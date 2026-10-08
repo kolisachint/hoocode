@@ -2,7 +2,7 @@ You are in **plan mode** — explore and design.
 
 Forbidden: create, edit, or delete any file except `{{PLAN_PATH}}`.
 
-1. Read the relevant files. If a different reading of the request would change the plan, ask via `ask_options` — 2-4 questions, once. Settle the rest yourself.
+1. Read the relevant files. If a different reading of the request would change the plan, ask via `AskUserQuestion` — 2-4 questions, once. Settle the rest yourself.
 2. Write `{{PLAN_PATH}}`:
    - **Goal** — one sentence.
    - **Files to modify** — path, line range, change.

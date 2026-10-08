@@ -24,58 +24,35 @@ pub const MODEL_INHERIT: &str = "inherit";
 
 /// `HOOCODE_TOOL_NAMES`: built-in tools an agent's `tools` list is normalized against.
 pub const HOOCODE_TOOL_NAMES: &[&str] = &[
-    "bash",
-    "edit",
-    "read",
-    "SearchCodebase",
-    "webfetch",
-    "websearch",
-    "write",
+    "Shell",
+    "Edit",
+    "Read",
+    "CodeSearch",
+    "WebFetch",
+    "WebSearch",
+    "Write",
 ];
 
-/// `TASK_TOOL_NAME`: the subagent tool's canonical name.
-///
-/// Renamed from `Task` on 2026-10-05 (`Agent`/`AgentOut`: short, and the
-/// same word in the TUI, the transcript and a bot's chat line). `Task` read as a to-do item — the task
-/// store really does have a `Task` type for TodoWrite entries and MCP calls —
-/// while the tool starts a background run. `TASK_TOOL_LEGACY_NAME` stays
-/// registered as an alias for a release so a pinned prompt, an agent file or a
-/// muscle-memory call from an older transcript keeps working.
+/// `TASK_TOOL_NAME`: the subagent tool's canonical name (`Agent`).
 pub const TASK_TOOL_NAME: &str = "Agent";
-/// The pre-rename name, accepted as an alias and shown in deprecation notices.
-pub const TASK_TOOL_LEGACY_NAME: &str = "Task";
 /// The companion tool: read the status of, wait for, or collect a background run.
-pub const TASK_OUTPUT_TOOL_NAME: &str = "AgentOut";
-/// The pre-rename companion name, accepted as an alias.
-pub const TASK_OUTPUT_TOOL_LEGACY_NAME: &str = "TaskOutput";
-
-/// Map a tool name a caller used onto the canonical name.
-///
-/// Only the two subagent tools have ever been renamed, so this is a pair of
-/// entries rather than a general mechanism — and it is where the next rename
-/// goes. Returns `None` for a name that is already canonical or unknown.
-pub fn canonical_tool_name(name: &str) -> Option<&'static str> {
-    match name {
-        TASK_TOOL_LEGACY_NAME => Some(TASK_TOOL_NAME),
-        TASK_OUTPUT_TOOL_LEGACY_NAME => Some(TASK_OUTPUT_TOOL_NAME),
-        _ => None,
-    }
-}
+pub const TASK_OUTPUT_TOOL_NAME: &str = "AgentOutput";
 /// `TODO_WRITE_TOOL_NAME`.
 pub const TODO_WRITE_TOOL_NAME: &str = "TodoWrite";
 
 /// `CLAUDE_TOOL_ALIASES`: lower-cased Claude Code tool name -> hoocode tool.
 pub const CLAUDE_TOOL_ALIASES: &[(&str, &str)] = &[
-    ("read", "read"),
-    ("write", "write"),
-    ("edit", "edit"),
-    ("bash", "bash"),
-    ("searchcodebase", "SearchCodebase"),
-    ("grep", "SearchCodebase"),
-    ("glob", "SearchCodebase"),
-    ("find", "SearchCodebase"),
-    ("webfetch", "webfetch"),
-    ("websearch", "websearch"),
+    ("read", "Read"),
+    ("write", "Write"),
+    ("edit", "Edit"),
+    ("bash", "Shell"),
+    ("shell", "Shell"),
+    ("codesearch", "CodeSearch"),
+    ("grep", "CodeSearch"),
+    ("glob", "CodeSearch"),
+    ("find", "CodeSearch"),
+    ("webfetch", "WebFetch"),
+    ("websearch", "WebSearch"),
 ];
 
 const KNOWN_MODEL_ALIASES: &[&str] = &[
@@ -186,7 +163,7 @@ pub fn normalize_tools(
     let mut diagnostics = Vec::new();
     if value.is_array() {
         diagnostics.push(ResourceDiagnostic::warning(
-            "tools: use a comma-separated string (\"tools: read, bash\") instead of a YAML list for Claude Code compatibility",
+            "tools: use a comma-separated string (\"tools: Read, Shell\") instead of a YAML list for Claude Code compatibility",
             file_path,
         ));
     }

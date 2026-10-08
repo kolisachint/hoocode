@@ -136,7 +136,7 @@ mod parity {
     fn uses_built_in_rendering_for_built_in_overrides_without_custom_renderers() {
         let _g = lock();
         let mut c = component(
-            "edit",
+            "Edit",
             "tool-2",
             json!({"path": "README.md", "oldText": "before", "newText": "after"}),
             Full,
@@ -151,7 +151,7 @@ mod parity {
             false,
         );
         let rendered = strip_all(&c.render(120));
-        assert!(rendered.contains("edit"));
+        assert!(rendered.contains("Edit"));
         assert!(rendered.contains("README.md"));
         assert!(!rendered.contains(":1"));
     }
@@ -160,14 +160,14 @@ mod parity {
     fn preserves_legacy_file_path_rendering_compatibility_for_built_in_tools() {
         let _g = lock();
         let mut c = component(
-            "read",
+            "Read",
             "tool-3",
             json!({"file_path": "README.md"}),
             Full,
             None,
         );
         let rendered = strip_all(&c.render(120));
-        assert!(rendered.contains("read"));
+        assert!(rendered.contains("Read"));
         assert!(rendered.contains("README.md"));
     }
 
@@ -175,7 +175,7 @@ mod parity {
     fn does_not_duplicate_built_in_headers_when_passed_the_active_built_in_definition() {
         let _g = lock();
         let mut c = component(
-            "read",
+            "Read",
             "tool-4",
             json!({"path": "README.md"}),
             Full,
@@ -185,7 +185,7 @@ mod parity {
         let rendered = strip_all(&c.render(120));
         let reads = rendered
             .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
-            .filter(|w| *w == "read")
+            .filter(|w| *w == "Read")
             .count();
         assert_eq!(reads, 1, "{rendered}");
     }
@@ -198,7 +198,7 @@ mod parity {
             ..base()
         };
         let mut c = component(
-            "read",
+            "Read",
             "tool-4b",
             json!({"path": "notes.txt"}),
             Full,
@@ -218,7 +218,7 @@ mod parity {
             ..base()
         };
         let mut c = component(
-            "read",
+            "Read",
             "tool-4c",
             json!({"path": "README.md"}),
             Full,
@@ -226,7 +226,7 @@ mod parity {
         );
         c.update_result(result("hello", false), false);
         let rendered = strip_all(&c.render(120));
-        assert!(rendered.contains("read"));
+        assert!(rendered.contains("Read"));
         assert!(rendered.contains("README.md"));
         assert!(rendered.contains("override result"));
     }
@@ -240,7 +240,7 @@ mod parity {
             ..tools::read::definition()
         };
         let mut c = component(
-            "read",
+            "Read",
             "tool-4d",
             json!({"path": "README.md"}),
             Full,
@@ -264,7 +264,7 @@ mod parity {
             ..base()
         };
         let mut c = component(
-            "read",
+            "Read",
             "tool-4e",
             json!({"path": "README.md"}),
             Full,
@@ -347,7 +347,7 @@ mod parity {
     fn trims_trailing_blank_display_lines_from_write_previews() {
         let _g = lock();
         let mut c = component(
-            "write",
+            "Write",
             "tool-7",
             json!({"path": "README.md", "content": "one\ntwo\n"}),
             Full,
@@ -363,7 +363,7 @@ mod parity {
     fn trims_trailing_blank_display_lines_from_read_results() {
         let _g = lock();
         let mut c = component(
-            "read",
+            "Read",
             "tool-8",
             json!({"path": "notes.txt"}),
             Full,
@@ -435,7 +435,7 @@ mod parity {
         let _g = lock();
         for s in compact_scenarios() {
             let mut c = component(
-                "read",
+                "Read",
                 &format!("tool-compact-{}", s.title),
                 json!({"path": s.path}),
                 Peek,
@@ -465,7 +465,7 @@ mod parity {
             ),
         ] {
             let mut c = component(
-                "read",
+                "Read",
                 "tool-compact-range",
                 json!({"path": path, "offset": 120, "limit": 210}),
                 Peek,
@@ -645,7 +645,7 @@ mod freeze {
 
     fn finished(id: &str) -> ToolExecutionComponent {
         let mut c = component(
-            "read",
+            "Read",
             id,
             json!({"path": "README.md"}),
             Full,
@@ -659,7 +659,7 @@ mod freeze {
     fn a_finished_block_is_freezable_a_partial_one_is_not() {
         let _g = lock();
         let mut c = component(
-            "read",
+            "Read",
             "freeze-partial",
             json!({"path": "README.md"}),
             Full,

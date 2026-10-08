@@ -377,7 +377,7 @@ pub fn format_agents_for_prompt(agents: &[AgentDefinition]) -> String {
         return String::new();
     }
     let mut lines: Vec<String> = vec![
-        "\n\nThe following specialized agents are available for delegation via the Task tool."
+        "\n\nThe following specialized agents are available for delegation via the Agent tool."
             .into(),
         "Choose the agent whose description best matches the task and pass it as `subagent_type`."
             .into(),

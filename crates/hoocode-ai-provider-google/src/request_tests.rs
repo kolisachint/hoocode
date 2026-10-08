@@ -319,7 +319,7 @@ fn params_carry_generation_settings_tools_and_tool_choice() {
     let mut context = hello();
     context.system_prompt = "sys".into();
     context.tools = vec![hoocode_ai_types::Tool {
-        name: "read".into(),
+        name: "Read".into(),
         description: "Read".into(),
         parameters: json!({"type": "object"}),
         defer_loading: None,
@@ -340,7 +340,7 @@ fn params_carry_generation_settings_tools_and_tool_choice() {
                 "temperature": 0.0,
                 "maxOutputTokens": 100,
                 "systemInstruction": "sys",
-                "tools": [{"functionDeclarations": [{"name": "read", "description": "Read", "parametersJsonSchema": {"type": "object"}}]}],
+                "tools": [{"functionDeclarations": [{"name": "Read", "description": "Read", "parametersJsonSchema": {"type": "object"}}]}],
                 "toolConfig": {"functionCallingConfig": {"mode": "ANY"}},
             },
         })
@@ -349,7 +349,7 @@ fn params_carry_generation_settings_tools_and_tool_choice() {
     let rest = sdk_body(&params, false);
     assert_eq!(
         serde_json::to_string(&rest).unwrap(),
-        r#"{"contents":[{"parts":[{"text":"Hello"}],"role":"user"}],"systemInstruction":{"parts":[{"text":"sys"}],"role":"user"},"tools":[{"functionDeclarations":[{"name":"read","description":"Read","parametersJsonSchema":{"type":"object"}}]}],"toolConfig":{"functionCallingConfig":{"mode":"ANY"}},"generationConfig":{"temperature":0.0,"maxOutputTokens":100}}"#
+        r#"{"contents":[{"parts":[{"text":"Hello"}],"role":"user"}],"systemInstruction":{"parts":[{"text":"sys"}],"role":"user"},"tools":[{"functionDeclarations":[{"name":"Read","description":"Read","parametersJsonSchema":{"type":"object"}}]}],"toolConfig":{"functionCallingConfig":{"mode":"ANY"}},"generationConfig":{"temperature":0.0,"maxOutputTokens":100}}"#
     );
     let vertex = sdk_body(&params, true);
     assert_eq!(

@@ -134,10 +134,10 @@ pub struct FindCoveringReadOptions<'a> {
     pub resolve_path: &'a dyn Fn(&str) -> String,
 }
 
-const READ_TOOL: &str = "read";
+const READ_TOOL: &str = "Read";
 
 fn is_mutate_tool(name: &str) -> bool {
-    name == "edit" || name == "write"
+    name == "Edit" || name == "Write"
 }
 
 /// A session compaction entry: the boundary that trims the live context.
@@ -436,7 +436,7 @@ mod tests {
         }
         json!({
             "role": "assistant",
-            "content": [{ "type": "toolCall", "id": id, "name": "read", "arguments": arguments }]
+            "content": [{ "type": "toolCall", "id": id, "name": "Read", "arguments": arguments }]
         })
     }
 
@@ -458,7 +458,7 @@ mod tests {
     }
 
     fn read_result(id: &str, text: &str) -> Value {
-        result(id, "read", text, false)
+        result(id, "Read", text, false)
     }
 
     fn cover(
@@ -528,8 +528,8 @@ mod tests {
         let entries = [
             read_call("r1", "/f.txt", None),
             read_result("r1", "content"),
-            mutate_call("e1", "/f.txt", "edit"),
-            result("e1", "edit", "edited", false),
+            mutate_call("e1", "/f.txt", "Edit"),
+            result("e1", "Edit", "edited", false),
         ];
         assert!(cover(&entries, "/f.txt", None, "cur").is_none());
     }
@@ -626,7 +626,7 @@ mod tests {
     fn ignores_error_results() {
         let entries = [
             read_call("r1", "/f.txt", None),
-            result("r1", "read", "boom", true),
+            result("r1", "Read", "boom", true),
         ];
         assert!(cover(&entries, "/f.txt", None, "cur").is_none());
     }
@@ -636,8 +636,8 @@ mod tests {
         let entries = [
             read_call("r1", "/f.txt", None),
             read_result("r1", "content"),
-            mutate_call("e1", "/f.txt", "edit"),
-            result("e1", "edit", "Could not find the exact text", true),
+            mutate_call("e1", "/f.txt", "Edit"),
+            result("e1", "Edit", "Could not find the exact text", true),
         ];
         assert!(cover(&entries, "/f.txt", None, "cur").is_none());
     }

@@ -351,7 +351,7 @@ async fn executes_mutated_before_tool_call_args_without_revalidation() {
 async fn prepares_tool_arguments_before_execution() {
     let executed = Arc::new(Mutex::new(Vec::<serde_json::Value>::new()));
     let e = executed.clone();
-    let mut edit = tool("edit", move |args| {
+    let mut edit = tool("Edit", move |args| {
         e.lock().unwrap().push(args["edits"].clone());
         Ok(AgentToolResult {
             content: vec![Content::text("edited")],
@@ -371,7 +371,7 @@ async fn prepares_tool_arguments_before_execution() {
     mock_stream(&mut config, |n, _| match n {
         0 => tool_calls(&[(
             "tool-1",
-            "edit",
+            "Edit",
             serde_json::json!({"oldText": "before", "newText": "after"}),
         )]),
         _ => text("done"),

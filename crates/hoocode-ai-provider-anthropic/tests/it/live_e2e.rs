@@ -468,10 +468,10 @@ async fn oauth_tool_names_round_trip() {
             "todowrite",
         ),
         (
-            one_arg_tool("read", "Read a file", "path", "File path"),
+            one_arg_tool("Read", "Read a file", "path", "File path"),
             "You are a helpful assistant. Use the read tool to read files.",
             "Read the file /tmp/test.txt using the read tool.",
-            "read",
+            "Read",
         ),
         (
             one_arg_tool("find", "Find files by pattern", "pattern", "Glob pattern"),

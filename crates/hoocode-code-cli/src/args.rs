@@ -698,8 +698,8 @@ mod tests {
     #[test]
     fn parses_a_comma_separated_denylist() {
         assert_eq!(
-            parse(&["--disallowed-tools", "bash, write"]).disallowed_tools,
-            strs(&["bash", "write"])
+            parse(&["--disallowed-tools", "Shell, Write"]).disallowed_tools,
+            strs(&["Shell", "Write"])
         );
     }
     #[test]
@@ -817,25 +817,25 @@ mod tests {
     #[test]
     fn parses_tools_flag() {
         assert_eq!(
-            parse(&["--tools", "read,bash"]).tools,
-            strs(&["read", "bash"])
+            parse(&["--tools", "Read,Shell"]).tools,
+            strs(&["Read", "Shell"])
         );
     }
     #[test]
     fn parses_t_shorthand() {
-        assert_eq!(parse(&["-t", "read,bash"]).tools, strs(&["read", "bash"]));
+        assert_eq!(parse(&["-t", "Read,Shell"]).tools, strs(&["Read", "Shell"]));
     }
     #[test]
     fn parses_no_tools_with_explicit_tools_flags() {
-        let r = parse(&["--no-tools", "--tools", "read,bash"]);
+        let r = parse(&["--no-tools", "--tools", "Read,Shell"]);
         assert_eq!(r.no_tools, Some(true));
-        assert_eq!(r.tools, strs(&["read", "bash"]));
+        assert_eq!(r.tools, strs(&["Read", "Shell"]));
     }
     #[test]
     fn parses_no_builtin_tools_with_explicit_tools_flags() {
-        let r = parse(&["--no-builtin-tools", "--tools", "read,bash"]);
+        let r = parse(&["--no-builtin-tools", "--tools", "Read,Shell"]);
         assert_eq!(r.no_builtin_tools, Some(true));
-        assert_eq!(r.tools, strs(&["read", "bash"]));
+        assert_eq!(r.tools, strs(&["Read", "Shell"]));
     }
 
     // messages and file args

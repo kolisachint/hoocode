@@ -2,7 +2,7 @@
 //!
 //! The default bundle is hoocode's: `read`, `edit`, `write` from
 //! `hoocode-code-tools-fs` (10.2a, 10.2c), `bash` from
-//! `hoocode-code-tool-bash` (10.2b) and `SearchCodebase` from
+//! `hoocode-code-tool-bash` (10.2b) and `CodeSearch` from
 //! `hoocode-code-tool-search` (10.2d). The free functions below (grep, find,
 //! ls, webfetch, websearch, todo) predate the ports and are not tools; they go
 //! when 10.2e/10.2f land.
@@ -20,7 +20,6 @@ use hoocode_code_tools_fs::{
     create_edit_tool_definition, create_read_tool_definition, create_write_tool_definition,
     EditToolOptions, ReadToolOptions, WriteToolOptions,
 };
-use search_hoocode::{create_search_hoocode_tool_definition, SearchHooCodeOptions};
 use std::path::Path;
 
 pub mod file_finder;
@@ -341,10 +340,11 @@ pub fn default_tools_with(
     )
 }
 
-/// The default coding bundle (`CODING_TOOL_NAMES`): read, bash, edit, write,
-/// SearchCodebase and SearchHooCode, in hoocode's order. SearchHooCode rides
-/// with `read` as in hoocode-ts. webfetch/websearch and TodoWrite are opt-in
-/// tools (10.2e, 10.2f).
+/// The default coding bundle (`CODING_TOOL_NAMES`): Read, Shell, Edit, Write
+/// and CodeSearch, in hoocode's order. DocSearch is not here: the CLI registers
+/// it after AskUserQuestion so the model sees that order. Read, Shell, Edit,
+/// Write, CodeSearch and AskUserQuestion, then DocSearch.
+/// WebFetch/WebSearch and TodoWrite are opt-in tools (10.2e, 10.2f).
 pub fn default_tool_definitions(
     cwd: std::path::PathBuf,
     _permissions: PermissionPolicy,
@@ -356,8 +356,7 @@ pub fn default_tool_definitions(
         create_bash_tool_definition(cwd.clone(), bash),
         create_edit_tool_definition(cwd.clone(), EditToolOptions::default()),
         create_write_tool_definition(cwd.clone(), WriteToolOptions::default()),
-        create_search_tool_definition(cwd.clone(), SearchToolOptions::default()),
-        create_search_hoocode_tool_definition(cwd, SearchHooCodeOptions::default()),
+        create_search_tool_definition(cwd, SearchToolOptions::default()),
     ]
 }
 

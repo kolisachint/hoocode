@@ -479,12 +479,12 @@ impl Branch {
         let mut entries = self.0.lock().unwrap();
         entries.push(json!({
             "role": "assistant",
-            "content": [{ "type": "toolCall", "id": id, "name": "read", "arguments": args }]
+            "content": [{ "type": "toolCall", "id": id, "name": "Read", "arguments": args }]
         }));
         entries.push(json!({
             "role": "toolResult",
             "toolCallId": id,
-            "toolName": "read",
+            "toolName": "Read",
             "content": [{ "type": "text", "text": text_output(result) }],
             "isError": false
         }));

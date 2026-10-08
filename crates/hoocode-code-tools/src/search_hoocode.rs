@@ -1,4 +1,4 @@
-//! The `SearchHooCode` tool (`extensions/core/self-knowledge.ts` in hoocode-ts).
+//! The `DocSearch` tool (`extensions/core/self-knowledge.ts` in hoocode-ts).
 //!
 //! It searches what this session can do: loaded skills and subagents, and
 //! installed plugins once they load. Docs are not indexed here yet (the Rust
@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use crate::text_result;
 
 /// The tool's name, as hoocode-ts registers it.
-pub const SEARCH_HOOCODE_TOOL_NAME: &str = "SearchHooCode";
+pub const DOC_SEARCH_TOOL_NAME: &str = "DocSearch";
 
 const DEFAULT_LIMIT: f64 = 8.0;
 const MAX_LIMIT: f64 = 25.0;
@@ -30,7 +30,7 @@ pub const SEARCH_HOOCODE_PROMPT_SNIPPET: &str =
     "Search hoocode's own docs and this session's capabilities by describing what you need.";
 
 /// The guideline added to the system prompt (`promptGuidelines`).
-pub const SEARCH_HOOCODE_PROMPT_GUIDELINE: &str = "For questions about hoocode itself — its features, configuration, or how to extend it — use SearchHooCode and read the section it points at instead of answering from memory.";
+pub const SEARCH_HOOCODE_PROMPT_GUIDELINE: &str = "For questions about hoocode itself — its features, configuration, or how to extend it — use DocSearch and read the section it points at instead of answering from memory.";
 
 const QUERY_DESCRIPTION: &str = "What you want to know about hoocode, in your own words — 'how do I write an extension', 'where are sessions stored', 'can it run subagents'.";
 const LIMIT_DESCRIPTION: &str = "Maximum results. Default 8.";
@@ -77,8 +77,8 @@ pub fn create_search_hoocode_tool_definition(
 ) -> ToolDefinition {
     let cwd: PathBuf = cwd.into();
     ToolDefinition {
-        name: SEARCH_HOOCODE_TOOL_NAME.into(),
-        label: SEARCH_HOOCODE_TOOL_NAME.into(),
+        name: DOC_SEARCH_TOOL_NAME.into(),
+        label: DOC_SEARCH_TOOL_NAME.into(),
         description: SEARCH_HOOCODE_DESCRIPTION.into(),
         prompt_snippet: Some(SEARCH_HOOCODE_PROMPT_SNIPPET.into()),
         prompt_guidelines: vec![SEARCH_HOOCODE_PROMPT_GUIDELINE.into()],
@@ -174,8 +174,8 @@ mod tests {
     #[test]
     fn name_description_and_prompt_text_match_hoocode_ts() {
         let tool = create_search_hoocode_tool_definition(".", SearchHooCodeOptions::default());
-        assert_eq!(tool.name, "SearchHooCode");
-        assert_eq!(tool.label, "SearchHooCode");
+        assert_eq!(tool.name, "DocSearch");
+        assert_eq!(tool.label, "DocSearch");
         assert_eq!(tool.description, SEARCH_HOOCODE_DESCRIPTION);
         assert!(tool.description.starts_with("Search hoocode's own documentation and the capabilities loaded in this session (skills, slash commands, subagents, installed plugins)."));
         assert!(tool
@@ -298,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn the_default_bundle_registers_search_hoocode_after_read() {
+    fn the_default_bundle_leaves_doc_search_to_the_cli() {
         let dir = std::env::temp_dir();
         let defs = crate::default_tool_definitions(
             dir,
@@ -307,7 +307,7 @@ mod tests {
             hoocode_code_tool_bash::BashToolOptions::default(),
         );
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
-        assert!(names.contains(&"read"));
-        assert!(names.contains(&"SearchHooCode"));
+        assert!(names.contains(&"Read"));
+        assert!(!names.contains(&"DocSearch"));
     }
 }

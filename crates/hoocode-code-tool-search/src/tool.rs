@@ -1,4 +1,4 @@
-//! The `SearchCodebase` tool (`core/tools/search.ts`). Interactive rendering
+//! The `CodeSearch` tool (`core/tools/search.ts`). Interactive rendering
 //! arrives with phase 11.
 
 use std::path::PathBuf;
@@ -27,7 +27,7 @@ pub struct SearchToolOptions {
     pub get_service: Option<ServiceProvider>,
 }
 
-/// The TypeBox schema hoocode sends for `SearchCodebase`.
+/// The TypeBox schema hoocode sends for `CodeSearch`.
 pub fn search_parameters_schema() -> Value {
     json!({
         "type": "object",
@@ -67,12 +67,12 @@ pub fn create_search_tool_definition(
 ) -> ToolDefinition {
     let cwd: PathBuf = cwd.into();
     ToolDefinition { ordered_start: false, background_when: None,
-        name: "SearchCodebase".into(),
-        label: "SearchCodebase".into(),
+        name: "CodeSearch".into(),
+        label: "CodeSearch".into(),
         description: "Find where code lives: ranked file:line-range results, fusing keyword and semantic retrieval over a local index with exact-text search of files the index has not read yet. The query is plain text, not a regex — regex metacharacters are matched literally. Falls back to exact-text retrieval automatically when the index is unavailable, and still finds code written moments ago that no index has seen.".into(),
         prompt_snippet: Some("Ranked code search (keyword + semantic, rank-fused)".into()),
         prompt_guidelines: vec![
-            "SearchCodebase defaults to mode=auto, which is almost always right. Use limit=3 for targeted lookups, 10–20 when exploring a broad topic — past ~15 results the deeper ones arrive as ranked file:line-range headers without a snippet, which is still enough to choose what to read.".into(),
+            "CodeSearch defaults to mode=auto, which is almost always right. Use limit=3 for targeted lookups, 10–20 when exploring a broad topic — past ~15 results the deeper ones arrive as ranked file:line-range headers without a snippet, which is still enough to choose what to read.".into(),
         ],
         parameters: search_parameters_schema(),
         prepare_arguments: None,

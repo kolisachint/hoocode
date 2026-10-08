@@ -1,5 +1,5 @@
-//! `core/tools/subagent.ts` renderers: the `Agent` call line and `AgentOut`
-//! (its call, and the result card or roster). The legacy `Task`/`TaskOutput`
+//! `core/tools/subagent.ts` renderers: the `Agent` call line and `AgentOutput`
+//! (its call, and the result card or roster). The legacy `Task`/`AgentOutput`
 //! names render through the same functions.
 
 use std::rc::Rc;
@@ -84,7 +84,7 @@ pub fn format_task_output_call(args: &Value) -> String {
     };
     format!(
         "{}{styled}{}",
-        t.fg("toolTitle", &t.bold("AgentOut ")),
+        t.fg("toolTitle", &t.bold("AgentOutput ")),
         if truthy(args.get("wait")) {
             t.fg("dim", " (wait)")
         } else {

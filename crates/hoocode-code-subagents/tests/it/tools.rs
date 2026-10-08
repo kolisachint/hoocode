@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! task-output.test.ts, subagent-progress-roster.test.ts and subagent.test.ts,
-//! plus the Task tool's execute paths against a pool of shell-mock children
+//! plus the Agent tool's execute paths against a pool of shell-mock children
 //! (the TS suite's fake pool is 10.9f's subagent-execution test).
 //!
 //! The inbox, task store and shared pool are process-wide, so each group
@@ -220,13 +220,13 @@ async fn progress_events_drive_roster_activity() {
     progress(
         &pool,
         "run-1",
-        json!({"type": "tool_execution_start", "toolName": "SearchCodebase"}),
+        json!({"type": "tool_execution_start", "toolName": "CodeSearch"}),
     );
-    assert_eq!(activity_of("run-1").as_deref(), Some("SearchCodebase"));
+    assert_eq!(activity_of("run-1").as_deref(), Some("CodeSearch"));
     progress(
         &pool,
         "run-1",
-        json!({"type": "tool_execution_end", "toolName": "SearchCodebase"}),
+        json!({"type": "tool_execution_end", "toolName": "CodeSearch"}),
     );
     assert_eq!(activity_of("run-1").as_deref(), Some(""));
 
@@ -234,9 +234,9 @@ async fn progress_events_drive_roster_activity() {
     progress(
         &pool,
         "run-1",
-        json!({"type": "tool_execution_start", "toolName": "bash"}),
+        json!({"type": "tool_execution_start", "toolName": "Shell"}),
     );
-    assert_eq!(activity_of("run-1").as_deref(), Some("bash"));
+    assert_eq!(activity_of("run-1").as_deref(), Some("Shell"));
     progress(&pool, "run-1", json!({"type": "turn_end"}));
     assert_eq!(activity_of("run-1").as_deref(), Some("thinking"));
     pool.emit_for_testing(
@@ -250,25 +250,25 @@ async fn progress_events_drive_roster_activity() {
     progress(
         &pool,
         "run-1",
-        json!({"type": "tool_execution_start", "toolName": "SearchCodebase"}),
+        json!({"type": "tool_execution_start", "toolName": "CodeSearch"}),
     );
     progress(
         &pool,
         "run-2",
-        json!({"type": "tool_execution_start", "toolName": "bash"}),
+        json!({"type": "tool_execution_start", "toolName": "Shell"}),
     );
     pool.emit_for_testing(
         "task_done",
         json!({"agent_type": "explore", "task_id": "run-2"}),
     );
-    assert_eq!(activity_of("run-1").as_deref(), Some("SearchCodebase"));
+    assert_eq!(activity_of("run-1").as_deref(), Some("CodeSearch"));
     assert_eq!(activity_of("run-2").as_deref(), Some(""));
 
     // a run with no roster row is a no-op
     progress(
         &pool,
         "ghost-run",
-        json!({"type": "tool_execution_start", "toolName": "SearchCodebase"}),
+        json!({"type": "tool_execution_start", "toolName": "CodeSearch"}),
     );
     assert!(store.agents().iter().all(|a| a.id != "ghost-run"));
     dispose_subagent_pool();
@@ -304,22 +304,22 @@ fn builtin_subagent_allowlists() {
     );
     for name in ["code-review", "security-review"] {
         let tools = builtin_tools(name);
-        assert!(tools.contains(&"bash".to_string()));
-        assert!(!tools.iter().any(|t| t == "edit" || t == "write"));
+        assert!(tools.contains(&"Shell".to_string()));
+        assert!(!tools.iter().any(|t| t == "Edit" || t == "Write"));
     }
     for name in ["plan", "explore"] {
         let tools = builtin_tools(name);
         assert!(
             !tools
                 .iter()
-                .any(|t| t == "edit" || t == "write" || t == "bash"),
+                .any(|t| t == "Edit" || t == "Write" || t == "Shell"),
             "{name}"
         );
     }
     for name in names {
         assert!(!builtin_tools(name).is_empty(), "{name}");
     }
-    assert!(builtin_tools("general-purpose").contains(&"write".to_string()));
+    assert!(builtin_tools("general-purpose").contains(&"Write".to_string()));
     let raw = EMBEDDED_AGENT_PROMPTS
         .iter()
         .find(|(n, _)| *n == "general-purpose")
@@ -398,7 +398,7 @@ fn build_task_main_prompt_contents() {
     assert!(prompt.contains("mark the item in_progress BEFORE dispatching"));
     // Built-in explore/plan are background agents: the background block is in.
     assert!(prompt.contains("don't idle"));
-    assert!(prompt.contains("AgentOut(wait: true)"));
+    assert!(prompt.contains("AgentOutput(wait: true)"));
     assert!(!prompt.contains("DO NOT stop and wait"));
     assert!(prompt.contains("Delegate when you need only the final result"));
     assert!(!prompt.contains("WHEN TO USE:"));
@@ -426,7 +426,7 @@ fn the_task_tool_runs_in_the_background_per_agent_or_argument() {
     let predicate = tool.background_when.clone().unwrap();
     let call = |args: Value| AgentToolCall {
         id: "c".into(),
-        name: "Task".into(),
+        name: "Agent".into(),
         arguments: args,
     };
     // Built-in explore is a background agent; general-purpose is not.
@@ -443,7 +443,7 @@ fn the_task_tool_runs_in_the_background_per_agent_or_argument() {
     )));
 }
 
-// The Task tool's execute paths, against a real pool of shell-mock children.
+// The Agent tool's execute paths, against a real pool of shell-mock children.
 
 const DIR: &str = hoocode_code_paths::CONFIG_DIR_NAME;
 
@@ -547,7 +547,7 @@ async fn task_tool_execute_paths() {
     .unwrap();
     assert_eq!(
         text(&r),
-        "explore#1 finished ✓ — Mapped the module.\nRead the full result with AgentOut(\"explore#1\")."
+        "explore#1 finished ✓ — Mapped the module.\nRead the full result with AgentOutput(\"explore#1\")."
     );
     assert_subset(&r.details, json!({"ok": true, "background": true}));
     let (_, body) = subagent_inbox().collect("explore#1").unwrap();
@@ -816,7 +816,7 @@ fn a_project_agent_opting_into_background_runs_detached() {
     let predicate = tool.background_when.clone().unwrap();
     let call = |agent: &str| AgentToolCall {
         id: "c".into(),
-        name: "Task".into(),
+        name: "Agent".into(),
         arguments: json!({"subagent_type": agent}),
     };
     assert!(predicate(&call("watcher")));
@@ -851,14 +851,11 @@ fn active_tool_names(with_task: bool) -> Vec<String> {
         hoocode_code_session::SessionManager::in_memory(dir.path().to_string_lossy()),
         CreateAgentSessionOptions {
             model: Some(model),
-            // What the CLI registers: both canonical tools and both
-            // deprecated aliases.
+            // What the CLI registers: both subagent tools.
             custom_tools: if with_task {
                 vec![
                     create_task_tool_definition(dir.path()),
                     create_task_output_tool_definition(),
-                    create_task_tool_alias_definition(dir.path()),
-                    create_task_output_tool_alias_definition(),
                 ]
             } else {
                 vec![]
@@ -876,13 +873,10 @@ fn the_task_tool_is_active_only_when_registered() {
     isolate_agent_dir();
     let on = active_tool_names(true);
     assert!(on.contains(&"Agent".to_string()));
-    assert!(on.contains(&"AgentOut".to_string()));
-    // Both spellings stay registered while the old one is deprecated.
-    assert!(on.contains(&"Task".to_string()));
-    assert!(on.contains(&"TaskOutput".to_string()));
-    assert!(on.contains(&"read".to_string()));
+    assert!(on.contains(&"AgentOutput".to_string()));
+    assert!(on.contains(&"Read".to_string()));
     let off = active_tool_names(false);
     assert!(!off.contains(&"Agent".to_string()));
-    assert!(!off.contains(&"Task".to_string()));
-    assert!(off.contains(&"read".to_string()));
+    assert!(!off.contains(&"AgentOutput".to_string()));
+    assert!(off.contains(&"Read".to_string()));
 }

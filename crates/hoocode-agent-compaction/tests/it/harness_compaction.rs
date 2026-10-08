@@ -251,7 +251,7 @@ fn prepares_compaction_using_the_latest_compaction_summary_as_previous_summary()
 fn serializes_conversation_with_truncated_tool_results() {
     let messages = vec![Message::ToolResult(ToolResultMessage {
         tool_call_id: "tc1".into(),
-        tool_name: "read".into(),
+        tool_name: "Read".into(),
         content: vec![Content::text("x".repeat(5000))],
         details: None,
         is_error: false,
@@ -271,7 +271,7 @@ fn serialize_does_not_truncate_short_tool_results() {
     let short = "x".repeat(1500);
     let messages = vec![Message::ToolResult(ToolResultMessage {
         tool_call_id: "tc1".into(),
-        tool_name: "read".into(),
+        tool_name: "Read".into(),
         content: vec![Content::text(short.clone())],
         details: None,
         is_error: false,
@@ -363,7 +363,7 @@ async fn returns_a_compaction_result_with_file_details() {
         assistant_with(
             vec![Content::ToolCall(ToolCallContent {
                 id: "tool-1".into(),
-                name: "read".into(),
+                name: "Read".into(),
                 arguments: json!({"path": "src/index.ts"}),
                 thought_signature: None,
             })],
@@ -483,7 +483,7 @@ async fn collects_and_summarizes_an_abandoned_branch() {
         assistant_with(
             vec![Content::ToolCall(ToolCallContent {
                 id: "t".into(),
-                name: "edit".into(),
+                name: "Edit".into(),
                 arguments: json!({"path": "a.rs"}),
                 thought_signature: None,
             })],

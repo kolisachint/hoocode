@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 /// The only tools a light session exposes.
-pub const LIGHT_TOOL_NAMES: [&str; 4] = ["read", "write", "edit", "bash"];
+pub const LIGHT_TOOL_NAMES: [&str; 4] = ["Read", "Write", "Edit", "Shell"];
 
 /// `createLightTools`: the real tools wearing short descriptions and stripped
 /// parameter schemas (same shapes, no per-property descriptions). Each gets
@@ -149,10 +149,10 @@ mod tests {
     use super::*;
 
     const SHORT_DESCRIPTIONS: [(&str, &str); 4] = [
-        ("read", "Read a file. args: path, offset?, limit?"),
-        ("write", "Write file (overwrites). args: path, content"),
-        ("edit", "Replace exact text. args: path, oldText, newText"),
-        ("bash", "Run a shell command. args: command, timeout?"),
+        ("Read", "Read a file. args: path, offset?, limit?"),
+        ("Write", "Write file (overwrites). args: path, content"),
+        ("Edit", "Replace exact text. args: path, oldText, newText"),
+        ("Shell", "Run a shell command. args: command, timeout?"),
     ];
 
     #[test]
@@ -183,7 +183,7 @@ mod tests {
         let file = dir.join("hello.txt");
         std::fs::write(&file, "hello old world\n").unwrap();
         let tools = create_light_tools(dir.clone());
-        let edit = tools.iter().find(|t| t.name == "edit").unwrap();
+        let edit = tools.iter().find(|t| t.name == "Edit").unwrap();
         (edit.execute)(
             "e1".into(),
             json!({"path": "hello.txt", "oldText": "old", "newText": "new"}),

@@ -63,7 +63,7 @@ pub struct ResourceListing {
     pub prompt_diagnostics: Vec<ResourceDiagnostic>,
     pub context_files: Vec<ContextFile>,
     pub context_warnings: Vec<String>,
-    /// Dispatchable agents (empty when the Task tool is off): name, description.
+    /// Dispatchable agents (empty when the Agent tool is off): name, description.
     pub agents: Vec<(String, String)>,
     pub mcp: Vec<McpServerStatus>,
     /// Loaded extensions (plugins have a `plugin:` display name).

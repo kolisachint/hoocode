@@ -626,7 +626,7 @@ fn platform_submenu(
     ListSubmenu::new(list).handle()
 }
 
-const CORE_TOOLS: &[&str] = &["read", "bash", "edit", "write"];
+const CORE_TOOLS: &[&str] = &["Read", "Shell", "Edit", "Write"];
 const GROUP_PREFIX: &str = "group:";
 
 /// `ToolsSubmenu`: group switches first, then one on/off row per tool. The
@@ -1234,7 +1234,7 @@ impl SettingsSelectorComponent {
         leaves.push(Leaf::cycle(
             "webtools-timeout-secs",
             "Web tools timeout",
-            "Per-request timeout (secs) for webfetch/websearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.",
+            "Per-request timeout (secs) for WebFetch/WebSearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.",
             config.webtools_timeout_secs.to_string(),
             preset_values(&[5, 10, 15, 30, 60, 120], config.webtools_timeout_secs),
         ));

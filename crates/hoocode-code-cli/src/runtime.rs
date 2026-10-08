@@ -259,7 +259,7 @@ fn resource_loader(
     })
 }
 
-/// Extension-registered tools in hoocode, SDK tools here: ask_options always
+/// Extension-registered tools in hoocode, SDK tools here: AskUserQuestion always
 /// (the options pane in interactive mode; elsewhere it says there is no UI),
 /// TodoWrite with `--enable-todowrite` or the `enableTodoWrite` setting.
 fn custom_tools(
@@ -274,6 +274,13 @@ fn custom_tools(
         Arc::new(hoocode_code_tools_optin::NoUi)
     };
     let mut tools = vec![hoocode_code_tools_optin::create_ask_options_tool_definition(ask_host)];
+    // After AskUserQuestion: the model sees DocSearch last among the built-ins.
+    tools.push(
+        hoocode_code_tools::search_hoocode::create_search_hoocode_tool_definition(
+            cwd.to_path_buf(),
+            hoocode_code_tools::search_hoocode::SearchHooCodeOptions::default(),
+        ),
+    );
     tools.extend(subagent_tools(args, settings, false, cwd));
     if args.task_id.is_none()
         && args
@@ -290,7 +297,7 @@ fn custom_tools(
 /// main.ts's subagent block of `buildSessionOptions`: seed the tree-wide depth
 /// cap and nested concurrency into the environment (a root only; descendants
 /// inherit them), set or clear `--delegate-allow`, and decide whether this
-/// process gets the Task/TaskOutput tools (and warm workers, root only).
+/// process gets the Agent/AgentOutput tools (and warm workers, root only).
 fn subagent_tools(
     args: &Args,
     settings: &SettingsManager,
@@ -353,11 +360,6 @@ fn subagent_tools(
     vec![
         hoocode_code_subagents::tools::create_task_tool_definition(cwd),
         hoocode_code_subagents::tools::create_task_output_tool_definition(),
-        // Deprecated spellings, one release. They resolve to the same
-        // executors, so a model or a resumed transcript that still says `Task`
-        // keeps working while the prompt teaches the new names.
-        hoocode_code_subagents::tools::create_task_tool_alias_definition(cwd),
-        hoocode_code_subagents::tools::create_task_output_tool_alias_definition(),
     ]
 }
 
@@ -584,7 +586,7 @@ fn assemble_session(
     // main.ts: the light preset is an allowlist of the four short-schema tools
     // (their order is the active order), which also keeps extension tools off.
     let (base_tools, custom, tools) = if light {
-        // Still seeds the subagent env; light mode gets no Task tool.
+        // Still seeds the subagent env; light mode gets no Agent tool.
         subagent_tools(args, &settings, true, &cwd);
         (
             Some(BaseTools::Override(
@@ -720,7 +722,7 @@ pub fn run_print_mode(
         };
         writeln!(
             err,
-            "Note: {mode} does not ask for tool approval; bash, write, edit, webfetch and websearch run without it."
+            "Note: {mode} does not ask for tool approval; Shell, Write, Edit, WebFetch and WebSearch run without it."
         )?;
     }
     let (session, diagnostics) = build_session(args, false);
@@ -1416,12 +1418,8 @@ fn resource_listing(
         listing.context_files = context.agents_files;
         listing.context_warnings = context.warnings;
     }
-    // Dispatchable agents only when the Agent tool (or its `Task` alias) is on.
-    if session
-        .get_active_tool_names()
-        .iter()
-        .any(|t| t == "Agent" || t == "Task")
-    {
+    // Dispatchable agents only when the Agent tool is on.
+    if session.get_active_tool_names().iter().any(|t| t == "Agent") {
         let registry = hoocode_code_resources::agent_registry::load_agent_registry(
             &hoocode_code_resources::agent_registry::LoadAgentRegistryOptions::new(cwd),
         );
@@ -1681,13 +1679,10 @@ mod tests {
     fn default_prompt_lists_tools_with_snippets() {
         let (prompt, tools) = prompt_for(&[]);
         assert!(prompt.starts_with("You are an expert coding assistant operating inside hoocode"));
-        // The aliases are listed too, and say what they point at: a model that
-        // sees `Task` in the tool list and `Agent` in the prompt should be
-        // able to work out which is which.
         for line in [
             "Agent: delegate a self-contained task to a specialized subagent (choose via subagent_type)",
-            "SearchHooCode: Search hoocode's own docs and this session's capabilities by describing what you need.",
-            "AgentOut: check status / list / collect the results of background subagents",
+            "DocSearch: Search hoocode's own docs and this session's capabilities by describing what you need.",
+            "AgentOutput: check status / list / collect the results of background subagents",
             "TodoWrite: Plan and track multi-step work as a live todo list (use proactively; replaces the whole list each call)",
         ] {
             assert!(
@@ -1699,17 +1694,6 @@ mod tests {
             prompt.contains("Available tools:"),
             "the tool list should still be there: {prompt}"
         );
-        for alias in [
-            "Task: deprecated alias for Agent; prefer Agent",
-            "TaskOutput: deprecated alias for AgentOut; prefer AgentOut",
-        ] {
-            assert!(
-                prompt
-                    .lines()
-                    .any(|l| l.trim_start().starts_with(&format!("- {alias}"))),
-                "the alias should announce itself: {alias}"
-            );
-        }
         assert!(
             prompt.lines().any(|l| l.trim() == "Guidelines:"),
             "the list must run into the guidelines"
@@ -1717,17 +1701,15 @@ mod tests {
         assert_eq!(
             tools,
             [
-                "read",
-                "bash",
-                "edit",
-                "write",
-                "SearchCodebase",
-                "SearchHooCode",
-                "ask_options",
+                "Read",
+                "Shell",
+                "Edit",
+                "Write",
+                "CodeSearch",
+                "AskUserQuestion",
+                "DocSearch",
                 "Agent",
-                "AgentOut",
-                "Task",
-                "TaskOutput",
+                "AgentOutput",
                 "TodoWrite"
             ]
         );
@@ -1837,7 +1819,7 @@ mod tests {
                 "role": "assistant",
                 "content": [
                     {"type": "thinking", "thinking": thinking, "thinkingSignature": ""},
-                    {"type": "toolCall", "id": id, "name": "SearchCodebase", "arguments": {"query": query}},
+                    {"type": "toolCall", "id": id, "name": "CodeSearch", "arguments": {"query": query}},
                 ],
                 "api": "test-api", "provider": "test-provider", "model": "test-model",
                 "stopReason": "toolUse", "timestamp": 0,
@@ -1847,7 +1829,7 @@ mod tests {
 
         fn tool_result(id: &str, text: &str) -> AgentMessage {
             serde_json::from_value(json!({
-                "role": "toolResult", "toolCallId": id, "toolName": "SearchCodebase",
+                "role": "toolResult", "toolCallId": id, "toolName": "CodeSearch",
                 "content": [{"type": "text", "text": text}], "isError": false, "timestamp": 0,
             }))
             .unwrap()
@@ -1956,7 +1938,7 @@ mod tests {
             assert_eq!(line_of(&lines, "TRACE_ONE"), None);
             assert_eq!(line_of(&lines, "TRACE_TWO"), None);
             // One chain of two calls.
-            assert!(lines[at(&lines, "SearchCodebase ×2")].contains("2 calls"));
+            assert!(lines[at(&lines, "CodeSearch ×2")].contains("2 calls"));
         }
 
         #[test]
@@ -1965,7 +1947,7 @@ mod tests {
                 "role": "assistant",
                 "content": [
                     {"type": "text", "text": "SPOKEN"},
-                    {"type": "toolCall", "id": "call-2", "name": "SearchCodebase", "arguments": {"query": "QUERY_TWO"}},
+                    {"type": "toolCall", "id": "call-2", "name": "CodeSearch", "arguments": {"query": "QUERY_TWO"}},
                 ],
                 "api": "test-api", "provider": "test-provider", "model": "test-model",
                 "stopReason": "toolUse", "timestamp": 0,
@@ -1986,7 +1968,7 @@ mod tests {
             let calls: Vec<usize> = lines
                 .iter()
                 .enumerate()
-                .filter(|(_, l)| l.contains("● SearchCodebase"))
+                .filter(|(_, l)| l.contains("● CodeSearch"))
                 .map(|(i, _)| i)
                 .collect();
             assert!(calls.len() >= 2, "{}", lines.join("\n"));

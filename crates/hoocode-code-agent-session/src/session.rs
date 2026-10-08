@@ -54,14 +54,16 @@ const THINKING_LEVELS: [ThinkingLevel; 5] = [
     ThinkingLevel::High,
 ];
 
-/// Tools active by default when the built-ins come from the factory.
-pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 6] = [
-    "read",
-    "bash",
-    "edit",
-    "write",
-    "SearchCodebase",
-    "SearchHooCode",
+/// Tools active by default, in the order the model sees them: Read, Shell,
+/// Edit, Write, CodeSearch, AskUserQuestion, DocSearch. The rest follow.
+pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 7] = [
+    "Read",
+    "Shell",
+    "Edit",
+    "Write",
+    "CodeSearch",
+    "AskUserQuestion",
+    "DocSearch",
 ];
 
 /// A failed session operation (the TS methods throw `Error(message)`).
@@ -1238,8 +1240,8 @@ impl AgentSession {
             }
             (valid, snippets, guidelines)
         };
-        // The agents are listed only while the Agent tool (or its `Task` alias) is active.
-        let agents = if valid.iter().any(|n| n == "Agent" || n == "Task") {
+        // The agents are listed only while the Agent tool is active.
+        let agents = if valid.iter().any(|n| n == "Agent") {
             hoocode_code_resources::load_agent_registry(
                 &hoocode_code_resources::LoadAgentRegistryOptions::new(
                     self.inner.cwd.to_string_lossy(),

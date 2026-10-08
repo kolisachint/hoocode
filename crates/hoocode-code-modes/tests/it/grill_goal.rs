@@ -39,7 +39,7 @@ fn returns_none_for_unknown_arguments() {
 #[test]
 fn asks_the_user_via_ask_options_in_the_me_phase_without_critiquing() {
     let m = build_grill_message(&parse_plan_sections(SAMPLE_PLAN), GrillTarget::Me);
-    assert!(m.contains("ask_options"));
+    assert!(m.contains("AskUserQuestion"));
     assert!(m.contains("interrogating the *request*"));
     assert!(!m.contains("attacking the plan"));
 }
@@ -48,13 +48,13 @@ fn asks_the_user_via_ask_options_in_the_me_phase_without_critiquing() {
 fn critiques_the_plan_in_the_plan_phase_without_asking_questions() {
     let m = build_grill_message(&parse_plan_sections(SAMPLE_PLAN), GrillTarget::Plan);
     assert!(m.contains("attacking the plan"));
-    assert!(!m.contains("ask_options"));
+    assert!(!m.contains("AskUserQuestion"));
 }
 
 #[test]
 fn runs_questions_before_critique_when_both_phases_are_requested() {
     let m = build_grill_message(&parse_plan_sections(SAMPLE_PLAN), GrillTarget::Both);
-    let ask = m.find("ask_options").unwrap();
+    let ask = m.find("AskUserQuestion").unwrap();
     let critique = m.find("attacking the plan").unwrap();
     assert!(ask < critique);
 }

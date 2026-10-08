@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "The bash tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output"
+description = "The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output"
 readme = "README.md"
 
 [package.metadata.hoocode]

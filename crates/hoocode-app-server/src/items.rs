@@ -18,8 +18,8 @@ pub enum ToolKind {
 
 pub fn tool_kind(tool_name: &str) -> ToolKind {
     match tool_name {
-        "bash" => ToolKind::Command,
-        "edit" | "write" => ToolKind::FileChange,
+        "Shell" => ToolKind::Command,
+        "Edit" | "Write" => ToolKind::FileChange,
         _ => ToolKind::Dynamic,
     }
 }
@@ -151,7 +151,7 @@ fn file_change(
         .and_then(Value::as_str)
         .map(str::to_string)
         .or_else(|| {
-            (tool_name == "write").then(|| {
+            (tool_name == "Write").then(|| {
                 args.get("content")
                     .and_then(Value::as_str)
                     .unwrap_or_default()
@@ -159,7 +159,7 @@ fn file_change(
             })
         })
         .unwrap_or_default();
-    let kind = if tool_name == "write" {
+    let kind = if tool_name == "Write" {
         PatchChangeKind::Add
     } else {
         PatchChangeKind::Update { move_path: None }
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn bash_maps_to_command_execution() {
         let args = json!({"command": "ls -la"});
-        let started = tool_item_started("c1", "bash", &args, "/w");
+        let started = tool_item_started("c1", "Shell", &args, "/w");
         assert!(matches!(
             &started,
             ThreadItem::CommandExecution { command, status: ItemStatus::InProgress, .. } if command == "ls -la"
@@ -335,7 +335,7 @@ mod tests {
         };
         let done = tool_item_completed(
             "c1",
-            "bash",
+            "Shell",
             &args,
             "/w",
             ToolOutcome::Done {
@@ -347,7 +347,7 @@ mod tests {
             done,
             ThreadItem::CommandExecution { status: ItemStatus::Completed, aggregated_output: Some(ref o), .. } if o == "a\nb"
         ));
-        let declined = tool_item_completed("c1", "bash", &args, "/w", ToolOutcome::Declined);
+        let declined = tool_item_completed("c1", "Shell", &args, "/w", ToolOutcome::Declined);
         assert!(matches!(
             declined,
             ThreadItem::CommandExecution {
@@ -359,14 +359,14 @@ mod tests {
 
     #[test]
     fn edit_maps_to_file_change_with_absolute_path() {
-        let item = tool_item_started("e", "edit", &json!({"path": "src/a.rs"}), "/w");
+        let item = tool_item_started("e", "Edit", &json!({"path": "src/a.rs"}), "/w");
         let ThreadItem::FileChange { changes, .. } = item else {
             panic!("not a file change")
         };
         assert_eq!(changes[0].path, "/w/src/a.rs");
         let item = tool_item_started(
             "w",
-            "write",
+            "Write",
             &json!({"path": "/x/b", "content": "hi"}),
             "/w",
         );
@@ -381,7 +381,7 @@ mod tests {
     fn other_tools_are_dynamic() {
         let item = tool_item_completed(
             "r",
-            "read",
+            "Read",
             &json!({"path": "a"}),
             "/w",
             ToolOutcome::Declined,
@@ -403,7 +403,7 @@ mod tests {
             AgentMessage::Assistant(AssistantMessage {
                 content: vec![Content::ToolCall(ToolCallContent {
                     id: "t1".into(),
-                    name: "bash".into(),
+                    name: "Shell".into(),
                     arguments: json!({"command": "ls"}),
                     thought_signature: None,
                 })],
@@ -413,7 +413,7 @@ mod tests {
             }),
             AgentMessage::ToolResult(ToolResultMessage {
                 tool_call_id: "t1".into(),
-                tool_name: "bash".into(),
+                tool_name: "Shell".into(),
                 content: vec![Content::text("out")],
                 details: None,
                 is_error: false,

@@ -136,21 +136,21 @@ fn disabled_tools_default_round_trip_and_preservation() {
     assert!(d.manager().disabled_tools().is_empty());
 
     let mut manager = d.manager();
-    manager.set_disabled_tools(&strings(&["bash", "write"]));
+    manager.set_disabled_tools(&strings(&["Shell", "Write"]));
     assert_eq!(
         read(&d.global_path())["disabledTools"],
-        json!(["bash", "write"])
+        json!(["Shell", "Write"])
     );
-    assert_eq!(d.manager().disabled_tools(), strings(&["bash", "write"]));
+    assert_eq!(d.manager().disabled_tools(), strings(&["Shell", "Write"]));
 
     write(
         &d.global_path(),
         &json!({"theme": "dark", "defaultModel": "claude-sonnet"}),
     );
     let mut manager = d.manager();
-    manager.set_disabled_tools(&strings(&["bash"]));
+    manager.set_disabled_tools(&strings(&["Shell"]));
     let saved = read(&d.global_path());
-    assert_eq!(saved["disabledTools"], json!(["bash"]));
+    assert_eq!(saved["disabledTools"], json!(["Shell"]));
     assert_eq!(saved["theme"], "dark");
     assert_eq!(saved["defaultModel"], "claude-sonnet");
 }

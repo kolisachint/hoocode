@@ -254,14 +254,14 @@ fn explore_run() -> u64 {
 #[test]
 fn an_in_progress_subagent_row_shows_the_owners_live_tool_activity() {
     let _g = lock();
-    explore_agent("SearchCodebase");
+    explore_agent("CodeSearch");
     explore_run();
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Subagents);
     let lines = plain(&mut panel, 120);
     let row = find(&lines, "trace the auth flow");
-    assert!(row.contains("⋯ SearchCodebase · "), "{row}");
-    let after = row.split("⋯ SearchCodebase · ").nth(1).unwrap();
+    assert!(row.contains("⋯ CodeSearch · "), "{row}");
+    let after = row.split("⋯ CodeSearch · ").nth(1).unwrap();
     assert!(after.starts_with(|c: char| c.is_ascii_digit()), "{row}");
 }
 
@@ -1121,7 +1121,7 @@ fn a_running_row_shows_attempt_model_and_the_deadline_counting_down() {
         "subagent",
         TaskAgentKind::Subagent,
         TaskAgentPatch {
-            activity: Some("read".into()),
+            activity: Some("Read".into()),
             attempt: Some(2),
             model: Some("mock/pinned".into()),
             deadline_at: Some(now + 192_000),

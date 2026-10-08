@@ -207,7 +207,7 @@ fn should_include_intro_text_before_xml() {
     )]);
     let intro = &result[..result.find("<available_skills>").unwrap()];
     assert!(intro.contains("The following skills provide specialized instructions"));
-    assert!(intro.contains("Use the read tool to load a skill's file"));
+    assert!(intro.contains("Use the Read tool to load a skill's file"));
 }
 
 #[test]
@@ -380,14 +380,14 @@ fn ignore_files_plugin_roots_allowed_tools_and_namespaces() {
     assert_eq!(names, ["keep", "loose"]);
     assert_eq!(
         r.skills[0].allowed_tools,
-        Some(vec!["read".to_string(), "SearchCodebase".to_string()])
+        Some(vec!["Read".to_string(), "CodeSearch".to_string()])
     );
     assert!(any_contains(
         &r.diagnostics,
         "tool \"NotebookEdit\" has no hoocode equivalent"
     ));
     let prompt = format_skills_for_prompt(&r.skills);
-    assert!(prompt.contains("    <tools>read, SearchCodebase</tools>\n"));
+    assert!(prompt.contains("    <tools>Read, CodeSearch</tools>\n"));
 
     let mut opts = options(vec![format!("{root}/keep")], false);
     opts.namespaces

@@ -429,7 +429,7 @@ fn streams_thinking_text_and_tool_calls_with_usage() {
         json!({"response": {"responseId": "r1", "candidates": [{"content": {"role": "model", "parts": [
             {"text": "plan", "thought": true, "thoughtSignature": "sig"}]}}]}}),
         json!({"response": {"responseId": "r2", "candidates": [{"content": {"role": "model", "parts": [
-            {"text": "Hi"}, {"functionCall": {"name": "read", "args": {"path": "a"}}}]},
+            {"text": "Hi"}, {"functionCall": {"name": "Read", "args": {"path": "a"}}}]},
             "finishReason": "STOP"}],
             "usageMetadata": {"promptTokenCount": 10, "cachedContentTokenCount": 4,
                               "candidatesTokenCount": 3, "thoughtsTokenCount": 2, "totalTokenCount": 15}}}),
@@ -472,7 +472,7 @@ fn streams_thinking_text_and_tool_calls_with_usage() {
     let Content::ToolCall(call) = &message.content[2] else {
         panic!()
     };
-    assert!(call.id.starts_with("read_"), "{}", call.id);
+    assert!(call.id.starts_with("Read_"), "{}", call.id);
     assert_eq!(call.arguments, json!({"path": "a"}));
 
     let requests = server.requests();

@@ -70,7 +70,7 @@ fn format_read_call(args: &Value) -> String {
     };
     format!(
         "{} {display}{}",
-        t.fg("toolTitle", &t.bold("read")),
+        t.fg("toolTitle", &t.bold("Read")),
         format_line_range(args)
     )
 }

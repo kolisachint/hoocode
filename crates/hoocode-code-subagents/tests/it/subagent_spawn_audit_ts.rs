@@ -2,7 +2,7 @@
 //! The subagents half of the pin's `test/suite/subagent-spawn-audit.test.ts`:
 //! lifeguard stall de-duplication, the JSONL reader's bounded buffer, atomic
 //! result writes, the cumulative token budget across the inherited-model
-//! retry, the process-group kill, and cancellation (pool and Task tool). The
+//! retry, the process-group kill, and cancellation (pool and Agent tool). The
 //! roster and task panel cases are in
 //! `hoocode-code-tui-app/tests/subagent_spawn_audit_ts.rs`.
 //!

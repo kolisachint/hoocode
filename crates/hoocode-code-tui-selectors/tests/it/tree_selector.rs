@@ -75,7 +75,7 @@ fn tool_call_only_assistant(id: &str, parent: Option<&str>) -> FileEntry {
     assistant(
         id,
         parent,
-        json!([{"type": "toolCall", "id": format!("tc-{id}"), "name": "read", "arguments": {"path": "test.ts"}}]),
+        json!([{"type": "toolCall", "id": format!("tc-{id}"), "name": "Read", "arguments": {"path": "test.ts"}}]),
         "toolUse",
     )
 }

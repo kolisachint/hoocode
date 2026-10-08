@@ -479,7 +479,7 @@ impl ExtensionHooks for ReloadFilter {
         }
         Box::pin(async {
             hoocode_code_agent_session::SessionEventResult {
-                active_tools: Some(vec!["read".to_string()]),
+                active_tools: Some(vec!["Read".to_string()]),
                 ..Default::default()
             }
         })
@@ -491,17 +491,17 @@ async fn reload_emits_session_start_and_applies_its_tool_filter() {
     let reasons = Arc::new(Mutex::new(Vec::new()));
     let h = Harness::new(HarnessOptions {
         tools: vec![
-            tool("read", |_| text_result("")),
-            tool("write", |_| text_result("")),
+            tool("Read", |_| text_result("")),
+            tool("Write", |_| text_result("")),
         ],
         extensions: Some(Arc::new(ReloadFilter(reasons.clone()))),
         ..Default::default()
     });
-    assert_eq!(h.session.get_active_tool_names(), ["read", "write"]);
+    assert_eq!(h.session.get_active_tool_names(), ["Read", "Write"]);
     h.session.reload().await;
     assert_eq!(
         *reasons.lock().unwrap(),
         [hoocode_code_agent_session::SessionStartReason::Reload]
     );
-    assert_eq!(h.session.get_active_tool_names(), ["read"]);
+    assert_eq!(h.session.get_active_tool_names(), ["Read"]);
 }

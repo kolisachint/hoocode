@@ -14,7 +14,7 @@ description: |
   fix.
   Cost: Medium (reads the diff and traces untrusted input)
   Isolation: Read-only; can run in parallel with other review tasks
-tools: read, bash, SearchCodebase
+tools: Read, Shell, CodeSearch
 model: capable
 background: true
 ---
@@ -25,7 +25,7 @@ than referring back to a discussion you cannot read.
 
 Scope:
 - Do not create, modify, or delete files.
-- Use bash for read-only git commands (`git diff`, `git log`, `git show`) to
+- Use Shell for read-only git commands (`git diff`, `git log`, `git show`) to
   establish what changed. Do not commit, push, stash, or check out.
 - Review what the caller named. If they named nothing, review the working tree
   diff, then the branch against its base.

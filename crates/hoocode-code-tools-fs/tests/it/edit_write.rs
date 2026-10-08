@@ -727,7 +727,7 @@ impl Harness {
         self.msgs.lock().unwrap().push(json!({"role": "toolResult", "toolCallId": id, "toolName": tool, "content": [{"type": "text", "text": text}], "isError": is_error}));
     }
     fn read(&mut self, path: &str) -> String {
-        let id = self.call("read", json!({"path": path}));
+        let id = self.call("Read", json!({"path": path}));
         let tool = create_read_tool_definition(
             &self.cwd,
             ReadToolOptions {
@@ -752,20 +752,20 @@ impl Harness {
                 _ => None,
             })
             .collect();
-        self.record(&id, "read", &out, false);
+        self.record(&id, "Read", &out, false);
         out
     }
     fn edit(&mut self, path: &str, edits: Value) -> (bool, String) {
         let args = json!({"path": path, "edits": edits});
-        let id = self.call("edit", args.clone());
+        let id = self.call("Edit", args.clone());
         match run(&edit_tool(&self.cwd), args) {
             Ok(result) => {
                 let t = text(&result);
-                self.record(&id, "edit", &t, false);
+                self.record(&id, "Edit", &t, false);
                 (true, t)
             }
             Err(e) => {
-                self.record(&id, "edit", &e.to_string(), true);
+                self.record(&id, "Edit", &e.to_string(), true);
                 (false, e.to_string())
             }
         }

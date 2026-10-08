@@ -44,9 +44,9 @@ pub fn extract_file_ops_from_message(message: &AgentMessage, file_ops: &mut File
             continue;
         };
         let set = match call.name.as_str() {
-            "read" => &mut file_ops.read,
-            "write" => &mut file_ops.written,
-            "edit" => &mut file_ops.edited,
+            "Read" => &mut file_ops.read,
+            "Write" => &mut file_ops.written,
+            "Edit" => &mut file_ops.edited,
             _ => continue,
         };
         set.insert(path.to_string());
@@ -220,12 +220,12 @@ mod tests {
     fn tracks_read_write_edit_paths_and_splits_read_only_files() {
         let message = AgentMessage::Assistant(AssistantMessage {
             content: vec![
-                call("read", json!({"path": "b.ts"})),
-                call("read", json!({"path": "a.ts"})),
-                call("edit", json!({"path": "b.ts"})),
-                call("write", json!({"path": "c.ts"})),
-                call("bash", json!({"path": "ignored"})),
-                call("read", json!({"path": ""})),
+                call("Read", json!({"path": "b.ts"})),
+                call("Read", json!({"path": "a.ts"})),
+                call("Edit", json!({"path": "b.ts"})),
+                call("Write", json!({"path": "c.ts"})),
+                call("Shell", json!({"path": "ignored"})),
+                call("Read", json!({"path": ""})),
             ],
             ..Default::default()
         });
@@ -255,7 +255,7 @@ mod tests {
                         ..Default::default()
                     }),
                     Content::text("ok"),
-                    call("read", json!({"path": "a", "limit": 5})),
+                    call("Read", json!({"path": "a", "limit": 5})),
                     call("ls", json!({})),
                 ],
                 ..Default::default()
@@ -263,7 +263,7 @@ mod tests {
         ];
         assert_eq!(
             serialize_conversation(&messages),
-            "[User]: hi\n\n[Assistant thinking]: plan\n\n[Assistant]: ok\n\n[Assistant tool calls]: read(path=\"a\", limit=5); ls()"
+            "[User]: hi\n\n[Assistant thinking]: plan\n\n[Assistant]: ok\n\n[Assistant tool calls]: Read(path=\"a\", limit=5); ls()"
         );
     }
 }

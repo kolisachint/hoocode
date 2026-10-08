@@ -153,7 +153,7 @@ fn format_write_call(
         Some(p) if !p.is_empty() => t.fg("accent", &p),
         Some(_) => t.fg("toolOutput", "..."),
     };
-    let mut text = format!("{} {path_display}", t.fg("toolTitle", &t.bold("write")));
+    let mut text = format!("{} {path_display}", t.fg("toolTitle", &t.bold("Write")));
     match content {
         None => text.push_str(&format!(
             "\n\n{}",

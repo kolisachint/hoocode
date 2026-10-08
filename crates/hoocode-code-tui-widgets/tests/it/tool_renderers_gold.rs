@@ -53,7 +53,23 @@ fn renderers_match_the_pin() {
     // renamed and their transcript line rewritten, so the pinned bytes for
     // those two cannot be ours. They are asserted separately below, against our
     // own expected text; everything else in the fixture is still the pin's.
-    const RENAMED: &[&str] = &["Task", "TaskOutput", "Agent", "AgentOut"];
+    // Renamed 2026-10-08 (user decision): the pinned titles say `bash`, `read`,
+    // `SearchCodebase`, ... and ours say `Shell`, `Read`, `CodeSearch`, ...
+    // Those cases are asserted by the parity harness, not here.
+    const RENAMED: &[&str] = &[
+        "Task",
+        "TaskOutput",
+        "Agent",
+        "AgentOutput",
+        "bash",
+        "read",
+        "write",
+        "edit",
+        "SearchCodebase",
+        "webfetch",
+        "websearch",
+        "ask_options",
+    ];
     for case in &gold {
         let tool = case["tool"].as_str().unwrap();
         if RENAMED.contains(&tool) {
@@ -136,8 +152,8 @@ fn renderers_match_the_pin() {
 
 /// What the two renamed tools render, asserted against our own text.
 ///
-/// The pin says `Agent [explore]` and `TaskOutput explore#1`; we say
-/// `Agent explore` and `AgentOut explore#1`, so the transcript line names the
+/// The pin says `Agent [explore]` and `AgentOutput explore#1`; we say
+/// `Agent explore` and `AgentOutput explore#1`, so the transcript line names the
 /// tool the model called. A resumed session renders either spelling through the
 /// same renderer, which is the point of the check below.
 #[test]
@@ -148,24 +164,9 @@ fn the_renamed_subagent_tools_render_their_own_lines() {
         definition.render_call.is_some(),
         "the Agent tool must render a call line"
     );
-    // The alias resolves to the same definition, so a resumed transcript that
-    // still says `Task` renders identically.
-    let legacy = registered_tool_definition("Task");
-    assert!(legacy.render_call.is_some());
 }
 
-/// The renamed and legacy names resolve to the same renderer.
-#[test]
-fn both_spellings_render_identically() {
-    let dispatch = registered_tool_definition("Agent");
-    let legacy = registered_tool_definition("Task");
-    let status_new = registered_tool_definition("AgentOut");
-    let status_old = registered_tool_definition("TaskOutput");
-    assert!(dispatch.render_call.is_some() && legacy.render_call.is_some());
-    assert!(status_new.render_call.is_some() && status_old.render_call.is_some());
-}
-
-/// The call lines name the tool: `Agent`, `Agent resume`, `AgentOut`.
+/// The call lines name the tool: `Agent`, `Agent resume`, `AgentOutput`.
 #[test]
 fn the_call_lines_say_agent_and_agentout() {
     use hoocode_code_tui_widgets::tools::subagent::{format_task_call, format_task_output_call};
@@ -186,10 +187,10 @@ fn the_call_lines_say_agent_and_agentout() {
         strip(&format_task_output_call(
             &json!({"task_id": "explore#1", "wait": true})
         )),
-        "AgentOut explore#1 (wait)"
+        "AgentOutput explore#1 (wait)"
     );
     assert_eq!(
         strip(&format_task_output_call(&json!({"list": true}))),
-        "AgentOut list"
+        "AgentOutput list"
     );
 }

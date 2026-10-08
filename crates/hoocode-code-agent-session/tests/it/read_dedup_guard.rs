@@ -12,7 +12,7 @@ fn read_twice(harness: &Harness, file: &str) {
     let call = || {
         faux_assistant_message(
             vec![faux_tool_call(
-                "read",
+                "Read",
                 serde_json::json!({"path": file}),
                 None,
             )],
@@ -37,7 +37,7 @@ fn read_results(harness: &Harness) -> Vec<String> {
         .into_iter()
         .filter_map(
             |m| match hoocode_agent_harness::messages::convert_to_llm(&[m]).pop() {
-                Some(Message::ToolResult(r)) if r.tool_name == "read" => Some(text_of(&r.content)),
+                Some(Message::ToolResult(r)) if r.tool_name == "Read" => Some(text_of(&r.content)),
                 _ => None,
             },
         )

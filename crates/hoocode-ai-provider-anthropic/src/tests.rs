@@ -374,7 +374,7 @@ fn repairs_malformed_sse_json_and_malformed_streamed_tool_json() {
         String::new(),
         vec![user("Use the edit tool.")],
         vec![Tool {
-            name: "edit".into(),
+            name: "Edit".into(),
             description: "Edit a file.".into(),
             parameters: json!({"type": "object", "properties": {"path": {"type": "string"}, "text": {"type": "string"}}, "required": ["path", "text"]}),
             defer_loading: None,
@@ -384,7 +384,7 @@ fn repairs_malformed_sse_json_and_malformed_streamed_tool_json() {
     let malformed = r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":\"A\H\",\"text\":\"col1	col2\"}"}}"#;
     let events = vec![
         ("message_start", json!({"type": "message_start", "message": {"id": "msg_test", "usage": usage_json(0)}}).to_string()),
-        ("content_block_start", json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_test", "name": "edit", "input": {}}}).to_string()),
+        ("content_block_start", json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_test", "name": "Edit", "input": {}}}).to_string()),
         ("content_block_delta", malformed.to_string()),
         ("content_block_stop", json!({"type": "content_block_stop", "index": 0}).to_string()),
         ("message_delta", json!({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": usage_json(5)}).to_string()),

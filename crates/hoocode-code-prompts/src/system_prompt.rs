@@ -15,18 +15,15 @@ pub const APP_NAME: &str = "hoocode";
 /// `hoocode_code_resources::TASK_TOOL_NAME`; the prompts crate must not
 /// depend on the resources crate for one string.
 pub const TASK_TOOL_NAME: &str = "Agent";
-/// The pre-2026-10-05 name, still recognised so a session resumed from an old
-/// transcript keeps its delegation guidance.
-pub const TASK_TOOL_LEGACY_NAME: &str = "Task";
 
-/// Name of the tool that searches the app's own docs (hoocode `SearchHooCode`).
+/// Name of the tool that searches the app's own docs.
 /// Kept verbatim until the self-knowledge extension is ported.
-pub const SELF_SEARCH_TOOL_NAME: &str = "SearchHooCode";
+pub const DOC_SEARCH_TOOL_NAME: &str = "DocSearch";
 
 /// Terse replacement for the default system prompt in light mode
 /// (`LIGHT_SYSTEM_PROMPT` in `core/light.ts`). `build_system_prompt` appends the
 /// date and working directory; light mode disables everything else.
-pub const LIGHT_SYSTEM_PROMPT: &str = "You are a coding agent. Use the tools to read, edit, and write files and run shell commands.\nSearch with bash (rg/find/ls). Prefer edit for changes; write for new files.\nBe concise. No preamble.";
+pub const LIGHT_SYSTEM_PROMPT: &str = "You are a coding agent. Use the tools to read, edit, and write files and run shell commands.\nSearch with Shell (rg/find/ls). Prefer Edit for changes; Write for new files.\nBe concise. No preamble.";
 
 /// A project context file (`AGENTS.md`/`CLAUDE.md`) already loaded.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,7 +65,7 @@ pub struct SelfDoc {
 pub struct BuildSystemPromptOptions {
     /// Custom system prompt (replaces the default).
     pub custom_prompt: Option<String>,
-    /// Tools to include. Default: read, bash, edit, write, SearchCodebase.
+    /// Tools to include. Default: read, bash, edit, write, CodeSearch.
     pub selected_tools: Option<Vec<String>>,
     /// One-line tool snippets keyed by tool name.
     pub tool_snippets: Vec<(String, String)>,
@@ -80,7 +77,7 @@ pub struct BuildSystemPromptOptions {
     pub cwd: String,
     pub context_files: Vec<ContextFile>,
     pub skills: Vec<PromptSkill>,
-    /// Emitted only when the Task tool is active.
+    /// Emitted only when the Agent tool is active.
     pub agents: Vec<PromptAgent>,
     /// Point the model at the app's own docs. Default: true for the built-in
     /// prompt, false when `custom_prompt` replaces it.
@@ -111,7 +108,7 @@ pub fn format_skills_for_prompt(skills: &[PromptSkill]) -> String {
     }
     let mut lines = vec![
         "\n\nThe following skills provide specialized instructions for specific tasks.".to_string(),
-        "Use the read tool to load a skill's file when the task matches its description.".to_string(),
+        "Use the Read tool to load a skill's file when the task matches its description.".to_string(),
         "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.".to_string(),
         String::new(),
         "<available_skills>".to_string(),
@@ -215,13 +212,13 @@ pub fn summarize_agent_description(description: &str) -> String {
     truncate_with_ellipsis(&summary, 200)
 }
 
-/// `formatAgentsForPrompt`: agents available through the Task tool, or `""`.
+/// `formatAgentsForPrompt`: agents available through the Agent tool, or `""`.
 pub fn format_agents_for_prompt(agents: &[PromptAgent]) -> String {
     if agents.is_empty() {
         return String::new();
     }
     let mut lines = vec![
-        "\n\nThe following specialized agents are available for delegation via the Task tool."
+        "\n\nThe following specialized agents are available for delegation via the Agent tool."
             .to_string(),
         "Choose the agent whose description best matches the task and pass it as `subagent_type`."
             .to_string(),
@@ -317,7 +314,7 @@ pub fn format_self_docs_for_prompt(docs: &[SelfDoc]) -> String {
         .map(|(root, files)| format!("{root}/: {}", files.join(", ")))
         .collect();
     format!(
-        "\n\n# About {APP_NAME} itself\n\nYou are running inside {APP_NAME}. Its own docs ship with the install, listed below; {APP_NAME} is actively developed, so answer questions about it from these files rather than from memory. They sit outside the working directory, so searching the project will not find them. Use {SELF_SEARCH_TOOL_NAME} to locate a specific heading, or read a file directly.\n\n{}",
+        "\n\n# About {APP_NAME} itself\n\nYou are running inside {APP_NAME}. Its own docs ship with the install, listed below; {APP_NAME} is actively developed, so answer questions about it from these files rather than from memory. They sit outside the working directory, so searching the project will not find them. Use {DOC_SEARCH_TOOL_NAME} to locate a specific heading, or read a file directly.\n\n{}",
         sections.join("\n")
     )
 }
@@ -357,11 +354,11 @@ pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
         let mut prompt = custom.to_string();
         prompt.push_str(&append_section);
         prompt.push_str(&context_files_section(&options.context_files));
-        let has_read = has("read");
+        let has_read = has("Read");
         if has_read {
             prompt.push_str(&format_skills_for_prompt(&options.skills));
         }
-        if has(TASK_TOOL_NAME) || has(TASK_TOOL_LEGACY_NAME) {
+        if has(TASK_TOOL_NAME) {
             prompt.push_str(&format_agents_for_prompt(&options.agents));
         }
         if want_self_docs && has_read {
@@ -372,7 +369,7 @@ pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
         return prompt;
     }
 
-    let default_tools: Vec<String> = ["read", "bash", "edit", "write", "SearchCodebase"]
+    let default_tools: Vec<String> = ["Read", "Shell", "Edit", "Write", "CodeSearch"]
         .iter()
         .map(|s| s.to_string())
         .collect();
@@ -402,18 +399,18 @@ pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
         }
     };
     let has = |name: &str| tools.iter().any(|t| t == name);
-    let has_bash = has("bash");
-    let has_search = has("SearchCodebase");
-    let has_read = has("read");
+    let has_bash = has("Shell");
+    let has_search = has("CodeSearch");
+    let has_read = has("Read");
 
     if has_search {
         add(if has_bash {
-            "SearchCodebase finds where code lives by concept, behavior, or half-known name (ranked, respects .gitignore); shell out to rg/find/ls only for exact matching lines, counts, or a raw listing"
+            "CodeSearch finds where code lives by concept, behavior, or half-known name (ranked, respects .gitignore); shell out to rg/find/ls only for exact matching lines, counts, or a raw listing"
         } else {
-            "For code discovery use SearchCodebase — it finds where code lives by concept, behavior, or half-known name, and respects .gitignore"
+            "For code discovery use CodeSearch — it finds where code lives by concept, behavior, or half-known name, and respects .gitignore"
         });
     } else if has_bash {
-        add("Use bash for file exploration (ls, rg/grep, find)");
+        add("Use Shell for file exploration (ls, rg/grep, find)");
     }
     for guideline in &options.prompt_guidelines {
         let normalized = guideline.trim();
@@ -444,7 +441,7 @@ pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
     if has_read {
         prompt.push_str(&format_skills_for_prompt(&options.skills));
     }
-    if has(TASK_TOOL_NAME) || has(TASK_TOOL_LEGACY_NAME) {
+    if has(TASK_TOOL_NAME) {
         prompt.push_str(&format_agents_for_prompt(&options.agents));
     }
     if want_self_docs && has_read {
@@ -506,47 +503,47 @@ mod tests {
     fn includes_all_default_tools_when_snippets_are_provided() {
         let mut o = opts(None);
         o.tool_snippets = [
-            ("read", "Read file contents"),
-            ("bash", "Execute bash commands"),
-            ("edit", "Make surgical edits"),
-            ("write", "Create or overwrite files"),
+            ("Read", "Read file contents"),
+            ("Shell", "Execute bash commands"),
+            ("Edit", "Make surgical edits"),
+            ("Write", "Create or overwrite files"),
         ]
         .iter()
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect();
         let prompt = build_system_prompt(&o);
-        for t in ["- read:", "- bash:", "- edit:", "- write:"] {
+        for t in ["- Read:", "- Shell:", "- Edit:", "- Write:"] {
             assert!(prompt.contains(t), "{t}");
         }
     }
 
     #[test]
     fn lists_search_hoocode_with_its_snippet_and_guideline_when_active() {
-        let mut o = opts(Some(&["read", "SearchHooCode"]));
+        let mut o = opts(Some(&["Read", "DocSearch"]));
         o.tool_snippets = vec![(
-            "SearchHooCode".into(),
+            "DocSearch".into(),
             "Search hoocode's own docs and this session's capabilities by describing what you need.".into(),
         )];
         o.prompt_guidelines = vec![
-            "For questions about hoocode itself — its features, configuration, or how to extend it — use SearchHooCode and read the section it points at instead of answering from memory.".into(),
+            "For questions about hoocode itself — its features, configuration, or how to extend it — use DocSearch and read the section it points at instead of answering from memory.".into(),
         ];
         let prompt = build_system_prompt(&o);
         assert!(prompt.contains(
-            "- SearchHooCode: Search hoocode's own docs and this session's capabilities by describing what you need."
+            "- DocSearch: Search hoocode's own docs and this session's capabilities by describing what you need."
         ));
         assert!(prompt.contains("- For questions about hoocode itself"));
     }
 
     #[test]
     fn omits_search_hoocode_when_it_is_not_active() {
-        let mut o = opts(Some(&["read"]));
-        o.tool_snippets = vec![("SearchHooCode".into(), "Search".into())];
-        assert!(!build_system_prompt(&o).contains("SearchHooCode"));
+        let mut o = opts(Some(&["Read"]));
+        o.tool_snippets = vec![("DocSearch".into(), "Search".into())];
+        assert!(!build_system_prompt(&o).contains("DocSearch"));
     }
 
     #[test]
     fn includes_custom_tools_in_available_tools_when_prompt_snippet_is_provided() {
-        let mut o = opts(Some(&["read", "dynamic_tool"]));
+        let mut o = opts(Some(&["Read", "dynamic_tool"]));
         o.tool_snippets = vec![("dynamic_tool".into(), "Run dynamic test behavior".into())];
         assert!(build_system_prompt(&o).contains("- dynamic_tool: Run dynamic test behavior"));
     }
@@ -554,20 +551,20 @@ mod tests {
     #[test]
     fn omits_custom_tools_from_available_tools_without_prompt_snippet() {
         assert!(
-            !build_system_prompt(&opts(Some(&["read", "dynamic_tool"]))).contains("dynamic_tool")
+            !build_system_prompt(&opts(Some(&["Read", "dynamic_tool"]))).contains("dynamic_tool")
         );
     }
 
     #[test]
     fn appends_prompt_guidelines_to_default_guidelines() {
-        let mut o = opts(Some(&["read", "dynamic_tool"]));
+        let mut o = opts(Some(&["Read", "dynamic_tool"]));
         o.prompt_guidelines = vec!["Use dynamic_tool for project summaries.".into()];
         assert!(build_system_prompt(&o).contains("- Use dynamic_tool for project summaries."));
     }
 
     #[test]
     fn deduplicates_and_trims_prompt_guidelines() {
-        let mut o = opts(Some(&["read", "dynamic_tool"]));
+        let mut o = opts(Some(&["Read", "dynamic_tool"]));
         o.prompt_guidelines = vec![
             "Use dynamic_tool for summaries.".into(),
             "  Use dynamic_tool for summaries.  ".into(),
@@ -583,30 +580,30 @@ mod tests {
 
     #[test]
     fn emits_the_routing_guideline_only_when_both_search_and_bash_are_active() {
-        let both = build_system_prompt(&opts(Some(&["SearchCodebase", "bash"])));
+        let both = build_system_prompt(&opts(Some(&["CodeSearch", "Shell"])));
         assert!(both.contains("shell out to rg/find/ls only for"));
-        let search_only = build_system_prompt(&opts(Some(&["SearchCodebase"])));
-        assert!(search_only.contains("For code discovery use SearchCodebase"));
+        let search_only = build_system_prompt(&opts(Some(&["CodeSearch"])));
+        assert!(search_only.contains("For code discovery use CodeSearch"));
         assert!(!search_only.contains("shell out to rg/find/ls only for"));
     }
 
     #[test]
     fn falls_back_to_the_shell_guideline_when_search_is_absent() {
-        let bash_only = build_system_prompt(&opts(Some(&["bash"])));
-        assert!(bash_only.contains("Use bash for file exploration"));
-        assert!(!bash_only.contains("SearchCodebase"));
+        let bash_only = build_system_prompt(&opts(Some(&["Shell"])));
+        assert!(bash_only.contains("Use Shell for file exploration"));
+        assert!(!bash_only.contains("CodeSearch"));
     }
 
     #[test]
     fn exact_layout_for_read_only() {
-        let mut o = opts(Some(&["read"]));
-        o.tool_snippets = vec![("read".into(), "Read file contents".into())];
+        let mut o = opts(Some(&["Read"]));
+        o.tool_snippets = vec![("Read".into(), "Read file contents".into())];
         o.cwd = "C:\\w\\p".into();
         o.date = Some("2026-01-02".into());
         assert_eq!(
             build_system_prompt(&o),
             "You are an expert coding assistant operating inside hoocode, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\n\
-Available tools:\n- read: Read file contents\n\n\
+Available tools:\n- Read: Read file contents\n\n\
 Guidelines:\n\
 - Put independent tool calls in one message — they execute in parallel; only split them across turns when a call needs an earlier call's result\n\
 - Be concise: no preamble or postamble, no restating the task or summarizing what you just did, no closers like \"Let me know\"\n\
@@ -620,7 +617,7 @@ Current date: 2026-01-02\nCurrent working directory: C:/w/p"
 
     #[test]
     fn custom_prompt_replaces_the_default_and_skips_self_docs() {
-        let mut o = opts(Some(&["read"]));
+        let mut o = opts(Some(&["Read"]));
         o.custom_prompt = Some("Be terse.".into());
         o.append_system_prompt = Some("Extra.".into());
         o.date = Some("2026-01-02".into());
@@ -641,14 +638,14 @@ Current date: 2026-01-02\nCurrent working directory: C:/w/p"
 
     #[test]
     fn skills_agents_and_self_docs_sections() {
-        let mut o = opts(Some(&["read", "Task"]));
+        let mut o = opts(Some(&["Read", "Agent"]));
         o.date = Some("2026-01-02".into());
         o.skills = vec![
             PromptSkill {
                 name: "a&b".into(),
                 description: "Use <this>".into(),
                 file_path: "/s/SKILL.md".into(),
-                allowed_tools: vec!["read".into(), "write".into()],
+                allowed_tools: vec!["Read".into(), "Write".into()],
                 disable_model_invocation: false,
             },
             PromptSkill {
@@ -662,7 +659,7 @@ Current date: 2026-01-02\nCurrent working directory: C:/w/p"
             description:
                 "Use this subagent ONLY when:\n- Reading code\n- Scouting\nDO NOT use when editing"
                     .into(),
-            tools: vec!["read".into()],
+            tools: vec!["Read".into()],
             model: Some("fast".into()),
         }];
         o.self_docs = vec![
@@ -681,14 +678,14 @@ Current date: 2026-01-02\nCurrent working directory: C:/w/p"
         ];
         let prompt = build_system_prompt(&o);
         assert!(prompt.contains(
-            "\n\nThe following skills provide specialized instructions for specific tasks.\nUse the read tool to load a skill's file when the task matches its description.\n"
+            "\n\nThe following skills provide specialized instructions for specific tasks.\nUse the Read tool to load a skill's file when the task matches its description.\n"
         ));
         assert!(prompt.contains(
-            "  <skill>\n    <name>a&amp;b</name>\n    <description>Use &lt;this&gt;</description>\n    <tools>read, write</tools>\n    <location>/s/SKILL.md</location>\n  </skill>\n</available_skills>"
+            "  <skill>\n    <name>a&amp;b</name>\n    <description>Use &lt;this&gt;</description>\n    <tools>Read, Write</tools>\n    <location>/s/SKILL.md</location>\n  </skill>\n</available_skills>"
         ));
         assert!(!prompt.contains("hidden"));
         assert!(prompt.contains(
-            "  <agent>\n    <name>explore</name>\n    <description>Reading code; Scouting</description>\n    <tools>read</tools>\n    <model>fast</model>\n  </agent>\n</available_agents>"
+            "  <agent>\n    <name>explore</name>\n    <description>Reading code; Scouting</description>\n    <tools>Read</tools>\n    <model>fast</model>\n  </agent>\n</available_agents>"
         ));
         assert!(prompt.contains("\n\n# About hoocode itself\n\nYou are running inside hoocode."));
         assert!(prompt.contains(
@@ -698,7 +695,7 @@ Current date: 2026-01-02\nCurrent working directory: C:/w/p"
 
     #[test]
     fn agents_need_the_task_tool() {
-        let mut o = opts(Some(&["read"]));
+        let mut o = opts(Some(&["Read"]));
         o.agents = vec![PromptAgent {
             name: "explore".into(),
             description: "Scout".into(),

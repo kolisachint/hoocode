@@ -386,7 +386,7 @@ pub fn format_skills_for_prompt(skills: &[Skill]) -> String {
     }
     let mut lines: Vec<String> = vec![
         "\n\nThe following skills provide specialized instructions for specific tasks.".into(),
-        "Use the read tool to load a skill's file when the task matches its description.".into(),
+        "Use the Read tool to load a skill's file when the task matches its description.".into(),
         "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.".into(),
         String::new(),
         "<available_skills>".into(),

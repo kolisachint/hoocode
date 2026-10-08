@@ -18,18 +18,18 @@ pub enum PermissionPolicy {
 
 /// Whether a tool name is considered dangerous.
 pub fn is_dangerous(tool_name: &str) -> bool {
-    matches!(tool_name, "bash" | "write" | "edit")
+    matches!(tool_name, "Shell" | "Write" | "Edit")
 }
 
 /// Whether a tool name is read-only.
 pub fn is_read_only(tool_name: &str) -> bool {
     matches!(
         tool_name,
-        "read"
-            | "SearchCodebase"
-            | "SearchHooCode"
+        "Read"
+            | "CodeSearch"
+            | "DocSearch"
             | "TodoWrite"
-            | "ask_options"
+            | "AskUserQuestion"
             | "grep"
             | "find"
             | "ls"
@@ -179,7 +179,7 @@ mod tests {
         let gate = AutoPermissionGate;
         let tc = AgentToolCall {
             id: "1".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         assert_eq!(gate.request(&tc), PermissionDecision::Grant);
@@ -190,7 +190,7 @@ mod tests {
         let gate = DenyPermissionGate;
         let tc = AgentToolCall {
             id: "1".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         assert!(matches!(gate.request(&tc), PermissionDecision::Deny { .. }));
@@ -201,12 +201,12 @@ mod tests {
         let gate = PolicyPermissionGate::auto();
         let bash = AgentToolCall {
             id: "1".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         let read = AgentToolCall {
             id: "2".into(),
-            name: "read".into(),
+            name: "Read".into(),
             arguments: serde_json::json!({"path": "x"}),
         };
         assert_eq!(gate.request(&bash), PermissionDecision::Grant);
@@ -218,7 +218,7 @@ mod tests {
         let gate = PolicyPermissionGate::deny();
         let bash = AgentToolCall {
             id: "1".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         assert!(matches!(
@@ -232,12 +232,12 @@ mod tests {
         let gate = PolicyPermissionGate::ask(Arc::new(AutoPermissionGate));
         let read = AgentToolCall {
             id: "1".into(),
-            name: "read".into(),
+            name: "Read".into(),
             arguments: serde_json::json!({"path": "x"}),
         };
         let bash = AgentToolCall {
             id: "2".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         assert_eq!(gate.request(&read), PermissionDecision::Grant);
@@ -256,7 +256,7 @@ mod tests {
         let gate = PolicyPermissionGate::ask(Arc::new(AlwaysGrant));
         let bash = AgentToolCall {
             id: "1".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         assert_eq!(gate.request(&bash), PermissionDecision::GrantAlways);

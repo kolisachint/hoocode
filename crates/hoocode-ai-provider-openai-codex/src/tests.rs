@@ -926,7 +926,7 @@ fn request_body_matches_build_request_body() {
 fn tools_are_sent_with_strict_null() {
     let mut context = say_hello();
     context.tools = vec![Tool {
-        name: "read".into(),
+        name: "Read".into(),
         description: "Read a file".into(),
         parameters: serde_json::from_value(json!({"type": "object", "properties": {}})).unwrap(),
         defer_loading: None,

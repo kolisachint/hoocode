@@ -17,7 +17,7 @@ use serde_json::Value;
 
 use crate::render_utils::get_text_output;
 
-/// Width of the tool-name column (`SearchCodebase` is the longest built-in).
+/// Width of the tool-name column (`CodeSearch` is the longest built-in).
 const VERB_WIDTH: usize = 14;
 /// Gap between the verb column and the subject.
 const VERB_GAP: usize = 2;

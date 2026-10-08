@@ -171,15 +171,15 @@ fn describes_background_tools_for_mcp_and_subagents() {
     );
 
     let task = describe_background_tool(&call(
-        "Task",
+        "Agent",
         json!({"subagent_type": "explorer", "prompt": "\n  Find the parser  \nmore"}),
     ));
     assert_eq!(task.subagent_type, "explorer");
     assert_eq!(task.label, "subagent `explorer`");
     assert_eq!(task.summary.as_deref(), Some("Find the parser"));
 
-    let described = describe_background_tool(&call("Task", json!({"description": "  Audit  "})));
-    assert_eq!(described.subagent_type, "Task");
+    let described = describe_background_tool(&call("Agent", json!({"description": "  Audit  "})));
+    assert_eq!(described.subagent_type, "Agent");
     assert_eq!(described.summary.as_deref(), Some("Audit"));
 
     let long = "x".repeat(200);
@@ -196,8 +196,8 @@ fn background_placeholders_and_finish_messages() {
         "Started MCP tool `s_t` in the background — q: x. Its result arrives as a follow-up; keep working."
     );
     assert_eq!(
-        create_background_placeholder_text(&call("Task", json!({"subagent_type": "a"}))),
-        "Delegated to subagent `a` in the background. I'll be notified when it finishes; use AgentOut to check progress or read the result."
+        create_background_placeholder_text(&call("Agent", json!({"subagent_type": "a"}))),
+        "Delegated to subagent `a` in the background. I'll be notified when it finishes; use AgentOutput to check progress or read the result."
     );
 
     let result = |name: &str, is_error: bool| BackgroundToolResult {
@@ -222,7 +222,7 @@ fn background_placeholders_and_finish_messages() {
         mcp.details,
         Some(json!({"subagentType": "mcp_s_t", "isMcpTool": true, "isError": true}))
     );
-    let task = create_background_task_message(&result("Task", false));
+    let task = create_background_task_message(&result("Agent", false));
     assert_eq!(
         task.content,
         UserContent::Blocks(vec![Content::text("body")])

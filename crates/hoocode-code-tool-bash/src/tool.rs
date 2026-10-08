@@ -347,8 +347,8 @@ pub fn create_bash_tool_definition(
     ToolDefinition {
         ordered_start: false,
         background_when: None,
-        name: "bash".into(),
-        label: "bash".into(),
+        name: "Shell".into(),
+        label: "Shell".into(),
         description,
         prompt_snippet: Some("Run builds, tests, linters, git, and package managers".into()),
         prompt_guidelines: Vec::new(),

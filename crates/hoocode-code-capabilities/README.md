@@ -1,6 +1,6 @@
 # hoocode-code-capabilities
 
-The in-process index behind `SearchHooCode`: what this session can do, searchable by
+The in-process index behind `DocSearch`: what this session can do, searchable by
 describing it. Entries are `{kind, name, description, source}` with kind `skill`,
 `subagent` or `plugin`.
 

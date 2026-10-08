@@ -115,7 +115,7 @@ pub struct CreatedAgentSession {
 }
 
 /// `createAllToolDefinitions` for the default session: read, bash, edit,
-/// write and SearchCodebase with their settings.
+/// write and CodeSearch with their settings.
 pub fn default_base_tools(ctx: &BaseToolsContext<'_>) -> Vec<ToolDefinition> {
     let settings = ctx.settings;
     let read = ReadToolOptions {
@@ -346,7 +346,7 @@ pub fn create_agent_session(
 
     let mut initial_active: Vec<String> = DEFAULT_ACTIVE_TOOL_NAMES.map(String::from).to_vec();
     if options.enable_web_tools {
-        initial_active.extend(["webfetch".to_string(), "websearch".to_string()]);
+        initial_active.extend(["WebFetch".to_string(), "WebSearch".to_string()]);
     }
     let allowed_tool_names = options
         .tools

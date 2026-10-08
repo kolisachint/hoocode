@@ -1,12 +1,12 @@
 //! `core/tools/subagent.ts`: the `Task` tool (delegate a focused task to a
-//! specialized subagent) and the `TaskOutput` tool (check on and collect
+//! specialized subagent) and the `AgentOutput` tool (check on and collect
 //! background subagents).
 //!
 //! The parent agent decides when to delegate and picks the agent with
 //! `subagent_type`; the chosen agent runs in an isolated child process (the
 //! cold pool, or a warm RPC worker when enabled) and only its final answer
 //! comes back. Background dispatches leave their body in the inbox and return
-//! a compact notification; `TaskOutput` pulls it. Interactive rendering
+//! a compact notification; `AgentOutput` pulls it. Interactive rendering
 //! (`renderCall`/`renderResult`) arrives with the TUI (phase 11).
 
 use std::collections::HashSet;
@@ -18,8 +18,8 @@ use hoocode_agent_types::{AgentToolCall, AgentToolResult};
 use hoocode_ai_types::{AbortSignal, Content, Model};
 use hoocode_code_agent_session::provider_health::get_provider_exhaustion;
 use hoocode_code_resources::{
-    load_agent_registry, LoadAgentRegistryOptions, MODEL_INHERIT, TASK_OUTPUT_TOOL_LEGACY_NAME,
-    TASK_OUTPUT_TOOL_NAME, TASK_TOOL_LEGACY_NAME, TASK_TOOL_NAME,
+    load_agent_registry, LoadAgentRegistryOptions, MODEL_INHERIT, TASK_OUTPUT_TOOL_NAME,
+    TASK_TOOL_NAME,
 };
 use hoocode_code_session::SessionManager;
 use hoocode_code_task_store::{
@@ -50,11 +50,11 @@ const TASK_BACKGROUND_NONE_PROMPT: &str =
     include_str!("../templates/prompts/task-background-none.md");
 
 /// How long a `running` record may sit with the pool saying nothing about it
-/// before `TaskOutput` stops believing it. Past the longest agent deadline
+/// before `AgentOutput` stops believing it. Past the longest agent deadline
 /// (20 min) and the lifeguard's 4x load ceiling, plus a minute of slack.
 const RECONCILE_AGE_MS: u64 = 81 * 60 * 1000;
 
-/// Default wait for `TaskOutput(wait: true)`.
+/// Default wait for `AgentOutput(wait: true)`.
 const TASK_OUTPUT_DEFAULT_TIMEOUT_MS: u64 = 120_000;
 
 fn now_ms() -> u64 {
@@ -505,7 +505,7 @@ fn finalize_dispatch_result(
             String::new()
         };
         let text = format!(
-            "{} finished ✓{partial_note} — {}.{tail}\nRead the full result with AgentOut(\"{}\").",
+            "{} finished ✓{partial_note} — {}.{tail}\nRead the full result with AgentOutput(\"{}\").",
             background.label,
             summarize(&answer),
             background.label
@@ -582,8 +582,8 @@ fn task_parameters() -> Value {
                 ],
                 "description": "Model tier for this dispatch: fast (quick reads/lookups), standard (multi-file edits), capable (deep architecture). Maps to settings.modelCategories. Ignored if the chosen agent pins its own model; omit to use the agent's default."
             },
-            "background": {"type": "boolean", "description": "Set true to run non-blocking: you get a short notification when it finishes and pull the full result with AgentOut; set false to wait and get the answer inline. Defaults to the agent's own background setting."},
-            "resume_task_id": {"type": "string", "description": "Optional. To continue a previous subagent run, pass its task_id (returned by an earlier Agent or AgentOut call). The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction."}
+            "background": {"type": "boolean", "description": "Set true to run non-blocking: you get a short notification when it finishes and pull the full result with AgentOutput; set false to wait and get the answer inline. Defaults to the agent's own background setting."},
+            "resume_task_id": {"type": "string", "description": "Optional. To continue a previous subagent run, pass its task_id (returned by an earlier Agent or AgentOutput call). The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction."}
         }
     })
 }
@@ -969,7 +969,7 @@ async fn execute_task(
 }
 
 // ---------------------------------------------------------------------------
-// TaskOutput
+// AgentOutput
 // ---------------------------------------------------------------------------
 
 /// How long a record has run (so far, or until it settled).
@@ -1046,7 +1046,7 @@ fn format_task_roster() -> AgentToolResult {
         if all.len() == 1 { "" } else { "s" }
     );
     let hint = if all.iter().any(|r| r.lifecycle == TaskLifecycle::Done) {
-        "\nRead a finished one with AgentOut(\"<label>\")."
+        "\nRead a finished one with AgentOutput(\"<label>\")."
     } else {
         ""
     };
@@ -1069,43 +1069,6 @@ fn task_output_parameters() -> Value {
 }
 
 /// `createTaskOutputToolDefinition`.
-/// The pre-rename names, registered as aliases for one release.
-///
-/// A model that has seen `Task` in a thousand transcripts will keep calling it,
-/// and a resumed session carries tool calls by name; both must keep working.
-/// The alias points at the same executor, so an alias is a spelling, not a
-/// second code path — and the description says which name is canonical.
-pub fn create_task_tool_alias_definition(cwd: &Path) -> ToolDefinition {
-    let mut definition = create_task_tool_definition(cwd);
-    definition.name = TASK_TOOL_LEGACY_NAME.to_string();
-    definition.label = TASK_TOOL_LEGACY_NAME.to_string();
-    definition.description = format!(
-        "Deprecated alias for `{TASK_TOOL_NAME}`. {}",
-        definition.description
-    );
-    // The prompt's tool list shows the snippet, so this is where a model learns
-    // the alias is legacy: two identical entries would be worse than one.
-    definition.prompt_snippet = Some(format!(
-        "deprecated alias for {TASK_TOOL_NAME}; prefer {TASK_TOOL_NAME}"
-    ));
-    definition
-}
-
-/// The deprecated alias for [`create_task_output_tool_definition`].
-pub fn create_task_output_tool_alias_definition() -> ToolDefinition {
-    let mut definition = create_task_output_tool_definition();
-    definition.name = TASK_OUTPUT_TOOL_LEGACY_NAME.to_string();
-    definition.label = TASK_OUTPUT_TOOL_LEGACY_NAME.to_string();
-    definition.description = format!(
-        "Deprecated alias for `{TASK_OUTPUT_TOOL_NAME}`. {}",
-        definition.description
-    );
-    definition.prompt_snippet = Some(format!(
-        "deprecated alias for {TASK_OUTPUT_TOOL_NAME}; prefer {TASK_OUTPUT_TOOL_NAME}"
-    ));
-    definition
-}
-
 pub fn create_task_output_tool_definition() -> ToolDefinition {
     ToolDefinition { ordered_start: false,
         name: TASK_OUTPUT_TOOL_NAME.into(),
@@ -1191,7 +1154,7 @@ async fn execute_task_output(params: Value, ctx: Option<ToolContext>) -> AgentTo
 
     let Some(rec) = inbox.get(&handle) else {
         return text_result(
-            format!("No background task \"{handle}\". Call AgentOut with list:true to see active tasks."),
+            format!("No background task \"{handle}\". Call AgentOutput with list:true to see active tasks."),
             output_details(Some(&handle), "unknown", false, None),
         );
     };
@@ -1205,7 +1168,7 @@ async fn execute_task_output(params: Value, ctx: Option<ToolContext>) -> AgentTo
                 .unwrap_or_default();
             text_result(
                 format!(
-                    "{} is still running — {} elapsed{activity}. Call AgentOut again, or with wait:true to block until it finishes.",
+                    "{} is still running — {} elapsed{activity}. Call AgentOutput again, or with wait:true to block until it finishes.",
                     rec.label,
                     record_elapsed(&rec)
                 ),

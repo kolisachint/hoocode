@@ -38,7 +38,7 @@ fn tool_call_assistant(
     let mut content = content_extra;
     content.push(Content::ToolCall(ToolCallContent {
         id: id.into(),
-        name: "edit".into(),
+        name: "Edit".into(),
         arguments: json!({"path": "src/styles/app.css"}),
         thought_signature: None,
     }));
@@ -55,7 +55,7 @@ fn tool_call_assistant(
 fn tool_result(id: &str, content: Vec<Content>) -> Message {
     Message::ToolResult(ToolResultMessage {
         tool_call_id: id.into(),
-        tool_name: "edit".into(),
+        tool_name: "Edit".into(),
         content,
         details: None,
         is_error: false,
@@ -193,7 +193,7 @@ fn converts_system_user_assistant_and_results() {
             json!({"type": "message", "role": "assistant",
                    "content": [{"type": "output_text", "text": "answer", "annotations": []}],
                    "status": "completed", "id": "msg_abc", "phase": "commentary"}),
-            json!({"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "edit",
+            json!({"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "Edit",
                    "arguments": "{\"path\":\"src/styles/app.css\"}"}),
             json!({"type": "function_call_output", "call_id": "call_1", "output": "(see attached image)"}),
         ]
@@ -331,7 +331,7 @@ fn responses_model() -> Model {
 #[test]
 fn removes_partial_json_from_persisted_tool_call_blocks() {
     let args = r#"{"path":"README.md","content":"updated"}"#;
-    let item = json!({"type": "function_call", "id": "fc_test", "call_id": "call_test", "name": "edit", "arguments": ""});
+    let item = json!({"type": "function_call", "id": "fc_test", "call_id": "call_test", "name": "Edit", "arguments": ""});
     let mut done = item.clone();
     done["arguments"] = json!(args);
     let (events, output, result) = process(
@@ -541,7 +541,7 @@ fn text_signatures_round_trip() {
 fn edit_tool() -> Tool {
     Tool {
         defer_loading: None,
-        name: "edit".into(),
+        name: "Edit".into(),
         description: "Replace exact text".into(),
         parameters: json!({
             "type": "object",

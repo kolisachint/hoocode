@@ -49,9 +49,9 @@ fn uses_the_last_assistant_text_as_the_summary() {
 #[test]
 fn collects_changed_files_from_edit_write_tool_calls() {
     let result = build(&[
-        assistant_tool_call("edit", json!({"path": "src/a.ts"})),
-        assistant_tool_call("write", json!({"file_path": "src/b.ts"})),
-        assistant_tool_call("read", json!({"path": "src/c.ts"})),
+        assistant_tool_call("Edit", json!({"path": "src/a.ts"})),
+        assistant_tool_call("Write", json!({"file_path": "src/b.ts"})),
+        assistant_tool_call("Read", json!({"path": "src/c.ts"})),
         assistant_text("done"),
     ]);
     let mut files = result.files_changed.clone();
@@ -81,7 +81,7 @@ fn surfaces_the_provider_error_message_in_the_summary_on_failure() {
 
 #[test]
 fn falls_back_to_a_placeholder_summary_without_assistant_text() {
-    let result = build(&[assistant_tool_call("edit", json!({"path": "x.ts"}))]);
+    let result = build(&[assistant_tool_call("Edit", json!({"path": "x.ts"}))]);
     assert!(!result.summary.is_empty());
     assert!(result.confidence >= 0.5);
 }
@@ -111,7 +111,7 @@ fn reports_a_partial_result_when_stopped_at_the_turn_cap() {
 #[test]
 fn yields_a_verifier_passing_partial_result_without_assistant_text() {
     let result = build_subagent_result(
-        &[assistant_tool_call("edit", json!({"path": "x.ts"}))],
+        &[assistant_tool_call("Edit", json!({"path": "x.ts"}))],
         None,
         BuildSubagentResultOptions {
             reached_max_turns: true,
@@ -150,7 +150,7 @@ fn a_deadline_wrap_up_yields_a_verifier_passing_partial_result() {
 #[test]
 fn a_deadline_wrap_up_with_no_assistant_text_still_verifies() {
     let result = build_subagent_result(
-        &[assistant_tool_call("edit", json!({"path": "x.ts"}))],
+        &[assistant_tool_call("Edit", json!({"path": "x.ts"}))],
         None,
         BuildSubagentResultOptions {
             reached_deadline: true,

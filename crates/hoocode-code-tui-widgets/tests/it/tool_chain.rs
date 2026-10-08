@@ -78,17 +78,17 @@ fn run() -> Vec<Call> {
     let cwd = cwd();
     vec![
         call(
-            "SearchCodebase",
+            "CodeSearch",
             json!({"query": "toolOutputView", "glob": "packages/**"}),
             "a\nb",
         ),
         call(
-            "read",
+            "Read",
             json!({"file_path": format!("{cwd}/src/keys.ts")}),
             "x\ny\nz",
         ),
         call(
-            "edit",
+            "Edit",
             json!({"path": format!("{cwd}/src/keys.ts"), "edits": []}),
             "",
         ),
@@ -102,7 +102,7 @@ fn collapses_a_run_of_calls_to_one_line_in_radar() {
     let out = render(&mut chain);
     let lines: Vec<&str> = out.split('\n').filter(|l| !l.trim().is_empty()).collect();
     assert_eq!(lines.len(), 1);
-    assert!(lines[0].contains("SearchCodebase › read › edit"));
+    assert!(lines[0].contains("CodeSearch › Read › Edit"));
 }
 
 #[test]
@@ -111,18 +111,18 @@ fn shows_the_shape_while_running_and_what_it_amounted_to_once_done() {
     let mut calls = run();
     calls.push(Call {
         pending: true,
-        ..call("bash", json!({"command": "x"}), "")
+        ..call("Shell", json!({"command": "x"}), "")
     });
     let mut running = chain_of(Radar, calls, "r");
     let out = render(&mut running);
-    assert!(out.contains("SearchCodebase › read › edit › bash"));
+    assert!(out.contains("CodeSearch › Read › Edit › Shell"));
     assert!(out.contains("running"));
 
     let mut done = chain_of(Radar, run(), "d");
     done.close(ChainState::Done);
     let settled = render(&mut done);
     assert!(settled.contains("Edited"));
-    assert!(!settled.contains("SearchCodebase › read"));
+    assert!(!settled.contains("CodeSearch › Read"));
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn an_interrupted_chain_keeps_the_shape_and_says_so_claiming_nothing() {
     let mut chain = chain_of(Radar, run(), "i");
     chain.close(ChainState::Interrupted);
     let out = render(&mut chain);
-    assert!(out.contains("SearchCodebase › read › edit"));
+    assert!(out.contains("CodeSearch › Read › Edit"));
     assert!(out.contains("interrupted"));
     assert!(!out.contains("Edited src"));
 }
@@ -146,7 +146,7 @@ fn a_collapsed_chain_still_shows_why_a_call_failed() {
             first,
             Call {
                 is_error: true,
-                ..call("bash", json!({"command": "bun test"}), "ASSERTION FAILED")
+                ..call("Shell", json!({"command": "bun test"}), "ASSERTION FAILED")
             },
         ],
         "e",
@@ -162,12 +162,12 @@ fn the_dial_not_a_per_chain_toggle_is_what_turns_the_line_back_into_calls() {
     let _g = lock();
     let mut chain = chain_of(Radar, run(), "o");
     chain.close(ChainState::Done);
-    assert!(!render(&mut chain).contains("SearchCodebase"));
+    assert!(!render(&mut chain).contains("CodeSearch"));
     chain.set_view(Peek);
     let opened = render(&mut chain);
-    assert!(opened.contains("SearchCodebase"));
-    assert!(opened.contains("read"));
-    assert!(opened.contains("edit"));
+    assert!(opened.contains("CodeSearch"));
+    assert!(opened.contains("Read"));
+    assert!(opened.contains("Edit"));
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn is_a_plain_pass_through_in_peek_and_full() {
         chain.close(ChainState::Done);
         let out = render(&mut chain);
         assert!(!out.contains('›'), "{view:?}");
-        assert!(out.contains("SearchCodebase"), "{view:?}");
+        assert!(out.contains("CodeSearch"), "{view:?}");
     }
 }
 
@@ -201,10 +201,10 @@ fn every_tools_call_line_starts_in_the_same_column() {
     let mut chain = chain_of(
         Peek,
         vec![
-            call("SearchCodebase", json!({"query": "docs"}), "a"),
-            call("read", json!({"file_path": format!("{cwd}/a.ts")}), "a"),
+            call("CodeSearch", json!({"query": "docs"}), "a"),
+            call("Read", json!({"file_path": format!("{cwd}/a.ts")}), "a"),
             call(
-                "edit",
+                "Edit",
                 json!({"path": format!("{cwd}/a.ts"), "edits": []}),
                 "",
             ),
@@ -228,14 +228,14 @@ fn a_failures_reason_hangs_off_its_radar_row_rather_than_starting_a_new_column()
         Radar,
         vec![Call {
             is_error: true,
-            ..call("bash", json!({"command": "bun test"}), "ASSERTION FAILED")
+            ..call("Shell", json!({"command": "bun test"}), "ASSERTION FAILED")
         }],
         "indent",
     );
     chain.close(ChainState::Done);
     let out = render(&mut chain);
     let lines: Vec<&str> = out.split('\n').collect();
-    let row = lines.iter().position(|l| l.contains("bash")).unwrap();
+    let row = lines.iter().position(|l| l.contains("Shell")).unwrap();
     let body = lines
         .iter()
         .position(|l| l.contains("ASSERTION FAILED"))
@@ -252,7 +252,7 @@ fn a_chain_of_one_keeps_its_radar_row_instead_of_a_phrase() {
     let mut chain = chain_of(Radar, vec![first], "one");
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    assert!(out.contains("SearchCodebase"));
+    assert!(out.contains("CodeSearch"));
     assert!(out.contains("2 lines"));
     assert!(!out.contains("Explored"));
     assert!(!chain.is_summarised());
@@ -265,7 +265,7 @@ fn two_calls_are_still_worth_folding() {
     calls.truncate(2);
     let mut chain = chain_of(Radar, calls, "two");
     assert!(chain.is_summarised());
-    assert!(render(&mut chain).contains("SearchCodebase › read"));
+    assert!(render(&mut chain).contains("CodeSearch › Read"));
 }
 
 #[test]
@@ -287,7 +287,7 @@ fn a_radar_run_of_one_gets_the_same_lead_in() {
     chain.close(ChainState::Done);
     let lines = chain.render(100);
     assert_eq!(lines[0], "");
-    assert!(strip(&lines[1]).contains("SearchCodebase"));
+    assert!(strip(&lines[1]).contains("CodeSearch"));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! `core/subagent-pool-instance.ts`: the process-wide [`SubagentPool`].
 //!
-//! The Task tool and `/subagent` share one pool, so concurrency limits,
+//! The Agent tool and `/subagent` share one pool, so concurrency limits,
 //! lifeguard monitoring and token budgets span every delegation in the
 //! session. Created lazily on first use (inside a tokio runtime).
 

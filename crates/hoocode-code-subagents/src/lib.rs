@@ -6,7 +6,7 @@
 //! (`hoocode --mode json --task-id <id> ...`): progress events and
 //! `{"ping":true}` heartbeats on its stdout, a verified `result.json` in the
 //! task's dispatch dir settles it. [`lifeguard`] reaps silent or overdue
-//! children. The Task/TaskOutput tools and the warm (RPC) pool build on this.
+//! children. The Task/AgentOutput tools and the warm (RPC) pool build on this.
 //!
 //! [`ledger`] is the measurement layer: one append-only line per dispatch
 //! attempt, so "how reliable are subagents?" has an answer that is not

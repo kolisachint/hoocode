@@ -23,13 +23,13 @@ pub mod write;
 /// fallbacks), which keeps the shell choice and slot inheritance right.
 pub fn builtin_tool_definition(name: &str, _cwd: &str) -> Option<ToolRenderDefinition> {
     match name {
-        "read" => Some(read::definition()),
-        "write" => Some(write::definition()),
-        "SearchCodebase" => Some(search::definition()),
-        "webfetch" => Some(web::webfetch_definition()),
-        "websearch" => Some(web::websearch_definition()),
-        "bash" => Some(bash::definition()),
-        "edit" => Some(edit::definition()),
+        "Read" => Some(read::definition()),
+        "Write" => Some(write::definition()),
+        "CodeSearch" => Some(search::definition()),
+        "WebFetch" => Some(web::webfetch_definition()),
+        "WebSearch" => Some(web::websearch_definition()),
+        "Shell" => Some(bash::definition()),
+        "Edit" => Some(edit::definition()),
         _ => None,
     }
 }
@@ -39,10 +39,8 @@ pub fn builtin_tool_definition(name: &str, _cwd: &str) -> Option<ToolRenderDefin
 /// none, which still makes the block draw its dot and fallbacks.
 pub fn registered_tool_definition(name: &str) -> ToolRenderDefinition {
     match name {
-        // Both spellings resolve: the canonical names and the deprecated
-        // aliases a resumed transcript can still carry.
-        "Agent" | "Task" => subagent::task_definition(),
-        "AgentOut" | "TaskOutput" => subagent::task_output_definition(),
+        "Agent" => subagent::task_definition(),
+        "AgentOutput" => subagent::task_output_definition(),
         n if plugins::RENDERED_PLUGIN_TOOLS.contains(&n) => plugins::definition(),
         _ => ToolRenderDefinition::default(),
     }

@@ -2,7 +2,7 @@
 //!
 //! When a turn fails with a usage/quota/rate-limit error that does not recover
 //! (retries exhausted or disabled), the session flags the provider as
-//! exhausted for a short window. The subagent Task tool reads this to skip
+//! exhausted for a short window. The subagent Agent tool reads this to skip
 //! pointless spawns: subagents inherit the parent's provider. The signal is
 //! cleared on the next successful response and self-expires after a TTL.
 

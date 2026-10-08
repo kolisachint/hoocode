@@ -392,7 +392,7 @@ pub const QUEUE_PER_SLOT: usize = 4;
 /// stream of `explore` runs (the finding from Q9 in the design review).
 const AGEING_STEP_MS: u64 = 60_000;
 
-/// `"read,bash"` → `["read", "bash"]`.
+/// `"Read,Shell"` → `["Read", "Shell"]`.
 fn split_csv(value: String) -> Vec<String> {
     value
         .split(',')
@@ -1153,7 +1153,7 @@ impl PoolInner {
             let mut tools = def.as_ref().and_then(|d| d.tools.clone());
             if can_child_delegate {
                 if let Some(tools) = &mut tools {
-                    for t in ["Agent", "AgentOut", "Task", "TaskOutput"] {
+                    for t in ["Agent", "AgentOutput"] {
                         if !tools.iter().any(|x| x == t) {
                             tools.push(t.into());
                         }

@@ -1,7 +1,7 @@
 # hoocode-code-tool-search
 
 Port of hoocode `core/tools/search.ts` and the runtime half of `core/search/` (v0.5.89): the
-`SearchCodebase` tool.
+`CodeSearch` tool.
 
 The lexical leg reproduces hoocode's ripgrep invocation (`--hidden --no-require-git
 --ignore-case --sort path --glob '!**/.git/**'`) with ripgrep's own libraries

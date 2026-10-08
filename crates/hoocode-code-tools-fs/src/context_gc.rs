@@ -88,7 +88,7 @@ pub fn evict_superseded_reads(
             if call.id.is_empty() {
                 continue;
             }
-            if call.name == "bash" {
+            if call.name == "Shell" {
                 if let Some(cmd) = call.arguments.get("command").and_then(|v| v.as_str()) {
                     if !cmd.is_empty() {
                         bash_command_by_call.insert(&call.id, cmd);
@@ -102,7 +102,7 @@ pub fn evict_superseded_reads(
                 continue;
             }
             let resolved = hoocode_code_tool_api::path_utils::node_resolve(cwd, raw);
-            if call.name == "read" {
+            if call.name == "Read" {
                 range_by_call.insert(&call.id, read_range_from_args(Some(&call.arguments)));
             }
             display_by_path
@@ -126,7 +126,7 @@ pub fn evict_superseded_reads(
             continue;
         };
         match result.tool_name.as_str() {
-            "read" => {
+            "Read" => {
                 if is_dedup_pointer_text(&result_text(result)) {
                     continue;
                 }
@@ -136,7 +136,7 @@ pub fn evict_superseded_reads(
                     .unwrap_or(WHOLE_FILE_RANGE);
                 reads_by_path.entry(path).or_default().push((i, range));
             }
-            "edit" | "write" => {
+            "Edit" | "Write" => {
                 last_mutate.insert(path, i);
             }
             _ => {}
@@ -155,7 +155,7 @@ pub fn evict_superseded_reads(
             if result.is_error {
                 return message.clone();
             }
-            if result.tool_name == "read" {
+            if result.tool_name == "Read" {
                 let Some(path) = path_by_call.get(result.tool_call_id.as_str()) else {
                     return message.clone();
                 };
@@ -188,7 +188,7 @@ pub fn evict_superseded_reads(
                     format!("[Superseded read of {display} elided to save context — {reason}. Re-read the file if you need its current contents.]"),
                 );
             }
-            if pressure >= 0.6 && result.tool_name == "bash" {
+            if pressure >= 0.6 && result.tool_name == "Shell" {
                 let cmd = bash_command_by_call
                     .get(result.tool_call_id.as_str())
                     .copied()

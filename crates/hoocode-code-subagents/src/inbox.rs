@@ -1,9 +1,9 @@
 //! `core/subagent-inbox.ts`: the notify-and-pull bookkeeping behind background
-//! `Task` dispatch and the `TaskOutput` tool.
+//! `Task` dispatch and the `AgentOutput` tool.
 //!
 //! A background dispatch gives the parent a compact notification
 //! ("explore#1 finished"); the body waits here, keyed by task id, until the
-//! model pulls it with TaskOutput. Lifecycle per task:
+//! model pulls it with AgentOutput. Lifecycle per task:
 //!
 //! ```text
 //! running ──▶ done (body kept) ──collect──▶ collected (body dropped)
@@ -430,7 +430,7 @@ impl SubagentInbox {
 
 static INBOX: LazyLock<Arc<SubagentInbox>> = LazyLock::new(Arc::default);
 
-/// The process-wide inbox shared by the Task and TaskOutput tools.
+/// The process-wide inbox shared by the Task and AgentOutput tools.
 pub fn subagent_inbox() -> &'static Arc<SubagentInbox> {
     &INBOX
 }

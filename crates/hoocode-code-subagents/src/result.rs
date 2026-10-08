@@ -165,7 +165,7 @@ pub fn build_task_forest(tasks: &[Task]) -> Vec<SubagentTaskNode> {
 }
 
 /// Tools that mutate files; their `path`/`file_path` argument is a changed file.
-const MUTATING_TOOLS: &[&str] = &["edit", "write"];
+const MUTATING_TOOLS: &[&str] = &["Edit", "Write"];
 
 /// Distinct file paths touched by edit/write tool calls, in first-seen order.
 fn collect_changed_files(messages: &[AgentMessage]) -> Vec<String> {

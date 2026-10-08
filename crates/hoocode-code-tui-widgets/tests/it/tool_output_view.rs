@@ -111,7 +111,7 @@ mod radar_signal_row {
     #[test]
     fn reports_output_size_outcome_or_error_as_the_signal() {
         let base = ToolSignalInput {
-            tool_name: "bash".into(),
+            tool_name: "Shell".into(),
             args: json!({}),
             cwd: cwd(),
             ..Default::default()
@@ -168,8 +168,8 @@ mod radar_signal_row {
     #[test]
     fn aligns_the_tool_column_and_keeps_the_row_within_its_width() {
         let _g = lock();
-        let bash = row("bash", "npm run check", "a\nb", 80);
-        let websearch = row("websearch", "npm run check", "a\nb", 80);
+        let bash = row("Shell", "npm run check", "a\nb", 80);
+        let websearch = row("WebSearch", "npm run check", "a\nb", 80);
         assert_eq!(bash.find("npm run check"), websearch.find("npm run check"));
         assert!(bash.ends_with("2 lines"));
         assert!(bash.chars().count() <= 80);
@@ -178,7 +178,7 @@ mod radar_signal_row {
     #[test]
     fn truncates_a_long_subject_rather_than_pushing_out_the_signal() {
         let _g = lock();
-        let row = row("bash", &"x".repeat(400), "a", 60);
+        let row = row("Shell", &"x".repeat(400), "a", 60);
         assert!(row.chars().count() <= 60);
         assert!(row.ends_with("1 line"));
     }

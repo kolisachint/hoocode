@@ -75,8 +75,8 @@ fn fake_bash() -> ToolDefinition {
     ToolDefinition {
         ordered_start: false,
         background_when: None,
-        name: "bash".into(),
-        label: "bash".into(),
+        name: "Shell".into(),
+        label: "Shell".into(),
         description: "bash tool".into(),
         prompt_snippet: None,
         prompt_guidelines: vec![],
@@ -318,9 +318,9 @@ fn setup(ask_bash: bool) -> Setup {
     let dir = temp.path().canonicalize().unwrap();
     let mode = if ask_bash { "ask" } else { "trusting" };
     let auto_allow: Vec<&str> = if ask_bash {
-        vec!["read"]
+        vec!["Read"]
     } else {
-        vec!["read", "bash"]
+        vec!["Read", "Shell"]
     };
     std::fs::create_dir_all(dir.join(".hoocode")).unwrap();
     std::fs::write(
@@ -356,7 +356,7 @@ fn reply(text: &str) -> FauxResponseStep {
 fn bash_call(command: &str) -> FauxResponseStep {
     FauxResponseStep::Message(faux_assistant_message(
         vec![faux_tool_call(
-            "bash",
+            "Shell",
             json!({"command": command}),
             Some("call-1".into()),
         )],
@@ -980,8 +980,8 @@ async fn interrupt_with_two_pending_tool_calls_does_not_hang() {
     s.faux.set_responses(vec![
         FauxResponseStep::Message(faux_assistant_message(
             vec![
-                faux_tool_call("bash", json!({"command": "one"}), Some("c1".into())),
-                faux_tool_call("bash", json!({"command": "two"}), Some("c2".into())),
+                faux_tool_call("Shell", json!({"command": "one"}), Some("c1".into())),
+                faux_tool_call("Shell", json!({"command": "two"}), Some("c2".into())),
             ],
             hoocode_ai_provider_faux::FauxMessageOptions {
                 stop_reason: Some(StopReason::ToolUse),

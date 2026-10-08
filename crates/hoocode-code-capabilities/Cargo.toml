@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (SearchHooCode)"
+description = "Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch)"
 readme = "README.md"
 
 [package.metadata.hoocode]

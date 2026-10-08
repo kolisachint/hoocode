@@ -1071,12 +1071,8 @@ impl Mode {
         });
 
         let footer_data = FooterDataProvider::new(session.cwd());
-        footer_data.set_subagent_enabled(
-            session
-                .get_active_tool_names()
-                .iter()
-                .any(|t| t == "Agent" || t == "Task"),
-        );
+        footer_data
+            .set_subagent_enabled(session.get_active_tool_names().iter().any(|t| t == "Agent"));
         let is_oauth: Rc<dyn Fn(&str) -> bool> = Rc::from(options.is_oauth);
         let mut footer = FooterComponent::new(
             Box::new(SessionFooter {
@@ -2954,7 +2950,7 @@ impl Mode {
                     ToolGroupInfo {
                         id: "web".into(),
                         label: "Web tools".into(),
-                        description: "webfetch + websearch (network access).".into(),
+                        description: "WebFetch + WebSearch (network access).".into(),
                         enabled: settings.enable_web_tools(),
                     },
                     ToolGroupInfo {
@@ -3085,7 +3081,7 @@ impl Mode {
                     self.session
                         .get_active_tool_names()
                         .iter()
-                        .any(|t| t == "Agent" || t == "Task"),
+                        .any(|t| t == "Agent"),
                 );
             }
             SettingsChange::ToolGroup { id, enabled } => {
@@ -5039,7 +5035,7 @@ impl Mode {
             self.session
                 .get_active_tool_names()
                 .iter()
-                .any(|t| t == "Agent" || t == "Task"),
+                .any(|t| t == "Agent"),
         );
         // `ctx.ui.setMode` from the mode system's `session_start`.
         if let Some(mode) = self.session.extensions().active_mode() {

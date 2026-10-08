@@ -14,7 +14,7 @@ description: |
   Output: A concrete plan — the approach, the files to change, and the steps.
   Cost: Low–medium (read-only)
   Isolation: Can run in parallel with explore tasks
-tools: read, SearchCodebase
+tools: Read, CodeSearch
 model: standard
 background: true
 ---
@@ -24,7 +24,7 @@ isolated context and cannot see the parent conversation.
 
 Scope:
 - Do not create, modify, or delete files, and do not run commands.
-- Use read and SearchCodebase to understand the code and its structure.
+- Use Read and CodeSearch to understand the code and its structure.
 
 Method:
 1. Restate the goal and identify what you need to learn to plan it.

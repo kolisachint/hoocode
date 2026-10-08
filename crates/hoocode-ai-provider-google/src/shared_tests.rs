@@ -400,7 +400,7 @@ fn two_tool_calls(api: &str, provider: &str, model_id: &str, signature: Option<&
     let call = |id: &str, command: &str, sig: Option<&str>| {
         Content::ToolCall(ToolCallContent {
             id: id.into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": command}),
             thought_signature: sig.map(str::to_string),
         })
@@ -513,7 +513,7 @@ fn image_routing_context(model_id: &str) -> Context {
     let read = |id: &str, path: &str| {
         Content::ToolCall(ToolCallContent {
             id: id.into(),
-            name: "read".into(),
+            name: "Read".into(),
             arguments: serde_json::json!({"path": path}),
             thought_signature: None,
         })
@@ -521,7 +521,7 @@ fn image_routing_context(model_id: &str) -> Context {
     let result = |id: &str, content: Content| {
         Message::ToolResult(ToolResultMessage {
             tool_call_id: id.into(),
-            tool_name: "read".into(),
+            tool_name: "Read".into(),
             content: vec![content],
             details: None,
             is_error: false,

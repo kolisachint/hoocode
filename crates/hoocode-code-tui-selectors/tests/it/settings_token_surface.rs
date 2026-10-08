@@ -21,7 +21,7 @@ fn surface() -> PromptSurface {
         system_prompt_tokens: 1430,
         tool_schema_tokens: 2710,
         total_tokens: 4140,
-        tools: vec![("read".into(), 162), ("bash".into(), 128)],
+        tools: vec![("Read".into(), 162), ("Shell".into(), 128)],
     }
 }
 
@@ -29,7 +29,7 @@ fn pane_config() -> SettingsConfig {
     SettingsConfig {
         tools: vec![
             ToolToggleInfo {
-                name: "read".into(),
+                name: "Read".into(),
                 enabled: true,
                 tokens: Some(162),
             },
@@ -39,7 +39,7 @@ fn pane_config() -> SettingsConfig {
                 tokens: Some(849),
             },
             ToolToggleInfo {
-                name: "websearch".into(),
+                name: "WebSearch".into(),
                 enabled: true,
                 tokens: None,
             },
@@ -95,7 +95,7 @@ fn re_prices_after_a_change_since_a_tool_toggle_moves_the_surface_at_once() {
     *current.borrow_mut() = PromptSurface {
         tool_schema_tokens: 1861,
         total_tokens: 3291,
-        tools: vec![("read".into(), 162)],
+        tools: vec![("Read".into(), 162)],
         ..surface()
     };
     pane.settings_list()
@@ -146,9 +146,9 @@ fn prices_each_tool_beside_its_switch_including_the_ones_that_are_off() {
     };
     // What a disabled tool costs is what turning it back on will cost.
     assert_eq!(suffix("ProposePlugin").as_deref(), Some("849 tok/turn"));
-    assert_eq!(suffix("read").as_deref(), Some("162 tok/turn"));
+    assert_eq!(suffix("Read").as_deref(), Some("162 tok/turn"));
     // A tool disabled before launch has no schema this session, so no price.
-    assert_eq!(suffix("websearch"), None);
+    assert_eq!(suffix("WebSearch"), None);
 }
 
 #[test]

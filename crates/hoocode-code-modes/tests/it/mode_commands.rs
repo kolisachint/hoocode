@@ -71,7 +71,7 @@ fn runs_both_phases_against_the_plan_by_default() {
     let actions = extension(dir.path()).command("grill", "");
     let sent = sent(&actions);
     assert_eq!(sent.len(), 1);
-    assert!(sent[0].contains("ask_options"));
+    assert!(sent[0].contains("AskUserQuestion"));
     assert!(sent[0].contains("attacking the plan"));
     assert!(sent[0].contains("Ship the /goal command."));
 }
@@ -81,7 +81,7 @@ fn restricts_itself_to_the_requested_phase() {
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
     let actions = extension(dir.path()).command("grill", "plan");
-    assert!(!sent(&actions)[0].contains("ask_options"));
+    assert!(!sent(&actions)[0].contains("AskUserQuestion"));
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn drops_the_interrogation_phase_while_an_autonomous_loop_is_running() {
     let ext = extension(dir.path());
     ext.set_auto_loop_active(true);
     let actions = ext.command("grill", "me");
-    assert!(!sent(&actions)[0].contains("ask_options"));
+    assert!(!sent(&actions)[0].contains("AskUserQuestion"));
     assert!(sent(&actions)[0].contains("attacking the plan"));
     assert!(notes(&actions)
         .iter()
@@ -123,7 +123,7 @@ fn asks_again_once_the_loop_stops() {
     let ext = extension(dir.path());
     ext.set_auto_loop_active(true);
     ext.set_auto_loop_active(false);
-    assert!(sent(&ext.command("grill", "me"))[0].contains("ask_options"));
+    assert!(sent(&ext.command("grill", "me"))[0].contains("AskUserQuestion"));
 }
 
 // /goal
@@ -195,7 +195,7 @@ fn appends_the_mode_block_and_substitutes_the_plan_path() {
     assert!(prompt.starts_with("BASE\n\n<!-- hoo-core: mode=build -->\nYou are in **build mode**"));
 
     let config: HooConfig = serde_json::from_str(
-        r#"{"active_mode": "plan", "modes": {"plan": {"enabled_tools": ["read", "write"]}}}"#,
+        r#"{"active_mode": "plan", "modes": {"plan": {"enabled_tools": ["Read", "Write"]}}}"#,
     )
     .unwrap();
     let plan = ModesExtension::with_config(
@@ -216,7 +216,7 @@ fn appends_the_mode_block_and_substitutes_the_plan_path() {
     assert!(!prompt.contains("{{PLAN_PATH}}"));
     assert_eq!(
         plan.active().enabled_tools,
-        Some(vec!["read".to_string(), "write".to_string()])
+        Some(vec!["Read".to_string(), "Write".to_string()])
     );
     // /approve outside plan mode declines.
     assert!(matches!(
