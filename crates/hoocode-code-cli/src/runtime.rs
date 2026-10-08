@@ -1689,6 +1689,7 @@ mod tests {
         // able to work out which is which.
         for line in [
             "Agent: delegate a self-contained task to a specialized subagent (choose via subagent_type)",
+            "SearchHooCode: Search hoocode's own docs and this session's capabilities by describing what you need.",
             "AgentOut: check status / list / collect the results of background subagents",
             "TodoWrite: Plan and track multi-step work as a live todo list (use proactively; replaces the whole list each call)",
         ] {
@@ -1724,6 +1725,7 @@ mod tests {
                 "edit",
                 "write",
                 "SearchCodebase",
+                "SearchHooCode",
                 "ask_options",
                 "Agent",
                 "AgentOut",

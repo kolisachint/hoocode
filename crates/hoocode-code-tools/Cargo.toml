@@ -20,6 +20,7 @@ doctest = false
 hoocode-ai-util = { workspace = true }
 hoocode-agent-types = { workspace = true }
 hoocode-ai-types = { workspace = true }
+hoocode-code-capabilities = { workspace = true }
 hoocode-code-tool-api = { workspace = true }
 hoocode-code-tools-fs = { workspace = true }
 hoocode-code-tool-bash = { workspace = true }

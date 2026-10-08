@@ -25,7 +25,14 @@ pub fn is_dangerous(tool_name: &str) -> bool {
 pub fn is_read_only(tool_name: &str) -> bool {
     matches!(
         tool_name,
-        "read" | "SearchCodebase" | "TodoWrite" | "ask_options" | "grep" | "find" | "ls"
+        "read"
+            | "SearchCodebase"
+            | "SearchHooCode"
+            | "TodoWrite"
+            | "ask_options"
+            | "grep"
+            | "find"
+            | "ls"
     )
 }
 

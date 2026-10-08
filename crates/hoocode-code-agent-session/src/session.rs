@@ -55,8 +55,14 @@ const THINKING_LEVELS: [ThinkingLevel; 5] = [
 ];
 
 /// Tools active by default when the built-ins come from the factory.
-pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 5] =
-    ["read", "bash", "edit", "write", "SearchCodebase"];
+pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 6] = [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "SearchCodebase",
+    "SearchHooCode",
+];
 
 /// A failed session operation (the TS methods throw `Error(message)`).
 #[derive(Debug, Clone, PartialEq, Eq)]

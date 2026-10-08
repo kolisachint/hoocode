@@ -521,6 +521,30 @@ mod tests {
     }
 
     #[test]
+    fn lists_search_hoocode_with_its_snippet_and_guideline_when_active() {
+        let mut o = opts(Some(&["read", "SearchHooCode"]));
+        o.tool_snippets = vec![(
+            "SearchHooCode".into(),
+            "Search hoocode's own docs and this session's capabilities by describing what you need.".into(),
+        )];
+        o.prompt_guidelines = vec![
+            "For questions about hoocode itself — its features, configuration, or how to extend it — use SearchHooCode and read the section it points at instead of answering from memory.".into(),
+        ];
+        let prompt = build_system_prompt(&o);
+        assert!(prompt.contains(
+            "- SearchHooCode: Search hoocode's own docs and this session's capabilities by describing what you need."
+        ));
+        assert!(prompt.contains("- For questions about hoocode itself"));
+    }
+
+    #[test]
+    fn omits_search_hoocode_when_it_is_not_active() {
+        let mut o = opts(Some(&["read"]));
+        o.tool_snippets = vec![("SearchHooCode".into(), "Search".into())];
+        assert!(!build_system_prompt(&o).contains("SearchHooCode"));
+    }
+
+    #[test]
     fn includes_custom_tools_in_available_tools_when_prompt_snippet_is_provided() {
         let mut o = opts(Some(&["read", "dynamic_tool"]));
         o.tool_snippets = vec![("dynamic_tool".into(), "Run dynamic test behavior".into())];

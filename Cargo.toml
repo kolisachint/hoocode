@@ -33,6 +33,7 @@ members = [
     "crates/hoocode-agent-types",
 
     # Code namespace
+    "crates/hoocode-code-capabilities",
     "crates/hoocode-code-cli",
     "crates/hoocode-code-paths",
     "crates/hoocode-code-settings",
@@ -117,6 +118,7 @@ hoocode-agent-loop = { path = "crates/hoocode-agent-loop" }
 hoocode-agent-session = { path = "crates/hoocode-agent-session" }
 hoocode-agent-types = { path = "crates/hoocode-agent-types" }
 
+hoocode-code-capabilities = { path = "crates/hoocode-code-capabilities" }
 hoocode-code-cli = { path = "crates/hoocode-code-cli" }
 hoocode-code-paths = { path = "crates/hoocode-code-paths" }
 hoocode-code-settings = { path = "crates/hoocode-code-settings" }

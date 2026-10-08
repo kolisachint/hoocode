@@ -20,11 +20,13 @@ use hoocode_code_tools_fs::{
     create_edit_tool_definition, create_read_tool_definition, create_write_tool_definition,
     EditToolOptions, ReadToolOptions, WriteToolOptions,
 };
+use search_hoocode::{create_search_hoocode_tool_definition, SearchHooCodeOptions};
 use std::path::Path;
 
 pub mod file_finder;
 pub mod light;
 pub mod permissions;
+pub mod search_hoocode;
 
 pub use permissions::*;
 
@@ -339,9 +341,10 @@ pub fn default_tools_with(
     )
 }
 
-/// The default coding bundle (`CODING_TOOL_NAMES`): read, bash, edit, write
-/// and SearchCodebase, in hoocode's order. webfetch/websearch and TodoWrite
-/// are opt-in tools (10.2e, 10.2f).
+/// The default coding bundle (`CODING_TOOL_NAMES`): read, bash, edit, write,
+/// SearchCodebase and SearchHooCode, in hoocode's order. SearchHooCode rides
+/// with `read` as in hoocode-ts. webfetch/websearch and TodoWrite are opt-in
+/// tools (10.2e, 10.2f).
 pub fn default_tool_definitions(
     cwd: std::path::PathBuf,
     _permissions: PermissionPolicy,
@@ -353,7 +356,8 @@ pub fn default_tool_definitions(
         create_bash_tool_definition(cwd.clone(), bash),
         create_edit_tool_definition(cwd.clone(), EditToolOptions::default()),
         create_write_tool_definition(cwd.clone(), WriteToolOptions::default()),
-        create_search_tool_definition(cwd, SearchToolOptions::default()),
+        create_search_tool_definition(cwd.clone(), SearchToolOptions::default()),
+        create_search_hoocode_tool_definition(cwd, SearchHooCodeOptions::default()),
     ]
 }
 

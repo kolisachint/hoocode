@@ -1219,6 +1219,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hoocode-code-capabilities"
+version = "0.1.8"
+dependencies = [
+ "hoocode-code-paths",
+ "hoocode-code-resources",
+]
+
+[[package]]
 name = "hoocode-code-cli"
 version = "0.1.8"
 dependencies = [
@@ -1512,6 +1520,7 @@ dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
  "hoocode-ai-util",
+ "hoocode-code-capabilities",
  "hoocode-code-prompts",
  "hoocode-code-tool-api",
  "hoocode-code-tool-bash",
