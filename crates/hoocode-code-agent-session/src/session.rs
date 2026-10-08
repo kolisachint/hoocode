@@ -22,7 +22,7 @@ use hoocode_ai_types::{
 };
 use hoocode_code_models::{AuthLookup, ModelRegistry};
 use hoocode_code_prompts::BuildSystemPromptOptions;
-use hoocode_code_session::SessionManager;
+use hoocode_code_session::{SessionManager, SESSION_FLUSH_DEADLINE};
 use hoocode_code_settings::{QueueMode, SettingsManager, ThinkingLevelSetting};
 use hoocode_code_tool_api::{
     wrap_tool_definitions, SessionBranch, ToolContext, ToolContextFactory, ToolDefinition,
@@ -750,6 +750,12 @@ impl AgentSession {
         }
 
         if let AgentEvent::AgentEnd { .. } = event {
+            // Turn end: the turn's entries are queued; wait for them to reach
+            // the OS in the background, bounded by the flush deadline.
+            let ticket = lock(&self.inner.session_manager).flush_ticket();
+            self.spawn(async move {
+                let _ = ticket.wait(SESSION_FLUSH_DEADLINE).await;
+            });
             let last = lock(&self.inner.state).last_assistant_message.take();
             if let Some(message) = last {
                 let session = self.clone();
@@ -804,6 +810,9 @@ impl AgentSession {
     /// `dispose()`: drop listeners, disconnect from the agent and release the
     /// session's provider resources.
     pub fn dispose(&self) {
+        // Shutdown: write out queued session entries, waiting at most the flush deadline.
+        let ticket = lock(&self.inner.session_manager).flush_ticket();
+        let _ = ticket.wait_blocking(SESSION_FLUSH_DEADLINE);
         self.disconnect_from_agent();
         lock(&self.inner.listeners).clear();
         let _ = hoocode_ai_registry::session_resources::cleanup_session_resources(Some(

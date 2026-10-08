@@ -49,6 +49,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | A slash command | list: `code-resources/src/slash_commands.rs`; handler: `code-tui-app/src/interactive_mode.rs` `run_builtin_command` |
 | Turn logic, parallel tool calls | `agent-loop` |
 | Session file format | `agent-session` (entries, storage), `code-session` (manager) |
+| Session file writes (queue caps, flush barriers, the `hoocode-session-io` thread) | `runtime` (`session_io.rs`); `code-session` `manager.rs` `persist` and `rewrite_file` queue the writes ([concurrency.md](../design/concurrency.md) Phase 3) |
 | Compaction | `agent-compaction` |
 | Subagents | `code-subagents` (see `docs/design/subagents.md`) |
 | A model provider | `ai-provider-<name>`, registered in `ai-registry` |
@@ -74,7 +75,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them | 7 | 315 / 200 | keep |
+| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process, and the `hoocode-session-io` writer (`session_io.rs`, the only writer of session files): the only crate that builds them | 8 | 761 / 499 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
@@ -134,7 +135,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 6 | 4433 / 2992 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1547 / 1025 | keep |
 | `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 926 / 0 | keep |
-| `code-session` | Session handling for the hoocode coding agent | 6 | 1821 / 274 | keep |
+| `code-session` | Session handling for the hoocode coding agent; appends and rewrites go through `runtime` `session_io` (flush barriers before reads) | 6 | 1850 / 390 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 8 | 2074 / 1218 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 7789 / 6672 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 5 | 588 / 0 | keep |

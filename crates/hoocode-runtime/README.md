@@ -7,5 +7,7 @@ See `docs/design/concurrency.md` (sections 1 to 4).
 - `block_on_entry(fut)`: for `main` and tests only.
 - `run_blocking(f)`: runs sync work on the `hoocode-tools` pool (at most 16 threads).
 - `spawn_named_thread(name, f)` and `bounded_channel(cap)`.
+- `session_io()`: the `hoocode-session-io` thread, the only writer of session files. Bounded queue
+  (4096 entries or 64 MiB; producers wait), flush barriers with deadlines.
 - `ParallelToolLimit`: the per-turn cap on parallel tool calls.
 - `total_memory_bytes()`: physical RAM, used for the memory limit defaults.

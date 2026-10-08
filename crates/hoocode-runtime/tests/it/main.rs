@@ -1,5 +1,7 @@
 //! Tests for the process runtime: worker count, thread names, the tools pool
-//! cap, the parallel tool limit and the channel helpers.
+//! cap, the parallel tool limit, the channel helpers and the session writer.
+
+mod session_io;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

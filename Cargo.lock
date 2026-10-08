@@ -1441,6 +1441,7 @@ dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
  "hoocode-code-paths",
+ "hoocode-runtime",
  "serde",
  "serde_json",
 ]
