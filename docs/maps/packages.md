@@ -1,7 +1,7 @@
 # Package map
 
 What each crate does, who uses it, and where to make a change. Snapshot of 2026-10-08, after the deletions in
-[decisions-2026-10-08.md](../design/decisions-2026-10-08.md): 66 crates (65 after the deletions, plus `runtime`, added in Concurrency phase 1; 76 before; see
+[decisions-2026-10-08.md](../design/decisions-2026-10-08.md): 67 crates (65 after the deletions, plus `runtime`, added in Concurrency phase 1, and `agent-mcp`, the MCP client core of [mcp.md](../design/mcp.md); 76 before; see
 [Deleted](#deleted-2026-10-08)). In step 0 the crates
 become `hoocode-*` and the binary `hoocode`
 ([naming-and-paths.md](../design/naming-and-paths.md)); this page is regenerated
@@ -52,6 +52,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | Session file writes (queue caps, flush barriers, the `hoocode-session-io` thread) | `runtime` (`session_io.rs`); `code-session` `manager.rs` `persist` and `rewrite_file` queue the writes ([concurrency.md](../design/concurrency.md) Phase 3) |
 | Compaction | `agent-compaction` |
 | Subagents | `code-subagents` (see `docs/design/subagents.md`) |
+| MCP client: connect to a server, list and call its tools, progress, caps, tool names | `agent-mcp` (`hoocode-agent-mcp`; the only crate that depends on `rmcp`; see [mcp.md](../design/mcp.md)). Not wired into the binary yet. |
 | A model provider | `ai-provider-<name>`, registered in `ai-registry` |
 | A login flow | `ai-oauth-<name>`, stored by `code-auth` |
 | The model list | `ai-models-catalog` (generated), `code-models` (models.json) |
@@ -111,6 +112,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `agent-core` | Core agent runtime for hoocode agents | 2 | 1979 / 0 | keep |
 | `agent-harness` | Agent harness for hoocode agents | 6 | 3321 / 1042 | keep |
 | `agent-loop` | Agent loop for hoocode agents | 1 | 2647 / 0 | keep |
+| `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 0 | 868 / 653 | keep |
 | `agent-session` | Session trees for hoocode agents: entry format, storage, repositories | 2 | 2355 / 0 | keep |
 | `agent-types` | Shared types for hoocode agents | 21 | 896 / 0 | keep |
 

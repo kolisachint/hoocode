@@ -29,6 +29,7 @@ members = [
     "crates/hoocode-agent-compaction",
     "crates/hoocode-agent-harness",
     "crates/hoocode-agent-loop",
+    "crates/hoocode-agent-mcp",
     "crates/hoocode-agent-session",
     "crates/hoocode-agent-types",
 
@@ -120,6 +121,7 @@ hoocode-agent-core = { path = "crates/hoocode-agent-core" }
 hoocode-agent-compaction = { path = "crates/hoocode-agent-compaction" }
 hoocode-agent-harness = { path = "crates/hoocode-agent-harness" }
 hoocode-agent-loop = { path = "crates/hoocode-agent-loop" }
+hoocode-agent-mcp = { path = "crates/hoocode-agent-mcp" }
 hoocode-agent-session = { path = "crates/hoocode-agent-session" }
 hoocode-agent-types = { path = "crates/hoocode-agent-types" }
 
