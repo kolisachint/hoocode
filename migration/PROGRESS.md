@@ -5,6 +5,9 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ## Resume here
 
+- **2026-10-08: ledger closed for the design cards.** Added the `moved` status (closed, like
+  `done`; `ledger.py move <id> <card> <text>`). Tasks 9.1, 10.2e, 10.11, 12.1–12.7 and 13.4 are
+  `moved` to their cards in `docs/design/` (13.4 has no card; it is tracked in the plan §0.3).
 - **2026-10-01: pin bumped v0.5.89 (`a6cd96e7`) to v0.6.0 (`2223437c`)** (user-approved,
   outside the ledger tasks). Ported the whole delta (`HOOCODE_DELTA_BASE=a6cd96e7… python3
   migration/pin_drift.py delta v0.6.0`): regenerated catalog (1228 models: claude-sonnet-5-5,
