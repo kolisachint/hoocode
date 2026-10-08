@@ -57,7 +57,8 @@ pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 8 | Version check and completion chime | [extras.md](extras.md) | S | 0c | Small polish |
 
 **Status (2026-10-08):** milestone 2 (concurrency phases 0-1) is done. Milestone 3 (DocSearch;
-the 8 `l1_done` tasks) is done. The ledger rows are not yet moved. See the 2026-10-08 entry in
+the 8 `l1_done` tasks) is done. Milestones 4 (MCP client) and 5 (concurrency phases 2-5) are
+built, not yet load-tested. Open items are listed in the 2026-10-08 (second session) entry in
 [../../migration/PROGRESS.md](../../migration/PROGRESS.md).
 
 **Only if the numbers or a need say so:** concurrency phase 6 (highlighting off the UI

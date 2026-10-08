@@ -1,8 +1,8 @@
 # MCP client
 
-Status: **agreed 2026-10-07**, scope cut 2026-10-08 ([decisions-2026-10-08.md](decisions-2026-10-08.md)).
-Steps 3 (OAuth) and 4 (Interaction) are built for the interactive mode: `/mcp login <server>` opens the browser and reconnects the server. Elicitation is answered in the TUI and declined in print and rpc (no question request there yet).
-Design only. Replaces ledger 9.1 and 10.11.
+Status: **built 2026-10-08** (`hoocode-agent-mcp`, `hoocode-code-mcp`; scope cut in [decisions-2026-10-08.md](decisions-2026-10-08.md)). Open: no load test, no conformance suite run, no manual real-server or OAuth run, plugin `mcp.json` not loaded (milestone 6). See [../../migration/PROGRESS.md](../../migration/PROGRESS.md).
+Elicitation is answered in the TUI and declined in print and rpc (no question request there yet).
+Replaces ledger 9.1 and 10.11 (both `moved` to this card).
 
 ## Goal
 
@@ -25,7 +25,7 @@ trusted.
 ## What we build
 
 1. **Core.**
-   - New crate `agent-mcp` on rmcp; only this crate depends on rmcp. It runs on the
+   - New crate `hoocode-agent-mcp` on rmcp; only this crate depends on rmcp. It runs on the
      one `hoocode-io` runtime ([concurrency.md](concurrency.md)), never its own.
    - Transports: stdio and Streamable HTTP.
    - Tools named `mcp_<server>_<tool>`; too-long names are shortened with a hash
@@ -33,7 +33,7 @@ trusted.
    - Tool progress shows in the TUI; aborting a turn cancels the call.
    - A dropped server reconnects once.
 2. **Discovery and trust.**
-   - New crate `code-mcp` reads `~/.agents/mcp.json` (user), `./.agents/mcp.json`
+   - New crate `hoocode-code-mcp` reads `~/.agents/mcp.json` (user), `./.agents/mcp.json`
      (project) and plugin `mcp.json` files.
    - Trust records are kept outside the repository, shared with plugins.
    - `/mcp` lists servers with their state: connected, not trusted, auth needed,
