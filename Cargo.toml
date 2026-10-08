@@ -46,6 +46,7 @@ members = [
     "crates/hoocode-code-media",
     "crates/hoocode-code-models",
     "crates/hoocode-code-auth",
+    "crates/hoocode-code-mcp",
     "crates/hoocode-code-migrate",
     "crates/hoocode-code-modes",
     "crates/hoocode-code-permissions",
@@ -136,6 +137,7 @@ hoocode-code-media = { path = "crates/hoocode-code-media" }
 hoocode-code-print = { path = "crates/hoocode-code-print" }
 hoocode-code-models = { path = "crates/hoocode-code-models" }
 hoocode-code-auth = { path = "crates/hoocode-code-auth" }
+hoocode-code-mcp = { path = "crates/hoocode-code-mcp" }
 hoocode-code-migrate = { path = "crates/hoocode-code-migrate" }
 hoocode-code-modes = { path = "crates/hoocode-code-modes" }
 hoocode-code-permissions = { path = "crates/hoocode-code-permissions" }
