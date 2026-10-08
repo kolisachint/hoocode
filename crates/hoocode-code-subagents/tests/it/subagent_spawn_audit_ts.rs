@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! The subagents half of the pin's `test/suite/subagent-spawn-audit.test.ts`:
 //! lifeguard stall de-duplication, the JSONL reader's bounded buffer, atomic
 //! result writes, the cumulative token budget across the inherited-model

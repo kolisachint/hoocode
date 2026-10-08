@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Live Anthropic tests ported from hoocode (v0.5.89)
 //! `anthropic-eager-tool-input-e2e.test.ts`,
 //! `anthropic-long-cache-retention-e2e.test.ts`,

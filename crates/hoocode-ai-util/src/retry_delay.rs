@@ -510,6 +510,7 @@ mod tests {
         assert_eq!(sdk_retry_timeout_ms(&after, 2, 2, 0.0), 3000.0);
     }
 
+    #[allow(clippy::disallowed_methods)] // test helper: builds its own runtime
     fn run<R>(f: impl Future<Output = R>) -> R {
         tokio::runtime::Builder::new_current_thread()
             .enable_time()

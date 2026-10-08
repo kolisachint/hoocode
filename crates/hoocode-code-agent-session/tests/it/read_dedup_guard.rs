@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of the pin's `coding-agent/test/suite/read-dedup-guard.test.ts`: the
 //! read dedup guard through the real tool pipeline, gated on `contextGc`.
 

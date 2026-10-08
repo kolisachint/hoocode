@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! rpc mode fails closed (reliability 1.1): a gated tool call that needs
 //! approval is denied with a message the model sees, and the tool never runs.
 //! The session uses the real `HooPermissionGate` in its fail-closed headless

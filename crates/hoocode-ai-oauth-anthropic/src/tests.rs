@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of hoocode `packages/ai/test/anthropic-oauth.test.ts` (`fetch`
 //! stubbed through the [`Fetch`] seam) plus `parseAuthorizationInput`.
 

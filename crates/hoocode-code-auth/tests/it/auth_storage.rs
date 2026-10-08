@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of hoocode `packages/coding-agent/test/auth-storage.test.ts` (v0.5.89).
 
 use hoocode_ai_oauth::{BoxFuture, OAuthCredentials, OAuthLoginCallbacks, OAuthProvider};

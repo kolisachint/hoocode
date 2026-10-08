@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! The `/login` flow's logic (`login-controller.ts`, `utils/open-url.ts`);
 //! the panes are covered by the `login-api-key` parity scenario.
 

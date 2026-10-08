@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Ports the model/thinking cases of `test/suite/agent-session-model-extension.test.ts`,
 //! `test/agent-session-stats.test.ts`, the SDK-tool cases of
 //! `test/agent-session-dynamic-tools.test.ts`, plus registry, session-info and

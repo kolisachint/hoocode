@@ -17,6 +17,7 @@ publish = false
 doctest = false
 
 [dependencies]
+hoocode-runtime = { workspace = true }
 hoocode-agent-compaction = { workspace = true }
 hoocode-agent-core = { workspace = true }
 hoocode-agent-harness = { workspace = true }

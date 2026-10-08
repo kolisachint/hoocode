@@ -237,6 +237,7 @@ fn respond(options: &CallbackServerOptions, head: &str) -> Response {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)] // test module: #[tokio::test] expands to a runtime builder
 mod tests {
     use super::*;
 

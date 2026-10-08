@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Ports `test/agent-session-tree-navigation.test.ts` (live-model e2e in
 //! TS) onto the faux provider: summaries come from scripted responses.
 

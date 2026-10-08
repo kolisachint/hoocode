@@ -76,6 +76,9 @@ members = [
     "crates/hoocode-tui-render",
     "crates/hoocode-tui-terminal",
     "crates/hoocode-tui-util",
+
+    # Runtime namespace
+    "crates/hoocode-runtime",
 ]
 resolver = "2"
 # fuzz/ is a separate nightly-only workspace (cargo-fuzz); see fuzz/README.md.
@@ -161,6 +164,8 @@ hoocode-tui-keys = { path = "crates/hoocode-tui-keys" }
 hoocode-tui-render = { path = "crates/hoocode-tui-render" }
 hoocode-tui-terminal = { path = "crates/hoocode-tui-terminal" }
 hoocode-tui-util = { path = "crates/hoocode-tui-util" }
+
+hoocode-runtime = { path = "crates/hoocode-runtime" }
 
 [workspace.metadata.hoocode]
 # Lockstep version bump script uses this as the single source of truth.

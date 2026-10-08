@@ -17,6 +17,7 @@ publish = true
 doctest = false
 
 [dependencies]
+hoocode-runtime = { workspace = true }
 hoocode-ai-types = { workspace = true }
 futures-executor = "0.3"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }

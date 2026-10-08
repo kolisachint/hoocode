@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! RPC session commands on [`RuntimeHost`]: `new_session`, `switch_session`,
 //! `fork` and `clone` replace the runtime's session and RPC mode follows it
 //! (rpc.test.ts "should create new session", on the faux provider; the other

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! The app-server end to end on the faux provider: a client talks JSON over
 //! an in-memory line transport, exactly as over stdio.
 

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of hoocode `packages/ai/test/openai-codex-oauth.test.ts` (`fetch`
 //! stubbed through the [`Fetch`] seam) plus the login flow and helpers.
 

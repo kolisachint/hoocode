@@ -107,18 +107,7 @@ fn to_value(credential: &AuthCredential) -> Value {
 /// Runs `fut` to completion from sync code, inside or outside a tokio runtime
 /// (on its own thread with a private runtime).
 fn block_on<T: Send>(fut: impl std::future::Future<Output = T> + Send) -> T {
-    std::thread::scope(|scope| {
-        scope
-            .spawn(|| {
-                tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("failed to start a tokio runtime")
-                    .block_on(fut)
-            })
-            .join()
-            .expect("auth refresh thread panicked")
-    })
+    hoocode_runtime::block_on_isolated(fut).expect("auth refresh thread panicked")
 }
 
 enum Lookup {

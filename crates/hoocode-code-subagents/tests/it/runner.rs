@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! The runner seam: the same pool, with no processes.
 //!
 //! These tests exist to prove the seam is real — that queueing, priority,

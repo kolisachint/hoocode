@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of the pin's `coding-agent/test/session-cwd.test.ts`.
 
 use std::path::{Path, PathBuf};

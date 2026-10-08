@@ -483,6 +483,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[allow(clippy::disallowed_methods)] // test helper: builds its own runtime
     fn block_on<F: std::future::Future>(future: F) -> F::Output {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()

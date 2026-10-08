@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! subagent-pool.test.ts, subagent-pool-protocol.test.ts,
 //! subagent-pool-registry.test.ts, subagent-pool-inherited-model.test.ts and
 //! the pool half of subagent-claude-agent.test.ts.
