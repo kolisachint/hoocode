@@ -1,0 +1,8 @@
+# Concurrency rule (docs/design/concurrency.md section 4): tokio runtimes are
+# built only in crates/hoocode-runtime. Every remaining use there and in test
+# code carries #[allow(clippy::disallowed_methods)] with a reason.
+disallowed-methods = [
+    { path = "tokio::runtime::Runtime::new", reason = "build runtimes only in hoocode-runtime (use io_handle, run_blocking or a sync bridge)" },
+    { path = "tokio::runtime::Builder::new_multi_thread", reason = "build runtimes only in hoocode-runtime (use io_handle)" },
+    { path = "tokio::runtime::Builder::new_current_thread", reason = "build runtimes only in hoocode-runtime (use a sync bridge or run_blocking)" },
+]

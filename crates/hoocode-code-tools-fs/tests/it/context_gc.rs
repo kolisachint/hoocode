@@ -30,13 +30,13 @@ fn read_range_call(id: &str, path: &str, offset: Option<u64>, limit: Option<u64>
         args["limit"] = l.into();
     }
     msg(
-        json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "read", "arguments": args}]}),
+        json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "Read", "arguments": args}]}),
     )
 }
 
 fn bash_call(id: &str, command: &str) -> AgentMessage {
     msg(
-        json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "bash", "arguments": {"command": command}}]}),
+        json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "Shell", "arguments": {"command": command}}]}),
     )
 }
 
@@ -87,10 +87,10 @@ fn changed(messages: &[AgentMessage]) -> bool {
 #[test]
 fn stubs_reads_superseded_by_edits_or_rereads() {
     let msgs = vec![
-        assistant_call("r1", "read", "src/a.ts"),
-        result("r1", "read", "old contents", false),
-        assistant_call("e1", "edit", "src/a.ts"),
-        result("e1", "edit", "ok", false),
+        assistant_call("r1", "Read", "src/a.ts"),
+        result("r1", "Read", "old contents", false),
+        assistant_call("e1", "Edit", "src/a.ts"),
+        result("e1", "Edit", "ok", false),
     ];
     let out = gc(&msgs, 0.0);
     assert!(text_of(&out[1]).contains("[Superseded read of src/a.ts elided"));
@@ -98,42 +98,42 @@ fn stubs_reads_superseded_by_edits_or_rereads() {
     assert_eq!(text_of(&out[3]), "ok");
 
     let msgs = vec![
-        assistant_call("r1", "read", "src/a.ts"),
-        result("r1", "read", "first", false),
-        assistant_call("r2", "read", "src/a.ts"),
-        result("r2", "read", "second", false),
+        assistant_call("r1", "Read", "src/a.ts"),
+        result("r1", "Read", "first", false),
+        assistant_call("r2", "Read", "src/a.ts"),
+        result("r2", "Read", "second", false),
     ];
     let out = gc(&msgs, 0.0);
     assert!(text_of(&out[1]).contains("read again later"));
     assert_eq!(text_of(&out[3]), "second");
 
     let msgs = vec![
-        assistant_call("r1", "read", "src/a.ts"),
-        result("r1", "read", "contents", false),
-        assistant_call("e1", "edit", "src/a.ts"),
-        result("e1", "edit", "Could not find text", true),
+        assistant_call("r1", "Read", "src/a.ts"),
+        result("r1", "Read", "contents", false),
+        assistant_call("e1", "Edit", "src/a.ts"),
+        result("e1", "Edit", "Could not find text", true),
     ];
     assert!(!changed(&msgs));
 
     let msgs = vec![
-        assistant_call("r1", "read", "src/a.ts"),
-        result("r1", "read", "a", false),
-        assistant_call("e1", "edit", "src/b.ts"),
-        result("e1", "edit", "ok", false),
+        assistant_call("r1", "Read", "src/a.ts"),
+        result("r1", "Read", "a", false),
+        assistant_call("e1", "Edit", "src/b.ts"),
+        result("e1", "Edit", "ok", false),
     ];
     assert!(!changed(&msgs));
 
     let msgs = vec![
-        assistant_call("r1", "read", "src/a.ts"),
-        result("r1", "read", "a", false),
-        assistant_call("e1", "edit", "/project/src/a.ts"),
-        result("e1", "edit", "ok", false),
+        assistant_call("r1", "Read", "src/a.ts"),
+        result("r1", "Read", "a", false),
+        assistant_call("e1", "Edit", "/project/src/a.ts"),
+        result("e1", "Edit", "ok", false),
     ];
     assert!(text_of(&gc(&msgs, 0.0)[1]).starts_with("[Superseded read"));
 
     let msgs = vec![
-        assistant_call("r1", "read", "src/a.ts"),
-        result("r1", "read", "a", false),
+        assistant_call("r1", "Read", "src/a.ts"),
+        result("r1", "Read", "a", false),
     ];
     assert!(!changed(&msgs));
 }
@@ -142,21 +142,21 @@ fn stubs_reads_superseded_by_edits_or_rereads() {
 fn read_ranges_decide_supersession() {
     let disjoint = vec![
         read_range_call("r1", "big.ts", Some(1), Some(40)),
-        result("r1", "read", "lines 1-40", false),
+        result("r1", "Read", "lines 1-40", false),
         read_range_call("r2", "big.ts", Some(200), Some(60)),
-        result("r2", "read", "lines 200-260", false),
+        result("r2", "Read", "lines 200-260", false),
     ];
     assert!(!changed(&disjoint));
 
     let alternating = vec![
         read_range_call("r1", "big.ts", Some(1), Some(40)),
-        result("r1", "read", "A1", false),
+        result("r1", "Read", "A1", false),
         read_range_call("r2", "big.ts", Some(200), Some(60)),
-        result("r2", "read", "B1", false),
+        result("r2", "Read", "B1", false),
         read_range_call("r3", "big.ts", Some(1), Some(40)),
-        result("r3", "read", "A2", false),
+        result("r3", "Read", "A2", false),
         read_range_call("r4", "big.ts", Some(200), Some(60)),
-        result("r4", "read", "B2", false),
+        result("r4", "Read", "B2", false),
     ];
     let out = gc(&alternating, 0.0);
     assert!(text_of(&out[1]).starts_with("[Superseded read"));
@@ -166,27 +166,27 @@ fn read_ranges_decide_supersession() {
 
     let overlap = vec![
         read_range_call("r1", "big.ts", Some(1), Some(40)),
-        result("r1", "read", "1-40", false),
+        result("r1", "Read", "1-40", false),
         read_range_call("r2", "big.ts", Some(30), Some(20)),
-        result("r2", "read", "30-49", false),
+        result("r2", "Read", "30-49", false),
     ];
     assert!(text_of(&gc(&overlap, 0.0)[1]).starts_with("[Superseded read"));
 
     let whole = vec![
         read_range_call("r1", "big.ts", Some(500), Some(10)),
-        result("r1", "read", "500-509", false),
+        result("r1", "Read", "500-509", false),
         read_range_call("r2", "big.ts", None, None),
-        result("r2", "read", "whole", false),
+        result("r2", "Read", "whole", false),
     ];
     assert!(text_of(&gc(&whole, 0.0)[1]).starts_with("[Superseded read"));
 
     let mutated = vec![
         read_range_call("r1", "big.ts", Some(1), Some(40)),
-        result("r1", "read", "1-40", false),
+        result("r1", "Read", "1-40", false),
         read_range_call("r2", "big.ts", Some(200), Some(60)),
-        result("r2", "read", "200-259", false),
-        assistant_call("w1", "write", "big.ts"),
-        result("w1", "write", "ok", false),
+        result("r2", "Read", "200-259", false),
+        assistant_call("w1", "Write", "big.ts"),
+        result("w1", "Write", "ok", false),
     ];
     let out = gc(&mutated, 0.0);
     assert!(
@@ -201,7 +201,7 @@ fn bash_output_eviction_under_pressure() {
     let run = |cmd: &str, text: &str, pressure: f64, is_error: bool| {
         text_of(
             &gc(
-                &[bash_call("b1", cmd), result("b1", "bash", text, is_error)],
+                &[bash_call("b1", cmd), result("b1", "Shell", text, is_error)],
                 pressure,
             )[1],
         )
@@ -238,17 +238,17 @@ fn pressure_latch_tracks_rises_and_resets_after_a_collapse() {
 fn dedup_pointers_neither_supersede_nor_get_stubbed() {
     let pointer = "[Already in context: src/a.ts (lines 1-3) is unchanged since the read in call r1 — reuse that output instead of re-reading.]";
     let msgs = vec![
-        assistant_call("r1", "read", "src/a.ts"),
-        result("r1", "read", "contents", false),
-        assistant_call("r2", "read", "src/a.ts"),
-        result("r2", "read", pointer, false),
+        assistant_call("r1", "Read", "src/a.ts"),
+        result("r1", "Read", "contents", false),
+        assistant_call("r2", "Read", "src/a.ts"),
+        result("r2", "Read", pointer, false),
     ];
     assert!(!changed(&msgs));
     let msgs = vec![
-        assistant_call("r1", "read", "src/a.ts"),
-        result("r1", "read", "contents", false),
-        assistant_call("r2", "read", "src/a.ts"),
-        result("r2", "read", "newer", false),
+        assistant_call("r1", "Read", "src/a.ts"),
+        result("r1", "Read", "contents", false),
+        assistant_call("r2", "Read", "src/a.ts"),
+        result("r2", "Read", "newer", false),
     ];
     assert!(text_of(&gc(&msgs, 0.0)[1]).starts_with("[Superseded read"));
 }
@@ -336,7 +336,7 @@ impl Transcript {
         if let Some(l) = limit {
             args["limit"] = l.into();
         }
-        self.push(msg(json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "read", "arguments": args}]})));
+        self.push(msg(json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "Read", "arguments": args}]})));
         let tool = create_read_tool_definition(
             &self.cwd,
             ReadToolOptions {
@@ -360,7 +360,7 @@ impl Transcript {
                 _ => None,
             })
             .collect();
-        let index = self.push(result(&id, "read", &text, false));
+        let index = self.push(result(&id, "Read", &text, false));
         (index, text)
     }
 
@@ -368,15 +368,15 @@ impl Transcript {
         self.seq += 1;
         let id = next_call_id();
         let args = json!({"path": "f.txt", "edits": edits});
-        self.push(msg(json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "edit", "arguments": args}]})));
+        self.push(msg(json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "Edit", "arguments": args}]})));
         let tool = create_edit_tool_definition(&self.cwd, EditToolOptions::default());
         match (tool.execute)(id.clone(), args, None, None, None) {
             Ok(_) => {
-                self.push(result(&id, "edit", "ok", false));
+                self.push(result(&id, "Edit", "ok", false));
                 true
             }
             Err(e) => {
-                self.push(result(&id, "edit", &e.to_string(), true));
+                self.push(result(&id, "Edit", &e.to_string(), true));
                 false
             }
         }
@@ -533,7 +533,7 @@ fn run_sequence(seq: &[Op]) -> Vec<String> {
                     }
                     let later_mutate = msgs.iter().enumerate().any(|(j, m)| {
                         j > r.index
-                            && matches!(m, AgentMessage::ToolResult(res) if (res.tool_name == "edit" || res.tool_name == "write") && !res.is_error)
+                            && matches!(m, AgentMessage::ToolResult(res) if (res.tool_name == "Edit" || res.tool_name == "Write") && !res.is_error)
                     });
                     let later_read = log.iter().any(|o| o.index > r.index);
                     if !later_mutate && !later_read {
@@ -619,7 +619,7 @@ fn gc_evicts_the_superseded_read_once_the_loop_moves_on() {
         t.seq += 1;
         let id = next_call_id();
         let args = json!({"path": path.to_string_lossy()});
-        t.push(msg(json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "read", "arguments": args}]})));
+        t.push(msg(json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "Read", "arguments": args}]})));
         let tool = create_read_tool_definition(
             &t.cwd,
             ReadToolOptions {
@@ -639,14 +639,14 @@ fn gc_evicts_the_superseded_read_once_the_loop_moves_on() {
             hoocode_ai_types::Content::Text(x) => x.text.clone(),
             _ => unreachable!(),
         };
-        t.push(result(&id, "read", &text, false));
+        t.push(result(&id, "Read", &text, false));
     };
     read(&mut t);
     t.seq += 1;
     let id = next_call_id();
     let args =
         json!({"path": "gc.ts", "edits": [{"oldText": "const v = 1;", "newText": "const v = 2;"}]});
-    t.push(msg(json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "edit", "arguments": args}]})));
+    t.push(msg(json!({"role": "assistant", "content": [{"type": "toolCall", "id": id, "name": "Edit", "arguments": args}]})));
     (create_edit_tool_definition(&t.cwd, EditToolOptions::default()).execute)(
         id.clone(),
         args,
@@ -655,7 +655,7 @@ fn gc_evicts_the_superseded_read_once_the_loop_moves_on() {
         None,
     )
     .unwrap();
-    t.push(result(&id, "edit", "ok", false));
+    t.push(result(&id, "Edit", "ok", false));
     read(&mut t);
     let msgs = t.msgs.lock().unwrap().clone();
     let out = evict_superseded_reads(
@@ -668,7 +668,7 @@ fn gc_evicts_the_superseded_read_once_the_loop_moves_on() {
     .unwrap();
     let reads: Vec<String> = out
         .iter()
-        .filter(|m| matches!(m, AgentMessage::ToolResult(r) if r.tool_name == "read"))
+        .filter(|m| matches!(m, AgentMessage::ToolResult(r) if r.tool_name == "Read"))
         .map(text_of)
         .collect();
     assert!(reads[0].contains("Superseded read"));

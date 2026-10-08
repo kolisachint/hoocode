@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: tool names renamed; the old names are no longer accepted (2026-10-08)
+- **New tool names:** `read` → `Read`, `bash` → `Shell`, `edit` → `Edit`, `write` → `Write`,
+  `SearchCodebase` → `CodeSearch`, `SearchHooCode` → `DocSearch`, `ask_options` →
+  `AskUserQuestion`, `webfetch` → `WebFetch`, `websearch` → `WebSearch`, `AgentOut` →
+  `AgentOutput`. `Agent` and `TodoWrite` are unchanged.
+- **No aliases for the old names.** They are unknown tools now. The legacy `Task` and
+  `TaskOutput` aliases are deleted. Settings, permission rules, `enabled_tools`/`denied_tools`
+  and agent `tools:` lists must use the new names.
+- The model sees the built-in tools in this order: `Read`, `Shell`, `Edit`, `Write`,
+  `CodeSearch`, `AskUserQuestion`, `DocSearch`, and the rest.
+
 ### Changed: the subagent tools are `Agent` and `AgentOut` (2026-10-06)
+> Superseded 2026-10-08: `AgentOut` is now `AgentOutput`, and the `Task` and `TaskOutput`
+> aliases described below were deleted.
+
 - **`Task` → `Agent`, `TaskOutput` → `AgentOut`.** `Task` read as a to-do item while the tool starts
   a subagent run. The old names stay registered for one release as deprecated aliases that run the
   same executor, and the prompt's tool list marks them `deprecated alias for Agent; prefer Agent`.

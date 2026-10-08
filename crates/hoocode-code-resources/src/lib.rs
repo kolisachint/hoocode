@@ -25,9 +25,8 @@ pub mod slash_commands;
 pub mod source_info;
 
 pub use agent_frontmatter::{
-    canonical_tool_name, normalize_model, normalize_tools, parse_agent_definition, AgentDefinition,
-    AgentSource, CLAUDE_TOOL_ALIASES, HOOCODE_TOOL_NAMES, MODEL_INHERIT,
-    TASK_OUTPUT_TOOL_LEGACY_NAME, TASK_OUTPUT_TOOL_NAME, TASK_TOOL_LEGACY_NAME, TASK_TOOL_NAME,
+    normalize_model, normalize_tools, parse_agent_definition, AgentDefinition, AgentSource,
+    CLAUDE_TOOL_ALIASES, HOOCODE_TOOL_NAMES, MODEL_INHERIT, TASK_OUTPUT_TOOL_NAME, TASK_TOOL_NAME,
     TODO_WRITE_TOOL_NAME,
 };
 pub use agent_registry::{

@@ -1,7 +1,7 @@
 //! `core/dispatch-evaluator.ts`: the subagent dispatch guard plus a
 //! complexity estimate for the dispatch log.
 //!
-//! The parent agent picks the subagent (via the Task tool), so there is no
+//! The parent agent picks the subagent (via the Agent tool), so there is no
 //! routing here: only the depth guard and an LLM-free heuristic.
 
 use std::sync::LazyLock;

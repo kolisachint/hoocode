@@ -19,7 +19,7 @@ fn thinking(text: &str) -> Content {
 fn tool_call() -> Content {
     Content::ToolCall(ToolCallContent {
         id: "tool-1".into(),
-        name: "read".into(),
+        name: "Read".into(),
         arguments: serde_json::json!({ "path": "file.txt" }),
         thought_signature: None,
     })

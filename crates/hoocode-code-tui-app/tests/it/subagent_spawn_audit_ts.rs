@@ -140,6 +140,7 @@ fn agent_state(id: &str) -> Option<TaskAgentState> {
         .and_then(|a| a.state)
 }
 
+#[allow(clippy::disallowed_methods)] // test helper: a runtime of its own
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

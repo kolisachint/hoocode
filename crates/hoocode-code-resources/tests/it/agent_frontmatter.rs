@@ -16,14 +16,14 @@ fn tools(value: Value) -> (Vec<String>, Vec<String>) {
 #[test]
 fn maps_claude_tool_names_case_insensitive() {
     let (t, d) = tools(json!("Read, Grep, Bash"));
-    assert_eq!(t, ["read", "SearchCodebase", "bash"]);
+    assert_eq!(t, ["Read", "CodeSearch", "Shell"]);
     assert!(d.is_empty());
 }
 
 #[test]
 fn accepts_a_yaml_list_but_emits_a_format_warning() {
-    let (value, diagnostics) = normalize_tools(&json!(["Read", "SearchCodebase"]), None);
-    assert_eq!(value, ["read", "SearchCodebase"]);
+    let (value, diagnostics) = normalize_tools(&json!(["Read", "CodeSearch"]), None);
+    assert_eq!(value, ["Read", "CodeSearch"]);
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(
         diagnostics[0].kind,
@@ -35,7 +35,7 @@ fn accepts_a_yaml_list_but_emits_a_format_warning() {
 #[test]
 fn drops_unknown_tools_with_a_diagnostic() {
     let (t, d) = tools(json!("Read, NotebookEdit, Task, MultiEdit"));
-    assert_eq!(t, ["read"]);
+    assert_eq!(t, ["Read"]);
     assert_eq!(d.len(), 3);
     assert!(d.iter().any(|m| m.contains("NotebookEdit")));
 }
@@ -43,26 +43,26 @@ fn drops_unknown_tools_with_a_diagnostic() {
 #[test]
 fn maps_claude_webfetch_websearch_to_the_opt_in_web_tools() {
     let (t, d) = tools(json!("WebFetch, WebSearch"));
-    assert_eq!(t, ["webfetch", "websearch"]);
+    assert_eq!(t, ["WebFetch", "WebSearch"]);
     assert!(d.is_empty());
 }
 
 #[test]
 fn dedupes_resolved_tools() {
-    assert_eq!(tools(json!("Grep, Glob, find")).0, ["SearchCodebase"]);
+    assert_eq!(tools(json!("Grep, Glob, find")).0, ["CodeSearch"]);
 }
 
 #[test]
 fn drops_the_pre_rename_search_name() {
     let (t, d) = tools(json!("read, search"));
-    assert_eq!(t, ["read"]);
+    assert_eq!(t, ["Read"]);
     assert!(d.iter().any(|m| m.contains("tool \"search\"")));
 }
 
 #[test]
 fn drops_ls_which_has_no_counterpart() {
     let (t, d) = tools(json!("Read, LS"));
-    assert_eq!(t, ["read"]);
+    assert_eq!(t, ["Read"]);
     assert!(d.iter().any(|m| m.contains("LS")));
 }
 
@@ -114,7 +114,7 @@ fn parses_a_claude_code_style_agent_natively() {
     assert!(d.is_empty());
     let agent = agent.unwrap();
     assert_eq!(agent.name, "explorer");
-    assert_eq!(agent.tools.unwrap(), ["read", "SearchCodebase", "bash"]);
+    assert_eq!(agent.tools.unwrap(), ["Read", "CodeSearch", "Shell"]);
     assert_eq!(agent.model.as_deref(), Some("sonnet"));
     assert_eq!(agent.prompt, "You are a read-only explorer.");
     assert_eq!(agent.source, AgentSource::ClaudeProject);
@@ -151,10 +151,10 @@ fn returns_null_for_an_invalid_name() {
 
 #[test]
 fn captures_a_disallowed_tools_denylist() {
-    let raw = "---\nname: limited\ndescription: An agent with a denied tool.\ntools: read, SearchCodebase, bash\ndisallowedTools: bash\n---\nbody";
+    let raw = "---\nname: limited\ndescription: An agent with a denied tool.\ntools: Read, CodeSearch, Shell\ndisallowedTools: Shell\n---\nbody";
     let agent = parse(raw, AgentSource::Project).0.unwrap();
-    assert!(agent.tools.unwrap().contains(&"bash".to_string()));
-    assert_eq!(agent.disallowed_tools.unwrap(), ["bash"]);
+    assert!(agent.tools.unwrap().contains(&"Shell".to_string()));
+    assert_eq!(agent.disallowed_tools.unwrap(), ["Shell"]);
 }
 
 #[test]
@@ -241,6 +241,6 @@ fn allows_full_claude_model_ids_without_warning() {
 fn warns_when_tools_is_a_yaml_list() {
     let raw = "---\nname: list-tools\ndescription: Agent declaring tools as a YAML list.\ntools:\n  - read\n  - bash\n---\nbody";
     let (agent, d) = parse(raw, AgentSource::Project);
-    assert_eq!(agent.unwrap().tools.unwrap(), ["read", "bash"]);
+    assert_eq!(agent.unwrap().tools.unwrap(), ["Read", "Shell"]);
     assert!(d.iter().any(|m| m.contains("comma-separated string")));
 }

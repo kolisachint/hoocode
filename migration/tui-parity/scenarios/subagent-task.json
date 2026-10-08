@@ -23,7 +23,7 @@
       "tool_calls": [
         {
           "id": "call_task_1",
-          "name": "Task",
+          "name": "Agent",
           "arguments": {
             "description": "Compute a product",
             "prompt": "What is 6 times 7? Reply with the number only.",

@@ -165,7 +165,7 @@ fn format_tool_call(name: &str, args: &Value) -> String {
         shorten(if p.is_empty() { arg("file_path") } else { p })
     };
     match name {
-        "read" => {
+        "Read" => {
             let mut display = path();
             let offset = args.get("offset").and_then(Value::as_i64);
             let limit = args.get("limit").and_then(Value::as_i64);
@@ -181,9 +181,9 @@ fn format_tool_call(name: &str, args: &Value) -> String {
             }
             format!("[read: {display}]")
         }
-        "write" => format!("[write: {}]", path()),
-        "edit" => format!("[edit: {}]", path()),
-        "bash" => {
+        "Write" => format!("[write: {}]", path()),
+        "Edit" => format!("[edit: {}]", path()),
+        "Shell" => {
             let raw = arg("command");
             let cmd = js_slice(normalize(&raw).as_str(), 50);
             format!(
@@ -191,14 +191,14 @@ fn format_tool_call(name: &str, args: &Value) -> String {
                 if js_len(&raw) > 50 { "..." } else { "" }
             )
         }
-        "SearchCodebase" => {
+        "CodeSearch" => {
             let glob = arg("glob");
             let glob = if glob.is_empty() {
                 String::new()
             } else {
                 format!(" in {}", shorten(glob))
             };
-            format!("[SearchCodebase: {}{glob}]", arg("query"))
+            format!("[CodeSearch: {}{glob}]", arg("query"))
         }
         _ => {
             let json = args.to_string();

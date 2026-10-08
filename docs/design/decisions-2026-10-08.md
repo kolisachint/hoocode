@@ -15,7 +15,7 @@ The full plan, with sizes and dependencies, is in [README.md](README.md#the-plan
    generator.
 1. **Reliability first** ([reliability.md](reliability.md)), unchanged.
 2. **Concurrency phases 0–1**: measure, then one runtime and the caps.
-3. **Close the 8 `l1_done` tasks** (`SearchHooCode`), unchanged.
+3. **Close the 8 `l1_done` tasks** (`DocSearch`), unchanged.
 4. **MCP client.**
 5. **Concurrency phases 2–5**: terminal-output thread, session writer, lanes and
    priority, watchdog and memory limits.
@@ -33,7 +33,7 @@ needed.
 | Thread model | **Lanes**, not a thread per subsystem. Dedicated threads for UI, input, terminal output, session writer and watchdog; one tokio runtime of 2–4 workers for I/O; a capped pool for tools; subagents stay processes. |
 | Build order | **Split**: phases 0–1 before MCP, phases 2–5 after it. |
 | "gcc separate" | Meant **compaction and cleanup**. Compaction runs on `cortex-io` and `cortex-tools`; cleanup runs in the Low lane. No GC thread (Rust has no GC). |
-| Priority of the agent's `bash` commands | **Normal (nice 0)**, lowered with `performance.bashNice`. |
+| Priority of the agent's `Shell` commands | **Normal (nice 0)**, lowered with `performance.bashNice`. |
 | Memory limits | **On by default**: soft at the lower of 2 GiB and 25% of RAM, hard at the lower of 4 GiB and 50% of RAM. |
 | Settings | **Four keys** in a `performance` block: `maxParallelTools`, `memorySoftLimitMb`, `memoryHardLimitMb`, `bashNice`. Every other cap is fixed in code. |
 | Background compaction while typing | **Later, in its own card.** Not part of concurrency. |
@@ -55,7 +55,7 @@ code nothing calls.
 | `/mcp import` | **Dropped.** Copy entries into `~/.agents/mcp.json` by hand. | mcp.md M6 |
 | WASM crate `code-extensions` | **Deleted**, not feature-flagged. | "off-by-default feature" |
 | RPC approval dialogs | **Dropped.** hoobot uses the app-server; rpc fails closed (reliability.md). | rpc-approvals.md |
-| Semantic search part B (`embsearch`) | **Dropped.** Lexical `SearchCodebase` and `SearchHooCode` stay. | semantic-search.md part B |
+| Semantic search part B (`embsearch`) | **Dropped.** Lexical `CodeSearch` and `DocSearch` stay. | semantic-search.md part B |
 | crates.io publishing | **Dropped.** Users get release archives, npm and the curl installer. | distribution.md "Deferred" |
 | Small crates | **Not merged.** The layout in build-speed.md stays. | — |
 
@@ -108,3 +108,38 @@ docs hide the old names (git keeps them).
 | The external-tools layer | **Removed**: the `external_tools` table and its `/settings` pane, `bin_dir()`, and `HOOCODE_RG_BINARY`, `HOOCODE_FD_BINARY`, `HOOCODE_NATIVE_SEARCH`. Its other rows are gone too: `embsearch` dropped, `webtools` comes through MCP, `voicetools` dropped. The parity harness masks the `/settings` difference. |
 
 Built as item 6 of [reliability.md](reliability.md).
+
+## Tool names (user, 2026-10-08)
+
+The user renamed the tools. These are final:
+
+| hoocode-ts | hoocode |
+|---|---|
+| `read` | `Read` |
+| `bash` | `Shell` |
+| `edit` | `Edit` |
+| `write` | `Write` |
+| `SearchCodebase` | `CodeSearch` |
+| `SearchHooCode` | `DocSearch` |
+| `ask_options` | `AskUserQuestion` |
+| `webfetch` | `WebFetch` |
+| `websearch` | `WebSearch` |
+| `Task` | `Agent` (Rust name since 2026-10-06) |
+| `TaskOutput` | `AgentOutput` (was `AgentOut` until this date) |
+
+`Agent` and `TodoWrite` are unchanged. The tool order sent to the model is `Read`,
+`Shell`, `Edit`, `Write`, `CodeSearch`, `AskUserQuestion`, `DocSearch`, ..., the same
+order as hoocode-ts (`DocSearch` after `AskUserQuestion`).
+
+- **No aliases for old names.** `AgentOut`, `Task`, `TaskOutput`, `SearchCodebase`,
+  `SearchHooCode`, `ask_options`, `webfetch`, `websearch` and the lowercase built-ins
+  are no longer accepted. The legacy `Task` and `TaskOutput` aliases are deleted.
+- **The parity harness maps TS names to Rust names.** The L2 harness runs hoocode-ts with
+  its names and hoocode with the new ones. `TOOL_NAMES` in `migration/tui-parity/harness.py`
+  maps the TS side in the normalized comparison (the rules are in `normalize.json`, which
+  the Rust replay test also reads), and the mock translates scripted tool calls for the
+  TS run. The `--print` / `--mode json` stderr note is the one documented exception.
+- **`DocSearch` is the renamed `SearchHooCode`.** Its TS description is kept verbatim for
+  now. Real doc search (indexing hoocode's own docs) is built later.
+- **The `maxParallelTools` cap is applied at launch in `agent-loop` (option A).** The loop
+  starts at most that many tool calls at once; the rest wait, in call order.

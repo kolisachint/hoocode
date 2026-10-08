@@ -1,59 +1,112 @@
 {
-  "_comment": "Regex rules applied to BOTH apps' captured screens before comparison. {HOME}, {WORK}, {TMP} expand to the run's escaped temp paths. Keep rules minimal: every rule hides a potential difference.",
+  "_comment": "Regex rules applied to BOTH apps' captured screens before comparison. {HOME}, {WORK}, {TMP} expand to the run's escaped temp paths. Keep rules minimal: every rule hides a potential difference. Tool-name rules (hoocode-ts -> hoocode, 2026-10-08) are generated from TOOL_NAMES in harness.py; harness.py refuses to run if they drift. The stderr note rule blanks the hoocode-only --print/--mode json note (also dropped on the hoocode side by harness.py).",
   "rules": [
-    {
-      "pattern": "^┌─+ [a-z]+-[a-z]+ ──┐$",
-      "replace": "┌<editor-top-border: session-name badge, color derived from random session id>┐",
-      "style": "<masked>"
-    },
-    {
-      "pattern": "{WORK}",
-      "replace": "<WORK>"
-    },
-    {
-      "pattern": "{HOME}",
-      "replace": "<HOME>"
-    },
-    {
-      "pattern": "{TMP}",
-      "replace": "<TMP>"
-    },
-    {
-      "pattern": "/tmp/parity-[A-Za-z0-9_]+",
-      "replace": "<TMP>"
-    },
-    {
-      "pattern": "\\bhoo│code_",
-      "replace": "<WORDMARK>"
-    },
-    {
-      "pattern": "\\bhoocode_",
-      "replace": "<WORDMARK>"
-    },
-    {
-      "pattern": "\\bHooCode\\b",
-      "replace": "<APP>"
-    },
-    {
-      "pattern": "\\bhoocode\\b",
-      "replace": "<app>"
-    },
-    {
-      "pattern": "\\bv\\d+\\.\\d+\\.\\d+\\b",
-      "replace": "v<VERSION>"
-    },
-    {
-      "pattern": "\\b\\d+(\\.\\d+)?(ms|s)\\b",
-      "replace": "<DUR>"
-    },
-    {
-      "pattern": "^Pane is dead \\(status (\\d+), .*\\)$",
-      "replace": "<exited status=\\1>"
-    },
-    {
-      "pattern": "^ [○●] (Working\\.\\.\\.)$",
-      "replace": " <working-blink> \\1",
-      "style": "<masked: blinking indicator>"
-    }
+    {"pattern": "^┌─+ [a-z]+-[a-z]+ ──┐$", "replace": "┌<editor-top-border: session-name badge, color derived from random session id>┐", "style": "<masked>"},
+    {"pattern": "{WORK}", "replace": "<WORK>"},
+    {"pattern": "{HOME}", "replace": "<HOME>"},
+    {"pattern": "{TMP}", "replace": "<TMP>"},
+    {"pattern": "/tmp/parity-[A-Za-z0-9_]+", "replace": "<TMP>"},
+    {"pattern": "\\bhoo│code_", "replace": "<WORDMARK>"},
+    {"pattern": "\\bhoocode_", "replace": "<WORDMARK>"},
+    {"pattern": "\\bHooCode\\b", "replace": "<APP>"},
+    {"pattern": "\\bhoocode\\b", "replace": "<app>"},
+    {"pattern": "\\bv\\d+\\.\\d+\\.\\d+\\b", "replace": "v<VERSION>"},
+    {"pattern": "\\b\\d+(\\.\\d+)?(ms|s)\\b", "replace": "<DUR>"},
+    {"pattern": "^Pane is dead \\(status (\\d+), .*\\)$", "replace": "<exited status=\\1>"},
+    {"pattern": "^ [○●] (Working\\.\\.\\.)$", "replace": " <working-blink> \\1", "style": "<masked: blinking indicator>"},
+    {"pattern": "builtin-skills/[0-9a-f]{12}", "replace": "builtin-skills/<hash>", "why": "The cache dir name is sha256 of the embedded skill files (builtin-skills.ts / builtin_skills.rs). Those files differ from hoocode-ts only by the renamed tool names (allowed-tools frontmatter), so the hash differs by design; mask it so the <location> line compares."},
+    {"pattern": "\"(name|toolName)\":( ?)\"read\"", "replace": "\"\\1\":\\2\"Read\""},
+    {"pattern": "`read`", "replace": "`Read`"},
+    {"pattern": "for tool (\\\\?)\"read(\\\\?)\"", "replace": "for tool \\1\"Read\\2\""},
+    {"pattern": "\"(name|toolName)\":( ?)\"bash\"", "replace": "\"\\1\":\\2\"Shell\""},
+    {"pattern": "`bash`", "replace": "`Shell`"},
+    {"pattern": "for tool (\\\\?)\"bash(\\\\?)\"", "replace": "for tool \\1\"Shell\\2\""},
+    {"pattern": "\"(name|toolName)\":( ?)\"edit\"", "replace": "\"\\1\":\\2\"Edit\""},
+    {"pattern": "`edit`", "replace": "`Edit`"},
+    {"pattern": "for tool (\\\\?)\"edit(\\\\?)\"", "replace": "for tool \\1\"Edit\\2\""},
+    {"pattern": "\"(name|toolName)\":( ?)\"write\"", "replace": "\"\\1\":\\2\"Write\""},
+    {"pattern": "`write`", "replace": "`Write`"},
+    {"pattern": "for tool (\\\\?)\"write(\\\\?)\"", "replace": "for tool \\1\"Write\\2\""},
+    {"pattern": "\"(name|toolName)\":( ?)\"SearchCodebase\"", "replace": "\"\\1\":\\2\"CodeSearch\""},
+    {"pattern": "`SearchCodebase`", "replace": "`CodeSearch`"},
+    {"pattern": "for tool (\\\\?)\"SearchCodebase(\\\\?)\"", "replace": "for tool \\1\"CodeSearch\\2\""},
+    {"pattern": "\"(name|toolName)\":( ?)\"SearchHooCode\"", "replace": "\"\\1\":\\2\"DocSearch\""},
+    {"pattern": "`SearchHooCode`", "replace": "`DocSearch`"},
+    {"pattern": "for tool (\\\\?)\"SearchHooCode(\\\\?)\"", "replace": "for tool \\1\"DocSearch\\2\""},
+    {"pattern": "\"(name|toolName)\":( ?)\"ask_options\"", "replace": "\"\\1\":\\2\"AskUserQuestion\""},
+    {"pattern": "`ask_options`", "replace": "`AskUserQuestion`"},
+    {"pattern": "for tool (\\\\?)\"ask_options(\\\\?)\"", "replace": "for tool \\1\"AskUserQuestion\\2\""},
+    {"pattern": "\"(name|toolName)\":( ?)\"webfetch\"", "replace": "\"\\1\":\\2\"WebFetch\""},
+    {"pattern": "`webfetch`", "replace": "`WebFetch`"},
+    {"pattern": "for tool (\\\\?)\"webfetch(\\\\?)\"", "replace": "for tool \\1\"WebFetch\\2\""},
+    {"pattern": "\"(name|toolName)\":( ?)\"websearch\"", "replace": "\"\\1\":\\2\"WebSearch\""},
+    {"pattern": "`websearch`", "replace": "`WebSearch`"},
+    {"pattern": "for tool (\\\\?)\"websearch(\\\\?)\"", "replace": "for tool \\1\"WebSearch\\2\""},
+    {"pattern": "\"(name|toolName)\":( ?)\"Task\"", "replace": "\"\\1\":\\2\"Agent\""},
+    {"pattern": "`Task`", "replace": "`Agent`"},
+    {"pattern": "for tool (\\\\?)\"Task(\\\\?)\"", "replace": "for tool \\1\"Agent\\2\""},
+    {"pattern": "\"(name|toolName)\":( ?)\"TaskOutput\"", "replace": "\"\\1\":\\2\"AgentOutput\""},
+    {"pattern": "`TaskOutput`", "replace": "`AgentOutput`"},
+    {"pattern": "for tool (\\\\?)\"TaskOutput(\\\\?)\"", "replace": "for tool \\1\"AgentOutput\\2\""},
+    {"pattern": "\\bSearchCodebase\\b", "replace": "CodeSearch"},
+    {"pattern": "\\bSearchHooCode\\b", "replace": "DocSearch"},
+    {"pattern": "\\bask_options\\b", "replace": "AskUserQuestion"},
+    {"pattern": "\\bwebfetch\\b", "replace": "WebFetch"},
+    {"pattern": "\\bwebsearch\\b", "replace": "WebSearch"},
+    {"pattern": "\\bTaskOutput\\b", "replace": "AgentOutput"},
+    {"pattern": "\\bTask( tool\\b)", "replace": "Agent\\1"},
+    {"pattern": "^(\\s*(?:●\\s+)?)read( )", "replace": "\\1Read\\2"},
+    {"pattern": "^(\\s*(?:●\\s+)?)edit( )", "replace": "\\1Edit\\2"},
+    {"pattern": "^(\\s*(?:●\\s+)?)write( )", "replace": "\\1Write\\2"},
+    {"pattern": "Allow: read ", "replace": "Allow: Read "},
+    {"pattern": "Allow: edit ", "replace": "Allow: Edit "},
+    {"pattern": "Allow: write ", "replace": "Allow: Write "},
+    {"pattern": "(^|\\\\n)- read: ", "replace": "\\1- Read: "},
+    {"pattern": "\\b(the|call|use) read (tool|with)\\b", "replace": "\\1 Read \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)read(, |</tools>)", "replace": "\\1Read\\2"},
+    {"pattern": "(^|\\\\n)- bash: ", "replace": "\\1- Shell: "},
+    {"pattern": "\\*\\*bash\\*\\*", "replace": "**Shell**"},
+    {"pattern": "\\b(the|call|use) bash (tool|with)\\b", "replace": "\\1 Shell \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)bash(, |</tools>)", "replace": "\\1Shell\\2"},
+    {"pattern": "(^|\\\\n)- edit: ", "replace": "\\1- Edit: "},
+    {"pattern": "\\b(the|call|use) edit (tool|with)\\b", "replace": "\\1 Edit \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)edit(, |</tools>)", "replace": "\\1Edit\\2"},
+    {"pattern": "(^|\\\\n)- write: ", "replace": "\\1- Write: "},
+    {"pattern": "\\b(the|call|use) write (tool|with)\\b", "replace": "\\1 Write \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)write(, |</tools>)", "replace": "\\1Write\\2"},
+    {"pattern": "(^|\\\\n)- SearchCodebase: ", "replace": "\\1- CodeSearch: "},
+    {"pattern": "\\*\\*SearchCodebase\\*\\*", "replace": "**CodeSearch**"},
+    {"pattern": "\\b(the|call|use) SearchCodebase (tool|with)\\b", "replace": "\\1 CodeSearch \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)SearchCodebase(, |</tools>)", "replace": "\\1CodeSearch\\2"},
+    {"pattern": "(^|\\\\n)- SearchHooCode: ", "replace": "\\1- DocSearch: "},
+    {"pattern": "\\*\\*SearchHooCode\\*\\*", "replace": "**DocSearch**"},
+    {"pattern": "\\b(the|call|use) SearchHooCode (tool|with)\\b", "replace": "\\1 DocSearch \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)SearchHooCode(, |</tools>)", "replace": "\\1DocSearch\\2"},
+    {"pattern": "(^|\\\\n)- ask_options: ", "replace": "\\1- AskUserQuestion: "},
+    {"pattern": "\\*\\*ask_options\\*\\*", "replace": "**AskUserQuestion**"},
+    {"pattern": "\\b(the|call|use) ask_options (tool|with)\\b", "replace": "\\1 AskUserQuestion \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)ask_options(, |</tools>)", "replace": "\\1AskUserQuestion\\2"},
+    {"pattern": "(^|\\\\n)- webfetch: ", "replace": "\\1- WebFetch: "},
+    {"pattern": "\\*\\*webfetch\\*\\*", "replace": "**WebFetch**"},
+    {"pattern": "\\b(the|call|use) webfetch (tool|with)\\b", "replace": "\\1 WebFetch \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)webfetch(, |</tools>)", "replace": "\\1WebFetch\\2"},
+    {"pattern": "(^|\\\\n)- websearch: ", "replace": "\\1- WebSearch: "},
+    {"pattern": "\\*\\*websearch\\*\\*", "replace": "**WebSearch**"},
+    {"pattern": "\\b(the|call|use) websearch (tool|with)\\b", "replace": "\\1 WebSearch \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)websearch(, |</tools>)", "replace": "\\1WebSearch\\2"},
+    {"pattern": "(^|\\\\n)- Task: ", "replace": "\\1- Agent: "},
+    {"pattern": "\\*\\*Task\\*\\*", "replace": "**Agent**"},
+    {"pattern": "\\b(the|call|use) Task (tool|with)\\b", "replace": "\\1 Agent \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)Task(, |</tools>)", "replace": "\\1Agent\\2"},
+    {"pattern": "(^|\\\\n)- TaskOutput: ", "replace": "\\1- AgentOutput: "},
+    {"pattern": "\\*\\*TaskOutput\\*\\*", "replace": "**AgentOutput**"},
+    {"pattern": "\\b(the|call|use) TaskOutput (tool|with)\\b", "replace": "\\1 AgentOutput \\2"},
+    {"pattern": "(<tools>(?:[A-Za-z]+, )*)TaskOutput(, |</tools>)", "replace": "\\1AgentOutput\\2"},
+    {"pattern": "Search with bash \\(rg/find/ls\\)", "replace": "Search with Shell (rg/find/ls)"},
+    {"pattern": "Prefer edit for changes; write for new files", "replace": "Prefer Edit for changes; Write for new files"},
+    {"pattern": "\\bfrom a Task notification\\b", "replace": "from an Agent notification"},
+    {"pattern": "\\bvia Task,", "replace": "via Agent,"},
+    {"pattern": "\\bearlier Task or AgentOutput\\b", "replace": "earlier Agent or AgentOutput"},
+    {"pattern": "^Note: --(print|mode json) does not ask for tool approval;.*$", "replace": ""}
   ]
 }

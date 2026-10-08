@@ -1011,7 +1011,7 @@ mod editor_component {
 
             editor.prompt_prefix = "!".into();
             editor.prompt_color = Box::new(|s: &str| format!("\x1b[32m{s}\x1b[0m"));
-            editor.set_text("bash");
+            editor.set_text("Shell");
             let lines = render(&mut editor, width);
 
             let contentLine = lines[1].clone();

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// `GATED_TOOLS`: prompted in interactive sessions.
-pub const GATED_TOOLS: [&str; 5] = ["bash", "write", "edit", "webfetch", "websearch"];
+pub const GATED_TOOLS: [&str; 5] = ["Shell", "Write", "Edit", "WebFetch", "WebSearch"];
 
 /// The three prompt choices, in order.
 pub const CHOICES: [&str; 3] = [
@@ -138,7 +138,7 @@ pub fn describe_tool(tool_name: &str, input: &Value) -> String {
             .to_string()
     };
     match tool_name {
-        "bash" => {
+        "Shell" => {
             // `command.replace(/\s+/g, " ").slice(0, 100)` (UTF-16 units).
             let command = input.get("command").and_then(Value::as_str).unwrap_or("");
             let mut collapsed = String::new();
@@ -157,12 +157,12 @@ pub fn describe_tool(tool_name: &str, input: &Value) -> String {
             let units: Vec<u16> = collapsed.encode_utf16().take(100).collect();
             format!("$ {}", String::from_utf16_lossy(&units))
         }
-        "edit" | "write" => format!(
+        "Edit" | "Write" => format!(
             "{tool_name} {}",
             mutation_path(input).unwrap_or_else(|| "(unknown)".into())
         ),
-        "webfetch" => format!("webfetch {}", field("url")),
-        "websearch" => format!("websearch \"{}\"", field("query")),
+        "WebFetch" => format!("WebFetch {}", field("url")),
+        "WebSearch" => format!("WebSearch \"{}\"", field("query")),
         _ => tool_name.to_string(),
     }
 }
@@ -200,7 +200,7 @@ pub fn evaluate(
             ));
         }
     }
-    if tool_name == "bash" {
+    if tool_name == "Shell" {
         let command = input.get("command").and_then(Value::as_str).unwrap_or("");
         for pattern in list("denied_bash_commands").unwrap_or_default() {
             if matches_bash_pattern(&pattern, command) {
@@ -230,7 +230,7 @@ pub fn evaluate(
     if !GATED_TOOLS.contains(&tool_name) {
         return Verdict::Allow;
     }
-    if tool_name == "write" || tool_name == "edit" {
+    if tool_name == "Write" || tool_name == "Edit" {
         if let Some(allowed) = list("allowed_write_paths") {
             let file_path = mutation_path(input).unwrap_or_default();
             if !matches_allowed_path(&file_path, &allowed, cwd) {

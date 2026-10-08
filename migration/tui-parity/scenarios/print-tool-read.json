@@ -8,7 +8,7 @@
   "files": {"notes.txt": "alpha\nbeta\ngamma\n"},
   "args": ["--offline", "--provider", "mock", "--model", "mock-model", "-p", "read notes.txt"],
   "llm": [
-    {"text": "Let me read it.", "tool_calls": [{"id": "call_read_1", "name": "read", "arguments": {"path": "notes.txt"}}]},
+    {"text": "Let me read it.", "tool_calls": [{"id": "call_read_1", "name": "Read", "arguments": {"path": "notes.txt"}}]},
     {"text": "The file has three lines: alpha, beta, gamma."}
   ],
   "steps": [

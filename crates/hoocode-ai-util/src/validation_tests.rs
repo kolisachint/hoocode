@@ -107,6 +107,8 @@ fn matches_hoocode_on_recorded_cases() {
         (SchemaOrigin::PlainJson, "plain"),
     ] {
         for case in fixture[key].as_array().unwrap() {
+            // The recording was made against hoocode-ts, whose tool is still named `read`;
+            // the validator only echoes the name it is given.
             let got = validate_tool_arguments("read", schema, &case["args"], origin);
             match (case.get("ok"), case.get("err")) {
                 (Some(ok), _) => assert_eq!(got.as_ref(), Ok(ok), "{key} {}", case["args"]),

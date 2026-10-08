@@ -991,7 +991,7 @@ mod wire_tests {
             }),
             Content::ToolCall(ToolCallContent {
                 id: "c1".into(),
-                name: "read".into(),
+                name: "Read".into(),
                 arguments: json!({"path": "a"}),
                 thought_signature: None,
             }),
@@ -1002,7 +1002,7 @@ mod wire_tests {
                 {"type": "text", "text": "hi"},
                 {"type": "image", "data": "AA==", "mimeType": "image/png"},
                 {"type": "thinking", "thinking": "t", "thinkingSignature": "s"},
-                {"type": "toolCall", "id": "c1", "name": "read", "arguments": {"path": "a"}}
+                {"type": "toolCall", "id": "c1", "name": "Read", "arguments": {"path": "a"}}
             ])
         );
     }
@@ -1011,7 +1011,7 @@ mod wire_tests {
     fn messages_are_tagged_by_role_in_camel_case() {
         let m = Message::ToolResult(ToolResultMessage {
             tool_call_id: "c1".into(),
-            tool_name: "read".into(),
+            tool_name: "Read".into(),
             content: vec![Content::text("x")],
             details: None,
             is_error: false,
@@ -1019,7 +1019,7 @@ mod wire_tests {
         });
         assert_eq!(
             serde_json::to_value(&m).unwrap(),
-            json!({"role": "toolResult", "toolCallId": "c1", "toolName": "read",
+            json!({"role": "toolResult", "toolCallId": "c1", "toolName": "Read",
                    "content": [{"type": "text", "text": "x"}], "isError": false, "timestamp": 5})
         );
         let user: Message =

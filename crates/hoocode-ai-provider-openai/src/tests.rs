@@ -148,7 +148,7 @@ fn ignores_null_stream_chunks() {
 fn coalesces_tool_call_deltas_by_stable_index_when_ids_change() {
     let call = |id: &str, name: Value, args: &str| json!({"index": 0, "id": id, "type": "function", "function": {"name": name, "arguments": args}});
     let server = serve_chunks(&[
-        json!({"id": "c", "choices": [{"delta": {"tool_calls": [call("functions.read:0", json!("read"), "")]}, "finish_reason": null}]}),
+        json!({"id": "c", "choices": [{"delta": {"tool_calls": [call("functions.read:0", json!("Read"), "")]}, "finish_reason": null}]}),
         json!({"id": "c", "choices": [{"delta": {"tool_calls": [call("chatcmpl-tool-a", Value::Null, "{\"path\":\"README")]}, "finish_reason": null}]}),
         json!({"id": "c", "choices": [{"delta": {"tool_calls": [call("chatcmpl-tool-b", Value::Null, ".md\"}")]}, "finish_reason": "tool_calls"}], "usage": usage(10, 5)}),
     ]);
@@ -158,7 +158,7 @@ fn coalesces_tool_call_deltas_by_stable_index_when_ids_change() {
         Context::new(
             String::new(),
             vec![user("Read README.md")],
-            vec![read_tool("read")],
+            vec![read_tool("Read")],
         ),
     );
     assert_eq!(message.stop_reason, StopReason::ToolUse);
@@ -167,7 +167,7 @@ fn coalesces_tool_call_deltas_by_stable_index_when_ids_change() {
     assert_eq!(message.content.len(), 1);
     let tc = tool_call(&message.content[0]);
     assert_eq!(tc.id, "functions.read:0");
-    assert_eq!(tc.name, "read");
+    assert_eq!(tc.name, "Read");
     assert_eq!(tc.arguments, json!({"path": "README.md"}));
     let serialized = serde_json::to_value(&message.content[0]).unwrap();
     assert!(serialized.get("streamIndex").is_none() && serialized.get("partialArgs").is_none());
@@ -193,10 +193,10 @@ fn accumulates_mixed_content_reasoning_and_parallel_tool_calls() {
             "content": "answer 1",
             "reasoning_content": "think 1",
             "tool_calls": [
-                tc(Some(0), Some("tc_read_initial"), Some("read"), "{\"path\":\"README"),
+                tc(Some(0), Some("tc_read_initial"), Some("Read"), "{\"path\":\"README"),
                 tc(Some(1), Some("tc_grep_initial"), Some("grep"), "{\"pattern\":\"TODO"),
                 tc(None, Some("tc_list_no_index"), Some("list"), "{\"path\":\"packages"),
-                tc(None, Some("tc_write_no_index"), Some("write"), "{\"path\":\"out"),
+                tc(None, Some("tc_write_no_index"), Some("Write"), "{\"path\":\"out"),
             ]}, "finish_reason": null}]}),
         json!({"id": "m", "choices": [{"delta": {
             "content": " answer 2",
@@ -215,7 +215,7 @@ fn accumulates_mixed_content_reasoning_and_parallel_tool_calls() {
             "usage": {"prompt_tokens": 10, "completion_tokens": 8, "prompt_tokens_details": {"cached_tokens": 0}, "completion_tokens_details": {"reasoning_tokens": 2}}}),
     ]);
     let model = at(completions("openai", "gpt-4o-mini"), &server);
-    let tools = ["read", "grep", "list", "write"].map(read_tool).to_vec();
+    let tools = ["Read", "grep", "list", "Write"].map(read_tool).to_vec();
     let (events, message) = run(
         model,
         Context::new(
@@ -258,7 +258,7 @@ fn accumulates_mixed_content_reasoning_and_parallel_tool_calls() {
         json!({"type": "thinking", "thinking": "think 1 think 2", "thinkingSignature": "reasoning_content"})
     );
     let expected = [
-        ("tc_read_initial", "read", json!({"path": "README.md"})),
+        ("tc_read_initial", "Read", json!({"path": "README.md"})),
         (
             "tc_grep_initial",
             "grep",
@@ -267,7 +267,7 @@ fn accumulates_mixed_content_reasoning_and_parallel_tool_calls() {
         ("tc_list_no_index", "list", json!({"path": "packages/ai"})),
         (
             "tc_write_no_index",
-            "write",
+            "Write",
             json!({"path": "out.txt", "content": "ok"}),
         ),
     ];

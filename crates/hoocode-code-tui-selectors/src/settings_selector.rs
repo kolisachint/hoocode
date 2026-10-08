@@ -626,8 +626,30 @@ fn platform_submenu(
     ListSubmenu::new(list).handle()
 }
 
-const CORE_TOOLS: &[&str] = &["read", "bash", "edit", "write"];
+const CORE_TOOLS: &[&str] = &["Read", "Shell", "Edit", "Write"];
 const GROUP_PREFIX: &str = "group:";
+
+/// The name hoocode-ts gives a tool, the key its Tools pane sorts by
+/// (`[...].sort()` over the TS names). hoocode renamed the tools, so the rows
+/// are ordered by these keys to keep the same order (Shell, Edit, Read, Write
+/// for the core four). Mirrors `TOOL_NAMES` in `migration/tui-parity/harness.py`;
+/// a tool without a TS name sorts by its own name.
+pub fn tool_row_sort_key(name: &str) -> &str {
+    match name {
+        "Shell" => "bash",
+        "Edit" => "edit",
+        "Read" => "read",
+        "Write" => "write",
+        "CodeSearch" => "SearchCodebase",
+        "DocSearch" => "SearchHooCode",
+        "AskUserQuestion" => "ask_options",
+        "WebFetch" => "webfetch",
+        "WebSearch" => "websearch",
+        "Agent" => "Task",
+        "AgentOutput" => "TaskOutput",
+        other => other,
+    }
+}
 
 /// `ToolsSubmenu`: group switches first, then one on/off row per tool. The
 /// last core tool cannot be turned off.
@@ -655,7 +677,14 @@ fn tools_submenu(
         )
         .to_item()
     });
-    let tool_items = tools.iter().map(|tool| {
+    // Rows in hoocode-ts's order (see `tool_row_sort_key`), whatever order the caller gave.
+    let mut tools: Vec<&ToolToggleInfo> = tools.iter().collect();
+    tools.sort_by(|a, b| {
+        tool_row_sort_key(&a.name)
+            .cmp(tool_row_sort_key(&b.name))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let tool_items = tools.into_iter().map(|tool| {
         let description = if CORE_TOOLS.contains(&tool.name.as_str()) {
             "Core tool. Disabling leaves the agent unable to perform this action in every session."
         } else {
@@ -1234,7 +1263,7 @@ impl SettingsSelectorComponent {
         leaves.push(Leaf::cycle(
             "webtools-timeout-secs",
             "Web tools timeout",
-            "Per-request timeout (secs) for webfetch/websearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.",
+            "Per-request timeout (secs) for WebFetch/WebSearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.",
             config.webtools_timeout_secs.to_string(),
             preset_values(&[5, 10, 15, 30, 60, 120], config.webtools_timeout_secs),
         ));

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! rpc-prompt-response-semantics.test.ts: the `prompt` command answers once,
 //! after preflight, whether the prompt was sent, queued or rejected.
 

@@ -216,7 +216,7 @@ pub fn create_background_placeholder_text(tool_call: &AgentToolCall) -> String {
         );
     }
     format!(
-        "Delegated to {} in the background{what}. I'll be notified when it finishes; use AgentOut to check progress or read the result.",
+        "Delegated to {} in the background{what}. I'll be notified when it finishes; use AgentOutput to check progress or read the result.",
         info.label
     )
 }

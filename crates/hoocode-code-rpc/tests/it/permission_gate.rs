@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! rpc mode fails closed (reliability 1.1): a gated tool call that needs
 //! approval is denied with a message the model sees, and the tool never runs.
 //! The session uses the real `HooPermissionGate` in its fail-closed headless
@@ -55,8 +56,8 @@ fn recording_bash(ran: Arc<Mutex<Vec<String>>>) -> ToolDefinition {
     ToolDefinition {
         ordered_start: false,
         background_when: None,
-        name: "bash".into(),
-        label: "bash".into(),
+        name: "Shell".into(),
+        label: "Shell".into(),
         description: "bash tool".into(),
         prompt_snippet: None,
         prompt_guidelines: vec![],
@@ -178,7 +179,7 @@ async fn setup(faux_steps: Vec<FauxResponseStep>, gate: Arc<dyn PermissionGate>)
 fn bash_call(command: &str) -> FauxResponseStep {
     FauxResponseStep::Message(faux_assistant_message(
         vec![faux_tool_call(
-            "bash",
+            "Shell",
             json!({"command": command}),
             Some("call-1".into()),
         )],
@@ -231,7 +232,7 @@ async fn an_auto_allowed_tool_still_runs_in_rpc_mode() {
     std::fs::create_dir_all(&project).unwrap();
     std::fs::write(
         project.join("hoo-config.json"),
-        r#"{"active_mode":"build","modes":{"build":{"auto_allow":["bash"]}}}"#,
+        r#"{"active_mode":"build","modes":{"build":{"auto_allow":["Shell"]}}}"#,
     )
     .unwrap();
     let s = setup(

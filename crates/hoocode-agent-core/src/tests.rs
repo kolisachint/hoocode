@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of hoocode `packages/agent/test/agent.test.ts` and
 //! `prepare-next-turn-refresh.test.ts`, plus transcript/tool/abort checks.
 

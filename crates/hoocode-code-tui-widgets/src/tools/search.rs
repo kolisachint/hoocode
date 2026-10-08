@@ -1,4 +1,4 @@
-//! `core/tools/search.ts` renderers (`SearchCodebase`).
+//! `core/tools/search.ts` renderers (`CodeSearch`).
 
 use std::rc::Rc;
 
@@ -35,7 +35,7 @@ fn format_search_call(args: &Value) -> String {
     };
     let mut text = format!(
         "{}{}",
-        t.fg("toolTitle", &t.bold("SearchCodebase ")),
+        t.fg("toolTitle", &t.bold("CodeSearch ")),
         t.fg("accent", &query_display)
     );
     let mut extras = Vec::new();

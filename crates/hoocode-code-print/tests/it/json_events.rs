@@ -24,7 +24,7 @@ fn text(t: &str) -> Content {
 fn read_call() -> Content {
     Content::ToolCall(ToolCallContent {
         id: "call_read_1".into(),
-        name: "read".into(),
+        name: "Read".into(),
         arguments: json!({"path": "notes.txt", "limit": 2}),
         thought_signature: None,
     })
@@ -49,9 +49,9 @@ fn assistant(content: Vec<Content>, stop_reason: StopReason) -> AssistantMessage
     }
 }
 
-const ASSISTANT: &str = r#"{"role":"assistant","content":[{"type":"text","text":"Let me read it."},{"type":"toolCall","id":"call_read_1","name":"read","arguments":{"path":"notes.txt","limit":2}}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":1,"responseId":"chatcmpl-mock"}"#;
+const ASSISTANT: &str = r#"{"role":"assistant","content":[{"type":"text","text":"Let me read it."},{"type":"toolCall","id":"call_read_1","name":"Read","arguments":{"path":"notes.txt","limit":2}}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":1,"responseId":"chatcmpl-mock"}"#;
 
-const TOOL_RESULT: &str = r#"{"role":"toolResult","toolCallId":"call_read_1","toolName":"read","content":[{"type":"text","text":"alpha"}],"isError":false,"timestamp":2}"#;
+const TOOL_RESULT: &str = r#"{"role":"toolResult","toolCallId":"call_read_1","toolName":"Read","content":[{"type":"text","text":"alpha"}],"isError":false,"timestamp":2}"#;
 
 fn keys(value: &serde_json::Value) -> Vec<&str> {
     value
@@ -146,7 +146,7 @@ fn message_update_carries_content_index_and_end_payloads() {
             partial: partial.clone(),
             index: 1
         }),
-        r#"{"type":"toolcall_end","contentIndex":1,"toolCall":{"type":"toolCall","id":"call_read_1","name":"read","arguments":{"path":"notes.txt","limit":2}}}"#
+        r#"{"type":"toolcall_end","contentIndex":1,"toolCall":{"type":"toolCall","id":"call_read_1","name":"Read","arguments":{"path":"notes.txt","limit":2}}}"#
     );
 }
 
@@ -198,20 +198,20 @@ fn tool_execution_events_match_agent_loop() {
     assert_eq!(
         line(&AgentEvent::ToolExecutionStart {
             tool_call_id: "call_read_1".into(),
-            tool_name: "read".into(),
+            tool_name: "Read".into(),
             args: json!({"path": "notes.txt", "limit": 2}),
         }),
-        "{\"type\":\"tool_execution_start\",\"toolCallId\":\"call_read_1\",\"toolName\":\"read\",\"args\":{\"path\":\"notes.txt\",\"limit\":2}}\n"
+        "{\"type\":\"tool_execution_start\",\"toolCallId\":\"call_read_1\",\"toolName\":\"Read\",\"args\":{\"path\":\"notes.txt\",\"limit\":2}}\n"
     );
     // `details: undefined` is left out; `terminate` only when set.
     assert_eq!(
         line(&AgentEvent::ToolExecutionEnd {
             tool_call_id: "call_read_1".into(),
-            tool_name: "read".into(),
+            tool_name: "Read".into(),
             result: result.clone(),
             is_error: false,
         }),
-        "{\"type\":\"tool_execution_end\",\"toolCallId\":\"call_read_1\",\"toolName\":\"read\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"alpha\\nbeta\"}]},\"isError\":false}\n"
+        "{\"type\":\"tool_execution_end\",\"toolCallId\":\"call_read_1\",\"toolName\":\"Read\",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"alpha\\nbeta\"}]},\"isError\":false}\n"
     );
     let partial = AgentToolResult {
         details: json!({"lines": 2}),
@@ -221,13 +221,13 @@ fn tool_execution_events_match_agent_loop() {
     assert_eq!(
         AgentEvent::ToolExecutionUpdate {
             tool_call_id: "c".into(),
-            tool_name: "bash".into(),
+            tool_name: "Shell".into(),
             args: json!({}),
             partial_result: partial,
         }
         .to_json()
         .to_string(),
-        r#"{"type":"tool_execution_update","toolCallId":"c","toolName":"bash","args":{},"partialResult":{"content":[{"type":"text","text":"alpha\nbeta"}],"details":{"lines":2},"terminate":true}}"#
+        r#"{"type":"tool_execution_update","toolCallId":"c","toolName":"Shell","args":{},"partialResult":{"content":[{"type":"text","text":"alpha\nbeta"}],"details":{"lines":2},"terminate":true}}"#
     );
 }
 
@@ -239,7 +239,7 @@ fn turn_end_and_agent_end_carry_role_tagged_messages() {
     );
     let tool_result = ToolResultMessage {
         tool_call_id: "call_read_1".into(),
-        tool_name: "read".into(),
+        tool_name: "Read".into(),
         content: vec![text("alpha")],
         details: None,
         is_error: false,

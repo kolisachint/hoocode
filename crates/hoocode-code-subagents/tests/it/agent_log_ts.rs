@@ -51,6 +51,7 @@ fn with_tui_owned<T>(owned: bool, run: impl FnOnce() -> T) -> T {
 
 /// A pool that spawns a trivial child, so a dispatch is real but cheap.
 fn dispatch_output() -> String {
+    #[allow(clippy::disallowed_methods)] // test: a runtime of its own
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let _enter = runtime.enter();
     let cwd = tempfile::tempdir().unwrap();

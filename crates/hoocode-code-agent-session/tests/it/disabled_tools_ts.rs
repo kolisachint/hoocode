@@ -23,19 +23,33 @@ fn all_tools(h: &Harness) -> Vec<String> {
 
 #[test]
 fn removes_a_disabled_tool_from_the_registry() {
-    let h = session(None, &["bash"]);
+    let h = session(None, &["Shell"]);
     let names = all_tools(&h);
-    assert!(names.contains(&"read".to_string()));
-    assert!(!names.contains(&"bash".to_string()));
+    assert!(names.contains(&"Read".to_string()));
+    assert!(!names.contains(&"Shell".to_string()));
     assert!(!h
         .session
         .get_active_tool_names()
-        .contains(&"bash".to_string()));
+        .contains(&"Shell".to_string()));
 }
 
 #[test]
 fn keeps_a_tool_disabled_even_when_it_is_in_the_allowlist() {
-    let h = session(Some(&["read", "bash"]), &["bash"]);
-    assert_eq!(all_tools(&h), ["read"]);
-    assert_eq!(h.session.get_active_tool_names(), ["read"]);
+    let h = session(Some(&["Read", "Shell"]), &["Shell"]);
+    assert_eq!(all_tools(&h), ["Read"]);
+    assert_eq!(h.session.get_active_tool_names(), ["Read"]);
+}
+
+/// `noTools: "builtin"` (`--no-builtin-tools`, regression #3592): no built-in
+/// starts active, but the extension-registered tools do.
+#[test]
+fn no_builtin_tools_leaves_the_extension_tools_active() {
+    let h = Harness::new(HarnessOptions {
+        real_builtin_tools: true,
+        initial_active_tool_names: Some(vec![]),
+        custom_tools: vec![crate::common::tool("AskUserQuestion", |_| unimplemented!())],
+        ..Default::default()
+    });
+    assert_eq!(h.session.get_active_tool_names(), ["AskUserQuestion"]);
+    assert!(all_tools(&h).contains(&"Read".to_string()));
 }

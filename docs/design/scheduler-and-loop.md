@@ -1,6 +1,26 @@
 # Scheduler and `/loop`
 
-Status: **agreed 2026-10-07**, design only. Replaces ledger 12.5.
+Status: **agreed 2026-10-07**. Replaces ledger 12.5.
+
+Built so far (2026-10-08, crate `hoocode-code-scheduler`):
+
+- Done: the cron matcher (ported from `core/scheduler.ts`), the store at
+  `<cwd>/.agents/scheduled_tasks.json` (same shape, legacy `.hoocode/` read until the new
+  file exists, write-temp-and-rename, lock file so a fire is claimed once), the three
+  tools with hoocode-ts's names, labels, descriptions and schemas, in the default bundle
+  after AskUserQuestion (13 tools in the print-basic request, as in TS), and firing in
+  the interactive loop: a 30-second tick, idle only, the due prompts sent as follow-ups.
+- Not done: item 3 (the `/loop` command, its `list`, `delete`, `stop`, `once` forms) and
+  item 4 (`/loop auto`).
+- Not done: the 10-minute late-fire rule in the table above. As in hoocode-ts, a task due
+  while the agent is busy fires only on an idle tick in that same minute; otherwise it is
+  skipped.
+- Differences from hoocode-ts: `CronCreate` returns a tool error when the store cannot be
+  written (TS ignores the write error); the store is re-read on every operation, so a
+  task another process created is not lost.
+- Firing happens only in the interactive loop. Print, rpc and subagent processes do not
+  tick. The tick uses the session's current cwd, the tools use the cwd the session
+  started with, so `/cd` leaves the two pointing at different stores.
 
 ## Goal
 
@@ -32,7 +52,7 @@ made in either hoocode is visible to the other.
    - re-prompts after each turn until the reply contains `LOOP_DONE` or 10 turns
      pass;
    - yields while you type;
-   - makes `ask_options` pick recommended answers, or stop the loop when there is
+   - makes `AskUserQuestion` pick recommended answers, or stop the loop when there is
      none (the hooks already exist in Rust).
 5. Scheduled prompts go through the normal input path, so modes and permissions
    apply.

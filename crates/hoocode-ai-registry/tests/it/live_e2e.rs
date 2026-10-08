@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Live provider tests ported from hoocode `packages/ai/test/abort.test.ts` and
 //! the basic cases of `stream.test.ts` (text, streaming, tool calling).
 //!

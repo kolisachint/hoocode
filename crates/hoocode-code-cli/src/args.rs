@@ -72,6 +72,8 @@ pub struct Args {
     pub team: Option<String>,
     pub fork: Option<String>,
     pub session_dir: Option<String>,
+    /// Append one JSON line of the UI's performance counters a second to this file.
+    pub perf_log: Option<String>,
     pub models: Option<Vec<String>>,
     pub tools: Option<Vec<String>>,
     pub disallowed_tools: Option<Vec<String>>,
@@ -261,6 +263,10 @@ pub fn parse_args(args: &[String]) -> Args {
             "--session-dir" if has_next => {
                 i += 1;
                 result.session_dir = Some(args[i].clone());
+            }
+            "--perf-log" if has_next => {
+                i += 1;
+                result.perf_log = Some(args[i].clone());
             }
             "--models" if has_next => {
                 i += 1;
@@ -692,8 +698,8 @@ mod tests {
     #[test]
     fn parses_a_comma_separated_denylist() {
         assert_eq!(
-            parse(&["--disallowed-tools", "bash, write"]).disallowed_tools,
-            strs(&["bash", "write"])
+            parse(&["--disallowed-tools", "Shell, Write"]).disallowed_tools,
+            strs(&["Shell", "Write"])
         );
     }
     #[test]
@@ -811,25 +817,25 @@ mod tests {
     #[test]
     fn parses_tools_flag() {
         assert_eq!(
-            parse(&["--tools", "read,bash"]).tools,
-            strs(&["read", "bash"])
+            parse(&["--tools", "Read,Shell"]).tools,
+            strs(&["Read", "Shell"])
         );
     }
     #[test]
     fn parses_t_shorthand() {
-        assert_eq!(parse(&["-t", "read,bash"]).tools, strs(&["read", "bash"]));
+        assert_eq!(parse(&["-t", "Read,Shell"]).tools, strs(&["Read", "Shell"]));
     }
     #[test]
     fn parses_no_tools_with_explicit_tools_flags() {
-        let r = parse(&["--no-tools", "--tools", "read,bash"]);
+        let r = parse(&["--no-tools", "--tools", "Read,Shell"]);
         assert_eq!(r.no_tools, Some(true));
-        assert_eq!(r.tools, strs(&["read", "bash"]));
+        assert_eq!(r.tools, strs(&["Read", "Shell"]));
     }
     #[test]
     fn parses_no_builtin_tools_with_explicit_tools_flags() {
-        let r = parse(&["--no-builtin-tools", "--tools", "read,bash"]);
+        let r = parse(&["--no-builtin-tools", "--tools", "Read,Shell"]);
         assert_eq!(r.no_builtin_tools, Some(true));
-        assert_eq!(r.tools, strs(&["read", "bash"]));
+        assert_eq!(r.tools, strs(&["Read", "Shell"]));
     }
 
     // messages and file args

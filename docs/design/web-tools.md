@@ -10,7 +10,7 @@ Let the agent read web pages and search the web.
 
 | Decision | Why |
 |---|---|
-| **No built-in `webfetch`/`websearch` for now** | `bash` + `curl` already fetches pages |
+| **No built-in `WebFetch`/`WebSearch` for now** | `Shell` + `curl` already fetches pages |
 | Clean fetch and search come from the **webtools MCP server** once [mcp.md](mcp.md) lands | `kolisachint/webtools` already ships an MCP server (`webtools mcp`) with `fetch` and `search`. No code here. |
 | Revisit **provider-native web search** (server-side search offered by Anthropic and OpenAI) later | Improves without our work |
 

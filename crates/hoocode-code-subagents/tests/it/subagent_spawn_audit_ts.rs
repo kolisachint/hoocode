@@ -1,7 +1,8 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! The subagents half of the pin's `test/suite/subagent-spawn-audit.test.ts`:
 //! lifeguard stall de-duplication, the JSONL reader's bounded buffer, atomic
 //! result writes, the cumulative token budget across the inherited-model
-//! retry, the process-group kill, and cancellation (pool and Task tool). The
+//! retry, the process-group kill, and cancellation (pool and Agent tool). The
 //! roster and task panel cases are in
 //! `hoocode-code-tui-app/tests/subagent_spawn_audit_ts.rs`.
 //!
@@ -30,10 +31,9 @@ use hoocode_code_task_store::{task_store, TaskAgentKind, TaskAgentState, TaskSou
 use hoocode_code_tool_api::ToolContext;
 use serde_json::{json, Value};
 
-const DIR: &str = hoocode_code_paths::CONFIG_DIR_NAME;
+use crate::SERIAL;
 
-/// One test at a time: the store, inbox and pool slot are process-wide.
-static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+const DIR: &str = hoocode_code_paths::CONFIG_DIR_NAME;
 
 fn setup() -> tempfile::TempDir {
     static ONCE: Once = Once::new();

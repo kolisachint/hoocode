@@ -51,7 +51,7 @@ fn details_match(message: &CustomMessage, expected: Value) {
 #[test]
 fn describes_a_task_call_by_subagent_type_and_description() {
     let info = describe_background_tool(&call(
-        "Task",
+        "Agent",
         json!({"subagent_type": "explore", "description": "find the bug", "prompt": "long prompt..."}),
     ));
     assert!(!info.is_mcp_tool);
@@ -63,7 +63,7 @@ fn describes_a_task_call_by_subagent_type_and_description() {
 #[test]
 fn falls_back_to_the_prompts_first_line() {
     let info = describe_background_tool(&call(
-        "Task",
+        "Agent",
         json!({"subagent_type": "explore", "prompt": "first line\nsecond line"}),
     ));
     assert_eq!(info.summary.as_deref(), Some("first line"));
@@ -84,17 +84,17 @@ fn describes_an_mcp_tool_by_its_de_prefixed_name_and_args() {
 #[test]
 fn subagent_placeholder_is_one_line_and_finish_passes_the_notification_through() {
     let args = json!({"subagent_type": "review", "description": "review the diff"});
-    let placeholder = create_background_placeholder_text(&call("Task", args.clone()));
+    let placeholder = create_background_placeholder_text(&call("Agent", args.clone()));
     let finish = create_background_task_message(&bg_result(
-        "Task",
+        "Agent",
         args.clone(),
         "review#1 finished ✓ — looks good",
         false,
     ));
-    let label = describe_background_tool(&call("Task", args)).label;
+    let label = describe_background_tool(&call("Agent", args)).label;
     assert!(placeholder.contains(&label));
     assert_eq!(placeholder.split('\n').count(), 1);
-    assert!(placeholder.contains("AgentOut"));
+    assert!(placeholder.contains("AgentOutput"));
     assert_eq!(texts(&finish), ["review#1 finished ✓ — looks good"]);
     assert_eq!(finish.custom_type, BACKGROUND_TASK_CUSTOM_TYPE);
     details_match(
@@ -121,7 +121,7 @@ fn mcp_placeholder_is_compact_and_finish_keeps_header_and_body() {
 #[test]
 fn marks_a_failed_subagent_finish_via_details() {
     let finish = create_background_task_message(&bg_result(
-        "Task",
+        "Agent",
         json!({"subagent_type": "explore"}),
         "explore#1 failed ✗ — boom",
         true,

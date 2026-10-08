@@ -169,6 +169,7 @@ struct RunSettings {
     transport: Option<Transport>,
     max_retry_delay_ms: Option<u64>,
     tool_execution: ToolExecutionMode,
+    max_parallel_tools: usize,
     on_payload: Option<hoocode_ai_types::OnPayload>,
     on_response: Option<hoocode_ai_types::OnResponse>,
 }
@@ -344,6 +345,7 @@ impl Agent {
                 transport: options.transport,
                 max_retry_delay_ms: options.max_retry_delay_ms,
                 tool_execution: options.tool_execution.unwrap_or_default(),
+                max_parallel_tools: options.max_parallel_tools.unwrap_or(8),
                 on_payload: options.on_payload,
                 on_response: options.on_response,
             }),
@@ -406,6 +408,11 @@ impl Agent {
 
     pub fn set_tool_execution(&self, mode: ToolExecutionMode) {
         self.settings.lock().unwrap().tool_execution = mode;
+    }
+
+    /// Most parallel tool calls per batch (`performance.maxParallelTools`).
+    pub fn set_max_parallel_tools(&self, max: usize) {
+        self.settings.lock().unwrap().max_parallel_tools = max.max(1);
     }
 
     pub fn set_thinking_budgets(&self, budgets: Option<ThinkingBudgets>) {
@@ -744,6 +751,7 @@ impl Agent {
         config.thinking_display = settings.thinking_display;
         config.max_retry_delay_ms = settings.max_retry_delay_ms;
         config.tool_execution = settings.tool_execution;
+        config.max_parallel_tools = settings.max_parallel_tools;
         config.on_payload = settings.on_payload;
         config.on_response = settings.on_response;
         config.api_key = settings.api_key;
@@ -840,6 +848,8 @@ pub struct AgentOptions {
     pub transport: Option<Transport>,
     pub max_retry_delay_ms: Option<u64>,
     pub tool_execution: Option<ToolExecutionMode>,
+    /// Most parallel tool calls per batch; default 8.
+    pub max_parallel_tools: Option<usize>,
     /// `onPayload`, passed to every provider request.
     pub on_payload: Option<hoocode_ai_types::OnPayload>,
     /// `onResponse`, passed to every provider request.

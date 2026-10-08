@@ -1,4 +1,4 @@
-//! `SearchCodebase`: hoocode `core/tools/search.ts` and the runtime half of
+//! `CodeSearch`: hoocode `core/tools/search.ts` and the runtime half of
 //! `core/search/` (v0.5.89). The eval harness (`search/eval*.ts`) and the
 //! embsearch daemon client belong to ledger 12.4.
 

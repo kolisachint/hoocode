@@ -44,7 +44,7 @@ mod tests {
     #[test]
     fn help_lists_pinned_flags_with_hoocode_branding() {
         let help = render_help(false);
-        assert!(help.starts_with("hoocode - AI coding assistant with read, bash, edit, write tools\n\nUsage:\n  hoocode [options] [@files...] [messages...]\n"));
+        assert!(help.starts_with("hoocode - AI coding assistant with Read, Shell, Edit, Write tools\n\nUsage:\n  hoocode [options] [@files...] [messages...]\n"));
         for flag in [
             "--provider <name>",
             "--no-tools, -nt",
@@ -59,7 +59,9 @@ mod tests {
         assert!(help.contains(
             "HOOCODE_CODING_AGENT_DIR          - Config directory (default: ~/.hoocode/agent)"
         ));
-        assert!(help.ends_with("  search - Ranked code search, keyword + semantic (read-only)\n"));
+        assert!(
+            help.ends_with("  CodeSearch - Ranked code search, keyword + semantic (read-only)\n")
+        );
     }
 
     #[test]

@@ -63,7 +63,7 @@ fn discovers_the_project_skill() {
 #[test]
 fn injects_the_skill_card_for_a_read_capable_subagent() {
     let d = setup();
-    let prompt = subagent_prompt(&d, &["read", "SearchCodebase"]);
+    let prompt = subagent_prompt(&d, &["Read", "CodeSearch"]);
     assert!(prompt.contains("<available_skills>"));
     assert!(prompt.contains("<name>greeting</name>"));
     assert!(prompt.contains("Say hello in a friendly, on-brand way"));
@@ -73,7 +73,7 @@ fn injects_the_skill_card_for_a_read_capable_subagent() {
 #[test]
 fn omits_skills_without_the_read_tool() {
     let d = setup();
-    let prompt = subagent_prompt(&d, &["bash"]);
+    let prompt = subagent_prompt(&d, &["Shell"]);
     assert!(!prompt.contains("<available_skills>"));
     assert!(!prompt.contains("greeting"));
 }

@@ -433,8 +433,8 @@ pub fn create_read_tool_definition(
     ToolDefinition {
         ordered_start: false,
         background_when: None,
-        name: "read".into(),
-        label: "read".into(),
+        name: "Read".into(),
+        label: "Read".into(),
         description,
         prompt_snippet: Some("Read file contents".into()),
         // No promptGuidelines: "use read instead of cat/sed" is already covered

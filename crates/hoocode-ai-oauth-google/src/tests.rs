@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! The OAuth half of hoocode `google-gemini-cli.test.ts` (both providers,
 //! `getApiKey`), plus the flows with `fetch` stubbed through [`Fetch`].
 

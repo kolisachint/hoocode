@@ -105,10 +105,29 @@ fn template_copies_match_the_pin() {
         "prompts/grill-plan.md",
         "prompts/grill-bridge.md",
     ] {
+        // The one declared divergence: the ask tool is AskUserQuestion here and
+        // ask_options in the pin. Map ours back to the pinned wording first.
+        let mut ours = std::fs::read_to_string(templates().join(rel)).unwrap();
+        for (file, ours_text, pinned) in DECLARED_MODE_DIVERGENCES {
+            if *file == rel {
+                ours = ours.replace(ours_text, pinned);
+            }
+        }
         assert_eq!(
-            std::fs::read_to_string(templates().join(rel)).unwrap(),
+            ours,
             std::fs::read_to_string(pin.join(rel)).unwrap(),
             "{rel} differs from the pin"
         );
     }
 }
+
+/// `(file, our text, pinned text)`: the tool renamed from `ask_options` to
+/// `AskUserQuestion`. Nothing else in these templates may differ from the pin.
+const DECLARED_MODE_DIVERGENCES: &[(&str, &str, &str)] = &[
+    ("modes/plan/system.md", "`AskUserQuestion`", "`ask_options`"),
+    (
+        "prompts/grill-me.md",
+        "AskUserQuestion tool",
+        "ask_options tool",
+    ),
+];

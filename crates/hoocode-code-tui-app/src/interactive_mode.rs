@@ -135,6 +135,7 @@ use crate::login_controller::{
     PostLoginModel, API_KEY_LABEL, LOGIN_CANCELLED, NOTHING_TO_LOG_OUT, SUBSCRIPTION_LABEL,
 };
 use crate::notification_panel::{NotificationKind, NotificationPanel};
+use crate::perf::Perf;
 use crate::record_row::RecordRows;
 use crate::resource_display::{format_display_path, show_loaded_resources, ResourceListing};
 use crate::scroll_view::install_scroll_view;
@@ -171,6 +172,8 @@ pub struct InteractiveOptions {
     /// Shown as a notice (the only place the remedy is named).
     pub model_fallback_message: Option<String>,
     pub terminal: Option<Box<dyn Terminal>>,
+    /// `--perf-log`: one JSON line of the UI's counters a second is appended here.
+    pub perf_log: Option<std::path::PathBuf>,
 }
 
 /// The footer's view of the session.
@@ -855,6 +858,8 @@ struct Mode {
     verbose: bool,
     size: Rc<Cell<(u16, u16)>>,
     dirty: Rc<Cell<bool>>,
+    /// Phase 0 counters behind `/perf` and `--perf-log`.
+    perf: Perf,
     header: Rc<RefCell<ExpandableText>>,
     chat: Rc<RefCell<Container>>,
     status: Rc<RefCell<Container>>,
@@ -865,6 +870,8 @@ struct Mode {
     /// and whether an update is waiting for the window to pass.
     stream_render_at: Option<Instant>,
     stream_render_pending: bool,
+    /// When the next scheduled-task tick is due (`TaskScheduler`'s interval).
+    scheduler_tick_at: Instant,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
     tool_output_view: ToolOutputView,
@@ -1013,6 +1020,7 @@ impl Mode {
             .terminal
             .unwrap_or_else(|| Box::new(hoocode_tui_terminal::ProcessTerminal::new()));
         let size = Rc::new(Cell::new((terminal.columns(), terminal.rows())));
+        let perf = Perf::new(options.perf_log.as_deref());
         let mut tui = Tui::new(terminal, Some(show_hardware_cursor));
         tui.set_clear_on_shrink(clear_on_shrink);
 
@@ -1065,12 +1073,8 @@ impl Mode {
         });
 
         let footer_data = FooterDataProvider::new(session.cwd());
-        footer_data.set_subagent_enabled(
-            session
-                .get_active_tool_names()
-                .iter()
-                .any(|t| t == "Agent" || t == "Task"),
-        );
+        footer_data
+            .set_subagent_enabled(session.get_active_tool_names().iter().any(|t| t == "Agent"));
         let is_oauth: Rc<dyn Fn(&str) -> bool> = Rc::from(options.is_oauth);
         let mut footer = FooterComponent::new(
             Box::new(SessionFooter {
@@ -1244,6 +1248,7 @@ impl Mode {
             verbose: options.verbose,
             size,
             dirty,
+            perf,
             header,
             chat,
             status,
@@ -1252,6 +1257,7 @@ impl Mode {
             streaming_message: None,
             stream_render_at: None,
             stream_render_pending: false,
+            scheduler_tick_at: Instant::now() + hoocode_code_scheduler::TICK_INTERVAL,
             turn_cost_anchor: None,
             turn_stop_reason: None,
             tool_output_view,
@@ -2303,6 +2309,30 @@ impl Mode {
         }
     }
 
+    /// `TaskScheduler.tick`: every [`hoocode_code_scheduler::TICK_INTERVAL`],
+    /// while the agent is idle, submit the prompts of the tasks due this minute
+    /// as follow-up messages (`fire` in `extensions/core/loop.ts`).
+    fn tick_scheduler(&mut self) {
+        let now = Instant::now();
+        if now < self.scheduler_tick_at {
+            return;
+        }
+        self.scheduler_tick_at = now + hoocode_code_scheduler::TICK_INTERVAL;
+        if self.session.is_streaming() || self.session.is_compacting() {
+            return;
+        }
+        let due = hoocode_code_scheduler::claim_due_now(self.session.cwd());
+        // The first prompt starts a turn; the rest queue behind it, as the
+        // follow-up they would be in TS once the first has begun.
+        for (index, prompt) in due.into_iter().enumerate() {
+            if index == 0 {
+                self.send_user_follow_up(prompt);
+            } else {
+                self.queue_prompt(prompt, StreamingBehavior::FollowUp);
+            }
+        }
+    }
+
     /// `sendUserMessage(text, { deliverAs: "followUp" })`: queued behind a
     /// running turn, else sent now.
     fn send_user_follow_up(&mut self, text: String) {
@@ -2913,7 +2943,7 @@ impl Mode {
             let all_tools = self.session.get_all_tools();
             // Union so tools disabled at startup (absent from the live
             // registry) still appear and can be re-enabled for next session.
-            let mut names: Vec<String> = all_tools
+            let names: Vec<String> = all_tools
                 .iter()
                 .filter(|t| t.source == ToolSource::Builtin)
                 .map(|t| t.name.clone())
@@ -2921,7 +2951,7 @@ impl Mode {
                 .collect::<HashSet<_>>()
                 .into_iter()
                 .collect();
-            names.sort();
+            // Order is the pane's: it sorts its rows by hoocode-ts's tool names.
             let tokens: HashMap<&str, usize> = all_tools
                 .iter()
                 .map(|t| {
@@ -2947,7 +2977,7 @@ impl Mode {
                     ToolGroupInfo {
                         id: "web".into(),
                         label: "Web tools".into(),
-                        description: "webfetch + websearch (network access).".into(),
+                        description: "WebFetch + WebSearch (network access).".into(),
                         enabled: settings.enable_web_tools(),
                     },
                     ToolGroupInfo {
@@ -3078,7 +3108,7 @@ impl Mode {
                     self.session
                         .get_active_tool_names()
                         .iter()
-                        .any(|t| t == "Agent" || t == "Task"),
+                        .any(|t| t == "Agent"),
                 );
             }
             SettingsChange::ToolGroup { id, enabled } => {
@@ -3550,6 +3580,7 @@ impl Mode {
             BuiltinCommand::Hotkeys => self.handle_hotkeys_command(),
             BuiltinCommand::Changelog => self.handle_changelog_command(),
             BuiltinCommand::Debug => self.handle_debug_command(),
+            BuiltinCommand::Perf => self.handle_perf_command(),
             BuiltinCommand::Color => {
                 // An argument sets the slot outright; bare `/color` opens the
                 // swatches.
@@ -3781,6 +3812,14 @@ impl Mode {
             ))));
         }
         self.add_to_chat(as_component(&handle(DynamicBorder::new(None))));
+    }
+
+    /// `/perf`: the Phase 0 counters (threads, RSS, frame and keystroke timing,
+    /// stalls), as a notice in the transcript. See `perf.rs`.
+    fn handle_perf_command(&mut self) {
+        let text = crate::perf::format_report(&self.perf.snapshot());
+        self.add_to_chat(as_component(&handle(Spacer::new(1))));
+        self.add_to_chat(as_component(&handle(Text::new(text, 1, 0))));
     }
 
     /// `handleDebug`: every rendered line with its width, and the messages
@@ -5023,7 +5062,7 @@ impl Mode {
             self.session
                 .get_active_tool_names()
                 .iter()
-                .any(|t| t == "Agent" || t == "Task"),
+                .any(|t| t == "Agent"),
         );
         // `ctx.ui.setMode` from the mode system's `session_start`.
         if let Some(mode) = self.session.extensions().active_mode() {
@@ -5883,6 +5922,8 @@ impl Mode {
             Option<String>,
         ),
     ) -> Result<(), String> {
+        self.tui
+            .set_frame_observer(Some(self.perf.frame_observer()));
         let mut input = self.tui.start();
         // From here the TUI owns the terminal: the agent's operational log
         // lines (dispatch, warm fallback, lifeguard) must not write to it.
@@ -5942,6 +5983,9 @@ impl Mode {
         if let Some(message) = fallback {
             self.show_error(&message);
         }
+        if let Some(message) = self.perf.take_startup_error() {
+            self.show_error(&message);
+        }
         if let Some(model_error) = self.session.model_registry().error() {
             self.show_error(&format!("models.json error: {model_error}"));
         }
@@ -5964,12 +6008,17 @@ impl Mode {
         self.tui.request_render(false);
         self.dirty.set(false);
         loop {
-            match input.recv_timeout(self.next_wakeup()) {
+            let received = input.recv_timeout(self.next_wakeup());
+            // Phase 0 timing: an iteration starts when its input has arrived,
+            // not while the loop sleeps.
+            let iteration_started = Instant::now();
+            match received {
                 Ok(event) => {
                     // A keystroke that turns out to do nothing is still the
                     // user being present: it restarts the tips' idle clock.
-                    if let TuiEvent::Input(_) = event {
+                    if let TuiEvent::Input(_, arrived) = &event {
                         self.tips.on_activity();
+                        self.perf.key_arrived(*arrived);
                     }
                     if let TuiEvent::Resize = event {
                         let terminal = &self.tui.terminal;
@@ -5977,8 +6026,9 @@ impl Mode {
                     }
                     self.tui.process_event(event);
                     while let Ok(event) = input.try_recv() {
-                        if let TuiEvent::Input(_) = event {
+                        if let TuiEvent::Input(_, arrived) = &event {
                             self.tips.on_activity();
+                            self.perf.key_arrived(*arrived);
                         }
                         self.tui.process_event(event);
                     }
@@ -5996,6 +6046,7 @@ impl Mode {
                 }
             }
             self.drain_extension_ui_requests();
+            self.tick_scheduler();
             if let Some(restarted) = self.restarted_input.take() {
                 input = restarted;
             }
@@ -6139,6 +6190,7 @@ impl Mode {
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
             }
+            self.perf.end_iteration(iteration_started);
         }
 
         set_dialog_sink(None);
@@ -6191,6 +6243,7 @@ enum BuiltinCommand {
     Hotkeys,
     Changelog,
     Debug,
+    Perf,
     Color,
     Chrome,
     Fork,
@@ -6227,6 +6280,7 @@ impl BuiltinCommand {
             "hotkeys" => Self::Hotkeys,
             "changelog" => Self::Changelog,
             "debug" => Self::Debug,
+            "perf" => Self::Perf,
             "color" => Self::Color,
             "chrome" => Self::Chrome,
             "fork" => Self::Fork,

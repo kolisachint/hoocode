@@ -312,12 +312,9 @@ impl ScriptedHandle {
                 handle.spawn(pump);
             }
             Err(_) => {
-                std::thread::spawn(move || {
-                    tokio::runtime::Builder::new_current_thread()
-                        .build()
-                        .map(|rt| rt.block_on(pump))
-                        .ok();
-                });
+                // Detached: the pump runs until the child's streams end.
+                let _ = hoocode_runtime::spawn_isolated("hoocode-subagent-pump", pump)
+                    .expect("failed to start a thread");
             }
         }
         Self {

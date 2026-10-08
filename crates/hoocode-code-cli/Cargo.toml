@@ -17,6 +17,7 @@ publish = false
 doctest = false
 
 [dependencies]
+hoocode-runtime = { workspace = true }
 hoocode-ai-util = { workspace = true }
 hoocode-app-server = { workspace = true }
 hoocode-code-agent-session = { workspace = true }
@@ -35,6 +36,7 @@ hoocode-ai-registry = { workspace = true }
 hoocode-code-prompts = { workspace = true }
 hoocode-code-rpc = { workspace = true }
 hoocode-code-subagents = { workspace = true }
+hoocode-code-scheduler = { workspace = true }
 hoocode-code-task-store = { workspace = true }
 hoocode-code-media = { workspace = true }
 base64 = "0.22"

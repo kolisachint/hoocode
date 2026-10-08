@@ -10,9 +10,13 @@ Script format (JSON list, one entry per model request)::
 
     [
       {"text": "Hello!"},
-      {"thinking": "...", "text": "Reading", "tool_calls": [{"name": "read", "arguments": {"path": "a.txt"}}]},
+      {"thinking": "...", "text": "Reading", "tool_calls": [{"name": "Read", "arguments": {"path": "a.txt"}}]},
       {"text": "Done."}
     ]
+
+Tool names are whatever the script says: the parity scenarios use hoocode's names
+and harness.py translates them for hoocode-ts (see its docstring). This file does
+not rename anything.
 
 Every request body is appended to ``--log`` as one JSON line, so level-1 checks can
 diff what each app actually sent to the model.

@@ -41,15 +41,16 @@ fn session_start_re_resolves_the_mode_and_returns_its_tool_filter() {
 
     write_project_config(
         dir.path(),
-        r#"{"active_mode":"plan","modes":{"plan":{"enabled_tools":["read","grep"]}}}"#,
+        r#"{"active_mode":"plan","modes":{"plan":{"enabled_tools":["Read","grep"]}}}"#,
     );
+    #[allow(clippy::disallowed_methods)] // test: a runtime of its own
     let rt = tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap();
     let result = rt.block_on(ext.emit_session_event(reload_event()));
     assert_eq!(
         result.active_tools,
-        Some(vec!["read".to_string(), "grep".to_string()])
+        Some(vec!["Read".to_string(), "grep".to_string()])
     );
     assert_eq!(ext.active().mode, "plan");
     assert_eq!(ext.active_mode().as_deref(), Some("plan"));
@@ -102,6 +103,7 @@ fn light_mode_sets_no_badge() {
 fn command_actions_become_ui_requests_in_order() {
     let dir = tempfile::tempdir().unwrap();
     let ext = ModesExtension::with_config(session(dir.path(), false), &HooConfig::new());
+    #[allow(clippy::disallowed_methods)] // test: a runtime of its own
     let rt = tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap();

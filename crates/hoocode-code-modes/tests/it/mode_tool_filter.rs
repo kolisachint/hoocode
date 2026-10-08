@@ -23,37 +23,37 @@ fn field(merged: &HooConfig, mode: &str, key: &str) -> Value {
 #[test]
 fn uses_global_enabled_tools_when_project_has_none() {
     let m = merge_configs(
-        &cfg(json!({"modes": {"plan": {"enabled_tools": ["read", "bash", "SearchCodebase"]}}})),
+        &cfg(json!({"modes": {"plan": {"enabled_tools": ["Read", "Shell", "CodeSearch"]}}})),
         &cfg(json!({})),
     );
     assert_eq!(
         field(&m, "plan", "enabled_tools"),
-        json!(["read", "bash", "SearchCodebase"])
+        json!(["Read", "Shell", "CodeSearch"])
     );
 }
 
 #[test]
 fn project_enabled_tools_overrides_global() {
     let m = merge_configs(
-        &cfg(json!({"modes": {"plan": {"enabled_tools": ["read", "bash"]}}})),
-        &cfg(json!({"modes": {"plan": {"enabled_tools": ["read", "SearchCodebase"]}}})),
+        &cfg(json!({"modes": {"plan": {"enabled_tools": ["Read", "Shell"]}}})),
+        &cfg(json!({"modes": {"plan": {"enabled_tools": ["Read", "CodeSearch"]}}})),
     );
     assert_eq!(
         field(&m, "plan", "enabled_tools"),
-        json!(["read", "SearchCodebase"])
+        json!(["Read", "CodeSearch"])
     );
 }
 
 #[test]
 fn project_enabled_tools_is_used_even_when_global_has_different_mode() {
     let m = merge_configs(
-        &cfg(json!({"modes": {"build": {"enabled_tools": ["read", "write", "edit"]}}})),
-        &cfg(json!({"modes": {"plan": {"enabled_tools": ["read"]}}})),
+        &cfg(json!({"modes": {"build": {"enabled_tools": ["Read", "Write", "Edit"]}}})),
+        &cfg(json!({"modes": {"plan": {"enabled_tools": ["Read"]}}})),
     );
-    assert_eq!(field(&m, "plan", "enabled_tools"), json!(["read"]));
+    assert_eq!(field(&m, "plan", "enabled_tools"), json!(["Read"]));
     assert_eq!(
         field(&m, "build", "enabled_tools"),
-        json!(["read", "write", "edit"])
+        json!(["Read", "Write", "Edit"])
     );
 }
 
@@ -100,30 +100,30 @@ fn removes_duplicates_in_allowed_write_paths_union() {
 #[test]
 fn unions_auto_allow_arrays() {
     let m = merge_configs(
-        &cfg(json!({"modes": {"build": {"auto_allow": ["bash"]}}})),
-        &cfg(json!({"modes": {"build": {"auto_allow": ["write"]}}})),
+        &cfg(json!({"modes": {"build": {"auto_allow": ["Shell"]}}})),
+        &cfg(json!({"modes": {"build": {"auto_allow": ["Write"]}}})),
     );
-    assert_eq!(field(&m, "build", "auto_allow"), json!(["bash", "write"]));
+    assert_eq!(field(&m, "build", "auto_allow"), json!(["Shell", "Write"]));
 }
 
 // denied_tools
 
 #[test]
 fn denied_tools_merge_rules() {
-    let g = cfg(json!({"modes": {"build": {"denied_tools": ["write"]}}}));
+    let g = cfg(json!({"modes": {"build": {"denied_tools": ["Write"]}}}));
     assert_eq!(
         field(&merge_configs(&g, &cfg(json!({}))), "build", "denied_tools"),
-        json!(["write"])
+        json!(["Write"])
     );
-    let p = cfg(json!({"modes": {"build": {"denied_tools": ["edit"]}}}));
+    let p = cfg(json!({"modes": {"build": {"denied_tools": ["Edit"]}}}));
     assert_eq!(
         field(&merge_configs(&g, &p), "build", "denied_tools"),
-        json!(["write", "edit"])
+        json!(["Write", "Edit"])
     );
-    let p = cfg(json!({"modes": {"build": {"denied_tools": ["write", "edit"]}}}));
+    let p = cfg(json!({"modes": {"build": {"denied_tools": ["Write", "Edit"]}}}));
     assert_eq!(
         field(&merge_configs(&g, &p), "build", "denied_tools"),
-        json!(["write", "edit"])
+        json!(["Write", "Edit"])
     );
     let m = merge_configs(
         &cfg(json!({"modes": {"build": {}}})),

@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "SearchCodebase for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking"
+description = "CodeSearch for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking"
 readme = "README.md"
 
 [package.metadata.hoocode]

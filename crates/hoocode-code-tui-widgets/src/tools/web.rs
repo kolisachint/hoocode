@@ -68,7 +68,7 @@ pub fn format_webfetch_call(args: &Value) -> String {
     };
     format!(
         "{}{}{format}",
-        t.fg("toolTitle", &t.bold("webfetch ")),
+        t.fg("toolTitle", &t.bold("WebFetch ")),
         t.fg("accent", &url)
     )
 }
@@ -120,7 +120,7 @@ pub fn format_websearch_call(args: &Value) -> String {
     };
     let mut text = format!(
         "{}{}",
-        t.fg("toolTitle", &t.bold("websearch ")),
+        t.fg("toolTitle", &t.bold("WebSearch ")),
         t.fg("accent", &query)
     );
     if let Some(limit) = args.get("maxResults") {

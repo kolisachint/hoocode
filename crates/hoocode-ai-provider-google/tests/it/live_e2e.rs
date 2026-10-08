@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Live Google tests: the Gemini and Vertex cases of hoocode's
 //! `google-thinking-disable.test.ts` (v0.5.89). Ignored by default; each
 //! returns early without credentials. Run with

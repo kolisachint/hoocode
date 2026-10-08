@@ -94,7 +94,7 @@ fn format_edit_call(args: &Value) -> String {
         Some(p) if !p.is_empty() => t.fg("accent", &p),
         Some(_) => t.fg("toolOutput", "..."),
     };
-    format!("{} {display}", t.fg("toolTitle", &t.bold("edit")))
+    format!("{} {display}", t.fg("toolTitle", &t.bold("Edit")))
 }
 
 /// The call component: rebuilt from the shared state at render time, so a

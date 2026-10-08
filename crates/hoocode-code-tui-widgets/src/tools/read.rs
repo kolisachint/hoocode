@@ -70,7 +70,7 @@ fn format_read_call(args: &Value) -> String {
     };
     format!(
         "{} {display}{}",
-        t.fg("toolTitle", &t.bold("read")),
+        t.fg("toolTitle", &t.bold("Read")),
         format_line_range(args)
     )
 }
@@ -162,7 +162,7 @@ fn format_compact_read_call(kind: &CompactKind, label: &str, args: &Value) -> St
     };
     format!(
         "{} {}{}{expand_hint}",
-        t.fg("toolTitle", &t.bold(&format!("read {kind}"))),
+        t.fg("toolTitle", &t.bold(&format!("Read {kind}"))),
         t.fg("accent", label),
         format_line_range(args)
     )

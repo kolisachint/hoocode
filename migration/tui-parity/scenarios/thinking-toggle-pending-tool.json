@@ -15,7 +15,7 @@
       "tool_calls": [
         {
           "id": "call_slow_1",
-          "name": "bash",
+          "name": "Shell",
           "arguments": {
             "command": "sleep 3; echo FINAL_RESULT"
           }

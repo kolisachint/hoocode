@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Ports `test/suite/agent-session-queue.test.ts` (extension-origin messages
 //! go through `send_user_message`, as `hoo.sendUserMessage` does).
 

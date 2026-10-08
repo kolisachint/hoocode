@@ -14,7 +14,7 @@
       "tool_calls": [
         {
           "id": "call_edit_1",
-          "name": "edit",
+          "name": "Edit",
           "arguments": {
             "path": "src/app.ts",
             "edits": [
@@ -31,7 +31,7 @@
         },
         {
           "id": "call_write_1",
-          "name": "write",
+          "name": "Write",
           "arguments": {
             "path": "tools/util.py",
             "content": "import sys\n\n\ndef main(args: list[str]) -> int:\n    \"\"\"Print the arguments.\"\"\"\n    for a in args:\n        print(f\"arg: {a}\")  # echo\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main(sys.argv[1:]))\n"
@@ -61,7 +61,7 @@
       ]
     },
     {
-      "wait_for": "Allow: edit src/app\\.ts",
+      "wait_for": "Allow: [Ee]dit src/app\\.ts",
       "timeout": 30
     },
     {
@@ -81,7 +81,7 @@
       ]
     },
     {
-      "wait_for": "Allow: write tools/util\\.py",
+      "wait_for": "Allow: [Ww]rite tools/util\\.py",
       "timeout": 30
     },
     {

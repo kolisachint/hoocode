@@ -842,6 +842,7 @@ dependencies = [
  "hoocode-ai-stream",
  "hoocode-ai-types",
  "hoocode-ai-util",
+ "hoocode-runtime",
  "serde",
  "serde_json",
  "tokio",
@@ -1106,6 +1107,7 @@ dependencies = [
  "futures-executor",
  "futures-util",
  "hoocode-ai-types",
+ "hoocode-runtime",
  "serde_json",
  "tokio",
 ]
@@ -1193,6 +1195,7 @@ dependencies = [
  "hoocode-code-tool-bash",
  "hoocode-code-tools",
  "hoocode-code-tools-fs",
+ "hoocode-runtime",
  "hoocode-tui-util",
  "libc",
  "regex-lite",
@@ -1211,11 +1214,20 @@ dependencies = [
  "hoocode-ai-types",
  "hoocode-code-models",
  "hoocode-code-paths",
+ "hoocode-runtime",
  "rand 0.8.8",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "hoocode-code-capabilities"
+version = "0.1.8"
+dependencies = [
+ "hoocode-code-paths",
+ "hoocode-code-resources",
 ]
 
 [[package]]
@@ -1250,6 +1262,7 @@ dependencies = [
  "hoocode-code-prompts",
  "hoocode-code-resources",
  "hoocode-code-rpc",
+ "hoocode-code-scheduler",
  "hoocode-code-session",
  "hoocode-code-settings",
  "hoocode-code-subagents",
@@ -1260,6 +1273,7 @@ dependencies = [
  "hoocode-code-tools-fs",
  "hoocode-code-tools-optin",
  "hoocode-code-tui-app",
+ "hoocode-runtime",
  "hoocode-tui-fuzzy",
  "hoocode-tui-terminal",
  "hoocode-tui-util",
@@ -1406,6 +1420,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hoocode-code-scheduler"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "hoocode-code-tool-api",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "hoocode-code-session"
 version = "0.1.8"
 dependencies = [
@@ -1424,6 +1451,7 @@ version = "0.1.8"
 dependencies = [
  "hoocode-ai-types",
  "hoocode-code-paths",
+ "hoocode-runtime",
  "serde",
  "serde_json",
  "tempfile",
@@ -1447,6 +1475,7 @@ dependencies = [
  "hoocode-code-settings",
  "hoocode-code-task-store",
  "hoocode-code-tool-api",
+ "hoocode-runtime",
  "libc",
  "regex",
  "serde_json",
@@ -1512,6 +1541,7 @@ dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
  "hoocode-ai-util",
+ "hoocode-code-capabilities",
  "hoocode-code-prompts",
  "hoocode-code-tool-api",
  "hoocode-code-tool-bash",
@@ -1575,6 +1605,7 @@ dependencies = [
  "hoocode-code-paths",
  "hoocode-code-permissions",
  "hoocode-code-resources",
+ "hoocode-code-scheduler",
  "hoocode-code-session",
  "hoocode-code-settings",
  "hoocode-code-subagents",
@@ -1680,6 +1711,13 @@ dependencies = [
  "serde_json",
  "tempfile",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "hoocode-runtime"
+version = "0.1.8"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]

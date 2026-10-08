@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Live Anthropic tests ported from hoocode (v0.5.89)
 //! `anthropic-eager-tool-input-e2e.test.ts`,
 //! `anthropic-long-cache-retention-e2e.test.ts`,
@@ -467,10 +468,10 @@ async fn oauth_tool_names_round_trip() {
             "todowrite",
         ),
         (
-            one_arg_tool("read", "Read a file", "path", "File path"),
+            one_arg_tool("Read", "Read a file", "path", "File path"),
             "You are a helpful assistant. Use the read tool to read files.",
             "Read the file /tmp/test.txt using the read tool.",
-            "read",
+            "Read",
         ),
         (
             one_arg_tool("find", "Find files by pattern", "pattern", "Glob pattern"),

@@ -115,7 +115,7 @@ pub struct CreatedAgentSession {
 }
 
 /// `createAllToolDefinitions` for the default session: read, bash, edit,
-/// write and SearchCodebase with their settings.
+/// write and CodeSearch with their settings.
 pub fn default_base_tools(ctx: &BaseToolsContext<'_>) -> Vec<ToolDefinition> {
     let settings = ctx.settings;
     let read = ReadToolOptions {
@@ -346,7 +346,7 @@ pub fn create_agent_session(
 
     let mut initial_active: Vec<String> = DEFAULT_ACTIVE_TOOL_NAMES.map(String::from).to_vec();
     if options.enable_web_tools {
-        initial_active.extend(["webfetch".to_string(), "websearch".to_string()]);
+        initial_active.extend(["WebFetch".to_string(), "WebSearch".to_string()]);
     }
     let allowed_tool_names = options
         .tools
@@ -424,7 +424,15 @@ pub fn create_agent_session(
             base_stream(model, context, stream_options)
         }));
 
-    let (steering_mode, follow_up_mode, transport, budgets, display, max_retry_delay_ms) = {
+    let (
+        steering_mode,
+        follow_up_mode,
+        transport,
+        budgets,
+        display,
+        max_retry_delay_ms,
+        max_parallel,
+    ) = {
         let s = lock(&settings);
         (
             s.steering_mode(),
@@ -433,6 +441,7 @@ pub fn create_agent_session(
             s.thinking_budgets(),
             s.thinking_display(),
             s.provider_retry_settings().max_retry_delay_ms,
+            s.performance_max_parallel_tools() as usize,
         )
     };
     let placeholder_model = Agent::new().state().model;
@@ -458,6 +467,7 @@ pub fn create_agent_session(
         thinking_budgets: budgets,
         thinking_display: display.map(to_ai_thinking_display),
         max_retry_delay_ms: Some(max_retry_delay_ms),
+        max_parallel_tools: Some(max_parallel),
         permission_gate: options.permission_gate,
         ..Default::default()
     }));

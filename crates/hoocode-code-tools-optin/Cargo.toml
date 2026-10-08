@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Opt-in tools for the hoocode coding agent: TodoWrite and ask_options"
+description = "Opt-in tools for the hoocode coding agent: TodoWrite and AskUserQuestion"
 readme = "README.md"
 
 [package.metadata.hoocode]

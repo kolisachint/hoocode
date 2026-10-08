@@ -49,12 +49,16 @@ pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 0d | `scripts/maps/packages.py` (regenerates [../maps/packages.md](../maps/packages.md), `--check` in CI) and the `no_hoocode.sh` guard | [naming-and-paths.md](naming-and-paths.md) §1 | S | 0c | Keeps the maps and names honest from here on |
 | 1 | Reliability, in this order: **1.1** rpc fails closed (security); **1.2** `~/.hoocode` paths, `HOOCODE_` env, one-time merge; **1.3** macOS test fixes and CI job; **1.4** `@file` without `fd`; **1.5** panic audit; **1.6** fuzzing | [reliability.md](reliability.md), [naming-and-paths.md](naming-and-paths.md) §2–4 | L | 0c | Reliability before features |
 | 2 | Concurrency phases 0–1: `/perf` and the load test, then one runtime and the caps | [concurrency.md](concurrency.md) | M | 1 | Sets the runtime rules before MCP brings rmcp |
-| 3 | `SearchHooCode`; close the 8 `l1_done` tasks | [semantic-search.md](semantic-search.md) part A | S | 2 | Small; finishes the migration's loose ends |
+| 3 | `DocSearch`; close the 8 `l1_done` tasks | [semantic-search.md](semantic-search.md) part A | S | 2 | Small; finishes the migration's loose ends |
 | 4 | MCP client on rmcp; then a short guide for the webtools MCP server | [mcp.md](mcp.md), [web-tools.md](web-tools.md) | L | 2 | The main missing capability |
 | 5 | Concurrency phases 2–5: terminal-output thread, session writer, lanes and priority, watchdog and memory limits | [concurrency.md](concurrency.md) | L | 4 | Built against the real MCP and tool load |
 | 6 | Plugins: load, install, opt-in model tools | [plugins.md](plugins.md) | L | 4 | Delivers skills, MCP servers and subagents |
 | 7 | Scheduler and `/loop` | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
 | 8 | Version check and completion chime | [extras.md](extras.md) | S | 0c | Small polish |
+
+**Status (2026-10-08):** milestone 2 (concurrency phases 0-1) is done. Milestone 3 (DocSearch;
+the 8 `l1_done` tasks) is done. The ledger rows are not yet moved. See the 2026-10-08 entry in
+[../../migration/PROGRESS.md](../../migration/PROGRESS.md).
 
 **Only if the numbers or a need say so:** concurrency phase 6 (highlighting off the UI
 thread), MCP Apps ([canvas-and-mcp-apps.md](canvas-and-mcp-apps.md)), the MCP Tasks

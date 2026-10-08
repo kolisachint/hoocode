@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! The P1 hardening: what the subagent pool now refuses, bounds and cleans up.
 //!
 //! Each test here pins one decision from the reliability review that the eval

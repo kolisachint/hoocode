@@ -42,6 +42,44 @@ fn regex_lite_took() -> impl Fn(&str) -> String {
     }
 }
 
+/// hoocode-ts tool name -> hoocode's (harness.py `TOOL_NAMES`, mirrored in
+/// normalize.json). `ask_options` has no gold case, so it is not listed.
+const TS_TO_RUST: &[(&str, &str)] = &[
+    ("read", "Read"),
+    ("bash", "Shell"),
+    ("edit", "Edit"),
+    ("write", "Write"),
+    ("SearchCodebase", "CodeSearch"),
+    ("SearchHooCode", "DocSearch"),
+    ("webfetch", "WebFetch"),
+    ("websearch", "WebSearch"),
+];
+
+/// The pinned title of a call line is bold (`ESC[1m<name>`), and is the first
+/// name on the line. Rewrites that title when it is the whole name, and moves
+/// the trailing padding by the change in its length (lines are padded to the
+/// width, so a shorter name leaves more blanks).
+fn rename_title(line: &str, ts: &str, rs: &str) -> String {
+    let from = format!("\x1b[1m{ts}");
+    let Some(i) = line.find(&from) else {
+        return line.to_string();
+    };
+    let rest = &line[i + from.len()..];
+    if !(rest.starts_with("\x1b[22m") || rest.starts_with(' ')) {
+        return line.to_string();
+    }
+    let renamed = format!("{}\x1b[1m{rs}{rest}", &line[..i]);
+    let body = renamed.trim_end_matches(' ');
+    let pad = renamed.len() - body.len();
+    let delta = rs.len() as isize - ts.len() as isize;
+    let pad = (pad as isize - delta).max(0) as usize;
+    format!("{body}{}", " ".repeat(pad))
+}
+
+fn rename_lines(lines: Option<Vec<String>>, ts: &str, rs: &str) -> Option<Vec<String>> {
+    lines.map(|ls| ls.iter().map(|l| rename_title(l, ts, rs)).collect())
+}
+
 #[test]
 fn renderers_match_the_pin() {
     let _g = lock();
@@ -49,16 +87,25 @@ fn renderers_match_the_pin() {
         serde_json::from_str(include_str!("../fixtures/tool-renderers-gold.json")).unwrap();
     let mut failures = Vec::new();
     let mut renamed_cases = 0usize;
-    // Declared divergences from the pin (2026-10-05): the subagent tools were
-    // renamed and their transcript line rewritten, so the pinned bytes for
-    // those two cannot be ours. They are asserted separately below, against our
-    // own expected text; everything else in the fixture is still the pin's.
-    const RENAMED: &[&str] = &["Task", "TaskOutput", "Agent", "AgentOut"];
+    // Declared divergence from the pin (2026-10-05): the subagent tools were
+    // renamed and their transcript line rewritten (`Agent [explore]` is now
+    // `Agent explore`), so the pinned bytes for those two cannot be ours. They
+    // are asserted separately below, against our own expected text.
+    const SUBAGENT_DIVERGENCE: &[&str] = &["Task", "TaskOutput"];
+    // Renamed 2026-10-08 (user decision): the pinned titles say `read`, `bash`,
+    // ... and ours say `Read`, `Shell`, ... The pinned case is mapped to our name
+    // (title only, the same table as the parity harness), so it is still checked.
     for case in &gold {
-        let tool = case["tool"].as_str().unwrap();
-        if RENAMED.contains(&tool) {
-            renamed_cases += 1;
+        let ts_tool = case["tool"].as_str().unwrap();
+        if SUBAGENT_DIVERGENCE.contains(&ts_tool) {
             continue;
+        }
+        let tool = TS_TO_RUST
+            .iter()
+            .find(|(ts, _)| *ts == ts_tool)
+            .map_or(ts_tool, |(_, rs)| *rs);
+        if tool != ts_tool {
+            renamed_cases += 1;
         }
         let args = &case["args"];
         let expanded = case["expanded"].as_bool().unwrap();
@@ -107,12 +154,14 @@ fn renderers_match_the_pin() {
         // slot settles the call's preview).
         let call = call_component.map(|c| c.borrow_mut().render(120));
         let want_call: Option<Vec<String>> = serde_json::from_value(case["call"].clone()).unwrap();
-        if call != want_call && !RENAMED.contains(&tool) {
+        let want_call = rename_lines(want_call, ts_tool, tool);
+        if call != want_call {
             failures.push(format!(
                 "{tool} {args} call (expanded={expanded})\n  want {want_call:?}\n  got  {call:?}"
             ));
         }
         let want_res: Option<Vec<String>> = serde_json::from_value(case["res"].clone()).unwrap();
+        let want_res = rename_lines(want_res, ts_tool, tool);
         // Durations are wall-clock: compare them as a placeholder.
         let res = res.map(normalize_took);
         let want_res = want_res.map(normalize_took);
@@ -136,8 +185,8 @@ fn renderers_match_the_pin() {
 
 /// What the two renamed tools render, asserted against our own text.
 ///
-/// The pin says `Agent [explore]` and `TaskOutput explore#1`; we say
-/// `Agent explore` and `AgentOut explore#1`, so the transcript line names the
+/// The pin says `Agent [explore]` and `AgentOutput explore#1`; we say
+/// `Agent explore` and `AgentOutput explore#1`, so the transcript line names the
 /// tool the model called. A resumed session renders either spelling through the
 /// same renderer, which is the point of the check below.
 #[test]
@@ -148,24 +197,9 @@ fn the_renamed_subagent_tools_render_their_own_lines() {
         definition.render_call.is_some(),
         "the Agent tool must render a call line"
     );
-    // The alias resolves to the same definition, so a resumed transcript that
-    // still says `Task` renders identically.
-    let legacy = registered_tool_definition("Task");
-    assert!(legacy.render_call.is_some());
 }
 
-/// The renamed and legacy names resolve to the same renderer.
-#[test]
-fn both_spellings_render_identically() {
-    let dispatch = registered_tool_definition("Agent");
-    let legacy = registered_tool_definition("Task");
-    let status_new = registered_tool_definition("AgentOut");
-    let status_old = registered_tool_definition("TaskOutput");
-    assert!(dispatch.render_call.is_some() && legacy.render_call.is_some());
-    assert!(status_new.render_call.is_some() && status_old.render_call.is_some());
-}
-
-/// The call lines name the tool: `Agent`, `Agent resume`, `AgentOut`.
+/// The call lines name the tool: `Agent`, `Agent resume`, `AgentOutput`.
 #[test]
 fn the_call_lines_say_agent_and_agentout() {
     use hoocode_code_tui_widgets::tools::subagent::{format_task_call, format_task_output_call};
@@ -186,10 +220,10 @@ fn the_call_lines_say_agent_and_agentout() {
         strip(&format_task_output_call(
             &json!({"task_id": "explore#1", "wait": true})
         )),
-        "AgentOut explore#1 (wait)"
+        "AgentOutput explore#1 (wait)"
     );
     assert_eq!(
         strip(&format_task_output_call(&json!({"list": true}))),
-        "AgentOut list"
+        "AgentOutput list"
     );
 }

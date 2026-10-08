@@ -66,7 +66,7 @@ stop the same bug classes coming back.
      slice in the 23 TUI and tool crates goes through `text_slice` (`prefix`,
      `suffix_from`, `range`; a copy in `hoocode-tui-util` and one in
      `hoocode-code-tool-api`) and `clippy::string_slice` is on there. Input panics
-     fixed: the webfetch page cut, the websearch title and snippet range, and the
+     fixed: the WebFetch page cut, the WebSearch title and snippet range, and the
      session timestamp in `get_last_activity_time`. The other `unwrap`/`expect` sites
      were triaged by reading. Most are mutex locks, static regexes or guarded pops;
      a few are not individually re-checked.

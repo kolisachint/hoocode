@@ -107,9 +107,9 @@ Client notification: `initialized` (accepted; nothing else required).
 
 | hoocode tool | Request | Item type |
 |---|---|---|
-| `bash` | `item/commandExecution/requestApproval` with `command`, `cwd` | `commandExecution` |
-| `edit`, `write` | `item/fileChange/requestApproval` | `fileChange` |
-| `webfetch`, `websearch` | `item/commandExecution/requestApproval`, `command` = hoocode's one-line description, `reason` names the tool | `dynamicToolCall` |
+| `Shell` | `item/commandExecution/requestApproval` with `command`, `cwd` | `commandExecution` |
+| `Edit`, `Write` | `item/fileChange/requestApproval` | `fileChange` |
+| `WebFetch`, `WebSearch` | `item/commandExecution/requestApproval`, `command` = hoocode's one-line description, `reason` names the tool | `dynamicToolCall` |
 
 Decisions back: `accept` → run once; `acceptForSession` → run, and don't ask
 again for that tool on this thread while it is loaded (in memory only);
@@ -118,9 +118,9 @@ again for that tool on this thread while it is loaded (in memory only);
 (writing the global config) is never offered over the server.
 
 Which calls ask is hoocode's existing policy (`hoocode-code-permissions`
-`evaluate`, per-mode `auto_allow`, `denied_tools`, bash patterns, …) with
+`evaluate`, per-mode `auto_allow`, `denied_tools`, Shell patterns, …) with
 "has UI" = true. So a workspace in hoobot's `discord` mode asks for
-bash/edit/write exactly as the terminal UI would.
+Shell/Edit/Write exactly as the terminal UI would.
 
 ## Mapping hoocode → Codex
 
@@ -131,8 +131,8 @@ bash/edit/write exactly as the terminal UI would.
 | user prompt | `userMessage` item (started + completed at turn start) |
 | assistant text | `agentMessage` item: `item/started` on first text, `item/agentMessage/delta` per text delta, `item/completed` with the full text at message end |
 | assistant thinking | `reasoning` item, completed with `content` at message end (no deltas) |
-| `bash` tool | `commandExecution` (`source: agent`, `commandActions: []`, `aggregatedOutput`, `status`) |
-| `edit` / `write` | `fileChange` (`changes: [{path, kind, diff}]`; `diff` from the tool result when present) |
+| `Shell` tool | `commandExecution` (`source: agent`, `commandActions: []`, `aggregatedOutput`, `status`) |
+| `Edit` / `Write` | `fileChange` (`changes: [{path, kind, diff}]`; `diff` from the tool result when present) |
 | any other tool | `dynamicToolCall` (`tool`, `arguments`, `status`, `success`, `contentItems` as text) |
 | denied tool | item completes with `status: declined` (`failed` for dynamic tools) |
 | agent_end, normal | `turn/completed` status `completed` |
@@ -188,7 +188,7 @@ fail), then `collaborationMode/list`, `hooks/list`, `config/read`,
   a model with exactly that id (`provider/id` or bare id, default provider
   first); otherwise hoocode's default model runs. Sandbox and approval
   fields are ignored: hoocode's mode policy decides.
-- Checked by hand: a turn streams; `bash` in an asking mode shows the TUI's
+- Checked by hand: a turn streams; `Shell` in an asking mode shows the TUI's
   "Would you like to run the following command?"; accepting runs it and
   the TUI shows the output.
 

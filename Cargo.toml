@@ -33,11 +33,13 @@ members = [
     "crates/hoocode-agent-types",
 
     # Code namespace
+    "crates/hoocode-code-capabilities",
     "crates/hoocode-code-cli",
     "crates/hoocode-code-paths",
     "crates/hoocode-code-settings",
     "crates/hoocode-code-tool-bash",
     "crates/hoocode-code-tool-search",
+    "crates/hoocode-code-scheduler",
     "crates/hoocode-code-task-store",
     "crates/hoocode-code-tools-optin",
     "crates/hoocode-code-main",
@@ -75,6 +77,9 @@ members = [
     "crates/hoocode-tui-render",
     "crates/hoocode-tui-terminal",
     "crates/hoocode-tui-util",
+
+    # Runtime namespace
+    "crates/hoocode-runtime",
 ]
 resolver = "2"
 # fuzz/ is a separate nightly-only workspace (cargo-fuzz); see fuzz/README.md.
@@ -117,11 +122,13 @@ hoocode-agent-loop = { path = "crates/hoocode-agent-loop" }
 hoocode-agent-session = { path = "crates/hoocode-agent-session" }
 hoocode-agent-types = { path = "crates/hoocode-agent-types" }
 
+hoocode-code-capabilities = { path = "crates/hoocode-code-capabilities" }
 hoocode-code-cli = { path = "crates/hoocode-code-cli" }
 hoocode-code-paths = { path = "crates/hoocode-code-paths" }
 hoocode-code-settings = { path = "crates/hoocode-code-settings" }
 hoocode-code-tool-bash = { path = "crates/hoocode-code-tool-bash" }
 hoocode-code-tool-search = { path = "crates/hoocode-code-tool-search" }
+hoocode-code-scheduler = { path = "crates/hoocode-code-scheduler" }
 hoocode-code-task-store = { path = "crates/hoocode-code-task-store" }
 hoocode-code-tools-optin = { path = "crates/hoocode-code-tools-optin" }
 hoocode-code-main = { path = "crates/hoocode-code-main" }
@@ -159,6 +166,8 @@ hoocode-tui-keys = { path = "crates/hoocode-tui-keys" }
 hoocode-tui-render = { path = "crates/hoocode-tui-render" }
 hoocode-tui-terminal = { path = "crates/hoocode-tui-terminal" }
 hoocode-tui-util = { path = "crates/hoocode-tui-util" }
+
+hoocode-runtime = { path = "crates/hoocode-runtime" }
 
 [workspace.metadata.hoocode]
 # Lockstep version bump script uses this as the single source of truth.

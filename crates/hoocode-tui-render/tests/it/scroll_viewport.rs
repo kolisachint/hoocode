@@ -37,7 +37,7 @@ fn status_row(term: &Handle) -> String {
 }
 
 fn send(tui: &mut Tui, data: &str) {
-    tui.process_event(TuiEvent::Input(data.to_string()));
+    tui.process_event(TuiEvent::input(data));
 }
 
 fn wheel_up(tui: &mut Tui, times: usize) {

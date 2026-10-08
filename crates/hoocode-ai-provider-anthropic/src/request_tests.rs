@@ -314,7 +314,7 @@ fn oauth_tokens_get_claude_code_identity_and_tool_names() {
     );
     // No CC tool is named "find": it passes through unchanged both ways.
     assert_eq!(to_claude_code_name("find"), "find");
-    assert_eq!(to_claude_code_name("read"), "Read");
+    assert_eq!(to_claude_code_name("Read"), "Read");
 }
 
 #[test]
@@ -344,14 +344,14 @@ fn tool_choice_and_metadata_user_id() {
     assert_eq!(params["tool_choice"], json!({"type": "any"}));
     assert_eq!(params["metadata"], json!({"user_id": "u1"}));
     let options = AnthropicOptions {
-        tool_choice: Some(json!({"type": "tool", "name": "read"})),
+        tool_choice: Some(json!({"type": "tool", "name": "Read"})),
         metadata: Some(json!({"user_id": 5})),
         ..Default::default()
     };
     let params = build_params(&model, &hello(), false, &options);
     assert_eq!(
         params["tool_choice"],
-        json!({"type": "tool", "name": "read"})
+        json!({"type": "tool", "name": "Read"})
     );
     assert!(params.get("metadata").is_none());
 }
@@ -512,7 +512,7 @@ fn assistant(content: Vec<Content>) -> Message {
 fn tool_result(id: &str, content: Vec<Content>) -> Message {
     Message::ToolResult(ToolResultMessage {
         tool_call_id: id.into(),
-        tool_name: "read".into(),
+        tool_name: "Read".into(),
         content,
         details: None,
         is_error: false,
@@ -552,13 +552,13 @@ fn converts_turns_and_merges_consecutive_tool_results() {
             Content::Text(TextContent::new("")),
             Content::ToolCall(ToolCallContent {
                 id: "call|1".into(),
-                name: "read".into(),
+                name: "Read".into(),
                 arguments: json!({"path": "a"}),
                 thought_signature: None,
             }),
             Content::ToolCall(ToolCallContent {
                 id: "call_2".into(),
-                name: "read".into(),
+                name: "Read".into(),
                 arguments: json!({"path": "b"}),
                 thought_signature: None,
             }),
@@ -579,8 +579,8 @@ fn converts_turns_and_merges_consecutive_tool_results() {
                 {"type": "text", "text": "unsigned"},
                 {"type": "redacted_thinking", "data": "opaque"},
                 // Same model: transformMessages leaves ids alone.
-                {"type": "tool_use", "id": "call|1", "name": "read", "input": {"path": "a"}},
-                {"type": "tool_use", "id": "call_2", "name": "read", "input": {"path": "b"}},
+                {"type": "tool_use", "id": "call|1", "name": "Read", "input": {"path": "a"}},
+                {"type": "tool_use", "id": "call_2", "name": "Read", "input": {"path": "b"}},
             ]}),
             json!({"role": "user", "content": [
                 {"type": "tool_result", "tool_use_id": "call|1", "content": "one\ntwo", "is_error": false},

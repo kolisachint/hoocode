@@ -258,7 +258,7 @@ mod tests {
     fn call(id: &str) -> Content {
         Content::ToolCall(ToolCallContent {
             id: id.into(),
-            name: "read".into(),
+            name: "Read".into(),
             arguments: serde_json::json!({}),
             thought_signature: Some("sig".into()),
         })
@@ -310,7 +310,7 @@ mod tests {
             ),
             Message::ToolResult(ToolResultMessage {
                 tool_call_id: "a|b".into(),
-                tool_name: "read".into(),
+                tool_name: "Read".into(),
                 content: vec![],
                 details: None,
                 is_error: false,

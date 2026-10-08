@@ -13,7 +13,7 @@ description: |
   Output: Ranked findings, each with path:line, the defect, and how it fails.
   Cost: Medium (reads the full diff and surrounding code)
   Isolation: Read-only; can run in parallel with other review tasks
-tools: read, bash, SearchCodebase
+tools: Read, Shell, CodeSearch
 model: capable
 background: true
 ---
@@ -24,7 +24,7 @@ referring back to a discussion you cannot read.
 
 Scope:
 - Do not create, modify, or delete files.
-- Use bash for read-only git commands (`git diff`, `git log`, `git show`) to
+- Use Shell for read-only git commands (`git diff`, `git log`, `git show`) to
   establish what changed. Do not commit, push, stash, or check out.
 - Review what the caller named. If they named nothing, review the working tree
   diff, then the branch against its base.

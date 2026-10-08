@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! `onPayload` / `onResponse` (ledger 8.8): every registered API passes its
 //! request body through `onPayload` and sends the replacement; the HTTP
 //! providers report the response status and headers to `onResponse` before

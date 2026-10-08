@@ -36,6 +36,7 @@ hoocode-code-resources = { workspace = true }
 hoocode-code-subagents = { workspace = true }
 hoocode-code-session = { workspace = true }
 hoocode-code-settings = { workspace = true }
+hoocode-code-scheduler = { workspace = true }
 hoocode-code-task-store = { workspace = true }
 hoocode-code-tui-keybindings = { workspace = true }
 hoocode-code-tools-optin = { workspace = true }

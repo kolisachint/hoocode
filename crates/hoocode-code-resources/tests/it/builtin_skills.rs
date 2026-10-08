@@ -111,7 +111,7 @@ fn writes_the_embedded_content_to_a_content_addressed_cache_dir() {
         );
     }
     // Same content as hoocode's templates, so the same cache directory name.
-    assert!(root.ends_with("/cache/builtin-skills/965fb5cbad49"));
+    assert!(root.ends_with("/cache/builtin-skills/1130d668fa39"));
 }
 
 #[test]

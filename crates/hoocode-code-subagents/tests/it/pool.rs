@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! subagent-pool.test.ts, subagent-pool-protocol.test.ts,
 //! subagent-pool-registry.test.ts, subagent-pool-inherited-model.test.ts and
 //! the pool half of subagent-claude-agent.test.ts.
@@ -596,7 +597,7 @@ fn write_project_agent(cwd: &Path, name: &str, content: &str) {
     std::fs::write(dir.join(format!("{name}.md")), content).unwrap();
 }
 
-const ORCHESTRATOR: &str = "---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, SearchCodebase\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n";
+const ORCHESTRATOR: &str = "---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: Read, CodeSearch\ndelegate: true\n---\nDelegate subtasks via the Agent tool.\n";
 
 async fn run_with_cap(cwd: &Path, agent: &str, max_depth: &str) -> Vec<String> {
     let p = SubagentPool::new(SubagentPoolOptions {
@@ -624,9 +625,7 @@ async fn a_delegate_agent_gets_task_tools_when_nesting_is_permitted() {
     let argv = run_with_cap(dir.path(), "orchestrator", "2").await;
     assert!(argv.contains(&"--enable-subagents".to_string()));
     let tools = arg_after(&argv, "--tools").unwrap();
-    // Canonical names first, then the deprecated spellings: both are granted,
-    // so a nested child that says `Task` still works.
-    assert_eq!(tools, "read,SearchCodebase,Agent,AgentOut,Task,TaskOutput");
+    assert_eq!(tools, "Read,CodeSearch,Agent,AgentOutput");
 }
 
 #[tokio::test]
@@ -635,7 +634,7 @@ async fn a_delegate_agent_gets_no_task_tools_at_the_default_cap() {
     write_project_agent(dir.path(), "orchestrator", ORCHESTRATOR);
     let argv = run_with_cap(dir.path(), "orchestrator", "1").await;
     assert!(!argv.contains(&"--enable-subagents".to_string()));
-    assert_eq!(arg_after(&argv, "--tools").unwrap(), "read,SearchCodebase");
+    assert_eq!(arg_after(&argv, "--tools").unwrap(), "Read,CodeSearch");
 }
 
 #[tokio::test]
@@ -644,7 +643,7 @@ async fn forwards_a_scoped_delegate_list_as_delegate_allow() {
     write_project_agent(
         dir.path(),
         "scoped",
-        "---\nname: scoped\ndescription: delegates only to explore.\ntools: read, SearchCodebase\ndelegate: explore\n---\nbody",
+        "---\nname: scoped\ndescription: delegates only to explore.\ntools: Read, CodeSearch\ndelegate: explore\n---\nbody",
     );
     let argv = run_with_cap(dir.path(), "scoped", "2").await;
     assert!(argv.contains(&"--enable-subagents".to_string()));
@@ -660,12 +659,12 @@ async fn forwards_an_agents_disallowed_tools() {
     write_project_agent(
         dir.path(),
         "limited",
-        "---\nname: limited\ndescription: restricted agent.\ntools: read, SearchCodebase, bash\ndisallowedTools: bash\n---\nbody",
+        "---\nname: limited\ndescription: restricted agent.\ntools: Read, CodeSearch, Shell\ndisallowedTools: Shell\n---\nbody",
     );
     let argv = run_with_cap(dir.path(), "limited", "1").await;
     assert_eq!(
         arg_after(&argv, "--disallowed-tools").as_deref(),
-        Some("bash")
+        Some("Shell")
     );
 }
 
@@ -908,7 +907,7 @@ async fn forwards_progress_events_and_drops_the_firehose() {
         "mock-progress.sh",
         r#"echo '{"type":"turn_end"}'
 echo '{"type":"message_update"}'
-echo '{"type":"tool_execution_start","toolName":"read"}'"#,
+echo '{"type":"tool_execution_start","toolName":"Read"}'"#,
     );
     let p = pool(exe, 1, dir.path());
     let progress = record(&p, "task_progress");
@@ -976,7 +975,7 @@ async fn a_project_agent_overrides_the_builtin_prompt_tools_and_model() {
     );
     assert_eq!(
         arg_after(&argv, "--tools").as_deref(),
-        Some("read,SearchCodebase")
+        Some("Read,CodeSearch")
     );
     assert_eq!(arg_after(&argv, "--model").as_deref(), Some("pinned-model"));
     p.dispose();
@@ -990,7 +989,7 @@ async fn uses_the_builtin_agents_frontmatter_tool_allowlist() {
     let argv = read_argv(dir.path());
     assert_eq!(
         arg_after(&argv, "--tools").as_deref(),
-        Some("read,SearchCodebase")
+        Some("Read,CodeSearch")
     );
     p.dispose();
 }
@@ -1022,7 +1021,7 @@ async fn spawns_a_claude_format_agent_with_its_prompt_tools_and_model() {
         .contains("You are a security reviewer."));
     assert_eq!(
         arg_after(&argv, "--tools").as_deref(),
-        Some("read,SearchCodebase,bash")
+        Some("Read,CodeSearch,Shell")
     );
     assert_eq!(arg_after(&argv, "--model").as_deref(), Some("sonnet"));
     p.dispose();

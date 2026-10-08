@@ -54,9 +54,21 @@ const THINKING_LEVELS: [ThinkingLevel; 5] = [
     ThinkingLevel::High,
 ];
 
-/// Tools active by default when the built-ins come from the factory.
-pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 5] =
-    ["read", "bash", "edit", "write", "SearchCodebase"];
+/// Tools active by default, in the order the model sees them: Read, Shell,
+/// Edit, Write, CodeSearch, AskUserQuestion, the Cron tools, DocSearch. The
+/// rest follow.
+pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 10] = [
+    "Read",
+    "Shell",
+    "Edit",
+    "Write",
+    "CodeSearch",
+    "AskUserQuestion",
+    "CronCreate",
+    "CronList",
+    "CronDelete",
+    "DocSearch",
+];
 
 /// A failed session operation (the TS methods throw `Error(message)`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -617,14 +629,11 @@ impl AgentSession {
                 handle.spawn(future);
             }
             Err(_) => {
-                // No runtime (a synchronous caller): run it to completion here.
-                let _ = std::thread::spawn(move || {
-                    tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .map(|rt| rt.block_on(future))
-                })
-                .join();
+                // No runtime (a synchronous caller): run it to completion on its
+                // own thread, and wait for it.
+                let thread = hoocode_runtime::spawn_isolated("hoocode-session-task", future)
+                    .expect("failed to start a thread");
+                let _ = thread.join();
             }
         }
     }
@@ -1235,8 +1244,8 @@ impl AgentSession {
             }
             (valid, snippets, guidelines)
         };
-        // The agents are listed only while the Agent tool (or its `Task` alias) is active.
-        let agents = if valid.iter().any(|n| n == "Agent" || n == "Task") {
+        // The agents are listed only while the Agent tool is active.
+        let agents = if valid.iter().any(|n| n == "Agent") {
             hoocode_code_resources::load_agent_registry(
                 &hoocode_code_resources::LoadAgentRegistryOptions::new(
                     self.inner.cwd.to_string_lossy(),

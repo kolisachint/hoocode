@@ -111,7 +111,7 @@ fn cache_context() -> Context {
         vec![user("Hello")],
         vec![Tool {
             defer_loading: None,
-            name: "read".into(),
+            name: "Read".into(),
             description: "Read a file".into(),
             parameters: json!({"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
         }],
@@ -568,7 +568,7 @@ fn serializes_same_model_thinking_only_as_text_parts() {
 fn image_tool_result(id: &str) -> Message {
     Message::ToolResult(ToolResultMessage {
         tool_call_id: id.into(),
-        tool_name: "read".into(),
+        tool_name: "Read".into(),
         content: vec![
             Content::Text(TextContent::new("Read image file [image/png]")),
             Content::Image(ImageContent {
@@ -589,7 +589,7 @@ fn batches_tool_result_images_after_consecutive_tool_results() {
     let call = |id: &str, path: &str| {
         Content::ToolCall(ToolCallContent {
             id: id.into(),
-            name: "read".into(),
+            name: "Read".into(),
             arguments: json!({"path": path}),
             thought_signature: None,
         })
@@ -876,7 +876,7 @@ fn assistant_replay_uses_signature_field_and_bridges_tool_results() {
                     }),
                     Content::ToolCall(ToolCallContent {
                         id: "c1".into(),
-                        name: "read".into(),
+                        name: "Read".into(),
                         arguments: json!({"path": "a"}),
                         thought_signature: None,
                     }),
@@ -889,7 +889,7 @@ fn assistant_replay_uses_signature_field_and_bridges_tool_results() {
             }),
             Message::ToolResult(ToolResultMessage {
                 tool_call_id: "c1".into(),
-                tool_name: "read".into(),
+                tool_name: "Read".into(),
                 content: vec![Content::Text(TextContent::new("data"))],
                 details: None,
                 is_error: false,
@@ -906,12 +906,12 @@ fn assistant_replay_uses_signature_field_and_bridges_tool_results() {
             "role": "assistant",
             "content": "",
             "reasoning_content": "plan",
-            "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "read", "arguments": "{\"path\":\"a\"}"}}]
+            "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "Read", "arguments": "{\"path\":\"a\"}"}}]
         })
     );
     assert_eq!(
         messages[2],
-        json!({"role": "tool", "content": "data", "tool_call_id": "c1", "name": "read"})
+        json!({"role": "tool", "content": "data", "tool_call_id": "c1", "name": "Read"})
     );
     assert_eq!(
         messages[3],
@@ -930,7 +930,7 @@ fn pipe_separated_tool_call_ids_are_normalized_for_other_models() {
             Message::Assistant(AssistantMessage {
                 content: vec![Content::ToolCall(ToolCallContent {
                     id: long_id.clone(),
-                    name: "read".into(),
+                    name: "Read".into(),
                     arguments: json!({}),
                     thought_signature: None,
                 })],
@@ -942,7 +942,7 @@ fn pipe_separated_tool_call_ids_are_normalized_for_other_models() {
             }),
             Message::ToolResult(ToolResultMessage {
                 tool_call_id: long_id,
-                tool_name: "read".into(),
+                tool_name: "Read".into(),
                 content: vec![Content::Text(TextContent::new("ok"))],
                 details: None,
                 is_error: false,
@@ -962,7 +962,7 @@ fn pipe_separated_tool_call_ids_are_normalized_for_other_models() {
 fn edit_tool() -> Tool {
     Tool {
         defer_loading: None,
-        name: "edit".into(),
+        name: "Edit".into(),
         description: "Replace exact text".into(),
         parameters: json!({
             "type": "object",

@@ -2,7 +2,7 @@
 //!
 //! The default bundle is hoocode's: `read`, `edit`, `write` from
 //! `hoocode-code-tools-fs` (10.2a, 10.2c), `bash` from
-//! `hoocode-code-tool-bash` (10.2b) and `SearchCodebase` from
+//! `hoocode-code-tool-bash` (10.2b) and `CodeSearch` from
 //! `hoocode-code-tool-search` (10.2d). The free functions below (grep, find,
 //! ls, webfetch, websearch, todo) predate the ports and are not tools; they go
 //! when 10.2e/10.2f land.
@@ -25,6 +25,7 @@ use std::path::Path;
 pub mod file_finder;
 pub mod light;
 pub mod permissions;
+pub mod search_hoocode;
 
 pub use permissions::*;
 
@@ -339,9 +340,11 @@ pub fn default_tools_with(
     )
 }
 
-/// The default coding bundle (`CODING_TOOL_NAMES`): read, bash, edit, write
-/// and SearchCodebase, in hoocode's order. webfetch/websearch and TodoWrite
-/// are opt-in tools (10.2e, 10.2f).
+/// The default coding bundle (`CODING_TOOL_NAMES`): Read, Shell, Edit, Write
+/// and CodeSearch, in hoocode's order. DocSearch is not here: the CLI registers
+/// it after AskUserQuestion so the model sees that order. Read, Shell, Edit,
+/// Write, CodeSearch and AskUserQuestion, then DocSearch.
+/// WebFetch/WebSearch and TodoWrite are opt-in tools (10.2e, 10.2f).
 pub fn default_tool_definitions(
     cwd: std::path::PathBuf,
     _permissions: PermissionPolicy,
@@ -479,6 +482,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[allow(clippy::disallowed_methods)] // test helper: builds its own runtime
     fn block_on<F: std::future::Future>(future: F) -> F::Output {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()

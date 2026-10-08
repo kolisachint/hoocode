@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! warm-subagent-pool.test.ts: the real worker/pool against a fake RPC child
 //! (hoocode's `fixtures/fake-rpc-child.mjs`, as a shell script). The fake
 //! echoes its pid, generation (bumped by new_session) and prompt count, so
@@ -26,8 +27,8 @@ while IFS= read -r line; do
       n=$((n + 1)); last=$(field message)
       respond prompt ""
       echo '{"type":"agent_start"}'
-      echo '{"type":"tool_execution_start","toolName":"SearchCodebase"}'
-      echo '{"type":"tool_execution_end","toolName":"SearchCodebase"}'
+      echo '{"type":"tool_execution_start","toolName":"CodeSearch"}'
+      echo '{"type":"tool_execution_end","toolName":"CodeSearch"}'
       if [ "$fail" = 1 ]; then
         echo '{"type":"turn_end","message":{"usage":{"input":11,"output":7},"stopReason":"error","errorMessage":"boom"}}'
       else
@@ -130,7 +131,7 @@ async fn reports_live_tool_activity_and_clears_it_at_the_end() {
         .await
         .unwrap();
     let seen = activity.lock().unwrap().clone();
-    assert!(seen.contains(&"SearchCodebase".to_string()));
+    assert!(seen.contains(&"CodeSearch".to_string()));
     assert_eq!(seen.last().map(String::as_str), Some(""));
     pool.dispose().await;
 }

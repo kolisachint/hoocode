@@ -32,12 +32,8 @@ mod chain_segments_the_running_line {
     #[test]
     fn keeps_the_order_of_the_run() {
         assert_eq!(
-            chain(&[
-                c("SearchCodebase", "x"),
-                c("read", "a.ts"),
-                c("edit", "a.ts")
-            ]),
-            "SearchCodebase › read › edit"
+            chain(&[c("CodeSearch", "x"), c("Read", "a.ts"), c("Edit", "a.ts")]),
+            "CodeSearch › Read › Edit"
         );
     }
 
@@ -45,12 +41,12 @@ mod chain_segments_the_running_line {
     fn collapses_a_consecutive_repeat() {
         assert_eq!(
             chain(&[
-                c("SearchCodebase", "x"),
-                c("read", "a"),
-                c("read", "b"),
-                c("read", "c")
+                c("CodeSearch", "x"),
+                c("Read", "a"),
+                c("Read", "b"),
+                c("Read", "c")
             ]),
-            "SearchCodebase › read ×3"
+            "CodeSearch › Read ×3"
         );
     }
 
@@ -58,35 +54,35 @@ mod chain_segments_the_running_line {
     fn never_merges_a_failure_into_a_repeat() {
         assert_eq!(
             chain(&[
-                c("read", "a"),
-                call("read", "b", 0, true, false),
-                c("read", "c")
+                c("Read", "a"),
+                call("Read", "b", 0, true, false),
+                c("Read", "c")
             ]),
-            "read › read✗ › read"
+            "Read › Read✗ › Read"
         );
     }
 
     #[test]
     fn elides_the_middle_of_a_long_chain_but_never_a_failure() {
-        let tools = ["bash", "SearchCodebase", "read", "edit"];
+        let tools = ["Shell", "CodeSearch", "Read", "Edit"];
         let entries: Vec<ChainEntry> = (0..27)
             .map(|i| {
                 if i == 9 {
-                    call("bash", "check", 0, true, false)
+                    call("Shell", "check", 0, true, false)
                 } else {
                     c(tools[i % 4], &format!("f{i}"))
                 }
             })
             .collect();
         let rendered = chain(&entries);
-        assert!(rendered.contains("bash✗"));
+        assert!(rendered.contains("Shell✗"));
         assert!(rendered.contains("more …"));
         assert!(rendered.split(" › ").count() < entries.len());
     }
 
     #[test]
     fn marks_a_still_running_call_rather_than_calling_it_done() {
-        let segments = chain_segments(&[call("bash", "x", 0, false, true)]);
+        let segments = chain_segments(&[call("Shell", "x", 0, false, true)]);
         assert_eq!(segments[0].tone, SegmentTone::Running);
     }
 }
@@ -97,8 +93,8 @@ mod chain_stats_ {
     #[test]
     fn counts_progress_while_running_totals_once_done() {
         let entries = [
-            call("SearchCodebase", "x", 5, false, false),
-            call("bash", "y", 0, false, true),
+            call("CodeSearch", "x", 5, false, false),
+            call("Shell", "y", 0, false, true),
         ];
         assert_eq!(
             chain_stats(&entries, ChainState::Running),
@@ -107,8 +103,8 @@ mod chain_stats_ {
         assert_eq!(
             chain_stats(
                 &[
-                    call("SearchCodebase", "x", 5, false, false),
-                    call("bash", "y", 7, false, false)
+                    call("CodeSearch", "x", 5, false, false),
+                    call("Shell", "y", 7, false, false)
                 ],
                 ChainState::Done
             ),
@@ -119,7 +115,7 @@ mod chain_stats_ {
     #[test]
     fn always_surfaces_failures() {
         assert!(
-            chain_stats(&[call("bash", "x", 1, true, false)], ChainState::Done)
+            chain_stats(&[call("Shell", "x", 1, true, false)], ChainState::Done)
                 .contains("1 failed")
         );
     }
@@ -127,7 +123,7 @@ mod chain_stats_ {
     #[test]
     fn says_an_interrupted_chain_was_interrupted() {
         assert!(chain_stats(
-            &[call("SearchCodebase", "x", 1, false, false)],
+            &[call("CodeSearch", "x", 1, false, false)],
             ChainState::Interrupted
         )
         .contains("interrupted"));
@@ -140,9 +136,9 @@ mod chain_phrase_the_settled_line {
     #[test]
     fn names_the_most_consequential_thing_not_the_most_frequent() {
         let mut entries: Vec<ChainEntry> = (0..6)
-            .map(|i| call("read", &format!("src/f{i}.ts"), 10, false, false))
+            .map(|i| call("Read", &format!("src/f{i}.ts"), 10, false, false))
             .collect();
-        entries.push(c("edit", "src/keys.ts"));
+        entries.push(c("Edit", "src/keys.ts"));
         assert_eq!(chain_phrase(&entries), "Edited src/keys.ts");
     }
 
@@ -150,8 +146,8 @@ mod chain_phrase_the_settled_line {
     fn names_a_shared_location_when_the_calls_have_one() {
         assert_eq!(
             chain_phrase(&[
-                c("read", "packages/tui/src/a.ts"),
-                c("read", "packages/tui/src/b.ts")
+                c("Read", "packages/tui/src/a.ts"),
+                c("Read", "packages/tui/src/b.ts")
             ]),
             "Read packages/tui/src"
         );
@@ -160,7 +156,7 @@ mod chain_phrase_the_settled_line {
     #[test]
     fn counts_rather_than_naming_one_arbitrary_target() {
         assert_eq!(
-            chain_phrase(&[c("edit", "a.ts"), c("edit", "b.ts"), c("edit", "c.ts")]),
+            chain_phrase(&[c("Edit", "a.ts"), c("Edit", "b.ts"), c("Edit", "c.ts")]),
             "Edited 3 files"
         );
     }
@@ -169,8 +165,8 @@ mod chain_phrase_the_settled_line {
     fn never_presents_a_glob_as_a_location() {
         assert_eq!(
             chain_phrase(&[
-                call("SearchCodebase", "*.test.ts", 4, false, false),
-                call("SearchCodebase", "keys", 2, false, false)
+                call("CodeSearch", "*.test.ts", 4, false, false),
+                call("CodeSearch", "keys", 2, false, false)
             ]),
             "Explored"
         );
@@ -179,11 +175,11 @@ mod chain_phrase_the_settled_line {
     #[test]
     fn gives_a_lone_call_its_own_subject_whatever_shape_it_is() {
         assert_eq!(
-            chain_phrase(&[call("bash", "bun run check", 40, false, false)]),
+            chain_phrase(&[call("Shell", "bun run check", 40, false, false)]),
             "Ran bun run check"
         );
         assert_eq!(
-            chain_phrase(&[call("SearchCodebase", "toolOutputView", 27, false, false)]),
+            chain_phrase(&[call("CodeSearch", "toolOutputView", 27, false, false)]),
             "Searched toolOutputView"
         );
     }
@@ -191,7 +187,7 @@ mod chain_phrase_the_settled_line {
     #[test]
     fn falls_back_to_a_count_for_several_commands() {
         assert_eq!(
-            chain_phrase(&[c("bash", "a"), c("bash", "b")]),
+            chain_phrase(&[c("Shell", "a"), c("Shell", "b")]),
             "Ran 2 commands"
         );
     }
@@ -200,8 +196,8 @@ mod chain_phrase_the_settled_line {
     fn never_reads_a_shared_command_prefix_as_a_location() {
         assert_eq!(
             chain_phrase(&[
-                c("bash", "cd /Users/me/repo && ls"),
-                c("bash", "cd /Users/me/repo && cat x")
+                c("Shell", "cd /Users/me/repo && ls"),
+                c("Shell", "cd /Users/me/repo && cat x")
             ]),
             "Ran 2 commands"
         );
@@ -211,7 +207,7 @@ mod chain_phrase_the_settled_line {
     fn names_the_act_not_the_navigation_in_front_of_it() {
         assert_eq!(
             chain_phrase(&[call(
-                "bash",
+                "Shell",
                 "cd /Users/me/repo && bun run check",
                 40,
                 false,
@@ -225,13 +221,13 @@ mod chain_phrase_the_settled_line {
     fn a_run_that_did_the_same_thing_every_time_is_that_thing_not_a_count() {
         assert_eq!(
             chain_phrase(&[
-                c("bash", "cd /repo && bun run check"),
-                c("bash", "cd /elsewhere && bun run check")
+                c("Shell", "cd /repo && bun run check"),
+                c("Shell", "cd /elsewhere && bun run check")
             ]),
             "Ran bun run check"
         );
         assert_eq!(
-            chain_phrase(&[c("read", "src/keys.ts"), c("read", "src/keys.ts")]),
+            chain_phrase(&[c("Read", "src/keys.ts"), c("Read", "src/keys.ts")]),
             "Read src/keys.ts"
         );
     }
@@ -250,7 +246,7 @@ mod chain_phrase_long_chains {
 
     fn reads(n: usize, dir: &str) -> Vec<ChainEntry> {
         (0..n)
-            .map(|i| call("read", &format!("{dir}/f{i}.ts"), 10, false, false))
+            .map(|i| call("Read", &format!("{dir}/f{i}.ts"), 10, false, false))
             .collect()
     }
 
@@ -260,10 +256,10 @@ mod chain_phrase_long_chains {
 
     #[test]
     fn an_incidental_act_does_not_get_to_name_a_long_chain() {
-        let mut entries = many(28, "SearchCodebase", |i| format!("symbol{i}"));
+        let mut entries = many(28, "CodeSearch", |i| format!("symbol{i}"));
         entries.extend(reads(37, "packages/coding-agent/src"));
         entries.push(c(
-            "edit",
+            "Edit",
             "packages/coding-agent/src/core/tools/subagent.ts",
         ));
         assert_eq!(chain_phrase(&entries), "Read packages/coding-agent/src");
@@ -272,17 +268,17 @@ mod chain_phrase_long_chains {
     #[test]
     fn a_tenth_of_the_calls_is_enough_to_keep_the_headline() {
         let mut entries = reads(9, "packages/tui/src");
-        entries.push(c("edit", "src/keys.ts"));
+        entries.push(c("Edit", "src/keys.ts"));
         assert_eq!(chain_phrase(&entries), "Edited src/keys.ts · 9 reads");
         let mut entries = reads(10, "packages/tui/src");
-        entries.push(c("edit", "src/keys.ts"));
+        entries.push(c("Edit", "src/keys.ts"));
         assert_eq!(chain_phrase(&entries), "Read packages/tui/src");
     }
 
     #[test]
     fn below_the_threshold_a_long_chain_behaves_exactly_as_before() {
         let mut entries = reads(6, "src");
-        entries.push(c("edit", "src/keys.ts"));
+        entries.push(c("Edit", "src/keys.ts"));
         assert_eq!(chain_phrase(&entries), "Edited src/keys.ts");
     }
 
@@ -296,7 +292,7 @@ mod chain_phrase_long_chains {
     #[test]
     fn a_short_chain_keeps_its_shallow_location() {
         assert_eq!(
-            chain_phrase(&[c("write", "docs/a.md"), c("write", "docs/b.md")]),
+            chain_phrase(&[c("Write", "docs/a.md"), c("Write", "docs/b.md")]),
             "Edited docs"
         );
     }
@@ -305,8 +301,8 @@ mod chain_phrase_long_chains {
     fn an_absolute_location_keeps_its_leading_slash() {
         assert_eq!(
             chain_phrase(&[
-                c("read", "/etc/nginx/a.conf"),
-                c("read", "/etc/nginx/b.conf")
+                c("Read", "/etc/nginx/a.conf"),
+                c("Read", "/etc/nginx/b.conf")
             ]),
             "Read /etc/nginx"
         );
@@ -314,8 +310,8 @@ mod chain_phrase_long_chains {
 
     #[test]
     fn a_minority_headline_admits_the_largest_thing_it_left_out() {
-        let mut entries = many(3, "edit", |i| format!("packages/tui/src/x{i}.ts"));
-        entries.extend(many(10, "bash", |_| "bun run check".into()));
+        let mut entries = many(3, "Edit", |i| format!("packages/tui/src/x{i}.ts"));
+        entries.extend(many(10, "Shell", |_| "bun run check".into()));
         entries.extend(reads(5, "packages/tui/src"));
         assert_eq!(
             chain_phrase(&entries),
@@ -325,26 +321,26 @@ mod chain_phrase_long_chains {
 
     #[test]
     fn a_headline_that_covers_the_run_says_nothing_more() {
-        let mut entries = many(10, "edit", |i| format!("packages/tui/src/x{i}.ts"));
+        let mut entries = many(10, "Edit", |i| format!("packages/tui/src/x{i}.ts"));
         entries.extend(reads(3, "packages/tui/src"));
         assert_eq!(chain_phrase(&entries), "Edited packages/tui/src");
     }
 
     #[test]
     fn a_footnote_sized_remainder_is_not_worth_the_width() {
-        let mut entries = many(4, "edit", |i| format!("src/x{i}.ts"));
-        entries.extend(many(2, "bash", |_| "check".into()));
-        entries.extend(many(2, "read", |i| format!("src/y{i}.ts")));
-        entries.extend(many(2, "SearchCodebase", |i| format!("sym{i}")));
-        entries.extend(many(2, "webfetch", |_| "https://example.com".into()));
+        let mut entries = many(4, "Edit", |i| format!("src/x{i}.ts"));
+        entries.extend(many(2, "Shell", |_| "check".into()));
+        entries.extend(many(2, "Read", |i| format!("src/y{i}.ts")));
+        entries.extend(many(2, "CodeSearch", |i| format!("sym{i}")));
+        entries.extend(many(2, "WebFetch", |_| "https://example.com".into()));
         assert!(!chain_phrase(&entries).contains('·'));
     }
 
     #[test]
     fn a_chain_spread_thin_across_everything_still_names_its_largest_act() {
         let mut entries = many(50, "TodoWrite", |_| "plan".into());
-        entries.extend(many(4, "edit", |i| format!("src/x{i}.ts")));
-        entries.extend(many(4, "bash", |_| "check".into()));
+        entries.extend(many(4, "Edit", |i| format!("src/x{i}.ts")));
+        entries.extend(many(4, "Shell", |_| "check".into()));
         assert_eq!(chain_phrase(&entries), "Edited 4 files · 4 commands");
     }
 }

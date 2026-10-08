@@ -13,7 +13,7 @@
 //! - Tool-argument validation (`validateToolArguments`) is ledger 8.5; until
 //!   then prepared arguments pass through unchanged.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -25,6 +25,7 @@ use hoocode_ai_types::{
     self as ai_types, AbortSignal, AssistantMessage, AssistantMessageEvent, Content, Message,
     SimpleStreamOptions, StopReason, ThinkingLevel, ToolResultMessage, UserMessage,
 };
+use hoocode_runtime::ParallelToolLimit;
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -681,7 +682,64 @@ async fn execute_tool_calls_sequential(
     }
 }
 
-/// `executeToolCallsParallel`: prepared tools run concurrently;
+/// A started call: its index in the batch and its outcome once it settles.
+type RunningCall =
+    std::pin::Pin<Box<dyn std::future::Future<Output = (usize, ExecutedOutcome)> + Send>>;
+
+/// Starts a parallel batch's prepared calls in call order, one per free slot of
+/// `limit` (`performance.maxParallelTools`). A call takes its slot here, before
+/// it is spawned; only then does an `ordered_start` call take its turn on the
+/// [`Turnstile`]. The slot is held by the call's future and freed when the call
+/// settles. Slots always go to the earliest unfinished calls, so every
+/// turn-holder's predecessors are already running and reach their dispatch
+/// point. That rules out the deadlock where a call waits for a turn that no
+/// running call can give.
+struct SlotLauncher {
+    limit: ParallelToolLimit,
+    signal: Option<AbortSignal>,
+    updates: UpdateSender,
+    turnstile: Arc<Turnstile>,
+    ordered_starts: usize,
+}
+
+impl SlotLauncher {
+    /// Starts waiting calls, in call order, until no slot is free.
+    fn fill(
+        &mut self,
+        waiting: &mut VecDeque<usize>,
+        running: &mut FuturesUnordered<RunningCall>,
+        prepared_calls: &[Option<Box<PreparedToolCall>>],
+    ) {
+        while let Some(&index) = waiting.front() {
+            // Take the slot before the call exists as a task.
+            let Some(slot) = self.limit.try_acquire() else {
+                break;
+            };
+            waiting.pop_front();
+            let prepared = prepared_calls[index]
+                .as_ref()
+                .expect("a waiting call was prepared");
+            let order = prepared.tool.ordered_start.then(|| {
+                self.ordered_starts += 1;
+                (self.turnstile.clone(), self.ordered_starts - 1)
+            });
+            let tool = prepared.tool.clone();
+            let tool_call = prepared.tool_call.clone();
+            let args = prepared.args.clone();
+            let signal = self.signal.clone();
+            let updates = self.updates.clone();
+            running.push(Box::pin(async move {
+                // Released when this call settles, before the batch sees the result.
+                let _slot = slot;
+                let executed = run_tool(tool, tool_call, args, signal, Some(updates), order).await;
+                (index, executed)
+            }));
+        }
+    }
+}
+
+/// `executeToolCallsParallel`: prepared tools run concurrently, at most
+/// `config.max_parallel_tools` at a time, started in call order.
 /// `tool_execution_end` is emitted as each settles, result messages after the
 /// whole batch in call order.
 async fn execute_tool_calls_parallel(
@@ -693,10 +751,7 @@ async fn execute_tool_calls_parallel(
 ) -> ExecutedToolCallBatch {
     let mut finalized: Vec<Option<FinalizedOutcome>> = vec![None; tool_calls.len()];
     let mut prepared_calls: Vec<Option<Box<PreparedToolCall>>> = Vec::new();
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let running = FuturesUnordered::new();
-    let turnstile = Arc::new(Turnstile::default());
-    let mut ordered_starts = 0usize;
+    let mut waiting: VecDeque<usize> = VecDeque::new();
 
     for (index, tool_call) in tool_calls.iter().enumerate() {
         emit_tool_execution_start(tool_call, emit);
@@ -708,39 +763,40 @@ async fn execute_tool_calls_parallel(
                 prepared_calls.push(None);
             }
             Preparation::Prepared(prepared) => {
-                let tool = prepared.tool.clone();
-                let tool_call = prepared.tool_call.clone();
-                let args = prepared.args.clone();
-                let signal = config.signal.clone();
-                let tx = tx.clone();
-                let order = tool.ordered_start.then(|| {
-                    ordered_starts += 1;
-                    (turnstile.clone(), ordered_starts - 1)
-                });
-                running.push(async move {
-                    let executed = run_tool(tool, tool_call, args, signal, Some(tx), order).await;
-                    (index, executed)
-                });
                 prepared_calls.push(Some(prepared));
+                waiting.push_back(index);
             }
         }
     }
-    drop(tx);
 
-    tokio::pin!(running);
-    let mut remaining = running.len();
-    while remaining > 0 {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut launcher = SlotLauncher {
+        limit: ParallelToolLimit::new(config.max_parallel_tools),
+        signal: config.signal.clone(),
+        updates: tx,
+        turnstile: Arc::new(Turnstile::default()),
+        ordered_starts: 0,
+    };
+    let mut running: FuturesUnordered<RunningCall> = FuturesUnordered::new();
+    launcher.fill(&mut waiting, &mut running, &prepared_calls);
+
+    while !running.is_empty() {
+        let mut settled = None;
         tokio::select! {
             biased;
             Some(update) = rx.recv() => emit(update),
-            Some((index, executed)) = running.next() => {
-                remaining -= 1;
-                let prepared = prepared_calls[index].as_ref().expect("a running call was prepared");
-                let outcome =
-                    finalize_executed_tool_call(context, assistant_message, prepared, executed, config);
-                emit_tool_execution_end(&outcome, emit);
-                finalized[index] = Some(outcome);
-            }
+            Some(done) = running.next() => settled = Some(done),
+        }
+        if let Some((index, executed)) = settled {
+            let prepared = prepared_calls[index]
+                .as_ref()
+                .expect("a running call was prepared");
+            let outcome =
+                finalize_executed_tool_call(context, assistant_message, prepared, executed, config);
+            emit_tool_execution_end(&outcome, emit);
+            finalized[index] = Some(outcome);
+            // The freed slot goes to the next call in order.
+            launcher.fill(&mut waiting, &mut running, &prepared_calls);
         }
     }
     while let Ok(update) = rx.try_recv() {

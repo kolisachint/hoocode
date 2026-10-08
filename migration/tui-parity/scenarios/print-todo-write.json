@@ -48,7 +48,7 @@
         },
         {
           "id": "call_ask_1",
-          "name": "ask_options",
+          "name": "AskUserQuestion",
           "arguments": {
             "questions": [
               {

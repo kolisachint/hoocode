@@ -151,7 +151,7 @@ Both recovered the same real summary from a run that otherwise would not have. T
 delivered exactly once and then persists as ordinary conversation history — verified as one
 copy per request body, not re-injection.
 
-A full `Task` tool dispatch — parent, pool, real child process, verified `result.json` — settled
+A full `Agent` tool dispatch — parent, pool, real child process, verified `result.json` — settled
 `complete` and the parent received the summary. **The first clean subagent success in the ten
 recorded runs.**
 
@@ -251,10 +251,15 @@ the transcript said a third thing entirely (`Agent [explore]`).
 
 | before | after | still accepted |
 |---|---|---|
-| `Task` | **`Agent`** | `Task`, registered as an alias for a release |
-| `TaskOutput` | **`AgentOut`** | `TaskOutput`, same |
-| `Agent [explore]`, `TaskOutput explore#1` | **`Agent explore`**, **`AgentOut explore#1`** (plus `resume`, plus `· background`) | both names render through one renderer |
+| `Task` (2026-10-05 wording) | **`Agent`** (2026-10-06) | `Task` was an alias for one release; deleted 2026-10-08, no longer accepted |
+| `TaskOutput` (2026-10-05 wording) | **`AgentOutput`** (2026-10-06 as `AgentOut`, renamed 2026-10-08) | `TaskOutput` and `AgentOut` are no longer accepted |
+| `Agent [explore]`, `TaskOutput explore#1` | **`Agent explore`**, **`AgentOutput explore#1`** (plus `resume`, plus `· background`) | — both names render through one renderer |
 | `call Task with resume_task_id` | `call Agent with …` | — |
+
+Tool rename, 2026-10-08 (user): `AgentOut` became `AgentOutput`. The `Task` and
+`TaskOutput` aliases were deleted, so the old names are unknown tools. The
+parity harness maps the hoocode-ts names to these (`TOOL_NAMES` in
+`migration/tui-parity/harness.py`).
 
 First shipped on this branch as `Dispatch` / `DispatchStatus`; renamed to
 `Agent` / `AgentOut` before release (2026-10-06) because they are shorter, read

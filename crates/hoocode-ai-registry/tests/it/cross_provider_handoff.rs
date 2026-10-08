@@ -165,6 +165,7 @@ fn options(model: &Model, api_key: &str) -> SimpleStreamOptions {
 }
 
 fn complete(model: &Model, context: Context, api_key: &str) -> AssistantMessage {
+    #[allow(clippy::disallowed_methods)] // test: a runtime of its own
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let opts = options(model, api_key);
     runtime.block_on(async {

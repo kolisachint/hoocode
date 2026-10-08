@@ -1,5 +1,5 @@
 //! Port of the pin's `test/suite/subagent-visual-tie.test.ts`: per-agent
-//! identity colors across the Task call, the task panel and TaskOutput;
+//! identity colors across the Task call, the task panel and AgentOutput;
 //! wall-clock elapsed times; the TodoWrite ↔ dispatch link and the flat lens
 //! nesting it drives; TodoWrite's reconcile by identity.
 //!
@@ -126,6 +126,7 @@ fn instant_pool(cwd: &Path) -> SubagentPool {
     pool
 }
 
+#[allow(clippy::disallowed_methods)] // test helper: a runtime of its own
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -141,7 +142,7 @@ fn execute(tool: &ToolDefinition, args: Value, cwd: &Path) -> AgentToolResult {
     (tool.execute)("c1".into(), args, None, None, Some(&ctx)).unwrap()
 }
 
-/// Dispatch "scan the repo" as an explore run through the Task tool.
+/// Dispatch "scan the repo" as an explore run through the Agent tool.
 fn dispatch_scan(cwd: &Path) {
     let rt = runtime();
     let _enter = rt.enter();
@@ -176,7 +177,7 @@ fn hashes_an_agent_type_to_a_stable_palette_token() {
         "plan",
         "general-purpose",
         "review",
-        "edit",
+        "Edit",
         "doc",
     ]
     .into_iter()
@@ -285,12 +286,12 @@ fn each_running_row_carries_its_own_live_timer_next_to_the_activity() {
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Subagents);
     let run = task_store().create("scan the repo", sub("explore", Some("run-1")));
-    running_agent("run-1", "explore#1", Some("SearchCodebase"));
+    running_agent("run-1", "explore#1", Some("CodeSearch"));
     set_status(run.id, TaskStatus::InProgress);
     advance_clock_for_tests(34_000);
     let lines = render(&mut panel);
     let row = strip(find(&lines, "scan the repo"));
-    assert!(row.contains("⋯ SearchCodebase · 34s"), "{row}");
+    assert!(row.contains("⋯ CodeSearch · 34s"), "{row}");
     panel.dispose();
 }
 
@@ -371,7 +372,7 @@ fn nests_a_linked_run_under_its_plan_item_in_the_flat_lens_and_counts_it() {
             ..sub("explore", Some("run-1"))
         },
     );
-    running_agent("run-1", "explore#1", Some("SearchCodebase"));
+    running_agent("run-1", "explore#1", Some("CodeSearch"));
     set_status(run.id, TaskStatus::InProgress);
     // An unlinked run stays out of the flat lens entirely.
     let unlinked = task_store().create("free-floating run", sub("plan", None));
@@ -391,7 +392,7 @@ fn nests_a_linked_run_under_its_plan_item_in_the_flat_lens_and_counts_it() {
     assert_eq!(run_idx, todo_idx + 1, "{lines:#?}");
     assert!(lines[run_idx].contains("└─"));
     assert!(lines[run_idx].contains("[explore]"));
-    assert!(lines[run_idx].contains("⋯ SearchCodebase"));
+    assert!(lines[run_idx].contains("⋯ CodeSearch"));
     assert!(!lines.iter().any(|l| l.contains("free-floating run")));
     // The header counts what the lens shows: todo + linked run + pending todo.
     assert!(lines[0].contains("0/3"), "{}", lines[0]);

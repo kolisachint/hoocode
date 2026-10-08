@@ -24,14 +24,14 @@
       "tool_calls": [
         {
           "id": "call_bash_1",
-          "name": "bash",
+          "name": "Shell",
           "arguments": {
             "command": "echo hi"
           }
         },
         {
           "id": "call_read_1",
-          "name": "read",
+          "name": "Read",
           "arguments": {
             "path": "missing.txt"
           }

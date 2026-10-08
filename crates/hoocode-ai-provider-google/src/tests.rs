@@ -334,8 +334,8 @@ fn stream_keeps_signatures_ids_response_id_usage_and_cost() {
             {"text": "answer", "thoughtSignature": "tsig"},
         ]}}]}),
         json!({"responseId": "r2", "candidates": [{"content": {"parts": [
-            {"functionCall": {"id": "c1", "name": "read", "args": {"path": "a"}}, "thoughtSignature": "fsig"},
-            {"functionCall": {"id": "c1", "name": "read"}},
+            {"functionCall": {"id": "c1", "name": "Read", "args": {"path": "a"}}, "thoughtSignature": "fsig"},
+            {"functionCall": {"id": "c1", "name": "Read"}},
         ]}, "finishReason": "STOP"}],
          "usageMetadata": {"promptTokenCount": 100, "cachedContentTokenCount": 40, "candidatesTokenCount": 7, "thoughtsTokenCount": 3, "totalTokenCount": 110}}),
     ];
@@ -373,7 +373,7 @@ fn stream_keeps_signatures_ids_response_id_usage_and_cost() {
     // A repeated id gets a generated `<name>_<ms>_<n>` one; missing args are {}.
     let second_id = content[3]["id"].as_str().unwrap();
     assert!(
-        second_id.starts_with("read_") && second_id != "c1",
+        second_id.starts_with("Read_") && second_id != "c1",
         "{second_id}"
     );
     assert_eq!(content[3]["arguments"], json!({}));

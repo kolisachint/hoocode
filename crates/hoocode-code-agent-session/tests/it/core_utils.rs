@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! `core/exec.ts`, `core/event-bus.ts` and `core/output-guard.ts` (hoocode has
 //! no dedicated tests for these; the cases pin the TS behavior).
 

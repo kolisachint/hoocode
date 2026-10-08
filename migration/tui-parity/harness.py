@@ -29,6 +29,33 @@ Usage::
     harness.py png <scenario>            # render report.html to report.png (needs playwright)
     harness.py record <scenario|all>     # Level-1 replay fixtures from ts (replay.json)
 
+Tool names (2026-10-08 rename, user decision). hoocode-ts still calls its tools
+``read``, ``bash``, ``edit``, ``write``, ``SearchCodebase``, ``SearchHooCode``,
+``ask_options``, ``webfetch``, ``websearch``, ``Task`` and ``TaskOutput``; hoocode
+calls them ``Read``, ``Shell``, ``Edit``, ``Write``, ``CodeSearch``, ``DocSearch``,
+``AskUserQuestion``, ``WebFetch``, ``WebSearch``, ``Agent`` and ``AgentOutput``.
+The table is ``TOOL_NAMES`` below. The harness handles the difference in exactly
+two places, and nowhere else:
+
+* Scenarios and the mock use the **hoocode** names: a scenario's ``llm`` script
+  names ``Read``, ``Shell``, ... ``llm_for_app`` turns them back into the
+  hoocode-ts names for the ts run. The hoocode run gets the script unchanged, so
+  the Rust replay test (``crates/hoocode-code-main/tests/it/replay.rs``) can read
+  scenarios directly.
+* The comparison maps ts output to the hoocode names. The rules are the
+  ``tool_rules()`` entries in ``normalize.json``, generated from ``TOOL_NAMES``
+  (``"name"`` / ``"toolName"`` values, backtick code spans, the unambiguous
+  identifiers, ``Task tool``, and a tool title at the start of a line for read,
+  edit and write). ``normalize.json`` is shared with the Rust replay test, so both
+  sides see the same mapping. Being applied to both apps, the rules also hide a
+  stale old name printed by hoocode; the Rust tests are what catch that.
+
+Documented exception: hoocode prints a stderr note in ``--print`` and
+``--mode json`` (``crates/hoocode-code-cli/src/runtime.rs``, required by
+``docs/design/reliability.md``) that hoocode-ts does not print. ``RUST_ONLY_NOTE``
+drops that line from the hoocode side of every capture (screen or text). The same
+line is also blanked by a ``normalize.json`` rule for the Rust replay test.
+
 Scenario format: see ``scenarios/README.md``.
 """
 
@@ -60,6 +87,97 @@ APPS = ("ts", "rust")
 # Each app's project config dir (`{config}` in `work_files` paths). Both apps use
 # `.hoocode` (naming-and-paths.md); isolation comes from each run's own temp HOME.
 CONFIG_DIRS = {"ts": ".hoocode", "rust": ".hoocode"}
+
+# Tool names, hoocode-ts (key) -> hoocode (value). See the module docstring.
+TOOL_NAMES = {
+    "read": "Read",
+    "bash": "Shell",
+    "edit": "Edit",
+    "write": "Write",
+    "SearchCodebase": "CodeSearch",
+    "SearchHooCode": "DocSearch",
+    "ask_options": "AskUserQuestion",
+    "webfetch": "WebFetch",
+    "websearch": "WebSearch",
+    "Task": "Agent",
+    "TaskOutput": "AgentOutput",
+}
+# Identifiers that are never ordinary words: mapped anywhere in text.
+UNAMBIGUOUS_TOOL_NAMES = ["SearchCodebase", "SearchHooCode", "ask_options", "webfetch", "websearch", "TaskOutput"]
+# Tool titles that start a line (formatReadCall, edit and write render "<name> <path>").
+# bash is not listed: its title is "$ <command>", which has no name.
+HEADER_TOOL_NAMES = ["read", "edit", "write"]
+# hoocode's --print / --mode json stderr note (runtime.rs). hoocode-ts prints nothing.
+RUST_ONLY_NOTE = re.compile(r"^Note: --(print|mode json) does not ask for tool approval;.*$")
+# The tmux pane wraps the note, so its tail arrives on the following lines (" it.").
+# The tail of the note is the text those continuation lines must be a suffix of.
+RUST_ONLY_NOTE_TAIL = "run without it."
+
+
+# Model-facing prose that names a tool (the light system prompt). Only exact phrases:
+# the verbs "read", "edit" and "write" in "Use the tools to read, edit, and write" stay.
+PROSE_TOOL_RULES = [
+    (r"Search with bash \(rg/find/ls\)", "Search with Shell (rg/find/ls)"),
+    (r"Prefer edit for changes; write for new files", "Prefer Edit for changes; Write for new files"),
+    # Tool descriptions that name the subagent tool in prose.
+    (r"\bfrom a Task notification\b", "from an Agent notification"),
+    (r"\bvia Task,", "via Agent,"),
+    (r"\bearlier Task or AgentOutput\b", "earlier Agent or AgentOutput"),
+]
+
+
+def tool_rules() -> list[dict]:
+    """The normalize.json rules that map hoocode-ts tool names to hoocode's."""
+    rules = []
+    for ts, rs in TOOL_NAMES.items():
+        rules.append({"pattern": rf'"(name|toolName)":( ?)"{ts}"', "replace": rf'"\1":\2"{rs}"'})
+        rules.append({"pattern": f"`{ts}`", "replace": f"`{rs}`"})
+        # Validation errors name the tool the model called (`Validation failed for tool "read":`).
+        rules.append({"pattern": rf'for tool (\\?)"{ts}(\\?)"', "replace": rf'for tool \1"{rs}\2"'})
+    for ts in UNAMBIGUOUS_TOOL_NAMES:
+        rules.append({"pattern": rf"\b{ts}\b", "replace": TOOL_NAMES[ts]})
+    rules.append({"pattern": r"\bTask( tool\b)", "replace": r"Agent\1"})
+    for ts in HEADER_TOOL_NAMES:
+        # A tool title, with or without the "●" bullet (and its spaces) that precedes it on screen.
+        rules.append({"pattern": rf"^(\s*(?:●\s+)?){ts}( )", "replace": rf"\1{TOOL_NAMES[ts]}\2"})
+    # The permission prompt's title names the tool: "Allow: edit src/app.ts".
+    for ts in HEADER_TOOL_NAMES:
+        rules.append({"pattern": rf"Allow: {ts} ", "replace": f"Allow: {TOOL_NAMES[ts]} "})
+    # Model-facing text in captured requests: the system prompt is JSON, so its
+    # line breaks are the two characters "\n" (hence `(^|\\n)` for "start of line").
+    for ts, rs in TOOL_NAMES.items():
+        rules.append({"pattern": rf"(^|\\n)- {ts}: ", "replace": rf"\1- {rs}: "})
+        # Bold only for names that are not ordinary words ("**read** surface" stays).
+        if ts in UNAMBIGUOUS_TOOL_NAMES or ts in ("Task", "bash"):
+            rules.append({"pattern": rf"\*\*{ts}\*\*", "replace": f"**{rs}**"})
+        rules.append({"pattern": rf"\b(the|call|use) {ts} (tool|with)\b", "replace": rf"\1 {rs} \2"})
+        # No lookahead: normalize.json is also read by the Rust replay test (regex crate).
+        rules.append({"pattern": rf"(<tools>(?:[A-Za-z]+, )*){ts}(, |</tools>)", "replace": rf"\1{rs}\2"})
+    for pattern, replace in PROSE_TOOL_RULES:
+        rules.append({"pattern": pattern, "replace": replace})
+    return rules
+
+
+def tool_needle(app: str, needle: str) -> str:
+    """A snapshot assertion names a tool as hoocode does; the ts run looks for hoocode-ts's name."""
+    if app == "rust":
+        return needle
+    back = {rs: ts for ts, rs in TOOL_NAMES.items()}
+    return back.get(needle, needle)
+
+
+def llm_for_app(app: str, turns: list) -> list:
+    """A scenario's script names tools as hoocode does. The ts run gets hoocode-ts names."""
+    if app == "rust":
+        return turns
+    back = {rs: ts for ts, rs in TOOL_NAMES.items()}
+    out = []
+    for turn in turns:
+        if turn.get("tool_calls"):
+            calls = [{**c, "name": back.get(c["name"], c["name"])} for c in turn["tool_calls"]]
+            turn = {**turn, "tool_calls": calls}
+        out.append(turn)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -257,40 +375,71 @@ class Normalizer:
 
     A rule's replacement cells inherit the style of the first matched cell, or the
     rule's explicit ``style`` (use it to mask a style that is itself random, such as
-    a session-color badge)."""
+    a session-color badge). ``drop`` lines are removed entirely (hoocode side only,
+    see RUST_ONLY_NOTE)."""
 
     rules: list[tuple[re.Pattern, str, str | None]] = field(default_factory=list)
+    drop: list[re.Pattern] = field(default_factory=list)
 
     @classmethod
-    def load(cls, extra: list[dict] | None, subs: dict[str, str]) -> "Normalizer":
+    def load(cls, extra: list[dict] | None, subs: dict[str, str], app: str = "ts") -> "Normalizer":
         spec = json.loads(NORMALIZE.read_text())["rules"] + (extra or [])
+        missing = [r["pattern"] for r in tool_rules() if r not in spec]
+        if missing:
+            sys.exit(f"normalize.json lacks the tool-name rule {missing[0]!r}; it must mirror TOOL_NAMES in harness.py")
         rules = []
         for r in spec:
             pattern = r["pattern"]
             for key, value in subs.items():
                 pattern = pattern.replace("{" + key + "}", re.escape(value))
             rules.append((re.compile(pattern), r["replace"], r.get("style")))
-        return cls(rules)
+        drop = [RUST_ONLY_NOTE] if app == "rust" else []
+        return cls(rules, drop)
 
     def apply_text(self, text: str) -> str:
         return grid_text(self.apply([[(ch, "") for ch in line] for line in text.split("\n")]))
 
     def apply(self, grid: list[list[Cell]]) -> list[list[Cell]]:
         out = []
+        wrapping = False  # inside a dropped note whose wrapped tail may follow
+        dropped = 0
         for cells in grid:
+            text = "".join(ch for ch, _ in cells)
+            if wrapping and text.strip() and RUST_ONLY_NOTE_TAIL.endswith(text.strip()):
+                dropped += 1
+                continue
+            wrapping = False
+            if any(p.search(text) for p in self.drop):
+                wrapping = bool(self.drop)
+                dropped += 1
+                continue
             for pattern, repl, forced in self.rules:
                 text = "".join(ch for ch, _ in cells)
                 new: list[Cell] = []
                 last = 0
                 for m in pattern.finditer(text):
                     new.extend(cells[last : m.start()])
-                    style = forced if forced is not None else (cells[m.start()][1] if m.start() < len(cells) else "")
-                    new.extend((ch, style) for ch in m.expand(repl))
+                    replaced = m.expand(repl)
+                    matched = cells[m.start() : m.end()]
+                    if forced is None and len(replaced) == len(matched):
+                        # A same-length rewrite (a renamed tool title) keeps each cell's own
+                        # style, so "● read" keeps its bullet colour and bold title.
+                        new.extend((ch, cell[1]) for ch, cell in zip(replaced, matched))
+                    else:
+                        style = forced if forced is not None else (cells[m.start()][1] if m.start() < len(cells) else "")
+                        new.extend((ch, style) for ch in replaced)
                     last = m.end()
                 if last:
                     new.extend(cells[last:])
                     cells = new
             out.append(cells)
+        # The dropped note occupied pane rows that hoocode-ts shows as blank rows above the
+        # exit line (the last row of a finished print run), so put blank rows back there.
+        blanks = [[] for _ in range(dropped)]
+        if out and "".join(ch for ch, _ in out[-1]).startswith("<exited status="):
+            out[-1:-1] = blanks
+        else:
+            out.extend(blanks)
         return out
 
 
@@ -419,7 +568,7 @@ def run_app(app: str, sc: dict, out: Path, keep: bool) -> dict:
     if sc.get("git"):
         subprocess.run(["git", "init", "-q", "-b", "main"], cwd=work, check=True)
 
-    mock, port, log = start_mock(sc.get("llm", []), tmp)
+    mock, port, log = start_mock(llm_for_app(app, sc.get("llm", [])), tmp)
     write_models_json(home, port, sc)
 
     term = sc.get("terminal", {})
@@ -439,7 +588,7 @@ def run_app(app: str, sc: dict, out: Path, keep: bool) -> dict:
         },
     }
     argv = app_cmd(app) + list(sc.get("args", ["--offline", "--provider", "mock", "--model", "mock-model"]))
-    normalizer = Normalizer.load(sc.get("normalize"), {"HOME": str(home), "WORK": str(work), "TMP": str(tmp)})
+    normalizer = Normalizer.load(sc.get("normalize"), {"HOME": str(home), "WORK": str(work), "TMP": str(tmp)}, app)
     result: dict = {"ok": True, "error": None, "snapshots": {}}
     stdout_file = tmp / "stdout.jsonl" if sc.get("stdout_jsonl") is not None else None
     try:
@@ -455,7 +604,7 @@ def run_app(app: str, sc: dict, out: Path, keep: bool) -> dict:
         tmux.start(argv, work, env, stdout_file)
         for i, step in enumerate(sc["steps"]):
             try:
-                run_step(tmux, step, out, normalizer, result, stdout_file, {"HOME": home, "WORK": work})
+                run_step(tmux, step, out, normalizer, result, stdout_file, {"HOME": home, "WORK": work}, app)
             except StepError as e:
                 raise StepError(f"step {i} {json.dumps(step)}: {e}") from None
     except (StepError, RuntimeError) as e:
@@ -503,12 +652,23 @@ def run_app(app: str, sc: dict, out: Path, keep: bool) -> dict:
 DEFAULT_REQUEST_FIELDS = ["messages", "tools", "tool_choice", "model"]
 
 
+# The system prompt's "# About <app> itself" section lists the app's own docs by
+# absolute path. Those paths point into the install (the pinned build dir for
+# hoocode-ts, nothing for the Rust build yet), so the section is install-specific
+# and masked on both sides. Nothing else in the system prompt is masked.
+SELF_DOCS_RE = re.compile(r"# About (?:hoocode|<app>) itself\n.*?(?=Current date:)", re.S)
+
+
 def normalize_requests(log: Path, normalizer: "Normalizer", fields: list[str] | None) -> str:
     """What the app sent to the model, reduced to the fields that shape model behavior."""
     reqs = []
     for line in log.read_text().splitlines():
         body = json.loads(line)["body"]
-        reqs.append({k: body.get(k) for k in (fields or DEFAULT_REQUEST_FIELDS) if k in body})
+        req = {k: body.get(k) for k in (fields or DEFAULT_REQUEST_FIELDS) if k in body}
+        for msg in req.get("messages") or []:
+            if msg.get("role") == "system" and isinstance(msg.get("content"), str):
+                msg["content"] = SELF_DOCS_RE.sub("", msg["content"])
+        reqs.append(req)
     return normalizer.apply_text(json.dumps(reqs, indent=1, sort_keys=True, ensure_ascii=False))
 
 
@@ -561,6 +721,7 @@ def run_step(
     result: dict,
     stdout_file: Path | None = None,
     dirs: dict | None = None,
+    app: str = "rust",
 ) -> None:
     timeout = float(step.get("timeout", 15))
     if "write_settings" in step or "write_files" in step:
@@ -619,9 +780,17 @@ def run_step(
         (out / f"{name}.style").write_text(styled)
         result["snapshots"][name] = {"text": plain, "style": styled, "grid": grid}
         for needle in step.get("contains", []):
+            needle = tool_needle(app, needle)
             if needle not in plain:
                 raise StepError(f"snapshot {name}: expected to contain {needle!r}")
+        # contains_line: a list of [needle, ...]; one screen line must hold all of them
+        # (e.g. the row of one tool and its switch value), so the check is about one row.
+        for needles in step.get("contains_line", []):
+            needles = [tool_needle(app, n) for n in needles]
+            if not any(all(n in line for n in needles) for line in plain.splitlines()):
+                raise StepError(f"snapshot {name}: expected one line to contain all of {needles!r}")
         for needle in step.get("not_contains", []):
+            needle = tool_needle(app, needle)
             if needle in plain:
                 raise StepError(f"snapshot {name}: expected NOT to contain {needle!r}")
     else:
@@ -667,7 +836,7 @@ def run_headless(app: str, sc: dict, keep: bool = False) -> dict:
     write_files(sc, work)
     if sc.get("symlinks") or sc.get("git"):
         raise StepError("symlinks/git scenarios are not replayable")
-    mock, port, log = start_mock(sc.get("llm", []), tmp)
+    mock, port, log = start_mock(llm_for_app(app, sc.get("llm", [])), tmp)
     write_models_json(home, port, sc)
     env = {
         "HOME": str(home),

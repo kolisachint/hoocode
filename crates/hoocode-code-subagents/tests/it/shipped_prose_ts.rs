@@ -47,10 +47,10 @@ fn leaves_no_substitution_token_in_the_rendered_prompt() {
 ///
 /// The subagent tools are ours to name: `Task` collided with TodoWrite items in
 /// the task store and read as a to-do rather than a background run, so the
-/// wire names are `Agent` and `AgentOut` (`Task` and `TaskOutput` stay
-/// registered as deprecated aliases for a release). A prompt that told the
-/// model to "call Task" while the tool was called `Agent` would be worse
-/// than the divergence, so the templates move with the names.
+/// wire names are `Agent` and `AgentOutput`. The pre-rename `Task` and
+/// `TaskOutput` names are gone (no aliases). A prompt that told the model to
+/// "call Task" while the tool was called `Agent` would be worse than the
+/// divergence, so the templates move with the names.
 ///
 /// Everything else in these files must still match the pin byte for byte: a
 /// divergence nobody wrote down here is a bug, and this list is where it has to
@@ -58,8 +58,8 @@ fn leaves_no_substitution_token_in_the_rendered_prompt() {
 const DECLARED_DIVERGENCES: &[(&str, &str, &str)] = &[
     ("task-main.md", "**Task** tool", "**Agent** tool"),
     ("task-main.md", "call Task with", "call Agent with"),
-    ("task-background-agents.md", "`TaskOutput", "`AgentOut"),
-    ("task-background-none.md", "`TaskOutput", "`AgentOut"),
+    ("task-background-agents.md", "`TaskOutput", "`AgentOutput"),
+    ("task-background-none.md", "`TaskOutput", "`AgentOutput"),
 ];
 
 #[test]

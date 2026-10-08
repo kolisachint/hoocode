@@ -4,7 +4,7 @@
   "terminal": {"cols": 100, "rows": 34},
   "files": {"notes.txt": "alpha\nbeta\ngamma\n"},
   "llm": [
-    {"text": "Let me read it.", "tool_calls": [{"id": "call_read_1", "name": "read", "arguments": {"path": "notes.txt"}}]},
+    {"text": "Let me read it.", "tool_calls": [{"id": "call_read_1", "name": "Read", "arguments": {"path": "notes.txt"}}]},
     {"text": "The file has three lines: alpha, beta, gamma."}
   ],
   "steps": [

@@ -268,7 +268,7 @@ fn converts_thinking_blocks_to_plain_text_when_the_source_model_differs() {
 fn removes_thought_signature_from_tool_calls_when_migrating_between_models() {
     let call = ToolCallContent {
         id: "call_123".into(),
-        name: "bash".into(),
+        name: "Shell".into(),
         arguments: json!({"command": "ls"}),
         thought_signature: Some(
             json!({"type": "reasoning.encrypted", "id": "call_123", "data": "encrypted"})
@@ -283,7 +283,7 @@ fn removes_thought_signature_from_tool_calls_when_migrating_between_models() {
             vec![Content::ToolCall(call)],
             StopReason::ToolUse,
         ),
-        tool_result("call_123", "bash", "output"),
+        tool_result("call_123", "Shell", "output"),
     ];
     let result = transform(&messages);
     let Some(Content::ToolCall(call)) = first_assistant(&result)
@@ -319,14 +319,14 @@ fn adds_synthetic_tool_results_for_trailing_orphaned_tool_calls() {
             "gpt-5",
             vec![tool_call(
                 "call_123|fc_123",
-                "read",
+                "Read",
                 json!({"path": "README.md"}),
             )],
             StopReason::ToolUse,
         ),
     ];
     let result = transform(&messages);
-    assert_synthetic(result.last().unwrap(), "call_123_fc_123", "read");
+    assert_synthetic(result.last().unwrap(), "call_123_fc_123", "Read");
 }
 
 #[test]
@@ -337,12 +337,12 @@ fn adds_synthetic_results_only_for_trailing_calls_still_missing_results() {
             "openai-responses",
             "gpt-5",
             vec![
-                tool_call("call_1|fc_1", "read", json!({"path": "README.md"})),
-                tool_call("call_2|fc_2", "bash", json!({"command": "pwd"})),
+                tool_call("call_1|fc_1", "Read", json!({"path": "README.md"})),
+                tool_call("call_2|fc_2", "Shell", json!({"command": "pwd"})),
             ],
             StopReason::ToolUse,
         ),
-        tool_result("call_1|fc_1", "read", "done"),
+        tool_result("call_1|fc_1", "Read", "done"),
     ];
     let result = transform(&messages);
     let synthetic: Vec<&Message> = result
@@ -350,7 +350,7 @@ fn adds_synthetic_results_only_for_trailing_calls_still_missing_results() {
         .filter(|m| matches!(m, Message::ToolResult(r) if r.is_error))
         .collect();
     assert_eq!(synthetic.len(), 1);
-    assert_synthetic(synthetic[0], "call_2_fc_2", "bash");
+    assert_synthetic(synthetic[0], "call_2_fc_2", "Shell");
 }
 
 // --- Routing: every Copilot backend carries the Copilot headers ---
@@ -428,12 +428,12 @@ fn copilot_initiator_is_agent_after_a_tool_result_and_images_set_the_vision_head
         assistant(
             "openai-responses",
             "gpt-5",
-            vec![tool_call("call_1", "read", json!({"path": "a.png"}))],
+            vec![tool_call("call_1", "Read", json!({"path": "a.png"}))],
             StopReason::ToolUse,
         ),
         Message::ToolResult(ToolResultMessage {
             tool_call_id: "call_1".into(),
-            tool_name: "read".into(),
+            tool_name: "Read".into(),
             content: vec![image],
             details: None,
             is_error: false,

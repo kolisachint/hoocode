@@ -11,20 +11,20 @@ the Rust `hoocode`.
 
 ## Problem
 
-In `--mode rpc`, tools that should ask first (bash, write, edit, webfetch,
-websearch) run without asking.
+In `--mode rpc`, tools that should ask first (Shell, Write, Edit, WebFetch,
+WebSearch) run without asking.
 
 - `hoocode-code-cli/src/runtime.rs` `build_permission_gate` attaches a
   `PermissionUi` only in interactive mode. RPC mode gets `None`.
 - `hoocode-code-permissions/src/lib.rs` `evaluate` returns `Allow` for a
   gated tool when there is no UI (`!has_ui`). Hard rules (`denied_tools`,
-  `enabled_tools`, bash patterns) still apply; `auto_allow` and the prompt
+  `enabled_tools`, Shell patterns) still apply; `auto_allow` and the prompt
   don't.
 - `hoocode-code-rpc/src/mode.rs` drops every `extension_ui_response`.
 
 hoobot runs `hoocode --mode rpc` per Discord thread with a `discord` mode that
-auto-allows only `read`, and shows the prompts as Allow / Deny buttons. On the
-Rust build every allowlisted Discord user can run bash and edit files with no
+auto-allows only `Read`, and shows the prompts as Allow / Deny buttons. On the
+Rust build every allowlisted Discord user can run Shell and edit files with no
 approval.
 
 ## Wire format (what hoobot already speaks)
@@ -78,7 +78,7 @@ approval timeout by answering `cancelled`.
 7. **"Always"** keeps writing the global config. hoobot never offers it.
 
 Not included: `confirm`, `input` and `editor` dialogs, and an RPC host for the
-`ask_options` tool. Nothing needs them yet.
+`AskUserQuestion` tool. Nothing needs them yet.
 
 ## Plan
 
@@ -90,7 +90,7 @@ Not included: `confirm`, `input` and `editor` dialogs, and an RPC host for the
    - `abort` and stdin EOF while a dialog is open deny and don't hang;
    - unknown response id is ignored.
 2. Wire it in `build_permission_gate`; headless env for warm workers, with a
-   test that a warm worker still runs bash without a request.
+   test that a warm worker still runs Shell without a request.
 3. Manual check with hoobot on Discord: approve, deny, approval timeout,
    abort during a prompt, bot restart with `--continue`.
 

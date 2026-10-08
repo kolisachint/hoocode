@@ -26,7 +26,7 @@ The parts already run in parallel, but nothing bounds or orders them.
 | 4 more "thread + `current_thread` runtime" fallbacks | `code-agent-session` `spawn`, `code-subagents` `tools.rs` and `runner.rs`, `code-auth` | Hidden threads; `block_on` inside a runtime can deadlock or panic |
 | 40 `block_on` calls, 26 `thread::spawn`, 20 unbounded channels | non-test code | No count, no names, no backpressure |
 | Tool calls run on tokio's blocking pool | `agent-loop` `run_tool` | Pool cap is 512 threads; parallel tool calls are not capped |
-| Each `bash` call adds 3 threads | `code-tool-bash` (2 pipe readers + 100 ms flusher) | 8 parallel bash calls = 24 extra threads |
+| Each `Shell` call adds 3 threads | `code-tool-bash` (2 pipe readers + 100 ms flusher) | 8 parallel Shell calls = 24 extra threads |
 | Each lone ESC spawns a timer thread; resize is a 100 ms polling thread | `tui-terminal` | Threads for timers |
 | `@file` autocomplete spawns `fd` and waits for it | `tui-components` `autocomplete` | Runs on the UI thread; typing stalls on a big tree (fixed by reliability item 6) |
 | UI loop writes frames to stdout itself | `tui-render` `do_render` | A slow terminal (ssh, paused pane) blocks input handling |
@@ -50,7 +50,7 @@ The parts already run in parallel, but nothing bounds or orders them.
 | **Every wait on something outside the process has a timeout.** | A hung server or tool must end as an error, not a hang. |
 | **Measure first.** Phase 0 adds the numbers; later phases must move them. | "Faster" needs a baseline. |
 | **Compaction and cleanup are work, not threads.** Compaction's LLM call runs on `hoocode-io`, its CPU part on `hoocode-tools`; cleanup runs in the Low lane. | Rust has no garbage collector; memory is freed on drop. |
-| **The agent's `bash` commands run at normal priority** (nice 0); `performance.bashNice` lowers them. | Builds and tests the agent runs are as fast as from your shell. The UI needs very little CPU. |
+| **The agent's `Shell` commands run at normal priority** (nice 0); `performance.bashNice` lowers them. | Builds and tests the agent runs are as fast as from your shell. The UI needs very little CPU. |
 | **Memory limits are on by default.** | Off by default leaves the freeze this card exists to stop. |
 | **Four settings, everything else fixed** (§3). | Fewer ways to misconfigure. |
 | **Numbers are visible**: `/perf` and `--perf-log <file>`. | For the load test and for bug reports. |
@@ -70,7 +70,7 @@ The parts already run in parallel, but nothing bounds or orders them.
 | `hoocode-bg` | 1 thread, own `current_thread` runtime | Low | Housekeeping: prune old dispatch dirs and temp files, session list index, version check, file watchers, future search indexing. |
 | `hoocode-watchdog` | 1, mostly asleep | High | Heartbeats, stall reports, RSS sampling, limit enforcement. |
 | Subagents | child processes, 5 (2 nested), as today | Low | Unchanged pool; children start with 2 workers and lowered priority. |
-| `bash` commands | child processes | Medium | Pipes read by async tasks on `hoocode-io`, not by 3 threads each. |
+| `Shell` commands | child processes | Medium | Pipes read by async tasks on `hoocode-io`, not by 3 threads each. |
 
 Steady state is about 10 threads per process; the ceiling under load is about 26.
 Today it is unbounded.
@@ -83,7 +83,7 @@ Today it is unbounded.
 | Medium | nice +5 (thread) | QoS `UTILITY` | `BELOW_NORMAL` |
 | Low | nice +10 (thread) | QoS `BACKGROUND` | `LOWEST` |
 | Subagent children | process nice +5 | process nice +5 | `BELOW_NORMAL_PRIORITY_CLASS` |
-| `bash` children | nice 0; `performance.bashNice` | nice 0; `performance.bashNice` | normal; any `bashNice` > 0 means `BELOW_NORMAL_PRIORITY_CLASS` |
+| `Shell` children | nice 0; `performance.bashNice` | nice 0; `performance.bashNice` | normal; any `bashNice` > 0 means `BELOW_NORMAL_PRIORITY_CLASS` |
 
 - Per-thread priority through the `thread-priority` crate (MIT), owned by
   `hoocode-runtime` only (add it to `migration/dep-firewall.json`).
@@ -124,6 +124,15 @@ Shedding at the soft limit: no new subagent dispatches, parallel tools drop to 1
 render caches are cleared, and the footer shows a warning. It lifts once memory is
 10% under the limit.
 
+**Parallel tool cap (landed).** `performance.maxParallelTools` (1–32, default 8) is
+applied at launch in `hoocode-agent-loop`: each batch's `SlotLauncher` takes a
+`hoocode-runtime` `ParallelToolLimit` permit per call, in call order, before the call
+is spawned or takes its `ordered_start` turn. The permit moves into the call's future
+and frees the slot when the call settles. It cannot deadlock: slots always go to the
+earliest unfinished calls, so a call waiting on the turnstile has all its predecessors
+already running and able to reach their dispatch point. N=1 runs the batch strictly
+one call at a time.
+
 ### 4. Never hang
 
 | Rule | How it is enforced |
@@ -144,7 +153,7 @@ render caches are cleared, and the footer shows a warning. It lifts once memory 
 - `/perf` (and `--perf-log <file>`): threads per lane, queue depths, frame build and
   write time, keystroke-to-frame latency, UI stalls, RSS.
 - A load scenario on the mock LLM (the one `subagent_evals.py` and the parity harness
-  use): the model streams at full speed, the turn runs 8 parallel `bash` calls that
+  use): the model streams at full speed, the turn runs 8 parallel `Shell` calls that
   print a lot, 5 subagents run, a stdio MCP server never answers, and keys are typed
   throughout. A second run uses a terminal that stops reading (paused pty).
 
@@ -157,11 +166,53 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 |---|---|---|
 | 0 | `/perf`, load scenario, baseline numbers in this card | Numbers recorded for Linux and macOS |
 | 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites | No runtime built outside the crate; thread ceiling holds in the load test |
-| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `bash` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal |
+| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal |
 | 3 | `hoocode-session-io` with flush barriers | No session file I/O on the UI thread or on `hoocode-io`; kill -9 mid-turn loses at most the unflushed entries of that turn |
 | 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test |
 | 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase |
 | 6 | Only if Phase 0 shows it: move syntax highlighting and big markdown parses to `hoocode-tools` | Frame build p99 under 8 ms on a 10k-line transcript |
+
+#### Baseline (Phase 0)
+
+Linux only, so far. macOS is not measured yet, and Phase 0 is not done until it is.
+Measured 2026-10-08 on a 4-vCPU VM (kernel 6.18). One run per row, driven by
+`scripts/perf/load_scenario.py` against the mock model in tmux, 20 keys a second for
+15 s. Each frame is timed by `Tui::set_frame_observer`. Keystroke-to-frame runs from
+the moment the terminal's reader thread receives the key to the end of the loop
+iteration that draws it. The per-second log is in `target/perf/load-*/perf.jsonl`.
+
+| Run (release build unless noted) | Frame build p50 / p99 ms | Frame write p99 ms | Keystroke→frame p50 / p99 ms | Loop iteration p50 / p99 ms | Stalls >500 ms | Threads max | RSS max |
+|---|---|---|---|---|---|---|---|
+| Load: 8 parallel `Shell`, 5,000 lines each | 28.6 / 48.7 | 0.2 | 29.1 / 191.6 | 29.1 / 99.2 | 0 | 17 | 47.9 MiB |
+| Control: 8 `Shell`, 500 lines each | 30.9 / 51.8 | 0.7 | 31.9 / 213.4 | 31.3 / 209.8 | 0 | 17 | 45.6 MiB |
+| Control: no tool calls (typing only) | 0.30 / 2.78 | 3.5 | 0.46 / 8.65 | 0.42 / 4.59 | 0 | 9 | 29.3 MiB |
+| Debug build, load as the first row | 341 / 470 | 1.7 | 97,826 / 106,026 | 105,255 p99 (one iteration) | 3 | 17 | 64.1 MiB |
+
+What the numbers say:
+
+- Idle typing meets the Phase 2 target (keystroke-to-frame p99 under 16 ms). Under
+  tool output it does not: p99 is 192 ms, and frames take about 30 ms at p50.
+- A keystroke costs one full synchronous frame. `Tui::handle_input` calls
+  `request_render`, and `run()` drains every queued input event before it looks at
+  `AppEvent`s. At 20 keys a second and 30 ms a frame the UI thread is about 60% busy
+  with frames, so any frame longer than 50 ms builds a backlog. The debug run shows
+  the backlog case: 300 queued keys took about 105 s to draw, and the agent's output
+  waited behind them.
+- The cost does not grow between 500 and 5,000 lines a call. That points at the
+  per-frame cost of the bash block, not at the amount of text. Not profiled in release
+  yet. A debug-build stack sample showed the UI thread in
+  `tool_chain` → `bash.rs` → `visual_truncate` → `Text::render` → `wrap_text_with_ansi`,
+  so the block is wrapped in full on each frame before it is truncated.
+- Thread count is 9 at idle and 17 once tools run (tokio workers for the `Shell` pipes).
+- Frame write time is small everywhere (p99 under 4 ms). The terminal is not what
+  stalls the loop; the render is.
+
+Phase 6 says "frame build p99 under 8 ms on a 10k-line transcript". This load has
+about 40,000 lines of `Shell` output, so it is a different test. It still fails by
+a wide margin (p99 48.7 ms).
+
+Not in these runs yet (the scenario's TODOs): the five subagents, the stdio MCP
+server that never answers, and the paused-pty run.
 
 ## Not doing
 
@@ -171,7 +222,7 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
   `Rc<RefCell<…>>`; making it `Send` is a rewrite for little gain once stdout I/O
   is off the thread.
 - **Raising any priority above normal**, or real-time scheduling.
-- **Hard memory limits on the user's `bash` commands.** `RLIMIT_AS` breaks Node, the
+- **Hard memory limits on the user's `Shell` commands.** `RLIMIT_AS` breaks Node, the
   JVM and Go; cgroups are Linux-only. The user's builds run as they would in a shell.
 - **In-process subagents by default.** subagents.md §6 keeps child processes.
 - **A rayon or work-stealing CPU pool up front.** Only if Phase 0 shows CPU-bound UI
@@ -211,7 +262,7 @@ None. The eight questions were answered on 2026-10-08 and are recorded in
 |---|---|---|
 | Key handling, frame build, frame write | High | `main`, `hoocode-term-out` |
 | Main agent's LLM stream | High | `hoocode-io` |
-| Tool bodies, MCP calls, `bash` I/O | Medium | `hoocode-tools`, `hoocode-io` |
+| Tool bodies, MCP calls, `Shell` I/O | Medium | `hoocode-tools`, `hoocode-io` |
 | Session writes | Medium | `hoocode-session-io` |
 | Session reads for picker, resume, tree | Medium | `hoocode-tools` (result sent to UI) |
 | Compaction (LLM part / CPU part) | Medium | `hoocode-io` / `hoocode-tools` |

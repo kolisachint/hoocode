@@ -18,15 +18,31 @@ pub enum PermissionPolicy {
 
 /// Whether a tool name is considered dangerous.
 pub fn is_dangerous(tool_name: &str) -> bool {
-    matches!(tool_name, "bash" | "write" | "edit")
+    matches!(tool_name, "Shell" | "Write" | "Edit")
 }
 
 /// Whether a tool name is read-only.
 pub fn is_read_only(tool_name: &str) -> bool {
     matches!(
         tool_name,
-        "read" | "SearchCodebase" | "TodoWrite" | "ask_options" | "grep" | "find" | "ls"
+        "Read"
+            | "CodeSearch"
+            | "DocSearch"
+            | "TodoWrite"
+            | "AskUserQuestion"
+            | "CronList"
+            | "grep"
+            | "find"
+            | "ls"
     )
+}
+
+/// Whether a tool name schedules or unschedules a prompt (`CronCreate`,
+/// `CronDelete`). hoocode-ts's permission gate does not prompt for these; a
+/// fired prompt goes through the usual gates when it runs. Denied only when the
+/// policy denies everything.
+pub fn is_schedule_tool(tool_name: &str) -> bool {
+    matches!(tool_name, "CronCreate" | "CronDelete")
 }
 
 /// Gate that always grants every tool call.
@@ -126,6 +142,13 @@ impl PermissionGate for PolicyPermissionGate {
                     }
                 }
             }
+        } else if is_schedule_tool(&tool_call.name) {
+            match self.policy {
+                PermissionPolicy::Deny => PermissionDecision::Deny {
+                    reason: format!("Scheduling tool '{}' is denied by policy", tool_call.name),
+                },
+                PermissionPolicy::Auto | PermissionPolicy::Ask => PermissionDecision::Grant,
+            }
         } else if is_dangerous(&tool_call.name) {
             match self.policy {
                 PermissionPolicy::Auto => PermissionDecision::Grant,
@@ -172,7 +195,7 @@ mod tests {
         let gate = AutoPermissionGate;
         let tc = AgentToolCall {
             id: "1".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         assert_eq!(gate.request(&tc), PermissionDecision::Grant);
@@ -183,7 +206,7 @@ mod tests {
         let gate = DenyPermissionGate;
         let tc = AgentToolCall {
             id: "1".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         assert!(matches!(gate.request(&tc), PermissionDecision::Deny { .. }));
@@ -194,12 +217,12 @@ mod tests {
         let gate = PolicyPermissionGate::auto();
         let bash = AgentToolCall {
             id: "1".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         let read = AgentToolCall {
             id: "2".into(),
-            name: "read".into(),
+            name: "Read".into(),
             arguments: serde_json::json!({"path": "x"}),
         };
         assert_eq!(gate.request(&bash), PermissionDecision::Grant);
@@ -211,7 +234,7 @@ mod tests {
         let gate = PolicyPermissionGate::deny();
         let bash = AgentToolCall {
             id: "1".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         assert!(matches!(
@@ -225,12 +248,12 @@ mod tests {
         let gate = PolicyPermissionGate::ask(Arc::new(AutoPermissionGate));
         let read = AgentToolCall {
             id: "1".into(),
-            name: "read".into(),
+            name: "Read".into(),
             arguments: serde_json::json!({"path": "x"}),
         };
         let bash = AgentToolCall {
             id: "2".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         assert_eq!(gate.request(&read), PermissionDecision::Grant);
@@ -249,11 +272,40 @@ mod tests {
         let gate = PolicyPermissionGate::ask(Arc::new(AlwaysGrant));
         let bash = AgentToolCall {
             id: "1".into(),
-            name: "bash".into(),
+            name: "Shell".into(),
             arguments: serde_json::json!({"command": "ls"}),
         };
         assert_eq!(gate.request(&bash), PermissionDecision::GrantAlways);
         // Second call should be a plain Grant from the cache.
         assert_eq!(gate.request(&bash), PermissionDecision::Grant);
+    }
+
+    #[test]
+    fn cron_tools_are_granted_without_a_prompt_unless_denied() {
+        let call = |name: &str| AgentToolCall {
+            id: "1".into(),
+            name: name.into(),
+            arguments: serde_json::json!({}),
+        };
+        assert!(is_read_only("CronList"));
+        assert!(!is_read_only("CronCreate"));
+        assert!(!is_read_only("CronDelete"));
+        // No inner gate: anything that needed a prompt would be denied, so a Grant
+        // here shows that no prompt is asked.
+        let ask = PolicyPermissionGate::new(PermissionPolicy::Ask, true, None);
+        for name in ["CronList", "CronCreate", "CronDelete"] {
+            assert_eq!(
+                ask.request(&call(name)),
+                PermissionDecision::Grant,
+                "{name}"
+            );
+        }
+        let deny = PolicyPermissionGate::deny();
+        for name in ["CronCreate", "CronDelete"] {
+            assert!(
+                matches!(deny.request(&call(name)), PermissionDecision::Deny { .. }),
+                "{name}"
+            );
+        }
     }
 }

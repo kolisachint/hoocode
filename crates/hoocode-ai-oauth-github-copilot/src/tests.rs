@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of hoocode `packages/ai/test/github-copilot-oauth.test.ts` (fake
 //! timers -> tokio's paused clock, `fetch` through the [`Fetch`] seam) plus
 //! the domain/base-URL helpers.

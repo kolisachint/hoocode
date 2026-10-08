@@ -53,14 +53,14 @@ update this page in the same commit.
 
 | Tool | File |
 |---|---|
-| `bash` | `bash.rs` |
-| `read` (and skills) | `read.rs` |
-| `edit` | `edit.rs` |
-| `write` | `write.rs` |
-| `SearchCodebase` | `search.rs` |
-| `Agent`, `AgentOut` (subagents) | `subagent.rs` |
+| `Shell` | `bash.rs` |
+| `Read` (and skills) | `read.rs` |
+| `Edit` | `edit.rs` |
+| `Write` | `write.rs` |
+| `CodeSearch` | `search.rs` |
+| `Agent`, `AgentOutput` (subagents) | `subagent.rs` |
 | Plugin tools | `plugins.rs` |
-| `webfetch`, `websearch` | `web.rs` (web tools are deferred) |
+| `WebFetch`, `WebSearch` | `web.rs` (web tools are deferred) |
 | Registry: tool name → renderer | `mod.rs` |
 | Shared helpers | `../render_utils.rs` |
 
@@ -70,7 +70,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 
 | Opened by | Picker | File |
 |---|---|---|
-| `/settings` | settings pane | `settings_selector.rs` (uses `tui-components/src/settings_list.rs`). No External tools category: the external-tools layer went with `fd`/`rg` (reliability 1.4), so the top level is the tool rows, then the categories. |
+| `/settings` | settings pane | `settings_selector.rs` (uses `tui-components/src/settings_list.rs`). No External tools category: the external-tools layer went with `fd`/`rg` (reliability 1.4), so the top level is the tool rows, then the categories. Tool rows are in hoocode-ts's order (sorted by its tool names, `tool_row_sort_key`: Shell, Edit, Read, Write). |
 | `/model` | model picker | `model_selector.rs` |
 | `/scoped-models` | scoped models | `scoped_models_selector.rs` |
 | thinking level, theme, `/color` | one-list pickers | `small_selectors.rs`, `framed_list.rs` |
@@ -79,7 +79,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | `/tree` | session tree | `tree_selector.rs` |
 | `/fork` | pick a user message | `user_message_selector.rs` |
 | `/login`, `/logout` | provider pickers, login dialog | `oauth_selector.rs`, `login_dialog.rs`; flow in `code-tui-app/src/login_controller.rs` |
-| `ask_options` tool | options pane | `ask_options.rs` |
+| `AskUserQuestion` tool | options pane | `ask_options.rs` |
 | `hoocode config` | resource list | `config_selector.rs` |
 | `/hotkeys` | shortcuts page | `code-tui-app/src/hotkeys.rs` |
 | `/changelog` | changelog | `code-tui-app/src/changelog.rs` |
@@ -92,6 +92,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | The list (names, descriptions, order) | `code-resources/src/slash_commands.rs` `BUILTIN_SLASH_COMMANDS` |
 | Name → `BuiltinCommand` | `interactive_mode.rs`, `enum BuiltinCommand` and its parser |
 | What each does | `interactive_mode.rs` `run_builtin_command` (`/compact`: `handle_compact_command`) |
+| `/perf`: threads, RSS, frame and keystroke timing, stalls (Phase 0 counters) | `handle_perf_command` in `interactive_mode.rs`; collector and report in `code-tui-app/src/perf.rs` (`format_report`) |
 | Mode commands (`/mode`, `/plan`, `/grill`, `/goal`, `/approve`) | `code-modes` |
 | Skill and prompt-template commands | `code-resources` |
 
@@ -109,6 +110,7 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 | Submitting a prompt | `submit`, `prompt`, `prompt_with_images` |
 | Streaming render throttle | `schedule_streaming_render`, `run_streaming_render` |
 | Ctrl+Z | `code-tui-app/src/suspend.rs` |
+| Perf counters (`/perf`, `--perf-log <file>`) | `code-tui-app/src/perf.rs`. The loop calls `Perf::key_arrived` for each key (stamped by the terminal's reader thread: `TuiEvent::Input(data, arrived)`) and `Perf::end_iteration` after each frame. Frame build and write times come from `Tui::set_frame_observer`. The UI thread only records into fixed rings; a sampler thread (`hoocode-perf`) reads `/proc` and writes the log once a second. |
 
 ## TUI library (`tui-*`)
 

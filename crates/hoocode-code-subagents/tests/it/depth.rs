@@ -156,21 +156,21 @@ fn mcp_needed_when_the_allowlist_is_undefined() {
 #[test]
 fn mcp_not_needed_for_an_mcp_free_allowlist() {
     assert!(!tool_allowlist_needs_mcp(Some(&strings(&[
-        "read",
-        "SearchCodebase"
+        "Read",
+        "CodeSearch"
     ]))));
     assert!(!tool_allowlist_needs_mcp(Some(&[])));
     assert!(!tool_allowlist_needs_mcp(Some(&strings(&[
-        "read",
-        "Task",
-        "TaskOutput"
+        "Read",
+        "Agent",
+        "AgentOutput"
     ]))));
 }
 
 #[test]
 fn mcp_needed_when_the_allowlist_references_an_mcp_tool() {
     assert!(tool_allowlist_needs_mcp(Some(&strings(&[
-        "read",
+        "Read",
         "mcp_github_search"
     ]))));
     assert!(tool_allowlist_needs_mcp(Some(&strings(&[" mcp-foo "]))));

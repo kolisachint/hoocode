@@ -7,7 +7,7 @@ incident record; this file is the instrument. Not a migration-ledger task.
 
 Subagents failed on ten dispatches out of ten in early October 2026, and the
 fixes that followed (`subagents.md` §2) were verified by hand: two recorded
-end-to-end runs and one full `Task` dispatch. That is a good day; it is not a
+end-to-end runs and one full `Agent` dispatch. That is a good day; it is not a
 measurement. There was no way to ask:
 
 - what fraction of dispatches settle `complete` or `partial`?
@@ -26,7 +26,7 @@ swept after 24h. Two things ship together here:
    truth: `result.json` decides correctness, the ledger only records what
    happened. A ledger that cannot be written is logged and dropped.
 2. **The eval harness** (`scripts/eval/`): scenarios that drive the real
-   binary — real parent session, real `Task` tool, real pool, real child
+   binary — real parent session, real `Agent` tool, real pool, real child
    process — against a scripted mock provider.
 
 ## 2. Running it
@@ -113,7 +113,7 @@ settling threads. Now one write per record, with a 400-line concurrency test.
 This is exactly the bug the suite existed to find, on the code the suite needed.
 
 **The unknown-`complexity` gap is smaller than it looked.** A bad tier is
-rejected by the `Task` tool's schema in the parent, so no child ever spawns. The
+rejected by the `Agent` tool's schema in the parent, so no child ever spawns. The
 pool still does not validate a tier for callers that skip the schema
 (`/subagent`, and anything reaching `DispatchOptions` directly).
 
