@@ -11,9 +11,12 @@
 //! - [`block_on_entry`]: entry points (`main`, tests) only.
 //! - [`spawn_named_thread`], [`bounded_channel`], [`sync_bounded_channel`].
 //! - [`ParallelToolLimit`]: the per-turn cap on parallel tool calls.
+//! - [`watch_sigwinch`] (Unix): terminal resize signal, on its own named thread.
 
 mod limits;
 mod runtime;
+#[cfg(unix)]
+mod signals;
 mod threads;
 
 pub use limits::{
@@ -24,5 +27,7 @@ pub use runtime::{
     is_subagent_child, run_blocking, spawn_isolated, IO_CHILD_WORKERS, IO_MAX_WORKERS,
     IO_THREAD_PREFIX, TOOLS_MAX_THREADS, TOOLS_THREAD_PREFIX,
 };
+#[cfg(unix)]
+pub use signals::{watch_sigwinch, SignalWatch};
 pub use threads::{bounded_channel, spawn_named_thread, sync_bounded_channel};
 pub use tokio::task::JoinError;

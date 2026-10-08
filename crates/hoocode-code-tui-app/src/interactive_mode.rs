@@ -239,6 +239,9 @@ const DEFAULT_HIDDEN_THINKING_LABEL: &str = "Thinking...";
 const LIVE_TOOL_WINDOW: usize = 50;
 /// Minimum gap between re-renders of the streaming message.
 const STREAM_RENDER_THROTTLE: Duration = Duration::from_millis(100);
+/// Most keys taken from the input channel in one loop pass. The rest wait for the
+/// next pass, so AppEvents and ticks run between batches (concurrency.md, Phase 2).
+const MAX_INPUT_PER_ITERATION: usize = 64;
 
 /// The open extension selector and the channel its answer goes back on.
 type OpenSelector = (
@@ -5870,6 +5873,22 @@ impl Mode {
     }
 
     /// The next time something is due without input.
+    /// One event from the TUI's input channel, handled without painting: the
+    /// loop paints once after it has taken the pass's events.
+    fn accept_terminal_event(&mut self, event: TuiEvent) {
+        // A keystroke that turns out to do nothing is still the user being
+        // present: it restarts the tips' idle clock.
+        if let TuiEvent::Input(_, arrived) = &event {
+            self.tips.on_activity();
+            self.perf.key_arrived(*arrived);
+        }
+        if let TuiEvent::Resize = event {
+            let terminal = &self.tui.terminal;
+            self.size.set((terminal.columns(), terminal.rows()));
+        }
+        self.tui.accept_event(event);
+    }
+
     fn next_wakeup(&self) -> Duration {
         let now = Instant::now();
         let mut wait = Duration::from_millis(250);
@@ -6014,23 +6033,14 @@ impl Mode {
             let iteration_started = Instant::now();
             match received {
                 Ok(event) => {
-                    // A keystroke that turns out to do nothing is still the
-                    // user being present: it restarts the tips' idle clock.
-                    if let TuiEvent::Input(_, arrived) = &event {
-                        self.tips.on_activity();
-                        self.perf.key_arrived(*arrived);
-                    }
-                    if let TuiEvent::Resize = event {
-                        let terminal = &self.tui.terminal;
-                        self.size.set((terminal.columns(), terminal.rows()));
-                    }
-                    self.tui.process_event(event);
-                    while let Ok(event) = input.try_recv() {
-                        if let TuiEvent::Input(_, arrived) = &event {
-                            self.tips.on_activity();
-                            self.perf.key_arrived(*arrived);
+                    self.accept_terminal_event(event);
+                    // Keys already queued go in this pass too, up to a cap, so
+                    // AppEvents are not starved. The frame is painted once below.
+                    for _ in 1..MAX_INPUT_PER_ITERATION {
+                        match input.try_recv() {
+                            Ok(event) => self.accept_terminal_event(event),
+                            Err(_) => break,
                         }
-                        self.tui.process_event(event);
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => {}
@@ -6186,10 +6196,11 @@ impl Mode {
             if self.exit_requested {
                 break;
             }
-            // Input already re-rendered; anything else that changed renders now.
+            // Input and resizes this pass, and anything else that changed, render once here.
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
             }
+            self.tui.flush_scheduled_render();
             self.perf.end_iteration(iteration_started);
         }
 

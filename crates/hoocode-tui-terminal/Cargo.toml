@@ -18,6 +18,7 @@ doctest = false
 
 [dependencies]
 crossterm = "0.28"
+hoocode-runtime = { workspace = true }
 hoocode-tui-util = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]

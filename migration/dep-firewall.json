@@ -72,6 +72,9 @@
     "notify": [
       "hoocode-code-watch"
     ],
+    "signal-hook": [
+      "hoocode-runtime"
+    ],
     "tokio-tungstenite": [
       "hoocode-ai-provider-openai-codex",
       "hoocode-app-server"

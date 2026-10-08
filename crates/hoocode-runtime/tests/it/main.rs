@@ -198,3 +198,21 @@ fn sync_bounded_channel_delivers_in_order() {
     writer.join().expect("writer finishes");
     assert_eq!(got, vec![0, 1, 2, 3, 4]);
 }
+
+#[cfg(unix)]
+#[test]
+fn sigwinch_runs_the_callback_on_the_named_thread() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let watch = hoocode_runtime::watch_sigwinch("hoocode-test-sigwinch", move || {
+        let name = std::thread::current().name().map(str::to_owned);
+        let _ = tx.send(name);
+    })
+    .expect("watch starts");
+    signal_hook::low_level::raise(signal_hook::consts::SIGWINCH).expect("raise SIGWINCH");
+    let name = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("callback runs after SIGWINCH");
+    assert_eq!(name.as_deref(), Some("hoocode-test-sigwinch"));
+    // Dropping the watch closes the iterator, so the thread ends.
+    drop(watch);
+}

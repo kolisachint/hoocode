@@ -74,7 +74,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them | 7 | 315 / 200 | keep |
+| `runtime` | Threads, runtime, blocking pool, channels and SIGWINCH (`signals.rs`, Unix) for the hoocode process: the only crate that builds them. Depends on `signal-hook` (Unix) | 8 | 364 / 218 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
@@ -166,7 +166,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1237 / 379 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 6 | 1968 / 582 | keep |
 | `tui-render` | Differential rendering for the hoocode TUI | 4 | 2841 / 2616 | keep |
-| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 1610 / 103 | keep |
+| `tui-terminal` | Terminal abstraction for the hoocode TUI: `hoocode-term-out` writer thread (`output.rs`), stdin and resize threads through `hoocode-runtime` | 2 | 2056 / 103 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 10 | 2159 / 583 | keep |
 
 <!-- END generated -->

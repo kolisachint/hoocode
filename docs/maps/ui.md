@@ -103,7 +103,7 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 
 | What | Where |
 |---|---|
-| Main loop (input, app events, ticks, render) | `interactive_mode.rs` `run` |
+| Main loop (input, app events, ticks, render). Up to 64 keys per pass, then app events, then one render (`accept_terminal_event`, `flush_scheduled_render`) | `interactive_mode.rs` `run` |
 | Events from other threads | `enum AppEvent` (session events, prompt done, bash chunks, dialogs, login…) |
 | Agent session events → screen | `handle_session_event` |
 | Key and UI actions | `enum Action`, `handle_action` |
@@ -117,7 +117,8 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 | Concern | Crate / file |
 |---|---|
 | Differential renderer, frames, overlays | `tui-render/src/tui.rs`, `component.rs`, `overlay.rs` |
-| Terminal: raw mode, stdin reader, resize, mouse | `tui-terminal/src/lib.rs`, `stdin_buffer.rs`, `mouse.rs` |
+| Terminal: raw mode, stdin reader, resize (SIGWINCH), mouse | `tui-terminal/src/lib.rs`, `stdin_buffer.rs`, `mouse.rs` |
+| Terminal output: every write, in order; one pending frame | `tui-terminal/src/output.rs` (`hoocode-term-out`) |
 | Key parsing (Kitty, modifyOtherKeys), matching | `tui-keys` |
 | App key map, `keybindings.json`, hint text | `code-tui-keybindings` |
 | Components: text, input, select list, loader, box, image | `tui-components/src/` |
