@@ -591,7 +591,9 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
     try:
         home, work = write_project(root, port, scenario)
         argv = build_argv(binary, scenario)
-        env = dict(os.environ)
+        # Drop HOOCODE_* from the developer's shell first, then set what the
+        # run needs, so the depth below is not stripped with the rest.
+        env = {k: v for k, v in os.environ.items() if not k.startswith("HOOCODE_")}
         env.update(
             {
                 "HOME": str(home),
@@ -603,9 +605,6 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
                 "HOOCODE_SUBAGENT_DEPTH": "0",
             }
         )
-        for leaked in ("HOOCODE_CODING_AGENT_DIR", "HOOCODE_"):
-            for key in [k for k in env if k.startswith(leaked)]:
-                env.pop(key)
         try:
             completed = subprocess.run(
                 argv,
