@@ -4,11 +4,11 @@
 //! Port of hoocode `packages/ai/test/cross-provider-handoff.test.ts`
 //! (v0.5.89). Needs network and provider keys in the environment; OAuth-only
 //! providers (openai-codex, github-copilot) are skipped until their OAuth
-//! crates land (8.4a, 8.4b). Run with `cargo test -p cortexcode-ai --test
+//! crates land (8.4a, 8.4b). Run with `cargo test -p cortexcode-ai-registry --test
 //! cross_provider_handoff -- --ignored --nocapture`.
 
-use cortexcode_ai::registry::complete_simple;
-use cortexcode_ai::types::{
+use cortexcode_ai_registry::complete_simple;
+use cortexcode_ai_types::{
     AssistantMessage, Content, Context, Message, Model, SimpleStreamOptions, StopReason,
     TextContent, ThinkingLevel, Tool, ToolResultMessage, UserMessage,
 };
@@ -155,7 +155,7 @@ fn user(text: &str) -> Message {
 }
 
 fn model_for(provider: &str, id: &str, api: Option<&str>) -> Option<Model> {
-    let mut model = cortexcode_ai::models::get_model(provider, id)?.clone();
+    let mut model = cortexcode_ai_models::get_model(provider, id)?.clone();
     if let Some(api) = api {
         model.api = api.into();
     }
@@ -239,7 +239,7 @@ fn generate_context(model: &Model, api_key: &str) -> Option<Vec<Message>> {
 fn cross_provider_handoff() {
     let mut contexts: Vec<(&str, Model, String, Vec<Message>)> = Vec::new();
     for (provider, id, label, api) in PROVIDER_MODEL_PAIRS {
-        let Some(api_key) = cortexcode_ai::env::get_env_api_key(provider) else {
+        let Some(api_key) = cortexcode_ai_env::get_env_api_key(provider) else {
             eprintln!("[{label}] Skipping - no auth for {provider}");
             continue;
         };

@@ -5,7 +5,7 @@
 //!
 //! Every test is `#[ignore]`d and runs only the provider cases whose key is
 //! in the environment (TS `describe.skipIf`). Run with e.g.
-//! `OPENROUTER_API_KEY=... cargo test -p cortexcode-ai --test live_matrix -- --ignored`.
+//! `OPENROUTER_API_KEY=... cargo test -p cortexcode-ai-registry --test live_matrix -- --ignored`.
 //!
 //! Not covered here: the github-copilot / openai-codex cases (their APIs and
 //! OAuth come with 8.4a/8.4b/8.7), Anthropic OAuth tokens from auth storage

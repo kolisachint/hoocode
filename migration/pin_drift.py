@@ -37,7 +37,7 @@ SOURCE_MAP: list[tuple[str, str]] = [
     ("packages/ai/src/providers/azure", "ai-provider-azure"),
     ("packages/ai/src/providers/google-gemini-cli", "ai-provider-google-gemini-cli"),
     ("packages/ai/src/providers/google", "ai-provider-google"),
-    ("packages/ai/src/providers/images", "ai-images"),
+    ("packages/ai/src/providers/images", "(none: ai-images deleted 2026-10-08)"),
     ("packages/ai/src/utils/oauth", "ai-oauth*"),
     ("packages/ai/src/env-api-keys", "ai-env"),
     ("packages/ai/src/models.ts", "ai-models"),

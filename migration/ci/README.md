@@ -4,6 +4,7 @@ The session's GitHub token can't modify `.github/workflows/`, so these changes a
 staged here. To apply them:
 
 ```bash
+git apply migration/ci/delete-crates-doc-step.patch      # drop the agent-mcp doc-test step (crate deleted, 0b)
 git apply migration/ci/ci.yml.patch                     # ledger + dependency-firewall checks in CI
 cp migration/ci/tui-parity.yml .github/workflows/       # manual/nightly Level-2 parity job
 # then paste migration/ci/msrv-job.yml under `jobs:` in .github/workflows/ci.yml

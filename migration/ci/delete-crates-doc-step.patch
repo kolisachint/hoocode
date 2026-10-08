@@ -1,0 +1,13 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 6eb1b95..3dd8622 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -64,8 +64,6 @@ jobs:
+       - name: Pinned hoocode fixtures
+         run: scripts/ci/fetch_hoocode_fixtures.sh
+       - run: cargo nextest run --locked --workspace --no-fail-fast
+-        # The only crate with a doctest (build-speed D4: the rest set doctest = false).
+-      - run: cargo test --locked --doc -p cortexcode-agent-mcp
+ 
+   doc:
+     runs-on: ubuntu-latest
