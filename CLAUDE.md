@@ -24,7 +24,7 @@ Never modify hoocode; it is the reference.
 - **What to build next:** `docs/design/README.md` (cards in build order, plus the user's
   design preferences). `docs/design/decisions-2026-10-07.md` and `decisions-2026-10-08.md` (concurrency
   card, scope cuts, crates to delete) win over any card. Start
-  with `reliability.md`. A design session changes docs only.
+  with step 0a of the plan in `docs/design/README.md`. A design session changes docs only.
 - **Maps:** `docs/maps/packages.md` (crates) and `docs/maps/ui.md` (screen, pickers, slash
   commands). Read them to find code; update them in the same commit as any crate, screen
   or command change.

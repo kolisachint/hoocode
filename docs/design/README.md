@@ -35,47 +35,41 @@ To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) 
   `embeddingsearchtools`, `voicetools`, `hooteams`, `drawio-canvas`) are MIT and
   fair to use.
 
-## Cards, in build order
+## The plan, in priority order
 
-| # | Card | Status | Replaces ledger task |
-|---|---|---|---|
-| 0 | [naming-and-paths.md](naming-and-paths.md) §1: rename everything to hoocode (with the crate deletions) | Agreed 2026-10-08 | — |
-| 1 | [reliability.md](reliability.md) (item 2 is [naming-and-paths.md](naming-and-paths.md) §2–4) | Agreed; build next | — |
-| 1b | [concurrency.md](concurrency.md) phases 0–1 (measure; one runtime and caps) | Agreed 2026-10-08 | — |
-| 2 | [semantic-search.md](semantic-search.md) part A (`SearchHooCode`); part B dropped | Agreed | closes 10.2a/b/c/d/f/g, 10.4c, 10.5; part of 12.4 |
-| 3 | [mcp.md](mcp.md) | Agreed; scope cut 2026-10-08 | 9.1, 10.11 |
-| 3b | [concurrency.md](concurrency.md) phases 2–5 (terminal output, session writer, lanes, watchdog, memory limits) | Agreed 2026-10-08 | — |
-| 4 | [plugins.md](plugins.md) | Agreed; scope cut 2026-10-08 | 12.1, 12.2 |
-| 5 | [scheduler-and-loop.md](scheduler-and-loop.md) | Agreed | 12.5 |
-| — | [canvas-and-mcp-apps.md](canvas-and-mcp-apps.md) | MCP Apps deferred; Copilot canvas dropped (2026-10-08) | 12.7 canvas |
-| — | [extras.md](extras.md) | Version check and chime yes; rest no | 12.6, 12.7 rest |
-| — | [web-tools.md](web-tools.md) | Deferred | 10.2e |
-| — | [extension-runtime.md](extension-runtime.md) | Standards only; WASM crate deleted | 12.3 |
+Agreed on 2026-10-08. One milestone at a time; each lands as one or more PRs that
+pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
+**L** many.
 
-Older docs that stay as they are: [rpc-approvals.md](rpc-approvals.md) (dropped
-2026-10-08), [app-server.md](app-server.md), [subagents.md](subagents.md),
+| # | Milestone | Card | Size | Needs | Why here |
+|---|---|---|---|---|---|
+| 0a | Close the migration ledger: `moved` status; mark 9.1, 10.2e, 10.11, 12.1–12.7, 13.4 with their cards; one line each in plan §0.3 and `PROGRESS.md` | this page | S | — | Bookkeeping before code |
+| 0b | Delete the 11 unused crates (move `cortexcode-ai`'s tests to `ai-registry` first; fix dep firewall, `generate_crates.sh`, CI, release scripts) | [decisions-2026-10-08.md](decisions-2026-10-08.md) | S | 0a | Less to rename and build |
+| 0c | Rename everything to hoocode, one mechanical commit, no other branch open | [naming-and-paths.md](naming-and-paths.md) §1 | M | 0b | Touches every file; must not race other work |
+| 0d | `scripts/maps/packages.py` (regenerates [../maps/packages.md](../maps/packages.md), `--check` in CI) and the `no_cortex.sh` guard | [naming-and-paths.md](naming-and-paths.md) §1 | S | 0c | Keeps the maps and names honest from here on |
+| 1 | Reliability, in this order: **1.1** rpc fails closed (security); **1.2** `~/.hoocode` paths, `HOOCODE_` env, one-time merge; **1.3** macOS test fixes and CI job; **1.4** `@file` without `fd`; **1.5** panic audit; **1.6** fuzzing | [reliability.md](reliability.md), [naming-and-paths.md](naming-and-paths.md) §2–4 | L | 0c | Reliability before features |
+| 2 | Concurrency phases 0–1: `/perf` and the load test, then one runtime and the caps | [concurrency.md](concurrency.md) | M | 1 | Sets the runtime rules before MCP brings rmcp |
+| 3 | `SearchHooCode`; close the 8 `l1_done` tasks | [semantic-search.md](semantic-search.md) part A | S | 2 | Small; finishes the migration's loose ends |
+| 4 | MCP client on rmcp; then a short guide for the webtools MCP server | [mcp.md](mcp.md), [web-tools.md](web-tools.md) | L | 2 | The main missing capability |
+| 5 | Concurrency phases 2–5: terminal-output thread, session writer, lanes and priority, watchdog and memory limits | [concurrency.md](concurrency.md) | L | 4 | Built against the real MCP and tool load |
+| 6 | Plugins: load, install, opt-in model tools | [plugins.md](plugins.md) | L | 4 | Delivers skills, MCP servers and subagents |
+| 7 | Scheduler and `/loop` | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
+| 8 | Version check and completion chime | [extras.md](extras.md) | S | 0c | Small polish |
+
+**Only if the numbers or a need say so:** concurrency phase 6 (highlighting off the UI
+thread), MCP Apps ([canvas-and-mcp-apps.md](canvas-and-mcp-apps.md)), the MCP Tasks
+extension, background compaction (its own card first), thinking escalation.
+
+**Dropped:** Copilot canvas, Skills over MCP, plugin update/package/publish tools,
+writing Claude plugin formats, `/mcp import`, rpc approval dialogs
+([rpc-approvals.md](rpc-approvals.md)), semantic search part B, crates.io, the WASM
+crate, Azure, `fd`/`rg` and the external-tools pane, and the extras marked No in
+[extras.md](extras.md).
+
+Older docs that stay as they are: [app-server.md](app-server.md), [subagents.md](subagents.md),
 [subagent-evals.md](subagent-evals.md), [distribution.md](distribution.md),
 [build-speed.md](build-speed.md), and the migration plan
 [hoocode-to-cortexcode-migration.md](hoocode-to-cortexcode-migration.md).
-
-## First step when coding starts
-
-Close the migration ledger:
-
-- add a `moved` status to `migration/ledger.py`;
-- mark 9.1, 10.2e, 10.11, 12.1–12.7 and 13.4 `moved`, each with a note naming its
-  card;
-- add one line each to plan §0.3 and `migration/PROGRESS.md` pointing here;
-- delete the 11 crates listed in [decisions-2026-10-08.md](decisions-2026-10-08.md)
-  (move `cortexcode-ai`'s tests to `ai-registry` first), then update
-  `migration/dep-firewall.json`, `scripts/generate_crates.sh`, CI and release
-  scripts that name them;
-- rename everything to hoocode in one commit ([naming-and-paths.md](naming-and-paths.md) §1);
-- add `scripts/maps/packages.py` (regenerates [../maps/packages.md](../maps/packages.md)
-  from `cargo metadata`; `--check` in CI).
-
-This is tooling and bookkeeping, so it happens in the first coding session, not in a
-design session.
 
 ## Standards checked (2026-10-07)
 

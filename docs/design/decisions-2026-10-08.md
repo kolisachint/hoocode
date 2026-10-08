@@ -7,6 +7,8 @@ of the whole plan, and naming ([naming-and-paths.md](naming-and-paths.md)). Wher
 
 ## Order of work (updated)
 
+The full plan, with sizes and dependencies, is in [README.md](README.md#the-plan-in-priority-order).
+
 0. **First coding session (bookkeeping):** close the migration ledger (README),
    delete the 11 crates below, then rename everything to hoocode in one mechanical
    commit ([naming-and-paths.md](naming-and-paths.md) §1), then add the package-map
