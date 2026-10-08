@@ -19,6 +19,7 @@ Each `*.json` file is one scenario, run against the real hoocode (pinned build i
            {"error": "boom", "status": 500},       // one entry per model request, see mockllm.py
            {"text": "...", "delay_s": 5} ],         // delay_s: wait before answering
   "compare": "style",                             // "style" (default: text + colors/attrs) or "text"
+  "mask_snapshots": ["pane"],                     // snapshots not compared (a known, intended difference); their contains asserts still run
   "compare_requests": false,                      // also require identical model requests
   "request_fields": ["messages", "tools"],        // subset compared when compare_requests
   "stdout_jsonl": {"mask_keys": ["timestamp"],    // stdout to a file, compared as JSON lines (key order kept);

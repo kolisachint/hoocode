@@ -1,8 +1,8 @@
 //! The `/settings` pane, hoocode `components/settings-selector.ts`.
 //!
 //! One [`SettingsList`] in the prompt's frame. The top level is short: the
-//! tool rows, then categories whose submenus hold the leaf settings, then the
-//! external binaries. Every change goes out as one [`SettingsChange`].
+//! tool rows, then categories whose submenus hold the leaf settings. Every
+//! change goes out as one [`SettingsChange`].
 //!
 //! Adaptations: TypeScript shares one mutable item object between the flat
 //! leaf list and the category submenu that shows it, so a value cycled in a
@@ -20,9 +20,6 @@ use hoocode_code_settings::{
     DoubleEscapeAction, EditorBorder, FlagValue, LearnSettingKey, LearnSettings,
     MarketplacePlatform, PluginInstallScope, QueueMode, ThinkingLevelSetting, ToolOutputView,
     TreeFilterMode, WarningSettings,
-};
-use hoocode_code_tools::external_tools::{
-    build_row_gates, status_label, Acquisition, ExternalToolStatus, ManagedToolSource,
 };
 use hoocode_code_tools::light::PromptSurface;
 use hoocode_code_tui_keybindings::key_display_text;
@@ -83,8 +80,6 @@ pub struct SettingsConfig {
     pub auto_compact: bool,
     pub tools: Vec<ToolToggleInfo>,
     pub tool_groups: Vec<ToolGroupInfo>,
-    /// The external binaries and whether each is present.
-    pub external_tools: Vec<ExternalToolStatus>,
     pub flags: Vec<FlagInfo>,
     pub tool_output_view: ToolOutputView,
     pub tool_output_max_bytes: u64,
@@ -138,7 +133,6 @@ impl Default for SettingsConfig {
             auto_compact: true,
             tools: Vec::new(),
             tool_groups: Vec::new(),
-            external_tools: Vec::new(),
             flags: Vec::new(),
             tool_output_view: ToolOutputView::Peek,
             tool_output_max_bytes: 8192,
@@ -440,7 +434,7 @@ fn new_list(
 }
 
 /// A submenu that is one settings list: the warnings, platform, tools,
-/// external-tool, tool-output, flag and category submenus. Public so a
+/// tool-output, flag and category submenus. Public so a
 /// caller can reach the list a factory built (`submenu(...).settingsList`).
 pub struct ListSubmenu {
     list: Rc<RefCell<SettingsList>>,
@@ -632,49 +626,6 @@ fn platform_submenu(
     ListSubmenu::new(list).handle()
 }
 
-/// Trailing sentence for a row inert until a binary shows up (`gateNote`).
-fn gate_note(gate: Option<&ExternalToolStatus>) -> String {
-    match gate {
-        Some(gate) if !gate.installed => {
-            if gate.downloadable {
-                format!(
-                    " Needs the {} binary, which {APP_NAME} fetches the first time this is used. Until then: {}",
-                    gate.doc.tool, gate.doc.fallback
-                )
-            } else {
-                format!(
-                    " Needs the {} binary, and this environment will not fetch it. Until then: {}",
-                    gate.doc.tool, gate.doc.fallback
-                )
-            }
-        }
-        _ => String::new(),
-    }
-}
-
-/// "3 of 5 installed" (`externalCount`).
-fn external_count(statuses: &[ExternalToolStatus]) -> String {
-    let installed = statuses.iter().filter(|s| s.installed).count();
-    format!("{installed} of {} installed", statuses.len())
-}
-
-/// The capability words (`externalSummary`).
-fn external_summary(statuses: &[ExternalToolStatus]) -> String {
-    statuses
-        .iter()
-        .map(|s| s.doc.tool)
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// Value-column marker for a gated row (`gateSuffix`).
-fn gate_suffix(gate: Option<&ExternalToolStatus>) -> Option<String> {
-    match gate {
-        Some(gate) if !gate.installed => Some(format!("needs {}", gate.doc.tool)),
-        _ => None,
-    }
-}
-
 const CORE_TOOLS: &[&str] = &["read", "bash", "edit", "write"];
 const GROUP_PREFIX: &str = "group:";
 
@@ -683,7 +634,6 @@ const GROUP_PREFIX: &str = "group:";
 fn tools_submenu(
     tools: &[ToolToggleInfo],
     groups: &[ToolGroupInfo],
-    gates: &HashMap<String, ExternalToolStatus>,
     on_change: impl Fn(&str, bool) + 'static,
     on_group_change: impl Fn(&str, bool) + 'static,
     slot: DoneSlot,
@@ -693,20 +643,16 @@ fn tools_submenu(
     ));
     let group_items = groups.iter().map(|group| {
         let id = format!("{GROUP_PREFIX}{}", group.id);
-        let gate = gates.get(&id);
         Leaf::cycle(
             &id,
             &format!("[group] {}", group.label),
             format!(
-                "{} Governs whether these tools exist; applies on the next session.{}",
-                group.description,
-                gate_note(gate)
+                "{} Governs whether these tools exist; applies on the next session.",
+                group.description
             ),
             if group.enabled { "on" } else { "off" }.into(),
             strings(&["on", "off"]),
         )
-        // Settable with the binary missing: the setting is what fetches it.
-        .suffix(gate_suffix(gate))
         .to_item()
     });
     let tool_items = tools.iter().map(|tool| {
@@ -763,115 +709,6 @@ fn tools_submenu(
     let mut submenu = ListSubmenu::new(list);
     submenu.reverts = reverts;
     submenu.handle()
-}
-
-/// `ExternalToolDetailSubmenu`: read-only rows about one binary.
-fn external_tool_detail_submenu(status: &ExternalToolStatus, slot: DoneSlot) -> ComponentHandle {
-    let acquisition = match status.doc.acquisition {
-        Acquisition::Startup => "Downloaded in the background at startup.",
-        Acquisition::OnDemand => "Downloaded the first time the feature is used.",
-        Acquisition::Manual => "Never downloaded automatically; install it yourself.",
-    };
-    let path = status.path.as_deref().unwrap_or("");
-    let location = if status.installed {
-        match status.source {
-            Some(ManagedToolSource::Path) => format!("found on PATH as `{path}`"),
-            Some(ManagedToolSource::Override) => {
-                format!("{} points at {path}", status.override_env)
-            }
-            _ => format!("{APP_NAME}'s own copy at {path}"),
-        }
-    } else if status.downloadable {
-        format!("{acquisition} Not on this machine yet.")
-    } else {
-        "Not installed, and this environment will not download it (offline mode, or no published build for this platform).".to_string()
-    };
-    let enables = status.doc.enables.len();
-    let rows: Vec<(&str, String, String)> = vec![
-        ("Status", status_label(status).to_string(), location),
-        (
-            "Enables",
-            format!("{enables} feature{}", if enables == 1 { "" } else { "s" }),
-            status.doc.enables.join("; "),
-        ),
-        (
-            "Without it",
-            "fallback".to_string(),
-            status.doc.fallback.to_string(),
-        ),
-        (
-            "Source",
-            if status.repo.is_empty() {
-                "-".to_string()
-            } else {
-                status.repo.clone()
-            },
-            format!(
-                "Release archives come from github.com/{}. {acquisition}",
-                status.repo
-            ),
-        ),
-        (
-            "Env",
-            status.doc.env.len().to_string(),
-            status.doc.env.join("  |  "),
-        ),
-    ];
-    let items: Vec<SettingItem> = rows
-        .into_iter()
-        .enumerate()
-        .map(|(i, (label, value, description))| SettingItem {
-            id: format!("detail-{i}"),
-            label: label.to_string(),
-            description: Some(description),
-            current_value: value,
-            value_suffix: None,
-            keywords: None,
-            values: None,
-            submenu: None,
-        })
-        .collect();
-    let max = items.len();
-    let list = new_list(items, max, false, |_, _| {}, move || done(&slot, None));
-    ListSubmenu::new(list).handle()
-}
-
-/// `ExternalToolsSubmenu`: one row per managed binary.
-fn external_tools_submenu(statuses: &[ExternalToolStatus], slot: DoneSlot) -> ComponentHandle {
-    let items: Vec<SettingItem> = statuses
-        .iter()
-        .map(|status| {
-            let detail = status.clone();
-            let suffix = if status.installed {
-                None
-            } else if status.downloadable {
-                Some("auto-fetch".to_string())
-            } else {
-                Some("manual".to_string())
-            };
-            let keywords = [status.doc.tool, status.repo.as_str()]
-                .into_iter()
-                .chain(status.doc.settings_keys.iter().copied())
-                .chain(status.doc.enables.iter().copied())
-                .collect::<Vec<_>>()
-                .join(" ");
-            Leaf::opens(
-                &format!("ext-{}", status.doc.tool),
-                status.doc.label,
-                format!("{} Without it: {}", status.doc.summary, status.doc.fallback),
-                status_label(status).to_string(),
-                Rc::new(move |_current: &str, slot: DoneSlot| {
-                    external_tool_detail_submenu(&detail, slot)
-                }),
-            )
-            .suffix(suffix)
-            .keywords(keywords)
-            .to_item()
-        })
-        .collect();
-    let max = items.len().min(10);
-    let list = new_list(items, max, true, |_, _| {}, move || done(&slot, None));
-    ListSubmenu::new(list).handle()
 }
 
 /// `TOOL_OUTPUT_BYTE_PRESETS`.
@@ -1238,7 +1075,6 @@ impl SettingsSelectorComponent {
                 String::new()
             }
         };
-        let row_gates = Rc::new(build_row_gates(&config.external_tools));
         let initial_surface = config.measure_token_surface.as_ref().map(|m| m());
         let surface_text = initial_surface
             .as_ref()
@@ -1385,37 +1221,23 @@ impl SettingsSelectorComponent {
             "Show OSC 9;4 progress indicators in the terminal tab bar",
             config.show_terminal_progress,
         ));
-        let voice_gate = row_gates.get("voice-silence-ms");
-        leaves.push(
-            Leaf::cycle(
-                "voice-silence-ms",
-                "Voice silence window",
-                format!(
-                    "Trailing-silence (ms) before voice capture auto-stops (300-10000). Env: VOICETOOLS_SILENCE_MS.{}",
-                    gate_note(voice_gate)
-                ),
-                config.voice_silence_ms.to_string(),
-                preset_values(
-                    &[300, 500, 800, 1200, 2000, 3000, 5000, 8000, 10000],
-                    config.voice_silence_ms,
-                ),
-            )
-            .suffix(gate_suffix(voice_gate)),
-        );
-        let web_gate = row_gates.get("webtools-timeout-secs");
-        leaves.push(
-            Leaf::cycle(
-                "webtools-timeout-secs",
-                "Web tools timeout",
-                format!(
-                    "Per-request timeout (secs) for webfetch/websearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.{}",
-                    gate_note(web_gate)
-                ),
-                config.webtools_timeout_secs.to_string(),
-                preset_values(&[5, 10, 15, 30, 60, 120], config.webtools_timeout_secs),
-            )
-            .suffix(gate_suffix(web_gate)),
-        );
+        leaves.push(Leaf::cycle(
+            "voice-silence-ms",
+            "Voice silence window",
+            "Trailing-silence (ms) before voice capture auto-stops (300-10000). Env: VOICETOOLS_SILENCE_MS.",
+            config.voice_silence_ms.to_string(),
+            preset_values(
+                &[300, 500, 800, 1200, 2000, 3000, 5000, 8000, 10000],
+                config.voice_silence_ms,
+            ),
+        ));
+        leaves.push(Leaf::cycle(
+            "webtools-timeout-secs",
+            "Web tools timeout",
+            "Per-request timeout (secs) for webfetch/websearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.",
+            config.webtools_timeout_secs.to_string(),
+            preset_values(&[5, 10, 15, 30, 60, 120], config.webtools_timeout_secs),
+        ));
         for (key, label, description, presets) in LEARN_SETTINGS {
             let value = learn_value(&config.learn, *key);
             leaves.push(Leaf::cycle(
@@ -1610,7 +1432,6 @@ impl SettingsSelectorComponent {
         {
             let config = config.clone();
             let callback = callback.clone();
-            let row_gates = row_gates.clone();
             let surface = surface.clone();
             top.push(
                 Leaf::opens(
@@ -1629,7 +1450,6 @@ impl SettingsSelectorComponent {
                         tools_submenu(
                             &config.tools,
                             &config.tool_groups,
-                            &row_gates,
                             move |name, enabled| {
                                 emit(
                                     &tool_callback,
@@ -1863,34 +1683,6 @@ impl SettingsSelectorComponent {
             "Thresholds /learn mines sessions with: how far back to look, and how often something must repeat.",
             LEARN_SETTINGS.iter().map(|(k, ..)| k.as_str().to_string()).collect(),
         ));
-        {
-            let statuses = config.external_tools.clone();
-            let keywords = config
-                .external_tools
-                .iter()
-                .flat_map(|s| {
-                    [s.doc.tool, s.doc.label]
-                        .into_iter()
-                        .chain(s.doc.settings_keys.iter().copied())
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
-            top.push(
-                Leaf::opens(
-                    "cat-external",
-                    "External tools",
-                    format!(
-                        "Optional Rust binaries that expand what {APP_NAME} can do: {}. {APP_NAME} runs without every one of them - each row says what it adds and what happens without it.",
-                        external_summary(&config.external_tools)
-                    ),
-                    external_count(&config.external_tools),
-                    Rc::new(move |_current: &str, slot: DoneSlot| {
-                        external_tools_submenu(&statuses, slot)
-                    }),
-                )
-                .keywords(keywords),
-            );
-        }
         top.push(category_row(
             "cat-advanced",
             "Advanced",

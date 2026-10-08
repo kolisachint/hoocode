@@ -3,7 +3,6 @@
 
 mod ask_options;
 mod config_selector;
-mod external_tools_pane;
 mod learn_settings_pane;
 mod model_selector;
 mod oauth_selector;

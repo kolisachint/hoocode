@@ -861,11 +861,17 @@ def compare(sc: dict, results: dict[str, dict], out: Path) -> str:
         if not cor["ok"]:
             status = "fail"
             lines += ["**rust failed a step:**", "```", cor["error"], "```"]
+        masked = set(sc.get("mask_snapshots") or [])
         for name, h in hoo["snapshots"].items():
             c = cor["snapshots"].get(name)
             if c is None:
                 status = "fail"
                 lines.append(f"- `{name}`: missing in rust")
+                continue
+            if name in masked:
+                # A known, intended difference (the scenario's "mask_snapshots"):
+                # the snapshot's `contains` assertions still ran for both apps.
+                lines.append(f"- `{name}`: masked (known difference, not compared)")
                 continue
             text_ok = h["text"] == c["text"]
             style_ok = h["style"] == c["style"]

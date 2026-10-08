@@ -9,6 +9,8 @@ use hoocode_tui_components::{
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::thread;
+use std::time::{Duration, Instant};
 
 struct TempDir(PathBuf);
 
@@ -43,12 +45,24 @@ fn setup_folder(base: &Path, dirs: &[&str], files: &[(&str, &str)]) {
     }
 }
 
+/// Asks for suggestions the way the editor does, then waits out the background
+/// walk (if this query started one) and asks again, as `poll_autocomplete` would.
 fn suggest(
     p: &CombinedAutocompleteProvider,
     line: &str,
     col: usize,
     force: bool,
 ) -> Option<AutocompleteSuggestions> {
+    let first = p.get_suggestions(&[line.to_string()], 0, col, force);
+    if !p.file_walk_pending() {
+        return first;
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while p.file_walk_pending() {
+        assert!(Instant::now() < deadline, "the @file walk never finished");
+        thread::sleep(Duration::from_millis(1));
+    }
+    assert!(p.take_ready());
     p.get_suggestions(&[line.to_string()], 0, col, force)
 }
 

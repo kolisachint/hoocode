@@ -84,12 +84,15 @@ stop the same bug classes coming back.
      a panic in `js_regex` `translate` (truncated `\u`, `\x`, `\p`), now fixed.
 
 6. **`@file` autocomplete without `fd`** (2026-10-08).
-   - Status (2026-10-08, `claude/1.4-file-without-fd`): **partly built.** The walk is
-     in `hoocode-code-tools` (`file_finder`, the `ignore` crate) and the app injects it,
+   - Status (2026-10-08, `claude/1.4b-finder-async`): **done.** The walk is in
+     `hoocode-code-tools` (`file_finder`, the `ignore` crate) and the app injects it,
      so `@` works with no `fd` installed. Results are capped at 100 matches and 20 shown,
-     as before. Not done yet: running the walk off the UI thread (the provider is still
-     synchronous), and the external-tools layer (its `fd` and `rg` rows, the `/settings`
-     pane, `bin_dir()`, the env variables). The `fd` row still says it drives `@` completion.
+     as before. The walk runs on a worker thread (`tui-components/src/autocomplete/file_search.rs`):
+     typing never waits on it, matches for a query typed past are dropped, and the editor
+     asks again when the walk finishes. The external-tools layer is removed: the `fd` and
+     `rg` lookups, the `external_tools` table and its `/settings` pane, `bin_dir()`, and
+     `HOOCODE_RG_BINARY`, `HOOCODE_FD_BINARY`, `HOOCODE_NATIVE_SEARCH`. The parity harness
+     masks the `/settings` pane (`mask_snapshots` in `settings-pane.json`).
    - A file finder in a `code-*` crate walks with the `ignore` crate using fd's
      rules: files and folders, hidden included, follow links, honour `.gitignore`,
      skip `.git`, match the name (the full path when the query has a `/`),
