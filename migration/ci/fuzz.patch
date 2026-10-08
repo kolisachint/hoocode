@@ -1,0 +1,67 @@
+diff --git a/.github/workflows/fuzz.yml b/.github/workflows/fuzz.yml
+new file mode 100644
+--- /dev/null
++++ b/.github/workflows/fuzz.yml
+@@ -0,0 +1,62 @@
++name: Fuzz
++
++# Plan step 1.6 (docs/design/reliability.md, item 5). The stable smoke runs of the same
++# targets are already in the test suite (`cargo test --workspace fuzz_smoke`). This job
++# runs the cargo-fuzz targets in fuzz/ for longer, on nightly. See fuzz/README.md.
++
++on:
++  schedule:
++    # 03:37 UTC: off the hour, before the 04:17 nightly evals in ci.yml.
++    - cron: "37 3 * * *"
++  workflow_dispatch:
++    inputs:
++      seconds:
++        description: "Seconds per target"
++        default: "300"
++
++concurrency:
++  group: fuzz-${{ github.ref }}
++  cancel-in-progress: false
++
++permissions:
++  contents: read
++
++env:
++  CARGO_INCREMENTAL: "0"
++  CARGO_TERM_COLOR: always
++  RUST_BACKTRACE: short
++
++jobs:
++  fuzz:
++    runs-on: ubuntu-latest
++    timeout-minutes: 90
++    strategy:
++      fail-fast: false
++      matrix:
++        target:
++          - sse
++          - rpc_jsonl
++          - session_jsonl
++          - settings_json
++          - models_json
++          - tui_keys
++          - js_regex
++          - ansi_wrap
++          - markdown
++    steps:
++      - uses: actions/checkout@v4
++      - name: Nightly toolchain
++        run: rustup toolchain install nightly --profile minimal
++      - name: cargo-fuzz
++        run: cargo install cargo-fuzz --locked
++      - name: Fuzz ${{ matrix.target }}
++        run: >-
++          cargo +nightly fuzz run ${{ matrix.target }} --
++          -max_total_time=${{ github.event.inputs.seconds || 300 }}
++      - name: Upload crashes
++        if: failure()
++        uses: actions/upload-artifact@v4
++        with:
++          name: fuzz-${{ matrix.target }}
++          path: fuzz/artifacts/${{ matrix.target }}/
++          if-no-files-found: ignore

@@ -1,0 +1,7 @@
+data: one
+data: two
+
+id: 7
+event: ping
+data:
+

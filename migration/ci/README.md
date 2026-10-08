@@ -8,6 +8,7 @@ git apply migration/ci/delete-crates-doc-step.patch      # drop the agent-mcp do
 git apply migration/ci/ci.yml.patch                     # ledger + dependency-firewall checks in CI
 git apply migration/ci/rename-to-hoocode.patch            # step 0c: workflow binary and crate names -> hoocode (after the rename)
 cp migration/ci/tui-parity.yml .github/workflows/       # manual/nightly Level-2 parity job
+git apply migration/ci/fuzz.patch                       # nightly cargo-fuzz job for fuzz/ (plan 1.6); adds .github/workflows/fuzz.yml
 # then paste migration/ci/msrv-job.yml under `jobs:` in .github/workflows/ci.yml
 ```
 

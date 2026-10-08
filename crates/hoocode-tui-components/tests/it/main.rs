@@ -2,6 +2,7 @@ mod autocomplete_ts;
 mod common;
 mod editor;
 mod frame;
+mod fuzz_smoke;
 mod image_component;
 mod lists_and_input;
 mod markdown;

@@ -58,6 +58,14 @@ stop the same bug classes coming back.
    Rust) for: session JSONL parse, settings and `models.json` parse, SSE parser,
    terminal key parser, markdown renderer, and list-item detection. An optional
    nightly `cargo-fuzz` CI job runs the same targets for longer.
+   - **Status (2026-10-08, branch `claude/1.6-fuzzing`): done, except the CI job is staged.**
+     Targets are in `fuzz/` (see `fuzz/README.md`): `sse`, `rpc_jsonl`, `session_jsonl`,
+     `settings_json`, `models_json`, `tui_keys`, `js_regex`, `ansi_wrap`, `markdown`
+     (list items are covered through the lexer; `list_item_regex` is crate-private).
+     Smoke tests run on stable as `fuzz_smoke` in each owning crate. They replay seeds,
+     their prefixes and deterministic mutations, so no `proptest` dependency was added.
+     The nightly job is `migration/ci/fuzz.patch`, not yet applied. The first run found
+     a panic in `js_regex` `translate` (truncated `\u`, `\x`, `\p`), now fixed.
 
 6. **`@file` autocomplete without `fd`** (2026-10-08).
    - A file finder in a `code-*` crate walks with the `ignore` crate using fd's

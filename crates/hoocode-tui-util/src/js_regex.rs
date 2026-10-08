@@ -127,27 +127,29 @@ pub fn translate(source: &str, flags: &str) -> String {
                         out.push_str("0B");
                     }
                 }
-                'x' => {
+                // A malformed escape (too few characters left, no closing brace) is an
+                // identity escape, as in JS Annex B. It must not index past the end: the
+                // pattern comes from `try_new`, which reports bad input as an `Err`.
+                'x' if i + 1 < chars.len() => {
                     out.push_str(r"\x");
                     out.push(chars[i]);
                     out.push(chars[i + 1]);
                     i += 2;
                 }
-                'u' => {
-                    if chars.get(i) == Some(&'{') {
-                        let end = chars[i..].iter().position(|&c| c == '}').unwrap() + i;
-                        out.push_str(r"\x{");
-                        out.extend(&chars[i + 1..end]);
-                        out.push('}');
-                        i = end + 1;
-                    } else {
-                        out.push_str(r"\x{");
-                        out.extend(&chars[i..i + 4]);
-                        out.push('}');
-                        i += 4;
-                    }
+                'u' if chars.get(i) == Some(&'{') && chars[i..].contains(&'}') => {
+                    let end = chars[i..].iter().position(|&c| c == '}').unwrap() + i;
+                    out.push_str(r"\x{");
+                    out.extend(&chars[i + 1..end]);
+                    out.push('}');
+                    i = end + 1;
                 }
-                'p' | 'P' => {
+                'u' if chars.get(i) != Some(&'{') && i + 4 <= chars.len() => {
+                    out.push_str(r"\x{");
+                    out.extend(&chars[i..i + 4]);
+                    out.push('}');
+                    i += 4;
+                }
+                'p' | 'P' if chars[i..].contains(&'}') => {
                     out.push('\\');
                     out.push(n);
                     let end = chars[i..].iter().position(|&c| c == '}').unwrap() + i;
@@ -474,5 +476,19 @@ mod tests {
     fn replaces_like_js() {
         let re = JsRegex::new(r"\\([\[\]])", "g");
         assert_eq!(re.replace(r"a\[b\]", true, "$1"), "a[b]");
+    }
+
+    // Fuzzer finding (fuzz/targets/js_regex.rs): `\u` with fewer than four characters
+    // left panicked with an out-of-range slice.
+    #[test]
+    fn truncated_escapes_are_identity_escapes_not_panics() {
+        for pattern in [
+            r"\x", r"\x1", r"\u", r"\u12", r"\u{41", r"\p", r"\pL", r"\P{",
+        ] {
+            let _ = JsRegex::try_new(pattern, "");
+        }
+        assert!(JsRegex::new(r"\u12", "").test("u12"));
+        assert!(JsRegex::new(r"\x1", "").test("x1"));
+        assert!(JsRegex::new(r"\pL", "").test("pL"));
     }
 }
