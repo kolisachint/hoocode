@@ -24,7 +24,7 @@ impl CapabilityKind {
     pub fn as_str(self) -> &'static str {
         match self {
             CapabilityKind::Skill => "skill",
-            CapabilityKind::Subagent => "subagent",
+            CapabilityKind::Subagent => "agent",
             CapabilityKind::Plugin => "plugin",
         }
     }
