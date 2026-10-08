@@ -96,3 +96,13 @@ hoocode (Rust) is a drop-in replacement for hoocode-ts. Card:
 Accepted risks: after the first merge hoocode-ts runs with the Rust settings and
 logins (backups undo it); the project merge writes into git working trees; rewritten
 docs hide the old names (git keeps them).
+
+## fd and rg
+
+| Question | Decision |
+|---|---|
+| `rg` | **Dropped.** Nothing runs it; search links ripgrep's libraries (`grep-*`, `ignore`). |
+| `fd` | **Dropped.** `@file` autocomplete walks in process with the `ignore` crate (fd's own walker) using fd's rules, off the UI thread. Today it suggests nothing when `fd` is missing, and it blocks typing while `fd` runs. |
+| The external-tools layer | **Removed**: the `external_tools` table and its `/settings` pane, `bin_dir()`, and `HOOCODE_RG_BINARY`, `HOOCODE_FD_BINARY`, `HOOCODE_NATIVE_SEARCH`. Its other rows are gone too: `embsearch` dropped, `webtools` comes through MCP, `voicetools` dropped. The parity harness masks the `/settings` difference. |
+
+Built as item 6 of [reliability.md](reliability.md).

@@ -53,7 +53,21 @@ stop the same bug classes coming back.
    terminal key parser, markdown renderer, and list-item detection. An optional
    nightly `cargo-fuzz` CI job runs the same targets for longer.
 
-Done when: all five land, CI is green on Linux and macOS, and every item has
+6. **`@file` autocomplete without `fd`** (2026-10-08).
+   - A file finder in a `code-*` crate walks with the `ignore` crate using fd's
+     rules: files and folders, hidden included, follow links, honour `.gitignore`,
+     skip `.git`, match the name (the full path when the query has a `/`),
+     smart case, at most 100 results.
+   - The autocomplete gets it injected (the `tui-*` crates stay free of it), runs it
+     off the UI thread, and drops results for a query the user has typed past.
+   - Remove the `fd` and `rg` lookups, the external-tools table and its `/settings`
+     pane, `bin_dir()`, and the `RG_BINARY`, `FD_BINARY` and `NATIVE_SEARCH` env
+     variables. Mask the `/settings` pane difference in the parity harness.
+   - Tests: the same suggestions as `fd` on a fixture tree (hidden files,
+     `.gitignore`, symlinks, `.git` skipped, path queries); typing never waits on
+     the walk.
+
+Done when: all six land, CI is green on Linux and macOS, and every item has
 regression tests.
 
 ## Not doing

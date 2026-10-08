@@ -59,7 +59,7 @@ open, so nothing conflicts with it.
 |---|---|---|
 | `CONFIG_DIR_NAME` | `.cortexcode` (reads `.hoocode` as a fallback) | `.hoocode`, no fallback |
 | Agent dir | `~/.cortexcode` | `~/.hoocode` |
-| Managed binaries (fd, rg) | `~/.cortexcode/bin` | `~/.hoocode/bin` (as hoocode-ts; the installer replaces only its own files there) |
+| Managed binaries (fd, rg) | `~/.cortexcode/bin` | **None**: fd and rg are dropped (reliability item 6). `~/.hoocode/bin` belongs to the installer. |
 | Debug log | `~/.cortexcode/cortex-debug.log` | `~/.hoocode/hoocode-debug.log` (the same file hoocode-ts writes) |
 | Dispatch dirs | `<cwd>/.cortexcode/dispatch/` | `<cwd>/.hoocode/dispatch/` |
 | `ENV_PREFIXES` | `CORTEXCODE_`, `CORTEX_`, `HOOCODE_` | `HOOCODE_` only |

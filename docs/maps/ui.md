@@ -29,7 +29,7 @@ update this page in the same commit.
 | Progress bar | progress bar, startup progress | `code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
 | Prompt editor | `CustomEditor` around `Editor` | `interactive_mode.rs` (`CustomEditor`); `tui-components/src/editor/` |
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
-| Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `interactive_mode.rs` `setup_autocomplete_provider` |
+| Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `interactive_mode.rs` `setup_autocomplete_provider`. `@file` uses `fd` today; an in-process finder replaces it (reliability item 6). |
 | Footer | footer, footer data | `code-tui-app/src/footer.rs`, `footer_data.rs` |
 | Session chip | session chip | `code-tui-widgets/src/session_chip.rs` |
 | How much room chrome gets | chrome layout | `code-tui-app/src/chrome_layout.rs` |

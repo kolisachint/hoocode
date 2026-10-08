@@ -28,6 +28,7 @@ The parts already run in parallel, but nothing bounds or orders them.
 | Tool calls run on tokio's blocking pool | `agent-loop` `run_tool` | Pool cap is 512 threads; parallel tool calls are not capped |
 | Each `bash` call adds 3 threads | `code-tool-bash` (2 pipe readers + 100 ms flusher) | 8 parallel bash calls = 24 extra threads |
 | Each lone ESC spawns a timer thread; resize is a 100 ms polling thread | `tui-terminal` | Threads for timers |
+| `@file` autocomplete spawns `fd` and waits for it | `tui-components` `autocomplete` | Runs on the UI thread; typing stalls on a big tree (fixed by reliability item 6) |
 | UI loop writes frames to stdout itself | `tui-render` `do_render` | A slow terminal (ssh, paused pane) blocks input handling |
 | Session entries are appended by opening the file per entry | `code-session` `manager.rs` `persist` | Blocking file I/O on whichever thread emits the event; a slow disk stalls it |
 | Subagents are child processes, 5 at once, 2 when nested, depth 1 | `code-subagents` `pool.rs`, `depth.rs` | Good. But each child starts its own core-sized runtime |
