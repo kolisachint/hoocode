@@ -5,10 +5,12 @@
 //! integration point that turns the previously stubbed CLI commands into
 //! actual LLM-backed sessions.
 
+use crate::args::Mode;
 use crate::{Args, DiagnosticKind};
 use hoocode_agent_types::PermissionGate;
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_code_auth::AuthStorage;
+use hoocode_code_permissions::{ApprovalChannel, HooPermissionGate};
 
 use hoocode_code_agent_session::{
     create_agent_session, AgentSession, AgentSessionRuntime, AgentSessionRuntimeDiagnostic,
@@ -359,16 +361,56 @@ fn subagent_tools(
     ]
 }
 
+/// An env flag that is set to exactly `1`.
+fn env_flag(name: &str) -> bool {
+    std::env::var_os(name).is_some_and(|v| v == "1")
+}
+
+/// The approval channel for a run without a UI. rpc fails closed. The one
+/// exception is a warm worker (`WARM_WORKER_ENV`), whose stdio has no client to
+/// answer: it stays open, unless its rpc parent was itself fail-closed
+/// (`FAIL_CLOSED_ENV`), in which case it must not open what the parent denies.
+/// print and json fail closed only when they run under a fail-closed rpc
+/// process, so a json subagent cannot run what its rpc parent would have denied.
+fn headless_approval_channel(
+    mode: Option<Mode>,
+    warm_worker: bool,
+    inherited_fail_closed: bool,
+) -> ApprovalChannel {
+    let fail_closed = match mode {
+        Some(Mode::Rpc) => !warm_worker || inherited_fail_closed,
+        _ => inherited_fail_closed,
+    };
+    ApprovalChannel::Headless { fail_closed }
+}
+
+/// [`headless_approval_channel`] for this process, from its args and env.
+fn headless_approval_channel_for(args: &Args) -> ApprovalChannel {
+    headless_approval_channel(
+        args.mode,
+        env_flag(hoocode_code_permissions::WARM_WORKER_ENV),
+        env_flag(hoocode_code_permissions::FAIL_CLOSED_ENV),
+    )
+}
+
 /// Build the permission gate for the current CLI mode. Read-only tools are
 /// hoocode's permission gate (hoo-core): per-mode hard rules always; prompts
-/// for bash/write/edit/web tools only when there is a UI to ask.
-fn build_permission_gate(interactive: bool, cwd: &std::path::Path) -> Arc<dyn PermissionGate> {
-    let ui: Option<Arc<dyn hoocode_code_permissions::PermissionUi>> =
-        interactive.then(|| Arc::new(hoocode_code_tui_app::dialog_bridge::TuiPermissionUi) as _);
-    Arc::new(hoocode_code_permissions::HooPermissionGate::new(
-        cwd.to_path_buf(),
-        ui,
-    ))
+/// for bash/write/edit/web tools when a UI can ask, and otherwise the headless
+/// channel decides (see [`headless_approval_channel`]).
+fn build_permission_gate(
+    args: &Args,
+    interactive: bool,
+    cwd: &std::path::Path,
+) -> Arc<dyn PermissionGate> {
+    let (channel, ui) = if interactive {
+        (
+            ApprovalChannel::Ui,
+            Some(Arc::new(hoocode_code_tui_app::dialog_bridge::TuiPermissionUi) as _),
+        )
+    } else {
+        (headless_approval_channel_for(args), None)
+    };
+    Arc::new(HooPermissionGate::new(cwd.to_path_buf(), channel, ui))
 }
 
 /// Build the session for a CLI run: the initial session manager, then the
@@ -635,7 +677,7 @@ fn assemble_session(
             custom_tools: custom,
             base_tools,
             permission_gate: Some(
-                gate.unwrap_or_else(|| build_permission_gate(interactive, &services.cwd)),
+                gate.unwrap_or_else(|| build_permission_gate(args, interactive, &services.cwd)),
             ),
             disallowed_tools,
             extensions: Some(modes),
@@ -676,6 +718,16 @@ pub fn run_print_mode(
     let home = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_default();
+    if let ApprovalChannel::Headless { fail_closed: false } = headless_approval_channel_for(args) {
+        let mode = match mode {
+            PrintMode::Json => "--mode json",
+            PrintMode::Text => "--print",
+        };
+        writeln!(
+            err,
+            "Note: {mode} does not ask for tool approval; bash, write, edit, webfetch and websearch run without it."
+        )?;
+    }
     let (session, diagnostics) = build_session(args, false);
     let mut messages = args.messages.clone();
     let (initial_message, initial_images) = match crate::initial_message::prepare_initial_message(
@@ -950,6 +1002,12 @@ fn build_session_runtime(
 /// stdout, until stdin ends. The session lives in an `AgentSessionRuntime`, so
 /// new_session/switch_session/fork/clone replace it through the factory.
 pub fn run_rpc_mode(args: &Args, color: bool, err: &mut dyn Write) -> std::io::Result<i32> {
+    // Children we spawn (json subagents, print runs) fail closed too. A warm
+    // worker keeps its own gate open (it is driven over stdio with no client to
+    // answer), but it must not hand that opt-out to its children.
+    if !env_flag(hoocode_code_permissions::WARM_WORKER_ENV) {
+        std::env::set_var(hoocode_code_permissions::FAIL_CLOSED_ENV, "1");
+    }
     let (runtime, diagnostics) = build_session_runtime(args, load_auth(), false);
     report_diagnostics(err, color, &diagnostics)?;
     if diagnostics
@@ -2040,5 +2098,52 @@ mod tests {
             assert!(!drawn[..collapsed_end].contains("Compose — the message in your hands"));
             assert!(drawn[collapsed_end..].contains("Compose — the message in your hands"));
         }
+    }
+}
+
+#[cfg(test)]
+mod approval_channel_tests {
+    use super::{headless_approval_channel, ApprovalChannel, Mode};
+
+    fn closed() -> ApprovalChannel {
+        ApprovalChannel::Headless { fail_closed: true }
+    }
+
+    fn open() -> ApprovalChannel {
+        ApprovalChannel::Headless { fail_closed: false }
+    }
+
+    #[test]
+    fn rpc_fails_closed_unless_it_is_a_warm_worker() {
+        assert_eq!(
+            headless_approval_channel(Some(Mode::Rpc), false, false),
+            closed()
+        );
+        // A warm worker with no fail-closed parent opts out for its own gate.
+        assert_eq!(
+            headless_approval_channel(Some(Mode::Rpc), true, false),
+            open()
+        );
+        // A warm worker spawned by a fail-closed rpc parent stays closed.
+        assert_eq!(
+            headless_approval_channel(Some(Mode::Rpc), true, true),
+            closed()
+        );
+    }
+
+    #[test]
+    fn print_and_json_allow_unless_inherited_from_a_fail_closed_rpc() {
+        assert_eq!(headless_approval_channel(None, false, false), open());
+        assert_eq!(
+            headless_approval_channel(Some(Mode::Json), false, false),
+            open()
+        );
+        // A json subagent of a fail-closed rpc parent (or a print run started
+        // from one) fails closed too.
+        assert_eq!(
+            headless_approval_channel(Some(Mode::Json), false, true),
+            closed()
+        );
+        assert_eq!(headless_approval_channel(None, false, true), closed());
     }
 }
