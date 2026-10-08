@@ -47,6 +47,14 @@ stop the same bug classes coming back.
    - `tui-selectors` scoped-models hint: find the cause, then fix.
    - Add a macOS test job to `ci.yml`. `binaries.yml` already uses `macos-latest`
      runners for release builds, but no tests run there.
+   - **Status (2026-10-08, branch `claude/1.3-macos-tests`): fixes done, macOS job staged.**
+     Fixed: replay masks both spellings of each temp path (`/private`), `code-tool-api`
+     compares names with `same_file_name` (NFC both sides), the `option+a` tip expects
+     `option` on macOS, and the scoped-models footer test renders at 200 columns (cause
+     below). The job is `migration/ci/macos-tests.patch`, not yet applied. Not run on
+     macOS (Linux only here).
+     Scoped-models cause: `alt` is printed as `option` on macOS, so the 5-key footer is
+     about 20 columns wider and wraps at 120, splitting "all enabled".
 4. **Panic audit.**
    - Scope: about 170 byte-index slices (`[..n]`, `[n..]`) on strings, and about
      815 `unwrap`/`expect` calls in non-test code. Most are fine.

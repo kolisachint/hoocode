@@ -1,5 +1,6 @@
 //! Case-for-case port of the pin's `coding-agent/test/path-utils.test.ts`.
 
+use hoocode_code_tool_api::path_utils::same_file_name;
 use hoocode_code_tool_api::{expand_path, resolve_read_path, resolve_to_cwd};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -79,9 +80,13 @@ fn handles_nfc_vs_nfd_filenames() {
     assert_ne!(nfd, nfc);
     t.touch(nfd);
     let r = resolve_read_path(nfc, &t.0);
-    let s = r.to_string_lossy();
     assert!(r.starts_with(&t.0));
-    assert!(s.ends_with(".txt") && s.contains("/file"));
+    assert!(r.exists(), "{}", r.display());
+    // macOS may hand the name back NFD, Linux keeps the written spelling.
+    assert!(same_file_name(
+        &r.file_name().unwrap().to_string_lossy(),
+        nfc
+    ));
 }
 
 #[test]

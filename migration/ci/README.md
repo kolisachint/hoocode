@@ -10,6 +10,7 @@ git apply migration/ci/rename-to-hoocode.patch            # step 0c: workflow bi
 cp migration/ci/tui-parity.yml .github/workflows/       # manual/nightly Level-2 parity job
 git apply migration/ci/fuzz.patch                       # nightly cargo-fuzz job for fuzz/ (plan 1.6); adds .github/workflows/fuzz.yml
 # then paste migration/ci/msrv-job.yml under `jobs:` in .github/workflows/ci.yml
+git apply migration/ci/macos-tests.patch                # reliability 1.3: test-macos job (macos-latest, same nextest command as `test`)
 ```
 
 Tracked by ledger tasks 7.1 (CI gates) and 13.3 (parity workflow).
