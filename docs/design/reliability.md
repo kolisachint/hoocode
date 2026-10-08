@@ -19,10 +19,16 @@ stop the same bug classes coming back.
 
 ## What we build
 
-1. **rpc fail-closed.**
-   - `evaluate` takes a third case, "no UI and not allowed to auto-approve", and
-     returns `Block` with a clear message ("needs approval; no client attached").
-   - rpc mode uses it; print and json keep `Allow` and print the notice.
+1. **rpc fail-closed.** Built 2026-10-08 (`claude/1.1-rpc-fails-closed`).
+   - `evaluate` takes an `ApprovalChannel` (`Ui`, or `Headless { fail_closed }`).
+     A gated call that needs approval is `Block`ed when `fail_closed`, with a
+     message that names `auto_allow` in hoo-config.json.
+   - rpc mode is fail-closed. Its children inherit the policy through the internal
+     env `HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED`, so json subagents are closed too.
+     Warm workers opt out of their own gate with the internal `HOOCODE_INTERNAL_WARM_WORKER`,
+     unless their parent is fail-closed (the inherited flag wins).
+   - print and json keep `Allow` and print a one-line stderr note.
+   - MCP and plugin tools stay ungated (TODO in `code-permissions`).
    - Tests: a gated tool in rpc is blocked, in print is allowed with the notice,
      and in interactive mode still prompts.
    - Approval dialogs over rpc are dropped (2026-10-08); hoobot uses the
@@ -52,8 +58,22 @@ stop the same bug classes coming back.
    Rust) for: session JSONL parse, settings and `models.json` parse, SSE parser,
    terminal key parser, markdown renderer, and list-item detection. An optional
    nightly `cargo-fuzz` CI job runs the same targets for longer.
+   - **Status (2026-10-08, branch `claude/1.6-fuzzing`): done, except the CI job is staged.**
+     Targets are in `fuzz/` (see `fuzz/README.md`): `sse`, `rpc_jsonl`, `session_jsonl`,
+     `settings_json`, `models_json`, `tui_keys`, `js_regex`, `ansi_wrap`, `markdown`
+     (list items are covered through the lexer; `list_item_regex` is crate-private).
+     Smoke tests run on stable as `fuzz_smoke` in each owning crate. They replay seeds,
+     their prefixes and deterministic mutations, so no `proptest` dependency was added.
+     The nightly job is `migration/ci/fuzz.patch`, not yet applied. The first run found
+     a panic in `js_regex` `translate` (truncated `\u`, `\x`, `\p`), now fixed.
 
 6. **`@file` autocomplete without `fd`** (2026-10-08).
+   - Status (2026-10-08, `claude/1.4-file-without-fd`): **partly built.** The walk is
+     in `hoocode-code-tools` (`file_finder`, the `ignore` crate) and the app injects it,
+     so `@` works with no `fd` installed. Results are capped at 100 matches and 20 shown,
+     as before. Not done yet: running the walk off the UI thread (the provider is still
+     synchronous), and the external-tools layer (its `fd` and `rg` rows, the `/settings`
+     pane, `bin_dir()`, the env variables). The `fd` row still says it drives `@` completion.
    - A file finder in a `code-*` crate walks with the `ignore` crate using fd's
      rules: files and folders, hidden included, follow links, honour `.gitignore`,
      skip `.git`, match the name (the full path when the query has a `/`),

@@ -1,0 +1,4 @@
+{
+  // comment
+  "providers": {"local": {"baseUrl": "http://localhost:1234/v1", "models": [{"id": "m1",},],},},
+}

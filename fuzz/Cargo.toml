@@ -1,0 +1,91 @@
+[package]
+name = "hoocode-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "cargo-fuzz targets for the hoocode parsers (plan step 1.6). Needs nightly; not part of the workspace."
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+futures-executor = "0.3"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+serde_json = "1"
+hoocode-ai-sse = { path = "../crates/hoocode-ai-sse" }
+hoocode-code-models = { path = "../crates/hoocode-code-models" }
+hoocode-code-rpc = { path = "../crates/hoocode-code-rpc" }
+hoocode-code-session = { path = "../crates/hoocode-code-session" }
+hoocode-code-settings = { path = "../crates/hoocode-code-settings" }
+hoocode-tui-components = { path = "../crates/hoocode-tui-components" }
+hoocode-tui-keys = { path = "../crates/hoocode-tui-keys" }
+hoocode-tui-render = { path = "../crates/hoocode-tui-render" }
+hoocode-tui-util = { path = "../crates/hoocode-tui-util" }
+
+# The fuzz crate is its own workspace so the main workspace never builds it.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "sse"
+path = "fuzz_targets/sse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rpc_jsonl"
+path = "fuzz_targets/rpc_jsonl.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session_jsonl"
+path = "fuzz_targets/session_jsonl.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "settings_json"
+path = "fuzz_targets/settings_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "models_json"
+path = "fuzz_targets/models_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tui_keys"
+path = "fuzz_targets/tui_keys.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "js_regex"
+path = "fuzz_targets/js_regex.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ansi_wrap"
+path = "fuzz_targets/ansi_wrap.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "markdown"
+path = "fuzz_targets/markdown.rs"
+test = false
+doc = false
+bench = false

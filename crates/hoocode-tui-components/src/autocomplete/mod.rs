@@ -3,25 +3,23 @@
 //! Adaptation: the TypeScript original is async (`Promise`-returning
 //! `getSuggestions`, `AbortSignal`-cancellable `fd` subprocess spawning).
 //! No async runtime is wired into this crate, so [`AutocompleteProvider`]
-//! is synchronous: suggestion generation (a directory read or an `fd`
-//! subprocess call) blocks the calling thread. `fd` invocations here
-//! typically complete in single-digit milliseconds, and callers that need
-//! cancellation can run this behind their own timeout/thread if needed —
-//! but true mid-flight process cancellation via `AbortSignal` is not
-//! ported.
+//! is synchronous: suggestion generation (a directory read or a file walk)
+//! blocks the calling thread. Mid-flight cancellation is not ported.
+//!
+//! `@file` suggestions come from a [`FileFinder`] that the app injects, so
+//! this crate does not depend on the walker. No `fd` binary is used.
 
 mod path_utils;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use hoocode_tui_fuzzy::fuzzy_filter;
 
 use path_utils::{
-    basename, build_completion_value, build_fd_path_query, dirname, expand_home_path,
-    extract_quoted_prefix, find_last_delimiter, is_dir, join_path, parse_path_prefix,
-    to_display_path, CompletionValueOptions,
+    basename, build_completion_value, dirname, expand_home_path, extract_quoted_prefix,
+    find_last_delimiter, is_dir, join_path, parse_path_prefix, to_display_path,
+    CompletionValueOptions,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,11 +112,23 @@ pub trait AutocompleteProvider {
     }
 }
 
+/// One path a [`FileFinder`] returned: relative to the search base, `/`-separated,
+/// without a trailing slash.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileMatch {
+    pub path: String,
+    pub is_directory: bool,
+}
+
+/// Finds `@file` candidates: `(base, query, max_results)`. The app injects one
+/// (an in-process walk that honours `.gitignore`), so this crate has no walker of its own.
+pub type FileFinder = Box<dyn Fn(&Path, &str, usize) -> Vec<FileMatch>>;
+
 /// Combined provider that handles both slash commands and file paths.
 pub struct CombinedAutocompleteProvider {
     commands: Vec<CommandEntry>,
     base_path: PathBuf,
-    fd_path: Option<PathBuf>,
+    file_finder: Option<FileFinder>,
 }
 
 fn cursor_line_text(lines: &[String], cursor_line: usize, cursor_col: usize) -> String {
@@ -135,15 +145,16 @@ fn char_index_to_byte(s: &str, char_index: usize) -> usize {
 }
 
 impl CombinedAutocompleteProvider {
+    /// Without a `file_finder`, `@` completion offers nothing.
     pub fn new(
         commands: Vec<CommandEntry>,
         base_path: impl Into<PathBuf>,
-        fd_path: Option<PathBuf>,
+        file_finder: Option<FileFinder>,
     ) -> Self {
         Self {
             commands,
             base_path: base_path.into(),
-            fd_path,
+            file_finder,
         }
     }
 
@@ -375,14 +386,14 @@ impl CombinedAutocompleteProvider {
         }
     }
 
-    /// Fuzzy file search using `fd` (fast, respects `.gitignore`). Blocking:
-    /// see the module-level docs on the async→sync adaptation.
+    /// Fuzzy file search through the injected [`FileFinder`]. Blocking: see the
+    /// module-level docs on the async→sync adaptation.
     fn get_fuzzy_file_suggestions(
         &self,
         query: &str,
         is_quoted_prefix: bool,
     ) -> Vec<AutocompleteItem> {
-        let Some(fd_path) = &self.fd_path else {
+        let Some(finder) = &self.file_finder else {
             return Vec::new();
         };
 
@@ -396,15 +407,21 @@ impl CombinedAutocompleteProvider {
             .map(|(_, q, _)| q.clone())
             .unwrap_or_else(|| query.to_string());
 
-        let entries = walk_directory_with_fd(&fd_base_dir, fd_path, &fd_query, 100);
+        let entries = finder(&fd_base_dir, &fd_query, 100);
 
-        let mut scored: Vec<(FdEntry, i32)> = entries
+        let mut scored: Vec<(FileMatch, i32)> = entries
             .into_iter()
             .map(|entry| {
                 let score = if fd_query.is_empty() {
                     1
                 } else {
-                    Self::score_entry(&entry.path, &fd_query, entry.is_directory)
+                    // Directories score with their trailing slash, as before.
+                    let scored_path = if entry.is_directory {
+                        format!("{}/", entry.path)
+                    } else {
+                        entry.path.clone()
+                    };
+                    Self::score_entry(&scored_path, &fd_query, entry.is_directory)
                 };
                 (entry, score)
             })
@@ -415,11 +432,7 @@ impl CombinedAutocompleteProvider {
 
         let mut suggestions = Vec::new();
         for (entry, _) in scored {
-            let path_without_slash = if entry.is_directory {
-                entry.path.trim_end_matches('/').to_string()
-            } else {
-                entry.path.clone()
-            };
+            let path_without_slash = entry.path.clone();
             let display_path = match &scoped {
                 Some((_, _, display_base)) => {
                     Self::scoped_path_for_display(display_base, &path_without_slash)
@@ -454,81 +467,6 @@ impl CombinedAutocompleteProvider {
 
         suggestions
     }
-}
-
-struct FdEntry {
-    path: String,
-    is_directory: bool,
-}
-
-fn walk_directory_with_fd(
-    base_dir: &Path,
-    fd_path: &Path,
-    query: &str,
-    max_results: usize,
-) -> Vec<FdEntry> {
-    let mut args: Vec<String> = vec![
-        "--base-directory".into(),
-        base_dir.to_string_lossy().into_owned(),
-        "--max-results".into(),
-        max_results.to_string(),
-        "--type".into(),
-        "f".into(),
-        "--type".into(),
-        "d".into(),
-        "--follow".into(),
-        "--hidden".into(),
-        "--exclude".into(),
-        ".git".into(),
-        "--exclude".into(),
-        ".git/*".into(),
-        "--exclude".into(),
-        ".git/**".into(),
-    ];
-
-    if to_display_path(query).contains('/') {
-        args.push("--full-path".into());
-    }
-
-    if !query.is_empty() {
-        args.push(build_fd_path_query(query));
-    }
-
-    let Ok(output) = Command::new(fd_path).args(&args).output() else {
-        return Vec::new();
-    };
-    if !output.status.success() {
-        return Vec::new();
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if stdout.trim().is_empty() {
-        return Vec::new();
-    }
-
-    let mut results = Vec::new();
-    for line in stdout.trim().lines() {
-        if line.is_empty() {
-            continue;
-        }
-        let display_line = to_display_path(line);
-        let has_trailing_separator = display_line.ends_with('/');
-        let normalized_path = if has_trailing_separator {
-            display_line.trim_end_matches('/').to_string()
-        } else {
-            display_line.clone()
-        };
-        if normalized_path == ".git"
-            || normalized_path.starts_with(".git/")
-            || normalized_path.contains("/.git/")
-        {
-            continue;
-        }
-        results.push(FdEntry {
-            path: display_line,
-            is_directory: has_trailing_separator,
-        });
-    }
-    results
 }
 
 impl AutocompleteProvider for CombinedAutocompleteProvider {

@@ -491,10 +491,15 @@ impl WarmSubagentPool {
     /// MCP-free allowlist. (hoocode also deletes the deferred-MCP flag, but
     /// its RpcClient spreads the parent environment back over it.)
     fn child_env(&self, agent_type: &str) -> Vec<(String, String)> {
-        let mut env = vec![(
-            format!("HOOCODE_{SUBAGENT_DEPTH_ENV}"),
-            (current_subagent_depth(&ProcessEnv) + 1).to_string(),
-        )];
+        let mut env = vec![
+            (
+                format!("HOOCODE_{SUBAGENT_DEPTH_ENV}"),
+                (current_subagent_depth(&ProcessEnv) + 1).to_string(),
+            ),
+            // Internal: this rpc worker has no client to answer approvals, so
+            // its own gate stays open. Its children inherit the parent policy.
+            (hoocode_code_permissions::WARM_WORKER_ENV.into(), "1".into()),
+        ];
         let registry = self.registry();
         let tools = registry.get(agent_type).and_then(|d| d.tools.as_deref());
         if !tool_allowlist_needs_mcp(tools) {

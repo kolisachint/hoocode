@@ -24,7 +24,7 @@ use hoocode_app_server_protocol::{
 use hoocode_code_agent_session::{
     AgentSession, AgentSessionEvent, PromptOptions, SessionSubscription,
 };
-use hoocode_code_permissions::{evaluate, Verdict};
+use hoocode_code_permissions::{evaluate, ApprovalChannel, Verdict};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
@@ -679,7 +679,13 @@ struct ServerGate {
 impl PermissionGate for ServerGate {
     fn request(&self, call: &AgentToolCall) -> PermissionDecision {
         let config = hoocode_code_modes::config::read_merged_config(&self.cwd);
-        match evaluate(&config, &self.cwd, &call.name, &call.arguments, true) {
+        match evaluate(
+            &config,
+            &self.cwd,
+            &call.name,
+            &call.arguments,
+            ApprovalChannel::Ui,
+        ) {
             Verdict::Allow => PermissionDecision::Grant,
             Verdict::Block(reason) => PermissionDecision::Deny { reason },
             Verdict::Prompt => {

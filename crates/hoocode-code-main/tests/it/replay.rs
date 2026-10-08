@@ -376,6 +376,16 @@ struct RawRun {
     files: Vec<(String, Option<String>)>,
 }
 
+/// The one stderr line this build adds on purpose (reliability 1.1): print and
+/// json do not ask for tool approval, and say so. The pinned reference never
+/// prints it, so it is dropped before the comparison. Nothing else is masked.
+fn without_approval_note(stderr: &str) -> String {
+    stderr
+        .split_inclusive('\n')
+        .filter(|line| !line.contains(" does not ask for tool approval; "))
+        .collect()
+}
+
 fn render(sc: &Value, raw: &RawRun) -> String {
     let paths: Vec<(&str, &str)> = raw
         .paths
@@ -391,7 +401,10 @@ fn render(sc: &Value, raw: &RawRun) -> String {
         )),
         _ => parts.push(format!("## stdout\n{}", normalizer.apply_text(&raw.stdout))),
     }
-    parts.push(format!("## stderr\n{}", normalizer.apply_text(&raw.stderr)));
+    parts.push(format!(
+        "## stderr\n{}",
+        normalizer.apply_text(&without_approval_note(&raw.stderr))
+    ));
     if sc
         .get("compare_requests")
         .and_then(Value::as_bool)

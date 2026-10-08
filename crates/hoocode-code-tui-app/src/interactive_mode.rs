@@ -57,7 +57,7 @@ use hoocode_code_subagents::pool::DispatchOptions;
 use hoocode_code_task_store::{task_store, TaskStatus};
 use hoocode_code_tool_api::{truncate_tail, TruncationOptions, TruncationResult};
 use hoocode_code_tool_bash::BashResult;
-use hoocode_code_tools::external_tools::{describe_external_tools, get_tool_path};
+use hoocode_code_tools::external_tools::describe_external_tools;
 use hoocode_code_tools::light::{measure_prompt_surface, measure_tool_schema_tokens};
 use hoocode_code_tools_optin::todo::settle_dangling_main_tasks;
 use hoocode_code_tools_optin::AskQuestion;
@@ -109,8 +109,8 @@ use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::TruncatedText;
 use hoocode_tui_components::{
     ArgumentCompletionsFn, AutocompleteItem, CombinedAutocompleteProvider, CommandEntry, Editor,
-    EditorHost, EditorOptions, FrameBorderStyle, Loader, Markdown, MarkdownTheme, SelectItem,
-    SlashCommand, Spacer, Text,
+    EditorHost, EditorOptions, FileFinder, FileMatch, FrameBorderStyle, Loader, Markdown,
+    MarkdownTheme, SelectItem, SlashCommand, Spacer, Text,
 };
 use hoocode_tui_images::get_capabilities;
 use hoocode_tui_keys::get_keybindings;
@@ -376,6 +376,20 @@ const EDITOR_ACTIONS: [(&str, Action); 29] = [
 struct CustomEditor {
     editor: Editor,
     actions: Rc<RefCell<Vec<Action>>>,
+}
+
+/// The `@file` finder: `hoocode_code_tools::file_finder` (fd's rules, in
+/// process, so no `fd` binary is needed).
+pub fn at_file_finder() -> FileFinder {
+    Box::new(|base, query, max_results| {
+        hoocode_code_tools::file_finder::find_paths(base, query, max_results)
+            .into_iter()
+            .map(|found| FileMatch {
+                path: found.path,
+                is_directory: found.is_directory,
+            })
+            .collect()
+    })
 }
 
 fn is_plain_text(data: &str) -> bool {
@@ -3404,10 +3418,8 @@ impl Mode {
 
     /// `createBaseAutocompleteProvider` + `setupAutocompleteProvider`: the
     /// built-in commands, then prompt templates, then skill commands. `@`
-    /// file completion walks with `fd` (`ensureTool("fd")` at init): an
-    /// override, the managed copy or `fd`/`fdfind` on PATH. Downloading a
-    /// missing `fd` is not ported, so without one `@` completion stays off,
-    /// as in hoocode when the download fails.
+    /// file completion uses [`at_file_finder`], an in-process walk, so it
+    /// works without `fd` installed.
     fn setup_autocomplete_provider(&mut self) {
         let mut commands: Vec<CommandEntry> = BUILTIN_SLASH_COMMANDS
             .iter()
@@ -3493,9 +3505,11 @@ impl Mode {
                 get_argument_completions: None,
             }));
         }
-        let fd_path = get_tool_path("fd").map(std::path::PathBuf::from);
-        let provider =
-            CombinedAutocompleteProvider::new(commands, self.session.cwd().to_path_buf(), fd_path);
+        let provider = CombinedAutocompleteProvider::new(
+            commands,
+            self.session.cwd().to_path_buf(),
+            Some(at_file_finder()),
+        );
         self.editor
             .borrow_mut()
             .editor

@@ -5,6 +5,11 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ## Resume here
 
+- **2026-10-08: reliability 1.1 (rpc fails closed) built on `claude/1.1-rpc-fails-closed`.**
+  Not a ledger task. Gate: `ApprovalChannel` in `code-permissions`. rpc denies gated calls
+  that need approval; warm workers and print/json are unchanged apart from a print/json stderr
+  note. Design card: `docs/design/reliability.md` item 1.
+
 - **2026-10-08: ledger closed for the design cards.** Added the `moved` status (closed, like
   `done`; `ledger.py move <id> <card> <text>`). Tasks 9.1, 10.2e, 10.11, 12.1–12.7 and 13.4 are
   `moved` to their cards in `docs/design/` (13.4 has no card; it is tracked in the plan §0.3).
