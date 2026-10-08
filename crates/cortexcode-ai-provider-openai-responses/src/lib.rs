@@ -1,5 +1,5 @@
 //! OpenAI Responses API provider (`openai-responses`) for cortex AI, plus the
-//! Responses plumbing shared with `azure-openai-responses` ([`shared`]).
+//! Responses plumbing in [`shared`].
 //!
 //! Port of hoocode `providers/openai-responses.ts` and
 //! `providers/openai-responses-shared.ts` (v0.5.89).

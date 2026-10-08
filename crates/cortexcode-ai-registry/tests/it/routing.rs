@@ -4,12 +4,12 @@
 //! Covers the routing half of ledger task 8.2 (hoocode v0.5.89
 //! `stream.ts` + `register-builtins.ts` + `openai-completions.ts` `getCompat`).
 
-use cortexcode_ai::registry::{get_api_provider, stream_simple};
-use cortexcode_ai::types::{
+use cortexcode_ai_registry::{get_api_provider, stream_simple};
+use cortexcode_ai_stream::testing::serve_script;
+use cortexcode_ai_types::{
     Content, Context, Message, Model, SimpleStreamOptions, StopReason, TextContent, ThinkingLevel,
     UserMessage,
 };
-use cortexcode_ai_stream::testing::serve_script;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -20,8 +20,8 @@ const PENDING_APIS: &[(&str, &str)] = &[];
 /// One catalog model per (provider, api) pair, in catalog order.
 fn one_model_per_provider_api() -> Vec<Model> {
     let mut seen = BTreeMap::new();
-    for provider in cortexcode_ai::models::get_providers() {
-        for model in cortexcode_ai::models::get_models(provider) {
+    for provider in cortexcode_ai_models::get_providers() {
+        for model in cortexcode_ai_models::get_models(provider) {
             seen.entry((model.provider.clone(), model.api.clone()))
                 .or_insert_with(|| model.clone());
         }
@@ -50,8 +50,8 @@ fn hi() -> Context {
 
 #[test]
 fn all_known_providers_are_in_the_catalog() {
-    let providers = cortexcode_ai::models::get_providers();
-    assert_eq!(providers.len(), 31, "{providers:?}");
+    let providers = cortexcode_ai_models::get_providers();
+    assert_eq!(providers.len(), 30, "{providers:?}");
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn every_registered_provider_streams_through_its_api() {
             } else {
                 "test-key".into()
             }),
-            transport: codex.then_some(cortexcode_ai::types::Transport::Sse),
+            transport: codex.then_some(cortexcode_ai_types::Transport::Sse),
             ..Default::default()
         };
         let label = format!("{}/{} ({})", model.provider, model.id, model.api);
@@ -139,7 +139,7 @@ fn every_registered_provider_streams_through_its_api() {
             "openai-completions" => "/chat/completions",
             "anthropic-messages" => "/messages",
             "google-generative-ai" | "google-vertex" => ":streamGenerateContent",
-            "openai-responses" | "azure-openai-responses" => "/responses",
+            "openai-responses" => "/responses",
             "openai-codex-responses" => "/codex/responses",
             "google-gemini-cli" => "/v1internal:streamGenerateContent?alt=sse",
             other => panic!("{label}: no expected path for {other}"),
@@ -149,7 +149,7 @@ fn every_registered_provider_streams_through_its_api() {
 }
 
 fn completions_payload(provider: &str, reasoning: Option<ThinkingLevel>) -> (Model, Value) {
-    let mut model = cortexcode_ai::models::get_models(provider)
+    let mut model = cortexcode_ai_models::get_models(provider)
         .into_iter()
         .find(|m| m.api == "openai-completions" && (reasoning.is_none() || m.reasoning))
         .unwrap_or_else(|| panic!("{provider} has an openai-completions model"))
@@ -163,7 +163,7 @@ fn completions_payload(provider: &str, reasoning: Option<ThinkingLevel>) -> (Mod
     let options = SimpleStreamOptions {
         api_key: Some("test-key".into()),
         reasoning,
-        cache_retention: Some(cortexcode_ai::types::CacheRetention::Short),
+        cache_retention: Some(cortexcode_ai_types::CacheRetention::Short),
         ..Default::default()
     };
     stream_simple(model.clone(), hi(), options)

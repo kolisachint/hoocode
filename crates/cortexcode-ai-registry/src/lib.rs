@@ -55,10 +55,6 @@ fn builtins() -> Vec<(&'static str, ApiStreamSimpleFn)> {
             Arc::new(cortexcode_ai_provider_openai_responses::stream),
         ),
         (
-            "azure-openai-responses",
-            Arc::new(cortexcode_ai_provider_azure::stream),
-        ),
-        (
             "openai-codex-responses",
             Arc::new(cortexcode_ai_provider_openai_codex::stream),
         ),
@@ -167,7 +163,6 @@ mod tests {
         for api in [
             "anthropic-messages",
             "openai-completions",
-            "azure-openai-responses",
             "openai-codex-responses",
             "google-generative-ai",
             "google-vertex",

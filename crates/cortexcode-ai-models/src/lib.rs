@@ -273,9 +273,9 @@ mod tests {
 
     #[test]
     fn test_reasoning_model_supports_levels() {
-        // gpt-5 via azure-openai-responses has reasoning=true and thinkingLevelMap={off: null}
+        // gpt-5 via openai has reasoning=true and thinkingLevelMap={off: null}
         // so off is excluded, xhigh is excluded (undefined), but minimal through high are supported
-        let model = get_model("azure-openai-responses", "gpt-5").expect("gpt-5 exists");
+        let model = get_model("openai", "gpt-5").expect("gpt-5 exists");
         let levels = get_supported_thinking_levels(model);
         assert!(!levels.contains(&ThinkingLevel::Off));
         assert!(levels.contains(&ThinkingLevel::Minimal));
@@ -314,9 +314,9 @@ mod tests {
 
     #[test]
     fn test_clamp_level_to_nearest() {
-        // gpt-5 via azure-openai-responses has reasoning=true and xhigh not in thinkingLevelMap
+        // gpt-5 via openai has reasoning=true and xhigh not in thinkingLevelMap
         // so xhigh should be unsupported, clamp should pick nearest supported (high)
-        let model = get_model("azure-openai-responses", "gpt-5").expect("gpt-5 exists");
+        let model = get_model("openai", "gpt-5").expect("gpt-5 exists");
         assert_eq!(
             clamp_thinking_level(model, &ThinkingLevel::XHigh),
             ThinkingLevel::High
