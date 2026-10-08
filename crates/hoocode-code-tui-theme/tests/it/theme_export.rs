@@ -10,7 +10,8 @@ use hoocode_code_tui_theme::*;
 use serde_json::{json, Value};
 
 /// A fresh agent dir with an empty `themes/`, pointed at by the env
-/// override. Tests here share the process env, so they run one at a time.
+/// override. Tests here share the process env and theme state, so they hold
+/// the crate-wide global theme lock.
 struct AgentDir {
     _guard: MutexGuard<'static, ()>,
     dir: tempfile::TempDir,
@@ -18,8 +19,7 @@ struct AgentDir {
 
 impl AgentDir {
     fn new() -> Self {
-        static LOCK: Mutex<()> = Mutex::new(());
-        let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = crate::global_theme_lock();
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("agent/themes")).unwrap();
         std::env::set_var("HOOCODE_CODING_AGENT_DIR", dir.path().join("agent"));

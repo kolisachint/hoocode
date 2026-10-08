@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::color::{ansi256_to_hex, detect_color_mode, relative_luminance, ColorMode, RawColor};
@@ -363,7 +364,15 @@ struct State {
     current_name: Option<String>,
     registered: Vec<(String, Arc<Theme>)>,
     on_change: Option<ChangeCallback>,
-    watcher: Option<Arc<AtomicBool>>,
+    watcher: Option<Watcher>,
+}
+
+/// The running custom-theme watcher: told to stop by `stop`, and joined when
+/// it is stopped, so no reload or change callback runs after
+/// [`stop_theme_watcher`] returns.
+struct Watcher {
+    stop: Arc<AtomicBool>,
+    thread: JoinHandle<()>,
 }
 
 fn state() -> MutexGuard<'static, State> {
@@ -515,11 +524,11 @@ fn start_theme_watcher() {
         return;
     }
     let stop = Arc::new(AtomicBool::new(false));
-    state().watcher = Some(stop.clone());
-    hoocode_runtime::spawn_thread("hoocode-theme-watch", move || {
+    let thread_stop = Arc::clone(&stop);
+    let thread = hoocode_runtime::spawn_thread("hoocode-theme-watch", move || {
         let mut last = file_signature(&theme_file);
         let mut pending: Option<Instant> = None;
-        while !stop.load(Ordering::Relaxed) {
+        while !thread_stop.load(Ordering::Relaxed) {
             std::thread::sleep(WATCH_POLL);
             let signature = file_signature(&theme_file);
             if signature != last {
@@ -528,13 +537,14 @@ fn start_theme_watcher() {
             }
             if pending.is_some_and(|at| at.elapsed() >= RELOAD_DEBOUNCE) {
                 pending = None;
-                if stop.load(Ordering::Relaxed) {
+                if thread_stop.load(Ordering::Relaxed) {
                     break;
                 }
                 reload_watched(&watched_name, &theme_file);
             }
         }
     });
+    state().watcher = Some(Watcher { stop, thread });
 }
 
 fn reload_watched(watched_name: &str, theme_file: &Path) {
@@ -564,10 +574,17 @@ fn reload_watched(watched_name: &str, theme_file: &Path) {
     notify_change();
 }
 
-/// `stopThemeWatcher`.
+/// `stopThemeWatcher`. Waits for the watcher thread to exit (it polls every
+/// [`WATCH_POLL`]), so a reload cannot land after this returns. A watcher
+/// stopping itself (from a change callback) is not joined.
 pub fn stop_theme_watcher() {
-    if let Some(stop) = state().watcher.take() {
+    // Take the handle out first: the watcher needs the state lock to reload.
+    let watcher = state().watcher.take();
+    if let Some(Watcher { stop, thread }) = watcher {
         stop.store(true, Ordering::Relaxed);
+        if thread.thread().id() != std::thread::current().id() {
+            let _ = thread.join();
+        }
     }
 }
 

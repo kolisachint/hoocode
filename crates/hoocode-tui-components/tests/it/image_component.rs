@@ -10,6 +10,7 @@ use hoocode_tui_render::Component;
 
 #[test]
 fn restores_the_cursor_to_the_reserved_image_row_after_kitty_rendering() {
+    let _caps = crate::capabilities_lock();
     set_capabilities(TerminalCapabilities {
         images: Some(ImageProtocol::Kitty),
         true_color: true,
