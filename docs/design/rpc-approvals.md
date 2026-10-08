@@ -1,6 +1,10 @@
 # RPC approval dialogs
 
-Status: **planned 2026-10-01, not started.** Design and plan only.
+Status: **dropped 2026-10-08** ([decisions-2026-10-08.md](decisions-2026-10-08.md)). hoobot uses the
+app-server, and rpc mode now denies gated tools when nobody can answer
+([reliability.md](reliability.md)). Kept for the record.
+
+Original status: planned 2026-10-01, not started. Design and plan only.
 This is not a migration-ledger task: the user took it out of the migration
 (which is paused) on 2026-10-01. It is the one blocker for running hoobot on
 the Rust `hoocode`.

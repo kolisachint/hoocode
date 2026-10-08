@@ -43,7 +43,7 @@ Every release made by `release.yml` (a merged PR with a `rust:*` label):
 | Item | Why deferred | What it needs |
 |---|---|---|
 | **Windows** | The Windows leg was the slowest part of every release. Windows users run hoocode-ts. | Add `x86_64-pc-windows-msvc` back to `binaries.yml`, a `.zip`, an `install.ps1`, a `win32-x64` npm package. |
-| **crates.io** | 34 of 42 crates are unpublished; a first publish hits crates.io rate limits (run 29692981384). `release:crates` only leaves a notice. | A paced, resumable `scripts/publish_packages.py` run, then re-enable the `crates` job in `release.yml`. |
+| **crates.io** — **dropped 2026-10-08** | Not needed: users get archives, npm and curl. The umbrella crates are deleted. Was: 34 of 42 crates are unpublished; a first publish hits crates.io rate limits (run 29692981384). `release:crates` only leaves a notice. | A paced, resumable `scripts/publish_packages.py` run, then re-enable the `crates` job in `release.yml`. |
 | **Site docs** | The site at `/hoocode/` still renders the TypeScript docs (synced from hoocode-ts). Only `install.sh` is Rust today. | Decide where Rust docs live (this repo's `docs/` or a `docs/` mirror of hoocode-ts), move the TS docs to `/hoocode-ts/`, and point `scripts/sync-docs.mjs` at both. |
 | **Auto-sync of `install.sh`** | The site copies it by hand for now. | Have the site's sync script also fetch `install/install.sh` from kolisachint/hoocode into `public/hoocode/`. |
 | **macOS signing** | Binaries carry only the linker's ad-hoc signature. curl, npm and `gh` downloads are not quarantined, so they run; a browser download triggers "Apple could not verify". | An Apple Developer ID, `codesign` + `notarytool` in `binaries.yml`. |

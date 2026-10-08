@@ -25,8 +25,8 @@ stop the same bug classes coming back.
    - rpc mode uses it; print and json keep `Allow` and print the notice.
    - Tests: a gated tool in rpc is blocked, in print is allowed with the notice,
      and in interactive mode still prompts.
-   - Later, optional: real approval dialogs over rpc ([rpc-approvals.md](rpc-approvals.md)).
-     hoobot now uses the app-server, so this is not urgent.
+   - Approval dialogs over rpc are dropped (2026-10-08); hoobot uses the
+     app-server ([rpc-approvals.md](rpc-approvals.md) is kept for the record).
 2. **Paths.** [naming-and-paths.md](naming-and-paths.md) steps 1–2:
    - new layout in `code-paths`;
    - a one-time migration with a backup and a marker file;
@@ -59,7 +59,7 @@ regression tests.
 
 ## Not doing
 
-- Approval dialogs over rpc (later, optional).
+- Approval dialogs over rpc (dropped 2026-10-08).
 - Rewriting every `unwrap`; only ones reachable from input.
 
 ## Open questions
