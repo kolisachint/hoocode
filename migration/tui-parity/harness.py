@@ -503,12 +503,23 @@ def run_app(app: str, sc: dict, out: Path, keep: bool) -> dict:
 DEFAULT_REQUEST_FIELDS = ["messages", "tools", "tool_choice", "model"]
 
 
+# The system prompt's "# About <app> itself" section lists the app's own docs by
+# absolute path. Those paths point into the install (the pinned build dir for
+# hoocode-ts, nothing for the Rust build yet), so the section is install-specific
+# and masked on both sides. Nothing else in the system prompt is masked.
+SELF_DOCS_RE = re.compile(r"# About (?:hoocode|<app>) itself\n.*?(?=Current date:)", re.S)
+
+
 def normalize_requests(log: Path, normalizer: "Normalizer", fields: list[str] | None) -> str:
     """What the app sent to the model, reduced to the fields that shape model behavior."""
     reqs = []
     for line in log.read_text().splitlines():
         body = json.loads(line)["body"]
-        reqs.append({k: body.get(k) for k in (fields or DEFAULT_REQUEST_FIELDS) if k in body})
+        req = {k: body.get(k) for k in (fields or DEFAULT_REQUEST_FIELDS) if k in body}
+        for msg in req.get("messages") or []:
+            if msg.get("role") == "system" and isinstance(msg.get("content"), str):
+                msg["content"] = SELF_DOCS_RE.sub("", msg["content"])
+        reqs.append(req)
     return normalizer.apply_text(json.dumps(reqs, indent=1, sort_keys=True, ensure_ascii=False))
 
 
