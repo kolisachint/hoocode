@@ -166,7 +166,7 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 |---|---|---|
 | 0 | `/perf`, load scenario, baseline numbers in this card | Numbers recorded for Linux and macOS |
 | 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites | No runtime built outside the crate; thread ceiling holds in the load test |
-| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal |
+| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal. **Part 1 landed 2026-10-08** (writer thread, input batching, SIGWINCH; see "Phase 2, part 1" below). Part 2 (Ctrl+C on input, ESC timer, async `Shell` pipes) and the done-when numbers are open. |
 | 3 | `hoocode-session-io` with flush barriers | No session file I/O on the UI thread or on `hoocode-io`; kill -9 mid-turn loses at most the unflushed entries of that turn. **Status: writes landed** (`runtime` `session_io.rs`; 4096 entries or 64 MiB, producers wait; barrier at turn end, 1 s flush at dispose; torn last line skipped on read and not glued to the next entry). **Open:** session reads still run on the caller (they first wait for queued writes, up to 1 s), and `create_dir_all` and the `open`/`resume` paths are not yet moved to a lane. |
 | 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test |
 | 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase |
@@ -213,6 +213,34 @@ a wide margin (p99 48.7 ms).
 
 Not in these runs yet (the scenario's TODOs): the five subagents, the stdio MCP
 server that never answers, and the paused-pty run.
+
+#### Phase 2, part 1 (2026-10-08)
+
+- **`hoocode-term-out`** (`hoocode-tui-terminal` `output.rs`) is the only writer of
+  terminal output. Frames, escapes around them, and the escapes the input, progress
+  and timer threads send all go through it, in order. Its channel holds 1024 control
+  writes (the sender waits when full). A frame is a diff against the previous one, so
+  it is never replaced in the queue: the UI builds the next frame only after the
+  writer has taken the previous one (`frame_pending`), and the writer wakes the loop
+  with `TuiEvent::OutputDrained`. Shutdown writes what is queued within 1 s, then
+  drops the rest.
+- **Input batching** (`code-tui-app` `run`): up to 64 keys per loop pass go through
+  `Tui::accept_event`, which only schedules the frame. The pass then runs app events
+  and paints once (`flush_scheduled_render`).
+- **SIGWINCH** (`hoocode-runtime` `watch_sigwinch`, Unix) replaces the 100 ms resize
+  poll on Unix; the poll stays on Windows and as the fallback if the listener fails.
+  Verified by hand in tmux (resize redraws at the new width) and by a runtime test.
+- **Numbers** (Linux, 4 vCPU, debug build, `scripts/perf/load_scenario.py`, two runs
+  each, same session): keystroke-to-frame p50 about 3 ms on both the base commit and
+  this one. Frames for the same 300 keys: 305 here, 340 on base. p99 is 7 to 93 ms on
+  this commit and 31 to 92 ms on base, and one frame of the 40k-line bash block (150 to 230 ms)
+  sets it. That frame is the Phase 6 cost (`visual_truncate` wraps the whole block).
+  So the p99 target is not met yet, and the Phase 0 baseline (frame build p50 341 ms in
+  debug) is stale: HEAD builds frames in about 2.3 ms p50.
+- **Not in part 1:** Ctrl+C on the input thread, the ESC timer without a thread, async
+  `Shell` pipes, the paused-pty run. Other `std::thread::spawn` sites in `code-tui-app`
+  (bash, clipboard, login, footer, session picker, perf sampler) are unchanged.
+  `clippy.toml` does not forbid `thread::spawn`; adding it means touching those sites.
 
 ## Not doing
 

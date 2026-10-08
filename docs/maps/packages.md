@@ -47,6 +47,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | The Cron tools (CronCreate, CronList, CronDelete), the schedule store, the cron matcher | `code-scheduler`; registered in `code-cli` `runtime.rs` `custom_tools`; fired by `code-tui-app` `interactive_mode.rs` `tick_scheduler` ([scheduler-and-loop.md](../design/scheduler-and-loop.md)) |
 | How a tool looks in the transcript | `code-tui-widgets/src/tools/` ([ui.md](ui.md)) |
 | A slash command | list: `code-resources/src/slash_commands.rs`; handler: `code-tui-app/src/interactive_mode.rs` `run_builtin_command` |
+| Terminal writes (the `hoocode-term-out` thread, one frame in flight), input batching, SIGWINCH | `tui-terminal` (`output.rs`), `tui-render` (`tui.rs`), `runtime` (`signals.rs`); [concurrency.md](../design/concurrency.md) Phase 2 |
 | Turn logic, parallel tool calls | `agent-loop` |
 | Session file format | `agent-session` (entries, storage), `code-session` (manager) |
 | Session file writes (queue caps, flush barriers, the `hoocode-session-io` thread) | `runtime` (`session_io.rs`); `code-session` `manager.rs` `persist` and `rewrite_file` queue the writes ([concurrency.md](../design/concurrency.md) Phase 3) |
@@ -77,7 +78,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them | 8 | 761 / 504 | keep |
+| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them | 9 | 810 / 522 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
@@ -154,7 +155,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 12074 / 4940 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 12085 / 4940 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 839 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7822 / 3124 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2407 / 2505 | keep |
@@ -170,8 +171,8 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 1985 / 72 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1237 / 379 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 6 | 1968 / 582 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2841 / 2616 | keep |
-| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 1610 / 103 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2960 / 2616 | keep |
+| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 2056 / 103 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 10 | 2159 / 583 | keep |
 
 <!-- END generated -->

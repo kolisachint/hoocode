@@ -7,27 +7,34 @@
 //! title) are written directly, matching the byte sequences hoocode used.
 
 pub mod mouse;
+mod output;
 mod stdin_buffer;
 
 pub use mouse::{
     is_mouse_sequence, mouse_sequence_length, parse_mouse_event, MouseEvent, MouseEventKind,
     MOUSE_DISABLE, MOUSE_ENABLE,
 };
+pub use output::{DrainedWake, OutputHandle, OutputThread, OUTPUT_QUEUE_CAP, OUTPUT_THREAD_NAME};
 pub use stdin_buffer::{StdinBuffer, StdinBufferOptions, StdinEvent};
 
 use std::env;
-use std::fs::OpenOptions;
-use std::io::{self, Write};
+use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+
+use hoocode_runtime::spawn_named_thread;
 
 const TERMINAL_PROGRESS_ACTIVE_SEQUENCE: &str = "\x1b]9;4;3\x07";
 const TERMINAL_PROGRESS_CLEAR_SEQUENCE: &str = "\x1b]9;4;0;\x07";
 const TERMINAL_PROGRESS_KEEPALIVE: Duration = Duration::from_millis(1000);
 const KITTY_QUERY_FALLBACK_DELAY: Duration = Duration::from_millis(150);
+/// How long shutdown waits for queued terminal output before dropping it.
+const OUTPUT_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(1);
+/// Resize polling interval where there is no SIGWINCH (Windows, or if the listener fails).
+const RESIZE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Minimal terminal interface for the TUI.
 ///
@@ -38,6 +45,27 @@ pub trait Terminal: Send {
     fn stop(&mut self);
     fn drain_input(&mut self, max: Duration, idle: Duration);
     fn write(&mut self, data: &str);
+
+    /// Writes one frame. The TUI does not build the next frame until
+    /// [`frame_pending`](Terminal::frame_pending) is false, so a frame is never
+    /// dropped. Default: an ordinary write.
+    fn write_frame(&mut self, data: &str) {
+        self.write(data);
+    }
+
+    /// True from [`write_frame`](Terminal::write_frame) until the terminal has the frame.
+    fn frame_pending(&self) -> bool {
+        false
+    }
+
+    /// Asks for `on_output_drained` (set with [`on_output_drained`](Terminal::on_output_drained))
+    /// once the frame that is pending now has been written.
+    fn notify_when_drained(&self) {}
+
+    /// Sets the callback run on the output thread after a frame the TUI waits on
+    /// is written. Call before [`start`](Terminal::start).
+    fn on_output_drained(&mut self, _wake: DrainedWake) {}
+
     fn columns(&self) -> u16;
     fn rows(&self) -> u16;
     fn kitty_protocol_active(&self) -> bool;
@@ -114,6 +142,77 @@ fn humantime_like_timestamp(_now: std::time::SystemTime) -> String {
     secs.to_string()
 }
 
+/// Where the terminal's own threads send output: the output thread while the
+/// terminal runs, stdout directly before it starts and after it stops.
+#[derive(Clone)]
+struct Writer {
+    handle: Option<OutputHandle>,
+    log: Option<PathBuf>,
+}
+
+impl Writer {
+    fn write(&self, data: &str) {
+        match &self.handle {
+            Some(handle) => handle.write(data),
+            None => output::emit(&mut io::stdout(), self.log.as_deref(), data),
+        }
+    }
+}
+
+/// Resize watch: a `SIGWINCH` listener on Unix, size polling otherwise.
+/// The payload is only held: dropping it stops the watch.
+#[allow(dead_code)]
+enum ResizeWatch {
+    #[cfg(unix)]
+    Signal(hoocode_runtime::SignalWatch),
+    /// Stops when the terminal stops (`stop_signal`).
+    Poll(JoinHandle<()>),
+}
+
+/// Calls `on_resize` when the terminal size differs from the last size seen.
+#[derive(Clone)]
+struct ResizeCheck {
+    on_resize: Arc<Mutex<Box<dyn FnMut() + Send>>>,
+    last_cols: Arc<AtomicU16>,
+    last_rows: Arc<AtomicU16>,
+}
+
+impl ResizeCheck {
+    fn run(&self) {
+        let Ok((cols, rows)) = crossterm::terminal::size() else {
+            return;
+        };
+        if cols != self.last_cols.load(Ordering::SeqCst)
+            || rows != self.last_rows.load(Ordering::SeqCst)
+        {
+            self.last_cols.store(cols, Ordering::SeqCst);
+            self.last_rows.store(rows, Ordering::SeqCst);
+            (self.on_resize.lock().unwrap_or_else(|e| e.into_inner()))();
+        }
+    }
+}
+
+fn start_resize_watch(check: ResizeCheck, stop_signal: Arc<AtomicBool>) -> Option<ResizeWatch> {
+    #[cfg(unix)]
+    {
+        let signal_check = check.clone();
+        if let Ok(watch) =
+            hoocode_runtime::watch_sigwinch("hoocode-resize", move || signal_check.run())
+        {
+            return Some(ResizeWatch::Signal(watch));
+        }
+    }
+    let poll = spawn_named_thread("hoocode-resize", move || loop {
+        if stop_signal.load(Ordering::SeqCst) {
+            break;
+        }
+        thread::sleep(RESIZE_POLL_INTERVAL);
+        check.run();
+    })
+    .ok()?;
+    Some(ResizeWatch::Poll(poll))
+}
+
 /// Real terminal backed by process stdin/stdout, raw mode via `crossterm`.
 pub struct ProcessTerminal {
     was_raw: bool,
@@ -123,14 +222,18 @@ pub struct ProcessTerminal {
     progress_active: Arc<AtomicBool>,
     forwarding: Arc<AtomicBool>,
     last_input_at: Arc<Mutex<Instant>>,
-    resize_thread: Option<thread::JoinHandle<()>>,
+    resize: Option<ResizeWatch>,
     stop_signal: Arc<AtomicBool>,
-    progress_thread: Option<thread::JoinHandle<()>>,
+    progress_thread: Option<JoinHandle<()>>,
     last_cols: Arc<AtomicU16>,
     last_rows: Arc<AtomicU16>,
     write_log_path: Option<PathBuf>,
     mouse_reporting: bool,
     alternate_screen: bool,
+    /// The `hoocode-term-out` thread, while the terminal runs.
+    out: Option<OutputThread>,
+    /// Run by the output thread once a frame is written; set before `start`.
+    drained_wake: Option<DrainedWake>,
 }
 
 impl Default for ProcessTerminal {
@@ -149,7 +252,7 @@ impl ProcessTerminal {
             progress_active: Arc::new(AtomicBool::new(false)),
             forwarding: Arc::new(AtomicBool::new(true)),
             last_input_at: Arc::new(Mutex::new(Instant::now())),
-            resize_thread: None,
+            resize: None,
             stop_signal: Arc::new(AtomicBool::new(false)),
             progress_thread: None,
             last_cols: Arc::new(AtomicU16::new(0)),
@@ -157,6 +260,8 @@ impl ProcessTerminal {
             write_log_path: resolve_write_log_path(),
             mouse_reporting: false,
             alternate_screen: false,
+            out: None,
+            drained_wake: None,
         }
     }
 
@@ -172,14 +277,15 @@ impl ProcessTerminal {
         }
     }
 
-    fn raw_write(&self, data: &str) {
-        let _ = io::stdout().write_all(data.as_bytes());
-        let _ = io::stdout().flush();
-        if let Some(path) = &self.write_log_path {
-            if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
-                let _ = f.write_all(data.as_bytes());
-            }
+    fn writer(&self) -> Writer {
+        Writer {
+            handle: self.out.as_ref().map(OutputThread::handle),
+            log: self.write_log_path.clone(),
         }
+    }
+
+    fn raw_write(&self, data: &str) {
+        self.writer().write(data);
     }
 }
 
@@ -187,12 +293,20 @@ impl Terminal for ProcessTerminal {
     fn start(
         &mut self,
         mut on_input: Box<dyn FnMut(&str) + Send>,
-        mut on_resize: Box<dyn FnMut() + Send>,
+        on_resize: Box<dyn FnMut() + Send>,
     ) {
         if self.started {
             return;
         }
         self.started = true;
+        // Every write from here on goes through the output thread, in order.
+        // If the thread cannot start, writes go to stdout directly.
+        self.out = OutputThread::spawn(
+            Box::new(io::stdout()),
+            self.write_log_path.clone(),
+            self.drained_wake.take(),
+        )
+        .ok();
         self.was_raw = crossterm::terminal::is_raw_mode_enabled().unwrap_or(false);
         let _ = crossterm::terminal::enable_raw_mode();
 
@@ -239,14 +353,14 @@ impl Terminal for ProcessTerminal {
             let kitty_active = self.kitty_protocol_active.clone();
             let modify_active = self.modify_other_keys_active.clone();
             let stop_signal = self.stop_signal.clone();
-            thread::spawn(move || {
+            let writer = self.writer();
+            let _ = spawn_named_thread("hoocode-input-timer", move || {
                 thread::sleep(KITTY_QUERY_FALLBACK_DELAY);
                 if stop_signal.load(Ordering::SeqCst) {
                     return;
                 }
                 if !kitty_active.load(Ordering::SeqCst) && !modify_active.load(Ordering::SeqCst) {
-                    let _ = io::stdout().write_all(b"\x1b[>4;2m");
-                    let _ = io::stdout().flush();
+                    writer.write("\x1b[>4;2m");
                     modify_active.store(true, Ordering::SeqCst);
                 }
             });
@@ -260,6 +374,7 @@ impl Terminal for ProcessTerminal {
         let kitty_active = self.kitty_protocol_active.clone();
         let last_input_at = self.last_input_at.clone();
         let buf = Arc::new(Mutex::new(StdinBuffer::new(StdinBufferOptions::default())));
+        let writer = self.writer();
         type Deliver = Arc<Mutex<Box<dyn FnMut(Vec<StdinEvent>) + Send>>>;
         let deliver: Deliver = Arc::new(Mutex::new(Box::new(move |events: Vec<StdinEvent>| {
             for event in events {
@@ -271,8 +386,7 @@ impl Terminal for ProcessTerminal {
                         if !kitty_active.load(Ordering::SeqCst) && parse_kitty_query_response(&seq)
                         {
                             kitty_active.store(true, Ordering::SeqCst);
-                            let _ = io::stdout().write_all(b"\x1b[>7u");
-                            let _ = io::stdout().flush();
+                            writer.write("\x1b[>7u");
                             continue;
                         }
                         on_input(&seq);
@@ -305,7 +419,7 @@ impl Terminal for ProcessTerminal {
             if let Some(timeout) = flush_after {
                 let buf = buf.clone();
                 let deliver = deliver.clone();
-                thread::spawn(move || {
+                let _ = spawn_named_thread("hoocode-input-timer", move || {
                     thread::sleep(timeout);
                     let events = buf
                         .lock()
@@ -318,27 +432,16 @@ impl Terminal for ProcessTerminal {
             }
         }));
 
-        // Resize watcher: crossterm has no cross-platform SIGWINCH hook, so
-        // poll terminal size and fire `on_resize` on change.
+        // Resize: SIGWINCH on Unix (no polling); size polling on Windows.
         let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
         self.last_cols.store(cols, Ordering::SeqCst);
         self.last_rows.store(rows, Ordering::SeqCst);
-        let stop_signal = self.stop_signal.clone();
-        let last_cols = self.last_cols.clone();
-        let last_rows = self.last_rows.clone();
-        self.resize_thread = Some(thread::spawn(move || loop {
-            if stop_signal.load(Ordering::SeqCst) {
-                break;
-            }
-            thread::sleep(Duration::from_millis(100));
-            if let Ok((c, r)) = crossterm::terminal::size() {
-                if c != last_cols.load(Ordering::SeqCst) || r != last_rows.load(Ordering::SeqCst) {
-                    last_cols.store(c, Ordering::SeqCst);
-                    last_rows.store(r, Ordering::SeqCst);
-                    on_resize();
-                }
-            }
-        }));
+        let check = ResizeCheck {
+            on_resize: Arc::new(Mutex::new(on_resize)),
+            last_cols: self.last_cols.clone(),
+            last_rows: self.last_rows.clone(),
+        };
+        self.resize = start_resize_watch(check, self.stop_signal.clone());
     }
 
     fn stop(&mut self) {
@@ -372,7 +475,13 @@ impl Terminal for ProcessTerminal {
         // Stop listening; input that arrives before the next terminal starts
         // waits for it, as it does in a paused Node stdin.
         stdin_hub::unsubscribe();
-        self.resize_thread = None;
+        self.resize = None;
+
+        // Everything queued (the frame included) reaches the terminal before
+        // raw mode changes. A terminal that stopped reading drops it after the deadline.
+        if let Some(out) = self.out.take() {
+            let _ = out.finish(OUTPUT_SHUTDOWN_DEADLINE);
+        }
 
         let _ = crossterm::terminal::disable_raw_mode();
         if self.was_raw {
@@ -405,6 +514,29 @@ impl Terminal for ProcessTerminal {
 
     fn write(&mut self, data: &str) {
         self.raw_write(data);
+    }
+
+    fn write_frame(&mut self, data: &str) {
+        match &self.out {
+            Some(out) => out.handle().write_frame(data),
+            None => self.raw_write(data),
+        }
+    }
+
+    fn frame_pending(&self) -> bool {
+        self.out
+            .as_ref()
+            .is_some_and(|out| out.handle().frame_pending())
+    }
+
+    fn notify_when_drained(&self) {
+        if let Some(out) = &self.out {
+            out.handle().notify_when_drained();
+        }
+    }
+
+    fn on_output_drained(&mut self, wake: DrainedWake) {
+        self.drained_wake = Some(wake);
     }
 
     fn columns(&self) -> u16 {
@@ -459,15 +591,16 @@ impl Terminal for ProcessTerminal {
             if !self.progress_active.swap(true, Ordering::SeqCst) {
                 let stop_signal = self.stop_signal.clone();
                 let progress_active = self.progress_active.clone();
-                self.progress_thread = Some(thread::spawn(move || loop {
+                let writer = self.writer();
+                self.progress_thread = spawn_named_thread("hoocode-progress", move || loop {
                     thread::sleep(TERMINAL_PROGRESS_KEEPALIVE);
                     if stop_signal.load(Ordering::SeqCst) || !progress_active.load(Ordering::SeqCst)
                     {
                         break;
                     }
-                    let _ = io::stdout().write_all(TERMINAL_PROGRESS_ACTIVE_SEQUENCE.as_bytes());
-                    let _ = io::stdout().flush();
-                }));
+                    writer.write(TERMINAL_PROGRESS_ACTIVE_SEQUENCE);
+                })
+                .ok();
             }
         } else {
             self.progress_active.store(false, Ordering::SeqCst);
@@ -571,7 +704,7 @@ mod stdin_hub {
         hub.sink = Some(sink);
         drop(hub);
         READER.call_once(|| {
-            std::thread::spawn(|| {
+            let _ = hoocode_runtime::spawn_named_thread("hoocode-input", || {
                 let mut chunk = [0u8; 4096];
                 let mut stdin = std::io::stdin();
                 loop {

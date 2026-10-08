@@ -13,10 +13,13 @@
 //! - [`ParallelToolLimit`]: the per-turn cap on parallel tool calls.
 //! - [`session_io`]: the `hoocode-session-io` thread, the only writer of session
 //!   files, with a bounded queue and flush barriers.
+//! - [`watch_sigwinch`] (Unix): terminal resize signal, on its own named thread.
 
 mod limits;
 mod runtime;
 mod session_io;
+#[cfg(unix)]
+mod signals;
 mod threads;
 
 pub use limits::{
@@ -31,5 +34,7 @@ pub use session_io::{
     session_io, FileWriter, FlushError, FlushTicket, SESSION_IO_THREAD, SESSION_QUEUE_MAX_BYTES,
     SESSION_QUEUE_MAX_ENTRIES,
 };
+#[cfg(unix)]
+pub use signals::{watch_sigwinch, SignalWatch};
 pub use threads::{bounded_channel, spawn_named_thread, sync_bounded_channel};
 pub use tokio::task::JoinError;

@@ -1776,6 +1776,7 @@ dependencies = [
 name = "hoocode-runtime"
 version = "0.1.8"
 dependencies = [
+ "signal-hook",
  "tokio",
 ]
 
@@ -1847,6 +1848,7 @@ name = "hoocode-tui-terminal"
 version = "0.1.8"
 dependencies = [
  "crossterm",
+ "hoocode-runtime",
  "hoocode-tui-util",
  "windows-sys 0.59.0",
 ]

@@ -8,9 +8,11 @@
 //! 1. No reference-identity flatten memoization ([`crate::Container`] always
 //!    re-renders and re-concatenates children; the differential writer
 //!    below still only rewrites lines whose *content* changed).
-//! 2. No `requestAnimationFrame`-style 16ms render coalescing: every
-//!    `request_render()` renders immediately (TypeScript's `expediteRender`
-//!    path, used unconditionally).
+//! 2. No `requestAnimationFrame`-style 16ms render coalescing. Input and
+//!    resizes passed to [`Tui::accept_event`] only schedule a frame, which
+//!    [`Tui::flush_scheduled_render`] paints once per loop iteration. Other
+//!    `request_render()` calls paint at once. A frame is also held back while
+//!    the output thread still writes the previous one (see below).
 //!
 //! Threading: `hoocode_tui_terminal::Terminal::start` requires `Send`
 //! callbacks because it reads stdin on a background thread, but this
@@ -20,6 +22,11 @@
 //! straight into `TUI.handleInput`/`requestRender` — [`Tui::start`] here
 //! forwards raw input/resize notifications through an `mpsc` channel to a
 //! single owning thread, which drives them into [`Tui::process_event`].
+//!
+//! Output: frames and the escapes around them go through the terminal's
+//! output thread in the order they were sent. A frame is a diff against the
+//! one before it, so the next frame is built only after the terminal has taken
+//! the previous one; the output thread then sends [`TuiEvent::OutputDrained`].
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -223,6 +230,9 @@ pub enum TuiEvent {
     /// start of keystroke-to-frame latency, see `hoocode-code-tui-app`'s `perf`).
     Input(String, Instant),
     Resize,
+    /// The output thread wrote the frame the TUI was waiting to paint its
+    /// next one after (see [`Tui::flush_scheduled_render`]).
+    OutputDrained,
 }
 
 impl TuiEvent {
@@ -282,7 +292,12 @@ pub struct Tui {
     frame_observer: Option<FrameObserver>,
     /// Terminal write time accumulated by the frame being painted.
     frame_write_time: Duration,
-    render_requested: bool,
+    /// A render was asked for and has not been painted yet: input and resizes
+    /// only mark the frame dirty; the loop paints once per iteration.
+    render_scheduled: bool,
+    /// Set while [`Tui::accept_event`] handles input, so the renders the input
+    /// asks for are scheduled instead of painted one by one.
+    in_input: bool,
 
     cursor_row: i64,
     hardware_cursor_row: i64,
@@ -347,7 +362,8 @@ impl Tui {
             on_debug: None,
             frame_observer: None,
             frame_write_time: Duration::ZERO,
-            render_requested: false,
+            render_scheduled: false,
+            in_input: false,
             cursor_row: 0,
             hardware_cursor_row: 0,
             show_hardware_cursor: show_hardware_cursor.unwrap_or(false),
@@ -973,6 +989,10 @@ impl Tui {
     pub fn start(&mut self) -> Receiver<TuiEvent> {
         self.stopped = false;
         let (tx, rx) = mpsc::channel();
+        let tx_drained = tx.clone();
+        self.terminal.on_output_drained(Box::new(move || {
+            let _ = tx_drained.send(TuiEvent::OutputDrained);
+        }));
         let tx_input = tx.clone();
         self.terminal.start(
             Box::new(move |data: &str| {
@@ -988,10 +1008,40 @@ impl Tui {
         rx
     }
 
+    /// Handles one event and paints if it asked for a frame.
     pub fn process_event(&mut self, event: TuiEvent) {
+        self.accept_event(event);
+        self.flush_scheduled_render();
+    }
+
+    /// Handles one event without painting. A frame it asks for waits for
+    /// [`flush_scheduled_render`](Self::flush_scheduled_render), so a loop can
+    /// take several keys and paint once.
+    pub fn accept_event(&mut self, event: TuiEvent) {
         match event {
-            TuiEvent::Input(data, _) => self.handle_input(&data),
-            TuiEvent::Resize => self.request_render(false),
+            TuiEvent::Input(data, _) => {
+                self.in_input = true;
+                self.handle_input(&data);
+                self.in_input = false;
+            }
+            TuiEvent::Resize => self.schedule_render(),
+            TuiEvent::OutputDrained => {}
+        }
+    }
+
+    /// Marks the frame dirty without painting it (see [`flush_scheduled_render`](Self::flush_scheduled_render)).
+    pub fn schedule_render(&mut self) {
+        if !self.stopped {
+            self.render_scheduled = true;
+        }
+    }
+
+    /// Paints the frame if one was scheduled. A frame waits while the terminal
+    /// is still writing the previous one; the output thread then wakes the loop
+    /// with [`TuiEvent::OutputDrained`].
+    pub fn flush_scheduled_render(&mut self) {
+        if self.render_scheduled {
+            self.do_render();
         }
     }
 
@@ -1045,9 +1095,9 @@ impl Tui {
     }
 
     /// Request a render. `force` clears all cached state for a full
-    /// redraw (matching `requestRender(true)`). Unlike the TypeScript
-    /// original this renders synchronously and immediately: see the
-    /// module-level docs on the dropped 16ms coalescing optimization.
+    /// redraw (matching `requestRender(true)`). The frame is painted now,
+    /// unless it was requested while handling input (painted once per loop
+    /// iteration) or the terminal is still writing the previous frame.
     pub fn request_render(&mut self, force: bool) {
         if force {
             self.previous_lines.clear();
@@ -1061,8 +1111,10 @@ impl Tui {
         if self.stopped {
             return;
         }
-        self.render_requested = true;
-        self.render_requested = false;
+        if self.in_input {
+            self.render_scheduled = true;
+            return;
+        }
         self.do_render();
     }
 
@@ -1491,8 +1543,18 @@ impl Tui {
     /// Paint one frame, then report how long it took to build and to write.
     fn do_render(&mut self) {
         if self.stopped {
+            self.render_scheduled = false;
             return;
         }
+        // A frame is a diff against the one before it, so a new frame must not be
+        // built while the terminal still lacks the previous one. The state the
+        // frame is built from is read when it is finally built, so nothing is lost.
+        if self.terminal.frame_pending() {
+            self.render_scheduled = true;
+            self.terminal.notify_when_drained();
+            return;
+        }
+        self.render_scheduled = false;
         let started = Instant::now();
         self.frame_write_time = Duration::ZERO;
         self.paint();
@@ -1506,7 +1568,7 @@ impl Tui {
     /// The frame's bytes to the terminal, timed.
     fn write_frame(&mut self, buffer: &str) {
         let started = Instant::now();
-        self.terminal.write(buffer);
+        self.terminal.write_frame(buffer);
         self.frame_write_time += started.elapsed();
     }
 
@@ -2050,6 +2112,8 @@ mod tests {
         rows: Arc<Mutex<u16>>,
         hide_cursor_calls: Arc<Mutex<u32>>,
         show_cursor_calls: Arc<Mutex<u32>>,
+        /// Stands in for the output thread still writing the last frame.
+        frame_busy: Arc<Mutex<bool>>,
     }
 
     impl MockTerminal {
@@ -2060,6 +2124,7 @@ mod tests {
                 rows: Arc::new(Mutex::new(rows)),
                 hide_cursor_calls: Arc::new(Mutex::new(0)),
                 show_cursor_calls: Arc::new(Mutex::new(0)),
+                frame_busy: Arc::new(Mutex::new(false)),
             }
         }
     }
@@ -2097,6 +2162,9 @@ mod tests {
         fn clear_screen(&mut self) {}
         fn set_title(&mut self, _title: &str) {}
         fn set_progress(&mut self, _active: bool) {}
+        fn frame_pending(&self) -> bool {
+            *self.frame_busy.lock().unwrap()
+        }
     }
 
     struct TestComponent {
@@ -2131,6 +2199,7 @@ mod tests {
         writes: SharedLog,
         cols: Arc<Mutex<u16>>,
         rows: Arc<Mutex<u16>>,
+        frame_busy: Arc<Mutex<bool>>,
     }
 
     impl MockHandles {
@@ -2146,8 +2215,58 @@ mod tests {
             writes: terminal.writes.clone(),
             cols: terminal.cols.clone(),
             rows: terminal.rows.clone(),
+            frame_busy: terminal.frame_busy.clone(),
         };
         (Tui::new(Box::new(terminal), Some(false)), handles)
+    }
+
+    #[test]
+    fn keys_accepted_in_one_pass_paint_one_frame() {
+        let (mut tui, _handles) = new_tui(40, 10);
+        let component = TestComponent::new();
+        component.borrow_mut().lines = vec!["a".to_string()];
+        component.borrow_mut().focusable = true;
+        tui.add_child(component.clone());
+        tui.set_focus(Some(component.clone()));
+        tui.request_render(false);
+
+        let frames = Rc::new(std::cell::Cell::new(0u32));
+        let counter = frames.clone();
+        tui.set_frame_observer(Some(Box::new(move |_| counter.set(counter.get() + 1))));
+        for key in ["x", "y", "z"] {
+            tui.accept_event(TuiEvent::input(key));
+        }
+        assert_eq!(frames.get(), 0, "keys alone must not paint");
+        tui.flush_scheduled_render();
+        assert_eq!(frames.get(), 1, "three keys, one frame");
+        tui.flush_scheduled_render();
+        assert_eq!(frames.get(), 1, "nothing scheduled, nothing painted");
+    }
+
+    #[test]
+    fn frame_waits_while_terminal_is_still_writing_the_last_one() {
+        let (mut tui, handles) = new_tui(40, 10);
+        let component = TestComponent::new();
+        component.borrow_mut().lines = vec!["a".to_string()];
+        tui.add_child(component.clone());
+        tui.request_render(false);
+        assert!(handles.writes.joined().contains('a'));
+
+        *handles.frame_busy.lock().unwrap() = true;
+        handles.writes.clear();
+        component.borrow_mut().lines = vec!["b".to_string()];
+        tui.request_render(false);
+        assert!(
+            handles.writes.joined().is_empty(),
+            "no frame while one is pending"
+        );
+
+        *handles.frame_busy.lock().unwrap() = false;
+        tui.flush_scheduled_render();
+        assert!(
+            handles.writes.joined().contains('b'),
+            "the latest state is painted"
+        );
     }
 
     #[test]
