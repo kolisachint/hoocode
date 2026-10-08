@@ -135,6 +135,7 @@ use crate::login_controller::{
     PostLoginModel, API_KEY_LABEL, LOGIN_CANCELLED, NOTHING_TO_LOG_OUT, SUBSCRIPTION_LABEL,
 };
 use crate::notification_panel::{NotificationKind, NotificationPanel};
+use crate::perf::Perf;
 use crate::record_row::RecordRows;
 use crate::resource_display::{format_display_path, show_loaded_resources, ResourceListing};
 use crate::scroll_view::install_scroll_view;
@@ -171,6 +172,8 @@ pub struct InteractiveOptions {
     /// Shown as a notice (the only place the remedy is named).
     pub model_fallback_message: Option<String>,
     pub terminal: Option<Box<dyn Terminal>>,
+    /// `--perf-log`: one JSON line of the UI's counters a second is appended here.
+    pub perf_log: Option<std::path::PathBuf>,
 }
 
 /// The footer's view of the session.
@@ -855,6 +858,8 @@ struct Mode {
     verbose: bool,
     size: Rc<Cell<(u16, u16)>>,
     dirty: Rc<Cell<bool>>,
+    /// Phase 0 counters behind `/perf` and `--perf-log`.
+    perf: Perf,
     header: Rc<RefCell<ExpandableText>>,
     chat: Rc<RefCell<Container>>,
     status: Rc<RefCell<Container>>,
@@ -1013,6 +1018,7 @@ impl Mode {
             .terminal
             .unwrap_or_else(|| Box::new(hoocode_tui_terminal::ProcessTerminal::new()));
         let size = Rc::new(Cell::new((terminal.columns(), terminal.rows())));
+        let perf = Perf::new(options.perf_log.as_deref());
         let mut tui = Tui::new(terminal, Some(show_hardware_cursor));
         tui.set_clear_on_shrink(clear_on_shrink);
 
@@ -1244,6 +1250,7 @@ impl Mode {
             verbose: options.verbose,
             size,
             dirty,
+            perf,
             header,
             chat,
             status,
@@ -3550,6 +3557,7 @@ impl Mode {
             BuiltinCommand::Hotkeys => self.handle_hotkeys_command(),
             BuiltinCommand::Changelog => self.handle_changelog_command(),
             BuiltinCommand::Debug => self.handle_debug_command(),
+            BuiltinCommand::Perf => self.handle_perf_command(),
             BuiltinCommand::Color => {
                 // An argument sets the slot outright; bare `/color` opens the
                 // swatches.
@@ -3781,6 +3789,14 @@ impl Mode {
             ))));
         }
         self.add_to_chat(as_component(&handle(DynamicBorder::new(None))));
+    }
+
+    /// `/perf`: the Phase 0 counters (threads, RSS, frame and keystroke timing,
+    /// stalls), as a notice in the transcript. See `perf.rs`.
+    fn handle_perf_command(&mut self) {
+        let text = crate::perf::format_report(&self.perf.snapshot());
+        self.add_to_chat(as_component(&handle(Spacer::new(1))));
+        self.add_to_chat(as_component(&handle(Text::new(text, 1, 0))));
     }
 
     /// `handleDebug`: every rendered line with its width, and the messages
@@ -5883,6 +5899,8 @@ impl Mode {
             Option<String>,
         ),
     ) -> Result<(), String> {
+        self.tui
+            .set_frame_observer(Some(self.perf.frame_observer()));
         let mut input = self.tui.start();
         // From here the TUI owns the terminal: the agent's operational log
         // lines (dispatch, warm fallback, lifeguard) must not write to it.
@@ -5942,6 +5960,9 @@ impl Mode {
         if let Some(message) = fallback {
             self.show_error(&message);
         }
+        if let Some(message) = self.perf.take_startup_error() {
+            self.show_error(&message);
+        }
         if let Some(model_error) = self.session.model_registry().error() {
             self.show_error(&format!("models.json error: {model_error}"));
         }
@@ -5964,12 +5985,17 @@ impl Mode {
         self.tui.request_render(false);
         self.dirty.set(false);
         loop {
-            match input.recv_timeout(self.next_wakeup()) {
+            let received = input.recv_timeout(self.next_wakeup());
+            // Phase 0 timing: an iteration starts when its input has arrived,
+            // not while the loop sleeps.
+            let iteration_started = Instant::now();
+            match received {
                 Ok(event) => {
                     // A keystroke that turns out to do nothing is still the
                     // user being present: it restarts the tips' idle clock.
-                    if let TuiEvent::Input(_) = event {
+                    if let TuiEvent::Input(_, arrived) = &event {
                         self.tips.on_activity();
+                        self.perf.key_arrived(*arrived);
                     }
                     if let TuiEvent::Resize = event {
                         let terminal = &self.tui.terminal;
@@ -5977,8 +6003,9 @@ impl Mode {
                     }
                     self.tui.process_event(event);
                     while let Ok(event) = input.try_recv() {
-                        if let TuiEvent::Input(_) = event {
+                        if let TuiEvent::Input(_, arrived) = &event {
                             self.tips.on_activity();
+                            self.perf.key_arrived(*arrived);
                         }
                         self.tui.process_event(event);
                     }
@@ -6139,6 +6166,7 @@ impl Mode {
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
             }
+            self.perf.end_iteration(iteration_started);
         }
 
         set_dialog_sink(None);
@@ -6191,6 +6219,7 @@ enum BuiltinCommand {
     Hotkeys,
     Changelog,
     Debug,
+    Perf,
     Color,
     Chrome,
     Fork,
@@ -6227,6 +6256,7 @@ impl BuiltinCommand {
             "hotkeys" => Self::Hotkeys,
             "changelog" => Self::Changelog,
             "debug" => Self::Debug,
+            "perf" => Self::Perf,
             "color" => Self::Color,
             "chrome" => Self::Chrome,
             "fork" => Self::Fork,

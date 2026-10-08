@@ -16,6 +16,7 @@ pub use hoocode_code_tui_widgets::input_frame;
 pub mod interactive_mode;
 pub mod login_controller;
 pub mod notification_panel;
+pub mod perf;
 pub mod progress_bar;
 pub mod record_row;
 pub mod resource_display;

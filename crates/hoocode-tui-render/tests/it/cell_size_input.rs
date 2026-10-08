@@ -51,7 +51,7 @@ fn forwards_bare_escape_even_when_a_cell_size_query_was_sent() {
     with_image_terminal(|| {
         let (mut tui, term, recorder) = setup();
         assert!(term.joined_writes().contains("\x1b[16t"));
-        tui.process_event(TuiEvent::Input("\x1b".into()));
+        tui.process_event(TuiEvent::input("\x1b"));
         assert_eq!(recorder.borrow().0, ["\x1b"]);
         tui.stop();
     });
@@ -65,7 +65,7 @@ fn consumes_cell_size_responses_and_still_forwards_later_input() {
             height_px: 18,
         });
         let (mut tui, _term, recorder) = setup();
-        tui.process_event(TuiEvent::Input("\x1b[6;20;10t".into()));
+        tui.process_event(TuiEvent::input("\x1b[6;20;10t"));
         assert!(recorder.borrow().0.is_empty());
         assert_eq!(
             get_cell_dimensions(),
@@ -74,7 +74,7 @@ fn consumes_cell_size_responses_and_still_forwards_later_input() {
                 height_px: 20
             }
         );
-        tui.process_event(TuiEvent::Input("q".into()));
+        tui.process_event(TuiEvent::input("q"));
         assert_eq!(recorder.borrow().0, ["q"]);
         tui.stop();
     });

@@ -72,6 +72,8 @@ pub struct Args {
     pub team: Option<String>,
     pub fork: Option<String>,
     pub session_dir: Option<String>,
+    /// Append one JSON line of the UI's performance counters a second to this file.
+    pub perf_log: Option<String>,
     pub models: Option<Vec<String>>,
     pub tools: Option<Vec<String>>,
     pub disallowed_tools: Option<Vec<String>>,
@@ -261,6 +263,10 @@ pub fn parse_args(args: &[String]) -> Args {
             "--session-dir" if has_next => {
                 i += 1;
                 result.session_dir = Some(args[i].clone());
+            }
+            "--perf-log" if has_next => {
+                i += 1;
+                result.perf_log = Some(args[i].clone());
             }
             "--models" if has_next => {
                 i += 1;

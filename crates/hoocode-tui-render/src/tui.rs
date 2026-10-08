@@ -25,6 +25,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
+use std::time::{Duration, Instant};
 
 use hoocode_tui_images::{
     allocate_image_id, delete_kitty_image, get_capabilities, set_cell_dimensions, CellDimensions,
@@ -218,9 +219,28 @@ pub type InputInterceptor = Box<dyn FnMut(&mut Tui, &str) -> bool>;
 /// Event delivered from the terminal's background threads to the single
 /// thread driving the `Tui` (see module docs).
 pub enum TuiEvent {
-    Input(String),
+    /// Raw input, stamped when the terminal's reader thread received it (the
+    /// start of keystroke-to-frame latency, see `hoocode-code-tui-app`'s `perf`).
+    Input(String, Instant),
     Resize,
 }
+
+impl TuiEvent {
+    /// Input that arrived now.
+    pub fn input(data: impl Into<String>) -> Self {
+        Self::Input(data.into(), Instant::now())
+    }
+}
+
+/// How long one frame took: building its lines and writing them to the terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameTiming {
+    pub build: Duration,
+    pub write: Duration,
+}
+
+/// See [`Tui::set_frame_observer`].
+pub type FrameObserver = Box<dyn FnMut(FrameTiming)>;
 
 #[derive(Clone, Copy)]
 struct CursorPos {
@@ -259,6 +279,9 @@ pub struct Tui {
     input_listeners: Vec<InputListener>,
 
     pub on_debug: Option<Box<dyn FnMut()>>,
+    frame_observer: Option<FrameObserver>,
+    /// Terminal write time accumulated by the frame being painted.
+    frame_write_time: Duration,
     render_requested: bool,
 
     cursor_row: i64,
@@ -322,6 +345,8 @@ impl Tui {
             focused_component: None,
             input_listeners: Vec::new(),
             on_debug: None,
+            frame_observer: None,
+            frame_write_time: Duration::ZERO,
             render_requested: false,
             cursor_row: 0,
             hardware_cursor_row: 0,
@@ -951,7 +976,7 @@ impl Tui {
         let tx_input = tx.clone();
         self.terminal.start(
             Box::new(move |data: &str| {
-                let _ = tx_input.send(TuiEvent::Input(data.to_string()));
+                let _ = tx_input.send(TuiEvent::input(data));
             }),
             Box::new(move || {
                 let _ = tx.send(TuiEvent::Resize);
@@ -965,7 +990,7 @@ impl Tui {
 
     pub fn process_event(&mut self, event: TuiEvent) {
         match event {
-            TuiEvent::Input(data) => self.handle_input(&data),
+            TuiEvent::Input(data, _) => self.handle_input(&data),
             TuiEvent::Resize => self.request_render(false),
         }
     }
@@ -1458,7 +1483,34 @@ impl Tui {
         self.root.render(width)
     }
 
+    /// Install (or remove) the observer that gets the timing of every frame.
+    pub fn set_frame_observer(&mut self, observer: Option<FrameObserver>) {
+        self.frame_observer = observer;
+    }
+
+    /// Paint one frame, then report how long it took to build and to write.
     fn do_render(&mut self) {
+        if self.stopped {
+            return;
+        }
+        let started = Instant::now();
+        self.frame_write_time = Duration::ZERO;
+        self.paint();
+        if let Some(observer) = self.frame_observer.as_mut() {
+            let write = self.frame_write_time;
+            let build = started.elapsed().saturating_sub(write);
+            observer(FrameTiming { build, write });
+        }
+    }
+
+    /// The frame's bytes to the terminal, timed.
+    fn write_frame(&mut self, buffer: &str) {
+        let started = Instant::now();
+        self.terminal.write(buffer);
+        self.frame_write_time += started.elapsed();
+    }
+
+    fn paint(&mut self) {
         if self.stopped {
             return;
         }
@@ -1593,7 +1645,7 @@ impl Tui {
             self.hardware_cursor_row = new_lines.len() as i64 - 1;
             buffer.push_str(&self.build_hardware_cursor_move(&cursor_pos, new_lines.len() as i64));
             buffer.push_str("\x1b[?2026l");
-            self.terminal.write(&buffer);
+            self.write_frame(&buffer);
             self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
             self.previous_lines = new_lines;
             self.previous_width = width;
@@ -1657,7 +1709,7 @@ impl Tui {
                     &self.build_hardware_cursor_move(&cursor_pos, new_lines.len() as i64),
                 );
                 buffer.push_str("\x1b[?2026l");
-                self.terminal.write(&buffer);
+                self.write_frame(&buffer);
             } else {
                 self.position_hardware_cursor(&cursor_pos, new_lines.len() as i64);
             }
@@ -1764,7 +1816,7 @@ impl Tui {
         buffer.push_str(&self.build_hardware_cursor_move(&cursor_pos, new_lines.len() as i64));
 
         buffer.push_str("\x1b[?2026l");
-        self.terminal.write(&buffer);
+        self.write_frame(&buffer);
 
         self.max_lines_rendered = self.max_lines_rendered.max(new_lines.len() as i64);
         self.previous_viewport_top = prev_viewport_top.max(final_cursor_row - height + 1);
@@ -1794,7 +1846,7 @@ impl Tui {
         let cp = self.last_cursor_pos;
         buffer.push_str(&self.build_hardware_cursor_move(&cp, new_lines.len() as i64));
         buffer.push_str("\x1b[?2026l");
-        self.terminal.write(&buffer);
+        self.write_frame(&buffer);
 
         if clear {
             self.max_lines_rendered = new_lines.len() as i64;
@@ -1847,7 +1899,7 @@ impl Tui {
     /// emit no content of their own.
     fn position_hardware_cursor(&mut self, cursor_pos: &Option<CursorPos>, total_lines: i64) {
         let buffer = self.build_hardware_cursor_move(cursor_pos, total_lines);
-        self.terminal.write(&buffer);
+        self.write_frame(&buffer);
     }
 
     /// Paint the pinned window onto the alternate screen, whole (not
@@ -1909,7 +1961,7 @@ impl Tui {
         buffer.push_str(&(self.scroll_status_formatter)(&status));
         buffer.push_str("\x1b[?7h");
         buffer.push_str("\x1b[?2026l");
-        self.terminal.write(&buffer);
+        self.write_frame(&buffer);
         // Kept so a click on the pinned window can be placed.
         self.scroll_view_lines = Some(lines);
     }
@@ -1927,7 +1979,7 @@ impl Tui {
     fn release_scroll_images(&mut self) {
         let buffer = self.clear_scroll_images();
         if !buffer.is_empty() {
-            self.terminal.write(&buffer);
+            self.write_frame(&buffer);
         }
         self.scroll_image_ids.clear();
     }
