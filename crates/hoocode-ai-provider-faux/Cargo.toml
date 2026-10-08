@@ -1,0 +1,28 @@
+[package]
+name = "hoocode-ai-provider-faux"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Faux / test provider for hoocode AI"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = true
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-ai-types = { workspace = true }
+hoocode-ai-stream = { workspace = true }
+hoocode-ai-registry = { workspace = true }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "time"] }
+
+[dev-dependencies]
+futures-util = { version = "0.3", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

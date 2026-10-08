@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Build the pinned hoocode reference into target/hoocode-pin (gitignored).
-# Reads the pin from [workspace.metadata.cortex.source] in the root Cargo.toml.
+# Reads the pin from [workspace.metadata.hoocode.source] in the root Cargo.toml.
 # Idempotent: skips clone/build when the pinned commit is already built.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEST="${HOOCODE_PIN_DIR:-$ROOT/target/hoocode-pin}"
-COMMIT="$(python3 -c "import tomllib;print(tomllib.load(open('$ROOT/Cargo.toml','rb'))['workspace']['metadata']['cortex']['source']['hoocode-commit'])")"
+COMMIT="$(python3 -c "import tomllib;print(tomllib.load(open('$ROOT/Cargo.toml','rb'))['workspace']['metadata']['hoocode']['source']['hoocode-commit'])")"
 REPO="${HOOCODE_REPO:-https://github.com/kolisachint/hoocode-ts}"
 
 # The file-autocomplete scenario walks files with fd; --offline never downloads it.

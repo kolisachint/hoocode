@@ -1,0 +1,22 @@
+[package]
+name = "hoocode-ai-types"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Shared types for hoocode AI"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = true
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio-util = { version = "0.7", default-features = false }

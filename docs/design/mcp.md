@@ -5,7 +5,7 @@ Design only. Replaces ledger 9.1 and 10.11.
 
 ## Goal
 
-`cortex` uses MCP servers (tools from other programs). It speaks the current spec,
+`hoocode` uses MCP servers (tools from other programs). It speaks the current spec,
 is easy to keep current as the spec moves, and only starts servers the user has
 trusted.
 
@@ -25,7 +25,7 @@ trusted.
 
 1. **Core.**
    - New crate `agent-mcp` on rmcp; only this crate depends on rmcp. It runs on the
-     one `cortex-io` runtime ([concurrency.md](concurrency.md)), never its own.
+     one `hoocode-io` runtime ([concurrency.md](concurrency.md)), never its own.
    - Transports: stdio and Streamable HTTP.
    - Tools named `mcp_<server>_<tool>`; too-long names are shortened with a hash
      suffix.

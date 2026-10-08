@@ -1,6 +1,6 @@
 # UI map
 
-Where each part of the interactive screen lives. Snapshot of 2026-10-08. Crate names change from `cortexcode-*` to `hoocode-*` in step 0
+Where each part of the interactive screen lives. Snapshot of 2026-10-08. Crate names are `hoocode-*` since step 0c
 ([naming-and-paths.md](../design/naming-and-paths.md)). Crates are
 described in [packages.md](packages.md). Names, not line numbers: line numbers drift.
 
@@ -80,7 +80,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | `/fork` | pick a user message | `user_message_selector.rs` |
 | `/login`, `/logout` | provider pickers, login dialog | `oauth_selector.rs`, `login_dialog.rs`; flow in `code-tui-app/src/login_controller.rs` |
 | `ask_options` tool | options pane | `ask_options.rs` |
-| `cortex config` | resource list | `config_selector.rs` |
+| `hoocode config` | resource list | `config_selector.rs` |
 | `/hotkeys` | shortcuts page | `code-tui-app/src/hotkeys.rs` |
 | `/changelog` | changelog | `code-tui-app/src/changelog.rs` |
 | Questions from code off the UI thread | select / editor dialogs | `code-tui-app/src/dialog_bridge.rs`, `extension_selector.rs`, `extension_editor.rs` |

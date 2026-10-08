@@ -1,0 +1,31 @@
+[package]
+name = "hoocode-code-tool-bash"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The bash tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-agent-harness = { workspace = true }
+hoocode-agent-types = { workspace = true }
+hoocode-ai-types = { workspace = true }
+hoocode-code-paths = { workspace = true }
+hoocode-code-tool-api = { workspace = true }
+process-wrap = { version = "10", default-features = false, features = ["std", "process-group", "job-object"] }
+regex-lite = "0.1"
+serde_json = "1"
+tempfile = "3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

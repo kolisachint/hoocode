@@ -1,6 +1,6 @@
 // marked token streams (strict-strikethrough tokenizer) for deterministic
 // pseudo-random documents stitched from markdown fragments.
-// Output: crates/cortexcode-tui-components/tests/fixtures/markdown-fuzz-gold.json
+// Output: crates/hoocode-tui-components/tests/fixtures/markdown-fuzz-gold.json
 import { Marked, Tokenizer } from "marked";
 
 const STRICT = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;

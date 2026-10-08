@@ -1,0 +1,38 @@
+[package]
+name = "hoocode-ai-provider-openai-codex"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "OpenAI Codex (ChatGPT subscription) Responses provider for hoocode AI: SSE and WebSocket transports"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-ai-env = { workspace = true }
+hoocode-ai-models = { workspace = true }
+hoocode-ai-provider-openai-responses = { workspace = true }
+hoocode-ai-stream = { workspace = true }
+hoocode-ai-types = { workspace = true }
+hoocode-ai-util = { workspace = true }
+base64 = "0.22"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "time", "sync", "net"] }
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util", "time", "net", "io-util"] }

@@ -4,7 +4,7 @@ Status: **agreed 2026-10-07**, design only. Build this before any new feature.
 
 ## Goal
 
-Fix the known ways `cortex` is unsafe, wrong or crashes today, and add checks that
+Fix the known ways `hoocode` is unsafe, wrong or crashes today, and add checks that
 stop the same bug classes coming back.
 
 ## Decisions
@@ -30,7 +30,7 @@ stop the same bug classes coming back.
 2. **Paths** (changed 2026-10-08): [naming-and-paths.md](naming-and-paths.md) §2–4.
    Data moves to `~/.hoocode`, **shared with hoocode-ts** (drop-in replacement);
    `HOOCODE_` is the only env prefix; a one-time merge copies `~/.cortexcode` and
-   `<repo>/.cortexcode/` in (cortexcode wins, backups first). The crate and binary
+   `<repo>/.cortexcode/` in (hoocode wins, backups first). The crate and binary
    rename is §1 of that card and happens in step 0, before this card.
 3. **macOS test failures** (all four fail on a clean checkout):
    - `code-main` replay: temp paths resolve under `/private` on macOS, so

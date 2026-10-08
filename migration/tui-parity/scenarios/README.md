@@ -1,7 +1,7 @@
 # Level-2 parity scenarios
 
 Each `*.json` file is one scenario, run against the real hoocode (pinned build in
-`target/hoocode-pin`) and the real `cortex` binary in identical tmux terminals.
+`target/hoocode-pin`) and the real `hoocode` binary in identical tmux terminals.
 
 ```jsonc
 {

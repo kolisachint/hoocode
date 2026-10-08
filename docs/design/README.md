@@ -44,9 +44,9 @@ pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | # | Milestone | Card | Size | Needs | Why here |
 |---|---|---|---|---|---|
 | 0a | Close the migration ledger: `moved` status; mark 9.1, 10.2e, 10.11, 12.1–12.7, 13.4 with their cards; one line each in plan §0.3 and `PROGRESS.md` | this page | S | — | Bookkeeping before code |
-| 0b | Delete the 11 unused crates (move `cortexcode-ai`'s tests to `ai-registry` first; fix dep firewall, `generate_crates.sh`, CI, release scripts) | [decisions-2026-10-08.md](decisions-2026-10-08.md) | S | 0a | Less to rename and build |
+| 0b | Delete the 11 unused crates (move `hoocode-ai`'s tests to `ai-registry` first; fix dep firewall, `generate_crates.sh`, CI, release scripts) | [decisions-2026-10-08.md](decisions-2026-10-08.md) | S | 0a | Less to rename and build |
 | 0c | Rename everything to hoocode, one mechanical commit, no other branch open | [naming-and-paths.md](naming-and-paths.md) §1 | M | 0b | Touches every file; must not race other work |
-| 0d | `scripts/maps/packages.py` (regenerates [../maps/packages.md](../maps/packages.md), `--check` in CI) and the `no_cortex.sh` guard | [naming-and-paths.md](naming-and-paths.md) §1 | S | 0c | Keeps the maps and names honest from here on |
+| 0d | `scripts/maps/packages.py` (regenerates [../maps/packages.md](../maps/packages.md), `--check` in CI) and the `no_hoocode.sh` guard | [naming-and-paths.md](naming-and-paths.md) §1 | S | 0c | Keeps the maps and names honest from here on |
 | 1 | Reliability, in this order: **1.1** rpc fails closed (security); **1.2** `~/.hoocode` paths, `HOOCODE_` env, one-time merge; **1.3** macOS test fixes and CI job; **1.4** `@file` without `fd`; **1.5** panic audit; **1.6** fuzzing | [reliability.md](reliability.md), [naming-and-paths.md](naming-and-paths.md) §2–4 | L | 0c | Reliability before features |
 | 2 | Concurrency phases 0–1: `/perf` and the load test, then one runtime and the caps | [concurrency.md](concurrency.md) | M | 1 | Sets the runtime rules before MCP brings rmcp |
 | 3 | `SearchHooCode`; close the 8 `l1_done` tasks | [semantic-search.md](semantic-search.md) part A | S | 2 | Small; finishes the migration's loose ends |
@@ -69,7 +69,7 @@ crate, Azure, `fd`/`rg` and the external-tools pane, and the extras marked No in
 Older docs that stay as they are: [app-server.md](app-server.md), [subagents.md](subagents.md),
 [subagent-evals.md](subagent-evals.md), [distribution.md](distribution.md),
 [build-speed.md](build-speed.md), and the migration plan
-[hoocode-to-cortexcode-migration.md](hoocode-to-cortexcode-migration.md).
+[ts-to-rust-migration.md](ts-to-rust-migration.md).
 
 ## Standards checked (2026-10-07)
 

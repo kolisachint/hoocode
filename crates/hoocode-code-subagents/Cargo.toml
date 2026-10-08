@@ -1,0 +1,43 @@
+[package]
+name = "hoocode-code-subagents"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Subagent orchestration for the hoocode coding agent"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = true
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-agent-types = { workspace = true }
+hoocode-ai-types = { workspace = true }
+hoocode-code-agent-session = { workspace = true }
+hoocode-code-paths = { workspace = true }
+hoocode-code-resources = { workspace = true }
+hoocode-code-rpc = { workspace = true }
+hoocode-code-session = { workspace = true }
+hoocode-code-settings = { workspace = true }
+hoocode-code-task-store = { workspace = true }
+hoocode-code-tool-api = { workspace = true }
+chrono = "0.4"
+regex = "1"
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "process", "io-util", "sync", "time", "macros"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+hoocode-code-models = { workspace = true }
+hoocode-code-prompts = { workspace = true }
+hoocode-code-paths = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

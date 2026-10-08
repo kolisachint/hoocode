@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Level-2 (rendered TUI) parity harness: hoocode vs cortex, side by side.
+"""Level-2 (rendered TUI) parity harness: hoocode-ts (ts) vs hoocode (rust), side by side.
 
 Each scenario runs the *real* interactive app of both implementations inside a
 fixed-size tmux terminal, against the same scripted mock LLM
@@ -13,9 +13,9 @@ Result per scenario:
 * ``pass``       — every snapshot is identical after normalization (text AND style
                    unless the scenario sets ``"compare": "text"``), and every
                    assertion holds for both apps.
-* ``fail``       — cortex differs from hoocode (diff written to the report).
-* ``invalid``    — hoocode itself failed an assertion or a wait. Fix the
-                   scenario, not cortex.
+* ``fail``       — rust differs from ts (diff written to the report).
+* ``invalid``    — the ts reference itself failed an assertion or a wait. Fix the
+                   scenario, not the reference.
 
 Artifacts land in ``target/tui-parity/<scenario>/`` (gitignored):
 ``<app>/<snapshot>.txt``, ``<app>/<snapshot>.style``, ``<app>/requests.jsonl``,
@@ -24,10 +24,10 @@ Artifacts land in ``target/tui-parity/<scenario>/`` (gitignored):
 Usage::
 
     harness.py list
-    harness.py run <scenario|all> [--app both|hoocode|cortex] [--keep]
-    harness.py selfcheck <scenario|all>  # run hoocode twice; scenario must be deterministic
+    harness.py run <scenario|all> [--app both|ts|rust] [--keep]
+    harness.py selfcheck <scenario|all>  # run ts twice; scenario must be deterministic
     harness.py png <scenario>            # render report.html to report.png (needs playwright)
-    harness.py record <scenario|all>     # Level-1 replay fixtures from hoocode (replay.json)
+    harness.py record <scenario|all>     # Level-1 replay fixtures from ts (replay.json)
 
 Scenario format: see ``scenarios/README.md``.
 """
@@ -56,9 +56,9 @@ ROOT = HERE.parent.parent
 SCENARIOS = HERE / "scenarios"
 OUT = ROOT / "target" / "tui-parity"
 NORMALIZE = HERE / "normalize.json"
-APPS = ("hoocode", "cortex")
+APPS = ("ts", "rust")
 # Each app's project config dir (`{config}` in `work_files` paths).
-CONFIG_DIRS = {"hoocode": ".hoocode", "cortex": ".cortexcode"}
+CONFIG_DIRS = {"ts": ".hoocode", "rust": ".cortexcode"}
 
 
 # ---------------------------------------------------------------------------
@@ -66,25 +66,25 @@ CONFIG_DIRS = {"hoocode": ".hoocode", "cortex": ".cortexcode"}
 # ---------------------------------------------------------------------------
 
 
-def hoocode_cmd() -> list[str]:
+def ts_cmd() -> list[str]:
     cli = Path(os.environ.get("HOOCODE_PIN_DIR", ROOT / "target" / "hoocode-pin")) / "packages/coding-agent/dist/cli.js"
     if not cli.exists():
         sys.exit(f"hoocode reference not built: {cli}\nrun migration/tui-parity/setup_hoocode.sh")
     return ["node", str(cli)]
 
 
-def cortex_cmd() -> list[str]:
-    if "CORTEX_BIN" in os.environ:
-        return [os.environ["CORTEX_BIN"]]
+def rust_cmd() -> list[str]:
+    if "HOOCODE_BIN" in os.environ:
+        return [os.environ["HOOCODE_BIN"]]
     # Always build (a no-op when up to date): `ledger.py verify` runs `cargo test`
     # for the task's crates only, which does not rebuild the binary, and L2 must
     # never run against a stale one.
-    subprocess.run(["cargo", "build", "-q", "-p", "cortexcode-code-main", "--bin", "cortex"], cwd=ROOT, check=True)
-    return [str(ROOT / "target" / "debug" / "cortex")]
+    subprocess.run(["cargo", "build", "-q", "-p", "hoocode-code-main", "--bin", "hoocode"], cwd=ROOT, check=True)
+    return [str(ROOT / "target" / "debug" / "hoocode")]
 
 
 def app_cmd(app: str) -> list[str]:
-    return hoocode_cmd() if app == "hoocode" else cortex_cmd()
+    return ts_cmd() if app == "ts" else rust_cmd()
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ class Tmux:
         self.name = name
         self.cols = cols
         self.rows = rows
-        self.socket = f"cortex-parity-{os.getpid()}"
+        self.socket = f"hoocode-parity-{os.getpid()}"
 
     def _run(self, *args: str, check: bool = True) -> str:
         res = subprocess.run(["tmux", "-L", self.socket, *args], capture_output=True, text=True)
@@ -630,17 +630,17 @@ def run_step(
 # Level-1 fixture recording (13.2): headless replay of non-interactive scenarios
 # ---------------------------------------------------------------------------
 #
-# `record` runs hoocode for each scenario in `replay.json` WITHOUT tmux: stdin is a
+# `record` runs the ts reference for each scenario in `replay.json` WITHOUT tmux: stdin is a
 # pipe (or /dev/null), stdout/stderr go to files. The Rust integration test
-# `crates/cortexcode-code-main/tests/replay.rs` runs `cortex` the same way against
+# `crates/hoocode-code-main/tests/replay.rs` runs `hoocode` the same way against
 # a port of `mockllm.py` and must render the same text. The recording keeps
-# hoocode's raw output plus the rendered (normalized) text as an insta snapshot;
+# the ts reference's raw output plus the rendered (normalized) text as an insta snapshot;
 # the Rust test re-normalizes the raw output to check its normalizer agrees with
 # this one.
 
 REPLAY = HERE / "replay.json"
-FIXTURES = ROOT / "crates" / "cortexcode-code-main" / "tests" / "fixtures" / "hoocode-0.5.89" / "replay"
-SNAPSHOTS = ROOT / "crates" / "cortexcode-code-main" / "tests" / "snapshots"
+FIXTURES = ROOT / "crates" / "hoocode-code-main" / "tests" / "fixtures" / "hoocode-0.5.89" / "replay"
+SNAPSHOTS = ROOT / "crates" / "hoocode-code-main" / "tests" / "snapshots"
 REPLAY_STEPS = {"type", "keys", "wait_stdout", "wait_exit", "snapshot", "sleep"}
 REPLAY_KEYS = {"Enter": "\n"}
 
@@ -650,7 +650,7 @@ def replay_manifest() -> dict:
 
 
 def pin_commit() -> str:
-    return tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["metadata"]["cortex"]["source"]["hoocode-commit"]
+    return tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["metadata"]["hoocode"]["source"]["hoocode-commit"]
 
 
 def run_headless(app: str, sc: dict, keep: bool = False) -> dict:
@@ -799,17 +799,17 @@ def snap_file(name: str) -> Path:
 
 
 def cmd_record(names: list[str]) -> int:
-    """Record hoocode fixtures for the Level-1 replay test (never run with cortex)."""
+    """Record ts fixtures for the Level-1 replay test (never run with rust)."""
     manifest = replay_manifest()
     commit = pin_commit()
     for name in names:
         sc = load_scenario(name)
-        raw = run_headless("hoocode", sc)
+        raw = run_headless("ts", sc)
         rendered = render_replay(sc, raw, manifest)
-        again = render_replay(sc, run_headless("hoocode", sc), manifest)
+        again = render_replay(sc, run_headless("ts", sc), manifest)
         if again != rendered:
             diff = difflib.unified_diff(rendered.splitlines(), again.splitlines(), "run1", "run2", lineterm="")
-            print(f"unstable {name}: two hoocode runs render differently\n" + "\n".join(list(diff)[:60]))
+            print(f"unstable {name}: two ts runs render differently\n" + "\n".join(list(diff)[:60]))
             return 1
         d = FIXTURES / name
         shutil.rmtree(d, ignore_errors=True)
@@ -831,8 +831,8 @@ def cmd_record(names: list[str]) -> int:
                 (d / f"file-{i}").write_text(t)
         SNAPSHOTS.mkdir(parents=True, exist_ok=True)
         header = (
-            "---\nsource: crates/cortexcode-code-main/tests/replay.rs\n"
-            f"description: \"recorded from hoocode {commit[:8]} by harness.py record; never accept cortex output here\"\n"
+            "---\nsource: crates/hoocode-code-main/tests/replay.rs\n"
+            f"description: \"recorded from ts {commit[:8]} by harness.py record; never accept rust output here\"\n"
             f"expression: {name}\n---\n"
         )
         snap_file(name).write_text(header + rendered)
@@ -846,24 +846,24 @@ def cmd_record(names: list[str]) -> int:
 
 
 def compare(sc: dict, results: dict[str, dict], out: Path) -> str:
-    hoo, cor = results.get("hoocode"), results.get("cortex")
+    hoo, cor = results.get("ts"), results.get("rust")
     lines = [f"# TUI parity: {sc['id']}", "", sc.get("description", ""), ""]
     if hoo is None or cor is None:
         status = "partial"
     elif not hoo["ok"]:
         status = "invalid"
-        lines += ["**invalid**: hoocode failed the scenario:", "```", hoo["error"], "```"]
+        lines += ["**invalid**: ts failed the scenario:", "```", hoo["error"], "```"]
     else:
         status = "pass"
         mode = sc.get("compare", "style")
         if not cor["ok"]:
             status = "fail"
-            lines += ["**cortex failed a step:**", "```", cor["error"], "```"]
+            lines += ["**rust failed a step:**", "```", cor["error"], "```"]
         for name, h in hoo["snapshots"].items():
             c = cor["snapshots"].get(name)
             if c is None:
                 status = "fail"
-                lines.append(f"- `{name}`: missing in cortex")
+                lines.append(f"- `{name}`: missing in rust")
                 continue
             text_ok = h["text"] == c["text"]
             style_ok = h["style"] == c["style"]
@@ -872,14 +872,14 @@ def compare(sc: dict, results: dict[str, dict], out: Path) -> str:
             if not ok:
                 status = "fail"
                 a, b = (h["text"], c["text"]) if not text_ok else (h["style"], c["style"])
-                diff = difflib.unified_diff(a.splitlines(), b.splitlines(), "hoocode", "cortex", lineterm="")
+                diff = difflib.unified_diff(a.splitlines(), b.splitlines(), "ts", "rust", lineterm="")
                 lines += ["", "```diff", *list(diff)[:200], "```", ""]
     if hoo and cor and hoo["ok"] and sc.get("compare_requests"):
         h, c = hoo.get("requests", ""), cor.get("requests", "")
         lines.append(f"- `requests` (what the model saw): {'✓' if h == c else '✗'}")
         if h != c:
             status = "fail"
-            diff = difflib.unified_diff(h.splitlines(), c.splitlines(), "hoocode", "cortex", lineterm="")
+            diff = difflib.unified_diff(h.splitlines(), c.splitlines(), "ts", "rust", lineterm="")
             lines += ["", "```diff", *list(diff)[:300], "```", ""]
     if hoo and cor and hoo["ok"] and sc.get("stdout_jsonl") is not None:
         h, c = hoo.get("stdout", ""), cor.get("stdout", "")
@@ -895,7 +895,7 @@ def compare(sc: dict, results: dict[str, dict], out: Path) -> str:
                     except json.JSONDecodeError:
                         out.append(f"[{i}] {l}")
                 return out
-            diff = difflib.unified_diff(explode(h), explode(c), "hoocode", "cortex", lineterm="")
+            diff = difflib.unified_diff(explode(h), explode(c), "ts", "rust", lineterm="")
             lines += ["", "```diff", *list(diff)[:400], "```", ""]
     if hoo and cor and hoo["ok"] and sc.get("work_files"):
         for rel in sc["work_files"]:
@@ -906,7 +906,7 @@ def compare(sc: dict, results: dict[str, dict], out: Path) -> str:
                 diff = difflib.unified_diff(
                     json.dumps(json.loads(h), indent=1).splitlines() if h.startswith("{") else [h],
                     json.dumps(json.loads(c), indent=1).splitlines() if c.startswith("{") else [c],
-                    "hoocode", "cortex", lineterm="",
+                    "ts", "rust", lineterm="",
                 )
                 lines += ["", "```diff", *list(diff)[:200], "```", ""]
     lines.insert(1, f"\n**Result: {status}**\n")
@@ -1001,11 +1001,11 @@ def cmd_run(names: list[str], apps: list[str], keep: bool) -> int:
 
 
 def cmd_selfcheck(names: list[str]) -> int:
-    """A scenario is only trustworthy if hoocode renders it identically twice."""
+    """A scenario is only trustworthy if the ts reference renders it identically twice."""
     bad = 0
     for name in names:
         sc = load_scenario(name)
-        runs = [run_app("hoocode", sc, OUT / name / f"selfcheck-{i}", keep=False) for i in (1, 2)]
+        runs = [run_app("ts", sc, OUT / name / f"selfcheck-{i}", keep=False) for i in (1, 2)]
         if not all(r["ok"] for r in runs):
             print(f"invalid  {name}: {next(r['error'] for r in runs if not r['ok'])[:300]}")
             bad += 1
@@ -1017,7 +1017,7 @@ def cmd_selfcheck(names: list[str]) -> int:
             diffs.append("work_files")
         if diffs:
             bad += 1
-            print(f"unstable {name}: snapshots {diffs} differ between two hoocode runs (see {OUT / name}/selfcheck-*)")
+            print(f"unstable {name}: snapshots {diffs} differ between two ts runs (see {OUT / name}/selfcheck-*)")
         else:
             print(f"stable   {name}")
     return 1 if bad else 0
@@ -1041,7 +1041,7 @@ def main() -> int:
     r.add_argument("--keep", action="store_true", help="keep the temp HOME/workspace for debugging")
     sc = sub.add_parser("selfcheck")
     sc.add_argument("scenario")
-    rec = sub.add_parser("record", help="record hoocode fixtures for the Level-1 replay test (replay.json)")
+    rec = sub.add_parser("record", help="record ts fixtures for the Level-1 replay test (replay.json)")
     rec.add_argument("scenario")
     p = sub.add_parser("png")
     p.add_argument("scenario")

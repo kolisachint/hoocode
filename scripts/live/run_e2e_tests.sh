@@ -20,7 +20,7 @@ echo ""
 
 # Test 1: Verify provider exists in models.json
 echo "Test 1: Checking if mimo-v2.5-free model exists in models.json..."
-if grep -q '"mimo-v2.5-free"' crates/cortexcode-ai-models-catalog/data/models.json; then
+if grep -q '"mimo-v2.5-free"' crates/hoocode-ai-models-catalog/data/models.json; then
     echo "  ✓ Model found in models.json"
 else
     echo "  ✗ Model not found in models.json"
@@ -30,7 +30,7 @@ fi
 # Test 2: Verify OpenCode provider is configured
 echo ""
 echo "Test 2: Checking OpenCode provider configuration..."
-if grep -q '"provider": "opencode"' crates/cortexcode-ai-models-catalog/data/models.json; then
+if grep -q '"provider": "opencode"' crates/hoocode-ai-models-catalog/data/models.json; then
     echo "  ✓ OpenCode provider configured"
 else
     echo "  ✗ OpenCode provider not configured"
@@ -40,7 +40,7 @@ fi
 # Test 3: Verify API key environment variable mapping
 echo ""
 echo "Test 3: Checking API key environment variable mapping..."
-if grep -q 'opencode.*OPENCODE_API_KEY' crates/cortexcode-ai-env/src/lib.rs; then
+if grep -q 'opencode.*OPENCODE_API_KEY' crates/hoocode-ai-env/src/lib.rs; then
     echo "  ✓ OPENCODE_API_KEY environment variable mapped"
 else
     echo "  ✗ Environment variable mapping not found"
@@ -60,7 +60,7 @@ fi
 # Test 5: Run existing provider tests
 echo ""
 echo "Test 5: Running existing provider tests..."
-if cargo test --package cortexcode-ai-provider-openai --lib 2>&1 | tail -10 | grep -q "test result: ok"; then
+if cargo test --package hoocode-ai-provider-openai --lib 2>&1 | tail -10 | grep -q "test result: ok"; then
     echo "  ✓ Provider tests pass"
 else
     echo "  ✗ Provider tests failed"

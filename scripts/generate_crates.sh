@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generate placeholder crates for the cortexcode workspace.
+# Generate placeholder crates for the hoocode workspace.
 # This is a one-off scaffolding script used during the initial migration.
 set -euo pipefail
 
@@ -12,42 +12,42 @@ mkdir -p "$CRATES_DIR"
 # kind: leaf
 declare -a CRATES=(
 
-    "cortexcode-ai-env|Environment and API key handling for cortex AI|ai|leaf"
-    "cortexcode-ai-models|LLM model registry and discovery for cortex AI|ai|leaf"
-    "cortexcode-ai-oauth|OAuth flows for cortex AI providers|ai|leaf"
-    "cortexcode-ai-provider-anthropic|Anthropic provider for cortex AI|ai|leaf"
-    "cortexcode-ai-provider-faux|Faux / test provider for cortex AI|ai|leaf"
-    "cortexcode-ai-provider-google|Google Gemini provider for cortex AI|ai|leaf"
-    "cortexcode-ai-provider-openai|OpenAI provider for cortex AI|ai|leaf"
-    "cortexcode-ai-stream|Streaming response utilities for cortex AI|ai|leaf"
-    "cortexcode-ai-types|Shared types for cortex AI|ai|leaf"
-    "cortexcode-ai-util|Shared utilities for cortex AI|ai|leaf"
+    "hoocode-ai-env|Environment and API key handling for hoocode AI|ai|leaf"
+    "hoocode-ai-models|LLM model registry and discovery for hoocode AI|ai|leaf"
+    "hoocode-ai-oauth|OAuth flows for hoocode AI providers|ai|leaf"
+    "hoocode-ai-provider-anthropic|Anthropic provider for hoocode AI|ai|leaf"
+    "hoocode-ai-provider-faux|Faux / test provider for hoocode AI|ai|leaf"
+    "hoocode-ai-provider-google|Google Gemini provider for hoocode AI|ai|leaf"
+    "hoocode-ai-provider-openai|OpenAI provider for hoocode AI|ai|leaf"
+    "hoocode-ai-stream|Streaming response utilities for hoocode AI|ai|leaf"
+    "hoocode-ai-types|Shared types for hoocode AI|ai|leaf"
+    "hoocode-ai-util|Shared utilities for hoocode AI|ai|leaf"
 
-    "cortexcode-agent-core|Core agent runtime for cortex agents|agent|leaf"
-    "cortexcode-agent-compaction|Session compaction for cortex agents|agent|leaf"
-    "cortexcode-agent-harness|Agent harness for cortex agents|agent|leaf"
-    "cortexcode-agent-loop|Agent loop for cortex agents|agent|leaf"
-    "cortexcode-agent-session|Session management for cortex agents|agent|leaf"
-    "cortexcode-agent-types|Shared types for cortex agents|agent|leaf"
+    "hoocode-agent-core|Core agent runtime for hoocode agents|agent|leaf"
+    "hoocode-agent-compaction|Session compaction for hoocode agents|agent|leaf"
+    "hoocode-agent-harness|Agent harness for hoocode agents|agent|leaf"
+    "hoocode-agent-loop|Agent loop for hoocode agents|agent|leaf"
+    "hoocode-agent-session|Session management for hoocode agents|agent|leaf"
+    "hoocode-agent-types|Shared types for hoocode agents|agent|leaf"
 
-    "cortexcode-code-config|Configuration for the cortex coding agent|code|leaf"
-    "cortexcode-code-main|Main entry point for the cortex coding agent|code|leaf"
-    "cortexcode-code-print|Output formatting for the cortex coding agent|code|leaf"
-    "cortexcode-code-prompts|Prompt templates for the cortex coding agent|code|leaf"
-    "cortexcode-code-resources|Resource management for the cortex coding agent|code|leaf"
-    "cortexcode-code-rpc|RPC mode for the cortex coding agent|code|leaf"
-    "cortexcode-code-session|Session handling for the cortex coding agent|code|leaf"
-    "cortexcode-code-subagents|Subagent orchestration for the cortex coding agent|code|leaf"
-    "cortexcode-code-tools|Coding tools for the cortex coding agent|code|leaf"
+    "hoocode-code-config|Configuration for the hoocode coding agent|code|leaf"
+    "hoocode-code-main|Main entry point for the hoocode coding agent|code|leaf"
+    "hoocode-code-print|Output formatting for the hoocode coding agent|code|leaf"
+    "hoocode-code-prompts|Prompt templates for the hoocode coding agent|code|leaf"
+    "hoocode-code-resources|Resource management for the hoocode coding agent|code|leaf"
+    "hoocode-code-rpc|RPC mode for the hoocode coding agent|code|leaf"
+    "hoocode-code-session|Session handling for the hoocode coding agent|code|leaf"
+    "hoocode-code-subagents|Subagent orchestration for the hoocode coding agent|code|leaf"
+    "hoocode-code-tools|Coding tools for the hoocode coding agent|code|leaf"
 
-    "cortexcode-tui-components|UI components for the cortex TUI|tui|leaf"
-    "cortexcode-tui-editing|Text editing primitives for the cortex TUI|tui|leaf"
-    "cortexcode-tui-fuzzy|Fuzzy matching for the cortex TUI|tui|leaf"
-    "cortexcode-tui-images|Terminal image rendering for the cortex TUI|tui|leaf"
-    "cortexcode-tui-keys|Keyboard handling for the cortex TUI|tui|leaf"
-    "cortexcode-tui-render|Differential rendering for the cortex TUI|tui|leaf"
-    "cortexcode-tui-terminal|Terminal abstraction for the cortex TUI|tui|leaf"
-    "cortexcode-tui-util|Shared utilities for the cortex TUI|tui|leaf"
+    "hoocode-tui-components|UI components for the hoocode TUI|tui|leaf"
+    "hoocode-tui-editing|Text editing primitives for the hoocode TUI|tui|leaf"
+    "hoocode-tui-fuzzy|Fuzzy matching for the hoocode TUI|tui|leaf"
+    "hoocode-tui-images|Terminal image rendering for the hoocode TUI|tui|leaf"
+    "hoocode-tui-keys|Keyboard handling for the hoocode TUI|tui|leaf"
+    "hoocode-tui-render|Differential rendering for the hoocode TUI|tui|leaf"
+    "hoocode-tui-terminal|Terminal abstraction for the hoocode TUI|tui|leaf"
+    "hoocode-tui-util|Shared utilities for the hoocode TUI|tui|leaf"
 )
 
 for entry in "${CRATES[@]}"; do
@@ -68,7 +68,7 @@ rust-version.workspace = true
 description = "$desc"
 readme = "README.md"
 
-[package.metadata.cortex]
+[package.metadata.hoocode]
 publish = true
 
 [dependencies]
@@ -78,7 +78,7 @@ EOF
     cat > "$dir/src/lib.rs" <<EOF
 //! $desc
 //!
-//! This crate is currently a placeholder reserved for the cortexcode Rust migration.
+//! This crate is currently a placeholder reserved for the hoocode Rust migration.
 //! Functionality will be ported from the TypeScript HooCode project incrementally.
 EOF
 
@@ -88,7 +88,7 @@ EOF
 
 $desc
 
-Part of the [cortexcode](https://github.com/kolisachint/cortexcode) Rust workspace.
+Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 
 This crate is currently a placeholder reserved for the Rust migration from HooCode.
 EOF

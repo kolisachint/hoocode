@@ -1,0 +1,41 @@
+[package]
+name = "hoocode-code-tui-selectors"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The coding agent's pickers and dialogs on the hoocode TUI"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+chrono = "0.4"
+hoocode-ai-models = { workspace = true }
+hoocode-ai-types = { workspace = true }
+hoocode-code-auth = { workspace = true }
+hoocode-code-paths = { workspace = true }
+hoocode-code-resources = { workspace = true }
+hoocode-code-session = { workspace = true }
+hoocode-code-settings = { workspace = true }
+hoocode-code-tools = { workspace = true }
+hoocode-code-tools-optin = { workspace = true }
+hoocode-code-tui-keybindings = { workspace = true }
+hoocode-code-tui-theme = { workspace = true }
+hoocode-code-tui-widgets = { workspace = true }
+hoocode-tui-components = { workspace = true }
+hoocode-tui-fuzzy = { workspace = true }
+hoocode-tui-keys = { workspace = true }
+hoocode-tui-render = { workspace = true }
+hoocode-tui-util = { workspace = true }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

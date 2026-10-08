@@ -1,9 +1,9 @@
 // cli-highlight's output (highlight.js 10.7.3) over a corpus: source files of
-// the pin and of cortexcode, hand-written snippets, and a polyglot snippet in
+// the pin and of hoocode, hand-written snippets, and a polyglot snippet in
 // every language. Cases run in order in one process (grammars compile once and
 // share modes), with cli-highlight's DEFAULT_THEME and with a marker theme for
 // the classes hoocode's theme maps.
-// Output: crates/cortexcode-tui-highlight/tests/fixtures/highlight-gold.json
+// Output: crates/hoocode-tui-highlight/tests/fixtures/highlight-gold.json
 import { createRequire } from "node:module";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";

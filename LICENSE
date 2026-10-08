@@ -1,9 +1,9 @@
 MIT License
 
 Copyright (c) 2025 Mario Zechner (original "pi-mono" project — https://github.com/badlogic/pi-mono and https://github.com/earendil-works/pi-mono)
-Copyright (c) 2026 Sachin Koli (HooCode fork — https://github.com/kolisachint/cortexcode)
+Copyright (c) 2026 Sachin Koli (HooCode fork — https://github.com/kolisachint/hoocode)
 
-This project ("cortexcode") is a Rust migration of the HooCode / pi-mono project by
+This project ("hoocode") is a Rust migration of the HooCode / pi-mono project by
 Mario Zechner. All upstream copyright and authorship is preserved. Modifications
 and additions made in this fork are released under the same MIT terms below.
 

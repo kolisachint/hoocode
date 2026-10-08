@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scripted, deterministic LLM server shared by hoocode and cortex parity runs.
+"""Scripted, deterministic LLM server shared by hoocode and hoocode parity runs.
 
 Speaks the OpenAI Chat Completions streaming protocol (``POST /v1/chat/completions``),
 which both apps reach through a custom ``models.json`` provider (api

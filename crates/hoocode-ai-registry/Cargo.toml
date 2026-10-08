@@ -1,0 +1,38 @@
+[package]
+name = "hoocode-ai-registry"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "API provider registry for hoocode AI: dispatches streams on model.api"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-ai-stream = { workspace = true }
+hoocode-ai-types = { workspace = true }
+hoocode-ai-provider-anthropic = { workspace = true }
+hoocode-ai-provider-openai = { workspace = true }
+hoocode-ai-provider-openai-responses = { workspace = true }
+hoocode-ai-provider-openai-codex = { workspace = true }
+hoocode-ai-provider-google = { workspace = true }
+hoocode-ai-provider-google-gemini-cli = { workspace = true }
+
+[dev-dependencies]
+hoocode-ai-env = { workspace = true }
+hoocode-ai-models = { workspace = true }
+hoocode-ai-stream = { workspace = true, features = ["testing"] }
+hoocode-ai-util = { workspace = true }
+base64 = "0.22"
+futures-util = { version = "0.3", default-features = false }
+regex = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

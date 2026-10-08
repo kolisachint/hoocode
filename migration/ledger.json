@@ -92,19 +92,19 @@
     "7.1"
    ],
    "crates": [
-    "cortexcode-ai-types",
-    "cortexcode-agent-types",
-    "cortexcode-code-session",
-    "cortexcode-agent-harness",
-    "cortexcode-agent-loop",
-    "cortexcode-agent-core",
-    "cortexcode-ai-provider-anthropic",
-    "cortexcode-ai-provider-openai",
-    "cortexcode-ai-provider-google",
-    "cortexcode-ai-provider-azure",
-    "cortexcode-ai-provider-faux",
-    "cortexcode-ai-util",
-    "cortexcode-code-print"
+    "hoocode-ai-types",
+    "hoocode-agent-types",
+    "hoocode-code-session",
+    "hoocode-agent-harness",
+    "hoocode-agent-loop",
+    "hoocode-agent-core",
+    "hoocode-ai-provider-anthropic",
+    "hoocode-ai-provider-openai",
+    "hoocode-ai-provider-google",
+    "hoocode-ai-provider-azure",
+    "hoocode-ai-provider-faux",
+    "hoocode-ai-util",
+    "hoocode-code-print"
    ],
    "sources": [
     "packages/ai/src/types.ts",
@@ -143,10 +143,10 @@
     "7.2"
    ],
    "crates": [
-    "cortexcode-code-models",
-    "cortexcode-code-main",
-    "cortexcode-ai-types",
-    "cortexcode-ai-models"
+    "hoocode-code-models",
+    "hoocode-code-main",
+    "hoocode-ai-types",
+    "hoocode-ai-models"
    ],
    "sources": [
     "packages/coding-agent/src/core/model-registry.ts",
@@ -196,9 +196,9 @@
     "7.2"
    ],
    "crates": [
-    "cortexcode-ai-registry",
-    "cortexcode-code-main",
-    "cortexcode-ai-provider-faux"
+    "hoocode-ai-registry",
+    "hoocode-code-main",
+    "hoocode-ai-provider-faux"
    ],
    "sources": [
     "packages/ai/src/api-registry.ts",
@@ -210,7 +210,7 @@
    "l2": [
     "print-basic"
    ],
-   "notes": "API registry lives in its own crate cortexcode-ai-registry (umbrella crates stay code-free).",
+   "notes": "API registry lives in its own crate hoocode-ai-registry (umbrella crates stay code-free).",
    "log": [
     {
      "at": "2026-09-24T19:52:18Z",
@@ -241,8 +241,8 @@
     "7.2"
    ],
    "crates": [
-    "cortexcode-code-cli",
-    "cortexcode-code-main"
+    "hoocode-code-cli",
+    "hoocode-code-main"
    ],
    "sources": [
     "packages/coding-agent/src/cli/args.ts",
@@ -288,7 +288,7 @@
     "10.7a"
    ],
    "crates": [
-    "cortexcode-code-print"
+    "hoocode-code-print"
    ],
    "sources": [
     "packages/coding-agent/src/modes/print-mode.ts"
@@ -336,9 +336,9 @@
     "10.8a"
    ],
    "crates": [
-    "cortexcode-code-tool-api",
-    "cortexcode-code-tools-fs",
-    "cortexcode-code-media"
+    "hoocode-code-tool-api",
+    "hoocode-code-tools-fs",
+    "hoocode-code-media"
    ],
    "sources": [
     "packages/coding-agent/src/core/tools/read.ts",
@@ -357,7 +357,7 @@
     "print-tool-read",
     "print-tool-read-paging"
    ],
-   "notes": "Also creates cortexcode-code-media early (image sniffing + resize for read images; 11.4 extends it). Both L2 scenarios need 10.4c (system prompt); print-tool-read-paging also needs 10.2g (context GC stubs superseded reads).",
+   "notes": "Also creates hoocode-code-media early (image sniffing + resize for read images; 11.4 extends it). Both L2 scenarios need 10.4c (system prompt); print-tool-read-paging also needs 10.2g (context GC stubs superseded reads).",
    "log": [
     {
      "at": "2026-09-25T04:54:56Z",
@@ -394,7 +394,7 @@
     "10.2a"
    ],
    "crates": [
-    "cortexcode-code-prompts"
+    "hoocode-code-prompts"
    ],
    "sources": [
     "packages/coding-agent/src/core/system-prompt.ts",
@@ -407,7 +407,7 @@
     "print-tool-read-paging",
     "print-multi"
    ],
-   "notes": "print-tool-read compares requests.messages, which includes the system prompt. 10.4c ported buildSystemPrompt + skills/agents/self-docs formatters (L1). The default-bundle prompt's L2 then needs the bundle's content, owned elsewhere: tool snippets/guidelines of bash (10.2b), edit/write (10.2c), SearchCodebase (10.2d), ask_options/TodoWrite (10.2f), Task/TaskOutput + <available_agents> (10.9); the Task section from the built-in APPEND_SYSTEM template and the builtin artifact-design skill (10.5); the build-mode appendix (10.5b); SearchHooCode from the hoo-core self-knowledge extension (only 12.4 fits, deferred); the '# About <app> itself' docs section (cortex must ship docs; the listed paths/files must match modulo a path normalization rule). Decision pending with the user: see PROGRESS.md 2026-09-25.",
+   "notes": "print-tool-read compares requests.messages, which includes the system prompt. 10.4c ported buildSystemPrompt + skills/agents/self-docs formatters (L1). The default-bundle prompt's L2 then needs the bundle's content, owned elsewhere: tool snippets/guidelines of bash (10.2b), edit/write (10.2c), SearchCodebase (10.2d), ask_options/TodoWrite (10.2f), Task/TaskOutput + <available_agents> (10.9); the Task section from the built-in APPEND_SYSTEM template and the builtin artifact-design skill (10.5); the build-mode appendix (10.5b); SearchHooCode from the hoo-core self-knowledge extension (only 12.4 fits, deferred); the '# About <app> itself' docs section (hoocode must ship docs; the listed paths/files must match modulo a path normalization rule). Decision pending with the user: see PROGRESS.md 2026-09-25.",
    "log": [
     {
      "at": "2026-09-25T04:58:13Z",
@@ -444,9 +444,9 @@
     "10.4c"
    ],
    "crates": [
-    "cortexcode-code-tools",
-    "cortexcode-code-prompts",
-    "cortexcode-code-cli"
+    "hoocode-code-tools",
+    "hoocode-code-prompts",
+    "hoocode-code-cli"
    ],
    "sources": [
     "packages/coding-agent/src/core/light.ts",
@@ -484,15 +484,15 @@
     "10.8a"
    ],
    "crates": [
-    "cortexcode-ai-sse",
-    "cortexcode-ai-stream",
-    "cortexcode-ai-types",
-    "cortexcode-ai-provider-anthropic",
-    "cortexcode-ai-provider-openai",
-    "cortexcode-ai-provider-google",
-    "cortexcode-ai-provider-azure",
-    "cortexcode-ai-provider-faux",
-    "cortexcode-ai-registry"
+    "hoocode-ai-sse",
+    "hoocode-ai-stream",
+    "hoocode-ai-types",
+    "hoocode-ai-provider-anthropic",
+    "hoocode-ai-provider-openai",
+    "hoocode-ai-provider-google",
+    "hoocode-ai-provider-azure",
+    "hoocode-ai-provider-faux",
+    "hoocode-ai-registry"
    ],
    "sources": [
     "packages/ai/src/utils/event-stream.ts",
@@ -550,12 +550,12 @@
     "7.3a"
    ],
    "crates": [
-    "cortexcode-agent-types",
-    "cortexcode-agent-loop",
-    "cortexcode-agent-core",
-    "cortexcode-code-cli",
-    "cortexcode-code-print",
-    "cortexcode-code-subagents"
+    "hoocode-agent-types",
+    "hoocode-agent-loop",
+    "hoocode-agent-core",
+    "hoocode-code-cli",
+    "hoocode-code-print",
+    "hoocode-code-subagents"
    ],
    "sources": [
     "packages/agent/src/agent-loop.ts",
@@ -598,15 +598,15 @@
     "7.3b"
    ],
    "crates": [
-    "cortexcode-ai-types",
-    "cortexcode-ai-oauth",
-    "cortexcode-ai-images",
-    "cortexcode-code-tools",
-    "cortexcode-ai-provider-anthropic",
-    "cortexcode-ai-util",
-    "cortexcode-code-cli",
-    "cortexcode-agent-types",
-    "cortexcode-agent-loop"
+    "hoocode-ai-types",
+    "hoocode-ai-oauth",
+    "hoocode-ai-images",
+    "hoocode-code-tools",
+    "hoocode-ai-provider-anthropic",
+    "hoocode-ai-util",
+    "hoocode-code-cli",
+    "hoocode-agent-types",
+    "hoocode-agent-loop"
    ],
    "sources": [
     "packages/ai/src/providers/anthropic.ts",
@@ -649,8 +649,8 @@
     "7.2"
    ],
    "crates": [
-    "cortexcode-agent-session",
-    "cortexcode-code-session"
+    "hoocode-agent-session",
+    "hoocode-code-session"
    ],
    "sources": [
     "packages/agent/src/harness/session/"
@@ -685,9 +685,9 @@
     "7.3b"
    ],
    "crates": [
-    "cortexcode-agent-types",
-    "cortexcode-agent-loop",
-    "cortexcode-agent-core"
+    "hoocode-agent-types",
+    "hoocode-agent-loop",
+    "hoocode-agent-core"
    ],
    "sources": [
     "packages/agent/src/agent-loop.ts",
@@ -729,8 +729,8 @@
     "7.5a"
    ],
    "crates": [
-    "cortexcode-agent-core",
-    "cortexcode-agent-loop"
+    "hoocode-agent-core",
+    "hoocode-agent-loop"
    ],
    "sources": [
     "packages/agent/src/agent.ts"
@@ -772,11 +772,11 @@
     "7.2"
    ],
    "crates": [
-    "cortexcode-ai-models-catalog",
-    "cortexcode-ai-models",
-    "cortexcode-ai-types",
-    "cortexcode-ai-images",
-    "cortexcode-code-models"
+    "hoocode-ai-models-catalog",
+    "hoocode-ai-models",
+    "hoocode-ai-types",
+    "hoocode-ai-images",
+    "hoocode-code-models"
    ],
    "sources": [
     "packages/ai/src/models.generated.ts",
@@ -814,9 +814,9 @@
     "8.2a"
    ],
    "crates": [
-    "cortexcode-ai",
-    "cortexcode-ai-env",
-    "cortexcode-ai-provider-openai"
+    "hoocode-ai",
+    "hoocode-ai-env",
+    "hoocode-ai-provider-openai"
    ],
    "sources": [
     "packages/ai/src/env-api-keys.ts",
@@ -859,8 +859,8 @@
     "7.3a"
    ],
    "crates": [
-    "cortexcode-ai-provider-openai-responses",
-    "cortexcode-ai-provider-azure"
+    "hoocode-ai-provider-openai-responses",
+    "hoocode-ai-provider-azure"
    ],
    "sources": [
     "packages/ai/src/providers/openai-responses-shared.ts",
@@ -898,8 +898,8 @@
     "8.7"
    ],
    "crates": [
-    "cortexcode-ai-provider-openai-codex",
-    "cortexcode-ai-oauth-openai-codex"
+    "hoocode-ai-provider-openai-codex",
+    "hoocode-ai-oauth-openai-codex"
    ],
    "sources": [
     "packages/ai/src/providers/openai-codex-responses.ts",
@@ -942,8 +942,8 @@
     "8.7"
    ],
    "crates": [
-    "cortexcode-ai",
-    "cortexcode-ai-oauth-github-copilot"
+    "hoocode-ai",
+    "hoocode-ai-oauth-github-copilot"
    ],
    "sources": [
     "packages/ai/src/utils/oauth/github-copilot.ts"
@@ -980,8 +980,8 @@
     "8.7"
    ],
    "crates": [
-    "cortexcode-ai-provider-google-gemini-cli",
-    "cortexcode-ai-oauth-google"
+    "hoocode-ai-provider-google-gemini-cli",
+    "hoocode-ai-oauth-google"
    ],
    "sources": [
     "packages/ai/src/providers/google-gemini-cli.ts",
@@ -1018,8 +1018,8 @@
     "7.3a"
    ],
    "crates": [
-    "cortexcode-ai-util",
-    "cortexcode-ai"
+    "hoocode-ai-util",
+    "hoocode-ai"
    ],
    "sources": [
     "packages/ai/src/utils/retry-delay.ts",
@@ -1043,7 +1043,7 @@
      "at": "2026-09-25T15:14:45Z",
      "commit": "912521f",
      "kind": "note",
-     "text": "8.2: transform_messages, to_strict_json_schema, param_fallback (DROPPABLE_PARAMS, rejected_params_for, droppable_params_named_by) and copilot headers are already in ai-util (ported for openai-completions); port their TS tests here (cross-provider-handoff etc.). openai-completions still lacks the openai SDK's client retries (maxRetries 2, retryDelayCapFetch) and describeProviderError's retry-after suffix: wire both into crates/cortexcode-ai-provider-openai create_with_param_fallback once retry-delay lands."
+     "text": "8.2: transform_messages, to_strict_json_schema, param_fallback (DROPPABLE_PARAMS, rejected_params_for, droppable_params_named_by) and copilot headers are already in ai-util (ported for openai-completions); port their TS tests here (cross-provider-handoff etc.). openai-completions still lacks the openai SDK's client retries (maxRetries 2, retryDelayCapFetch) and describeProviderError's retry-after suffix: wire both into crates/hoocode-ai-provider-openai create_with_param_fallback once retry-delay lands."
     },
     {
      "at": "2026-09-25T15:24:52Z",
@@ -1068,8 +1068,8 @@
     "8.5a"
    ],
    "crates": [
-    "cortexcode-ai-util",
-    "cortexcode-agent-loop"
+    "hoocode-ai-util",
+    "hoocode-agent-loop"
    ],
    "sources": [
     "packages/ai/src/utils/validation.ts",
@@ -1088,7 +1088,7 @@
      "at": "2026-09-25T12:02:10Z",
      "commit": "632ecfe",
      "kind": "note",
-     "text": "7.5a: agent-loop calls validate_tool_arguments() (crates/cortexcode-agent-loop), currently a pass-through; port validateToolArguments (TypeBox Convert + JSON-schema coercion, TS error format) and wire it there."
+     "text": "7.5a: agent-loop calls validate_tool_arguments() (crates/hoocode-agent-loop), currently a pass-through; port validateToolArguments (TypeBox Convert + JSON-schema coercion, TS error format) and wire it there."
     },
     {
      "at": "2026-09-25T15:39:02Z",
@@ -1126,8 +1126,8 @@
     "8.5b"
    ],
    "crates": [
-    "cortexcode-ai-provider-faux",
-    "cortexcode-ai-registry"
+    "hoocode-ai-provider-faux",
+    "hoocode-ai-registry"
    ],
    "sources": [
     "packages/ai/src/providers/faux.ts"
@@ -1162,8 +1162,8 @@
     "8.6a"
    ],
    "crates": [
-    "cortexcode-ai-types",
-    "cortexcode-ai-provider-openai"
+    "hoocode-ai-types",
+    "hoocode-ai-provider-openai"
    ],
    "sources": [
     "packages/ai/src/types.ts"
@@ -1204,7 +1204,7 @@
     "8.6b"
    ],
    "crates": [
-    "cortexcode-ai-provider-anthropic"
+    "hoocode-ai-provider-anthropic"
    ],
    "sources": [
     "packages/ai/src/providers/anthropic.ts"
@@ -1260,7 +1260,7 @@
     "8.6b"
    ],
    "crates": [
-    "cortexcode-ai-provider-google"
+    "hoocode-ai-provider-google"
    ],
    "sources": [
     "packages/ai/src/providers/google-shared.ts",
@@ -1303,12 +1303,12 @@
     "8.6d"
    ],
    "crates": [
-    "cortexcode-ai",
-    "cortexcode-ai-util",
-    "cortexcode-ai-images",
-    "cortexcode-ai-models",
-    "cortexcode-ai-provider-openai",
-    "cortexcode-ai-provider-openai-responses"
+    "hoocode-ai",
+    "hoocode-ai-util",
+    "hoocode-ai-images",
+    "hoocode-ai-models",
+    "hoocode-ai-provider-openai",
+    "hoocode-ai-provider-openai-responses"
    ],
    "sources": [
     "packages/ai/src/stream.ts"
@@ -1359,9 +1359,9 @@
     "7.3c"
    ],
    "crates": [
-    "cortexcode-ai-oauth",
-    "cortexcode-ai-oauth-anthropic",
-    "cortexcode-ai-oauth-github-copilot"
+    "hoocode-ai-oauth",
+    "hoocode-ai-oauth-anthropic",
+    "hoocode-ai-oauth-github-copilot"
    ],
    "sources": [
     "packages/ai/src/utils/oauth/"
@@ -1397,14 +1397,14 @@
     "8.6e"
    ],
    "crates": [
-    "cortexcode-ai-types",
-    "cortexcode-ai-provider-openai",
-    "cortexcode-ai-provider-openai-responses",
-    "cortexcode-ai-provider-anthropic",
-    "cortexcode-ai-provider-google",
-    "cortexcode-ai-provider-azure",
-    "cortexcode-ai-provider-faux",
-    "cortexcode-ai-images"
+    "hoocode-ai-types",
+    "hoocode-ai-provider-openai",
+    "hoocode-ai-provider-openai-responses",
+    "hoocode-ai-provider-anthropic",
+    "hoocode-ai-provider-google",
+    "hoocode-ai-provider-azure",
+    "hoocode-ai-provider-faux",
+    "hoocode-ai-images"
    ],
    "sources": [
     "packages/ai/src/types.ts",
@@ -1442,7 +1442,7 @@
     "7.1"
    ],
    "crates": [
-    "cortexcode-agent-mcp"
+    "hoocode-agent-mcp"
    ],
    "sources": [
     "packages/agent/src/tools/mcp-tools.ts",
@@ -1494,7 +1494,7 @@
     "9.3a"
    ],
    "crates": [
-    "cortexcode-agent-compaction"
+    "hoocode-agent-compaction"
    ],
    "sources": [
     "packages/agent/src/harness/compaction/"
@@ -1537,8 +1537,8 @@
     "10.3b"
    ],
    "crates": [
-    "cortexcode-agent-compaction",
-    "cortexcode-code-agent-session"
+    "hoocode-agent-compaction",
+    "hoocode-code-agent-session"
    ],
    "sources": [
     "packages/coding-agent/src/core/agent-session-compaction.ts"
@@ -1557,7 +1557,7 @@
      "at": "2026-09-26T23:53:59Z",
      "commit": "74e6c23",
      "kind": "note",
-     "text": "10.3b: AgentSession::{compact, run_auto_compaction, check_compaction, plan_compaction, abort_compaction, is_compacting, set_auto_compaction_enabled} and the CompactionStart/End events exist (crates/cortexcode-code-agent-session/src/compaction.rs); /compact and threshold UI build on them."
+     "text": "10.3b: AgentSession::{compact, run_auto_compaction, check_compaction, plan_compaction, abort_compaction, is_compacting, set_auto_compaction_enabled} and the CompactionStart/End events exist (crates/hoocode-code-agent-session/src/compaction.rs); /compact and threshold UI build on them."
     },
     {
      "at": "2026-09-27T02:15:13Z",
@@ -1600,7 +1600,7 @@
     "7.2"
    ],
    "crates": [
-    "cortexcode-agent-harness"
+    "hoocode-agent-harness"
    ],
    "sources": [
     "packages/agent/src/harness/messages.ts",
@@ -1641,7 +1641,7 @@
     "9.4a"
    ],
    "crates": [
-    "cortexcode-agent-harness"
+    "hoocode-agent-harness"
    ],
    "sources": [
     "packages/agent/src/harness/skills.ts",
@@ -1680,7 +1680,7 @@
     "8.8"
    ],
    "crates": [
-    "cortexcode-agent-harness"
+    "hoocode-agent-harness"
    ],
    "sources": [
     "packages/agent/src/harness/types.ts",
@@ -1719,11 +1719,11 @@
     "9.2a"
    ],
    "crates": [
-    "cortexcode-agent-harness",
-    "cortexcode-agent-orchestrator",
-    "cortexcode-agent-core",
-    "cortexcode-agent-loop",
-    "cortexcode-agent-types"
+    "hoocode-agent-harness",
+    "hoocode-agent-orchestrator",
+    "hoocode-agent-core",
+    "hoocode-agent-loop",
+    "hoocode-agent-types"
    ],
    "sources": [
     "packages/agent/src/harness/agent-harness.ts"
@@ -1733,13 +1733,13 @@
    ],
    "l1_cmds": [],
    "l2": "n/a: library-internal, no user-visible surface of its own; covered by downstream scenarios",
-   "notes": "Split from 9.4 (2026-09-26). AgentHarness lives in the new crate cortexcode-agent-orchestrator: it needs agent-compaction, which depends on agent-harness (cycle otherwise).",
+   "notes": "Split from 9.4 (2026-09-26). AgentHarness lives in the new crate hoocode-agent-orchestrator: it needs agent-compaction, which depends on agent-harness (cycle otherwise).",
    "log": [
     {
      "at": "2026-09-26T21:06:45Z",
      "commit": "e460389",
      "kind": "note",
-     "text": "8.8: SimpleStreamOptions.on_payload/on_response are typed now (cortexcode_ai_types::OnPayload / OnResponse, async-capable, every provider). cortexcode-agent-types AgentLoopConfig still has Box<dyn Fn(String)> placeholders; map the before_provider_request / after_provider_response hooks onto the typed ones here."
+     "text": "8.8: SimpleStreamOptions.on_payload/on_response are typed now (hoocode_ai_types::OnPayload / OnResponse, async-capable, every provider). hoocode-agent-types AgentLoopConfig still has Box<dyn Fn(String)> placeholders; map the before_provider_request / after_provider_response hooks onto the typed ones here."
     },
     {
      "at": "2026-09-26T21:39:57Z",
@@ -1764,7 +1764,7 @@
     "10.7a"
    ],
    "crates": [
-    "cortexcode-code-paths"
+    "hoocode-code-paths"
    ],
    "sources": [
     "packages/coding-agent/src/config.ts",
@@ -1800,7 +1800,7 @@
     "10.1a"
    ],
    "crates": [
-    "cortexcode-code-settings"
+    "hoocode-code-settings"
    ],
    "sources": [
     "packages/coding-agent/src/core/settings-manager.ts",
@@ -1851,9 +1851,9 @@
     "10.1b"
    ],
    "crates": [
-    "cortexcode-code-cli",
-    "cortexcode-code-session",
-    "cortexcode-code"
+    "hoocode-code-cli",
+    "hoocode-code-session",
+    "hoocode-code"
    ],
    "sources": [
     "packages/coding-agent/src/config.ts",
@@ -1864,7 +1864,7 @@
    "l2": [
     "print-basic"
    ],
-   "notes": "Split from 10.1 (2026-09-26); keeps the print-basic L2 scenario. The crate list names the crates that remain: cortexcode-code-config is deleted by this task, and the umbrella cortexcode-code now re-exports paths/settings.",
+   "notes": "Split from 10.1 (2026-09-26); keeps the print-basic L2 scenario. The crate list names the crates that remain: hoocode-code-config is deleted by this task, and the umbrella hoocode-code now re-exports paths/settings.",
    "log": [
     {
      "at": "2026-09-26T22:03:37Z",
@@ -1896,8 +1896,8 @@
     "7.3b"
    ],
    "crates": [
-    "cortexcode-code-tool-bash",
-    "cortexcode-code-tools"
+    "hoocode-code-tool-bash",
+    "hoocode-code-tools"
    ],
    "sources": [
     "packages/coding-agent/src/core/tools/bash.ts",
@@ -1946,8 +1946,8 @@
     "10.2a"
    ],
    "crates": [
-    "cortexcode-code-tools-fs",
-    "cortexcode-code-tools"
+    "hoocode-code-tools-fs",
+    "hoocode-code-tools"
    ],
    "sources": [
     "packages/coding-agent/src/core/tools/edit.ts",
@@ -2002,8 +2002,8 @@
     "10.2a"
    ],
    "crates": [
-    "cortexcode-code-tool-search",
-    "cortexcode-code-tools"
+    "hoocode-code-tool-search",
+    "hoocode-code-tools"
    ],
    "sources": [
     "packages/coding-agent/src/core/tools/search.ts",
@@ -2055,7 +2055,7 @@
     "10.2a"
    ],
    "crates": [
-    "cortexcode-code-tool-web"
+    "hoocode-code-tool-web"
    ],
    "sources": [
     "packages/coding-agent/src/core/tools/webfetch.ts",
@@ -2102,9 +2102,9 @@
     "10.2a"
    ],
    "crates": [
-    "cortexcode-code-task-store",
-    "cortexcode-code-tools-optin",
-    "cortexcode-code-tools"
+    "hoocode-code-task-store",
+    "hoocode-code-tools-optin",
+    "hoocode-code-tools"
    ],
    "sources": [
     "packages/coding-agent/src/core/tools/todo.ts",
@@ -2151,8 +2151,8 @@
     "10.2a"
    ],
    "crates": [
-    "cortexcode-code-tools-fs",
-    "cortexcode-code-cli"
+    "hoocode-code-tools-fs",
+    "hoocode-code-cli"
    ],
    "sources": [
     "packages/coding-agent/src/core/context-gc.ts",
@@ -2206,7 +2206,7 @@
     "10.1c"
    ],
    "crates": [
-    "cortexcode-code-agent-session"
+    "hoocode-code-agent-session"
    ],
    "sources": [
     "packages/coding-agent/src/core/agent-session.ts",
@@ -2230,13 +2230,13 @@
      "at": "2026-09-25T15:16:00Z",
      "commit": "912521f",
      "kind": "note",
-     "text": "8.2: hoocode passes sessionId: sessionManager.getSessionId() into the agent (sdk.ts:423), so openai-completions sends prompt_cache_key; cortex code-cli build_agent (runtime.rs) sets no session id, so the key is missing from harness requests (all other non-message fields now match). Wire the session id into AgentOptions here."
+     "text": "8.2: hoocode passes sessionId: sessionManager.getSessionId() into the agent (sdk.ts:423), so openai-completions sends prompt_cache_key; hoocode code-cli build_agent (runtime.rs) sets no session id, so the key is missing from harness requests (all other non-message fields now match). Wire the session id into AgentOptions here."
     },
     {
      "at": "2026-09-26T20:30:34Z",
      "commit": "3b28ba0",
      "kind": "note",
-     "text": "8.4a: AgentSession.dispose() must call cortexcode_ai_registry::session_resources::cleanup_session_resources(Some(session_id)) (TS cleanupSessionResources) so cached openai-codex WebSockets are closed."
+     "text": "8.4a: AgentSession.dispose() must call hoocode_ai_registry::session_resources::cleanup_session_resources(Some(session_id)) (TS cleanupSessionResources) so cached openai-codex WebSockets are closed."
     },
     {
      "at": "2026-09-26T23:15:10Z",
@@ -2262,7 +2262,7 @@
     "9.2a"
    ],
    "crates": [
-    "cortexcode-code-agent-session"
+    "hoocode-code-agent-session"
    ],
    "sources": [
     "packages/coding-agent/src/core/agent-session-retry.ts",
@@ -2283,7 +2283,7 @@
      "at": "2026-09-26T23:42:24Z",
      "commit": "6441f47",
      "kind": "note",
-     "text": "10.3a: AgentSession (crates/cortexcode-code-agent-session/src/session.rs) leaves the hooks marked '(10.3b)': process_agent_event on agent_end (retry isRetryableError/handleRetryableError, markProviderExhausted, compaction.checkCompaction), message_end resets (resetOverflowRecovery, onSuccessfulAssistantResponse, clearProviderExhaustion), prompt() pre-send checkCompaction on the last assistant + waitForRetry after agent.prompt, abort() retry.abort, isCompacting/isRetrying getters, and the AgentSessionEvent variants compaction_start/end + auto_retry_start/end. Retry controller needs a synchronously created promise per agent_end (TS createPromiseForAgentEnd); events are processed synchronously in the agent listener already."
+     "text": "10.3a: AgentSession (crates/hoocode-code-agent-session/src/session.rs) leaves the hooks marked '(10.3b)': process_agent_event on agent_end (retry isRetryableError/handleRetryableError, markProviderExhausted, compaction.checkCompaction), message_end resets (resetOverflowRecovery, onSuccessfulAssistantResponse, clearProviderExhaustion), prompt() pre-send checkCompaction on the last assistant + waitForRetry after agent.prompt, abort() retry.abort, isCompacting/isRetrying getters, and the AgentSessionEvent variants compaction_start/end + auto_retry_start/end. Retry controller needs a synchronously created promise per agent_end (TS createPromiseForAgentEnd); events are processed synchronously in the agent listener already."
     },
     {
      "at": "2026-09-26T23:42:53Z",
@@ -2308,7 +2308,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-agent-session"
+    "hoocode-code-agent-session"
    ],
    "sources": [
     "packages/coding-agent/src/core/agent-session-tree-navigation.ts",
@@ -2361,8 +2361,8 @@
     "10.1c"
    ],
    "crates": [
-    "cortexcode-code-models",
-    "cortexcode-code-auth"
+    "hoocode-code-models",
+    "hoocode-code-auth"
    ],
    "sources": [
     "packages/coding-agent/src/core/model-resolver.ts",
@@ -2382,7 +2382,7 @@
      "at": "2026-09-26T20:44:05Z",
      "commit": "b5982c2",
      "kind": "note",
-     "text": "8.4b: apply OAuth modifyModels when building the registry (github-copilot: token proxy-ep -> baseUrl via cortexcode_ai_oauth_github_copilot modify_models; model-registry.ts:397). Today code-cli uses the catalog baseUrl, so Copilot business/enterprise accounts hit the individual endpoint."
+     "text": "8.4b: apply OAuth modifyModels when building the registry (github-copilot: token proxy-ep -> baseUrl via hoocode_ai_oauth_github_copilot modify_models; model-registry.ts:397). Today code-cli uses the catalog baseUrl, so Copilot business/enterprise accounts hit the individual endpoint."
     },
     {
      "at": "2026-09-26T23:42:24Z",
@@ -2406,7 +2406,7 @@
      "at": "2026-09-27T04:04:34Z",
      "commit": "3608e70",
      "kind": "note",
-     "text": "OAuth modifyModels now applied via ModelRegistry::set_model_modifier(AuthStorage::model_modifier) (8.4b note resolved). auth.json written by AuthStorage (type-tagged, 0600, proper-lockfile compatible auth.json.lock dir); legacy cortex entries without type read as oauth. auth_guidance moved to code-auth. Harness: tmux options now come from a config file and the app runs under a silent sh wrapper (tmux 3.4 dropped the Pane-is-dead line for fast-exiting node ~1/8 runs)."
+     "text": "OAuth modifyModels now applied via ModelRegistry::set_model_modifier(AuthStorage::model_modifier) (8.4b note resolved). auth.json written by AuthStorage (type-tagged, 0600, proper-lockfile compatible auth.json.lock dir); legacy hoocode entries without type read as oauth. auth_guidance moved to code-auth. Harness: tmux options now come from a config file and the app runs under a silent sh wrapper (tmux 3.4 dropped the Pane-is-dead line for fast-exiting node ~1/8 runs)."
     }
    ]
   },
@@ -2419,7 +2419,7 @@
     "10.1c"
    ],
    "crates": [
-    "cortexcode-code-resources"
+    "hoocode-code-resources"
    ],
    "sources": [
     "packages/coding-agent/src/utils/frontmatter.ts",
@@ -2468,7 +2468,7 @@
     "10.5a"
    ],
    "crates": [
-    "cortexcode-code-resources"
+    "hoocode-code-resources"
    ],
    "sources": [
     "packages/coding-agent/src/core/context-files.ts",
@@ -2505,7 +2505,7 @@
     "10.5a"
    ],
    "crates": [
-    "cortexcode-code-resources"
+    "hoocode-code-resources"
    ],
    "sources": [
     "packages/coding-agent/src/core/package-resource-discovery.ts",
@@ -2543,7 +2543,7 @@
     "10.5d"
    ],
    "crates": [
-    "cortexcode-code-resources"
+    "hoocode-code-resources"
    ],
    "sources": [
     "packages/coding-agent/src/core/resource-loader.ts",
@@ -2564,13 +2564,13 @@
      "at": "2026-09-26T23:42:24Z",
      "commit": "6441f47",
      "kind": "note",
-     "text": "10.3a: implement cortexcode_code_agent_session::ResourceLoader (hooks.rs) for the real loader: system_prompt/append_system_prompt/skills/context_files feed _rebuildSystemPrompt, and expand_input must do _expandSkillCommand then tryExpandPromptTemplate returning ExpandedInput{text, template kind, args} (AgentSession.prompt handles user/system/context kinds). Port the skill-expansion case of test/suite/agent-session-prompt.test.ts against it. code-cli runtime.rs resource_loader() is the StaticResourceLoader stand-in to replace."
+     "text": "10.3a: implement hoocode_code_agent_session::ResourceLoader (hooks.rs) for the real loader: system_prompt/append_system_prompt/skills/context_files feed _rebuildSystemPrompt, and expand_input must do _expandSkillCommand then tryExpandPromptTemplate returning ExpandedInput{text, template kind, args} (AgentSession.prompt handles user/system/context kinds). Port the skill-expansion case of test/suite/agent-session-prompt.test.ts against it. code-cli runtime.rs resource_loader() is the StaticResourceLoader stand-in to replace."
     },
     {
      "at": "2026-09-27T12:00:00Z",
      "commit": "e550a22",
      "kind": "note",
-     "text": "Split: 10.5a (frontmatter, skills, prompt templates, slash commands, agent-frontmatter) and 10.5c (context files, agent registry) were carved out; 10.5 keeps resource-loader.ts, the session/CLI wiring and the print-context-files L2 gate. 10.5b (modes) keeps depending on 10.5. The existing cortexcode-code-resources crate was invented (not a port) and is replaced by these tasks."
+     "text": "Split: 10.5a (frontmatter, skills, prompt templates, slash commands, agent-frontmatter) and 10.5c (context files, agent registry) were carved out; 10.5 keeps resource-loader.ts, the session/CLI wiring and the print-context-files L2 gate. 10.5b (modes) keeps depending on 10.5. The existing hoocode-code-resources crate was invented (not a port) and is replaced by these tasks."
     },
     {
      "at": "2026-09-27T14:00:00Z",
@@ -2607,7 +2607,7 @@
     "10.5"
    ],
    "crates": [
-    "cortexcode-code-modes"
+    "hoocode-code-modes"
    ],
    "sources": [
     "packages/coding-agent/src/extensions/core/modes.ts",
@@ -2636,7 +2636,7 @@
      "at": "2026-09-27T04:59:33Z",
      "commit": "9b29742",
      "kind": "note",
-     "text": "New crate code-modes: hoo-config.json (read/merge/write), mode prompts + grill prompts embedded verbatim, plan parsing (reproduces hoocode's multiline-regex first-line capture), /mode /plan /grill /goal /approve as ModeAction lists, ModesExtension (ExtensionHooks: commands + new before_agent_start hook). CLI installs it per session (--mode-path, enabled_tools). print-context-files: the build-mode appendix now matches hoocode byte for byte. mode-plan L2 (stable) waits on the interactive TUI (11.x: editor, footer mode badge) — cortex's interactive mode is still the placeholder. The host must carry out ModeActions (Notify, Reload, NewSessionWithMessage, SendFollowUp via take_actions); nothing consumes them yet (interactive 11.x; StartAutoLoop needs /loop, 12.5). Not ported: mode prompt in subagents is skipped via SUBAGENT_DEPTH env (10.9 must set CORTEXCODE_SUBAGENT_DEPTH); hoo.setMode footer, argument completions (11.x)."
+     "text": "New crate code-modes: hoo-config.json (read/merge/write), mode prompts + grill prompts embedded verbatim, plan parsing (reproduces hoocode's multiline-regex first-line capture), /mode /plan /grill /goal /approve as ModeAction lists, ModesExtension (ExtensionHooks: commands + new before_agent_start hook). CLI installs it per session (--mode-path, enabled_tools). print-context-files: the build-mode appendix now matches hoocode byte for byte. mode-plan L2 (stable) waits on the interactive TUI (11.x: editor, footer mode badge) — hoocode's interactive mode is still the placeholder. The host must carry out ModeActions (Notify, Reload, NewSessionWithMessage, SendFollowUp via take_actions); nothing consumes them yet (interactive 11.x; StartAutoLoop needs /loop, 12.5). Not ported: mode prompt in subagents is skipped via SUBAGENT_DEPTH env (10.9 must set CORTEXCODE_SUBAGENT_DEPTH); hoo.setMode footer, argument completions (11.x)."
     },
     {
      "at": "2026-10-01T05:15:25Z",
@@ -2655,9 +2655,9 @@
     "10.5b"
    ],
    "crates": [
-    "cortexcode-code-modes",
-    "cortexcode-code-tui-app",
-    "cortexcode-code-cli"
+    "hoocode-code-modes",
+    "hoocode-code-tui-app",
+    "hoocode-code-cli"
    ],
    "sources": [
     "packages/coding-agent/src/extensions/core/modes.ts",
@@ -2668,7 +2668,7 @@
    "l2": [
     "mode-cycle"
    ],
-   "notes": "Found in 11.8: in cortex's interactive mode '/mode plan' is accepted and does nothing (nothing drains ModesExtension::take_actions; its active mode is fixed at construction, so a reload cannot re-resolve it), and alt+a is unbound. hoocode: alt+a from build shows 'Mode set to \"debug\" — reloading…' and the footer badge reads DEBUG. L2 mode-cycle (to write): alt+a twice, then /mode plan.",
+   "notes": "Found in 11.8: in hoocode's interactive mode '/mode plan' is accepted and does nothing (nothing drains ModesExtension::take_actions; its active mode is fixed at construction, so a reload cannot re-resolve it), and alt+a is unbound. hoocode: alt+a from build shows 'Mode set to \"debug\" — reloading…' and the footer badge reads DEBUG. L2 mode-cycle (to write): alt+a twice, then /mode plan.",
    "log": [
     {
      "at": "2026-10-01T04:38:34Z",
@@ -2693,7 +2693,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-permissions"
+    "hoocode-code-permissions"
    ],
    "sources": [
     "packages/coding-agent/src/extensions/core/permission-gate.ts"
@@ -2721,7 +2721,7 @@
      "at": "2026-09-27T05:04:19Z",
      "commit": "24570c8",
      "kind": "note",
-     "text": "New crate code-permissions: HooPermissionGate ports permission-gate.ts over code-modes' merged hoo-config.json (read on every call): denied_tools, enabled_tools allowlist, denied/allowed_bash_commands (regex crate; no look-around), then with a UI allowed_write_paths, auto_allow and the 'Allow: …' Yes/No/Always prompt ('Always' appends to the global auto_allow). Headless (print) sessions now run every tool not hard-blocked, as in hoocode (the invented PolicyPermissionGate denied unknown tools like webfetch in print mode; it stays in code-tools unused by the CLI). CLI: --disallowed-tools + disabledTools setting feed CreateAgentSessionOptions.disallowed_tools. Left: .webtoolsignore host rule (10.2e, blockedHostForUrl); the gate runs in the loop before before_tool_call on the raw (prepared) args. permission-prompt L2 (stable on hoocode) waits on the TUI selector (11.3); cortex's prompt is the crossterm placeholder (TerminalPermissionUi)."
+     "text": "New crate code-permissions: HooPermissionGate ports permission-gate.ts over code-modes' merged hoo-config.json (read on every call): denied_tools, enabled_tools allowlist, denied/allowed_bash_commands (regex crate; no look-around), then with a UI allowed_write_paths, auto_allow and the 'Allow: …' Yes/No/Always prompt ('Always' appends to the global auto_allow). Headless (print) sessions now run every tool not hard-blocked, as in hoocode (the invented PolicyPermissionGate denied unknown tools like webfetch in print mode; it stays in code-tools unused by the CLI). CLI: --disallowed-tools + disabledTools setting feed CreateAgentSessionOptions.disallowed_tools. Left: .webtoolsignore host rule (10.2e, blockedHostForUrl); the gate runs in the loop before before_tool_call on the raw (prepared) args. permission-prompt L2 (stable on hoocode) waits on the TUI selector (11.3); hoocode's prompt is the crossterm placeholder (TerminalPermissionUi)."
     },
     {
      "at": "2026-09-27T21:09:56Z",
@@ -2742,7 +2742,7 @@
     "10.3c"
    ],
    "crates": [
-    "cortexcode-code-cli"
+    "hoocode-code-cli"
    ],
    "sources": [
     "packages/coding-agent/src/cli/args.ts",
@@ -2798,11 +2798,11 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-print",
-    "cortexcode-ai-types",
-    "cortexcode-agent-types",
-    "cortexcode-code-agent-session",
-    "cortexcode-code-cli"
+    "hoocode-code-print",
+    "hoocode-ai-types",
+    "hoocode-agent-types",
+    "hoocode-code-agent-session",
+    "hoocode-code-cli"
    ],
    "sources": [
     "packages/coding-agent/src/modes/print-mode.ts",
@@ -2845,12 +2845,12 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-rpc",
-    "cortexcode-code-agent-session",
-    "cortexcode-code-cli",
-    "cortexcode-code-resources",
-    "cortexcode-code-subagents",
-    "cortexcode-ai-types"
+    "hoocode-code-rpc",
+    "hoocode-code-agent-session",
+    "hoocode-code-cli",
+    "hoocode-code-resources",
+    "hoocode-code-subagents",
+    "hoocode-ai-types"
    ],
    "sources": [
     "packages/coding-agent/src/modes/rpc/jsonl.ts",
@@ -2891,9 +2891,9 @@
     "10.8c"
    ],
    "crates": [
-    "cortexcode-code-rpc",
-    "cortexcode-code-cli",
-    "cortexcode-code-agent-session"
+    "hoocode-code-rpc",
+    "hoocode-code-cli",
+    "hoocode-code-agent-session"
    ],
    "sources": [
     "packages/coding-agent/src/modes/rpc/rpc-mode.ts",
@@ -2937,14 +2937,14 @@
   },
   {
    "id": "10.8e",
-   "title": "Rust RpcClient (rpc-client.ts): spawn cortex --mode rpc, typed commands, events, promptAndWait",
+   "title": "Rust RpcClient (rpc-client.ts): spawn hoocode --mode rpc, typed commands, events, promptAndWait",
    "phase": 10,
    "status": "done",
    "depends": [
     "10.8c"
    ],
    "crates": [
-    "cortexcode-code-rpc"
+    "hoocode-code-rpc"
    ],
    "sources": [
     "packages/coding-agent/src/modes/rpc/rpc-client.ts"
@@ -2998,8 +2998,8 @@
     "10.8e"
    ],
    "crates": [
-    "cortexcode-code-subagents",
-    "cortexcode-code-agent-session"
+    "hoocode-code-subagents",
+    "hoocode-code-agent-session"
    ],
    "sources": [
     "packages/coding-agent/src/core/subagent-depth.ts",
@@ -3068,7 +3068,7 @@
     "10.9a"
    ],
    "crates": [
-    "cortexcode-code-subagents"
+    "hoocode-code-subagents"
    ],
    "sources": [
     "packages/coding-agent/src/core/subagent-pool.ts",
@@ -3116,10 +3116,10 @@
     "10.9a"
    ],
    "crates": [
-    "cortexcode-code-print",
-    "cortexcode-code-cli",
-    "cortexcode-ai-provider-openai",
-    "cortexcode-code-subagents"
+    "hoocode-code-print",
+    "hoocode-code-cli",
+    "hoocode-ai-provider-openai",
+    "hoocode-code-subagents"
    ],
    "sources": [
     "packages/coding-agent/src/modes/print-mode.ts"
@@ -3147,7 +3147,7 @@
      "at": "2026-09-27T10:00:00Z",
      "commit": "",
      "kind": "note",
-     "text": "hoocode delivers session events to listeners asynchronously (AgentSession._agentEventQueue, behind extension handlers); cortex listeners run synchronously. The --max-turns hook applies its steer/abort at the next turn_start to land where hoocode's does. Other listener-driven behaviors may need the same care until/unless AgentSession event delivery is made asynchronous."
+     "text": "hoocode delivers session events to listeners asynchronously (AgentSession._agentEventQueue, behind extension handlers); hoocode listeners run synchronously. The --max-turns hook applies its steer/abort at the next turn_start to land where hoocode's does. Other listener-driven behaviors may need the same care until/unless AgentSession event delivery is made asynchronous."
     },
     {
      "at": "2026-09-27T10:00:00Z",
@@ -3172,7 +3172,7 @@
     "10.9b"
    ],
    "crates": [
-    "cortexcode-code-subagents"
+    "hoocode-code-subagents"
    ],
    "sources": [
     "packages/coding-agent/src/core/warm-subagent-pool.ts",
@@ -3223,10 +3223,10 @@
     "10.9e"
    ],
    "crates": [
-    "cortexcode-code-subagents",
-    "cortexcode-agent-types",
-    "cortexcode-agent-loop",
-    "cortexcode-code-tool-api"
+    "hoocode-code-subagents",
+    "hoocode-agent-types",
+    "hoocode-agent-loop",
+    "hoocode-code-tool-api"
    ],
    "sources": [
     "packages/coding-agent/src/core/tools/subagent.ts"
@@ -3287,10 +3287,10 @@
     "10.9d"
    ],
    "crates": [
-    "cortexcode-code-cli",
-    "cortexcode-code-agent-session",
-    "cortexcode-code-subagents",
-    "cortexcode-code-modes"
+    "hoocode-code-cli",
+    "hoocode-code-agent-session",
+    "hoocode-code-subagents",
+    "hoocode-code-modes"
    ],
    "sources": [
     "packages/coding-agent/src/main.ts",
@@ -3330,7 +3330,7 @@
      "at": "2026-09-27T12:00:00Z",
      "commit": "",
      "kind": "note",
-     "text": "Pinned hoocode never exits after a print-mode run that dispatched a subagent: SubagentLifeguard's setInterval is not unref'd. cortex exits 0; the subagent-task scenario drops only a clean exit marker (commented in the scenario). The child's model request matches hoocode byte for byte; the parent's differs only by default-bundle tools owned by other tasks (Cron*, SearchHooCode)."
+     "text": "Pinned hoocode never exits after a print-mode run that dispatched a subagent: SubagentLifeguard's setInterval is not unref'd. hoocode exits 0; the subagent-task scenario drops only a clean exit marker (commented in the scenario). The child's model request matches hoocode byte for byte; the parent's differs only by default-bundle tools owned by other tasks (Cron*, SearchHooCode)."
     },
     {
      "at": "2026-09-27T10:05:25Z",
@@ -3361,8 +3361,8 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-agent-session",
-    "cortexcode-code-paths"
+    "hoocode-code-agent-session",
+    "hoocode-code-paths"
    ],
    "sources": [
     "packages/coding-agent/src/core/",
@@ -3377,7 +3377,7 @@
      "at": "2026-09-26T23:42:24Z",
      "commit": "6441f47",
      "kind": "note",
-     "text": "10.3a: git-branch.ts is ported (cortexcode_code_paths::git_branch: find_git_paths, read_branch_from_head, resolve_branch_with_git, read_git_branch); SessionManager records Header.branch with it. The footer's live branch watcher is still open."
+     "text": "10.3a: git-branch.ts is ported (hoocode_code_paths::git_branch: find_git_paths, read_branch_from_head, resolve_branch_with_git, read_git_branch); SessionManager records Header.branch with it. The footer's live branch watcher is still open."
     },
     {
      "at": "2026-09-27T14:00:00Z",
@@ -3396,9 +3396,9 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-agent-session",
-    "cortexcode-tui-util",
-    "cortexcode-code-subagents"
+    "hoocode-code-agent-session",
+    "hoocode-tui-util",
+    "hoocode-code-subagents"
    ],
    "sources": [
     "packages/coding-agent/src/core/exec.ts",
@@ -3446,7 +3446,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-paths"
+    "hoocode-code-paths"
    ],
    "sources": [
     "packages/coding-agent/src/utils/git.ts"
@@ -3493,18 +3493,18 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-ai-util",
-    "cortexcode-code-cli",
-    "cortexcode-agent-mcp",
-    "cortexcode-ai-images",
-    "cortexcode-ai-oauth",
-    "cortexcode-ai-provider-anthropic",
-    "cortexcode-ai-provider-google",
-    "cortexcode-ai-provider-google-gemini-cli",
-    "cortexcode-ai-provider-openai",
-    "cortexcode-ai-provider-openai-codex",
-    "cortexcode-ai-provider-openai-responses",
-    "cortexcode-code-tools"
+    "hoocode-ai-util",
+    "hoocode-code-cli",
+    "hoocode-agent-mcp",
+    "hoocode-ai-images",
+    "hoocode-ai-oauth",
+    "hoocode-ai-provider-anthropic",
+    "hoocode-ai-provider-google",
+    "hoocode-ai-provider-google-gemini-cli",
+    "hoocode-ai-provider-openai",
+    "hoocode-ai-provider-openai-codex",
+    "hoocode-ai-provider-openai-responses",
+    "hoocode-code-tools"
    ],
    "sources": [
     "packages/coding-agent/src/utils/tls-ca.ts",
@@ -3548,7 +3548,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-mcp"
+    "hoocode-code-mcp"
    ],
    "sources": [
     "packages/coding-agent/src/extensions/core/mcp-loader.ts",
@@ -3566,7 +3566,7 @@
      "at": "2026-09-25T15:46:43Z",
      "commit": "8ff9654",
      "kind": "note",
-     "text": "8.5b: hoocode's mcp-loader rebuilds each MCP tool's parameters with TypeBox (buildMcpSchema: number/integer→Type.Number, boolean→Type.Boolean, else Type.String; Optional unless required), so validation takes the TypeBox Value.Convert path. cortex's agent-mcp build_schema passes the raw schema through; port buildMcpSchema here (AgentTool.plain_json_schema stays false)."
+     "text": "8.5b: hoocode's mcp-loader rebuilds each MCP tool's parameters with TypeBox (buildMcpSchema: number/integer→Type.Number, boolean→Type.Boolean, else Type.String; Optional unless required), so validation takes the TypeBox Value.Convert path. hoocode's agent-mcp build_schema passes the raw schema through; port buildMcpSchema here (AgentTool.plain_json_schema stays false)."
     },
     {
      "at": "2026-10-01T05:49:39Z",
@@ -3589,10 +3589,10 @@
    "status": "done",
    "depends": [],
    "crates": [
-    "cortexcode-code-cli",
-    "cortexcode-code-tui-app",
-    "cortexcode-code-tools-fs",
-    "cortexcode-code-settings"
+    "hoocode-code-cli",
+    "hoocode-code-tui-app",
+    "hoocode-code-tools-fs",
+    "hoocode-code-settings"
    ],
    "sources": [
     "packages/coding-agent/src/cli/file-processor.ts",
@@ -3633,9 +3633,9 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-tui-theme",
-    "cortexcode-code-tui-keybindings"
+    "hoocode-code-tui-app",
+    "hoocode-code-tui-theme",
+    "hoocode-code-tui-keybindings"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
@@ -3665,10 +3665,10 @@
    "status": "done",
    "depends": [],
    "crates": [
-    "cortexcode-tui-util",
-    "cortexcode-tui-components",
-    "cortexcode-tui-editing",
-    "cortexcode-tui-keys"
+    "hoocode-tui-util",
+    "hoocode-tui-components",
+    "hoocode-tui-editing",
+    "hoocode-tui-keys"
    ],
    "sources": [
     "packages/tui/src/utils.ts",
@@ -3735,11 +3735,11 @@
     "11.0a"
    ],
    "crates": [
-    "cortexcode-tui-render",
-    "cortexcode-tui-terminal",
-    "cortexcode-tui-images",
-    "cortexcode-tui-components",
-    "cortexcode-tui-util"
+    "hoocode-tui-render",
+    "hoocode-tui-terminal",
+    "hoocode-tui-images",
+    "hoocode-tui-components",
+    "hoocode-tui-util"
    ],
    "sources": [
     "packages/tui/src/tui.ts",
@@ -3788,7 +3788,7 @@
     "11.0a"
    ],
    "crates": [
-    "cortexcode-tui-components"
+    "hoocode-tui-components"
    ],
    "sources": [
     "packages/tui/src/components/editor.ts",
@@ -3817,7 +3817,7 @@
      "at": "2026-09-27T15:21:52Z",
      "commit": "a408d80",
      "kind": "note",
-     "text": "editor.test.ts ported to crates/cortexcode-tui-components/tests/editor.rs (199 tests). N/A: 'aborts active autocomplete when typing continues' — the Rust AutocompleteProvider is synchronous, so there is no in-flight request to abort; 'announces the list only once it actually exists' adapted to the sync provider (list + announcement arrive together, exactly once). Also fixed tui-keys defaults: jumpForward/jumpBackward had stray plain 'f'/'F' bindings not in the pin (swallowed typed f/g)."
+     "text": "editor.test.ts ported to crates/hoocode-tui-components/tests/editor.rs (199 tests). N/A: 'aborts active autocomplete when typing continues' — the Rust AutocompleteProvider is synchronous, so there is no in-flight request to abort; 'announces the list only once it actually exists' adapted to the sync provider (list + announcement arrive together, exactly once). Also fixed tui-keys defaults: jumpForward/jumpBackward had stray plain 'f'/'F' bindings not in the pin (swallowed typed f/g)."
     },
     {
      "at": "2026-09-27T15:22:04Z",
@@ -3837,7 +3837,7 @@
     "11.0a"
    ],
    "crates": [
-    "cortexcode-code-tui-theme"
+    "hoocode-code-tui-theme"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/theme/"
@@ -3875,7 +3875,7 @@
      "at": "2026-09-27T15:40:11Z",
      "commit": "b0c1366",
      "kind": "note",
-     "text": "New crate cortexcode-code-tui-theme. Ported theme-contrast (51 Rust tests incl. it.each expansions), theme-export (+ loader/global/watcher tests), theme-cutout-tokens (N/A until 11.2: the two radar-row cases need tool-signal's renderToolSignalLine). Goldens: every token's fg/bg/fill ANSI for all 8 themes x truecolor/256color, resolved + export colors, agent/session palette mapping, and validation error text, all captured from the pinned build. Deviations: cli-highlight is a pluggable CodeHighlighter (set_code_highlighter; tui-highlight lands in 11.2 and should install one); the custom-theme watcher polls the file (50ms, 100ms debounce) instead of fs.watch; built-in themes are embedded, so ThemeInfo.path is None for them; SourceInfo on Theme not carried (extensions are deferred)."
+     "text": "New crate hoocode-code-tui-theme. Ported theme-contrast (51 Rust tests incl. it.each expansions), theme-export (+ loader/global/watcher tests), theme-cutout-tokens (N/A until 11.2: the two radar-row cases need tool-signal's renderToolSignalLine). Goldens: every token's fg/bg/fill ANSI for all 8 themes x truecolor/256color, resolved + export colors, agent/session palette mapping, and validation error text, all captured from the pinned build. Deviations: cli-highlight is a pluggable CodeHighlighter (set_code_highlighter; tui-highlight lands in 11.2 and should install one); the custom-theme watcher polls the file (50ms, 100ms debounce) instead of fs.watch; built-in themes are embedded, so ThemeInfo.path is None for them; SourceInfo on Theme not carried (extensions are deferred)."
     },
     {
      "at": "2026-09-27T15:40:24Z",
@@ -3895,7 +3895,7 @@
     "11.0a"
    ],
    "crates": [
-    "cortexcode-code-tui-keybindings"
+    "hoocode-code-tui-keybindings"
    ],
    "sources": [
     "packages/coding-agent/src/core/keybindings.ts"
@@ -3921,7 +3921,7 @@
      "at": "2026-09-27T15:46:12Z",
      "commit": "d70674d",
      "kind": "note",
-     "text": "New crate cortexcode-code-tui-keybindings: KEYBINDINGS (TUI + app, declaration order; tui-keys now exports the ordered TUI_KEYBINDINGS table and KeybindingsManager is Clone), legacy-name migration + ordering, keybindings.json loading (AppKeybindingsManager::create/reload/install), the keybindings step of migrations.ts (migrate_keybindings_config_file; the rest of runMigrations is not ported here), and keybinding-hints.ts (format_key_text, key_text, key_hint, matches_app_key, app_key_label). Ported keybinding-layout (20) and keybindings-migration tests; golden of the full table, key text and migration order from the pinned build."
+     "text": "New crate hoocode-code-tui-keybindings: KEYBINDINGS (TUI + app, declaration order; tui-keys now exports the ordered TUI_KEYBINDINGS table and KeybindingsManager is Clone), legacy-name migration + ordering, keybindings.json loading (AppKeybindingsManager::create/reload/install), the keybindings step of migrations.ts (migrate_keybindings_config_file; the rest of runMigrations is not ported here), and keybinding-hints.ts (format_key_text, key_text, key_hint, matches_app_key, app_key_label). Ported keybinding-layout (20) and keybindings-migration tests; golden of the full table, key text and migration order from the pinned build."
     },
     {
      "at": "2026-09-27T15:46:20Z",
@@ -3941,8 +3941,8 @@
     "11.1c2"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-cli"
+    "hoocode-code-tui-app",
+    "hoocode-code-cli"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
@@ -3998,7 +3998,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/core/wordmark.ts",
@@ -4032,7 +4032,7 @@
      "at": "2026-09-27T16:05:03Z",
      "commit": "bbe019d",
      "kind": "note",
-     "text": "New crate cortexcode-code-tui-app (chrome components). Goldens from the pin (generators in migration/tools/goldens/): footer across 13 states, resource listing (4 cases), wordmark. Ported tests: progress-bar (voice-panel cases N/A: no voice UI), session-chip, startup-progress (store, embsearch mapping, footer lines), footer-width, subagent-footer, footer-data-provider (git child_process mocks replaced by real files; fs.watch retry N/A: the watcher polls), chrome-layout (Slot cases live in tui-render), notification-panel (fake clock; the panel is polled via deadline()/poll() instead of owning a timer), input-surface-frame's InputFrame cases (surface cases wait on 11.3 pickers). Fixed tui-util truncate_to_width, which cut escape sequences in half."
+     "text": "New crate hoocode-code-tui-app (chrome components). Goldens from the pin (generators in migration/tools/goldens/): footer across 13 states, resource listing (4 cases), wordmark. Ported tests: progress-bar (voice-panel cases N/A: no voice UI), session-chip, startup-progress (store, embsearch mapping, footer lines), footer-width, subagent-footer, footer-data-provider (git child_process mocks replaced by real files; fs.watch retry N/A: the watcher polls), chrome-layout (Slot cases live in tui-render), notification-panel (fake clock; the panel is polled via deadline()/poll() instead of owning a timer), input-surface-frame's InputFrame cases (surface cases wait on 11.3 pickers). Fixed tui-util truncate_to_width, which cut escape sequences in half."
     },
     {
      "at": "2026-09-27T16:05:46Z",
@@ -4057,8 +4057,8 @@
     "11.1c1"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-cli"
+    "hoocode-code-tui-app",
+    "hoocode-code-cli"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts"
@@ -4086,7 +4086,7 @@
      "at": "2026-09-27T16:19:12Z",
      "commit": "7dabecd",
      "kind": "note",
-     "text": "InteractiveMode in code-tui-app (interactive_mode.rs) replaces code-cli's crossterm REPL: banner (expandable via app.tools.expand), flex fill, resource listing, notification band, CustomEditor dispatch (interrupt/clear-twice-exits/exit/expand/chrome dial/thinking dial), session chip, thinking-coloured border, footer via FooterSource, chrome density, startup-progress and branch rerenders, theme watcher. Semantic index: binary lookup only (setting/PATH/bin), missing -> the footer's 'unavailable' line; found -> skipped (indexing is 12.4). Placeholders until 11.2: a turn shows the user's text and the agent's final text; no working loader. The crossterm permission prompt remains (firewall pending moved to 10.6). normalize.json: added \\\\bcortex_ -> <WORDMARK> (the brand name is the only difference in the banner). Headless end-to-end test in code-cli runtime tests."
+     "text": "InteractiveMode in code-tui-app (interactive_mode.rs) replaces code-cli's crossterm REPL: banner (expandable via app.tools.expand), flex fill, resource listing, notification band, CustomEditor dispatch (interrupt/clear-twice-exits/exit/expand/chrome dial/thinking dial), session chip, thinking-coloured border, footer via FooterSource, chrome density, startup-progress and branch rerenders, theme watcher. Semantic index: binary lookup only (setting/PATH/bin), missing -> the footer's 'unavailable' line; found -> skipped (indexing is 12.4). Placeholders until 11.2: a turn shows the user's text and the agent's final text; no working loader. The crossterm permission prompt remains (firewall pending moved to 10.6). normalize.json: added \\\\bhoocode_ -> <WORDMARK> (the brand name is the only difference in the banner). Headless end-to-end test in code-cli runtime tests."
     },
     {
      "at": "2026-09-27T16:19:50Z",
@@ -4105,7 +4105,7 @@
     "11.1c2"
    ],
    "crates": [
-    "cortexcode-tui-components"
+    "hoocode-tui-components"
    ],
    "sources": [
     "packages/tui/src/components/markdown.ts"
@@ -4152,8 +4152,8 @@
     "11.2a"
    ],
    "crates": [
-    "cortexcode-code-tui-widgets",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-widgets",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/user-message.ts",
@@ -4219,8 +4219,8 @@
     "11.2c2"
    ],
    "crates": [
-    "cortexcode-code-tui-widgets",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-widgets",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
@@ -4270,8 +4270,8 @@
     "11.2b"
    ],
    "crates": [
-    "cortexcode-code-tui-widgets",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-widgets",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
@@ -4327,7 +4327,7 @@
     "11.2c1"
    ],
    "crates": [
-    "cortexcode-code-tui-widgets"
+    "hoocode-code-tui-widgets"
    ],
    "sources": [
     "packages/coding-agent/src/core/tools/webfetch.ts",
@@ -4372,9 +4372,9 @@
     "11.2d2"
    ],
    "crates": [
-    "cortexcode-code-tui-widgets",
-    "cortexcode-tui-highlight",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-widgets",
+    "hoocode-tui-highlight",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/bash-execution.ts",
@@ -4444,8 +4444,8 @@
     "11.2e"
    ],
    "crates": [
-    "cortexcode-code-tui-widgets",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-widgets",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/bash-execution.ts",
@@ -4491,8 +4491,8 @@
     "11.2d1"
    ],
    "crates": [
-    "cortexcode-code-tui-theme",
-    "cortexcode-code-tui-widgets"
+    "hoocode-code-tui-theme",
+    "hoocode-code-tui-widgets"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/theme/theme.ts"
@@ -4500,7 +4500,7 @@
    "ts_tests": [],
    "l1_cmds": [],
    "l2": "n/a: covered by goldens against cli-highlight output",
-   "notes": "Remove needs_highlighter() from cortexcode-code-tui-widgets/tests/tool_renderers_gold.rs once the highlighter is installed (two read cases with .md paths). Exact parity needs highlight.js's tokenizer, not syntect.",
+   "notes": "Remove needs_highlighter() from hoocode-code-tui-widgets/tests/tool_renderers_gold.rs once the highlighter is installed (two read cases with .md paths). Exact parity needs highlight.js's tokenizer, not syntect.",
    "log": [
     {
      "at": "2026-09-27T21:08:35Z",
@@ -4531,8 +4531,8 @@
     "11.2c"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-cli"
+    "hoocode-code-tui-app",
+    "hoocode-code-cli"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/extension-dialogs.ts",
@@ -4590,8 +4590,8 @@
     "11.2d"
    ],
    "crates": [
-    "cortexcode-code-tui-widgets",
-    "cortexcode-tui-highlight"
+    "hoocode-code-tui-widgets",
+    "hoocode-tui-highlight"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/"
@@ -4616,7 +4616,7 @@
      "at": "2026-09-27T18:30:00Z",
      "commit": "",
      "kind": "note",
-     "text": "cortexcode-tui-components' markdown is a custom AST renderer, not a port of the pin's marked-based markdown.ts; port it faithfully (with markdown.test.ts) before chat-basic parity."
+     "text": "hoocode-tui-components' markdown is a custom AST renderer, not a port of the pin's marked-based markdown.ts; port it faithfully (with markdown.test.ts) before chat-basic parity."
     },
     {
      "at": "2026-09-27T16:27:05Z",
@@ -4654,8 +4654,8 @@
     "11.3a2"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/session-selector.ts",
@@ -4683,7 +4683,7 @@
      "at": "2026-09-28T05:35:00Z",
      "commit": "dca7f63",
      "kind": "note",
-     "text": "WIP handoff: new crate cortexcode-code-tui-selectors has session_selector_search.rs (filterAndSortSessions) and session_selector.rs (header, threaded list, rename, delete, scope loaders via LoadSink + poll()). Builds and passes clippy; no tests yet. SessionInfo gained color/branch (a colour-only session_info entry no longer clears the name). brand.rs and input_frame.rs moved to code-tui-widgets (re-exported from code-tui-app); InputFrame::clear added. Next: port the 4 session-selector-*.test.ts files, wire alt+h and --resume in the app (list_sessions/list_all_sessions loaders, SessionManager::open), write and selfcheck the session-resume L2 scenario, then the missing-session-cwd Continue/Cancel prompt."
+     "text": "WIP handoff: new crate hoocode-code-tui-selectors has session_selector_search.rs (filterAndSortSessions) and session_selector.rs (header, threaded list, rename, delete, scope loaders via LoadSink + poll()). Builds and passes clippy; no tests yet. SessionInfo gained color/branch (a colour-only session_info entry no longer clears the name). brand.rs and input_frame.rs moved to code-tui-widgets (re-exported from code-tui-app); InputFrame::clear added. Next: port the 4 session-selector-*.test.ts files, wire alt+h and --resume in the app (list_sessions/list_all_sessions loaders, SessionManager::open), write and selfcheck the session-resume L2 scenario, then the missing-session-cwd Continue/Cancel prompt."
     },
     {
      "at": "2026-09-28T05:49:39Z",
@@ -4708,8 +4708,8 @@
     "11.2"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/session-selector.ts",
@@ -4746,7 +4746,7 @@
      "at": "2026-09-28T05:35:00Z",
      "commit": "dca7f63",
      "kind": "note",
-     "text": "WIP handoff: new crate cortexcode-code-tui-selectors has session_selector_search.rs (filterAndSortSessions) and session_selector.rs (header, threaded list, rename, delete, scope loaders via LoadSink + poll()). Builds and passes clippy; no tests yet. SessionInfo gained color/branch (a colour-only session_info entry no longer clears the name). brand.rs and input_frame.rs moved to code-tui-widgets (re-exported from code-tui-app); InputFrame::clear added. Next: port the 4 session-selector-*.test.ts files, wire alt+h and --resume in the app (list_sessions/list_all_sessions loaders, SessionManager::open), write and selfcheck the session-resume L2 scenario, then the missing-session-cwd Continue/Cancel prompt."
+     "text": "WIP handoff: new crate hoocode-code-tui-selectors has session_selector_search.rs (filterAndSortSessions) and session_selector.rs (header, threaded list, rename, delete, scope loaders via LoadSink + poll()). Builds and passes clippy; no tests yet. SessionInfo gained color/branch (a colour-only session_info entry no longer clears the name). brand.rs and input_frame.rs moved to code-tui-widgets (re-exported from code-tui-app); InputFrame::clear added. Next: port the 4 session-selector-*.test.ts files, wire alt+h and --resume in the app (list_sessions/list_all_sessions loaders, SessionManager::open), write and selfcheck the session-resume L2 scenario, then the missing-session-cwd Continue/Cancel prompt."
     },
     {
      "at": "2026-09-28T05:49:39Z",
@@ -4777,8 +4777,8 @@
     "11.3a1"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-agent-session"
+    "hoocode-code-tui-app",
+    "hoocode-code-agent-session"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts"
@@ -4821,8 +4821,8 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/model-selector.ts",
@@ -4883,8 +4883,8 @@
     "11.3a"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/thinking-selector.ts",
@@ -4954,8 +4954,8 @@
     "11.3d3"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/settings-selector.ts",
@@ -5012,9 +5012,9 @@
     "11.3a"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-settings",
-    "cortexcode-tui-components"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-settings",
+    "hoocode-tui-components"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/settings-selector.ts",
@@ -5068,7 +5068,7 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts"
@@ -5109,10 +5109,10 @@
     "11.3a"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-cli",
-    "cortexcode-code-tui-app",
-    "cortexcode-tui-terminal"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-cli",
+    "hoocode-code-tui-app",
+    "hoocode-tui-terminal"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/config-selector.ts",
@@ -5141,7 +5141,7 @@
      "at": "2026-09-28T07:02:10Z",
      "commit": "ff03824",
      "kind": "note",
-     "text": "config-selector.ts has no TS tests; Rust tests in code-tui-selectors tests/config_selector.rs, L2 config-selector. Only local resources are listed (resolve_local_resources); package sources wait on 12.2. Fixed in cortexcode-tui-terminal: a lone ESC was never delivered (nothing called StdinBuffer::poll_timeout), so ProcessTerminal now flushes a pending partial sequence after the buffer timeout, like the original's setTimeout."
+     "text": "config-selector.ts has no TS tests; Rust tests in code-tui-selectors tests/config_selector.rs, L2 config-selector. Only local resources are listed (resolve_local_resources); package sources wait on 12.2. Fixed in hoocode-tui-terminal: a lone ESC was never delivered (nothing called StdinBuffer::poll_timeout), so ProcessTerminal now flushes a pending partial sequence after the buffer timeout, like the original's setTimeout."
     },
     {
      "at": "2026-09-28T07:04:59Z",
@@ -5161,8 +5161,8 @@
     "11.3e2"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/tree-selector.ts"
@@ -5209,8 +5209,8 @@
     "11.3a"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-tui-widgets"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-tui-widgets"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/tree-selector.ts",
@@ -5252,8 +5252,8 @@
     "11.3e1"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-tui-selectors"
+    "hoocode-code-tui-app",
+    "hoocode-code-tui-selectors"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
@@ -5302,8 +5302,8 @@
     "11.3f2"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/login-dialog.ts",
@@ -5352,9 +5352,9 @@
     "11.3a"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors",
-    "cortexcode-code-auth",
-    "cortexcode-code-tui-widgets"
+    "hoocode-code-tui-selectors",
+    "hoocode-code-auth",
+    "hoocode-code-tui-widgets"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/oauth-selector.ts",
@@ -5399,8 +5399,8 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-models"
+    "hoocode-code-tui-app",
+    "hoocode-code-models"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/login-controller.ts",
@@ -5447,7 +5447,7 @@
     "11.3f"
    ],
    "crates": [
-    "cortexcode-code-tui-selectors"
+    "hoocode-code-tui-selectors"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/"
@@ -5467,7 +5467,7 @@
      "at": "2026-09-27T05:04:19Z",
      "commit": "24570c8",
      "kind": "note",
-     "text": "10.6: permission-prompt scenario (10.6's L2 gate): the gate's select ('Allow: $ ls', three choices, bordered, title right-aligned in the top border) must implement cortexcode_code_permissions::PermissionUi; replace permission_dialog::TerminalPermissionUi."
+     "text": "10.6: permission-prompt scenario (10.6's L2 gate): the gate's select ('Allow: $ ls', three choices, bordered, title right-aligned in the top border) must implement hoocode_code_permissions::PermissionUi; replace permission_dialog::TerminalPermissionUi."
     },
     {
      "at": "2026-09-27T05:12:47Z",
@@ -5510,8 +5510,8 @@
     "11.4g"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-media"
+    "hoocode-code-tui-app",
+    "hoocode-code-media"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/command-executor.ts",
@@ -5551,7 +5551,7 @@
     "11.2b"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
@@ -5593,7 +5593,7 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts"
@@ -5634,7 +5634,7 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/bash-execution-controller.ts"
@@ -5687,8 +5687,8 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-media"
+    "hoocode-code-tui-app",
+    "hoocode-code-media"
    ],
    "sources": [
     "packages/coding-agent/src/utils/clipboard.ts",
@@ -5735,8 +5735,8 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-media"
+    "hoocode-code-tui-app",
+    "hoocode-code-media"
    ],
    "sources": [
     "packages/coding-agent/src/utils/clipboard-image.ts",
@@ -5782,8 +5782,8 @@
     "11.4d2"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-media"
+    "hoocode-code-tui-app",
+    "hoocode-code-media"
    ],
    "sources": [
     "packages/coding-agent/src/utils/clipboard.ts",
@@ -5832,7 +5832,7 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/command-executor.ts",
@@ -5879,7 +5879,7 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/command-executor.ts",
@@ -5921,7 +5921,7 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/command-executor.ts",
@@ -5965,7 +5965,7 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/command-executor.ts",
@@ -6007,7 +6007,7 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/command-executor.ts",
@@ -6049,8 +6049,8 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-tui-widgets"
+    "hoocode-code-tui-app",
+    "hoocode-code-tui-widgets"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/command-executor.ts",
@@ -6098,7 +6098,7 @@
     "11.4e6"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/command-executor.ts",
@@ -6152,8 +6152,8 @@
     "11.4a"
    ],
    "crates": [
-    "cortexcode-code-tui-app",
-    "cortexcode-code-tui-widgets"
+    "hoocode-code-tui-app",
+    "hoocode-code-tui-widgets"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts",
@@ -6203,7 +6203,7 @@
     "11.4f"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/message-queue-controller.ts",
@@ -6250,7 +6250,7 @@
     "10.9f"
    ],
    "crates": [
-    "cortexcode-code-tui-widgets"
+    "hoocode-code-tui-widgets"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/task-panel.ts"
@@ -6292,7 +6292,7 @@
     "11.5a"
    ],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts"
@@ -6334,7 +6334,7 @@
     "11.5b"
    ],
    "crates": [
-    "cortexcode-code-tui-widgets"
+    "hoocode-code-tui-widgets"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/components/task-panel.ts",
@@ -6345,7 +6345,7 @@
    "l2": [
     "subagent-task"
    ],
-   "notes": "task-store.ts was ported in 10.2f (crate cortexcode-code-task-store); this task renders it.",
+   "notes": "task-store.ts was ported in 10.2f (crate hoocode-code-task-store); this task renders it.",
    "log": [
     {
      "at": "2026-09-29T06:34:34Z",
@@ -6374,7 +6374,7 @@
    "status": "done",
    "depends": [],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/tips.ts",
@@ -6408,8 +6408,8 @@
    "status": "done",
    "depends": [],
    "crates": [
-    "cortexcode-tui-render",
-    "cortexcode-code-tui-app"
+    "hoocode-tui-render",
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/scroll-view.ts"
@@ -6421,7 +6421,7 @@
    "l2": [
     "scroll-view"
    ],
-   "notes": "Found in 13.4e: the TUI mechanism (tui.rs scroll viewport, search) was ported, but nothing installed the app's keys: PageUp/ctrl+r/ctrl+up did nothing in cortex. The TUI gained an input interceptor (a Rust listener cannot hold the TUI) and can_pin_scroll takes the TUI (focus check).",
+   "notes": "Found in 13.4e: the TUI mechanism (tui.rs scroll viewport, search) was ported, but nothing installed the app's keys: PageUp/ctrl+r/ctrl+up did nothing in hoocode. The TUI gained an input interceptor (a Rust listener cannot hold the TUI) and can_pin_scroll takes the TUI (focus check).",
    "log": [
     {
      "at": "2026-09-30T18:12:37Z",
@@ -6438,7 +6438,7 @@
    "status": "done",
    "depends": [],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts"
@@ -6451,7 +6451,7 @@
     "thinking-toggle-pending-tool",
     "external-editor"
    ],
-   "notes": "Found in 13.4f: hoocode binds these in setupKeyHandlers (onAction); cortex's EDITOR_ACTIONS lacks them, so the keys the startup hints advertise (ctrl+t, alt+a, ctrl+g) do nothing. team.focus and input.voiceTranscribe are phase-12 features. 4167 (a re-render while a tool is pending keeps its completion routed) needs ctrl+t; its L2 scenario runs a slow bash call and toggles thinking mid-call. The mode cycle (alt+a) moved to 10.5e: it needs /mode to work interactively first.",
+   "notes": "Found in 13.4f: hoocode binds these in setupKeyHandlers (onAction); hoocode's EDITOR_ACTIONS lacks them, so the keys the startup hints advertise (ctrl+t, alt+a, ctrl+g) do nothing. team.focus and input.voiceTranscribe are phase-12 features. 4167 (a re-render while a tool is pending keeps its completion routed) needs ctrl+t; its L2 scenario runs a slow bash call and toggles thinking mid-call. The mode cycle (alt+a) moved to 10.5e: it needs /mode to work interactively first.",
    "log": [
     {
      "at": "2026-10-01T04:27:29Z",
@@ -6474,7 +6474,7 @@
    "status": "done",
    "depends": [],
    "crates": [
-    "cortexcode-code-tui-app"
+    "hoocode-code-tui-app"
    ],
    "sources": [
     "packages/coding-agent/src/modes/interactive/interactive-mode.ts"
@@ -6487,7 +6487,7 @@
     "session-surface-sync",
     "session-surface-sync-reload"
    ],
-   "notes": "Found in 13.4f: cortex applied these settings only at startup, so an on-disk compaction.enabled edit left auto@ in the footer after /new and /reload, and /new kept the old theme. At the pin the banner is rebuilt before the new theme loads (it takes the palette on the next rebuild); the scenarios encode that. The harness gained write_settings / write_files steps for edits mid-run.",
+   "notes": "Found in 13.4f: hoocode applied these settings only at startup, so an on-disk compaction.enabled edit left auto@ in the footer after /new and /reload, and /new kept the old theme. At the pin the banner is rebuilt before the new theme loads (it takes the palette on the next rebuild); the scenarios encode that. The harness gained write_settings / write_files steps for edits mid-run.",
    "log": [
     {
      "at": "2026-10-01T04:19:36Z",
@@ -6519,7 +6519,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-plugins"
+    "hoocode-code-plugins"
    ],
    "sources": [
     "packages/coding-agent/src/core/extensions/plugins/"
@@ -6553,7 +6553,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-packages"
+    "hoocode-code-packages"
    ],
    "sources": [
     "packages/coding-agent/src/core/package-manager.ts"
@@ -6587,7 +6587,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-extensions"
+    "hoocode-code-extensions"
    ],
    "sources": [
     "packages/coding-agent/src/core/extensions/"
@@ -6657,7 +6657,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-capabilities"
+    "hoocode-code-capabilities"
    ],
    "sources": [
     "packages/coding-agent/src/core/embsearch/"
@@ -6665,7 +6665,7 @@
    "ts_tests": [],
    "l1_cmds": [],
    "l2": "n/a",
-   "notes": "Needs a go/no-go decision from the user before starting. From 10.2d: implement cortexcode_code_tool_search::EmbsearchService with the daemon client; port search/eval*.ts + search-eval.test.ts + the eval-scoring cases of hybrid-search.test.ts, and native-search.ts collectEntries (+ native-search.test.ts) for repo-scan.",
+   "notes": "Needs a go/no-go decision from the user before starting. From 10.2d: implement hoocode_code_tool_search::EmbsearchService with the daemon client; port search/eval*.ts + search-eval.test.ts + the eval-scoring cases of hybrid-search.test.ts, and native-search.ts collectEntries (+ native-search.test.ts) for repo-scan.",
    "log": [
     {
      "at": "2026-09-29T04:03:39Z",
@@ -6691,7 +6691,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-scheduler"
+    "hoocode-code-scheduler"
    ],
    "sources": [
     "packages/coding-agent/src/core/scheduler.ts"
@@ -6725,7 +6725,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-subagents"
+    "hoocode-code-subagents"
    ],
    "sources": [
     "packages/coding-agent/src/core/warm-subagent-pool.ts"
@@ -6759,7 +6759,7 @@
     "10.3a"
    ],
    "crates": [
-    "cortexcode-code-extras"
+    "hoocode-code-extras"
    ],
    "sources": [
     "packages/coding-agent/src/core/"
@@ -6773,7 +6773,7 @@
      "at": "2026-09-26T21:51:26Z",
      "commit": "821deb9",
      "kind": "note",
-     "text": "From 10.1 split (2026-09-26): config.ts detectInstallMethod / getSelfUpdateCommand / getUpdateInstruction (config.test.ts) belong with the version check; npm/pnpm/bun install detection needs a cortex (binary/cargo) equivalent."
+     "text": "From 10.1 split (2026-09-26): config.ts detectInstallMethod / getSelfUpdateCommand / getUpdateInstruction (config.test.ts) belong with the version check; npm/pnpm/bun install detection needs a hoocode (binary/cargo) equivalent."
     },
     {
      "at": "2026-09-29T04:03:39Z",
@@ -6826,20 +6826,20 @@
     "7.2"
    ],
    "crates": [
-    "cortexcode-code-main",
-    "cortexcode-agent-loop",
-    "cortexcode-code-cli",
-    "cortexcode-code-tools-fs"
+    "hoocode-code-main",
+    "hoocode-agent-loop",
+    "hoocode-code-cli",
+    "hoocode-code-tools-fs"
    ],
    "sources": [
     "migration/tui-parity/"
    ],
    "ts_tests": [],
    "l1_cmds": [
-    "cargo test -p cortexcode-code-main --test it replay"
+    "cargo test -p hoocode-code-main --test it replay"
    ],
    "l2": "n/a: test infra",
-   "notes": "harness.py record <scenario|all> (scenarios in migration/tui-parity/replay.json) -> crates/cortexcode-code-main/tests/{fixtures/hoocode-0.5.89/replay,snapshots}; tests/replay.rs replays against cortex. Default-bundle print scenarios join after 12.4.",
+   "notes": "harness.py record <scenario|all> (scenarios in migration/tui-parity/replay.json) -> crates/hoocode-code-main/tests/{fixtures/hoocode-0.5.89/replay,snapshots}; tests/replay.rs replays against hoocode. Default-bundle print scenarios join after 12.4.",
    "log": [
     {
      "at": "2026-09-29T16:59:10Z",
@@ -7063,7 +7063,7 @@
      "at": "2026-09-30T17:57:29Z",
      "commit": "c994c53",
      "kind": "note",
-     "text": "part 3: interactive-mode-suspend ported; Ctrl+Z (app.suspend) was a no-op in cortex, now implemented (suspend.rs, checked by hand in tmux: C-z, jobs, fg, typing)"
+     "text": "part 3: interactive-mode-suspend ported; Ctrl+Z (app.suspend) was a no-op in hoocode, now implemented (suspend.rs, checked by hand in tmux: C-z, jobs, fg, typing)"
     },
     {
      "at": "2026-09-30T17:59:34Z",
@@ -7147,7 +7147,7 @@
    "title": "TS test port ledger: every one of the 400 TS test files marked ported/equivalent/n.a.",
    "phase": 13,
    "status": "moved",
-   "moved_to": "docs/design/hoocode-to-cortexcode-migration.md",
+   "moved_to": "docs/design/ts-to-rust-migration.md",
    "depends": [
     "13.4a",
     "13.4b",

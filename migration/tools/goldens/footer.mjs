@@ -1,5 +1,5 @@
 // Footer rendering for a range of states, with a stub session (as
-// footer-width.test.ts builds one). Output: crates/cortexcode-code-tui-app/tests/fixtures/footer-gold.json
+// footer-width.test.ts builds one). Output: crates/hoocode-code-tui-app/tests/fixtures/footer-gold.json
 import { FooterComponent } from "./modes/interactive/components/footer.js";
 import { initTheme } from "./modes/interactive/theme/theme.js";
 import { startupProgress } from "./core/startup-progress.js";

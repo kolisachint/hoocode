@@ -14,13 +14,13 @@ the Rust `hoocode`.
 In `--mode rpc`, tools that should ask first (bash, write, edit, webfetch,
 websearch) run without asking.
 
-- `cortexcode-code-cli/src/runtime.rs` `build_permission_gate` attaches a
+- `hoocode-code-cli/src/runtime.rs` `build_permission_gate` attaches a
   `PermissionUi` only in interactive mode. RPC mode gets `None`.
-- `cortexcode-code-permissions/src/lib.rs` `evaluate` returns `Allow` for a
+- `hoocode-code-permissions/src/lib.rs` `evaluate` returns `Allow` for a
   gated tool when there is no UI (`!has_ui`). Hard rules (`denied_tools`,
   `enabled_tools`, bash patterns) still apply; `auto_allow` and the prompt
   don't.
-- `cortexcode-code-rpc/src/mode.rs` drops every `extension_ui_response`.
+- `hoocode-code-rpc/src/mode.rs` drops every `extension_ui_response`.
 
 hoobot runs `hoocode --mode rpc` per Discord thread with a `discord` mode that
 auto-allows only `read`, and shows the prompts as Allow / Deny buttons. On the
@@ -49,8 +49,8 @@ approval timeout by answering `cancelled`.
 
 ## Design
 
-1. **`RpcPermissionUi`** in `cortexcode-code-rpc`, implementing
-   `cortexcode_code_permissions::PermissionUi`:
+1. **`RpcPermissionUi`** in `hoocode-code-rpc`, implementing
+   `hoocode_code_permissions::PermissionUi`:
    - `select`: new id, register a pending answer channel, write the request
      through the mode's existing `RpcOutput`, block until answered.
      `None` (cancelled) means deny, as in the terminal UI.
@@ -69,7 +69,7 @@ approval timeout by answering `cancelled`.
    `PermissionGate::request` runs in RPC mode; if it's on a runtime worker,
    wrap the wait in `tokio::task::block_in_place` or run the stdin reader on
    its own thread.
-6. **Warm subagents:** `cortexcode-code-subagents/src/warm.rs` drives
+6. **Warm subagents:** `hoocode-code-subagents/src/warm.rs` drives
    `--mode rpc` children through `RpcClient`, which doesn't answer UI
    requests. Those children would block. Keep today's behaviour for them by
    having the pool spawn workers headless (an internal env var read by
@@ -83,7 +83,7 @@ Not included: `confirm`, `input` and `editor` dialogs, and an RPC host for the
 ## Plan
 
 1. `RpcPermissionUi` + response routing + cancel paths, with unit tests in
-   `cortexcode-code-rpc` using the faux provider:
+   `hoocode-code-rpc` using the faux provider:
    - gated tool emits a `select` request; `Yes (once)` runs it; `No (block)`
      and `cancelled` deny it;
    - `auto_allow` tool runs with no request;
