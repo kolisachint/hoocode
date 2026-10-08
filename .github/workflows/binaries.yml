@@ -1,7 +1,7 @@
 name: Build binaries
 
 # Release binaries, shipped as `hoocode` (the Rust build; the crate's binary is
-# `cortex`) plus the `hoocode-ts` shim that runs the TypeScript hoocode.
+# `hoocode`) plus the `hoocode-ts` shim that runs the TypeScript hoocode.
 
 on:
   workflow_call:
@@ -77,7 +77,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build binary
-        run: cargo build --locked --release --target ${{ matrix.target }} --bin cortex
+        run: cargo build --locked --release --target ${{ matrix.target }} --bin hoocode
 
       - name: Smoke test
         # x86_64-apple-darwin is cross-built on an arm64 runner; skip running it.
@@ -86,7 +86,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          bin="target/$TARGET/release/cortex"
+          bin="target/$TARGET/release/hoocode"
           "$bin" --version
           if [[ "$TARGET" == *musl ]]; then
             file "$bin"
@@ -102,7 +102,7 @@ jobs:
           name="hoocode-$TARGET"
           mkdir -p "dist/$name"
           cp README.md LICENSE "dist/$name/"
-          cp "target/$TARGET/release/cortex" "dist/$name/hoocode"
+          cp "target/$TARGET/release/hoocode" "dist/$name/hoocode"
           cp scripts/shims/hoocode-ts "dist/$name/"
           chmod +x "dist/$name/hoocode" "dist/$name/hoocode-ts"
           tar czf "dist/$name.tar.gz" -C dist "$name"
