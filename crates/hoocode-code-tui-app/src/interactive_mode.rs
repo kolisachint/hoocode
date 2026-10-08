@@ -3581,6 +3581,7 @@ impl Mode {
             BuiltinCommand::Changelog => self.handle_changelog_command(),
             BuiltinCommand::Debug => self.handle_debug_command(),
             BuiltinCommand::Perf => self.handle_perf_command(),
+            BuiltinCommand::Mcp => self.handle_mcp_command(),
             BuiltinCommand::Color => {
                 // An argument sets the slot outright; bare `/color` opens the
                 // swatches.
@@ -3816,6 +3817,50 @@ impl Mode {
 
     /// `/perf`: the Phase 0 counters (threads, RSS, frame and keystroke timing,
     /// stalls), as a notice in the transcript. See `perf.rs`.
+    /// `/mcp`: each MCP server with its source, state and tool count.
+    fn handle_mcp_command(&mut self) {
+        let servers = self
+            .session
+            .mcp()
+            .map(|hub| hub.servers())
+            .unwrap_or_default();
+        let text = crate::mcp_listing::format_listing(&servers);
+        self.add_to_chat(as_component(&handle(Spacer::new(1))));
+        self.add_to_chat(as_component(&handle(Text::new(text, 1, 0))));
+    }
+
+    /// The one-time trust prompt for project and plugin MCP servers. Asked on a
+    /// thread (the answer waits for the user); the grant saves the trust store and
+    /// starts the servers, off the UI thread.
+    fn ask_mcp_trust(&self) {
+        let Some(hub) = self.session.mcp() else {
+            return;
+        };
+        let prompts = hub.pending_prompts();
+        if prompts.is_empty() {
+            return;
+        }
+        let servers = hub.servers();
+        let spawned = hoocode_runtime::spawn_named_thread("hoocode-mcp-trust", move || {
+            use hoocode_code_permissions::PermissionUi as _;
+            let ui = crate::dialog_bridge::TuiPermissionUi;
+            for prompt in prompts {
+                let question = hoocode_code_agent_session::mcp::trust_question(&prompt, &servers);
+                let answer = ui.select(&question, &[MCP_TRUST_YES, MCP_TRUST_NO]);
+                if answer.as_deref() != Some(MCP_TRUST_YES) {
+                    continue;
+                }
+                let message = match hub.grant(std::slice::from_ref(&prompt.key)) {
+                    Ok(_) => format!("MCP servers from {} are trusted.", prompt.source.label()),
+                    Err(error) => format!("Could not save the MCP trust grant: {error}"),
+                };
+                ui.notify(&message);
+            }
+        });
+        // A thread that cannot start leaves the servers untrusted: the safe default.
+        let _ = spawned;
+    }
+
     fn handle_perf_command(&mut self) {
         let text = crate::perf::format_report(&self.perf.snapshot());
         self.add_to_chat(as_component(&handle(Spacer::new(1))));
@@ -5966,6 +6011,7 @@ impl Mode {
                 .send(AppEvent::Dialog(request))
                 .is_ok()
         })));
+        self.ask_mcp_trust();
         let tx = self.tx.clone();
         on_theme_change(move || {
             let _ = tx.send(AppEvent::ThemeChanged);
@@ -6225,6 +6271,10 @@ impl Mode {
 }
 
 /// The built-in slash commands this mode dispatches itself.
+/// The answers to the MCP trust prompt.
+const MCP_TRUST_YES: &str = "Trust and start";
+const MCP_TRUST_NO: &str = "Not now";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BuiltinCommand {
     Quit,
@@ -6244,6 +6294,7 @@ enum BuiltinCommand {
     Changelog,
     Debug,
     Perf,
+    Mcp,
     Color,
     Chrome,
     Fork,
@@ -6281,6 +6332,7 @@ impl BuiltinCommand {
             "changelog" => Self::Changelog,
             "debug" => Self::Debug,
             "perf" => Self::Perf,
+            "mcp" => Self::Mcp,
             "color" => Self::Color,
             "chrome" => Self::Chrome,
             "fork" => Self::Fork,

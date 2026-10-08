@@ -1225,6 +1225,7 @@ dependencies = [
  "hoocode-agent-compaction",
  "hoocode-agent-core",
  "hoocode-agent-harness",
+ "hoocode-agent-mcp",
  "hoocode-agent-types",
  "hoocode-ai-models",
  "hoocode-ai-provider-faux",
@@ -1232,6 +1233,7 @@ dependencies = [
  "hoocode-ai-types",
  "hoocode-ai-util",
  "hoocode-code-auth",
+ "hoocode-code-mcp",
  "hoocode-code-models",
  "hoocode-code-paths",
  "hoocode-code-prompts",
@@ -1250,6 +1252,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -1677,6 +1680,7 @@ dependencies = [
  "hoocode-code-tui-selectors",
  "hoocode-code-tui-theme",
  "hoocode-code-tui-widgets",
+ "hoocode-runtime",
  "hoocode-tui-components",
  "hoocode-tui-fuzzy",
  "hoocode-tui-images",

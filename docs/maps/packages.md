@@ -52,7 +52,8 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | Session file writes (queue caps, flush barriers, the `hoocode-session-io` thread) | `runtime` (`session_io.rs`); `code-session` `manager.rs` `persist` and `rewrite_file` queue the writes ([concurrency.md](../design/concurrency.md) Phase 3) |
 | Compaction | `agent-compaction` |
 | Subagents | `code-subagents` (see `docs/design/subagents.md`) |
-| MCP client: connect to a server, list and call its tools, progress, caps, tool names | `agent-mcp` (`hoocode-agent-mcp`; the only crate that depends on `rmcp`; see [mcp.md](../design/mcp.md)). Not wired into the binary yet. |
+| MCP client: connect to a server, list and call its tools, progress, caps, tool names | `agent-mcp` (`hoocode-agent-mcp`; the only crate that depends on `rmcp`; see [mcp.md](../design/mcp.md)) |
+| MCP servers in a session: start the trusted ones in the background, `mcp_<server>_<tool>` tool definitions, shutdown | `code-agent-session` `mcp.rs` (`McpHub`); attached in `code-cli` `runtime.rs` (`attach_mcp`, `mcp_wanted`); synced at each turn in `session.rs` |
 | A model provider | `ai-provider-<name>`, registered in `ai-registry` |
 | A login flow | `ai-oauth-<name>`, stored by `code-auth` |
 | The model list | `ai-models-catalog` (generated), `code-models` (models.json) |
@@ -77,7 +78,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them | 8 | 761 / 504 | keep |
+| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them | 9 | 761 / 504 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
@@ -112,7 +113,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `agent-core` | Core agent runtime for hoocode agents | 2 | 1979 / 0 | keep |
 | `agent-harness` | Agent harness for hoocode agents | 6 | 3321 / 1042 | keep |
 | `agent-loop` | Agent loop for hoocode agents | 1 | 2647 / 0 | keep |
-| `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 0 | 880 / 666 | keep |
+| `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 1 | 880 / 666 | keep |
 | `agent-session` | Session trees for hoocode agents: entry format, storage, repositories | 2 | 2355 / 0 | keep |
 | `agent-types` | Shared types for hoocode agents | 21 | 896 / 0 | keep |
 
@@ -122,12 +123,12 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2529 / 1013 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1187 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5883 / 5459 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 6489 / 5693 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 822 / 707 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 537 / 0 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5126 / 0 | keep |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5185 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1165 | the `hoocode` binary |
-| `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 0 | 1535 / 0 | keep |
+| `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 1 | 1535 / 0 | keep |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1586 / 608 | keep |
 | `code-migrate` | One-time merge of the pre-1.2 coding-agent folders into ~/.hoocode | 1 | 758 / 334 | keep |
 | `code-models` | Model registry for the hoocode coding agent: built-in catalog plus models.json custom providers and overrides | 4 | 1985 / 682 | keep |
@@ -154,7 +155,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 12074 / 4940 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 12221 / 4940 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 839 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7822 / 3124 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2407 / 2505 | keep |

@@ -11,6 +11,7 @@ pub mod event_bus;
 pub mod exec;
 pub mod format;
 pub mod hooks;
+pub mod mcp;
 pub mod output_guard;
 pub mod provider_health;
 pub mod resources;
