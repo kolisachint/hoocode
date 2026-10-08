@@ -158,6 +158,14 @@ def tool_rules() -> list[dict]:
     return rules
 
 
+def tool_needle(app: str, needle: str) -> str:
+    """A snapshot assertion names a tool as hoocode does; the ts run looks for hoocode-ts's name."""
+    if app == "rust":
+        return needle
+    back = {rs: ts for ts, rs in TOOL_NAMES.items()}
+    return back.get(needle, needle)
+
+
 def llm_for_app(app: str, turns: list) -> list:
     """A scenario's script names tools as hoocode does. The ts run gets hoocode-ts names."""
     if app == "rust":
@@ -411,8 +419,15 @@ class Normalizer:
                 last = 0
                 for m in pattern.finditer(text):
                     new.extend(cells[last : m.start()])
-                    style = forced if forced is not None else (cells[m.start()][1] if m.start() < len(cells) else "")
-                    new.extend((ch, style) for ch in m.expand(repl))
+                    replaced = m.expand(repl)
+                    matched = cells[m.start() : m.end()]
+                    if forced is None and len(replaced) == len(matched):
+                        # A same-length rewrite (a renamed tool title) keeps each cell's own
+                        # style, so "● read" keeps its bullet colour and bold title.
+                        new.extend((ch, cell[1]) for ch, cell in zip(replaced, matched))
+                    else:
+                        style = forced if forced is not None else (cells[m.start()][1] if m.start() < len(cells) else "")
+                        new.extend((ch, style) for ch in replaced)
                     last = m.end()
                 if last:
                     new.extend(cells[last:])
@@ -589,7 +604,7 @@ def run_app(app: str, sc: dict, out: Path, keep: bool) -> dict:
         tmux.start(argv, work, env, stdout_file)
         for i, step in enumerate(sc["steps"]):
             try:
-                run_step(tmux, step, out, normalizer, result, stdout_file, {"HOME": home, "WORK": work})
+                run_step(tmux, step, out, normalizer, result, stdout_file, {"HOME": home, "WORK": work}, app)
             except StepError as e:
                 raise StepError(f"step {i} {json.dumps(step)}: {e}") from None
     except (StepError, RuntimeError) as e:
@@ -706,6 +721,7 @@ def run_step(
     result: dict,
     stdout_file: Path | None = None,
     dirs: dict | None = None,
+    app: str = "rust",
 ) -> None:
     timeout = float(step.get("timeout", 15))
     if "write_settings" in step or "write_files" in step:
@@ -764,9 +780,17 @@ def run_step(
         (out / f"{name}.style").write_text(styled)
         result["snapshots"][name] = {"text": plain, "style": styled, "grid": grid}
         for needle in step.get("contains", []):
+            needle = tool_needle(app, needle)
             if needle not in plain:
                 raise StepError(f"snapshot {name}: expected to contain {needle!r}")
+        # contains_line: a list of [needle, ...]; one screen line must hold all of them
+        # (e.g. the row of one tool and its switch value), so the check is about one row.
+        for needles in step.get("contains_line", []):
+            needles = [tool_needle(app, n) for n in needles]
+            if not any(all(n in line for n in needles) for line in plain.splitlines()):
+                raise StepError(f"snapshot {name}: expected one line to contain all of {needles!r}")
         for needle in step.get("not_contains", []):
+            needle = tool_needle(app, needle)
             if needle in plain:
                 raise StepError(f"snapshot {name}: expected NOT to contain {needle!r}")
     else:

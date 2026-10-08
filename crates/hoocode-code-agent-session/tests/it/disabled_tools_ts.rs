@@ -39,3 +39,17 @@ fn keeps_a_tool_disabled_even_when_it_is_in_the_allowlist() {
     assert_eq!(all_tools(&h), ["Read"]);
     assert_eq!(h.session.get_active_tool_names(), ["Read"]);
 }
+
+/// `noTools: "builtin"` (`--no-builtin-tools`, regression #3592): no built-in
+/// starts active, but the extension-registered tools do.
+#[test]
+fn no_builtin_tools_leaves_the_extension_tools_active() {
+    let h = Harness::new(HarnessOptions {
+        real_builtin_tools: true,
+        initial_active_tool_names: Some(vec![]),
+        custom_tools: vec![crate::common::tool("AskUserQuestion", |_| unimplemented!())],
+        ..Default::default()
+    });
+    assert_eq!(h.session.get_active_tool_names(), ["AskUserQuestion"]);
+    assert!(all_tools(&h).contains(&"Read".to_string()));
+}
