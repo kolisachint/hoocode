@@ -15,7 +15,19 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
+    // The one place a hoocode thread is started (`std::thread::spawn` is disallowed).
+    #[allow(clippy::disallowed_methods)] // this helper is the named-thread spawn
     std::thread::Builder::new().name(name.to_owned()).spawn(f)
+}
+
+/// [`spawn_named_thread`] for callers that cannot go on without the thread: a
+/// failure to start one panics, as `std::thread::spawn` does.
+pub fn spawn_thread<F, T>(name: &str, f: F) -> JoinHandle<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    spawn_named_thread(name, f).unwrap_or_else(|e| panic!("failed to start thread {name}: {e}"))
 }
 
 /// A bounded async channel with `cap` slots (at least 1). A full channel makes

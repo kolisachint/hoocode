@@ -5,4 +5,6 @@ disallowed-methods = [
     { path = "tokio::runtime::Runtime::new", reason = "build runtimes only in hoocode-runtime (use io_handle, run_blocking or a sync bridge)" },
     { path = "tokio::runtime::Builder::new_multi_thread", reason = "build runtimes only in hoocode-runtime (use io_handle)" },
     { path = "tokio::runtime::Builder::new_current_thread", reason = "build runtimes only in hoocode-runtime (use a sync bridge or run_blocking)" },
+    { path = "std::thread::spawn", reason = "start threads through hoocode_runtime::spawn_named_thread or spawn_thread (names show in logs and the thread map; concurrency.md section 4)" },
+    { path = "std::thread::Builder::spawn", reason = "start threads through hoocode_runtime::spawn_named_thread (concurrency.md section 4)" },
 ]

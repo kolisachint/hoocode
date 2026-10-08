@@ -2,3 +2,4 @@
 #![allow(clippy::string_slice)]
 
 mod bash_tool;
+mod operations;

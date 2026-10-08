@@ -329,7 +329,7 @@ pub fn open_url(url: &str) {
         .spawn();
     // Reap it off the UI thread so it does not linger as a zombie.
     if let Ok(mut child) = spawned {
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-login", move || {
             let _ = child.wait();
         });
     }

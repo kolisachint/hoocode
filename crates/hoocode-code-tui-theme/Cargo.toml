@@ -17,6 +17,7 @@ publish = false
 doctest = false
 
 [dependencies]
+hoocode-runtime = { workspace = true }
 hoocode-code-paths = { workspace = true }
 hoocode-tui-components = { workspace = true }
 hoocode-tui-highlight = { workspace = true }

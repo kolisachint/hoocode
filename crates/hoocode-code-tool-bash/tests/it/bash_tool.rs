@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: threads that stand in for a peer, a slow tool or a second caller
 //! Port of the bash cases in hoocode `test/tools.test.ts` and
 //! `test/bash-prompt-snippet.test.ts` (v0.5.89). Unix only (sh, seq).
 #![cfg(unix)]
@@ -173,6 +174,7 @@ fn handles_process_spawn_errors() {
             &dir.0,
             BashExecOptions {
                 on_data: &mut |_| {},
+                on_idle: None,
                 signal: None,
                 timeout: None,
                 env: None,
@@ -201,6 +203,7 @@ fn passes_shell_path_through_to_shell_resolution() {
             &dir.0,
             BashExecOptions {
                 on_data: &mut |_| {},
+                on_idle: None,
                 signal: None,
                 timeout: None,
                 env: None,
@@ -312,6 +315,7 @@ fn exposes_local_bash_operations_for_extension_reuse() {
             &dir.0,
             BashExecOptions {
                 on_data: &mut |data| out.extend_from_slice(data),
+                on_idle: None,
                 signal: None,
                 timeout: None,
                 env: Some(env),
@@ -524,6 +528,7 @@ fn bash_nice_runs_the_shell_at_that_niceness() {
                     signal: None,
                     timeout: None,
                     env: None,
+                    on_idle: None,
                 },
             )
             .unwrap();

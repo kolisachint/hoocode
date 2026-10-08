@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: threads that stand in for a peer, a slow tool or a second caller
 //! Level-1 fixture replay (migration task 13.2).
 //!
 //! Each scenario in `migration/tui-parity/replay.json` was recorded from the pinned

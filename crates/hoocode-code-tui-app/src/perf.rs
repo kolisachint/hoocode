@@ -245,10 +245,10 @@ impl Sampler {
         let shared = Arc::new(Mutex::new(Shared::default()));
         let (stop, stopped) = mpsc::channel();
         let thread_shared = Arc::clone(&shared);
-        std::thread::Builder::new()
-            .name("hoocode-perf".into())
-            .spawn(move || sample_loop(&thread_shared, file, &stopped))
-            .map_err(|error| format!("Failed to start the perf sampler: {error}"))?;
+        hoocode_runtime::spawn_named_thread("hoocode-perf", move || {
+            sample_loop(&thread_shared, file, &stopped)
+        })
+        .map_err(|error| format!("Failed to start the perf sampler: {error}"))?;
         Ok(Self {
             shared,
             _stop: stop,

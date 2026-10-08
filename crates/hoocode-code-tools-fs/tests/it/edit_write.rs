@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: threads that stand in for a peer, a slow tool or a second caller
 //! Port of the write/edit cases in hoocode `test/tools.test.ts` ("write
 //! tool", "edit tool", "edit tool fuzzy matching", "edit tool CRLF
 //! handling"), `test/edit-tool-legacy-input.test.ts`,

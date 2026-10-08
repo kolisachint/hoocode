@@ -1399,7 +1399,7 @@ impl Mode {
 
         let session = self.session.clone();
         let tx = self.tx.clone();
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-ui-task", move || {
             let chunks = tx.clone();
             let mut on_chunk = move |chunk: &str| {
                 let _ = chunks.send(AppEvent::BashChunk(chunk.to_string()));
@@ -3671,7 +3671,7 @@ impl Mode {
             "last agent message".to_string()
         };
         let tx = self.tx.clone();
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-ui-task", move || {
             let host = SystemClipboardHost {
                 native: native_clipboard_writer(),
             };
@@ -3706,7 +3706,7 @@ impl Mode {
     /// thread; [`Self::insert_pasted_image`] puts its path in the prompt.
     fn handle_clipboard_image_paste(&mut self) {
         let tx = self.tx.clone();
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-ui-task", move || {
             let host = SystemClipboardImageHost {
                 native: native_clipboard_image_reader(),
             };
@@ -6037,6 +6037,9 @@ impl Mode {
         self.tui
             .set_frame_observer(Some(self.perf.frame_observer()));
         let mut input = self.tui.start();
+        // Ctrl+C aborts the turn from the input thread, without waiting for this loop.
+        let interrupt_agent = self.session.agent().clone();
+        hoocode_tui_terminal::interrupt::set_hook(Some(Arc::new(move || interrupt_agent.abort())));
         // From here the TUI owns the terminal: the agent's operational log
         // lines (dispatch, warm fallback, lifeguard) must not write to it.
         set_terminal_owned_by_tui(true);
@@ -6139,6 +6142,8 @@ impl Mode {
             // Phase 0 timing: an iteration starts when its input has arrived,
             // not while the loop sleeps.
             let iteration_started = Instant::now();
+            // Heartbeat for the input thread's stall check (Ctrl+C twice = emergency exit).
+            hoocode_tui_terminal::interrupt::ui_beat();
             match received {
                 Ok(event) => {
                     self.accept_terminal_event(event);
@@ -6336,6 +6341,7 @@ impl Mode {
         }
         self.task_panel.borrow_mut().dispose();
         self.tui.stop();
+        hoocode_tui_terminal::interrupt::set_hook(None);
         set_terminal_owned_by_tui(false);
         let session = self.session.clone();
         if session.is_streaming() {

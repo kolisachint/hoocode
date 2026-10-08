@@ -17,11 +17,11 @@ publish = false
 doctest = false
 
 [dependencies]
+hoocode-runtime = { workspace = true }
 libc = "0.2"
 hoocode-agent-types = { workspace = true }
 hoocode-agent-compaction = { workspace = true }
 hoocode-code-agent-session = { workspace = true }
-hoocode-runtime = { workspace = true }
 hoocode-code-auth = { workspace = true }
 hoocode-ai-oauth = { workspace = true }
 hoocode-code-models = { workspace = true }
