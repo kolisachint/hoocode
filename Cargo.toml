@@ -76,6 +76,8 @@ members = [
     "crates/hoocode-tui-util",
 ]
 resolver = "2"
+# fuzz/ is a separate nightly-only workspace (cargo-fuzz); see fuzz/README.md.
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.8"
