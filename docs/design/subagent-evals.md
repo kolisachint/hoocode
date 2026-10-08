@@ -22,7 +22,7 @@ swept after 24h. Two things ship together here:
 
 1. **The dispatch ledger** (`crates/hoocode-code-subagents/src/ledger.rs`):
    one append-only line per **attempt**, in
-   `<cwd>/.cortexcode/dispatch/ledger.jsonl`. Telemetry, never a source of
+   `<cwd>/.hoocode/dispatch/ledger.jsonl`. Telemetry, never a source of
    truth: `result.json` decides correctness, the ledger only records what
    happened. A ledger that cannot be written is logged and dropped.
 2. **The eval harness** (`scripts/eval/`): scenarios that drive the real

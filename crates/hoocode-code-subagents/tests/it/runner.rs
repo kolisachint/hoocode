@@ -21,7 +21,7 @@ fn isolate_agent_dir() {
     ONCE.call_once(|| {
         let dir = std::env::temp_dir().join(format!("hoocode-runner-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", &dir);
+        std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir);
     });
 }
 
@@ -546,7 +546,7 @@ async fn in_process_and_child_process_runs_are_comparable() {
     std::fs::write(
         &bench,
         format!(
-            "#!/bin/sh\n{TASK_ID_SCRIPT}\nmkdir -p .cortexcode/dispatch/$tid\nprintf '%s' '{}' > .cortexcode/dispatch/$tid/result.json\nexit 0",
+            "#!/bin/sh\n{TASK_ID_SCRIPT}\nmkdir -p .hoocode/dispatch/$tid\nprintf '%s' '{}' > .hoocode/dispatch/$tid/result.json\nexit 0",
             serde_json::json!({"summary": "the same work either way", "files_changed": [], "confidence": 0.9, "status": "complete"})
         ),
     )

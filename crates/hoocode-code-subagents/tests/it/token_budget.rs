@@ -22,7 +22,7 @@ fn turn(context: u64, output: u64) -> String {
 }
 
 /// The 15 assistant turns of `dispatch-1790866463943-0ozuar`
-/// (`hoobot/.cortexcode/dispatch`), as (context, output).
+/// (`hoobot/.hoocode/dispatch`), as (context, output).
 ///
 /// hoocode's accumulation reported 1_654_795 against a 35_000 budget. The turns
 /// visible in that run's (256KB-capped) stdout sum to 1_047_206 of context;

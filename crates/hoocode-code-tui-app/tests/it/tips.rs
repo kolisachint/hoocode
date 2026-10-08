@@ -73,8 +73,13 @@ fn key_tips_name_the_live_binding() {
     hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
     let modes = tips().into_iter().find(|t| t.id == "modes").unwrap();
     let body = render_tip(&modes).body;
-    // "option+a" on macOS, like the pin's formatKeyText.
-    let key = hoocode_code_tui_keybindings::format_key_text("alt+a", false);
+    // The binding is alt+a; the hint labels alt as Option on macOS only
+    // (`format_key_part`), so the expected text depends on the platform.
+    let key = if cfg!(target_os = "macos") {
+        "option+a"
+    } else {
+        "alt+a"
+    };
     assert_eq!(body[0], format!("{key} cycles ask → plan → build → debug."));
 }
 

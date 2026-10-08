@@ -168,7 +168,10 @@ fn toggle_from_all_enabled_keeps_only_that_model_and_marks_unsaved() {
     let models = faux();
     let ids = full_ids(&models);
     let mut selector = ScopedModelsSelectorComponent::new(models, None);
-    let rendered = strip(&selector.render(120));
+    // The footer lists five hotkeys. On macOS `alt` is printed as `option`, so
+    // the footer is about 20 columns wider than on Linux and wraps at 120,
+    // splitting "all enabled". Render wide enough for both platforms.
+    let rendered = strip(&selector.render(200));
     // "option+s" on macOS, like the pin's formatKeyText.
     let save = hoocode_code_tui_keybindings::format_key_text("alt+s", false);
     assert!(rendered.contains(&format!("Session-only. {save} to save to settings.")));

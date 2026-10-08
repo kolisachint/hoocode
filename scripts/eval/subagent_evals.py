@@ -53,7 +53,7 @@ OUT_DIR = REPO / "target/subagent-evals"
 
 MODEL = "mock-model"
 PINNED_MODEL = "mock-pinned-model"
-CONFIG_DIR = ".cortexcode"
+CONFIG_DIR = ".hoocode"
 
 PARENT_SUMMARY = "The repo has crates/, scripts/ and docs/."
 CHILD_SUMMARY = "crates/ holds one directory per Rust crate; scripts/ holds tooling; docs/ holds design notes."
@@ -591,7 +591,9 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
     try:
         home, work = write_project(root, port, scenario)
         argv = build_argv(binary, scenario)
-        env = dict(os.environ)
+        # Drop HOOCODE_* from the developer's shell first, then set what the
+        # run needs, so the depth below is not stripped with the rest.
+        env = {k: v for k, v in os.environ.items() if not k.startswith("HOOCODE_")}
         env.update(
             {
                 "HOME": str(home),
@@ -600,12 +602,9 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
                 "LANG": "en_US.UTF-8",
                 # The pool reads depth from the environment; a stale value from
                 # the developer's shell would silently change what is tested.
-                "CORTEXCODE_SUBAGENT_DEPTH": "0",
+                "HOOCODE_SUBAGENT_DEPTH": "0",
             }
         )
-        for leaked in ("CORTEXCODE_CODING_AGENT_DIR", "CORTEX_", "HOOCODE_", "CORTEXCODE_"):
-            for key in [k for k in env if k.startswith(leaked)]:
-                env.pop(key)
         try:
             completed = subprocess.run(
                 argv,

@@ -71,10 +71,10 @@ fn env_lower(key: &str) -> String {
     env::var(key).unwrap_or_default().to_lowercase()
 }
 
-/// `CORTEX_IMAGE_PROTOCOL=kitty|iterm2|sixel|none` names the protocol
+/// `HOOCODE_IMAGE_PROTOCOL=kitty|iterm2|sixel|none` names the protocol
 /// outright, for terminals detection cannot identify. `Some(None)` is "none".
 fn image_protocol_override() -> Option<Option<ImageProtocol>> {
-    match env_lower("CORTEX_IMAGE_PROTOCOL").trim() {
+    match env_lower("HOOCODE_IMAGE_PROTOCOL").trim() {
         "kitty" => Some(Some(ImageProtocol::Kitty)),
         "iterm2" => Some(Some(ImageProtocol::ITerm2)),
         "sixel" => Some(Some(ImageProtocol::Sixel)),

@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 use regex::Regex;
 use serde_json::{Map, Value};
 
-const APP_CONFIG_DIR: &str = ".cortexcode";
+const APP_CONFIG_DIR: &str = ".hoocode";
 const CHUNK_SIZE: usize = 8;
 const CHUNK_DELAY: Duration = Duration::from_millis(10);
 const DEFAULT_REQUEST_FIELDS: [&str; 4] = ["messages", "tools", "tool_choice", "model"];
@@ -193,6 +193,34 @@ struct Normalizer {
     rules: Vec<(Regex, String)>,
 }
 
+/// Every spelling a temp path can come back in. On macOS `/var`, `/tmp` and
+/// `/etc` are symlinks into `/private`, and a child process reports its cwd
+/// canonicalized, so a recording or a live run may show either form. Longest
+/// first, so a regex alternation matches `/private/var/x` before `/var/x`.
+fn path_variants(path: &str) -> Vec<String> {
+    let mut out = vec![path.to_string()];
+    if let Ok(real) = fs::canonicalize(path) {
+        out.push(real.display().to_string());
+    }
+    for link in ["/var/", "/tmp/", "/etc/"] {
+        if path.starts_with(link) {
+            out.push(format!("/private{path}"));
+        }
+    }
+    out.sort_by_key(|v| std::cmp::Reverse(v.len()));
+    out.dedup();
+    out
+}
+
+/// The regex for one masked path: an alternation over its variants.
+fn path_pattern(path: &str) -> String {
+    let alternatives: Vec<String> = path_variants(path)
+        .iter()
+        .map(|v| regex::escape(v))
+        .collect();
+    format!("(?:{})", alternatives.join("|"))
+}
+
 impl Normalizer {
     fn load(extra: Option<&Value>, paths: &[(&str, &str)]) -> Self {
         let global = read_json(&parity_dir().join("normalize.json"));
@@ -211,7 +239,7 @@ impl Normalizer {
             .map(|r| {
                 let mut pattern = r["pattern"].as_str().expect("pattern").to_string();
                 for (key, value) in paths {
-                    pattern = pattern.replace(&format!("{{{key}}}"), &regex::escape(value));
+                    pattern = pattern.replace(&format!("{{{key}}}"), &path_pattern(value));
                 }
                 let regex = Regex::new(&pattern).unwrap_or_else(|e| panic!("rule {pattern}: {e}"));
                 (regex, py_template(r["replace"].as_str().expect("replace")))
@@ -807,20 +835,18 @@ fn run_hoocode(sc: &Value) -> RawRun {
     let doc = serde_json::json!({"providers": {"mock": {
         "baseUrl": format!("http://127.0.0.1:{}/v1", mock.port),
         "api": "openai-completions", "apiKey": "mock-key", "models": models}}});
-    for dir in [".hoocode", APP_CONFIG_DIR] {
-        fs::create_dir_all(home.join(dir)).expect("config dir");
+    fs::create_dir_all(home.join(APP_CONFIG_DIR)).expect("config dir");
+    fs::write(
+        home.join(APP_CONFIG_DIR).join("models.json"),
+        serde_json::to_string_pretty(&doc).expect("json"),
+    )
+    .expect("models");
+    if let Some(settings) = sc.get("settings") {
         fs::write(
-            home.join(dir).join("models.json"),
-            serde_json::to_string_pretty(&doc).expect("json"),
+            home.join(APP_CONFIG_DIR).join("settings.json"),
+            serde_json::to_string_pretty(settings).expect("json"),
         )
-        .expect("models");
-        if let Some(settings) = sc.get("settings") {
-            fs::write(
-                home.join(dir).join("settings.json"),
-                serde_json::to_string_pretty(settings).expect("json"),
-            )
-            .expect("settings");
-        }
+        .expect("settings");
     }
     let (home_s, work_s, tmp_s) = (
         home.display().to_string(),
@@ -1054,6 +1080,30 @@ replay_tests! {
     print_tool_read_light => "print-tool-read-light",
     rpc_basic => "rpc-basic",
     rpc_session => "rpc-session",
+}
+
+#[test]
+fn private_alias_is_masked_with_its_short_form() {
+    // The /private spelling comes first so `/var/x` cannot match inside it.
+    let variants = path_variants("/var/folders/t/replay-1");
+    assert_eq!(variants[0], "/private/var/folders/t/replay-1");
+    assert!(variants.contains(&"/var/folders/t/replay-1".to_string()));
+    assert!(path_pattern("/var/a").starts_with("(?:"));
+    let re = Regex::new(&path_pattern("/var/a")).unwrap();
+    assert_eq!(re.replace_all("/private/var/a/b", "<TMP>"), "<TMP>/b");
+}
+
+#[cfg(unix)]
+#[test]
+fn canonicalized_symlinked_temp_dirs_compare_equal() {
+    let real = tempfile::tempdir().expect("real dir");
+    let holder = tempfile::tempdir().expect("holder");
+    let link = holder.path().join("link");
+    std::os::unix::fs::symlink(real.path(), &link).expect("symlink");
+    let canonical = real.path().canonicalize().expect("canonical");
+    assert_eq!(link.canonicalize().expect("canonical link"), canonical);
+    // Whichever spelling a run reports, the mask covers the canonical one.
+    assert!(path_variants(&link.display().to_string()).contains(&canonical.display().to_string()));
 }
 
 #[test]

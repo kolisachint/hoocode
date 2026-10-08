@@ -1,7 +1,7 @@
 //! `extensions/core/config.ts`: `hoo-config.json`.
 //!
 //! The global file lives in the agent dir; a project may overlay
-//! `.cortexcode/hoo-config.json` (scalars win, most arrays are unioned). The
+//! `.hoocode/hoo-config.json` (scalars win, most arrays are unioned). The
 //! config is kept as JSON so fields hoocode does not model survive a rewrite.
 
 use serde_json::{Map, Value};
@@ -129,7 +129,7 @@ pub fn merge_search_paths(sources: &[&[String]]) -> Vec<String> {
     dedupe(sources.iter().flat_map(|s| s.iter().cloned()))
 }
 
-/// `readMergedConfig`: global, overlaid by `<cwd>/.cortexcode/hoo-config.json`.
+/// `readMergedConfig`: global, overlaid by `<cwd>/.hoocode/hoo-config.json`.
 pub fn read_merged_config(cwd: &Path) -> HooConfig {
     let global = read_config();
     let project_path = cwd

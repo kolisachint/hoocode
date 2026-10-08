@@ -7,8 +7,8 @@ use super::*;
 /// The Antigravity flow.
 pub const ANTIGRAVITY: GoogleFlow = GoogleFlow {
     client_env: GoogleOAuthClientEnv {
-        id_var: "CORTEXCODE_ANTIGRAVITY_CLIENT_ID",
-        secret_var: "CORTEXCODE_ANTIGRAVITY_CLIENT_SECRET",
+        id_var: "HOOCODE_ANTIGRAVITY_CLIENT_ID",
+        secret_var: "HOOCODE_ANTIGRAVITY_CLIENT_SECRET",
         product_name: "Google Antigravity",
     },
     callback_port: 51121,

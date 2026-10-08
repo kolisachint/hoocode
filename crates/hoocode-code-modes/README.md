@@ -4,7 +4,7 @@ The mode system of hoocode's built-in `hoo-core` extension, ported natively
 (`packages/coding-agent/src/extensions/core/{modes,config}.ts`, `core/mode-prompts.ts`, pinned
 v0.5.89):
 
-- `config` — `hoo-config.json` (agent dir, then `.cortexcode/hoo-config.json` in the project):
+- `config` — `hoo-config.json` (agent dir, then `.hoocode/hoo-config.json` in the project):
   read, merge rules, write.
 - `prompts` — the shipped ask/plan/build/debug prompts and `/grill` phases (hoocode's
   `templates/modes` and `templates/prompts/grill-*.md`, verbatim).

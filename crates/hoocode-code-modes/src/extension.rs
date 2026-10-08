@@ -60,7 +60,7 @@ pub const MODE_COMMANDS: [(&str, &str); 5] = [
     ),
 ];
 
-/// `resolveModeFile`: `<cwd>/.cortexcode/modes/<name>/system.md`, the agent
+/// `resolveModeFile`: `<cwd>/.hoocode/modes/<name>/system.md`, the agent
 /// dir's `modes/<name>/system.md`, then each external dir; trimmed, non-empty.
 fn resolve_mode_file(name: &str, cwd: &Path, external_dirs: &[String]) -> Option<String> {
     let mut candidates = vec![

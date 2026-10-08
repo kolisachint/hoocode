@@ -1,7 +1,6 @@
 //! Port of hoocode `test/settings-manager.test.ts` and
 //! `test/settings-manager-bug.test.ts` (v0.5.89). Project settings live in
-//! `.cortexcode/` (hoocode-ts: `.hoocode/`); the `.hoocode` fallback has its own
-//! tests at the end.
+//! `.hoocode/`, as in hoocode-ts.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -24,7 +23,7 @@ impl Dirs {
         let agent = root.join("agent");
         let project = root.join("project");
         std::fs::create_dir_all(&agent).unwrap();
-        std::fs::create_dir_all(project.join(".cortexcode")).unwrap();
+        std::fs::create_dir_all(project.join(".hoocode")).unwrap();
         Self {
             root,
             agent,
@@ -37,7 +36,7 @@ impl Dirs {
     }
 
     fn project_path(&self) -> PathBuf {
-        self.project.join(".cortexcode/settings.json")
+        self.project.join(".hoocode/settings.json")
     }
 
     fn manager(&self) -> SettingsManager {
@@ -255,11 +254,7 @@ fn voice_silence_defaults_round_trips_and_clamps() {
 
 fn with_webtools_env(value: Option<&str>, f: impl FnOnce()) {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let names = [
-        "CORTEXCODE_WEBTOOLS_TIMEOUT",
-        "CORTEX_WEBTOOLS_TIMEOUT",
-        "HOOCODE_WEBTOOLS_TIMEOUT",
-    ];
+    let names = ["HOOCODE_WEBTOOLS_TIMEOUT"];
     let saved: Vec<_> = names.iter().map(std::env::var_os).collect();
     for n in names {
         std::env::remove_var(n);
@@ -484,9 +479,9 @@ fn collects_and_clears_load_errors() {
 fn does_not_create_the_project_dir_when_only_reading() {
     let d = Dirs::new();
     write(&d.global_path(), &json!({"theme": "dark"}));
-    std::fs::remove_dir_all(d.project.join(".cortexcode")).unwrap();
+    std::fs::remove_dir_all(d.project.join(".hoocode")).unwrap();
     let manager = d.manager();
-    assert!(!d.project.join(".cortexcode").exists());
+    assert!(!d.project.join(".hoocode").exists());
     assert_eq!(manager.theme().as_deref(), Some("dark"));
 }
 
@@ -494,15 +489,15 @@ fn does_not_create_the_project_dir_when_only_reading() {
 fn creates_the_project_dir_when_writing_project_settings() {
     let d = Dirs::new();
     write(&d.global_path(), &json!({"theme": "dark"}));
-    std::fs::remove_dir_all(d.project.join(".cortexcode")).unwrap();
+    std::fs::remove_dir_all(d.project.join(".hoocode")).unwrap();
     let mut manager = d.manager();
-    assert!(!d.project.join(".cortexcode").exists());
+    assert!(!d.project.join(".hoocode").exists());
     manager.set_project_packages(&[PackageSource::Filtered(PackageFilter {
         source: "npm:test-pkg".into(),
         ..Default::default()
     })]);
     manager.flush();
-    assert!(d.project.join(".cortexcode").exists());
+    assert!(d.project.join(".hoocode").exists());
     assert!(d.project_path().exists());
     assert_eq!(
         read(&d.project_path()),
@@ -660,45 +655,6 @@ fn in_memory_project_changes_override_external_changes_for_the_same_field() {
 }
 
 // --- beyond the TS files ---
-
-#[test]
-fn reads_hoocode_settings_until_the_first_write_creates_the_hoocode_file() {
-    let d = Dirs::new();
-    let hoocode_agent = d.root.join(".hoocode");
-    let rust_agent = d.root.join(".cortexcode");
-    std::fs::create_dir_all(&hoocode_agent).unwrap();
-    write(
-        &hoocode_agent.join("settings.json"),
-        &json!({"theme": "dark", "unknownFutureKey": {"a": 1}}),
-    );
-    std::fs::create_dir_all(d.project.join(".hoocode")).unwrap();
-    write(
-        &d.project.join(".hoocode/settings.json"),
-        &json!({"defaultModel": "from-hoocode-project"}),
-    );
-    std::fs::remove_dir_all(d.project.join(".cortexcode")).unwrap();
-
-    let mut manager = SettingsManager::create(&d.project, &rust_agent);
-    assert_eq!(manager.theme().as_deref(), Some("dark"));
-    assert_eq!(
-        manager.default_model().as_deref(),
-        Some("from-hoocode-project")
-    );
-    assert!(!rust_agent.exists());
-
-    manager.set_quiet_startup(true);
-    assert_eq!(
-        read(&rust_agent.join("settings.json")),
-        json!({"theme": "dark", "unknownFutureKey": {"a": 1}, "quietStartup": true})
-    );
-    // The hoocode file is left alone.
-    assert_eq!(
-        read(&hoocode_agent.join("settings.json")),
-        json!({"theme": "dark", "unknownFutureKey": {"a": 1}})
-    );
-    assert!(!hoocode_agent.join("settings.json.lock").exists());
-    assert!(!d.project.join(".cortexcode").exists());
-}
 
 #[test]
 fn migrates_retired_keys() {

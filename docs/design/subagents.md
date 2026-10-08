@@ -10,7 +10,7 @@ Not a migration-ledger task: the migration is paused and this was taken out of i
 
 ## 1. The problem, and what the evidence actually said
 
-Subagents were failing on every recorded run. In `hoobot/.cortexcode/dispatch/`, a clean
+Subagents were failing on every recorded run. In `hoobot/.hoocode/dispatch/`, a clean
 success deletes its dispatch dir (`pool.rs`, clean-success branch), so every dir left on disk
 is a failure. **Ten dirs, zero successes.**
 

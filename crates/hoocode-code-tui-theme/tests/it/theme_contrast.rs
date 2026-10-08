@@ -16,7 +16,7 @@ fn isolate() {
         let dir =
             std::env::temp_dir().join(format!("hoocode-theme-contrast-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("themes")).unwrap();
-        std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", &dir);
+        std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir);
     });
 }
 

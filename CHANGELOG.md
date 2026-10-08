@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warm pool) and the tool-chain summary.
 
 ### Added: subagent evals and a dispatch ledger (2026-10-05)
-- **Subagent reliability is now measured, not remembered.** `<cwd>/.cortexcode/dispatch/ledger.jsonl`
+- **Subagent reliability is now measured, not remembered.** `<cwd>/.hoocode/dispatch/ledger.jsonl`
   is an append-only line per dispatch **attempt** - agent, requested and resolved model, mode, depth,
   status, verifier verdict, confidence, wall clock, generated tokens, peak context, exit code and cause.
   Every terminal path in the pool writes one, including the ones that used to vanish: the inherited-model

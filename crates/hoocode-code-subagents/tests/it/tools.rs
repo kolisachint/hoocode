@@ -34,7 +34,7 @@ fn isolate_agent_dir() {
     ONCE.call_once(|| {
         let dir = std::env::temp_dir().join(format!("hoocode-tools-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", &dir);
+        std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir);
     });
 }
 
@@ -351,11 +351,11 @@ fn resolve_fork_session_file_cases() {
         None
     );
     std::env::set_var(
-        "CORTEXCODE_CODING_AGENT_SESSION_DIR",
+        "HOOCODE_CODING_AGENT_SESSION_DIR",
         dir.path().join("sessions"),
     );
     let forked = resolve_fork_session_file(Some(true), Some(&parent), dir.path()).unwrap();
-    std::env::remove_var("CORTEXCODE_CODING_AGENT_SESSION_DIR");
+    std::env::remove_var("HOOCODE_CODING_AGENT_SESSION_DIR");
     assert!(forked.exists());
     assert_ne!(forked, parent);
     let empty = dir.path().join("empty.jsonl");

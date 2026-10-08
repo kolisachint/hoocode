@@ -24,7 +24,7 @@ fn isolate_agent_dir() {
     ONCE.call_once(|| {
         let dir = std::env::temp_dir().join(format!("hoocode-pool-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", &dir);
+        std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir);
     });
 }
 
@@ -536,7 +536,7 @@ fn env_capture(dir: &Path) -> PathBuf {
         dir,
         "mock-env.sh",
         &format!(
-            "printf '%s %s' \"${{CORTEXCODE_SUBAGENT_DEPTH-null}}\" \"${{HOOCODE_SUBAGENT_MAX_DEPTH-null}}\" > env.txt\necho '{DONE_LINE}'"
+            "printf '%s %s' \"${{HOOCODE_SUBAGENT_DEPTH-null}}\" \"${{HOOCODE_SUBAGENT_MAX_DEPTH-null}}\" > env.txt\necho '{DONE_LINE}'"
         ),
     )
 }
@@ -1135,7 +1135,7 @@ fn fallback_error_matches_not_supported_and_unsupported_wording() {
 /// model was known-good.
 #[test]
 fn fallback_error_matches_region_rejections() {
-    // Verbatim from the recorded failures in hoobot/.cortexcode/dispatch.
+    // Verbatim from the recorded failures in hoobot/.hoocode/dispatch.
     assert!(SubagentPool::is_inherited_model_fallback_error(&failed(
         "400 Upstream request failed: This Go model requires Global regions."
     )));

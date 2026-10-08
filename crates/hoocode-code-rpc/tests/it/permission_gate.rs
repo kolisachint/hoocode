@@ -37,7 +37,7 @@ fn isolate_agent_dir() {
         let dir =
             std::env::temp_dir().join(format!("hoocode-rpc-gate-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", &dir);
+        std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir);
     });
 }
 

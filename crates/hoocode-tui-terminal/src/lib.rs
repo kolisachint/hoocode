@@ -91,7 +91,7 @@ fn parse_kitty_query_response(sequence: &str) -> bool {
 }
 
 fn resolve_write_log_path() -> Option<PathBuf> {
-    let env = env::var("CORTEXCODE_TUI_WRITE_LOG").ok()?;
+    let env = env::var("HOOCODE_TUI_WRITE_LOG").ok()?;
     if env.is_empty() {
         return None;
     }
@@ -221,8 +221,8 @@ impl Terminal for ProcessTerminal {
         self.raw_write("\x1b[?2004h");
 
         // Take the wheel (see mouse.rs). A dumb terminal has nothing to report
-        // with, and CORTEX_MOUSE=0 hands the wheel back.
-        if std::env::var("CORTEX_MOUSE").as_deref() != Ok("0")
+        // with, and HOOCODE_MOUSE=0 hands the wheel back.
+        if std::env::var("HOOCODE_MOUSE").as_deref() != Ok("0")
             && std::env::var("TERM").as_deref() != Ok("dumb")
             && std::io::IsTerminal::is_terminal(&io::stdout())
         {

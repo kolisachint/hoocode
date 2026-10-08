@@ -57,7 +57,7 @@ fn isolate_agent_dir() {
         let dir =
             std::env::temp_dir().join(format!("hoocode-app-server-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", &dir);
+        std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir);
     });
 }
 
@@ -321,9 +321,9 @@ fn setup(ask_bash: bool) -> Setup {
     } else {
         vec!["read", "bash"]
     };
-    std::fs::create_dir_all(dir.join(".cortexcode")).unwrap();
+    std::fs::create_dir_all(dir.join(".hoocode")).unwrap();
     std::fs::write(
-        dir.join(".cortexcode/hoo-config.json"),
+        dir.join(".hoocode/hoo-config.json"),
         json!({"active_mode": mode, "modes": {mode: {"auto_allow": auto_allow}}}).to_string(),
     )
     .unwrap();

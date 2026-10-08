@@ -24,13 +24,10 @@ pub fn redirect_uri() -> String {
 /// `CALLBACK_HOST`: `HOOCODE_OAUTH_CALLBACK_HOST` (or the hoocode spelling),
 /// default `127.0.0.1`.
 fn callback_host() -> String {
-    [
-        "CORTEXCODE_OAUTH_CALLBACK_HOST",
-        "HOOCODE_OAUTH_CALLBACK_HOST",
-    ]
-    .iter()
-    .find_map(|v| std::env::var(v).ok().filter(|h| !h.is_empty()))
-    .unwrap_or_else(|| "127.0.0.1".to_string())
+    ["HOOCODE_OAUTH_CALLBACK_HOST"]
+        .iter()
+        .find_map(|v| std::env::var(v).ok().filter(|h| !h.is_empty()))
+        .unwrap_or_else(|| "127.0.0.1".to_string())
 }
 
 /// The authorize URL for a PKCE pair (`state` is the verifier).

@@ -833,12 +833,12 @@ static PROVIDER_REGISTRY: Lazy<Mutex<HashMap<String, Box<dyn ProviderFactory>>>>
 | Native search (fd/rg) | **ripgrep as a library** (`grep-searcher`, `grep-regex`, `ignore`, `globset`) | No binary downloads, `.gitignore`-aware, same engine as `rg` |
 | Async runtime | **`tokio`** (multi-threaded) end to end: providers, agent loop, tools, MCP. *Status: providers, agent loop/core and OAuth are async since 7.3 (2026-09-25); tools still run their sync bodies on the blocking pool (7.5, 10.2)* | Needed for abort (`CancellationToken`), steering/follow-up queues, parallel tool execution, streaming TUI and `rmcp` (tokio-only). Library crates stay runtime-agnostic where practical (futures `Stream`) |
 | Wire formats | **Byte-compatible with hoocode JSON** (messages, session JSONL v3, RPC protocol, `--mode json` events, `settings.json`, `auth.json`, `models.json`). *Added 2026-09-24* | Users can resume hoocode sessions, RPC clients and IDE integrations keep working, and golden fixtures from hoocode can be replayed |
-| Config directory | Read `~/.hoocode/` and `.hoocode/` (project) as a fallback source. Write `~/.cortexcode/` and `.cortexcode/` | Matches §10.6. Project-level `.hoocode/` (modes, skills, prompts) must be discovered too, not only the global `settings.json` |
+| Config directory | Read `~/.hoocode/` and `.hoocode/` (project) as a fallback source. Write `~/.hoocode/` and `.hoocode/` | Matches §10.6. Project-level `.hoocode/` (modes, skills, prompts) must be discovered too, not only the global `settings.json` |
 | MSRV | **1.88** (was 1.78) | Needed by `rmcp` 3.x. `similar` 3.x needs 1.85 |
 | Serialization | **`serde`** + `serde_json` (`preserve_order`, so re-serialized JSON such as tool-call arguments keeps hoocode's key order) + `serde_yaml` | De facto Rust standard |
 | HTTP client | **`reqwest`** | TLS, streaming, proxy support built in |
 | Embedded templates | **`include_str!`** at compile time | No `build.rs` needed for static content |
-| Generated models | **`build.rs`** (gated behind `CORTEX_UPDATE_MODELS=1`) | Mirrors TS `scripts/generate-models.ts` |
+| Generated models | **`build.rs`** (gated behind `HOOCODE_UPDATE_MODELS=1`) | Mirrors TS `scripts/generate-models.ts` |
 | Plugin system | **Split** (revised). Declarative plugins (`.agents-plugin` manifests: skills, commands, prompts, MCP servers) are ported in Phase 12. Code extensions run as an out-of-process JSON-RPC protocol, with the `wasmtime` prototype optional | hoocode's marketplace plugins are mostly markdown and JSON, so they port without executing TS. Only `ExtensionAPI` code hooks need a runtime |
 | Binary name | **`hoocode`** | Short, memorable, available |
 | Cross-compilation | **GitHub Actions matrix** — 4 targets | Native `rustc` cross-compilation |
@@ -1236,7 +1236,7 @@ Goal: `hoocode -p` and `hoocode --mode rpc` behave like `hoocode` at the pin wit
   - Port the tool tests.
 - [x] **10.3 AgentSession.** Port `agent-session.ts` plus its `-runtime`, `-services`, `-retry`, `-stats`, `-skills` and `-tree-navigation` modules. This is the orchestrator all three modes share: persistence into the `code-session` tree, retries, auto-compaction, model and thinking switching, and cost/usage stats. `session-manager.ts` deltas and `session-cwd`/`session-identity` go here too.
 - [ ] **10.4 Models and auth.** Port `model-registry.ts` (built-ins + user `models.json` custom providers), `model-resolver.ts` (`provider/model` patterns, `--models` scoping, fuzzy match), `auth-storage.ts` (`auth.json` format-compatible; OAuth refresh with a lock), and `auth-guidance.ts`. *(Status 2026-10-01: L1 only (L2 waits on 12.4): 10.4c.)*
-- [ ] **10.5 Resources.** Port `resource-loader.ts`, `skills.ts`, `builtin-skills.ts`, `prompt-templates.ts`, `context-files.ts` (AGENTS.md/CLAUDE.md walk-up), `slash-commands.ts`, `mode-prompts.ts` and the ask/plan/build/debug mode system (`extensions/core/modes.ts`), plus `agent-frontmatter`/`agent-registry` (`--agent`). Parse frontmatter with `serde_yaml_ng`. Discovery honors `.hoocode/` and `.cortexcode/`. *(Status 2026-10-01: L1 only (L2 waits on 12.4): 10.5.)*
+- [ ] **10.5 Resources.** Port `resource-loader.ts`, `skills.ts`, `builtin-skills.ts`, `prompt-templates.ts`, `context-files.ts` (AGENTS.md/CLAUDE.md walk-up), `slash-commands.ts`, `mode-prompts.ts` and the ask/plan/build/debug mode system (`extensions/core/modes.ts`), plus `agent-frontmatter`/`agent-registry` (`--agent`). Parse frontmatter with `serde_yaml_ng`. Discovery honors `.hoocode/` and `.hoocode/`. *(Status 2026-10-01: L1 only (L2 waits on 12.4): 10.5.)*
 - [x] **10.6 Permission gate.** Port the `extensions/core/permission-gate.ts` policy (hard tool/command policy, `--disallowed-tools`, per-session approvals). Keep the trait from `agent-types`.
 - [x] **10.7 CLI.** Move `code-main` args into `code-cli` as an exact port of the hand-written `args.ts` parser (not `clap`; see §3.4) with **exactly** the pinned flag set (`cli/args.ts`, 50+ flags incl. `--continue/--resume/--session/--fork/--no-session`, `--models`, `--thinking`, `--tools/--no-tools`, `--list-models`, `--export`, `--offline`, `--print-token-surface`). Also port `initial-message.ts`, `file-processor.ts` (`@file` args) and `list-models.ts`.
 - [x] **10.8 Print and RPC protocol parity.** `--mode json` must emit the same event objects as `print-mode.ts`. Replace the generic JSON-RPC server with hoocode's RPC protocol (`modes/rpc/{rpc-types,rpc-mode,jsonl}.ts`: commands, events, extension UI requests). Port `rpc-client.ts` as a Rust client so subagents and tests can use it.
@@ -1334,7 +1334,7 @@ tokio::spawn(async move {
 ### 10.6 Data migration (from hoocode)
 
 - Read `~/.hoocode/settings.json` for backward compatibility during transition.
-- Write to `~/.cortexcode/` going forward.
+- Write to `~/.hoocode/` going forward.
 - Auto-migrate settings on first run.
 - *Added 2026-09-24:* The following must also be readable without conversion, which is
   why the wire types in 7.2 must match hoocode:
@@ -1342,7 +1342,7 @@ tokio::spawn(async move {
   - hoocode session JSONL files (v1–v3, with in-place migration as in `session-manager.ts`)
   - `~/.hoocode/sessions/`, where the session list and `--resume` should show hoocode sessions
   - project `.hoocode/{settings.json,modes,skills,prompts,commands,agents}` and user `~/.agents/`
-  - Env overrides map as follows: `HOOCODE_CODING_AGENT_DIR` → `CORTEXCODE_CODING_AGENT_DIR`,
+  - Env overrides map as follows: `HOOCODE_CODING_AGENT_DIR` → `HOOCODE_CODING_AGENT_DIR`,
     and the same for `*_CODING_AGENT_SESSION_DIR` and `*_USER_AGENTS_DIR`. Both names are honored.
 
 ### 10.7 Plugin / extension system

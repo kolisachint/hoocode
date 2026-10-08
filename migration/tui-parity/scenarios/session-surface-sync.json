@@ -10,9 +10,9 @@
     ".hoocode/skills/demo/SKILL.md": "---\nname: demo\ndescription: demo skill\n---\nbody\n",
     ".hoocode/agents/helper.md": "---\nname: helper\ndescription: helper agent\n---\nyou help\n",
     ".hoocode/prompts/greet.md": "Say hello to the user\n",
-    ".cortexcode/skills/demo/SKILL.md": "---\nname: demo\ndescription: demo skill\n---\nbody\n",
-    ".cortexcode/agents/helper.md": "---\nname: helper\ndescription: helper agent\n---\nyou help\n",
-    ".cortexcode/prompts/greet.md": "Say hello to the user\n"
+    ".hoocode/skills/demo/SKILL.md": "---\nname: demo\ndescription: demo skill\n---\nbody\n",
+    ".hoocode/agents/helper.md": "---\nname: helper\ndescription: helper agent\n---\nyou help\n",
+    ".hoocode/prompts/greet.md": "Say hello to the user\n"
   },
   "llm": [],
   "steps": [
@@ -88,7 +88,7 @@
     {
       "write_files": {
         ".hoocode/prompts/second.md": "Second command\n",
-        ".cortexcode/prompts/second.md": "Second command\n"
+        ".hoocode/prompts/second.md": "Second command\n"
       }
     },
     {

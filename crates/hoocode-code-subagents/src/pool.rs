@@ -44,7 +44,7 @@ use crate::token_budget::{TokenBudget, TokenBudgetOptions};
 /// Provider/model failures where retrying with the parent's model can recover.
 ///
 /// Deviation: hoocode's pattern plus two groups it is missing, both of which
-/// were observed killing real subagents in `hoobot/.cortexcode/dispatch`:
+/// were observed killing real subagents in `hoobot/.hoocode/dispatch`:
 ///
 /// * **region** — `400 Upstream request failed: This Go model requires Global
 ///   regions.` A gateway account in the wrong region rejects a model the
@@ -87,7 +87,7 @@ const MAX_SUBAGENT_EVENT_LINE_CHARS: usize = 8 * 1024 * 1024;
 const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
 
 /// The env prefix hoocode stamps on children (read back via any prefix).
-const CHILD_ENV_PREFIX: &str = "CORTEXCODE_";
+const CHILD_ENV_PREFIX: &str = "HOOCODE_";
 
 /// What [`SubagentPool::statuses`] reports per task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

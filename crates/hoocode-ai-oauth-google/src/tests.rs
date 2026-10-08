@@ -156,17 +156,17 @@ fn a_missing_client_names_the_variables_to_set() {
     let err = read_google_oauth_client_with(&env, none).unwrap_err();
     assert!(err.starts_with(
         "Google Cloud Code Assist (Gemini CLI) needs an OAuth client, and hoocode does not ship one. \
-         Set CORTEXCODE_GEMINI_CLI_CLIENT_ID and CORTEXCODE_GEMINI_CLI_CLIENT_SECRET to the"
+         Set HOOCODE_GEMINI_CLI_CLIENT_ID and HOOCODE_GEMINI_CLI_CLIENT_SECRET to the"
     ));
     let only_id = |v: &str| v.ends_with("_ID").then(|| "id".to_string());
     let err = read_google_oauth_client_with(&env, only_id).unwrap_err();
-    assert!(err.contains("Set CORTEXCODE_GEMINI_CLI_CLIENT_SECRET to the"));
+    assert!(err.contains("Set HOOCODE_GEMINI_CLI_CLIENT_SECRET to the"));
     let both = |v: &str| Some(v.to_lowercase());
     assert_eq!(
         read_google_oauth_client_with(&env, both).unwrap(),
         GoogleOAuthClient {
-            client_id: "CORTEXCODE_GEMINI_CLI_CLIENT_ID".to_lowercase(),
-            client_secret: "CORTEXCODE_GEMINI_CLI_CLIENT_SECRET".to_lowercase(),
+            client_id: "HOOCODE_GEMINI_CLI_CLIENT_ID".to_lowercase(),
+            client_secret: "HOOCODE_GEMINI_CLI_CLIENT_SECRET".to_lowercase(),
         }
     );
 }

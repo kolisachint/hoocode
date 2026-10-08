@@ -313,14 +313,14 @@ pub fn build_goal_messages(objective: &str, verification: Option<&str>) -> GoalM
     }
 }
 
-/// `getPlanPath`: `.cortexcode/plans/<sessionId>.md`.
+/// `getPlanPath`: `.hoocode/plans/<sessionId>.md`.
 pub fn plan_path(cwd: &Path, session_id: &str) -> PathBuf {
     cwd.join(hoocode_code_paths::CONFIG_DIR_NAME)
         .join("plans")
         .join(format!("{session_id}.md"))
 }
 
-/// `getLegacyPlanPath`: `.cortexcode/plan.md`.
+/// `getLegacyPlanPath`: `.hoocode/plan.md`.
 pub fn legacy_plan_path(cwd: &Path) -> PathBuf {
     cwd.join(hoocode_code_paths::CONFIG_DIR_NAME)
         .join("plan.md")
