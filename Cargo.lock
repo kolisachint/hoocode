@@ -1296,6 +1296,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hoocode-code-mcp"
+version = "0.1.8"
+dependencies = [
+ "hoocode-code-paths",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "hoocode-code-media"
 version = "0.1.8"
 dependencies = [

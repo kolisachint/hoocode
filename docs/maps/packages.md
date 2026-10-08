@@ -56,6 +56,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | The model list | `ai-models-catalog` (generated), `code-models` (models.json) |
 | Settings keys | `code-settings` |
 | Config paths, env prefixes | `code-paths` |
+| MCP server discovery, `mcp.json` precedence, folder and plugin trust, `/mcp` states | `code-mcp` (`config.rs`, `trust.rs`, `discover.rs`); design in [mcp.md](../design/mcp.md) |
 | Permissions and modes | `code-permissions`, `code-modes` |
 | Themes | `code-tui-theme` |
 | Key bindings | `code-tui-keybindings` (app), `tui-keys` (parsing) |
@@ -123,11 +124,12 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 537 / 0 | keep |
 | `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5126 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1165 | the `hoocode` binary |
+| `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 0 | 1535 / 0 | keep |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1586 / 608 | keep |
 | `code-migrate` | One-time merge of the pre-1.2 coding-agent folders into ~/.hoocode | 1 | 758 / 334 | keep |
 | `code-models` | Model registry for the hoocode coding agent: built-in catalog plus models.json custom providers and overrides | 4 | 1985 / 682 | keep |
 | `code-modes` | Modes for the hoocode coding agent: ask/plan/build/debug prompts, hoo-config.json, /mode /plan /grill /goal /approve | 3 | 1057 / 1071 | keep |
-| `code-paths` | App identity, config directories and path helpers for the hoocode coding agent | 16 | 1109 / 474 | keep |
+| `code-paths` | App identity, config directories and path helpers for the hoocode coding agent | 17 | 1109 / 474 | keep |
 | `code-permissions` | Permission gate for the hoocode coding agent: per-mode tool policy from hoo-config.json and approval prompts | 4 | 329 / 279 | keep |
 | `code-print` | Output formatting for the hoocode coding agent | 1 | 298 / 280 | keep |
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 801 / 0 | keep |
