@@ -366,18 +366,19 @@ fn env_flag(name: &str) -> bool {
     std::env::var_os(name).is_some_and(|v| v == "1")
 }
 
-/// The approval channel for a run without a UI. rpc fails closed, except for a
-/// warm worker (`WARM_WORKER_ENV`), whose stdio has no client to answer. print
-/// and json fail closed only when they run under a fail-closed rpc process
-/// (`FAIL_CLOSED_ENV`, which rpc sets for its children), so a json subagent
-/// cannot run what its rpc parent would have denied.
+/// The approval channel for a run without a UI. rpc fails closed. The one
+/// exception is a warm worker (`WARM_WORKER_ENV`), whose stdio has no client to
+/// answer: it stays open, unless its rpc parent was itself fail-closed
+/// (`FAIL_CLOSED_ENV`), in which case it must not open what the parent denies.
+/// print and json fail closed only when they run under a fail-closed rpc
+/// process, so a json subagent cannot run what its rpc parent would have denied.
 fn headless_approval_channel(
     mode: Option<Mode>,
     warm_worker: bool,
     inherited_fail_closed: bool,
 ) -> ApprovalChannel {
     let fail_closed = match mode {
-        Some(Mode::Rpc) => !warm_worker,
+        Some(Mode::Rpc) => !warm_worker || inherited_fail_closed,
         _ => inherited_fail_closed,
     };
     ApprovalChannel::Headless { fail_closed }
@@ -2118,10 +2119,15 @@ mod approval_channel_tests {
             headless_approval_channel(Some(Mode::Rpc), false, false),
             closed()
         );
-        // A warm worker opts out for its own gate, whatever it inherited.
+        // A warm worker with no fail-closed parent opts out for its own gate.
+        assert_eq!(
+            headless_approval_channel(Some(Mode::Rpc), true, false),
+            open()
+        );
+        // A warm worker spawned by a fail-closed rpc parent stays closed.
         assert_eq!(
             headless_approval_channel(Some(Mode::Rpc), true, true),
-            open()
+            closed()
         );
     }
 
