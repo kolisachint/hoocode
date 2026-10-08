@@ -1,6 +1,8 @@
 # Concurrency: threads, lanes and limits
 
-Status: **proposed 2026-10-08**, design only. Not agreed yet; see Open questions.
+Status: **agreed 2026-10-08**, design only ([decisions-2026-10-08.md](decisions-2026-10-08.md)).
+Build order: phases 0–1 after [reliability.md](reliability.md) and before
+[mcp.md](mcp.md); phases 2–5 after MCP.
 
 ## Goal
 
@@ -46,6 +48,11 @@ The parts already run in parallel, but nothing bounds or orders them.
 | **Memory has a soft and a hard limit on the process.** Soft sheds load; hard aborts the turn cleanly. Nothing kills cortex itself. | A process that kills itself loses the session; one that slows down does not. |
 | **Every wait on something outside the process has a timeout.** | A hung server or tool must end as an error, not a hang. |
 | **Measure first.** Phase 0 adds the numbers; later phases must move them. | "Faster" needs a baseline. |
+| **Compaction and cleanup are work, not threads.** Compaction's LLM call runs on `cortex-io`, its CPU part on `cortex-tools`; cleanup runs in the Low lane. | Rust has no garbage collector; memory is freed on drop. |
+| **The agent's `bash` commands run at normal priority** (nice 0); `performance.bashNice` lowers them. | Builds and tests the agent runs are as fast as from your shell. The UI needs very little CPU. |
+| **Memory limits are on by default.** | Off by default leaves the freeze this card exists to stop. |
+| **Four settings, everything else fixed** (§3). | Fewer ways to misconfigure. |
+| **Numbers are visible**: `/perf` and `--perf-log <file>`. | For the load test and for bug reports. |
 
 ## What we build
 
@@ -75,7 +82,7 @@ Today it is unbounded.
 | Medium | nice +5 (thread) | QoS `UTILITY` | `BELOW_NORMAL` |
 | Low | nice +10 (thread) | QoS `BACKGROUND` | `LOWEST` |
 | Subagent children | process nice +5 | process nice +5 | `BELOW_NORMAL_PRIORITY_CLASS` |
-| `bash` children | nice 0 (setting) | default | default |
+| `bash` children | nice 0; `performance.bashNice` | nice 0; `performance.bashNice` | normal; any `bashNice` > 0 means `BELOW_NORMAL_PRIORITY_CLASS` |
 
 - Per-thread priority through the `thread-priority` crate (MIT), owned by
   `cortexcode-runtime` only (add it to `migration/dep-firewall.json`).
@@ -85,7 +92,14 @@ Today it is unbounded.
 
 ### 3. Caps
 
-Start values; Phase 0's load test tunes them.
+Start values; Phase 0's load test tunes them. Only these four are settings:
+
+| Setting | Default | Range |
+|---|---|---|
+| `performance.maxParallelTools` | 8 | 1–32 |
+| `performance.memorySoftLimitMb` | lower of 2048 and 25% of RAM | 256 up; 0 turns it off |
+| `performance.memoryHardLimitMb` | lower of 4096 and 50% of RAM | above the soft limit; 0 turns it off |
+| `performance.bashNice` | 0 | 0–19 (Unix); Windows: 0 or above 0 |
 
 | Resource | Cap | When reached | Setting |
 |---|---|---|---|
@@ -162,39 +176,14 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 - **A rayon or work-stealing CPU pool up front.** Only if Phase 0 shows CPU-bound UI
   work (Phase 6).
 - **Rewriting the sync tools as async.** They run on `cortex-tools`.
+- **Background compaction while you type** (compacting early, before the context is
+  full). It changes what the agent does, not just where it runs; it gets its own card
+  later.
 
 ## Open questions
 
-Recommended answer first.
-
-1. **Where does this go in the build order?**
-   - (a) **Phases 0–1 right after [reliability.md](reliability.md), before MCP;
-     phases 2–5 after MCP.** The MCP card brings `rmcp` and its own runtime needs;
-     one-runtime rules are cheapest before it lands. Risk: MCP starts a little later.
-   - (b) All of it after card 5. Risk: MCP and the scheduler add more ad-hoc threads
-     to undo.
-   - (c) All of it now, before reliability. Risk: breaks the "reliability first"
-     decision of 2026-10-07.
-2. **"gcc separate": what did you mean?**
-   - (a) **Compaction and cleanup.** Compaction is an LLM call on `cortex-io`, with
-     its CPU part on `cortex-tools`; cleanup is the Low lane. This card assumes this.
-   - (b) Something else (please say what).
-3. **Priority of the user's `bash` commands.**
-   - (a) **Normal (nice 0), with a setting.** Builds and tests run at full speed; the
-     UI stays responsive because it needs very little CPU.
-   - (b) nice +5. The UI gets more headroom, but `cargo build` from the agent runs
-     slower than from your shell.
-4. **Memory limits on by default?**
-   - (a) **On, with the defaults above.** Risk: a huge session near 2 GiB starts
-     shedding; the footer says why and the setting raises it.
-   - (b) Off by default. Risk: the freeze this card is meant to stop.
-5. **Settings surface.**
-   - (a) **A `performance` block with the 3 keys above**; everything else fixed.
-   - (b) Every cap configurable. Risk: more ways to misconfigure.
-   - (c) Environment variables only.
-6. **Background compaction while you type** (compact early, before the context is
-   full): later, as its own card? Recommended: yes, later; it changes behaviour, not
-   just threading.
+None. The eight questions were answered on 2026-10-08 and are recorded in
+[decisions-2026-10-08.md](decisions-2026-10-08.md).
 
 ## Details
 

@@ -2,8 +2,10 @@
 
 Start here. The migration from hoocode-ts is finished at the v0.6.0 pin. Everything
 still to build is planned in the cards below. Each card was agreed with the user on
-2026-10-07 ([decisions-2026-10-07.md](decisions-2026-10-07.md); that page wins if a
-card disagrees).
+2026-10-07 or later. The dated decision pages win if a card disagrees:
+[decisions-2026-10-07.md](decisions-2026-10-07.md) and
+[decisions-2026-10-08.md](decisions-2026-10-08.md) (the later page adds to the
+earlier one).
 
 ## How we work on designs (user preferences)
 
@@ -35,12 +37,13 @@ card disagrees).
 | # | Card | Status | Replaces ledger task |
 |---|---|---|---|
 | 1 | [reliability.md](reliability.md) | Agreed; build next | — |
+| 1b | [concurrency.md](concurrency.md) phases 0–1 (measure; one runtime and caps) | Agreed 2026-10-08 | — |
 | 2 | [semantic-search.md](semantic-search.md) part A (`SearchHooCode`) | Agreed | closes 10.2a/b/c/d/f/g, 10.4c, 10.5; part of 12.4 |
 | 3 | [mcp.md](mcp.md) | Agreed | 9.1, 10.11 |
+| 3b | [concurrency.md](concurrency.md) phases 2–5 (terminal output, session writer, lanes, watchdog, memory limits) | Agreed 2026-10-08 | — |
 | 4 | [plugins.md](plugins.md) | Agreed | 12.1, 12.2 |
 | 5 | [canvas-and-mcp-apps.md](canvas-and-mcp-apps.md) | Agreed (MCP Apps) | 12.7 canvas |
 | 5 | [scheduler-and-loop.md](scheduler-and-loop.md) | Agreed | 12.5 |
-| 1b? | [concurrency.md](concurrency.md) (threads, lanes, limits) | **Proposed 2026-10-08**; not agreed. Recommends phases 0–1 after card 1 | — |
 | — | [extras.md](extras.md) | Version check and chime yes; rest no | 12.6, 12.7 rest |
 | — | [web-tools.md](web-tools.md) | Deferred | 10.2e |
 | — | [extension-runtime.md](extension-runtime.md) | Standards only; no runtime | 12.3 |

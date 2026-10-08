@@ -22,7 +22,8 @@ Never modify hoocode; it is the reference.
   `../codex`, Apache-2.0) into this repo. Running such tools in tests is fine.
 - Work outside the migration has no TypeScript reference (user, 2026-10-01).
 - **What to build next:** `docs/design/README.md` (cards in build order, plus the user's
-  design preferences). `docs/design/decisions-2026-10-07.md` wins over any card. Start
+  design preferences). `docs/design/decisions-2026-10-07.md` and `decisions-2026-10-08.md` (adds
+  `concurrency.md` to the order) win over any card. Start
   with `reliability.md`. A design session changes docs only.
 
 - Command names: the Rust build installs as `hoocode` and the TS one is `hoocode-ts`, by
