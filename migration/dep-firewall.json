@@ -75,6 +75,9 @@
     "tokio-tungstenite": [
       "hoocode-ai-provider-openai-codex",
       "hoocode-app-server"
+    ],
+    "rmcp": [
+      "hoocode-agent-mcp"
     ]
   },
   "pending": {}
