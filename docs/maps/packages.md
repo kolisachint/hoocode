@@ -71,8 +71,8 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `ai-env` | Environment and API key handling for cortex AI | 7 | 347 / 0 | keep |
-| `ai-models` | LLM model registry and discovery for cortex AI | 10 | 348 / 234 | keep |
+| `ai-env` | Environment and API key handling for cortex AI | 7 | 345 / 0 | keep |
+| `ai-models` | LLM model registry and discovery for cortex AI | 10 | 348 / 232 | keep |
 | `ai-models-catalog` | Model catalog data (LLM and image models) for cortex AI, generated from the pinned hoocode | 1 | 43 / 0 | keep |
 | `ai-oauth` | OAuth core for cortex AI: types, PKCE, callback server, provider registry | 7 | 1084 / 0 | keep |
 | `ai-oauth-anthropic` | Anthropic (Claude Pro/Max) OAuth flow for cortex AI | 1 | 517 / 0 | keep |
@@ -85,8 +85,8 @@ in those tables; the generator keeps each crate's Status by name.
 | `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for cortex AI | 1 | 1724 / 0 | keep |
 | `ai-provider-openai` | OpenAI provider for cortex AI | 1 | 3415 / 826 | keep |
 | `ai-provider-openai-codex` | OpenAI Codex (ChatGPT subscription) Responses provider for cortex AI: SSE and WebSocket transports | 1 | 2555 / 0 | keep |
-| `ai-provider-openai-responses` | OpenAI Responses API provider for cortex AI, and the Responses plumbing it shares internally | 2 | 2260 / 0 | keep |
-| `ai-registry` | API provider registry for cortex AI: dispatches streams on model.api | 4 | 314 / 3068 | keep |
+| `ai-provider-openai-responses` | OpenAI Responses API provider for cortex AI | 2 | 2260 / 0 | keep |
+| `ai-registry` | API provider registry for cortex AI: dispatches streams on model.api | 4 | 309 / 3006 | keep |
 | `ai-sse` | Server-Sent Events decoder shared by the cortex AI providers | 2 | 218 / 0 | keep |
 | `ai-stream` | Streaming response utilities for cortex AI | 12 | 611 / 0 | keep |
 | `ai-types` | Shared types for cortex AI | 39 | 1090 / 0 | keep |
@@ -110,11 +110,11 @@ in those tables; the generator keeps each crate's Status by name.
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2522 / 1012 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1187 / 0 | keep |
 | `code-agent-session` | AgentSession: the agent lifecycle shared by the cortex run modes | 7 | 5868 / 5436 | keep |
-| `code-auth` | Credential storage for the cortex coding agent: auth.json API keys and OAuth tokens with locked refresh | 4 | 890 / 706 | keep |
+| `code-auth` | Credential storage for the cortex coding agent: auth.json API keys and OAuth tokens with locked refresh | 4 | 889 / 706 | keep |
 | `code-cli` | CLI argument parsing and mode dispatch for the cortex coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 4985 / 0 | keep |
 | `code-main` | Main entry point for the cortex coding agent | 0 | 6 / 1102 | the `cortex` binary |
 | `code-media` | Image handling for the cortex coding agent: format sniffing, resize/re-encode for model input | 3 | 1586 / 610 | keep |
-| `code-models` | Model registry for the cortex coding agent: built-in catalog plus models.json custom providers and overrides | 4 | 1996 / 670 | keep |
+| `code-models` | Model registry for the cortex coding agent: built-in catalog plus models.json custom providers and overrides | 4 | 1995 / 670 | keep |
 | `code-modes` | Modes for the cortex coding agent: ask/plan/build/debug prompts, hoo-config.json, /mode /plan /grill /goal /approve | 3 | 1057 / 1050 | keep |
 | `code-paths` | App identity, config directories and path helpers for the cortex coding agent | 16 | 1029 / 415 | keep |
 | `code-permissions` | Permission gate for the cortex coding agent: per-mode tool policy from hoo-config.json and approval prompts | 3 | 290 / 210 | keep |
