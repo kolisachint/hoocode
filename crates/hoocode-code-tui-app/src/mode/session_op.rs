@@ -117,6 +117,13 @@ impl Mode {
         Some(runtime)
     }
 
+    /// The mode dial's line: the mode the footer shows now (`next` if none).
+    fn show_mode_dial(&mut self, key: &'static str, next: &str) {
+        let landed = self.footer_data.get_active_mode();
+        let landed = if landed.is_empty() { next } else { &landed };
+        self.show_dial_step(key, &format!("Mode: {landed}"));
+    }
+
     /// Applies a finished operation on the UI thread.
     pub(super) fn finish_session_op(&mut self, done: SessionOpDone) {
         self.session_op = None;
@@ -134,16 +141,17 @@ impl Mode {
                     self.show_error(&error);
                 } else {
                     self.drain_extension_ui_requests();
-                    let landed = self.footer_data.get_active_mode();
-                    let landed = if landed.is_empty() { next } else { landed };
-                    self.show_dial_step(
-                        if forward {
-                            "app.mode.cycleBackward"
-                        } else {
-                            "app.mode.cycleForward"
-                        },
-                        &format!("Mode: {landed}"),
-                    );
+                    let key = if forward {
+                        "app.mode.cycleBackward"
+                    } else {
+                        "app.mode.cycleForward"
+                    };
+                    // A reload the command asked for shows its own line first; the dial's goes last.
+                    if self.session_op.is_some() {
+                        self.mode_dial_after = Some((key, next));
+                    } else {
+                        self.show_mode_dial(key, &next);
+                    }
                 }
             }
             SessionOutcome::Tree { entry_id, result } => {
@@ -171,6 +179,11 @@ impl Mode {
                 result,
             } => self.finish_import(input, overridden, result),
             SessionOutcome::Reload => self.finish_reload(),
+        }
+        if self.session_op.is_none() {
+            if let Some((key, next)) = self.mode_dial_after.take() {
+                self.show_mode_dial(key, &next);
+            }
         }
         self.dirty.set(true);
     }

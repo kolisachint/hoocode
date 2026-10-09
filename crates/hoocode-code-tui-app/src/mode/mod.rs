@@ -375,6 +375,8 @@ struct Mode {
     restarted_input: Option<Receiver<TuiEvent>>,
     /// The session operation running off the UI thread, if any (`session_op.rs`).
     session_op: Option<&'static str>,
+    /// The mode dial's line, held until the reload its `/mode` asked for ends.
+    mode_dial_after: Option<(&'static str, String)>,
 }
 
 /// `InteractiveMode.run`: until the user exits.
@@ -723,6 +725,7 @@ impl Mode {
             pending_import: None,
             restarted_input: None,
             session_op: None,
+            mode_dial_after: None,
         }
     }
 

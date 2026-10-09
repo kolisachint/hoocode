@@ -44,6 +44,12 @@ impl Mode {
     /// Carry out what extension command handlers asked of the UI
     /// (`ctx.ui.notify`, `ctx.reload()`, `ctx.newSession`, `sendUserMessage`).
     pub(super) fn drain_extension_ui_requests(&mut self) {
+        // Requests wait while a session operation runs: `/mode` asks for a
+        // reload from inside its own prompt, and that reload would be refused
+        // behind the operation. They are taken when it finishes.
+        if self.session_op.is_some() {
+            return;
+        }
         loop {
             let requests = self.session.extensions().take_ui_requests();
             if requests.is_empty() {
