@@ -43,7 +43,7 @@ update this page in the same commit.
 | Custom and branch-summary messages | `custom_message.rs` |
 | One tool call's block | `tool_execution.rs` |
 | A run of tool calls on one line; radar view | `tool_chain.rs`, `tool_chain_summary.rs`, `tool_signal.rs` |
-| Radar / peek / full dial | `tool_output_view.rs` |
+| Radar / peek / full dial | `tool_output_view.rs` (`peek_block`, the shared peek body) |
 | `!` bash command typed by the user | `bash_execution.rs` |
 | Diffs | `diff.rs`, `jsdiff.rs` |
 | File content with line numbers | `read_output.rs` |
