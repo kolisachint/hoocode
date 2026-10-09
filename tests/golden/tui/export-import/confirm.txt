@@ -1,0 +1,36 @@
+«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+«fg=#989898»no project resources loaded
+
+«» «fg=#5cc8bb»✓ New session started
+
+
+«bg=#241a1a» «bg=#241a1a;bold;fg=#d58181»Error: Usage: /import <path.jsonl>
+
+
+«fg=#6e93ff»┌────────────────────────────────────────«bold;fg=#5cc8bb» Import session Replace current session with out.jsonl? «fg=#6e93ff»──┐
+«fg=#6e93ff»│«» «bg=#2a2a36» «bg=#2a2a36;fg=#5cc8bb»› Yes«bg=#2a2a36»                                                                                          «» «fg=#6e93ff»│
+«fg=#6e93ff»│«»    No                                                                                            «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#989898»↑↓«fg=#a8a8a8» navigate«»  «fg=#989898»enter«fg=#a8a8a8» select«»  «fg=#989898»escape/ctrl+c«fg=#a8a8a8» cancel«»                                                  «fg=#6e93ff»│
+«fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.0%«» «fg=#989898»128k auto@87%«»                                                               «fg=#a8a8a8»mock-model
