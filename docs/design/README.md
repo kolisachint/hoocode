@@ -91,7 +91,7 @@ before scheduling one.
 
 | Card | What | Status |
 |---|---|---|
-| [scoped-model-categories.md](scoped-model-categories.md) | `/scoped-models` gets an effort and a category per model; `scopedModels` replaces `enabledModels` and `modelCategories`; subagents ask by category or by model | design locked 2026-10-09, not implemented |
+| [scoped-models.md](scoped-models.md) | `/scoped-models` gets an effort and a category per model; `scopedModels` replaces `enabledModels` and `modelCategories`; subagents ask by category or by model | Locked 2026-10-09 (reviewed). Not implemented. |
 
 Older docs that stay as they are: [app-server.md](app-server.md), [subagents.md](subagents.md),
 [subagent-evals.md](subagent-evals.md), [distribution.md](distribution.md),

@@ -1,7 +1,7 @@
-# Scoped models and model categories
+# Scoped models design
 
-Status: **design locked 2026-10-09 (all questions closed), not implemented.** Not on the core plan's build order.
-Ask the user before scheduling it.
+Status: Locked 2026-10-09 (reviewed). Not implemented.
+Not on the core plan's build order. Ask the user before scheduling it.
 
 ## Goal
 
@@ -32,7 +32,7 @@ The main model never sees concrete model names today.
 | 1 | Flow | In the TUI the user picks scoped models. For each one: set an effort (thinking level), then optionally a category: `fast`, `standard`, `capable` or `cheap` (`cheap` is new). Then save. alt+m cycles the scoped models as before. |
 | 2 | Editor | Upgrade `/scoped-models` in place. Each row gains an effort column and a category column. `/settings` gets a "Models" row that opens it. |
 | 3 | Cardinality | Each scoped model has 0 or 1 category. Several models may share a category. |
-| 4 | Storage | New key `scopedModels` in `~/.hoocode/settings.json`: an ordered list of `{ "model": "provider/id", "effort"?: "<level>", "category"?: "fast\|standard\|capable\|cheap", "alias"?: "short-name" }`. A project override follows the existing settings scoping rules. **Migration:** on first load, if `scopedModels` is missing, build it once from `enabledModels` (a `:level` suffix becomes `effort`) plus `modelCategories` (model to category). After that only `scopedModels` is read or written. Old keys are ignored. hoocode-ts will not see the new scope; the user accepted this. |
+| 4 | Storage | New key `scopedModels` in `~/.hoocode/settings.json`: an ordered list of `{ "model": "provider/id", "effort"?: "<level>", "category"?: "fast\|standard\|capable\|cheap", "alias"?: "short-name" }`. A project override replaces the global list (decision 15). **Migration:** on first load, if `scopedModels` is missing, build it once from `enabledModels` (a `:level` suffix becomes `effort`) plus `modelCategories` (model to category). After that only `scopedModels` is read or written. Old keys are ignored. hoocode-ts will not see the new scope; the user accepted this. |
 | 5 | Cycling | Switching to a scoped model also applies its saved effort. A model with no saved effort keeps the current level. |
 | 6 | Subagent ask | The Agent tool's `model` takes either a category name or a scoped model reference. It is the only model param; `complexity` is removed now. An optional `effort` param overrides the scoped effort; the default is the scoped entry's effort. The system prompt lists the scoped models (alias or id, effort, category) so the model can choose. |
 | 7 | Name matching | Alias first (exact). Otherwise exact id. Otherwise a unique substring of the id. If more than one matches, it is an error that lists the candidates. |
@@ -54,33 +54,51 @@ The main model never sees concrete model names today.
 
 Affected files and crates (from Current state):
 
-- `crates/hoocode-code-settings`: `scopedModels` type, read and write, migration from
-  `enabledModels` and `modelCategories`, project override.
-- `crates/hoocode-code-models`: `resolve_model_scope` reads `scopedModels`; name matching;
-  nearest-tier fallback.
-- `crates/hoocode-code-subagents`: `model_categories.rs` resolves over the scope; `tools.rs`
-  removes `complexity`, makes `model` the only model param, and adds `effort`; `pool.rs` `resolve_task_model`
-  applies decisions 8 to 12.
-- `crates/hoocode-code-resources`: frontmatter `model:` becomes the default, not the pin.
-- `crates/hoocode-code-agent-session`: `cycle_scoped_model` applies the saved effort; the
-  system prompt lists the scoped models.
-- `crates/hoocode-code-tui-selectors`: `scoped_models_selector.rs` gains the effort and
-  category columns.
-- `crates/hoocode-code-tui-app`: `mode/models.rs` saves the full entries; `/settings` "Models"
-  row; `keybindings.rs` unchanged.
-- The `--models` flag parser (crate not yet located; find it with `grep -rn '"--models"'`):
-  session-only override.
+- `crates/hoocode-code-settings`: `src/types.rs` gets the `scopedModels` type; `src/manager.rs`
+  reads and writes it, runs the migration from `enabledModels` and `modelCategories` on first
+  load, and applies the project replace (decision 15).
+- `crates/hoocode-code-models`: `src/resolver.rs` `resolve_model_scope` reads `scopedModels`;
+  name matching (decision 7); nearest-tier fallback (decisions 10, 14); clamp effort (decision 17).
+- `crates/hoocode-code-subagents`: `src/model_categories.rs` resolves categories over the scope;
+  `src/tools.rs` removes `complexity`, makes `model` the only model param, and adds `effort`;
+  `src/pool.rs` `resolve_task_model` applies decisions 8 to 12; `templates/prompts/task-main.md`
+  gets the scoped-model list the main model chooses from.
+- `crates/hoocode-code-resources`: `src/agent_frontmatter.rs` `model:` becomes the default, not
+  the pin (decision 12).
+- `crates/hoocode-code-agent-session`: `src/session.rs` `cycle_scoped_model` applies the saved
+  effort (decision 5); the system prompt lists the scoped models.
+- `crates/hoocode-code-tui-selectors`: `src/scoped_models_selector.rs` gains the effort and
+  category columns (decisions 1, 2, 3, 17); `src/settings_selector.rs` gets the "Models" row.
+- `crates/hoocode-code-tui-app`: `src/mode/models.rs` saves the full entries (the save currently
+  drops the effort suffix); `src/mode/settings.rs` opens the picker from the "Models" row;
+  `keybindings.rs` unchanged (alt+m and shift+alt+m keep their bindings).
+- `crates/hoocode-code-cli`: `src/args.rs` `--models` parser stays, session-only override
+  (decision 13); `src/runtime.rs` takes the override in place of `scopedModels` for that run.
+- `crates/hoocode-app-server`: `src/server.rs` line ~56 doc comment names `enabledModels`; update
+  the wording with the rest of the change.
 - `docs/maps/ui.md` must be updated in the same commit as the screen and command changes.
   `docs/maps/packages.md` too, if a crate's contents change in a way the map lists.
 
 ## Test plan
 
 - **Unit:** migration (both source keys, `:level` to `effort`, missing and present cases);
-  resolution by alias, id and substring; the ambiguous-match error; tie-break by list order;
-  nearest-tier fallback in both directions; untagged models never picked for a category;
-  precedence of an explicit ask over the frontmatter pin.
+  migration runs on first load and is written to disk, and a second load does not re-migrate;
+  `scopedModels: []` counts as present, so no migration runs; old keys are ignored after
+  migration; project `scopedModels` replaces the global list and does not merge (decision 15);
+  resolution by alias, id and substring; the ambiguous-match error; alias validation (unique
+  across the list, `[a-z0-9-]` only; decision 19); tie-break by list order; nearest-tier fallback
+  in both directions; step-up fallback when the lowest tier (`cheap`) is empty, with the tool
+  result naming the model used; untagged models never picked for a category; effort clamped to
+  the closest level the model supports (decision 17); hard limit: subagents never get an
+  unscoped model, and an empty scope falls back to all logged-in models (decision 8);
+  precedence of an explicit ask over the frontmatter pin, and the pin is used when the main model
+  asks for nothing (decision 12); the Agent tool schema has `model` and `effort` only, with no
+  `complexity` (decisions 6, 16); an `effort` param overrides the scoped effort; `--models`
+  overrides `scopedModels` for that run only and is not written to disk (decision 13); cycling
+  (alt+m) applies the saved effort, and a model with no saved effort keeps the current level
+  (decision 5); the picker saves `effort` and `category` for each entry, not ids only.
 - **TUI component golden:** the picker row with the effort and category columns (in
-  `hoocode-code-tui-widgets` or the selector's crate, per `tests/golden/<crate>/`).
+  `hoocode-code-tui-selectors`'s golden tests, per `tests/golden/<crate>/`).
 - **Screen golden:** `/scoped-models` end to end (`scripts/tui/goldens.py`), accepted with
   `goldens.py update <scenario>` once reviewed.
 - Done bar: L1 plus `python3 scripts/tui/goldens.py check all`, and a review bundle for the
@@ -93,6 +111,6 @@ Affected files and crates (from Current state):
 - A separate settings key for the picker. `scopedModels` is the only key read or written after
   migration.
 
-## Open questions
+## Closed questions
 
-None. All questions closed 2026-10-09 (decisions 14 to 20).
+All questions were closed on 2026-10-09 (decisions 14 to 20).
