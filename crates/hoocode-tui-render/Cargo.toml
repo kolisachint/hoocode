@@ -21,9 +21,16 @@ hoocode-tui-images = { workspace = true }
 hoocode-tui-keys = { workspace = true }
 hoocode-tui-terminal = { workspace = true }
 hoocode-tui-util = { workspace = true }
+# Only for the `golden` module (screen snapshots in tests).
+vt100 = { version = "0.16", optional = true }
+
+[features]
+# Golden snapshots (`golden` module, `assert_golden!`). Other crates enable it as a dev-dependency feature.
+golden = ["dep:vt100"]
 
 [dev-dependencies]
-vt100 = "0.16"
+# Enables `golden` for this crate's own tests (integration tests do not see `cfg(test)`).
+hoocode-tui-render = { path = ".", features = ["golden"] }
 
 # Byte-index slices of text are a panic risk on multi-byte input (see docs/design/reliability.md, 1.5).
 [lints.clippy]

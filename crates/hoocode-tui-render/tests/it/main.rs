@@ -4,6 +4,7 @@
 mod cell_size_input;
 mod cursor_parking;
 mod flatcache_stress;
+mod golden;
 mod hyperlink_click;
 mod overlay_compositing;
 mod overlay_non_capturing_ts;

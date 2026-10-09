@@ -1,0 +1,11 @@
+red plain bold underline
+orange inverse
+truecolor
+italic
+--- styles ---
+r0 c0-2 fg=1
+r0 c10-23 bold underline
+r1 c0-5 fg=208
+r1 c7-13 inverse
+r2 c0-8 fg=#0a141e bg=#ffffff
+r3 c0-5 italic
