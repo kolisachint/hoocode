@@ -28,6 +28,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use hoocode_runtime::spawn_named_thread;
+use hoocode_tui_keys::{is_kitty_protocol_active, set_kitty_protocol_active};
 
 const TERMINAL_PROGRESS_ACTIVE_SEQUENCE: &str = "\x1b]9;4;3\x07";
 const TERMINAL_PROGRESS_CLEAR_SEQUENCE: &str = "\x1b]9;4;0;\x07";
@@ -110,6 +111,13 @@ fn resolve_dimension(measured: Option<u16>, env_var: Option<&str>, default: u16)
 }
 
 /// Matches a Kitty keyboard-protocol query response: `\x1b[?<flags>u`.
+/// Clears the Kitty flag and reports whether it was set.
+fn take_kitty_protocol_active() -> bool {
+    let active = is_kitty_protocol_active();
+    set_kitty_protocol_active(false);
+    active
+}
+
 fn parse_kitty_query_response(sequence: &str) -> bool {
     let Some(rest) = sequence.strip_prefix("\x1b[?") else {
         return false;
@@ -219,7 +227,6 @@ fn start_resize_watch(check: ResizeCheck, stop_signal: Arc<AtomicBool>) -> Optio
 pub struct ProcessTerminal {
     was_raw: bool,
     started: bool,
-    kitty_protocol_active: Arc<AtomicBool>,
     modify_other_keys_active: Arc<AtomicBool>,
     progress_active: Arc<AtomicBool>,
     forwarding: Arc<AtomicBool>,
@@ -249,7 +256,6 @@ impl ProcessTerminal {
         Self {
             was_raw: false,
             started: false,
-            kitty_protocol_active: Arc::new(AtomicBool::new(false)),
             modify_other_keys_active: Arc::new(AtomicBool::new(false)),
             progress_active: Arc::new(AtomicBool::new(false)),
             forwarding: Arc::new(AtomicBool::new(true)),
@@ -348,7 +354,6 @@ impl Terminal for ProcessTerminal {
         // Query + (fallback) enable Kitty keyboard protocol / modifyOtherKeys.
         self.raw_write("\x1b[?u");
         {
-            let kitty_active = self.kitty_protocol_active.clone();
             let modify_active = self.modify_other_keys_active.clone();
             let stop_signal = self.stop_signal.clone();
             let writer = self.writer();
@@ -357,7 +362,7 @@ impl Terminal for ProcessTerminal {
                 if stop_signal.load(Ordering::SeqCst) {
                     return;
                 }
-                if !kitty_active.load(Ordering::SeqCst) && !modify_active.load(Ordering::SeqCst) {
+                if !is_kitty_protocol_active() && !modify_active.load(Ordering::SeqCst) {
                     writer.write("\x1b[>4;2m");
                     modify_active.store(true, Ordering::SeqCst);
                 }
@@ -370,7 +375,6 @@ impl Terminal for ProcessTerminal {
         // runs on the reader's own deadline.
         let feed = stdin_hub::Feed::new(
             self.forwarding.clone(),
-            self.kitty_protocol_active.clone(),
             self.last_input_at.clone(),
             self.writer(),
             on_input,
@@ -410,7 +414,7 @@ impl Terminal for ProcessTerminal {
 
         self.raw_write("\x1b[?2004l");
 
-        if self.kitty_protocol_active.swap(false, Ordering::SeqCst) {
+        if take_kitty_protocol_active() {
             self.raw_write("\x1b[<u");
         }
         if self.modify_other_keys_active.swap(false, Ordering::SeqCst) {
@@ -435,7 +439,7 @@ impl Terminal for ProcessTerminal {
     }
 
     fn drain_input(&mut self, max: Duration, idle: Duration) {
-        if self.kitty_protocol_active.swap(false, Ordering::SeqCst) {
+        if take_kitty_protocol_active() {
             self.raw_write("\x1b[<u");
         }
         if self.modify_other_keys_active.swap(false, Ordering::SeqCst) {
@@ -495,7 +499,7 @@ impl Terminal for ProcessTerminal {
     }
 
     fn kitty_protocol_active(&self) -> bool {
-        self.kitty_protocol_active.load(Ordering::SeqCst)
+        is_kitty_protocol_active()
     }
 
     fn move_by(&mut self, lines: i32) {
@@ -609,9 +613,28 @@ mod tests {
         assert!(!parse_kitty_query_response("\x1b[A"));
     }
 
+    /// The Kitty flag is one flag, shared by the terminal (which detects it)
+    /// and key matching (which reads it). Also: no flag before detection.
     #[test]
-    fn new_terminal_is_not_kitty_active_by_default() {
-        let term = ProcessTerminal::new();
-        assert!(!term.kitty_protocol_active());
+    fn kitty_detection_reaches_key_matching() {
+        set_kitty_protocol_active(false);
+        assert!(!ProcessTerminal::new().kitty_protocol_active());
+        assert!(!hoocode_tui_keys::matches_key("\x1b\r", "shift+enter"));
+        assert!(hoocode_tui_keys::matches_key("\x1b\r", "alt+enter"));
+
+        let mut feed = stdin_hub::Feed::new(
+            Arc::new(AtomicBool::new(true)),
+            Arc::new(Mutex::new(Instant::now())),
+            Writer {
+                handle: None,
+                log: None,
+            },
+            Box::new(|_: &str| {}),
+        );
+        feed.chunk(b"\x1b[?7u", Instant::now());
+        assert!(ProcessTerminal::new().kitty_protocol_active());
+        assert!(hoocode_tui_keys::matches_key("\x1b\r", "shift+enter"));
+        assert!(!hoocode_tui_keys::matches_key("\x1b\r", "alt+enter"));
+        set_kitty_protocol_active(false);
     }
 }

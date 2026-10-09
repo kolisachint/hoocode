@@ -1925,6 +1925,7 @@ version = "0.1.9"
 dependencies = [
  "crossterm",
  "hoocode-runtime",
+ "hoocode-tui-keys",
  "hoocode-tui-util",
  "libc",
  "windows-sys 0.59.0",

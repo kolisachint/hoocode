@@ -17,13 +17,14 @@ use std::time::Instant;
 
 use hoocode_runtime::spawn_named_thread;
 
+use hoocode_tui_keys::{is_kitty_protocol_active, set_kitty_protocol_active};
+
 use crate::interrupt;
 use crate::{parse_kitty_query_response, StdinBuffer, StdinBufferOptions, StdinEvent, Writer};
 
 /// What a running terminal does with stdin.
 pub(crate) struct Feed {
     forwarding: Arc<AtomicBool>,
-    kitty_active: Arc<AtomicBool>,
     last_input_at: Arc<Mutex<Instant>>,
     buf: StdinBuffer,
     writer: Writer,
@@ -41,14 +42,12 @@ pub(crate) struct Feed {
 impl Feed {
     pub(crate) fn new(
         forwarding: Arc<AtomicBool>,
-        kitty_active: Arc<AtomicBool>,
         last_input_at: Arc<Mutex<Instant>>,
         writer: Writer,
         on_input: Box<dyn FnMut(&str) + Send>,
     ) -> Self {
         Self {
             forwarding,
-            kitty_active,
             last_input_at,
             buf: StdinBuffer::new(StdinBufferOptions::default()),
             writer,
@@ -61,7 +60,7 @@ impl Feed {
 
     /// One raw chunk of input, in order. It (re)arms the ESC timer when it
     /// leaves an incomplete sequence behind.
-    fn chunk(&mut self, bytes: &[u8], now: Instant) {
+    pub(crate) fn chunk(&mut self, bytes: &[u8], now: Instant) {
         *lock(&self.last_input_at) = now;
         let mut text = String::new();
         let mut data = std::mem::take(&mut self.utf8_tail);
@@ -130,9 +129,8 @@ impl Feed {
             match event {
                 StdinEvent::Data(seq) => {
                     // The Kitty protocol query response is ours, not the caller's.
-                    if !self.kitty_active.load(Ordering::SeqCst) && parse_kitty_query_response(&seq)
-                    {
-                        self.kitty_active.store(true, Ordering::SeqCst);
+                    if !is_kitty_protocol_active() && parse_kitty_query_response(&seq) {
+                        set_kitty_protocol_active(true);
                         self.writer.write("\x1b[>7u");
                         continue;
                     }
@@ -348,7 +346,6 @@ mod tests {
         let sink = delivered.clone();
         let mut feed = Feed::new(
             Arc::new(AtomicBool::new(true)),
-            Arc::new(AtomicBool::new(true)),
             Arc::new(Mutex::new(Instant::now())),
             Writer {
                 handle: None,
@@ -381,7 +378,6 @@ mod tests {
         let delivered = Arc::new(Mutex::new(Vec::<String>::new()));
         let sink = delivered.clone();
         let feed = Feed::new(
-            Arc::new(AtomicBool::new(true)),
             Arc::new(AtomicBool::new(true)),
             Arc::new(Mutex::new(Instant::now())),
             Writer {
