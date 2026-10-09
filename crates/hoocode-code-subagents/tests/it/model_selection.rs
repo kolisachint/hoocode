@@ -275,7 +275,6 @@ fn a_tagged_scope_keeps_its_tags_for_category_asks() {
 /// derived default for that tier over the flag's list alone. `acme/tiny` is
 /// cheapest overall but is not in the list, so `acme/mid` must be picked.
 #[test]
-#[ignore = "bug: a --models category ask errors on untagged entries instead of deriving the tier from the list (decision 13)"]
 fn a_models_flag_category_ask_derives_its_tier_from_the_list_alone() {
     let scoped = scope(&[
         entry("acme/mid", None, None, Some("high")),

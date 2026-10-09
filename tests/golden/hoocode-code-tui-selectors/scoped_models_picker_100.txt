@@ -11,7 +11,7 @@
 │                                                                                                  │
 │   enter toggle · alt+a all · alt+x clear · alt+g provider · alt+up/alt+down reorder · alt+s save │
 │ · 2/3 enabled                                                                                    │
-│   tab effort · alt+j category · the last step clears                                             │
+│   tab effort · alt+j category                                                                    │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 --- styles ---
 r0 c0-88 fg=#6e93ff
@@ -65,6 +65,6 @@ r12 c0 fg=#6e93ff
 r12 c2-14 fg=#989898
 r12 c99 fg=#6e93ff
 r13 c0 fg=#6e93ff
-r13 c2-53 fg=#989898
+r13 c2-30 fg=#989898
 r13 c99 fg=#6e93ff
 r14 c0-99 fg=#6e93ff

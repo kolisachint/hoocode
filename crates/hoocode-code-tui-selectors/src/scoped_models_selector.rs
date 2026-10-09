@@ -246,7 +246,7 @@ fn column_hint() -> String {
     theme().fg(
         "dim",
         &format!(
-            "  {} effort · {} category · the last step clears",
+            "  {} effort · {} category",
             format_key_text(EFFORT_KEY, false),
             format_key_text(CATEGORY_KEY, false)
         ),
