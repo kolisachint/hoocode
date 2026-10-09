@@ -1,5 +1,8 @@
 //! `core/tool-output-view.ts`: the radar / peek / full dial.
 
+use hoocode_code_tui_keybindings::key_hint;
+use hoocode_code_tui_theme::theme;
+
 pub use hoocode_code_settings::ToolOutputView;
 
 /// The dial's order, least to most. Cycling wraps at both ends.
@@ -27,6 +30,31 @@ pub fn tool_output_view_description(view: ToolOutputView) -> &'static str {
         ToolOutputView::Peek => "the call line and the first few lines of the result",
         ToolOutputView::Full => "the call line and the whole result",
     }
+}
+
+/// The body a tool result shows at the peek stop, shared by every renderer
+/// that trims its own output: the first `PEEK_LINES` lines (all of them when
+/// `expanded`), styled by `style`, then the muted `... (N more lines, to
+/// expand)` hint when lines were left out. Callers put any leading newline
+/// themselves, and skip the call for an empty output.
+pub fn peek_block(
+    lines: &[String],
+    expanded: bool,
+    style: impl FnOnce(&[String]) -> Vec<String>,
+) -> String {
+    let max = if expanded { lines.len() } else { PEEK_LINES };
+    let shown = lines.len().min(max);
+    let body = style(&lines[..shown]).join("\n");
+    if lines.len() <= shown {
+        return body;
+    }
+    let remaining = lines.len() - shown;
+    let t = theme();
+    format!(
+        "{body}{} {})",
+        t.fg("muted", &format!("\n... ({remaining} more lines,")),
+        key_hint("app.tools.expand", "to expand")
+    )
 }
 
 /// `isToolOutputView`.

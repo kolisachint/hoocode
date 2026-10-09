@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use hoocode_code_tool_api::{format_size, resolve_read_path, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES};
-use hoocode_code_tui_keybindings::{key_hint, key_text};
+use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_theme::{get_language_from_path, highlight_code, message_label, theme};
 use serde_json::Value;
 
@@ -16,7 +16,7 @@ use crate::render_utils::{
     arg_or, get_text_output, invalid_arg_text, replace_tabs, shorten_path, str_arg,
 };
 use crate::tool_execution::{ToolRenderDefinition, ToolRenderResultOptions, ToolResultView};
-use crate::tool_output_view::PEEK_LINES;
+use crate::tool_output_view::peek_block;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CompactKind {
@@ -188,27 +188,15 @@ fn format_read_result(
         None => output.split('\n').map(str::to_string).collect(),
     };
     let lines = trim_trailing_empty_lines(rendered);
-    let max = if options.expanded {
-        lines.len()
-    } else {
-        PEEK_LINES
-    };
-    let shown: Vec<String> = lines.iter().take(max).cloned().collect();
     let start_line = args
         .get("offset")
         .and_then(Value::as_f64)
         .map(|n| n as i64)
         .unwrap_or(1);
-    let numbered = render_read_output(&shown.join("\n"), start_line);
-    let mut text = format!("\n{}", numbered.join("\n"));
-    if lines.len() > max {
-        let remaining = lines.len() - max;
-        text.push_str(&format!(
-            "{} {})",
-            t.fg("muted", &format!("\n... ({remaining} more lines,")),
-            key_hint("app.tools.expand", "to expand")
-        ));
-    }
+    let body = peek_block(&lines, options.expanded, |shown| {
+        render_read_output(&shown.join("\n"), start_line)
+    });
+    let mut text = format!("\n{body}");
 
     let truncation = result.details.get("truncation");
     if let Some(tr) = truncation.filter(|tr| tr.get("truncated") == Some(&Value::Bool(true))) {

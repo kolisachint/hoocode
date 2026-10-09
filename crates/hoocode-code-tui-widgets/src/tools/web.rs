@@ -2,7 +2,6 @@
 
 use std::rc::Rc;
 
-use hoocode_code_tui_keybindings::key_hint;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::markdown::js_trim;
 use serde_json::Value;
@@ -11,7 +10,7 @@ use super::search::js_number;
 use super::text;
 use crate::render_utils::{get_text_output, invalid_arg_text, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolRenderResultOptions, ToolResultView};
-use crate::tool_output_view::PEEK_LINES;
+use crate::tool_output_view::peek_block;
 
 /// The first lines of the output, peek-trimmed, as both web tools print it.
 fn peek_output(
@@ -22,32 +21,14 @@ fn peek_output(
     let t = theme();
     let output = get_text_output(Some(result.content), show_images);
     let output = js_trim(&output);
-    let mut text = String::new();
-    if !output.is_empty() {
-        let lines: Vec<&str> = output.split('\n').collect();
-        let max = if options.expanded {
-            lines.len()
-        } else {
-            PEEK_LINES
-        };
-        let shown: Vec<String> = lines
-            .iter()
-            .take(max)
-            .map(|l| t.fg("toolOutput", l))
-            .collect();
-        text.push_str(&format!("\n{}", shown.join("\n")));
-        if lines.len() > max {
-            text.push_str(&format!(
-                "{} {})",
-                t.fg(
-                    "muted",
-                    &format!("\n... ({} more lines,", lines.len() - max)
-                ),
-                key_hint("app.tools.expand", "to expand")
-            ));
-        }
+    if output.is_empty() {
+        return String::new();
     }
-    text
+    let lines: Vec<String> = output.split('\n').map(str::to_string).collect();
+    let body = peek_block(&lines, options.expanded, |shown| {
+        shown.iter().map(|l| t.fg("toolOutput", l)).collect()
+    });
+    format!("\n{body}")
 }
 
 fn present(details: &Value, key: &str) -> Option<Value> {

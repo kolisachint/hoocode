@@ -3,14 +3,13 @@
 
 use std::rc::Rc;
 
-use hoocode_code_tui_keybindings::key_hint;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::markdown::js_trim;
 
 use super::text;
 use crate::render_utils::get_text_output;
 use crate::tool_execution::{ToolRenderDefinition, ToolRenderResultOptions, ToolResultView};
-use crate::tool_output_view::PEEK_LINES;
+use crate::tool_output_view::peek_block;
 
 /// The plugin tools that render their own result.
 pub const RENDERED_PLUGIN_TOOLS: [&str; 4] = [
@@ -30,34 +29,21 @@ pub fn format_plugin_tool_result(
     if output.is_empty() {
         return String::new();
     }
-    let lines: Vec<&str> = output.split('\n').collect();
-    let max = if options.expanded {
-        lines.len()
-    } else {
-        PEEK_LINES
-    };
-    let shown: Vec<&str> = lines.iter().take(max).copied().collect();
-    let remaining = lines.len() - shown.len();
-    let body = shown
-        .iter()
-        .enumerate()
-        .map(|(i, line)| {
-            if i == 0 {
-                t.fg("muted", line)
-            } else {
-                t.fg("toolOutput", line)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    if remaining == 0 {
-        return body;
-    }
-    format!(
-        "{body}{} {})",
-        t.fg("muted", &format!("\n... ({remaining} more lines,")),
-        key_hint("app.tools.expand", "to expand")
-    )
+    let lines: Vec<String> = output.split('\n').map(str::to_string).collect();
+    // The first row (the count line) is muted, the rows under it are body text.
+    peek_block(&lines, options.expanded, |shown| {
+        shown
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+                if i == 0 {
+                    t.fg("muted", line)
+                } else {
+                    t.fg("toolOutput", line)
+                }
+            })
+            .collect()
+    })
 }
 
 pub fn definition() -> ToolRenderDefinition {

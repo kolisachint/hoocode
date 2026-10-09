@@ -174,3 +174,59 @@ mod radar_signal_row {
         assert!(row.ends_with("1 line"));
     }
 }
+
+mod peek_block {
+    use super::*;
+    use hoocode_code_tui_widgets::tool_output_view::{peek_block, PEEK_LINES};
+
+    fn lines(n: usize) -> Vec<String> {
+        (1..=n).map(|i| format!("line {i}")).collect()
+    }
+
+    /// The identity style, so the test sees the plain lines the helper chose.
+    fn plain(shown: &[String]) -> Vec<String> {
+        shown.to_vec()
+    }
+
+    #[test]
+    fn shows_every_line_without_a_hint_when_they_fit_the_peek_budget() {
+        let _g = lock();
+        let block = peek_block(&lines(PEEK_LINES), false, plain);
+        assert_eq!(block, lines(PEEK_LINES).join("\n"));
+    }
+
+    #[test]
+    fn shows_the_first_peek_lines_and_counts_the_rest() {
+        let _g = lock();
+        let block = strip(&peek_block(&lines(PEEK_LINES + 3), false, plain));
+        let want_head = lines(PEEK_LINES).join("\n");
+        assert!(block.starts_with(&want_head), "{block:?}");
+        assert!(block.contains("... (3 more lines,"), "{block:?}");
+        assert!(block.contains("to expand"), "{block:?}");
+        assert!(!block.contains("line 6"), "{block:?}");
+    }
+
+    #[test]
+    fn expanded_shows_everything_with_no_hint() {
+        let _g = lock();
+        let block = peek_block(&lines(20), true, plain);
+        assert_eq!(block, lines(20).join("\n"));
+    }
+
+    #[test]
+    fn the_style_closure_sees_only_the_shown_lines() {
+        let _g = lock();
+        let mut seen = 0usize;
+        let _ = peek_block(&lines(12), false, |shown| {
+            seen = shown.len();
+            shown.to_vec()
+        });
+        assert_eq!(seen, PEEK_LINES);
+    }
+
+    #[test]
+    fn an_empty_output_is_an_empty_block() {
+        let _g = lock();
+        assert_eq!(peek_block(&[], false, plain), "");
+    }
+}
