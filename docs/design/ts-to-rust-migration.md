@@ -707,7 +707,9 @@ exceptions are listed under `pending` with the ledger task that removes them. Ex
 - **Level 1 (programmatic):** `cargo fmt`, `clippy -D warnings` and tests for the
   task's crates (with ported TS tests), plus the dependency firewall and task-specific
   commands.
-- **Level 2 (rendered TUI):** `migration/tui-parity/harness.py` runs the *real* pinned
+- **Level 2 (rendered TUI), retired 2026-10-09 (TUI plan T0.6):** the hoocode-ts comparison
+  below no longer gates. Screen goldens (`scripts/tui/goldens.py check all`) replace it. The
+  text is kept for history. `migration/tui-parity/harness.py` runs the *real* pinned
   hoocode (built by `setup_hoocode.sh` into `target/hoocode-pin`) and the *real*
   `hoocode` in identical fixed-size tmux terminals. It uses throwaway HOME and workspace
   directories and one scripted mock LLM (`mockllm.py`, OpenAI-compatible SSE, reached via
@@ -719,8 +721,8 @@ exceptions are listed under `pending` with the ledger task that removes them. Ex
   Reports: `target/tui-parity/<scenario>/report.{md,html,png}`.
 - A scenario is only trusted after `harness.py selfcheck` shows that hoocode renders it
   identically twice.
-- **Done** = `ledger.py verify` passes both levels. L1 alone gives `l1_done`, and the
-  task is re-verified once the tasks its scenarios need have landed.
+- **Done** (superseded 2026-10-09): L1 plus `python3 scripts/tui/goldens.py check all`. The
+  `ledger.py verify` gate is retired and `ledger.py` is read-only. See CLAUDE.md.
 - **Resuming:** "continue migration" follows `.claude/skills/continue-migration/SKILL.md`:
   orient (`ledger.py next`, `migration/PROGRESS.md`), port one task, gate, commit, write
   the handoff note, repeat.

@@ -1,0 +1,20 @@
+«» «fg=#5cc8bb»- «»beta item 13
+«» «fg=#5cc8bb»- «»beta item 14
+«» «fg=#5cc8bb»- «»beta item 15
+«» «fg=#5cc8bb»- «»beta item 16
+«» «fg=#5cc8bb»- «»beta item 17
+«» «fg=#5cc8bb»- «»beta item 18
+«» «fg=#5cc8bb»- «»beta item 19
+«» «fg=#5cc8bb»- «»beta item 20
+«» «fg=#5cc8bb»- «»beta item 21
+«» «fg=#5cc8bb»- «»beta item 22
+«» «fg=#5cc8bb»- «»beta item 23
+«» «fg=#5cc8bb»- «»beta item 24
+«» «fg=#5cc8bb»- «»beta item 25
+
+«» «fg=#989898»↑«fg=#a8a8a8»100«fg=#989898» ↓«fg=#a8a8a8»20«fg=#989898» · «fg=#a8a8a8»<DUR>
+
+«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
+«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
+«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.1%«» «fg=#989898»128k auto@87%«»                                                      «fg=#a8a8a8»mock-model

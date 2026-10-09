@@ -137,8 +137,13 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 
 ## Rules for UI changes
 
-- The L2 parity harness (`migration/tui-parity/harness.py`) compares the screen with
-  hoocode v0.6.0. A deliberate visual difference needs a harness mask or a recorded
-  reason, not a silent failure.
+- Screen goldens: `python3 scripts/tui/goldens.py check all` runs the real binary in tmux
+  against the mock LLM (`scripts/tui/mockllm.py`) and diffs each screen with `tests/golden/tui/<scenario>/`.
+  Scenarios are in `scripts/tui/scenarios/`. `scripts/tui/review_bundle.py` writes the review bundles. A deliberate
+  change is accepted with `goldens.py update <scenario>` and shows in the diff. Component goldens
+  (`tests/golden/<crate>/`) run in nextest; accept them with `UPDATE_GOLDENS=1`. The screens
+  need not match hoocode-ts (TUI plan, Not doing).
 - Concurrency ([concurrency.md](../design/concurrency.md)): the UI thread never does
   file or network I/O. Work off the UI thread reports back through `AppEvent`.
+- Visual change: after the goldens change, a Haiku subagent reviews the bundle with the
+  `tui-review` skill (`.claude/skills/tui-review/SKILL.md`). The review is advisory; text golden diffs gate.

@@ -5,13 +5,12 @@
 #   Level 1  cargo test -p hoocode-code-main --test it replay
 #            (hoocode vs fixtures recorded from the pinned hoocode; runs in CI via
 #            `cargo test --workspace`)
-#   Level 2  python3 migration/tui-parity/harness.py run all
-#            (rendered TUI, real hoocode vs real hoocode in tmux; manual/nightly
-#            workflow staged in migration/ci/tui-parity.yml)
+#   Level 2  python3 scripts/tui/goldens.py check all
+#            (rendered TUI: real hoocode in tmux against the mock LLM, diffed with
+#            tests/golden/tui/; manual/nightly workflow staged in migration/ci/tui-parity.yml)
 #
 # This script is only a quick smoke: the binary starts, answers --version/--help,
-# the Level-1 replay passes, and (when the pinned hoocode is built, see
-# migration/tui-parity/setup_hoocode.sh) one Level-2 scenario passes.
+# the Level-1 replay passes, and (when tmux is installed) the startup golden passes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -33,10 +32,10 @@ bin=target/debug/hoocode
 check "--version prints the version" sh -c "$bin --version </dev/null 2>&1 | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'"
 check "--help prints usage" sh -c "$bin --help </dev/null 2>&1 | grep -q 'Usage:'"
 check "Level-1 replay (hoocode-ts vs hoocode fixtures)" cargo test -q -p hoocode-code-main --test it replay
-if [ -f target/hoocode-pin/packages/coding-agent/dist/cli.js ] && command -v tmux >/dev/null; then
-    check "Level-2 print-basic (hoocode-ts vs hoocode in tmux)" python3 migration/tui-parity/harness.py run print-basic
+if command -v tmux >/dev/null; then
+    check "Level-2 startup golden (tests/golden/tui)" python3 scripts/tui/goldens.py check startup
 else
-    echo "SKIP  Level-2 print-basic (run migration/tui-parity/setup_hoocode.sh; needs tmux)"
+    echo "SKIP  Level-2 startup golden (needs tmux)"
 fi
 
 exit $failed

@@ -1,47 +1,44 @@
 #!/usr/bin/env python3
-"""Migration ledger CLI: where are we, what's next, and the two-level done gate.
+"""Migration ledger, read-only (frozen 2026-10-09, TUI plan T0.6).
 
     ledger.py status              # progress per phase + current task
     ledger.py next                # the task to work on now (in_progress, else first ready todo)
     ledger.py show <id>           # full task card: hoocode sources at the pin, TS tests, gates
-    ledger.py start <id>          # mark in_progress (only one task at a time)
-    ledger.py note <id> <text>    # append a handoff note to the task log
-    ledger.py block <id> <text>   # mark blocked with a reason
-    ledger.py move <id> <card> <text>  # mark moved to a design card (docs/design/*.md)
-    ledger.py verify <id>         # run L1 + L2 gates and set l1_done / done from the results
     ledger.py check               # validate ledger structure (CI)
 
-Level 1 (programmatic): cargo fmt --check, clippy -D warnings and tests for the task's
-crates, the dependency firewall, and the task's extra ``l1_cmds``.
-Level 2 (rendered): every scenario in the task's ``l2`` list passes
-``migration/tui-parity/harness.py run`` (hoocode-ts vs hoocode, same mock LLM).
-A task is ``done`` only when both levels pass; with L1 only it is ``l1_done``.
+The ledger no longer changes through this script. ``start``, ``note``, ``block``, ``move``
+and ``verify`` exit non-zero. The hoocode-ts parity gate (Level 2) is retired: the done bar
+is now Level 1 plus ``python3 scripts/tui/goldens.py check all``. New work is tracked in the
+phase tables of docs/design/tui-activity.md, not in this ledger.
+
+Migration is paused (CLAUDE.md). ``migration/ledger.json`` is kept as history.
 """
 
 from __future__ import annotations
 
-import datetime as dt
 import json
-import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "migration" / "ledger.json"
-SCENARIOS = ROOT / "migration" / "tui-parity" / "scenarios"
+# Screen scenarios moved from migration/tui-parity/ to scripts/tui/ in T0.6.
+SCENARIOS = ROOT / "scripts" / "tui" / "scenarios"
 # "moved" tasks are closed in the ledger: their work now lives in a design card
 # (moved_to). Dependents of a moved task are ready, like dependents of a done one.
 DONEISH = {"done", "l1_done", "moved"}
 STATUSES = {"todo", "in_progress", "l1_done", "done", "blocked", "deferred", "moved"}
+MUTATING = {"start", "note", "block", "move", "verify"}
+FROZEN = (
+    "ledger.py is read-only since 2026-10-09 (TUI plan T0.6). '{cmd}' would change the ledger and is refused.\n"
+    "New work is tracked in the phase tables of docs/design/tui-activity.md.\n"
+    "The done bar is L1 plus `python3 scripts/tui/goldens.py check all`."
+)
+FROZEN_FOOTER = "(ledger.py is read-only since 2026-10-09; see docs/design/tui-activity.md)"
 
 
 def load() -> dict:
     return json.loads(LEDGER.read_text())
-
-
-def save(led: dict) -> None:
-    LEDGER.write_text(json.dumps(led, indent=1, ensure_ascii=False) + "\n")
 
 
 def task(led: dict, tid: str) -> dict:
@@ -51,25 +48,9 @@ def task(led: dict, tid: str) -> dict:
     sys.exit(f"unknown task {tid}")
 
 
-def now() -> str:
-    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def head() -> str:
-    return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-
-
-def log(t: dict, kind: str, text: str) -> None:
-    t.setdefault("log", []).append({"at": now(), "commit": head(), "kind": kind, "text": text})
-
-
 def ready(led: dict, t: dict) -> bool:
     by_id = {x["id"]: x for x in led["tasks"]}
     return all(by_id[d]["status"] in DONEISH for d in t["depends"])
-
-
-def workspace_crates() -> set[str]:
-    return {tomllib.loads(p.read_text())["package"]["name"] for p in (ROOT / "crates").glob("*/Cargo.toml")}
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +73,7 @@ def cmd_status(led: dict) -> None:
         print(f"in progress: {t['id']} {t['title']}")
     l1 = [t["id"] for t in led["tasks"] if t["status"] == "l1_done"]
     if l1:
-        print(f"awaiting L2: {', '.join(l1)}")
+        print(f"l1_done (L2 retired, not closed): {', '.join(l1)}")
 
 
 def cmd_next(led: dict) -> None:
@@ -100,19 +81,15 @@ def cmd_next(led: dict) -> None:
     if cur:
         print(f"CONTINUE {cur[0]['id']}")
         show(cur[0])
-        return
-    for t in led["tasks"]:
-        if t["status"] == "todo" and ready(led, t):
-            print(f"START {t['id']}")
-            show(t)
-            return
-    # Nothing ready: maybe an l1_done task can now reach done.
-    for t in led["tasks"]:
-        if t["status"] == "l1_done":
-            print(f"RE-VERIFY {t['id']} (L2 may pass now)")
-            show(t)
-            return
-    print("nothing ready: all remaining tasks are blocked/deferred or waiting on dependencies")
+    else:
+        for t in led["tasks"]:
+            if t["status"] == "todo" and ready(led, t):
+                print(f"NEXT {t['id']} (not started: the ledger is read-only)")
+                show(t)
+                break
+        else:
+            print("nothing ready: all remaining tasks are blocked/deferred or waiting on dependencies")
+    print(FROZEN_FOOTER)
 
 
 def show(t: dict) -> None:
@@ -133,78 +110,13 @@ def show(t: dict) -> None:
     if isinstance(l2, list):
         for s in l2:
             exists = (SCENARIOS / f"{s}.json").exists()
-            print(f"  L2 scenario: {s}{'' if exists else '  (not written yet: write it, selfcheck it)'}")
+            print(f"  L2 scenario: {s}{'' if exists else '  (not written yet)'}")
     else:
         print(f"  L2: {l2}")
     if t["notes"]:
         print(f"  notes: {t['notes']}")
     for entry in t.get("log", [])[-5:]:
         print(f"  log {entry['at']} {entry['commit']} [{entry['kind']}] {entry['text']}")
-
-
-def run(cmd: list[str] | str, shell: bool = False) -> bool:
-    print(f"$ {cmd if isinstance(cmd, str) else ' '.join(cmd)}", flush=True)
-    return subprocess.run(cmd, cwd=ROOT, shell=shell).returncode == 0
-
-
-def cmd_verify(led: dict, tid: str) -> int:
-    t = task(led, tid)
-    existing = workspace_crates()
-    missing = [c for c in t["crates"] if c not in existing]
-    if missing:
-        print(f"L1 FAIL: crates not in workspace yet: {missing}")
-        return 1
-    pkgs = [a for c in t["crates"] for a in ("-p", c)]
-    l1 = run(["cargo", "fmt", "--all", "--", "--check"])
-    if pkgs:
-        l1 = run(["cargo", "clippy", *pkgs, "--all-targets", "--", "-D", "warnings"]) and l1
-        l1 = run(["cargo", "test", *pkgs]) and l1
-    l1 = run([sys.executable, "migration/check_dep_firewall.py"]) and l1
-    for c in t["l1_cmds"]:
-        l1 = run(c, shell=True) and l1
-    if not l1:
-        log(t, "verify", "L1 failed")
-        save(led)
-        print(f"\n{tid}: L1 FAILED; status stays {t['status']}")
-        return 1
-
-    l2_ok, detail = True, "n/a"
-    if isinstance(t["l2"], list):
-        unwritten = [s for s in t["l2"] if not (SCENARIOS / f"{s}.json").exists()]
-        results = []
-        for s in t["l2"]:
-            if s in unwritten:
-                continue
-            ok = run([sys.executable, "migration/tui-parity/harness.py", "run", s])
-            results.append(f"{s}={'pass' if ok else 'fail'}")
-            l2_ok = l2_ok and ok
-        if unwritten:
-            l2_ok = False
-            results.append(f"unwritten={unwritten}")
-        detail = ", ".join(results)
-    t["status"] = "done" if l2_ok else "l1_done"
-    log(t, "verify", f"L1 pass; L2 {detail}")
-    save(led)
-    print(f"\n{tid}: L1 pass · L2 {'pass' if l2_ok else 'pending'} ({detail}) -> status {t['status']}")
-    return 0
-
-
-def set_moved(led: dict, tid: str, card: str, text: str) -> None:
-    t = task(led, tid)
-    if t["status"] == "in_progress":
-        sys.exit(f"{tid} is in_progress; finish, block or note it first")
-    # Keep the key right after "status" so the JSON reads in the same order.
-    rebuilt = {}
-    for k, v in t.items():
-        if k == "moved_to":
-            continue
-        rebuilt[k] = "moved" if k == "status" else v
-        if k == "status":
-            rebuilt["moved_to"] = card
-    t.clear()
-    t.update(rebuilt)
-    log(t, "move", text)
-    save(led)
 
 
 def cmd_check(led: dict) -> int:
@@ -241,38 +153,19 @@ def main() -> int:
     if not args or args[0] in ("-h", "--help"):
         print(__doc__)
         return 0
-    led = load()
     cmd = args[0]
+    if cmd in MUTATING:
+        print(FROZEN.format(cmd=cmd), file=sys.stderr)
+        return 2
+    led = load()
     if cmd == "status":
         cmd_status(led)
     elif cmd == "next":
         cmd_next(led)
     elif cmd == "show":
+        if len(args) < 2:
+            sys.exit("usage: ledger.py show <id>")
         show(task(led, args[1]))
-    elif cmd == "start":
-        for t in led["tasks"]:
-            if t["status"] == "in_progress" and t["id"] != args[1]:
-                sys.exit(f"{t['id']} is already in_progress; finish, block or note it first")
-        t = task(led, args[1])
-        if not ready(led, t):
-            sys.exit(f"{args[1]} has unfinished dependencies: {t['depends']}")
-        t["status"] = "in_progress"
-        log(t, "start", "started")
-        save(led)
-    elif cmd == "note":
-        log(task(led, args[1]), "note", " ".join(args[2:]))
-        save(led)
-    elif cmd == "block":
-        t = task(led, args[1])
-        t["status"] = "blocked"
-        log(t, "block", " ".join(args[2:]))
-        save(led)
-    elif cmd == "move":
-        if len(args) < 4:
-            sys.exit("usage: ledger.py move <id> <card> <text>")
-        set_moved(led, args[1], args[2], " ".join(args[3:]))
-    elif cmd == "verify":
-        return cmd_verify(led, args[1])
     elif cmd == "check":
         return cmd_check(led)
     else:

@@ -1,0 +1,30 @@
+«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+
+
+
+
+
+
+
+
+
+
+
+«fg=#989898»no project resources loaded
+
+
+«bg=#1c1c26» remember the word apple
+
+
+«» Noted: apple.
+
+
+«bg=#1e1a28» «bg=#1e1a28;fg=#a8a8a8»◦«bg=#1e1a28» Resumed session
+«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
+«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
+«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.1%«» «fg=#989898»128k auto@87%«»  «fg=#989898»↑«fg=#a8a8a8»100«»  «fg=#989898»↓«fg=#a8a8a8»20«»                                                    «fg=#a8a8a8»mock-model

@@ -5,6 +5,16 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ## Resume here
 
+- **2026-10-09 (TUI Phase T0 done): hoocode-only goldens, parity retired.** Outcome and open
+  items in `docs/design/tui-activity.md`.
+  - T0.1: `golden` feature on `hoocode-tui-render` (`render_golden`, `assert_golden!`).
+  - T0.2: 36 component goldens (31 widgets, 5 footer). Clock-dependent widgets not covered yet.
+  - T0.3: `scripts/tui/goldens.py`, 67 scenarios, 165 screens in `tests/golden/tui/`.
+  - T0.4/T0.5: `scripts/tui/review_bundle.py` and the `tui-review` skill.
+  - T0.6: `ledger.py` frozen read-only. Done bar is L1 plus `goldens.py check all`.
+  - Open: copy `migration/ci/tui-parity.yml` into `.github/workflows/` (user). Confirm the
+    fixtures-only SessionStart change. Replay fixtures stay until 2026-10-16.
+  - Next step: Phase S, tier Now, N1. Migration stays paused.
 - **2026-10-08 (second session): milestones 4 and 5 built on `claude/m4-m5-mcp-concurrency`.
   Not load-tested yet. Read this first.**
   - **Milestone 4, MCP client.** Crate `hoocode-agent-mcp` (rmcp 3.5.1; only this crate uses rmcp).

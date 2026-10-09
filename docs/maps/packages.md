@@ -47,6 +47,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | The Cron tools (CronCreate, CronList, CronDelete), the schedule store, the cron matcher | `code-scheduler`; registered in `code-cli` `runtime.rs` `custom_tools`; fired by `code-tui-app` `interactive_mode.rs` `tick_scheduler` ([scheduler-and-loop.md](../design/scheduler-and-loop.md)) |
 | How a tool looks in the transcript | `code-tui-widgets/src/tools/` ([ui.md](ui.md)) |
 | A slash command | list: `code-resources/src/slash_commands.rs`; handler: `code-tui-app/src/interactive_mode.rs` `run_builtin_command` |
+| Screen goldens: the scenarios, the mock LLM, the review bundles | `scripts/tui/` (`goldens.py`, `mockllm.py`, `scenarios/`, `review_bundle.py`); component goldens use the `tui-render` feature `golden` ([ui.md](ui.md)) |
 | Terminal writes (the `hoocode-term-out` thread, one frame in flight), input batching, SIGWINCH | `tui-terminal` (`output.rs`), `tui-render` (`tui.rs`), `runtime` (`signals.rs`); [concurrency.md](../design/concurrency.md) Phase 2 |
 | Ctrl+C fast path and emergency exit, the ESC timer (no thread on Unix), the UI heartbeat | `tui-terminal` (`interrupt.rs`, `stdin_hub.rs`); the UI beats and sets the hook in `code-tui-app` `run`; [concurrency.md](../design/concurrency.md) Phase 2 |
 | Shell pipes read by async tasks on `hoocode-io` (no thread per pipe) | `code-tool-bash` (`operations.rs`) |
@@ -174,7 +175,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 1985 / 72 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1237 / 379 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 6 | 1968 / 582 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2960 / 2616 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI. Feature `golden`: `render_golden` and `assert_golden!` for screen snapshots in `tests/golden/<crate>/` | 4 | 2960 / 2616 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 2487 / 103 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 10 | 2159 / 583 | keep |
 

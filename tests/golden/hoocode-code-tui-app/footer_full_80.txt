@@ -1,0 +1,20 @@
+⬢ BUILD  /work/project • amber-harbor                                     ◍ peek
+▰▰▱▱▱▱▱▱ 31.0% 200k auto@92%  ↑48k  ↓9.8k  R120k  W3.4k  $0.420
+--- styles ---
+r0 c0-6 fg=#5cc8bb bold
+r0 c9-21 fg=#a8a8a8
+r0 c22-36 fg=#989898
+r0 c74-79 fg=#989898
+r1 c0-1 fg=#5cc8bb
+r1 c2-7 fg=#989898
+r1 c9-13 fg=#a8a8a8
+r1 c15-27 fg=#989898
+r1 c30 fg=#989898
+r1 c31-33 fg=#a8a8a8
+r1 c36 fg=#989898
+r1 c37-40 fg=#a8a8a8
+r1 c43 fg=#989898
+r1 c44-47 fg=#a8a8a8
+r1 c50 fg=#989898
+r1 c51-54 fg=#a8a8a8
+r1 c57-62 fg=#a8a8a8

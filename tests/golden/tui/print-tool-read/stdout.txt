@@ -1,0 +1,13 @@
+
+
+«»The file has three lines: alpha, beta, gamma.
+
+
+
+
+
+
+
+
+
+«»<exited status=0>

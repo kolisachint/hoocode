@@ -1,93 +1,80 @@
 ---
 name: continue-migration
-description: Resume and keep advancing the hoocode-ts → hoocode (Rust) migration from exactly where it was left. Use when the user says "continue migration", "continue", "keep migrating", "next migration task", or asks for migration status.
+description: Report the status of the hoocode-ts → hoocode (Rust) migration from the frozen ledger and resume a task only when the user names it. Use when the user says "continue migration", "continue", "keep migrating", "next migration task", or asks for migration status.
 ---
 
 # Continue the hoocode-ts → hoocode (Rust) migration
 
-State lives in the repo, not in chat history. Read it, pick up the current task, and
-work in small verified increments. Keep looping until the user stops you or you hit
-a real blocker.
+**Status (2026-10-09).** Migration is paused (user decision, plan §0.3): every remaining task is
+`deferred`. `migration/ledger.py` is read-only since TUI plan T0.6. It cannot start, note, block,
+move or verify a task. The hoocode-ts parity gate (Level 2) is retired. The done bar is Level 1
+plus `python3 scripts/tui/goldens.py check all`. New work is tracked in the phase tables of
+`docs/design/tui-activity.md` and in the core plan's cards, not in the ledger.
 
-## 0. Orient (every time, ~1 minute)
+So by default this skill reports status. It does not advance a task on its own.
+
+## 0. Orient (read-only, about a minute)
 
 ```bash
 cd <hoocode checkout>
 git status --short && git log --oneline -5
 python3 migration/ledger.py status
-python3 migration/ledger.py next          # CONTINUE / START / RE-VERIFY + the task card
-sed -n '1,60p' migration/PROGRESS.md      # latest handoff notes: read before touching code
-migration/tui-parity/setup_hoocode.sh     # idempotent: builds the pinned hoocode reference
+python3 migration/ledger.py next          # the next ready task, read-only
+python3 migration/ledger.py check         # ledger structure
+sed -n '1,60p' migration/PROGRESS.md      # latest handoff notes
 ```
 
-- `docs/design/ts-to-rust-migration.md` explains why (§0 audit, §5.5 crate
-  split and volatility tiers, §9 phases). `migration/ledger.json` is the what and status.
-  If they disagree, the ledger wins; fix the doc.
-- Port only from the pinned hoocode at `target/hoocode-pin`, which is checked out at
-  `[workspace.metadata.hoocode.source].hoocode-commit`. Never port from another hoocode
-  checkout or from memory. **Never modify hoocode.**
+- `docs/design/ts-to-rust-migration.md` explains why (§0 audit, §5.5 crate split, §9 phases).
+  `migration/ledger.json` is the what and status. If they disagree, the ledger wins.
+- Port only from the pinned hoocode at `target/hoocode-pin`, built by
+  `migration/tui-parity/setup_hoocode.sh` or fetched for fixtures with
+  `scripts/ci/fetch_hoocode_fixtures.sh`. Never port from another checkout or from memory.
+  **Never modify hoocode.**
 
-## 1. Work one task
+## 1. Resume a task (only when the user names it)
 
-1. `python3 migration/ledger.py start <id>`. Skip this if `next` said CONTINUE.
+1. Resume only a task the user names. Move its status back to `todo` in
+   `migration/ledger.json` by hand (CLAUDE.md), add a note at the top of `migration/PROGRESS.md`,
+   and say so in the commit. `ledger.py` will not do it.
 2. Read the task's hoocode sources and TS tests in full, at the pin.
-3. Check for reuse before writing code: the ecosystem crates in the plan (§3.4) and the
-   crates already in this workspace (§3.4.2). Volatile third-party crates go only in the
-   adapter crate listed in `migration/dep-firewall.json`.
-4. Create new crates when the task names them (follow §4.5, add to the root
-   `Cargo.toml` members and `[workspace.dependencies]`, `publish = false` until stable).
-   Split existing crates in the task that owns the split. No big-bang restructures.
-5. Port the TS tests as Rust tests (Level 1). Keep wire formats byte-compatible with
-   hoocode's JSON (sessions, RPC, json mode, settings, auth, models).
-6. If the task lists L2 scenarios that don't exist yet, write them in
-   `migration/tui-parity/scenarios/` (format in its README), then run
-   `python3 migration/tui-parity/harness.py selfcheck <name>`. It must print `stable`.
-   The scenario encodes hoocode's behavior, so write it from what hoocode actually
-   renders (`harness.py run <name> --app hoocode`, look at
-   `target/tui-parity/<name>/hoocode/*.txt`), never from what hoocode happens to do.
-7. Gate: `python3 migration/ledger.py verify <id>`.
-   - Level 1 = fmt + clippy `-D warnings` + tests for the task's crates + dependency
-     firewall + the task's `l1_cmds`.
-   - Level 2 = each scenario's rendered screen, and optionally its model requests,
-     identical to hoocode after normalization.
-   - Both pass → `done`. L1 only → `l1_done`, which is fine when the scenario needs a
-     later task. Run `cargo test --workspace` before committing as well.
-   - To look at a rendered result: open `target/tui-parity/<scenario>/report.md`, or
-     `harness.py png <scenario>` and read the PNG.
-8. Commit, one task per commit (or a few commits). Use the message `migrate(<id>): <title>`,
-   including `migration/ledger.json` and `migration/PROGRESS.md` changes. Push to the
-   current branch with `git push -u origin <branch>`. Open a PR only if asked.
-9. Write a handoff entry at the top of `migration/PROGRESS.md` log: date, task, what
-   changed, what's left, and the exact next step. Keep it short.
-10. Go back to 0 and take the next task.
+3. Check for reuse before writing code: the ecosystem crates in the plan (§3.4) and the crates
+   already in this workspace (§3.4.2). Volatile third-party crates go only in the adapter crate
+   listed in `migration/dep-firewall.json`.
+4. Port the TS tests as Rust tests (Level 1). Keep wire formats byte-compatible with hoocode's
+   JSON (sessions, RPC, json mode, settings, auth, models).
+5. If the task needs a screen check, write a scenario in `scripts/tui/scenarios/` (format in its
+   README). Write it from what hoocode actually renders, never from what hoocode happens to do.
+   Accept it with `python3 scripts/tui/goldens.py update <scenario>` and review the diff.
+6. Gate, in this order:
+   - Level 1: `cargo fmt --all -- --check`, `cargo clippy -D warnings`, `cargo nextest run` for
+     the touched crates, and `python3 migration/check_dep_firewall.py`.
+   - Done bar for a screen change: `python3 scripts/tui/goldens.py check all`, then
+     `python3 scripts/tui/review_bundle.py` for a visual review (advisory).
+7. Commit with `migrate(<id>): <title>`. Include the ledger and PROGRESS.md changes. Push only
+   when the user asks.
 
 ## Tools
 
-- `migration/tools/fix_struct_fields.py`: compiler-driven fixer for struct-shape changes.
-  It inserts missing fields, deletes removed ones, and unwraps `Some`/`None` for fields
-  that are no longer optional. Extend its tables when you change a widely used type,
-  run it repeatedly (each crate layer surfaces errors only once its dependencies
-  compile), then review the diff.
-- Recording hoocode data (sessions, etc.): `harness.py run <scenario> --app hoocode --keep`,
+- `migration/tools/fix_struct_fields.py`: compiler-driven fixer for struct-shape changes. It
+  inserts missing fields, deletes removed ones, and unwraps `Some`/`None` for fields that are no
+  longer optional. Run it repeatedly, then review the diff.
+- Recording hoocode data (sessions, etc.): `migration/tui-parity/harness.py run <scenario> --app hoocode --keep`,
   then look in the kept temp HOME (path in `target/tui-parity/<scenario>/hoocode/tmpdir.txt`).
+  `harness.py record` regenerates the replay fixtures (`migration/tui-parity/replay.json`).
 
 ## Rules
 
-- **Never mark done by hand.** Only `ledger.py verify` sets `l1_done`/`done`. Don't edit
-  statuses in the JSON except to fix a bookkeeping mistake, and say so in the log.
-- **Don't weaken the gates** to go green: no loosening normalization to hide a real
-  difference, no deleting snapshots or assertions, no `#[ignore]` on a failing ported
-  test. A normalization rule is allowed only for real nondeterminism (random ids,
-  temp paths, durations) or branding (hoocode-ts↔hoocode), with a comment.
-- If a task is too big for one sitting, split it in the ledger (`10.3` → `10.3a`,
-  `10.3b` with dependencies) and note why.
-- Stuck, or you need a decision (Phase 12 go/no-go, a design choice)? Run
-  `ledger.py block <id> "<question>"` or `note`, record it in PROGRESS.md, and ask the user.
-- `.github/workflows/*` can't be pushed from these sessions (the token has no `workflow`
-  scope). Stage workflow changes in `migration/ci/` and tell the user to apply them.
-- Never commit secrets. Live-provider tests read keys from the environment and are
-  `#[ignore]`d.
-- Moving the hoocode pin is a separate, user-approved task (plan §0.1). Never do it as
-  a side effect.
-- Before the session ends or context gets long: commit, push, and make sure PROGRESS.md
-  says exactly where to resume.
+- **Don't edit statuses** in the ledger except to undo a bookkeeping mistake or to resume a task
+  the user named. Say so in the log.
+- **Don't weaken the gates** to go green: no loosening normalization to hide a real difference,
+  no deleting snapshots or assertions, no `#[ignore]` on a failing ported test. A normalization
+  rule is allowed only for real nondeterminism (random ids, temp paths, durations) or branding,
+  with a comment.
+- Stuck, or you need a decision (a design choice, a go/no-go)? Record it in PROGRESS.md and ask
+  the user.
+- `.github/workflows/*` can't be pushed from these sessions (the token has no `workflow` scope).
+  Stage workflow changes in `migration/ci/` and tell the user to apply them.
+- Never commit secrets. Live-provider tests read keys from the environment and are `#[ignore]`d.
+- Moving the hoocode pin is a separate, user-approved task (plan §0.1). Never do it as a side effect.
+- Before the session ends or context gets long: commit, and make sure PROGRESS.md says exactly
+  where to resume.

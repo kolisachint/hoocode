@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A routable mock OpenAI-compatible provider for the subagent evals.
 
-`migration/tui-parity/mockllm.py` serves one global, strictly ordered script,
+`scripts/tui/mockllm.py` serves one global, strictly ordered script,
 which is the right shape for a parity transcript and the wrong shape for evals:
 a subagent dispatch interleaves the parent's and the child's requests, and the
 order in which two processes happen to make calls is not something a test

@@ -1,0 +1,26 @@
+
+ Plan
+
+ The fix has two parts:
+
+ 1. Rotate the token in middleware.rs.
+ 2. Log the rotation.
+
+ ```rust
+   fn rotate(session: &mut Session) {
+       session.token = new_token();
+   }
+ ```
+
+ Run cargo test afterwards.
+--- styles ---
+r1 c1-4 fg=#f0c674 bold
+r5 c1-3 fg=#5cc8bb
+r5 c24-36 fg=#5cc8bb
+r6 c1-3 fg=#5cc8bb
+r8 c1-7 fg=#a8a8a8
+r9 c3-4 fg=#599ed7
+r9 c6-11 fg=#dcdcaa
+r9 c23-25 fg=#599ed7
+r12 c1-3 fg=#a8a8a8
+r14 c5-14 fg=#5cc8bb

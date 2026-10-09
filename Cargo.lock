@@ -1913,6 +1913,7 @@ version = "0.1.9"
 dependencies = [
  "hoocode-tui-images",
  "hoocode-tui-keys",
+ "hoocode-tui-render",
  "hoocode-tui-terminal",
  "hoocode-tui-util",
  "vt100",

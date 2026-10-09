@@ -1,0 +1,6 @@
+
+ Why does the footer hide the model name on narrow terminals?
+--- styles ---
+r0 c0-119 bg=#1c1c26
+r1 c0-119 bg=#1c1c26
+r2 c0-119 bg=#1c1c26

@@ -1,0 +1,16 @@
+
+ ● AgentOutput explore#1
+ ╭ ◐ running explore#1
+ │ Still reading files.
+ ╰
+--- styles ---
+r1 c1-2 fg=#ffff00
+r1 c3-14 bold
+r1 c15-23 fg=#56b6c2
+r2 c1 fg=#757575
+r2 c3 fg=#ffff00
+r2 c5-11 fg=#ffff00 bold
+r2 c13-21 fg=#56b6c2
+r3 c1 fg=#757575
+r3 c3-22 fg=#a8a8a8
+r4 c1 fg=#757575

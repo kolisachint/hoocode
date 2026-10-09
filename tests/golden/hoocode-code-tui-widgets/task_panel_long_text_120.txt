@@ -1,0 +1,9 @@
+▎ ◐ Refactor the authentication middleware so that session tokens are rotated on every privileged request and the audit…
+▎ ○ Short follow-up
+--- styles ---
+r0 c0 fg=#ffff00
+r0 c2 fg=#ffff00
+r0 c4-118 bold
+r1 c0 fg=#ffff00
+r1 c2 fg=#989898
+r1 c4-18 fg=#989898

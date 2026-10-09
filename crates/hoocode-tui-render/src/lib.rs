@@ -6,6 +6,8 @@
 //! (documented, deliberate) simplifications made relative to the original.
 
 mod component;
+#[cfg(any(test, feature = "golden"))]
+pub mod golden;
 mod overlay;
 mod tui;
 

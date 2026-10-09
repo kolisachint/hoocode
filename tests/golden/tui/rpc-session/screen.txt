@@ -1,0 +1,13 @@
+«»{"id":"c0","type":"clone"}
+«»{"id":"p1","type":"prompt","message":"say hi"}
+«»{"id":"f1","type":"get_fork_messages"}
+«»{"id":"c1","type":"clone"}
+«»{"id":"s1","type":"get_state"}
+«»{"id":"m1","type":"get_messages"}
+«»{"id":"k1","type":"fork","entryId":"missing"}
+«»{"id":"n1","type":"new_session"}
+«»{"id":"s2","type":"get_state"}
+«»{"id":"p2","type":"prompt","message":"again"}
+«»{"id":"t2","type":"get_last_assistant_text"}
+
+«»<exited status=0>
