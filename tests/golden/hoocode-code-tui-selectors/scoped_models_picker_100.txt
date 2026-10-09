@@ -1,0 +1,70 @@
+┌──────────────────────────────────────────────────────────────────────────────────────── models ──┐
+│ Session-only. alt+s to save to settings.                                                         │
+│ ❯                                                                                                │
+│                                                                                                  │
+│   model                           effort    category                                             │
+│ › claude-haiku-5-5 [anthropic] ✓  low       cheap                                                │
+│   gpt-5-mini [openai] ✓           -         standard                                             │
+│   gpt-5 [openai] ✗                -         -                                                    │
+│                                                                                                  │
+│   Model Name: Claude Haiku 5.5                                                                   │
+│                                                                                                  │
+│   enter toggle · alt+a all · alt+x clear · alt+g provider · alt+up/alt+down reorder · alt+s save │
+│ · 2/3 enabled                                                                                    │
+│   tab effort · alt+j category · the last step clears                                             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r0 c0-88 fg=#6e93ff
+r0 c89-96 fg=#5cc8bb bold
+r0 c97-99 fg=#6e93ff
+r1 c0 fg=#6e93ff
+r1 c2-41 fg=#a8a8a8
+r1 c99 fg=#6e93ff
+r2 c0 fg=#6e93ff
+r2 c2-3 fg=#a8a8a8
+r2 c4 inverse
+r2 c99 fg=#6e93ff
+r3 c0 fg=#6e93ff
+r3 c99 fg=#6e93ff
+r4 c0 fg=#6e93ff
+r4 c2-53 fg=#989898
+r4 c99 fg=#6e93ff
+r5 c0 fg=#6e93ff
+r5 c2-19 fg=#5cc8bb bg=#2a2a36
+r5 c20-31 fg=#a8a8a8 bg=#2a2a36
+r5 c32-33 fg=#b5bd68 bg=#2a2a36
+r5 c34-35 bg=#2a2a36
+r5 c36-38 fg=#a8a8a8 bg=#2a2a36
+r5 c39-45 bg=#2a2a36
+r5 c46-50 fg=#a8a8a8 bg=#2a2a36
+r5 c51-97 bg=#2a2a36
+r5 c99 fg=#6e93ff
+r6 c0 fg=#6e93ff
+r6 c14-22 fg=#a8a8a8
+r6 c23-24 fg=#b5bd68
+r6 c36 fg=#989898
+r6 c46-53 fg=#a8a8a8
+r6 c99 fg=#6e93ff
+r7 c0 fg=#6e93ff
+r7 c9-17 fg=#a8a8a8
+r7 c18-19 fg=#989898
+r7 c36 fg=#989898
+r7 c46 fg=#989898
+r7 c99 fg=#6e93ff
+r8 c0 fg=#6e93ff
+r8 c99 fg=#6e93ff
+r9 c0 fg=#6e93ff
+r9 c2-31 fg=#a8a8a8
+r9 c99 fg=#6e93ff
+r10 c0 fg=#6e93ff
+r10 c99 fg=#6e93ff
+r11 c0 fg=#6e93ff
+r11 c2-98 fg=#989898
+r11 c99 fg=#6e93ff
+r12 c0 fg=#6e93ff
+r12 c2-14 fg=#989898
+r12 c99 fg=#6e93ff
+r13 c0 fg=#6e93ff
+r13 c2-53 fg=#989898
+r13 c99 fg=#6e93ff
+r14 c0-99 fg=#6e93ff

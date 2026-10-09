@@ -2,10 +2,16 @@
 //! pickers' own behaviour (no TS tests of their own).
 
 use hoocode_ai_types::Model;
+use hoocode_code_settings::{ModelCategoryName, ScopedModel};
 use hoocode_code_tui_selectors::model_selector::{ModelSelectorComponent, ModelSelectorEvent};
 use hoocode_code_tui_selectors::scoped_models_selector::{
-    clear_all, enable_all, move_id, toggle, ScopedModelsEvent, ScopedModelsSelectorComponent,
+    clear_all, enable_all, move_id, next_category, next_effort, toggle, ScopedModelsEvent,
+    ScopedModelsSelectorComponent,
 };
+
+/// Raw input for the picker's effort (tab) and category (alt+j) keys.
+const EFFORT_INPUT: &str = "\t";
+const CATEGORY_INPUT: &str = "\x1bj";
 use hoocode_code_tui_theme::SELECT_CURSOR;
 use hoocode_tui_render::Component;
 use serde_json::json;
@@ -28,6 +34,25 @@ fn faux() -> Vec<Model> {
         model("faux", "faux-2", "Two"),
         model("faux", "faux-3", "Three"),
     ]
+}
+
+/// A saved entry with no effort, category or alias.
+fn plain(model: &str) -> ScopedModel {
+    entry(model, None, None, None)
+}
+
+fn entry(
+    model: &str,
+    effort: Option<&str>,
+    category: Option<ModelCategoryName>,
+    alias: Option<&str>,
+) -> ScopedModel {
+    ScopedModel {
+        model: model.into(),
+        effort: effort.map(String::from),
+        category,
+        alias: alias.map(String::from),
+    }
 }
 
 fn full_ids(models: &[Model]) -> Vec<String> {
@@ -57,7 +82,8 @@ fn propagates_reordered_scoped_models_back_to_the_session_state() {
     let _g = lock();
     let models = faux();
     let ordered = full_ids(&models);
-    let mut selector = ScopedModelsSelectorComponent::new(models, Some(ordered.clone()));
+    let saved = ordered.iter().map(|id| plain(id)).collect();
+    let mut selector = ScopedModelsSelectorComponent::new(models, Some(saved));
     selector.handle_input("\x1b[1;3B");
     assert_eq!(
         selector.take_events(),
@@ -188,7 +214,7 @@ fn toggle_from_all_enabled_keeps_only_that_model_and_marks_unsaved() {
     selector.handle_input("\x1bs");
     assert_eq!(
         selector.take_events(),
-        vec![ScopedModelsEvent::Persist(Some(vec![ids[0].clone()]))]
+        vec![ScopedModelsEvent::Persist(vec![plain(&ids[0])])]
     );
     assert!(!strip(&selector.render(200)).contains("(unsaved)"));
 }
@@ -229,4 +255,124 @@ fn enabled_set_helpers_follow_the_original() {
     assert_eq!(move_id(&s(&["a", "b"]), "b", -1), s(&["b", "a"]));
     assert_eq!(move_id(&s(&["a", "b"]), "a", -1), s(&["a", "b"]));
     assert_eq!(move_id(&None, "a", 1), None);
+}
+
+#[test]
+fn picker_saves_effort_and_category_per_entry_not_ids_only() {
+    let _g = lock();
+    let models = faux();
+    let ids = full_ids(&models);
+    let saved = vec![
+        entry(
+            &ids[1],
+            Some("high"),
+            Some(ModelCategoryName::Capable),
+            None,
+        ),
+        entry(&ids[0], None, None, Some("one")),
+    ];
+    let mut selector = ScopedModelsSelectorComponent::new(models, Some(saved));
+    // Enabled order is the priority: faux-2 leads, faux-1 follows. "high" is
+    // the model's last level, so one step unsets it and the next starts over.
+    selector.handle_input(EFFORT_INPUT);
+    selector.handle_input(EFFORT_INPUT);
+    selector.handle_input(CATEGORY_INPUT);
+    selector.handle_input(CATEGORY_INPUT);
+    // Editing the columns is not a change to the enabled set.
+    assert!(selector.take_events().is_empty());
+    selector.handle_input("\x1b[B");
+    selector.handle_input(EFFORT_INPUT);
+    selector.handle_input(CATEGORY_INPUT);
+    selector.handle_input("\x1bs");
+    assert_eq!(
+        selector.take_events(),
+        vec![ScopedModelsEvent::Persist(vec![
+            entry(&ids[1], Some("off"), Some(ModelCategoryName::Cheap), None),
+            entry(
+                &ids[0],
+                Some("off"),
+                Some(ModelCategoryName::Cheap),
+                Some("one")
+            ),
+        ])]
+    );
+}
+
+#[test]
+fn saved_effort_is_clamped_to_what_the_model_supports() {
+    let _g = lock();
+    let models = faux();
+    let ids = full_ids(&models);
+    // The faux models have no xhigh mapping, so xhigh clamps to the nearest lower level.
+    let saved = vec![entry(&ids[2], Some("xhigh"), None, None)];
+    let mut selector = ScopedModelsSelectorComponent::new(models, Some(saved));
+    assert!(strip(&selector.render(200)).contains("high"));
+    selector.handle_input("\x1bs");
+    assert_eq!(
+        selector.take_events(),
+        vec![ScopedModelsEvent::Persist(vec![entry(
+            &ids[2],
+            Some("high"),
+            None,
+            None
+        )])]
+    );
+}
+
+#[test]
+fn all_enabled_with_no_effort_or_category_saves_as_the_clear() {
+    let _g = lock();
+    let mut selector = ScopedModelsSelectorComponent::new(faux(), None);
+    selector.handle_input("\x1bs");
+    assert_eq!(
+        selector.take_events(),
+        vec![ScopedModelsEvent::Persist(Vec::new())]
+    );
+}
+
+#[test]
+fn all_enabled_writes_every_model_once_a_column_is_set() {
+    let _g = lock();
+    let models = faux();
+    let ids = full_ids(&models);
+    let mut selector = ScopedModelsSelectorComponent::new(models, None);
+    selector.handle_input(CATEGORY_INPUT);
+    selector.handle_input("\x1bs");
+    match selector.take_events().as_slice() {
+        [ScopedModelsEvent::Persist(entries)] => {
+            let saved: Vec<&str> = entries.iter().map(|e| e.model.as_str()).collect();
+            assert_eq!(saved, ids.iter().map(String::as_str).collect::<Vec<_>>());
+            assert_eq!(entries[0].category, Some(ModelCategoryName::Cheap));
+            assert_eq!(entries[1].category, None);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn effort_and_category_cycles_step_then_unset() {
+    let levels = ["off", "low", "high"];
+    assert_eq!(next_effort(None, &levels), Some("off".into()));
+    assert_eq!(next_effort(Some("off"), &levels), Some("low".into()));
+    assert_eq!(next_effort(Some("high"), &levels), None);
+    // A value the model does not list starts the cycle again.
+    assert_eq!(next_effort(Some("minimal"), &levels), Some("off".into()));
+    assert_eq!(next_effort(None, &[]), None);
+
+    let mut category = None;
+    let mut seen = Vec::new();
+    for _ in 0..5 {
+        category = next_category(category);
+        seen.push(category.map(|c| c.as_str()));
+    }
+    assert_eq!(
+        seen,
+        [
+            Some("cheap"),
+            Some("fast"),
+            Some("standard"),
+            Some("capable"),
+            None
+        ]
+    );
 }
