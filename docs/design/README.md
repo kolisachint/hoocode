@@ -4,8 +4,9 @@ Start here. The migration from hoocode-ts is finished at the v0.6.0 pin. Everyth
 still to build is planned in the cards below. Each card was agreed with the user on
 2026-10-07 or later. The dated decision pages win if a card disagrees:
 [decisions-2026-10-07.md](decisions-2026-10-07.md) and
-[decisions-2026-10-08.md](decisions-2026-10-08.md) (the later page adds to the
-earlier one).
+[decisions-2026-10-08.md](decisions-2026-10-08.md) and
+[decisions-2026-10-09.md](decisions-2026-10-09.md) (each later page adds to the
+earlier ones).
 
 To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) and
 [../maps/ui.md](../maps/ui.md) (screen, pickers, slash commands).
@@ -35,7 +36,19 @@ To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) 
   `embeddingsearchtools`, `voicetools`, `hooteams`, `drawio-canvas`) are MIT and
   fair to use.
 
-## The plan, in priority order
+## Two plans, side by side
+
+There are two plans: the **core plan** (below) and the **TUI plan**
+([tui-activity.md](tui-activity.md), agreed 2026-10-09). Neither is ahead of the other.
+**When the user asks to proceed or to start implementing, ask which plan and which step
+first.** Don't pick one yourself.
+
+| Plan | Card | Phases | First step |
+|---|---|---|---|
+| Core | this page, "The core plan" | milestones 0a–8 | per the status line below |
+| TUI | [tui-activity.md](tui-activity.md) | T0 goldens (replaces L1/L2 parity) · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell. All work by Haiku subagents | T0.1 |
+
+## The core plan, in priority order
 
 Agreed on 2026-10-08. One milestone at a time; each lands as one or more PRs that
 pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
