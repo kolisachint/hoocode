@@ -12,7 +12,9 @@ use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{AbortSignal, AssistantMessage, Model, StopReason};
 use hoocode_code_session::FileEntry;
 
-use crate::auth_guidance::{format_no_api_key_found_message, format_no_model_selected_message};
+use crate::auth_guidance::{
+    format_auth_failed_message, format_no_api_key_found_message, format_no_model_selected_message,
+};
 use crate::session::{AgentSession, AgentSessionError, AgentSessionEvent};
 
 /// Why a compaction ran.
@@ -119,9 +121,8 @@ impl AgentSession {
             return Ok((key, auth.headers));
         }
         if self.auth().is_oauth(&model.provider) {
-            return Err(AgentSessionError(format!(
-                "Authentication failed for \"{0}\". Credentials may have expired or network is unavailable. Run '/login {0}' to re-authenticate.",
-                model.provider
+            return Err(AgentSessionError(format_auth_failed_message(
+                &model.provider,
             )));
         }
         Err(AgentSessionError(format_no_api_key_found_message(

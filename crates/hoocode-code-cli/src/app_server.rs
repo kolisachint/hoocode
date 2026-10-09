@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use hoocode_agent_types::PermissionGate;
 use hoocode_app_server::transport::{self, Listen};
-use hoocode_app_server::{AppServer, SavedSession, ServerConfig, SessionFactory};
+use hoocode_app_server::{
+    AppServer, ModelEntry, SavedSession, ScopedInfo, ServerConfig, SessionFactory,
+};
 use hoocode_code_agent_session::AgentSession;
 
 use crate::runtime::{app_server_auth, async_runtime, AppServerSessions};
@@ -60,8 +62,12 @@ impl SessionFactory for AppServerSessions {
         sessions
     }
 
-    fn models(&self) -> Vec<(String, String, bool, bool)> {
+    fn models(&self) -> Vec<ModelEntry> {
         AppServerSessions::models(self)
+    }
+
+    fn scoped(&self, name: &str) -> Result<Option<ScopedInfo>, String> {
+        AppServerSessions::scoped(self, name)
     }
 
     fn resolve_model(&self, name: &str) -> Option<hoocode_ai_types::Model> {

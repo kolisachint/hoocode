@@ -98,6 +98,10 @@ pub struct ThreadStartParams {
     pub base_instructions: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub developer_instructions: Option<String>,
+    /// Reasoning effort (`off` … `xhigh`) for the new thread. Must be one the
+    /// model supports; without it the scoped model's own effort applies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -108,6 +112,9 @@ pub struct ThreadResumeParams {
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Reasoning effort, as on `thread/start`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 /// The result of `thread/start` and `thread/resume`.
@@ -194,6 +201,10 @@ pub struct TurnStartParams {
     pub input: Vec<UserInput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Reasoning effort for this turn and the ones after it. Applied after
+    /// `model`; must be a level the (new) model supports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -257,6 +268,12 @@ pub struct ModelInfo {
     pub supported_reasoning_efforts: Vec<ReasoningEffortOption>,
     #[serde(default)]
     pub input_modalities: Vec<String>,
+    /// The scoped entry's `category` (`cheap`, `fast`, `standard`, `capable`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    /// The scoped entry's `alias`; a client may name the model by it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
 }
 
 /// `model/list`. Hidden models (outside the user's model scope) are left out

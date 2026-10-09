@@ -9,6 +9,7 @@ use crate::args::Mode;
 use crate::{Args, DiagnosticKind};
 use hoocode_agent_types::PermissionGate;
 use hoocode_ai_types::{Model, ThinkingLevel};
+use hoocode_app_server::{ModelEntry, ScopedInfo};
 use hoocode_code_auth::AuthStorage;
 use hoocode_code_permissions::{ApprovalChannel, HooPermissionGate};
 
@@ -18,7 +19,7 @@ use hoocode_code_agent_session::{
     PromptOptions, SessionStartEvent,
 };
 use hoocode_code_models::{
-    clamp_effort, parse_thinking_level, resolve_cli_model, resolve_model_scope,
+    clamp_effort, match_scoped_model, parse_thinking_level, resolve_cli_model, resolve_model_scope,
     resolve_scoped_models, AuthLookup, ModelRegistry, ResolvedScoped,
 };
 use hoocode_code_print::{json_line, text_result, PrintMode};
@@ -1252,40 +1253,106 @@ impl AppServerSessions {
         load_registry(&self.auth).find(provider, id).cloned()
     }
 
-    /// Models with auth configured: `(provider/id, name, is default, hidden)`.
-    /// With a model scope (`--models` or `scopedModels`), models outside it
-    /// are hidden; without one, none are.
-    pub fn models(&self) -> Vec<(String, String, bool, bool)> {
+    /// The run's model scope (`--models`, else `scopedModels`) and whether one
+    /// is set. Scoped entries are resolved against the models with auth.
+    fn scope(&self) -> (SettingsManager, bool, Vec<ResolvedScoped>) {
         let registry = load_registry(&self.auth);
         let mut settings = SettingsManager::create_default(&self.cwd);
         if let Some(patterns) = &self.args.models {
             apply_models_flag(&mut settings, patterns);
         }
-        let default = settings.default_model();
+        let entries = settings.scoped_models().unwrap_or_default();
         let available: Vec<Model> = registry
             .get_available(self.auth.as_ref())
             .into_iter()
             .cloned()
             .collect();
-        let entries = settings.scoped_models().unwrap_or_default();
-        let scope: Option<Vec<(String, String)>> = (!entries.is_empty()).then(|| {
-            resolve_scoped_models(&entries, &available)
-                .into_iter()
-                .map(|sm| (sm.model.provider.clone(), sm.model.id.clone()))
-                .collect()
-        });
-        available
-            .iter()
-            .map(|m| {
-                let id = format!("{}/{}", m.provider, m.id);
-                let is_default = default.as_deref() == Some(m.id.as_str());
-                let hidden = scope
-                    .as_ref()
-                    .is_some_and(|s| !s.iter().any(|(p, i)| *p == m.provider && *i == m.id));
-                (id, m.name.clone(), is_default, hidden)
-            })
-            .collect()
+        let scoped = resolve_scoped_models(&entries, &available);
+        (settings, !entries.is_empty(), scoped)
     }
+
+    /// The scope entry `name` (an alias, `id`, `provider/id`, or a part of the
+    /// id) matches. `Ok(None)` without a scope. A name outside it is `Err`.
+    pub fn scoped(&self, name: &str) -> Result<Option<ScopedInfo>, String> {
+        let (_, has_scope, scoped) = self.scope();
+        if !has_scope {
+            return Ok(None);
+        }
+        match match_scoped_model(name, &scoped) {
+            // The entry's own effort only: a switch with none keeps the
+            // thread's current level (settings' default is for new threads).
+            Ok(found) => Ok(Some(ScopedInfo {
+                model: format!("{}/{}", found.model.provider, found.model.id),
+                effort: found
+                    .effort
+                    .clone()
+                    .map(|level| clamp_effort(level, &found.model)),
+                alias: found.alias.clone(),
+                category: found.category.map(|c| c.as_str().to_string()),
+            })),
+            // An ambiguous name is in the scope, just not uniquely: say so.
+            Err(message) if !message.starts_with("no scoped model matches") => Err(message),
+            Err(_) => {
+                let list = scoped
+                    .iter()
+                    .map(|s| {
+                        s.alias
+                            .clone()
+                            .unwrap_or_else(|| format!("{}/{}", s.model.provider, s.model.id))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(format!(
+                    "model {name} is not in your scoped models ({list})"
+                ))
+            }
+        }
+    }
+
+    /// Models with auth configured, for `model/list`. With a model scope
+    /// (`--models` or `scopedModels`), the scoped models come first in scope
+    /// order and the rest are hidden; without one, none are. A model listed
+    /// twice in the scope keeps its first entry.
+    pub fn models(&self) -> Vec<ModelEntry> {
+        let registry = load_registry(&self.auth);
+        let (settings, has_scope, scoped) = self.scope();
+        let default = settings.default_model();
+        let default_effort = settings.default_thinking_level().map(ThinkingLevel::from);
+        let is_default = |m: &Model| default.as_deref() == Some(m.id.as_str());
+        let mut listed: Vec<ModelEntry> = Vec::new();
+        for sm in &scoped {
+            if listed.iter().any(|e| same_model(&e.model, &sm.model)) {
+                continue;
+            }
+            listed.push(ModelEntry {
+                model: sm.model.clone(),
+                is_default: is_default(&sm.model),
+                hidden: false,
+                category: sm.category.map(|c| c.as_str().to_string()),
+                alias: sm.alias.clone(),
+                effort: sm.effort.clone().or_else(|| default_effort.clone()),
+            });
+        }
+        for m in registry.get_available(self.auth.as_ref()) {
+            if listed.iter().any(|e| same_model(&e.model, m)) {
+                continue;
+            }
+            listed.push(ModelEntry {
+                model: m.clone(),
+                is_default: is_default(m),
+                hidden: has_scope,
+                category: None,
+                alias: None,
+                effort: default_effort.clone(),
+            });
+        }
+        listed
+    }
+}
+
+/// The same model (`provider` and `id`).
+fn same_model(a: &Model, b: &Model) -> bool {
+    a.provider == b.provider && a.id == b.id
 }
 
 /// Auth for the app-server's sessions.

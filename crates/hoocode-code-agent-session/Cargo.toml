@@ -23,6 +23,7 @@ hoocode-agent-compaction = { workspace = true }
 hoocode-agent-core = { workspace = true }
 hoocode-agent-harness = { workspace = true }
 hoocode-agent-types = { workspace = true }
+hoocode-ai-env = { workspace = true }
 hoocode-ai-models = { workspace = true }
 hoocode-ai-registry = { workspace = true }
 hoocode-ai-types = { workspace = true }

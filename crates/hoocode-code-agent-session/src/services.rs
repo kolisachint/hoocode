@@ -21,7 +21,7 @@ use hoocode_code_tool_api::ToolDefinition;
 use hoocode_code_tool_bash::BashToolOptions;
 use hoocode_code_tools_fs::ReadToolOptions;
 
-use crate::auth_guidance::format_no_models_available_message;
+use crate::auth_guidance::{format_auth_failed_message, format_no_models_available_message};
 use crate::hooks::{ExtensionHooks, ResourceLoader, SessionStartEvent};
 use crate::session::{
     AgentSession, AgentSessionConfig, BaseTools, BaseToolsContext, DEFAULT_ACTIVE_TOOL_NAMES,
@@ -412,8 +412,17 @@ pub fn create_agent_session(
                 let s = lock(&stream_settings);
                 (s.provider_retry_settings(), attribution_headers(&model, &s))
             };
-            if let Some(key) = request_auth.api_key {
-                stream_options.api_key = Some(key);
+            match request_auth.api_key {
+                Some(key) => stream_options.api_key = Some(key),
+                // An OAuth credential that vanished since the turn was checked:
+                // say how to fix it rather than send an unauthenticated request.
+                // An env API key still counts as auth, so the turn goes on.
+                None if stream_auth.is_oauth(&model.provider)
+                    && hoocode_ai_env::get_env_api_key(&model.provider).is_none() =>
+                {
+                    return Err(format_auth_failed_message(&model.provider).into());
+                }
+                None => {}
             }
             stream_options.timeout_ms = stream_options.timeout_ms.or(retry.timeout_ms);
             stream_options.max_retries = stream_options.max_retries.or(retry.max_retries);

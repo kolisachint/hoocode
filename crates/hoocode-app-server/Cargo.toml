@@ -19,6 +19,7 @@ doctest = false
 [dependencies]
 hoocode-app-server-protocol = { workspace = true }
 hoocode-agent-types = { workspace = true }
+hoocode-ai-models = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-code-agent-session = { workspace = true }
 hoocode-code-modes = { workspace = true }

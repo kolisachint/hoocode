@@ -13,7 +13,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use hoocode_agent_types::{
     AgentEvent, AgentMessage, AgentToolCall, PermissionDecision, PermissionGate,
 };
-use hoocode_ai_types::{AssistantMessageEvent, Content, ImageContent, StopReason};
+use hoocode_ai_models::{clamp_thinking_level, get_supported_thinking_levels};
+use hoocode_ai_types::{
+    AssistantMessageEvent, Content, ImageContent, Model, StopReason, ThinkingLevel,
+};
 use hoocode_app_server_protocol::jsonrpc::{
     INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND,
 };
@@ -52,16 +55,50 @@ pub trait SessionFactory: Send + Sync + 'static {
     ) -> Result<AgentSession, String>;
     /// Saved sessions, newest first.
     fn list(&self) -> Vec<SavedSession>;
-    /// Models for `model/list`: `(id, display name, is default, hidden)`.
-    /// Hidden models are outside the user's model scope (`scopedModels`):
-    /// still usable by name, left out of pickers.
-    fn models(&self) -> Vec<(String, String, bool, bool)> {
+    /// Models for `model/list`: with a scope, the scoped models first (in
+    /// `scopedModels` order), then the others marked hidden. Without one, every
+    /// model with auth, none hidden.
+    fn models(&self) -> Vec<ModelEntry> {
         Vec::new()
     }
+    /// The scope entry a client's model name matches (`model` on `thread/*`
+    /// and `turn/start`). `Ok(None)` without a model scope. With a scope, a
+    /// name outside it is `Err` with the message to send as INVALID_PARAMS.
+    fn scoped(&self, _name: &str) -> Result<Option<ScopedInfo>, String> {
+        Ok(None)
+    }
     /// The model a client names (`model` on `turn/start`), if usable.
-    fn resolve_model(&self, _name: &str) -> Option<hoocode_ai_types::Model> {
+    fn resolve_model(&self, _name: &str) -> Option<Model> {
         None
     }
+}
+
+/// One model for `model/list`.
+#[derive(Debug, Clone)]
+pub struct ModelEntry {
+    pub model: Model,
+    pub is_default: bool,
+    /// Outside the user's model scope.
+    pub hidden: bool,
+    /// The scoped entry's category (`cheap`, `fast`, `standard`, `capable`).
+    pub category: Option<String>,
+    /// The scoped entry's alias.
+    pub alias: Option<String>,
+    /// The effort a new thread starts with: the scoped entry's effort, else the
+    /// settings' `defaultThinkingLevel`, else medium. The server clamps it to
+    /// the model when listing.
+    pub effort: Option<ThinkingLevel>,
+}
+
+/// The scope entry a client's model name matched.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScopedInfo {
+    /// `provider/id` of the model.
+    pub model: String,
+    /// The entry's effort, clamped to the model. `None` when it has none.
+    pub effort: Option<ThinkingLevel>,
+    pub alias: Option<String>,
+    pub category: Option<String>,
 }
 
 /// A saved session as `thread/list` sees it.
@@ -1028,7 +1065,7 @@ impl Inner {
             approval_policy: "on-request".into(),
             approvals_reviewer: "user".into(),
             sandbox: SandboxPolicy::DangerFullAccess,
-            reasoning_effort: None,
+            reasoning_effort: Some(thread.session.thinking_level().as_str().into()),
         }
     }
 
@@ -1050,20 +1087,59 @@ impl Inner {
         }
     }
 
+    /// The scope entry a `model` param names. `None` without a name or a scope.
+    fn scope_check(&self, name: Option<&str>) -> Result<Option<ScopedInfo>, (i64, String)> {
+        let Some(name) = name else { return Ok(None) };
+        self.factory.scoped(name).map_err(|e| (INVALID_PARAMS, e))
+    }
+
+    /// The model a thread's `model` param means, when it is not the thread's
+    /// current one. `None` when no name was given or it is the current model.
+    fn switch_for(
+        &self,
+        thread: &LoadedThread,
+        name: Option<&str>,
+    ) -> Result<Option<Model>, (i64, String)> {
+        let Some(name) = name else { return Ok(None) };
+        let same = thread
+            .session
+            .model()
+            .is_some_and(|m| name == m.id || name == format!("{}/{}", m.provider, m.id));
+        if same {
+            return Ok(None);
+        }
+        self.factory.resolve_model(name).map(Some).ok_or_else(|| {
+            (
+                INVALID_PARAMS,
+                format!("unknown or unavailable model {name}"),
+            )
+        })
+    }
+
     async fn thread_start(
         self: &Arc<Self>,
         connection: ConnectionId,
         params: proto::ThreadStartParams,
     ) -> ReplyResult {
         self.check_cwd(params.cwd.as_deref())?;
+        let scoped = self.scope_check(params.model.as_deref())?;
+        let model = scoped_name(params.model.as_deref(), scoped.as_ref());
         let factory = self.factory.clone();
-        let model = params.model.clone();
         let thread = self
             .load(
                 |gate| factory.create(model.as_deref(), gate),
                 now_ms() / 1000,
             )
             .map_err(|e| (INTERNAL_ERROR, e))?;
+        if let Err(e) = configure(
+            &thread.session,
+            None,
+            scoped.as_ref(),
+            params.effort.as_deref(),
+        ) {
+            self.unload_if_unused(&thread.id);
+            return Err(e);
+        }
         self.subscribe(&thread, connection);
         let response = self.session_response(&thread, false);
         thread.notify(
@@ -1084,6 +1160,9 @@ impl Inner {
         connection: ConnectionId,
         params: proto::ThreadResumeParams,
     ) -> ReplyResult {
+        let scoped = self.scope_check(params.model.as_deref())?;
+        let target = scoped_name(params.model.as_deref(), scoped.as_ref());
+        let mut fresh = false;
         let thread = match self.thread(&params.thread_id) {
             Some(thread) => thread,
             None => {
@@ -1096,12 +1175,36 @@ impl Inner {
                         return Err((INVALID_PARAMS, format!("no thread {}", params.thread_id)))
                     }
                 };
+                // Opened on the saved model, so the switch below compares the
+                // named model with the saved one.
                 let factory = self.factory.clone();
-                let model = params.model.clone();
-                self.load(|gate| factory.open(&path, model.as_deref(), gate), created)
-                    .map_err(|e| (INTERNAL_ERROR, e))?
+                let thread = self
+                    .load(|gate| factory.open(&path, None, gate), created)
+                    .map_err(|e| (INTERNAL_ERROR, e))?;
+                fresh = true;
+                thread
             }
         };
+        // A loaded thread keeps its session. Its model and effort change only
+        // between turns, so a resume that names one during a turn is rejected.
+        if busy(&thread) {
+            if params.model.is_some() || params.effort.is_some() {
+                return Err(turn_running());
+            }
+        } else {
+            let applied = self
+                .switch_for(&thread, target.as_deref())
+                .and_then(|switch| {
+                    let scoped = scoped.as_ref().filter(|_| switch.is_some());
+                    configure(&thread.session, switch, scoped, params.effort.as_deref())
+                });
+            if let Err(e) = applied {
+                if fresh {
+                    self.unload_if_unused(&thread.id);
+                }
+                return Err(e);
+            }
+        }
         self.subscribe(&thread, connection);
         ok(self.session_response(&thread, true))
     }
@@ -1228,34 +1331,17 @@ impl Inner {
         if text.trim().is_empty() && images.is_empty() {
             return Err((INVALID_PARAMS, "input is empty".into()));
         }
-        // `model` switches this turn and the ones after it.
-        if let Some(name) = params.model.as_deref() {
-            let current = thread.session.model();
-            let same = current
-                .as_ref()
-                .is_some_and(|m| name == m.id || name == format!("{}/{}", m.provider, m.id));
-            if !same && !thread.session.is_streaming() {
-                let model = self.factory.resolve_model(name).ok_or_else(|| {
-                    (
-                        INVALID_PARAMS,
-                        format!("unknown or unavailable model {name}"),
-                    )
-                })?;
-                thread
-                    .session
-                    .set_model(model)
-                    .map_err(|e| (INVALID_PARAMS, e.to_string()))?;
-            }
-        }
+        // `model` and `effort` switch this turn and the ones after it.
+        let scoped = self.scope_check(params.model.as_deref())?;
+        let name = scoped_name(params.model.as_deref(), scoped.as_ref());
         let turn_id = new_id();
         let started_ms = now_ms();
         {
+            // Reserve the turn before switching, so no other turn can start
+            // while the model and effort change.
             let mut state = lock(&thread.state);
             if state.turn.is_some() || thread.session.is_streaming() {
-                return Err((
-                    INVALID_REQUEST,
-                    "a turn is already running; use turn/steer".into(),
-                ));
+                return Err(turn_running());
             }
             state.turn = Some(ActiveTurn {
                 id: turn_id.clone(),
@@ -1268,6 +1354,16 @@ impl Inner {
                 cancel_requested: false,
                 error: None,
             });
+        }
+        let applied = self
+            .switch_for(&thread, name.as_deref())
+            .and_then(|switch| {
+                let scoped = scoped.as_ref().filter(|_| switch.is_some());
+                configure(&thread.session, switch, scoped, params.effort.as_deref())
+            });
+        if let Err(e) = applied {
+            lock(&thread.state).turn = None;
+            return Err(e);
         }
         let turn = Turn {
             id: turn_id.clone(),
@@ -1359,27 +1455,157 @@ impl Inner {
             .factory
             .models()
             .into_iter()
-            .filter(|(_, _, _, hidden)| params.include_hidden || !hidden)
-            .map(|(id, name, is_default, hidden)| proto::ModelInfo {
-                id: id.clone(),
-                model: id,
-                display_name: name.clone(),
-                description: name,
-                hidden,
-                is_default,
-                default_reasoning_effort: "medium".into(),
-                supported_reasoning_efforts: vec![proto::ReasoningEffortOption {
-                    reasoning_effort: "medium".into(),
-                    description: "Default".into(),
-                }],
-                input_modalities: vec!["text".into(), "image".into()],
-            })
+            .filter(|entry| params.include_hidden || !entry.hidden)
+            .map(model_info)
             .collect();
         proto::ModelListResponse {
             data,
             next_cursor: None,
         }
     }
+}
+
+/// A `model/list` row: the levels the model supports, and the effort a new
+/// thread starts with (medium when nothing says otherwise), clamped to it.
+fn model_info(entry: ModelEntry) -> proto::ModelInfo {
+    let model = &entry.model;
+    let start = clamp_thinking_level(model, &entry.effort.unwrap_or(ThinkingLevel::Medium));
+    let id = format!("{}/{}", model.provider, model.id);
+    proto::ModelInfo {
+        id: id.clone(),
+        model: id,
+        display_name: model.name.clone(),
+        description: model.name.clone(),
+        hidden: entry.hidden,
+        is_default: entry.is_default,
+        default_reasoning_effort: start.as_str().into(),
+        supported_reasoning_efforts: get_supported_thinking_levels(model)
+            .into_iter()
+            .map(|level| proto::ReasoningEffortOption {
+                reasoning_effort: level.as_str().into(),
+                description: effort_description(&level).into(),
+            })
+            .collect(),
+        input_modalities: vec!["text".into(), "image".into()],
+        category: entry.category,
+        alias: entry.alias,
+    }
+}
+
+fn effort_description(level: &ThinkingLevel) -> &'static str {
+    match level {
+        ThinkingLevel::Off => "No extra reasoning",
+        ThinkingLevel::Minimal => "Minimal reasoning",
+        ThinkingLevel::Low => "Light reasoning",
+        ThinkingLevel::Medium => "Balanced reasoning (default)",
+        ThinkingLevel::High => "Deep reasoning",
+        ThinkingLevel::XHigh => "Maximum reasoning",
+    }
+}
+
+/// Every thinking level, lowest first.
+fn all_efforts() -> Vec<ThinkingLevel> {
+    vec![
+        ThinkingLevel::Off,
+        ThinkingLevel::Minimal,
+        ThinkingLevel::Low,
+        ThinkingLevel::Medium,
+        ThinkingLevel::High,
+        ThinkingLevel::XHigh,
+    ]
+}
+
+/// The thinking level a `reasoning_effort` name is. `none` is an alias of `off`.
+fn parse_effort(name: &str) -> Option<ThinkingLevel> {
+    let name = if name == "none" { "off" } else { name };
+    all_efforts()
+        .into_iter()
+        .find(|level| level.as_str() == name)
+}
+
+/// The model to load for a `model` param: the scope entry's `provider/id`
+/// (so an alias works), else the name as the client sent it.
+fn scoped_name(name: Option<&str>, scoped: Option<&ScopedInfo>) -> Option<String> {
+    scoped
+        .map(|s| s.model.clone())
+        .or_else(|| name.map(str::to_string))
+}
+
+/// A turn is running, or the session is streaming.
+fn busy(thread: &LoadedThread) -> bool {
+    thread.turn_id().is_some() || thread.session.is_streaming()
+}
+
+/// The error for a model or effort change (or a new turn) on a busy thread.
+fn turn_running() -> (i64, String) {
+    (
+        INVALID_REQUEST,
+        "a turn is already running; use turn/steer".into(),
+    )
+}
+
+/// Applies a thread's model, then its effort. `model` is the model to switch
+/// to (`None` keeps the current one). An explicit `effort` must be one the
+/// model supports; it is checked before anything changes. Without one, a
+/// `scoped` entry's effort applies, clamped to the model.
+fn configure(
+    session: &AgentSession,
+    model: Option<Model>,
+    scoped: Option<&ScopedInfo>,
+    effort: Option<&str>,
+) -> Result<(), (i64, String)> {
+    let target = model.clone().or_else(|| session.model());
+    let level = match effort {
+        Some(name) => {
+            let level = parse_effort(name).ok_or_else(|| {
+                (
+                    INVALID_PARAMS,
+                    format!("unknown effort {name}; use one of {}", effort_names(None)),
+                )
+            })?;
+            if let Some(target) = &target {
+                if !get_supported_thinking_levels(target).contains(&level) {
+                    return Err((
+                        INVALID_PARAMS,
+                        format!(
+                            "effort {name} is not supported by {}; supported efforts: {}",
+                            target.id,
+                            effort_names(Some(target)),
+                        ),
+                    ));
+                }
+            }
+            Some(level)
+        }
+        None => scoped
+            .and_then(|s| s.effort.clone())
+            .map(|level| match &target {
+                Some(target) => clamp_thinking_level(target, &level),
+                None => level,
+            }),
+    };
+    if let Some(model) = model {
+        session
+            .set_model(model)
+            .map_err(|e| (INVALID_PARAMS, e.to_string()))?;
+    }
+    if let Some(level) = level {
+        session.set_thinking_level(level);
+    }
+    Ok(())
+}
+
+/// The effort names a model supports (all of them without a model), for errors.
+fn effort_names(model: Option<&Model>) -> String {
+    let levels = match model {
+        Some(model) => get_supported_thinking_levels(model),
+        None => all_efforts(),
+    };
+    levels
+        .iter()
+        .map(|level| level.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Image inputs → hoocode images. Data URLs and local files only.

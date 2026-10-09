@@ -85,12 +85,12 @@ path exists: connect to it; if something answers, refuse to start
 | Method | Notes |
 |---|---|
 | `initialize` | Before anything else, once per connection. Result: `userAgent` (`hoocode/<version>`), `codexHome` (agent dir), `platformFamily`, `platformOs`. Records `capabilities.experimentalApi`. |
-| `thread/start` | New session in the server's cwd. Optional `model` (hoocode model pattern). Optional `config["hoocode.profile"]` reserved for profiles (ignored for now). Caller is subscribed. Emits `thread/started`. |
-| `thread/resume` | Load a saved session by `threadId` (or `path`). Caller is subscribed. Result has `thread.turns` rebuilt from the session file. Pending approvals for the thread are replayed to the caller. |
+| `thread/start` | New session in the server's cwd. Optional `model` (hoocode model pattern) and `effort`. Optional `config["hoocode.profile"]` reserved for profiles (ignored for now). Caller is subscribed. Emits `thread/started`. |
+| `thread/resume` | Load a saved session by `threadId` (or `path`). Optional `model` and `effort`. Caller is subscribed. Result has `thread.turns` rebuilt from the session file. Pending approvals for the thread are replayed to the caller. |
 | `thread/list` | Sessions for the server's cwd, newest first; `limit` + `cursor` (opaque offset). `archived: true` → empty. |
 | `thread/read` | One thread; `includeTurns` rebuilds turns from the file. Doesn't subscribe. |
 | `thread/unsubscribe` | Stop events for this connection. Result `status`: `unsubscribed` / `notSubscribed` / `notLoaded`. |
-| `turn/start` | Starts a run with `input` (text, data-URL image or local image). Error if a turn is already running (clients steer instead). Optional `model` switches this turn and later ones (must be an available model, else `-32602`). Result `{turn}` with `status: inProgress`. |
+| `turn/start` | Starts a run with `input` (text, data-URL image or local image). Error if a turn is already running (clients steer instead). Optional `model` and `effort` switch this turn and later ones (see [Model scope and effort](#model-scope-and-effort)). Result `{turn}` with `status: inProgress`. |
 | `turn/steer` | `expectedTurnId` must equal the running turn. Queued as a hoocode steer. Result `{turnId}`. |
 | `turn/interrupt` | Denies and resolves pending approvals, starts the abort and answers `{}` at once; `turn/completed` (`interrupted`) follows. No further approvals are asked in that turn. |
 | neutral stubs | What the recorded Codex TUI session needs (see "Codex TUI" below): `account/read`, `model/list` (hoocode's real models), `configRequirements/read`, `skills/list` (empty), `thread/loaded/list`. |
@@ -121,6 +121,104 @@ Which calls ask is hoocode's existing policy (`hoocode-code-permissions`
 `evaluate`, per-mode `auto_allow`, `denied_tools`, Shell patterns, …) with
 "has UI" = true. So a workspace in hoobot's `discord` mode asks for
 Shell/Edit/Write exactly as the terminal UI would.
+
+## Model scope and effort
+
+Added 2026-10-09. The server uses the same model scope as the terminal UI:
+`--models` for the run, else `scopedModels` (see [scoped-models.md](scoped-models.md)).
+With no scope, every model with auth is listed and none is hidden.
+
+### New fields
+
+| Where | Field | Notes |
+|---|---|---|
+| `thread/start`, `thread/resume` params | `effort` | Optional reasoning effort (`off` … `xhigh`) for the thread. |
+| `turn/start` params | `effort` | Optional. Applies to this turn and the ones after it. Applied after `model`. |
+| `model/list` entry | `category`, `alias` | The scope entry's category (`cheap`, `fast`, `standard`, `capable`) and alias. Left out when the entry has none. |
+| `model/list` entry | `supportedReasoningEfforts`, `defaultReasoningEffort` | Real values now. Before, every model reported `medium` only. |
+| `thread/start`, `thread/resume` results | `reasoningEffort` | The thread's current level. Was always `null`. |
+
+`model/list` puts the scoped models first, in `scopedModels` order. The
+others follow with `hidden: true` and are left out unless the request sets
+`includeHidden`.
+
+Example `model/list` entry (the effort levels depend on the model):
+
+```json
+{
+  "id": "anthropic/claude-sonnet-5-5",
+  "model": "anthropic/claude-sonnet-5-5",
+  "displayName": "Claude Sonnet 5.5",
+  "description": "Claude Sonnet 5.5",
+  "hidden": false,
+  "isDefault": true,
+  "defaultReasoningEffort": "medium",
+  "supportedReasoningEfforts": [
+    { "reasoningEffort": "low", "description": "Light reasoning" },
+    { "reasoningEffort": "medium", "description": "Balanced reasoning (default)" },
+    { "reasoningEffort": "high", "description": "Deep reasoning" }
+  ],
+  "inputModalities": ["text", "image"],
+  "category": "standard",
+  "alias": "sonnet"
+}
+```
+
+Example `turn/start` with an effort:
+
+```json
+{
+  "id": 12,
+  "method": "turn/start",
+  "params": {
+    "threadId": "thread-1",
+    "input": [{ "type": "text", "text": "Review this diff" }],
+    "model": "sonnet",
+    "effort": "high"
+  }
+}
+```
+
+### Precedence
+
+For a thread or a turn, the first rule that applies wins:
+
+1. **Explicit `effort`.** Used as sent. The model must support it.
+2. **Scoped effort.** The request names a scoped model and switches to it.
+   The entry's effort applies, or the settings' default level if the entry
+   has none. It is clamped to the closest level the model supports, with no error.
+3. **Unchanged.** A new thread keeps the session default. A running thread
+   keeps its level.
+
+Rule 2 applies on `thread/start`, and on `thread/resume` when it creates the
+session. A request with no `model` gets no scoped effort. On a thread that is
+already loaded, or in a `turn/start` that names the model the thread already
+uses, nothing switches, so the scoped effort is not applied. On `thread/resume`
+during a turn, `model` and `effort` are ignored.
+
+Every check runs before anything changes, so a rejected request leaves the
+thread as it was.
+
+### Errors
+
+All of these are `-32602` (invalid params). `{name}` is the value the client
+sent.
+
+| Case | Message |
+|---|---|
+| `model` outside the scope | `model {name} is not in your scoped models ({list})`. `list` is each entry's alias, or `provider/id` when it has none. |
+| `model` matches more than one scope entry | `"{name}" matches more than one scoped model: {list}. Use an alias or the full provider/id.` |
+| `model` unknown or without auth (no scope) | `unknown or unavailable model {name}` |
+| `effort` is not a level name | `unknown effort {name}; use one of off, minimal, low, medium, high, xhigh` |
+| `effort` the model does not support | `effort {name} is not supported by {id}; supported efforts: {list}`. `id` is the bare model id. |
+
+**Expired OAuth login.** When an OAuth provider has no usable credential,
+the turn fails with this message, in place of the raw `No API key found for …`
+(API-key providers keep theirs):
+
+```
+Authentication failed for "openai-codex". Credentials may have expired or network is unavailable. Run '/login openai-codex' to re-authenticate.
+```
 
 ## Mapping hoocode → Codex
 

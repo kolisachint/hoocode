@@ -88,15 +88,15 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `ai-env` | Environment and API key handling for hoocode AI | 7 | 345 / 0 | keep |
-| `ai-models` | LLM model registry and discovery for hoocode AI | 10 | 345 / 232 | keep |
+| `ai-env` | Environment and API key handling for hoocode AI | 8 | 345 / 0 | keep |
+| `ai-models` | LLM model registry and discovery for hoocode AI | 11 | 345 / 234 | keep |
 | `ai-models-catalog` | Model catalog data (LLM and image models) for hoocode AI, generated from the pinned hoocode | 1 | 43 / 0 | keep |
 | `ai-oauth` | OAuth core for hoocode AI: types, PKCE, callback server, provider registry | 7 | 1086 / 0 | keep |
 | `ai-oauth-anthropic` | Anthropic (Claude Pro/Max) OAuth flow for hoocode AI | 1 | 515 / 0 | keep |
 | `ai-oauth-github-copilot` | GitHub Copilot OAuth device flow for hoocode AI | 1 | 676 / 0 | keep |
 | `ai-oauth-google` | Google Cloud Code Assist OAuth flows (Gemini CLI, Antigravity) for hoocode AI | 1 | 1450 / 0 | keep |
 | `ai-oauth-openai-codex` | OpenAI Codex (ChatGPT Plus/Pro) OAuth flow for hoocode AI | 1 | 600 / 0 | keep |
-| `ai-provider-anthropic` | Anthropic provider for hoocode AI | 1 | 2678 / 517 | keep |
+| `ai-provider-anthropic` | Anthropic provider for hoocode AI | 1 | 2729 / 517 | keep |
 | `ai-provider-faux` | Faux / test provider for hoocode AI | 0 | 930 / 760 | test provider (dev-dep only) |
 | `ai-provider-google` | Google Gemini provider for hoocode AI | 2 | 3157 / 110 | keep |
 | `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for hoocode AI | 1 | 1721 / 0 | keep |
@@ -125,12 +125,12 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2529 / 1013 | keep |
-| `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1187 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 6873 / 6170 | keep |
-| `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 896 / 853 | keep |
+| `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2755 / 1568 | keep |
+| `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1204 / 0 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 6882 / 6170 | keep |
+| `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 916 / 853 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 537 / 0 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5347 / 0 | keep |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5420 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1359 | the `hoocode` binary |
 | `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 1 | 1883 / 0 | keep |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1582 / 608 | keep |
@@ -146,7 +146,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 926 / 0 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 1864 / 390 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2304 / 1706 | keep |
-| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 8273 / 7474 | keep |
+| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 8273 / 7482 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 5 | 664 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1080 / 125 | keep |
 | `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1511 / 653 | keep |
@@ -161,7 +161,7 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 13246 / 4790 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 724 / 828 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8048 / 3361 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8048 / 3398 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2364 / 2514 | keep |
 | `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 6700 / 4737 | keep |
 
