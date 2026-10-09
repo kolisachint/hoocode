@@ -58,19 +58,17 @@
 «» Free and reversible, every one: nothing here touches the work, only the window
 «» onto it. Press again or add «fg=#5cc8bb»Shift«» and you are back where you were.
 
-«» ┌─────────────────────┬────────────────────────────────────────────────────────────────────────┐
-«» │ «bold»Key                «» │ «bold»Action                                                                «» │
-«» ├─────────────────────┼────────────────────────────────────────────────────────────────────────┤
-«» │ «fg=#5cc8bb»Alt+O«» / «fg=#5cc8bb»Shift+Alt+O«» │ Step tool output: radar → peek → full                                  │
-«» ├─────────────────────┼────────────────────────────────────────────────────────────────────────┤
-«» │ «fg=#5cc8bb»Alt+L«» / «fg=#5cc8bb»Shift+Alt+L«» │ Step the task panel: tasks → subagents → teams                         │
-«» ├─────────────────────┼────────────────────────────────────────────────────────────────────────┤
-«» │ «fg=#5cc8bb»Ctrl+O«»              │ Jump to the full view and back, without moving the dial                │
-«» ├─────────────────────┼────────────────────────────────────────────────────────────────────────┤
-«» │ «fg=#5cc8bb»Ctrl+T«»              │ Show or hide thinking blocks                                           │
-«» ├─────────────────────┼────────────────────────────────────────────────────────────────────────┤
-«» │ «fg=#5cc8bb»Alt+N«»               │ Focus the team roster — «fg=#5cc8bb»n«» nudges, «fg=#5cc8bb»a«» attaches, «fg=#5cc8bb»q«»/«fg=#5cc8bb»Escape«» leaves («fg=#5cc8bb»--team«») │
-«» └─────────────────────┴────────────────────────────────────────────────────────────────────────┘
+«» ┌─────────────────────┬─────────────────────────────────────────────────────────┐
+«» │ «bold»Key                «» │ «bold»Action                                                 «» │
+«» ├─────────────────────┼─────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+O«» / «fg=#5cc8bb»Shift+Alt+O«» │ Step tool output: radar → peek → full                   │
+«» ├─────────────────────┼─────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+L«» / «fg=#5cc8bb»Shift+Alt+L«» │ Step the task panel: tasks → subagents                  │
+«» ├─────────────────────┼─────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+O«»              │ Jump to the full view and back, without moving the dial │
+«» ├─────────────────────┼─────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+T«»              │ Show or hide thinking blocks                            │
+«» └─────────────────────┴─────────────────────────────────────────────────────────┘
 
 «» «bold»Screen«» — how much room there is to see it in
 «» One dial for the furniture. Everything below the transcript except the prompt,
