@@ -5,7 +5,7 @@ Input: eight read-only reviews of the TUI, subagent and parity code (summarised 
 
 **T0 done 2026-10-09** (T0.1 to T0.6). The hoocode-ts parity gate is retired: the done bar is
 L1 plus `python3 scripts/tui/goldens.py check all`, and `ledger.py` is read-only. The phase
-tables below stay as the record. **Phase S, tier Now: N1 to N7 done 2026-10-09.** Next step: N8.
+tables below stay as the record. **Phase S, tier Now: N1 to N8 done 2026-10-09.** Next step: N9.
 
 This is the **TUI plan**. It runs side by side with the core plan in
 [README.md](README.md); neither is ahead of the other. Before implementing any step, ask the
@@ -93,7 +93,7 @@ subagent that takes a row still confirms it before changing code.
 | N5 | Up to 1 s UI stall when a compaction ends or on quit. The progress keepalive sleeps 1 s and is joined. Wake it with a Condvar. **Done 2026-10-09** (`b08109f`, in `hoocode-tui-terminal`). | TM1 V | S |
 | N6 | Alt+P / Alt+_ / Alt+] start a string sequence, and the flush emits one dead blob. Split off the ESC and re-feed the rest. **Done 2026-10-09** (`9461fc1`). | TM4 P | S |
 | N7 | Small fixes: "Full output: undefined" sent to the model when no temp file exists (`tool-bash/tool.rs:157`). CSI scan ends at any final byte (`ansi.rs:18`). An Esc just before a paste is lost. "/" is ambiguous as the hint separator. Remove the unreachable "undefined" fallbacks. **Done 2026-10-09** (`1c4596e`, `13f667e`, `33fc95c`, `944172f`, `53f4a07`). The hotkey banner now joins dial keys with " or " (not "/"). | new, UT1 P, TM2 V, KY2 P, TB1 P | S |
-| N8 | Delete the overlay subsystem (~560 LOC plus 3 test files, no caller outside `tui-render`). Do it before any other `paint` edit. | RN2 P | M |
+| N8 | Delete the overlay subsystem (~560 LOC plus 3 test files, no caller outside `tui-render`). Do it before any other `paint` edit. **Done 2026-10-09** (`248c829`): no picker used an overlay, so nothing replaces them; also removed tui-util `extract_segments`, which only overlay compositing used. | RN2 P | M |
 | N9 | Delete the teams lens, roster, focus code, `app.team.*` bindings, team hotkey hint and ~17 tests. The `--team` flag is removed too (decision 27). | TP1 V, AP12 hint | M |
 | X11 | Task panel inside T1.3/T4 (promoted from Next 2026-10-09; do it with N9): `Task::is_plan_item()` shared with `todo.rs`, the `Plan` rename, `kind` added with the Shell/Schedule rows, and one row model per store version. | TP3 V, TP4 P, TP2 P | S |
 | N10 | Split `interactive_mode.rs` into `mode/*`. Then `Transcript` = the 12 fields `reset_transcript_view` clears, plus `chat.clear()`. | IM1 V, IM2 P | M |
