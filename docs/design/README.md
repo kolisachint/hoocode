@@ -36,7 +36,19 @@ To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) 
   `embeddingsearchtools`, `voicetools`, `hooteams`, `drawio-canvas`) are MIT and
   fair to use.
 
-## The plan, in priority order
+## Two plans, side by side
+
+There are two plans: the **core plan** (below) and the **TUI plan**
+([tui-activity.md](tui-activity.md), agreed 2026-10-09). Neither is ahead of the other.
+**When the user asks to proceed or to start implementing, ask which plan and which step
+first.** Don't pick one yourself.
+
+| Plan | Card | Phases | First step |
+|---|---|---|---|
+| Core | this page, "The core plan" | milestones 0a–8 | per the status line below |
+| TUI | [tui-activity.md](tui-activity.md) | T0 goldens (replaces L1/L2 parity) · T1 prerequisites · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell | T0.1 |
+
+## The core plan, in priority order
 
 Agreed on 2026-10-08. One milestone at a time; each lands as one or more PRs that
 pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
@@ -56,7 +68,6 @@ pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 6 | Plugins: load, install, opt-in model tools | [plugins.md](plugins.md) | L | 4 | Delivers skills, MCP servers and subagents |
 | 7 | Scheduler and `/loop` | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
 | 8 | Version check and completion chime | [extras.md](extras.md) | S | 0c | Small polish |
-| 9 | TUI: hoocode-only goldens (T0), then activity panel tabs, subagent storage and attach, background shell (T1–T5) | [tui-activity.md](tui-activity.md) | L | — | Agreed 2026-10-09 ([decisions-2026-10-09.md](decisions-2026-10-09.md)); T0 replaces L1/L2 parity |
 
 **Status (2026-10-08):** milestone 2 (concurrency phases 0-1) is done. Milestone 3 (DocSearch;
 the 8 `l1_done` tasks) is done. Milestones 4 (MCP client) and 5 (concurrency phases 2-5) are

@@ -4,6 +4,10 @@ Status: **design, agreed 2026-10-09** ([decisions-2026-10-09.md](decisions-2026-
 No code yet. Input: eight read-only reviews of the TUI, subagent and parity code
 (summarised in Details).
 
+This is the **TUI plan**. It runs side by side with the core plan in
+[README.md](README.md); neither is ahead of the other. Before implementing any step, ask the
+user which plan and which step to take next.
+
 ## Goal
 
 1. Save each subagent's transcript next to its parent session, so `/resume` brings them back
@@ -20,24 +24,29 @@ No code yet. Input: eight read-only reviews of the TUI, subagent and parity code
 
 | Topic | Decision |
 |---|---|
-| Subagent storage | Sibling dir: `<session>.jsonl` plus `<session>/subagents/<task_id>.jsonl`. The child header's `parent_session` is set. The parent gets a `subagent_run` entry (task_id, agent type, description, child file, outcome). |
+| Subagent storage | Sibling dir: `<session>.jsonl` plus `<session>/subagents/<task_id>.jsonl`. The child header's `parent_session` is set. The parent gets a `custom` entry with `customType: "subagent_run"` (task_id, agent type, description, child file, outcome). Not a new entry type: hoocode-ts reads the same `~/.hoocode` sessions and must not choke. Its session listing reads `*.jsonl` only, so the sibling dir is invisible to it. |
 | Recovery | View and resume. After a restart a child transcript is browsable read-only. An interrupted child can be resumed on request (existing `resume_task_id` path). No auto-resume. |
-| Retention | Child files live as long as the parent session. Success no longer deletes them. `.hoocode/dispatch/<task>/` holds only scratch (pid, result.json, output.json). The 24h sweep touches scratch only. |
+| Retention | Child files live as long as the parent session. Success no longer deletes them (this changes [subagents.md](subagents.md) §2, where a clean success deletes its dispatch dir). `.hoocode/dispatch/<task>/` holds only scratch (pid, result.json, output.json). The 24h sweep touches scratch only. |
 | Attach | **True transcript swap** (not an overlay). The main transcript is parked and the child's is shown full screen. Header: `◂ explore · <description> · running · Esc back`. |
 | Attached input | Read-only. The prompt is disabled with a hint. Esc detaches. |
+| Picking a run | `/agents` lists this session's subagent runs (running, done, interrupted) and attaches to the chosen one. Needed when the panel is collapsed. |
 | Live log source | The child's full stdout events are forwarded to the UI (`AppEvent::Subagent(task_id, event)`). On attach, history is backfilled from the child's `session.jsonl`. |
 | Panel content | Tabs: **Plan · Agents · Shell · Schedule · MCP**. Empty tabs are hidden. Unfocused, the panel shows the current tab plus a one-line count per tab. |
 | Panel keys | **Ctrl+G** focuses the panel (Ctrl+T stays thinking). Tab / Shift+Tab switch tabs, Up/Down pick a row, Enter attaches or opens, `x` cancels (with confirm), Esc returns to the prompt. All keys are rebindable. |
 | Teams lens | Delete it (about 300 lines with no production producer). Focus is rebuilt on the new row model. |
-| Background shell | In scope. `Shell` gets `run_in_background`, a job registry, output to a file, kill, and `ShellOutput`/`ShellKill` tools. Jobs appear in the Shell tab and are attachable. |
+| Background shell | In scope. `Shell` gets `run_in_background`, a job registry, output to a file, kill, and `ShellOutput`/`ShellKill` tools. Jobs appear in the Shell tab and are attachable. Quitting with jobs running asks once; "kill all" is the default. |
 | Done bar | **L1** (fmt, clippy, nextest, dep firewall) **plus hoocode goldens**. Text diffs fail. LLM review is advisory. hoocode-ts setup leaves hooks and CI. |
 | Golden tiers | (a) In-process component goldens: vt100 at a fixed width, run under nextest, in milliseconds. (b) tmux end-to-end scenarios on the real binary and the mock LLM. |
 | Visual review | Text grid plus a compact style legend by default. A PNG is rendered only for changed screens or when the text review is unsure. It is run by a Haiku subagent in-session (no API key, not in CI). |
 | Cleanups | Only the prerequisites first. The rest is a ranked backlog for later Haiku batches. |
+| Replay fixtures | Keep `hoocode-0.5.89/` and `replay.json` as regression tests until T0 has run green for a week; then decide. |
+| Migration ledger | Freeze `ledger.py` read-only at T0.6. New work is tracked in this card's phase tables. |
 
 ## What we build
 
 ### Phase T0: hoocode-only goldens (first, so later phases have a safety net)
+
+Needs: nothing. Start here.
 
 | Step | Work | Size |
 |---|---|---|
@@ -46,9 +55,11 @@ No code yet. Input: eight read-only reviews of the TUI, subagent and parity code
 | T0.3 | `scripts/tui/goldens.py` (forked from `harness.py` with the hoocode-ts half dropped): `run <scenario>`, `check` (diff against `tests/golden/tui/<scenario>/*.txt`), `update`. It reuses the scenario JSON, `mockllm.py`, the tmux driver and the `normalize.json` rules (tool-name rules dropped). | M |
 | T0.4 | `scripts/tui/review_bundle.py`: for changed screens only, writes `target/tui-review/<scenario>/<snap>/{before,after}.txt`, `diff.txt`, a style legend and an optional `after.png` (`grid_to_html` → `render_png.mjs`). Plus `index.md` listing the bundles. | S |
 | T0.5 | `.claude/skills/tui-review/SKILL.md`: how a Haiku subagent reviews a bundle (checklist: alignment, truncation, colour roles, overflow at 80 and 120 columns, empty and error states). It writes `review.md` per screen with ok / issue / unsure. On unsure, it asks for the PNG. | S |
-| T0.6 | Retire parity: `ledger.py verify` = L1 + `goldens.py check <scenarios>`. Remove `setup_hoocode.sh` from SessionStart and CI. Update CLAUDE.md, build-speed.md, ui.md and the continue-migration skill. Move `migration/tui-parity/` to `scripts/tui/` (keep mock and scenarios). The replay fixtures stay until the user says so. | S |
+| T0.6 | Retire parity: done = L1 + `goldens.py check`. Freeze `ledger.py` (read-only, `verify` prints a pointer here). Remove `setup_hoocode.sh` from SessionStart and CI. Update CLAUDE.md ("Done =" line, commands), build-speed.md, ui.md ("Rules for UI changes") and the continue-migration skill. Move the mock and scenarios from `migration/tui-parity/` to `scripts/tui/`. The replay fixtures stay (Decisions). | S |
 
 ### Phase T1: prerequisites (refactors, no visible change; goldens must stay identical)
+
+Needs: T0.
 
 | Step | Work | Size |
 |---|---|---|
@@ -59,35 +70,47 @@ No code yet. Input: eight read-only reviews of the TUI, subagent and parity code
 
 ### Phase T2: subagent storage and recovery
 
+Needs: T0. Independent of T1, so T1 and T2 can run in parallel.
+
+
 | Step | Work | Size |
 |---|---|---|
 | T2.1 | Pool: the child's `--session` points at `<parent>/subagents/<task_id>.jsonl`. `Header.parent_session` is set. `dispatch-log.json` and ledger lines carry the parent session id. | S |
-| T2.2 | Parent session: a `subagent_run` entry at dispatch, and its outcome at settle. Success no longer deletes the transcript. The sweep spares `subagents/`. Deleting a session deletes its dir. | S |
+| T2.2 | Parent session: a `subagent_run` custom entry at dispatch, and a second one with the outcome at settle (append-only; the last one wins). Success no longer deletes the transcript. The sweep spares `subagents/`. Deleting a session deletes its dir. | S |
 | T2.3 | `/resume`: subagent runs nest under their parent session in the threaded view. Search matches the parent row only. | S |
-| T2.4 | After restart, `subagent_run` entries whose outcome is missing are shown as `interrupted`. Enter on such a row offers View / Resume (the existing `SubagentPool::resume`). | S |
+| T2.4 | After restart, `subagent_run` runs with no outcome entry are shown as `interrupted`. Enter on such a row offers View / Resume (the existing `SubagentPool::resume`). | S |
 
 ### Phase T3: live events and attach
+
+Needs: T1.2 and T2.
+
 
 | Step | Work | Size |
 |---|---|---|
 | T3.1 | Forward every child stdout event: a pool listener sends `AppEvent::Subagent(task_id, event)`. The child also emits `message_update` deltas, throttled to the existing streaming render rate. | S |
 | T3.2 | The Agent tool emits a partial at dispatch carrying `task_id`, so the tool block knows its run. The block shows `Agent explore · <description>` and a 5-line tail of the live activity. | S |
-| T3.3 | Attach: park the main `Transcript`, build the child's from its jsonl (`render_session_context`), and route that task's live events into it. Main-session events keep updating the parked view. Esc restores it with its scroll offset. The prompt is disabled while attached. The header row shows state. | M |
-| T3.4 | Attach from three places: the panel (Enter), the Agent tool block (a key on the selected block), and `/agents` (a picker of runs in this session). | S |
+| T3.3 | Attach: park the main `Transcript`, build the child's from its jsonl (read on a worker thread, per concurrency.md: no file I/O on the UI thread; `render_session_context` on arrival), and route that task's live events into it. Main-session events keep updating the parked view. Esc restores it with its scroll offset. The prompt is disabled while attached. The header row shows state. | M |
+| T3.4 | Attach from three places: the panel (Enter), the Agent tool block (a key on the selected block), and `/agents` (a picker of runs in this session). Add `/agents` to `BUILTIN_SLASH_COMMANDS` and `ui.md`. | S |
 
 ### Phase T4: activity panel tabs
+
+Needs: T1.3. Attach from the panel needs T3.
+
 
 | Step | Work | Size |
 |---|---|---|
 | T4.1 | Panel tabs over the T1.3 row model. The unfocused view shows the current tab plus counts. Ctrl+G focuses it. Keys are as in Decisions. The tick runs while any row is running. | M |
-| T4.2 | Schedule tab: the scheduler publishes fire, run and finish plus next run time into the store. | S |
+| T4.2 | Schedule tab: the scheduler publishes fire, run and finish plus next run time into the store. The store and tick exist today; `/loop` itself is core milestone 7 ([scheduler-and-loop.md](scheduler-and-loop.md)), and the tab shows its jobs once it lands. | S |
 | T4.3 | MCP tab: `McpHub` publishes per-server state (connecting, ready, auth needed, failed) and in-flight calls longer than 1 s. Enter on an auth-needed row runs `/mcp login`. `x` aborts a call. | S |
 
 ### Phase T5: background shell
 
+Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2) can start after T0.
+
+
 | Step | Work | Size |
 |---|---|---|
-| T5.1 | Job registry (`hoocode-code-tool-bash`): spawn with output to `<session>/jobs/<id>.log`, a kill handle, exit status. Session-scoped, and killed on exit unless the user detaches it. | M |
+| T5.1 | Job registry (`hoocode-code-tool-bash`): spawn with output to `<session>/jobs/<id>.log`, a kill handle, exit status. Session-scoped. On quit with jobs running, ask once ("kill all" default, or leave running). | M |
 | T5.2 | `Shell` gets `run_in_background`. New opt-in tools `ShellOutput(id, since?)` and `ShellKill(id)`. Completion is a notice to the model at the next turn. | S |
 | T5.3 | Shell tab rows plus attach (a tail of the log file, the same swap view as T3.3 with a plain-text transcript). | S |
 
@@ -98,8 +121,9 @@ No code yet. Input: eight read-only reviews of the TUI, subagent and parity code
 - Each one runs L1 for its crates and `goldens.py check`. On a visual change, it produces a
   review bundle and a second Haiku subagent reviews it (T0.5). The orchestrator (main
   session) reads the review and merges.
-- Parallel only where files don't overlap: T0.1/T0.3 together, T1.3/T1.4 together, T4.2/T4.3
-  together. T1.1 → T1.2 → T3.3 are serial.
+- Parallel only where files don't overlap: T0.1/T0.3 together, T1.3/T1.4 together, T1 with T2,
+  T4.2/T4.3 together, T5.1/T5.2 with T3. T1.1 → T1.2 → T3.3 are serial.
+- Before starting any step, the orchestrator asks the user which plan (core or TUI) and step.
 
 ## Not doing
 
@@ -113,14 +137,8 @@ No code yet. Input: eight read-only reviews of the TUI, subagent and parity code
 
 ## Open questions
 
-1. `/agents`: a new slash command (T3.4), or attach only from the panel and tool block?
-   Recommended: add it. It is the only way in when the panel is collapsed.
-2. Background shell jobs at exit: kill silently, or ask when jobs are running?
-   Recommended: ask once, with "kill all" as the default.
-3. Replay fixtures (`hoocode-0.5.89/`, `replay.json`): keep as regression tests, or delete
-   with the parity harness? Recommended: keep until T0 has run green for a week.
-4. Migration ledger: keep `ledger.py` at all once parity is gone? Recommended: freeze it
-   read-only. New work is tracked in this card's phase tables.
+None. The four left open on 2026-10-09 were answered the same day and are now under
+Decisions (`/agents`, quit with running jobs, replay fixtures, ledger).
 
 ## Details
 
@@ -128,7 +146,7 @@ No code yet. Input: eight read-only reviews of the TUI, subagent and parity code
 
 | Area (LOC) | Finding used here |
 |---|---|
-| `interactive_mode.rs` (6,624) | The transcript is a re-rendered component tree, not terminal scrollback (`ui.md` was wrong; fixed). A swap needs `Transcript` (T1.2). Nine UI-thread `block_on` calls break concurrency.md §4 (backlog B1). |
+| `interactive_mode.rs` (6,624) | The transcript is a re-rendered component tree, not terminal scrollback (`ui.md` said otherwise; fixed in the same commit as this card). A swap needs `Transcript` (T1.2). Nine UI-thread `block_on` calls break concurrency.md §4 (backlog B1). |
 | Task panel (1,100) | Teams/focus is unreachable. The store is memory-only. Shell, scheduler and MCP are absent. `render` clones the store every frame. |
 | Subagents | Success deletes the transcript (`pool.rs` settle). Nothing links the child to its parent. Progress is collapsed to one string in `instance.rs`. stdin is null. |
 | Tool blocks (4,384) | The Agent block can't learn its task id until it finishes. It hides `description`. AgentOutput and Edit ignore the peek dial. |

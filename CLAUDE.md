@@ -25,6 +25,9 @@ Never modify hoocode-ts; it is the reference.
   design preferences). `docs/design/decisions-2026-10-07.md` and `decisions-2026-10-08.md` (concurrency
   card, scope cuts, crates to delete) win over any card. Start
   with step 0a of the plan in `docs/design/README.md`. A design session changes docs only.
+- **Two plans side by side:** the core plan (`docs/design/README.md`) and the TUI plan
+  (`docs/design/tui-activity.md`, 2026-10-09). When the user asks to proceed or implement,
+  ask which plan and which step first.
 - **Maps:** `docs/maps/packages.md` (crates) and `docs/maps/ui.md` (screen, pickers, slash
   commands). Read them to find code; update them in the same commit as any crate, screen
   or command change.
