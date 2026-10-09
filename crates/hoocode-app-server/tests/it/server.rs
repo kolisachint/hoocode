@@ -8,11 +8,13 @@ use std::time::Duration;
 
 use hoocode_agent_types::{AgentToolResult, PermissionGate};
 use hoocode_ai_provider_faux::{
-    faux_assistant_message, faux_tool_call, register_faux_provider, FauxProvider,
-    FauxProviderRegistration, FauxResponseStep, RegisterFauxProviderOptions,
+    faux_assistant_message, faux_tool_call, register_faux_provider, FauxModelDefinition,
+    FauxProvider, FauxProviderRegistration, FauxResponseStep, RegisterFauxProviderOptions,
 };
-use hoocode_ai_types::{Content, StopReason};
-use hoocode_app_server::{AppServer, SavedSession, ServerConfig, SessionFactory};
+use hoocode_ai_types::{Content, Model, StopReason, ThinkingLevel};
+use hoocode_app_server::{
+    AppServer, ModelEntry, SavedSession, ScopedInfo, ServerConfig, SessionFactory,
+};
 use hoocode_code_agent_session::{
     create_agent_session, AgentSession, AgentSessionServices, BaseTools, CreateAgentSessionOptions,
     StaticResourceLoader,
@@ -95,14 +97,67 @@ fn fake_bash() -> ToolDefinition {
     }
 }
 
+/// The provider every faux model is registered under: `model/list` ids are `p/<id>`.
+const PROVIDER: &str = "p";
+
+/// A model that is never in the scope.
+const OUT_OF_SCOPE: &str = "out-of-scope";
+
+/// One model in the fake's model scope (`scopedModels`).
+#[derive(Clone)]
+struct ScopeEntry {
+    id: &'static str,
+    alias: Option<&'static str>,
+    category: Option<&'static str>,
+    effort: Option<ThinkingLevel>,
+}
+
+impl ScopeEntry {
+    fn plain(id: &'static str) -> Self {
+        Self {
+            id,
+            alias: None,
+            category: None,
+            effort: None,
+        }
+    }
+
+    fn full_id(&self) -> String {
+        format!("{PROVIDER}/{}", self.id)
+    }
+}
+
 struct Factory {
     faux: Arc<FauxProvider>,
     dir: PathBuf,
+    /// The model scope. `None`: every model is listed, none hidden.
+    scope: Option<Vec<ScopeEntry>>,
 }
 
 impl Factory {
-    fn session(&self, manager: SessionManager, gate: Arc<dyn PermissionGate>) -> AgentSession {
-        let model = self.faux.get_model();
+    /// The faux model a client's name means: `id` or `provider/id`.
+    fn find(&self, name: &str) -> Option<Model> {
+        self.faux
+            .models()
+            .iter()
+            .find(|m| name == m.id || name == format!("{}/{}", m.provider, m.id))
+            .cloned()
+    }
+
+    /// The model a session starts with: the named one, else the first.
+    fn pick(&self, name: Option<&str>) -> Result<Model, String> {
+        match name {
+            Some(name) => self.find(name).ok_or_else(|| format!("no model {name}")),
+            None => Ok(self.faux.get_model()),
+        }
+    }
+
+    fn session(
+        &self,
+        model: Model,
+        manager: SessionManager,
+        gate: Arc<dyn PermissionGate>,
+    ) -> AgentSession {
         let services = AgentSessionServices {
             cwd: self.dir.clone(),
             agent_dir: self.dir.clone(),
@@ -135,28 +190,101 @@ impl Factory {
 impl SessionFactory for Factory {
     fn create(
         &self,
-        _model: Option<&str>,
+        model: Option<&str>,
         gate: Arc<dyn PermissionGate>,
     ) -> Result<AgentSession, String> {
+        let model = self.pick(model)?;
         let manager = SessionManager::create(self.dir.to_string_lossy(), Some(self.sessions_dir()));
-        Ok(self.session(manager, gate))
+        Ok(self.session(model, manager, gate))
     }
 
     fn open(
         &self,
         path: &Path,
-        _model: Option<&str>,
+        model: Option<&str>,
         gate: Arc<dyn PermissionGate>,
     ) -> Result<AgentSession, String> {
         let manager = SessionManager::open(path, Some(self.sessions_dir()), None);
-        Ok(self.session(manager, gate))
+        // Like the real factory: no model named means the saved one.
+        let saved = manager
+            .build_context()
+            .model
+            .and_then(|m| self.find(&format!("{}/{}", m.provider, m.model_id)));
+        let model = match (model, saved) {
+            (None, Some(saved)) => saved,
+            (model, _) => self.pick(model)?,
+        };
+        Ok(self.session(model, manager, gate))
     }
 
-    fn models(&self) -> Vec<(String, String, bool, bool)> {
-        vec![
-            ("p/in-scope".into(), "In scope".into(), true, false),
-            ("p/out-of-scope".into(), "Out of scope".into(), false, true),
-        ]
+    fn models(&self) -> Vec<ModelEntry> {
+        let all = self.faux.models();
+        let Some(scope) = &self.scope else {
+            return all
+                .iter()
+                .enumerate()
+                .map(|(i, m)| ModelEntry {
+                    model: m.clone(),
+                    is_default: i == 0,
+                    hidden: false,
+                    category: None,
+                    alias: None,
+                    effort: None,
+                })
+                .collect();
+        };
+        let scoped = scope.iter().enumerate().filter_map(|(i, e)| {
+            let model = all.iter().find(|m| m.id == e.id)?.clone();
+            Some(ModelEntry {
+                model,
+                is_default: i == 0,
+                hidden: false,
+                category: e.category.map(str::to_string),
+                alias: e.alias.map(str::to_string),
+                effort: e.effort.clone(),
+            })
+        });
+        let others = all
+            .iter()
+            .filter(|m| !scope.iter().any(|e| e.id == m.id))
+            .map(|m| ModelEntry {
+                model: m.clone(),
+                is_default: false,
+                hidden: true,
+                category: None,
+                alias: None,
+                effort: None,
+            });
+        scoped.chain(others).collect()
+    }
+
+    fn scoped(&self, name: &str) -> Result<Option<ScopedInfo>, String> {
+        let Some(scope) = &self.scope else {
+            return Ok(None);
+        };
+        let Some(entry) = scope
+            .iter()
+            .find(|e| e.alias == Some(name) || e.id == name || e.full_id() == name)
+        else {
+            let list = scope
+                .iter()
+                .map(|e| e.alias.map_or_else(|| e.full_id(), str::to_string))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "model {name} is not in your scoped models ({list})"
+            ));
+        };
+        Ok(Some(ScopedInfo {
+            model: entry.full_id(),
+            effort: entry.effort.clone(),
+            alias: entry.alias.map(str::to_string),
+            category: entry.category.map(str::to_string),
+        }))
+    }
+
+    fn resolve_model(&self, name: &str) -> Option<Model> {
+        self.find(name)
     }
 
     fn list(&self) -> Vec<SavedSession> {
@@ -311,8 +439,14 @@ struct Setup {
 }
 
 /// A server in a temp workspace. `ask_bash`: the workspace's mode asks
-/// before bash (like hoobot's `discord` mode).
+/// before bash (like hoobot's `discord` mode). The scope is `in-scope` only.
 fn setup(ask_bash: bool) -> Setup {
+    setup_with(ask_bash, Some(vec![ScopeEntry::plain("in-scope")]))
+}
+
+/// [`setup`] with a given model scope. The faux provider registers the
+/// scoped models (reasoning on), then `out-of-scope`.
+fn setup_with(ask_bash: bool, scope: Option<Vec<ScopeEntry>>) -> Setup {
     isolate_agent_dir();
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path().canonicalize().unwrap();
@@ -328,7 +462,22 @@ fn setup(ask_bash: bool) -> Setup {
         json!({"active_mode": mode, "modes": {mode: {"auto_allow": auto_allow}}}).to_string(),
     )
     .unwrap();
-    let registration = register_faux_provider(RegisterFauxProviderOptions::default());
+    let mut ids: Vec<&'static str> = match &scope {
+        Some(entries) => entries.iter().map(|e| e.id).collect(),
+        None => vec!["in-scope"],
+    };
+    ids.push(OUT_OF_SCOPE);
+    let registration = register_faux_provider(RegisterFauxProviderOptions {
+        provider: Some(PROVIDER.into()),
+        models: ids
+            .iter()
+            .map(|id| FauxModelDefinition {
+                reasoning: Some(true),
+                ..FauxModelDefinition::new(*id)
+            })
+            .collect(),
+        ..Default::default()
+    });
     let faux = registration.provider().clone();
     let server = AppServer::new(
         ServerConfig {
@@ -339,6 +488,7 @@ fn setup(ask_bash: bool) -> Setup {
         Arc::new(Factory {
             faux: faux.clone(),
             dir: dir.clone(),
+            scope,
         }),
     );
     Setup {
@@ -970,6 +1120,411 @@ async fn turn_start_rejects_an_unknown_model() {
         c.notification("turn/completed").await["turn"]["status"],
         json!("completed")
     );
+}
+
+/// The `supportedReasoningEfforts` names of one `model/list` row.
+fn efforts_of(row: &Value) -> Vec<String> {
+    row["supportedReasoningEfforts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["reasoningEffort"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// `model/list` follows the scope: scoped models first, in scope order (not
+/// registration order), each with its category, alias and effort; the rest
+/// are hidden.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn model_list_carries_scope_category_alias_and_efforts() {
+    let s = setup_with(
+        false,
+        Some(vec![
+            ScopeEntry {
+                id: "second",
+                alias: None,
+                category: Some("fast"),
+                effort: None,
+            },
+            ScopeEntry {
+                id: "in-scope",
+                alias: Some("big"),
+                category: Some("capable"),
+                effort: Some(ThinkingLevel::High),
+            },
+        ]),
+    );
+    let mut c = Client::connect(&s.server);
+    c.initialize().await;
+    let ids = |r: &Value| -> Vec<String> {
+        r["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let scoped = c.ok("model/list", json!({})).await;
+    assert_eq!(ids(&scoped), vec!["p/second", "p/in-scope"]);
+    let all = c.ok("model/list", json!({"includeHidden": true})).await;
+    assert_eq!(ids(&all), vec!["p/second", "p/in-scope", "p/out-of-scope"]);
+
+    let fast = &all["data"][0];
+    assert_eq!(fast["isDefault"], json!(true));
+    assert_eq!(fast["hidden"], json!(false));
+    assert_eq!(fast["category"], json!("fast"));
+    assert!(fast.get("alias").is_none(), "no alias: {fast}");
+    // No effort in the scope: a new thread starts at medium.
+    assert_eq!(fast["defaultReasoningEffort"], json!("medium"));
+
+    let big = &all["data"][1];
+    assert_eq!(big["isDefault"], json!(false));
+    assert_eq!(big["category"], json!("capable"));
+    assert_eq!(big["alias"], json!("big"));
+    assert_eq!(big["defaultReasoningEffort"], json!("high"));
+    // A reasoning model: every level up to high; xhigh needs a mapping.
+    assert_eq!(
+        efforts_of(big),
+        vec!["off", "minimal", "low", "medium", "high"]
+    );
+
+    let hidden = &all["data"][2];
+    assert_eq!(hidden["hidden"], json!(true));
+    assert_eq!(hidden["isDefault"], json!(false));
+    assert!(hidden.get("category").is_none(), "{hidden}");
+}
+
+/// A model outside the scope is -32602 on `thread/start`, `thread/resume` and
+/// `turn/start`, and the thread keeps its model.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_model_outside_the_scope_is_rejected() {
+    let s = setup(false);
+    let mut c = Client::connect(&s.server);
+    c.initialize().await;
+    let scope_error = "model p/out-of-scope is not in your scoped models (p/in-scope)";
+
+    let r = c
+        .call("thread/start", json!({"model": "p/out-of-scope"}))
+        .await;
+    assert_eq!(r["error"]["code"], json!(-32602));
+    assert_eq!(r["error"]["message"], json!(scope_error));
+
+    let started = c.ok("thread/start", json!({})).await;
+    let thread = started["thread"]["id"].as_str().unwrap().to_string();
+    c.notification("thread/started").await;
+    let before = c.ok("thread/resume", json!({"threadId": thread})).await["model"].clone();
+
+    let r = c
+        .call(
+            "thread/resume",
+            json!({"threadId": thread, "model": "out-of-scope"}),
+        )
+        .await;
+    assert_eq!(r["error"]["code"], json!(-32602));
+    assert_eq!(
+        r["error"]["message"],
+        json!("model out-of-scope is not in your scoped models (p/in-scope)")
+    );
+
+    let r = c
+        .call(
+            "turn/start",
+            json!({"threadId": thread, "model": "p/out-of-scope", "input": [{"type": "text", "text": "x"}]}),
+        )
+        .await;
+    assert_eq!(r["error"]["code"], json!(-32602));
+    assert_eq!(r["error"]["message"], json!(scope_error));
+
+    let after = c.ok("thread/resume", json!({"threadId": thread})).await["model"].clone();
+    assert_eq!(after, before, "a rejected model must not switch the thread");
+}
+
+/// An explicit `effort` is applied on `thread/start` and `thread/resume`, and
+/// reported as `reasoningEffort`. A resume without one keeps it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_explicit_effort_is_applied_and_reported() {
+    let s = setup(false);
+    let mut c = Client::connect(&s.server);
+    c.initialize().await;
+
+    let started = c.ok("thread/start", json!({"effort": "high"})).await;
+    assert_eq!(started["reasoningEffort"], json!("high"));
+    let thread = started["thread"]["id"].as_str().unwrap().to_string();
+    c.notification("thread/started").await;
+
+    let resumed = c
+        .ok(
+            "thread/resume",
+            json!({"threadId": thread, "effort": "low"}),
+        )
+        .await;
+    assert_eq!(resumed["reasoningEffort"], json!("low"));
+    let again = c.ok("thread/resume", json!({"threadId": thread})).await;
+    assert_eq!(again["reasoningEffort"], json!("low"));
+}
+
+/// Switching to a scoped model with no effort of its own applies the scope
+/// entry's effort, clamped to the model.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_scoped_effort_applies_when_the_model_switches() {
+    let s = setup_with(
+        false,
+        Some(vec![
+            ScopeEntry::plain("in-scope"),
+            ScopeEntry {
+                id: "second",
+                alias: Some("quick"),
+                category: Some("fast"),
+                effort: Some(ThinkingLevel::Low),
+            },
+        ]),
+    );
+    let mut c = Client::connect(&s.server);
+    c.initialize().await;
+    let thread = start_thread(&mut c).await;
+
+    s.faux.set_responses(vec![reply("ok")]);
+    c.ok(
+        "turn/start",
+        json!({"threadId": thread, "model": "quick", "input": [{"type": "text", "text": "x"}]}),
+    )
+    .await;
+    assert_eq!(
+        c.notification("turn/completed").await["turn"]["status"],
+        json!("completed")
+    );
+    let resumed = c.ok("thread/resume", json!({"threadId": thread})).await;
+    assert_eq!(resumed["reasoningEffort"], json!("low"));
+    assert_eq!(resumed["model"], json!("second"));
+}
+
+/// An effort the model does not support, and an unknown effort name, are
+/// -32602 on every method that takes one; the thread keeps its effort.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_unsupported_or_unknown_effort_is_rejected() {
+    let s = setup(false);
+    let mut c = Client::connect(&s.server);
+    c.initialize().await;
+    let unsupported = "effort xhigh is not supported by in-scope; supported efforts: off, minimal, low, medium, high";
+
+    let r = c.call("thread/start", json!({"effort": "xhigh"})).await;
+    assert_eq!(r["error"]["code"], json!(-32602));
+    assert_eq!(r["error"]["message"], json!(unsupported));
+    let r = c.call("thread/start", json!({"effort": "turbo"})).await;
+    assert_eq!(r["error"]["code"], json!(-32602));
+    assert_eq!(
+        r["error"]["message"],
+        json!("unknown effort turbo; use one of off, minimal, low, medium, high, xhigh")
+    );
+
+    let started = c.ok("thread/start", json!({"effort": "low"})).await;
+    let thread = started["thread"]["id"].as_str().unwrap().to_string();
+    c.notification("thread/started").await;
+
+    let r = c
+        .call(
+            "thread/resume",
+            json!({"threadId": thread, "effort": "xhigh"}),
+        )
+        .await;
+    assert_eq!(r["error"]["code"], json!(-32602));
+    assert_eq!(r["error"]["message"], json!(unsupported));
+    let r = c
+        .call(
+            "turn/start",
+            json!({"threadId": thread, "effort": "xhigh", "input": [{"type": "text", "text": "x"}]}),
+        )
+        .await;
+    assert_eq!(r["error"]["code"], json!(-32602));
+    assert_eq!(r["error"]["message"], json!(unsupported));
+
+    let resumed = c.ok("thread/resume", json!({"threadId": thread})).await;
+    assert_eq!(resumed["reasoningEffort"], json!("low"));
+}
+
+/// With no model scope, any model is accepted and an effort is applied to it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn without_a_scope_any_model_is_accepted_and_an_effort_applied() {
+    let s = setup_with(false, None);
+    s.faux.set_responses(vec![reply("ok")]);
+    let mut c = Client::connect(&s.server);
+    c.initialize().await;
+    let started = c
+        .ok(
+            "thread/start",
+            json!({"model": OUT_OF_SCOPE, "effort": "low"}),
+        )
+        .await;
+    let thread = started["thread"]["id"].as_str().unwrap().to_string();
+    c.notification("thread/started").await;
+    assert_eq!(started["model"], json!(OUT_OF_SCOPE));
+    assert_eq!(started["reasoningEffort"], json!("low"));
+
+    c.ok(
+        "turn/start",
+        json!({"threadId": thread, "model": "in-scope", "effort": "high", "input": [{"type": "text", "text": "x"}]}),
+    )
+    .await;
+    assert_eq!(
+        c.notification("turn/completed").await["turn"]["status"],
+        json!("completed")
+    );
+    let resumed = c.ok("thread/resume", json!({"threadId": thread})).await;
+    assert_eq!(resumed["model"], json!("in-scope"));
+    assert_eq!(resumed["reasoningEffort"], json!("high"));
+}
+
+/// `thread/resume` on a thread whose turn is running is rejected when it names
+/// a model or an effort, with the error `turn/start` gives. Without them it
+/// still resumes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn resuming_a_busy_thread_with_an_effort_is_rejected() {
+    let s = setup(true);
+    s.faux.set_responses(vec![bash_call("ls"), reply("done")]);
+    let mut c = Client::connect(&s.server);
+    c.initialize().await;
+    let thread = start_thread(&mut c).await;
+    let turn = start_turn(&mut c, &thread, "x").await;
+    c.server_request("item/commandExecution/requestApproval")
+        .await;
+
+    let r = c
+        .call(
+            "thread/resume",
+            json!({"threadId": thread, "effort": "low"}),
+        )
+        .await;
+    assert_eq!(r["error"]["code"], json!(-32600));
+    assert_eq!(
+        r["error"]["message"],
+        json!("a turn is already running; use turn/steer")
+    );
+    let r = c
+        .call(
+            "thread/resume",
+            json!({"threadId": thread, "model": "in-scope"}),
+        )
+        .await;
+    assert_eq!(r["error"]["code"], json!(-32600));
+    c.ok("thread/resume", json!({"threadId": thread})).await;
+
+    c.ok(
+        "turn/interrupt",
+        json!({"threadId": thread, "turnId": turn}),
+    )
+    .await;
+    assert_eq!(
+        c.notification("turn/completed").await["turn"]["status"],
+        json!("interrupted")
+    );
+}
+
+/// `none` is accepted as an alias of `off`, on start and on resume.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn effort_none_is_an_alias_of_off() {
+    let s = setup(false);
+    let mut c = Client::connect(&s.server);
+    c.initialize().await;
+    let started = c.ok("thread/start", json!({"effort": "none"})).await;
+    let thread = started["thread"]["id"].as_str().unwrap().to_string();
+    c.notification("thread/started").await;
+    assert_eq!(started["reasoningEffort"], json!("off"));
+
+    c.ok(
+        "thread/resume",
+        json!({"threadId": thread, "effort": "high"}),
+    )
+    .await;
+    let resumed = c
+        .ok(
+            "thread/resume",
+            json!({"threadId": thread, "effort": "none"}),
+        )
+        .await;
+    assert_eq!(resumed["reasoningEffort"], json!("off"));
+}
+
+/// Switching to a scoped model with no effort of its own keeps the thread's
+/// current effort.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_scoped_model_without_an_effort_keeps_the_current_one() {
+    let s = setup_with(
+        false,
+        Some(vec![
+            ScopeEntry::plain("in-scope"),
+            ScopeEntry::plain("second"),
+        ]),
+    );
+    s.faux.set_responses(vec![reply("ok")]);
+    let mut c = Client::connect(&s.server);
+    c.initialize().await;
+    let started = c.ok("thread/start", json!({"effort": "high"})).await;
+    let thread = started["thread"]["id"].as_str().unwrap().to_string();
+    c.notification("thread/started").await;
+
+    c.ok(
+        "turn/start",
+        json!({"threadId": thread, "model": "second", "input": [{"type": "text", "text": "x"}]}),
+    )
+    .await;
+    assert_eq!(
+        c.notification("turn/completed").await["turn"]["status"],
+        json!("completed")
+    );
+    let resumed = c.ok("thread/resume", json!({"threadId": thread})).await;
+    assert_eq!(resumed["model"], json!("second"));
+    assert_eq!(resumed["reasoningEffort"], json!("high"));
+}
+
+/// A saved thread that is not loaded: naming a model that differs from the
+/// saved one switches to it and applies its scoped effort. Resuming without a
+/// model keeps the saved effort.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn resuming_an_unloaded_thread_applies_the_scoped_effort_on_a_switch() {
+    let s = setup_with(
+        false,
+        Some(vec![
+            ScopeEntry::plain("in-scope"),
+            ScopeEntry {
+                id: "second",
+                alias: Some("quick"),
+                category: None,
+                effort: Some(ThinkingLevel::Minimal),
+            },
+        ]),
+    );
+    s.faux.set_responses(vec![reply("ok")]);
+    let mut c = Client::connect(&s.server);
+    c.initialize().await;
+    let started = c.ok("thread/start", json!({"effort": "high"})).await;
+    let thread = started["thread"]["id"].as_str().unwrap().to_string();
+    c.notification("thread/started").await;
+    c.ok(
+        "turn/start",
+        json!({"threadId": thread, "input": [{"type": "text", "text": "x"}]}),
+    )
+    .await;
+    c.notification("turn/completed").await;
+    // The last subscriber leaves: the thread unloads.
+    let left = c
+        .ok("thread/unsubscribe", json!({"threadId": thread}))
+        .await;
+    assert_eq!(left["status"], json!("unsubscribed"));
+
+    let switched = c
+        .ok(
+            "thread/resume",
+            json!({"threadId": thread, "model": "quick"}),
+        )
+        .await;
+    assert_eq!(switched["model"], json!("second"));
+    assert_eq!(switched["reasoningEffort"], json!("minimal"));
+    c.ok("thread/unsubscribe", json!({"threadId": thread}))
+        .await;
+
+    let kept = c.ok("thread/resume", json!({"threadId": thread})).await;
+    assert_eq!(kept["model"], json!("second"));
+    assert_eq!(kept["reasoningEffort"], json!("minimal"));
 }
 
 /// Two tool calls in one message: interrupting during the first approval

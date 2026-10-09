@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: app-server clients choose the effort and see the scope (2026-10-09)
+- `thread/start`, `thread/resume` and `turn/start` take an optional `effort`. An explicit effort the model
+  does not support is rejected, not silently changed.
+- Switching to a scoped model applies its effort. Scoped models are listed first in `model/list`, with
+  their `category` and `alias`, and each model reports the efforts it supports.
+- Thread results include `reasoningEffort`. Names outside the model scope are rejected.
+
+### Fixed: expired OAuth login says how to sign in again (2026-10-09)
+- When an OAuth login has expired, the error now names the provider and the `/login` command to run,
+  instead of the raw "No API key found" message. API-key providers are unchanged.
+
 ### Added: Claude Haiku 5.5 (2026-10-09)
 - Added Claude Haiku 5.5 (`claude-haiku-5-5`) to the Anthropic model catalog: 1M context, 128K max output,
   reasoning, text and image input, $0.10 / $0.50 per MTok (cache read $0.01, cache write $0.125; the

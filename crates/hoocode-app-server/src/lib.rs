@@ -4,4 +4,4 @@ pub mod items;
 pub mod server;
 pub mod transport;
 
-pub use server::{AppServer, SavedSession, ServerConfig, SessionFactory};
+pub use server::{AppServer, ModelEntry, SavedSession, ScopedInfo, ServerConfig, SessionFactory};

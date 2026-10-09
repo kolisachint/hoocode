@@ -32,7 +32,9 @@ use hoocode_code_tool_bash::{
     LocalBashOperations,
 };
 
-use crate::auth_guidance::{format_no_api_key_found_message, format_no_model_selected_message};
+use crate::auth_guidance::{
+    format_auth_failed_message, format_no_api_key_found_message, format_no_model_selected_message,
+};
 use crate::compaction::{CompactionReason, CompactionState};
 use crate::hooks::{
     ExtensionError, ExtensionHooks, NoExtensions, ResourceLoader, SessionEvent, SessionStartEvent,
@@ -1518,10 +1520,7 @@ impl AgentSession {
         };
         if !self.has_configured_auth(&model) {
             if self.inner.auth.is_oauth(&model.provider) {
-                return err(format!(
-                    "Authentication failed for \"{0}\". Credentials may have expired or network is unavailable. Run '/login {0}' to re-authenticate.",
-                    model.provider
-                ));
+                return err(format_auth_failed_message(&model.provider));
             }
             return err(format_no_api_key_found_message(&model.provider));
         }
