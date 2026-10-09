@@ -18,7 +18,8 @@ user which plan and which step to take next.
    and return to the main session.
 4. Replace the L1/L2 parity gates with a hoocode-only bar: L1 plus committed screen goldens,
    with a fast LLM visual review of the screens that changed.
-5. Do the TUI simplifications these features need first. Keep the rest as a ranked backlog.
+5. Simplify every TUI component first: [tui-simplify.md](tui-simplify.md), right after T0
+   and before any feature phase.
 
 ## Decisions
 
@@ -38,7 +39,8 @@ user which plan and which step to take next.
 | Done bar | **L1** (fmt, clippy, nextest, dep firewall) **plus hoocode goldens**. Text diffs fail. LLM review is advisory. hoocode-ts setup leaves hooks and CI. |
 | Golden tiers | (a) In-process component goldens: vt100 at a fixed width, run under nextest, in milliseconds. (b) tmux end-to-end scenarios on the real binary and the mock LLM. |
 | Visual review | Text grid plus a compact style legend by default. A PNG is rendered only for changed screens or when the text review is unsure. It is run by a Haiku subagent in-session (no API key, not in CI). |
-| Cleanups | Only the prerequisites first. The rest is a ranked backlog for later Haiku batches. |
+| Cleanups | **Simplification first** (decision 22): after T0, batches S0–S3 of [tui-simplify.md](tui-simplify.md) land before T2. S4–S6 may run alongside the features where files don't overlap. |
+| Who works | **Haiku subagents for all work** (decision 23): review, implement, test, visual review. The main session orchestrates and merges. |
 | Replay fixtures | Keep `hoocode-0.5.89/` and `replay.json` as regression tests until T0 has run green for a week; then decide. |
 | Migration ledger | Freeze `ledger.py` read-only at T0.6. New work is tracked in this card's phase tables. |
 
@@ -57,9 +59,14 @@ Needs: nothing. Start here.
 | T0.5 | `.claude/skills/tui-review/SKILL.md`: how a Haiku subagent reviews a bundle (checklist: alignment, truncation, colour roles, overflow at 80 and 120 columns, empty and error states). It writes `review.md` per screen with ok / issue / unsure. On unsure, it asks for the PNG. | S |
 | T0.6 | Retire parity: done = L1 + `goldens.py check`. Freeze `ledger.py` (read-only, `verify` prints a pointer here). Remove `setup_hoocode.sh` from SessionStart and CI. Update CLAUDE.md ("Done =" line, commands), build-speed.md, ui.md ("Rules for UI changes") and the continue-migration skill. Move the mock and scenarios from `migration/tui-parity/` to `scripts/tui/`. The replay fixtures stay (Decisions). | S |
 
+### Phase S: simplification ([tui-simplify.md](tui-simplify.md))
+
+Needs: T0. Batches S0 (bugs) → S1 (dead code) → S2 (one copy of each helper) → S3 (structure)
+must land before T2. S3 contains all of T1 below.
+
 ### Phase T1: prerequisites (refactors, no visible change; goldens must stay identical)
 
-Needs: T0.
+Done inside batch S3 (IDs: T1.1 = IM1, T1.2 = IM2, T1.3 = TP2 + TP4, T1.4 = AP11).
 
 | Step | Work | Size |
 |---|---|---|
@@ -70,7 +77,7 @@ Needs: T0.
 
 ### Phase T2: subagent storage and recovery
 
-Needs: T0. Independent of T1, so T1 and T2 can run in parallel.
+Needs: S3.
 
 
 | Step | Work | Size |
@@ -105,7 +112,7 @@ Needs: T1.3. Attach from the panel needs T3.
 
 ### Phase T5: background shell
 
-Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2) can start after T0.
+Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2) can start after S3.
 
 
 | Step | Work | Size |
@@ -116,13 +123,16 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
 
 ### How Haiku subagents do the work
 
-- One phase step = one Haiku subagent in its own worktree, with a precise brief: files, the
+- Every piece of work, including reviews, tests and visual checks, goes to a Haiku subagent.
+  One phase step or inventory row = one Haiku subagent in its own worktree, with a precise brief: files, the
   acceptance test, and the goldens that must stay unchanged or the ones it may update.
+- An inventory row is a claim from a read-only review. The subagent confirms it first and
+  drops it if it doesn't hold.
 - Each one runs L1 for its crates and `goldens.py check`. On a visual change, it produces a
   review bundle and a second Haiku subagent reviews it (T0.5). The orchestrator (main
   session) reads the review and merges.
-- Parallel only where files don't overlap: T0.1/T0.3 together, T1.3/T1.4 together, T1 with T2,
-  T4.2/T4.3 together, T5.1/T5.2 with T3. T1.1 → T1.2 → T3.3 are serial.
+- Parallel only where files don't overlap: T0.1/T0.3 together, rows inside an S batch by
+  crate, T4.2/T4.3 together, T5.1/T5.2 with T3. T1.1 → T1.2 → T3.3 are serial.
 - Before starting any step, the orchestrator asks the user which plan (core or TUI) and step.
 
 ## Not doing
@@ -152,17 +162,6 @@ Decisions (`/agents`, quit with running jobs, replay fixtures, ledger).
 | Tool blocks (4,384) | The Agent block can't learn its task id until it finishes. It hides `description`. AgentOutput and Edit ignore the peek dial. |
 | Parity harness | Scenario JSON, `mockllm.py`, the tmux driver, `grid_to_html` and `render_png.mjs` are reusable as is. vt100 is already a dev-dep. |
 
-### Backlog (after T5, ranked by value/effort)
+### Backlog
 
-| # | Item | Visible |
-|---|---|---|
-| B1 | Move the nine UI-thread `block_on` session ops to the runtime (`AppEvent::SessionOp`) | no |
-| B2 | One `ActivePicker` enum in place of ~14 `Option` slots; the `poll_*` functions become `AppEvent`s | no |
-| B3 | Shared picker helpers: `visible_window`, `step`, `Filtered<T>`, `PickerView` (~200 LOC saved); one wrap-vs-clamp policy | wrap only |
-| B4 | One `peek_block` helper for the 7 copies of the peek trim; AgentOutput and Edit respect the dial | yes |
-| B5 | Render cost: bash output styled and wrapped in full every frame; Read highlights the whole file; markdown cache clones its lines; assistant message clones on every delta | no |
-| B6 | Per-keystroke cost: `EditorChanged` clones the full text; bindings re-parsed on each `matches` | no |
-| B7 | Dead code and TS-isms: `js_line_count`, `LEGACY_TOOL_OUTPUT_VIEWS`, MultiEdit/NotebookEdit names, "(exit undefined)", duplicated `js_trim`/`home_dir`/`group_digits`/`shorten_path` | "undefined" text only |
-| B8 | `custom_message.rs`: one summary-sheet helper for three copies | spacing |
-| B9 | `Container` per-child line cache keyed by version, with a debug check against an uncached render | no |
-| B10 | Editor cursor in byte offsets instead of UTF-16 (needs emoji and paste tests first) | no |
+Replaced by the full per-component inventory in [tui-simplify.md](tui-simplify.md).
