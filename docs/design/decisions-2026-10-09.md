@@ -35,3 +35,11 @@ Where this page disagrees with an earlier one, this page wins.
 | 28 | `home_dir` | One rule everywhere: HOME if set and non-empty, else passwd, never "/" (X7) |
 | 29 | Picker ends | **Clamp everywhere**; PgUp/PgDn and Home/End jump (X6). Wrap-when-it-fits was offered and declined |
 | 30 | Now tier | N1–N13 as proposed, **plus the UI-thread `block_on` removal** (N14, formerly X1) |
+
+### Phase S scope (2026-10-09, later the same day)
+
+| # | Question | Answer |
+|---|---|---|
+| 31 | UI-thread `block_on` removal (N14) | Lives in the TUI plan's Now tier only. Core phase 1 in [concurrency.md](concurrency.md) keeps its runtime and caps parts; the UI-thread part is done under N14 |
+| 32 | Task panel row model (X11) | Promoted from Next to Now, done alongside N9 |
+| 33 | Image cleanup (N12) | Deletes the Sixel path only. Kitty and iTerm2 image rendering stay |
