@@ -285,20 +285,6 @@ impl AnsiCodeTracker {
         result
     }
 
-    pub fn has_active_codes(&self) -> bool {
-        self.bold
-            || self.dim
-            || self.italic
-            || self.underline
-            || self.blink
-            || self.inverse
-            || self.hidden
-            || self.strikethrough
-            || self.fg_color.is_some()
-            || self.bg_color.is_some()
-            || self.active_hyperlink.is_some()
-    }
-
     /// Codes needed to close attributes that must not bleed past line end
     /// (underline, and any open OSC-8 hyperlink).
     pub fn line_end_reset(&self) -> String {
@@ -521,10 +507,9 @@ mod tests {
     fn test_ansi_tracker_bold_and_reset() {
         let mut t = AnsiCodeTracker::new();
         t.process("\x1b[1m");
-        assert!(t.has_active_codes());
         assert_eq!(t.active_codes(), "\x1b[1m");
         t.process("\x1b[0m");
-        assert!(!t.has_active_codes());
+        assert_eq!(t.active_codes(), "");
     }
 
     #[test]
@@ -547,6 +532,6 @@ mod tests {
         t.process("\x1b]8;;https://example.com\x07");
         assert!(t.active_codes().contains("https://example.com"));
         t.process("\x1b]8;;\x07");
-        assert!(!t.has_active_codes());
+        assert_eq!(t.active_codes(), "");
     }
 }

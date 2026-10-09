@@ -13,7 +13,7 @@ pub use dimensions::{
     get_webp_dimensions, ImageDimensions,
 };
 pub use iterm2::{encode_iterm2, ITerm2EncodeOptions};
-pub use kitty::{delete_all_kitty_images, delete_kitty_image, encode_kitty, KittyEncodeOptions};
+pub use kitty::{delete_kitty_image, encode_kitty, KittyEncodeOptions};
 
 use once_cell::sync::Lazy;
 use rand::Rng;

@@ -9,7 +9,6 @@ use std::path::Path;
 use std::rc::Rc;
 
 use hoocode_code_agent_session::format::{format_tokens, render_compact_rows, CompactRowsOptions};
-use hoocode_code_paths::git::parse_git_url;
 use hoocode_code_resources::agent_registry::summarize_agent_description;
 use hoocode_code_resources::context_files::{ContextFile, ContextFileSize};
 use hoocode_code_resources::diagnostics::{DiagnosticType, ResourceDiagnostic};
@@ -22,16 +21,12 @@ use hoocode_tui_util::visible_width;
 use crate::brand::{Category, SEGMENT_SEP};
 use crate::expandable_text::ExpandableText;
 
-/// Left rail for the summary (flush with the banner).
-const RAIL: &str = "";
-
 /// A loaded item: its path, where it came from, and an optional label.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ListedItem {
     pub name: String,
     pub path: String,
     pub source_info: Option<SourceInfo>,
-    pub display_name: Option<String>,
 }
 
 /// A live MCP server.
@@ -42,14 +37,6 @@ pub struct McpServerStatus {
     pub tool_count: usize,
     pub background: bool,
     pub deferred: bool,
-}
-
-/// A canvas that could be opened here.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanvasEntry {
-    pub id: String,
-    pub scope: String,
-    pub withheld: bool,
 }
 
 /// Everything the listing shows.
@@ -66,10 +53,7 @@ pub struct ResourceListing {
     /// Dispatchable agents (empty when the Agent tool is off): name, description.
     pub agents: Vec<(String, String)>,
     pub mcp: Vec<McpServerStatus>,
-    /// Loaded extensions (plugins have a `plugin:` display name).
-    pub extensions: Vec<ListedItem>,
     pub extension_diagnostics: Vec<ResourceDiagnostic>,
-    pub canvases: Vec<CanvasEntry>,
     /// Themes loaded from files (path + source).
     pub custom_themes: Vec<ListedItem>,
     pub theme_diagnostics: Vec<ResourceDiagnostic>,
@@ -103,14 +87,6 @@ pub fn format_display_path(p: &str) -> String {
         ),
         _ => p.to_string(),
     }
-}
-
-fn format_extension_display_path(p: &str) -> String {
-    let result = format_display_path(p);
-    result
-        .strip_suffix("/index.ts")
-        .or_else(|| result.strip_suffix("/index.js"))
-        .map_or(result.clone(), str::to_string)
 }
 
 fn format_context_path(p: &str, cwd: &str) -> String {
@@ -189,116 +165,6 @@ fn get_short_path(full_path: &str, info: Option<&SourceInfo>) -> String {
         }
     }
     format_display_path(full_path)
-}
-
-fn compact_path_label(path: &str, info: Option<&SourceInfo>) -> String {
-    let short = get_short_path(path, info).replace('\\', "/");
-    short
-        .split('/')
-        .rfind(|s| !s.is_empty() && *s != "~")
-        .map_or(short.clone(), str::to_string)
-}
-
-fn compact_package_source_label(info: Option<&SourceInfo>) -> String {
-    let source = info.map(|i| i.source.as_str()).unwrap_or("");
-    if let Some(rest) = source.strip_prefix("npm:") {
-        return if rest.is_empty() {
-            source.to_string()
-        } else {
-            rest.to_string()
-        };
-    }
-    match parse_git_url(source) {
-        Some(git) if !git.path.is_empty() => git.path,
-        _ => source.to_string(),
-    }
-}
-
-fn compact_extension_label(path: &str, info: Option<&SourceInfo>) -> String {
-    if !is_package_source(info) {
-        return compact_path_label(path, info);
-    }
-    let label = compact_package_source_label(info);
-    if label.is_empty() {
-        return compact_path_label(path, info);
-    }
-    let short = get_short_path(path, info).replace('\\', "/");
-    let package_path = short
-        .strip_prefix("extensions/")
-        .unwrap_or(&short)
-        .to_string();
-    let (dir, file) = match package_path.rfind('/') {
-        Some(i) => (
-            hoocode_tui_util::text_slice::prefix(&package_path, i),
-            hoocode_tui_util::text_slice::suffix_from(&package_path, i + 1),
-        ),
-        None => ("", package_path.as_str()),
-    };
-    let stem = file.rsplit_once('.').map_or(file, |(s, _)| s);
-    if stem == "index" {
-        return if dir.is_empty() || dir == "." {
-            label
-        } else {
-            format!("{label}:{dir}")
-        };
-    }
-    format!("{label}:{package_path}")
-}
-
-fn display_path_segments(path: &str) -> Vec<String> {
-    format_display_path(path)
-        .replace('\\', "/")
-        .split('/')
-        .filter(|s| !s.is_empty() && *s != "~")
-        .map(str::to_string)
-        .collect()
-}
-
-fn compact_extension_labels(extensions: &[ListedItem]) -> Vec<String> {
-    let non_package: Vec<(String, Vec<String>)> = extensions
-        .iter()
-        .filter(|e| !is_package_source(e.source_info.as_ref()))
-        .map(|e| {
-            let mut segments = display_path_segments(&e.path);
-            if segments.len() > 1
-                && matches!(
-                    segments.last().map(String::as_str),
-                    Some("index.ts" | "index.js")
-                )
-            {
-                segments.pop();
-            }
-            (e.path.clone(), segments)
-        })
-        .collect();
-    extensions
-        .iter()
-        .map(|e| {
-            if let Some(name) = &e.display_name {
-                return name.clone();
-            }
-            if is_package_source(e.source_info.as_ref()) {
-                return compact_extension_label(&e.path, e.source_info.as_ref());
-            }
-            let Some(index) = non_package.iter().position(|(p, _)| *p == e.path) else {
-                return compact_path_label(&e.path, e.source_info.as_ref());
-            };
-            let segments = &non_package[index].1;
-            if segments.is_empty() {
-                return compact_path_label(&e.path, None);
-            }
-            for count in 1..=segments.len() {
-                let candidate = segments[segments.len() - count..].join("/");
-                let unique = non_package.iter().enumerate().all(|(i, (_, other))| {
-                    i == index || other[other.len().saturating_sub(count)..].join("/") != candidate
-                });
-                if unique {
-                    return candidate;
-                }
-            }
-            segments.join("/")
-        })
-        .collect()
 }
 
 /// (label, scope label).
@@ -550,23 +416,20 @@ pub fn show_loaded_resources(
     }
     let t = theme();
     let section_header = |name: &str| t.fg("mdHeading", &format!("[{name}]"));
-    let format_compact_list = |items: Vec<String>, sort: bool| {
+    let format_compact_list = |items: Vec<String>| {
         let mut labels: Vec<String> = items
             .into_iter()
             .map(|i| i.trim().to_string())
             .filter(|i| !i.is_empty())
             .collect();
-        if sort {
-            labels.sort_by(|a, b| locale_cmp(a, b));
-        }
+        labels.sort_by(|a, b| locale_cmp(a, b));
         t.fg("dim", &format!("  {}", labels.join(", ")))
     };
 
     let mut source_infos: Vec<(String, SourceInfo)> = Vec::new();
     for item in listing
-        .extensions
+        .skills
         .iter()
-        .chain(&listing.skills)
         .chain(&listing.templates)
         .chain(&listing.custom_themes)
     {
@@ -578,13 +441,6 @@ pub fn show_loaded_resources(
 
     if show_listing {
         out.push(handle(Spacer::new(1)));
-        let is_plugin = |e: &ListedItem| {
-            e.display_name
-                .as_deref()
-                .is_some_and(|n| n.starts_with("plugin:"))
-        };
-        let plugin_count = listing.extensions.iter().filter(|e| is_plugin(e)).count();
-        let code_extension_count = listing.extensions.len() - plugin_count;
         let plural = |n: usize, s: &str, many: Option<&str>| {
             if n == 1 {
                 s.to_string()
@@ -616,24 +472,6 @@ pub fn show_loaded_resources(
                 plural(listing.mcp.len(), "mcp server", None),
             ));
         }
-        if plugin_count > 0 {
-            cells.push((
-                Category::Plugins,
-                plugin_count,
-                plural(plugin_count, "plugin", None),
-            ));
-        }
-        if code_extension_count > 0 {
-            cells.push((
-                Category::Extensions,
-                code_extension_count,
-                plural(code_extension_count, "extension", None),
-            ));
-        }
-        if !listing.canvases.is_empty() {
-            let n = listing.canvases.len();
-            cells.push((Category::Canvases, n, plural(n, "canvas", Some("canvases"))));
-        }
         if !listing.custom_themes.is_empty() {
             let n = listing.custom_themes.len();
             cells.push((Category::Themes, n, plural(n, "theme", None)));
@@ -641,7 +479,7 @@ pub fn show_loaded_resources(
 
         if cells.is_empty() {
             out.push(handle(Text::new(
-                t.fg("dim", &format!("{RAIL}no project resources loaded")),
+                t.fg("dim", "no project resources loaded"),
                 0,
                 0,
             )));
@@ -667,7 +505,9 @@ pub fn show_loaded_resources(
             let rows: Vec<String> = cells
                 .chunks(4)
                 .map(|row| {
-                    format!("{RAIL}{}", row.iter().map(styled_cell).collect::<String>())
+                    row.iter()
+                        .map(styled_cell)
+                        .collect::<String>()
                         .trim_end()
                         .to_string()
                 })
@@ -700,7 +540,7 @@ pub fn show_loaded_resources(
             };
             out.push(handle(Text::new(
                 format!(
-                    "{RAIL}{} {} {names}{total}",
+                    "{} {} {names}{total}",
                     t.fg("accent", Category::Context.glyph()),
                     t.fg("muted", "context")
                 ),
@@ -718,10 +558,7 @@ pub fn show_loaded_resources(
             detail_sections.push(format!(
                 "{}\n{}\n{list}",
                 section_header("Skills"),
-                format_compact_list(
-                    listing.skills.iter().map(|s| s.name.clone()).collect(),
-                    true
-                )
+                format_compact_list(listing.skills.iter().map(|s| s.name.clone()).collect())
             ));
         }
         if !listing.templates.is_empty() {
@@ -736,8 +573,7 @@ pub fn show_loaded_resources(
                         .templates
                         .iter()
                         .map(|t| format!("/{}", t.name))
-                        .collect(),
-                    true
+                        .collect()
                 )
             ));
         }
@@ -803,42 +639,6 @@ pub fn show_loaded_resources(
                 .join("\n");
             detail_sections.push(format!("{}\n{list}", section_header("MCP")));
         }
-        let plugins: Vec<ListedItem> = listing
-            .extensions
-            .iter()
-            .filter(|e| is_plugin(e))
-            .cloned()
-            .collect();
-        let extension_path = |i: &ListedItem| {
-            i.display_name
-                .clone()
-                .unwrap_or_else(|| format_extension_display_path(&i.path))
-        };
-        let extension_package_path = |i: &ListedItem| {
-            i.display_name.clone().unwrap_or_else(|| {
-                format_extension_display_path(&get_short_path(&i.path, i.source_info.as_ref()))
-            })
-        };
-        if !plugins.is_empty() {
-            let list = format_scope_groups(
-                &build_scope_groups(&plugins),
-                &extension_path,
-                &extension_package_path,
-            );
-            detail_sections.push(format!("{}\n{list}", section_header("Plugins")));
-        }
-        if !listing.extensions.is_empty() {
-            let list = format_scope_groups(
-                &build_scope_groups(&listing.extensions),
-                &extension_path,
-                &extension_package_path,
-            );
-            detail_sections.push(format!(
-                "{}\n{}\n{list}",
-                section_header("Extensions"),
-                format_compact_list(compact_extension_labels(&listing.extensions), true)
-            ));
-        }
         if !listing.custom_themes.is_empty() {
             let list = format_scope_groups(
                 &build_scope_groups(&listing.custom_themes),
@@ -846,36 +646,6 @@ pub fn show_loaded_resources(
                 &|i| get_short_path(&i.path, i.source_info.as_ref()),
             );
             detail_sections.push(format!("{}\n{list}", section_header("Themes")));
-        }
-        if !listing.canvases.is_empty() {
-            let details: Vec<(String, String)> = listing
-                .canvases
-                .iter()
-                .map(|c| {
-                    let detail = if c.withheld {
-                        "withheld: untrusted workspace — /plugin trust".to_string()
-                    } else {
-                        format!("{} · /canvas open {}", c.scope, c.id)
-                    };
-                    (c.id.clone(), detail)
-                })
-                .collect();
-            let rows: Vec<(&str, &str)> = details
-                .iter()
-                .map(|(n, d)| (n.as_str(), d.as_str()))
-                .collect();
-            let muted = |s: &str| theme().fg("muted", s);
-            let dim = |s: &str| theme().fg("dim", s);
-            let list = render_compact_rows(
-                &rows,
-                &CompactRowsOptions {
-                    columns: listing.columns,
-                    name_style: Some(&muted),
-                    detail_style: Some(&dim),
-                    ..Default::default()
-                },
-            );
-            detail_sections.push(format!("{}\n{list}", section_header("Canvases")));
         }
         if !detail_sections.is_empty() {
             let details = detail_sections.join("\n\n");
@@ -889,11 +659,7 @@ pub fn show_loaded_resources(
             )));
         }
         for warning in &listing.context_warnings {
-            out.push(handle(Text::new(
-                t.fg("warning", &format!("{RAIL}{warning}")),
-                0,
-                0,
-            )));
+            out.push(handle(Text::new(t.fg("warning", warning), 0, 0)));
         }
     }
 

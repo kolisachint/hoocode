@@ -563,11 +563,6 @@ impl AppKeybindingsManager {
         }
     }
 
-    /// `getEffectiveConfig`: every binding's resolved keys.
-    pub fn get_effective_config(&self) -> HashMap<String, Vec<String>> {
-        self.manager.get_resolved_bindings()
-    }
-
     pub fn config_path(&self) -> Option<&Path> {
         self.config_path.as_deref()
     }

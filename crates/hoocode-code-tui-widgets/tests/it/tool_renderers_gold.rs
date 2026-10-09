@@ -13,7 +13,7 @@ use serde_json::Value;
 const CWD: &str = "/work/project";
 
 fn definition(tool: &str) -> ToolRenderDefinition {
-    builtin_tool_definition(tool, CWD).unwrap_or_else(|| registered_tool_definition(tool))
+    builtin_tool_definition(tool).unwrap_or_else(|| registered_tool_definition(tool))
 }
 
 fn content(result: &Value) -> Vec<Content> {

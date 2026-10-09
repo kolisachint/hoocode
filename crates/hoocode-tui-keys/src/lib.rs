@@ -18,7 +18,7 @@ pub use keybindings::{
 };
 pub use kitty::{
     decode_kitty_printable, decode_modify_other_keys_printable, decode_printable_key,
-    is_key_release, is_key_repeat, parse_kitty_sequence, KeyEventType, ParsedKittySequence,
+    is_key_release, parse_kitty_sequence, ParsedKittySequence,
 };
 pub use matching::matches_key;
 pub use parse::parse_key;

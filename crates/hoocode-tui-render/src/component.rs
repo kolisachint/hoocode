@@ -18,11 +18,6 @@ pub trait Component {
     /// Handle keyboard input when the component has focus.
     fn handle_input(&mut self, _data: &str) {}
 
-    /// If true, the component receives key release events (Kitty protocol).
-    fn wants_key_release(&self) -> bool {
-        false
-    }
-
     /// Invalidate any cached rendering state (e.g. on theme change).
     fn invalidate(&mut self) {}
 
@@ -164,15 +159,6 @@ impl Slot {
     /// Whoever is in the slot right now.
     pub fn child(&self) -> ComponentHandle {
         self.component.clone()
-    }
-
-    /// Swap the occupant; returns whether anything changed.
-    pub fn set_child(&mut self, component: ComponentHandle) -> bool {
-        if Rc::ptr_eq(&self.component, &component) {
-            return false;
-        }
-        self.component = component;
-        true
     }
 
     pub fn visible(&self) -> bool {

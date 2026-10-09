@@ -37,7 +37,7 @@ use std::time::{Duration, Instant};
 use hoocode_tui_images::{
     allocate_image_id, delete_kitty_image, get_capabilities, set_cell_dimensions, CellDimensions,
 };
-use hoocode_tui_keys::{is_key_release, matches_key};
+use hoocode_tui_keys::is_key_release;
 use hoocode_tui_terminal::{
     mouse_sequence_length, parse_mouse_event, MouseEvent, MouseEventKind, Terminal,
 };
@@ -272,7 +272,6 @@ pub struct Tui {
     focused_component: Option<ComponentHandle>,
     input_listeners: Vec<InputListener>,
 
-    pub on_debug: Option<Box<dyn FnMut()>>,
     frame_observer: Option<FrameObserver>,
     /// Terminal write time accumulated by the frame being painted.
     frame_write_time: Duration,
@@ -283,7 +282,6 @@ pub struct Tui {
     /// asks for are scheduled instead of painted one by one.
     in_input: bool,
 
-    cursor_row: i64,
     hardware_cursor_row: i64,
     show_hardware_cursor: bool,
     clear_on_shrink: bool,
@@ -339,12 +337,10 @@ impl Tui {
             saw_image_line: false,
             focused_component: None,
             input_listeners: Vec::new(),
-            on_debug: None,
             frame_observer: None,
             frame_write_time: Duration::ZERO,
             render_scheduled: false,
             in_input: false,
-            cursor_row: 0,
             hardware_cursor_row: 0,
             show_hardware_cursor: show_hardware_cursor.unwrap_or(false),
             clear_on_shrink: false,
@@ -709,10 +705,6 @@ impl Tui {
         out
     }
 
-    pub fn get_show_hardware_cursor(&self) -> bool {
-        self.show_hardware_cursor
-    }
-
     pub fn set_show_hardware_cursor(&mut self, enabled: bool) {
         if self.show_hardware_cursor == enabled {
             return;
@@ -722,10 +714,6 @@ impl Tui {
             self.terminal.hide_cursor();
         }
         self.request_render(false);
-    }
-
-    pub fn get_clear_on_shrink(&self) -> bool {
-        self.clear_on_shrink
     }
 
     pub fn set_clear_on_shrink(&mut self, enabled: bool) {
@@ -738,10 +726,6 @@ impl Tui {
 
     pub fn remove_child(&mut self, component: &ComponentHandle) {
         self.root.remove_child(component);
-    }
-
-    pub fn clear_children(&mut self) {
-        self.root.clear();
     }
 
     pub fn set_focus(&mut self, component: Option<ComponentHandle>) {
@@ -892,7 +876,6 @@ impl Tui {
             self.previous_lines.clear();
             self.previous_width = -1;
             self.previous_height = -1;
-            self.cursor_row = 0;
             self.hardware_cursor_row = 0;
             self.max_lines_rendered = 0;
             self.previous_viewport_top = 0;
@@ -953,16 +936,8 @@ impl Tui {
             return;
         }
 
-        if matches_key(&data, "shift+ctrl+d") {
-            if let Some(cb) = &mut self.on_debug {
-                cb();
-                return;
-            }
-        }
-
         if let Some(focused) = self.focused_component.clone() {
-            let wants_release = focused.borrow().wants_key_release();
-            if is_key_release(&data) && !wants_release {
+            if is_key_release(&data) {
                 return;
             }
             focused.borrow_mut().handle_input(&data);
@@ -1345,7 +1320,6 @@ impl Tui {
                 buffer.push_str(&self.emit_line(&line, width));
             }
             buffer.push_str("\x1b[?7h");
-            self.cursor_row = new_lines.len() as i64 - 1;
             self.hardware_cursor_row = new_lines.len() as i64 - 1;
             buffer.push_str(&self.build_hardware_cursor_move(&cursor_pos, new_lines.len() as i64));
             buffer.push_str("\x1b[?2026l");
@@ -1407,7 +1381,6 @@ impl Tui {
                 if extra_lines > 0 {
                     buffer.push_str(&format!("\x1b[{extra_lines}A"));
                 }
-                self.cursor_row = target_row;
                 self.hardware_cursor_row = target_row;
                 buffer.push_str(
                     &self.build_hardware_cursor_move(&cursor_pos, new_lines.len() as i64),
@@ -1489,7 +1462,6 @@ impl Tui {
             buffer.push_str(&format!("\x1b[{extra_lines}A"));
         }
 
-        self.cursor_row = (new_lines.len() as i64 - 1).max(0);
         self.hardware_cursor_row = final_cursor_row;
         // Inside the synchronized block, so the frame is never presented with
         // the cursor still parked at the end of the last redrawn line.
@@ -1521,8 +1493,7 @@ impl Tui {
             }
             buffer.push_str(&self.emit_line(line, width));
         }
-        self.cursor_row = (new_lines.len() as i64 - 1).max(0);
-        self.hardware_cursor_row = self.cursor_row;
+        self.hardware_cursor_row = (new_lines.len() as i64 - 1).max(0);
         let cp = self.last_cursor_pos;
         buffer.push_str(&self.build_hardware_cursor_move(&cp, new_lines.len() as i64));
         buffer.push_str("\x1b[?2026l");

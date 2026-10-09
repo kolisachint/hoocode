@@ -31,7 +31,6 @@ fn items(v: &Value) -> Vec<ListedItem> {
                     name: i[0].as_str().unwrap().into(),
                     path: i[1].as_str().unwrap().into(),
                     source_info: source_info(&i[2]),
-                    display_name: None,
                 })
                 .collect()
         })

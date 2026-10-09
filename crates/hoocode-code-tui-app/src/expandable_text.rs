@@ -39,10 +39,6 @@ impl ExpandableText {
         }
     }
 
-    pub fn is_expanded(&self) -> bool {
-        self.is_expanded
-    }
-
     /// Re-evaluate the current state's text (what it reads may have changed,
     /// e.g. the working directory after `/cd`).
     pub fn refresh(&mut self) {

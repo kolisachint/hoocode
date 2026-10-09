@@ -275,14 +275,9 @@ fn push_literal(out: &mut String, c: char, in_class: bool) {
         // An identity escape of a letter (`\q`) means the letter itself.
         out.push(c);
     } else {
-        let mut buf = [0u8; 4];
-        out.push_str(&regex_escape(c.encode_utf8(&mut buf)));
+        // Punctuation that is not meta in either context is safe raw.
+        out.push(c);
     }
-}
-
-fn regex_escape(s: &str) -> String {
-    // Punctuation that is not meta in either context is safe raw.
-    s.to_string()
 }
 
 /// A compiled JavaScript regex.

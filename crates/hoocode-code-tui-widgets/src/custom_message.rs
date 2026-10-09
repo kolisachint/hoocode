@@ -46,9 +46,6 @@ impl CustomMessageComponent {
         this
     }
 
-    /// Nothing folds in the default rendering.
-    pub fn set_expanded(&mut self, _expanded: bool) {}
-
     fn rebuild(&mut self) {
         let mut sheet = BoxComponent::new(1, 1, None);
         apply_block_fill(&mut sheet, BlockFill::CustomMessageBg);

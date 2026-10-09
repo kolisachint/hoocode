@@ -1666,9 +1666,8 @@ impl Mode {
             }
             AgentMessage::Custom(custom) => {
                 if custom.display {
-                    let mut component =
+                    let component =
                         CustomMessageComponent::new(custom.clone(), self.markdown_theme());
-                    component.set_expanded(self.expanded);
                     self.add_to_chat(as_component(&handle(component)));
                 }
             }

@@ -21,7 +21,7 @@ pub mod write;
 /// `createAllToolDefinitions(cwd)[name]`, rendering half. Tools whose
 /// renderers are not ported yet still count as built-in (the block uses its
 /// fallbacks), which keeps the shell choice and slot inheritance right.
-pub fn builtin_tool_definition(name: &str, _cwd: &str) -> Option<ToolRenderDefinition> {
+pub fn builtin_tool_definition(name: &str) -> Option<ToolRenderDefinition> {
     match name {
         "Read" => Some(read::definition()),
         "Write" => Some(write::definition()),

@@ -10,8 +10,8 @@
 //! Grammars are compiled by mutating them in place (as highlight.js does), so
 //! each thread keeps its own copy.
 
-pub mod engine;
-pub mod value;
+mod engine;
+mod value;
 
 use std::collections::HashSet;
 
@@ -79,11 +79,6 @@ pub fn supports_language(name: &str) -> bool {
     REGISTRY.with(|r| r.language(name).is_some())
 }
 
-/// Every language name (`listLanguages`).
-pub fn list_languages() -> Vec<String> {
-    REGISTRY.with(|r| r.language_names())
-}
-
 /// The outcome of highlighting: the token tree, or the code as plain text
 /// (highlight.js gave up on it).
 #[derive(Debug, Clone, PartialEq)]
@@ -102,19 +97,6 @@ pub fn highlight_tree(code: &str, language: &str, ignore_illegals: bool) -> Opti
         } else {
             Highlighted::Tree(result.emitter.into_nodes())
         })
-    })
-}
-
-/// `hljs.highlightAuto(code)` as a token tree, with the detected language.
-pub fn highlight_auto_tree(code: &str) -> (Option<String>, Highlighted) {
-    REGISTRY.with(|r| {
-        let result = engine::highlight_auto(r, code, None);
-        let tree = if result.plain {
-            Highlighted::Plain(code.to_string())
-        } else {
-            Highlighted::Tree(result.emitter.into_nodes())
-        };
-        (result.language, tree)
     })
 }
 

@@ -252,7 +252,7 @@ impl ToolExecutionComponent {
             image_width_cells: options.image_width_cells,
             is_partial: true,
             tool_definition,
-            builtin_definition: builtin_tool_definition(tool_name, cwd),
+            builtin_definition: builtin_tool_definition(tool_name),
             cwd: cwd.to_string(),
             execution_started: false,
             args_complete: false,

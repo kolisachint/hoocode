@@ -27,7 +27,7 @@ fn tool(name: &str, args: Value, view: ToolOutputView) -> ToolExecutionComponent
     // The registry as the app builds it: built-in renderers first, then the
     // registered ones (Agent, AgentOutput).
     let definition =
-        builtin_tool_definition(name, CWD).unwrap_or_else(|| registered_tool_definition(name));
+        builtin_tool_definition(name).unwrap_or_else(|| registered_tool_definition(name));
     ToolExecutionComponent::new(
         name,
         "call-1",

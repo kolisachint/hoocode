@@ -1473,7 +1473,6 @@ fn resource_listing(
                 name: s.name.clone(),
                 path: s.file_path.clone(),
                 source_info: Some(s.source_info.clone()),
-                display_name: None,
             })
             .collect();
         listing.skill_diagnostics = skills.diagnostics;
@@ -1485,7 +1484,6 @@ fn resource_listing(
                 name: p.name.clone(),
                 path: p.file_path.clone(),
                 source_info: Some(p.source_info.clone()),
-                display_name: None,
             })
             .collect();
         listing.prompt_diagnostics = prompts.diagnostics;

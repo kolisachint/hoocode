@@ -1885,7 +1885,6 @@ name = "hoocode-tui-highlight"
 version = "0.1.9"
 dependencies = [
  "hoocode-tui-util",
- "once_cell",
  "serde_json",
 ]
 

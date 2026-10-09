@@ -29,13 +29,6 @@ pub fn tool_output_view_description(view: ToolOutputView) -> &'static str {
     }
 }
 
-/// `LEGACY_TOOL_OUTPUT_VIEWS`: values written by older versions.
-pub const LEGACY_TOOL_OUTPUT_VIEWS: [(&str, ToolOutputView); 3] = [
-    ("collapsed", ToolOutputView::Radar),
-    ("glance", ToolOutputView::Peek),
-    ("standard", ToolOutputView::Full),
-];
-
 /// `isToolOutputView`.
 pub fn is_tool_output_view(value: Option<&str>) -> bool {
     value.is_some_and(|v| ToolOutputView::parse(v).is_some())

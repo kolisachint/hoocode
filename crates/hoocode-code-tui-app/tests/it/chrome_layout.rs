@@ -176,5 +176,8 @@ fn restores_the_stop_the_dial_was_on_not_the_one_the_transient_input_implied() {
     s.controller.set_autocomplete_open(true);
     s.controller.set_autocomplete_open(false);
     assert!(s.footer_slot.borrow().visible());
-    assert_eq!(s.controller.layout().footer, FooterLayout::Line);
+    assert_eq!(
+        s.footer_densities.borrow().last(),
+        Some(&FooterLayout::Line)
+    );
 }

@@ -99,11 +99,6 @@ impl ChromeLayoutController {
         self.inputs.density
     }
 
-    /// The layout on screen.
-    pub fn layout(&self) -> ChromeLayout {
-        self.applied.unwrap_or_else(|| resolve_chrome(self.inputs))
-    }
-
     pub fn set_density(&mut self, density: ChromeDensity) -> bool {
         if self.inputs.density == density {
             return false;

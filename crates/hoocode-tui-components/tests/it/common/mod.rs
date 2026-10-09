@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+pub mod markdown_json;
+
 use hoocode_tui_components::MarkdownTheme;
 
 pub fn sgr(open: &str, close: &str) -> Box<dyn Fn(&str) -> String> {

@@ -5,7 +5,6 @@ use std::rc::Rc;
 
 use hoocode_code_tui_keybindings::key_hint;
 use hoocode_code_tui_theme::{get_language_from_path, highlight_code, theme};
-use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_render::Container;
 use serde_json::{json, Value};
 
@@ -247,7 +246,6 @@ pub fn definition() -> ToolRenderDefinition {
                     return Ok(text(format!("\n{}", theme().fg("error", &output))));
                 }
             }
-            let _ = js_trim;
             Ok(std::rc::Rc::new(std::cell::RefCell::new(Container::new())))
         })),
         render_shell: None,

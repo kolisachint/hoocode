@@ -291,20 +291,6 @@ pub enum SessionEvent {
     },
 }
 
-impl SessionEvent {
-    /// The event's `type` (what `hasHandlers` is asked about).
-    pub fn event_type(&self) -> &'static str {
-        match self {
-            SessionEvent::Start(_) => "session_start",
-            SessionEvent::BeforeSwitch { .. } => "session_before_switch",
-            SessionEvent::BeforeFork { .. } => "session_before_fork",
-            SessionEvent::Shutdown { .. } => "session_shutdown",
-            SessionEvent::BeforeTree { .. } => "session_before_tree",
-            SessionEvent::Tree { .. } => "session_tree",
-        }
-    }
-}
-
 /// An extension-provided branch summary (`SessionBeforeTreeResult.summary`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtensionSummary {

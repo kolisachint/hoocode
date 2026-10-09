@@ -23,7 +23,7 @@ update this page in the same commit.
 | Whole screen, event loop | `InteractiveMode` (`Mode`) | `code-tui-app/src/interactive_mode.rs` |
 | Transcript scroll-back view | scroll view | `code-tui-app/src/scroll_view.rs` |
 | Startup banner | wordmark | `code-tui-app/src/wordmark.rs` |
-| Startup resource listing | resource display | `code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
+| Startup resource listing (skills, commands, agents, MCP, themes, context; no extensions or canvases cells, N12) | resource display | `code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
 | Task panel | task panel | `code-tui-widgets/src/task_panel.rs` |
 | Notification band | notification panel, tips | `code-tui-app/src/notification_panel.rs`, `tips.rs` |
 | Progress bar | progress bar, startup progress | `code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |

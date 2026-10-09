@@ -4,7 +4,7 @@ use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
 use hoocode_code_tui_widgets::tool_output_view::{
     cycle_tool_output_view, is_tool_output_view, ToolOutputView, DEFAULT_TOOL_OUTPUT_VIEW,
-    LEGACY_TOOL_OUTPUT_VIEWS, MAX_TOOL_OUTPUT_VIEW, TOOL_OUTPUT_VIEWS,
+    MAX_TOOL_OUTPUT_VIEW, TOOL_OUTPUT_VIEWS,
 };
 use hoocode_code_tui_widgets::tool_signal::{
     render_tool_signal_line, tool_signal, tool_subject, ToolResult, ToolSignalInput,
@@ -31,15 +31,6 @@ mod tool_output_view_dial {
         assert!(is_tool_output_view(Some("peek")));
         assert!(!is_tool_output_view(Some("glance")));
         assert!(!is_tool_output_view(None));
-    }
-
-    #[test]
-    fn maps_every_retired_value_and_leaves_the_live_ones_alone() {
-        assert_eq!(
-            LEGACY_TOOL_OUTPUT_VIEWS,
-            [("collapsed", Radar), ("glance", Peek), ("standard", Full)]
-        );
-        assert!(!LEGACY_TOOL_OUTPUT_VIEWS.iter().any(|(k, _)| *k == "peek"));
     }
 
     #[test]

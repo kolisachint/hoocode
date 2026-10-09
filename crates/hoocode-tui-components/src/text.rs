@@ -27,11 +27,6 @@ impl Text {
         }
     }
 
-    pub fn with_bg_fn(mut self, bg_fn: ColorFn) -> Self {
-        self.custom_bg_fn = Some(bg_fn);
-        self
-    }
-
     pub fn set_text(&mut self, text: impl Into<String>) {
         self.text = text.into();
     }

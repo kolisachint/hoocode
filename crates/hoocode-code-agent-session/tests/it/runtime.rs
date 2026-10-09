@@ -60,6 +60,18 @@ enum Recorded {
 
 type CancelFn = Box<dyn Fn(&SessionEvent) -> bool + Send + Sync>;
 
+/// The event's `type`, as `hasHandlers` is asked about it.
+fn event_type(event: &SessionEvent) -> &'static str {
+    match event {
+        SessionEvent::Start(_) => "session_start",
+        SessionEvent::BeforeSwitch { .. } => "session_before_switch",
+        SessionEvent::BeforeFork { .. } => "session_before_fork",
+        SessionEvent::Shutdown { .. } => "session_shutdown",
+        SessionEvent::BeforeTree { .. } => "session_before_tree",
+        SessionEvent::Tree { .. } => "session_tree",
+    }
+}
+
 /// `hoo.on(...)` handlers: record the listed event types, cancel on demand.
 struct Recorder {
     handles: Vec<&'static str>,
@@ -74,7 +86,7 @@ impl ExtensionHooks for Recorder {
 
     fn emit_session_event(&self, event: SessionEvent) -> SessionEventFuture {
         let mut result = SessionEventResult::default();
-        if self.handles.contains(&event.event_type()) {
+        if self.handles.contains(&event_type(&event)) {
             let recorded = match &event {
                 SessionEvent::Start(start) => Some(Recorded::Start(
                     start.reason,

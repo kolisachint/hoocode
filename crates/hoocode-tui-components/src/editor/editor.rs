@@ -146,7 +146,6 @@ fn slash_command_layout() -> SelectListLayoutOptions {
     SelectListLayoutOptions {
         min_primary_column_width: Some(12),
         max_primary_column_width: Some(32),
-        ..Default::default()
     }
 }
 
@@ -357,10 +356,6 @@ impl Editor {
         }
     }
 
-    pub fn get_padding_x(&self) -> usize {
-        self.padding_x
-    }
-
     pub fn set_padding_x(&mut self, padding: usize) {
         if self.padding_x != padding {
             self.padding_x = padding;
@@ -377,10 +372,6 @@ impl Editor {
             self.border = border;
             self.request_render();
         }
-    }
-
-    pub fn get_autocomplete_max_visible(&self) -> usize {
-        self.autocomplete_max_visible
     }
 
     pub fn set_autocomplete_max_visible(&mut self, max_visible: usize) {
@@ -1711,10 +1702,6 @@ impl Editor {
 
     pub fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
-    }
-
-    pub fn is_focused(&self) -> bool {
-        self.focused
     }
 
     /// `handleInput`, with the keybindings passed explicitly.

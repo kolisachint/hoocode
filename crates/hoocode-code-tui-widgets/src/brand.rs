@@ -12,12 +12,8 @@ pub enum Category {
     Commands,
     Agents,
     Mcp,
-    Plugins,
-    Marketplaces,
     Themes,
     Context,
-    Extensions,
-    Canvases,
 }
 
 impl Category {
@@ -28,12 +24,8 @@ impl Category {
             Category::Commands => "⌘",
             Category::Agents => "◈",
             Category::Mcp => "⧉",
-            Category::Plugins => "⬡",
-            Category::Marketplaces => "⊞",
             Category::Themes => "◒",
             Category::Context => "❯",
-            Category::Extensions => "⊹",
-            Category::Canvases => "▤",
         }
     }
 }
