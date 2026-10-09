@@ -23,7 +23,7 @@ use std::env;
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -223,6 +223,68 @@ fn start_resize_watch(check: ResizeCheck, stop_signal: Arc<AtomicBool>) -> Optio
     Some(ResizeWatch::Poll(poll))
 }
 
+/// Wake state of a [`ProgressKeepalive`] thread: `stopped` is set by stopping it.
+#[derive(Default)]
+struct ProgressWake {
+    stopped: Mutex<bool>,
+    wake: Condvar,
+}
+
+/// Calls `tick` every `interval` until stopped. Stopping wakes the thread at
+/// once, so a stop never waits out the rest of an interval.
+struct ProgressKeepalive {
+    wake: Arc<ProgressWake>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl ProgressKeepalive {
+    /// Starts the thread. `None` if the thread cannot be spawned.
+    fn start(interval: Duration, mut tick: impl FnMut() + Send + 'static) -> Option<Self> {
+        let wake = Arc::new(ProgressWake::default());
+        let thread_wake = Arc::clone(&wake);
+        let handle = spawn_named_thread("hoocode-progress", move || loop {
+            let stopped = lock(&thread_wake.stopped);
+            let (stopped, _) = thread_wake
+                .wake
+                .wait_timeout_while(stopped, interval, |stopped| !*stopped)
+                .unwrap_or_else(|e| e.into_inner());
+            if *stopped {
+                break;
+            }
+            drop(stopped);
+            tick();
+        })
+        .ok()?;
+        Some(Self {
+            wake,
+            handle: Some(handle),
+        })
+    }
+
+    fn signal(&self) {
+        *lock(&self.wake.stopped) = true;
+        self.wake.wake.notify_all();
+    }
+
+    /// Stops the thread and waits for it to exit.
+    fn stop(mut self) {
+        self.signal();
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for ProgressKeepalive {
+    fn drop(&mut self) {
+        self.signal();
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Real terminal backed by process stdin/stdout, raw mode via `crossterm`.
 pub struct ProcessTerminal {
     was_raw: bool,
@@ -233,7 +295,8 @@ pub struct ProcessTerminal {
     last_input_at: Arc<Mutex<Instant>>,
     resize: Option<ResizeWatch>,
     stop_signal: Arc<AtomicBool>,
-    progress_thread: Option<JoinHandle<()>>,
+    /// The OSC progress keepalive, while progress is active.
+    progress: Option<ProgressKeepalive>,
     last_cols: Arc<AtomicU16>,
     last_rows: Arc<AtomicU16>,
     write_log_path: Option<PathBuf>,
@@ -262,7 +325,7 @@ impl ProcessTerminal {
             last_input_at: Arc::new(Mutex::new(Instant::now())),
             resize: None,
             stop_signal: Arc::new(AtomicBool::new(false)),
-            progress_thread: None,
+            progress: None,
             last_cols: Arc::new(AtomicU16::new(0)),
             last_rows: Arc::new(AtomicU16::new(0)),
             write_log_path: resolve_write_log_path(),
@@ -404,8 +467,8 @@ impl Terminal for ProcessTerminal {
         if self.progress_active.swap(false, Ordering::SeqCst) {
             self.raw_write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
         }
-        if let Some(handle) = self.progress_thread.take() {
-            let _ = handle.join();
+        if let Some(progress) = self.progress.take() {
+            progress.stop();
         }
 
         // Back to the normal screen and off the wheel first, so the rest of
@@ -538,23 +601,15 @@ impl Terminal for ProcessTerminal {
         if active {
             self.raw_write(TERMINAL_PROGRESS_ACTIVE_SEQUENCE);
             if !self.progress_active.swap(true, Ordering::SeqCst) {
-                let stop_signal = self.stop_signal.clone();
-                let progress_active = self.progress_active.clone();
                 let writer = self.writer();
-                self.progress_thread = spawn_named_thread("hoocode-progress", move || loop {
-                    thread::sleep(TERMINAL_PROGRESS_KEEPALIVE);
-                    if stop_signal.load(Ordering::SeqCst) || !progress_active.load(Ordering::SeqCst)
-                    {
-                        break;
-                    }
+                self.progress = ProgressKeepalive::start(TERMINAL_PROGRESS_KEEPALIVE, move || {
                     writer.write(TERMINAL_PROGRESS_ACTIVE_SEQUENCE);
-                })
-                .ok();
+                });
             }
         } else {
             self.progress_active.store(false, Ordering::SeqCst);
-            if let Some(handle) = self.progress_thread.take() {
-                let _ = handle.join();
+            if let Some(progress) = self.progress.take() {
+                progress.stop();
             }
             self.raw_write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
         }
@@ -585,6 +640,48 @@ impl Drop for ProcessTerminal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    /// Stop must not wait out the interval: the old keepalive slept for a full
+    /// second before it could see the stop. The interval here is far longer than
+    /// the bound, so only a prompt wake passes.
+    #[test]
+    fn progress_keepalive_stop_wakes_without_waiting_out_interval() {
+        let ticks = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&ticks);
+        let keepalive = ProgressKeepalive::start(Duration::from_secs(60), move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        })
+        .expect("spawn progress keepalive");
+        let started = Instant::now();
+        keepalive.stop();
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "stop took {:?}",
+            started.elapsed()
+        );
+        assert_eq!(ticks.load(Ordering::SeqCst), 0);
+    }
+
+    /// The keepalive still ticks at its interval, and no tick follows a stop.
+    #[test]
+    fn progress_keepalive_ticks_until_stopped() {
+        let ticks = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&ticks);
+        let keepalive = ProgressKeepalive::start(Duration::from_millis(5), move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        })
+        .expect("spawn progress keepalive");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while ticks.load(Ordering::SeqCst) < 2 && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(ticks.load(Ordering::SeqCst) >= 2, "keepalive did not tick");
+        keepalive.stop();
+        let after_stop = ticks.load(Ordering::SeqCst);
+        thread::sleep(Duration::from_millis(50));
+        assert_eq!(ticks.load(Ordering::SeqCst), after_stop);
+    }
 
     #[test]
     fn resolve_dimension_prefers_measured_value() {
