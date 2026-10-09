@@ -44,9 +44,9 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | A CLI flag or mode | `code-cli` (`args.rs`, `runtime.rs`) |
 | The system prompt | `code-prompts` (`system_prompt.rs`) |
 | A built-in tool | `code-tool-bash`, `code-tools-fs`, `code-tool-search`, `code-tools-optin`; registration in `code-tools` |
-| The Cron tools (CronCreate, CronList, CronDelete), the schedule store, the cron matcher | `code-scheduler`; registered in `code-cli` `runtime.rs` `custom_tools`; fired by `code-tui-app` `interactive_mode.rs` `tick_scheduler` ([scheduler-and-loop.md](../design/scheduler-and-loop.md)) |
+| The Cron tools (CronCreate, CronList, CronDelete), the schedule store, the cron matcher | `code-scheduler`; registered in `code-cli` `runtime.rs` `custom_tools`; fired by `code-tui-app` `mode/events.rs` `tick_scheduler` ([scheduler-and-loop.md](../design/scheduler-and-loop.md)) |
 | How a tool looks in the transcript | `code-tui-widgets/src/tools/` ([ui.md](ui.md)) |
-| A slash command | list: `code-resources/src/slash_commands.rs`; handler: `code-tui-app/src/interactive_mode.rs` `run_builtin_command` |
+| A slash command | list: `code-resources/src/slash_commands.rs`; handler: `code-tui-app/src/mode/commands.rs` `run_builtin_command` |
 | Screen goldens: the scenarios, the mock LLM, the review bundles | `scripts/tui/` (`goldens.py`, `mockllm.py`, `scenarios/`, `review_bundle.py`); component goldens use the `tui-render` feature `golden` ([ui.md](ui.md)) |
 | Terminal writes (the `hoocode-term-out` thread, one frame in flight), input batching, SIGWINCH | `tui-terminal` (`output.rs`), `tui-render` (`tui.rs`), `runtime` (`signals.rs`); [concurrency.md](../design/concurrency.md) Phase 2 |
 | Ctrl+C fast path and emergency exit, the ESC timer (no thread on Unix), the UI heartbeat | `tui-terminal` (`interrupt.rs`, `stdin_hub.rs`); the UI beats and sets the hook in `code-tui-app` `run`; [concurrency.md](../design/concurrency.md) Phase 2 |
@@ -159,7 +159,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 12681 / 4941 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI (`src/mode/*`, split by concern) | 1 | 12720 / 4787 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 839 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7822 / 3124 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2424 / 2514 | keep |

@@ -5,7 +5,7 @@
 //! scenario `export-import`, including the missing-file error.
 
 use hoocode_code_agent_session::RuntimeError;
-use hoocode_code_tui_app::interactive_mode::command_path_argument;
+use hoocode_code_tui_app::mode::command_path_argument;
 
 #[test]
 fn strips_quotes_from_import_path_arguments() {

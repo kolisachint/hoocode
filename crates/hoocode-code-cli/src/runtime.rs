@@ -1581,29 +1581,27 @@ pub fn run_interactive_mode(
     }
     start_semantic_index(args, &session);
 
-    hoocode_code_tui_app::interactive_mode::run_interactive(
-        hoocode_code_tui_app::interactive_mode::InteractiveOptions {
-            session,
-            session_runtime: Some(session_runtime),
-            runtime: async_runtime(),
-            listing: Box::new(resource_listing),
-            is_oauth: {
-                let auth = auth.clone();
-                Box::new(move |provider| {
-                    hoocode_code_models::AuthLookup::is_oauth(auth.as_ref(), provider)
-                })
-            },
-            auth_storage: auth,
-            version: hoocode_code_paths::VERSION.to_string(),
-            verbose: args.verbose == Some(true),
-            initial_message,
-            initial_images,
-            initial_messages: messages,
-            model_fallback_message: None,
-            terminal: None,
-            perf_log: args.perf_log.as_ref().map(std::path::PathBuf::from),
+    hoocode_code_tui_app::mode::run_interactive(hoocode_code_tui_app::mode::InteractiveOptions {
+        session,
+        session_runtime: Some(session_runtime),
+        runtime: async_runtime(),
+        listing: Box::new(resource_listing),
+        is_oauth: {
+            let auth = auth.clone();
+            Box::new(move |provider| {
+                hoocode_code_models::AuthLookup::is_oauth(auth.as_ref(), provider)
+            })
         },
-    )
+        auth_storage: auth,
+        version: hoocode_code_paths::VERSION.to_string(),
+        verbose: args.verbose == Some(true),
+        initial_message,
+        initial_images,
+        initial_messages: messages,
+        model_fallback_message: None,
+        terminal: None,
+        perf_log: args.perf_log.as_ref().map(std::path::PathBuf::from),
+    })
     .map(|()| 0)
     .map_err(RuntimeError::Setup)
 }
@@ -1704,8 +1702,8 @@ mod tests {
             output: output.clone(),
             title: title.clone(),
         };
-        let result = hoocode_code_tui_app::interactive_mode::run_interactive(
-            hoocode_code_tui_app::interactive_mode::InteractiveOptions {
+        let result = hoocode_code_tui_app::mode::run_interactive(
+            hoocode_code_tui_app::mode::InteractiveOptions {
                 session,
                 session_runtime: None,
                 runtime: async_runtime(),
@@ -1982,8 +1980,8 @@ mod tests {
                 output: output.clone(),
                 title: Arc::new(Mutex::new(String::new())),
             };
-            hoocode_code_tui_app::interactive_mode::run_interactive(
-                hoocode_code_tui_app::interactive_mode::InteractiveOptions {
+            hoocode_code_tui_app::mode::run_interactive(
+                hoocode_code_tui_app::mode::InteractiveOptions {
                     session,
                     session_runtime: None,
                     runtime: async_runtime(),
@@ -2121,8 +2119,8 @@ mod tests {
                 output: output.clone(),
                 title: Arc::new(Mutex::new(String::new())),
             };
-            hoocode_code_tui_app::interactive_mode::run_interactive(
-                hoocode_code_tui_app::interactive_mode::InteractiveOptions {
+            hoocode_code_tui_app::mode::run_interactive(
+                hoocode_code_tui_app::mode::InteractiveOptions {
                     session: session.clone(),
                     session_runtime: None,
                     runtime: async_runtime(),

@@ -5,7 +5,7 @@
 
 use std::cell::Cell;
 
-use hoocode_code_tui_app::interactive_mode::{
+use hoocode_code_tui_app::mode::{
     claim_anthropic_subscription_warning, ANTHROPIC_SUBSCRIPTION_AUTH_BODY,
     ANTHROPIC_SUBSCRIPTION_AUTH_TITLE,
 };
