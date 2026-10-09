@@ -566,3 +566,149 @@ fn reads_oauth_entries_written_without_a_type_by_earlier_hoocode_builds() {
         Some(AuthCredential::OAuth(OAuthCredentials::new("r", "a", 5)))
     );
 }
+
+// N14: non-blocking readiness for UI callers, and single-flight refresh.
+
+/// An OAuth provider that counts refreshes and takes `delay` to finish one.
+struct CountingOAuthProvider {
+    id: String,
+    refreshes: Arc<std::sync::atomic::AtomicUsize>,
+    delay: std::time::Duration,
+}
+
+impl OAuthProvider for CountingOAuthProvider {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        "Counting OAuth Provider"
+    }
+    fn login<'a>(
+        &'a self,
+        _callbacks: &'a dyn OAuthLoginCallbacks,
+    ) -> BoxFuture<'a, Result<OAuthCredentials, String>> {
+        Box::pin(async { Err("Not used in this test".to_string()) })
+    }
+    fn refresh_token<'a>(
+        &'a self,
+        credentials: &'a OAuthCredentials,
+    ) -> BoxFuture<'a, Result<OAuthCredentials, String>> {
+        Box::pin(async move {
+            self.refreshes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::thread::sleep(self.delay);
+            Ok(OAuthCredentials {
+                access: "refreshed-access-token".into(),
+                expires: hoocode_ai_oauth::now_ms() + 60_000,
+                ..credentials.clone()
+            })
+        })
+    }
+    fn get_api_key(&self, credentials: &OAuthCredentials) -> String {
+        format!("Bearer {}", credentials.access)
+    }
+}
+
+fn n14_provider(
+    tag: &str,
+    delay: std::time::Duration,
+) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+    let id = format!("n14-{tag}-{}", std::process::id());
+    let refreshes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    hoocode_ai_oauth::register_oauth_provider(Arc::new(CountingOAuthProvider {
+        id: id.clone(),
+        refreshes: Arc::clone(&refreshes),
+        delay,
+    }));
+    (id, refreshes)
+}
+
+fn oauth_with_expiry(expires: i64) -> AuthCredential {
+    let mut cred = OAuthCredentials::new("refresh-token", "access-token", 0);
+    cred.expires = expires;
+    AuthCredential::OAuth(cred)
+}
+
+#[test]
+fn readiness_reports_ready_refresh_or_missing_without_refreshing() {
+    use hoocode_code_auth::AuthReadiness;
+    // A token is only usable when its provider is registered.
+    let (fresh_id, _) = n14_provider("fresh", std::time::Duration::ZERO);
+    let (stale_id, refreshes) = n14_provider("stale", std::time::Duration::ZERO);
+    let key_id = format!("n14-key-{}", std::process::id());
+    let missing_id = format!("n14-none-{}", std::process::id());
+    let now = hoocode_ai_oauth::now_ms();
+    let storage = AuthStorage::in_memory([
+        (
+            key_id.clone(),
+            AuthCredential::ApiKey {
+                key: "literal-key".into(),
+            },
+        ),
+        (fresh_id.clone(), oauth_with_expiry(now + 3_600_000)),
+        (stale_id.clone(), oauth_with_expiry(now - 10_000)),
+    ]);
+    assert_eq!(storage.readiness(&key_id, false), AuthReadiness::Ready);
+    assert_eq!(storage.readiness(&fresh_id, false), AuthReadiness::Ready);
+    assert_eq!(
+        storage.readiness(&stale_id, false),
+        AuthReadiness::NeedsRefresh
+    );
+    assert_eq!(
+        storage.readiness(&missing_id, false),
+        AuthReadiness::Missing
+    );
+    // Reading readiness never refreshes, so the stale token stays stale.
+    assert_eq!(refreshes.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        storage.readiness(&stale_id, false),
+        AuthReadiness::NeedsRefresh
+    );
+}
+
+#[test]
+fn menu_path_shows_an_expired_token_without_network_refresh() {
+    let (id, refreshes) = n14_provider("menu", std::time::Duration::ZERO);
+    let storage = AuthStorage::in_memory([(id.clone(), oauth_with_expiry(0))]);
+    // A built-in model re-pointed at the test provider; only its provider is read.
+    let registry = hoocode_code_models::ModelRegistry::in_memory();
+    let mut model = registry.get_all()[0].clone();
+    model.provider = id.clone();
+    assert!(registry.has_configured_auth(&model, &storage));
+    assert_eq!(
+        storage.readiness(&id, false),
+        hoocode_code_auth::AuthReadiness::NeedsRefresh
+    );
+    assert_eq!(refreshes.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn spawn_refresh_is_single_flight_per_provider() {
+    let (id, refreshes) = n14_provider("single", std::time::Duration::from_millis(300));
+    let storage = Arc::new(AuthStorage::in_memory([(id.clone(), oauth_with_expiry(0))]));
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    assert!(storage.spawn_refresh(&id, false, move |key| {
+        let _ = tx.send(key);
+    }));
+    // The first refresh is still sleeping, so these start nothing.
+    for _ in 0..3 {
+        assert!(!storage.spawn_refresh(&id, false, |_| panic!("second refresh ran")));
+    }
+    let key = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("refresh finished");
+    assert_eq!(key.as_deref(), Some("Bearer refreshed-access-token"));
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+
+    // The in-flight mark is cleared once the refresh has finished.
+    let (tx, rx) = std::sync::mpsc::channel();
+    assert!(storage.spawn_refresh(&id, false, move |key| {
+        let _ = tx.send(key);
+    }));
+    let key = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("second refresh finished");
+    assert_eq!(key.as_deref(), Some("Bearer refreshed-access-token"));
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+}

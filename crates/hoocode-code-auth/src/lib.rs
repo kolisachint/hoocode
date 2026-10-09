@@ -17,7 +17,7 @@ use hoocode_ai_types::Model;
 use hoocode_code_models::{AuthLookup, ModelModifier};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -69,6 +69,8 @@ pub struct AuthStorage {
     state: Mutex<State>,
     runtime_overrides: Mutex<HashMap<String, String>>,
     fallback_resolver: RwLock<Option<FallbackResolver>>,
+    /// Providers with a background refresh in flight (see `spawn_refresh`).
+    refreshing: Mutex<HashSet<String>>,
 }
 
 fn parse_storage_data(content: Option<&str>) -> Result<Map<String, Value>, String> {
@@ -115,6 +117,30 @@ enum Lookup {
     Refresh(Arc<dyn OAuthProvider>),
 }
 
+/// Whether a provider can answer now, read without network I/O (UI callers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthReadiness {
+    /// A key is available now: runtime override, stored key or token, env, or fallback.
+    Ready,
+    /// The stored OAuth token is expired; a refresh (network) is needed first.
+    NeedsRefresh,
+    /// No credential at all.
+    Missing,
+}
+
+/// Clears a provider's in-flight mark when the refresh ends, even by panic.
+struct RefreshGuard<'a> {
+    refreshing: &'a Mutex<HashSet<String>>,
+    provider_id: String,
+}
+
+impl Drop for RefreshGuard<'_> {
+    fn drop(&mut self) {
+        let mut set = self.refreshing.lock().unwrap_or_else(|e| e.into_inner());
+        set.remove(&self.provider_id);
+    }
+}
+
 impl AuthStorage {
     fn new(storage: Box<dyn AuthStorageBackend>) -> Self {
         let this = Self {
@@ -122,6 +148,7 @@ impl AuthStorage {
             state: Mutex::new(State::default()),
             runtime_overrides: Mutex::new(HashMap::new()),
             fallback_resolver: RwLock::new(None),
+            refreshing: Mutex::new(HashSet::new()),
         };
         this.reload();
         this
@@ -473,12 +500,54 @@ impl AuthStorage {
         }
     }
 
+    /// Non-blocking readiness for UI callers. Never refreshes and never does
+    /// network I/O. Use [`Self::spawn_refresh`] when it returns `NeedsRefresh`.
+    pub fn readiness(&self, provider_id: &str, include_fallback: bool) -> AuthReadiness {
+        match self.lookup(provider_id, include_fallback) {
+            Lookup::Done(Some(_)) => AuthReadiness::Ready,
+            Lookup::Done(None) => AuthReadiness::Missing,
+            Lookup::Refresh(_) => AuthReadiness::NeedsRefresh,
+        }
+    }
+
+    /// Starts [`Self::get_api_key`] for `provider_id` on its own thread and
+    /// hands the result to `on_done` from that thread. At most one refresh per
+    /// provider runs at a time: returns `false` (and starts nothing) while one
+    /// is in flight, or when the thread cannot start.
+    pub fn spawn_refresh(
+        self: &Arc<Self>,
+        provider_id: &str,
+        include_fallback: bool,
+        on_done: impl FnOnce(Option<String>) + Send + 'static,
+    ) -> bool {
+        {
+            let mut set = self.refreshing.lock().unwrap_or_else(|e| e.into_inner());
+            if !set.insert(provider_id.to_string()) {
+                return false;
+            }
+        }
+        let this = Arc::clone(self);
+        let id = provider_id.to_string();
+        let started = hoocode_runtime::spawn_isolated("auth-refresh", async move {
+            let _guard = RefreshGuard {
+                refreshing: &this.refreshing,
+                provider_id: id.clone(),
+            };
+            let key = this.get_api_key(&id, include_fallback).await;
+            drop(_guard);
+            on_done(key);
+        });
+        if started.is_err() {
+            let mut set = self.refreshing.lock().unwrap_or_else(|e| e.into_inner());
+            set.remove(provider_id);
+            return false;
+        }
+        true
+    }
+
     /// [`Self::get_api_key`] from sync code (a refresh runs on its own thread).
-    // TODO(N14): reached from the TUI UI thread. `AuthLookup::api_key` is called
-    // for every model by `get_available_models` (model menus, /model, subagent
-    // pickers), so an expired OAuth token blocks the UI on a network refresh.
-    // Fix: a non-blocking lookup that returns None on `Lookup::Refresh`, spawns
-    // the refresh on the runtime and wakes the UI; needs a design choice first.
+    /// Non-UI callers only (agent threads, CLI print mode). UI callers use
+    /// [`Self::readiness`] and [`Self::spawn_refresh`].
     pub fn get_api_key_blocking(
         &self,
         provider_id: &str,
