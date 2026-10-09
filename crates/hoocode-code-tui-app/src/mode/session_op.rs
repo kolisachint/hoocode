@@ -1,0 +1,91 @@
+//! Session operations that run off the UI thread (TUI plan N14).
+//!
+//! The UI loop never waits on the runtime. An operation moves the
+//! `AgentSessionRuntime` (or only the session) onto the runtime, and the
+//! result comes back as `AppEvent::SessionOp`; [`Mode::finish_session_op`]
+//! applies it. While one runs, a loader shows and the prompt refuses input;
+//! a second operation says the first must finish.
+
+use super::*;
+
+/// What a session operation found out.
+pub(super) enum SessionOutcome {
+    /// `/mode <next>` sent to the session as a prompt (the Shift+Tab dial).
+    Mode {
+        forward: bool,
+        next: String,
+        result: Result<(), String>,
+    },
+}
+
+/// A finished session operation. The runtime comes back with it when the
+/// operation used it.
+pub(super) struct SessionOpDone {
+    pub(super) runtime: Option<AgentSessionRuntime>,
+    pub(super) outcome: SessionOutcome,
+}
+
+impl Mode {
+    /// False, with a warning, when another session operation is running.
+    pub(super) fn session_op_free(&mut self) -> bool {
+        match self.session_op {
+            None => true,
+            Some(running) => {
+                self.show_warning(&format!(
+                    "{running} is still running; wait for it to finish."
+                ));
+                false
+            }
+        }
+    }
+
+    /// Marks `label` as running and shows its loader.
+    pub(super) fn start_session_op(&mut self, label: &'static str) {
+        self.session_op = Some(label);
+        self.stop_working_loader();
+        let mut loader = Loader::new(
+            Box::new(|s: &str| theme().fg("accent", s)),
+            Box::new(|s: &str| theme().fg("muted", s)),
+            format!("{label}..."),
+            None,
+        );
+        loader.start();
+        let loader = handle(loader);
+        self.status.borrow_mut().add_child(as_component(&loader));
+        self.loader = Some(loader);
+        self.dirty.set(true);
+    }
+
+    /// Applies a finished operation on the UI thread.
+    pub(super) fn finish_session_op(&mut self, done: SessionOpDone) {
+        self.session_op = None;
+        self.stop_working_loader();
+        if let Some(runtime) = done.runtime {
+            self.session_runtime = Some(runtime);
+        }
+        match done.outcome {
+            SessionOutcome::Mode {
+                forward,
+                next,
+                result,
+            } => {
+                if let Err(error) = result {
+                    self.show_error(&error);
+                } else {
+                    self.drain_extension_ui_requests();
+                    let landed = self.footer_data.get_active_mode();
+                    let landed = if landed.is_empty() { next } else { landed };
+                    self.show_dial_step(
+                        if forward {
+                            "app.mode.cycleBackward"
+                        } else {
+                            "app.mode.cycleForward"
+                        },
+                        &format!("Mode: {landed}"),
+                    );
+                }
+            }
+        }
+        self.dirty.set(true);
+    }
+}

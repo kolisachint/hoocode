@@ -464,6 +464,14 @@ impl Mode {
         if text.is_empty() {
             return;
         }
+        // A session change is running: the text goes back to the prompt.
+        if let Some(running) = self.session_op {
+            self.show_warning(&format!(
+                "{running} is still running; wait for it to finish."
+            ));
+            self.editor.borrow_mut().editor.set_text(&text);
+            return;
+        }
         // Built-in slash commands; `with_args` ones also take "/name <args>".
         let (name, has_args) = match text.find(' ') {
             Some(i) => (hoocode_tui_util::text_slice::prefix(&text, i), true),
@@ -562,10 +570,15 @@ impl Mode {
             .map_or(-1, |i| i as isize);
         let step = if forward { 1 } else { -1 };
         let next = modes[((index + step + len) % len) as usize].clone();
+        if !self.session_op_free() {
+            return;
+        }
+        self.start_session_op("Switching mode");
         let session = self.session.clone();
         let text = format!("/mode {next}");
-        let result = self.runtime.block_on(async move {
-            session
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let result = session
                 .prompt(
                     &text,
                     PromptOptions {
@@ -574,22 +587,16 @@ impl Mode {
                     },
                 )
                 .await
+                .map_err(|e| e.to_string());
+            let _ = tx.send(AppEvent::SessionOp(Box::new(SessionOpDone {
+                runtime: None,
+                outcome: SessionOutcome::Mode {
+                    forward,
+                    next,
+                    result,
+                },
+            })));
         });
-        if let Err(error) = result {
-            self.show_error(&error.to_string());
-            return;
-        }
-        self.drain_extension_ui_requests();
-        let landed = self.footer_data.get_active_mode();
-        let landed = if landed.is_empty() { next } else { landed };
-        self.show_dial_step(
-            if forward {
-                "app.mode.cycleBackward"
-            } else {
-                "app.mode.cycleForward"
-            },
-            &format!("Mode: {landed}"),
-        );
     }
 
     /// `createBaseAutocompleteProvider` + `setupAutocompleteProvider`: the

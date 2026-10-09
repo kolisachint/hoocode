@@ -76,6 +76,7 @@ mod input;
 mod mcp;
 mod models;
 mod prompt_queue;
+mod session_op;
 mod session_ops;
 mod settings;
 mod subagents;
@@ -121,6 +122,8 @@ pub struct InteractiveOptions {
     pub perf_log: Option<std::path::PathBuf>,
 }
 
+use session_op::{SessionOpDone, SessionOutcome};
+
 const DEFAULT_WORKING_MESSAGE: &str = "Working...";
 
 const DEFAULT_HIDDEN_THINKING_LABEL: &str = "Thinking...";
@@ -160,6 +163,8 @@ enum AppEvent {
     PastedImage(Option<ClipboardImage>),
     /// A `/subagent` run ended: its mode, and its summary or error.
     SubagentDone(String, Result<Option<String>, String>),
+    /// A session operation run off the UI thread ended (`session_op.rs`).
+    SessionOp(Box<session_op::SessionOpDone>),
     /// Queued messages sent after a compaction failed; they go back.
     CompactionQueueFailed(Vec<(String, StreamingBehavior)>, String),
     /// A message typed while streaming could not be queued.
@@ -368,6 +373,8 @@ struct Mode {
     previous_cwd: Rc<RefCell<Option<PathBuf>>>,
     pending_import: Option<(String, Option<String>, mpsc::Receiver<Option<String>>)>,
     restarted_input: Option<Receiver<TuiEvent>>,
+    /// The session operation running off the UI thread, if any (`session_op.rs`).
+    session_op: Option<&'static str>,
 }
 
 /// `InteractiveMode.run`: until the user exits.
@@ -715,6 +722,7 @@ impl Mode {
             previous_cwd: Rc::new(RefCell::new(None)),
             pending_import: None,
             restarted_input: None,
+            session_op: None,
         }
     }
 
@@ -1027,6 +1035,7 @@ impl Mode {
                     AppEvent::CopyDone(subject, result) => self.finish_copy(&subject, result),
                     AppEvent::PastedImage(image) => self.insert_pasted_image(image),
                     AppEvent::SubagentDone(mode, result) => self.finish_subagent(&mode, result),
+                    AppEvent::SessionOp(done) => self.finish_session_op(*done),
                     AppEvent::CompactionQueueFailed(queued, error) => {
                         self.session.clear_queue();
                         self.compaction_queue = queued;
