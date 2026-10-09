@@ -28,3 +28,4 @@ Where this page disagrees with an earlier one, this page wins.
 | 21 | Where the TUI plan sits | Side by side with the core plan in README.md, not merged into its order. When the user asks to proceed, ask which plan and step |
 | 22 | Order inside the TUI plan | **Simplification first**: after T0 (goldens, the safety net), work the full per-component inventory in [tui-simplify.md](tui-simplify.md) before any feature phase. Replaces answer 15 |
 | 23 | Who does the work | **Always Haiku subagents** for all TUI work: review, implement, test, visual review. The main session only orchestrates, briefs, checks results and merges |
+| 24 | Sixel images (HI3) | Delete the Sixel path; no decoder |

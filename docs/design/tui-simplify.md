@@ -211,7 +211,7 @@ These change behaviour, so each one needs a failing test before the fix.
 | ID | Idea | Vis | Risk | Size |
 |---|---|---|---|---|
 | HI2 | Delete `list_languages`, `highlight_auto_tree` and `Highlighted` (no callers). Make `engine` and `value` private. Drop `once_cell` and the duplicate dev-dependency. Drop the always-true `ignore_illegals`. | no | L | XS |
-| HI3 | Sixel: there is no production rasterizer, so it always falls back to text. Delete it (235 LOC) or add a decoder (user call). | yes if built | M | M |
+| HI3 | Sixel: there is no production rasterizer, so it always falls back to text. **Delete it** (235 LOC, decision 24). | no | L | S |
 | HI4 | `detect_terminal_capabilities`: a table in place of 7 copied struct literals. Delete the unread `true_color`. | no | L | XS |
 | HI5 | Kitty encode via `chunks()`. Delete `delete_all_kitty_images` and the unused iTerm2 options. | no | L | XS |
 | HI6 | Memo the highlight output by (lang, code). Merge the two `highlight_code` copies in the theme. | no | L | S |
@@ -241,17 +241,16 @@ files don't overlap. Every batch: L1 + `goldens.py check`. `Vis: yes` rows add a
 | Batch | Rows | Why this order |
 |---|---|---|
 | S0: bugs | TM1–TM4, KY1, UT1, RN1, MS1, HI1, KY2, TB1 | Real defects. Each gets a failing test first. |
-| S1: dead code | AP1–AP6, AP10, AP13, MS8, TB5, TP1, ED2, MC2–MC6, RN2, RN3, KY6, KY8, KY9, HI2, HI4, HI5, UT6, UT7 | Cheapest and lowest risk. Shrinks what later batches read. |
+| S1: dead code | AP1–AP6, AP10, AP13, MS8, TB5, TP1, ED2, MC2–MC6, RN2, RN3, KY6, KY8, KY9, HI2, HI3, HI4, HI5, UT6, UT7 | Cheapest and lowest risk. Shrinks what later batches read. |
 | S2: one copy of each helper | UT2–UT5, UT11, IM9, PK1, PK6, PK8, AP7, AP9, MS2, MS6, MS7, TB2, MC7, MC8, MC11, RN4, TM5–TM7, KY7 | Dedupe before restructuring. |
 | S3: structure (feature prerequisites) | IM1, IM2, TP2, TP4, TP3, AP11, IM3, IM4, IM6, PK3–PK5, ED3, ED4, TB9, RN6, RN9 | IM1 → IM2 serial; the rest in parallel by crate. Includes T1 of the TUI plan. |
 | S4: per-keystroke and per-frame cost | IM7, IM8, KY3, KY4, KY10, ED1, MC1, MC9, MS3, MS4, TB6–TB8, TB10, RN5, RN8, TM8, TM9, TM11, UT8, UT9, HI6, HI7 | Measure with `/perf` and the load scenario before and after. |
 | S5: visible changes | TB3, TB4, PK2, PK7, AP12, MC10 | Each one goes through the visual review. |
-| S6: larger and riskier | IM5, MS5, RN7, RN10, RN11, TM10, TM12, ED5, KY5, KY11, UT10, AP8, HI3, HI8 | One at a time. Some need a user call (HI3). |
+| S6: larger and riskier | IM5, MS5, RN7, RN10, RN11, TM10, TM12, ED5, KY5, KY11, UT10, AP8, HI8 | One at a time. |
 
 After S3 the feature phases (T2–T5) can start. S4–S6 can run alongside them where files don't
 overlap.
 
-## 4. Open question
+## 4. Open questions
 
-1. **HI3 Sixel:** delete it, or add a decoder so Windows Terminal shows images?
-   Recommended: delete. Kitty and iTerm2 cover most users, and a decoder is a new dependency.
+None. HI3 (Sixel): delete, decided 2026-10-09 (decision 24).
