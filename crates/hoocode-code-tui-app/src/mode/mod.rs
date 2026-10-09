@@ -83,8 +83,7 @@ mod transcript;
 mod tree;
 
 use self::{
-    auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, subagents::*, transcript::*,
-    tree::*,
+    auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, transcript::*, tree::*,
 };
 
 pub use self::events::plan_settle_outcome;

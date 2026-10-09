@@ -2,6 +2,7 @@
 
 use hoocode_agent_types::{AgentMessage, CustomMessage};
 use hoocode_ai_types::UserContent;
+use hoocode_code_agent_session::format::group_digits;
 use hoocode_code_resources::agent_registry::{load_agent_registry, LoadAgentRegistryOptions};
 use hoocode_code_subagents::instance::get_subagent_pool;
 use hoocode_code_subagents::ledger;
@@ -10,19 +11,6 @@ use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::{Spacer, Text};
 
 use super::*;
-
-/// `toLocaleString()` for a count: grouped with commas.
-pub(super) fn group_digits(n: u64) -> String {
-    let digits = n.to_string();
-    let mut out = String::new();
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
-}
 
 impl Mode {
     /// `handleSubagent`: `/subagent <mode> <task>` runs one subagent of that

@@ -189,6 +189,9 @@ pub fn select_config(
     closed
 }
 
+/// `--resume` at startup: the session picker over `session_dir` (then all
+/// sessions), with the theme applied. Returns the chosen session file, or
+/// `None` when the picker closes without a choice.
 pub fn resume_picker(theme_name: Option<&str>, session_dir: PathBuf) -> Option<PathBuf> {
     hoocode_code_tui_theme::init_theme(theme_name, true);
     let selected = select_session(

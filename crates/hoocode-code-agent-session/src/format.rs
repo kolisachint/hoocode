@@ -8,6 +8,19 @@ use hoocode_tui_util::visible_width;
 /// The shared segment separator (`SEGMENT_SEP` in hoocode `core/brand.ts`).
 pub const SEGMENT_SEP: &str = "\u{b7}";
 
+/// `toLocaleString()` for a count: grouped with commas.
+pub fn group_digits(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// JS `Number.prototype.toFixed(digits)` for finite values.
 ///
 /// `toFixed` rounds the exact binary value, picking the larger candidate on an
@@ -376,4 +389,17 @@ pub fn render_compact_rows(rows: &[(&str, &str)], options: &CompactRowsOptions<'
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod group_digits_tests {
+    use super::group_digits;
+
+    #[test]
+    fn groups_every_three_digits_with_commas() {
+        assert_eq!(group_digits(0), "0");
+        assert_eq!(group_digits(999), "999");
+        assert_eq!(group_digits(1000), "1,000");
+        assert_eq!(group_digits(1_234_567), "1,234,567");
+    }
 }

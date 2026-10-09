@@ -5,6 +5,7 @@ use std::sync::mpsc::{self};
 use std::time::Instant;
 
 use hoocode_agent_types::AgentEvent;
+use hoocode_code_agent_session::format::group_digits;
 use hoocode_code_agent_session::runtime::{format_missing_session_cwd_prompt, RuntimeError};
 use hoocode_code_agent_session::stats::sum_assistant_usage;
 use hoocode_code_agent_session::{AgentSessionEvent, ForkPosition, NewSessionRequest};
