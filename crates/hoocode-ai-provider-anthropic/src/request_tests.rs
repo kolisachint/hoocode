@@ -130,6 +130,43 @@ fn sonnet_5_and_fable_5_use_adaptive_summarized_thinking() {
     }
 }
 
+#[test]
+fn haiku_5_5_uses_adaptive_thinking_but_haiku_4_5_keeps_budget_tokens() {
+    let haiku_5_5 = thinking_payload(
+        "anthropic",
+        "claude-haiku-5-5",
+        reasoning(ThinkingLevel::High),
+    );
+    assert_eq!(
+        haiku_5_5["thinking"],
+        json!({"type": "adaptive", "display": "summarized"})
+    );
+    assert_eq!(haiku_5_5["output_config"], json!({"effort": "high"}));
+    assert!(haiku_5_5["thinking"].get("budget_tokens").is_none());
+
+    let haiku_4_5 = thinking_payload(
+        "anthropic",
+        "claude-haiku-4-5",
+        reasoning(ThinkingLevel::High),
+    );
+    assert_eq!(haiku_4_5["thinking"]["type"], "enabled");
+    assert!(haiku_4_5["thinking"]["budget_tokens"].is_u64());
+
+    // Haiku 5.5 rejects non-default temperature, so it is never sent; Haiku 4.5 still gets it.
+    let temperature = |id: &str| {
+        thinking_payload(
+            "anthropic",
+            id,
+            SimpleStreamOptions {
+                temperature: Some(0.5),
+                ..Default::default()
+            },
+        )
+    };
+    assert!(temperature("claude-haiku-5-5").get("temperature").is_none());
+    assert_eq!(temperature("claude-haiku-4-5")["temperature"], json!(0.5));
+}
+
 // --- anthropic-thinking-disable.test.ts: payload cases ---
 
 fn thinking_payload(provider: &str, id: &str, options: SimpleStreamOptions) -> Value {

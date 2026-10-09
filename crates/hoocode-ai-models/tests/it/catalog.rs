@@ -30,8 +30,9 @@ fn catalog_matches_the_pin() {
     let providers = get_providers();
     let total: usize = providers.iter().map(|p| get_models(p).len()).sum();
     // hoocode v0.6.0: Object.values(MODELS) flattened (scripts/convert_models_to_json.py),
-    // minus the 47 azure-openai-responses entries (Azure dropped; the converter filters them).
-    assert_eq!(total, 1181);
+    // minus the 47 azure-openai-responses entries (Azure dropped; the converter filters them),
+    // plus claude-haiku-5-5 from scripts/models_overrides.json (not in upstream v0.6.0 yet).
+    assert_eq!(total, 1182);
     // hoocode's provider order (Object.entries(MODELS)).
     assert_eq!(&providers[..3], ["anthropic", "cerebras", "deepseek"]);
     assert_eq!(providers.last(), Some(&"zai"));
@@ -43,6 +44,7 @@ fn claude_5_models_on_anthropic() {
         ("claude-opus-5", cost(5.0, 25.0, 0.5, 6.25)),
         ("claude-sonnet-5", cost(2.0, 10.0, 0.2, 2.5)),
         ("claude-fable-5", cost(10.0, 50.0, 1.0, 12.5)),
+        ("claude-haiku-5-5", cost(0.1, 0.5, 0.01, 0.125)),
     ] {
         let m = model("anthropic", id);
         assert_eq!(m.api, "anthropic-messages");

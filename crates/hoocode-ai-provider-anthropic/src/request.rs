@@ -165,7 +165,7 @@ fn adjust_max_tokens_for_thinking(
     (max_tokens, thinking_budget)
 }
 
-/// `supportsAdaptiveThinking`: Opus 4.6+, Opus 5, Sonnet 4.6+, Fable 5.
+/// `supportsAdaptiveThinking`: Opus 4.6+, Opus 5, Sonnet 4.6+, Fable 5, Haiku 5.5.
 pub fn supports_adaptive_thinking(model_id: &str) -> bool {
     [
         "fable-5",
@@ -179,14 +179,25 @@ pub fn supports_adaptive_thinking(model_id: &str) -> bool {
         "sonnet-4-6",
         "sonnet-4.6",
         "sonnet-5",
+        "haiku-5-5",
+        "haiku-5.5",
     ]
     .iter()
     .any(|family| model_id.contains(family))
 }
 
 /// `isThinkingAlwaysOn`: models that reject `thinking: {type: "disabled"}`.
+/// Haiku 5.5 accepts `disabled` at effort high or below, so it is not listed.
 fn is_thinking_always_on(model_id: &str) -> bool {
     ["fable-5", "mythos-5", "opus-5-5", "opus-5.5"]
+        .iter()
+        .any(|family| model_id.contains(family))
+}
+
+/// Models that return HTTP 400 for a non-default `temperature` (Haiku 5.5 also
+/// rejects `top_p`/`top_k` and assistant prefill, which are never sent here).
+fn rejects_sampling_params(model_id: &str) -> bool {
+    ["haiku-5-5", "haiku-5.5"]
         .iter()
         .any(|family| model_id.contains(family))
 }
@@ -420,9 +431,12 @@ pub fn build_params(
         params["system"] = json!([text_block(&context.system_prompt, cc)]);
     }
 
-    // Temperature is incompatible with extended thinking.
+    // Temperature is incompatible with extended thinking, and Haiku 5.5 rejects it outright.
     if let Some(temperature) = options.temperature {
-        if options.thinking_enabled != Some(true) && !is_thinking_always_on(&model.id) {
+        if options.thinking_enabled != Some(true)
+            && !is_thinking_always_on(&model.id)
+            && !rejects_sampling_params(&model.id)
+        {
             params["temperature"] = json!(temperature);
         }
     }
