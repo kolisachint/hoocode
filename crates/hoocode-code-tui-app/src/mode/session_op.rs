@@ -175,3 +175,42 @@ impl Mode {
         self.dirty.set(true);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// N14: the UI modules do not wait on the runtime. Every `block_on(` left in
+    /// `mode/` carries a `TODO(N14)` comment just above it saying why.
+    #[test]
+    fn every_ui_thread_block_on_is_a_marked_n14_exception() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/mode");
+        let mut checked = 0;
+        for entry in std::fs::read_dir(dir).expect("mode dir") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("source file");
+            let lines: Vec<&str> = text.lines().collect();
+            for (index, line) in lines.iter().enumerate() {
+                // Test modules sit at the end of each file.
+                if line.starts_with("#[cfg(test)]") {
+                    break;
+                }
+                if !line.contains("block_on(") || line.trim_start().starts_with("//") {
+                    continue;
+                }
+                checked += 1;
+                let start = index.saturating_sub(6);
+                let marked = lines[start..index].iter().any(|l| l.contains("TODO(N14)"));
+                assert!(
+                    marked,
+                    "{}:{}: block_on on the UI thread without a TODO(N14) reason",
+                    path.display(),
+                    index + 1
+                );
+            }
+        }
+        // The one exception left is the exit-time abort in mod.rs.
+        assert_eq!(checked, 1, "unexpected block_on count in mode/");
+    }
+}

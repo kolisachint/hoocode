@@ -474,6 +474,11 @@ impl AuthStorage {
     }
 
     /// [`Self::get_api_key`] from sync code (a refresh runs on its own thread).
+    // TODO(N14): reached from the TUI UI thread. `AuthLookup::api_key` is called
+    // for every model by `get_available_models` (model menus, /model, subagent
+    // pickers), so an expired OAuth token blocks the UI on a network refresh.
+    // Fix: a non-blocking lookup that returns None on `Lookup::Refresh`, spawns
+    // the refresh on the runtime and wakes the UI; needs a design choice first.
     pub fn get_api_key_blocking(
         &self,
         provider_id: &str,

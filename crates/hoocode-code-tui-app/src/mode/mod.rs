@@ -1156,6 +1156,10 @@ impl Mode {
         set_terminal_owned_by_tui(false);
         let session = self.session.clone();
         if session.is_streaming() {
+            // TODO(N14): still a UI-thread wait. It runs after the loop, once the
+            // terminal is restored, and must finish before `dispose` flushes the
+            // session. Moving it needs the ordered shutdown in concurrency.md §4
+            // (abort, then flush, each with a deadline).
             self.runtime.block_on(async move { session.abort().await });
         }
         self.session.dispose();
