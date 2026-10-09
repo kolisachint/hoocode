@@ -1444,12 +1444,20 @@ impl Tui {
         }
     }
 
-    fn emit_line(&mut self, line: &str) -> String {
+    /// Bytes for one row. Image rows pass through; text rows are cut to `width`
+    /// columns so an over-wide component line can never overrun the terminal.
+    fn emit_line(&mut self, line: &str, width: i64) -> String {
         if hoocode_tui_images::is_image_line(line) {
             self.saw_image_line = true;
             return line.to_string();
         }
-        format!("{}{SEGMENT_RESET}", normalize_terminal_output(line))
+        let text = slice_by_column(
+            &normalize_terminal_output(line),
+            0,
+            width.max(0) as usize,
+            true,
+        );
+        format!("{text}{SEGMENT_RESET}")
     }
 
     fn collect_kitty_image_ids(&self, lines: &[String]) -> HashSet<u32> {
@@ -1700,7 +1708,7 @@ impl Tui {
                     .get((window_top + row) as usize)
                     .cloned()
                     .unwrap_or_default();
-                buffer.push_str(&self.emit_line(&line));
+                buffer.push_str(&self.emit_line(&line, width));
             }
             buffer.push_str("\x1b[?7h");
             self.cursor_row = new_lines.len() as i64 - 1;
@@ -1830,31 +1838,7 @@ impl Tui {
                 buffer.push_str("\r\n");
             }
             buffer.push_str("\x1b[2K");
-            let line = &new_lines[i as usize];
-            let is_image = hoocode_tui_images::is_image_line(line);
-            if !is_image && visible_width(line) as i64 > width {
-                // The original crashes with a debug log here; we surface a
-                // plain error since this indicates a component bug (a line
-                // wider than the terminal that failed to truncate itself).
-                self.stop();
-                panic!(
-                    "Rendered line {i} exceeds terminal width ({} > {width}). \
-                     A custom TUI component is not truncating its output; \
-                     use visible_width()/truncate_to_width().",
-                    visible_width(line)
-                );
-            }
-            if is_image {
-                self.saw_image_line = true;
-            }
-            buffer.push_str(
-                if is_image {
-                    line.clone()
-                } else {
-                    format!("{}{SEGMENT_RESET}", normalize_terminal_output(line))
-                }
-                .as_str(),
-            );
+            buffer.push_str(&self.emit_line(&new_lines[i as usize], width));
         }
 
         let mut final_cursor_row = render_end;
@@ -1901,7 +1885,7 @@ impl Tui {
             if i > 0 {
                 buffer.push_str("\r\n");
             }
-            buffer.push_str(&self.emit_line(line));
+            buffer.push_str(&self.emit_line(line, width));
         }
         self.cursor_row = (new_lines.len() as i64 - 1).max(0);
         self.hardware_cursor_row = self.cursor_row;
@@ -2459,5 +2443,35 @@ mod tests {
             1,
             "appending lines should not trigger a full redraw"
         );
+    }
+
+    #[test]
+    fn over_width_line_on_diff_path_is_truncated_not_panicked() {
+        let (mut tui, handles) = new_tui(40, 10);
+        let component = TestComponent::new();
+        component.borrow_mut().lines = vec!["a".to_string(), "b".to_string()];
+        tui.add_child(component.clone());
+        tui.request_render(false);
+        handles.writes.clear();
+
+        component.borrow_mut().lines = vec!["a".to_string(), "x".repeat(50)];
+        tui.request_render(false);
+
+        let out = handles.writes.joined();
+        assert!(out.contains(&"x".repeat(40)), "line is cut at the width");
+        assert!(!out.contains(&"x".repeat(41)), "nothing past the width");
+    }
+
+    #[test]
+    fn over_width_line_on_full_path_is_truncated() {
+        let (mut tui, handles) = new_tui(40, 10);
+        let component = TestComponent::new();
+        component.borrow_mut().lines = vec!["x".repeat(50)];
+        tui.add_child(component);
+        tui.request_render(false);
+
+        let out = handles.writes.joined();
+        assert!(out.contains(&"x".repeat(40)), "line is cut at the width");
+        assert!(!out.contains(&"x".repeat(41)), "nothing past the width");
     }
 }
