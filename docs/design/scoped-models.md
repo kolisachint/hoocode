@@ -1,7 +1,7 @@
 # Scoped models design
 
-Status: Locked 2026-10-09 (reviewed). Not implemented.
-Not on the core plan's build order. Ask the user before scheduling it.
+Status: Implemented 2026-10-09. Decisions 1 to 20 are in force; the notes below record how
+they were built.
 
 ## Goal
 
@@ -11,7 +11,7 @@ model can then send subagent work by category ("cheap subagent") or by model ("u
 Today `enabledModels` and `modelCategories` are two separate settings, and `modelCategories`
 is read only by subagents.
 
-## Current state (verified)
+## Current state (verified at lock, 2026-10-09)
 
 | Piece | Where |
 |---|---|
@@ -103,6 +103,31 @@ Affected files and crates (from Current state):
   `goldens.py update <scenario>` once reviewed.
 - Done bar: L1 plus `python3 scripts/tui/goldens.py check all`, and a review bundle for the
   visual change.
+
+## Implementation notes
+
+- **Keys in the picker.** `tab` cycles the row's effort through the levels the model supports,
+  then unset. `alt+j` cycles its category: none, cheap, fast, standard, capable, then none. The
+  footer reads "tab effort · alt+j category".
+- **`--models` (decision 13).** It replaces `scopedModels` for that run only. It is not written
+  to disk: saving in `/scoped-models` is refused while the flag is active. It is also passed on
+  to nested subagents, so their subagents stay in the same scope.
+- **Project `scopedModels`.** When the project settings define the key, the picker saves to the
+  project file. Otherwise it saves to the global file. The project list replaces the global one
+  (decision 15).
+- **Untagged scope entries (decision 13 reading).** An entry with no category is never picked
+  for a category (decision 11). A category ask over a list with no categories, such as the
+  `--models` list, derives its tiers from that list alone with the existing derived-category
+  logic. It does not look outside the scope.
+- **Migration.** Runs on every load of the global scope; it builds `scopedModels` only when the key
+  is missing. A project file does not trigger it.
+- **Tool result prefix.** Each Agent result starts with `[model: ...]` (for example
+  `[model: acme/mid, effort high; ...]`). It names the model that ran, the alias when there is
+  one, the effort, and any note such as a fallback step or a clamped effort.
+- **Agent tool default when nothing is asked.** Inside a scope, the default is the session's
+  model if it is scoped, else the standard tier, else the first scoped entry. Without a scope,
+  it is the session's model, as before. An agent's frontmatter `model:` is used only when the
+  main model asks for nothing (decision 12).
 
 ## Not doing
 

@@ -5,6 +5,13 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ## Resume here
 
+- **2026-10-09: scoped models implemented (not migration work), branch `claude/scoped-models`.**
+  Design and notes in `docs/design/scoped-models.md`. `scopedModels` replaces `enabledModels` and
+  `modelCategories` (migrated once on load). The picker has effort and category columns; the Agent
+  tool takes `model` and `effort`, and `complexity` is removed.
+  - Polish: picker footer hint shortened to "tab effort · alt+j category"; the one ignored subagent
+    test (`a_models_flag_category_ask_derives_its_tier_from_the_list_alone`) un-ignored and passing.
+  - Open: nothing from the feature. Not pushed.
 - **2026-10-09 (end of day, TUI Phase S tier Now): branch `claude/tui-phase-s`, PR to `main`.**
   Plan and open items in `docs/design/tui-activity.md`.
   - Done: N1 to N13, X11, N10 with T1.1, T1.4, N11 with its Edit and AgentOutput follow-up.
