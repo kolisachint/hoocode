@@ -9,7 +9,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use hoocode_ai_types::{AssistantMessage, ImageContent, StopReason};
+use hoocode_ai_types::{ImageContent, StopReason};
 use hoocode_code_agent_session::stats::AssistantUsageTotals;
 use hoocode_code_agent_session::{
     AgentSession, AgentSessionEvent, AgentSessionRuntime, StreamingBehavior,
@@ -36,15 +36,10 @@ use hoocode_code_tui_theme::{
     ThinkingBorderLevel,
 };
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
-use hoocode_code_tui_widgets::custom_message::{
-    BranchSummaryMessageComponent, CompactionSummaryMessageComponent,
-};
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity};
-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
-use hoocode_code_tui_widgets::tool_execution::ToolExecutionComponent;
 use hoocode_code_tui_widgets::tool_output_view::MAX_TOOL_OUTPUT_VIEW;
-use hoocode_code_tui_widgets::{AssistantMessageComponent, UserMessageComponent};
+use hoocode_code_tui_widgets::UserMessageComponent;
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle, Loader, Spacer};
 use hoocode_tui_render::{Component, ComponentHandle, Container, FlexSpacer, Slot, Tui, TuiEvent};
 use hoocode_tui_terminal::Terminal;
@@ -300,62 +295,40 @@ fn expanded_instructions() -> String {
 }
 
 struct Mode {
+    /// The chat transcript and the components that track it (`transcript.rs`).
+    transcript: Transcript,
     session: AgentSession,
     runtime: tokio::runtime::Handle,
     tui: Tui,
     verbose: bool,
     size: Rc<Cell<(u16, u16)>>,
     dirty: Rc<Cell<bool>>,
-    /// Phase 0 counters behind `/perf` and `--perf-log`.
     perf: Perf,
     header: Rc<RefCell<ExpandableText>>,
-    chat: Rc<RefCell<Container>>,
     status: Rc<RefCell<Container>>,
     loader: Option<Rc<RefCell<Loader>>>,
-    streaming: Option<Rc<RefCell<AssistantMessageComponent>>>,
-    streaming_message: Option<AssistantMessage>,
-    /// Throttle for re-rendering the in-flight message: when the last run was,
-    /// and whether an update is waiting for the window to pass.
     stream_render_at: Option<Instant>,
     stream_render_pending: bool,
-    /// When the next scheduled-task tick is due (`TaskScheduler`'s interval).
     scheduler_tick_at: Instant,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
     tool_output_view: ToolOutputView,
-    /// Where `app.tools.expand` jumped from, so the same key goes back there.
     view_before_jump: Option<ToolOutputView>,
     hide_thinking_block: bool,
-    /// Tool blocks by call id, until their execution ends.
-    pending_tools: HashMap<String, Rc<RefCell<ToolExecutionComponent>>>,
-    /// The chain collecting tool calls, if the agent is mid-run.
-    open_chain: Option<Rc<RefCell<ToolChainComponent>>>,
-    /// Every chain and assistant message in the transcript, in order.
-    chains: Vec<Rc<RefCell<ToolChainComponent>>>,
-    assistant_components: Vec<Rc<RefCell<AssistantMessageComponent>>>,
-    latest_block: Option<Rc<RefCell<ToolExecutionComponent>>>,
-    latest_chain: Option<Rc<RefCell<ToolChainComponent>>>,
     chain_closed_for_current_message: bool,
     dial_reverse_taught: HashSet<&'static str>,
-    /// The last status line, updated in place when nothing followed it.
-    last_status: RecordRows,
-    /// When running tool blocks that tick (bash's `Elapsed`) last re-rendered.
     last_tool_tick: Instant,
     show_images: bool,
     image_width_cells: u32,
     code_block_indent: String,
     editor: Rc<RefCell<CustomEditor>>,
     editor_container: Rc<RefCell<Container>>,
-    /// The open extension selector and where its answer goes.
     selector: Option<OpenSelector>,
     actions: Rc<RefCell<Vec<Action>>>,
     notifications: Rc<RefCell<NotificationPanel>>,
-    /// Tips on the notification band (`tips.rs`).
     tips: TipsController,
     footer: Rc<RefCell<FooterComponent>>,
-    /// The warning on the footer now (shedding or UI stall), if any.
     runtime_notice: Option<String>,
-    /// Shedding as the last loop turn drew it; a change clears the render caches.
     shedding_shown: bool,
     footer_data: FooterDataProvider,
     chrome: ChromeLayoutController,
@@ -368,69 +341,33 @@ struct Mode {
     session_runtime: Option<AgentSessionRuntime>,
     subscription: Option<hoocode_code_agent_session::SessionSubscription>,
     is_oauth: Rc<dyn Fn(&str) -> bool>,
-    /// The credential store `/login` and `/logout` write.
     auth_storage: Arc<AuthStorage>,
-    /// A `/login` or `/logout` in progress.
     login: Option<LoginStep>,
-    /// The open session selector (alt+h).
     session_selector: Option<Rc<RefCell<SessionSelectorComponent>>>,
-    /// A resume waiting on the missing-cwd confirm: the session file, the
-    /// cwd to fall back to, and where the answer arrives.
     pending_cwd_prompt: Option<(PathBuf, String, mpsc::Receiver<Option<String>>)>,
-    /// The open options pane (`ask_options`) and where its answers go.
     ask_options: Option<OpenAskOptions>,
-    /// The open session tree, with the leaf it was opened on.
     tree_selector: Option<(Rc<RefCell<TreeSelectorComponent>>, Option<String>)>,
-    /// The open `/model` picker.
     model_selector: Option<Rc<RefCell<ModelSelectorComponent>>>,
-    /// The open `/scoped-models` picker, with how many models it lists.
     scoped_models_selector: Option<(Rc<RefCell<ScopedModelsSelectorComponent>>, usize)>,
-    /// The Anthropic extra-usage notice has been shown this session.
     anthropic_warning_shown: bool,
-    /// The open `/settings` pane, and the changes it has asked for.
     settings_selector: Option<Rc<RefCell<SettingsSelectorComponent>>>,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
-    /// When escape last hit an empty, idle prompt (`lastEscapeTime`).
     last_escape: Option<Instant>,
-    /// A tree selection waiting on "Summarize branch?".
     pending_tree_summary: Option<PendingTreeAnswer>,
-    /// A tree selection waiting on custom summarization instructions.
     pending_tree_instructions: Option<PendingTreeAnswer>,
-    /// A navigation that summarizes, running off the input loop.
     tree_navigation: Option<TreeNavigation>,
-    /// The open multi-line editor dialog (`showEditor`).
     editor_dialog: Option<OpenEditorDialog>,
-    /// Rows started while the agent streams, until the next prompt.
     pending_messages: Rc<RefCell<Container>>,
-    /// The prompt starts with `!` (`isBashMode`).
     is_bash_mode: bool,
-    /// The running `!` command's row (`bashComponent`).
     bash_component: Option<Rc<RefCell<BashExecutionComponent>>>,
-    /// `!` rows parked in the pending area (`pendingBashComponents`).
     pending_bash_components: Vec<Rc<RefCell<BashExecutionComponent>>>,
-    /// Every `!` row in the transcript, for the expand sweep.
-    bash_components: Vec<Rc<RefCell<BashExecutionComponent>>>,
-    /// Every branch summary in the transcript, for the expand sweep.
-    branch_summaries: Vec<Rc<RefCell<BranchSummaryMessageComponent>>>,
-    /// Every compaction summary in the transcript, for the expand sweep.
-    compaction_summaries: Vec<Rc<RefCell<CompactionSummaryMessageComponent>>>,
-    /// The compaction spinner (`autoCompactionLoader`).
     compaction_loader: Option<Rc<RefCell<Loader>>>,
-    /// Messages typed while a compaction runs (`compactionQueuedMessages`).
     compaction_queue: Vec<(String, StreamingBehavior)>,
-    /// The task ledger above the prompt.
     task_panel: Rc<RefCell<TaskPanelComponent>>,
-    /// Re-renders on task-store changes.
     task_store_subscription: Option<hoocode_code_task_store::Subscription<'static>>,
-    /// The open `/fork` message picker.
     fork_selector: Option<Rc<RefCell<UserMessageSelectorComponent>>>,
-    /// Where `/cd -` returns to (`previousCwd`), shared with the `/cd`
-    /// completions.
     previous_cwd: Rc<RefCell<Option<PathBuf>>>,
-    /// An `/import` waiting on a confirm: the input path, the fallback cwd
-    /// once the stored one turned out missing, and where the answer arrives.
     pending_import: Option<(String, Option<String>, mpsc::Receiver<Option<String>>)>,
-    /// The input channel of a TUI restarted after Ctrl+Z; the loop switches to it.
     restarted_input: Option<Receiver<TuiEvent>>,
 }
 
@@ -714,11 +651,9 @@ impl Mode {
             dirty,
             perf,
             header,
-            chat,
+            transcript: Transcript::new(chat),
             status,
             loader: None,
-            streaming: None,
-            streaming_message: None,
             stream_render_at: None,
             stream_render_pending: false,
             scheduler_tick_at: Instant::now() + hoocode_code_scheduler::TICK_INTERVAL,
@@ -727,15 +662,8 @@ impl Mode {
             tool_output_view,
             view_before_jump: None,
             hide_thinking_block,
-            pending_tools: HashMap::new(),
-            open_chain: None,
-            chains: Vec::new(),
-            assistant_components: Vec::new(),
-            latest_block: None,
-            latest_chain: None,
             chain_closed_for_current_message: false,
             dial_reverse_taught: HashSet::new(),
-            last_status: RecordRows::default(),
             last_tool_tick: Instant::now(),
             show_images,
             image_width_cells,
@@ -780,9 +708,6 @@ impl Mode {
             is_bash_mode: false,
             bash_component: None,
             pending_bash_components: Vec::new(),
-            bash_components: Vec::new(),
-            branch_summaries: Vec::new(),
-            compaction_summaries: Vec::new(),
             compaction_loader: None,
             compaction_queue: Vec::new(),
             task_panel,
@@ -1135,7 +1060,7 @@ impl Mode {
                 if self.task_panel.borrow().ticking() {
                     self.dirty.set(true);
                 }
-                for block in self.pending_tools.values() {
+                for block in self.transcript.pending_tools.values() {
                     if block.borrow().is_ticking() {
                         block.borrow_mut().invalidate();
                         self.dirty.set(true);

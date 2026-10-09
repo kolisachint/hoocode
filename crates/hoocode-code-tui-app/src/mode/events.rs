@@ -232,15 +232,17 @@ impl Mode {
                     ));
                     self.add_to_chat(as_component(&component));
                     component.borrow_mut().update_content(assistant, false);
-                    self.assistant_components.push(component.clone());
+                    self.transcript.assistant_components.push(component.clone());
                     self.chain_closed_for_current_message = false;
-                    self.streaming = Some(component);
-                    self.streaming_message = Some(assistant.clone());
+                    self.transcript.streaming = Some(component);
+                    self.transcript.streaming_message = Some(assistant.clone());
                 }
                 _ => {}
             },
             AgentEvent::MessageUpdate { message, .. } => {
-                if let (Some(_), AgentMessage::Assistant(assistant)) = (&self.streaming, message) {
+                if let (Some(_), AgentMessage::Assistant(assistant)) =
+                    (&self.transcript.streaming, message)
+                {
                     self.schedule_streaming_render();
                     // Whatever this message first puts on screen ends the run
                     // its previous calls formed.
@@ -252,7 +254,7 @@ impl Mode {
                         let Content::ToolCall(call) = content else {
                             continue;
                         };
-                        match self.pending_tools.get(&call.id) {
+                        match self.transcript.pending_tools.get(&call.id) {
                             Some(block) => block.borrow_mut().update_args(call.arguments.clone()),
                             None => {
                                 let block = self.new_tool_block(
@@ -261,11 +263,11 @@ impl Mode {
                                     call.arguments.clone(),
                                 );
                                 self.attach_tool_block(block.clone());
-                                self.pending_tools.insert(call.id.clone(), block);
+                                self.transcript.pending_tools.insert(call.id.clone(), block);
                             }
                         }
                     }
-                    self.streaming_message = Some(assistant);
+                    self.transcript.streaming_message = Some(assistant);
                 }
             }
             AgentEvent::MessageEnd { message } => {
@@ -273,7 +275,7 @@ impl Mode {
                     return;
                 };
                 self.turn_stop_reason = Some(assistant.stop_reason);
-                if let Some(component) = self.streaming.take() {
+                if let Some(component) = self.transcript.streaming.take() {
                     if assistant.stop_reason == StopReason::Aborted {
                         let attempt = self.session.retry_attempt();
                         assistant.error_message = Some(if attempt > 0 {
@@ -295,7 +297,7 @@ impl Mode {
                             .clone()
                             .filter(|m| !m.is_empty())
                             .unwrap_or_else(|| "Error".into());
-                        for block in self.pending_tools.values() {
+                        for block in self.transcript.pending_tools.values() {
                             block.borrow_mut().update_result(
                                 ToolResult {
                                     content: vec![Content::text(error.clone())],
@@ -305,14 +307,14 @@ impl Mode {
                                 false,
                             );
                         }
-                        self.pending_tools.clear();
+                        self.transcript.pending_tools.clear();
                     } else {
                         // Args are complete: edit blocks compute their diffs.
-                        for block in self.pending_tools.values() {
+                        for block in self.transcript.pending_tools.values() {
                             block.borrow_mut().set_args_complete();
                         }
                     }
-                    self.streaming_message = None;
+                    self.transcript.streaming_message = None;
                     self.stream_render_pending = false;
                 }
             }
@@ -321,12 +323,14 @@ impl Mode {
                 tool_name,
                 args,
             } => {
-                let block = match self.pending_tools.get(&tool_call_id) {
+                let block = match self.transcript.pending_tools.get(&tool_call_id) {
                     Some(block) => block.clone(),
                     None => {
                         let block = self.new_tool_block(&tool_name, &tool_call_id, args);
                         self.attach_tool_block(block.clone());
-                        self.pending_tools.insert(tool_call_id, block.clone());
+                        self.transcript
+                            .pending_tools
+                            .insert(tool_call_id, block.clone());
                         block
                     }
                 };
@@ -337,7 +341,7 @@ impl Mode {
                 partial_result,
                 ..
             } => {
-                if let Some(block) = self.pending_tools.get(&tool_call_id) {
+                if let Some(block) = self.transcript.pending_tools.get(&tool_call_id) {
                     block.borrow_mut().update_result(
                         ToolResult {
                             content: partial_result.content,
@@ -354,7 +358,7 @@ impl Mode {
                 is_error,
                 ..
             } => {
-                if let Some(block) = self.pending_tools.remove(&tool_call_id) {
+                if let Some(block) = self.transcript.pending_tools.remove(&tool_call_id) {
                     block.borrow_mut().update_result(
                         ToolResult {
                             content: result.content,
@@ -367,12 +371,12 @@ impl Mode {
                 }
             }
             AgentEvent::AgentEnd { .. } => {
-                self.pending_tools.clear();
+                self.transcript.pending_tools.clear();
                 self.stop_working_loader();
-                if let Some(component) = self.streaming.take() {
+                if let Some(component) = self.transcript.streaming.take() {
                     let handle = as_component(&component);
-                    self.chat.borrow_mut().remove_child(&handle);
-                    self.streaming_message = None;
+                    self.transcript.chat.borrow_mut().remove_child(&handle);
+                    self.transcript.streaming_message = None;
                 }
             }
             _ => {}

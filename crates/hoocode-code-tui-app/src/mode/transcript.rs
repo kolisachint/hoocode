@@ -39,6 +39,52 @@ use crate::resource_display::show_loaded_resources;
 
 use super::*;
 
+/// The chat transcript: the chat `Container` and the components that track it. Reset
+/// (`reset_transcript_view`) replaces the whole value, keeping only the chat container.
+pub(super) struct Transcript {
+    pub(super) chat: Rc<RefCell<Container>>,
+    pub(super) streaming: Option<Rc<RefCell<AssistantMessageComponent>>>,
+    pub(super) streaming_message: Option<AssistantMessage>,
+    /// Tool blocks by call id, until their execution ends.
+    pub(super) pending_tools: HashMap<String, Rc<RefCell<ToolExecutionComponent>>>,
+    /// The chain collecting tool calls, if the agent is mid-run.
+    pub(super) open_chain: Option<Rc<RefCell<ToolChainComponent>>>,
+    /// Every chain and assistant message in the transcript, in order.
+    pub(super) chains: Vec<Rc<RefCell<ToolChainComponent>>>,
+    pub(super) assistant_components: Vec<Rc<RefCell<AssistantMessageComponent>>>,
+    pub(super) latest_block: Option<Rc<RefCell<ToolExecutionComponent>>>,
+    pub(super) latest_chain: Option<Rc<RefCell<ToolChainComponent>>>,
+    /// The last status line, updated in place when nothing followed it.
+    pub(super) last_status: RecordRows,
+    /// Every `!` row in the transcript, for the expand sweep.
+    pub(super) bash_components: Vec<Rc<RefCell<BashExecutionComponent>>>,
+    /// Every branch summary in the transcript, for the expand sweep.
+    pub(super) branch_summaries: Vec<Rc<RefCell<BranchSummaryMessageComponent>>>,
+    /// Every compaction summary in the transcript, for the expand sweep.
+    pub(super) compaction_summaries: Vec<Rc<RefCell<CompactionSummaryMessageComponent>>>,
+}
+
+impl Transcript {
+    /// An empty transcript over `chat`, the container the TUI tree shows.
+    pub(super) fn new(chat: Rc<RefCell<Container>>) -> Self {
+        Self {
+            chat,
+            streaming: None,
+            streaming_message: None,
+            pending_tools: HashMap::new(),
+            open_chain: None,
+            chains: Vec::new(),
+            assistant_components: Vec::new(),
+            latest_block: None,
+            latest_chain: None,
+            last_status: RecordRows::default(),
+            bash_components: Vec::new(),
+            branch_summaries: Vec::new(),
+            compaction_summaries: Vec::new(),
+        }
+    }
+}
+
 /// A `{ truncated: true }` result for a `!` row: the row only reads the flag.
 pub(super) fn truncated_marker(content: &str) -> TruncationResult {
     TruncationResult {
@@ -49,7 +95,7 @@ pub(super) fn truncated_marker(content: &str) -> TruncationResult {
 
 impl Mode {
     pub(super) fn add_to_chat(&mut self, component: ComponentHandle) {
-        self.chat.borrow_mut().add_child(component);
+        self.transcript.chat.borrow_mut().add_child(component);
         self.dirty.set(true);
     }
 
@@ -132,7 +178,7 @@ impl Mode {
                 if text.is_empty() {
                     return;
                 }
-                if !self.chat.borrow().children.is_empty() {
+                if !self.transcript.chat.borrow().children.is_empty() {
                     self.add_to_chat(as_component(&handle(Spacer::new(1))));
                 }
                 let component = UserMessageComponent::with_theme(&text, (self.markdown_theme())());
@@ -148,7 +194,7 @@ impl Mode {
                     self.markdown_theme(),
                     DEFAULT_HIDDEN_THINKING_LABEL,
                 ));
-                self.assistant_components.push(component.clone());
+                self.transcript.assistant_components.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
             AgentMessage::Custom(custom) => {
@@ -165,7 +211,7 @@ impl Mode {
                     self.markdown_theme(),
                 ));
                 component.borrow_mut().set_expanded(self.expanded);
-                self.compaction_summaries.push(component.clone());
+                self.transcript.compaction_summaries.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
             AgentMessage::BranchSummary(summary) => {
@@ -175,7 +221,7 @@ impl Mode {
                     self.markdown_theme(),
                 ));
                 component.borrow_mut().set_expanded(self.expanded);
-                self.branch_summaries.push(component.clone());
+                self.transcript.branch_summaries.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
             AgentMessage::BashExecution(bash) => {
@@ -191,7 +237,7 @@ impl Mode {
                     bash.full_output_path.clone(),
                 );
                 let component = handle(component);
-                self.bash_components.push(component.clone());
+                self.transcript.bash_components.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
             _ => {}
@@ -205,7 +251,7 @@ impl Mode {
         messages: &[AgentMessage],
         populate_history: bool,
     ) {
-        self.pending_tools.clear();
+        self.transcript.pending_tools.clear();
         let mut rendered_pending: Vec<(String, Rc<RefCell<ToolExecutionComponent>>)> = Vec::new();
         let mut last_stop_reason = None;
         for message in messages {
@@ -288,7 +334,7 @@ impl Mode {
                 ChainState::Interrupted
             });
         }
-        self.pending_tools.extend(rendered_pending);
+        self.transcript.pending_tools.extend(rendered_pending);
         self.dirty.set(true);
     }
 
@@ -330,7 +376,10 @@ impl Mode {
     pub(super) fn run_streaming_render(&mut self) {
         self.stream_render_pending = false;
         self.stream_render_at = Some(Instant::now());
-        if let (Some(component), Some(message)) = (&self.streaming, &self.streaming_message) {
+        if let (Some(component), Some(message)) = (
+            &self.transcript.streaming,
+            &self.transcript.streaming_message,
+        ) {
             component.borrow_mut().update_content(message, true);
             self.dirty.set(true);
         }
@@ -365,27 +414,28 @@ impl Mode {
     /// `attachToolBlock`: into the open chain (a new one when none is open),
     /// marking the newest call and run.
     pub(super) fn attach_tool_block(&mut self, block: Rc<RefCell<ToolExecutionComponent>>) {
-        let chain = match &self.open_chain {
+        let chain = match &self.transcript.open_chain {
             Some(chain) if chain.borrow().is_open() => chain.clone(),
             _ => {
                 let chain = handle(ToolChainComponent::new(self.tool_output_view));
                 self.add_to_chat(as_component(&chain));
-                self.chains.push(chain.clone());
-                self.open_chain = Some(chain.clone());
+                self.transcript.chains.push(chain.clone());
+                self.transcript.open_chain = Some(chain.clone());
                 chain
             }
         };
         chain.borrow_mut().add(block.clone());
-        if let Some(previous) = self.latest_block.replace(block.clone()) {
+        if let Some(previous) = self.transcript.latest_block.replace(block.clone()) {
             previous.borrow_mut().set_latest(false);
         }
         block.borrow_mut().set_latest(true);
         let same = self
+            .transcript
             .latest_chain
             .as_ref()
             .is_some_and(|c| Rc::ptr_eq(c, &chain));
         if !same {
-            if let Some(previous) = self.latest_chain.replace(chain.clone()) {
+            if let Some(previous) = self.transcript.latest_chain.replace(chain.clone()) {
                 previous.borrow_mut().set_latest(false);
             }
             chain.borrow_mut().set_latest(true);
@@ -395,13 +445,13 @@ impl Mode {
 
     /// `closeOpenChain`: settle the chain collecting calls.
     pub(super) fn close_open_chain(&mut self, outcome: ChainState) {
-        let Some(chain) = self.open_chain.take() else {
+        let Some(chain) = self.transcript.open_chain.take() else {
             return;
         };
         if chain.borrow().is_empty() {
             let h = as_component(&chain);
-            self.chat.borrow_mut().remove_child(&h);
-            self.chains.retain(|c| !Rc::ptr_eq(c, &chain));
+            self.transcript.chat.borrow_mut().remove_child(&h);
+            self.transcript.chains.retain(|c| !Rc::ptr_eq(c, &chain));
         } else {
             chain.borrow_mut().close(outcome);
         }
@@ -421,6 +471,7 @@ impl Mode {
     /// `trimTranscriptMemory`: freeze all but the newest live tool blocks.
     pub(super) fn trim_transcript_memory(&mut self) {
         let freezable: Vec<_> = self
+            .transcript
             .chains
             .iter()
             .flat_map(|c| c.borrow().tool_blocks().to_vec())
@@ -458,11 +509,12 @@ impl Mode {
     /// Every tool block in the transcript.
     pub(super) fn tool_blocks(&self) -> Vec<Rc<RefCell<ToolExecutionComponent>>> {
         let mut blocks: Vec<_> = self
+            .transcript
             .chains
             .iter()
             .flat_map(|c| c.borrow().tool_blocks().to_vec())
             .collect();
-        for block in self.pending_tools.values() {
+        for block in self.transcript.pending_tools.values() {
             if !blocks.iter().any(|b| Rc::ptr_eq(b, block)) {
                 blocks.push(block.clone());
             }
@@ -499,8 +551,8 @@ impl Mode {
         self.session
             .settings()
             .set_hide_thinking_block(self.hide_thinking_block);
-        let streaming = self.streaming.clone();
-        let streaming_message = self.streaming_message.clone();
+        let streaming = self.transcript.streaming.clone();
+        let streaming_message = self.transcript.streaming_message.clone();
         self.reset_transcript_view();
         let messages = self.session.messages();
         self.render_session_context(&messages, false);
@@ -512,8 +564,8 @@ impl Mode {
                 c.update_content(&message, true);
             }
             self.add_to_chat(as_component(&component));
-            self.streaming = Some(component);
-            self.streaming_message = Some(message);
+            self.transcript.streaming = Some(component);
+            self.transcript.streaming_message = Some(message);
         }
         // Radar overrides the setting: say so rather than claim a change the
         // screen does not show.
@@ -530,19 +582,9 @@ impl Mode {
 
     /// `resetTranscriptView`: drop every view reference into the transcript.
     pub(super) fn reset_transcript_view(&mut self) {
-        self.chat.borrow_mut().clear();
-        self.open_chain = None;
-        self.latest_block = None;
-        self.latest_chain = None;
-        self.streaming = None;
-        self.streaming_message = None;
-        self.pending_tools.clear();
-        self.chains.clear();
-        self.assistant_components.clear();
-        self.bash_components.clear();
-        self.branch_summaries.clear();
-        self.compaction_summaries.clear();
-        self.last_status.reset();
+        let chat = self.transcript.chat.clone();
+        chat.borrow_mut().clear();
+        self.transcript = Transcript::new(chat);
     }
 
     /// `renderCurrentSessionState`: the transcript of the session just
@@ -582,7 +624,9 @@ impl Mode {
         } else {
             theme().fg("dim", message)
         };
-        self.last_status.show(&mut self.chat.borrow_mut(), styled);
+        self.transcript
+            .last_status
+            .show(&mut self.transcript.chat.borrow_mut(), styled);
         self.dirty.set(true);
     }
 
@@ -617,11 +661,11 @@ impl Mode {
         }
         self.footer.borrow_mut().set_tool_output_view(view);
         let thinking = self.thinking_display();
-        for chain in &self.chains {
+        for chain in &self.transcript.chains {
             chain.borrow_mut().set_view(view);
         }
         if thinking != previous_thinking {
-            for component in &self.assistant_components {
+            for component in &self.transcript.assistant_components {
                 component.borrow_mut().set_thinking_display(thinking);
             }
         }
@@ -630,13 +674,13 @@ impl Mode {
             // "full" holds nothing back: the header opens with it.
             self.expanded = expanded;
             self.header.borrow_mut().set_expanded(expanded);
-            for component in &self.bash_components {
+            for component in &self.transcript.bash_components {
                 component.borrow_mut().set_expanded(expanded);
             }
-            for component in &self.branch_summaries {
+            for component in &self.transcript.branch_summaries {
                 component.borrow_mut().set_expanded(expanded);
             }
-            for component in &self.compaction_summaries {
+            for component in &self.transcript.compaction_summaries {
                 component.borrow_mut().set_expanded(expanded);
             }
         }
