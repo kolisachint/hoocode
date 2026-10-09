@@ -18,8 +18,7 @@ user which plan and which step to take next.
    and return to the main session.
 4. Replace the L1/L2 parity gates with a hoocode-only bar: L1 plus committed screen goldens,
    with a fast LLM visual review of the screens that changed.
-5. Simplify every TUI component first: [tui-simplify.md](tui-simplify.md), right after T0
-   and before any feature phase.
+5. Simplify every TUI component first (Phase S), right after T0 and before any feature phase.
 
 ## Decisions
 
@@ -39,7 +38,7 @@ user which plan and which step to take next.
 | Done bar | **L1** (fmt, clippy, nextest, dep firewall) **plus hoocode goldens**. Text diffs fail. LLM review is advisory. hoocode-ts setup leaves hooks and CI. |
 | Golden tiers | (a) In-process component goldens: vt100 at a fixed width, run under nextest, in milliseconds. (b) tmux end-to-end scenarios on the real binary and the mock LLM. |
 | Visual review | Text grid plus a compact style legend by default. A PNG is rendered only for changed screens or when the text review is unsure. It is run by a Haiku subagent in-session (no API key, not in CI). |
-| Cleanups | **Simplification first** (decision 22): after T0, batches S0–S3 of [tui-simplify.md](tui-simplify.md) land before T2. S4–S6 may run alongside the features where files don't overlap. |
+| Cleanups | **Simplification first** (decision 22): after T0, tier **Now** of Phase S lands before T2. **Next** and **Later** may run alongside the features where files don't overlap. No idea is dropped to narrow the list; ideas move between tiers instead. |
 | Who works | **Haiku subagents for all work** (decision 23): review, implement, test, visual review. The main session orchestrates and merges. |
 | Replay fixtures | Keep `hoocode-0.5.89/` and `replay.json` as regression tests until T0 has run green for a week; then decide. |
 | Migration ledger | Freeze `ledger.py` read-only at T0.6. New work is tracked in this card's phase tables. |
@@ -59,14 +58,74 @@ Needs: nothing. Start here.
 | T0.5 | `.claude/skills/tui-review/SKILL.md`: how a Haiku subagent reviews a bundle (checklist: alignment, truncation, colour roles, overflow at 80 and 120 columns, empty and error states). It writes `review.md` per screen with ok / issue / unsure. On unsure, it asks for the PNG. | S |
 | T0.6 | Retire parity: done = L1 + `goldens.py check`. Freeze `ledger.py` (read-only, `verify` prints a pointer here). Remove `setup_hoocode.sh` from SessionStart and CI. Update CLAUDE.md ("Done =" line, commands), build-speed.md, ui.md ("Rules for UI changes") and the continue-migration skill. Move the mock and scenarios from `migration/tui-parity/` to `scripts/tui/`. The replay fixtures stay (Decisions). | S |
 
-### Phase S: simplification ([tui-simplify.md](tui-simplify.md))
+### Phase S: simplification
 
-Needs: T0. Batches S0 (bugs) → S1 (dead code) → S2 (one copy of each helper) → S3 (structure)
-must land before T2. S3 contains all of T1 below.
+Needs: T0. Tier **Now** lands before T2. **Next** and **Later** may run alongside the features
+where files don't overlap. All ideas from 15 reviews plus 8 verification passes
+(2026-10-09) are kept. None was dropped to narrow the list; only the order differs. Each row
+was checked against the code once (V = verified, P = partly true, corrected below). The
+subagent that takes a row still confirms it before changing code.
+
+**Now** (bugs, feature prerequisites, cheap wins), in order:
+
+| # | Work | Was | Size |
+|---|---|---|---|
+| N1 | UTF-8 split across stdin reads becomes U+FFFD. A single read byte >127 is treated as Meta (`stdin_hub.rs:58-61`). Carry the incomplete tail. Add an "every split point" stdin test first. | TM3 V + new | S |
+| N2 | The Kitty flag never reaches `tui-keys` (setter only in tests), so a custom Shift+Enter acts as Alt+Enter. Share one flag. | KY1 V | S |
+| N3 | An over-width line is checked only on the diff paint path. Truncate it in `emit_line` on every path, instead of panicking. | RN1 V | XS |
+| N4 | Toggling thinking display mid-stream collapses the segmented blocks (`refresh` drops `streaming`). The resize half of the claim was wrong. | MS1 P | S |
+| N5 | Up to 1 s UI stall when a compaction ends or on quit. The progress keepalive sleeps 1 s and is joined. Wake it with a Condvar. | TM1 V | S |
+| N6 | Alt+P / Alt+_ / Alt+] start a string sequence, and the flush emits one dead blob. Split off the ESC and re-feed the rest. | TM4 P | S |
+| N7 | Small fixes: "Full output: undefined" sent to the model when no temp file exists (`tool-bash/tool.rs:157`). CSI scan ends at any final byte (`ansi.rs:18`). An Esc just before a paste is lost. "/" is ambiguous as the hint separator. Remove the unreachable "undefined" fallbacks. | new, UT1 P, TM2 V, KY2 P, TB1 P | S |
+| N8 | Delete the overlay subsystem (~560 LOC plus 3 test files, no caller outside `tui-render`). Do it before any other `paint` edit. | RN2 P | M |
+| N9 | Delete the teams lens, roster, focus code, `app.team.*` bindings, team hotkey hint and ~17 tests. The `--team` flag: see Open questions. | TP1 V, AP12 hint | M |
+| N10 | Split `interactive_mode.rs` into `mode/*`. Then `Transcript` = the 12 fields `reset_transcript_view` clears, plus `chat.clear()`. | IM1 V, IM2 P | M |
+| N11 | Tool blocks: one `peek_block` for 6 copies (~70 LOC), with search and web merged first. Agent and Edit respect the peek dial. Agent shows `· <description>`, and `description` ranks above `prompt`. | TB2 P, TB3 V, TB4 V | S |
+| N12 | Dead-code sweep, verified only (tests that use the code are edited too): resource Canvases/Plugins/Extensions sections, `RAIL`, the `sort` argument; `cancellable_loader.rs`; `Loader.text`; `truncate_primary` and its parameters; the local `impl Clone` in `settings_list` → `derive`; `lex_inline`; the JSON dumpers → `tests/it/common`; RN3 APIs + `cursor_row` + `on_debug` + `wants_key_release`; `list_languages`, `highlight_auto_tree`, `once_cell`, private `engine`/`value`; Sixel (decision 24) with WT → no images; `delete_all_kitty_images`; `is_key_repeat`, `event_type`; `get_effective_config`; `get_color_mode`, `ThemeJson::color`/`to_value`, `regex_escape`, `has_active_codes`; `LEGACY_TOOL_OUTPUT_VIEWS`, `_cwd`, `let _ = js_trim`; `js_line_count`; the no-op `CustomMessageComponent::set_expanded`; `get_padding_x`, `get_autocomplete_max_visible`, `is_focused`, `with_bg_fn`; `notification_panel::dismiss`; `chrome_layout::layout`; `ExpandableText::is_expanded`; `footer::active_subagent_count` with one `list()` pass. | AP1 AP2 AP4 AP5 AP6 AP11 MC3 MC4 MC5 MC6 MC11 RN3 HI2 HI3 HI5 KY6 KY9 UT7 TB5 MS8 ED2 | M |
+| N13 | One copy of each helper: `js_trim` (3 identical copies; the editor copy differs, decide U+0085), `group_digits` (2) → `agent-session/format.rs`, one `SEGMENT_SEP` (agent-session is the lower layer), `text_slice` (tool-api re-exports tui-util), one `js_round` (6 copies) in tui-util, the `resume_picker` doc comment. | UT2 P, UT4 V, IM9, UT11 V, AP7 P, PK8 P | S |
+
+**Next** (worth doing, larger or visible):
+
+| # | Work | Was | Size |
+|---|---|---|---|
+| X1 | Move the 9 UI-thread `block_on` session ops to the runtime, one op at a time starting with `/mode`. Add a clippy `disallowed-methods` rule after the last one moves. | IM5 V | L |
+| X2 | Bash streaming: `update_display` joins and truncates the whole buffer on every chunk (O(N²), unbounded memory). Use a bounded tail. Compute tool result text once and hold `ToolResult` in an `Rc`. | TB7 P, TB8 V | S |
+| X3 | `read.rs` highlights the whole file on every render. Highlight the visible prefix and memo it, reusing the write tool's `HighlightCache` pattern. Memo the Edit diff. | TB6 P, HI6 corrected | S |
+| X4 | Images: decode only the header for dimensions. Cache the encoded sequence on `Image`. | HI7 V | S |
+| X5 | Grammar: a small name/alias index so `supports_language` doesn't parse the 1.1 MB JSON, then per-language load. Measure the first-code-block stall first. | HI8 V | M–L |
+| X6 | `PickerCursor` in tui-components: window (7 copies), `step` with a wrap flag, the "(n/len)" footer (5 copies), and `set_query` for the 3 fuzzy pickers. Wrap everywhere: `/login`, `/logout` and `/resume` change from clamp (visible). | PK1 P, PK2 corrected, PK3 corrected, PK4 P | S |
+| X7 | One `home_dir` + `shorten_path` policy in a std-only leaf (7 copies, 6 behaviours). Behaviour changes when HOME is unset; see Open questions. | UT5 P | M |
+| X8 | One `ansi_runs()` iterator for the 10 ANSI scan loops. Keep two named tab widths (render 3, editor and input 4); both are deliberate. | UT3 P | M |
+| X9 | Renderer after N8: one frame copy on full redraw (RN5); `Option` sentinels plus an explicit force-redraw flag (RN6); `move_rows` shared with `Terminal::move_by` (RN4); then split `paint` (RN9). | RN4–RN6 V/P, RN9 P | M |
+| X10 | Loop state: an `ActivePicker` enum for the picker slots only (not the `pending_*` receivers); the 5 `try_recv` pollers → `AppEvent`; one subagent dispatch helper; `EditorChanged` only on a `!` transition. | IM3 P, IM4 P, IM6 P, IM7 V | M |
+| X11 | Task panel inside T1.3/T4: `Task::is_plan_item()` shared with `todo.rs`, the `Plan` rename, `kind` added with the Shell/Schedule rows, and one row model per store version. | TP3 V, TP4 P, TP2 P | S |
+| X12 | Messages: `summary_sheet` for branch and compaction (2 copies); `BlockKey` enum and no deep clone per delta; a shared `ABORTED_MESSAGE` const (it misses the OpenAI "aborted." variant today); `after_indent` returns an `Option`. | MS2 P, MS3 V, MS4 V, MS6 P, MS5 P | S |
+| X13 | Terminal: one paste-end helper searching only the new tail (with a split-marker overlap); one `terminated_by`; `parse_mouse_report -> (event, len)`; one ESC-deadline clock, with the test-only methods under `cfg(test)`; drop the unused `_now`. | TM5 V, TM6 V, TM7 V, TM9 P, TM11 P | S |
+| X14 | Keys: a pre-parsed `KeySpec` plus a `\x1b[` fast path; a pre-lowered fuzzy matcher, also used by the session search; a `OnceLock` for `keybindings()`; the dead `kitty_active` parameter and an args struct for `matches_left_right`. | KY3 V, KY4 V, KY10 V, KY9 P, KY5 P | S |
+| X15 | Theme and util: wire `chalk::set_enabled(color_enabled())`; pass the bg opener once per band; skip the tab copy when there are no tabs; `JsRegex::search` returns `Option` (still UTF-16). | UT6 V, UT8 P, UT10 P | S |
+| X16 | Small structure: `startup_progress` → a single slot, removing the dead Download/Work branches; one scroll-key table; camelCase TS names → Rust names (file provenance stays); j/k as named bindings in `extension_selector`; frame sizing helpers shared with editor and box; the shared undo-coalescing predicate; `apply_completion` helper (3 tails); one autocomplete item builder, with `CmdView` → `AutocompleteItem`; a keyed `file_search` slot; drop the unused bold/underline/strike flags. | AP8 V, AP9 V, AP13 P, PK7 V, ED3 P, ED4 P, MC7 P, MC8 V, MC9 V, MC2 V | M |
+
+**Later** (keep; do only after `/perf` shows the cost, or when the file is touched anyway):
+
+| # | Work | Was |
+|---|---|---|
+| L1 | Render caches: a markdown version counter (no full-text compare); an editor layout cache or a whole-editor render cache; `Component::render_into`; a per-child line cache behind the debug "diff equals full render" assertion | MC1, ED1, RN8, RN10 |
+| L2 | I/O: batch output writes (never across a frame); stdin on `&str`; fold the Kitty timer thread into the runtime work | TM8, TM10, TM12 |
+| L3 | Theme lookup without a Mutex and an Arc clone per call; enum-indexed colour table | UT9 |
+| L4 | Types: unsigned sizes, signed deltas; direct slicing for `find` offsets | RN11, RN7 |
+| L5 | Readability: `format_parsed_key` match; capability table; one ctx builder in `tool_execution`; one-pass `chain_phrase`; tree glyph constants; `Editor::new` `mem::replace`; `derive(Default)` in perf; inline the `ThemeFactory` alias | KY7, HI4, TB9, TB10, PK6, ED6, AP10, MS7 |
+| L6 | Tests: merge the duplicate fuzzy suites and the `_ts` case-for-case suites into named tests | KY11 |
+| L7 | Behaviour changes held until asked: `@file` ranking via tui-fuzzy (changes which files appear); editor cursor in bytes (only with a real emoji/paste bug); a generic `PickerView` wrapper; tips catalog trimming; `get_conflicts` surfaced in `/hotkeys` | MC10, ED5, PK5, AP3, KY8 |
+
+**Checked, not an issue** (kept for the record): HI1 (an empty `subLanguage` already
+auto-detects); IM8 (already one keybinding pass); MS7's "unused" claim (`ThemeFactory` is
+used); PK2 as first stated (`/login`, `/logout` and `/resume` already agree; the real split is
+across pickers → X6); PK3 as first stated (those lists use `SelectedRowList` → X6); HI6 as
+first stated (only one `highlight_code` → X3).
 
 ### Phase T1: prerequisites (refactors, no visible change; goldens must stay identical)
 
-Done inside batch S3 (IDs: T1.1 = IM1, T1.2 = IM2, T1.3 = TP2 + TP4, T1.4 = AP11).
+Done in Phase S: T1.1/T1.2 = N10, T1.3 = X11, T1.4 = N12 (footer).
 
 | Step | Work | Size |
 |---|---|---|
@@ -77,7 +136,7 @@ Done inside batch S3 (IDs: T1.1 = IM1, T1.2 = IM2, T1.3 = TP2 + TP4, T1.4 = AP11
 
 ### Phase T2: subagent storage and recovery
 
-Needs: S3.
+Needs: Phase S tier Now.
 
 
 | Step | Work | Size |
@@ -112,7 +171,7 @@ Needs: T1.3. Attach from the panel needs T3.
 
 ### Phase T5: background shell
 
-Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2) can start after S3.
+Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2) can start after tier Now.
 
 
 | Step | Work | Size |
@@ -131,8 +190,7 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
 - Each one runs L1 for its crates and `goldens.py check`. On a visual change, it produces a
   review bundle and a second Haiku subagent reviews it (T0.5). The orchestrator (main
   session) reads the review and merges.
-- Parallel only where files don't overlap: T0.1/T0.3 together, rows inside an S batch by
-  crate, T4.2/T4.3 together, T5.1/T5.2 with T3. T1.1 → T1.2 → T3.3 are serial.
+- Parallel only where files don't overlap: T0.1/T0.3 together, Phase S rows by crate, T4.2/T4.3 together, T5.1/T5.2 with T3. T1.1 → T1.2 → T3.3 are serial.
 - Before starting any step, the orchestrator asks the user which plan (core or TUI) and step.
 
 ## Not doing
@@ -147,8 +205,14 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
 
 ## Open questions
 
-None. The four left open on 2026-10-09 were answered the same day and are now under
-Decisions (`/agents`, quit with running jobs, replay fixtures, ledger).
+1. **`--team` flag (N9):** it is parsed but reported as unsupported. Removing it with the
+   teams code changes the error from "unsupported" to "unknown flag". Recommended: remove it.
+2. **`home_dir` policy (X7):** use one rule everywhere: HOME if set and non-empty, else the
+   passwd entry, never a "/" fallback. Paths shown when HOME is unset change. Recommended: yes.
+3. **Picker wrap (X6):** all pickers wrap at the ends, so `/login`, `/logout` and `/resume`
+   change from clamping. Recommended: yes.
+4. **Editor `js_trim` (N13):** the editor's copy also trims U+0085. Recommended: use the shared
+   JS-whitespace rule (drops U+0085), matching the rest of the TUI.
 
 ## Details
 
@@ -161,7 +225,3 @@ Decisions (`/agents`, quit with running jobs, replay fixtures, ledger).
 | Subagents | Success deletes the transcript (`pool.rs` settle). Nothing links the child to its parent. Progress is collapsed to one string in `instance.rs`. stdin is null. |
 | Tool blocks (4,384) | The Agent block can't learn its task id until it finishes. It hides `description`. AgentOutput and Edit ignore the peek dial. |
 | Parity harness | Scenario JSON, `mockllm.py`, the tmux driver, `grid_to_html` and `render_png.mjs` are reusable as is. vt100 is already a dev-dep. |
-
-### Backlog
-
-Replaced by the full per-component inventory in [tui-simplify.md](tui-simplify.md).

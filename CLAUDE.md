@@ -30,7 +30,7 @@ Never modify hoocode-ts; it is the reference.
   ask which plan and which step first.
 - **TUI work is done by Haiku subagents** (user, 2026-10-09): review, implement, test and visual
   review. The main session orchestrates, briefs and merges. In the TUI plan, simplification
-  (`docs/design/tui-simplify.md`) comes before the feature phases.
+  (Phase S of `docs/design/tui-activity.md`) comes before the feature phases.
 - **Maps:** `docs/maps/packages.md` (crates) and `docs/maps/ui.md` (screen, pickers, slash
   commands). Read them to find code; update them in the same commit as any crate, screen
   or command change.
