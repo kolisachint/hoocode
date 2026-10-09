@@ -14,7 +14,6 @@
 
 
 
-
 «fg=#989898»no project resources loaded
 
 «fg=#6e93ff»┌──────────────────────────────────────────────────────────────────────────────────────«bold;fg=#5cc8bb» settings «fg=#6e93ff»──┐
@@ -22,6 +21,7 @@
 «fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
 «fg=#6e93ff»│«» «bg=#2a2a36;fg=#5cc8bb»› Tools      «bg=#2a2a36»  «bg=#2a2a36;fg=#5cc8bb»4 on«bg=#2a2a36;fg=#989898»  219 tok/turn«bg=#2a2a36»                                                               «» «fg=#6e93ff»│
 «fg=#6e93ff»│«»   Tool output  «fg=#a8a8a8»peek«»                                                                              «fg=#6e93ff»│
+«fg=#6e93ff»│«»   Models       «fg=#a8a8a8»all models«»                                                                        «fg=#6e93ff»│
 «fg=#6e93ff»│«»   Context      «fg=#a8a8a8»3 settings«»                                                                        «fg=#6e93ff»│
 «fg=#6e93ff»│«»   Behavior     «fg=#a8a8a8»6 settings«»                                                                        «fg=#6e93ff»│
 «fg=#6e93ff»│«»   Interface    «fg=#a8a8a8»8 settings«»                                                                        «fg=#6e93ff»│

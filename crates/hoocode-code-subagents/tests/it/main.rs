@@ -7,6 +7,7 @@ mod inbox;
 mod ledger;
 mod lifeguard;
 mod model_categories;
+mod model_selection;
 mod output_verifier;
 mod pool;
 mod result;

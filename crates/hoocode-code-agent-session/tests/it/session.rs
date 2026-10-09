@@ -10,13 +10,15 @@ use crate::common::{text_result, tool, Harness, HarnessOptions};
 use hoocode_agent_types::AgentMessage;
 use hoocode_ai_provider_faux::FauxModelDefinition;
 use hoocode_ai_types::{
-    AssistantMessage, Content, Cost, StopReason, ThinkingLevel, Usage, UserMessage,
+    AssistantMessage, Content, Cost, Model, StopReason, ThinkingLevel, Usage, UserMessage,
 };
 use hoocode_code_agent_session::{
     stats::sum_assistant_usage, AgentSessionEvent, CycleDirection, PromptOptions, ScopedModel,
     ToolSource, TranscriptSelection,
 };
+use hoocode_code_models::ResolvedScoped;
 use hoocode_code_session::FileEntry;
+use hoocode_code_settings::ModelCategoryName;
 
 fn two_models(second_reasoning: bool) -> Vec<FauxModelDefinition> {
     vec![
@@ -558,4 +560,139 @@ async fn tools_see_the_session_branch_and_model_through_their_context() {
     assert_eq!(model, h.faux.get_model().id);
     // Every message ended up in the session, in order.
     assert_eq!(h.entry_types(), ["message"; 4]);
+}
+
+fn resolved(model: Model, effort: Option<ThinkingLevel>) -> ResolvedScoped {
+    ResolvedScoped {
+        model,
+        alias: None,
+        category: None,
+        effort,
+    }
+}
+
+#[test]
+fn cycling_applies_the_saved_effort_of_each_scoped_model() {
+    let h = Harness::new(HarnessOptions {
+        models: two_models(true),
+        ..Default::default()
+    });
+    let one = h.faux.get_model_by_id("faux-1").unwrap();
+    let two = h.faux.get_model_by_id("faux-2").unwrap();
+    h.session.set_resolved_scoped_models(vec![
+        resolved(one.clone(), Some(ThinkingLevel::High)),
+        resolved(two.clone(), Some(ThinkingLevel::Low)),
+    ]);
+    h.session.set_model(one).unwrap();
+    h.session.set_thinking_level(ThinkingLevel::Off);
+
+    h.session.cycle_model(CycleDirection::Forward).unwrap();
+    assert_eq!(h.session.model().unwrap().id, "faux-2");
+    assert_eq!(h.session.thinking_level(), ThinkingLevel::Low);
+
+    h.session.cycle_model(CycleDirection::Forward).unwrap();
+    assert_eq!(h.session.model().unwrap().id, "faux-1");
+    assert_eq!(h.session.thinking_level(), ThinkingLevel::High);
+}
+
+#[test]
+fn cycling_keeps_the_current_level_when_the_scoped_model_has_no_effort() {
+    let h = Harness::new(HarnessOptions {
+        models: two_models(true),
+        ..Default::default()
+    });
+    let one = h.faux.get_model_by_id("faux-1").unwrap();
+    let two = h.faux.get_model_by_id("faux-2").unwrap();
+    h.session
+        .set_resolved_scoped_models(vec![resolved(one.clone(), None), resolved(two, None)]);
+    h.session.set_model(one).unwrap();
+    h.session.set_thinking_level(ThinkingLevel::Medium);
+
+    h.session.cycle_model(CycleDirection::Forward).unwrap();
+    assert_eq!(h.session.model().unwrap().id, "faux-2");
+    assert_eq!(h.session.thinking_level(), ThinkingLevel::Medium);
+}
+
+#[test]
+fn cycling_clamps_a_saved_effort_to_the_model() {
+    let h = Harness::new(HarnessOptions {
+        models: two_models(false),
+        ..Default::default()
+    });
+    let one = h.faux.get_model_by_id("faux-1").unwrap();
+    let two = h.faux.get_model_by_id("faux-2").unwrap();
+    // faux-2 does not reason, so a saved High clamps to Off.
+    h.session.set_resolved_scoped_models(vec![
+        resolved(one.clone(), None),
+        resolved(two, Some(ThinkingLevel::High)),
+    ]);
+    h.session.set_model(one).unwrap();
+    h.session.set_thinking_level(ThinkingLevel::Medium);
+
+    h.session.cycle_model(CycleDirection::Forward).unwrap();
+    assert_eq!(h.session.model().unwrap().id, "faux-2");
+    assert_eq!(h.session.thinking_level(), ThinkingLevel::Off);
+}
+
+#[test]
+fn system_prompt_lists_scoped_models_only_when_the_agent_tool_is_active() {
+    let h = Harness::new(HarnessOptions {
+        models: two_models(true),
+        tools: vec![tool("Agent", |_| text_result("ok"))],
+        initial_active_tool_names: Some(vec!["Agent".into()]),
+        ..Default::default()
+    });
+    let one = h.faux.get_model_by_id("faux-1").unwrap();
+    let two = h.faux.get_model_by_id("faux-2").unwrap();
+    let one_ref = format!("{}/{}", one.provider, one.id);
+    let two_ref = format!("{}/{}", two.provider, two.id);
+    h.session.set_resolved_scoped_models(vec![
+        ResolvedScoped {
+            model: one,
+            alias: Some("big".into()),
+            category: Some(ModelCategoryName::Capable),
+            effort: Some(ThinkingLevel::High),
+        },
+        ResolvedScoped {
+            model: two,
+            alias: None,
+            category: Some(ModelCategoryName::Cheap),
+            effort: None,
+        },
+    ]);
+    let prompt = h.session.system_prompt();
+    assert!(prompt.contains("## Scoped models"), "{prompt}");
+    // The intro tells the main model what the names are for (the shipped string).
+    assert!(
+        prompt.contains(
+            "The user scoped these models. For subagent work, pass one of these names, or a category, as the Agent tool's `model` parameter."
+        ),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains(&format!(
+            "- big ({one_ref}), effort: high, category: capable"
+        )),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains(&format!("- {two_ref}, category: cheap")),
+        "{prompt}"
+    );
+
+    // An empty scope removes the section again.
+    h.session.set_resolved_scoped_models(Vec::new());
+    assert!(!h.session.system_prompt().contains("## Scoped models"));
+}
+
+#[test]
+fn system_prompt_omits_scoped_models_without_the_agent_tool() {
+    let h = Harness::new(HarnessOptions {
+        models: two_models(true),
+        ..Default::default()
+    });
+    let one = h.faux.get_model_by_id("faux-1").unwrap();
+    h.session
+        .set_resolved_scoped_models(vec![resolved(one, None)]);
+    assert!(!h.session.system_prompt().contains("## Scoped models"));
 }

@@ -1449,6 +1449,7 @@ dependencies = [
  "glob",
  "hoocode-ai-models",
  "hoocode-ai-types",
+ "hoocode-code-settings",
  "serde",
  "serde_json",
  "tempfile",

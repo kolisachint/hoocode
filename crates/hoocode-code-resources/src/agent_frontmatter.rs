@@ -56,7 +56,7 @@ pub const CLAUDE_TOOL_ALIASES: &[(&str, &str)] = &[
 ];
 
 const KNOWN_MODEL_ALIASES: &[&str] = &[
-    "sonnet", "opus", "haiku", "inherit", "fast", "standard", "capable",
+    "sonnet", "opus", "haiku", "inherit", "cheap", "fast", "standard", "capable",
 ];
 
 /// `AgentDefinition`.
@@ -67,6 +67,8 @@ pub struct AgentDefinition {
     /// `None` = inherit all parent tools.
     pub tools: Option<Vec<String>>,
     pub disallowed_tools: Option<Vec<String>>,
+    /// The default model, not a pin: a model the caller asks for (the Agent
+    /// tool's `model`) beats it. `inherit` means the caller's model.
     pub model: Option<String>,
     pub prompt: String,
     pub source: AgentSource,
@@ -137,7 +139,7 @@ fn validate_model(value: &str) -> Vec<String> {
         return Vec::new();
     }
     vec![format!(
-        "model \"{trimmed}\" is not a recognized alias (sonnet | opus | haiku | inherit | fast | standard | capable) or full model ID; the agent may not load correctly"
+        "model \"{trimmed}\" is not a recognized alias (sonnet | opus | haiku | inherit | cheap | fast | standard | capable) or full model ID; the agent may not load correctly"
     )]
 }
 

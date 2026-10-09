@@ -4,7 +4,7 @@
 //! Each test here pins one decision from the reliability review that the eval
 //! suite alone could not: an unbounded queue, an unbounded result map, a record
 //! that claims to be running after the pool forgot it, a queued task starved
-//! by priority, and a `complexity` typo that used to cost a whole dispatch.
+//! by priority, and a `model` typo that used to cost a whole dispatch.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Once};
@@ -306,36 +306,21 @@ fn a_young_record_is_left_alone_even_when_the_pool_is_silent() {
 }
 
 #[test]
-fn a_partial_model_categories_block_keeps_the_global_tiers() {
-    // `instance.rs` used `global.extend(project)`, which replaced the whole
-    // `modelCategories` object: a project that set only `capable` silently lost
-    // the global `fast` and `standard`, and every tier fell back to a derived
-    // default. The pool now deep-merges like the rest of the codebase.
-    let global = json!({
-        "modelCategories": {"fast": "mock/fast", "standard": "mock/std", "capable": "mock/capable"}
-    });
-    let project = json!({"modelCategories": {"capable": "project/capable"}});
-
+fn the_default_provider_and_model_survive_the_settings_merge() {
+    // The pool reads its category settings from the deep merge of the global
+    // and project files. A project that sets one default must not drop the
+    // global one.
+    let global = json!({"defaultProvider": "mock", "defaultModel": "capable"});
+    let project = json!({"defaultModel": "project-capable"});
     let merged = hoocode_code_settings::deep_merge_settings(
-        &serde_json::from_value::<serde_json::Map<String, Value>>(global.clone()).unwrap(),
+        &serde_json::from_value::<serde_json::Map<String, Value>>(global).unwrap(),
         &serde_json::from_value::<serde_json::Map<String, Value>>(project).unwrap(),
     );
-    let categories = CategorySettings::from_settings(&merged)
-        .model_categories
-        .expect("modelCategories should survive the merge");
-    assert_eq!(categories.fast.as_deref(), Some("mock/fast"));
-    assert_eq!(categories.standard.as_deref(), Some("mock/std"));
-    assert_eq!(
-        categories.capable.as_deref(),
-        Some("project/capable"),
-        "the project's own tier still wins"
-    );
+    let settings = CategorySettings::from_settings(&merged);
+    assert_eq!(settings.default_provider.as_deref(), Some("mock"));
+    assert_eq!(settings.default_model.as_deref(), Some("project-capable"));
 }
 
-/// `lifeguard::sweep_old_agents` decides a dispatch dir belongs to a dead run
-/// by reading `dispatch/<task>/pid`. It always read that file; nothing ever
-/// wrote it, so reaping was age-only and a genuinely orphaned child was never
-/// detected by liveness.
 #[tokio::test]
 async fn the_pool_writes_a_pid_file_that_names_a_live_process() {
     let dir = setup();

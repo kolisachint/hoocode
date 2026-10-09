@@ -13,6 +13,7 @@ use hoocode_agent_types::{AgentMessage, AgentState, AgentTools, PermissionGate};
 use hoocode_ai_types::{Content, Message, Model, ThinkingDisplay, ThinkingLevel};
 use hoocode_code_models::{
     find_initial_model, AuthLookup, InitialModelOptions, ModelRegistry, RegistryWithAuth,
+    ResolvedScoped,
 };
 use hoocode_code_session::{FileEntry, SessionManager};
 use hoocode_code_settings::SettingsManager;
@@ -23,8 +24,8 @@ use hoocode_code_tools_fs::ReadToolOptions;
 use crate::auth_guidance::format_no_models_available_message;
 use crate::hooks::{ExtensionHooks, ResourceLoader, SessionStartEvent};
 use crate::session::{
-    AgentSession, AgentSessionConfig, BaseTools, BaseToolsContext, ScopedModel,
-    DEFAULT_ACTIVE_TOOL_NAMES, DEFAULT_THINKING_LEVEL,
+    AgentSession, AgentSessionConfig, BaseTools, BaseToolsContext, DEFAULT_ACTIVE_TOOL_NAMES,
+    DEFAULT_THINKING_LEVEL,
 };
 
 /// `AgentSessionRuntimeDiagnostic`.
@@ -89,7 +90,9 @@ pub struct CreateAgentSessionOptions {
     /// `defaultModel` settings when auth is configured.
     pub model: Option<Model>,
     pub thinking_level: Option<ThinkingLevel>,
-    pub scoped_models: Vec<ScopedModel>,
+    /// The scope to cycle through and list to subagents (`scopedModels`, or
+    /// `--models` for the run).
+    pub scoped_models: Vec<ResolvedScoped>,
     /// Tool allowlist (`--tools`).
     pub tools: Option<Vec<String>>,
     pub no_tools: Option<NoTools>,

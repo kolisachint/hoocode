@@ -125,6 +125,9 @@ pub struct SettingsConfig {
     pub measure_token_surface: Option<Rc<dyn Fn() -> PromptSurface>>,
     /// Whether the terminal renders inline images (`getCapabilities().images`).
     pub supports_images: bool,
+    /// The "Models" row's value: `all models`, or `N models` for a saved
+    /// `scopedModels` list. Enter opens the `/scoped-models` picker.
+    pub scoped_models_summary: String,
 }
 
 impl Default for SettingsConfig {
@@ -180,6 +183,7 @@ impl Default for SettingsConfig {
             },
             measure_token_surface: None,
             supports_images: false,
+            scoped_models_summary: "all models".into(),
         }
     }
 }
@@ -238,6 +242,9 @@ pub enum SettingsChange {
     VoiceSilenceMs(u64),
     WebtoolsTimeoutSecs(u64),
     LearnSetting(LearnSettingKey, u64),
+    /// The "Models" row was opened: the host closes the pane and shows the
+    /// `/scoped-models` picker.
+    OpenScopedModels,
     /// The pane was closed (`onCancel`).
     Cancel,
 }
@@ -1529,6 +1536,13 @@ impl SettingsSelectorComponent {
                 }),
             ));
         }
+        top.push(Leaf::cycle(
+            "models",
+            "Models",
+            "The scoped model list: each model's effort and category, for alt+m and subagents. Enter opens /scoped-models.",
+            config.scoped_models_summary.clone(),
+            vec![config.scoped_models_summary.clone()],
+        ));
         if !config.flags.is_empty() {
             let n = config.flags.len();
             let config = config.clone();
@@ -1588,6 +1602,9 @@ impl SettingsSelectorComponent {
                     "terminal-progress" => Some(SettingsChange::ShowTerminalProgress(on)),
                     "voice-silence-ms" => Some(SettingsChange::VoiceSilenceMs(n)),
                     "webtools-timeout-secs" => Some(SettingsChange::WebtoolsTimeoutSecs(n)),
+                    // An action row: its single value is the summary, so Enter
+                    // "cycles" to it and the host opens the picker.
+                    "models" => Some(SettingsChange::OpenScopedModels),
                     // The /learn rows are keyed by their settings.json name.
                     _ => LearnSettingKey::parse(id).map(|key| SettingsChange::LearnSetting(key, n)),
                 };

@@ -118,6 +118,78 @@ fn load_from_storage(
     }
 }
 
+/// Splits a `:level` suffix off an `enabledModels` pattern (decision 4). The
+/// suffix counts only when it names a thinking level, so ids that contain a
+/// colon stay whole.
+fn split_level_suffix(pattern: &str) -> (String, Option<String>) {
+    if let Some((model, level)) = pattern.rsplit_once(':') {
+        if !model.is_empty() && ThinkingLevelSetting::parse(level).is_some() {
+            return (model.to_owned(), Some(level.to_owned()));
+        }
+    }
+    (pattern.to_owned(), None)
+}
+
+/// Builds `scopedModels` from the retired `enabledModels` and `modelCategories`.
+/// `None` when neither key is present. A categorized model that is already in
+/// `enabledModels` takes the category on its untagged entry. Otherwise it is
+/// appended. When one model has two categories, the second entry copies the
+/// effort of the first.
+fn scoped_models_from_legacy(settings: &Settings) -> Option<Vec<ScopedModel>> {
+    let enabled = string_list(settings.get("enabledModels"));
+    let categories = defined(settings.get("modelCategories")).and_then(Value::as_object);
+    if enabled.is_none() && categories.is_none() {
+        return None;
+    }
+
+    let mut entries: Vec<ScopedModel> = enabled
+        .unwrap_or_default()
+        .iter()
+        .map(|pattern| {
+            let (model, effort) = split_level_suffix(pattern);
+            ScopedModel {
+                model,
+                effort,
+                category: None,
+                alias: None,
+            }
+        })
+        .collect();
+
+    let tier = |name: &str| {
+        categories
+            .and_then(|c| defined(c.get(name)))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    let tiers = [
+        (ModelCategoryName::Fast, tier("fast")),
+        (ModelCategoryName::Standard, tier("standard")),
+        (ModelCategoryName::Capable, tier("capable")),
+    ];
+    for (category, model) in tiers {
+        let Some(model) = model else { continue };
+        if let Some(entry) = entries
+            .iter_mut()
+            .find(|e| e.model == model && e.category.is_none())
+        {
+            entry.category = Some(category);
+            continue;
+        }
+        let effort = entries
+            .iter()
+            .find(|e| e.model == model)
+            .and_then(|e| e.effort.clone());
+        entries.push(ScopedModel {
+            model,
+            effort,
+            category: Some(category),
+            alias: None,
+        });
+    }
+    Some(entries)
+}
+
 /// Fields changed this session, in first-change order (`modifiedFields` /
 /// `modifiedNestedFields`).
 #[derive(Debug, Clone, Default)]
@@ -299,7 +371,7 @@ impl SettingsManager {
         let (global, global_load_failed) = load(SettingsScope::Global);
         let (project, project_load_failed) = load(SettingsScope::Project);
         let settings = deep_merge_settings(&global, &project);
-        Self {
+        let mut this = Self {
             storage,
             global,
             project,
@@ -309,7 +381,10 @@ impl SettingsManager {
             global_load_failed,
             project_load_failed,
             errors,
-        }
+        };
+        this.migrate_scoped_models();
+        this.check_scoped_model_entries();
+        this
     }
 
     /// `inMemory`: no file I/O; `settings` become the global scope.
@@ -365,6 +440,8 @@ impl SettingsManager {
             }
         }
         self.settings = deep_merge_settings(&self.global, &self.project);
+        self.migrate_scoped_models();
+        self.check_scoped_model_entries();
     }
 
     /// `applyOverrides`: layer `overrides` on the merged view (until the
@@ -645,20 +722,6 @@ impl SettingsManager {
             min_request_repeats: positive(LearnSettingKey::MinRequestRepeats),
             max_proposals: positive(LearnSettingKey::MaxProposals),
         }
-    }
-
-    pub fn model_categories(&self) -> Option<ModelCategories> {
-        let categories = self.get("modelCategories")?.as_object()?;
-        let tier = |name: &str| {
-            defined(categories.get(name))
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        };
-        Some(ModelCategories {
-            fast: tier("fast"),
-            standard: tier("standard"),
-            capable: tier("capable"),
-        })
     }
 
     /// `setLearnSetting`: floored to at least 1.
@@ -1278,12 +1341,127 @@ impl SettingsManager {
         self.set_nested("images", "blockImages", blocked.into());
     }
 
-    pub fn enabled_models(&self) -> Option<Vec<String>> {
-        string_list(self.get("enabledModels"))
+    /// `scopedModels`: the merged view, so a project list replaces the global
+    /// one (decision 15). Entries that do not parse are skipped. `None` when
+    /// the key is absent; `Some(vec![])` for an empty list.
+    pub fn scoped_models(&self) -> Option<Vec<ScopedModel>> {
+        let entries = self.get("scopedModels")?.as_array()?;
+        Some(
+            entries
+                .iter()
+                .filter_map(|entry| serde_json::from_value(entry.clone()).ok())
+                .collect(),
+        )
     }
 
-    pub fn set_enabled_models(&mut self, patterns: Option<&[String]>) {
-        self.set("enabledModels", patterns.map(strings));
+    /// Writes `scopedModels`. When the project settings already define the key,
+    /// the list goes to the project file (it replaces the global list there,
+    /// decision 15). Otherwise it goes to the global file. An empty slice is a
+    /// present, empty list, so the retired keys are never migrated again.
+    /// Callers validate first with [`SettingsManager::validate_scoped_models`].
+    pub fn set_scoped_models(&mut self, models: &[ScopedModel]) {
+        let value = serde_json::to_value(models).expect("scoped models serialize");
+        if defined(self.project.get("scopedModels")).is_some() {
+            self.set_project("scopedModels", value);
+        } else {
+            self.set("scopedModels", Some(value));
+        }
+    }
+
+    /// Records one settings error per `scopedModels` entry that does not parse.
+    /// Such entries are skipped by [`SettingsManager::scoped_models`].
+    fn check_scoped_model_entries(&mut self) {
+        let scopes = [
+            (
+                SettingsScope::Global,
+                self.global_load_failed,
+                self.global.clone(),
+            ),
+            (
+                SettingsScope::Project,
+                self.project_load_failed,
+                self.project.clone(),
+            ),
+        ];
+        for (scope, failed, settings) in scopes {
+            if failed {
+                continue;
+            }
+            let Some(entries) = defined(settings.get("scopedModels")).and_then(Value::as_array)
+            else {
+                continue;
+            };
+            for (index, entry) in entries.iter().enumerate() {
+                if let Err(error) = serde_json::from_value::<ScopedModel>(entry.clone()) {
+                    self.record_error(
+                        scope,
+                        Error::InvalidScopedModel(format!(
+                            "scopedModels[{index}] was skipped: {error}"
+                        )),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Checks a `scopedModels` list: each `model` is non-empty, aliases are
+    /// unique across the list and use only `[a-z0-9-]` (decision 19).
+    pub fn validate_scoped_models(models: &[ScopedModel]) -> Result<(), String> {
+        const TIER_NAMES: [&str; 4] = ["cheap", "fast", "standard", "capable"];
+        let mut seen: Vec<&str> = Vec::new();
+        for entry in models {
+            if entry.model.trim().is_empty() {
+                return Err("scoped model entry has an empty model".into());
+            }
+            let Some(alias) = entry.alias.as_deref() else {
+                continue;
+            };
+            let valid = !alias.is_empty()
+                && alias
+                    .chars()
+                    .all(|c| matches!(c, 'a'..='z' | '0'..='9' | '-'));
+            if !valid {
+                return Err(format!(
+                    "alias \"{alias}\" must use only lowercase letters, digits and '-'"
+                ));
+            }
+            if TIER_NAMES.contains(&alias) {
+                return Err(format!(
+                    "alias \"{alias}\" is a category name; pick another alias"
+                ));
+            }
+            if entry.model.contains(['*', '?', '[']) {
+                return Err(format!(
+                    "alias \"{alias}\" cannot name the glob \"{}\"; a glob matches several models",
+                    entry.model
+                ));
+            }
+            if seen.contains(&alias) {
+                return Err(format!("alias \"{alias}\" is used more than once"));
+            }
+            seen.push(alias);
+        }
+        Ok(())
+    }
+
+    /// Migration to `scopedModels` (decisions 4, 18, 20). Runs on every load of
+    /// the global scope. If the key is missing and `enabledModels` or
+    /// `modelCategories` exists, it is built once and written to disk. The old
+    /// keys stay on disk and are not read afterwards.
+    fn migrate_scoped_models(&mut self) {
+        if self.global_load_failed || self.get_global("scopedModels").is_some() {
+            return;
+        }
+        let Some(entries) = scoped_models_from_legacy(&self.global) else {
+            return;
+        };
+        let value = serde_json::to_value(entries).expect("scoped models serialize");
+        self.set("scopedModels", Some(value));
+    }
+
+    /// A global key with null treated as absent.
+    fn get_global(&self, key: &str) -> Option<&Value> {
+        defined(self.global.get(key))
     }
 
     pub fn double_escape_action(&self) -> DoubleEscapeAction {

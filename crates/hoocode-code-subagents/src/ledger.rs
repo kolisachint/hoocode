@@ -48,7 +48,7 @@ pub struct DispatchAttempt {
     pub mode: String,
     /// Nesting depth of the child (1 = dispatched by the root session).
     pub depth: u8,
-    /// What the caller asked for: a concrete model, a `complexity` category, or
+    /// What the caller asked for: a concrete model, a category or scoped model name, or
     /// nothing (inherit).
     pub requested_model: Option<String>,
     /// What `build_args` resolved it to, when that is known.

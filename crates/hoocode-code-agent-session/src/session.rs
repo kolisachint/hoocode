@@ -20,7 +20,7 @@ use hoocode_ai_types::{
     AbortSignal, AssistantMessage, Content, ImageContent, Model, TextContent, ThinkingLevel,
     UserContent, UserMessage,
 };
-use hoocode_code_models::{AuthLookup, ModelRegistry};
+use hoocode_code_models::{clamp_effort, AuthLookup, ModelRegistry, ResolvedScoped};
 use hoocode_code_prompts::BuildSystemPromptOptions;
 use hoocode_code_session::{SessionManager, SESSION_FLUSH_DEADLINE};
 use hoocode_code_settings::{QueueMode, SettingsManager, ThinkingLevelSetting};
@@ -70,6 +70,36 @@ pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 10] = [
     "CronDelete",
     "DocSearch",
 ];
+
+/// The "Scoped models" section of the system prompt: one line per scoped model
+/// with its alias or `provider/id`, effort and category. `None` when the scope
+/// is empty.
+fn scoped_models_section(scoped: &[ResolvedScoped]) -> Option<String> {
+    if scoped.is_empty() {
+        return None;
+    }
+    let mut section = String::from(
+        "## Scoped models\n\
+         The user scoped these models. For subagent work, pass one of these names, or a \
+         category, as the Agent tool's `model` parameter.\n",
+    );
+    for entry in scoped {
+        let reference = format!("{}/{}", entry.model.provider, entry.model.id);
+        let name = match &entry.alias {
+            Some(alias) => format!("{alias} ({reference})"),
+            None => reference,
+        };
+        section.push_str(&format!("- {name}"));
+        if let Some(effort) = &entry.effort {
+            section.push_str(&format!(", effort: {}", effort.as_str()));
+        }
+        if let Some(category) = entry.category {
+            section.push_str(&format!(", category: {category}"));
+        }
+        section.push('\n');
+    }
+    Some(section.trim_end().to_string())
+}
 
 /// A failed session operation (the TS methods throw `Error(message)`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -366,8 +396,9 @@ pub struct AgentSessionConfig {
     pub session_manager: SessionManager,
     pub settings: Arc<Mutex<SettingsManager>>,
     pub cwd: PathBuf,
-    /// Models to cycle through (`--models`).
-    pub scoped_models: Vec<ScopedModel>,
+    /// Models to cycle through and offer to subagents (`scopedModels`, or
+    /// `--models` for the run).
+    pub scoped_models: Vec<ResolvedScoped>,
     pub resource_loader: Arc<dyn ResourceLoader>,
     /// SDK tools registered outside extensions.
     pub custom_tools: Vec<ToolDefinition>,
@@ -394,7 +425,7 @@ struct DefinitionEntry {
 /// Mutable session state (the TS private fields).
 #[derive(Default)]
 struct State {
-    scoped_models: Vec<ScopedModel>,
+    scoped_models: Vec<ResolvedScoped>,
     steering_messages: Vec<String>,
     follow_up_messages: Vec<String>,
     pending_next_turn_messages: Vec<CustomMessage>,
@@ -1035,12 +1066,39 @@ impl AgentSession {
         self.session_manager().session_color_slot()
     }
 
+    /// The scoped models as `(model, effort)` pairs, for pickers.
     pub fn scoped_models(&self) -> Vec<ScopedModel> {
-        lock(&self.inner.state).scoped_models.clone()
+        lock(&self.inner.state)
+            .scoped_models
+            .iter()
+            .map(|s| ScopedModel {
+                model: s.model.clone(),
+                thinking_level: s.effort.clone(),
+            })
+            .collect()
     }
 
+    /// Replaces the scope with plain models, each with an optional effort and
+    /// no category or alias.
     pub fn set_scoped_models(&self, scoped_models: Vec<ScopedModel>) {
+        let resolved = scoped_models
+            .into_iter()
+            .map(|s| ResolvedScoped {
+                model: s.model,
+                alias: None,
+                category: None,
+                effort: s.thinking_level,
+            })
+            .collect();
+        self.set_resolved_scoped_models(resolved);
+    }
+
+    /// Replaces the scope with resolved `scopedModels` entries (aliases and
+    /// categories kept). The system prompt is rebuilt to list them.
+    pub fn set_resolved_scoped_models(&self, scoped_models: Vec<ResolvedScoped>) {
         lock(&self.inner.state).scoped_models = scoped_models;
+        let active = self.get_active_tool_names();
+        self.set_active_tools_by_name(&active);
     }
 
     // ------------------------------------------------------------------
@@ -1315,7 +1373,7 @@ impl AgentSession {
 
     /// `_rebuildSystemPrompt`.
     fn rebuild_system_prompt(&self, tool_names: &[String]) -> String {
-        let (valid, snippets, guidelines) = {
+        let (valid, snippets, guidelines, scoped) = {
             let state = lock(&self.inner.state);
             let valid: Vec<String> = tool_names
                 .iter()
@@ -1332,10 +1390,11 @@ impl AgentSession {
                     guidelines.extend(g.iter().cloned());
                 }
             }
-            (valid, snippets, guidelines)
+            (valid, snippets, guidelines, state.scoped_models.clone())
         };
+        let has_agent_tool = valid.iter().any(|n| n == "Agent");
         // The agents are listed only while the Agent tool is active.
-        let agents = if valid.iter().any(|n| n == "Agent") {
+        let agents = if has_agent_tool {
             hoocode_code_resources::load_agent_registry(
                 &hoocode_code_resources::LoadAgentRegistryOptions::new(
                     self.inner.cwd.to_string_lossy(),
@@ -1354,7 +1413,13 @@ impl AgentSession {
             Vec::new()
         };
         let loader = &self.inner.resource_loader;
-        let append = loader.append_system_prompt();
+        let mut append = loader.append_system_prompt();
+        if has_agent_tool {
+            // The scoped models are the choices for subagent work (decision 6).
+            if let Some(section) = scoped_models_section(&scoped) {
+                append.push(section);
+            }
+        }
         hoocode_code_prompts::build_system_prompt(&BuildSystemPromptOptions {
             custom_prompt: loader.system_prompt(),
             append_system_prompt: (!append.is_empty()).then(|| append.join("\n\n")),
@@ -1735,10 +1800,11 @@ impl AgentSession {
     }
 
     fn cycle_scoped_model(&self, direction: CycleDirection) -> Option<ModelCycleResult> {
-        let scoped: Vec<ScopedModel> = self
-            .scoped_models()
-            .into_iter()
+        let scoped: Vec<ResolvedScoped> = lock(&self.inner.state)
+            .scoped_models
+            .iter()
             .filter(|s| self.has_configured_auth(&s.model))
+            .cloned()
             .collect();
         if scoped.len() <= 1 {
             return None;
@@ -1748,7 +1814,13 @@ impl AgentSession {
             .iter()
             .position(|s| hoocode_ai_models::models_are_equal(Some(&s.model), current.as_ref()));
         let next = &scoped[Self::next_index(index, scoped.len(), direction)];
-        let thinking_level = self.thinking_level_for_model_switch(next.thinking_level.clone());
+        // A saved effort is applied, clamped to the model (decision 5). With
+        // none, the current level is kept.
+        let saved_effort = next
+            .effort
+            .clone()
+            .map(|level| clamp_effort(level, &next.model));
+        let thinking_level = self.thinking_level_for_model_switch(saved_effort);
         self.apply_model(&next.model);
         self.set_thinking_level(thinking_level);
         Some(ModelCycleResult {

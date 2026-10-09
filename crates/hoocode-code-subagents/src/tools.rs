@@ -18,8 +18,7 @@ use hoocode_agent_types::{AgentToolCall, AgentToolResult};
 use hoocode_ai_types::{AbortSignal, Content, Model};
 use hoocode_code_agent_session::provider_health::get_provider_exhaustion;
 use hoocode_code_resources::{
-    load_agent_registry, LoadAgentRegistryOptions, MODEL_INHERIT, TASK_OUTPUT_TOOL_NAME,
-    TASK_TOOL_NAME,
+    load_agent_registry, LoadAgentRegistryOptions, TASK_OUTPUT_TOOL_NAME, TASK_TOOL_NAME,
 };
 use hoocode_code_session::SessionManager;
 use hoocode_code_task_store::{
@@ -33,7 +32,7 @@ use crate::agent_log::agent_log;
 use crate::depth::{delegate_allow_list, is_delegate_allowed, ProcessEnv};
 use crate::inbox::{subagent_inbox, InboxRecord, TaskLifecycle};
 use crate::instance::get_subagent_pool;
-use crate::model_categories::ModelCategory;
+use crate::model_categories::{ModelRequest, ModelSelection};
 use crate::pool::TaskStatus as PoolTaskStatus;
 use crate::pool::{DispatchOptions, ResultStatus, SubagentPool, SubagentResult, TaskResult};
 use crate::warm::{
@@ -374,9 +373,28 @@ fn details(
     Value::Object(d)
 }
 
+/// The line that tells the main model which model a dispatch ran on.
+fn model_line(selection: &ModelSelection) -> String {
+    let model = match (&selection.model, &selection.alias) {
+        (Some(model), Some(alias)) => format!("{alias} ({model})"),
+        (Some(model), None) => model.clone(),
+        (None, _) => "the default model".into(),
+    };
+    let mut line = format!("[model: {model}");
+    if let Some(effort) = &selection.effort {
+        line.push_str(&format!(", effort {}", effort.as_str()));
+    }
+    if let Some(note) = &selection.note {
+        line.push_str(&format!("; {note}"));
+    }
+    line.push(']');
+    line
+}
+
 /// Update the task panel from a finished dispatch and shape the tool result.
 /// A foreground failure is an error; a background one is a notification.
 fn finalize_dispatch_result(
+    model_line: &str,
     dispatch: &TaskResult,
     subagent_type: &str,
     run_id: &str,
@@ -385,6 +403,13 @@ fn finalize_dispatch_result(
     background: Option<&Background>,
 ) -> Result<AgentToolResult, ToolError> {
     let result = dispatch.result.as_ref();
+    // A retry on the session's model says so; the first attempt's model is
+    // otherwise what the line reports.
+    let line = if result.and_then(|r| r.used_inherited_model_fallback) == Some(true) {
+        format!("{model_line} [retried on the session's model]")
+    } else {
+        model_line.to_string()
+    };
     let data = result.and_then(|r| r.result_data.as_ref());
     let usage = usage_of(data.and_then(|d| d.get("usage")));
     merge_child_task_tree(data.and_then(|d| d.get("task_tree")), task_id);
@@ -436,7 +461,7 @@ fn finalize_dispatch_result(
                 "failed ✗"
             };
             return Ok(text_result(
-                format!("{} {verdict} — {reason}", background.label),
+                format!("{} {verdict} — {reason}\n{line}", background.label),
                 details(
                     subagent_type,
                     false,
@@ -460,7 +485,7 @@ fn finalize_dispatch_result(
                 String::from_utf16_lossy(&units[units.len().saturating_sub(500)..])
             )
         };
-        return Err(format!("Subagent ({subagent_type}) failed: {reason}{stderr}").into());
+        return Err(format!("Subagent ({subagent_type}) failed: {reason}{stderr}\n{line}").into());
     };
 
     let fallback_note = (result.used_inherited_model_fallback == Some(true))
@@ -505,7 +530,7 @@ fn finalize_dispatch_result(
             String::new()
         };
         let text = format!(
-            "{} finished ✓{partial_note} — {}.{tail}\nRead the full result with AgentOutput(\"{}\").",
+            "{} finished ✓{partial_note} — {}.{tail}\nRead the full result with AgentOutput(\"{}\").\n{line}",
             background.label,
             summarize(&answer),
             background.label
@@ -523,7 +548,7 @@ fn finalize_dispatch_result(
         ));
     }
     Ok(text_result(
-        answer,
+        format!("{line}\n\n{answer}"),
         details(subagent_type, true, None, task_id, resume_handle, false),
     ))
 }
@@ -574,14 +599,8 @@ fn task_parameters() -> Value {
             "description": {"type": "string", "description": "A short (3-5 word) description of the task, shown in the task panel."},
             "prompt": {"type": "string", "description": "The full, self-contained task for the subagent. It cannot see this conversation, so include all needed context, files, and constraints."},
             "subagent_type": {"type": "string", "description": "The name of the specialized agent to delegate to. Must be one of the available agents."},
-            "complexity": {
-                "anyOf": [
-                    {"type": "string", "const": "fast"},
-                    {"type": "string", "const": "standard"},
-                    {"type": "string", "const": "capable"}
-                ],
-                "description": "Model tier for this dispatch: fast (quick reads/lookups), standard (multi-file edits), capable (deep architecture). Maps to settings.modelCategories. Ignored if the chosen agent pins its own model; omit to use the agent's default."
-            },
+            "model": {"type": "string", "description": "Which model the subagent runs on: a category (cheap, fast, standard, capable), or the alias or id of a scoped model (listed in the system prompt when scoped models are set). Omit to use the agent's default model. An explicit model overrides the agent's own `model:`. When scoped models are set, a subagent can only use one of them."},
+            "effort": {"type": "string", "enum": ["off", "minimal", "low", "medium", "high", "xhigh"], "description": "Thinking level for the subagent. Overrides the effort of the chosen scoped model; omit to use that model's effort."},
             "background": {"type": "boolean", "description": "Set true to run non-blocking: you get a short notification when it finishes and pull the full result with AgentOutput; set false to wait and get the answer inline. Defaults to the agent's own background setting."},
             "resume_task_id": {"type": "string", "description": "Optional. To continue a previous subagent run, pass its task_id (returned by an earlier Agent or AgentOutput call). The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction."}
         }
@@ -658,7 +677,22 @@ async fn execute_task(
         .unwrap_or_default();
     let model = ctx.as_ref().and_then(|c| c.model.clone());
     let pool = get_subagent_pool(&cwd, &available);
-
+    let ask = str_param(&params, "model")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    let effort = str_param(&params, "effort")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    if let Some(raw) = &effort {
+        if hoocode_code_models::parse_thinking_level(raw).is_none() {
+            return Err(format!(
+                "Unknown effort \"{raw}\". Use one of: off, minimal, low, medium, high, xhigh."
+            )
+            .into());
+        }
+    }
     // Pre-flight: the inherited provider just exhausted its quota; a subagent
     // on the same provider would fail too.
     if let Some(provider) = model.as_ref().map(|m| m.provider.clone()) {
@@ -703,8 +737,24 @@ async fn execute_task(
         .into());
     }
 
-    let model_id = model.as_ref().map(|m| m.id.clone());
+    // `provider/id`: the scope and the category match on that form.
+    let model_ref = model.as_ref().map(|m| format!("{}/{}", m.provider, m.id));
     let provider = model.as_ref().map(|m| m.provider.clone());
+    // Which model the dispatch runs on, decided once here so the result can
+    // say so. An ask that cannot be used is refused before anything is created.
+    let selection = pool.select_model(
+        &subagent_type,
+        &ModelRequest {
+            ask: ask.clone(),
+            effort: effort.clone(),
+            pin: None,
+            inherited: model_ref.clone(),
+        },
+    );
+    if let Some(error) = &selection.error {
+        return Err(error.clone().into());
+    }
+    let model_line = model_line(&selection);
 
     // Resume: continue a previous subagent with its persisted transcript.
     if let Some(resume_id) = str_param(&params, "resume_task_id")
@@ -724,7 +774,9 @@ async fn execute_task(
                 resume_id,
                 &prompt,
                 DispatchOptions {
-                    model: model_id,
+                    model: ask.clone(),
+                    inherited_model: model_ref.clone(),
+                    effort: effort.clone(),
                     provider,
                     task_id: Some(run_id.clone()),
                     ..Default::default()
@@ -735,6 +787,7 @@ async fn execute_task(
         return match outcome {
             // The session lives under the original id: keep it as the handle.
             Ok(dispatch) => finalize_dispatch_result(
+                &model_line,
                 &dispatch,
                 &subagent_type,
                 &run_id,
@@ -784,29 +837,6 @@ async fn execute_task(
     } else {
         None
     };
-    // `complexity` goes in as the model: a pinned agent model still wins, and
-    // the pool resolves a category.
-    //
-    // Validated here, not left to the child. The tool schema rejects an
-    // unknown tier in the parent, but every path that skips the schema (a
-    // plugin, an extension, `/subagent`) used to pass the string straight
-    // through as a model id, and the child then died at startup on "Model not
-    // found" — a whole dispatch lost to a typo. An unrecognised tier now falls
-    // back to the parent's model with one warning, which is what the caller
-    // meant anyway.
-    let dispatch_model = match str_param(&params, "complexity").map(str::trim) {
-        Some(raw) if !raw.is_empty() => match ModelCategory::parse(raw) {
-            Some(tier) => Some(tier.as_str().to_string()),
-            None if raw == MODEL_INHERIT => None,
-            None => {
-                crate::agent_log::agent_log(&format!(
-                    "[TASK] unknown complexity tier {raw:?} for agent={subagent_type}; using the parent's model"
-                ));
-                model_id.clone()
-            }
-        },
-        _ => model_id.clone(),
-    };
     let is_background = params
         .get("background")
         .and_then(Value::as_bool)
@@ -814,8 +844,10 @@ async fn execute_task(
     let warm_options = WarmDispatchOptions {
         agent_type: subagent_type.clone(),
         cwd: cwd.clone(),
-        model: dispatch_model.clone(),
+        model: ask.clone(),
         provider: provider.clone(),
+        inherited_model: model_ref.clone(),
+        effort: effort.clone(),
     };
     let progress: WarmProgressCallback = {
         let run_id = pool_task_id.clone();
@@ -832,11 +864,11 @@ async fn execute_task(
     let dispatch_options = DispatchOptions {
         force_agent: Some(subagent_type.clone()),
         context: Some(String::new()),
-        model: dispatch_model.clone(),
-        // The parent's own model, so the inherited-model fallback has somewhere
-        // to go: `model` may be a `complexity` category, which resolves to the
-        // model that just failed.
-        inherited_model: model_id.clone(),
+        model: ask.clone(),
+        // The parent's own model: the default when nothing is asked, and where
+        // the inherited-model fallback runs.
+        inherited_model: model_ref.clone(),
+        effort: effort.clone(),
         provider: provider.clone(),
         session_file: fork_session_file.clone(),
         task_id: Some(pool_task_id.clone()),
@@ -864,6 +896,7 @@ async fn execute_task(
                             warm_result_to_task_result(&warm_result, &subagent_type, task_id);
                         subagent_inbox().finish(&pool_task_id, &dispatch);
                         return finalize_dispatch_result(
+                            &model_line,
                             &dispatch,
                             &subagent_type,
                             &pool_task_id,
@@ -889,6 +922,7 @@ async fn execute_task(
             Ok(dispatch) => {
                 subagent_inbox().finish(&pool_task_id, &dispatch);
                 finalize_dispatch_result(
+                    &model_line,
                     &dispatch,
                     &subagent_type,
                     &pool_task_id,
@@ -926,6 +960,7 @@ async fn execute_task(
                     let dispatch =
                         warm_result_to_task_result(&warm_result, &subagent_type, task_id);
                     return finalize_dispatch_result(
+                        &model_line,
                         &dispatch,
                         &subagent_type,
                         &pool_task_id,
@@ -953,6 +988,7 @@ async fn execute_task(
         Ok(dispatch) => {
             let handle = dispatch.task_id.clone();
             finalize_dispatch_result(
+                &model_line,
                 &dispatch,
                 &subagent_type,
                 &pool_task_id,

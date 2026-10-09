@@ -241,6 +241,69 @@ pub struct ModelCategories {
     pub capable: Option<String>,
 }
 
+/// A tier a scoped model is used for (`scopedModels[].category`), in tier order
+/// `cheap` < `fast` < `standard` < `capable` (the derived `Ord`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelCategoryName {
+    Cheap,
+    Fast,
+    Standard,
+    Capable,
+}
+
+impl ModelCategoryName {
+    /// Every tier, lowest first.
+    pub const ALL: &'static [ModelCategoryName] = &[
+        ModelCategoryName::Cheap,
+        ModelCategoryName::Fast,
+        ModelCategoryName::Standard,
+        ModelCategoryName::Capable,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Cheap => "cheap",
+            Self::Fast => "fast",
+            Self::Standard => "standard",
+            Self::Capable => "capable",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "cheap" => Some(Self::Cheap),
+            "fast" => Some(Self::Fast),
+            "standard" => Some(Self::Standard),
+            "capable" => Some(Self::Capable),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for ModelCategoryName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One entry of `scopedModels`: a model the user scoped, with its effort and
+/// optional category and alias.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopedModel {
+    /// `provider/id`, or a glob pattern as `enabledModels` allowed.
+    pub model: String,
+    /// A thinking level name (`off` ... `xhigh`), kept as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<ModelCategoryName>,
+    /// Short name, unique across the list, `[a-z0-9-]` only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+}
+
 /// `WarningSettings` (`getWarnings` fills the defaults in).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WarningSettings {

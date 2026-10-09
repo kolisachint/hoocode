@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: scoped models carry an effort and a category (2026-10-09)
+- **`scopedModels` setting** in `settings.json`: an ordered list of `{ model, effort?, category?, alias? }`.
+  It replaces `enabledModels` and `modelCategories`. A project `scopedModels` replaces the global list.
+- **Migration:** on the first load, when `scopedModels` is missing, it is built once from `enabledModels`
+  (a `:level` suffix becomes `effort`) and `modelCategories` (model to category), and written to disk.
+  The old keys stay in the file and are no longer read. hoocode-ts does not see the new scope.
+- **`/scoped-models` picker** has an effort column (`tab` cycles the supported levels) and a category
+  column (`alt+j` cycles none, cheap, fast, standard, capable). Save writes the full entries, not ids only.
+  `/settings` has a Models row that opens it.
+- **Agent tool** takes `model` (a category or a scoped model) and `effort`. Tool results start with
+  `[model: ...]`, naming the model that ran. `--models` still works for one run and is not saved.
+
+### Removed: the Agent tool `complexity` parameter (2026-10-09)
+- `complexity` is removed, not aliased. `model` is the only model parameter. The dispatch log line
+  still prints a heuristic complexity estimate.
+
 ### Changed: tool names renamed; the old names are no longer accepted (2026-10-08)
 - **New tool names:** `read` → `Read`, `bash` → `Shell`, `edit` → `Edit`, `write` → `Write`,
   `SearchCodebase` → `CodeSearch`, `SearchHooCode` → `DocSearch`, `ask_options` →

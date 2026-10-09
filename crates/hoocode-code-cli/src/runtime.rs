@@ -15,13 +15,16 @@ use hoocode_code_permissions::{ApprovalChannel, HooPermissionGate};
 use hoocode_code_agent_session::{
     create_agent_session, AgentSession, AgentSessionRuntime, AgentSessionRuntimeDiagnostic,
     AgentSessionServices, BaseTools, CreateAgentSessionOptions, CreatedRuntime, DefaultResources,
-    PromptOptions, ScopedModel, SessionStartEvent,
+    PromptOptions, SessionStartEvent,
 };
-use hoocode_code_models::{resolve_cli_model, resolve_model_scope, AuthLookup, ModelRegistry};
+use hoocode_code_models::{
+    clamp_effort, parse_thinking_level, resolve_cli_model, resolve_model_scope,
+    resolve_scoped_models, AuthLookup, ModelRegistry, ResolvedScoped,
+};
 use hoocode_code_print::{json_line, text_result, PrintMode};
 use hoocode_code_resources::DefaultResourceLoaderOptions;
 use hoocode_code_session::SessionManager;
-use hoocode_code_settings::SettingsManager;
+use hoocode_code_settings::{ScopedModel as ScopedEntry, Settings, SettingsManager};
 use hoocode_code_tool_api::ToolDefinition;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -136,7 +139,7 @@ fn report_diagnostics(
 struct ModelOptions {
     model: Option<Model>,
     thinking_level: Option<ThinkingLevel>,
-    scoped_models: Vec<ScopedModel>,
+    scoped_models: Vec<ResolvedScoped>,
 }
 
 /// `buildSessionOptions`' model part: `--model` (with `--provider`, `provider/`
@@ -144,7 +147,7 @@ struct ModelOptions {
 /// `--models` scope, else the first scoped model; `--thinking` wins.
 fn model_options(
     args: &Args,
-    scoped_models: Vec<ScopedModel>,
+    scoped_models: Vec<ResolvedScoped>,
     has_existing_session: bool,
     registry: &ModelRegistry,
     settings: &SettingsManager,
@@ -184,8 +187,11 @@ fn model_options(
             })
             .unwrap_or(&scoped_models[0]);
         options.model = Some(chosen.model.clone());
-        if args.thinking.is_none() && chosen.thinking_level.is_some() {
-            options.thinking_level = chosen.thinking_level.clone();
+        if args.thinking.is_none() {
+            options.thinking_level = chosen
+                .effort
+                .clone()
+                .map(|level| clamp_effort(level, &chosen.model));
         }
     }
 
@@ -194,6 +200,69 @@ fn model_options(
     }
     options.scoped_models = scoped_models;
     options
+}
+
+/// The `--models` patterns as the run's scope entries, in flag order.
+fn cli_scope_entries(patterns: &[String]) -> Vec<ScopedEntry> {
+    patterns.iter().map(|p| cli_scope_entry(p)).collect()
+}
+
+/// One `--models` pattern as a scope entry (decision 13): `id` or `id:effort`,
+/// with no category. A suffix that is not a thinking level stays in the id.
+fn cli_scope_entry(pattern: &str) -> ScopedEntry {
+    let (model, effort) = match pattern.rsplit_once(':') {
+        Some((model, level)) if parse_thinking_level(level).is_some() => {
+            (model.to_string(), Some(level.to_string()))
+        }
+        _ => (pattern.to_string(), None),
+    };
+    ScopedEntry {
+        model,
+        effort,
+        category: None,
+        alias: None,
+    }
+}
+
+/// `--models` replaces `scopedModels` for this run only (decision 13). It is
+/// layered in memory with `apply_overrides`, so `global_settings()` and the
+/// settings file are unchanged. The subagents read their settings from disk
+/// and do not see this layer.
+fn apply_models_flag(settings: &mut SettingsManager, patterns: &[String]) {
+    let entries = cli_scope_entries(patterns);
+    let mut overrides = Settings::new();
+    overrides.insert(
+        "scopedModels".into(),
+        serde_json::to_value(&entries).expect("scoped models serialize"),
+    );
+    settings.apply_overrides(&overrides);
+}
+
+/// The run's scope (`scopedModels`, or the `--models` override) resolved
+/// against the models with auth. Patterns that match nothing warn, as
+/// `resolveModelScope` did.
+fn resolve_run_scope(
+    settings: &SettingsManager,
+    registry: &ModelRegistry,
+    auth: &dyn AuthLookup,
+    diagnostics: &mut Diagnostics,
+) -> Vec<ResolvedScoped> {
+    let entries = settings.scoped_models().unwrap_or_default();
+    if entries.is_empty() {
+        return Vec::new();
+    }
+    let available: Vec<Model> = registry.get_available(auth).into_iter().cloned().collect();
+    for entry in &entries {
+        let scope = resolve_model_scope(std::slice::from_ref(&entry.model), &available);
+        // resolveModelScope warns straight to stderr, before the diagnostics.
+        diagnostics.extend(
+            scope
+                .warnings
+                .into_iter()
+                .map(|w| (DiagnosticKind::Warning, w)),
+        );
+    }
+    resolve_scoped_models(&entries, &available)
 }
 
 /// `--skill` / `--prompt-template` / `--slash-command` values (`resolveCliPaths`):
@@ -495,30 +564,19 @@ fn create_runtime(
     interactive: bool,
     gate: Option<Arc<dyn PermissionGate>>,
 ) -> (AgentSession, AgentSessionServices, Diagnostics) {
-    let settings = SettingsManager::create_default(&cwd);
+    let mut settings = SettingsManager::create_default(&cwd);
+    if let Some(patterns) = &args.models {
+        apply_models_flag(&mut settings, patterns);
+        // Subagents build their own SettingsManager from disk, so they need the
+        // run-only scope through the subagent instance too. Their children get
+        // `--model` explicitly and do not read it.
+        hoocode_code_subagents::instance::set_scoped_models_override(Some(cli_scope_entries(
+            patterns,
+        )));
+    }
     let registry = load_registry(auth);
     let mut diagnostics = Diagnostics::new();
-
-    let patterns = args.models.clone().or_else(|| settings.enabled_models());
-    let scoped_models = match patterns.filter(|p| !p.is_empty()) {
-        Some(patterns) => {
-            let available: Vec<Model> = registry
-                .get_available(auth.as_ref())
-                .into_iter()
-                .cloned()
-                .collect();
-            let scope = resolve_model_scope(&patterns, &available);
-            // resolveModelScope warns straight to stderr, before the diagnostics.
-            diagnostics.extend(
-                scope
-                    .warnings
-                    .into_iter()
-                    .map(|w| (DiagnosticKind::Warning, w)),
-            );
-            scope.models
-        }
-        None => Vec::new(),
-    };
+    let scoped_models = resolve_run_scope(&settings, &registry, auth.as_ref(), &mut diagnostics);
     let has_existing_session = !session_manager.build_context().messages.is_empty();
     let options = model_options(
         args,
@@ -1195,25 +1253,23 @@ impl AppServerSessions {
     }
 
     /// Models with auth configured: `(provider/id, name, is default, hidden)`.
-    /// With a model scope (`--models` or `enabledModels`), models outside it
+    /// With a model scope (`--models` or `scopedModels`), models outside it
     /// are hidden; without one, none are.
     pub fn models(&self) -> Vec<(String, String, bool, bool)> {
         let registry = load_registry(&self.auth);
-        let settings = SettingsManager::create_default(&self.cwd);
+        let mut settings = SettingsManager::create_default(&self.cwd);
+        if let Some(patterns) = &self.args.models {
+            apply_models_flag(&mut settings, patterns);
+        }
         let default = settings.default_model();
         let available: Vec<Model> = registry
             .get_available(self.auth.as_ref())
             .into_iter()
             .cloned()
             .collect();
-        let patterns = self
-            .args
-            .models
-            .clone()
-            .or_else(|| settings.enabled_models());
-        let scope: Option<Vec<(String, String)>> = patterns.filter(|p| !p.is_empty()).map(|p| {
-            resolve_model_scope(&p, &available)
-                .models
+        let entries = settings.scoped_models().unwrap_or_default();
+        let scope: Option<Vec<(String, String)>> = (!entries.is_empty()).then(|| {
+            resolve_scoped_models(&entries, &available)
                 .into_iter()
                 .map(|sm| (sm.model.provider.clone(), sm.model.id.clone()))
                 .collect()
@@ -1848,7 +1904,7 @@ mod tests {
 
     fn options_for(
         argv: &[&str],
-        scoped: Vec<ScopedModel>,
+        scoped: Vec<ResolvedScoped>,
         s: &SettingsManager,
     ) -> (ModelOptions, Diagnostics) {
         let args = crate::args::parse_args(&argv.iter().map(|a| a.to_string()).collect::<Vec<_>>());
@@ -1895,11 +1951,13 @@ mod tests {
     #[test]
     fn scoped_models_prefer_the_saved_default_then_the_first() {
         let registry = models_json_registry();
-        let scoped: Vec<ScopedModel> = ["mock-model", "mock-mini"]
+        let scoped: Vec<ResolvedScoped> = ["mock-model", "mock-mini"]
             .iter()
-            .map(|id| ScopedModel {
+            .map(|id| ResolvedScoped {
                 model: registry.find("mock", id).unwrap().clone(),
-                thinking_level: None,
+                alias: None,
+                category: None,
+                effort: None,
             })
             .collect();
         let (o, _) = options_for(
@@ -1911,6 +1969,87 @@ mod tests {
         let (o, _) = options_for(&[], scoped.clone(), &settings(None, None));
         assert_eq!(id(&o).as_deref(), Some("mock/mock-model"));
         assert_eq!(o.scoped_models.len(), 2);
+    }
+
+    /// Credentials for the test registry's `mock` provider.
+    struct KeyedAuth;
+
+    impl AuthLookup for KeyedAuth {
+        fn api_key(&self, _provider: &str) -> Option<String> {
+            Some("k".into())
+        }
+    }
+
+    fn saved_scope() -> serde_json::Value {
+        serde_json::json!([
+            {"model": "mock/mock-model", "effort": "low", "category": "capable", "alias": "big"},
+            {"model": "mock/mock-mini", "category": "cheap"}
+        ])
+    }
+
+    fn settings_with_scope(agent_dir: &std::path::Path, cwd: &std::path::Path) -> SettingsManager {
+        std::fs::create_dir_all(agent_dir).unwrap();
+        std::fs::write(
+            agent_dir.join("settings.json"),
+            serde_json::json!({"scopedModels": saved_scope()}).to_string(),
+        )
+        .unwrap();
+        SettingsManager::create(cwd, agent_dir)
+    }
+
+    #[test]
+    fn cli_models_entries_take_an_effort_and_no_category() {
+        let high = cli_scope_entry("mock/mock-mini:high");
+        assert_eq!(high.model, "mock/mock-mini");
+        assert_eq!(high.effort.as_deref(), Some("high"));
+        assert_eq!(high.category, None);
+        assert_eq!(high.alias, None);
+        // A suffix that is not a thinking level stays part of the id.
+        let plain = cli_scope_entry("mock/mock-*");
+        assert_eq!(plain.model, "mock/mock-*");
+        assert_eq!(plain.effort, None);
+    }
+
+    #[test]
+    fn models_flag_overrides_scoped_models_for_the_run_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent_dir = dir.path().join("agent");
+        let cwd = dir.path().join("project");
+        let mut settings = settings_with_scope(&agent_dir, &cwd);
+        let file_before = std::fs::read_to_string(agent_dir.join("settings.json")).unwrap();
+
+        apply_models_flag(&mut settings, &["mock/mock-mini:high".to_string()]);
+
+        // The run sees only the flag's entry, with its effort.
+        let run = settings.scoped_models().unwrap();
+        assert_eq!(run.len(), 1);
+        assert_eq!(run[0].model, "mock/mock-mini");
+        assert_eq!(run[0].effort.as_deref(), Some("high"));
+        // The saved list is still there in memory and on disk, untouched.
+        let saved = settings.global_settings();
+        assert_eq!(saved["scopedModels"], saved_scope());
+        assert_eq!(
+            std::fs::read_to_string(agent_dir.join("settings.json")).unwrap(),
+            file_before
+        );
+    }
+
+    #[test]
+    fn run_scope_resolves_the_saved_list_without_the_flag() {
+        let registry = models_json_registry();
+        let dir = tempfile::tempdir().unwrap();
+        let settings = settings_with_scope(&dir.path().join("agent"), &dir.path().join("p"));
+        let mut diagnostics = Diagnostics::new();
+        let scope = resolve_run_scope(&settings, &registry, &KeyedAuth, &mut diagnostics);
+        assert!(diagnostics.is_empty());
+        assert_eq!(scope.len(), 2);
+        assert_eq!(scope[0].alias.as_deref(), Some("big"));
+        assert_eq!(
+            scope[0].category,
+            Some(hoocode_code_settings::ModelCategoryName::Capable)
+        );
+        assert_eq!(scope[0].effort, Some(ThinkingLevel::Low));
+        assert_eq!(scope[1].effort, None);
     }
 
     /// Port of the pin's `test/transcript-thinking-order.test.ts`: a thinking

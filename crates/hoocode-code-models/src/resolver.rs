@@ -6,6 +6,7 @@
 
 use crate::{AuthLookup, ModelRegistry};
 use hoocode_ai_types::{Model, ThinkingLevel};
+use hoocode_code_settings::{ModelCategoryName, ScopedModel as ScopedEntry};
 use std::cmp::Ordering;
 
 /// `defaultModelPerProvider`, in the TS object's key order (findInitialModel walks it).
@@ -345,6 +346,141 @@ pub fn resolve_model_scope(patterns: &[String], available_models: &[Model]) -> M
         push(&mut scope, &model, parsed.thinking_level);
     }
     scope
+}
+
+/// A `scopedModels` entry resolved against the available models. A glob entry
+/// gives one `ResolvedScoped` per matching model, all with the entry's alias and
+/// category.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedScoped {
+    pub model: Model,
+    pub alias: Option<String>,
+    pub category: Option<ModelCategoryName>,
+    /// The entry's `effort`, else the `:level` in its pattern. Not clamped to the
+    /// model; see [`clamp_effort`].
+    pub effort: Option<ThinkingLevel>,
+}
+
+/// Resolves `scopedModels` against the models with configured auth, keeping
+/// the list order. Entries whose pattern matches nothing are dropped (the
+/// warnings of [`resolve_model_scope`] are not returned here).
+pub fn resolve_scoped_models(entries: &[ScopedEntry], available: &[Model]) -> Vec<ResolvedScoped> {
+    let mut resolved = Vec::new();
+    for entry in entries {
+        let scope = resolve_model_scope(std::slice::from_ref(&entry.model), available);
+        let entry_effort = entry.effort.as_deref().and_then(parse_thinking_level);
+        for scoped in scope.models {
+            resolved.push(ResolvedScoped {
+                model: scoped.model,
+                alias: entry.alias.clone(),
+                category: entry.category,
+                effort: entry_effort.clone().or(scoped.thinking_level),
+            });
+        }
+    }
+    resolved
+}
+
+fn same_model(a: &Model, b: &Model) -> bool {
+    a.provider == b.provider && a.id == b.id
+}
+
+/// `"alias (provider/id)"`, or `"provider/id"` without an alias.
+fn scoped_display(scoped: &ResolvedScoped) -> String {
+    let reference = format!("{}/{}", scoped.model.provider, scoped.model.id);
+    match &scoped.alias {
+        Some(alias) => format!("{alias} ({reference})"),
+        None => reference,
+    }
+}
+
+fn list_for_error(scoped: &[ResolvedScoped]) -> String {
+    if scoped.is_empty() {
+        return "no scoped models are set".into();
+    }
+    scoped
+        .iter()
+        .map(scoped_display)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Matches a name against the scoped list (decision 7): alias exact, then exact
+/// id (`id` or `provider/id`), then a substring of the id. Several entries for
+/// the same model are one match. More than one model is an error that lists
+/// the candidates.
+pub fn match_scoped_model<'a>(
+    name: &str,
+    scoped: &'a [ResolvedScoped],
+) -> Result<&'a ResolvedScoped, String> {
+    let name = name.trim();
+    if let Some(found) = scoped.iter().find(|s| s.alias.as_deref() == Some(name)) {
+        return Ok(found);
+    }
+
+    let exact: Vec<&ResolvedScoped> = scoped
+        .iter()
+        .filter(|s| s.model.id == name || format!("{}/{}", s.model.provider, s.model.id) == name)
+        .collect();
+    if let Some(first) = exact.first() {
+        if exact.iter().all(|s| same_model(&s.model, &first.model)) {
+            return Ok(first);
+        }
+        return Err(ambiguous_error(name, &exact));
+    }
+
+    let lower = name.to_lowercase();
+    let partial: Vec<&ResolvedScoped> = scoped
+        .iter()
+        .filter(|s| !name.is_empty() && s.model.id.to_lowercase().contains(&lower))
+        .collect();
+    match partial.first() {
+        None => Err(format!(
+            "no scoped model matches \"{name}\". Available: {}",
+            list_for_error(scoped)
+        )),
+        Some(first) if partial.iter().all(|s| same_model(&s.model, &first.model)) => Ok(first),
+        Some(_) => Err(ambiguous_error(name, &partial)),
+    }
+}
+
+fn ambiguous_error(name: &str, candidates: &[&ResolvedScoped]) -> String {
+    let list = candidates
+        .iter()
+        .map(|s| scoped_display(s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "\"{name}\" matches more than one scoped model: {list}. Use an alias or the full provider/id."
+    )
+}
+
+/// Picks a scoped model for a category (decisions 9 to 11, 14). The first entry
+/// in list order with that category wins. Untagged entries are never picked.
+/// If none has it, the nearest lower tier is tried first, then the nearest
+/// higher one. The flag is `true` when a different tier was used.
+pub fn pick_by_category(
+    category: ModelCategoryName,
+    scoped: &[ResolvedScoped],
+) -> Option<(&ResolvedScoped, bool)> {
+    let find_tier = |tier: ModelCategoryName| scoped.iter().find(|s| s.category == Some(tier));
+    if let Some(found) = find_tier(category) {
+        return Some((found, false));
+    }
+    let tiers = ModelCategoryName::ALL;
+    let idx = tiers.iter().position(|t| *t == category)?;
+    for tier in tiers[..idx].iter().rev().chain(tiers[idx + 1..].iter()) {
+        if let Some(found) = find_tier(*tier) {
+            return Some((found, true));
+        }
+    }
+    None
+}
+
+/// Clamps a requested thinking level to the closest level `model` supports
+/// (decision 17). Uses the same rule as [`hoocode_ai_models::clamp_thinking_level`].
+pub fn clamp_effort(level: ThinkingLevel, model: &Model) -> ThinkingLevel {
+    hoocode_ai_models::clamp_thinking_level(model, &level)
 }
 
 /// `ResolveCliModelResult`: `error` is set (and `model` unset) on failure.

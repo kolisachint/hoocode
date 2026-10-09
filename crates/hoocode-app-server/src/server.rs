@@ -53,7 +53,7 @@ pub trait SessionFactory: Send + Sync + 'static {
     /// Saved sessions, newest first.
     fn list(&self) -> Vec<SavedSession>;
     /// Models for `model/list`: `(id, display name, is default, hidden)`.
-    /// Hidden models are outside the user's model scope (`enabledModels`):
+    /// Hidden models are outside the user's model scope (`scopedModels`):
     /// still usable by name, left out of pickers.
     fn models(&self) -> Vec<(String, String, bool, bool)> {
         Vec::new()

@@ -8,7 +8,8 @@ use std::path::Path;
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use hoocode_ai_types::Model;
-use hoocode_code_settings::{deep_merge_settings, SettingsManager};
+use hoocode_code_models::{resolve_scoped_models, ResolvedScoped};
+use hoocode_code_settings::{deep_merge_settings, ScopedModel, SettingsManager};
 use hoocode_code_task_store::{task_store, TaskAgentPatch};
 use serde_json::Value;
 
@@ -22,6 +23,9 @@ struct Instance {
     override_pool: Option<SubagentPool>,
     /// Latest non-default skill paths, kept in sync with the resource loader.
     skill_paths: Vec<String>,
+    /// The session's scoped models (`--models`), replacing `scopedModels` from
+    /// the settings for this run. `None`: read the settings.
+    scoped_override: Option<Vec<ScopedModel>>,
 }
 
 static INSTANCE: LazyLock<Mutex<Instance>> = LazyLock::new(Mutex::default);
@@ -35,22 +39,80 @@ fn spawn_command() -> std::path::PathBuf {
     std::env::current_exe().unwrap_or_else(|_| "hoocode".into())
 }
 
+/// Sets the scoped models for this process (the `--models` flag): they replace
+/// `scopedModels` from the settings. `None` goes back to the settings.
+pub fn set_scoped_models_override(models: Option<Vec<ScopedModel>>) {
+    instance().scoped_override = models;
+}
+
+/// The `--models` override as a flag value (`id` or `id:effort`, comma
+/// separated), for passing on to nested children. `None` when no override is
+/// set, or when it is empty.
+pub fn scoped_models_override_flag() -> Option<String> {
+    let entries = instance().scoped_override.clone()?;
+    let value = entries
+        .iter()
+        .map(|entry| match &entry.effort {
+            Some(level) => format!("{}:{level}", entry.model),
+            None => entry.model.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    (!value.is_empty()).then_some(value)
+}
+
+/// Whether a run-only scope (`--models`) is set. The TUI keeps its picker save
+/// to the settings file while it is, so the run's scope stays as the flag set it.
+pub fn scoped_models_override_active() -> bool {
+    instance().scoped_override.is_some()
+}
+
+/// The scope a dispatch uses now: the session override, else `scopedModels`
+/// from the settings, resolved against `available_models`. Empty: no scope.
+pub fn current_scope(cwd: &Path, available_models: &[Model]) -> Vec<ResolvedScoped> {
+    let override_models = instance().scoped_override.clone();
+    scope_from(cwd, available_models, override_models)
+}
+
+fn scope_from(
+    cwd: &Path,
+    available_models: &[Model],
+    override_models: Option<Vec<ScopedModel>>,
+) -> Vec<ResolvedScoped> {
+    let entries = override_models
+        .or_else(|| SettingsManager::create(cwd, hoocode_code_paths::agent_dir()).scoped_models());
+    resolve_scoped_models(&entries.unwrap_or_default(), available_models)
+}
+
 /// The shared pool for `cwd`, created on first use. `available_models` (the
 /// caller's available models) is snapshotted then, for deriving model
-/// categories; later calls reuse the pool.
+/// categories; later calls reuse the pool. Every call refreshes the pool's
+/// scope from the current settings and the `--models` override, so a picker
+/// save reaches the next dispatch from any caller.
 pub fn get_subagent_pool(cwd: &Path, available_models: &[Model]) -> SubagentPool {
+    // Read before taking the lock: `current_scope` takes it too.
+    let scope = current_scope(cwd, available_models);
     let mut instance = instance();
-    if let Some(pool) = &instance.override_pool {
-        return pool.clone();
-    }
-    if let Some(pool) = &instance.pool {
-        return pool.clone();
-    }
+    let pool = match instance
+        .override_pool
+        .clone()
+        .or_else(|| instance.pool.clone())
+    {
+        Some(pool) => pool,
+        None => create_pool(&mut instance, cwd, available_models, scope.clone()),
+    };
+    pool.set_scope(scope);
+    pool
+}
+
+fn create_pool(
+    instance: &mut Instance,
+    cwd: &Path,
+    available_models: &[Model],
+    scope: Vec<ResolvedScoped>,
+) -> SubagentPool {
     let manager = SettingsManager::create(cwd, hoocode_code_paths::agent_dir());
-    // One-level deep merge, the same rule the rest of the codebase uses. A
-    // plain `extend` replaced the whole `modelCategories` object, so a project
-    // that set only `capable` silently lost the global `fast` and `standard`
-    // tiers and every `complexity` fell back to a derived default.
+    // One-level deep merge, the same rule the rest of the codebase uses.
     let settings = deep_merge_settings(&manager.global_settings(), &manager.project_settings());
     let pool = SubagentPool::new(SubagentPoolOptions {
         executable: spawn_command(),
@@ -60,6 +122,7 @@ pub fn get_subagent_pool(cwd: &Path, available_models: &[Model]) -> SubagentPool
         max_concurrency: pool_concurrency_for_depth(&ProcessEnv).map(|n| n as usize),
         settings: Some(CategorySettings::from_settings(&settings)),
         available_models: available_models.to_vec(),
+        scope,
         ..Default::default()
     });
     wire_progress_to_task_store(&pool);

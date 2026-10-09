@@ -13,12 +13,14 @@ use hoocode_agent_types::{AgentToolCall, AgentToolResult};
 use hoocode_ai_types::Content;
 use hoocode_code_resources::agent_registry::EMBEDDED_AGENT_PROMPTS;
 use hoocode_code_resources::{parse_agent_definition, AgentSource};
+use hoocode_code_settings::{ModelCategoryName, ScopedModel};
 use hoocode_code_subagents::inbox::{subagent_inbox, TaskLifecycle};
 use hoocode_code_subagents::instance::{
-    dispose_subagent_pool, get_subagent_pool, set_subagent_pool_for_testing,
+    dispose_subagent_pool, get_subagent_pool, set_scoped_models_override,
+    set_subagent_pool_for_testing,
 };
 use hoocode_code_subagents::pool::{
-    ResultStatus, SubagentPool, SubagentPoolOptions, SubagentResult, TaskResult,
+    DispatchOptions, ResultStatus, SubagentPool, SubagentPoolOptions, SubagentResult, TaskResult,
 };
 use hoocode_code_subagents::tools::*;
 use hoocode_code_task_store::{
@@ -496,6 +498,16 @@ async fn execute(
         .unwrap()
 }
 
+/// A `--models`-style override entry: no effort, with an optional category.
+fn override_entry(model: &str, category: Option<ModelCategoryName>) -> ScopedModel {
+    ScopedModel {
+        model: model.into(),
+        effort: None,
+        category,
+        alias: None,
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn task_tool_execute_paths() {
     let _serial = SERIAL.lock().await;
@@ -515,7 +527,12 @@ async fn task_tool_execute_paths() {
     )
     .await
     .unwrap();
-    assert_eq!(text(&r), "Found it in main.rs");
+    assert!(text(&r).starts_with("[model: "), "{}", text(&r));
+    assert!(
+        text(&r).ends_with("\n\nFound it in main.rs"),
+        "{}",
+        text(&r)
+    );
     assert_subset(
         &r.details,
         json!({"subagent_type": "general-purpose", "ok": true}),
@@ -548,9 +565,12 @@ async fn task_tool_execute_paths() {
     )
     .await
     .unwrap();
-    assert_eq!(
-        text(&r),
-        "explore#1 finished ✓ — Mapped the module.\nRead the full result with AgentOutput(\"explore#1\")."
+    assert!(
+        text(&r).starts_with(
+            "explore#1 finished ✓ — Mapped the module.\nRead the full result with AgentOutput(\"explore#1\")."
+        ),
+        "{}",
+        text(&r)
     );
     assert_subset(&r.details, json!({"ok": true, "background": true}));
     let (_, body) = subagent_inbox().collect("explore#1").unwrap();
@@ -566,7 +586,11 @@ async fn task_tool_execute_paths() {
     )
     .await
     .unwrap_err();
-    assert_eq!(err, "Subagent (general-purpose) failed: Task failed: quota");
+    assert!(
+        err.to_string()
+            .starts_with("Subagent (general-purpose) failed: Task failed: quota\n[model: "),
+        "{err}"
+    );
     pool.dispose();
 
     // An unknown agent is rejected with the available list.
@@ -659,7 +683,7 @@ fn failing_then_ok_child(dir: &Path, failed: &Value) -> PathBuf {
     std::fs::write(
         &path,
         format!(
-            "#!/bin/sh\ntid=unknown; model=; prev=; for a in \"$@\"; do [ \"$prev\" = \"--task-id\" ] && tid=$a; [ \"$prev\" = \"--model\" ] && model=$a; prev=$a; done\nmkdir -p {DIR}/dispatch/$tid\necho \"$model\" >> models.txt\nif [ \"$model\" = \"pinned-model\" ]; then printf '%s' '{failed}' > {DIR}/dispatch/$tid/result.json; exit 1; fi\nprintf '%s' '{ok}' > {DIR}/dispatch/$tid/result.json\n"
+            "#!/bin/sh\ntid=unknown; model=; prev=; for a in \"$@\"; do [ \"$prev\" = \"--task-id\" ] && tid=$a; [ \"$prev\" = \"--model\" ] && model=$a; prev=$a; done\nmkdir -p {DIR}/dispatch/$tid\necho \"$model\" >> models.txt\ncase \"$model\" in *pinned-model|*tier-model) printf '%s' '{failed}' > {DIR}/dispatch/$tid/result.json; exit 1;; esac\nprintf '%s' '{ok}' > {DIR}/dispatch/$tid/result.json\n"
         ),
     )
     .unwrap();
@@ -680,8 +704,8 @@ fn model_arg_history(dir: &Path) -> Vec<String> {
         .collect()
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn task_tool_passes_complexity_or_the_parent_model() {
+#[tokio::test]
+async fn task_tool_passes_the_model_ask_or_the_parent_model() {
     let _serial = SERIAL.lock().await;
     isolate_agent_dir();
     let dir = tempfile::tempdir().unwrap();
@@ -696,38 +720,33 @@ async fn task_tool_passes_complexity_or_the_parent_model() {
     .unwrap();
     let tool = create_task_tool_definition(&cwd);
     task_store().clear();
-    let model: hoocode_ai_types::Model = serde_json::from_value(json!({
-        "id": "parent-model", "name": "p", "api": "openai-completions", "provider": "prov",
-        "baseUrl": "http://x", "contextWindow": 1000, "maxTokens": 100,
-    }))
-    .unwrap();
-    // `complexity` goes to the pool as the model; the pool resolves the tier.
+    let parent = scoped_test_model("prov", "parent-model");
+    let fast = scoped_test_model("prov", "fast-model");
+    // The scope: `fast` is the fast tier, the parent is an untagged scoped model.
+    set_scoped_models_override(Some(vec![
+        override_entry("prov/fast-model", Some(ModelCategoryName::Fast)),
+        override_entry("prov/parent-model", None),
+    ]));
     let pool = SubagentPool::new(SubagentPoolOptions {
         executable: argv_child(&cwd),
         cwd: Some(cwd.clone()),
-        settings: Some(hoocode_code_subagents::model_categories::CategorySettings {
-            model_categories: Some(hoocode_code_settings::ModelCategories {
-                fast: Some("fast-model".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        }),
         ..Default::default()
     });
     set_subagent_pool_for_testing(Some(pool.clone()));
     let with_model = || ToolContext {
-        model: Some(model.clone()),
+        model: Some(parent.clone()),
+        available_models: vec![parent.clone(), fast.clone()],
         ..ctx(&cwd)
     };
     execute(
         tool.clone(),
-        json!({"description": "quick read", "prompt": "read one file", "subagent_type": "helper", "complexity": "fast"}),
+        json!({"description": "quick read", "prompt": "read one file", "subagent_type": "helper", "model": "fast"}),
         with_model(),
     )
     .await
     .unwrap();
-    assert_eq!(model_arg(&cwd).as_deref(), Some("fast-model"));
-    // Without it, the parent's model.
+    assert_eq!(model_arg(&cwd).as_deref(), Some("prov/fast-model"));
+    // Without it, the parent's model, as provider/id.
     execute(
         tool.clone(),
         json!({"description": "do work", "prompt": "do some work", "subagent_type": "helper"}),
@@ -735,26 +754,159 @@ async fn task_tool_passes_complexity_or_the_parent_model() {
     )
     .await
     .unwrap();
-    assert_eq!(model_arg(&cwd).as_deref(), Some("parent-model"));
+    assert_eq!(model_arg(&cwd).as_deref(), Some("prov/parent-model"));
     pool.dispose();
     set_subagent_pool_for_testing(None);
+    set_scoped_models_override(None);
     task_store().clear();
 }
 
-/// The inherited-model fallback has to actually switch models.
-///
-/// When the caller passes a `complexity` tier, `DispatchOptions::model` holds
-/// the *category*, not a model. Falling back to it resolved the category again
-/// and re-ran on the model that had just failed — the retry looked like it
-/// happened and changed nothing.
+/// The session's model is a scoped model when it is named `provider/id` in the
+/// scope. It is used, and no "not scoped" note is given. The scope used to be
+/// matched on the bare id, so a scoped session model was reported as unscoped.
 #[tokio::test]
-async fn the_inherited_model_fallback_switches_away_from_a_complexity_tier() {
+async fn a_scoped_session_model_is_used_without_a_not_scoped_note() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let agents = cwd.join(DIR).join("agents");
+    std::fs::create_dir_all(&agents).unwrap();
+    std::fs::write(
+        agents.join("helper.md"),
+        "---\nname: helper\ndescription: Inherits the model.\ntools: read\nmodel: inherit\n---\nHelp.",
+    )
+    .unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    let session_model = scoped_test_model("acme", "mid");
+    set_scoped_models_override(Some(vec![override_entry("acme/mid", None)]));
+    let pool = SubagentPool::new(SubagentPoolOptions {
+        executable: argv_child(&cwd),
+        cwd: Some(cwd.clone()),
+        ..Default::default()
+    });
+    set_subagent_pool_for_testing(Some(pool.clone()));
+    let result = execute(
+        tool,
+        json!({"description": "do work", "prompt": "do some work", "subagent_type": "helper"}),
+        ToolContext {
+            model: Some(session_model.clone()),
+            available_models: vec![session_model],
+            ..ctx(&cwd)
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(model_arg(&cwd).as_deref(), Some("acme/mid"));
+    assert!(
+        !text(&result).contains("not scoped"),
+        "a scoped session model must not be reported as unscoped: {}",
+        text(&result)
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    set_scoped_models_override(None);
+    task_store().clear();
+}
+
+/// Every lookup of the shared pool gives it the current scope, not the scope it
+/// had when the pool was created. `/subagent` reads the pool this way and never
+/// goes through the Agent tool, so it must not see a stale scope.
+#[tokio::test]
+async fn every_pool_lookup_refreshes_the_scope() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let available = vec![
+        scoped_test_model("acme", "mid"),
+        scoped_test_model("acme", "big"),
+    ];
+    let request = hoocode_code_subagents::model_categories::ModelRequest {
+        ask: Some("acme/mid".into()),
+        ..Default::default()
+    };
+    set_scoped_models_override(Some(vec![override_entry("acme/mid", None)]));
+    let pool = get_subagent_pool(&cwd, &available);
+    assert!(pool.select_model("explore", &request).error.is_none());
+    // The scope changes (a picker save or a new run scope): the next lookup
+    // must carry it, with no dispatch in between.
+    set_scoped_models_override(Some(vec![override_entry("acme/big", None)]));
+    let pool = get_subagent_pool(&cwd, &available);
+    let selection = pool.select_model("explore", &request);
+    assert!(
+        selection.error.is_some(),
+        "acme/mid is no longer scoped, so the ask must be refused: {selection:?}"
+    );
+    set_scoped_models_override(None);
+}
+
+/// A `--models` override reaches the children a dispatch spawns, as `--models`
+/// with `id:effort` entries, so nested subagents stay within the run's scope.
+#[tokio::test]
+async fn the_models_override_is_passed_to_nested_children() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let agents = cwd.join(DIR).join("agents");
+    std::fs::create_dir_all(&agents).unwrap();
+    std::fs::write(
+        agents.join("helper.md"),
+        "---\nname: helper\ndescription: Inherits the model.\ntools: read\nmodel: inherit\n---\nHelp.",
+    )
+    .unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    let mid = scoped_test_model("acme", "mid");
+    set_scoped_models_override(Some(vec![ScopedModel {
+        model: "acme/mid".into(),
+        effort: Some("high".into()),
+        category: None,
+        alias: None,
+    }]));
+    let pool = SubagentPool::new(SubagentPoolOptions {
+        executable: argv_child(&cwd),
+        cwd: Some(cwd.clone()),
+        ..Default::default()
+    });
+    set_subagent_pool_for_testing(Some(pool.clone()));
+    execute(
+        tool,
+        json!({"description": "do work", "prompt": "do some work", "subagent_type": "helper"}),
+        ToolContext {
+            model: Some(mid.clone()),
+            available_models: vec![mid],
+            ..ctx(&cwd)
+        },
+    )
+    .await
+    .unwrap();
+    let bytes = std::fs::read(cwd.join("argv.bin")).unwrap();
+    let argv: Vec<String> = bytes
+        .split(|b| *b == 0)
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect();
+    let i = argv
+        .iter()
+        .position(|a| a == "--models")
+        .expect("--models is passed on");
+    assert_eq!(argv.get(i + 1).map(String::as_str), Some("acme/mid:high"));
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    set_scoped_models_override(None);
+    task_store().clear();
+}
+
+#[tokio::test]
+async fn the_inherited_model_fallback_switches_away_from_a_model_tier() {
     let _serial = SERIAL.lock().await;
     isolate_agent_dir();
     let dir = tempfile::tempdir().unwrap();
     let cwd = dir.path().canonicalize().unwrap();
     // An agent that pins a concrete model, so the fallback has something to
-    // drop; the caller's `complexity` is what it will otherwise resolve to.
+    // drop; the caller's model tier is what it will otherwise resolve to.
     let agents = cwd.join(DIR).join("agents");
     std::fs::create_dir_all(&agents).unwrap();
     std::fs::write(
@@ -764,11 +916,12 @@ async fn the_inherited_model_fallback_switches_away_from_a_complexity_tier() {
     .unwrap();
     let tool = create_task_tool_definition(&cwd);
     task_store().clear();
-    let model: hoocode_ai_types::Model = serde_json::from_value(json!({
-        "id": "parent-model", "name": "p", "api": "openai-completions", "provider": "prov",
-        "baseUrl": "http://x", "contextWindow": 1000, "maxTokens": 100,
-    }))
-    .unwrap();
+    let parent = scoped_test_model("prov", "parent-model");
+    let tier = scoped_test_model("prov", "tier-model");
+    set_scoped_models_override(Some(vec![
+        override_entry("prov/tier-model", Some(ModelCategoryName::Fast)),
+        override_entry("prov/parent-model", None),
+    ]));
     let failed = json!({
         "summary": "Task failed: This Go model requires Global regions.",
         "files_changed": [], "confidence": 0.5, "status": "failed"
@@ -776,31 +929,26 @@ async fn the_inherited_model_fallback_switches_away_from_a_complexity_tier() {
     let pool = SubagentPool::new(SubagentPoolOptions {
         executable: failing_then_ok_child(&cwd, &failed),
         cwd: Some(cwd.clone()),
-        settings: Some(hoocode_code_subagents::model_categories::CategorySettings {
-            model_categories: Some(hoocode_code_settings::ModelCategories {
-                fast: Some("tier-model".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        }),
         ..Default::default()
     });
     set_subagent_pool_for_testing(Some(pool.clone()));
     let result = execute(
         tool,
-        json!({"description": "quick read", "prompt": "read one file", "subagent_type": "pinned", "complexity": "fast"}),
+        json!({"description": "quick read", "prompt": "read one file", "subagent_type": "pinned", "model": "fast"}),
         ToolContext {
-            model: Some(model),
+            model: Some(parent.clone()),
+            available_models: vec![parent, tier],
             ..ctx(&cwd)
         },
     )
     .await;
     assert!(result.is_ok(), "{result:?}");
-    // Two attempts were recorded: the pinned model, then the parent's.
+    // Two attempts were recorded: the asked tier (it beats the pin), then the parent's.
     let models = model_arg_history(&cwd);
-    assert_eq!(models, vec!["pinned-model", "parent-model"]);
+    assert_eq!(models, vec!["prov/tier-model", "prov/parent-model"]);
     pool.dispose();
     set_subagent_pool_for_testing(None);
+    set_scoped_models_override(None);
     task_store().clear();
 }
 
@@ -882,4 +1030,182 @@ fn the_task_tool_is_active_only_when_registered() {
     assert!(!off.contains(&"Agent".to_string()));
     assert!(!off.contains(&"AgentOutput".to_string()));
     assert!(off.contains(&"Read".to_string()));
+}
+
+/// Every argument the child was spawned with, in order.
+fn argv_of(dir: &Path) -> Vec<String> {
+    std::fs::read(dir.join("argv.bin"))
+        .unwrap()
+        .split(|b| *b == 0)
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_effort_param_reaches_the_child_as_thinking() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    let pool = install_pool(&cwd, argv_child(&cwd));
+    execute(
+        tool.clone(),
+        json!({"description": "Map it", "prompt": "Map the module", "subagent_type": "general-purpose", "effort": "high"}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    let argv = argv_of(&cwd);
+    let at = argv
+        .iter()
+        .position(|a| a == "--thinking")
+        .expect("--thinking is passed");
+    assert_eq!(argv[at + 1], "high");
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unknown_effort_is_refused_before_anything_is_dispatched() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    let pool = install_pool(&cwd, argv_child(&cwd));
+    let err = execute(
+        tool.clone(),
+        json!({"description": "x", "prompt": "x", "subagent_type": "general-purpose", "effort": "turbo"}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("Unknown effort"), "{err}");
+    assert!(!dir.path().join("argv.bin").exists(), "nothing was spawned");
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+}
+
+fn scoped_test_model(provider: &str, id: &str) -> hoocode_ai_types::Model {
+    serde_json::from_value(json!({
+        "id": id, "name": id, "api": "openai-completions", "provider": provider,
+        "baseUrl": "http://x", "reasoning": true, "contextWindow": 1000, "maxTokens": 100,
+    }))
+    .unwrap()
+}
+
+/// The project's `scopedModels` drive the Agent tool: a category runs on its
+/// scoped model, the result names that model, and an unscoped name is refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_scoped_category_runs_on_its_model_and_the_result_names_it() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    std::fs::create_dir_all(cwd.join(DIR)).unwrap();
+    std::fs::write(
+        cwd.join(DIR).join("settings.json"),
+        json!({"scopedModels": [
+            {"model": "prov/quick-model", "category": "fast", "alias": "quick", "effort": "low"},
+            {"model": "prov/big-model", "category": "capable"},
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    let pool = install_pool(&cwd, argv_child(&cwd));
+    let available = vec![
+        scoped_test_model("prov", "quick-model"),
+        scoped_test_model("prov", "big-model"),
+        scoped_test_model("other", "unscoped"),
+    ];
+    let with_models = || ToolContext {
+        cwd: Some(cwd.clone()),
+        available_models: available.clone(),
+        ..Default::default()
+    };
+    let result = execute(
+        tool.clone(),
+        json!({"description": "quick read", "prompt": "read one file", "subagent_type": "general-purpose", "model": "fast"}),
+        with_models(),
+    )
+    .await
+    .unwrap();
+    let argv = argv_of(&cwd);
+    let at = argv
+        .iter()
+        .position(|a| a == "--model")
+        .expect("--model is passed");
+    assert_eq!(argv[at + 1], "prov/quick-model");
+    let at = argv
+        .iter()
+        .position(|a| a == "--thinking")
+        .expect("the scoped effort is passed");
+    assert_eq!(argv[at + 1], "low");
+    assert!(
+        text(&result).starts_with("[model: quick (prov/quick-model), effort low]"),
+        "{}",
+        text(&result)
+    );
+
+    let refused = execute(
+        tool.clone(),
+        json!({"description": "x", "prompt": "x", "subagent_type": "general-purpose", "model": "other/unscoped"}),
+        with_models(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        refused.to_string().contains("no scoped model matches"),
+        "{refused}"
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+}
+
+/// `/subagent <mode> <task>` dispatches with the session's model as
+/// `inherited_model` and no ask. An agent whose frontmatter pins a model keeps
+/// the pin; an agent with no pin runs on the session's model.
+#[tokio::test(flavor = "multi_thread")]
+async fn slash_subagent_passes_the_session_model_as_inherited_not_asked() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let agents = cwd.join(DIR).join("agents");
+    std::fs::create_dir_all(&agents).unwrap();
+    std::fs::write(
+        agents.join("pinned.md"),
+        "---\nname: pinned\ndescription: Pins a model.\ntools: read\nmodel: pinned-model\n---\nPinned.",
+    )
+    .unwrap();
+    std::fs::write(
+        agents.join("helper.md"),
+        "---\nname: helper\ndescription: Inherits the model.\ntools: read\nmodel: inherit\n---\nHelp.",
+    )
+    .unwrap();
+    task_store().clear();
+    let pool = install_pool(&cwd, argv_child(&cwd));
+    let slash = |agent: &str| DispatchOptions {
+        force_agent: Some(agent.into()),
+        inherited_model: Some("prov/parent-model".into()),
+        ..Default::default()
+    };
+
+    pool.dispatch("do a thing", slash("pinned")).await.unwrap();
+    assert_eq!(model_arg(&cwd).as_deref(), Some("pinned-model"));
+
+    pool.dispatch("do a thing", slash("helper")).await.unwrap();
+    assert_eq!(model_arg(&cwd).as_deref(), Some("prov/parent-model"));
+
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
 }
