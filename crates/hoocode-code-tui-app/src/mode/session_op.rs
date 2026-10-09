@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 
 use hoocode_code_agent_session::runtime::{ChangeDirectoryResult, RuntimeError};
-use hoocode_code_agent_session::{NavigateTreeResult, ReplaceResult};
+use hoocode_code_agent_session::{ForkPosition, ForkResult, NavigateTreeResult, ReplaceResult};
 
 use super::*;
 
@@ -37,6 +37,23 @@ pub(super) enum SessionOutcome {
         target: PathBuf,
         previous_cwd: PathBuf,
         result: Result<ChangeDirectoryResult, RuntimeError>,
+    },
+    /// `/fork` and `/clone`.
+    Fork {
+        position: ForkPosition,
+        result: Result<ForkResult, RuntimeError>,
+    },
+    /// `/resume`: the session file switched to, and whether its cwd was overridden.
+    Switch {
+        path: PathBuf,
+        overridden: bool,
+        result: Result<ReplaceResult, RuntimeError>,
+    },
+    /// `/import`.
+    Import {
+        input: String,
+        overridden: bool,
+        result: Result<ReplaceResult, RuntimeError>,
     },
     /// `/reload`: the session re-read its resources (the screen is applied after).
     Reload,
@@ -142,6 +159,17 @@ impl Mode {
                 previous_cwd,
                 result,
             } => self.finish_change_directory(target, previous_cwd, result),
+            SessionOutcome::Fork { position, result } => self.finish_fork(position, result),
+            SessionOutcome::Switch {
+                path,
+                overridden,
+                result,
+            } => self.finish_switch(path, overridden, result),
+            SessionOutcome::Import {
+                input,
+                overridden,
+                result,
+            } => self.finish_import(input, overridden, result),
             SessionOutcome::Reload => self.finish_reload(),
         }
         self.dirty.set(true);

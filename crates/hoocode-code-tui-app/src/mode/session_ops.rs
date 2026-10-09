@@ -11,7 +11,7 @@ use hoocode_code_agent_session::runtime::{
 };
 use hoocode_code_agent_session::stats::sum_assistant_usage;
 use hoocode_code_agent_session::{
-    AgentSessionEvent, ForkPosition, NewSessionRequest, ReplaceResult,
+    AgentSessionEvent, ForkPosition, ForkResult, NewSessionRequest, ReplaceResult,
 };
 use hoocode_code_session::SessionManager;
 use hoocode_code_settings::EditorBorder;
@@ -92,12 +92,28 @@ impl Mode {
     /// the forked message's text back in the prompt (`/fork`); `At` copies
     /// the branch whole (`/clone`).
     fn fork_session(&mut self, entry_id: &str, position: ForkPosition) {
-        self.stop_working_loader();
-        let handle_rt = self.runtime.clone();
-        let Some(runtime) = self.session_runtime.as_mut() else {
+        let Some(runtime) = self.take_session_runtime("Forking") else {
             return;
         };
-        match handle_rt.block_on(runtime.fork(entry_id, position)) {
+        let entry_id = entry_id.to_string();
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let mut runtime = runtime;
+            let result = runtime.fork(&entry_id, position).await;
+            let _ = tx.send(AppEvent::SessionOp(Box::new(SessionOpDone {
+                runtime: Some(runtime),
+                outcome: SessionOutcome::Fork { position, result },
+            })));
+        });
+    }
+
+    /// The fork ended: the new session's transcript, or the error.
+    pub(super) fn finish_fork(
+        &mut self,
+        position: ForkPosition,
+        result: Result<ForkResult, RuntimeError>,
+    ) {
+        match result {
             Ok(result) if result.cancelled => self.dirty.set(true),
             Ok(result) => {
                 self.rebind_current_session();
@@ -339,13 +355,35 @@ impl Mode {
 
     /// `runtimeHost.importFromJsonl`; a stored cwd that is gone asks first.
     fn import_session(&mut self, input: String, cwd_override: Option<String>) {
-        self.stop_working_loader();
         let overridden = cwd_override.is_some();
-        let handle_rt = self.runtime.clone();
-        let Some(runtime) = self.session_runtime.as_mut() else {
+        let Some(runtime) = self.take_session_runtime("Importing session") else {
             return;
         };
-        match handle_rt.block_on(runtime.import_from_jsonl(Path::new(&input), cwd_override)) {
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let mut runtime = runtime;
+            let result = runtime
+                .import_from_jsonl(Path::new(&input), cwd_override)
+                .await;
+            let _ = tx.send(AppEvent::SessionOp(Box::new(SessionOpDone {
+                runtime: Some(runtime),
+                outcome: SessionOutcome::Import {
+                    input,
+                    overridden,
+                    result,
+                },
+            })));
+        });
+    }
+
+    /// The import ended: the session is replaced, or a missing cwd asks first.
+    pub(super) fn finish_import(
+        &mut self,
+        input: String,
+        overridden: bool,
+        result: Result<ReplaceResult, RuntimeError>,
+    ) {
+        match result {
             Ok(result) if result.cancelled => self.show_status("Import cancelled"),
             Ok(_) => {
                 self.rebind_current_session();
@@ -592,16 +630,32 @@ impl Mode {
     /// `handleResumeSession`: swap to `path`; a stored cwd that is gone asks
     /// first (`promptForMissingSessionCwd`).
     pub(super) fn handle_resume_session(&mut self, path: PathBuf, cwd_override: Option<String>) {
-        if self.session_runtime.is_none() {
-            return;
-        }
-        self.stop_working_loader();
         let overridden = cwd_override.is_some();
-        let handle = self.runtime.clone();
-        let Some(runtime) = self.session_runtime.as_mut() else {
+        let Some(runtime) = self.take_session_runtime("Resuming session") else {
             return;
         };
-        let result = handle.block_on(runtime.switch_session(&path, cwd_override));
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let mut runtime = runtime;
+            let result = runtime.switch_session(&path, cwd_override).await;
+            let _ = tx.send(AppEvent::SessionOp(Box::new(SessionOpDone {
+                runtime: Some(runtime),
+                outcome: SessionOutcome::Switch {
+                    path,
+                    overridden,
+                    result,
+                },
+            })));
+        });
+    }
+
+    /// The resume ended: the session is swapped, or a stored cwd asks first.
+    pub(super) fn finish_switch(
+        &mut self,
+        path: PathBuf,
+        overridden: bool,
+        result: Result<ReplaceResult, RuntimeError>,
+    ) {
         match result {
             Ok(result) if result.cancelled => {}
             Ok(_) => {
