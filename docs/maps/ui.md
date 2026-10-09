@@ -142,3 +142,5 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
   reason, not a silent failure.
 - Concurrency ([concurrency.md](../design/concurrency.md)): the UI thread never does
   file or network I/O. Work off the UI thread reports back through `AppEvent`.
+- Visual change: after the goldens change, a Haiku subagent reviews the bundle with the
+  `tui-review` skill (`.claude/skills/tui-review/SKILL.md`). The review is advisory; text golden diffs gate.
