@@ -14,9 +14,10 @@ Never modify hoocode-ts; it is the reference.
 - Handoff log: `migration/PROGRESS.md`.
 - Build speed / agent loop design (profiles, nextest, test layout, hooks, CI):
   `docs/design/build-speed.md`. Its §4.3 rules join this file as they are implemented.
-- Done = Level 1 (cargo fmt/clippy/test + `migration/check_dep_firewall.py`) + Level 2
-  (`migration/tui-parity/harness.py`: real hoocode-ts vs real hoocode rendered in tmux against
-  one mock LLM). `ledger.py verify <id>` runs both.
+- Done = L1 (cargo fmt/clippy/nextest + `migration/check_dep_firewall.py`) + `python3 scripts/tui/goldens.py check all`
+  (component goldens run in nextest; `UPDATE_GOLDENS=1` accepts them, `goldens.py update <scenario>` accepts screens).
+  Visual changes get a review bundle (`scripts/tui/review_bundle.py`) reviewed by a Haiku subagent with the
+  `tui-review` skill (advisory).
 
 - **MIT only.** Never copy code, schemas or generated types from non-MIT projects (e.g.
   `../codex`, Apache-2.0) into this repo. Running such tools in tests is fine.
@@ -48,6 +49,7 @@ scripts/ci/fetch_hoocode_fixtures.sh               # fixtures some tests need (n
 cargo clippy --workspace --all-targets -- -D warnings
 scripts/eval/subagent_evals.py --include-slow # subagent reliability evals (real binary + mock LLM)
 python3 migration/check_dep_firewall.py
-migration/tui-parity/setup_hoocode.sh              # build pinned hoocode-ts into target/hoocode-pin
-python3 migration/tui-parity/harness.py run all     # L2 parity; reports in target/tui-parity/
+python3 scripts/tui/goldens.py check all           # screen goldens (tmux, ~6 min); reports in target/tui-goldens/
+python3 scripts/tui/goldens.py update <scenario>   # accept a deliberate screen change
+python3 scripts/tui/review_bundle.py               # after a golden change: review bundles in target/tui-review/
 ```

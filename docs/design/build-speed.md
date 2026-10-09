@@ -3,7 +3,7 @@
 Status: agreed design (2026-09-29). Implemented 2026-10-01: D1, D9 (CI and release; §4.2,
 §4.6) and D2 in CI. Implemented 2026-10-02: D3 + D4 (nextest lists 97 test binaries, down
 from 270 in CI; the `--doc` CI step is scoped to hoocode-agent-mcp, the one crate with a
-doctest). Not yet: D2 locally (`ledger.py verify`), D5–D8, D10–D12.
+doctest). Not yet: D2 locally (the L1 gate in `CLAUDE.md`), D5–D8, D10–D12. The `ledger.py verify` gate is retired (TUI plan T0.6).
 Scope: hoocode only; hoocode is
 never touched. Implementation lands as small steps in the order of §5, each re-measured
 against §2.
@@ -42,7 +42,7 @@ Environments:
 | Slowest compile units | the `wasmtime` stack (cranelift-codegen, wasmparser, wasmtime, zstd-sys, wast, wit-parser, wasmtime-environ) ≈ 55s of the 243s CPU |
 | Linker | Already **LLD 21**: the Rust default on `x86_64-unknown-linux-gnu` since 1.90 |
 | Alternating `-p <crate>` and `--workspace` builds | 0 recompiles: Cargo keeps both feature variants (costs disk, not time) |
-| Fresh session `cargo test --workspace` | 3 failures (`agent-compaction`): `target/hoocode-pin` fixtures are missing until `setup_hoocode.sh` runs |
+| Fresh session `cargo test --workspace` | 3 failures (`agent-compaction`): `target/hoocode-pin` fixtures are missing until `scripts/ci/fetch_hoocode_fixtures.sh` runs |
 
 Test binaries come from 142 `crates/*/tests/*.rs` files (each its own binary) plus ~77
 lib/bin unit-test targets. **The bottleneck is linking and running test binaries, not compiling.**
@@ -56,7 +56,7 @@ Reproduce with the commands in §7.
 | # | Change | Where | Why |
 |---|---|---|---|
 | D1 | `[profile.dev] debug = "line-tables-only"` | root `Cargo.toml` | Full debuginfo × 219 binaries does not fit a session's disk. Backtraces keep file:line. |
-| D2 | `cargo nextest run` for the test loop; doctests only via `cargo test --doc` in CI | CI, `CLAUDE.md`, `ledger.py verify` | Runs binaries in parallel. Estimated 45s → ~12–15s (bounded by `highlight_gold`). |
+| D2 | `cargo nextest run` for the test loop; doctests only via `cargo test --doc` in CI | CI, `CLAUDE.md` | Runs binaries in parallel. Estimated 45s → ~12–15s (bounded by `highlight_gold`). |
 | D3 | **One integration-test binary per crate**: `crates/X/tests/*.rs` → `crates/X/tests/it/<name>.rs` + `tests/it/main.rs` (`mod <name>;` per file). Cargo auto-discovers `tests/it/main.rs` as test target `it`. | all crates with `tests/` | ~219 → ~77 binaries. Estimated relink after a base-crate edit 48s → ~20s, test build ~13 GB → ~5 GB. |
 | D4 | `doctest = false` in `[lib]` of crates with no doctests | crate `Cargo.toml`s | Stops rustdoc running 73 times for 1 doctest. |
 | D5 | **Superseded 2026-10-08: the crate is deleted** ([extension-runtime.md](extension-runtime.md)). Was: `wasmtime` becomes an **optional dependency behind a `wasm` feature, off by default**, on `hoocode-code-extensions`. Plugin code is `#[cfg(feature = "wasm")]`. The umbrella `hoocode` forwards `wasm = ["hoocode-code-extensions/wasm"]`. When enabled, use `default-features = false` plus only the features the code uses. | `hoocode-code-extensions`, `hoocode` | The shipped `hoocode` binary (`hoocode-code-main`) does not depend on wasmtime at all. It only costs ~55s CPU on every clean workspace build. One CI job builds and tests with `--features wasm` so it doesn't rot. The crate is experimental (a hoocode-only WASM plugin host, not a hoocode port). Consumers of the published crate opt in with `features = ["wasm"]`. |
@@ -98,7 +98,7 @@ Reproduce with the commands in §7.
 
 | Hook | Does | Notes |
 |---|---|---|
-| `SessionStart` | 1. In cloud sessions (`CLAUDE_CODE_REMOTE=true`): install `cargo-binstall`, then `cargo binstall -y cargo-nextest` (prebuilt, no compiling). 2. Run `migration/tui-parity/setup_hoocode.sh` (fixes the 3 fresh-session failures, needed for L2). 3. Start `cargo nextest run --workspace --no-run` **in the background**, logging to `target/warmup.log`, so the first real build is warm. | Idempotent; must return quickly (backgrounds long work). Installs only in cloud sessions; local machines are left alone. |
+| `SessionStart` | 1. In cloud sessions (`CLAUDE_CODE_REMOTE=true`): install `cargo-binstall`, then `cargo binstall -y cargo-nextest` (prebuilt, no compiling). 2. Run `scripts/ci/fetch_hoocode_fixtures.sh` (fixtures only, no hoocode-ts build; fixes the 3 fresh-session failures). 3. Start `cargo nextest run --workspace --no-run` **in the background**, logging to `target/warmup.log`, so the first real build is warm. | Idempotent; must return quickly (backgrounds long work). Installs only in cloud sessions; local machines are left alone. |
 | `PostToolUse` (`Edit\|Write` on `*.rs`) | `rustfmt --edition 2021 <file>` on the edited file only | Milliseconds. Removes fmt failures from the loop. No `cargo check` here: it would run once per file in a multi-file change. |
 | `Stop` | Map `git diff --name-only HEAD` (plus untracked files) to `crates/<name>/` → `cargo clippy -p <each> --all-targets -- -D warnings`. On failure, exit 2 with the short errors so the agent keeps working instead of handing off red code. | Skipped when no `.rs` changed. Bounded timeout. |
 
@@ -174,7 +174,7 @@ renamed at packaging) and the `hoocode-ts` shim.
 Each step is its own PR, verified with Level 1 (`cargo fmt`, clippy `-D warnings`, tests,
 `migration/check_dep_firewall.py`), then re-measured with §7 and the §2 table updated.
 
-1. **D1 + D2 + D8**: line-tables-only, nextest (`ledger.py verify` switches to
+1. **D1 + D2 + D8**: line-tables-only, nextest (the L1 gate switches to
    `cargo nextest run -p …`), hooks.
 2. **D3 + D4**: test consolidation. **Done 2026-10-02.** As landed: scripted `git mv` (keeps
    blame), generated `tests/it/main.rs` per crate, helpers moved to `tests/it/{common,support}/`

@@ -25,11 +25,21 @@ You review how a changed TUI screen looks. You are a reader, not an editor.
 
 `target/tui-review/index.md` lists the bundles. Each bundle is one directory,
 `target/tui-review/<scenario>/<snap>/`, with `before.txt` (absent for a new screen),
-`after.txt` (text rows, then the style section), `diff.txt`, `legend.txt` and, only with
-`--png`, `after.png`.
+`after.txt`, `diff.txt`, `legend.txt` and, only with `--png`, `after.png`.
 
-Component goldens (`tests/golden/<crate>/*.txt`) are reviewed from a `git diff` of those
-files. Their style runs are `r<row> c<a>-<b> <style>`.
+Two golden formats reach you. They are not the same:
+
+- **Screen goldens** (end-to-end, `tests/golden/tui/<scenario>/<snap>.txt`; the bundle's
+  `before.txt` and `after.txt` use this format). One line per screen row, trailing spaces dropped.
+  Style is inline: a marker `«<key>»` starts a run in style `<key>`, and the run lasts until the
+  next marker. The empty key `«»` is the default style. A key is the style items sorted by name,
+  separated by `;`, for example `«bold;fg=#5cc8bb»`. There is no separate style section. A diff
+  line that changes only a marker is a visual change with the same text. Read each key's meaning
+  in `legend.txt`.
+- **Component goldens** (`tests/golden/<crate>/*.txt`, reviewed from a `git diff` of those files,
+  not from bundles). Text rows, then a `--- styles ---` line, then one line per styled run:
+  `r<row> c<a>-<b> <style>`. Rows and columns are 0-based and `<b>` is inclusive. A single cell is
+  written `c<a>`.
 
 ## Steps
 

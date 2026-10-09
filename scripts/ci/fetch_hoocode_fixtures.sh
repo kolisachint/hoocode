@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fetch only the pinned hoocode files the Rust tests read (fixtures, templates)
-# into target/hoocode-pin, without installing or building hoocode. CI uses this;
-# L2 parity needs the full build from migration/tui-parity/setup_hoocode.sh,
-# which turns the sparse checkout back into a full one.
+# into target/hoocode-pin, without installing or building hoocode. CI uses this.
+# The full build from migration/tui-parity/setup_hoocode.sh turns the sparse checkout back
+# into a full one; only the retired hoocode-ts comparison needed it (TUI plan T0.6).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

@@ -27,8 +27,8 @@ Tools: the scenarios and the normalizer use hoocode's tool names (Read, Shell, .
 the tool-name rules of ``normalize.json`` are not applied here. They exist only to map
 hoocode-ts names to hoocode's for the parity harness.
 
-Scenario files, the mock LLM and the normalizer rules are read from ``PARITY_DIR``
-(``migration/tui-parity``) for now. T0.6 moves them to ``scripts/tui`` and repoints it.
+Scenario files, the mock LLM and the normalizer rules live in this directory
+(``scripts/tui``). The hoocode-ts parity gate is retired (TUI plan T0.6).
 
 Env: ``HOOCODE_BIN`` runs that binary instead of building ``target/debug/hoocode``.
 """
@@ -52,11 +52,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-# Shared with the parity harness until T0.6 moves them here.
-PARITY_DIR = ROOT / "migration" / "tui-parity"
-SCENARIOS = PARITY_DIR / "scenarios"
-NORMALIZE = PARITY_DIR / "normalize.json"
-MOCKLLM = PARITY_DIR / "mockllm.py"
+TUI_DIR = HERE
+SCENARIOS = TUI_DIR / "scenarios"
+NORMALIZE = TUI_DIR / "normalize.json"
+MOCKLLM = TUI_DIR / "mockllm.py"
 OUT = ROOT / "target" / "tui-goldens"
 GOLDEN = ROOT / "tests" / "golden" / "tui"
 # The project config dir (`{config}`) and the default run args.

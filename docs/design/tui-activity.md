@@ -1,8 +1,11 @@
 # TUI: activity panel, subagent attach, and hoocode-only goldens
 
 Status: **design, agreed 2026-10-09** ([decisions-2026-10-09.md](decisions-2026-10-09.md)).
-No code yet. Input: eight read-only reviews of the TUI, subagent and parity code
-(summarised in Details).
+Input: eight read-only reviews of the TUI, subagent and parity code (summarised in Details).
+
+**T0 done 2026-10-09** (T0.1 to T0.6). The hoocode-ts parity gate is retired: the done bar is
+L1 plus `python3 scripts/tui/goldens.py check all`, and `ledger.py` is read-only. The phase
+tables below stay as the record. Phase S is next (after the user picks the step).
 
 This is the **TUI plan**. It runs side by side with the core plan in
 [README.md](README.md); neither is ahead of the other. Before implementing any step, ask the
@@ -45,7 +48,7 @@ user which plan and which step to take next.
 
 ## What we build
 
-### Phase T0: hoocode-only goldens (first, so later phases have a safety net)
+### Phase T0: hoocode-only goldens (first, so later phases have a safety net) (done 2026-10-09)
 
 Needs: nothing. Start here.
 

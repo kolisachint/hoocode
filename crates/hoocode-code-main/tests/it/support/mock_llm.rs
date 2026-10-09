@@ -1,6 +1,6 @@
 //! In-process mock LLM for the integration tests: an OpenAI-compatible chat-completions
 //! server that streams a scripted list of turns and records every request. A port of
-//! `migration/tui-parity/mockllm.py`, so tests that need a model need no Python.
+//! `scripts/tui/mockllm.py`, so tests that need a model need no Python.
 
 #![allow(clippy::disallowed_methods)] // test code: a listener thread and one thread per connection
 

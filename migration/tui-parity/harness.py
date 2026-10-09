@@ -80,9 +80,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-SCENARIOS = HERE / "scenarios"
+TUI_DIR = ROOT / "scripts" / "tui"  # mock, normalizer, scenarios, renderer (moved in T0.6)
+SCENARIOS = TUI_DIR / "scenarios"
 OUT = ROOT / "target" / "tui-parity"
-NORMALIZE = HERE / "normalize.json"
+NORMALIZE = TUI_DIR / "normalize.json"
 APPS = ("ts", "rust")
 # Each app's project config dir (`{config}` in `work_files` paths). Both apps use
 # `.hoocode` (naming-and-paths.md); isolation comes from each run's own temp HOME.
@@ -490,7 +491,7 @@ def start_mock(script: list, workdir: Path) -> tuple[subprocess.Popen, int, Path
     port_file = workdir / "llm-port"
     log = workdir / "requests.jsonl"
     proc = subprocess.Popen(
-        [sys.executable, str(HERE / "mockllm.py"), "--script", str(script_path), "--port-file", str(port_file), "--log", str(log)],
+        [sys.executable, str(TUI_DIR / "mockllm.py"), "--script", str(script_path), "--port-file", str(port_file), "--log", str(log)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -1202,7 +1203,7 @@ def cmd_selfcheck(names: list[str]) -> int:
 
 def cmd_png(name: str) -> int:
     report = OUT / name / "report.html"
-    script = HERE / "render_png.mjs"
+    script = TUI_DIR / "render_png.mjs"
     groot = subprocess.run(["npm", "root", "-g"], capture_output=True, text=True).stdout.strip()
     env = {**os.environ, "NODE_PATH": groot}
     return subprocess.run(["node", str(script), str(report), str(report.with_suffix(".png"))], env=env).returncode

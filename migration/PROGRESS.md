@@ -5,6 +5,14 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ## Resume here
 
+- **2026-10-09 (TUI T0.6): parity retired, ledger frozen.** `ledger.py` is read-only:
+  `start`, `note`, `block`, `move` and `verify` exit non-zero and point at
+  `docs/design/tui-activity.md`. The done bar is L1 plus `python3 scripts/tui/goldens.py check all`.
+  The mock, normalizer, scenarios and renderer moved to `scripts/tui/`. `replay.json` and the
+  `hoocode-0.5.89/` fixtures stay under `migration/tui-parity/` and `crates/hoocode-code-main/`
+  (regression tests until a week of green T0 runs). `setup_hoocode.sh` is dropped from the
+  SessionStart design (build-speed §4.1; no hook file exists in the repo) and from the CI job.
+  Migration stays paused. Resume a task only when the user names it.
 - **2026-10-08 (second session): milestones 4 and 5 built on `claude/m4-m5-mcp-concurrency`.
   Not load-tested yet. Read this first.**
   - **Milestone 4, MCP client.** Crate `hoocode-agent-mcp` (rmcp 3.5.1; only this crate uses rmcp).

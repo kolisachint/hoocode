@@ -1,7 +1,8 @@
-name: TUI parity (level 2)
+name: TUI goldens (level 2)
 
-# Runs the rendered-TUI comparison of pinned hoocode-ts vs hoocode. Manual and nightly;
-# failures are expected until the owning ledger tasks land, so this does not gate PRs.
+# Runs the hoocode-only screen goldens (scripts/tui/goldens.py check): the real hoocode binary
+# in tmux against the scripted mock LLM, diffed with tests/golden/tui/. The hoocode-ts parity
+# gate is retired (TUI plan T0.6). Manual and nightly; the same check is the local done bar.
 on:
   workflow_dispatch:
     inputs:
@@ -12,29 +13,21 @@ on:
     - cron: "17 3 * * *"
 
 jobs:
-  parity:
+  goldens:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Pin drift (upstream released past the pin?)
-        run: python3 migration/pin_drift.py status >> "$GITHUB_STEP_SUMMARY"
       - name: Install tmux
         run: sudo apt-get update && sudo apt-get install -y tmux
-      - name: Build pinned hoocode reference
-        run: migration/tui-parity/setup_hoocode.sh
       - name: Build hoocode
         run: cargo build -p hoocode-code-main --bin hoocode
-      - name: Run scenarios
-        run: python3 migration/tui-parity/harness.py run "${{ inputs.scenario || 'all' }}" || true
-      - name: Summary
-        run: cat target/tui-parity/summary.json
-      - uses: actions/upload-artifact@v4
+      - name: Check screen goldens
+        run: python3 scripts/tui/goldens.py check "${{ inputs.scenario || 'all' }}"
+      - name: Upload screens on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
         with:
-          name: tui-parity-reports
-          path: target/tui-parity/
+          name: tui-goldens
+          path: target/tui-goldens/

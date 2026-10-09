@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import goldens as G  # noqa: E402  (shares the output/golden paths and golden loader)
 
 REVIEW = G.ROOT / "target" / "tui-review"
-RENDER = G.PARITY_DIR / "render_png.mjs"
+RENDER = G.TUI_DIR / "render_png.mjs"
 # Files in a run's output directory that are not snapshots.
 NOT_SNAPSHOTS = {"error.txt", "last-screen.txt"}
 MARKER = re.compile(r"«([^»]*)»")

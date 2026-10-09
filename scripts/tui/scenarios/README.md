@@ -1,7 +1,9 @@
-# Level-2 parity scenarios
+# Screen golden scenarios
 
-Each `*.json` file is one scenario, run against the real hoocode (pinned build in
-`target/hoocode-pin`) and the real `hoocode` binary in identical tmux terminals.
+Each `*.json` file is one scenario, run against the real `hoocode` binary in a fixed tmux
+terminal with the mock LLM (`scripts/tui/goldens.py`). The screens are committed under
+`tests/golden/tui/<scenario>/`. The hoocode-ts comparison this format was built for is retired
+(TUI plan T0.6), so the `tool_needle` and ts-run notes below are history.
 
 ```jsonc
 {
@@ -49,13 +51,11 @@ are hoocode's; the ts run looks for hoocode-ts's name (`tool_needle` in `harness
 
 Rules:
 
-1. A scenario must pass `harness.py selfcheck <name>` (hoocode renders identically twice)
-   before it can be used to mark a task done.
+1. Accept a new scenario's screens with `python3 scripts/tui/goldens.py update <name>` after
+   checking them by eye (or with `review_bundle.py`). `goldens.py check <name>` must then pass.
 2. Prefer `wait_for` / `wait_stable` over `sleep`.
 3. Global normalization lives in `../normalize.json`. Add scenario-local rules only for
    scenario-specific randomness, and document why.
-4. A scenario is owned by exactly one ledger task (`phase`), but may be listed as an
-   L2 gate by several tasks.
 5. Print-mode scenarios (`wait_exit`) snapshot with `"history": true` and set
    `"settings": {"enableSemanticIndex": false}`. On exit tmux 3.4 writes its
    "Pane is dead" line and scrolls the screen by one row. hoocode also prints an

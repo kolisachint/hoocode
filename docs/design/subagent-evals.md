@@ -55,7 +55,7 @@ minutes of wall clock by design.
 ## 3. The mock provider
 
 `scripts/eval/mock_provider.py` is a routable OpenAI-compatible mock.
-`tui-parity/mockllm.py` serves one global, strictly ordered script, which is
+`scripts/tui/mockllm.py` serves one global, strictly ordered script, which is
 right for a parity transcript and wrong here: a dispatch interleaves the parent's
 and the child's requests, and the order in which two processes happen to call a
 model is not something a test should depend on. This one routes on the request —

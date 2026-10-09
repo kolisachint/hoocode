@@ -58,7 +58,8 @@ fn manifest() -> Value {
 }
 
 fn scenario(name: &str) -> Value {
-    read_json(&parity_dir().join(format!("scenarios/{name}.json")))
+    // Scenario JSON moved to scripts/tui/scenarios with the mock (TUI plan T0.6).
+    read_json(&root().join(format!("scripts/tui/scenarios/{name}.json")))
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +160,8 @@ fn path_pattern(path: &str) -> String {
 
 impl Normalizer {
     fn load(extra: Option<&Value>, paths: &[(&str, &str)]) -> Self {
-        let global = read_json(&parity_dir().join("normalize.json"));
+        // normalize.json moved to scripts/tui with the mock (TUI plan T0.6); replay.json stays.
+        let global = read_json(&root().join("scripts/tui/normalize.json"));
         let mut spec: Vec<Value> = global["rules"].as_array().cloned().unwrap_or_default();
         if let Some(Value::Array(extra)) = extra {
             spec.extend(extra.iter().cloned());
