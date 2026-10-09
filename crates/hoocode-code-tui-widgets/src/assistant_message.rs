@@ -189,6 +189,9 @@ pub struct AssistantMessageComponent {
     /// index and kind, so finished blocks keep their render caches.
     markdown_cache: HashMap<String, CachedMarkdown>,
     has_segmented_blocks: bool,
+    /// Whether the last `update_content` was a streaming update, so a
+    /// `refresh` (e.g. a thinking toggle mid-stream) keeps the same form.
+    streaming: bool,
 }
 
 fn handle<C: Component + 'static>(c: C) -> ComponentHandle {
@@ -220,6 +223,7 @@ impl AssistantMessageComponent {
             has_tool_calls: false,
             markdown_cache: HashMap::new(),
             has_segmented_blocks: false,
+            streaming: false,
         };
         if let Some(message) = message {
             this.update_content(message, false);
@@ -290,7 +294,8 @@ impl AssistantMessageComponent {
 
     fn refresh(&mut self) {
         if let Some(message) = self.last_message.clone() {
-            self.update_content(&message, false);
+            let streaming = self.streaming;
+            self.update_content(&message, streaming);
         }
     }
 
@@ -307,6 +312,7 @@ impl AssistantMessageComponent {
 
     pub fn update_content(&mut self, message: &AssistantMessage, streaming: bool) {
         self.last_message = Some(message.clone());
+        self.streaming = streaming;
 
         // A final render replaces streaming segments with the single form.
         if !streaming && self.has_segmented_blocks {
@@ -406,5 +412,55 @@ impl Component for AssistantMessageComponent {
         }
         self.content.invalidate();
         self.refresh();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn long_streaming_text() -> String {
+        // Well above SEGMENT_MIN_CHARS, with blank lines so it segments.
+        (0..60)
+            .map(|n| format!("Paragraph {n} with enough words to make the text long."))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
+    fn streaming_message() -> AssistantMessage {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        AssistantMessage {
+            content: vec![Content::Text(hoocode_ai_types::TextContent {
+                text: long_streaming_text(),
+                text_signature: None,
+            })],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn thinking_toggle_mid_stream_keeps_segmented_blocks() {
+        let message = streaming_message();
+        let mut component = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
+        component.update_content(&message, true);
+        assert!(component.has_segmented_blocks, "a long stream segments");
+
+        component.set_thinking_display(ThinkingDisplay::Label);
+
+        assert!(
+            component.has_segmented_blocks,
+            "a display change mid-stream must not drop the streaming form"
+        );
+        assert!(component.markdown_cache.keys().any(|k| k.contains(":seg:")));
+    }
+
+    #[test]
+    fn final_render_still_replaces_segments() {
+        let message = streaming_message();
+        let mut component = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
+        component.update_content(&message, true);
+        component.update_content(&message, false);
+        assert!(!component.has_segmented_blocks);
+        assert!(!component.markdown_cache.keys().any(|k| k.contains(":seg:")));
     }
 }
