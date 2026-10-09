@@ -4,6 +4,7 @@
 
 use hoocode_ai_types::Model;
 use hoocode_code_settings::{ModelCategoryName, ScopedModel};
+use hoocode_code_tui_keybindings::format_key_text;
 use hoocode_code_tui_selectors::scoped_models_selector::ScopedModelsSelectorComponent;
 use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
@@ -45,21 +46,57 @@ fn fixture() -> (Vec<Model>, Vec<ScopedModel>) {
     (models, scoped)
 }
 
+/// Every platform checks the rows, columns and hints. The goldens are recorded
+/// on Linux: on macOS `alt` prints as `option`, which widens and rewraps the
+/// hint lines (see `format_key_text`), so the byte comparison runs elsewhere.
+fn check(name: &str, width: u16) {
+    let (models, scoped) = fixture();
+    let mut selector = ScopedModelsSelectorComponent::new(models, Some(scoped));
+    let rendered = render_golden(&mut selector, width);
+    {
+        let text = rendered.split("--- styles ---").next().unwrap_or_default();
+        let rows: Vec<Vec<&str>> = text
+            .lines()
+            .map(|l| {
+                l.trim_matches(|c| c == '│' || c == ' ')
+                    .split_whitespace()
+                    .collect()
+            })
+            .collect();
+        for row in [
+            vec!["model", "effort", "category"],
+            vec!["›", "claude-haiku-5-5", "[anthropic]", "✓", "low", "cheap"],
+            vec!["gpt-5-mini", "[openai]", "✓", "-", "standard"],
+            vec!["gpt-5", "[openai]", "✗", "-", "-"],
+        ] {
+            assert!(
+                rows.contains(&row),
+                "{name}: missing row {row:?} in\n{text}"
+            );
+        }
+        let hint = format!(
+            "{} effort · {} category",
+            format_key_text("tab", false),
+            format_key_text("alt+j", false)
+        );
+        assert!(
+            text.contains(&hint),
+            "{name}: missing hint {hint:?} in\n{text}"
+        );
+    }
+    if !cfg!(target_os = "macos") {
+        assert_golden!(name, rendered);
+    }
+}
+
 #[test]
 fn scoped_models_picker_100() {
     let _g = lock();
-    let (models, scoped) = fixture();
-    let mut selector = ScopedModelsSelectorComponent::new(models, Some(scoped));
-    assert_golden!(
-        "scoped_models_picker_100",
-        render_golden(&mut selector, 100)
-    );
+    check("scoped_models_picker_100", 100);
 }
 
 #[test]
 fn scoped_models_picker_80() {
     let _g = lock();
-    let (models, scoped) = fixture();
-    let mut selector = ScopedModelsSelectorComponent::new(models, Some(scoped));
-    assert_golden!("scoped_models_picker_80", render_golden(&mut selector, 80));
+    check("scoped_models_picker_80", 80);
 }
