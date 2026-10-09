@@ -159,7 +159,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI (`src/mode/*`, split by concern) | 1 | 12720 / 4787 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI (`src/mode/*`, split by concern) | 1 | 12693 / 4787 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 839 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7822 / 3124 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2424 / 2514 | keep |
