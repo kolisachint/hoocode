@@ -722,20 +722,6 @@ impl SettingsManager {
         }
     }
 
-    pub fn model_categories(&self) -> Option<ModelCategories> {
-        let categories = self.get("modelCategories")?.as_object()?;
-        let tier = |name: &str| {
-            defined(categories.get(name))
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        };
-        Some(ModelCategories {
-            fast: tier("fast"),
-            standard: tier("standard"),
-            capable: tier("capable"),
-        })
-    }
-
     /// `setLearnSetting`: floored to at least 1.
     pub fn set_learn_setting(&mut self, key: LearnSettingKey, value: i64) {
         self.set(key.as_str(), Some(value.max(1).into()));
@@ -1351,14 +1337,6 @@ impl SettingsManager {
 
     pub fn set_block_images(&mut self, blocked: bool) {
         self.set_nested("images", "blockImages", blocked.into());
-    }
-
-    pub fn enabled_models(&self) -> Option<Vec<String>> {
-        string_list(self.get("enabledModels"))
-    }
-
-    pub fn set_enabled_models(&mut self, patterns: Option<&[String]>) {
-        self.set("enabledModels", patterns.map(strings));
     }
 
     /// `scopedModels`: the merged view, so a project list replaces the global

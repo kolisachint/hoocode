@@ -14,7 +14,7 @@ use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_code_models::{
     clamp_effort, match_scoped_model, parse_thinking_level, pick_by_category, ResolvedScoped,
 };
-use hoocode_code_settings::{ModelCategories, ModelCategoryName, SettingsManager};
+use hoocode_code_settings::{ModelCategories, ModelCategoryName};
 
 /// `ModelCategory`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,14 +80,6 @@ impl CategorySettings {
             model_categories,
             default_provider: text(settings.get("defaultProvider")),
             default_model: text(settings.get("defaultModel")),
-        }
-    }
-
-    pub fn from_manager(settings: &SettingsManager) -> Self {
-        Self {
-            model_categories: settings.model_categories(),
-            default_provider: settings.default_provider(),
-            default_model: settings.default_model(),
         }
     }
 }

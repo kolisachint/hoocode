@@ -13,6 +13,15 @@ use hoocode_tui_components::{Spacer, Text};
 use super::*;
 
 impl Mode {
+    /// The session's model as the `provider/id` reference the pool's
+    /// `inherited_model` takes. It is the default a subagent runs on, not an ask:
+    /// an agent's frontmatter `model:` still wins over it.
+    fn session_model_ref(&self) -> Option<String> {
+        self.session
+            .model()
+            .map(|m| format!("{}/{}", m.provider, m.id))
+    }
+
     /// `handleSubagent`: `/subagent <mode> <task>` runs one subagent of that
     /// type off the UI thread; [`Self::finish_subagent`] reports it.
     pub(super) fn handle_subagent_command(&mut self, text: &str) {
@@ -42,11 +51,9 @@ impl Mode {
 
         self.show_status(&format!("Spawning {mode} subagent..."));
         let available = self.session.get_available_models();
-        let model = self.session.model();
         let options = DispatchOptions {
             force_agent: Some(mode.clone()),
-            model: model.as_ref().map(|m| m.id.clone()),
-            provider: model.as_ref().map(|m| m.provider.clone()),
+            inherited_model: self.session_model_ref(),
             ..Default::default()
         };
         let tx = self.tx.clone();
@@ -161,11 +168,9 @@ impl Mode {
         }
         self.show_status(&format!("Re-dispatching {agent_type}…"));
         let models = self.session.get_available_models();
-        let model = self.session.model();
         let options = DispatchOptions {
             force_agent: Some(agent_type.clone()),
-            model: model.as_ref().map(|m| m.id.clone()),
-            provider: model.as_ref().map(|m| m.provider.clone()),
+            inherited_model: self.session_model_ref(),
             ..Default::default()
         };
         let tx = self.tx.clone();

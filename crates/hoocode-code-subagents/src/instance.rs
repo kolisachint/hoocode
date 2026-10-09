@@ -45,6 +45,12 @@ pub fn set_scoped_models_override(models: Option<Vec<ScopedModel>>) {
     instance().scoped_override = models;
 }
 
+/// Whether a run-only scope (`--models`) is set. The TUI keeps its picker save
+/// to the settings file while it is, so the run's scope stays as the flag set it.
+pub fn scoped_models_override_active() -> bool {
+    instance().scoped_override.is_some()
+}
+
 /// The scope a dispatch uses now: the session override, else `scopedModels`
 /// from the settings, resolved against `available_models`. Empty: no scope.
 pub fn current_scope(cwd: &Path, available_models: &[Model]) -> Vec<ResolvedScoped> {

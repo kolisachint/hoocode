@@ -202,6 +202,11 @@ fn model_options(
     options
 }
 
+/// The `--models` patterns as the run's scope entries, in flag order.
+fn cli_scope_entries(patterns: &[String]) -> Vec<ScopedEntry> {
+    patterns.iter().map(|p| cli_scope_entry(p)).collect()
+}
+
 /// One `--models` pattern as a scope entry (decision 13): `id` or `id:effort`,
 /// with no category. A suffix that is not a thinking level stays in the id.
 fn cli_scope_entry(pattern: &str) -> ScopedEntry {
@@ -224,7 +229,7 @@ fn cli_scope_entry(pattern: &str) -> ScopedEntry {
 /// settings file are unchanged. The subagents read their settings from disk
 /// and do not see this layer.
 fn apply_models_flag(settings: &mut SettingsManager, patterns: &[String]) {
-    let entries: Vec<ScopedEntry> = patterns.iter().map(|p| cli_scope_entry(p)).collect();
+    let entries = cli_scope_entries(patterns);
     let mut overrides = Settings::new();
     overrides.insert(
         "scopedModels".into(),
@@ -562,6 +567,12 @@ fn create_runtime(
     let mut settings = SettingsManager::create_default(&cwd);
     if let Some(patterns) = &args.models {
         apply_models_flag(&mut settings, patterns);
+        // Subagents build their own SettingsManager from disk, so they need the
+        // run-only scope through the subagent instance too. Their children get
+        // `--model` explicitly and do not read it.
+        hoocode_code_subagents::instance::set_scoped_models_override(Some(cli_scope_entries(
+            patterns,
+        )));
     }
     let registry = load_registry(auth);
     let mut diagnostics = Diagnostics::new();

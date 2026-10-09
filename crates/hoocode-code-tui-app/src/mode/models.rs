@@ -253,6 +253,19 @@ impl Mode {
                                 self.session
                                     .settings()
                                     .set_scoped_models(Some(entries.as_slice()));
+                                // Resolved entries keep each model's effort and category, so
+                                // alt+m cycling applies them now. While `--models` is set, the
+                                // run's scope stays as the flag made it: the save only writes
+                                // the settings file.
+                                if !hoocode_code_subagents::instance::scoped_models_override_active(
+                                ) {
+                                    let available = self.session.get_available_models();
+                                    self.session
+                                        .set_resolved_scoped_models(resolve_scoped_models(
+                                            &entries, &available,
+                                        ));
+                                    self.update_available_provider_count();
+                                }
                                 self.show_status("Model selection saved to settings");
                             }
                             Err(error) => {

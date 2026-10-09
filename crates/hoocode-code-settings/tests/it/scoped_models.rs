@@ -244,7 +244,6 @@ fn old_keys_stay_on_disk_and_are_not_read_after_migration() {
     }));
     let manager = dirs.manager();
     assert_eq!(manager.scoped_models().unwrap().len(), 2);
-    assert_eq!(manager.enabled_models().unwrap(), vec!["openai/gpt-5"]);
     let on_disk = dirs.read_global();
     assert!(on_disk.get("enabledModels").is_some());
     assert!(on_disk.get("modelCategories").is_some());
