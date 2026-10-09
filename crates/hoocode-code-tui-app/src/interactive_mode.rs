@@ -788,7 +788,8 @@ fn expanded_instructions() -> String {
     let hint = |id: &str, description: &str| key_hint(id, description);
     let dial = |forward: &str, backward: &str, subject: &str| {
         raw_key_hint(
-            &format!("{}/{}", app_key_label(forward), app_key_label(backward)),
+            // " or", not "/": a slash is itself a key (`/` for commands).
+            &format!("{} or {}", app_key_label(forward), app_key_label(backward)),
             &format!("to step {subject}"),
         )
     };
@@ -6621,4 +6622,22 @@ pub fn run_interactive(options: InteractiveOptions) -> Result<(), String> {
     );
     let mode = Mode::new(options);
     mode.run(initial)
+}
+
+#[cfg(test)]
+mod expanded_instructions_tests {
+    use super::*;
+
+    #[test]
+    fn dial_hints_join_their_keys_with_or_not_a_slash() {
+        init_theme(Some("dark"), false);
+        let text = hoocode_tui_util::strip_vt_control_characters(&expanded_instructions());
+        let line = text
+            .lines()
+            .find(|l| l.contains("to step thinking level"))
+            .expect("thinking dial line");
+        let keys = line.split(" to step").next().unwrap_or_default();
+        assert!(keys.contains(" or "), "keys joined with or: {line}");
+        assert!(!keys.contains('/'), "no slash between keys: {line}");
+    }
 }
