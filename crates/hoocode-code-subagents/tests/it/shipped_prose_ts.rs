@@ -58,6 +58,14 @@ fn leaves_no_substitution_token_in_the_rendered_prompt() {
 const DECLARED_DIVERGENCES: &[(&str, &str, &str)] = &[
     ("task-main.md", "**Task** tool", "**Agent** tool"),
     ("task-main.md", "call Task with", "call Agent with"),
+    // Scoped models (docs/design/scoped-models.md, decisions 6 and 16): `model`
+    // is the only model param, it takes a category or a scoped model, and
+    // `effort` overrides the scoped effort. `complexity` is removed.
+    (
+        "task-main.md",
+        "Model tier (optional `complexity`): `fast` for quick reads/lookups, `standard` for multi-file edits, `capable` for deep architecture. Omit to use the agent's default; an agent pinning its own model ignores it.",
+        "Model (optional `model`): a category (`cheap`, `fast`, `standard`, `capable`) or a scoped model's alias or id. `cheap` or `fast` for quick reads and lookups, `standard` for multi-file edits, `capable` for deep architecture. Omit it to use the agent's default model; an explicit `model` overrides the agent's own `model:`. Optional `effort` (`off` to `xhigh`) overrides the chosen scoped model's effort. The result says which model ran.",
+    ),
     ("task-background-agents.md", "`TaskOutput", "`AgentOutput"),
     ("task-background-none.md", "`TaskOutput", "`AgentOutput"),
 ];
