@@ -153,11 +153,24 @@ impl Mode {
         let session = self.session.clone();
         let target = entry_id.clone();
         if !summarize {
-            let result = self
-                .runtime
-                .block_on(async move { session.navigate_tree(&target, options).await })
-                .map_err(|e| e.to_string());
-            self.finish_tree_navigation(entry_id, result);
+            if !self.session_op_free() {
+                return;
+            }
+            self.start_session_op("Navigating the tree");
+            let tx = self.tx.clone();
+            self.runtime.spawn(async move {
+                let result = session
+                    .navigate_tree(&target, options)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = tx.send(AppEvent::SessionOp(Box::new(SessionOpDone {
+                    runtime: None,
+                    outcome: SessionOutcome::Tree {
+                        entry_id,
+                        result: Box::new(result),
+                    },
+                })));
+            });
             return;
         }
         self.add_to_chat(as_component(&handle(Spacer::new(1))));
@@ -206,7 +219,7 @@ impl Mode {
     }
 
     /// After `navigateTree`: redraw the transcript for the new position.
-    fn finish_tree_navigation(
+    pub(super) fn finish_tree_navigation(
         &mut self,
         entry_id: String,
         outcome: Result<NavigateTreeResult, String>,

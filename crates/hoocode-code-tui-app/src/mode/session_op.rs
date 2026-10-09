@@ -6,6 +6,8 @@
 //! applies it. While one runs, a loader shows and the prompt refuses input;
 //! a second operation says the first must finish.
 
+use hoocode_code_agent_session::NavigateTreeResult;
+
 use super::*;
 
 /// What a session operation found out.
@@ -16,6 +18,13 @@ pub(super) enum SessionOutcome {
         next: String,
         result: Result<(), String>,
     },
+    /// `/tree` to a point without a summary.
+    Tree {
+        entry_id: String,
+        result: Box<Result<NavigateTreeResult, String>>,
+    },
+    /// `/reload`: the session re-read its resources (the screen is applied after).
+    Reload,
 }
 
 /// A finished session operation. The runtime comes back with it when the
@@ -39,9 +48,15 @@ impl Mode {
         }
     }
 
+    /// Marks `label` as running; the caller shows its own loader.
+    pub(super) fn mark_session_op(&mut self, label: &'static str) {
+        self.session_op = Some(label);
+        self.dirty.set(true);
+    }
+
     /// Marks `label` as running and shows its loader.
     pub(super) fn start_session_op(&mut self, label: &'static str) {
-        self.session_op = Some(label);
+        self.mark_session_op(label);
         self.stop_working_loader();
         let mut loader = Loader::new(
             Box::new(|s: &str| theme().fg("accent", s)),
@@ -85,6 +100,10 @@ impl Mode {
                     );
                 }
             }
+            SessionOutcome::Tree { entry_id, result } => {
+                self.finish_tree_navigation(entry_id, *result)
+            }
+            SessionOutcome::Reload => self.finish_reload(),
         }
         self.dirty.set(true);
     }

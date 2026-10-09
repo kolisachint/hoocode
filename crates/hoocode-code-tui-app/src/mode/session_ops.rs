@@ -199,6 +199,9 @@ impl Mode {
             self.show_warning("Wait for compaction to finish before reloading.");
             return;
         }
+        if !self.session_op_free() {
+            return;
+        }
         let t = theme();
         let mut reload_box = Container::new();
         reload_box.add_child(as_component(&handle(DynamicBorder::new(Some(Box::new(
@@ -218,8 +221,21 @@ impl Mode {
         self.show_in_editor_slot(as_component(&handle(reload_box)));
         self.tui.request_render(true);
 
+        // The box above is the loader.
+        self.mark_session_op("Reloading");
         let session = self.session.clone();
-        self.runtime.block_on(async move { session.reload().await });
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            session.reload().await;
+            let _ = tx.send(AppEvent::SessionOp(Box::new(SessionOpDone {
+                runtime: None,
+                outcome: SessionOutcome::Reload,
+            })));
+        });
+    }
+
+    /// The `/reload` that ran off the UI thread ended: replay the transcript.
+    pub(super) fn finish_reload(&mut self) {
         self.apply_runtime_settings();
         self.apply_session_theme();
         self.update_editor_border_color();
