@@ -1,0 +1,208 @@
+«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+«fg=#989898»no project resources loaded
+
+«fg=#6e93ff»──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+«» «bold;fg=#5cc8bb»Keyboard Shortcuts
+
+«» Grouped by what you are doing, not by what the key is. Seven groups, none of the
+«» learned ones bigger than five — the size a person can actually hold. Three are
+«» free: «bold»Flow«» is what every terminal program already taught you, «bold»Scroll«» is
+«» what every pager did, and every picker prints its own keys on its own hint line,
+«» so you read those instead of remembering them. «bold»Screen«» is one key.
+
+«» «bold»Compose«» — the message in your hands
+
+«» ┌─────────────┬──────────────────────────────────────────────────────────────────┐
+«» │ «bold»Key        «» │ «bold»Action                                                          «» │
+«» ├─────────────┼──────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Enter«»       │ Send message                                                     │
+«» ├─────────────┼──────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Shift+Enter«» │ New line                                                         │
+«» ├─────────────┼──────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Tab«»         │ Path completion / accept autocomplete                            │
+«» ├─────────────┼──────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+E«»       │ Edit the message in «fg=#5cc8bb»$VISUAL«» / «fg=#5cc8bb»$EDITOR«»                            │
+«» ├─────────────┼──────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+R«»       │ Speak instead of type                                            │
+«» ├─────────────┼──────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+V«»      │ Paste image from clipboard                                       │
+«» ├─────────────┼──────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+Q«»       │ Copy the agent's last message («fg=#5cc8bb»/copy«»; «fg=#5cc8bb»/copy all«» for the session) │
+«» ├─────────────┼──────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+Enter«»   │ Queue a follow-up while the agent works                          │
+«» ├─────────────┼──────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+Up«»      │ Bring every queued message back to the editor                    │
+«» ├─────────────┼──────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»/«» «fg=#5cc8bb»!«» «fg=#5cc8bb»!!«»      │ Slash commands · run bash · run bash off the record              │
+«» └─────────────┴──────────────────────────────────────────────────────────────────┘
+
+«» «bold»Steer«» — what the agent is before it runs
+«» The only three keys that change what happens next, and the only three that cost
+«» anything. Step forward on the first key, back on the second; the footer shows
+«» all three.
+
+«» ┌─────────────────────┬────────────────┬──────────────────────────────────────────────┐
+«» │ «bold»Key                «» │ «bold»Steps         «» │ «bold»Through                                     «» │
+«» ├─────────────────────┼────────────────┼──────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+A«» / «fg=#5cc8bb»Shift+Alt+A«» │ Agent mode     │ ask → plan → build → debug («fg=#5cc8bb»/mode«» picks one) │
+«» ├─────────────────────┼────────────────┼──────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+M«» / «fg=#5cc8bb»Shift+Alt+M«» │ Model          │ your enabled models («fg=#5cc8bb»/model«» picks one)       │
+«» ├─────────────────────┼────────────────┼──────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+T«» / «fg=#5cc8bb»Shift+Alt+T«» │ Thinking level │ off → … → high                               │
+«» └─────────────────────┴────────────────┴──────────────────────────────────────────────┘
+
+«» «bold»Read«» — what you see of what it did
+«» Free and reversible, every one: nothing here touches the work, only the window
+«» onto it. Press again or add «fg=#5cc8bb»Shift«» and you are back where you were.
+
+«» ┌─────────────────────┬────────────────────────────────────────────────────────────────────────┐
+«» │ «bold»Key                «» │ «bold»Action                                                                «» │
+«» ├─────────────────────┼────────────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+O«» / «fg=#5cc8bb»Shift+Alt+O«» │ Step tool output: radar → peek → full                                  │
+«» ├─────────────────────┼────────────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+L«» / «fg=#5cc8bb»Shift+Alt+L«» │ Step the task panel: tasks → subagents → teams                         │
+«» ├─────────────────────┼────────────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+O«»              │ Jump to the full view and back, without moving the dial                │
+«» ├─────────────────────┼────────────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+T«»              │ Show or hide thinking blocks                                           │
+«» ├─────────────────────┼────────────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+N«»               │ Focus the team roster — «fg=#5cc8bb»n«» nudges, «fg=#5cc8bb»a«» attaches, «fg=#5cc8bb»q«»/«fg=#5cc8bb»Escape«» leaves («fg=#5cc8bb»--team«») │
+«» └─────────────────────┴────────────────────────────────────────────────────────────────────────┘
+
+«» «bold»Screen«» — how much room there is to see it in
+«» One dial for the furniture. Everything below the transcript except the prompt,
+«» which never hides.
+
+«» ┌─────────────────────┬────────┬───────────────────────────────────────────────────────────────────────────┐
+«» │ «bold»Key                «» │ «bold»Steps «» │ «bold»Through                                                                  «» │
+«» ├─────────────────────┼────────┼───────────────────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+Z«» / «fg=#5cc8bb»Shift+Alt+Z«» │ Chrome │ full → compact (one-row footer, no task list) → bare (neither) — «fg=#5cc8bb»/chrome«»  │
+«» │                     │        │ picks one                                                                 │
+«» └─────────────────────┴────────┴───────────────────────────────────────────────────────────────────────────┘
+
+«» It also gets out of the way on its own: the footer lends its rows to the
+«» completion list while that is open, and the task list keeps its counts but drops
+«» its rows while the agent is mid-turn. Both come back by themselves.
+
+«» «bold»Scroll«» — where in the session you are looking
+«» The wheel and these keys move the same view, and once it is scrolled back it
+«» «bold»stays«» there: output keeps arriving underneath without moving what you are
+«» reading. The bottom row tells you where you are and how to get back.
+
+«» ┌──────────────────────┬──────────────────────────────────────────────────────────────┐
+«» │ «bold»Key                 «» │ «bold»Action                                                      «» │
+«» ├──────────────────────┼──────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»PageUp«» / «fg=#5cc8bb»PageDown«»    │ Scroll a page — «fg=#5cc8bb»PageUp«» is also how you start                 │
+«» ├──────────────────────┼──────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+Home«» / «fg=#5cc8bb»Ctrl+End«» │ Jump to the start of the session / back to live              │
+«» ├──────────────────────┼──────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Up«» / «fg=#5cc8bb»Down«»            │ A line at a time (while scrolled back)                       │
+«» ├──────────────────────┼──────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+Up«» / «fg=#5cc8bb»Ctrl+Down«»  │ Jump to your previous / next message                         │
+«» ├──────────────────────┼──────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+R«»               │ Search the transcript — «fg=#5cc8bb»/«» once you are already scrolled back │
+«» ├──────────────────────┼──────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»n«» / «fg=#5cc8bb»p«»                │ Step the matches, once the query is committed with «fg=#5cc8bb»Enter«»     │
+«» ├──────────────────────┼──────────────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Escape«»               │ Back to live output                                          │
+«» ├──────────────────────┼──────────────────────────────────────────────────────────────┤
+«» │ Wheel                │ Three lines a notch, wherever you turn it                    │
+«» └──────────────────────┴──────────────────────────────────────────────────────────────┘
+
+«» Search runs backwards, like «fg=#5cc8bb»Ctrl+R«» in a shell: the newest match first,
+«» because what you are looking for in a session is behind you.
+
+«» Scrolling to the bottom hands the live view back on its own, and so does typing:
+«» any key that is not one of these returns you to live and then does its usual job.
+
+«» «bold»Go«» — sessions and places
+«» Each takes the screen and hands it back on «fg=#5cc8bb»Escape«», and each has a slash
+«» command that does the same thing.
+
+«» ┌─────────────────────┬──────────────────────────────────────────────────┐
+«» │ «bold»Key                «» │ «bold»Action                                          «» │
+«» ├─────────────────────┼──────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+H«»               │ Resume a session from history («fg=#5cc8bb»/resume«»)          │
+«» ├─────────────────────┼──────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+W«»               │ Change working directory («fg=#5cc8bb»/cd«»)                   │
+«» ├─────────────────────┼──────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+C«» / «fg=#5cc8bb»Shift+Alt+C«» │ Step the session chip's color («fg=#5cc8bb»/color«» picks one) │
+«» ├─────────────────────┼──────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+S«»               │ Open settings («fg=#5cc8bb»/settings«»)                        │
+«» ├─────────────────────┼──────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+K«»               │ Show this list («fg=#5cc8bb»/hotkeys«»)                        │
+«» ├─────────────────────┼──────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»/tree«»               │ Open the session tree                            │
+«» └─────────────────────┴──────────────────────────────────────────────────┘
+
+«» «bold»Flow«» — getting out, getting back
+
+«» ┌────────┬───────────────────────────────────────┐
+«» │ «bold»Key   «» │ «bold»Action                               «» │
+«» ├────────┼───────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Escape«» │ Cancel autocomplete / abort streaming │
+«» ├────────┼───────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+C«» │ Clear editor (first) / exit (second)  │
+«» ├────────┼───────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+D«» │ Exit when the editor is empty         │
+«» ├────────┼───────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+Z«» │ Suspend to background                 │
+«» └────────┴───────────────────────────────────────┘
+
+«» «bold;fg=#f0c674»### What the chord tells you
+
+«» «fg=#5cc8bb»Alt«»+letter «bold»sets a value«» and nothing takes the screen — you keep typing.
+«» Seven of those are dials, and «fg=#5cc8bb»Shift«» always steps one back: «bold»a«»gent mode,
+«» «bold»m«»odel, «bold»t«»hinking, tool «bold»o«»utput, task «bold»l«»ist, session «bold»c«»olor, and
+«» chrome («bold»z«», the one letter that names nothing — its stop is the shape of the
+«» screen in front of you).
+
+«» «fg=#5cc8bb»Ctrl«»+letter «bold»acts on what is drawn right now«» and shares its letter with the
+«» «fg=#5cc8bb»Alt«» key for the same subject. «fg=#5cc8bb»Alt+O«» sets how much tool output there
+«» ever is, «fg=#5cc8bb»Ctrl+O«» jumps to all of it and back; «fg=#5cc8bb»Alt+T
+«» sets how much thinking there ever is, «fg=#5cc8bb»Ctrl+T«» shows or hides what you
+«» have. Two subjects, two letters, four keys.
+
+«» The thinking level also answers to «fg=#5cc8bb»Shift+Tab«» — it is the one dial with no
+«» slash command, so that is the way to it on a terminal that does not send «fg=#5cc8bb»Alt«».
+
+«» Inside a picker every «fg=#5cc8bb»Ctrl«» key still edits the query, so the picker's own verbs
+«» are on «fg=#5cc8bb»Alt«» and its hint line names them.
+
+«» «bold;fg=#f0c674»### The editor
+
+«» Standard readline/emacs bindings — reference, not something to memorise.
+«» «fg=#5cc8bb»PageUp«» / «fg=#5cc8bb»PageDown«» are «bold»not«» here: they scroll the session,
+«» not the prompt, which is one to three lines almost every time you look at it.
+
+«» ┌────────────────────────────────────────────────────┬─────────────────────────────────────────────────────┐
+«» │ «bold»Key                                               «» │ «bold»Action                                             «» │
+«» ├────────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Up«» / «fg=#5cc8bb»Down«» / «fg=#5cc8bb»Left/Ctrl+B«» / «fg=#5cc8bb»Right/Ctrl+F«»             │ Move cursor / browse history (Up when empty)        │
+«» ├────────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Alt+Left/Ctrl+Left/Alt+B«» /                         │ Move by word                                        │
+«» │ «fg=#5cc8bb»Alt+Right/Ctrl+Right/Alt+F«»                         │                                                     │
+«» ├────────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Home/Ctrl+A«» / «fg=#5cc8bb»End/Ctrl+E«»                           │ Start / end of line                                 │
+«» ├────────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+]«» / «fg=#5cc8bb»Ctrl+Alt+]«»                                │ Jump forward / backward to character                │
+«» ├────────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+W/Alt+Backspace«» / «fg=#5cc8bb»Alt+D/Alt+Delete«»            │ Delete word backwards / forwards                    │
+«» ├────────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+U«» / «fg=#5cc8bb»Ctrl+K«»                                    │ Delete to start / end of line                       │
+«» ├────────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+Y«» / «fg=#5cc8bb»Alt+Y«»                                     │ Paste the most-recently-deleted text / cycle older  │
+«» │                                                    │ ones                                                │
+«» ├────────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+«» │ «fg=#5cc8bb»Ctrl+-«» / «fg=#5cc8bb»Alt+U«»                                     │ Undo / redo                                         │
+«» └────────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
+«fg=#6e93ff»──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
+«fg=#757575»│«» ❯ «inverse» «»                                                                                                        «fg=#757575»│
+«fg=#757575»└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                                     «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.0%«» «fg=#989898»128k auto@87%«»                                                                         «fg=#a8a8a8»mock-model

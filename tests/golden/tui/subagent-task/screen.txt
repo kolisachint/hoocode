@@ -1,0 +1,3 @@
+
+«»[DISPATCH] agent=general-purpose depth=1 reason=user_override complexity=low task_id=dispatch-<ts>-<rand>
+«»The subagent says 6 times 7 is 42.

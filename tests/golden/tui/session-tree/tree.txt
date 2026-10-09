@@ -1,0 +1,30 @@
+«fg=#989898»no project resources loaded
+
+
+«bg=#1c1c26» first question
+
+
+«» First answer.
+
+«» «fg=#989898»↑«fg=#a8a8a8»100«fg=#989898» ↓«fg=#a8a8a8»20«fg=#989898» · «fg=#a8a8a8»<DUR>
+
+
+«bg=#1c1c26» second question
+
+
+«» Second answer.
+
+«» «fg=#989898»↑«fg=#a8a8a8»100«fg=#989898» ↓«fg=#a8a8a8»20«fg=#989898» · «fg=#a8a8a8»<DUR>
+
+«fg=#6e93ff»┌──────────────────────────────────────────────────────────────────────────────────«bold;fg=#5cc8bb» session tree «fg=#6e93ff»──┐
+«fg=#6e93ff»│«» «fg=#989898»↑/↓«fg=#a8a8a8» move · «fg=#989898»←/→«fg=#a8a8a8» page · «fg=#989898»ctrl+←/ctrl+→«fg=#a8a8a8» fold · «fg=#989898»alt+1…alt+5«fg=#a8a8a8» filter · «fg=#989898»alt+c«fg=#a8a8a8» cycle · «fg=#989898»alt+l«fg=#a8a8a8» label · «fg=#989898»a«»... «fg=#6e93ff»│
+«fg=#6e93ff»│«»   «fg=#a8a8a8»Type to search:«»                                                                                «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#6e93ff»────────────────────────────────────────────────────────────────────────────────────────────────«» «fg=#6e93ff»│
+«fg=#6e93ff»│«»   «fg=#5cc8bb»• user: «»first question                                                                         «fg=#6e93ff»│
+«fg=#6e93ff»│«»   «fg=#5cc8bb»• «fg=#b5bd68»assistant: «»First answer.                                                                     «fg=#6e93ff»│
+«fg=#6e93ff»│«»   «fg=#5cc8bb»• user: «»second question                                                                        «fg=#6e93ff»│
+«fg=#6e93ff»│«» «bg=#2a2a36;fg=#5cc8bb»› • «bg=#2a2a36;bold;fg=#b5bd68»assistant: «bg=#2a2a36;bold»Second answer.«bg=#2a2a36»                                                                   «» «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#a8a8a8»  (4/4)«»                                                                                          «fg=#6e93ff»│
+«fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.1%«» «fg=#989898»128k auto@87%«»  «fg=#989898»↑«fg=#a8a8a8»200«»  «fg=#989898»↓«fg=#a8a8a8»40«»                                                    «fg=#a8a8a8»mock-model

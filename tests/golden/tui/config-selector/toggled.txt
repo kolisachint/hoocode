@@ -1,0 +1,12 @@
+
+«bold»Resource Configuration«»                                                      «fg=#989898»space«fg=#a8a8a8» toggle · «fg=#989898»esc«fg=#a8a8a8» close
+«fg=#a8a8a8»Type to filter resources
+
+«fg=#a8a8a8»❯ «inverse» 
+
+«»  «bold;fg=#5cc8bb»Project (<WORK>/.agents/)
+«»    «fg=#a8a8a8»Skills
+«bg=#2a2a36;fg=#5cc8bb»› «bg=#2a2a36»    «bg=#2a2a36;fg=#989898»[ ]«bg=#2a2a36» «bg=#2a2a36;bold;fg=#5cc8bb»deploy
+«»  «bold;fg=#5cc8bb»Project (<WORK>/.<app>/)
+«»    «fg=#a8a8a8»Prompts
+«»      «fg=#b5bd68»[x]«» review.md

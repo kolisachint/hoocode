@@ -1,0 +1,40 @@
+«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+
+
+
+
+
+
+
+
+
+
+«fg=#989898»no project resources loaded
+
+«» «bold»Session Info
+
+«» «fg=#989898»Name (auto):«» «<masked: session chip>» <slug> 
+«» «fg=#989898»File:«» In-memory
+«» «fg=#989898»ID: <ID>
+
+«» «bold»Messages
+«» «fg=#989898»User:«» 0
+«» «fg=#989898»Assistant:«» 0
+«» «fg=#989898»Tool Calls:«» 0
+«» «fg=#989898»Tool Results:«» 0
+«» «fg=#989898»Total:«» 0
+
+«» «bold»Tokens
+«» «fg=#989898»Input:«» 0
+«» «fg=#989898»Output:«» 0
+«» «fg=#989898»Total:«» 0
+
+
+«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
+«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
+«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.0%«» «fg=#989898»128k auto@87%«»                                                               «fg=#a8a8a8»mock-model

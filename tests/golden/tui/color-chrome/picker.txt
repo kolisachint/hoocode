@@ -1,0 +1,36 @@
+«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+«fg=#989898»no project resources loaded
+
+«» «fg=#989898»Session color set:«» «bg=#d19a66;bold;fg=#0b0b0f» parity «»  «fg=#989898»yellow
+
+
+«bg=#2e2e13» «bg=#2e2e13;fg=#ffff00»●«bg=#2e2e13» Usage: /color <1-6> or /color <cyan|purple|yellow|magenta|green|blue> (first letter works too...
+«fg=#6e93ff»┌────────────────────────────────────────────────────────────────────────────────«bold;fg=#5cc8bb» session colour «fg=#6e93ff»──┐
+«fg=#6e93ff»│«»   «bg=#56b6c2;bold;fg=#0b0b0f» parity «fg=#a8a8a8»                  cyan«»                                                                 «fg=#6e93ff»│
+«fg=#6e93ff»│«»   «bg=#c77bde;bold;fg=#0b0b0f» parity «fg=#a8a8a8»                  purple«»                                                               «fg=#6e93ff»│
+«fg=#6e93ff»│«» «bg=#2a2a36;fg=#5cc8bb»› «bg=#d19a66;bold;fg=#0b0b0f» parity «bg=#2a2a36»                  yellow · current                                                    «» «fg=#6e93ff»│
+«fg=#6e93ff»│«»   «bg=#c32056;bold;fg=#ffffff» parity «fg=#a8a8a8»                  magenta«»                                                              «fg=#6e93ff»│
+«fg=#6e93ff»│«»   «bg=#4ec9b0;bold;fg=#0b0b0f» parity «fg=#a8a8a8»                  green«»                                                                «fg=#6e93ff»│
+«fg=#6e93ff»│«»   «bg=#7aa2f7;bold;fg=#0b0b0f» parity «fg=#a8a8a8»                  blue«»                                                                 «fg=#6e93ff»│
+«fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.0%«» «fg=#989898»128k auto@87%«»                                                               «fg=#a8a8a8»mock-model

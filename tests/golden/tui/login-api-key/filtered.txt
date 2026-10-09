@@ -1,0 +1,40 @@
+«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+«fg=#989898»no project resources loaded
+
+«fg=#6e93ff»┌────────────────────────────────────────────────────────────────────────────────«bold;fg=#5cc8bb» login provider «fg=#6e93ff»──┐
+«fg=#6e93ff»│«» «fg=#a8a8a8»❯ «»mock«inverse» «»                                                                                          «fg=#6e93ff»│
+«fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
+«fg=#6e93ff»│«» «bg=#2a2a36» «bg=#2a2a36;fg=#5cc8bb»› mock«bg=#2a2a36;fg=#b5bd68» ✓ key in models.json«bg=#2a2a36»                                                                    «» «fg=#6e93ff»│
+«fg=#6e93ff»│«»    Kimi For Coding«fg=#a8a8a8» • unconfigured«»                                                                «fg=#6e93ff»│
+«fg=#6e93ff»│«»    Anthropic (Claude Pro/Max)«fg=#a8a8a8» • unconfigured«»                                                     «fg=#6e93ff»│
+«fg=#6e93ff»│«»    Moonshot AI (China)«fg=#a8a8a8» • unconfigured«»                                                            «fg=#6e93ff»│
+«fg=#6e93ff»│«»    Xiaomi MiMo Token Plan (China)«fg=#a8a8a8» • unconfigured«»                                                 «fg=#6e93ff»│
+«fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.0%«» «fg=#989898»128k auto@87%«»                                                               «fg=#a8a8a8»mock-model

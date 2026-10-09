@@ -1,0 +1,34 @@
+«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+
+
+
+
+
+«fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents
+
+
+«bg=#1c1c26» plan the retry work
+
+
+«» One decision first.
+
+«» «fg=#ffff00»● «bold»AskUserQuestion
+
+«<masked: blinking indicator>» <working-blink> Working...
+
+«fg=#6e93ff»┌──────────────────────────────────────────────────────────────────────────────────«bold;fg=#5cc8bb» input needed «fg=#6e93ff»──┐
+«fg=#6e93ff»│«»                                                 «fg=#989898»up/down«fg=#a8a8a8» move · «fg=#989898»right«fg=#a8a8a8» submit · «fg=#989898»escape/ctrl+c«fg=#a8a8a8» skip«» «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#b5bd68»✓«» «fg=#989898»where should retry logic live?«»   «fg=#989898»→ «fg=#5cc8bb»ai client«»                                                   «fg=#6e93ff»│
+«fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#989898»2/2«» «bold»backoff strategy?«»                                                                            «fg=#6e93ff»│
+«fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#5cc8bb»  «fg=#989898»1«» exponential + jitter                                                                         «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#5cc8bb»  «fg=#989898»2«» fixed <DUR>                                                                                     «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#5cc8bb»› +«» «fg=#a8a8a8»❯«» linear backoff please«fg=#5cc8bb»▏«»                                                                     «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#989898»(3/3)«»                                                                                            «fg=#6e93ff»│
+«fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.1%«» «fg=#989898»128k auto@87%«»  «fg=#989898»↑«fg=#a8a8a8»100«»  «fg=#989898»↓«fg=#a8a8a8»20«»                                                    «fg=#a8a8a8»mock-model

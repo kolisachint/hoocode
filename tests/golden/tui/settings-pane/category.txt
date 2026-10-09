@@ -1,0 +1,40 @@
+«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+«fg=#989898»no project resources loaded
+
+«fg=#6e93ff»┌──────────────────────────────────────────────────────────────────────────────────────«bold;fg=#5cc8bb» settings «fg=#6e93ff»──┐
+«fg=#6e93ff»│«» «fg=#989898»❯ «inverse» «»                                                                                              «fg=#6e93ff»│
+«fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
+«fg=#6e93ff»│«» «bg=#2a2a36;fg=#5cc8bb»› [group] Web tools      «bg=#2a2a36»  «bg=#2a2a36;fg=#5cc8bb»off«bg=#2a2a36»                                                                  «» «fg=#6e93ff»│
+«fg=#6e93ff»│«»   [group] Semantic search  «fg=#a8a8a8»off«»                                                                   «fg=#6e93ff»│
+«fg=#6e93ff»│«»   Shell                    «fg=#a8a8a8»on«fg=#989898»  51 tok/turn«»                                                       «fg=#6e93ff»│
+«fg=#6e93ff»│«»   Edit                     «fg=#a8a8a8»on«fg=#989898»  62 tok/turn«»                                                       «fg=#6e93ff»│
+«fg=#6e93ff»│«»   Read                     «fg=#a8a8a8»on«fg=#989898»  54 tok/turn«»                                                       «fg=#6e93ff»│
+«fg=#6e93ff»│«»   Write                    «fg=#a8a8a8»on«fg=#989898»  52 tok/turn«»                                                       «fg=#6e93ff»│
+«fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#989898»  WebFetch + WebSearch (network access). Governs whether these tools exist; applies on the next«»  «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#989898»  session.«»                                                                                       «fg=#6e93ff»│
+«fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#989898»  Type to search · Enter/Space to change · Esc to cancel«»                                         «fg=#6e93ff»│
+«fg=#6e93ff»│«»   Per-turn surface: 288 tokens  «fg=#989898»(69 system prompt + 219 schemas, 4 tools)«»                        «fg=#6e93ff»│
+«fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.0%«» «fg=#989898»128k auto@87%«»                                                               «fg=#a8a8a8»mock-model

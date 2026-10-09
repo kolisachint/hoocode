@@ -1,0 +1,40 @@
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+«fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents
+
+
+«bg=#1c1c26» edit the app
+
+
+«» Editing.
+
+«» «fg=#b5bd68»● «bg=#1a241a» «bg=#1a241a;bold»Edit«bg=#1a241a» «bg=#1a241a;fg=#5cc8bb»src/app.ts«bg=#1a241a»                                                                                
+«»   «bg=#1a241a»                                                                                                
+«»   «bg=#1a241a» «bg=#1a241a;fg=#a8a8a8» 1 export function greet(name: string): string {«bg=#1a241a»                                               
+«»   «bg=#1a241a» «bg=#1a241a;fg=#d58181»-2    return `«bg=#1a241a;fg=#d58181;inverse»hello«bg=#1a241a;fg=#d58181» ${name}`;«bg=#1a241a»                                                                  
+«»   «bg=#1a241a» «bg=#1a241a;fg=#b5bd68»+2    return `«bg=#1a241a;fg=#b5bd68;inverse»Hello,«bg=#1a241a;fg=#b5bd68» ${name}«bg=#1a241a;fg=#b5bd68;inverse»!«bg=#1a241a;fg=#b5bd68»`;«bg=#1a241a»                                                                
+«»   «bg=#1a241a» «bg=#1a241a;fg=#a8a8a8» 3 }«bg=#1a241a»                                                                                           
+«»   «bg=#1a241a» «bg=#1a241a;fg=#a8a8a8» 4 «bg=#1a241a»                                                                                            
+«»   «bg=#1a241a» «bg=#1a241a;fg=#d58181»-5 const answer= «bg=#1a241a;fg=#d58181;inverse»42«bg=#1a241a;fg=#d58181»; // the answer«bg=#1a241a»                                                             
+«»   «bg=#1a241a» «bg=#1a241a;fg=#b5bd68»+5 const answer«bg=#1a241a;fg=#b5bd68;inverse»: number «bg=#1a241a;fg=#b5bd68»= «bg=#1a241a;fg=#b5bd68;inverse»43«bg=#1a241a;fg=#b5bd68»; // the answer«bg=#1a241a»                                                    
+«»   «bg=#1a241a» «bg=#1a241a;fg=#a8a8a8» 6 export default answer;«bg=#1a241a»                                                                      
+
+«» «fg=#b5bd68»● «bold»Write«» «fg=#5cc8bb»tools/util.py
+
+«»   «fg=#599ed7»import«» sys
+
+
+«»   «fg=#599ed7»def«» «fg=#dcdcaa»main«»(«fg=#9cdcfe»args: «fg=#4ec9b0»list«»[«fg=#4ec9b0»str«»]) -> «fg=#4ec9b0»int«»:
+«»       «fg=#ce9178»"""Print the arguments."""
+«»   «fg=#a8a8a8»... (7 more lines, 12 total,«» «fg=#989898»ctrl+o«fg=#a8a8a8» to expand«»)
+
+«» Edited src/app.ts and wrote tools/util.py.
+
+«» «fg=#989898»↑«fg=#a8a8a8»200«fg=#989898» ↓«fg=#a8a8a8»40«fg=#989898» · «fg=#a8a8a8»<DUR>
+
+«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
+«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
+«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.1%«» «fg=#989898»128k auto@87%«»  «fg=#989898»↑«fg=#a8a8a8»200«»  «fg=#989898»↓«fg=#a8a8a8»40«»                                                    «fg=#a8a8a8»mock-model

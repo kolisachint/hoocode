@@ -1,0 +1,34 @@
+«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+
+
+
+
+
+
+«fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents
+
+
+«bg=#1c1c26» plan the retry work
+
+
+«» One decision first.
+
+«» «fg=#b5bd68»● «bold»AskUserQuestion
+«» «fg=#a8a8a8»where should retry logic live?
+«» «fg=#a8a8a8»  → ai client
+
+«» «fg=#a8a8a8»backoff strategy?
+«» «fg=#a8a8a8»  → linear backoff please
+
+«» Going with your answers.
+
+«» «fg=#989898»↑«fg=#a8a8a8»200«fg=#989898» ↓«fg=#a8a8a8»40«fg=#989898» · «fg=#a8a8a8»<DUR>
+
+«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
+«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
+«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
+«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.1%«» «fg=#989898»128k auto@87%«»  «fg=#989898»↑«fg=#a8a8a8»200«»  «fg=#989898»↓«fg=#a8a8a8»40«»                                                    «fg=#a8a8a8»mock-model

@@ -1,0 +1,30 @@
+«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+«fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents
+
+
+«bg=#1e1a28» «bg=#1e1a28;fg=#a8a8a8»◦«bg=#1e1a28» Mode: ask
+«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
+«fg=#757575»│«» ❯ /mo«inverse» «»                                                                                           «fg=#757575»│
+«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«»  «bg=#2a2a36;fg=#5cc8bb»› model          Select model (opens selector UI)«bg=#2a2a36»                                               
+«»    mode«fg=#a8a8a8»           [t] Switch active mode. Usage: /mode <ask|plan|build|debug>
+«»    scoped-models«fg=#a8a8a8»  Enable/disable models for model cycling
+«»    import«fg=#a8a8a8»         Import and resume a session from a JSONL file
