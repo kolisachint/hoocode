@@ -4,8 +4,7 @@
 //! when more than one lens has content, and the rows of the chosen lens:
 //! - flat ("tasks"): the main agent's TodoWrite plan, each dispatched run
 //!   nested under the plan item it works on;
-//! - subagents: the delegated forest (`parentTaskId`), drawn with connectors;
-//! - teams: role agents as groups, with handoff arrows and a focusable roster.
+//! - subagents: the delegated forest (`parentTaskId`), drawn with connectors.
 //!
 //! The pin memoizes rows per store version; that is only an optimization and
 //! is not reproduced. Its 1s run clock is [`TaskPanelComponent::ticking`]: the
@@ -15,12 +14,10 @@ use std::collections::{HashMap, HashSet};
 
 use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_task_store::{
-    task_owner_id, task_store, Task, TaskAgent, TaskAgentKind, TaskAgentState, TaskSource,
-    TaskStatus,
+    task_owner_id, task_store, Task, TaskAgent, TaskAgentKind, TaskSource, TaskStatus,
 };
-use hoocode_code_tui_keybindings::{app_key_label, format_key_text, matches_app_key, raw_key_hint};
+use hoocode_code_tui_keybindings::{app_key_label, format_key_text, raw_key_hint};
 use hoocode_code_tui_theme::{agent_color_for, theme};
-use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
@@ -37,21 +34,16 @@ fn task_status_icon(status: TaskStatus) -> &'static str {
 
 /// U+26A0 with VS15, so terminals draw it one cell wide.
 const WARNING_GLYPH: &str = "⚠\u{fe0e}";
-/// U+25B6 with VS15.
-const SELECTED_GLYPH: &str = "▶\u{fe0e}";
 /// Marker for MCP-sourced rows, which have no owning agent.
 const MCP_SOURCE_GLYPH: &str = "⧉";
 /// The thin left rail that groups the pane.
 const RAIL: &str = "▎";
-/// Indent under a group header, with a faint guide.
-const GROUP_INDENT_PLAIN: &str = "│ ";
 
 /// `TaskPanelView`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskPanelView {
     Flat,
     Subagents,
-    Teams,
 }
 
 impl TaskPanelView {
@@ -62,7 +54,6 @@ impl TaskPanelView {
             // flat lens to "subagents" collided with the other one.
             Self::Flat => "tasks",
             Self::Subagents => "subagents",
-            Self::Teams => "teams",
         }
     }
 }
@@ -95,9 +86,6 @@ fn available_views(tasks: &[Task], agents: &[TaskAgent]) -> Vec<TaskPanelView> {
     if has_subagent_work {
         views.push(TaskPanelView::Subagents);
     }
-    if agents.iter().any(|a| a.kind == TaskAgentKind::Role) {
-        views.push(TaskPanelView::Teams);
-    }
     views
 }
 
@@ -105,37 +93,6 @@ fn agent_glyph(kind: TaskAgentKind) -> &'static str {
     match kind {
         TaskAgentKind::Main => "◆",
         TaskAgentKind::Subagent => "◇",
-        TaskAgentKind::Role => "▸",
-    }
-}
-
-fn agent_glyph_color(kind: TaskAgentKind) -> &'static str {
-    match kind {
-        TaskAgentKind::Role => "borderAccent",
-        _ => "accent",
-    }
-}
-
-fn agent_state_color(state: TaskAgentState) -> &'static str {
-    match state {
-        TaskAgentState::Active | TaskAgentState::Running => "warning",
-        TaskAgentState::Done => "success",
-        TaskAgentState::Queued | TaskAgentState::Idle | TaskAgentState::Cancelled => "dim",
-        TaskAgentState::Waiting => "mdLink",
-        TaskAgentState::Failed => "error",
-    }
-}
-
-fn agent_state_label(state: TaskAgentState) -> &'static str {
-    match state {
-        TaskAgentState::Active => "active",
-        TaskAgentState::Running => "running",
-        TaskAgentState::Done => "done",
-        TaskAgentState::Queued => "queued",
-        TaskAgentState::Idle => "idle",
-        TaskAgentState::Waiting => "waiting",
-        TaskAgentState::Failed => "failed",
-        TaskAgentState::Cancelled => "cancelled",
     }
 }
 
@@ -174,14 +131,6 @@ fn task_elapsed_secs(task: &Task, now: u64) -> f64 {
     end.saturating_sub(task.created_at) as f64 / 1000.0
 }
 
-/// `"explore#2"` → `"explore"`.
-fn agent_type_of_name(name: &str) -> &str {
-    match name.find('#') {
-        Some(idx) if idx > 0 => hoocode_tui_util::text_slice::prefix(name, idx),
-        _ => name,
-    }
-}
-
 fn pad(n: usize) -> String {
     " ".repeat(n)
 }
@@ -190,18 +139,16 @@ fn pad(n: usize) -> String {
 /// when they fit.
 fn format_lens_tabs(
     tasks: &[Task],
-    agents: &[TaskAgent],
     width: usize,
     view: TaskPanelView,
     tab_views: &[TaskPanelView],
     show_cycle_hint: bool,
-    show_focus_hint: bool,
 ) -> String {
     let t = theme();
     let tabs: Vec<(String, String)> = tab_views
         .iter()
         .map(|&v| {
-            let lens = filter_tasks_for_lens(tasks, agents, v);
+            let lens = filter_tasks_for_lens(tasks, v);
             let done = lens.iter().filter(|t| t.status == TaskStatus::Done).count();
             let count = format!("{done}/{}", lens.len());
             let plain = format!(" {} {count} ", v.label());
@@ -243,13 +190,6 @@ fn format_lens_tabs(
             raw_key_hint(&key, "cycle"),
         ));
     }
-    if show_focus_hint {
-        let key = app_key_label("app.team.focus");
-        parts.push((
-            format!("{} focus", format_key_text(&key, false)),
-            raw_key_hint(&key, "focus"),
-        ));
-    }
     let sep = "  ";
     let hint_plain = parts
         .iter()
@@ -283,7 +223,6 @@ fn format_lens_tabs(
 /// Row options (`formatTaskLine`'s third argument).
 #[derive(Default, Clone, Copy)]
 struct LineOptions<'a> {
-    grouped: bool,
     owner: Option<&'a TaskAgent>,
     tree_prefix: &'a str,
 }
@@ -297,12 +236,6 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
         task_status_color(task.status),
         task_status_icon(task.status),
     );
-    let grouped = options.grouped;
-    let indent = if grouped {
-        t.fg("borderMuted", GROUP_INDENT_PLAIN)
-    } else {
-        String::new()
-    };
 
     let is_mcp = task.source == Some(TaskSource::Mcp);
     let owner_kind =
@@ -314,7 +247,7 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
             } else {
                 TaskAgentKind::Main
             });
-    let show_owner_glyph = !grouped && (is_mcp || owner_kind != TaskAgentKind::Main);
+    let show_owner_glyph = is_mcp || owner_kind != TaskAgentKind::Main;
     let source_glyph = if is_mcp {
         MCP_SOURCE_GLYPH
     } else {
@@ -336,12 +269,8 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
             format!("[{}]", task.subagent_mode.as_deref().unwrap_or("MCP")),
             "mcp",
         )
-    } else if grouped {
-        (String::new(), "accent")
     } else if let Some(mode) = &task.subagent_mode {
         (format!("[{mode}]"), agent_color_for(mode))
-    } else if let (TaskAgentKind::Role, Some(owner)) = (owner_kind, options.owner) {
-        (format!("[{}]", owner.name), agent_color_for(&owner.name))
     } else {
         (String::new(), "accent")
     };
@@ -438,16 +367,12 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
     } else {
         t.fg("borderMuted", options.tree_prefix)
     };
-    let left_body = if grouped {
-        format!("{indent}{icon} {styled_tag}{styled_title}")
+    let source = if styled_source.is_empty() {
+        String::new()
     } else {
-        let source = if styled_source.is_empty() {
-            String::new()
-        } else {
-            format!("{styled_source} ")
-        };
-        format!("{tree_prefix}{icon} {source}{styled_tag}{styled_title}")
+        format!("{styled_source} ")
     };
+    let left_body = format!("{tree_prefix}{icon} {source}{styled_tag}{styled_title}");
     let left = truncate_to_width(&left_body, left_width, "…", false);
     if right_plain.is_empty() {
         let gap = width.saturating_sub(visible_width(&left));
@@ -556,206 +481,15 @@ fn flat_lens_rows(tasks: &[Task]) -> Vec<TreeRow<'_>> {
     rows
 }
 
-fn role_ids(agents: &[TaskAgent]) -> HashSet<&str> {
-    agents
-        .iter()
-        .filter(|a| a.kind == TaskAgentKind::Role)
-        .map(|a| a.id.as_str())
-        .collect()
-}
-
 /// `filterTasksForLens`: exactly the tasks the lens shows.
-fn filter_tasks_for_lens<'a>(
-    tasks: &'a [Task],
-    agents: &[TaskAgent],
-    view: TaskPanelView,
-) -> Vec<&'a Task> {
+fn filter_tasks_for_lens(tasks: &[Task], view: TaskPanelView) -> Vec<&Task> {
     match view {
         TaskPanelView::Flat => flat_lens_rows(tasks).into_iter().map(|r| r.task).collect(),
         TaskPanelView::Subagents => subagent_lens_rows(tasks)
             .into_iter()
             .map(|r| r.task)
             .collect(),
-        TaskPanelView::Teams => {
-            let roles = role_ids(agents);
-            tasks
-                .iter()
-                .filter(|t| roles.contains(t.owner_id().as_str()))
-                .collect()
-        }
     }
-}
-
-/// Group metadata for an owner with no roster entry.
-fn default_agent_meta(id: &str) -> TaskAgent {
-    let main = id == "main";
-    TaskAgent {
-        id: id.to_string(),
-        name: id.to_string(),
-        role: Some(if main { "orchestrator" } else { "subagent" }.to_string()),
-        attempt: None,
-        model: None,
-        deadline_at: None,
-        outcome: None,
-        confidence: None,
-        cause: None,
-        kind: if main {
-            TaskAgentKind::Main
-        } else {
-            TaskAgentKind::Subagent
-        },
-        state: None,
-        handoff: None,
-        activity: None,
-        stats: None,
-    }
-}
-
-struct Group<'a> {
-    id: String,
-    meta: TaskAgent,
-    items: Vec<&'a Task>,
-}
-
-/// `groupTasks`: owner groups, main first, then roster order, then the rest.
-fn group_tasks<'a>(tasks: &[&'a Task], agents: &[TaskAgent]) -> Vec<Group<'a>> {
-    let mut groups: Vec<(String, Vec<&'a Task>)> = Vec::new();
-    for task in tasks {
-        let owner = task.owner_id();
-        match groups.iter_mut().find(|(id, _)| *id == owner) {
-            Some((_, items)) => items.push(task),
-            None => groups.push((owner, vec![task])),
-        }
-    }
-    let mut order: Vec<String> = Vec::new();
-    let mut push = |id: &str| {
-        if !order.iter().any(|o| o == id) {
-            order.push(id.to_string());
-        }
-    };
-    if groups.iter().any(|(id, _)| id == "main") {
-        push("main");
-    }
-    for agent in agents {
-        if groups.iter().any(|(id, _)| *id == agent.id) {
-            push(&agent.id);
-        }
-    }
-    for (id, _) in &groups {
-        push(id);
-    }
-    order
-        .into_iter()
-        .map(|id| Group {
-            meta: agents
-                .iter()
-                .find(|a| a.id == id)
-                .cloned()
-                .unwrap_or_else(|| default_agent_meta(&id)),
-            items: groups
-                .iter()
-                .find(|(g, _)| *g == id)
-                .map(|(_, items)| items.clone())
-                .unwrap_or_default(),
-            id,
-        })
-        .collect()
-}
-
-/// `formatGroupHeader`: glyph, name, role, `[state]`, activity, handoff, and
-/// the agent's usage plus done/total on the right.
-fn format_group_header(meta: &TaskAgent, items: &[&Task], width: usize, selected: bool) -> String {
-    let t = theme();
-    let identity_color = if meta.kind == TaskAgentKind::Main {
-        agent_glyph_color(meta.kind)
-    } else {
-        agent_color_for(agent_type_of_name(&meta.name))
-    };
-    let glyph = if selected {
-        t.fg("accent", SELECTED_GLYPH)
-    } else {
-        t.fg(identity_color, agent_glyph(meta.kind))
-    };
-    let name = if selected {
-        t.bold(&t.fg("accent", &meta.name))
-    } else if meta.kind == TaskAgentKind::Main {
-        t.bold(&meta.name)
-    } else {
-        t.bold(&t.fg(identity_color, &meta.name))
-    };
-    let role = match &meta.role {
-        Some(role) if !role.is_empty() => {
-            if meta.kind == TaskAgentKind::Main {
-                format!(" {}", t.fg("muted", role))
-            } else {
-                t.fg("dim", &format!(" · {role}"))
-            }
-        }
-        _ => String::new(),
-    };
-    let state = meta
-        .state
-        .map(|s| {
-            format!(
-                " {}",
-                t.fg(agent_state_color(s), &format!("[{}]", agent_state_label(s)))
-            )
-        })
-        .unwrap_or_default();
-    let activity = meta
-        .activity
-        .as_deref()
-        .filter(|a| !a.is_empty())
-        .map(|a| t.fg("dim", &format!(" ⋯ {a}")))
-        .unwrap_or_default();
-    let handoff = meta
-        .handoff
-        .as_deref()
-        .filter(|h| !h.is_empty())
-        .map(|h| format!(" {}", t.fg("dim", h)))
-        .unwrap_or_default();
-
-    let done = items
-        .iter()
-        .filter(|t| t.status == TaskStatus::Done)
-        .count();
-    let count_plain = format!("{done}/{}", items.len());
-    let count = t.fg("muted", &done.to_string())
-        + &t.fg("dim", "/")
-        + &t.fg("muted", &items.len().to_string());
-    let (mut right_plain, mut right_styled) = (count_plain.clone(), count.clone());
-    if let Some(stats) = meta
-        .stats
-        .filter(|s| s.input > 0.0 || s.output > 0.0 || s.cost > 0.0)
-    {
-        let stats_plain = format!(
-            "↑{} ↓{} · ${:.3}",
-            format_tokens(stats.input as u64),
-            format_tokens(stats.output as u64),
-            stats.cost
-        );
-        right_plain = format!("{stats_plain}  {count_plain}");
-        right_styled = format!("{}  {count}", t.fg("dim", &stats_plain));
-    }
-    let right_width = visible_width(&right_plain) + 1;
-    let left = truncate_to_width(
-        &format!("{glyph} {name}{role}{state}{activity}{handoff}"),
-        width.saturating_sub(right_width),
-        "…",
-        false,
-    );
-    let gap = width
-        .saturating_sub(visible_width(&left) + visible_width(&right_plain))
-        .max(1);
-    format!("{left}{}{right_styled}", pad(gap))
-}
-
-/// What a focused roster asked for.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TaskPanelEvent {
-    Nudge(String),
-    Attach(String),
-    ExitFocus,
 }
 
 /// `TaskPanelComponent`.
@@ -764,10 +498,6 @@ pub struct TaskPanelComponent {
     density: TaskPanelDensity,
     disposed: bool,
     ticking: bool,
-    /// Team focus: role rows become a navigable list.
-    pub focused: bool,
-    selected_role: Option<String>,
-    events: Vec<TaskPanelEvent>,
 }
 
 impl Default for TaskPanelComponent {
@@ -783,33 +513,7 @@ impl TaskPanelComponent {
             density: TaskPanelDensity::Full,
             disposed: false,
             ticking: false,
-            focused: false,
-            selected_role: None,
-            events: Vec::new(),
         }
-    }
-
-    fn role_agents() -> Vec<TaskAgent> {
-        task_store()
-            .agents()
-            .into_iter()
-            .filter(|a| a.kind == TaskAgentKind::Role)
-            .collect()
-    }
-
-    /// `focusedRole`: the cursor's role, clamped to the live roster.
-    pub fn focused_role(&self) -> Option<String> {
-        let roles = Self::role_agents();
-        roles
-            .iter()
-            .find(|a| Some(&a.name) == self.selected_role.as_ref())
-            .or(roles.first())
-            .map(|a| a.name.clone())
-    }
-
-    /// What the focused roster asked for since the last call.
-    pub fn take_events(&mut self) -> Vec<TaskPanelEvent> {
-        std::mem::take(&mut self.events)
     }
 
     pub fn get_view(&self) -> TaskPanelView {
@@ -857,34 +561,6 @@ impl TaskPanelComponent {
 }
 
 impl Component for TaskPanelComponent {
-    fn handle_input(&mut self, data: &str) {
-        let roles = Self::role_agents();
-        if roles.is_empty() {
-            self.events.push(TaskPanelEvent::ExitFocus);
-            return;
-        }
-        let kb = get_keybindings();
-        let index = roles
-            .iter()
-            .position(|a| Some(&a.name) == self.selected_role.as_ref())
-            .unwrap_or(0);
-        if kb.matches(data, "tui.select.up") {
-            self.selected_role = Some(roles[index.saturating_sub(1)].name.clone());
-        } else if kb.matches(data, "tui.select.down") {
-            self.selected_role = Some(roles[(index + 1).min(roles.len() - 1)].name.clone());
-        } else if matches_app_key(data, "app.team.nudge") {
-            if let Some(role) = self.focused_role() {
-                self.events.push(TaskPanelEvent::Nudge(role));
-            }
-        } else if matches_app_key(data, "app.team.attach") {
-            if let Some(role) = self.focused_role() {
-                self.events.push(TaskPanelEvent::Attach(role));
-            }
-        } else if matches_key(data, "q") || kb.matches(data, "tui.select.cancel") {
-            self.events.push(TaskPanelEvent::ExitFocus);
-        }
-    }
-
     fn render(&mut self, width: u16) -> Vec<String> {
         if self.disposed {
             return Vec::new();
@@ -896,24 +572,19 @@ impl Component for TaskPanelComponent {
         let now = now_ms();
 
         // Keep the stored view while it has content, else the first lens that
-        // does; team focus always shows the roster.
+        // does.
         let available = available_views(&tasks, &agents);
-        let mut view = if available.contains(&self.view) {
+        let view = if available.contains(&self.view) {
             self.view
         } else {
             available.first().copied().unwrap_or(TaskPanelView::Flat)
         };
-        if self.focused {
-            view = TaskPanelView::Teams;
-        }
-        let has_role_roster =
-            view == TaskPanelView::Teams && agents.iter().any(|a| a.kind == TaskAgentKind::Role);
-        if tasks.is_empty() && !has_role_roster {
+        if tasks.is_empty() {
             self.ticking = false;
             return Vec::new();
         }
 
-        let lens: Vec<Task> = filter_tasks_for_lens(&tasks, &agents, view)
+        let lens: Vec<Task> = filter_tasks_for_lens(&tasks, view)
             .into_iter()
             .cloned()
             .collect();
@@ -936,127 +607,30 @@ impl Component for TaskPanelComponent {
 
         if self.density == TaskPanelDensity::Summary {
             return vec![
-                gutter.clone()
-                    + &format_lens_tabs(&tasks, &agents, inner, view, &tab_views, false, false),
+                gutter.clone() + &format_lens_tabs(&tasks, inner, view, &tab_views, false),
             ];
         }
 
         let mut lines = Vec::new();
-        if available.len() >= 2 || view == TaskPanelView::Teams {
-            let show_cycle_hint = available.len() >= 2 && !self.focused;
-            let show_focus_hint =
-                view == TaskPanelView::Teams && !self.focused && !Self::role_agents().is_empty();
-            lines.push(
-                gutter.clone()
-                    + &format_lens_tabs(
-                        &tasks,
-                        &agents,
-                        inner,
-                        view,
-                        &tab_views,
-                        show_cycle_hint,
-                        show_focus_hint,
-                    ),
-            );
+        if available.len() >= 2 {
+            lines.push(gutter.clone() + &format_lens_tabs(&tasks, inner, view, &tab_views, true));
         }
 
         let agent_by_id: HashMap<&str, &TaskAgent> =
             agents.iter().map(|a| (a.id.as_str(), a)).collect();
-        let tree_rows = match view {
-            TaskPanelView::Flat => Some(flat_lens_rows(&tasks)),
-            TaskPanelView::Subagents => Some(subagent_lens_rows(&tasks)),
-            TaskPanelView::Teams => None,
+        let rows = match view {
+            TaskPanelView::Flat => flat_lens_rows(&tasks),
+            TaskPanelView::Subagents => subagent_lens_rows(&tasks),
         };
-        if let Some(rows) = tree_rows {
-            for row in rows {
-                let owner_id = task_owner_id(row.task.agent.as_deref(), row.task.source);
-                let options = LineOptions {
-                    grouped: false,
-                    owner: agent_by_id.get(owner_id.as_str()).copied(),
-                    tree_prefix: &row.tree_prefix,
-                };
-                lines.push(gutter.clone() + &format_task_line(row.task, inner, options, now));
-            }
-            return lines;
-        }
-
-        // Teams: role groups (idle roles too), handoff connectors, focus hints.
-        let roles = role_ids(&agents);
-        let role_agents: Vec<TaskAgent> = agents
-            .iter()
-            .filter(|a| a.kind == TaskAgentKind::Role)
-            .cloned()
-            .collect();
-        let team_tasks: Vec<&Task> = tasks
-            .iter()
-            .filter(|t| roles.contains(t.owner_id().as_str()))
-            .collect();
-        let mut groups = group_tasks(&team_tasks, &role_agents);
-        for agent in &role_agents {
-            if !groups.iter().any(|g| g.id == agent.id) {
-                groups.push(Group {
-                    id: agent.id.clone(),
-                    meta: agent.clone(),
-                    items: Vec::new(),
-                });
-            }
-        }
-        let cursor_role = if self.focused {
-            self.focused_role()
-        } else {
-            None
-        };
-        for group in &groups {
-            let selected = group.meta.kind == TaskAgentKind::Role
-                && cursor_role.as_deref() == Some(group.meta.name.as_str());
-            lines.push(
-                gutter.clone() + &format_group_header(&group.meta, &group.items, inner, selected),
-            );
-            for task in &group.items {
-                let options = LineOptions {
-                    grouped: true,
-                    ..Default::default()
-                };
-                lines.push(gutter.clone() + &format_task_line(task, inner, options, now));
-            }
-            if let Some(handoff) = &group.meta.handoff {
-                if let Some(idx) = handoff.find("→ ") {
-                    let next =
-                        hoocode_tui_util::text_slice::suffix_from(handoff, idx + "→ ".len()).trim();
-                    if role_agents.iter().any(|a| a.name == next) {
-                        let connector = format!("{GROUP_INDENT_PLAIN}  └──→ ");
-                        let gap =
-                            inner.saturating_sub(visible_width(&connector) + visible_width(next));
-                        lines.push(format!(
-                            "{gutter}{}{}{}",
-                            t.fg("borderMuted", &connector),
-                            t.fg("dim", next),
-                            pad(gap)
-                        ));
-                    }
-                }
-            }
-        }
-        if self.focused {
-            let sep = t.fg("muted", " · ");
-            let hint = [
-                raw_key_hint("↑/↓", "select"),
-                raw_key_hint(&app_key_label("app.team.nudge"), "nudge"),
-                raw_key_hint(&app_key_label("app.team.attach"), "attach"),
-                raw_key_hint("q/esc", "back"),
-            ]
-            .join(&sep);
-            lines.push(gutter.clone() + &truncate_to_width(&hint, inner, "…", false));
+        for row in rows {
+            let owner_id = task_owner_id(row.task.agent.as_deref(), row.task.source);
+            let options = LineOptions {
+                owner: agent_by_id.get(owner_id.as_str()).copied(),
+                tree_prefix: &row.tree_prefix,
+            };
+            lines.push(gutter.clone() + &format_task_line(row.task, inner, options, now));
         }
         lines
-    }
-
-    fn is_focusable(&self) -> bool {
-        true
-    }
-
-    fn set_focused(&mut self, focused: bool) {
-        self.focused = focused;
     }
 }
 

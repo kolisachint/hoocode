@@ -5934,7 +5934,6 @@ impl Mode {
                 let label = match view {
                     TaskPanelView::Flat => "tasks",
                     TaskPanelView::Subagents => "subagents",
-                    TaskPanelView::Teams => "teams",
                 };
                 self.show_dial_step(
                     if forward {

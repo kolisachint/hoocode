@@ -26,9 +26,6 @@ pub fn hotkeys_markdown() -> String {
     let cycle_task_view_back = key_display_label("app.tasks.cycleBackward");
     let expand_tools = key_display_text("app.tools.expand");
     let toggle_thinking = key_display_text("app.thinking.toggle");
-    let team_focus = key_display_text("app.team.focus");
-    let team_nudge = key_display_text("app.team.nudge");
-    let team_attach = key_display_text("app.team.attach");
     let interrupt = key_display_text("app.interrupt");
     let chrome_forward = key_display_label("app.chrome.cycleForward");
     let chrome_backward = key_display_label("app.chrome.cycleBackward");
@@ -117,10 +114,9 @@ onto it. Press again or add `Shift` and you are back where you were.
 | Key | Action |
 |-----|--------|
 | `{view_forward}` / `{view_backward}` | Step tool output: radar → peek → full |
-| `{cycle_task_view}` / `{cycle_task_view_back}` | Step the task panel: tasks → subagents → teams |
+| `{cycle_task_view}` / `{cycle_task_view_back}` | Step the task panel: tasks → subagents |
 | `{expand_tools}` | Jump to the full view and back, without moving the dial |
 | `{toggle_thinking}` | Show or hide thinking blocks |
-| `{team_focus}` | Focus the team roster — `{team_nudge}` nudges, `{team_attach}` attaches, `q`/`{interrupt}` leaves (`--team`) |
 
 **Screen** — how much room there is to see it in
 One dial for the furniture. Everything below the transcript except the prompt,

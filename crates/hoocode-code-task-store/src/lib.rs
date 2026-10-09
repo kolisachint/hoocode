@@ -49,7 +49,6 @@ pub enum TaskSource {
 pub enum TaskAgentKind {
     Main,
     Subagent,
-    Role,
 }
 
 /// `TaskAgentState`.

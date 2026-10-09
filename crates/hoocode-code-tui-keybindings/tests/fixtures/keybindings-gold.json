@@ -384,7 +384,7 @@
    [
     "alt+l"
    ],
-   "Cycle task panel view (tasks → subagents → teams, skips empty lenses)"
+   "Cycle task panel view (tasks → subagents, skips empty lenses)"
   ],
   [
    "app.tasks.cycleBackward",
@@ -392,13 +392,6 @@
     "shift+alt+l"
    ],
    "Cycle task panel view backward"
-  ],
-  [
-   "app.team.focus",
-   [
-    "alt+n"
-   ],
-   "Focus the team roster (navigate roles, n nudge, a attach)"
   ],
   [
    "app.chrome.cycleForward",
@@ -519,20 +512,6 @@
     "alt+k"
    ],
    "Show keyboard shortcuts"
-  ],
-  [
-   "app.team.nudge",
-   [
-    "n"
-   ],
-   "Nudge the selected team role (team focus mode)"
-  ],
-  [
-   "app.team.attach",
-   [
-    "a"
-   ],
-   "Attach to the selected team role (team focus mode)"
   ],
   [
    "app.scroll.lineUp",

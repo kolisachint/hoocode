@@ -68,8 +68,6 @@ pub struct Args {
     /// child wraps up shortly before it rather than being killed at it.
     pub deadline_ms: Option<u64>,
     pub session: Option<String>,
-    /// Base URL of a hooteams server, or "auto".
-    pub team: Option<String>,
     pub fork: Option<String>,
     pub session_dir: Option<String>,
     /// Append one JSON line of the UI's performance counters a second to this file.
@@ -251,10 +249,6 @@ pub fn parse_args(args: &[String]) -> Args {
             "--session" if has_next => {
                 i += 1;
                 result.session = Some(args[i].clone());
-            }
-            "--team" if has_next => {
-                i += 1;
-                result.team = Some(args[i].clone());
             }
             "--fork" if has_next => {
                 i += 1;
