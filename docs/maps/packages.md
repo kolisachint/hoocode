@@ -175,9 +175,9 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 1985 / 72 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1237 / 379 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 6 | 1968 / 582 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI. Feature `golden`: `render_golden` and `assert_golden!` for screen snapshots in `tests/golden/<crate>/` | 4 | 2960 / 2616 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI. Feature `golden`: `render_golden` and `assert_golden!` for screen snapshots in `tests/golden/<crate>/` | 4 | 2291 / 1382 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 2487 / 103 | keep |
-| `tui-util` | Shared utilities for the hoocode TUI | 10 | 2159 / 583 | keep |
+| `tui-util` | Shared utilities for the hoocode TUI | 10 | 2058 / 583 | keep |
 
 <!-- END generated -->
 

@@ -7,7 +7,7 @@ Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 ANSI-aware terminal string handling: grapheme-cluster-based visible-width
 calculation (CJK/emoji-aware), word wrapping and truncation that preserve
 SGR styling and OSC-8 hyperlinks across line breaks, and column-range
-slicing for overlay compositing.
+slicing.
 
 Simplification vs. the TypeScript source: emoji-width classification uses
 the same fast heuristic pre-filter the TS code uses before its exact

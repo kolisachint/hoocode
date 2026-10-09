@@ -121,7 +121,7 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 
 | Concern | Crate / file |
 |---|---|
-| Differential renderer, frames, overlays | `tui-render/src/tui.rs`, `component.rs`, `overlay.rs` |
+| Differential renderer, frames, pinned scroll view | `tui-render/src/tui.rs`, `component.rs` |
 | Terminal: raw mode, stdin reader, resize (SIGWINCH), mouse | `tui-terminal/src/lib.rs`, `stdin_buffer.rs`, `mouse.rs` |
 | Terminal output: every write, in order; one pending frame | `tui-terminal/src/output.rs` (`hoocode-term-out`) |
 | Key parsing (Kitty, modifyOtherKeys), matching | `tui-keys` |
