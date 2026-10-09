@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use super::text;
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
+use crate::tool_output_view::peek_block;
 
 /// A JS value as `String(value ?? "")` prints it.
 fn js_string(value: Option<&Value>) -> String {
@@ -110,6 +111,34 @@ pub fn format_task_output_call(args: &Value) -> String {
     )
 }
 
+/// One roster line, its label, status and rest coloured. Other lines pass through.
+fn roster_line(line: &str) -> String {
+    let t = theme();
+    match ROSTER_LINE.captures(line) {
+        None => t.fg("toolOutput", line),
+        Some(caps) => {
+            let label = &caps[1];
+            let status = &caps[2];
+            let rest = &caps[3];
+            let status_color = if status == "running" {
+                "warning"
+            } else if status.starts_with("done") {
+                "success"
+            } else if status == "collected" || status == "cancelled" {
+                "muted"
+            } else {
+                "error"
+            };
+            format!(
+                "- {}  {}{}",
+                t.fg(label_color(label, "accent"), label),
+                t.fg(status_color, status),
+                t.fg("dim", rest)
+            )
+        }
+    }
+}
+
 static ROSTER_LINE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^- (\S+)\s{2}(running|done \(uncollected\)|collected|failed|stalled|timeout|cancelled)(.*)$")
         .expect("roster line")
@@ -119,7 +148,9 @@ fn now_ms() -> u64 {
     hoocode_code_task_store::now_ms()
 }
 
-pub fn format_task_output_result(result: &ToolResultView<'_>) -> String {
+/// `expanded` is the peek dial's stop: at peek the card body and the roster
+/// show their first lines and a `... (N more lines)` hint.
+pub fn format_task_output_result(result: &ToolResultView<'_>, expanded: bool) -> String {
     let t = theme();
     let text = result
         .content
@@ -177,40 +208,20 @@ pub fn format_task_output_result(result: &ToolResultView<'_>) -> String {
             t.bold(&t.fg(color, status)),
             t.fg(color_of_label, label)
         );
-        let body = text
-            .split('\n')
-            .map(|line| format!("{} {}", spine("│"), t.fg("toolOutput", line)))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+        let body = peek_block(&lines, expanded, |shown| {
+            shown
+                .iter()
+                .map(|line| format!("{} {}", spine("│"), t.fg("toolOutput", line)))
+                .collect()
+        });
         return format!("{header}\n{body}\n{}", spine("╰"));
     }
 
-    text.split('\n')
-        .map(|line| match ROSTER_LINE.captures(line) {
-            None => t.fg("toolOutput", line),
-            Some(caps) => {
-                let label = &caps[1];
-                let status = &caps[2];
-                let rest = &caps[3];
-                let status_color = if status == "running" {
-                    "warning"
-                } else if status.starts_with("done") {
-                    "success"
-                } else if status == "collected" || status == "cancelled" {
-                    "muted"
-                } else {
-                    "error"
-                };
-                format!(
-                    "- {}  {}{}",
-                    t.fg(label_color(label, "accent"), label),
-                    t.fg(status_color, status),
-                    t.fg("dim", rest)
-                )
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    let lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+    peek_block(&lines, expanded, |shown| {
+        shown.iter().map(|line| roster_line(line)).collect()
+    })
 }
 
 pub fn task_definition() -> ToolRenderDefinition {
@@ -224,8 +235,8 @@ pub fn task_definition() -> ToolRenderDefinition {
 pub fn task_output_definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: Some(Rc::new(|args, _| Ok(text(format_task_output_call(args))))),
-        render_result: Some(Rc::new(|result, _, _| {
-            Ok(text(format_task_output_result(result)))
+        render_result: Some(Rc::new(|result, options, _| {
+            Ok(text(format_task_output_result(result, options.expanded)))
         })),
         render_shell: None,
     }
