@@ -6,6 +6,7 @@ use hoocode_code_agent_session::format::{format_tokens, js_to_fixed};
 use hoocode_code_task_store::{task_store, TaskSource, TaskStatus};
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_render::Component;
+use hoocode_tui_util::js_math::js_round;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
 use crate::brand::{BRAND_MARK, GIT_BRANCH_GLYPH};
@@ -80,10 +81,6 @@ fn assemble_line(
         return format!("{left_styled}{}", " ".repeat(width - lw));
     }
     truncate_to_width(left_styled, width, &theme().fg("dim", "…"), false)
-}
-
-fn js_round(x: f64) -> f64 {
-    (x + 0.5).floor()
 }
 
 /// A compact context-fill gauge, coloured by proximity to the compaction

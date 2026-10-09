@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use hoocode_tui_editing::{KillPushOptions, KillRing, UndoStack};
 use hoocode_tui_keys::{decode_printable_key, get_keybindings, matches_key, KeybindingsManager};
 use hoocode_tui_render::{Component, CURSOR_MARKER};
+use hoocode_tui_util::js_regex::{is_js_space, js_trim};
 use hoocode_tui_util::{is_punctuation_char, is_whitespace_char, visible_width};
 
 use super::word_wrap::{
@@ -149,11 +150,6 @@ fn slash_command_layout() -> SelectListLayoutOptions {
     }
 }
 
-/// JS `\s` (whitespace, line terminators, BOM).
-fn is_js_space(c: char) -> bool {
-    c.is_whitespace() || c == '\u{feff}'
-}
-
 /// `(?:^|[\s])[@#][^\s]*$`: the token after the last whitespace starts with
 /// `@` or `#`.
 fn in_symbol_context(text_before_cursor: &str) -> bool {
@@ -172,10 +168,6 @@ fn in_symbol_context(text_before_cursor: &str) -> bool {
 }
 
 /// JS `String.prototype.trim` (whitespace and line terminators).
-fn js_trim(s: &str) -> &str {
-    s.trim_matches(is_js_space)
-}
-
 /// UTF-16 code unit before `col` in `line` equals `ch`.
 fn unit_before_is(line: &str, col: usize, ch: char) -> bool {
     col > 0 && slice16(line, col - 1, col) == ch.to_string()

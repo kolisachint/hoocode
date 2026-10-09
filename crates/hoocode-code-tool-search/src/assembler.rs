@@ -88,7 +88,7 @@ pub fn assemble_context(
             let mut raw: Vec<&String> = lines[start - 1..snippet_end].iter().collect();
             while raw
                 .last()
-                .is_some_and(|l| crate::lexical::js_trim(l).is_empty())
+                .is_some_and(|l| hoocode_tui_util::js_regex::js_trim(l).is_empty())
             {
                 raw.pop();
             }

@@ -7,6 +7,7 @@
 //! stubbed. Under token-budget pressure (>= 0.6) bash output is elided too,
 //! except for commands that look side-effecting.
 
+use hoocode_tui_util::js_math::js_round;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -58,11 +59,6 @@ fn stub(message: &ToolResultMessage, text: String) -> AgentMessage {
         })],
         ..message.clone()
     })
-}
-
-/// JS `Math.round` for non-negative values.
-fn js_round(x: f64) -> i64 {
-    (x + 0.5).floor() as i64
 }
 
 /// `evictSupersededReads`. `None` when nothing changed (hoocode returns the
@@ -210,7 +206,7 @@ pub fn evict_superseded_reads(
                         result,
                         format!(
                             "[Bash output elided at {}% token budget — re-run if needed.]",
-                            js_round(pressure * 100.0)
+                            js_round(pressure * 100.0) as i64
                         ),
                     );
                 }

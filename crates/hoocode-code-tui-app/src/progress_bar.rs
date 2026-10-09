@@ -3,13 +3,10 @@
 
 use hoocode_code_agent_session::format::js_to_fixed;
 use hoocode_code_tui_theme::theme;
+use hoocode_tui_util::js_math::js_round;
 
 /// Default cells in a bar.
 pub const PROGRESS_BAR_CELLS: usize = 12;
-
-fn js_round(x: f64) -> f64 {
-    (x + 0.5).floor()
-}
 
 /// Megabytes, to one decimal (so a slow download does not look frozen).
 pub fn format_megabytes(bytes: u64) -> String {

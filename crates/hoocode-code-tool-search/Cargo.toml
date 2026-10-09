@@ -22,6 +22,7 @@ hoocode-agent-types = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-code-paths = { workspace = true }
 hoocode-code-tool-api = { workspace = true }
+hoocode-tui-util = { workspace = true }
 grep-matcher = "0.1"
 grep-regex = "0.1"
 grep-searcher = "0.1"

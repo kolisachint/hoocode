@@ -2,15 +2,11 @@
 //! numbers, durations and capability listings: ports of hoocode
 //! `core/format-tokens.ts`, `core/format-duration.ts` and `core/format-list.ts`.
 
+use hoocode_tui_util::js_math::js_round;
 use hoocode_tui_util::visible_width;
 
 /// The shared segment separator (`SEGMENT_SEP` in hoocode `core/brand.ts`).
 pub const SEGMENT_SEP: &str = "\u{b7}";
-
-/// JS `Math.round`: ties round toward +infinity.
-fn js_round(x: f64) -> f64 {
-    (x + 0.5).floor()
-}
 
 /// JS `Number.prototype.toFixed(digits)` for finite values.
 ///

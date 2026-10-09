@@ -450,6 +450,13 @@ fn expand(replacement: &str, m: &Match) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn js_trim_follows_the_javascript_whitespace_set() {
+        // BOM is JavaScript whitespace; U+0085 is Unicode whitespace but not JavaScript's.
+        assert_eq!(js_trim("\u{feff} a \u{feff}"), "a");
+        assert_eq!(js_trim("\u{85}a\u{85}"), "\u{85}a\u{85}");
+    }
+
     use super::*;
 
     #[test]

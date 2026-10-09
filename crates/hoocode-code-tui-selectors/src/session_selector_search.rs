@@ -4,7 +4,7 @@
 
 use hoocode_code_session::SessionInfo;
 use hoocode_tui_fuzzy::fuzzy_match;
-use hoocode_tui_util::js_regex::{byte_to_utf16, is_js_space, JsRegex};
+use hoocode_tui_util::js_regex::{byte_to_utf16, is_js_space, js_trim, JsRegex};
 
 /// How the list is ordered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,10 +37,6 @@ struct MatchResult {
     matches: bool,
     /// Lower is better; only meaningful when `matches`.
     score: f64,
-}
-
-fn js_trim(text: &str) -> &str {
-    text.trim_matches(is_js_space)
 }
 
 /// `text.toLowerCase().replace(/\s+/g, " ").trim()`.
