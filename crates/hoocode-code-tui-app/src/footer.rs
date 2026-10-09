@@ -112,23 +112,18 @@ fn context_gauge(percent: f64, error_level: f64, warn_level: f64) -> (String, St
 /// that seven more were waiting behind them.
 fn subagent_counts() -> (usize, usize) {
     let store = task_store();
-    let running = store
-        .list()
-        .iter()
-        .filter(|t| t.source == Some(TaskSource::Subagent) && t.status == TaskStatus::InProgress)
-        .count();
-    let queued = store
-        .list()
-        .iter()
-        .filter(|t| t.source == Some(TaskSource::Subagent) && t.status == TaskStatus::Pending)
-        .count();
-    (running, queued)
-}
-
-/// Running subagents only, for callers that want just the badge number.
-#[allow(dead_code)]
-fn active_subagent_count() -> usize {
-    subagent_counts().0
+    let mut counts = (0, 0);
+    for task in store.list().iter() {
+        if task.source != Some(TaskSource::Subagent) {
+            continue;
+        }
+        match task.status {
+            TaskStatus::InProgress => counts.0 += 1,
+            TaskStatus::Pending => counts.1 += 1,
+            _ => {}
+        }
+    }
+    counts
 }
 
 /// Newlines, tabs and carriage returns become spaces; runs of spaces collapse.
