@@ -129,7 +129,7 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 | Components: text, input, select list, loader, box, image | `tui-components/src/` |
 | Markdown (port of `marked` v15) | `tui-components/src/markdown/` |
 | Syntax highlighting (port of highlight.js 10.7.3) | `tui-highlight` |
-| Images (Kitty, iTerm2, Sixel) | `tui-images` |
+| Images (Kitty, iTerm2) | `tui-images` |
 | ANSI-aware width, wrap, truncate | `tui-util` |
 | Kill ring, undo | `tui-editing` |
 | Fuzzy match | `tui-fuzzy` |
