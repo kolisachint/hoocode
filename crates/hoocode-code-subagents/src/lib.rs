@@ -29,7 +29,7 @@ pub mod token_budget;
 pub mod tools;
 pub mod warm;
 
-pub use model_categories::{scoped_models_prompt_section, ModelRequest, ModelSelection};
+pub use model_categories::{ModelRequest, ModelSelection};
 
 pub use pool::{
     DispatchOptions, PoolError, PoolEvent, SubagentPool, SubagentPoolOptions, SubagentPoolTask,

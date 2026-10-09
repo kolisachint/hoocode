@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use hoocode_code_settings::{
-    FileSettingsStorage, ModelCategoryName, ScopedModel, SettingsManager, SettingsScope,
+    Error, FileSettingsStorage, ModelCategoryName, ScopedModel, SettingsManager, SettingsScope,
 };
 use serde_json::{json, Value};
 
@@ -278,7 +278,7 @@ fn set_scoped_models_round_trips_through_disk() {
         entry("openai/gpt-5"),
     ];
     let mut manager = dirs.manager();
-    manager.set_scoped_models(Some(&list));
+    manager.set_scoped_models(&list);
     assert_eq!(manager.scoped_models().unwrap(), list);
     assert_eq!(
         dirs.read_global()["scopedModels"],
@@ -385,4 +385,103 @@ fn validate_rejects_aliases_outside_a_to_z_0_to_9_dash() {
 #[test]
 fn validate_rejects_an_empty_model() {
     assert!(SettingsManager::validate_scoped_models(&[entry("  ")]).is_err());
+}
+
+#[test]
+fn set_scoped_models_writes_the_project_file_when_it_defines_the_key() {
+    let dirs = Dirs::new();
+    dirs.write_global(json!({"scopedModels": [{"model": "a/global"}]}));
+    write_json(
+        &dirs.project_path(),
+        &json!({"scopedModels": [{"model": "a/project"}]}),
+    );
+    let mut manager = dirs.manager();
+    manager.set_scoped_models(&[entry("a/saved")]);
+    assert_eq!(
+        dirs.read_global()["scopedModels"],
+        json!([{"model": "a/global"}])
+    );
+    let project: Value =
+        serde_json::from_str(&std::fs::read_to_string(dirs.project_path()).unwrap()).unwrap();
+    assert_eq!(project["scopedModels"], json!([{"model": "a/saved"}]));
+    assert_eq!(
+        dirs.manager().scoped_models().unwrap(),
+        vec![entry("a/saved")]
+    );
+}
+
+#[test]
+fn set_scoped_models_writes_global_when_the_project_has_no_key() {
+    let dirs = Dirs::new();
+    write_json(&dirs.project_path(), &json!({"model": "x"}));
+    let mut manager = dirs.manager();
+    manager.set_scoped_models(&[entry("a/saved")]);
+    assert_eq!(
+        dirs.read_global()["scopedModels"],
+        json!([{"model": "a/saved"}])
+    );
+    assert!(!std::fs::read_to_string(dirs.project_path())
+        .unwrap()
+        .contains("scopedModels"));
+}
+
+#[test]
+fn clearing_with_an_empty_slice_keeps_the_key_so_no_migration_runs() {
+    let dirs = Dirs::new();
+    dirs.write_global(json!({"enabledModels": ["a/old"]}));
+    let mut manager = dirs.manager();
+    manager.set_scoped_models(&[]);
+    assert_eq!(dirs.read_global()["scopedModels"], json!([]));
+    assert_eq!(dirs.manager().scoped_models().unwrap(), Vec::new());
+}
+
+#[test]
+fn validate_rejects_an_alias_on_a_glob_entry() {
+    let list = vec![ScopedModel {
+        alias: Some("anth".into()),
+        ..entry("anthropic/*")
+    }];
+    let err = SettingsManager::validate_scoped_models(&list).unwrap_err();
+    assert!(err.contains("glob"), "{err}");
+}
+
+#[test]
+fn validate_rejects_aliases_that_name_a_category() {
+    for tier in ["cheap", "fast", "standard", "capable"] {
+        let list = vec![ScopedModel {
+            alias: Some(tier.into()),
+            ..entry("a/x")
+        }];
+        assert!(
+            SettingsManager::validate_scoped_models(&list).is_err(),
+            "alias {tier} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn an_unparseable_scoped_model_entry_is_skipped_and_reported() {
+    let dirs = Dirs::new();
+    dirs.write_global(json!({"scopedModels": [
+        {"model": "a/good"},
+        {"model": "a/bad", "category": "premium"},
+        {"model": "a/also-good", "effort": "high"}
+    ]}));
+    let mut manager = dirs.manager();
+    assert_eq!(
+        manager.scoped_models().unwrap(),
+        vec![
+            entry("a/good"),
+            ScopedModel {
+                effort: Some("high".into()),
+                ..entry("a/also-good")
+            }
+        ]
+    );
+    let errors = manager.drain_errors();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(matches!(
+        &errors[0].error,
+        Error::InvalidScopedModel(message) if message.contains("scopedModels[1]")
+    ));
 }

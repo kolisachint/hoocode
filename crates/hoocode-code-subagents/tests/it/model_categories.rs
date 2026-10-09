@@ -1,7 +1,6 @@
 //! model-categories.test.ts.
 
 use hoocode_ai_types::Model;
-use hoocode_code_settings::ModelCategories;
 use hoocode_code_subagents::model_categories::*;
 use serde_json::json;
 
@@ -25,21 +24,6 @@ fn available() -> Vec<Model> {
     ]
 }
 
-fn categories(
-    fast: Option<&str>,
-    standard: Option<&str>,
-    capable: Option<&str>,
-) -> CategorySettings {
-    CategorySettings {
-        model_categories: Some(ModelCategories {
-            fast: fast.map(String::from),
-            standard: standard.map(String::from),
-            capable: capable.map(String::from),
-        }),
-        ..Default::default()
-    }
-}
-
 fn s(v: &str) -> Option<String> {
     Some(v.to_string())
 }
@@ -54,23 +38,26 @@ fn recognizes_the_three_category_names_and_nothing_else() {
 }
 
 #[test]
-fn resolves_a_configured_category_to_its_model_id() {
-    let settings = categories(Some("myprovider/tiny"), None, Some("myprovider/big"));
+fn resolves_a_category_to_its_derived_model_id() {
+    let models = available();
     assert_eq!(
-        resolve_model_category(ModelCategory::Fast, Some(&settings), None),
-        s("myprovider/tiny")
+        resolve_model_category(ModelCategory::Fast, None, Some(&models)),
+        s("acme/tiny")
     );
     assert_eq!(
-        resolve_model_category(ModelCategory::Capable, Some(&settings), None),
-        s("myprovider/big")
+        resolve_model_category(ModelCategory::Capable, None, Some(&models)),
+        s("acme/big")
     );
 }
 
 #[test]
 fn unconfigured_category_is_none_without_available_models() {
-    let settings = categories(Some("x"), None, None);
     assert_eq!(
-        resolve_model_category(ModelCategory::Standard, Some(&settings), None),
+        resolve_model_category(
+            ModelCategory::Standard,
+            Some(&CategorySettings::default()),
+            None
+        ),
         None
     );
     assert_eq!(
@@ -101,13 +88,13 @@ fn passes_non_category_references_through() {
 }
 
 #[test]
-fn resolves_category_references_via_settings() {
-    let settings = categories(None, Some("vendor/mid"), None);
+fn resolves_category_references_via_derived_defaults() {
+    let models = available();
     assert_eq!(
-        resolve_model_reference("standard", Some(&settings), None),
-        s("vendor/mid")
+        resolve_model_reference("standard", None, Some(&models)),
+        s("acme/mid")
     );
-    assert_eq!(resolve_model_reference("fast", Some(&settings), None), None);
+    assert_eq!(resolve_model_reference("fast", None, None), None);
 }
 
 #[test]
@@ -150,7 +137,6 @@ fn anchors_capable_to_the_configured_default_model() {
     let settings = CategorySettings {
         default_provider: s("other"),
         default_model: s("solo"),
-        ..Default::default()
     };
     assert_eq!(
         resolve_model_category(ModelCategory::Capable, Some(&settings), Some(&models)),
@@ -184,16 +170,18 @@ fn keeps_tiers_monotonic_across_providers() {
 }
 
 #[test]
-fn explicit_config_wins_over_derived_defaults() {
-    let models = available();
-    let settings = categories(Some("explicit/pin"), None, None);
-    assert_eq!(
-        resolve_model_category(ModelCategory::Fast, Some(&settings), Some(&models)),
-        s("explicit/pin")
+fn the_retired_model_categories_key_is_not_read() {
+    // `modelCategories` was migrated into `scopedModels`; a leftover key does
+    // not pin a tier any more.
+    let settings = CategorySettings::from_settings(
+        json!({"modelCategories": {"fast": "explicit/pin"}})
+            .as_object()
+            .unwrap(),
     );
+    assert_eq!(settings, CategorySettings::default());
     assert_eq!(
-        resolve_model_category(ModelCategory::Capable, Some(&settings), Some(&models)),
-        s("acme/big")
+        resolve_model_category(ModelCategory::Fast, Some(&settings), Some(&available())),
+        s("acme/tiny")
     );
 }
 

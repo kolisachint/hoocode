@@ -45,6 +45,22 @@ pub fn set_scoped_models_override(models: Option<Vec<ScopedModel>>) {
     instance().scoped_override = models;
 }
 
+/// The `--models` override as a flag value (`id` or `id:effort`, comma
+/// separated), for passing on to nested children. `None` when no override is
+/// set, or when it is empty.
+pub fn scoped_models_override_flag() -> Option<String> {
+    let entries = instance().scoped_override.clone()?;
+    let value = entries
+        .iter()
+        .map(|entry| match &entry.effort {
+            Some(level) => format!("{}:{level}", entry.model),
+            None => entry.model.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    (!value.is_empty()).then_some(value)
+}
+
 /// Whether a run-only scope (`--models`) is set. The TUI keeps its picker save
 /// to the settings file while it is, so the run's scope stays as the flag set it.
 pub fn scoped_models_override_active() -> bool {
@@ -70,21 +86,33 @@ fn scope_from(
 
 /// The shared pool for `cwd`, created on first use. `available_models` (the
 /// caller's available models) is snapshotted then, for deriving model
-/// categories; later calls reuse the pool.
+/// categories; later calls reuse the pool. Every call refreshes the pool's
+/// scope from the current settings and the `--models` override, so a picker
+/// save reaches the next dispatch from any caller.
 pub fn get_subagent_pool(cwd: &Path, available_models: &[Model]) -> SubagentPool {
+    // Read before taking the lock: `current_scope` takes it too.
+    let scope = current_scope(cwd, available_models);
     let mut instance = instance();
-    if let Some(pool) = &instance.override_pool {
-        return pool.clone();
-    }
-    if let Some(pool) = &instance.pool {
-        return pool.clone();
-    }
-    let scope = scope_from(cwd, available_models, instance.scoped_override.clone());
+    let pool = match instance
+        .override_pool
+        .clone()
+        .or_else(|| instance.pool.clone())
+    {
+        Some(pool) => pool,
+        None => create_pool(&mut instance, cwd, available_models, scope.clone()),
+    };
+    pool.set_scope(scope);
+    pool
+}
+
+fn create_pool(
+    instance: &mut Instance,
+    cwd: &Path,
+    available_models: &[Model],
+    scope: Vec<ResolvedScoped>,
+) -> SubagentPool {
     let manager = SettingsManager::create(cwd, hoocode_code_paths::agent_dir());
-    // One-level deep merge, the same rule the rest of the codebase uses. A
-    // plain `extend` replaced the whole `modelCategories` object, so a project
-    // that set only `capable` silently lost the global `fast` and `standard`
-    // tiers and every model tier fell back to a derived default.
+    // One-level deep merge, the same rule the rest of the codebase uses.
     let settings = deep_merge_settings(&manager.global_settings(), &manager.project_settings());
     let pool = SubagentPool::new(SubagentPoolOptions {
         executable: spawn_command(),

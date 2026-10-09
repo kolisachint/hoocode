@@ -3,10 +3,12 @@
 
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_code_models::{clamp_effort, resolve_scoped_models, ResolvedScoped};
-use hoocode_code_settings::{ModelCategories, ModelCategoryName, ScopedModel};
-use hoocode_code_subagents::model_categories::{
-    scoped_models_prompt_section, select_model, CategorySettings, ModelRequest,
+use hoocode_code_settings::{ModelCategoryName, ScopedModel};
+use hoocode_code_subagents::instance::{
+    current_scope, scoped_models_override_active, scoped_models_override_flag,
+    set_scoped_models_override,
 };
+use hoocode_code_subagents::model_categories::{select_model, ModelRequest};
 use hoocode_code_subagents::tools::create_task_tool_definition;
 use serde_json::json;
 
@@ -227,40 +229,68 @@ fn an_untagged_model_is_never_picked_for_a_category() {
 }
 
 #[test]
-fn a_category_with_no_tagged_model_is_an_error_and_the_default_stays_in_scope() {
+fn a_category_over_a_scope_with_no_tags_derives_the_tier_from_the_scope() {
+    // No entry is tagged (e.g. a `--models` list): the tier comes from the
+    // scoped models alone, so the only scoped model is the fast one.
     let scoped = scope(&[entry("acme/tiny", None, Some("plain"), None)]);
     let s = pick(&req(Some("fast"), None, Some("acme/big")), &scoped);
-    assert!(
-        s.error.as_deref().unwrap_or("").contains("fast"),
-        "{:?}",
-        s.error
-    );
+    assert!(s.error.is_none(), "{:?}", s.error);
     assert_eq!(s.model.as_deref(), Some("acme/tiny"));
+    assert_eq!(s.alias.as_deref(), Some("plain"));
+}
+
+#[test]
+fn an_untagged_scope_derives_each_tier_from_its_own_models_only() {
+    // acme/tiny is the cheapest model overall, but it is outside the scope:
+    // the fast tier is the cheapest scoped model, acme/mid.
+    let scoped = scope(&[
+        entry("acme/mid", None, None, None),
+        entry("acme/big", None, None, None),
+    ]);
+    let fast = pick(&req(Some("fast"), None, None), &scoped);
+    assert_eq!(fast.model.as_deref(), Some("acme/mid"));
+    assert!(fast.error.is_none(), "{:?}", fast.error);
+    let capable = pick(&req(Some("capable"), None, None), &scoped);
+    assert_eq!(capable.model.as_deref(), Some("acme/big"));
+}
+
+#[test]
+fn a_tagged_scope_keeps_its_tags_for_category_asks() {
+    // One tagged entry means the tags decide: the untagged mid is never a fast pick.
+    let scoped = scope(&[
+        entry("acme/mid", None, Some("plain"), None),
+        entry(
+            "acme/big",
+            Some(ModelCategoryName::Capable),
+            Some("big"),
+            None,
+        ),
+    ]);
+    let s = pick(&req(Some("fast"), None, None), &scoped);
+    assert_eq!(s.alias.as_deref(), Some("big"));
+    assert!(s.note.is_some(), "the nearest tier is named");
 }
 
 #[test]
 fn cheap_without_a_scope_behaves_as_fast() {
-    let settings = CategorySettings {
-        model_categories: Some(ModelCategories {
-            fast: Some("acme/tiny".into()),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    let cheap = select_model(
-        &req(Some("cheap"), None, None),
-        Some(&settings),
-        &available(),
-        &[],
-    );
-    let fast = select_model(
-        &req(Some("fast"), None, None),
-        Some(&settings),
-        &available(),
-        &[],
-    );
+    let cheap = select_model(&req(Some("cheap"), None, None), None, &available(), &[]);
+    let fast = select_model(&req(Some("fast"), None, None), None, &available(), &[]);
     assert_eq!(cheap.model.as_deref(), Some("acme/tiny"));
     assert_eq!(cheap.model, fast.model);
+    assert!(cheap.error.is_none(), "{:?}", cheap.error);
+}
+
+#[test]
+fn a_cheap_pin_without_a_scope_reads_as_fast() {
+    // The agent's `model: cheap` used to fall through to the inherited model,
+    // because only fast, standard and capable were parsed for a pin.
+    let s = select_model(
+        &req(None, Some("cheap"), Some("other/solo")),
+        None,
+        &available(),
+        &[],
+    );
+    assert_eq!(s.model.as_deref(), Some("acme/tiny"));
 }
 
 // --- hard limit and empty scope ---------------------------------------------------
@@ -336,31 +366,50 @@ fn no_effort_when_nothing_sets_one() {
     assert_eq!(s.effort, None);
 }
 
-// --- prompt section --------------------------------------------------------------------
+// --- the `--models` override (process-wide) ---------------------------------------
 
+/// The override is one process-wide slot. The test holds the shared SERIAL lock
+/// (the tool tests take it too) and always resets the slot, even on failure.
 #[test]
-fn the_prompt_section_is_empty_without_a_scope() {
-    assert_eq!(scoped_models_prompt_section(&[]), "");
+fn the_models_override_replaces_the_scope_and_is_reset_after_use() {
+    let _serial = crate::SERIAL.blocking_lock();
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            set_scoped_models_override(None);
+        }
+    }
+    let _reset = Reset;
+    assert!(!scoped_models_override_active());
+    assert_eq!(scoped_models_override_flag(), None);
+
+    let mid_high = entry("acme/mid", None, None, Some("high"));
+    set_scoped_models_override(Some(vec![mid_high, entry("other/solo", None, None, None)]));
+    assert!(scoped_models_override_active());
+    // The flag form round-trips: `id:effort`, comma separated, no categories.
+    assert_eq!(
+        scoped_models_override_flag().as_deref(),
+        Some("acme/mid:high,other/solo")
+    );
+    // The override is the scope, whatever the settings say; the cwd is never read.
+    let scope = current_scope(std::path::Path::new("/nonexistent-cwd"), &available());
+    let ids: Vec<String> = scope
+        .iter()
+        .map(|s| format!("{}/{}", s.model.provider, s.model.id))
+        .collect();
+    assert_eq!(ids, vec!["acme/mid".to_string(), "other/solo".to_string()]);
+    assert_eq!(scope[0].effort, Some(ThinkingLevel::High));
+
+    set_scoped_models_override(None);
+    assert!(!scoped_models_override_active());
+    assert_eq!(scoped_models_override_flag(), None);
 }
 
 #[test]
-fn the_prompt_section_lists_alias_or_id_effort_and_category() {
-    let scoped = scope(&[
-        entry(
-            "acme/tiny",
-            Some(ModelCategoryName::Cheap),
-            Some("tiny"),
-            Some("off"),
-        ),
-        entry("other/solo", None, None, None),
-    ]);
-    let text = scoped_models_prompt_section(&scoped);
-    assert!(
-        text.contains("tiny (acme/tiny): effort off, category cheap"),
-        "{text}"
-    );
-    assert!(
-        text.contains("- other/solo: effort default, category none"),
-        "{text}"
-    );
+fn an_empty_models_override_has_no_flag_value() {
+    let _serial = crate::SERIAL.blocking_lock();
+    set_scoped_models_override(Some(Vec::new()));
+    assert!(scoped_models_override_active());
+    assert_eq!(scoped_models_override_flag(), None);
+    set_scoped_models_override(None);
 }

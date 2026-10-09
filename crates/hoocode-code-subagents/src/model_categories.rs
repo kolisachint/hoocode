@@ -2,11 +2,12 @@
 //! categories for subagent model selection, and the scoped-model selection
 //! that sits on top of them ([`select_model`]).
 //!
-//! Without a scope, an explicit `modelCategories[category]` setting wins;
-//! otherwise, given the available models, the category resolves to a default
-//! derived from them (never a hardcoded provider/model); otherwise it is `None`
+//! Without a scope, the category resolves to a default derived from the
+//! available models (never a hardcoded provider/model); otherwise it is `None`
 //! ("no override"). With a scope (`scopedModels`), subagents may only run on a
 //! scoped model, and categories pick from the scope (see [`select_model`]).
+//! The retired `modelCategories` setting is no longer read; the migration
+//! moved it into `scopedModels`.
 
 use std::cmp::Ordering;
 
@@ -14,7 +15,7 @@ use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_code_models::{
     clamp_effort, match_scoped_model, parse_thinking_level, pick_by_category, ResolvedScoped,
 };
-use hoocode_code_settings::{ModelCategories, ModelCategoryName};
+use hoocode_code_settings::ModelCategoryName;
 
 /// `ModelCategory`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,14 +54,12 @@ pub fn is_model_category(value: &str) -> bool {
 /// The settings the resolution reads (`Settings` fields).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CategorySettings {
-    pub model_categories: Option<ModelCategories>,
     pub default_provider: Option<String>,
     pub default_model: Option<String>,
 }
 
 impl CategorySettings {
-    /// From a settings object (`modelCategories`, `defaultProvider`,
-    /// `defaultModel`).
+    /// From a settings object (`defaultProvider`, `defaultModel`).
     pub fn from_settings(settings: &serde_json::Map<String, serde_json::Value>) -> Self {
         let text = |value: Option<&serde_json::Value>| {
             value
@@ -68,16 +67,7 @@ impl CategorySettings {
                 .filter(|s| !s.is_empty())
                 .map(String::from)
         };
-        let model_categories = settings
-            .get("modelCategories")
-            .and_then(serde_json::Value::as_object)
-            .map(|c| ModelCategories {
-                fast: text(c.get("fast")),
-                standard: text(c.get("standard")),
-                capable: text(c.get("capable")),
-            });
         Self {
-            model_categories,
             default_provider: text(settings.get("defaultProvider")),
             default_model: text(settings.get("defaultModel")),
         }
@@ -164,23 +154,13 @@ pub fn derive_default_model_categories(
     }
 }
 
-/// `resolveModelCategory`.
+/// `resolveModelCategory`: the tier's derived default from the available models,
+/// or `None` when there are none.
 pub fn resolve_model_category(
     category: ModelCategory,
     settings: Option<&CategorySettings>,
     available: Option<&[Model]>,
 ) -> Option<String> {
-    let explicit = settings
-        .and_then(|s| s.model_categories.as_ref())
-        .and_then(|c| match category {
-            ModelCategory::Fast => c.fast.clone(),
-            ModelCategory::Standard => c.standard.clone(),
-            ModelCategory::Capable => c.capable.clone(),
-        })
-        .filter(|m| !m.is_empty());
-    if explicit.is_some() {
-        return explicit;
-    }
     match available {
         Some(models) if !models.is_empty() => {
             derive_default_model_categories(models, settings).get(category)
@@ -256,6 +236,28 @@ fn scoped_ref(scoped: &ResolvedScoped) -> String {
     format!("{}/{}", scoped.model.provider, scoped.model.id)
 }
 
+/// The entry a tier ask lands on (decisions 10, 13 and 14). When some scoped
+/// entry carries a category, the tagged entries decide ([`pick_by_category`]).
+/// When none does (e.g. a `--models` list), the tier is derived from the scoped
+/// models alone, the same way the unscoped default is derived from the
+/// available models. The flag is true when a neighbouring tier was used.
+fn pick_tier<'a>(
+    tier: ModelCategoryName,
+    settings: Option<&CategorySettings>,
+    scope: &'a [ResolvedScoped],
+) -> Option<(&'a ResolvedScoped, bool)> {
+    if scope.iter().any(|s| s.category.is_some()) {
+        return pick_by_category(tier, scope);
+    }
+    let models: Vec<Model> = scope.iter().map(|s| s.model.clone()).collect();
+    let reference =
+        derive_default_model_categories(&models, settings).get(derived_category(tier))?;
+    scope
+        .iter()
+        .find(|s| scoped_ref(s) == reference)
+        .map(|s| (s, false))
+}
+
 /// A pick before effort is applied.
 struct Pick<'a> {
     model: Option<String>,
@@ -319,7 +321,7 @@ fn pick_ask<'a>(
                 resolve_model_category(derived_category(tier), settings, Some(available));
             return Ok(concrete_pick(reference, available));
         }
-        return match pick_by_category(tier, scope) {
+        return match pick_tier(tier, settings, scope) {
             Some((scoped, fallback)) => Ok(scoped_pick(
                 scoped,
                 fallback.then(|| tier_note(tier, scoped)),
@@ -349,11 +351,15 @@ fn pick_pin<'a>(
     scope: &'a [ResolvedScoped],
 ) -> Option<Pick<'a>> {
     if scope.is_empty() {
-        let reference = resolve_model_reference(pin, settings, Some(available));
+        // `cheap` has no derived default of its own, so it reads as `fast`.
+        let reference = match ModelCategoryName::parse(pin) {
+            Some(tier) => resolve_model_category(derived_category(tier), settings, Some(available)),
+            None => resolve_model_reference(pin, settings, Some(available)),
+        };
         return Some(concrete_pick(reference, available));
     }
     if let Some(tier) = ModelCategoryName::parse(pin) {
-        return pick_by_category(tier, scope).map(|(scoped, fallback)| {
+        return pick_tier(tier, settings, scope).map(|(scoped, fallback)| {
             scoped_pick(scoped, fallback.then(|| tier_note(tier, scoped)))
         });
     }
@@ -436,31 +442,4 @@ pub fn select_model(
     selection.alias = pick.alias;
     selection.note = pick.note;
     selection
-}
-
-/// The system-prompt block that lists the scoped models for the Agent tool, so
-/// the main model can pick one by alias or id. Empty for an empty scope.
-pub fn scoped_models_prompt_section(scope: &[ResolvedScoped]) -> String {
-    if scope.is_empty() {
-        return String::new();
-    }
-    let mut out = String::from(
-        "# Scoped models\n\
-         The Agent tool's `model` takes a category (cheap, fast, standard, capable) or one of these scoped models by alias or id. \
-         `effort` overrides the effort listed. Subagents run only on these models.\n",
-    );
-    for scoped in scope {
-        let name = match &scoped.alias {
-            Some(alias) => format!("{alias} ({})", scoped_ref(scoped)),
-            None => scoped_ref(scoped),
-        };
-        let effort = scoped
-            .effort
-            .as_ref()
-            .map(|l| l.as_str())
-            .unwrap_or("default");
-        let category = scoped.category.map(|c| c.as_str()).unwrap_or("none");
-        out.push_str(&format!("- {name}: effort {effort}, category {category}\n"));
-    }
-    out.trim_end().to_string()
 }

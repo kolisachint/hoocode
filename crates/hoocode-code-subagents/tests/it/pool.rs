@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
+use hoocode_code_models::ResolvedScoped;
 use hoocode_code_resources::{AgentDefinition, AgentRegistry, AgentSource};
-use hoocode_code_settings::ModelCategories;
-use hoocode_code_subagents::model_categories::CategorySettings;
+use hoocode_code_settings::ModelCategoryName;
 use hoocode_code_subagents::pool::*;
 use serde_json::{json, Value};
 
@@ -1036,7 +1036,7 @@ fn model_fallback_recorder(dir: &Path) -> PathBuf {
             r#"n=$(ls argv-*.bin 2>/dev/null | wc -l | tr -d ' ')
 printf '%s\0' "$@" > argv-$n.bin
 model=; prev=; for a in "$@"; do [ "$prev" = "--model" ] && model=$a; prev=$a; done
-if [ "$model" != "parent-model" ]; then echo "No API key found for preferred model" >&2; exit 1; fi
+case "$model" in *parent-model) ;; *) echo "No API key found for preferred model" >&2; exit 1;; esac
 {TASK_ID}
 mkdir -p {DIR}/dispatch/$tid
 printf '%s' '{}' > {DIR}/dispatch/$tid/result.json
@@ -1046,18 +1046,31 @@ echo '{DONE_LINE}'"#,
     )
 }
 
+/// A scoped model for a pool's `scope` option.
+fn scoped_model(provider: &str, id: &str, category: Option<ModelCategoryName>) -> ResolvedScoped {
+    ResolvedScoped {
+        model: serde_json::from_value(json!({
+            "id": id, "name": id, "api": "openai-completions", "provider": provider,
+            "baseUrl": "http://x", "contextWindow": 128000, "maxTokens": 100,
+        }))
+        .unwrap(),
+        alias: None,
+        category,
+        effort: None,
+    }
+}
+
 async fn fallback_run(provider: Option<&str>) {
     let dir = setup();
     let p = SubagentPool::new(SubagentPoolOptions {
         executable: model_fallback_recorder(dir.path()),
         cwd: Some(dir.path().to_path_buf()),
-        settings: Some(CategorySettings {
-            model_categories: Some(ModelCategories {
-                fast: Some("preferred-model".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        }),
+        // `preferred-model` is the fast tier (the explore agent pins it); the
+        // parent is scoped too, so the fallback can run on it.
+        scope: vec![
+            scoped_model("p", "preferred-model", Some(ModelCategoryName::Fast)),
+            scoped_model("p", "parent-model", None),
+        ],
         ..Default::default()
     });
     let result = p
@@ -1068,7 +1081,7 @@ async fn fallback_run(provider: Option<&str>) {
                 // The concrete model the fallback runs on. `model` alone cannot
                 // serve: the caller may have passed a model category
                 // there instead, which would resolve to the model that failed.
-                inherited_model: Some("parent-model".into()),
+                inherited_model: Some("p/parent-model".into()),
                 provider: provider.map(String::from),
                 ..Default::default()
             },
@@ -1083,11 +1096,11 @@ async fn fallback_run(provider: Option<&str>) {
     assert!(!dir.path().join("argv-2.bin").exists());
     assert_eq!(
         arg_after(&first, "--model").as_deref(),
-        Some("preferred-model")
+        Some("p/preferred-model")
     );
     assert_eq!(
         arg_after(&second, "--model").as_deref(),
-        Some("parent-model")
+        Some("p/parent-model")
     );
     p.dispose();
 }
