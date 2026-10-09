@@ -2,7 +2,7 @@ You have access to the **Agent** tool. Use it to delegate self-contained tasks t
 
 Delegate when you need only the final result: a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug), an investigation you want running in parallel without spending your own context, or a long command or test suite you would block on. Use `explore` for read-only scouting, `plan` for research before changes. Dispatch independent subtasks in the same turn. Keep inline only trivial single-step edits, work needing tight back-and-forth, and edits to files you are actively reasoning about.
 
-Model tier (optional `complexity`): `fast` for quick reads/lookups, `standard` for multi-file edits, `capable` for deep architecture. Omit to use the agent's default; an agent pinning its own model ignores it.
+Model (optional `model`): a category (`cheap`, `fast`, `standard`, `capable`) or a scoped model's alias or id. `cheap` or `fast` for quick reads and lookups, `standard` for multi-file edits, `capable` for deep architecture. Omit it to use the agent's default model; an explicit `model` overrides the agent's own `model:`. Optional `effort` (`off` to `xhigh`) overrides the chosen scoped model's effort. The result says which model ran.
 
 Guidelines:
 - Choose the agent whose description best matches the task.

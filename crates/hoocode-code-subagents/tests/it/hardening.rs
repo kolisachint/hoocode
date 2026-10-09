@@ -4,7 +4,7 @@
 //! Each test here pins one decision from the reliability review that the eval
 //! suite alone could not: an unbounded queue, an unbounded result map, a record
 //! that claims to be running after the pool forgot it, a queued task starved
-//! by priority, and a `complexity` typo that used to cost a whole dispatch.
+//! by priority, and a `model` typo that used to cost a whole dispatch.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Once};

@@ -317,7 +317,7 @@ SCENARIOS: list[Scenario] = [
                 ]
             ),
             "parent": parent_route(
-                [task_call(background=False, complexity="capable"), {"text": PARENT_SUMMARY}]
+                [task_call(background=False, model="capable"), {"text": PARENT_SUMMARY}]
             ),
         },
         prompt="Describe the repository layout using a subagent.",
@@ -329,19 +329,19 @@ SCENARIOS: list[Scenario] = [
         ),
     ),
     Scenario(
-        name="parent_unknown_complexity_tier",
+        name="parent_unknown_model_name",
         kind="parent",
         doc=(
-            "A typo in the complexity tier must never reach a child. It does not: the tool "
-            "schema rejects it in the parent, so no dispatch and no ledger line. The pool "
-            "still does not validate a tier on the paths that skip the schema."
+            "A typo in the Agent tool's model must never reach a child. The tool refuses a "
+            "model name that matches no available model before anything is dispatched, so "
+            "there is no dispatch and no ledger line."
         ),
         routes={
             "child": child_route([{"text": CHILD_SUMMARY}]),
-            "parent": parent_route([task_call(background=False, complexity="fastt"), {"text": "done"}]),
+            "parent": parent_route([task_call(background=False, model="fastt"), {"text": "done"}]),
         },
         prompt="Describe the repository layout using a subagent.",
-        expect=Expect(ledger_count=0, parent_output_contains="complexity"),
+        expect=Expect(ledger_count=0, parent_output_contains="unknown model"),
     ),
     Scenario(
         name="child_rate_limited_then_answers",

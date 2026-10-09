@@ -230,7 +230,6 @@ exit 0"#
     let done = record(&pool, "task_done");
     let exceeded = record(&pool, "budget_exceeded");
     pool.spawn(SubagentPoolTask {
-        model: Some("parent-model".into()),
         inherited_model: Some("parent-model".into()),
         token_budget: Some(500),
         ..task("retry-budget", "pinned", "do work")
@@ -286,7 +285,6 @@ exit 0"#
         ..Default::default()
     });
     pool.spawn(SubagentPoolTask {
-        model: Some("parent-model".into()),
         inherited_model: Some("parent-model".into()),
         ..task("stall-retry", "pinned", "do work")
     })
@@ -337,7 +335,6 @@ async fn a_cancelled_run_is_never_retried_on_another_model() {
         ..Default::default()
     });
     pool.spawn(SubagentPoolTask {
-        model: Some("parent-model".into()),
         inherited_model: Some("parent-model".into()),
         ..task("cancel-once", "pinned", "do work")
     })

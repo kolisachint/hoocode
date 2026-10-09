@@ -21,6 +21,7 @@ hoocode-runtime = { workspace = true }
 hoocode-agent-types = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-code-agent-session = { workspace = true }
+hoocode-code-models = { workspace = true }
 hoocode-code-paths = { workspace = true }
 hoocode-code-permissions = { workspace = true }
 hoocode-code-resources = { workspace = true }
@@ -39,7 +40,6 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread", "process", "io-uti
 libc = "0.2"
 
 [dev-dependencies]
-hoocode-code-models = { workspace = true }
 hoocode-code-prompts = { workspace = true }
 hoocode-code-paths = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
