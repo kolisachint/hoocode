@@ -31,3 +31,7 @@ Where this page disagrees with an earlier one, this page wins.
 | 24 | Sixel images (HI3) | Delete the Sixel path; no decoder |
 | 25 | One TUI design doc | The simplification inventory is merged into tui-activity.md; tui-simplify.md is removed |
 | 26 | Narrowing the list | Never drop an idea to narrow it. Prioritise into tiers (Now, Next, Later). Only verified non-issues leave the list, recorded under "Checked, not an issue" |
+| 27 | `--team` flag | Remove it together with the teams code (N9) |
+| 28 | `home_dir` | One rule everywhere: HOME if set and non-empty, else passwd, never "/" (X7) |
+| 29 | Picker ends | **Clamp everywhere**; PgUp/PgDn and Home/End jump (X6). Wrap-when-it-fits was offered and declined |
+| 30 | Now tier | N1–N13 as proposed, **plus the UI-thread `block_on` removal** (N14, formerly X1) |

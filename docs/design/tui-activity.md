@@ -78,23 +78,23 @@ subagent that takes a row still confirms it before changing code.
 | N6 | Alt+P / Alt+_ / Alt+] start a string sequence, and the flush emits one dead blob. Split off the ESC and re-feed the rest. | TM4 P | S |
 | N7 | Small fixes: "Full output: undefined" sent to the model when no temp file exists (`tool-bash/tool.rs:157`). CSI scan ends at any final byte (`ansi.rs:18`). An Esc just before a paste is lost. "/" is ambiguous as the hint separator. Remove the unreachable "undefined" fallbacks. | new, UT1 P, TM2 V, KY2 P, TB1 P | S |
 | N8 | Delete the overlay subsystem (~560 LOC plus 3 test files, no caller outside `tui-render`). Do it before any other `paint` edit. | RN2 P | M |
-| N9 | Delete the teams lens, roster, focus code, `app.team.*` bindings, team hotkey hint and ~17 tests. The `--team` flag: see Open questions. | TP1 V, AP12 hint | M |
+| N9 | Delete the teams lens, roster, focus code, `app.team.*` bindings, team hotkey hint and ~17 tests. The `--team` flag is removed too (decision 27). | TP1 V, AP12 hint | M |
 | N10 | Split `interactive_mode.rs` into `mode/*`. Then `Transcript` = the 12 fields `reset_transcript_view` clears, plus `chat.clear()`. | IM1 V, IM2 P | M |
 | N11 | Tool blocks: one `peek_block` for 6 copies (~70 LOC), with search and web merged first. Agent and Edit respect the peek dial. Agent shows `· <description>`, and `description` ranks above `prompt`. | TB2 P, TB3 V, TB4 V | S |
 | N12 | Dead-code sweep, verified only (tests that use the code are edited too): resource Canvases/Plugins/Extensions sections, `RAIL`, the `sort` argument; `cancellable_loader.rs`; `Loader.text`; `truncate_primary` and its parameters; the local `impl Clone` in `settings_list` → `derive`; `lex_inline`; the JSON dumpers → `tests/it/common`; RN3 APIs + `cursor_row` + `on_debug` + `wants_key_release`; `list_languages`, `highlight_auto_tree`, `once_cell`, private `engine`/`value`; Sixel (decision 24) with WT → no images; `delete_all_kitty_images`; `is_key_repeat`, `event_type`; `get_effective_config`; `get_color_mode`, `ThemeJson::color`/`to_value`, `regex_escape`, `has_active_codes`; `LEGACY_TOOL_OUTPUT_VIEWS`, `_cwd`, `let _ = js_trim`; `js_line_count`; the no-op `CustomMessageComponent::set_expanded`; `get_padding_x`, `get_autocomplete_max_visible`, `is_focused`, `with_bg_fn`; `notification_panel::dismiss`; `chrome_layout::layout`; `ExpandableText::is_expanded`; `footer::active_subagent_count` with one `list()` pass. | AP1 AP2 AP4 AP5 AP6 AP11 MC3 MC4 MC5 MC6 MC11 RN3 HI2 HI3 HI5 KY6 KY9 UT7 TB5 MS8 ED2 | M |
 | N13 | One copy of each helper: `js_trim` (3 identical copies; the editor copy differs, decide U+0085), `group_digits` (2) → `agent-session/format.rs`, one `SEGMENT_SEP` (agent-session is the lower layer), `text_slice` (tool-api re-exports tui-util), one `js_round` (6 copies) in tui-util, the `resume_picker` doc comment. | UT2 P, UT4 V, IM9, UT11 V, AP7 P, PK8 P | S |
+| N14 | Move the 9 UI-thread `block_on` session ops (resume, new, fork, tree, `/cd`, reload, import, `/mode`) to the runtime, one op at a time starting with `/mode`, each behind a loader. Add a clippy `disallowed-methods` rule after the last one moves. Fixes UI freezes during slow session loads. Pulled into Now by the user (formerly X1). | IM5 V | L |
 
 **Next** (worth doing, larger or visible):
 
 | # | Work | Was | Size |
 |---|---|---|---|
-| X1 | Move the 9 UI-thread `block_on` session ops to the runtime, one op at a time starting with `/mode`. Add a clippy `disallowed-methods` rule after the last one moves. | IM5 V | L |
 | X2 | Bash streaming: `update_display` joins and truncates the whole buffer on every chunk (O(N²), unbounded memory). Use a bounded tail. Compute tool result text once and hold `ToolResult` in an `Rc`. | TB7 P, TB8 V | S |
 | X3 | `read.rs` highlights the whole file on every render. Highlight the visible prefix and memo it, reusing the write tool's `HighlightCache` pattern. Memo the Edit diff. | TB6 P, HI6 corrected | S |
 | X4 | Images: decode only the header for dimensions. Cache the encoded sequence on `Image`. | HI7 V | S |
 | X5 | Grammar: a small name/alias index so `supports_language` doesn't parse the 1.1 MB JSON, then per-language load. Measure the first-code-block stall first. | HI8 V | M–L |
-| X6 | `PickerCursor` in tui-components: window (7 copies), `step` with a wrap flag, the "(n/len)" footer (5 copies), and `set_query` for the 3 fuzzy pickers. Wrap everywhere: `/login`, `/logout` and `/resume` change from clamp (visible). | PK1 P, PK2 corrected, PK3 corrected, PK4 P | S |
-| X7 | One `home_dir` + `shorten_path` policy in a std-only leaf (7 copies, 6 behaviours). Behaviour changes when HOME is unset; see Open questions. | UT5 P | M |
+| X6 | `PickerCursor` in tui-components: window (7 copies), `step` (**clamp at both ends, every picker**, decision 29), the "(n/len)" footer (5 copies), and `set_query` for the 3 fuzzy pickers. `/model`, `/tree`, the user-message picker and scoped models stop wrapping (visible). PgUp/PgDn and Home/End jump. | PK1 P, PK2 corrected, PK3 corrected, PK4 P | S |
+| X7 | One `home_dir` + `shorten_path` policy in a std-only leaf (7 copies, 6 behaviours). Rule: HOME if set and non-empty, else the passwd entry, never "/" (decision 28). Paths shown when HOME is unset change. | UT5 P | M |
 | X8 | One `ansi_runs()` iterator for the 10 ANSI scan loops. Keep two named tab widths (render 3, editor and input 4); both are deliberate. | UT3 P | M |
 | X9 | Renderer after N8: one frame copy on full redraw (RN5); `Option` sentinels plus an explicit force-redraw flag (RN6); `move_rows` shared with `Terminal::move_by` (RN4); then split `paint` (RN9). | RN4–RN6 V/P, RN9 P | M |
 | X10 | Loop state: an `ActivePicker` enum for the picker slots only (not the `pending_*` receivers); the 5 `try_recv` pollers → `AppEvent`; one subagent dispatch helper; `EditorChanged` only on a `!` transition. | IM3 P, IM4 P, IM6 P, IM7 V | M |
@@ -205,13 +205,7 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
 
 ## Open questions
 
-1. **`--team` flag (N9):** it is parsed but reported as unsupported. Removing it with the
-   teams code changes the error from "unsupported" to "unknown flag". Recommended: remove it.
-2. **`home_dir` policy (X7):** use one rule everywhere: HOME if set and non-empty, else the
-   passwd entry, never a "/" fallback. Paths shown when HOME is unset change. Recommended: yes.
-3. **Picker wrap (X6):** all pickers wrap at the ends, so `/login`, `/logout` and `/resume`
-   change from clamping. Recommended: yes.
-4. **Editor `js_trim` (N13):** the editor's copy also trims U+0085. Recommended: use the shared
+1. **Editor `js_trim` (N13):** the editor's copy also trims U+0085. Recommended: use the shared
    JS-whitespace rule (drops U+0085), matching the rest of the TUI.
 
 ## Details
