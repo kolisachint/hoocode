@@ -1,0 +1,10 @@
+
+ ● $ cargo test -p hoocode-code-tui-widgets
+
+ test case_01 ... ok
+ test case_02 ... ok
+--- styles ---
+r1 c1-2 fg=#ffff00
+r1 c3-42 bold
+r3 c1-19 fg=#a8a8a8
+r4 c1-19 fg=#a8a8a8

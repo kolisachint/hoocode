@@ -1,0 +1,6 @@
+
+ Thinking...
+
+ Narrow footers drop the session name first.
+--- styles ---
+r1 c1-11 fg=#a8a8a8 italic

@@ -1,0 +1,8 @@
+▎  tasks 1/5
+--- styles ---
+r0 c0 fg=#d58181
+r0 c2 bg=#2a2a36
+r0 c3-7 fg=#5cc8bb bg=#2a2a36 bold
+r0 c8 bg=#2a2a36
+r0 c9-11 fg=#a8a8a8 bg=#2a2a36
+r0 c12 bg=#2a2a36

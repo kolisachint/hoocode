@@ -1,0 +1,16 @@
+
+ ● AgentOutput explore#1
+ ╭ ✗ failed explore#1
+ │ Stopped: tool limit reached.
+ ╰
+--- styles ---
+r1 c1-2 fg=#b5bd68
+r1 c3-14 bold
+r1 c15-23 fg=#56b6c2
+r2 c1 fg=#757575
+r2 c3 fg=#d58181
+r2 c5-10 fg=#d58181 bold
+r2 c12-20 fg=#56b6c2
+r3 c1 fg=#757575
+r3 c3-30 fg=#a8a8a8
+r4 c1 fg=#757575

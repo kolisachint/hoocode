@@ -1,0 +1,30 @@
+
+ ● $ cargo test -p hoocode-code-tui-widgets
+
+ test case_01 ... ok
+ test case_02 ... ok
+ test case_03 ... ok
+ test case_04 ... ok
+ test case_05 ... ok
+ test case_06 ... ok
+ test case_07 ... ok
+ test case_08 ... ok
+ test case_09 ... ok
+ test case_10 ... ok
+ test case_11 ... ok
+ test case_12 ... ok
+--- styles ---
+r1 c1-2 fg=#b5bd68
+r1 c3-42 bold
+r3 c1-19 fg=#a8a8a8
+r4 c1-19 fg=#a8a8a8
+r5 c1-19 fg=#a8a8a8
+r6 c1-19 fg=#a8a8a8
+r7 c1-19 fg=#a8a8a8
+r8 c1-19 fg=#a8a8a8
+r9 c1-19 fg=#a8a8a8
+r10 c1-19 fg=#a8a8a8
+r11 c1-19 fg=#a8a8a8
+r12 c1-19 fg=#a8a8a8
+r13 c1-19 fg=#a8a8a8
+r14 c1-19 fg=#a8a8a8

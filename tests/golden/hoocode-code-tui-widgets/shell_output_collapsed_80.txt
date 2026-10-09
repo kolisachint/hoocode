@@ -1,0 +1,6 @@
+ ● Shell           cargo test -p hoocode-code-tui-widgets              12 lines
+--- styles ---
+r0 c1-2 fg=#b5bd68
+r0 c3-18 bold
+r0 c19-56 fg=#a8a8a8
+r0 c71-78 fg=#b5bd68
