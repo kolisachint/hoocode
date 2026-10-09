@@ -1,8 +1,9 @@
 
- ● Agent explore
+ ● Agent explore · Find the footer code
  Found the footer in footer.rs.
 --- styles ---
 r1 c1-2 fg=#b5bd68
 r1 c3-8 bold
 r1 c9-15 fg=#56b6c2
+r1 c17-38 fg=#989898
 r2 c1-30 fg=#a8a8a8
