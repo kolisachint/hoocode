@@ -292,9 +292,14 @@ impl StdinBuffer {
                     hoocode_tui_util::text_slice::prefix(&buffer_str, start_idx)
                         .chars()
                         .collect();
-                let (sequences, _) = extract_complete_sequences(&before_paste);
+                let (sequences, remainder) = extract_complete_sequences(&before_paste);
                 for sequence in sequences {
                     self.emit_data_sequence(sequence, out);
+                }
+                // An incomplete tail (a lone Esc key) is input too; the paste
+                // marker ends it, so it cannot wait for more bytes.
+                if !remainder.is_empty() {
+                    self.emit_data_sequence(remainder.iter().collect(), out);
                 }
             }
 
@@ -804,6 +809,23 @@ mod tests {
         all.extend(b.process("b"));
         assert_eq!(data_strings(&all), vec!["a", "b"]);
         assert_eq!(paste_strings(&all), vec!["pasted"]);
+    }
+
+    #[test]
+    fn esc_key_just_before_paste_is_not_lost() {
+        let mut b = StdinBuffer::new(StdinBufferOptions::default());
+        let mut all = b.process("\x1b");
+        all.extend(b.process("\x1b[200~pasted\x1b[201~"));
+        assert_eq!(data_strings(&all), vec!["\x1b"]);
+        assert_eq!(paste_strings(&all), vec!["pasted"]);
+    }
+
+    #[test]
+    fn esc_key_in_same_chunk_before_paste_is_not_lost() {
+        let mut b = StdinBuffer::new(StdinBufferOptions::default());
+        let ev = b.process("\x1b\x1b[200~pasted\x1b[201~");
+        assert_eq!(data_strings(&ev), vec!["\x1b"]);
+        assert_eq!(paste_strings(&ev), vec!["pasted"]);
     }
 
     #[test]
