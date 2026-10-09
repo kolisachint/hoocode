@@ -19,22 +19,22 @@
 
 
 
-
-
 «fg=#989898»no project resources loaded
 
 «fg=#6e93ff»┌────────────────────────────────────────────────────────────────────────────────────────«bold;fg=#5cc8bb» models «fg=#6e93ff»──┐
 «fg=#6e93ff»│«» «fg=#a8a8a8»Session-only. alt+s to save to settings.«»                                                         «fg=#6e93ff»│
 «fg=#6e93ff»│«» «fg=#a8a8a8»❯ «inverse» «»                                                                                              «fg=#6e93ff»│
 «fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
-«fg=#6e93ff»│«» «bg=#2a2a36;fg=#5cc8bb»› mock-model«bg=#2a2a36;fg=#a8a8a8» [mock]«bg=#2a2a36»                                                                             «» «fg=#6e93ff»│
-«fg=#6e93ff»│«»   mock-fast«fg=#a8a8a8» [mock]«»                                                                               «fg=#6e93ff»│
-«fg=#6e93ff»│«»   mock-large«fg=#a8a8a8» [mock]«»                                                                              «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#989898»  model                effort    category«»                                                        «fg=#6e93ff»│
+«fg=#6e93ff»│«» «bg=#2a2a36;fg=#5cc8bb»› mock-model«bg=#2a2a36;fg=#a8a8a8» [mock]«bg=#2a2a36»    «bg=#2a2a36;fg=#989898»-«bg=#2a2a36»         «bg=#2a2a36;fg=#989898»-«bg=#2a2a36»                                                              «» «fg=#6e93ff»│
+«fg=#6e93ff»│«»   mock-fast«fg=#a8a8a8» [mock]«»     «fg=#989898»-«»         «fg=#989898»-«»                                                               «fg=#6e93ff»│
+«fg=#6e93ff»│«»   mock-large«fg=#a8a8a8» [mock]«»    «fg=#989898»-«»         «fg=#989898»-«»                                                               «fg=#6e93ff»│
 «fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
 «fg=#6e93ff»│«» «fg=#a8a8a8»  Model Name: Mock Model«»                                                                         «fg=#6e93ff»│
 «fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
 «fg=#6e93ff»│«» «fg=#989898»  enter toggle · alt+a all · alt+x clear · alt+g provider · alt+up/alt+down reorder · alt+s save «fg=#6e93ff»│
 «fg=#6e93ff»│«» «fg=#989898»· all enabled«»                                                                                    «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#989898»  tab effort · alt+j category · the last step clears«»                                             «fg=#6e93ff»│
 «fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 «bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
 «fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.0%«» «fg=#989898»200k auto@92%«»                                                               «fg=#a8a8a8»mock-large
