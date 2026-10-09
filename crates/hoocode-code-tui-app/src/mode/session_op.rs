@@ -6,7 +6,10 @@
 //! applies it. While one runs, a loader shows and the prompt refuses input;
 //! a second operation says the first must finish.
 
-use hoocode_code_agent_session::NavigateTreeResult;
+use std::path::PathBuf;
+
+use hoocode_code_agent_session::runtime::{ChangeDirectoryResult, RuntimeError};
+use hoocode_code_agent_session::{NavigateTreeResult, ReplaceResult};
 
 use super::*;
 
@@ -22,6 +25,18 @@ pub(super) enum SessionOutcome {
     Tree {
         entry_id: String,
         result: Box<Result<NavigateTreeResult, String>>,
+    },
+    /// `/new`, or a command's `newSession`; `follow_up` is sent to the new session.
+    New {
+        announce: bool,
+        follow_up: Option<String>,
+        result: Result<ReplaceResult, RuntimeError>,
+    },
+    /// `/cd`: the target and the directory left.
+    ChangeDirectory {
+        target: PathBuf,
+        previous_cwd: PathBuf,
+        result: Result<ChangeDirectoryResult, RuntimeError>,
     },
     /// `/reload`: the session re-read its resources (the screen is applied after).
     Reload,
@@ -71,6 +86,20 @@ impl Mode {
         self.dirty.set(true);
     }
 
+    /// The runtime for an operation that replaces the session. None when
+    /// there is none (nothing to do) or another operation is running.
+    pub(super) fn take_session_runtime(
+        &mut self,
+        label: &'static str,
+    ) -> Option<AgentSessionRuntime> {
+        if !self.session_op_free() {
+            return None;
+        }
+        let runtime = self.session_runtime.take()?;
+        self.start_session_op(label);
+        Some(runtime)
+    }
+
     /// Applies a finished operation on the UI thread.
     pub(super) fn finish_session_op(&mut self, done: SessionOpDone) {
         self.session_op = None;
@@ -103,6 +132,16 @@ impl Mode {
             SessionOutcome::Tree { entry_id, result } => {
                 self.finish_tree_navigation(entry_id, *result)
             }
+            SessionOutcome::New {
+                announce,
+                follow_up,
+                result,
+            } => self.finish_new_session(announce, follow_up, result),
+            SessionOutcome::ChangeDirectory {
+                target,
+                previous_cwd,
+                result,
+            } => self.finish_change_directory(target, previous_cwd, result),
             SessionOutcome::Reload => self.finish_reload(),
         }
         self.dirty.set(true);

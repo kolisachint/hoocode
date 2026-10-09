@@ -6,9 +6,13 @@ use std::time::Instant;
 
 use hoocode_agent_types::AgentEvent;
 use hoocode_code_agent_session::format::group_digits;
-use hoocode_code_agent_session::runtime::{format_missing_session_cwd_prompt, RuntimeError};
+use hoocode_code_agent_session::runtime::{
+    format_missing_session_cwd_prompt, ChangeDirectoryResult, RuntimeError,
+};
 use hoocode_code_agent_session::stats::sum_assistant_usage;
-use hoocode_code_agent_session::{AgentSessionEvent, ForkPosition, NewSessionRequest};
+use hoocode_code_agent_session::{
+    AgentSessionEvent, ForkPosition, NewSessionRequest, ReplaceResult,
+};
 use hoocode_code_session::SessionManager;
 use hoocode_code_settings::EditorBorder;
 use hoocode_code_tui_keybindings::{key_display_text, AppKeybindingsManager};
@@ -147,12 +151,32 @@ impl Mode {
             return;
         }
 
-        self.stop_working_loader();
-        let handle_rt = self.runtime.clone();
-        let Some(runtime) = self.session_runtime.as_mut() else {
+        let Some(runtime) = self.take_session_runtime("Changing directory") else {
             return;
         };
-        match handle_rt.block_on(runtime.change_directory(&target)) {
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let mut runtime = runtime;
+            let result = runtime.change_directory(&target).await;
+            let _ = tx.send(AppEvent::SessionOp(Box::new(SessionOpDone {
+                runtime: Some(runtime),
+                outcome: SessionOutcome::ChangeDirectory {
+                    target,
+                    previous_cwd,
+                    result,
+                },
+            })));
+        });
+    }
+
+    /// The `/cd` that ran off the UI thread ended.
+    pub(super) fn finish_change_directory(
+        &mut self,
+        target: PathBuf,
+        previous_cwd: PathBuf,
+        result: Result<ChangeDirectoryResult, RuntimeError>,
+    ) {
+        match result {
             Ok(result) if result.cancelled => {}
             Ok(result) => {
                 *self.previous_cwd.borrow_mut() = Some(previous_cwd.clone());
@@ -433,19 +457,51 @@ impl Mode {
 
     /// `handleClear` (`/new`): a fresh session in the same directory.
     pub(super) fn handle_new_command(&mut self) {
-        self.stop_working_loader();
-        let handle_rt = self.runtime.clone();
-        let Some(runtime) = self.session_runtime.as_mut() else {
+        self.start_new_session(true, None);
+    }
+
+    /// A fresh session in the same directory, run on the runtime. `announce`
+    /// adds the "New session started" line; `follow_up` is sent to the new
+    /// session instead (a command's `newSession({ withSession })`).
+    pub(super) fn start_new_session(&mut self, announce: bool, follow_up: Option<String>) {
+        let Some(runtime) = self.take_session_runtime("Starting a new session") else {
             return;
         };
-        match handle_rt.block_on(runtime.new_session(NewSessionRequest::default())) {
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let mut runtime = runtime;
+            let result = runtime.new_session(NewSessionRequest::default()).await;
+            let _ = tx.send(AppEvent::SessionOp(Box::new(SessionOpDone {
+                runtime: Some(runtime),
+                outcome: SessionOutcome::New {
+                    announce,
+                    follow_up,
+                    result,
+                },
+            })));
+        });
+    }
+
+    /// The new session is ready (or was not made).
+    pub(super) fn finish_new_session(
+        &mut self,
+        announce: bool,
+        follow_up: Option<String>,
+        result: Result<ReplaceResult, RuntimeError>,
+    ) {
+        match result {
             Ok(result) if result.cancelled => {}
             Ok(_) => {
                 self.rebind_current_session();
                 self.render_current_session_state();
-                self.add_to_chat(as_component(&handle(Spacer::new(1))));
-                let line = theme().fg("accent", "✓ New session started");
-                self.add_to_chat(as_component(&handle(Text::new(line, 1, 0))));
+                if let Some(text) = follow_up {
+                    self.send_user_follow_up(text);
+                }
+                if announce {
+                    self.add_to_chat(as_component(&handle(Spacer::new(1))));
+                    let line = theme().fg("accent", "✓ New session started");
+                    self.add_to_chat(as_component(&handle(Text::new(line, 1, 0))));
+                }
             }
             Err(error) => {
                 // `handleFatalRuntimeError`.

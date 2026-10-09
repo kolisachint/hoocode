@@ -1,8 +1,6 @@
 //! Prompts queued while the agent streams or compacts, and follow-up / dequeue keys.
 
-use hoocode_code_agent_session::{
-    AgentSession, NewSessionRequest, PromptOptions, StreamingBehavior,
-};
+use hoocode_code_agent_session::{AgentSession, PromptOptions, StreamingBehavior};
 use hoocode_code_tui_keybindings::key_display_text;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::Spacer;
@@ -24,23 +22,7 @@ impl Mode {
     /// `ctx.newSession({ withSession })` from a command: a fresh session
     /// (no "New session started" line), then the message to it.
     pub(super) fn handle_extension_new_session(&mut self, text: String) {
-        self.stop_working_loader();
-        let handle_rt = self.runtime.clone();
-        let Some(runtime) = self.session_runtime.as_mut() else {
-            return;
-        };
-        match handle_rt.block_on(runtime.new_session(NewSessionRequest::default())) {
-            Ok(result) if result.cancelled => {}
-            Ok(_) => {
-                self.rebind_current_session();
-                self.render_current_session_state();
-                self.send_user_follow_up(text);
-            }
-            Err(error) => {
-                self.show_error(&format!("Failed to create session: {error}"));
-                self.exit_requested = true;
-            }
-        }
+        self.start_new_session(false, Some(text));
     }
 
     /// `session.prompt(text, {streamingBehavior})` for a message typed while
