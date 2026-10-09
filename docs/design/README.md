@@ -84,6 +84,15 @@ writing Claude plugin formats, `/mcp import`, rpc approval dialogs
 crate, Azure, `fd`/`rg` and the external-tools pane, and the extras marked No in
 [extras.md](extras.md).
 
+## Designed, not scheduled
+
+Agreed designs with no build step yet. They are not in the core order above. Ask the user
+before scheduling one.
+
+| Card | What | Status |
+|---|---|---|
+| [scoped-models.md](scoped-models.md) | `/scoped-models` gets an effort and a category per model; `scopedModels` replaces `enabledModels` and `modelCategories`; subagents ask by category or by model | Locked 2026-10-09 (reviewed). Not implemented. |
+
 Older docs that stay as they are: [app-server.md](app-server.md), [subagents.md](subagents.md),
 [subagent-evals.md](subagent-evals.md), [distribution.md](distribution.md),
 [build-speed.md](build-speed.md), and the migration plan
