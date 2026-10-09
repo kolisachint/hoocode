@@ -297,3 +297,59 @@ impl Mode {
         self.update_available_provider_count();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hoocode_code_settings::ModelCategoryName;
+    use serde_json::json;
+
+    fn model(provider: &str, id: &str) -> Model {
+        serde_json::from_value(json!({
+            "id": id, "name": id, "api": "anthropic-messages", "provider": provider,
+            "baseUrl": "https://example.test", "reasoning": true, "input": ["text"],
+            "cost": {"input": 1, "output": 1, "cacheRead": 0, "cacheWrite": 0},
+            "contextWindow": 128000, "maxTokens": 8192,
+        }))
+        .unwrap()
+    }
+
+    /// The picker opens on the saved list with each concrete model's effort,
+    /// category and alias: a glob expands to its matches, which share the
+    /// entry's effort and category, and the alias goes to the first match only.
+    #[test]
+    fn picker_entries_expand_globs_and_keep_effort_category_and_alias() {
+        let available = vec![
+            model("acme", "quick-a"),
+            model("acme", "quick-b"),
+            model("acme", "big"),
+        ];
+        let saved = vec![
+            ScopedModel {
+                model: "acme/quick-*".into(),
+                effort: Some("low".into()),
+                category: Some(ModelCategoryName::Fast),
+                alias: Some("quick".into()),
+            },
+            ScopedModel {
+                model: "acme/big".into(),
+                effort: Some("high".into()),
+                category: Some(ModelCategoryName::Capable),
+                alias: None,
+            },
+        ];
+
+        let concrete = concrete_scoped_entries(&saved, &available);
+
+        let ids: Vec<&str> = concrete.iter().map(|e| e.model.as_str()).collect();
+        assert_eq!(ids, ["acme/quick-a", "acme/quick-b", "acme/big"]);
+        for quick in &concrete[..2] {
+            assert_eq!(quick.effort.as_deref(), Some("low"));
+            assert_eq!(quick.category, Some(ModelCategoryName::Fast));
+        }
+        assert_eq!(concrete[0].alias.as_deref(), Some("quick"));
+        assert_eq!(concrete[1].alias, None);
+        assert_eq!(concrete[2].effort.as_deref(), Some("high"));
+        assert_eq!(concrete[2].category, Some(ModelCategoryName::Capable));
+    }
+}

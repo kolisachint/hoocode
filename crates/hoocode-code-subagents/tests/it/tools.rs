@@ -18,7 +18,7 @@ use hoocode_code_subagents::instance::{
     dispose_subagent_pool, get_subagent_pool, set_subagent_pool_for_testing,
 };
 use hoocode_code_subagents::pool::{
-    ResultStatus, SubagentPool, SubagentPoolOptions, SubagentResult, TaskResult,
+    DispatchOptions, ResultStatus, SubagentPool, SubagentPoolOptions, SubagentResult, TaskResult,
 };
 use hoocode_code_subagents::tools::*;
 use hoocode_code_task_store::{
@@ -1029,6 +1029,46 @@ async fn a_scoped_category_runs_on_its_model_and_the_result_names_it() {
         refused.to_string().contains("no scoped model matches"),
         "{refused}"
     );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+}
+
+/// `/subagent <mode> <task>` dispatches with the session's model as
+/// `inherited_model` and no ask. An agent whose frontmatter pins a model keeps
+/// the pin; an agent with no pin runs on the session's model.
+#[tokio::test(flavor = "multi_thread")]
+async fn slash_subagent_passes_the_session_model_as_inherited_not_asked() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let agents = cwd.join(DIR).join("agents");
+    std::fs::create_dir_all(&agents).unwrap();
+    std::fs::write(
+        agents.join("pinned.md"),
+        "---\nname: pinned\ndescription: Pins a model.\ntools: read\nmodel: pinned-model\n---\nPinned.",
+    )
+    .unwrap();
+    std::fs::write(
+        agents.join("helper.md"),
+        "---\nname: helper\ndescription: Inherits the model.\ntools: read\nmodel: inherit\n---\nHelp.",
+    )
+    .unwrap();
+    task_store().clear();
+    let pool = install_pool(&cwd, argv_child(&cwd));
+    let slash = |agent: &str| DispatchOptions {
+        force_agent: Some(agent.into()),
+        inherited_model: Some("prov/parent-model".into()),
+        ..Default::default()
+    };
+
+    pool.dispatch("do a thing", slash("pinned")).await.unwrap();
+    assert_eq!(model_arg(&cwd).as_deref(), Some("pinned-model"));
+
+    pool.dispatch("do a thing", slash("helper")).await.unwrap();
+    assert_eq!(model_arg(&cwd).as_deref(), Some("prov/parent-model"));
+
     pool.dispose();
     set_subagent_pool_for_testing(None);
     task_store().clear();

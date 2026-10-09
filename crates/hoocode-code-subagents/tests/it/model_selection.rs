@@ -238,6 +238,21 @@ fn a_category_with_no_tagged_model_is_an_error_and_the_default_stays_in_scope() 
     assert_eq!(s.model.as_deref(), Some("acme/tiny"));
 }
 
+/// Decision 13: `--models` gives untagged entries. A category ask then uses the
+/// derived default for that tier over the flag's list alone. `acme/tiny` is
+/// cheapest overall but is not in the list, so `acme/mid` must be picked.
+#[test]
+#[ignore = "bug: a --models category ask errors on untagged entries instead of deriving the tier from the list (decision 13)"]
+fn a_models_flag_category_ask_derives_its_tier_from_the_list_alone() {
+    let scoped = scope(&[
+        entry("acme/mid", None, None, Some("high")),
+        entry("acme/big", None, None, None),
+    ]);
+    let s = pick(&req(Some("fast"), None, None), &scoped);
+    assert!(s.error.is_none(), "{:?}", s.error);
+    assert_eq!(s.model.as_deref(), Some("acme/mid"));
+}
+
 #[test]
 fn cheap_without_a_scope_behaves_as_fast() {
     let settings = CategorySettings {
