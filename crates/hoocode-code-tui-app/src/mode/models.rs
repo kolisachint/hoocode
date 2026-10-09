@@ -3,7 +3,10 @@
 use std::collections::HashSet;
 
 use hoocode_ai_types::{Model, ThinkingLevel, Transport};
-use hoocode_code_models::{find_exact_model_reference_match, resolve_model_scope};
+use hoocode_code_models::{
+    find_exact_model_reference_match, resolve_model_scope, resolve_scoped_models,
+};
+use hoocode_code_settings::{ScopedModel, SettingsManager};
 use hoocode_code_tui_selectors::model_selector::{ModelSelectorComponent, ModelSelectorEvent};
 use hoocode_code_tui_selectors::scoped_models_selector::{
     ScopedModelsEvent, ScopedModelsSelectorComponent,
@@ -18,6 +21,29 @@ pub(super) fn transport_name(transport: Transport) -> String {
         .ok()
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_else(|| "auto".into())
+}
+
+/// The saved `scopedModels` as concrete `provider/id` entries in list order,
+/// one per model (a glob entry expands to its matches). Each entry's effort,
+/// category and alias carry over; the alias goes to the first model it names.
+fn concrete_scoped_entries(entries: &[ScopedModel], available: &[Model]) -> Vec<ScopedModel> {
+    let mut concrete: Vec<ScopedModel> = Vec::new();
+    for entry in entries {
+        let mut alias = entry.alias.clone();
+        for resolved in resolve_scoped_models(std::slice::from_ref(entry), available) {
+            let model = format!("{}/{}", resolved.model.provider, resolved.model.id);
+            if concrete.iter().any(|c| c.model == model) {
+                continue;
+            }
+            concrete.push(ScopedModel {
+                model,
+                effort: resolved.effort.map(|level| level.as_str().to_string()),
+                category: resolved.category,
+                alias: alias.take(),
+            });
+        }
+    }
+    concrete
 }
 
 /// The notice for Anthropic subscription auth (`ANTHROPIC_SUBSCRIPTION_AUTH_*`).
@@ -178,29 +204,18 @@ impl Mode {
         self.dirty.set(true);
     }
 
-    /// `showModelsSelector`: the enable set model cycling steps through.
+    /// `showModelsSelector`: the scoped models model cycling steps through,
+    /// with their effort and category, loaded from `scopedModels`.
     pub(super) fn show_models_selector(&mut self) {
         let all = self.session.get_available_models();
         if all.is_empty() {
             self.show_status("No models available");
             return;
         }
-        let full_id = |m: &Model| format!("{}/{}", m.provider, m.id);
-        let scoped = self.session.scoped_models();
-        let enabled = if !scoped.is_empty() {
-            Some(scoped.iter().map(|s| full_id(&s.model)).collect())
-        } else {
-            let patterns = self.session.settings().enabled_models();
-            patterns.filter(|p| !p.is_empty()).map(|patterns| {
-                resolve_model_scope(&patterns, &all)
-                    .models
-                    .iter()
-                    .map(|s| full_id(&s.model))
-                    .collect()
-            })
-        };
+        let saved = self.session.settings().scoped_models();
+        let scoped = saved.map(|entries| concrete_scoped_entries(&entries, &all));
         let total = all.len();
-        let selector = handle(ScopedModelsSelectorComponent::new(all, enabled));
+        let selector = handle(ScopedModelsSelectorComponent::new(all, scoped));
         {
             let mut container = self.editor_container.borrow_mut();
             container.clear();
@@ -232,13 +247,18 @@ impl Mode {
                     ScopedModelsEvent::Change(enabled) => {
                         self.set_session_model_scope(enabled, total)
                     }
-                    ScopedModelsEvent::Persist(enabled) => {
-                        // Every model enabled clears the filter.
-                        let patterns = enabled.filter(|ids| ids.len() != total);
-                        self.session
-                            .settings()
-                            .set_enabled_models(patterns.as_deref());
-                        self.show_status("Model selection saved to settings");
+                    ScopedModelsEvent::Persist(entries) => {
+                        match SettingsManager::validate_scoped_models(&entries) {
+                            Ok(()) => {
+                                self.session
+                                    .settings()
+                                    .set_scoped_models(Some(entries.as_slice()));
+                                self.show_status("Model selection saved to settings");
+                            }
+                            Err(error) => {
+                                self.show_error(&format!("Model selection not saved: {error}"))
+                            }
+                        }
                     }
                     ScopedModelsEvent::Cancel => {
                         self.scoped_models_selector = None;

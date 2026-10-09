@@ -130,6 +130,11 @@ impl Mode {
                     measure_prompt_surface(&session.system_prompt(), &tools.0)
                 })),
                 supports_images: get_capabilities().images.is_some(),
+                scoped_models_summary: match settings.scoped_models().map_or(0, |m| m.len()) {
+                    0 => "all models".into(),
+                    1 => "1 model".into(),
+                    n => format!("{n} models"),
+                },
             }
         };
         self.settings_changes.borrow_mut().clear();
@@ -368,6 +373,12 @@ impl Mode {
                 .set_webtools_timeout_secs(secs as i64),
             SettingsChange::LearnSetting(key, value) => {
                 self.session.settings().set_learn_setting(key, value as i64)
+            }
+            SettingsChange::OpenScopedModels => {
+                // The pane gives way to the picker, as /scoped-models does.
+                self.settings_selector = None;
+                self.restore_editor();
+                self.show_models_selector();
             }
         }
     }

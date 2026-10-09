@@ -271,12 +271,37 @@ fn opens_something_from_every_top_level_row() {
     let _g = lock();
     let pane = SettingsSelectorComponent::new(pane_config(), ignore);
     for item in pane.settings_list().borrow().items() {
+        // The Models row is an action: Enter asks the host for the picker.
+        if item.id == "models" {
+            continue;
+        }
         assert!(
             item.submenu.is_some(),
             "top-level row \"{}\" opens a submenu",
             item.id
         );
     }
+}
+
+#[test]
+fn the_models_row_asks_the_host_to_open_the_scoped_models_picker() {
+    let _g = lock();
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    let sink = changes.clone();
+    let mut pane =
+        SettingsSelectorComponent::new(pane_config(), move |change| sink.borrow_mut().push(change));
+    let index = pane
+        .settings_list()
+        .borrow()
+        .items()
+        .iter()
+        .position(|i| i.id == "models")
+        .expect("a Models row");
+    for _ in 0..index {
+        pane.handle_input("\x1b[B");
+    }
+    pane.handle_input("\r");
+    assert_eq!(*changes.borrow(), vec![SettingsChange::OpenScopedModels]);
 }
 
 #[test]
