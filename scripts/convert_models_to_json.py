@@ -26,6 +26,12 @@ ROOT = Path(__file__).resolve().parents[1]
 # Providers hoocode drops (docs/design/decisions-2026-10-08.md, "Dropped: Azure").
 # Keep them out of the regenerated catalog so the drop survives a pin bump.
 DROPPED_PROVIDERS = {"azure-openai-responses"}
+# Models hoocode has not shipped yet, merged in after the dump so they survive a
+# regeneration. Each entry is {"before": <id in the same provider>, "model": {...}}
+# and is inserted just before that id (or after the provider's last model if the id
+# is gone). An entry is skipped once upstream ships the same provider/id itself, so
+# the list shrinks by itself. Remove entries when the pin catches up.
+OVERRIDES_PATH = ROOT / "scripts" / "models_overrides.json"
 DEFAULT_AI_PACKAGE = ROOT / "target" / "hoocode-pin" / "packages" / "ai"
 OUT_DIR = ROOT / "crates" / "hoocode-ai-models-catalog" / "data"
 
@@ -41,6 +47,26 @@ process.stdout.write(JSON.stringify({
   images: flatten(images.IMAGE_MODELS),
 }));
 """
+
+
+def apply_overrides(models: list, overrides: list) -> list:
+    """Insert each override model next to its `before` sibling (see OVERRIDES_PATH)."""
+    models = list(models)
+    for entry in overrides:
+        model = entry["model"]
+        provider, model_id = model["provider"], model["id"]
+        if any(m.get("provider") == provider and m.get("id") == model_id for m in models):
+            print(f"override {provider}/{model_id}: upstream ships it now, dropping override")
+            continue
+        same_provider = [i for i, m in enumerate(models) if m.get("provider") == provider]
+        if not same_provider:
+            raise SystemExit(f"override {provider}/{model_id}: provider {provider} is not in the dump")
+        index = next(
+            (i for i in same_provider if models[i].get("id") == entry["before"]),
+            same_provider[-1] + 1,
+        )
+        models.insert(index, model)
+    return models
 
 
 def main() -> int:
@@ -64,6 +90,7 @@ def main() -> int:
         json.dumps({"hoocodeVersion": version, "hoocodeCommit": commit}, indent=1) + "\n"
     )
     data["models"] = [m for m in data["models"] if m.get("provider") not in DROPPED_PROVIDERS]
+    data["models"] = apply_overrides(data["models"], json.loads(OVERRIDES_PATH.read_text()))
     for name, key in (("models.json", "models"), ("image-models.json", "images")):
         path = OUT_DIR / name
         path.write_text(json.dumps(data[key], indent=1, ensure_ascii=False) + "\n")

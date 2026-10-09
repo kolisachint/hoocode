@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: Claude Haiku 5.5 (2026-10-09)
+- Added Claude Haiku 5.5 (`claude-haiku-5-5`) to the Anthropic model catalog: 1M context, 128K max output,
+  reasoning, text and image input, $0.10 / $0.50 per MTok (cache read $0.01, cache write $0.125; the
+  over-100K-token tier of $0.50 / $2.50 is not modelled). Hoocode-ts v0.6.0 does not ship it yet, so
+  `scripts/models_overrides.json` adds it on each regeneration until the pin catches up.
+- Haiku 5.5 uses adaptive thinking (no `budget_tokens`) and never sends `temperature`, which the API rejects.
+  Haiku 4.5 is unchanged.
+
 ### Added: scoped models carry an effort and a category (2026-10-09)
 - **`scopedModels` setting** in `settings.json`: an ordered list of `{ model, effort?, category?, alias? }`.
   It replaces `enabledModels` and `modelCategories`. A project `scopedModels` replaces the global list.

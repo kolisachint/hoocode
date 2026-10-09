@@ -46,6 +46,29 @@
   "maxTokens": 128000
  },
  {
+  "id": "claude-haiku-5-5",
+  "name": "Claude Haiku 5.5",
+  "api": "anthropic-messages",
+  "provider": "anthropic",
+  "baseUrl": "https://api.anthropic.com",
+  "reasoning": true,
+  "thinkingLevelMap": {
+   "xhigh": "xhigh"
+  },
+  "input": [
+   "text",
+   "image"
+  ],
+  "cost": {
+   "input": 0.1,
+   "output": 0.5,
+   "cacheRead": 0.01,
+   "cacheWrite": 0.125
+  },
+  "contextWindow": 1000000,
+  "maxTokens": 128000
+ },
+ {
   "id": "claude-haiku-4-5",
   "name": "Claude Haiku 4.5 (latest)",
   "api": "anthropic-messages",

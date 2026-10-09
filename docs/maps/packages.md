@@ -60,7 +60,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | MCP servers in a session: start the trusted ones in the background, `mcp_<server>_<tool>` tool definitions, shutdown | `code-agent-session` `mcp.rs` (`McpHub`); attached in `code-cli` `runtime.rs` (`attach_mcp`, `mcp_wanted`); synced at each turn in `session.rs` |
 | A model provider | `ai-provider-<name>`, registered in `ai-registry` |
 | A login flow | `ai-oauth-<name>`, stored by `code-auth` |
-| The model list | `ai-models-catalog` (generated), `code-models` (models.json) |
+| The model list | `ai-models-catalog` (generated from the pin, plus `scripts/models_overrides.json` for models upstream does not ship yet), `code-models` (models.json) |
 | Settings keys | `code-settings` |
 | Config paths, env prefixes | `code-paths` |
 | MCP server discovery, `mcp.json` precedence, folder and plugin trust, `/mcp` states | `code-mcp` (`config.rs`, `trust.rs`, `discover.rs`); design in [mcp.md](../design/mcp.md) |
@@ -204,8 +204,9 @@ provider was wired into `ai-registry` only, so it was deleted with its `azure-op
 API, the `AZURE_OPENAI_*` env vars, the `/login` display name, the help text and the 47
 `azure-openai-responses` entries in `ai-models-catalog`. `ai-provider-openai-responses` keeps
 the shared Responses plumbing; only its doc comments mentioned Azure. The catalog now has
-1181 entries (the pin has 1228), and `scripts/convert_models_to_json.py` filters the
-Azure provider out so a regeneration does not bring it back.
+1182 entries (the pin has 1228), and `scripts/convert_models_to_json.py` filters the
+Azure provider out so a regeneration does not bring it back. Its `models_overrides.json`
+adds `claude-haiku-5-5` (anthropic) until the pin ships it.
 
 ## Upkeep
 
