@@ -5,7 +5,7 @@ Input: eight read-only reviews of the TUI, subagent and parity code (summarised 
 
 **T0 done 2026-10-09** (T0.1 to T0.6). The hoocode-ts parity gate is retired: the done bar is
 L1 plus `python3 scripts/tui/goldens.py check all`, and `ledger.py` is read-only. The phase
-tables below stay as the record. **Phase S, tier Now: N1 to N13 and X11 done 2026-10-09 (N11 with the Edit and AgentOutput follow-up, decision 36); N12 (with T1.4), N13 and X11 done 2026-10-09; N10 with T1.1 and T1.2; N14 partly (the nine session ops and `/mode` run off the UI thread; the exit-time abort remains and the auth refresh premise did not hold, see its row).** Next step: N14 remainder (`TODO(N14)` sites, decision 34), then the N11 Edit and AgentOutput follow-up (decision 36). Feature phases (T2 and later) wait for the user's review of the branch (decision 37).
+tables below stay as the record. **Phase S, tier Now is done 2026-10-09** (N1 to N13 and X11; N10 with T1.1; N12 with T1.4; N11 with the Edit and AgentOutput follow-up, decision 36), except two parts: N14's exit-time abort (waits on the ordered shutdown, concurrency.md §4) and T1.2 partial (the event handlers still take `&mut Mode`). Decision 34's menu UI is an open decision (see Open decisions). **Next step awaits the user's pick:** T2 or Phase S Next (e.g. X2). Feature phases (T2 and later) wait for the user's review of the branch (decision 37).
 
 This is the **TUI plan**. It runs side by side with the core plan in
 [README.md](README.md); neither is ahead of the other. Before implementing any step, ask the
@@ -224,6 +224,31 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
 1. **Editor `js_trim` (N13):** the editor's copy also trims U+0085. Decided 2026-10-09: the shared
    JS-whitespace rule (drops U+0085) is used, matching the rest of the TUI. The lexical copy in tool-search
    changed the same way.
+
+## Open decisions (2026-10-09)
+
+Pending the user's answer. Each is a question for the user, not work in progress.
+
+1. **Decision 34, expired-token menu UI.** Recommended: drop it. Menus never blocked (see 82c684b).
+   The unavailable marker and background redraw would hide a model that a request-time refresh
+   would fix.
+2. **N6, unterminated ESC P, `_` or `]`.** The parser reads it as Alt+key. Confirm that reading.
+3. **Banner wording.** The panel key hint says "shift+tab or tab". Confirm the wording.
+4. **Edit peek.** It also trims the pending call-slot diff. Confirm that stays.
+5. **Cleanups (not started):**
+   - Duplicates left: `is_js_space` (`hoocode-agent-harness` messages.rs and output_compression.rs,
+     `hoocode-code-tools-fs` edit_diff.rs), `is_ws` (`hoocode-code-tui-widgets` jsdiff.rs), and the
+     u16 `js_trim` in edit_diff.rs.
+   - `TaskAgent` role, state and handoff are no longer read by the panel (N9); the store still writes them.
+   - `--team`: the cited `docs/design/README.md:145` has no such line (the file is 101 lines). The live
+     mentions are `docs/design/ts-to-rust-migration.md:1270` and `docs/design/extras.md:18`.
+   - Stale sixel entry in `migration/ts-tests.json` (line 3049, `packages/tui/test/sixel.test.ts`).
+   - `ResourceListing.custom_themes` and `extension_diagnostics` reported test-only. Verify before removing.
+6. **Shell and Schedule `TaskKind` variants.** Deferred to T5 and T4.2. T1.3 stays open until then.
+7. **Flaky tests** (fix or quarantine):
+   - Screen goldens: print-tool-bash, scroll-view, mode-cycle.
+   - Races: `hoocode-code-rpc` `fork_branches` and `a_closed_agent`.
+   - `hoocode-ai-oauth-anthropic` uses fixed port 53692, which collides under concurrent runs.
 
 ## Details
 
