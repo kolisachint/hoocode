@@ -138,7 +138,8 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 ## Rules for UI changes
 
 - Screen goldens: `python3 scripts/tui/goldens.py check all` runs the real binary in tmux
-  against the mock LLM and diffs each screen with `tests/golden/tui/<scenario>/`. A deliberate
+  against the mock LLM (`scripts/tui/mockllm.py`) and diffs each screen with `tests/golden/tui/<scenario>/`.
+  Scenarios are in `scripts/tui/scenarios/`. `scripts/tui/review_bundle.py` writes the review bundles. A deliberate
   change is accepted with `goldens.py update <scenario>` and shows in the diff. Component goldens
   (`tests/golden/<crate>/`) run in nextest; accept them with `UPDATE_GOLDENS=1`. The screens
   need not match hoocode-ts (TUI plan, Not doing).

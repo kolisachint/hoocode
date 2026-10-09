@@ -5,14 +5,16 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ## Resume here
 
-- **2026-10-09 (TUI T0.6): parity retired, ledger frozen.** `ledger.py` is read-only:
-  `start`, `note`, `block`, `move` and `verify` exit non-zero and point at
-  `docs/design/tui-activity.md`. The done bar is L1 plus `python3 scripts/tui/goldens.py check all`.
-  The mock, normalizer, scenarios and renderer moved to `scripts/tui/`. `replay.json` and the
-  `hoocode-0.5.89/` fixtures stay under `migration/tui-parity/` and `crates/hoocode-code-main/`
-  (regression tests until a week of green T0 runs). `setup_hoocode.sh` is dropped from the
-  SessionStart design (build-speed §4.1; no hook file exists in the repo) and from the CI job.
-  Migration stays paused. Resume a task only when the user names it.
+- **2026-10-09 (TUI Phase T0 done): hoocode-only goldens, parity retired.** Outcome and open
+  items in `docs/design/tui-activity.md`.
+  - T0.1: `golden` feature on `hoocode-tui-render` (`render_golden`, `assert_golden!`).
+  - T0.2: 36 component goldens (31 widgets, 5 footer). Clock-dependent widgets not covered yet.
+  - T0.3: `scripts/tui/goldens.py`, 67 scenarios, 165 screens in `tests/golden/tui/`.
+  - T0.4/T0.5: `scripts/tui/review_bundle.py` and the `tui-review` skill.
+  - T0.6: `ledger.py` frozen read-only. Done bar is L1 plus `goldens.py check all`.
+  - Open: copy `migration/ci/tui-parity.yml` into `.github/workflows/` (user). Confirm the
+    fixtures-only SessionStart change. Replay fixtures stay until 2026-10-16.
+  - Next step: Phase S, tier Now, N1. Migration stays paused.
 - **2026-10-08 (second session): milestones 4 and 5 built on `claude/m4-m5-mcp-concurrency`.
   Not load-tested yet. Read this first.**
   - **Milestone 4, MCP client.** Crate `hoocode-agent-mcp` (rmcp 3.5.1; only this crate uses rmcp).

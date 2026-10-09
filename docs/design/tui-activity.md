@@ -5,7 +5,7 @@ Input: eight read-only reviews of the TUI, subagent and parity code (summarised 
 
 **T0 done 2026-10-09** (T0.1 to T0.6). The hoocode-ts parity gate is retired: the done bar is
 L1 plus `python3 scripts/tui/goldens.py check all`, and `ledger.py` is read-only. The phase
-tables below stay as the record. Phase S is next (after the user picks the step).
+tables below stay as the record. **Next step: Phase S, tier Now, starting at N1.**
 
 This is the **TUI plan**. It runs side by side with the core plan in
 [README.md](README.md); neither is ahead of the other. Before implementing any step, ask the
@@ -60,6 +60,19 @@ Needs: nothing. Start here.
 | T0.4 | `scripts/tui/review_bundle.py`: for changed screens only, writes `target/tui-review/<scenario>/<snap>/{before,after}.txt`, `diff.txt`, a style legend and an optional `after.png` (`grid_to_html` → `render_png.mjs`). Plus `index.md` listing the bundles. | S |
 | T0.5 | `.claude/skills/tui-review/SKILL.md`: how a Haiku subagent reviews a bundle (checklist: alignment, truncation, colour roles, overflow at 80 and 120 columns, empty and error states). It writes `review.md` per screen with ok / issue / unsure. On unsure, it asks for the PNG. | S |
 | T0.6 | Retire parity: done = L1 + `goldens.py check`. Freeze `ledger.py` (read-only, `verify` prints a pointer here). Remove `setup_hoocode.sh` from SessionStart and CI. Update CLAUDE.md ("Done =" line, commands), build-speed.md, ui.md ("Rules for UI changes") and the continue-migration skill. Move the mock and scenarios from `migration/tui-parity/` to `scripts/tui/`. The replay fixtures stay (Decisions). | S |
+
+**Outcome (2026-10-09)**
+
+- **T0.1:** the `hoocode-tui-render` feature `golden` adds `render_golden` and `assert_golden!`. Goldens live in `tests/golden/<crate>/`. `UPDATE_GOLDENS=1` rewrites them.
+- **T0.2:** 36 component goldens: 31 in `hoocode-code-tui-widgets`, 5 for the footer in `hoocode-code-tui-app`. Not covered, because they depend on the wall clock: the Shell and Agent elapsed lines, subagent rows in the task panel, and the footer git branch. Covering them needs a clock seam in production code.
+  - Follow-up: add an injectable clock when T1 or T3 touches those widgets.
+- **T0.3:** `scripts/tui/goldens.py` runs 67 scenarios, with 165 screens in `tests/golden/tui/`. `check all` takes about 6 minutes. Three changelog scenarios are excluded (`changelog-command`, `changelog-startup`, `changelog-startup-collapsed`). They symlink into the hoocode-ts package.
+  - Follow-up: give them a local changelog fixture.
+- **T0.4 and T0.5:** `scripts/tui/review_bundle.py` writes review bundles for changed screens only. The `tui-review` skill (`.claude/skills/tui-review/SKILL.md`) has a Haiku subagent review them.
+- **T0.6:** parity is retired. The done bar is L1 plus `goldens.py check all`. `ledger.py` is read-only. Open items:
+  - The CI job is staged at `migration/ci/tui-parity.yml`. The user must copy it into `.github/workflows/`, because the token cannot push workflows.
+  - The SessionStart design in [build-speed.md](build-speed.md) now fetches fixtures only, through `scripts/ci/fetch_hoocode_fixtures.sh`. Pending the user's confirmation.
+- **Replay fixtures** (`hoocode-0.5.89/`, `replay.json`) stay until T0 has run green for a week. Review date: **2026-10-16**.
 
 ### Phase S: simplification
 
