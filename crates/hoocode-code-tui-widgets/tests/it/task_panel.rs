@@ -163,7 +163,7 @@ fn each_lens_carries_the_owner_glyph_and_tag_for_its_own_rows() {
     }
     let mut panel = TaskPanelComponent::new();
 
-    panel.set_view(TaskPanelView::Flat);
+    panel.set_view(TaskPanelView::Plan);
     let flat = render(&mut panel, 120);
     let plain_row = find(&flat, "init project");
     assert!(!plain_row.contains('◆') && !plain_row.contains('◇'));
@@ -505,9 +505,9 @@ fn cycle_view_advances_through_the_lenses_that_have_content() {
     create("plan the work");
     create_with("find the bug", sub("explore"));
     let mut panel = TaskPanelComponent::new();
-    assert_eq!(panel.get_view(), TaskPanelView::Flat);
+    assert_eq!(panel.get_view(), TaskPanelView::Plan);
     assert_eq!(panel.cycle_view(true), TaskPanelView::Subagents);
-    assert_eq!(panel.cycle_view(true), TaskPanelView::Flat);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Plan);
 }
 
 #[test]
@@ -516,10 +516,10 @@ fn cycle_view_skips_empty_lenses() {
     let t = create("Plain work");
     set(t, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
-    assert_eq!(panel.cycle_view(true), TaskPanelView::Flat);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Plan);
     create_with("find the bug", sub("explore"));
     assert_eq!(panel.cycle_view(true), TaskPanelView::Subagents);
-    assert_eq!(panel.cycle_view(true), TaskPanelView::Flat);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Plan);
 }
 
 #[test]
@@ -532,7 +532,7 @@ fn a_selected_lens_that_empties_falls_back_to_flat_rendering() {
     let lines = plain(&mut panel, 120);
     assert!(lines.join("\n").contains("Plain work"));
     assert_eq!(lines.len(), 1);
-    assert_eq!(panel.cycle_view(true), TaskPanelView::Flat);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Plan);
 }
 
 #[test]
@@ -616,7 +616,7 @@ fn the_tasks_and_subagents_lenses_split_work_by_ownership() {
     let _g = lock();
     plan_sub_mcp(TaskStatus::InProgress, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Flat);
+    panel.set_view(TaskPanelView::Plan);
     let flat = plain(&mut panel, 120).join("\n");
     assert!(flat.contains("Write the plan"));
     assert!(!flat.contains("Explore the API") && !flat.contains("Fetch the spec"));
@@ -631,7 +631,7 @@ fn each_tabs_count_is_scoped_to_its_own_lens() {
     let _g = lock();
     plan_sub_mcp(TaskStatus::Done, TaskStatus::Done);
     let mut panel = TaskPanelComponent::new();
-    for view in [TaskPanelView::Flat, TaskPanelView::Subagents] {
+    for view in [TaskPanelView::Plan, TaskPanelView::Subagents] {
         panel.set_view(view);
         let header = strip(&render(&mut panel, 120)[0]);
         assert!(header.contains("tasks 0/1"), "{header}");
@@ -646,7 +646,7 @@ fn an_empty_flat_lens_falls_through_to_the_subagents_tree() {
     let s = create_with("Explore the API", sub("explore"));
     set(s, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
-    assert_eq!(panel.get_view(), TaskPanelView::Flat);
+    assert_eq!(panel.get_view(), TaskPanelView::Plan);
     assert!(plain(&mut panel, 120)
         .join("\n")
         .contains("Explore the API"));

@@ -187,9 +187,37 @@ pub fn task_owner_id(agent: Option<&str>, source: Option<TaskSource>) -> String 
     }
 }
 
+/// What a task row stands for in the task panel. Shell and schedule rows are
+/// added with their producers (T4.2, T5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskKind {
+    /// The main agent's own TodoWrite plan item.
+    Plan,
+    /// A dispatched subagent run.
+    Subagent,
+    /// An MCP call.
+    Mcp,
+}
+
 impl Task {
     pub fn owner_id(&self) -> String {
         task_owner_id(self.agent.as_deref(), self.source)
+    }
+
+    /// The main agent's own TodoWrite plan item: no source, no owning agent,
+    /// no parent. `todo.rs` settles these at the end of a request.
+    pub fn is_plan_item(&self) -> bool {
+        self.source.is_none() && self.agent.is_none() && self.parent_task_id.is_none()
+    }
+
+    /// The row kind, from the source. Every task without a source is a plan
+    /// item for this purpose.
+    pub fn kind(&self) -> TaskKind {
+        match self.source {
+            Some(TaskSource::Subagent) => TaskKind::Subagent,
+            Some(TaskSource::Mcp) => TaskKind::Mcp,
+            None => TaskKind::Plan,
+        }
     }
 }
 
@@ -584,4 +612,53 @@ static GLOBAL: LazyLock<TaskStore> = LazyLock::new(TaskStore::new);
 /// The shared, process-wide store (`taskStore`).
 pub fn task_store() -> &'static TaskStore {
     &GLOBAL
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task(options: CreateTaskOptions) -> Task {
+        TaskStore::new().create("t", options)
+    }
+
+    #[test]
+    fn only_a_sourceless_ownerless_parentless_task_is_a_plan_item() {
+        assert!(task(CreateTaskOptions::default()).is_plan_item());
+        assert!(!task(CreateTaskOptions {
+            source: Some(TaskSource::Subagent),
+            ..Default::default()
+        })
+        .is_plan_item());
+        assert!(!task(CreateTaskOptions {
+            source: Some(TaskSource::Mcp),
+            ..Default::default()
+        })
+        .is_plan_item());
+        assert!(!task(CreateTaskOptions {
+            agent: Some("worker".into()),
+            ..Default::default()
+        })
+        .is_plan_item());
+        assert!(!task(CreateTaskOptions {
+            parent_task_id: Some(1),
+            ..Default::default()
+        })
+        .is_plan_item());
+    }
+
+    #[test]
+    fn kind_follows_the_source_and_defaults_to_plan() {
+        assert_eq!(task(CreateTaskOptions::default()).kind(), TaskKind::Plan);
+        let run = task(CreateTaskOptions {
+            source: Some(TaskSource::Subagent),
+            ..Default::default()
+        });
+        assert_eq!(run.kind(), TaskKind::Subagent);
+        let call = task(CreateTaskOptions {
+            source: Some(TaskSource::Mcp),
+            ..Default::default()
+        });
+        assert_eq!(call.kind(), TaskKind::Mcp);
+    }
 }

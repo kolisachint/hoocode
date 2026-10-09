@@ -5932,7 +5932,7 @@ impl Mode {
                 let forward = action == Action::TasksForward;
                 let view = self.task_panel.borrow_mut().cycle_view(forward);
                 let label = match view {
-                    TaskPanelView::Flat => "tasks",
+                    TaskPanelView::Plan => "tasks",
                     TaskPanelView::Subagents => "subagents",
                 };
                 self.show_dial_step(

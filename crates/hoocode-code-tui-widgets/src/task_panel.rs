@@ -2,19 +2,20 @@
 //!
 //! A state-coloured left rail (working / reviewed / stopped), a lens tab strip
 //! when more than one lens has content, and the rows of the chosen lens:
-//! - flat ("tasks"): the main agent's TodoWrite plan, each dispatched run
+//! - plan ("tasks"): the main agent's TodoWrite plan, each dispatched run
 //!   nested under the plan item it works on;
 //! - subagents: the delegated forest (`parentTaskId`), drawn with connectors.
 //!
-//! The pin memoizes rows per store version; that is only an optimization and
-//! is not reproduced. Its 1s run clock is [`TaskPanelComponent::ticking`]: the
-//! app re-renders every second while it is true.
+//! The rows come from a [`RowModel`], rebuilt only when the store's
+//! `version()` moves, so a frame copies nothing from the store. Its 1s run
+//! clock is [`TaskPanelComponent::ticking`]: the app re-renders every second
+//! while it is true.
 
 use std::collections::{HashMap, HashSet};
 
 use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_task_store::{
-    task_owner_id, task_store, Task, TaskAgent, TaskAgentKind, TaskSource, TaskStatus,
+    task_store, Task, TaskAgent, TaskAgentKind, TaskKind, TaskStatus, TaskStore,
 };
 use hoocode_code_tui_keybindings::{app_key_label, format_key_text, raw_key_hint};
 use hoocode_code_tui_theme::{agent_color_for, theme};
@@ -42,17 +43,17 @@ const RAIL: &str = "▎";
 /// `TaskPanelView`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskPanelView {
-    Flat,
+    Plan,
     Subagents,
 }
 
 impl TaskPanelView {
     fn label(self) -> &'static str {
         match self {
-            // The flat lens is the task ledger (TodoWrite items plus dispatched
+            // The plan lens is the task ledger (TodoWrite items plus dispatched
             // runs); `Subagents` below is the delegation forest. Renaming the
-            // flat lens to "subagents" collided with the other one.
-            Self::Flat => "tasks",
+            // plan lens to "subagents" collided with the other one.
+            Self::Plan => "tasks",
             Self::Subagents => "subagents",
         }
     }
@@ -65,24 +66,19 @@ pub enum TaskPanelDensity {
     Summary,
 }
 
-/// The main agent's own TodoWrite plan item.
-fn is_main_task(task: &Task) -> bool {
-    task.source.is_none() && task.agent.is_none() && task.parent_task_id.is_none()
-}
-
 /// A dispatched subagent run or an MCP call.
 fn is_delegated(task: &Task) -> bool {
-    task.source.is_some()
+    task.kind() != TaskKind::Plan
 }
 
 /// The lenses with content, in cycle order.
 fn available_views(tasks: &[Task], agents: &[TaskAgent]) -> Vec<TaskPanelView> {
     let mut views = Vec::new();
-    if tasks.iter().any(is_main_task) {
-        views.push(TaskPanelView::Flat);
+    if tasks.iter().any(Task::is_plan_item) {
+        views.push(TaskPanelView::Plan);
     }
-    let has_subagent_work = agents.iter().any(|a| a.kind == TaskAgentKind::Subagent)
-        || tasks.iter().any(|t| t.source.is_some());
+    let has_subagent_work =
+        agents.iter().any(|a| a.kind == TaskAgentKind::Subagent) || tasks.iter().any(is_delegated);
     if has_subagent_work {
         views.push(TaskPanelView::Subagents);
     }
@@ -96,11 +92,17 @@ fn agent_glyph(kind: TaskAgentKind) -> &'static str {
     }
 }
 
-/// The rail colour for the lens's overall state.
-fn panel_state_color(tasks: &[Task]) -> &'static str {
-    if tasks.iter().any(|t| t.status == TaskStatus::Failed) {
+/// The rail colour for a lens's overall state: any failure, else any live
+/// work, else done.
+fn panel_state_color<'a>(tasks: impl Iterator<Item = &'a Task>) -> &'static str {
+    let (mut failed, mut active) = (false, false);
+    for task in tasks {
+        failed |= task.status == TaskStatus::Failed;
+        active |= task.status.is_active();
+    }
+    if failed {
         "error"
-    } else if tasks.iter().any(|t| t.status.is_active()) {
+    } else if active {
         "warning"
     } else {
         "success"
@@ -135,10 +137,128 @@ fn pad(n: usize) -> String {
     " ".repeat(n)
 }
 
+/// One row of a lens. Its identity is the task's store id, which survives a
+/// rebuild; the tree connector comes from the lens shape.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelRow {
+    pub id: u64,
+    pub tree_prefix: String,
+}
+
+/// Done, total and live counts of one lens (its tab).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct LensStats {
+    done: usize,
+    total: usize,
+    live: bool,
+}
+
+/// The panel's rows for one store version: the store's tasks and agents, the
+/// lenses with content, and each lens's rows. Rebuilt in [`RowModel::sync`]
+/// only when the store's `version()` has moved.
+#[derive(Debug, Default)]
+pub struct RowModel {
+    version: Option<u64>,
+    tasks: Vec<Task>,
+    agents: Vec<TaskAgent>,
+    task_index: HashMap<u64, usize>,
+    agent_index: HashMap<String, usize>,
+    views: Vec<TaskPanelView>,
+    plan: Vec<PanelRow>,
+    subagents: Vec<PanelRow>,
+    builds: u64,
+}
+
+impl RowModel {
+    /// Rebuild from `store` if it has changed since the last sync. The version
+    /// is read before the copy, so a mutation that races the copy costs one
+    /// extra rebuild and never a stale model.
+    pub fn sync(&mut self, store: &TaskStore) {
+        let version = store.version();
+        if self.version == Some(version) {
+            return;
+        }
+        let tasks = store.list();
+        let agents = store.agents();
+        let builds = self.builds + 1;
+        *self = Self::build(version, tasks, agents, builds);
+    }
+
+    fn build(version: u64, tasks: Vec<Task>, agents: Vec<TaskAgent>, builds: u64) -> Self {
+        let task_index = tasks.iter().enumerate().map(|(i, t)| (t.id, i)).collect();
+        let agent_index = agents
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.id.clone(), i))
+            .collect();
+        let views = available_views(&tasks, &agents);
+        let plan = plan_lens_rows(&tasks);
+        let subagents = subagent_lens_rows(&tasks);
+        Self {
+            version: Some(version),
+            tasks,
+            agents,
+            task_index,
+            agent_index,
+            views,
+            plan,
+            subagents,
+            builds,
+        }
+    }
+
+    /// How many times the model has been rebuilt from the store.
+    pub fn builds(&self) -> u64 {
+        self.builds
+    }
+
+    /// The lenses with content, in cycle order.
+    pub fn views(&self) -> &[TaskPanelView] {
+        &self.views
+    }
+
+    /// The store had no tasks at the last sync.
+    pub fn is_empty(&self) -> bool {
+        self.tasks.is_empty()
+    }
+
+    /// The task behind a row id, if the model has it.
+    pub fn task(&self, id: u64) -> Option<&Task> {
+        self.task_index.get(&id).map(|&i| &self.tasks[i])
+    }
+
+    /// The agent that owns a task, if the store has one with that id.
+    pub fn owner_of(&self, task: &Task) -> Option<&TaskAgent> {
+        self.agent_index
+            .get(&task.owner_id())
+            .map(|&i| &self.agents[i])
+    }
+
+    /// The rows of a lens, each with its task, in display order.
+    pub fn lens(&self, view: TaskPanelView) -> impl Iterator<Item = (&PanelRow, &Task)> + '_ {
+        let rows = match view {
+            TaskPanelView::Plan => &self.plan,
+            TaskPanelView::Subagents => &self.subagents,
+        };
+        rows.iter()
+            .filter_map(move |row| self.task(row.id).map(|task| (row, task)))
+    }
+
+    fn lens_stats(&self, view: TaskPanelView) -> LensStats {
+        self.lens(view)
+            .fold(LensStats::default(), |mut stats, (_, task)| {
+                stats.total += 1;
+                stats.done += usize::from(task.status == TaskStatus::Done);
+                stats.live |= task.status == TaskStatus::InProgress;
+                stats
+            })
+    }
+}
+
 /// `formatLensTabs`: one tab per lens with its done/total, plus key hints
 /// when they fit.
 fn format_lens_tabs(
-    tasks: &[Task],
+    model: &RowModel,
     width: usize,
     view: TaskPanelView,
     tab_views: &[TaskPanelView],
@@ -148,9 +268,8 @@ fn format_lens_tabs(
     let tabs: Vec<(String, String)> = tab_views
         .iter()
         .map(|&v| {
-            let lens = filter_tasks_for_lens(tasks, v);
-            let done = lens.iter().filter(|t| t.status == TaskStatus::Done).count();
-            let count = format!("{done}/{}", lens.len());
+            let stats = model.lens_stats(v);
+            let count = format!("{}/{}", stats.done, stats.total);
             let plain = format!(" {} {count} ", v.label());
             if v != view {
                 return (plain.clone(), t.fg("dim", &plain));
@@ -160,10 +279,9 @@ fn format_lens_tabs(
                 t.bold(&t.fg("accent", v.label())),
                 t.fg("muted", &count)
             );
-            let live = lens.iter().any(|t| t.status == TaskStatus::InProgress);
             (
                 plain,
-                if live {
+                if stats.live {
                     t.bg("selectedBg", &body)
                 } else {
                     body
@@ -237,12 +355,12 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
         task_status_icon(task.status),
     );
 
-    let is_mcp = task.source == Some(TaskSource::Mcp);
+    let is_mcp = task.kind() == TaskKind::Mcp;
     let owner_kind =
         options
             .owner
             .map(|o| o.kind)
-            .unwrap_or(if task.source == Some(TaskSource::Subagent) {
+            .unwrap_or(if task.kind() == TaskKind::Subagent {
                 TaskAgentKind::Subagent
             } else {
                 TaskAgentKind::Main
@@ -384,15 +502,39 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
     format!("{left}{}{right_styled}", pad(gap))
 }
 
-/// One row of the flat or subagents lens: a task and its tree connector.
-struct TreeRow<'a> {
-    task: &'a Task,
-    tree_prefix: String,
+/// `flatLensRows`: the plan, each linked subagent run nested under its item.
+fn plan_lens_rows(tasks: &[Task]) -> Vec<PanelRow> {
+    let mut linked: HashMap<u64, Vec<&Task>> = HashMap::new();
+    for task in tasks {
+        if let (Some(link), TaskKind::Subagent) = (task.linked_task_id, task.kind()) {
+            linked.entry(link).or_default().push(task);
+        }
+    }
+    let mut rows = Vec::new();
+    for task in tasks.iter().filter(|t| t.is_plan_item()) {
+        rows.push(PanelRow {
+            id: task.id,
+            tree_prefix: String::new(),
+        });
+        let runs = linked.get(&task.id).map(Vec::as_slice).unwrap_or_default();
+        for (i, run) in runs.iter().enumerate() {
+            rows.push(PanelRow {
+                id: run.id,
+                tree_prefix: if i == runs.len() - 1 {
+                    "└─ "
+                } else {
+                    "├─ "
+                }
+                .to_string(),
+            });
+        }
+    }
+    rows
 }
 
 /// `subagentLensRows`: a depth-first walk of the delegated forest (orphans
 /// become roots; a visited set guards against cycles).
-fn subagent_lens_rows(tasks: &[Task]) -> Vec<TreeRow<'_>> {
+fn subagent_lens_rows(tasks: &[Task]) -> Vec<PanelRow> {
     let ids: HashSet<u64> = tasks.iter().map(|t| t.id).collect();
     let mut children: HashMap<u64, Vec<&Task>> = HashMap::new();
     for task in tasks {
@@ -401,33 +543,36 @@ fn subagent_lens_rows(tasks: &[Task]) -> Vec<TreeRow<'_>> {
         }
     }
     let roots = tasks.iter().filter(|t| match t.parent_task_id {
-        None => t.source.is_some(),
+        None => is_delegated(t),
         Some(parent) => !ids.contains(&parent),
     });
     let mut rows = Vec::new();
     let mut visited = HashSet::new();
-    fn walk<'a>(
-        task: &'a Task,
+    fn walk(
+        task: &Task,
         prefix: &str,
         is_last: bool,
         is_root: bool,
-        children: &HashMap<u64, Vec<&'a Task>>,
+        children: &HashMap<u64, Vec<&Task>>,
         visited: &mut HashSet<u64>,
-        rows: &mut Vec<TreeRow<'a>>,
+        rows: &mut Vec<PanelRow>,
     ) {
         if !visited.insert(task.id) {
             return;
         }
         let branch = if is_last { "└─ " } else { "├─ " };
-        rows.push(TreeRow {
-            task,
+        rows.push(PanelRow {
+            id: task.id,
             tree_prefix: if is_root {
                 String::new()
             } else {
                 format!("{prefix}{branch}")
             },
         });
-        let kids = children.get(&task.id).cloned().unwrap_or_default();
+        let kids = children
+            .get(&task.id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         let child_prefix = if is_root {
             String::new()
         } else {
@@ -451,53 +596,13 @@ fn subagent_lens_rows(tasks: &[Task]) -> Vec<TreeRow<'_>> {
     rows
 }
 
-/// `flatLensRows`: the plan, each linked subagent run nested under its item.
-fn flat_lens_rows(tasks: &[Task]) -> Vec<TreeRow<'_>> {
-    let mut linked: HashMap<u64, Vec<&Task>> = HashMap::new();
-    for task in tasks {
-        if let (Some(link), Some(TaskSource::Subagent)) = (task.linked_task_id, task.source) {
-            linked.entry(link).or_default().push(task);
-        }
-    }
-    let mut rows = Vec::new();
-    for task in tasks.iter().filter(|t| is_main_task(t)) {
-        rows.push(TreeRow {
-            task,
-            tree_prefix: String::new(),
-        });
-        let runs = linked.get(&task.id).cloned().unwrap_or_default();
-        for (i, run) in runs.iter().enumerate() {
-            rows.push(TreeRow {
-                task: run,
-                tree_prefix: if i == runs.len() - 1 {
-                    "└─ "
-                } else {
-                    "├─ "
-                }
-                .to_string(),
-            });
-        }
-    }
-    rows
-}
-
-/// `filterTasksForLens`: exactly the tasks the lens shows.
-fn filter_tasks_for_lens(tasks: &[Task], view: TaskPanelView) -> Vec<&Task> {
-    match view {
-        TaskPanelView::Flat => flat_lens_rows(tasks).into_iter().map(|r| r.task).collect(),
-        TaskPanelView::Subagents => subagent_lens_rows(tasks)
-            .into_iter()
-            .map(|r| r.task)
-            .collect(),
-    }
-}
-
 /// `TaskPanelComponent`.
 pub struct TaskPanelComponent {
     view: TaskPanelView,
     density: TaskPanelDensity,
     disposed: bool,
     ticking: bool,
+    model: RowModel,
 }
 
 impl Default for TaskPanelComponent {
@@ -509,10 +614,11 @@ impl Default for TaskPanelComponent {
 impl TaskPanelComponent {
     pub fn new() -> Self {
         Self {
-            view: TaskPanelView::Flat,
+            view: TaskPanelView::Plan,
             density: TaskPanelDensity::Full,
             disposed: false,
             ticking: false,
+            model: RowModel::default(),
         }
     }
 
@@ -530,17 +636,17 @@ impl TaskPanelComponent {
     }
 
     /// `cycleView`: the next lens with content, wrapping; an emptied view
-    /// snaps back to flat.
+    /// snaps back to the plan.
     pub fn cycle_view(&mut self, forward: bool) -> TaskPanelView {
-        let store = task_store();
-        let available = available_views(&store.list(), &store.agents());
+        self.model.sync(task_store());
+        let available = self.model.views();
         let len = available.len() as isize;
         let idx = available
             .iter()
             .position(|v| *v == self.view)
             .map_or(-1, |i| i as isize);
         self.view = if len == 0 {
-            TaskPanelView::Flat
+            TaskPanelView::Plan
         } else {
             let step = if forward { 1 } else { -1 };
             available[((idx + step + len) % len) as usize]
@@ -565,38 +671,39 @@ impl Component for TaskPanelComponent {
         if self.disposed {
             return Vec::new();
         }
+        self.model.sync(task_store());
+        let model = &self.model;
         let width = width as usize;
-        let store = task_store();
-        let tasks = store.list();
-        let agents = store.agents();
         let now = now_ms();
 
         // Keep the stored view while it has content, else the first lens that
         // does.
-        let available = available_views(&tasks, &agents);
+        let available = model.views();
         let view = if available.contains(&self.view) {
             self.view
         } else {
-            available.first().copied().unwrap_or(TaskPanelView::Flat)
+            available.first().copied().unwrap_or(TaskPanelView::Plan)
         };
-        if tasks.is_empty() {
+        if model.is_empty() {
             self.ticking = false;
             return Vec::new();
         }
 
-        let lens: Vec<Task> = filter_tasks_for_lens(&tasks, view)
-            .into_iter()
-            .cloned()
-            .collect();
-        self.ticking = lens
-            .iter()
-            .any(|t| t.status == TaskStatus::InProgress && is_delegated(t));
+        self.ticking = model
+            .lens(view)
+            .any(|(_, task)| task.status == TaskStatus::InProgress && is_delegated(task));
 
         let t = theme();
-        let gutter = format!("{} ", t.fg(panel_state_color(&lens), RAIL));
+        let gutter = format!(
+            "{} ",
+            t.fg(
+                panel_state_color(model.lens(view).map(|(_, task)| task)),
+                RAIL
+            )
+        );
         let inner = width.saturating_sub(visible_width(RAIL) + 1);
         let tab_views: Vec<TaskPanelView> = if available.contains(&view) {
-            available.clone()
+            available.to_vec()
         } else {
             available
                 .iter()
@@ -606,29 +713,19 @@ impl Component for TaskPanelComponent {
         };
 
         if self.density == TaskPanelDensity::Summary {
-            return vec![
-                gutter.clone() + &format_lens_tabs(&tasks, inner, view, &tab_views, false),
-            ];
+            return vec![gutter.clone() + &format_lens_tabs(model, inner, view, &tab_views, false)];
         }
 
         let mut lines = Vec::new();
         if available.len() >= 2 {
-            lines.push(gutter.clone() + &format_lens_tabs(&tasks, inner, view, &tab_views, true));
+            lines.push(gutter.clone() + &format_lens_tabs(model, inner, view, &tab_views, true));
         }
-
-        let agent_by_id: HashMap<&str, &TaskAgent> =
-            agents.iter().map(|a| (a.id.as_str(), a)).collect();
-        let rows = match view {
-            TaskPanelView::Flat => flat_lens_rows(&tasks),
-            TaskPanelView::Subagents => subagent_lens_rows(&tasks),
-        };
-        for row in rows {
-            let owner_id = task_owner_id(row.task.agent.as_deref(), row.task.source);
+        for (row, task) in model.lens(view) {
             let options = LineOptions {
-                owner: agent_by_id.get(owner_id.as_str()).copied(),
+                owner: model.owner_of(task),
                 tree_prefix: &row.tree_prefix,
             };
-            lines.push(gutter.clone() + &format_task_line(row.task, inner, options, now));
+            lines.push(gutter.clone() + &format_task_line(task, inner, options, now));
         }
         lines
     }
@@ -671,4 +768,279 @@ fn truncate_to(text: &str, max: usize) -> String {
     }
     let head: String = text.chars().take(max.saturating_sub(1)).collect();
     format!("{head}…")
+}
+
+#[cfg(test)]
+mod row_model_tests {
+    use super::*;
+    use hoocode_code_task_store::{CreateTaskOptions, TaskAgentPatch, TaskPatch, TaskSource};
+
+    fn plan(store: &TaskStore, title: &str) -> u64 {
+        store.create(title, CreateTaskOptions::default()).id
+    }
+
+    fn run(store: &TaskStore, title: &str, options: CreateTaskOptions) -> u64 {
+        store
+            .create(
+                title,
+                CreateTaskOptions {
+                    source: Some(TaskSource::Subagent),
+                    ..options
+                },
+            )
+            .id
+    }
+
+    /// `RowModel::lens` borrows the model, so the tests collect plain values.
+    fn lens_ids(model: &RowModel, view: TaskPanelView) -> Vec<(u64, String)> {
+        model
+            .lens(view)
+            .map(|(row, _)| (row.id, row.tree_prefix.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn sync_rebuilds_only_when_the_store_version_moves() {
+        let store = TaskStore::new();
+        let p = plan(&store, "first");
+        let mut model = RowModel::default();
+        model.sync(&store);
+        assert_eq!(model.builds(), 1);
+        model.sync(&store);
+        assert_eq!(model.builds(), 1, "an unchanged store is not copied again");
+
+        store.update(
+            p,
+            TaskPatch {
+                status: Some(TaskStatus::Done),
+                ..Default::default()
+            },
+        );
+        model.sync(&store);
+        assert_eq!(model.builds(), 2);
+        assert_eq!(
+            model.task(p).map(|t| t.status),
+            Some(TaskStatus::Done),
+            "the rebuilt model shows the new status"
+        );
+    }
+
+    #[test]
+    fn plan_lens_nests_a_linked_run_and_keeps_an_unlinked_one_out() {
+        let store = TaskStore::new();
+        let p1 = plan(&store, "first item");
+        let p2 = plan(&store, "second item");
+        let linked = store.create(
+            "linked run",
+            CreateTaskOptions {
+                source: Some(TaskSource::Subagent),
+                linked_task_id: Some(p1),
+                ..Default::default()
+            },
+        );
+        let unlinked = run(&store, "unlinked run", CreateTaskOptions::default());
+        let mut model = RowModel::default();
+        model.sync(&store);
+
+        assert_eq!(
+            lens_ids(&model, TaskPanelView::Plan),
+            vec![
+                (p1, String::new()),
+                (linked.id, "└─ ".into()),
+                (p2, String::new()),
+            ]
+        );
+        // Both runs are delegated roots, so both show in the subagents lens.
+        assert_eq!(
+            lens_ids(&model, TaskPanelView::Subagents),
+            vec![(linked.id, String::new()), (unlinked, String::new())]
+        );
+    }
+
+    #[test]
+    fn subagents_lens_draws_a_child_under_its_parent_run() {
+        let store = TaskStore::new();
+        let parent = run(&store, "parent", CreateTaskOptions::default());
+        let child = run(
+            &store,
+            "child",
+            CreateTaskOptions {
+                parent_task_id: Some(parent),
+                ..Default::default()
+            },
+        );
+        let mut model = RowModel::default();
+        model.sync(&store);
+        assert_eq!(
+            lens_ids(&model, TaskPanelView::Subagents),
+            vec![(parent, String::new()), (child, "└─ ".into())]
+        );
+    }
+
+    #[test]
+    fn a_row_keeps_its_id_across_a_rebuild() {
+        let store = TaskStore::new();
+        let p1 = plan(&store, "first");
+        let p2 = plan(&store, "second");
+        let mut model = RowModel::default();
+        model.sync(&store);
+        let before = lens_ids(&model, TaskPanelView::Plan);
+
+        store.update(
+            p2,
+            TaskPatch {
+                status: Some(TaskStatus::InProgress),
+                ..Default::default()
+            },
+        );
+        model.sync(&store);
+        assert_eq!(lens_ids(&model, TaskPanelView::Plan), before);
+        assert_eq!(model.lens(TaskPanelView::Plan).next().unwrap().0.id, p1);
+        assert_eq!(
+            model.task(p2).map(|t| t.status),
+            Some(TaskStatus::InProgress)
+        );
+    }
+
+    #[test]
+    fn a_task_owned_by_an_agent_is_in_no_lens_but_its_owner_resolves() {
+        let store = TaskStore::new();
+        store.upsert_agent(
+            "explore",
+            "explore",
+            TaskAgentKind::Subagent,
+            TaskAgentPatch::default(),
+        );
+        let owned = store.create(
+            "owned by explore",
+            CreateTaskOptions {
+                agent: Some("explore".into()),
+                ..Default::default()
+            },
+        );
+        let run_id = run(
+            &store,
+            "a run",
+            CreateTaskOptions {
+                agent: Some("explore".into()),
+                ..Default::default()
+            },
+        );
+        let mut model = RowModel::default();
+        model.sync(&store);
+
+        assert!(lens_ids(&model, TaskPanelView::Plan).is_empty());
+        assert_eq!(
+            lens_ids(&model, TaskPanelView::Subagents),
+            vec![(run_id, String::new())]
+        );
+        let owner = model.owner_of(model.task(run_id).unwrap());
+        assert_eq!(owner.map(|a| a.id.as_str()), Some("explore"));
+        assert!(model.owner_of(model.task(owned.id).unwrap()).is_some());
+    }
+
+    #[test]
+    fn views_list_only_the_lenses_with_content() {
+        let store = TaskStore::new();
+        let mut model = RowModel::default();
+        model.sync(&store);
+        assert!(model.views().is_empty());
+
+        plan(&store, "only a plan item");
+        model.sync(&store);
+        assert_eq!(model.views(), [TaskPanelView::Plan]);
+
+        run(&store, "a run", CreateTaskOptions::default());
+        model.sync(&store);
+        assert_eq!(
+            model.views(),
+            [TaskPanelView::Plan, TaskPanelView::Subagents]
+        );
+    }
+
+    #[test]
+    fn a_subagent_agent_without_tasks_still_opens_the_subagents_lens() {
+        let store = TaskStore::new();
+        store.upsert_agent(
+            "explore",
+            "explore",
+            TaskAgentKind::Subagent,
+            TaskAgentPatch::default(),
+        );
+        let mut model = RowModel::default();
+        model.sync(&store);
+        assert_eq!(model.views(), [TaskPanelView::Subagents]);
+    }
+
+    #[test]
+    fn lens_stats_count_done_total_and_live_for_each_lens() {
+        let store = TaskStore::new();
+        let p1 = plan(&store, "done item");
+        plan(&store, "live item");
+        store.update(
+            p1,
+            TaskPatch {
+                status: Some(TaskStatus::Done),
+                ..Default::default()
+            },
+        );
+        let r = run(&store, "finished run", CreateTaskOptions::default());
+        store.update(
+            r,
+            TaskPatch {
+                status: Some(TaskStatus::Done),
+                ..Default::default()
+            },
+        );
+        let mut model = RowModel::default();
+        model.sync(&store);
+
+        let plan_stats = model.lens_stats(TaskPanelView::Plan);
+        assert_eq!(
+            (plan_stats.done, plan_stats.total, plan_stats.live),
+            (1, 2, false)
+        );
+        let sub_stats = model.lens_stats(TaskPanelView::Subagents);
+        assert_eq!(
+            (sub_stats.done, sub_stats.total, sub_stats.live),
+            (1, 1, false)
+        );
+    }
+
+    #[test]
+    fn an_unknown_row_id_has_no_task() {
+        let store = TaskStore::new();
+        plan(&store, "one");
+        let mut model = RowModel::default();
+        model.sync(&store);
+        assert!(model.task(999).is_none());
+    }
+
+    #[test]
+    fn panel_state_color_reports_failure_then_live_work_then_done() {
+        let store = TaskStore::new();
+        let a = plan(&store, "a");
+        let b = plan(&store, "b");
+        store.update(
+            a,
+            TaskPatch {
+                status: Some(TaskStatus::Done),
+                ..Default::default()
+            },
+        );
+        let mut model = RowModel::default();
+        model.sync(&store);
+        let color =
+            |model: &RowModel| panel_state_color(model.lens(TaskPanelView::Plan).map(|(_, t)| t));
+        assert_eq!(color(&model), "warning", "a pending item is live work");
+        store.update(
+            b,
+            TaskPatch {
+                status: Some(TaskStatus::Failed),
+                ..Default::default()
+            },
+        );
+        model.sync(&store);
+        assert_eq!(color(&model), "error");
+    }
 }

@@ -378,7 +378,7 @@ fn nests_a_linked_run_under_its_plan_item_in_the_flat_lens_and_counts_it() {
     let unlinked = task_store().create("free-floating run", sub("plan", None));
     set_status(unlinked.id, TaskStatus::InProgress);
 
-    panel.set_view(TaskPanelView::Flat);
+    panel.set_view(TaskPanelView::Plan);
     let lines: Vec<String> = render(&mut panel).iter().map(|l| strip(l)).collect();
     let todo_idx = lines
         .iter()
@@ -423,7 +423,7 @@ fn drops_a_dangling_link_from_the_flat_lens_without_losing_the_run() {
     set_status(run.id, TaskStatus::InProgress);
     task_store().remove(todo.id);
 
-    panel.set_view(TaskPanelView::Flat);
+    panel.set_view(TaskPanelView::Plan);
     let flat: Vec<String> = render(&mut panel).iter().map(|l| strip(l)).collect();
     assert!(flat.iter().any(|l| l.contains("Still on the plan")));
     assert!(!flat.iter().any(|l| l.contains("scan the repo")));
@@ -482,7 +482,7 @@ fn keeps_a_linked_run_on_its_plan_item_when_the_completed_head_is_dropped() {
     assert_eq!(wire.title, "Wire the parser");
 
     let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Flat);
+    panel.set_view(TaskPanelView::Plan);
     let lines: Vec<String> = render(&mut panel).iter().map(|l| strip(l)).collect();
     let todo_idx = lines
         .iter()
