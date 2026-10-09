@@ -383,6 +383,7 @@ impl SettingsManager {
             errors,
         };
         this.migrate_scoped_models();
+        this.check_scoped_model_entries();
         this
     }
 
@@ -440,6 +441,7 @@ impl SettingsManager {
         }
         self.settings = deep_merge_settings(&self.global, &self.project);
         self.migrate_scoped_models();
+        self.check_scoped_model_entries();
     }
 
     /// `applyOverrides`: layer `overrides` on the merged view (until the
@@ -1352,19 +1354,60 @@ impl SettingsManager {
         )
     }
 
-    /// Writes the global `scopedModels` list. `None` removes the key, and the
-    /// next load migrates the retired keys again. To clear the scope, pass
-    /// `Some(&[])`. Callers validate first with
-    /// [`SettingsManager::validate_scoped_models`].
-    pub fn set_scoped_models(&mut self, models: Option<&[ScopedModel]>) {
-        let value =
-            models.map(|models| serde_json::to_value(models).expect("scoped models serialize"));
-        self.set("scopedModels", value);
+    /// Writes `scopedModels`. When the project settings already define the key,
+    /// the list goes to the project file (it replaces the global list there,
+    /// decision 15). Otherwise it goes to the global file. An empty slice is a
+    /// present, empty list, so the retired keys are never migrated again.
+    /// Callers validate first with [`SettingsManager::validate_scoped_models`].
+    pub fn set_scoped_models(&mut self, models: &[ScopedModel]) {
+        let value = serde_json::to_value(models).expect("scoped models serialize");
+        if defined(self.project.get("scopedModels")).is_some() {
+            self.set_project("scopedModels", value);
+        } else {
+            self.set("scopedModels", Some(value));
+        }
+    }
+
+    /// Records one settings error per `scopedModels` entry that does not parse.
+    /// Such entries are skipped by [`SettingsManager::scoped_models`].
+    fn check_scoped_model_entries(&mut self) {
+        let scopes = [
+            (
+                SettingsScope::Global,
+                self.global_load_failed,
+                self.global.clone(),
+            ),
+            (
+                SettingsScope::Project,
+                self.project_load_failed,
+                self.project.clone(),
+            ),
+        ];
+        for (scope, failed, settings) in scopes {
+            if failed {
+                continue;
+            }
+            let Some(entries) = defined(settings.get("scopedModels")).and_then(Value::as_array)
+            else {
+                continue;
+            };
+            for (index, entry) in entries.iter().enumerate() {
+                if let Err(error) = serde_json::from_value::<ScopedModel>(entry.clone()) {
+                    self.record_error(
+                        scope,
+                        Error::InvalidScopedModel(format!(
+                            "scopedModels[{index}] was skipped: {error}"
+                        )),
+                    );
+                }
+            }
+        }
     }
 
     /// Checks a `scopedModels` list: each `model` is non-empty, aliases are
     /// unique across the list and use only `[a-z0-9-]` (decision 19).
     pub fn validate_scoped_models(models: &[ScopedModel]) -> Result<(), String> {
+        const TIER_NAMES: [&str; 4] = ["cheap", "fast", "standard", "capable"];
         let mut seen: Vec<&str> = Vec::new();
         for entry in models {
             if entry.model.trim().is_empty() {
@@ -1380,6 +1423,17 @@ impl SettingsManager {
             if !valid {
                 return Err(format!(
                     "alias \"{alias}\" must use only lowercase letters, digits and '-'"
+                ));
+            }
+            if TIER_NAMES.contains(&alias) {
+                return Err(format!(
+                    "alias \"{alias}\" is a category name; pick another alias"
+                ));
+            }
+            if entry.model.contains(['*', '?', '[']) {
+                return Err(format!(
+                    "alias \"{alias}\" cannot name the glob \"{}\"; a glob matches several models",
+                    entry.model
                 ));
             }
             if seen.contains(&alias) {

@@ -1240,6 +1240,11 @@ impl PoolInner {
         if let Some(level) = &selection.effort {
             args.extend(["--thinking".into(), level.as_str().into()]);
         }
+        // A run-only scope (`--models`) reaches nested children, so their
+        // subagents stay within it. An explicit `--model` still wins in the child.
+        if let Some(models) = crate::instance::scoped_models_override_flag() {
+            args.extend(["--models".into(), models]);
+        }
         let model = selection.model.clone();
         // --provider would filter out a model id carrying another provider's
         // prefix, so it only goes along with a bare model id.

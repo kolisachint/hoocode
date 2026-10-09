@@ -21,7 +21,7 @@ use hoocode_code_resources::{
     load_agent_registry, AgentRegistry, LoadAgentRegistryOptions, MODEL_INHERIT,
 };
 use hoocode_code_rpc::client::{RpcClient, RpcClientOptions};
-use hoocode_code_settings::SettingsManager;
+use hoocode_code_settings::{deep_merge_settings, SettingsManager};
 use serde_json::Value;
 use tokio::task::JoinHandle;
 
@@ -332,6 +332,11 @@ fn build_worker_args(
     }
     if let Some(level) = &selection.effort {
         args.extend(["--thinking".into(), level.as_str().into()]);
+    }
+    // A run-only scope (`--models`) reaches nested children, so their
+    // subagents stay within it. An explicit `--model` still wins in the child.
+    if let Some(models) = crate::instance::scoped_models_override_flag() {
+        args.extend(["--models".into(), models]);
     }
     if let Some(provider) = options.provider.as_ref().filter(|p| !p.is_empty()) {
         if selection.model.as_ref().is_none_or(|m| !m.contains('/')) {
@@ -748,28 +753,35 @@ fn instance() -> MutexGuard<'static, Instance> {
     INSTANCE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// The shared warm pool for `cwd`, created on first use.
+/// The shared warm pool for `cwd`, created on first use. Every call refreshes
+/// the pool's scope, the same as `get_subagent_pool`.
 pub fn get_warm_subagent_pool(cwd: &Path, available_models: &[Model]) -> WarmSubagentPool {
+    // Read before taking the lock: `current_scope` takes the subagent lock.
+    let scope = crate::instance::current_scope(cwd, available_models);
     let mut instance = instance();
-    if let Some(pool) = instance
+    let pool = match instance
         .override_pool
         .clone()
         .or_else(|| instance.pool.clone())
     {
-        return pool;
-    }
-    let manager = SettingsManager::create(cwd, hoocode_code_paths::agent_dir());
-    let mut settings = manager.global_settings();
-    settings.extend(manager.project_settings());
-    let scope = crate::instance::current_scope(cwd, available_models);
-    let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
-        settings: Some(CategorySettings::from_settings(&settings)),
-        skill_paths: instance.skill_paths.clone(),
-        available_models: available_models.to_vec(),
-        scope,
-        ..WarmSubagentPoolOptions::new(cwd)
-    });
-    instance.pool = Some(pool.clone());
+        Some(pool) => pool,
+        None => {
+            let manager = SettingsManager::create(cwd, hoocode_code_paths::agent_dir());
+            // The same one-level deep merge as the cold pool.
+            let settings =
+                deep_merge_settings(&manager.global_settings(), &manager.project_settings());
+            let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
+                settings: Some(CategorySettings::from_settings(&settings)),
+                skill_paths: instance.skill_paths.clone(),
+                available_models: available_models.to_vec(),
+                scope: scope.clone(),
+                ..WarmSubagentPoolOptions::new(cwd)
+            });
+            instance.pool = Some(pool.clone());
+            pool
+        }
+    };
+    pool.set_scope(scope);
     pool
 }
 

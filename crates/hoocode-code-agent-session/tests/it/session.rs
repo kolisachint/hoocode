@@ -662,6 +662,13 @@ fn system_prompt_lists_scoped_models_only_when_the_agent_tool_is_active() {
     ]);
     let prompt = h.session.system_prompt();
     assert!(prompt.contains("## Scoped models"), "{prompt}");
+    // The intro tells the main model what the names are for (the shipped string).
+    assert!(
+        prompt.contains(
+            "The user scoped these models. For subagent work, pass one of these names, or a category, as the Agent tool's `model` parameter."
+        ),
+        "{prompt}"
+    );
     assert!(
         prompt.contains(&format!(
             "- big ({one_ref}), effort: high, category: capable"

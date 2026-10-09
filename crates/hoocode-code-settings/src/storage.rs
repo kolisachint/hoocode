@@ -34,6 +34,9 @@ pub enum Error {
     NotAnObject,
     /// Another process held the lock for every retry (`ELOCKED`).
     Locked(PathBuf),
+    /// An entry of `scopedModels` that does not parse. It is skipped, and the
+    /// message names its position.
+    InvalidScopedModel(String),
 }
 
 impl fmt::Display for Error {
@@ -43,6 +46,7 @@ impl fmt::Display for Error {
             Self::Json(e) => e.fmt(f),
             Self::NotAnObject => f.write_str("settings must be a JSON object"),
             Self::Locked(path) => write!(f, "Lock file is already being held: {}", path.display()),
+            Self::InvalidScopedModel(message) => f.write_str(message),
         }
     }
 }

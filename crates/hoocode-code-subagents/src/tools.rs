@@ -693,11 +693,6 @@ async fn execute_task(
             .into());
         }
     }
-    // The scope is read per dispatch, so a change in the picker reaches
-    // subagents without a restart.
-    let scope = crate::instance::current_scope(&cwd, &available);
-    pool.set_scope(scope.clone());
-
     // Pre-flight: the inherited provider just exhausted its quota; a subagent
     // on the same provider would fail too.
     if let Some(provider) = model.as_ref().map(|m| m.provider.clone()) {
@@ -742,7 +737,8 @@ async fn execute_task(
         .into());
     }
 
-    let model_id = model.as_ref().map(|m| m.id.clone());
+    // `provider/id`: the scope and the category match on that form.
+    let model_ref = model.as_ref().map(|m| format!("{}/{}", m.provider, m.id));
     let provider = model.as_ref().map(|m| m.provider.clone());
     // Which model the dispatch runs on, decided once here so the result can
     // say so. An ask that cannot be used is refused before anything is created.
@@ -752,7 +748,7 @@ async fn execute_task(
             ask: ask.clone(),
             effort: effort.clone(),
             pin: None,
-            inherited: model_id.clone(),
+            inherited: model_ref.clone(),
         },
     );
     if let Some(error) = &selection.error {
@@ -779,7 +775,7 @@ async fn execute_task(
                 &prompt,
                 DispatchOptions {
                     model: ask.clone(),
-                    inherited_model: model_id.clone(),
+                    inherited_model: model_ref.clone(),
                     effort: effort.clone(),
                     provider,
                     task_id: Some(run_id.clone()),
@@ -850,7 +846,7 @@ async fn execute_task(
         cwd: cwd.clone(),
         model: ask.clone(),
         provider: provider.clone(),
-        inherited_model: model_id.clone(),
+        inherited_model: model_ref.clone(),
         effort: effort.clone(),
     };
     let progress: WarmProgressCallback = {
@@ -871,7 +867,7 @@ async fn execute_task(
         model: ask.clone(),
         // The parent's own model: the default when nothing is asked, and where
         // the inherited-model fallback runs.
-        inherited_model: model_id.clone(),
+        inherited_model: model_ref.clone(),
         effort: effort.clone(),
         provider: provider.clone(),
         session_file: fork_session_file.clone(),
@@ -890,7 +886,6 @@ async fn execute_task(
         };
         if use_warm {
             let warm = get_warm_subagent_pool(&cwd, &available);
-            warm.set_scope(scope.clone());
             if warm.is_poolable(&subagent_type) {
                 match warm
                     .dispatch(&prompt, &warm_options, Some(progress.clone()))
@@ -959,7 +954,6 @@ async fn execute_task(
     // Warm path for a foreground dispatch; infra failures fall back to cold.
     if use_warm {
         let warm = get_warm_subagent_pool(&cwd, &available);
-        warm.set_scope(scope.clone());
         if warm.is_poolable(&subagent_type) {
             match warm.dispatch(&prompt, &warm_options, Some(progress)).await {
                 Ok(warm_result) => {

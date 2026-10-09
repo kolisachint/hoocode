@@ -352,7 +352,7 @@ struct Mode {
     ask_options: Option<OpenAskOptions>,
     tree_selector: Option<(Rc<RefCell<TreeSelectorComponent>>, Option<String>)>,
     model_selector: Option<Rc<RefCell<ModelSelectorComponent>>>,
-    scoped_models_selector: Option<(Rc<RefCell<ScopedModelsSelectorComponent>>, usize)>,
+    scoped_models_selector: Option<Rc<RefCell<ScopedModelsSelectorComponent>>>,
     anthropic_warning_shown: bool,
     settings_selector: Option<Rc<RefCell<SettingsSelectorComponent>>>,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,

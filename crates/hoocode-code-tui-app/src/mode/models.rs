@@ -3,9 +3,7 @@
 use std::collections::HashSet;
 
 use hoocode_ai_types::{Model, ThinkingLevel, Transport};
-use hoocode_code_models::{
-    find_exact_model_reference_match, resolve_model_scope, resolve_scoped_models,
-};
+use hoocode_code_models::{find_exact_model_reference_match, resolve_scoped_models};
 use hoocode_code_settings::{ScopedModel, SettingsManager};
 use hoocode_code_tui_selectors::model_selector::{ModelSelectorComponent, ModelSelectorEvent};
 use hoocode_code_tui_selectors::scoped_models_selector::{
@@ -26,24 +24,55 @@ pub(super) fn transport_name(transport: Transport) -> String {
 /// The saved `scopedModels` as concrete `provider/id` entries in list order,
 /// one per model (a glob entry expands to its matches). Each entry's effort,
 /// category and alias carry over; the alias goes to the first model it names.
+/// A model named twice keeps one row, and the later entry fills in what the
+/// first left unset (alias, category, effort), so nothing it carried is lost.
 fn concrete_scoped_entries(entries: &[ScopedModel], available: &[Model]) -> Vec<ScopedModel> {
     let mut concrete: Vec<ScopedModel> = Vec::new();
     for entry in entries {
         let mut alias = entry.alias.clone();
         for resolved in resolve_scoped_models(std::slice::from_ref(entry), available) {
             let model = format!("{}/{}", resolved.model.provider, resolved.model.id);
-            if concrete.iter().any(|c| c.model == model) {
-                continue;
+            let effort = resolved.effort.map(|level| level.as_str().to_string());
+            let alias_here = alias.take();
+            match concrete.iter_mut().find(|c| c.model == model) {
+                Some(existing) => {
+                    existing.effort = existing.effort.take().or(effort);
+                    existing.category = existing.category.or(resolved.category);
+                    existing.alias = existing.alias.take().or(alias_here);
+                }
+                None => concrete.push(ScopedModel {
+                    model,
+                    effort,
+                    category: resolved.category,
+                    alias: alias_here,
+                }),
             }
-            concrete.push(ScopedModel {
-                model,
-                effort: resolved.effort.map(|level| level.as_str().to_string()),
-                category: resolved.category,
-                alias: alias.take(),
-            });
         }
     }
     concrete
+}
+
+/// The saved entries the picker cannot show because their models are not
+/// available now (e.g. logged out). A save keeps them verbatim, so saving never
+/// drops a scope entry the picker could not display.
+fn unavailable_entries(saved: &[ScopedModel], available: &[Model]) -> Vec<ScopedModel> {
+    saved
+        .iter()
+        .filter(|entry| resolve_scoped_models(std::slice::from_ref(entry), available).is_empty())
+        .cloned()
+        .collect()
+}
+
+/// What a picker save writes: the picked entries in priority order, then the
+/// unavailable saved entries in their saved order.
+fn entries_to_save(
+    picked: Vec<ScopedModel>,
+    saved: &[ScopedModel],
+    available: &[Model],
+) -> Vec<ScopedModel> {
+    let mut all = picked;
+    all.extend(unavailable_entries(saved, available));
+    all
 }
 
 /// The notice for Anthropic subscription auth (`ANTHROPIC_SUBSCRIPTION_AUTH_*`).
@@ -214,7 +243,6 @@ impl Mode {
         }
         let saved = self.session.settings().scoped_models();
         let scoped = saved.map(|entries| concrete_scoped_entries(&entries, &all));
-        let total = all.len();
         let selector = handle(ScopedModelsSelectorComponent::new(all, scoped));
         {
             let mut container = self.editor_container.borrow_mut();
@@ -222,8 +250,35 @@ impl Mode {
             container.add_child(as_component(&selector));
         }
         self.tui.set_focus(Some(as_component(&selector)));
-        self.scoped_models_selector = Some((selector, total));
+        self.scoped_models_selector = Some(selector);
         self.dirty.set(true);
+    }
+
+    /// The picker's save (`Persist`): writes `scopedModels` (the project's when
+    /// the project defines the key, else global) and applies the saved scope
+    /// to the session. Refused while `--models` is set: that run's scope is the
+    /// flag, and writing it would put the flag list on disk.
+    fn persist_scoped_models(&mut self, picked: Vec<ScopedModel>) {
+        if hoocode_code_subagents::instance::scoped_models_override_active() {
+            self.show_error(
+                "--models is set for this run, so the scope cannot be saved. Start without --models to save.",
+            );
+            return;
+        }
+        let available = self.session.get_available_models();
+        let saved = self.session.settings().scoped_models().unwrap_or_default();
+        let entries = entries_to_save(picked, &saved, &available);
+        if let Err(error) = SettingsManager::validate_scoped_models(&entries) {
+            self.show_error(&format!("Model selection not saved: {error}"));
+            return;
+        }
+        self.session.settings().set_scoped_models(&entries);
+        // Resolved entries keep each model's effort and category, so alt+m
+        // cycling applies them now.
+        self.session
+            .set_resolved_scoped_models(resolve_scoped_models(&entries, &available));
+        self.update_available_provider_count();
+        self.show_status("Model selection saved to settings");
     }
 
     /// The model pickers' answers.
@@ -239,40 +294,14 @@ impl Mode {
                 self.switch_model(*model);
             }
         }
-        if let Some((selector, total)) = &self.scoped_models_selector {
-            let total = *total;
+        if let Some(selector) = self.scoped_models_selector.clone() {
             let events = selector.borrow_mut().take_events();
             for event in events {
                 match event {
-                    ScopedModelsEvent::Change(enabled) => {
-                        self.set_session_model_scope(enabled, total)
-                    }
-                    ScopedModelsEvent::Persist(entries) => {
-                        match SettingsManager::validate_scoped_models(&entries) {
-                            Ok(()) => {
-                                self.session
-                                    .settings()
-                                    .set_scoped_models(Some(entries.as_slice()));
-                                // Resolved entries keep each model's effort and category, so
-                                // alt+m cycling applies them now. While `--models` is set, the
-                                // run's scope stays as the flag made it: the save only writes
-                                // the settings file.
-                                if !hoocode_code_subagents::instance::scoped_models_override_active(
-                                ) {
-                                    let available = self.session.get_available_models();
-                                    self.session
-                                        .set_resolved_scoped_models(resolve_scoped_models(
-                                            &entries, &available,
-                                        ));
-                                    self.update_available_provider_count();
-                                }
-                                self.show_status("Model selection saved to settings");
-                            }
-                            Err(error) => {
-                                self.show_error(&format!("Model selection not saved: {error}"))
-                            }
-                        }
-                    }
+                    // A change is only the picker's own state. The session scope
+                    // moves on a save, never on a change, so Cancel leaves it as it was.
+                    ScopedModelsEvent::Change(_) => {}
+                    ScopedModelsEvent::Persist(entries) => self.persist_scoped_models(entries),
                     ScopedModelsEvent::Cancel => {
                         self.scoped_models_selector = None;
                         self.restore_editor();
@@ -282,19 +311,74 @@ impl Mode {
             }
         }
     }
+}
 
-    /// The session's model scope from the picker (session-only): all or
-    /// none enabled means no filter.
-    fn set_session_model_scope(&mut self, enabled: Option<Vec<String>>, total: usize) {
-        match enabled.filter(|ids| !ids.is_empty() && ids.len() < total) {
-            Some(ids) => {
-                let available = self.session.get_available_models();
-                let scope = resolve_model_scope(&ids, &available);
-                self.session.set_scoped_models(scope.models);
-            }
-            None => self.session.set_scoped_models(Vec::new()),
+#[cfg(test)]
+mod scoped_save_tests {
+    use super::*;
+    use hoocode_code_settings::ModelCategoryName;
+
+    fn model(provider: &str, id: &str) -> Model {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "name": id, "api": "openai-completions", "provider": provider,
+            "baseUrl": "http://x", "contextWindow": 1000, "maxTokens": 100,
+        }))
+        .unwrap()
+    }
+
+    fn entry(model: &str) -> ScopedModel {
+        ScopedModel {
+            model: model.into(),
+            effort: None,
+            category: None,
+            alias: None,
         }
-        self.update_available_provider_count();
+    }
+
+    fn available() -> Vec<Model> {
+        vec![model("acme", "mid"), model("acme", "big")]
+    }
+
+    #[test]
+    fn a_save_keeps_saved_entries_for_models_that_are_not_available() {
+        // `other/gone` is logged out: the picker cannot show it, but saving must
+        // not drop it. It goes after the picked entries, in its saved order.
+        let saved = vec![entry("other/gone"), entry("acme/mid"), entry("gone/also")];
+        let picked = vec![entry("acme/big")];
+        let saved_list = entries_to_save(picked, &saved, &available());
+        let models: Vec<&str> = saved_list.iter().map(|e| e.model.as_str()).collect();
+        assert_eq!(models, vec!["acme/big", "other/gone", "gone/also"]);
+    }
+
+    #[test]
+    fn a_model_the_user_turned_off_is_not_kept_back() {
+        // `acme/mid` is available and was switched off in the picker: it is gone.
+        let saved = vec![entry("acme/mid")];
+        let saved_list = entries_to_save(vec![entry("acme/big")], &saved, &available());
+        assert_eq!(saved_list, vec![entry("acme/big")]);
+    }
+
+    #[test]
+    fn a_duplicate_model_keeps_its_alias_category_and_effort() {
+        // The same model listed twice: the first row keeps what it has, and the
+        // second fills in the alias, category and effort the first left unset.
+        let list = vec![
+            ScopedModel {
+                effort: Some("high".into()),
+                ..entry("acme/mid")
+            },
+            ScopedModel {
+                model: "acme/mid".into(),
+                effort: Some("low".into()),
+                category: Some(ModelCategoryName::Fast),
+                alias: Some("mid".into()),
+            },
+        ];
+        let concrete = concrete_scoped_entries(&list, &available());
+        assert_eq!(concrete.len(), 1);
+        assert_eq!(concrete[0].effort.as_deref(), Some("high"));
+        assert_eq!(concrete[0].category, Some(ModelCategoryName::Fast));
+        assert_eq!(concrete[0].alias.as_deref(), Some("mid"));
     }
 }
 
