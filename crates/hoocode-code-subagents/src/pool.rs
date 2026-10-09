@@ -17,6 +17,7 @@ use std::sync::{Arc, LazyLock, Mutex, MutexGuard, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hoocode_ai_types::Model;
+use hoocode_code_models::ResolvedScoped;
 use hoocode_code_resources::{
     load_agent_registry, AgentDefinition, AgentRegistry, AgentSource, LoadAgentRegistryOptions,
     MODEL_INHERIT,
@@ -35,7 +36,7 @@ use crate::dispatch::DispatchEvaluator;
 use crate::events::{classify_subagent_line, SubagentStdoutLine};
 use crate::ledger;
 use crate::lifeguard::{kill_process_tree, LifeguardEvent, SubagentLifeguard};
-use crate::model_categories::{resolve_model_reference, CategorySettings};
+use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
 use crate::output_verifier::OutputVerifier;
 use crate::result::write_file_atomic;
 use crate::runner::{ProcessRunner, RunSpec, Runner};
@@ -123,10 +124,12 @@ pub struct SubagentPoolTask {
     pub provider: Option<String>,
     /// The dispatching session's own concrete model, and the one the inherited-
     /// model fallback runs on. `model` alone is not enough: when the caller
-    /// asked for a `complexity` tier it holds a *category*, which resolves to
+    /// asked for a model tier it holds a *category*, which resolves to
     /// the model that just failed, so a fallback built from it retries the same
     /// model and changes nothing.
     pub inherited_model: Option<String>,
+    /// The explicit `effort` (a thinking level name), if the caller set one.
+    pub effort: Option<String>,
     /// Session file to persist/continue (default: the task's dispatch dir).
     pub session_file: Option<PathBuf>,
     /// Internal: retry with the caller's model after the preferred one failed.
@@ -203,8 +206,11 @@ pub struct DispatchOptions {
     pub context: Option<String>,
     pub model: Option<String>,
     pub provider: Option<String>,
-    /// The dispatching session's own model, for the inherited-model fallback.
+    /// The dispatching session's own model: the default, and the model the
+    /// inherited-model fallback runs on.
     pub inherited_model: Option<String>,
+    /// The explicit `effort` (a thinking level name).
+    pub effort: Option<String>,
     /// Session file to persist/continue (resume).
     pub session_file: Option<PathBuf>,
     /// Caller-supplied task id (default: a generated `dispatch-…` id).
@@ -239,6 +245,9 @@ pub struct SubagentPoolOptions {
     pub settings: Option<CategorySettings>,
     /// Available models for deriving model-category defaults (snapshot).
     pub available_models: Vec<Model>,
+    /// The scoped models subagents may use (`scopedModels`, resolved). Empty:
+    /// no scope, and every available model is allowed.
+    pub scope: Vec<ResolvedScoped>,
 }
 
 /// `get_status`.
@@ -346,6 +355,7 @@ struct PoolState {
     task_status: HashMap<String, TaskStatus>,
     skill_paths: Vec<String>,
     registry: Option<Arc<AgentRegistry>>,
+    scope: Vec<ResolvedScoped>,
     disposed: bool,
 }
 
@@ -503,7 +513,10 @@ impl SubagentPool {
             lifeguard: lifeguard.clone(),
             cwd,
             skill_paths,
-            state: Mutex::new(PoolState::default()),
+            state: Mutex::new(PoolState {
+                scope: options.scope,
+                ..Default::default()
+            }),
             listeners: Mutex::new(Vec::new()),
         });
         let weak: Weak<PoolInner> = Arc::downgrade(&inner);
@@ -561,6 +574,18 @@ impl SubagentPool {
     /// Use this registry instead of loading one for the pool's cwd.
     pub fn set_registry(&self, registry: AgentRegistry) {
         self.inner.state().registry = Some(Arc::new(registry));
+    }
+
+    /// Replace the scoped models subagents may use. Applies to dispatches that
+    /// start after this call.
+    pub fn set_scope(&self, scope: Vec<ResolvedScoped>) {
+        self.inner.state().scope = scope;
+    }
+
+    /// The model and effort a dispatch of `agent_type` runs on for `request`.
+    /// The agent definition's `model:` is the pin; `request.pin` is ignored.
+    pub fn select_model(&self, agent_type: &str, request: &ModelRequest) -> ModelSelection {
+        self.inner.select(agent_type, request.clone(), true)
     }
 
     /// Queue a task; it runs when a slot is free.
@@ -816,6 +841,7 @@ impl SubagentPool {
             model: options.model,
             provider: options.provider,
             inherited_model: options.inherited_model,
+            effort: options.effort,
             session_file: options.session_file,
             cwd: Some(self.inner.cwd.clone()),
             background: options.background,
@@ -962,6 +988,22 @@ impl PoolInner {
         )));
         self.state().registry = Some(registry.clone());
         registry
+    }
+
+    /// The selection for `request`. `use_pin` adds the agent definition's
+    /// `model:` as the default.
+    fn select(&self, agent_type: &str, request: ModelRequest, use_pin: bool) -> ModelSelection {
+        let pin = use_pin
+            .then(|| self.definition(agent_type).and_then(|d| d.model))
+            .flatten()
+            .filter(|m| !m.is_empty() && m != MODEL_INHERIT);
+        let scope = self.state().scope.clone();
+        select_model(
+            &ModelRequest { pin, ..request },
+            self.settings.as_ref(),
+            &self.available_models,
+            &scope,
+        )
     }
 
     fn definition(&self, agent_type: &str) -> Option<AgentDefinition> {
@@ -1191,10 +1233,14 @@ impl PoolInner {
 
         // A definition's explicit model wins (unless `inherit`), else the
         // caller's; a category resolves to a concrete model or to nothing.
-        let model = self.resolve_task_model(task);
-        if let Some(model) = &model {
+        let selection = self.select_for_task(task);
+        if let Some(model) = &selection.model {
             args.extend(["--model".into(), model.clone()]);
         }
+        if let Some(level) = &selection.effort {
+            args.extend(["--thinking".into(), level.as_str().into()]);
+        }
+        let model = selection.model.clone();
         // --provider would filter out a model id carrying another provider's
         // prefix, so it only goes along with a bare model id.
         if let Some(provider) = task.provider.as_ref().filter(|p| !p.is_empty()) {
@@ -1731,7 +1777,7 @@ impl PoolInner {
             return false;
         }
         // Falling back needs a concrete model to fall back *to*. `task.model`
-        // may be a `complexity` category, which would resolve to the model that
+        // may be a model category, which would resolve to the model that
         // just failed.
         if task.inherited_model.as_deref().is_none_or(str::is_empty) {
             return false;
@@ -1764,35 +1810,27 @@ impl PoolInner {
         let _ = std::fs::remove_file(dir.join("output.json"));
     }
 
-    /// The concrete model this task's `--model` resolves to, or `None` when the
-    /// child should resolve its own default. One implementation, shared by
+    /// The model and effort a task runs on. One implementation, shared by
     /// `build_args` and the ledger, so a recorded model can never disagree with
-    /// the model the child actually ran on.
+    /// the model the child actually ran on. An inherited-model retry asks for
+    /// nothing and does not use the agent's pin.
+    fn select_for_task(&self, task: &SubagentPoolTask) -> ModelSelection {
+        let fallback = task.use_inherited_model_fallback;
+        self.select(
+            &task.agent_type,
+            ModelRequest {
+                ask: if fallback { None } else { task.model.clone() },
+                effort: task.effort.clone(),
+                pin: None,
+                inherited: task.inherited_model.clone().filter(|m| !m.is_empty()),
+            },
+            !fallback,
+        )
+    }
+
+    /// The `--model` a task runs on, or `None` when the child resolves its own.
     fn resolve_task_model(&self, task: &SubagentPoolTask) -> Option<String> {
-        let def = self.definition(&task.agent_type);
-        let explicit = def
-            .as_ref()
-            .and_then(|d| d.model.clone())
-            .filter(|m| !task.use_inherited_model_fallback && !m.is_empty() && m != MODEL_INHERIT);
-        // On the fallback attempt the pinned model is dropped and the
-        // dispatching session's own model is used. `task.model` is only that
-        // when the caller passed a concrete model; when it passed a
-        // `complexity` tier it is a category that resolves to the model that
-        // just failed, so prefer `inherited_model` whenever we have it.
-        let raw = if task.use_inherited_model_fallback {
-            task.inherited_model.clone().filter(|m| !m.is_empty())
-        } else {
-            None
-        }
-        .or(explicit)
-        .or_else(|| task.model.clone().filter(|m| !m.is_empty()));
-        raw.and_then(|m| {
-            resolve_model_reference(
-                &m,
-                self.settings.as_ref(),
-                Some(self.available_models.as_slice()),
-            )
-        })
+        self.select_for_task(task).model
     }
 
     /// One [`ledger`] line per attempt, from every terminal path, so the ledger

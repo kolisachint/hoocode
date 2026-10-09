@@ -228,6 +228,8 @@ async fn refuses_a_dispatch_when_the_warm_pool_is_saturated() {
         cwd: dir.path().to_path_buf(),
         model: None,
         provider: None,
+        inherited_model: None,
+        effort: None,
     };
     let first = tokio::spawn({
         let pool = pool.clone();
@@ -265,6 +267,8 @@ async fn a_waiting_dispatch_is_admitted_while_a_slot_is_free_later() {
         cwd: dir.path().to_path_buf(),
         model: None,
         provider: None,
+        inherited_model: None,
+        effort: None,
     };
     // Sequential: the cap must not stop the pool from being used, only from
     // being used all at once.

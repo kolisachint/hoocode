@@ -1065,9 +1065,8 @@ async fn fallback_run(provider: Option<&str>) {
             "run a read-only scan",
             DispatchOptions {
                 force_agent: Some("explore".into()),
-                model: Some("parent-model".into()),
                 // The concrete model the fallback runs on. `model` alone cannot
-                // serve: the caller may have passed a `complexity` category
+                // serve: the caller may have passed a model category
                 // there instead, which would resolve to the model that failed.
                 inherited_model: Some("parent-model".into()),
                 provider: provider.map(String::from),
@@ -1255,7 +1254,7 @@ async fn should_retry_with_inherited_model_rules() {
         agent(AgentSource::Project, "claude-haiku-4-5"),
         &no_parent
     ));
-    // A `complexity` tier in `model` is not a fallback target: it resolves to the
+    // A model tier in `model` is not a fallback target: it resolves to the
     // model that just failed, so retrying on it changes nothing.
     let tier_only = SubagentPoolTask {
         model: Some("fast".into()),

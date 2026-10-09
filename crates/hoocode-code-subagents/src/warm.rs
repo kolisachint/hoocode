@@ -30,8 +30,9 @@ use crate::depth::{
     SubagentEnv, SUBAGENT_DEPTH_ENV, SUBAGENT_SKIP_MCP_ENV,
 };
 use crate::lifeguard;
-use crate::model_categories::{resolve_model_reference, CategorySettings};
+use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
 use crate::pool::DEFAULT_SUBAGENT_MAX_TURNS;
+use hoocode_code_models::ResolvedScoped;
 
 /// Usage totals pulled from a worker after a task.
 #[derive(Debug, Clone, PartialEq)]
@@ -60,9 +61,13 @@ pub struct WarmRunResult {
 pub struct WarmDispatchOptions {
     pub agent_type: String,
     pub cwd: PathBuf,
-    /// A model id or category.
+    /// The caller's ask: a category, a scoped name, or a model id.
     pub model: Option<String>,
     pub provider: Option<String>,
+    /// The dispatching session's own model: the default when nothing is asked.
+    pub inherited_model: Option<String>,
+    /// The explicit `effort` (a thinking level name).
+    pub effort: Option<String>,
 }
 
 /// An infrastructure failure (crash, timeout, protocol error).
@@ -114,8 +119,7 @@ impl WarmSubagentWorker {
         env: Vec<(String, String)>,
         registry: &AgentRegistry,
         skill_paths: &[String],
-        settings: Option<&CategorySettings>,
-        available_models: &[Model],
+        selection: &ModelSelection,
         spawn: Option<&SpawnCommand>,
     ) -> Self {
         let (executable, prefix_args) = match spawn {
@@ -127,7 +131,7 @@ impl WarmSubagentWorker {
             prefix_args,
             cwd: Some(options.cwd.clone()),
             env,
-            args: build_worker_args(options, registry, skill_paths, settings, available_models),
+            args: build_worker_args(options, registry, skill_paths, selection),
             ..Default::default()
         });
         Self {
@@ -285,8 +289,7 @@ fn build_worker_args(
     options: &WarmDispatchOptions,
     registry: &AgentRegistry,
     skill_paths: &[String],
-    settings: Option<&CategorySettings>,
-    available_models: &[Model],
+    selection: &ModelSelection,
 ) -> Vec<String> {
     let mut args = Vec::new();
     let def = registry.get(&options.agent_type);
@@ -324,16 +327,14 @@ fn build_worker_args(
             args.extend(["--delegate-allow".into(), to.join(",")]);
         }
     }
-    let explicit = def
-        .and_then(|d| d.model.clone())
-        .filter(|m| !m.is_empty() && m != MODEL_INHERIT);
-    let raw = explicit.or_else(|| options.model.clone().filter(|m| !m.is_empty()));
-    let model = raw.and_then(|m| resolve_model_reference(&m, settings, Some(available_models)));
-    if let Some(model) = &model {
+    if let Some(model) = &selection.model {
         args.extend(["--model".into(), model.clone()]);
     }
+    if let Some(level) = &selection.effort {
+        args.extend(["--thinking".into(), level.as_str().into()]);
+    }
     if let Some(provider) = options.provider.as_ref().filter(|p| !p.is_empty()) {
-        if model.as_ref().is_none_or(|m| !m.contains('/')) {
+        if selection.model.as_ref().is_none_or(|m| !m.contains('/')) {
             args.extend(["--provider".into(), provider.clone()]);
         }
     }
@@ -361,6 +362,7 @@ struct WarmState {
     waiting: usize,
     skill_paths: Vec<String>,
     registry: Option<Arc<AgentRegistry>>,
+    scope: Vec<ResolvedScoped>,
     disposed: bool,
 }
 
@@ -385,6 +387,8 @@ pub struct WarmSubagentPoolOptions {
     pub settings: Option<CategorySettings>,
     pub skill_paths: Vec<String>,
     pub available_models: Vec<Model>,
+    /// The scoped models subagents may use (resolved). Empty: no scope.
+    pub scope: Vec<ResolvedScoped>,
     /// Idle workers kept per configuration (default 2).
     pub max_per_key: usize,
     /// Workers running at once across every key (default 5, the cold pool's).
@@ -404,6 +408,7 @@ impl WarmSubagentPoolOptions {
             settings: None,
             skill_paths: Vec::new(),
             available_models: Vec::new(),
+            scope: Vec::new(),
             max_per_key: 2,
             max_in_flight: crate::pool::DEFAULT_MAX_CONCURRENCY,
             max_waiting: crate::pool::DEFAULT_MAX_CONCURRENCY * crate::pool::QUEUE_PER_SLOT,
@@ -448,6 +453,34 @@ impl WarmSubagentPool {
         self.state().skill_paths = paths;
     }
 
+    /// Replace the scoped models subagents may use. Applies to workers that
+    /// start after this call.
+    pub fn set_scope(&self, scope: Vec<ResolvedScoped>) {
+        self.state().scope = scope;
+    }
+
+    /// The model and effort a dispatch runs on, from the agent's pin, the ask
+    /// and the session's model. An inherited-model retry is not built here.
+    fn selection(&self, options: &WarmDispatchOptions) -> ModelSelection {
+        let pin = self
+            .registry()
+            .get(&options.agent_type)
+            .and_then(|d| d.model.clone())
+            .filter(|m| !m.is_empty() && m != MODEL_INHERIT);
+        let scope = self.state().scope.clone();
+        select_model(
+            &ModelRequest {
+                ask: options.model.clone().filter(|m| !m.is_empty()),
+                effort: options.effort.clone(),
+                pin,
+                inherited: options.inherited_model.clone().filter(|m| !m.is_empty()),
+            },
+            self.inner.settings.as_ref(),
+            &self.inner.available_models,
+            &scope,
+        )
+    }
+
     /// Use this registry instead of loading one for the pool's cwd.
     pub fn set_registry(&self, registry: AgentRegistry) {
         self.state().registry = Some(Arc::new(registry));
@@ -471,18 +504,16 @@ impl WarmSubagentPool {
             .is_some_and(|d| d.fork != Some(true))
     }
 
-    fn key_for(&self, options: &WarmDispatchOptions) -> String {
-        let resolved = options.model.as_deref().and_then(|m| {
-            resolve_model_reference(
-                m,
-                self.inner.settings.as_ref(),
-                Some(self.inner.available_models.as_slice()),
-            )
-        });
+    fn key_for(&self, options: &WarmDispatchOptions, selection: &ModelSelection) -> String {
         format!(
-            "{}::{}::{}",
+            "{}::{}::{}::{}",
             options.agent_type,
-            resolved.as_deref().unwrap_or("default"),
+            selection.model.as_deref().unwrap_or("default"),
+            selection
+                .effort
+                .as_ref()
+                .map(|l| l.as_str())
+                .unwrap_or("default"),
             options.provider.as_deref().unwrap_or("default")
         )
     }
@@ -561,7 +592,8 @@ impl WarmSubagentPool {
         &self,
         options: &WarmDispatchOptions,
     ) -> Result<WarmSubagentWorker, WarmWorkerError> {
-        let key = self.key_for(options);
+        let selection = self.selection(options);
+        let key = self.key_for(options, &selection);
         loop {
             let parked = {
                 let mut state = self.state();
@@ -588,8 +620,7 @@ impl WarmSubagentPool {
             self.child_env(&options.agent_type),
             &self.registry(),
             &skill_paths,
-            self.inner.settings.as_ref(),
-            &self.inner.available_models,
+            &selection,
             self.inner.spawn.as_ref(),
         );
         *self.state().live_count.entry(key.clone()).or_insert(0) += 1;
@@ -730,10 +761,12 @@ pub fn get_warm_subagent_pool(cwd: &Path, available_models: &[Model]) -> WarmSub
     let manager = SettingsManager::create(cwd, hoocode_code_paths::agent_dir());
     let mut settings = manager.global_settings();
     settings.extend(manager.project_settings());
+    let scope = crate::instance::current_scope(cwd, available_models);
     let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
         settings: Some(CategorySettings::from_settings(&settings)),
         skill_paths: instance.skill_paths.clone(),
         available_models: available_models.to_vec(),
+        scope,
         ..WarmSubagentPoolOptions::new(cwd)
     });
     instance.pool = Some(pool.clone());
