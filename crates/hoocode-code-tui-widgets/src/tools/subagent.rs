@@ -9,6 +9,7 @@ use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_subagents::inbox::subagent_inbox;
 use hoocode_code_task_store::task_store;
 use hoocode_code_tui_theme::{agent_color_for, theme};
+use hoocode_tui_components::markdown::js_trim;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
@@ -57,15 +58,31 @@ pub fn format_task_call(args: &Value) -> String {
     } else {
         "Agent "
     };
+    let mut tail = Vec::new();
+    if let Some(summary) = task_summary(args) {
+        tail.push(t.fg("dim", &format!("· {summary}")));
+    }
+    if args.get("background").and_then(Value::as_bool) == Some(true) {
+        tail.push(t.fg("dim", "· background"));
+    }
     format!(
         "{}{} {}",
         t.fg("toolTitle", &t.bold(title)),
         t.fg(agent_color_for(&agent_type), &agent_type),
-        match args.get("background").and_then(Value::as_bool) {
-            Some(true) => t.fg("dim", "· background"),
-            _ => String::new(),
-        }
+        tail.join(" ")
     )
+}
+
+/// What the Agent call line says the task is: `description` when given, else
+/// the first line of `prompt`. The first line only, so the call stays one row.
+fn task_summary(args: &Value) -> Option<String> {
+    ["description", "prompt"]
+        .iter()
+        .filter_map(|key| args.get(*key).and_then(Value::as_str))
+        .find_map(|s| {
+            let line = js_trim(s.lines().next().unwrap_or(""));
+            (!line.is_empty()).then(|| line.to_string())
+        })
 }
 
 pub fn format_task_output_call(args: &Value) -> String {
