@@ -1,0 +1,229 @@
+//! Session operations that run off the UI thread (TUI plan N14).
+//!
+//! The UI loop never waits on the runtime. An operation moves the
+//! `AgentSessionRuntime` (or only the session) onto the runtime, and the
+//! result comes back as `AppEvent::SessionOp`; [`Mode::finish_session_op`]
+//! applies it. While one runs, a loader shows and the prompt refuses input;
+//! a second operation says the first must finish.
+
+use std::path::PathBuf;
+
+use hoocode_code_agent_session::runtime::{ChangeDirectoryResult, RuntimeError};
+use hoocode_code_agent_session::{ForkPosition, ForkResult, NavigateTreeResult, ReplaceResult};
+
+use super::*;
+
+/// What a session operation found out.
+pub(super) enum SessionOutcome {
+    /// `/mode <next>` sent to the session as a prompt (the Shift+Tab dial).
+    Mode {
+        forward: bool,
+        next: String,
+        result: Result<(), String>,
+    },
+    /// `/tree` to a point without a summary.
+    Tree {
+        entry_id: String,
+        result: Box<Result<NavigateTreeResult, String>>,
+    },
+    /// `/new`, or a command's `newSession`; `follow_up` is sent to the new session.
+    New {
+        announce: bool,
+        follow_up: Option<String>,
+        result: Result<ReplaceResult, RuntimeError>,
+    },
+    /// `/cd`: the target and the directory left.
+    ChangeDirectory {
+        target: PathBuf,
+        previous_cwd: PathBuf,
+        result: Result<ChangeDirectoryResult, RuntimeError>,
+    },
+    /// `/fork` and `/clone`.
+    Fork {
+        position: ForkPosition,
+        result: Result<ForkResult, RuntimeError>,
+    },
+    /// `/resume`: the session file switched to, and whether its cwd was overridden.
+    Switch {
+        path: PathBuf,
+        overridden: bool,
+        result: Result<ReplaceResult, RuntimeError>,
+    },
+    /// `/import`.
+    Import {
+        input: String,
+        overridden: bool,
+        result: Result<ReplaceResult, RuntimeError>,
+    },
+    /// `/reload`: the session re-read its resources (the screen is applied after).
+    Reload,
+}
+
+/// A finished session operation. The runtime comes back with it when the
+/// operation used it.
+pub(super) struct SessionOpDone {
+    pub(super) runtime: Option<AgentSessionRuntime>,
+    pub(super) outcome: SessionOutcome,
+}
+
+impl Mode {
+    /// False, with a warning, when another session operation is running.
+    pub(super) fn session_op_free(&mut self) -> bool {
+        match self.session_op {
+            None => true,
+            Some(running) => {
+                self.show_warning(&format!(
+                    "{running} is still running; wait for it to finish."
+                ));
+                false
+            }
+        }
+    }
+
+    /// Marks `label` as running; the caller shows its own loader.
+    pub(super) fn mark_session_op(&mut self, label: &'static str) {
+        self.session_op = Some(label);
+        self.dirty.set(true);
+    }
+
+    /// Marks `label` as running and shows its loader.
+    pub(super) fn start_session_op(&mut self, label: &'static str) {
+        self.mark_session_op(label);
+        self.stop_working_loader();
+        let mut loader = Loader::new(
+            Box::new(|s: &str| theme().fg("accent", s)),
+            Box::new(|s: &str| theme().fg("muted", s)),
+            format!("{label}..."),
+            None,
+        );
+        loader.start();
+        let loader = handle(loader);
+        self.status.borrow_mut().add_child(as_component(&loader));
+        self.loader = Some(loader);
+        self.dirty.set(true);
+    }
+
+    /// The runtime for an operation that replaces the session. None when
+    /// there is none (nothing to do) or another operation is running.
+    pub(super) fn take_session_runtime(
+        &mut self,
+        label: &'static str,
+    ) -> Option<AgentSessionRuntime> {
+        if !self.session_op_free() {
+            return None;
+        }
+        let runtime = self.session_runtime.take()?;
+        self.start_session_op(label);
+        Some(runtime)
+    }
+
+    /// The mode dial's line: the mode the footer shows now (`next` if none).
+    fn show_mode_dial(&mut self, key: &'static str, next: &str) {
+        let landed = self.footer_data.get_active_mode();
+        let landed = if landed.is_empty() { next } else { &landed };
+        self.show_dial_step(key, &format!("Mode: {landed}"));
+    }
+
+    /// Applies a finished operation on the UI thread.
+    pub(super) fn finish_session_op(&mut self, done: SessionOpDone) {
+        self.session_op = None;
+        self.stop_working_loader();
+        if let Some(runtime) = done.runtime {
+            self.session_runtime = Some(runtime);
+        }
+        match done.outcome {
+            SessionOutcome::Mode {
+                forward,
+                next,
+                result,
+            } => {
+                if let Err(error) = result {
+                    self.show_error(&error);
+                } else {
+                    self.drain_extension_ui_requests();
+                    let key = if forward {
+                        "app.mode.cycleBackward"
+                    } else {
+                        "app.mode.cycleForward"
+                    };
+                    // A reload the command asked for shows its own line first; the dial's goes last.
+                    if self.session_op.is_some() {
+                        self.mode_dial_after = Some((key, next));
+                    } else {
+                        self.show_mode_dial(key, &next);
+                    }
+                }
+            }
+            SessionOutcome::Tree { entry_id, result } => {
+                self.finish_tree_navigation(entry_id, *result)
+            }
+            SessionOutcome::New {
+                announce,
+                follow_up,
+                result,
+            } => self.finish_new_session(announce, follow_up, result),
+            SessionOutcome::ChangeDirectory {
+                target,
+                previous_cwd,
+                result,
+            } => self.finish_change_directory(target, previous_cwd, result),
+            SessionOutcome::Fork { position, result } => self.finish_fork(position, result),
+            SessionOutcome::Switch {
+                path,
+                overridden,
+                result,
+            } => self.finish_switch(path, overridden, result),
+            SessionOutcome::Import {
+                input,
+                overridden,
+                result,
+            } => self.finish_import(input, overridden, result),
+            SessionOutcome::Reload => self.finish_reload(),
+        }
+        if self.session_op.is_none() {
+            if let Some((key, next)) = self.mode_dial_after.take() {
+                self.show_mode_dial(key, &next);
+            }
+        }
+        self.dirty.set(true);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// N14: the UI modules do not wait on the runtime. Every `block_on(` left in
+    /// `mode/` carries a `TODO(N14)` comment just above it saying why.
+    #[test]
+    fn every_ui_thread_block_on_is_a_marked_n14_exception() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/mode");
+        let mut checked = 0;
+        for entry in std::fs::read_dir(dir).expect("mode dir") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("source file");
+            let lines: Vec<&str> = text.lines().collect();
+            for (index, line) in lines.iter().enumerate() {
+                // Test modules sit at the end of each file.
+                if line.starts_with("#[cfg(test)]") {
+                    break;
+                }
+                if !line.contains("block_on(") || line.trim_start().starts_with("//") {
+                    continue;
+                }
+                checked += 1;
+                let start = index.saturating_sub(6);
+                let marked = lines[start..index].iter().any(|l| l.contains("TODO(N14)"));
+                assert!(
+                    marked,
+                    "{}:{}: block_on on the UI thread without a TODO(N14) reason",
+                    path.display(),
+                    index + 1
+                );
+            }
+        }
+        // The one exception left is the exit-time abort in mod.rs.
+        assert_eq!(checked, 1, "unexpected block_on count in mode/");
+    }
+}

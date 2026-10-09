@@ -171,17 +171,6 @@ impl NotificationPanel {
         (self.request_render)();
     }
 
-    /// Take the whole queue down.
-    pub fn dismiss(&mut self) {
-        self.deadline = None;
-        if self.queue.is_empty() {
-            return;
-        }
-        self.queue.clear();
-        self.cache = None;
-        (self.request_render)();
-    }
-
     /// Stop the clock (shutdown).
     pub fn stop(&mut self) {
         self.deadline = None;

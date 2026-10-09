@@ -154,23 +154,27 @@ fn format_output(
             map.insert("fullOutputPath".into(), path.clone().into());
         }
         details = Value::Object(map);
-        let path = snapshot.full_output_path.as_deref().unwrap_or("undefined");
+        // No temp file (it could not be created) means no "Full output" clause.
+        let full_output = match snapshot.full_output_path.as_deref() {
+            Some(path) => format!(". Full output: {path}]"),
+            None => "]".to_owned(),
+        };
         let start_line = truncation.total_lines + 1 - truncation.output_lines;
         let end_line = truncation.total_lines;
         if truncation.last_line_partial {
             text.push_str(&format!(
-                "\n\n[Showing last {} of line {end_line} (line is {}). Full output: {path}]",
+                "\n\n[Showing last {} of line {end_line} (line is {}){full_output}",
                 format_size(truncation.output_bytes),
                 format_size(last_line_bytes)
             ));
         } else if truncation.truncated_by == Some(TruncatedBy::Lines) {
             text.push_str(&format!(
-                "\n\n[Showing lines {start_line}-{end_line} of {}. Full output: {path}]",
+                "\n\n[Showing lines {start_line}-{end_line} of {}{full_output}",
                 truncation.total_lines
             ));
         } else {
             text.push_str(&format!(
-                "\n\n[Showing lines {start_line}-{end_line} of {} ({} limit). Full output: {path}]",
+                "\n\n[Showing lines {start_line}-{end_line} of {} ({} limit){full_output}",
                 truncation.total_lines,
                 format_size(max_bytes)
             ));
@@ -374,4 +378,63 @@ pub fn create_bash_tool(
     ctx_factory: Option<ToolContextFactory>,
 ) -> AgentTool {
     wrap_tool_definition(create_bash_tool_definition(cwd, options), ctx_factory)
+}
+
+#[cfg(test)]
+mod format_output_tests {
+    use super::*;
+    use hoocode_code_tool_api::TruncationResult;
+
+    fn truncated_by_lines(full_output_path: Option<&str>) -> (OutputSnapshot, usize) {
+        let truncation = TruncationResult {
+            content: "tail".into(),
+            truncated: true,
+            truncated_by: Some(TruncatedBy::Lines),
+            total_lines: 3000,
+            total_bytes: 90_000,
+            output_lines: 2000,
+            output_bytes: 60_000,
+            last_line_partial: false,
+            first_line_exceeds_limit: false,
+            max_lines: 2000,
+            max_bytes: 50 * 1024,
+        };
+        let snapshot = OutputSnapshot {
+            content: "tail".into(),
+            truncation,
+            full_output_path: full_output_path.map(str::to_owned),
+        };
+        (snapshot, 0)
+    }
+
+    #[test]
+    fn truncated_output_names_the_full_output_file() {
+        let (snapshot, last) = truncated_by_lines(Some("/tmp/hoocode-bash-1.log"));
+        let (text, _) = format_output(&snapshot, last, 50 * 1024, "");
+        assert!(
+            text.ends_with("of 3000. Full output: /tmp/hoocode-bash-1.log]"),
+            "got: {text}"
+        );
+    }
+
+    #[test]
+    fn partial_last_line_names_the_full_output_file() {
+        let (mut snapshot, last) = truncated_by_lines(Some("/tmp/x.log"));
+        snapshot.truncation.truncated_by = Some(TruncatedBy::Bytes);
+        snapshot.truncation.last_line_partial = true;
+        let (text, _) = format_output(&snapshot, last, 50 * 1024, "");
+        assert!(
+            text.ends_with("(line is 0B). Full output: /tmp/x.log]"),
+            "got: {text}"
+        );
+    }
+
+    #[test]
+    fn truncated_output_without_a_temp_file_has_no_undefined_path() {
+        let (snapshot, last) = truncated_by_lines(None);
+        let (text, _) = format_output(&snapshot, last, 50 * 1024, "");
+        assert!(!text.contains("undefined"), "got: {text}");
+        assert!(!text.contains("Full output"), "got: {text}");
+        assert!(text.ends_with("of 3000]"), "got: {text}");
+    }
 }

@@ -55,7 +55,6 @@ const GLOBAL_SCOPE: &[&str] = &[
     "app.scroll.search",
     "app.tasks.cycleForward",
     "app.tasks.cycleBackward",
-    "app.team.focus",
     "app.editor.external",
     "app.input.voiceTranscribe",
     "app.message.followUp",
@@ -124,14 +123,6 @@ const TREE_SCOPE: &[&str] = &[
     "tui.editor.deleteCharBackward",
 ];
 
-const TEAM_FOCUS_SCOPE: &[&str] = &[
-    "tui.select.up",
-    "tui.select.down",
-    "tui.select.cancel",
-    "app.team.nudge",
-    "app.team.attach",
-];
-
 const OPTIONS_SCOPE: &[&str] = &[
     "tui.select.up",
     "tui.select.down",
@@ -162,7 +153,6 @@ const SCOPES: &[(&str, &[&str])] = &[
     ("session picker", SESSION_PICKER_SCOPE),
     ("models picker", MODELS_PICKER_SCOPE),
     ("session tree", TREE_SCOPE),
-    ("team focus", TEAM_FOCUS_SCOPE),
     ("options pane", OPTIONS_SCOPE),
     ("pinned scroll view", SCROLL_SCOPE),
 ];
@@ -337,7 +327,6 @@ fn pins_which_actions_a_terminal_must_send_alt_to_reach() {
         "app.view.cycleBackward",
         "app.tasks.cycleForward",
         "app.tasks.cycleBackward",
-        "app.team.focus",
         "app.editor.external",
         "app.message.followUp",
         "app.message.dequeue",
@@ -552,13 +541,13 @@ fn families() -> Vec<(&'static str, Regex)> {
         ("Flow", r"^app\.(interrupt|clear|exit|suspend)$"),
         ("Compose", r"^app\.(editor\.external|input\.voiceTranscribe|clipboard\.|message\.)"),
         ("Steer", r"^app\.(mode|model)\.|^app\.thinking\.cycle"),
-        ("Read", r"^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|team\.focus)"),
+        ("Read", r"^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.)"),
         ("Screen", r"^app\.chrome\."),
         ("Scroll", r"^app\.scroll\.(pageUp|pageDown|top|bottom|previousMessage|nextMessage|search)$"),
         ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)"),
         (
             "Overlays",
-            r"^app\.(team\.(nudge|attach)|options\.|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)",
+            r"^app\.(options\.|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)",
         ),
     ]
     .into_iter()

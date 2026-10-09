@@ -2,8 +2,9 @@
 //! pinned `marked` + markdown.ts on a corpus of inputs
 //! (`fixtures/markdown-gold.json`, from `migration/tools/goldens/markdown.mjs`).
 
-use hoocode_tui_components::markdown::lexer::{lex, links_to_json, tokens_to_json};
+use hoocode_tui_components::markdown::lexer::lex;
 
+use crate::common::markdown_json::{links_to_json, tokens_to_json};
 use crate::common::{sgr, theme};
 use hoocode_tui_components::{DefaultTextStyle, Markdown};
 use hoocode_tui_images::{set_capabilities, TerminalCapabilities};

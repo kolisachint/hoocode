@@ -20,7 +20,7 @@ use hoocode_tui_util::{truncate_to_width, visible_width};
 #[derive(Debug, Clone, Copy)]
 pub struct AskOptionsOptions {
     /// Draw the prompt's frame around the pane; false when a host surface
-    /// frames it already (the team attach panel).
+    /// frames it already.
     pub framed: bool,
 }
 

@@ -6,7 +6,7 @@
 pub mod definition;
 pub mod fs_error;
 pub mod path_utils;
-pub mod text_slice;
+pub use hoocode_tui_util::text_slice;
 pub mod truncate;
 
 pub use definition::{

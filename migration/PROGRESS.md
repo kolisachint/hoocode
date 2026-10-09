@@ -5,6 +5,18 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ## Resume here
 
+- **2026-10-09 (end of day, TUI Phase S tier Now): branch `claude/tui-phase-s`, PR to `main`.**
+  Plan and open items in `docs/design/tui-activity.md`.
+  - Done: N1 to N13, X11, N10 with T1.1, T1.4, N11 with its Edit and AgentOutput follow-up.
+    N14 partly: the nine session ops and `/mode` run off the UI thread; the auth row closed
+    without a UI change. T1.2 partly (the handlers still take `&mut Mode`).
+  - Open: N14's exit-time `session.abort()` (needs the ordered shutdown, concurrency.md §4).
+    The open decisions list is in `docs/design/tui-activity.md`.
+  - Validation: fmt and clippy clean; `cargo test --workspace` 3805 passed, 0 failed.
+    cargo-nextest is not installed here, so nextest was not run. Dep firewall and
+    the naming guard OK; `goldens.py check all` 67/67.
+  - Next step: the user picks T2 or Phase S Next (e.g. X2). No feature work starts before the
+    user reviews the branch (decision 37).
 - **2026-10-09 (TUI Phase T0 done): hoocode-only goldens, parity retired.** Outcome and open
   items in `docs/design/tui-activity.md`.
   - T0.1: `golden` feature on `hoocode-tui-render` (`render_golden`, `assert_golden!`).

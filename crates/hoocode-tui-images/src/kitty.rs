@@ -61,11 +61,6 @@ pub fn delete_kitty_image(image_id: u32) -> String {
     format!("\x1b_Ga=d,d=I,i={image_id},q=2\x1b\\")
 }
 
-/// Delete all visible Kitty graphics images (uppercase `A` also frees image data).
-pub fn delete_all_kitty_images() -> String {
-    "\x1b_Ga=d,d=A,q=2\x1b\\".to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +98,5 @@ mod tests {
     #[test]
     fn delete_sequences_suppress_replies() {
         assert_eq!(delete_kitty_image(42), "\x1b_Ga=d,d=I,i=42,q=2\x1b\\");
-        assert_eq!(delete_all_kitty_images(), "\x1b_Ga=d,d=A,q=2\x1b\\");
     }
 }

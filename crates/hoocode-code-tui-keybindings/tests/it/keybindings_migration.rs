@@ -53,7 +53,7 @@ fn loads_old_key_names_in_memory_before_the_file_is_rewritten() {
     .into_iter()
     .collect();
     assert_eq!(keybindings.get_user_bindings(), &expected);
-    let effective = keybindings.get_effective_config();
+    let effective = keybindings.into_manager().get_resolved_bindings();
     assert_eq!(effective["tui.select.confirm"], vec!["enter"]);
     assert_eq!(effective["app.interrupt"], vec!["ctrl+x"]);
 }

@@ -409,6 +409,7 @@ impl SettingsList {
 
     /// Filter the list by `query` (label plus keywords), as typing does.
     pub fn apply_filter(&mut self, query: &str) {
+        #[derive(Clone)]
         struct View {
             index: usize,
             label: String,
@@ -425,14 +426,6 @@ impl SettingsList {
                 },
             })
             .collect();
-        impl Clone for View {
-            fn clone(&self) -> Self {
-                View {
-                    index: self.index,
-                    label: self.label.clone(),
-                }
-            }
-        }
         let filtered = fuzzy_filter(&views, query, |v| v.label.clone());
         self.filtered_indices = filtered.into_iter().map(|v| v.index).collect();
         self.selected_index = 0;

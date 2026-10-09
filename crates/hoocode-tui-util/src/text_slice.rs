@@ -3,8 +3,8 @@
 //! Input, model output and terminal output are not ASCII in general, so a byte
 //! index can fall inside a multi-byte character. These helpers move an index
 //! down to the nearest character boundary (and clamp it to the string length)
-//! instead of panicking. `hoocode-code-tool-api::text_slice` is a copy for the
-//! tool crates; the two must stay in step.
+//! instead of panicking. The tool crates reach this module through the
+//! `hoocode-code-tool-api::text_slice` re-export; there is one copy.
 
 /// The largest char boundary at or below `i`, with `i` clamped to `s.len()`.
 fn floor_boundary(s: &str, i: usize) -> usize {

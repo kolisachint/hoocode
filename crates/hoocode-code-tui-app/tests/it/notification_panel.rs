@@ -381,16 +381,3 @@ fn lets_a_caller_set_the_time_itself() {
     s.advance(500);
     assert_eq!(s.showing(), None);
 }
-
-#[test]
-fn takes_the_whole_queue_down_on_dismiss() {
-    let _g = lock(Some("dark"));
-    let mut s = setup(None);
-    s.warning("first");
-    s.warning("second");
-    s.panel.dismiss();
-    assert_eq!(s.showing(), None);
-    assert!(s.pending().is_empty());
-    s.advance(WARNING * 2);
-    assert_eq!(s.showing(), None);
-}

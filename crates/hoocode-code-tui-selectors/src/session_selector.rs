@@ -27,7 +27,7 @@ use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
 use hoocode_tui_components::{Input, Spacer, Text};
 use hoocode_tui_keys::{get_keybindings, KeybindingsManager};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
-use hoocode_tui_util::js_regex::is_js_space;
+use hoocode_tui_util::js_regex::js_trim;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
 use crate::session_selector_search::{
@@ -43,10 +43,6 @@ pub enum SessionScope {
 
 /// Branches that name no particular piece of work.
 const DEFAULT_BRANCHES: [&str; 4] = ["main", "master", "trunk", "develop"];
-
-fn js_trim(text: &str) -> &str {
-    text.trim_matches(is_js_space)
-}
 
 fn shorten_path(path: &str) -> String {
     let home = home_dir();

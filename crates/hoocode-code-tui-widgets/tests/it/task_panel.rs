@@ -1,4 +1,5 @@
-//! Port of `test/task-panel.test.ts` and `test/task-panel-team-focus.test.ts`.
+//! Port of `test/task-panel.test.ts` (the teams lens and its focus tests are
+//! gone with decision 9).
 //!
 //! The store is process-global, so every test holds [`lock`] and starts from
 //! a cleared store. Not ported: the two "warns on unknown id" store tests,
@@ -13,7 +14,7 @@ use hoocode_code_task_store::{
 };
 use hoocode_code_tui_keybindings::app_key_label;
 use hoocode_code_tui_theme::{init_theme, theme};
-use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelEvent, TaskPanelView};
+use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelView};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::visible_width;
 
@@ -100,18 +101,6 @@ fn set(id: u64, status: TaskStatus) {
     );
 }
 
-fn role(id: &str, name: &str, state: Option<TaskAgentState>) {
-    task_store().upsert_agent(
-        id,
-        name,
-        TaskAgentKind::Role,
-        TaskAgentPatch {
-            state,
-            ..Default::default()
-        },
-    );
-}
-
 fn usage(input: f64, output: f64, cost: f64) -> TaskUsage {
     TaskUsage {
         input,
@@ -166,17 +155,15 @@ fn shows_active_subagent_tasks_with_status_icons_ids_and_mode_tags() {
 #[test]
 fn each_lens_carries_the_owner_glyph_and_tag_for_its_own_rows() {
     let _g = lock();
-    role("team:planner", "planner", Some(TaskAgentState::Running));
     let s = create_with("find the bug", sub("explore"));
     let m = create_with("fetch", mcp(Some("web")));
-    let r = create_with("draft plan", owned("team:planner"));
     let p = create("init project");
-    for id in [s, m, r, p] {
+    for id in [s, m, p] {
         set(id, TaskStatus::InProgress);
     }
     let mut panel = TaskPanelComponent::new();
 
-    panel.set_view(TaskPanelView::Flat);
+    panel.set_view(TaskPanelView::Plan);
     let flat = render(&mut panel, 120);
     let plain_row = find(&flat, "init project");
     assert!(!plain_row.contains('◆') && !plain_row.contains('◇'));
@@ -192,13 +179,6 @@ fn each_lens_carries_the_owner_glyph_and_tag_for_its_own_rows() {
     for row in &sa {
         assert_eq!(visible_width(row), 120);
     }
-
-    panel.set_view(TaskPanelView::Teams);
-    let teams = render(&mut panel, 120);
-    assert!(teams
-        .iter()
-        .any(|l| l.contains('▸') && l.contains("planner")));
-    assert!(teams.iter().any(|l| l.contains("draft plan")));
 }
 
 #[test]
@@ -517,14 +497,6 @@ fn the_header_exists_only_when_there_is_more_than_one_lens() {
         )),
         "{two}"
     );
-
-    task_store().upsert_agent(
-        "planner",
-        "planner",
-        TaskAgentKind::Role,
-        TaskAgentPatch::default(),
-    );
-    assert!(strip(&render(&mut panel, 120)[0]).contains("teams 0/0"));
 }
 
 #[test]
@@ -532,17 +504,10 @@ fn cycle_view_advances_through_the_lenses_that_have_content() {
     let _g = lock();
     create("plan the work");
     create_with("find the bug", sub("explore"));
-    task_store().upsert_agent(
-        "planner",
-        "planner",
-        TaskAgentKind::Role,
-        TaskAgentPatch::default(),
-    );
     let mut panel = TaskPanelComponent::new();
-    assert_eq!(panel.get_view(), TaskPanelView::Flat);
+    assert_eq!(panel.get_view(), TaskPanelView::Plan);
     assert_eq!(panel.cycle_view(true), TaskPanelView::Subagents);
-    assert_eq!(panel.cycle_view(true), TaskPanelView::Teams);
-    assert_eq!(panel.cycle_view(true), TaskPanelView::Flat);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Plan);
 }
 
 #[test]
@@ -551,10 +516,10 @@ fn cycle_view_skips_empty_lenses() {
     let t = create("Plain work");
     set(t, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
-    assert_eq!(panel.cycle_view(true), TaskPanelView::Flat);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Plan);
     create_with("find the bug", sub("explore"));
     assert_eq!(panel.cycle_view(true), TaskPanelView::Subagents);
-    assert_eq!(panel.cycle_view(true), TaskPanelView::Flat);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Plan);
 }
 
 #[test]
@@ -563,11 +528,11 @@ fn a_selected_lens_that_empties_falls_back_to_flat_rendering() {
     let t = create("Plain work");
     set(t, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Teams);
+    panel.set_view(TaskPanelView::Subagents);
     let lines = plain(&mut panel, 120);
     assert!(lines.join("\n").contains("Plain work"));
     assert_eq!(lines.len(), 1);
-    assert_eq!(panel.cycle_view(true), TaskPanelView::Flat);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Plan);
 }
 
 #[test]
@@ -651,7 +616,7 @@ fn the_tasks_and_subagents_lenses_split_work_by_ownership() {
     let _g = lock();
     plan_sub_mcp(TaskStatus::InProgress, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Flat);
+    panel.set_view(TaskPanelView::Plan);
     let flat = plain(&mut panel, 120).join("\n");
     assert!(flat.contains("Write the plan"));
     assert!(!flat.contains("Explore the API") && !flat.contains("Fetch the spec"));
@@ -666,7 +631,7 @@ fn each_tabs_count_is_scoped_to_its_own_lens() {
     let _g = lock();
     plan_sub_mcp(TaskStatus::Done, TaskStatus::Done);
     let mut panel = TaskPanelComponent::new();
-    for view in [TaskPanelView::Flat, TaskPanelView::Subagents] {
+    for view in [TaskPanelView::Plan, TaskPanelView::Subagents] {
         panel.set_view(view);
         let header = strip(&render(&mut panel, 120)[0]);
         assert!(header.contains("tasks 0/1"), "{header}");
@@ -681,80 +646,15 @@ fn an_empty_flat_lens_falls_through_to_the_subagents_tree() {
     let s = create_with("Explore the API", sub("explore"));
     set(s, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
-    assert_eq!(panel.get_view(), TaskPanelView::Flat);
+    assert_eq!(panel.get_view(), TaskPanelView::Plan);
     assert!(plain(&mut panel, 120)
         .join("\n")
         .contains("Explore the API"));
 }
 
 #[test]
-fn teams_view_renders_role_agents_with_states_and_handoff_arrows() {
+fn subagents_tree_shows_delegated_work_and_excludes_plan_owned_tasks() {
     let _g = lock();
-    task_store().upsert_agent(
-        "planner",
-        "planner",
-        TaskAgentKind::Role,
-        TaskAgentPatch {
-            role: Some("architect".into()),
-            state: Some(TaskAgentState::Done),
-            handoff: Some("→ builder".into()),
-            stats: Some(AgentStats {
-                input: 1400.0,
-                output: 260.0,
-                cost: 0.004,
-            }),
-            ..Default::default()
-        },
-    );
-    task_store().upsert_agent(
-        "builder",
-        "builder",
-        TaskAgentKind::Role,
-        TaskAgentPatch {
-            role: Some("engineer".into()),
-            state: Some(TaskAgentState::Active),
-            ..Default::default()
-        },
-    );
-    let draft = create_with("Draft the retry design", owned("planner"));
-    set(draft, TaskStatus::Done);
-    let imp = create_with("Implement withRetry()", owned("builder"));
-    set(imp, TaskStatus::InProgress);
-
-    let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Teams);
-    let lines = plain(&mut panel, 120);
-    assert_eq!(lines.len(), 6, "{lines:#?}");
-    let planner = &lines[1];
-    for s in [
-        "▸ planner",
-        "· architect",
-        "[done]",
-        "→ builder",
-        "↑1.4k ↓260 · $0.004",
-    ] {
-        assert!(planner.contains(s), "{s} in {planner}");
-    }
-    assert!(lines
-        .iter()
-        .any(|l| l.contains("└──→") && l.contains("builder")));
-    let builder = &lines[4];
-    assert!(builder.contains("▸ builder") && builder.contains("[active]"));
-    assert!(builder.trim_end().ends_with("0/1"), "{builder}");
-    for line in render(&mut panel, 120) {
-        assert_eq!(visible_width(&line), 120);
-    }
-}
-
-#[test]
-fn subagents_tree_shows_delegated_work_and_excludes_role_tasks() {
-    let _g = lock();
-    task_store().upsert_agent(
-        "planner",
-        "planner",
-        TaskAgentKind::Role,
-        TaskAgentPatch::default(),
-    );
     let w = create_with(
         "worker task",
         CreateTaskOptions {
@@ -770,90 +670,6 @@ fn subagents_tree_shows_delegated_work_and_excludes_role_tasks() {
     let text = plain(&mut panel, 120).join("\n");
     assert!(!text.contains("planner task"));
     assert!(text.contains("worker task"));
-}
-
-#[test]
-fn teams_view_hides_non_role_agent_groups() {
-    let _g = lock();
-    let store = task_store();
-    store.upsert_agent(
-        "main-ag",
-        "main-ag",
-        TaskAgentKind::Main,
-        TaskAgentPatch::default(),
-    );
-    store.upsert_agent(
-        "worker",
-        "worker",
-        TaskAgentKind::Subagent,
-        TaskAgentPatch::default(),
-    );
-    store.upsert_agent(
-        "architect",
-        "architect",
-        TaskAgentKind::Role,
-        TaskAgentPatch::default(),
-    );
-    for (title, agent) in [
-        ("main task", "main-ag"),
-        ("worker task", "worker"),
-        ("arch task", "architect"),
-    ] {
-        let id = create_with(title, owned(agent));
-        set(id, TaskStatus::InProgress);
-    }
-    let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Teams);
-    let text = plain(&mut panel, 120).join("\n");
-    assert!(!text.contains("main task") && !text.contains("worker task"));
-    assert!(text.contains("arch task") && text.contains("architect"));
-}
-
-#[test]
-fn teams_view_renders_queued_and_idle_role_placeholders() {
-    let _g = lock();
-    task_store().upsert_agent(
-        "queued-role",
-        "queued-role",
-        TaskAgentKind::Role,
-        TaskAgentPatch {
-            role: Some("pending".into()),
-            state: Some(TaskAgentState::Queued),
-            ..Default::default()
-        },
-    );
-    let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Teams);
-    let lines = plain(&mut panel, 120);
-    assert_eq!(lines.len(), 2);
-    assert!(lines
-        .iter()
-        .any(|l| l.contains("queued-role") && l.contains("0/0")));
-
-    task_store().clear();
-    role("team:planner", "planner", Some(TaskAgentState::Idle));
-    let lines = plain(&mut panel, 120);
-    assert_eq!(lines.len(), 2);
-    assert!(lines
-        .iter()
-        .any(|l| l.contains("planner") && l.contains("[idle]") && l.contains("0/0")));
-}
-
-#[test]
-fn empty_flat_view_falls_through_to_the_team_roster_at_startup() {
-    let _g = lock();
-    role("team:planner", "planner", Some(TaskAgentState::Idle));
-    role("team:builder", "builder", Some(TaskAgentState::Idle));
-    let mut panel = TaskPanelComponent::new();
-    let lines = plain(&mut panel, 120);
-    assert_eq!(lines.len(), 3);
-    assert!(lines.iter().any(|l| l.contains("planner")));
-    assert!(lines.iter().any(|l| l.contains("builder")));
-    let t = create("Init project");
-    set(t, TaskStatus::InProgress);
-    let flat = plain(&mut panel, 120);
-    assert!(flat.iter().any(|l| l.contains("Init project")));
-    assert!(!flat.iter().any(|l| l.contains("planner")));
 }
 
 #[test]
@@ -957,19 +773,19 @@ fn add_agent_stats_accumulates_usage_across_dispatches() {
 }
 
 #[test]
-fn reset_preserves_role_agents_with_stats_but_drops_settled_subagent_runs() {
+fn reset_preserves_main_agents_with_stats_but_drops_settled_subagent_runs() {
     let _g = lock();
     let store = task_store();
     let dummy = create("dummy");
     set(dummy, TaskStatus::Done);
     store.upsert_agent(
-        "team:planner",
+        "main-ag",
         "planner",
-        TaskAgentKind::Role,
+        TaskAgentKind::Main,
         TaskAgentPatch::default(),
     );
     store.add_agent_stats(
-        "team:planner",
+        "main-ag",
         AgentStats {
             input: 100.0,
             output: 50.0,
@@ -994,117 +810,20 @@ fn reset_preserves_role_agents_with_stats_but_drops_settled_subagent_runs() {
         },
     );
     store.reset();
-    assert!(store.agents().iter().any(|a| a.id == "team:planner"));
+    assert!(store.agents().iter().any(|a| a.id == "main-ag"));
     assert!(!store.agents().iter().any(|a| a.id == "run-1"));
 
     store.upsert_agent(
-        "team:zero",
+        "zero-ag",
         "zero",
-        TaskAgentKind::Role,
+        TaskAgentKind::Main,
         TaskAgentPatch::default(),
     );
     let dummy2 = create("dummy2");
     set(dummy2, TaskStatus::Done);
     store.reset();
-    assert!(!store.agents().iter().any(|a| a.id == "team:zero"));
-    assert!(store.agents().iter().any(|a| a.id == "team:planner"));
-}
-
-// --- task-panel-team-focus.test.ts ------------------------------------------
-
-const DOWN: &str = "\x1b[B";
-const UP: &str = "\x1b[A";
-
-fn team() {
-    role("team:planner", "planner", Some(TaskAgentState::Idle));
-    role("team:coder", "coder", Some(TaskAgentState::Active));
-}
-
-#[test]
-fn focused_panel_renders_the_roster_with_a_cursor_on_the_selected_role() {
-    let _g = lock();
-    team();
-    let mut panel = TaskPanelComponent::new();
-    panel.focused = true;
-    let lines = plain(&mut panel, 80);
-    assert!(find(&lines, "planner").contains('▶'));
-    assert!(find(&lines, "coder").contains('▸'));
-    assert!(lines.join("\n").contains("n nudge"));
-}
-
-#[test]
-fn unfocused_panel_keeps_the_plain_role_glyph_and_no_hints() {
-    let _g = lock();
-    team();
-    let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Teams);
-    let text = plain(&mut panel, 80).join("\n");
-    assert!(!text.contains('▶') && !text.contains("n nudge"));
-}
-
-#[test]
-fn up_and_down_move_the_cursor_and_clamp_at_the_edges() {
-    let _g = lock();
-    team();
-    let mut panel = TaskPanelComponent::new();
-    panel.focused = true;
-    assert_eq!(panel.focused_role().as_deref(), Some("planner"));
-    for (key, expected) in [
-        (DOWN, "coder"),
-        (DOWN, "coder"),
-        (UP, "planner"),
-        (UP, "planner"),
-    ] {
-        panel.handle_input(key);
-        assert_eq!(panel.focused_role().as_deref(), Some(expected));
-    }
-}
-
-#[test]
-fn n_nudges_and_a_attaches_the_focused_role_q_and_escape_exit() {
-    let _g = lock();
-    team();
-    let mut panel = TaskPanelComponent::new();
-    panel.focused = true;
-    panel.handle_input("n");
-    panel.handle_input(DOWN);
-    panel.handle_input("a");
-    panel.handle_input("q");
-    panel.handle_input("\x1b");
-    assert_eq!(
-        panel.take_events(),
-        vec![
-            TaskPanelEvent::Nudge("planner".into()),
-            TaskPanelEvent::Attach("coder".into()),
-            TaskPanelEvent::ExitFocus,
-            TaskPanelEvent::ExitFocus,
-        ]
-    );
-}
-
-#[test]
-fn the_cursor_follows_its_role_by_name_when_the_roster_reorders() {
-    let _g = lock();
-    team();
-    let mut panel = TaskPanelComponent::new();
-    panel.focused = true;
-    panel.handle_input(DOWN);
-    assert_eq!(panel.focused_role().as_deref(), Some("coder"));
-    task_store().clear();
-    role("team:coder", "coder", Some(TaskAgentState::Active));
-    role("team:planner", "planner", Some(TaskAgentState::Idle));
-    assert_eq!(panel.focused_role().as_deref(), Some("coder"));
-}
-
-#[test]
-fn an_emptied_roster_exits_focus_instead_of_trapping_the_keyboard() {
-    let _g = lock();
-    team();
-    let mut panel = TaskPanelComponent::new();
-    panel.focused = true;
-    task_store().clear();
-    panel.handle_input(DOWN);
-    assert_eq!(panel.take_events(), vec![TaskPanelEvent::ExitFocus]);
+    assert!(!store.agents().iter().any(|a| a.id == "zero-ag"));
+    assert!(store.agents().iter().any(|a| a.id == "main-ag"));
 }
 
 /// The live row explains the run: which attempt, which model, how long left.

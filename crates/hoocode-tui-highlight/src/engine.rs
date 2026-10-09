@@ -719,7 +719,6 @@ struct Top {
 pub struct HighlightResult {
     pub relevance: f64,
     pub language: Option<String>,
-    pub illegal: bool,
     pub emitter: Emitter,
     /// The code, when the result is plain (an error or an illegal lexeme).
     pub plain: bool,
@@ -788,7 +787,6 @@ fn highlight_inner(
             Some(HighlightResult {
                 relevance: h.relevance.floor(),
                 language: Some(language_name.to_string()),
-                illegal: false,
                 emitter: h.emitter,
                 plain: false,
                 top: Some(top),
@@ -797,7 +795,6 @@ fn highlight_inner(
         Err(Stop::Illegal) => Some(HighlightResult {
             relevance: 0.0,
             language: None,
-            illegal: true,
             emitter: h.emitter,
             plain: true,
             top: None,
@@ -805,7 +802,6 @@ fn highlight_inner(
         Err(Stop::Error) => Some(HighlightResult {
             relevance: 0.0,
             language: Some(language_name.to_string()),
-            illegal: false,
             emitter: h.emitter,
             plain: true,
             top: Some(top),
@@ -1331,7 +1327,6 @@ pub fn highlight_auto(
     let mut results = vec![HighlightResult {
         relevance: 0.0,
         language: None,
-        illegal: false,
         emitter: plain,
         plain: true,
         top: None,

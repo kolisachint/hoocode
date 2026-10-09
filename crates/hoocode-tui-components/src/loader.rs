@@ -14,7 +14,6 @@ use hoocode_tui_util::{truncate_to_width, visible_width};
 use std::time::{Duration, Instant};
 
 use crate::color::ColorFn;
-use crate::text::Text;
 
 const DEFAULT_FRAMES: &[&str] = &["\u{25cb}", "\u{25cf}"];
 
@@ -42,7 +41,6 @@ pub struct LoaderIndicatorOptions {
 }
 
 pub struct Loader {
-    text: Text,
     spinner_color_fn: ColorFn,
     message_color_fn: ColorFn,
     message: String,
@@ -67,7 +65,6 @@ impl Loader {
         indicator: Option<LoaderIndicatorOptions>,
     ) -> Self {
         let mut loader = Self {
-            text: Text::new("", 1, 0),
             spinner_color_fn,
             message_color_fn,
             message: message.into(),
@@ -178,7 +175,6 @@ impl Loader {
             String::new()
         };
         self.line = format!("{indicator}{}", (self.message_color_fn)(&self.message));
-        self.text.set_text(self.line.clone());
     }
 }
 
@@ -195,10 +191,6 @@ impl Component for Loader {
         };
         let padding = " ".repeat(content_width.saturating_sub(visible_width(&content)));
         vec![String::new(), format!(" {content}{padding} ")]
-    }
-
-    fn invalidate(&mut self) {
-        self.text.invalidate();
     }
 }
 

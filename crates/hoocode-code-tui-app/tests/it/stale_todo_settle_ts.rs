@@ -7,7 +7,7 @@
 
 use hoocode_ai_types::StopReason;
 use hoocode_code_task_store::TaskStatus;
-use hoocode_code_tui_app::interactive_mode::plan_settle_outcome;
+use hoocode_code_tui_app::mode::plan_settle_outcome;
 
 #[test]
 fn a_clean_stop_settles_to_done_an_abort_or_error_to_cancelled() {

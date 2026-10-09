@@ -4,6 +4,7 @@
 mod assistant_message;
 mod bash_execution_width;
 mod diff_gold;
+mod edit_agent_output_peek;
 mod golden;
 mod message_block_fill;
 mod message_block_sheets;

@@ -4,7 +4,7 @@
 //! (`extractAnsiCode`, `AnsiCodeTracker`, OSC-8 hyperlink helpers).
 
 /// Find the ANSI escape sequence starting at byte offset `pos`, if any.
-/// Recognizes CSI (`ESC [ ... m/G/K/H/J`), OSC (`ESC ] ... BEL` or `ESC ] ... ESC \`),
+/// Recognizes CSI (`ESC [ ... <final byte>`), OSC (`ESC ] ... BEL` or `ESC ] ... ESC \`),
 /// and APC (`ESC _ ... BEL` or `ESC _ ... ESC \`) sequences.
 pub fn extract_ansi_code(s: &str, pos: usize) -> Option<(&str, usize)> {
     let bytes = s.as_bytes();
@@ -15,8 +15,10 @@ pub fn extract_ansi_code(s: &str, pos: usize) -> Option<(&str, usize)> {
 
     match next {
         Some(b'[') => {
+            // ECMA-48: parameter and intermediate bytes (0x20..=0x3F) are
+            // skipped; the first final byte (0x40..=0x7E) ends the sequence.
             let mut j = pos + 2;
-            while j < bytes.len() && !matches!(bytes[j], b'm' | b'G' | b'K' | b'H' | b'J') {
+            while j < bytes.len() && !(0x40..=0x7e).contains(&bytes[j]) {
                 j += 1;
             }
             if j < bytes.len() {
@@ -283,20 +285,6 @@ impl AnsiCodeTracker {
         result
     }
 
-    pub fn has_active_codes(&self) -> bool {
-        self.bold
-            || self.dim
-            || self.italic
-            || self.underline
-            || self.blink
-            || self.inverse
-            || self.hidden
-            || self.strikethrough
-            || self.fg_color.is_some()
-            || self.bg_color.is_some()
-            || self.active_hyperlink.is_some()
-    }
-
     /// Codes needed to close attributes that must not bleed past line end
     /// (underline, and any open OSC-8 hyperlink).
     pub fn line_end_reset(&self) -> String {
@@ -491,6 +479,18 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_ansi_code_csi_ends_at_any_final_byte() {
+        // `l` (hide/show cursor) is a final byte too; the text after it is not
+        // part of the sequence even when it contains an `m`.
+        let s = "\x1b[?25lhello m";
+        let (code, len) = extract_ansi_code(s, 0).unwrap();
+        assert_eq!(code, "\x1b[?25l");
+        assert_eq!(len, 6);
+        let (code, _) = extract_ansi_code("\x1b[5~tail", 0).unwrap();
+        assert_eq!(code, "\x1b[5~");
+    }
+
+    #[test]
     fn test_extract_ansi_code_none_for_plain_text() {
         assert!(extract_ansi_code("hello", 0).is_none());
     }
@@ -507,10 +507,9 @@ mod tests {
     fn test_ansi_tracker_bold_and_reset() {
         let mut t = AnsiCodeTracker::new();
         t.process("\x1b[1m");
-        assert!(t.has_active_codes());
         assert_eq!(t.active_codes(), "\x1b[1m");
         t.process("\x1b[0m");
-        assert!(!t.has_active_codes());
+        assert_eq!(t.active_codes(), "");
     }
 
     #[test]
@@ -533,6 +532,6 @@ mod tests {
         t.process("\x1b]8;;https://example.com\x07");
         assert!(t.active_codes().contains("https://example.com"));
         t.process("\x1b]8;;\x07");
-        assert!(!t.has_active_codes());
+        assert_eq!(t.active_codes(), "");
     }
 }

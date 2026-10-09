@@ -115,11 +115,6 @@ pub fn get(obj: &Obj, key: &str) -> V {
         .unwrap_or(V::Undefined)
 }
 
-/// `key in obj` / `hasOwnProperty`.
-pub fn has(obj: &Obj, key: &str) -> bool {
-    obj.borrow().props.iter().any(|(k, _)| k == key)
-}
-
 /// `obj[key] = value` (ignored on a frozen object, as in sloppy mode).
 pub fn set(obj: &Obj, key: &str, value: V) {
     let mut o = obj.borrow_mut();
@@ -203,17 +198,6 @@ impl V {
     /// `typeof value === "object"` (arrays, objects and `null`).
     pub fn is_js_object(&self) -> bool {
         matches!(self, V::Arr(_) | V::Obj(_) | V::Null)
-    }
-
-    /// Object identity (`===` for objects).
-    pub fn same(&self, other: &V) -> bool {
-        match (self, other) {
-            (V::Obj(a), V::Obj(b)) => Rc::ptr_eq(a, b),
-            (V::Arr(a), V::Arr(b)) => Rc::ptr_eq(a, b),
-            (V::Str(a), V::Str(b)) => a == b,
-            (V::Undefined, V::Undefined) | (V::Null, V::Null) => true,
-            _ => false,
-        }
     }
 }
 

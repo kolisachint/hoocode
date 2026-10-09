@@ -11,6 +11,7 @@ pub mod markdown_to_html;
 pub mod rich_clipboard;
 
 use base64::Engine as _;
+use hoocode_tui_util::js_math::js_round;
 use image::{DynamicImage, ImageDecoder, ImageReader};
 use std::io::Cursor;
 
@@ -198,11 +199,6 @@ fn try_encodings(
     Some(candidates)
 }
 
-/// JS `Math.round` for the non-negative values used here.
-fn js_round(x: f64) -> u32 {
-    (x + 0.5).floor() as u32
-}
-
 /// Resize an image (base64 `data` of type `mime_type`) to fit within the max
 /// dimensions and encoded size (`resizeImage`). `None` if it cannot be decoded
 /// or cannot be brought below `max_bytes`.
@@ -245,13 +241,13 @@ pub fn resize_image(
     if target_width > options.max_width {
         target_height = js_round(
             f64::from(target_height) * f64::from(options.max_width) / f64::from(target_width),
-        );
+        ) as u32;
         target_width = options.max_width;
     }
     if target_height > options.max_height {
         target_width = js_round(
             f64::from(target_width) * f64::from(options.max_height) / f64::from(target_height),
-        );
+        ) as u32;
         target_height = options.max_height;
     }
 

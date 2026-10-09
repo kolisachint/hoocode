@@ -10,6 +10,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use hoocode_tui_util::js_regex::js_trim;
+
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::sinks::Lossy;
 use grep_searcher::{BinaryDetection, SearcherBuilder};
@@ -46,11 +48,6 @@ pub(crate) fn escape_reg_exp(value: &str) -> String {
 
 fn js_len(s: &str) -> usize {
     s.encode_utf16().count()
-}
-
-/// JS `trim()`.
-pub(crate) fn js_trim(s: &str) -> &str {
-    s.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
 }
 
 static QUOTED: LazyLock<regex::Regex> =

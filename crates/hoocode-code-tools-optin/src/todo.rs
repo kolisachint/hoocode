@@ -72,24 +72,19 @@ fn display_title(item: &TodoItem) -> String {
     item.content.trim().to_owned()
 }
 
-/// A root task the main agent owns (a plan item).
-fn is_main_plan_task(task: &Task) -> bool {
-    task.source.is_none() && task.agent.is_none() && task.parent_task_id.is_none()
-}
-
 /// `settleDanglingMainTasks`: at request end, settle plan items left
 /// `in_progress` (unless delegated work is still running). Returns the count.
 pub fn settle_dangling_main_tasks(store: &TaskStore, outcome: TaskStatus) -> usize {
     let all = store.list();
     if all
         .iter()
-        .any(|t| !is_main_plan_task(t) && t.status.is_active())
+        .any(|t| !t.is_plan_item() && t.status.is_active())
     {
         return 0;
     }
     let dangling: Vec<u64> = all
         .iter()
-        .filter(|t| is_main_plan_task(t) && t.status == TaskStatus::InProgress)
+        .filter(|t| t.is_plan_item() && t.status == TaskStatus::InProgress)
         .map(|t| t.id)
         .collect();
     if dangling.is_empty() {
@@ -173,7 +168,11 @@ fn parse_items(args: &Value) -> Result<Vec<TodoItem>, ToolError> {
 /// first, then leftover slots in order; drop the rest; keep list order.
 fn reconcile(store: &TaskStore, todos: &[TodoItem]) {
     store.batch(|store| {
-        let existing: Vec<Task> = store.list().into_iter().filter(is_main_plan_task).collect();
+        let existing: Vec<Task> = store
+            .list()
+            .into_iter()
+            .filter(Task::is_plan_item)
+            .collect();
         let content = |item: &TodoItem| item.content.trim().to_owned();
         let mut matched = vec![false; existing.len()];
         let mut assigned: Vec<Option<usize>> = vec![None; todos.len()];

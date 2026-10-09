@@ -618,92 +618,6 @@ pub fn slice_by_column(line: &str, start_col: usize, length: usize, strict: bool
     slice_with_width(line, start_col, length, strict).0
 }
 
-/// Extract "before" (`[0, before_end)`) and "after" (`[after_start,
-/// after_start+after_len)`) column ranges from `line` in a single pass. The
-/// "after" segment inherits SGR styling active at `after_start` so it reads
-/// correctly when composited around an overlay.
-pub fn extract_segments(
-    line: &str,
-    before_end: usize,
-    after_start: usize,
-    after_len: usize,
-    strict_after: bool,
-) -> (String, usize, String, usize) {
-    let mut before = String::new();
-    let mut before_width = 0usize;
-    let mut after = String::new();
-    let mut after_width = 0usize;
-    let mut current_col = 0usize;
-    let mut i = 0;
-    let mut pending_ansi_before = String::new();
-    let mut after_started = false;
-    let after_end = after_start + after_len;
-
-    let mut tracker = AnsiCodeTracker::new();
-
-    while i < line.len() {
-        if let Some((code, len)) = extract_ansi_code(line, i) {
-            tracker.process(code);
-            if current_col < before_end {
-                pending_ansi_before.push_str(code);
-            } else if current_col >= after_start && current_col < after_end && after_started {
-                after.push_str(code);
-            }
-            i += len;
-            continue;
-        }
-
-        let mut text_end = i;
-        while text_end < line.len() && extract_ansi_code(line, text_end).is_none() {
-            text_end += 1;
-        }
-
-        for g in crate::text_slice::range(line, i, text_end).graphemes(true) {
-            let w = grapheme_width(g);
-
-            if current_col < before_end {
-                if !pending_ansi_before.is_empty() {
-                    before.push_str(&pending_ansi_before);
-                    pending_ansi_before.clear();
-                }
-                before.push_str(g);
-                before_width += w;
-            } else if current_col >= after_start && current_col < after_end {
-                let fits = !strict_after || current_col + w <= after_end;
-                if fits {
-                    if !after_started {
-                        after.push_str(&tracker.active_codes());
-                        after_started = true;
-                    }
-                    after.push_str(g);
-                    after_width += w;
-                }
-            }
-
-            current_col += w;
-            let done = if after_len == 0 {
-                current_col >= before_end
-            } else {
-                current_col >= after_end
-            };
-            if done {
-                break;
-            }
-        }
-        i = text_end;
-        let done = if after_len == 0 {
-            current_col >= before_end
-        } else {
-            current_col >= after_end
-        };
-        if done {
-            break;
-        }
-    }
-
-    (before, before_width, after, after_width)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -818,20 +732,5 @@ mod tests {
         let (text, width) = slice_with_width("hello", 0, 3, false);
         assert_eq!(text, "hel");
         assert_eq!(width, 3);
-    }
-
-    #[test]
-    fn test_extract_segments_before_and_after() {
-        let (before, before_w, after, after_w) = extract_segments("0123456789", 3, 6, 4, false);
-        assert_eq!(before, "012");
-        assert_eq!(before_w, 3);
-        assert_eq!(after, "6789");
-        assert_eq!(after_w, 4);
-    }
-
-    #[test]
-    fn test_extract_segments_after_inherits_style() {
-        let (_, _, after, _) = extract_segments("\x1b[1m0123456789", 3, 6, 4, false);
-        assert!(after.starts_with("\x1b[1m"));
     }
 }

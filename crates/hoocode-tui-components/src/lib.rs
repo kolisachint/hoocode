@@ -6,7 +6,6 @@
 
 mod autocomplete;
 mod box_component;
-mod cancellable_loader;
 mod color;
 mod editor;
 mod frame;
@@ -26,7 +25,6 @@ pub use autocomplete::{
     SlashCommand,
 };
 pub use box_component::{BoxComponent, PaperFn, PaperSheet};
-pub use cancellable_loader::{AbortSignal, CancellableLoader};
 pub use color::{identity_color, ColorFn};
 pub use editor::{
     find_paste_markers, identity_select_theme_color, is_paste_marker, len16, segment_with_markers,
@@ -43,10 +41,7 @@ pub use image::{Image, ImageOptions, ImageTheme};
 pub use input::{Input, DEFAULT_INPUT_PROMPT};
 pub use loader::{Loader, LoaderIndicatorOptions};
 pub use markdown::{DefaultTextStyle, HeadingFn, HighlightCodeFn, Markdown, MarkdownTheme};
-pub use select_list::{
-    SelectItem, SelectList, SelectListLayoutOptions, SelectListTheme,
-    SelectListTruncatePrimaryContext,
-};
+pub use select_list::{SelectItem, SelectList, SelectListLayoutOptions, SelectListTheme};
 pub use settings_list::{
     SettingItem, SettingsList, SettingsListOptions, SettingsListTheme, SubmenuFactory,
     SubmenuOutcome,

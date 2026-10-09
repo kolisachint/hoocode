@@ -44,22 +44,12 @@ pub struct SelectListTheme {
     pub selected_row: Option<ColorFn>,
 }
 
-pub struct SelectListTruncatePrimaryContext<'a> {
-    pub text: &'a str,
-    pub max_width: usize,
-    pub column_width: usize,
-    pub item: &'a SelectItem,
-    pub is_selected: bool,
-}
-
-pub type TruncatePrimaryFn = Box<dyn Fn(&SelectListTruncatePrimaryContext) -> String>;
 pub type SelectItemCallback = Box<dyn FnMut(&SelectItem)>;
 
 #[derive(Default)]
 pub struct SelectListLayoutOptions {
     pub min_primary_column_width: Option<usize>,
     pub max_primary_column_width: Option<usize>,
-    pub truncate_primary: Option<TruncatePrimaryFn>,
 }
 
 pub struct SelectList {
@@ -191,25 +181,8 @@ impl SelectList {
         widest.clamp(min, max)
     }
 
-    fn truncate_primary(
-        &self,
-        item: &SelectItem,
-        is_selected: bool,
-        max_width: usize,
-        column_width: usize,
-    ) -> String {
-        let display_value = Self::get_display_value(item);
-        let truncated_value = match &self.layout.truncate_primary {
-            Some(f) => f(&SelectListTruncatePrimaryContext {
-                text: display_value,
-                max_width,
-                column_width,
-                item,
-                is_selected,
-            }),
-            None => truncate_to_width(display_value, max_width, "", false),
-        };
-        truncate_to_width(&truncated_value, max_width, "", false)
+    fn truncate_primary(item: &SelectItem, max_width: usize) -> String {
+        truncate_to_width(Self::get_display_value(item), max_width, "", false)
     }
 
     fn render_item(
@@ -237,12 +210,7 @@ impl SelectList {
                 let max_primary_width = effective_primary_column_width
                     .saturating_sub(PRIMARY_COLUMN_GAP)
                     .max(1);
-                let truncated_value = self.truncate_primary(
-                    item,
-                    is_selected,
-                    max_primary_width,
-                    effective_primary_column_width,
-                );
+                let truncated_value = Self::truncate_primary(item, max_primary_width);
                 let truncated_value_width = visible_width(&truncated_value);
                 let spacing = " ".repeat(
                     effective_primary_column_width
@@ -268,7 +236,7 @@ impl SelectList {
         }
 
         let max_width = width.saturating_sub(prefix_width);
-        let truncated_value = self.truncate_primary(item, is_selected, max_width, max_width);
+        let truncated_value = Self::truncate_primary(item, max_width);
         if is_selected {
             self.render_selected(&format!("{prefix}{truncated_value}"), width)
         } else {

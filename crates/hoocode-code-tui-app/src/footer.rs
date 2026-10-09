@@ -6,6 +6,7 @@ use hoocode_code_agent_session::format::{format_tokens, js_to_fixed};
 use hoocode_code_task_store::{task_store, TaskSource, TaskStatus};
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_render::Component;
+use hoocode_tui_util::js_math::js_round;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
 use crate::brand::{BRAND_MARK, GIT_BRANCH_GLYPH};
@@ -82,10 +83,6 @@ fn assemble_line(
     truncate_to_width(left_styled, width, &theme().fg("dim", "…"), false)
 }
 
-fn js_round(x: f64) -> f64 {
-    (x + 0.5).floor()
-}
-
 /// A compact context-fill gauge, coloured by proximity to the compaction
 /// trip point.
 fn context_gauge(percent: f64, error_level: f64, warn_level: f64) -> (String, String) {
@@ -112,23 +109,18 @@ fn context_gauge(percent: f64, error_level: f64, warn_level: f64) -> (String, St
 /// that seven more were waiting behind them.
 fn subagent_counts() -> (usize, usize) {
     let store = task_store();
-    let running = store
-        .list()
-        .iter()
-        .filter(|t| t.source == Some(TaskSource::Subagent) && t.status == TaskStatus::InProgress)
-        .count();
-    let queued = store
-        .list()
-        .iter()
-        .filter(|t| t.source == Some(TaskSource::Subagent) && t.status == TaskStatus::Pending)
-        .count();
-    (running, queued)
-}
-
-/// Running subagents only, for callers that want just the badge number.
-#[allow(dead_code)]
-fn active_subagent_count() -> usize {
-    subagent_counts().0
+    let mut counts = (0, 0);
+    for task in store.list().iter() {
+        if task.source != Some(TaskSource::Subagent) {
+            continue;
+        }
+        match task.status {
+            TaskStatus::InProgress => counts.0 += 1,
+            TaskStatus::Pending => counts.1 += 1,
+            _ => {}
+        }
+    }
+    counts
 }
 
 /// Newlines, tabs and carriage returns become spaces; runs of spaces collapse.

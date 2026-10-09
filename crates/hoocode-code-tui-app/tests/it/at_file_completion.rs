@@ -2,7 +2,7 @@
 //! These are the cases that used to need `fd` on PATH; they now run anywhere,
 //! because the finder never spawns a process.
 
-use hoocode_code_tui_app::interactive_mode::at_file_finder;
+use hoocode_code_tui_app::mode::at_file_finder;
 use hoocode_tui_components::{
     AutocompleteProvider, AutocompleteSuggestions, CombinedAutocompleteProvider,
 };

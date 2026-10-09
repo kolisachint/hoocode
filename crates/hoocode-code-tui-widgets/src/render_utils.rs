@@ -96,8 +96,3 @@ pub fn get_text_output(content: Option<&[Content]>, show_images: bool) -> String
 pub fn invalid_arg_text() -> String {
     theme().fg("error", "[invalid arg]")
 }
-
-/// Lines beyond the peek budget, as `split("\n").length` counts them.
-pub fn js_line_count(text: &str) -> usize {
-    text.split('\n').count()
-}

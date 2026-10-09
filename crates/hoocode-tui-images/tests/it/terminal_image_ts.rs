@@ -6,10 +6,9 @@
 //! tests that touch them hold `GLOBALS`.
 
 use hoocode_tui_images::{
-    delete_all_kitty_images, delete_kitty_image, detect_capabilities, encode_kitty, hyperlink,
-    is_image_line, render_image, reset_capabilities_cache, set_capabilities, set_cell_dimensions,
-    CellDimensions, ImageDimensions, ImageProtocol, ImageRenderOptions, KittyEncodeOptions,
-    TerminalCapabilities,
+    delete_kitty_image, detect_capabilities, encode_kitty, hyperlink, is_image_line, render_image,
+    reset_capabilities_cache, set_capabilities, set_cell_dimensions, CellDimensions,
+    ImageDimensions, ImageProtocol, ImageRenderOptions, KittyEncodeOptions, TerminalCapabilities,
 };
 use std::sync::{Mutex, MutexGuard};
 
@@ -290,7 +289,6 @@ fn encode_kitty_can_request_no_cursor_movement() {
 #[test]
 fn delete_commands_suppress_kitty_replies() {
     assert_eq!(delete_kitty_image(42), "\x1b_Ga=d,d=I,i=42,q=2\x1b\\");
-    assert_eq!(delete_all_kitty_images(), "\x1b_Ga=d,d=A,q=2\x1b\\");
 }
 
 fn with_kitty_10px(f: impl FnOnce()) {

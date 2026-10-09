@@ -18,7 +18,6 @@ doctest = false
 
 [dependencies]
 hoocode-tui-util = { workspace = true }
-once_cell = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]

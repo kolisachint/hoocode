@@ -5,6 +5,7 @@
 //! round-half-up, float accumulation in the lift walk is kept as written), so
 //! the colors a theme emits match hoocode's byte for byte.
 
+use hoocode_tui_util::js_math::js_round;
 use std::fmt;
 
 /// `ColorMode`.
@@ -120,11 +121,6 @@ pub fn hex_to_rgb(hex: &str) -> Result<(i64, i64, i64), String> {
         (Some(r), Some(g), Some(b)) => Ok((r, g, b)),
         _ => Err(format!("Invalid hex color: {hex}")),
     }
-}
-
-/// JS `Math.round`.
-pub(crate) fn js_round(x: f64) -> f64 {
-    (x + 0.5).floor()
 }
 
 /// The 6x6x6 color cube channel values.

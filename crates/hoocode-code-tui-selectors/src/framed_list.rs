@@ -14,7 +14,6 @@ pub(crate) fn layout(min: usize, max: usize) -> SelectListLayoutOptions {
     SelectListLayoutOptions {
         min_primary_column_width: Some(min),
         max_primary_column_width: Some(max),
-        truncate_primary: None,
     }
 }
 

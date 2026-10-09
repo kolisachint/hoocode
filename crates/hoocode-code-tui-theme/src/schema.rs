@@ -1,7 +1,7 @@
 //! The theme JSON schema (`ThemeJsonSchema`) and its validation, with the
 //! error text hoocode's compiled typebox validator produces.
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::color::RawColor;
 
@@ -160,55 +160,6 @@ pub struct ThemeJson {
     pub vars: Option<Vec<(String, ColorValue)>>,
     pub colors: Vec<(String, ColorValue)>,
     pub export: Option<ThemeExportJson>,
-}
-
-impl ThemeJson {
-    /// The value of a color token, if the file sets it.
-    pub fn color(&self, key: &str) -> Option<&ColorValue> {
-        self.colors.iter().find(|(k, _)| k == key).map(|(_, v)| v)
-    }
-
-    /// Serialize back to JSON (file order kept).
-    pub fn to_value(&self) -> Value {
-        let mut root = Map::new();
-        if let Some(s) = &self.schema {
-            root.insert("$schema".into(), Value::String(s.clone()));
-        }
-        root.insert("name".into(), Value::String(self.name.clone()));
-        if let Some(d) = &self.description {
-            root.insert("description".into(), Value::String(d.clone()));
-        }
-        let to_json = |v: &ColorValue| match v {
-            RawColor::Str(s) => Value::String(s.clone()),
-            RawColor::Index(n) => Value::from(*n),
-        };
-        let record = |entries: &[(String, ColorValue)]| {
-            Value::Object(
-                entries
-                    .iter()
-                    .map(|(k, v)| (k.clone(), to_json(v)))
-                    .collect(),
-            )
-        };
-        if let Some(vars) = &self.vars {
-            root.insert("vars".into(), record(vars));
-        }
-        root.insert("colors".into(), record(&self.colors));
-        if let Some(export) = &self.export {
-            let mut e = Map::new();
-            for (key, value) in [
-                ("pageBg", &export.page_bg),
-                ("cardBg", &export.card_bg),
-                ("infoBg", &export.info_bg),
-            ] {
-                if let Some(v) = value {
-                    e.insert(key.into(), to_json(v));
-                }
-            }
-            root.insert("export".into(), Value::Object(e));
-        }
-        Value::Object(root)
-    }
 }
 
 /// A JSON pointer segment (`~` and `/` escaped).

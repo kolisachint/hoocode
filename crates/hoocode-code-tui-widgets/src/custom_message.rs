@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 use hoocode_agent_types::{BranchSummaryMessage, CompactionSummaryMessage, CustomMessage};
 use hoocode_ai_types::{Content, UserContent};
+use hoocode_code_agent_session::format::group_digits;
 use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_theme::{apply_block_fill, message_label, theme, BlockFill};
 use hoocode_tui_components::{
@@ -45,9 +46,6 @@ impl CustomMessageComponent {
         this.rebuild();
         this
     }
-
-    /// Nothing folds in the default rendering.
-    pub fn set_expanded(&mut self, _expanded: bool) {}
 
     fn rebuild(&mut self) {
         let mut sheet = BoxComponent::new(1, 1, None);
@@ -159,19 +157,6 @@ impl Component for BranchSummaryMessageComponent {
     fn invalidate(&mut self) {
         self.update_display();
     }
-}
-
-/// `toLocaleString()` for a token count: grouped with commas.
-fn group_digits(n: u64) -> String {
-    let digits = n.to_string();
-    let mut out = String::new();
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
 }
 
 /// `CompactionSummaryMessageComponent`: what a compaction kept, folded to

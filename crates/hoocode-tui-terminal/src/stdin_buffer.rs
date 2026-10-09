@@ -292,9 +292,14 @@ impl StdinBuffer {
                     hoocode_tui_util::text_slice::prefix(&buffer_str, start_idx)
                         .chars()
                         .collect();
-                let (sequences, _) = extract_complete_sequences(&before_paste);
+                let (sequences, remainder) = extract_complete_sequences(&before_paste);
                 for sequence in sequences {
                     self.emit_data_sequence(sequence, out);
+                }
+                // An incomplete tail (a lone Esc key) is input too; the paste
+                // marker ends it, so it cannot wait for more bytes.
+                if !remainder.is_empty() {
+                    self.emit_data_sequence(remainder.iter().collect(), out);
                 }
             }
 
@@ -388,6 +393,23 @@ impl StdinBuffer {
         self.pending_since = None;
         if self.buffer.is_empty() {
             return Vec::new();
+        }
+        if self.buffer.len() >= 2
+            && self.buffer[0] == ESC
+            && matches!(self.buffer[1], 'P' | '_' | ']')
+        {
+            // A string introducer (DCS, APC, OSC) that never got its end. In a
+            // terminal this is Alt+P, Alt+_ or Alt+]: emit the pair, and read
+            // what follows as new input instead of as the string's body.
+            let introducer: String = self.buffer[..2].iter().collect();
+            let rest: String = self.buffer[2..].iter().collect();
+            self.buffer.clear();
+            self.pending_kitty_printable_codepoint = None;
+            let mut out = vec![StdinEvent::Data(introducer)];
+            if !rest.is_empty() {
+                self.process_inner(&rest, &mut out);
+            }
+            return out;
         }
         let sequence: String = self.buffer.iter().collect();
         self.buffer.clear();
@@ -790,6 +812,23 @@ mod tests {
     }
 
     #[test]
+    fn esc_key_just_before_paste_is_not_lost() {
+        let mut b = StdinBuffer::new(StdinBufferOptions::default());
+        let mut all = b.process("\x1b");
+        all.extend(b.process("\x1b[200~pasted\x1b[201~"));
+        assert_eq!(data_strings(&all), vec!["\x1b"]);
+        assert_eq!(paste_strings(&all), vec!["pasted"]);
+    }
+
+    #[test]
+    fn esc_key_in_same_chunk_before_paste_is_not_lost() {
+        let mut b = StdinBuffer::new(StdinBufferOptions::default());
+        let ev = b.process("\x1b\x1b[200~pasted\x1b[201~");
+        assert_eq!(data_strings(&ev), vec!["\x1b"]);
+        assert_eq!(paste_strings(&ev), vec!["pasted"]);
+    }
+
+    #[test]
     fn handles_paste_with_newlines() {
         let mut b = StdinBuffer::new(StdinBufferOptions::default());
         let ev = b.process("\x1b[200~line1\nline2\nline3\x1b[201~");
@@ -842,5 +881,64 @@ mod tests {
         assert!(b
             .poll_timeout(Instant::now() + Duration::from_millis(15))
             .is_empty());
+    }
+
+    /// Alt+P, Alt+_ and Alt+] are ESC plus a string introducer (DCS, APC, OSC).
+    /// With no terminator they must not swallow the input that follows.
+    #[test]
+    fn alt_string_introducer_is_flushed_as_alt_key_and_rest_is_input() {
+        for (introducer, key) in [("P", "\x1bP"), ("_", "\x1b_"), ("]", "\x1b]")] {
+            let mut b = StdinBuffer::new(StdinBufferOptions {
+                timeout: Duration::from_millis(10),
+            });
+            let typed = format!("\x1b{introducer}abc");
+            assert!(
+                b.process(&typed).is_empty(),
+                "{key} waits for its terminator"
+            );
+            let ev = b.poll_timeout(Instant::now() + Duration::from_secs(1));
+            assert_eq!(
+                data_strings(&ev),
+                vec![key, "a", "b", "c"],
+                "{key} plus the typed rest"
+            );
+            assert!(!b.has_pending());
+        }
+    }
+
+    /// The introducer split across two reads: the flush still gives the pair.
+    #[test]
+    fn alt_string_introducer_split_across_reads() {
+        let mut b = StdinBuffer::new(StdinBufferOptions {
+            timeout: Duration::from_millis(10),
+        });
+        assert!(b.process("\x1b").is_empty());
+        assert!(b.process("P").is_empty());
+        let ev = b.poll_timeout(Instant::now() + Duration::from_secs(1));
+        assert_eq!(data_strings(&ev), vec!["\x1bP"]);
+    }
+
+    /// A string that does end is still one sequence (no regression).
+    #[test]
+    fn complete_string_sequence_is_one_event() {
+        let mut b = StdinBuffer::new(StdinBufferOptions::default());
+        let ev = b.process("\x1b]0;title\x07x");
+        assert_eq!(data_strings(&ev), vec!["\x1b]0;title\x07", "x"]);
+        let ev = b.process("\x1bPq\x1b\\y");
+        assert_eq!(data_strings(&ev), vec!["\x1bPq\x1b\\", "y"]);
+    }
+
+    /// A second Alt+P in the rest is handled the same way.
+    #[test]
+    fn two_alt_string_introducers_in_one_flush() {
+        let mut b = StdinBuffer::new(StdinBufferOptions {
+            timeout: Duration::from_millis(10),
+        });
+        assert!(b.process("\x1bP\x1b_z").is_empty());
+        let ev = b.poll_timeout(Instant::now() + Duration::from_secs(1));
+        assert_eq!(data_strings(&ev), vec!["\x1bP"]);
+        assert!(b.has_pending(), "the second introducer waits in turn");
+        let ev = b.poll_timeout(Instant::now() + Duration::from_secs(1));
+        assert_eq!(data_strings(&ev), vec!["\x1b_", "z"]);
     }
 }

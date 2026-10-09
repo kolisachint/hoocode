@@ -119,17 +119,12 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry(
             "app.tasks.cycleForward",
             &["alt+l"],
-            "Cycle task panel view (tasks → subagents → teams, skips empty lenses)",
+            "Cycle task panel view (tasks → subagents, skips empty lenses)",
         ),
         entry(
             "app.tasks.cycleBackward",
             &["shift+alt+l"],
             "Cycle task panel view backward",
-        ),
-        entry(
-            "app.team.focus",
-            &["alt+n"],
-            "Focus the team roster (navigate roles, n nudge, a attach)",
         ),
         // ── Screen — how much room there is
         entry(
@@ -201,16 +196,6 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry("app.settings.open", &["alt+s"], "Open settings"),
         entry("app.hotkeys.open", &["alt+k"], "Show keyboard shortcuts"),
         // ── Overlays — live only while their surface is open
-        entry(
-            "app.team.nudge",
-            &["n"],
-            "Nudge the selected team role (team focus mode)",
-        ),
-        entry(
-            "app.team.attach",
-            &["a"],
-            "Attach to the selected team role (team focus mode)",
-        ),
         entry(
             "app.scroll.lineUp",
             &["up"],
@@ -576,11 +561,6 @@ impl AppKeybindingsManager {
             let bindings = load_from_file(path);
             self.manager.set_user_bindings(bindings);
         }
-    }
-
-    /// `getEffectiveConfig`: every binding's resolved keys.
-    pub fn get_effective_config(&self) -> HashMap<String, Vec<String>> {
-        self.manager.get_resolved_bindings()
     }
 
     pub fn config_path(&self) -> Option<&Path> {

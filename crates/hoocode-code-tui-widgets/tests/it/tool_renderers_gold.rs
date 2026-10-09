@@ -2,18 +2,19 @@
 //! output (`fixtures/tool-renderers-gold.json`, from
 //! `migration/tools/goldens/tool-renderers.mjs`).
 
-use crate::support::lock;
+use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
 use hoocode_code_tui_widgets::tool_execution::{
     ToolRenderContext, ToolRenderDefinition, ToolRenderResultOptions, ToolResultView,
 };
+use hoocode_code_tui_widgets::tools::subagent::format_task_call;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 const CWD: &str = "/work/project";
 
 fn definition(tool: &str) -> ToolRenderDefinition {
-    builtin_tool_definition(tool, CWD).unwrap_or_else(|| registered_tool_definition(tool))
+    builtin_tool_definition(tool).unwrap_or_else(|| registered_tool_definition(tool))
 }
 
 fn content(result: &Value) -> Vec<Content> {
@@ -226,4 +227,29 @@ fn the_call_lines_say_agent_and_agentout() {
         strip(&format_task_output_call(&json!({"list": true}))),
         "AgentOutput list"
     );
+}
+
+/// The Agent call line names the task: `description` first, then the first
+/// line of `prompt` when the description is blank, with `background` after it.
+#[test]
+fn the_agent_call_line_names_the_task() {
+    let _g = lock();
+    let line = |args: Value| strip(&format_task_call(&args)).trim_end().to_string();
+    assert_eq!(
+        line(
+            json!({"subagent_type": "explore", "description": "Find the footer", "prompt": "Locate it"})
+        ),
+        "Agent explore · Find the footer"
+    );
+    assert_eq!(
+        line(
+            json!({"subagent_type": "explore", "description": "  ", "prompt": "Locate it\nthen list"})
+        ),
+        "Agent explore · Locate it"
+    );
+    assert_eq!(
+        line(json!({"description": "Find", "background": true})),
+        "Agent agent · Find · background"
+    );
+    assert_eq!(line(json!({"subagent_type": "explore"})), "Agent explore");
 }

@@ -20,17 +20,17 @@ update this page in the same commit.
 
 | Region | Component | File |
 |---|---|---|
-| Whole screen, event loop | `InteractiveMode` (`Mode`) | `code-tui-app/src/interactive_mode.rs` |
+| Whole screen, event loop | `InteractiveMode` (`Mode`) | `code-tui-app/src/mode/mod.rs` (struct, setup, loop); the rest is split by concern into `mode/*.rs`: `input` (editor and keys), `transcript` (`Transcript`: the chat container and the components that track it; reset replaces it), `events` (agent and session events), `prompt_queue`, `session_ops`, `session_op` (the session operations that run off the UI thread: `SessionOpDone`, `SessionOutcome`, `finish_session_op`), `tree`, `models`, `auth`, `settings`, `dialogs`, `subagents`, `bash`, `clipboard`, `mcp`, `chrome` (footer, title, colour), `commands` (slash commands) |
 | Transcript scroll-back view | scroll view | `code-tui-app/src/scroll_view.rs` |
 | Startup banner | wordmark | `code-tui-app/src/wordmark.rs` |
-| Startup resource listing | resource display | `code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
+| Startup resource listing (skills, commands, agents, MCP, themes, context; no extensions or canvases cells, N12) | resource display | `code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
 | Task panel | task panel | `code-tui-widgets/src/task_panel.rs` |
 | Notification band | notification panel, tips | `code-tui-app/src/notification_panel.rs`, `tips.rs` |
 | Progress bar | progress bar, startup progress | `code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
-| Prompt editor | `CustomEditor` around `Editor` | `interactive_mode.rs` (`CustomEditor`); `tui-components/src/editor/` |
+| Prompt editor | `CustomEditor` around `Editor` | `mode/input.rs` (`CustomEditor`); `tui-components/src/editor/` |
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
-| Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `interactive_mode.rs` `setup_autocomplete_provider`. `@file` uses the in-process finder `hoocode-code-tools::file_finder`, injected by `interactive_mode.rs` `at_file_finder` (no `fd`) and run on a worker thread (`autocomplete/file_search.rs`): typing never waits, and the editor re-asks when a walk finishes (`take_ready`). |
-| Footer | footer, footer data. A warning line (memory shedding, UI stall) sits above the transient lines; set by `interactive_mode.rs` `sync_runtime_health` | `code-tui-app/src/footer.rs`, `footer_data.rs` |
+| Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `mode/input.rs` `setup_autocomplete_provider`. `@file` uses the in-process finder `hoocode-code-tools::file_finder`, injected by `mode/input.rs` `at_file_finder` (no `fd`) and run on a worker thread (`autocomplete/file_search.rs`): typing never waits, and the editor re-asks when a walk finishes (`take_ready`). |
+| Footer | footer, footer data. A warning line (memory shedding, UI stall) sits above the transient lines; set by `mode/mod.rs` `sync_runtime_health` | `code-tui-app/src/footer.rs`, `footer_data.rs` |
 | Session chip | session chip | `code-tui-widgets/src/session_chip.rs` |
 | How much room chrome gets | chrome layout | `code-tui-app/src/chrome_layout.rs` |
 
@@ -43,7 +43,7 @@ update this page in the same commit.
 | Custom and branch-summary messages | `custom_message.rs` |
 | One tool call's block | `tool_execution.rs` |
 | A run of tool calls on one line; radar view | `tool_chain.rs`, `tool_chain_summary.rs`, `tool_signal.rs` |
-| Radar / peek / full dial | `tool_output_view.rs` |
+| Radar / peek / full dial | `tool_output_view.rs` (`peek_block`, the shared peek body) |
 | `!` bash command typed by the user | `bash_execution.rs` |
 | Diffs | `diff.rs`, `jsdiff.rs` |
 | File content with line numbers | `read_output.rs` |
@@ -78,7 +78,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | `--resume` on the command line | session picker on its own TUI | `code-tui-app/src/session_picker.rs` |
 | `/tree` | session tree | `tree_selector.rs` |
 | `/fork` | pick a user message | `user_message_selector.rs` |
-| MCP trust prompt (once per process, at startup, when a project or plugin declares MCP servers) | the permission selector (`TuiPermissionUi`, `DialogRequest::Select`); asked on a thread by `interactive_mode.rs` `ask_mcp_trust`, answered as `MCP_TRUST_YES` / `MCP_TRUST_NO`; the grant runs `McpHub::grant` (trust store, then start) |
+| MCP trust prompt (once per process, at startup, when a project or plugin declares MCP servers) | the permission selector (`TuiPermissionUi`, `DialogRequest::Select`); asked on a thread by `mode/mcp.rs` `ask_mcp_trust`, answered as `MCP_TRUST_YES` / `MCP_TRUST_NO`; the grant runs `McpHub::grant` (trust store, then start) |
 | `/login`, `/logout` | provider pickers, login dialog | `oauth_selector.rs`, `login_dialog.rs`; flow in `code-tui-app/src/login_controller.rs` |
 | `AskUserQuestion` tool | options pane | `ask_options.rs` |
 | `hoocode config` | resource list | `config_selector.rs` |
@@ -91,12 +91,12 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | Part | Where |
 |---|---|
 | The list (names, descriptions, order) | `code-resources/src/slash_commands.rs` `BUILTIN_SLASH_COMMANDS` |
-| Name → `BuiltinCommand` | `interactive_mode.rs`, `enum BuiltinCommand` and its parser |
-| What each does | `interactive_mode.rs` `run_builtin_command` (`/compact`: `handle_compact_command`) |
-| `/mcp`: each MCP server with source, state and tool count (a text block, not a picker). `AuthNeeded` servers show `run /mcp login <server>`. Typed, not in the autocomplete list, so the slash menu does not change for users without MCP | `handle_mcp_command` in `interactive_mode.rs`; listing in `code-tui-app/src/mcp_listing.rs` (`format_listing`); states from `code-agent-session/src/mcp.rs` (`McpHub::servers`) |
-| `/mcp login <server>`: starts the OAuth login of an `AuthNeeded` HTTP server. The browser opens and the login link is a chat record (the fallback when it does not open); the redirect is awaited off the UI thread, then the server reconnects and its tools appear at the next turn | `start_mcp_login` in `interactive_mode.rs`; `McpHub::login` (`code-agent-session/src/mcp.rs`) runs `begin_login` and `finish` on `hoocode-io` |
+| Name → `BuiltinCommand` | `mode/commands.rs`, `enum BuiltinCommand` and its parser |
+| What each does | `mode/commands.rs` `run_builtin_command` (`/compact`: `handle_compact_command`) |
+| `/mcp`: each MCP server with source, state and tool count (a text block, not a picker). `AuthNeeded` servers show `run /mcp login <server>`. Typed, not in the autocomplete list, so the slash menu does not change for users without MCP | `handle_mcp_command` in `mode/mcp.rs`; listing in `code-tui-app/src/mcp_listing.rs` (`format_listing`); states from `code-agent-session/src/mcp.rs` (`McpHub::servers`) |
+| `/mcp login <server>`: starts the OAuth login of an `AuthNeeded` HTTP server. The browser opens and the login link is a chat record (the fallback when it does not open); the redirect is awaited off the UI thread, then the server reconnects and its tools appear at the next turn | `start_mcp_login` in `mode/mcp.rs`; `McpHub::login` (`code-agent-session/src/mcp.rs`) runs `begin_login` and `finish` on `hoocode-io` |
 | MCP elicitation (a server asks for input mid-call) in the TUI: a selector Answer / Decline / Cancel, then the options pane with one question per form field (choices for enums and booleans, free text otherwise); a URL request shows the link and asks Accept / Decline / Cancel | `code-tui-app/src/mcp_elicitation.rs` (`TuiElicitation`), on a `run_blocking` thread; the answers map to the MCP accept / decline / cancel. Print and rpc decline (`DeclineElicitation`) and say so on stderr |
-| `/perf`: threads, RSS, frame and keystroke timing, stalls (Phase 0 counters) | `handle_perf_command` in `interactive_mode.rs`; collector and report in `code-tui-app/src/perf.rs` (`format_report`) |
+| `/perf`: threads, RSS, frame and keystroke timing, stalls (Phase 0 counters) | `handle_perf_command` in `mode/commands.rs`; collector and report in `code-tui-app/src/perf.rs` (`format_report`) |
 | Mode commands (`/mode`, `/plan`, `/grill`, `/goal`, `/approve`) | `code-modes` |
 | MCP tools in the transcript | `mcp_<server>_<tool>` tools use the generic tool block (no renderer); progress reports arrive as partial results and show there |
 | Skill and prompt-template commands | `code-resources` |
@@ -108,7 +108,7 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 
 | What | Where |
 |---|---|
-| Main loop (input, app events, ticks, render). Up to 64 keys per pass, then app events, then one render (`accept_terminal_event`, `flush_scheduled_render`) | `interactive_mode.rs` `run` |
+| Main loop (input, app events, ticks, render). Up to 64 keys per pass, then app events, then one render (`accept_terminal_event`, `flush_scheduled_render`) | `mode/mod.rs` `run` |
 | Events from other threads | `enum AppEvent` (session events, prompt done, bash chunks, dialogs, login…) |
 | Agent session events → screen | `handle_session_event` |
 | Key and UI actions | `enum Action`, `handle_action` |
@@ -121,7 +121,7 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 
 | Concern | Crate / file |
 |---|---|
-| Differential renderer, frames, overlays | `tui-render/src/tui.rs`, `component.rs`, `overlay.rs` |
+| Differential renderer, frames, pinned scroll view | `tui-render/src/tui.rs`, `component.rs` |
 | Terminal: raw mode, stdin reader, resize (SIGWINCH), mouse | `tui-terminal/src/lib.rs`, `stdin_buffer.rs`, `mouse.rs` |
 | Terminal output: every write, in order; one pending frame | `tui-terminal/src/output.rs` (`hoocode-term-out`) |
 | Key parsing (Kitty, modifyOtherKeys), matching | `tui-keys` |
@@ -129,7 +129,7 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 | Components: text, input, select list, loader, box, image | `tui-components/src/` |
 | Markdown (port of `marked` v15) | `tui-components/src/markdown/` |
 | Syntax highlighting (port of highlight.js 10.7.3) | `tui-highlight` |
-| Images (Kitty, iTerm2, Sixel) | `tui-images` |
+| Images (Kitty, iTerm2) | `tui-images` |
 | ANSI-aware width, wrap, truncate | `tui-util` |
 | Kill ring, undo | `tui-editing` |
 | Fuzzy match | `tui-fuzzy` |

@@ -126,7 +126,7 @@ pub fn rerank_candidates(
         return candidates.to_vec();
     };
     let terms = &plan.terms;
-    let query_path = crate::lexical::js_trim(query).to_lowercase();
+    let query_path = hoocode_tui_util::js_regex::js_trim(query).to_lowercase();
     let prose = query_is_prose(query);
 
     let mut cache = LineCache::new(cwd, true);

@@ -175,10 +175,16 @@ pub fn create_ask_options_tool_definition(host: Arc<dyn AskOptionsHost>) -> Tool
                 return Ok(text_result("No questions were provided.".into()));
             }
             if host.auto_loop_active() {
-                let blockers: Vec<&AskQuestion> = questions
-                    .iter()
-                    .filter(|q| !q.options.iter().any(|o| o.recommended))
-                    .collect();
+                // A question with a recommended option takes it; any other
+                // question is a blocker, and nothing is answered in that case.
+                let mut defaults: Vec<(&AskQuestion, &str)> = Vec::new();
+                let mut blockers: Vec<&AskQuestion> = Vec::new();
+                for q in &questions {
+                    match q.options.iter().find(|o| o.recommended) {
+                        Some(option) => defaults.push((q, option.label.as_str())),
+                        None => blockers.push(q),
+                    }
+                }
                 if !blockers.is_empty() {
                     let list: Vec<String> = blockers.iter().map(|q| format!("  • {}", q.question)).collect();
                     host.halt_loop(&format!(
@@ -191,14 +197,13 @@ pub fn create_ask_options_tool_definition(host: Arc<dyn AskOptionsHost>) -> Tool
                         list.join("\n")
                     )));
                 }
-                let text: Vec<String> = questions
+                let text: Vec<String> = defaults
                     .iter()
-                    .map(|q| {
-                        let recommended = q.options.iter().find(|o| o.recommended).map(|o| o.label.as_str());
+                    .map(|(q, label)| {
                         format!(
                             "{}\n  → {} (auto-selected recommended default; autonomous loop, no user present)",
                             q.question,
-                            recommended.unwrap_or("undefined")
+                            label
                         )
                     })
                     .collect();

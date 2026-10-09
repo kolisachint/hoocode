@@ -20,6 +20,7 @@ doctest = false
 crossterm = "0.28"
 hoocode-runtime = { workspace = true }
 hoocode-tui-util = { workspace = true }
+hoocode-tui-keys = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

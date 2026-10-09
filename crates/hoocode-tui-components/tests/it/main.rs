@@ -25,5 +25,4 @@ mod paper_sheet;
 #[path = "../../../hoocode-tui-render/tests/it/support/mod.rs"]
 mod render_support;
 mod scroll_images;
-mod sixel;
 mod truncated_text_ts;

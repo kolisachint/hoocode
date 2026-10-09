@@ -150,7 +150,6 @@ pub struct Theme {
     bg_colors: HashMap<String, String>,
     /// Foreground tokens usable as a chip fill: background ANSI plus ink.
     fill_colors: HashMap<String, String>,
-    mode: ColorMode,
 }
 
 impl Theme {
@@ -213,7 +212,6 @@ impl Theme {
             fg_colors: fg,
             bg_colors: bg,
             fill_colors: fills,
-            mode,
         })
     }
 
@@ -290,11 +288,6 @@ impl Theme {
         self.bg_colors
             .get(color)
             .unwrap_or_else(|| panic!("Unknown theme background color: {color}"))
-    }
-
-    /// `getColorMode`.
-    pub fn get_color_mode(&self) -> ColorMode {
-        self.mode
     }
 
     /// `getThinkingBorderColor`: the token a thinking level's border uses.

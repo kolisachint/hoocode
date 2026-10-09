@@ -21,6 +21,7 @@ hoocode-agent-types = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-code-media = { workspace = true }
 hoocode-code-tool-api = { workspace = true }
+hoocode-tui-util = { workspace = true }
 base64 = "0.22"
 regex = "1"
 regex-lite = "0.1"

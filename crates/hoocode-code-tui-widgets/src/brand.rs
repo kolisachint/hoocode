@@ -12,12 +12,8 @@ pub enum Category {
     Commands,
     Agents,
     Mcp,
-    Plugins,
-    Marketplaces,
     Themes,
     Context,
-    Extensions,
-    Canvases,
 }
 
 impl Category {
@@ -28,18 +24,14 @@ impl Category {
             Category::Commands => "⌘",
             Category::Agents => "◈",
             Category::Mcp => "⧉",
-            Category::Plugins => "⬡",
-            Category::Marketplaces => "⊞",
             Category::Themes => "◒",
             Category::Context => "❯",
-            Category::Extensions => "⊹",
-            Category::Canvases => "▤",
         }
     }
 }
 
-/// A soft dot separator used between footer/summary segments.
-pub const SEGMENT_SEP: &str = "·";
+/// A soft dot separator used between footer/summary segments (one copy, in agent-session).
+pub use hoocode_code_agent_session::format::SEGMENT_SEP;
 
 /// Fork glyph preceding a git branch.
 pub const GIT_BRANCH_GLYPH: &str = "⑂";

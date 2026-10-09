@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use hoocode_tui_editing::{KillPushOptions, KillRing, UndoStack};
 use hoocode_tui_keys::{decode_printable_key, get_keybindings, matches_key, KeybindingsManager};
 use hoocode_tui_render::{Component, CURSOR_MARKER};
+use hoocode_tui_util::js_regex::{is_js_space, js_trim};
 use hoocode_tui_util::{is_punctuation_char, is_whitespace_char, visible_width};
 
 use super::word_wrap::{
@@ -146,13 +147,7 @@ fn slash_command_layout() -> SelectListLayoutOptions {
     SelectListLayoutOptions {
         min_primary_column_width: Some(12),
         max_primary_column_width: Some(32),
-        ..Default::default()
     }
-}
-
-/// JS `\s` (whitespace, line terminators, BOM).
-fn is_js_space(c: char) -> bool {
-    c.is_whitespace() || c == '\u{feff}'
 }
 
 /// `(?:^|[\s])[@#][^\s]*$`: the token after the last whitespace starts with
@@ -173,10 +168,6 @@ fn in_symbol_context(text_before_cursor: &str) -> bool {
 }
 
 /// JS `String.prototype.trim` (whitespace and line terminators).
-fn js_trim(s: &str) -> &str {
-    s.trim_matches(is_js_space)
-}
-
 /// UTF-16 code unit before `col` in `line` equals `ch`.
 fn unit_before_is(line: &str, col: usize, ch: char) -> bool {
     col > 0 && slice16(line, col - 1, col) == ch.to_string()
@@ -357,10 +348,6 @@ impl Editor {
         }
     }
 
-    pub fn get_padding_x(&self) -> usize {
-        self.padding_x
-    }
-
     pub fn set_padding_x(&mut self, padding: usize) {
         if self.padding_x != padding {
             self.padding_x = padding;
@@ -377,10 +364,6 @@ impl Editor {
             self.border = border;
             self.request_render();
         }
-    }
-
-    pub fn get_autocomplete_max_visible(&self) -> usize {
-        self.autocomplete_max_visible
     }
 
     pub fn set_autocomplete_max_visible(&mut self, max_visible: usize) {
@@ -1711,10 +1694,6 @@ impl Editor {
 
     pub fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
-    }
-
-    pub fn is_focused(&self) -> bool {
-        self.focused
     }
 
     /// `handleInput`, with the keybindings passed explicitly.

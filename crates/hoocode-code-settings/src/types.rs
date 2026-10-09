@@ -94,7 +94,7 @@ str_enum!(
 );
 
 impl ToolOutputView {
-    /// `LEGACY_TOOL_OUTPUT_VIEWS`: the retired `toolOutputDisplay` values.
+    /// The retired `toolOutputDisplay` values.
     pub fn from_legacy(value: &str) -> Option<Self> {
         match value {
             "collapsed" => Some(Self::Radar),

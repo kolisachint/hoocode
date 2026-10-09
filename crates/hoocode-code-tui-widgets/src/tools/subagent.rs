@@ -9,12 +9,14 @@ use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_subagents::inbox::subagent_inbox;
 use hoocode_code_task_store::task_store;
 use hoocode_code_tui_theme::{agent_color_for, theme};
+use hoocode_tui_components::markdown::js_trim;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
 
 use super::text;
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
+use crate::tool_output_view::peek_block;
 
 /// A JS value as `String(value ?? "")` prints it.
 fn js_string(value: Option<&Value>) -> String {
@@ -57,15 +59,31 @@ pub fn format_task_call(args: &Value) -> String {
     } else {
         "Agent "
     };
+    let mut tail = Vec::new();
+    if let Some(summary) = task_summary(args) {
+        tail.push(t.fg("dim", &format!("· {summary}")));
+    }
+    if args.get("background").and_then(Value::as_bool) == Some(true) {
+        tail.push(t.fg("dim", "· background"));
+    }
     format!(
         "{}{} {}",
         t.fg("toolTitle", &t.bold(title)),
         t.fg(agent_color_for(&agent_type), &agent_type),
-        match args.get("background").and_then(Value::as_bool) {
-            Some(true) => t.fg("dim", "· background"),
-            _ => String::new(),
-        }
+        tail.join(" ")
     )
+}
+
+/// What the Agent call line says the task is: `description` when given, else
+/// the first line of `prompt`. The first line only, so the call stays one row.
+fn task_summary(args: &Value) -> Option<String> {
+    ["description", "prompt"]
+        .iter()
+        .filter_map(|key| args.get(*key).and_then(Value::as_str))
+        .find_map(|s| {
+            let line = js_trim(s.lines().next().unwrap_or(""));
+            (!line.is_empty()).then(|| line.to_string())
+        })
 }
 
 pub fn format_task_output_call(args: &Value) -> String {
@@ -93,6 +111,34 @@ pub fn format_task_output_call(args: &Value) -> String {
     )
 }
 
+/// One roster line, its label, status and rest coloured. Other lines pass through.
+fn roster_line(line: &str) -> String {
+    let t = theme();
+    match ROSTER_LINE.captures(line) {
+        None => t.fg("toolOutput", line),
+        Some(caps) => {
+            let label = &caps[1];
+            let status = &caps[2];
+            let rest = &caps[3];
+            let status_color = if status == "running" {
+                "warning"
+            } else if status.starts_with("done") {
+                "success"
+            } else if status == "collected" || status == "cancelled" {
+                "muted"
+            } else {
+                "error"
+            };
+            format!(
+                "- {}  {}{}",
+                t.fg(label_color(label, "accent"), label),
+                t.fg(status_color, status),
+                t.fg("dim", rest)
+            )
+        }
+    }
+}
+
 static ROSTER_LINE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^- (\S+)\s{2}(running|done \(uncollected\)|collected|failed|stalled|timeout|cancelled)(.*)$")
         .expect("roster line")
@@ -102,7 +148,9 @@ fn now_ms() -> u64 {
     hoocode_code_task_store::now_ms()
 }
 
-pub fn format_task_output_result(result: &ToolResultView<'_>) -> String {
+/// `expanded` is the peek dial's stop: at peek the card body and the roster
+/// show their first lines and a `... (N more lines)` hint.
+pub fn format_task_output_result(result: &ToolResultView<'_>, expanded: bool) -> String {
     let t = theme();
     let text = result
         .content
@@ -160,40 +208,20 @@ pub fn format_task_output_result(result: &ToolResultView<'_>) -> String {
             t.bold(&t.fg(color, status)),
             t.fg(color_of_label, label)
         );
-        let body = text
-            .split('\n')
-            .map(|line| format!("{} {}", spine("│"), t.fg("toolOutput", line)))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+        let body = peek_block(&lines, expanded, |shown| {
+            shown
+                .iter()
+                .map(|line| format!("{} {}", spine("│"), t.fg("toolOutput", line)))
+                .collect()
+        });
         return format!("{header}\n{body}\n{}", spine("╰"));
     }
 
-    text.split('\n')
-        .map(|line| match ROSTER_LINE.captures(line) {
-            None => t.fg("toolOutput", line),
-            Some(caps) => {
-                let label = &caps[1];
-                let status = &caps[2];
-                let rest = &caps[3];
-                let status_color = if status == "running" {
-                    "warning"
-                } else if status.starts_with("done") {
-                    "success"
-                } else if status == "collected" || status == "cancelled" {
-                    "muted"
-                } else {
-                    "error"
-                };
-                format!(
-                    "- {}  {}{}",
-                    t.fg(label_color(label, "accent"), label),
-                    t.fg(status_color, status),
-                    t.fg("dim", rest)
-                )
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    let lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+    peek_block(&lines, expanded, |shown| {
+        shown.iter().map(|line| roster_line(line)).collect()
+    })
 }
 
 pub fn task_definition() -> ToolRenderDefinition {
@@ -207,8 +235,8 @@ pub fn task_definition() -> ToolRenderDefinition {
 pub fn task_output_definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: Some(Rc::new(|args, _| Ok(text(format_task_output_call(args))))),
-        render_result: Some(Rc::new(|result, _, _| {
-            Ok(text(format_task_output_result(result)))
+        render_result: Some(Rc::new(|result, options, _| {
+            Ok(text(format_task_output_result(result, options.expanded)))
         })),
         render_shell: None,
     }

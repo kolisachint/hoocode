@@ -275,14 +275,9 @@ fn push_literal(out: &mut String, c: char, in_class: bool) {
         // An identity escape of a letter (`\q`) means the letter itself.
         out.push(c);
     } else {
-        let mut buf = [0u8; 4];
-        out.push_str(&regex_escape(c.encode_utf8(&mut buf)));
+        // Punctuation that is not meta in either context is safe raw.
+        out.push(c);
     }
-}
-
-fn regex_escape(s: &str) -> String {
-    // Punctuation that is not meta in either context is safe raw.
-    s.to_string()
 }
 
 /// A compiled JavaScript regex.
@@ -455,6 +450,13 @@ fn expand(replacement: &str, m: &Match) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn js_trim_follows_the_javascript_whitespace_set() {
+        // BOM is JavaScript whitespace; U+0085 is Unicode whitespace but not JavaScript's.
+        assert_eq!(js_trim("\u{feff} a \u{feff}"), "a");
+        assert_eq!(js_trim("\u{85}a\u{85}"), "\u{85}a\u{85}");
+    }
+
     use super::*;
 
     #[test]

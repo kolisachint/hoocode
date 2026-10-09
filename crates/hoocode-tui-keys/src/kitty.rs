@@ -12,32 +12,16 @@ use crate::constants::{
     normalize_kitty_functional_codepoint, normalize_shifted_letter_identity_codepoint, LOCK_MASK,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeyEventType {
-    Press,
-    Repeat,
-    Release,
-}
-
 pub struct ParsedKittySequence {
     pub codepoint: i32,
     pub shifted_key: Option<i32>,
     pub base_layout_key: Option<i32>,
     pub modifier: u32,
-    pub event_type: KeyEventType,
 }
 
 pub struct ParsedModifyOtherKeysSequence {
     pub codepoint: i32,
     pub modifier: u32,
-}
-
-fn parse_event_type(s: Option<&str>) -> KeyEventType {
-    match s.and_then(|s| s.parse::<i32>().ok()) {
-        Some(2) => KeyEventType::Repeat,
-        Some(3) => KeyEventType::Release,
-        _ => KeyEventType::Press,
-    }
 }
 
 static CSI_U_RE: Lazy<Regex> = Lazy::new(|| {
@@ -67,19 +51,16 @@ pub fn parse_kitty_sequence(data: &str) -> Option<ParsedKittySequence> {
             .and_then(|m| m.as_str().parse().ok());
         let base_layout_key = parse_i32(caps.get(3));
         let mod_value = parse_i32(caps.get(4)).unwrap_or(1);
-        let event_type = parse_event_type(caps.get(5).map(|m| m.as_str()));
         return Some(ParsedKittySequence {
             codepoint,
             shifted_key,
             base_layout_key,
             modifier: (mod_value - 1).max(0) as u32,
-            event_type,
         });
     }
 
     if let Some(caps) = ARROW_RE.captures(data) {
         let mod_value = parse_i32(caps.get(1))?;
-        let event_type = parse_event_type(caps.get(2).map(|m| m.as_str()));
         let letter = caps.get(3)?.as_str();
         let codepoint = match letter {
             "A" => arrow_codepoints::UP,
@@ -93,14 +74,12 @@ pub fn parse_kitty_sequence(data: &str) -> Option<ParsedKittySequence> {
             shifted_key: None,
             base_layout_key: None,
             modifier: (mod_value - 1).max(0) as u32,
-            event_type,
         });
     }
 
     if let Some(caps) = FUNC_RE.captures(data) {
         let key_num = parse_i32(caps.get(1))?;
         let mod_value = parse_i32(caps.get(2)).unwrap_or(1);
-        let event_type = parse_event_type(caps.get(3).map(|m| m.as_str()));
         let codepoint = match key_num {
             2 => functional_codepoints::INSERT,
             3 => functional_codepoints::DELETE,
@@ -115,13 +94,11 @@ pub fn parse_kitty_sequence(data: &str) -> Option<ParsedKittySequence> {
             shifted_key: None,
             base_layout_key: None,
             modifier: (mod_value - 1).max(0) as u32,
-            event_type,
         });
     }
 
     if let Some(caps) = HOME_END_RE.captures(data) {
         let mod_value = parse_i32(caps.get(1))?;
-        let event_type = parse_event_type(caps.get(2).map(|m| m.as_str()));
         let letter = caps.get(3)?.as_str();
         let codepoint = if letter == "H" {
             functional_codepoints::HOME
@@ -133,7 +110,6 @@ pub fn parse_kitty_sequence(data: &str) -> Option<ParsedKittySequence> {
             shifted_key: None,
             base_layout_key: None,
             modifier: (mod_value - 1).max(0) as u32,
-            event_type,
         });
     }
 
@@ -291,16 +267,6 @@ pub fn is_key_release(data: &str) -> bool {
         .any(|marker| data.contains(marker))
 }
 
-/// Whether `data` is a Kitty-protocol key-repeat event (flag 2).
-pub fn is_key_repeat(data: &str) -> bool {
-    if is_bracketed_paste(data) {
-        return false;
-    }
-    [":2u", ":2~", ":2A", ":2B", ":2C", ":2D", ":2H", ":2F"]
-        .iter()
-        .any(|marker| data.contains(marker))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,7 +276,6 @@ mod tests {
         let parsed = parse_kitty_sequence("\x1b[99u").unwrap();
         assert_eq!(parsed.codepoint, 99); // 'c'
         assert_eq!(parsed.modifier, 0);
-        assert_eq!(parsed.event_type, KeyEventType::Press);
     }
 
     #[test]
@@ -318,12 +283,6 @@ mod tests {
         let parsed = parse_kitty_sequence("\x1b[99;5u").unwrap();
         assert_eq!(parsed.codepoint, 99);
         assert_eq!(parsed.modifier, 4); // ctrl = mod 5 - 1
-    }
-
-    #[test]
-    fn test_parse_csi_u_with_event_type() {
-        let parsed = parse_kitty_sequence("\x1b[99;1:3u").unwrap();
-        assert_eq!(parsed.event_type, KeyEventType::Release);
     }
 
     #[test]
@@ -389,11 +348,5 @@ mod tests {
     #[test]
     fn test_is_key_release_ignores_bracketed_paste() {
         assert!(!is_key_release("\x1b[200~90:62:3F:A5\x1b[201~"));
-    }
-
-    #[test]
-    fn test_is_key_repeat() {
-        assert!(is_key_repeat("\x1b[99;1:2u"));
-        assert!(!is_key_repeat("\x1b[99u"));
     }
 }
