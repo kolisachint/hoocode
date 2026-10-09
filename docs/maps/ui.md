@@ -10,7 +10,7 @@ update this page in the same commit.
 ## The screen, top to bottom
 
 ```
-┌ transcript (terminal scrollback) ─ messages, tool blocks, notices ───────────┐
+┌ transcript (re-rendered component tree) ─ messages, tool blocks, notices ────┐
 │ task panel ─ TodoWrite plan items, subagent runs                             │
 │ notification band ─ tips, transient notices, progress bar                    │
 │ ┌ prompt frame ─ editor, autocomplete; pickers and dialogs replace it ─────┐ │

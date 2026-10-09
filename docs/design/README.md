@@ -4,8 +4,9 @@ Start here. The migration from hoocode-ts is finished at the v0.6.0 pin. Everyth
 still to build is planned in the cards below. Each card was agreed with the user on
 2026-10-07 or later. The dated decision pages win if a card disagrees:
 [decisions-2026-10-07.md](decisions-2026-10-07.md) and
-[decisions-2026-10-08.md](decisions-2026-10-08.md) (the later page adds to the
-earlier one).
+[decisions-2026-10-08.md](decisions-2026-10-08.md) and
+[decisions-2026-10-09.md](decisions-2026-10-09.md) (each later page adds to the
+earlier ones).
 
 To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) and
 [../maps/ui.md](../maps/ui.md) (screen, pickers, slash commands).
@@ -55,6 +56,7 @@ pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 6 | Plugins: load, install, opt-in model tools | [plugins.md](plugins.md) | L | 4 | Delivers skills, MCP servers and subagents |
 | 7 | Scheduler and `/loop` | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
 | 8 | Version check and completion chime | [extras.md](extras.md) | S | 0c | Small polish |
+| 9 | TUI: hoocode-only goldens (T0), then activity panel tabs, subagent storage and attach, background shell (T1–T5) | [tui-activity.md](tui-activity.md) | L | — | Agreed 2026-10-09 ([decisions-2026-10-09.md](decisions-2026-10-09.md)); T0 replaces L1/L2 parity |
 
 **Status (2026-10-08):** milestone 2 (concurrency phases 0-1) is done. Milestone 3 (DocSearch;
 the 8 `l1_done` tasks) is done. Milestones 4 (MCP client) and 5 (concurrency phases 2-5) are
