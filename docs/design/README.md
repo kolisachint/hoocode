@@ -5,8 +5,9 @@ still to build is planned in the cards below. Each card was agreed with the user
 2026-10-07 or later. The dated decision pages win if a card disagrees:
 [decisions-2026-10-07.md](decisions-2026-10-07.md) and
 [decisions-2026-10-08.md](decisions-2026-10-08.md) and
-[decisions-2026-10-09.md](decisions-2026-10-09.md) (each later page adds to the
-earlier ones).
+[decisions-2026-10-09.md](decisions-2026-10-09.md) and
+[decisions-2026-10-09-subagents.md](decisions-2026-10-09-subagents.md) (each later
+page adds to the earlier ones).
 
 To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) and
 [../maps/ui.md](../maps/ui.md) (screen, pickers, slash commands).
@@ -68,6 +69,7 @@ pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 6 | Plugins: load, install, opt-in model tools | [plugins.md](plugins.md) | L | 4 | Delivers skills, MCP servers and subagents |
 | 7 | Scheduler and `/loop` | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
 | 8 | Version check and completion chime | [extras.md](extras.md) | S | 0c | Small polish |
+| 9 | Subagent orchestration: background by default, subagent brief, worktree protocol by instruction, child prompt fixes, evals | [subagent-orchestration.md](subagent-orchestration.md) | M | — | Parent stops waiting on subagents; writers stop sharing one tree |
 
 **Status (2026-10-08):** milestone 2 (concurrency phases 0-1) is done. Milestone 3 (DocSearch;
 the 8 `l1_done` tasks) is done. Milestones 4 (MCP client) and 5 (concurrency phases 2-5) are
