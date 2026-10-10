@@ -38,7 +38,7 @@ user which plan and which step to take next.
 | Panel keys | **Ctrl+G** focuses the panel (Ctrl+T stays thinking). Tab / Shift+Tab switch tabs, Up/Down pick a row, Enter attaches or opens, `x` cancels (with confirm), Esc returns to the prompt. All keys are rebindable. |
 | Teams lens | Delete it (about 300 lines with no production producer). Focus is rebuilt on the new row model. |
 | Background shell | In scope. `Shell` gets `run_in_background`, a job registry, output to a file, kill, and `ShellOutput`/`ShellKill` tools. Jobs appear in the Shell tab and are attachable. Quitting with jobs running asks once; "kill all" is the default. |
-| Done bar | **L1** (fmt, clippy, nextest, dep firewall) **plus hoocode goldens**. Text diffs fail. LLM review is advisory. hoocode-ts setup leaves hooks and CI. |
+| Done bar | **L1** (fmt, clippy, nextest, dep firewall) **plus hoocode goldens**. Text diffs fail. LLM review is advisory. (Removed 2026-10-10: the hoocode-ts setup hooks and CI.) |
 | Golden tiers | (a) In-process component goldens: vt100 at a fixed width, run under nextest, in milliseconds. (b) tmux end-to-end scenarios on the real binary and the mock LLM. |
 | Visual review | Text grid plus a compact style legend by default. A PNG is rendered only for changed screens or when the text review is unsure. It is run by a Haiku subagent in-session (no API key, not in CI). |
 | Cleanups | **Simplification first** (decision 22): after T0, tier **Now** of Phase S lands before T2. **Next** and **Later** may run alongside the features where files don't overlap. No idea is dropped to narrow the list; ideas move between tiers instead. |
@@ -56,10 +56,10 @@ Needs: nothing. Start here.
 |---|---|---|
 | T0.1 | `hoocode-tui-render` test support: `render_golden(component, width) -> String` (vt100 screen plus style runs) and `assert_golden!(name, text)` writing to `tests/golden/<crate>/<name>.txt`. `UPDATE_GOLDENS=1` rewrites. | S |
 | T0.2 | Component goldens for the widgets the features touch: task panel, tool block (Agent, Shell), session chip, footer, user and assistant messages. About 30 snapshots. | S |
-| T0.3 | `scripts/tui/goldens.py` (forked from `harness.py` with the hoocode-ts half dropped): `run <scenario>`, `check` (diff against `tests/golden/tui/<scenario>/*.txt`), `update`. It reuses the scenario JSON, `mockllm.py`, the tmux driver and the `normalize.json` rules (tool-name rules dropped). | M |
+| T0.3 | `scripts/tui/goldens.py` (forked from `harness.py`, which is deleted 2026-10-10; the hoocode-ts half was dropped): `run <scenario>`, `check` (diff against `tests/golden/tui/<scenario>/*.txt`), `update`. It reuses the scenario JSON, `mockllm.py`, the tmux driver and the `normalize.json` rules (tool-name rules dropped). | M |
 | T0.4 | (retired 2026-10-10) `scripts/tui/review_bundle.py`: for changed screens only, writes `target/tui-review/<scenario>/<snap>/{before,after}.txt`, `diff.txt`, a style legend and an optional `after.png` (`grid_to_html` → `render_png.mjs`). Plus `index.md` listing the bundles. | S |
 | T0.5 | (retired 2026-10-10) `.claude/skills/tui-review/SKILL.md`: how a Haiku subagent reviews a bundle (checklist: alignment, truncation, colour roles, overflow at 80 and 120 columns, empty and error states). It writes `review.md` per screen with ok / issue / unsure. On unsure, it asks for the PNG. | S |
-| T0.6 | Retire parity: done = L1 + `goldens.py check`. Freeze `ledger.py` (read-only, `verify` prints a pointer here). Remove `setup_hoocode.sh` from SessionStart and CI. Update CLAUDE.md ("Done =" line, commands), build-speed.md, ui.md ("Rules for UI changes") and the continue-migration skill. Move the mock and scenarios from `migration/tui-parity/` to `scripts/tui/`. The replay fixtures stay (Decisions). | S |
+| T0.6 | Retire parity: done = L1 + `goldens.py check`. Freeze `ledger.py` (read-only, `verify` prints a pointer here). Remove `setup_hoocode.sh` from SessionStart and CI (done 2026-10-10). Update CLAUDE.md ("Done =" line, commands), build-speed.md, ui.md ("Rules for UI changes") and the continue-migration skill. Move the mock and scenarios from `migration/tui-parity/` to `scripts/tui/`. The replay fixtures stay (Decisions). | S |
 
 **Outcome (2026-10-09)**
 
@@ -70,8 +70,8 @@ Needs: nothing. Start here.
 - **T0.4 and T0.5:** retired 2026-10-10. `review_bundle.py` and the `tui-review` skill are removed. Screen goldens are a pre-release check of about 10 key screens, not per change.
 - **T0.6:** parity is retired. The done bar is L1 plus `goldens.py check all`. `ledger.py` is read-only. Open items:
   - The CI job is staged at `archive/migration/ci/tui-parity.yml`. The user must copy it into `.github/workflows/`, because the token cannot push workflows.
-  - The SessionStart design in [build-speed.md](build-speed.md) now fetches fixtures only, through `scripts/ci/fetch_hoocode_fixtures.sh`. Pending the user's confirmation.
-- **Replay fixtures** (`hoocode-0.5.89/`, `replay.json`) stay until T0 has run green for a week. Review date: **2026-10-16**.
+  - Done 2026-10-10: the fixture fetch is removed. `scripts/ci/fetch_hoocode_fixtures.sh` is deleted, and SessionStart fetches nothing for the TS pin.
+- **Replay fixtures** (`hoocode-0.5.89/`) are frozen. `replay.json` moved to `crates/hoocode-code-main/tests/fixtures/` on 2026-10-10. No re-recording path remains.
 
 ### Phase S: simplification
 

@@ -261,9 +261,7 @@ the transcript said a third thing entirely (`Agent [explore]`).
 | `call Task with resume_task_id` | `call Agent with …` | — |
 
 Tool rename, 2026-10-08 (user): `AgentOut` became `AgentOutput`. The `Task` and
-`TaskOutput` aliases were deleted, so the old names are unknown tools. The
-parity harness maps the hoocode-ts names to these (`TOOL_NAMES` in
-`migration/tui-parity/harness.py`).
+`TaskOutput` aliases were deleted, so the old names are unknown tools.
 
 First shipped on this branch as `Dispatch` / `DispatchStatus`; renamed to
 `Agent` / `AgentOut` before release (2026-10-06) because they are shorter, read
@@ -282,16 +280,14 @@ allowlist normalisation, the render dispatch, the pool's and warm pool's
 `--tools` grant, the availability prompt, the transcript renderer and the
 prompt templates.
 
-**Divergence is now declared, not silent.** Two pin checks compared our bytes to
-hoocode's and would have failed on the rename:
+The TypeScript pin is gone (2026-10-10: hoocode fully replaces hoocode-ts), so
+the rename no longer has a pinned copy to diverge from. The prompt templates are
+checked only against the Rust build's own tests (`tests/it/shipped_prose.rs`).
 
-- `shipped_prose_ts.rs` normalises our template back to the pinned wording using
-  an explicit `DECLARED_DIVERGENCES` list, so an undeclared difference still
-  fails and a declared one that rots (the pinned text changes under us) fails
-  too.
-- `tool_renderers_gold.rs` skips the renamed tools' pinned renderings and
-  asserts ours instead, with the count asserted so the skip cannot silently
-  become "compare nothing".
+**Decision 2026-10-10 (user): 2-hour runs and cancel.** Every subagent type may
+run for up to 2 hours, and the parent can stop a run with
+`AgentOutput(task_id, cancel: true)`. The background-agents template tells the
+model to poll a long run and to cancel one it no longer needs.
 
 ## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 

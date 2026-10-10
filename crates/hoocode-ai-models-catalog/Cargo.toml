@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Model catalog data (LLM and image models) for hoocode AI, generated from the pinned hoocode"
+description = "Model catalog data (LLM and image models) for hoocode AI, generated from models.dev"
 readme = "README.md"
 
 [package.metadata.hoocode]

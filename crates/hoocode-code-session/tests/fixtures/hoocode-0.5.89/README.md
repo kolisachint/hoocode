@@ -1,8 +1,7 @@
 # hoocode 0.5.89 session fixtures
 
-Recorded from the pinned hoocode (`a6cd96e7`) by the Level-2 harness:
-`python3 migration/tui-parity/harness.py run <scenario> --app hoocode --keep`, then
-copying `~/.hoocode/sessions/**/*.jsonl` from the kept temp HOME.
+Recorded from the TypeScript hoocode (`a6cd96e7`) by the since-removed Level-2 harness,
+by copying `~/.hoocode/sessions/**/*.jsonl` from the kept temp HOME. Frozen (2026-10-10).
 
 | File | Source |
 |---|---|
@@ -12,4 +11,4 @@ copying `~/.hoocode/sessions/**/*.jsonl` from the kept temp HOME.
 | `all-entry-types.jsonl` | hand-written from `packages/coding-agent/docs/session-format.md` and `packages/agent/src/harness/types.ts` |
 | `legacy-v1.jsonl`, `legacy-v2-hook.jsonl` | hand-written from `test/session-manager/migration.test.ts` |
 
-Re-record only when moving the pin, and never edit recorded files by hand.
+Frozen: never edit recorded files by hand.

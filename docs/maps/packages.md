@@ -35,7 +35,7 @@ code-main (bin `hoocode`)
 
 Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding agent;
 `code-*` is the product; `tui-*` is a UI library with no agent knowledge.
-`migration/dep-firewall.json` keeps volatile third-party crates in their owner crate.
+`scripts/ci/dep-firewall.json` keeps volatile third-party crates in their owner crate.
 
 ## Where to change things
 
@@ -60,7 +60,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | MCP servers in a session: start the trusted ones in the background, `mcp_<server>_<tool>` tool definitions, shutdown | `code-agent-session` `mcp.rs` (`McpHub`); attached in `code-cli` `runtime.rs` (`attach_mcp`, `mcp_wanted`); synced at each turn in `session.rs` |
 | A model provider | `ai-provider-<name>`, registered in `ai-registry` |
 | A login flow | `ai-oauth-<name>`, stored by `code-auth` |
-| The model list | `ai-models-catalog` (generated from the pin, plus `scripts/models_overrides.json` for models upstream does not ship yet), `code-models` (models.json) |
+| The model list | `ai-models-catalog` (`data/models.json`, generated from models.dev by `hoocode-models-sync`; hand rules in `data/overrides.json`), `code-models` (models.json) |
 | Settings keys | `code-settings` |
 | Config paths, env prefixes | `code-paths` |
 | MCP server discovery, `mcp.json` precedence, folder and plugin trust, `/mcp` states | `code-mcp` (`config.rs`, `trust.rs`, `discover.rs`); design in [mcp.md](../design/mcp.md) |
@@ -82,15 +82,15 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 14 | 1798 / 979 | keep |
+| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 14 | 1800 / 979 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
 | `ai-env` | Environment and API key handling for hoocode AI | 8 | 345 / 0 | keep |
-| `ai-models` | LLM model registry and discovery for hoocode AI | 11 | 345 / 234 | keep |
-| `ai-models-catalog` | Model catalog data (LLM and image models) for hoocode AI, generated from the pinned hoocode | 1 | 43 / 0 | keep |
+| `ai-models` | LLM model registry and discovery for hoocode AI | 11 | 345 / 247 | keep |
+| `ai-models-catalog` | Model catalog data (LLM and image models) for hoocode AI, generated from models.dev | 1 | 24 / 0 | keep |
 | `ai-oauth` | OAuth core for hoocode AI: types, PKCE, callback server, provider registry | 7 | 1086 / 0 | keep |
 | `ai-oauth-anthropic` | Anthropic (Claude Pro/Max) OAuth flow for hoocode AI | 1 | 515 / 0 | keep |
 | `ai-oauth-github-copilot` | GitHub Copilot OAuth device flow for hoocode AI | 1 | 676 / 0 | keep |
@@ -130,8 +130,8 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 6882 / 6170 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 916 / 853 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 537 / 0 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5420 / 0 | keep |
-| `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1359 | the `hoocode` binary |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5427 / 0 | keep |
+| `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1360 | the `hoocode` binary |
 | `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 1 | 1883 / 0 | keep |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1582 / 608 | keep |
 | `code-migrate` | One-time merge of the pre-1.2 coding-agent folders into ~/.hoocode | 1 | 758 / 334 | keep |
@@ -144,9 +144,9 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 6 | 4435 / 2992 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1547 / 1025 | keep |
 | `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 926 / 0 | keep |
-| `code-session` | Session handling for the hoocode coding agent | 6 | 1864 / 390 | keep |
-| `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2304 / 1706 | keep |
-| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 8273 / 7482 | keep |
+| `code-session` | Session handling for the hoocode coding agent | 6 | 1871 / 415 | keep |
+| `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2316 / 1744 | keep |
+| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 8404 / 7708 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 5 | 664 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1080 / 125 | keep |
 | `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1511 / 653 | keep |
@@ -159,11 +159,11 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 13246 / 4790 | keep |
-| `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 724 / 828 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8048 / 3398 | keep |
-| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2364 / 2514 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 6700 / 4737 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 14038 / 5259 | keep |
+| `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 724 / 868 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8047 / 3398 | keep |
+| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2372 / 2539 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 7285 / 5351 | keep |
 
 ### TUI library (`tui-*`)
 
@@ -175,9 +175,15 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 1946 / 72 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 956 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1921 / 582 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2472 / 1684 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2632 / 1981 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 2867 / 103 | keep |
-| `tui-util` | Shared utilities for the hoocode TUI | 14 | 2082 / 583 | keep |
+| `tui-util` | Shared utilities for the hoocode TUI | 14 | 2086 / 611 | keep |
+
+### Other
+
+| Crate | Does | Used by | src / tests lines | Status |
+|---|---|---|---|---|
+| `models-sync` | Regenerates the model catalog data from models.dev (the models-sync tool) | 0 | 848 / 323 | keep |
 
 <!-- END generated -->
 
@@ -192,7 +198,7 @@ later the same day (65 crates), so `ai-provider-azure` is listed below too.
 | 5 umbrellas: `hoocode`, `agent`, `ai`, `code`, `tui` | Only for crates.io, which is dropped | `ai`'s tests moved to `ai-registry` (below); `ai`'s `oauth_providers` test was dropped, as it only tested the umbrella's own install wrapper |
 | `agent-mcp` | Not wired into the binary; [mcp.md](../design/mcp.md) rebuilds MCP on rmcp | Nothing; its stub server idea returns as rmcp test servers |
 | `agent-orchestrator`, `agent-tools` | hoocode SDK ports the product never calls; `code-agent-session` does the job | Nothing |
-| `ai-images` | No tool or command generates images | Not done: `ai-models-catalog`'s `IMAGE_MODELS_JSON` and `data/image-models.json` still exist, and `scripts/convert_models_to_json.py` still writes them. A follow-up. |
+| `ai-images` | No tool or command generates images | Not done: `ai-models-catalog`'s `IMAGE_MODELS_JSON` and `data/image-models.json` still exist and are maintained by hand (models.dev lists no image models). A follow-up. |
 | `code-extensions` | Unused WASM host; costs ~55 s per clean build | `build-speed.md` D5 no longer applies |
 
 **Moved to `ai-registry`** (`crates/hoocode-ai-registry/tests/it/`): `cache_retention`,
@@ -204,9 +210,9 @@ provider was wired into `ai-registry` only, so it was deleted with its `azure-op
 API, the `AZURE_OPENAI_*` env vars, the `/login` display name, the help text and the 47
 `azure-openai-responses` entries in `ai-models-catalog`. `ai-provider-openai-responses` keeps
 the shared Responses plumbing; only its doc comments mentioned Azure. The catalog now has
-1182 entries (the pin has 1228), and `scripts/convert_models_to_json.py` filters the
-Azure provider out so a regeneration does not bring it back. Its `models_overrides.json`
-adds `claude-haiku-5-5` (anthropic) until the pin ships it.
+1182 entries at the time. The models.dev sync (`hoocode-models-sync`) filters the Azure
+provider out (`DROPPED_PROVIDERS`), so a regeneration does not bring it back. Its
+`data/overrides.json` adds `claude-haiku-5-5` (anthropic) when models.dev lacks it.
 
 ## Upkeep
 

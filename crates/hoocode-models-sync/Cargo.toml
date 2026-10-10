@@ -1,0 +1,29 @@
+[package]
+name = "hoocode-models-sync"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Regenerates the model catalog data from models.dev (the models-sync tool)"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[[bin]]
+name = "models-sync"
+path = "src/main.rs"
+
+[dependencies]
+# Blocking client: the sync is one GET and one file write, no async runtime needed.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
+serde = { version = "1", features = ["derive"] }
+# preserve_order keeps headers, compat and thinkingLevelMap in the order the file has them.
+# float_roundtrip: exact float parsing, so prices like 0.19999999999999998 are not
+# rounded to 0.2 on rewrite (the default parser is not always correctly rounded).
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }

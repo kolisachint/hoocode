@@ -1,5 +1,5 @@
 {
-  "_comment": "Volatile third-party crates may be depended on ONLY by their adapter crate(s), which expose hoocode-owned types. Upgrading or swapping one of these deps must touch exactly the listed crates. Checked by migration/check_dep_firewall.py (CI). 'pending' lists current violations tolerated until the named ledger task fixes them; never add to it without a task id.",
+  "_comment": "Volatile third-party crates may be depended on ONLY by their adapter crate(s), which expose hoocode-owned types. Upgrading or swapping one of these deps must touch exactly the listed crates. Checked by scripts/ci/check_dep_firewall.py (CI). 'pending' lists current violations tolerated until the named ledger task fixes them; never add to it without a task id.",
   "owners": {
     "jsonwebtoken": [
       "hoocode-ai-provider-google"

@@ -1,5 +1,5 @@
 {
-  "_comment": "Regex rules applied to BOTH apps' captured screens before comparison. {HOME}, {WORK}, {TMP} expand to the run's escaped temp paths. Keep rules minimal: every rule hides a potential difference. Tool-name rules (hoocode-ts -> hoocode, 2026-10-08) are generated from TOOL_NAMES in harness.py; harness.py refuses to run if they drift. The stderr note rule blanks the hoocode-only --print/--mode json note (also dropped on the hoocode side by harness.py).",
+  "_comment": "Regex rules applied to captured screens before comparison. {HOME}, {WORK}, {TMP} expand to the run's escaped temp paths. Keep rules minimal: every rule hides a potential difference. Tool-name rules (old names -> hoocode, 2026-10-08) were generated from the retired harness.py and are kept as they are. The stderr note rule blanks the hoocode-only --print/--mode json note (also dropped on the hoocode side).",
   "rules": [
     {"pattern": "^┌─+ [a-z]+-[a-z]+ ──┐([┃░]?)$", "replace": "┌<editor-top-border: session-name badge, color derived from random session id>┐\\1", "style": "<masked>"},
     {"pattern": "{WORK}", "replace": "<WORK>"},

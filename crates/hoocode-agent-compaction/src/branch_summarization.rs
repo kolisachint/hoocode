@@ -1,6 +1,5 @@
-//! Branch summarization for tree navigation: hoocode
-//! `harness/compaction/branch-summarization.ts` (v0.5.89). Leaving a branch
-//! summarizes it so its context is not lost.
+//! Branch summarization for tree navigation. Leaving a branch summarizes it
+//! so its context is not lost.
 
 use std::collections::{HashMap, HashSet};
 
