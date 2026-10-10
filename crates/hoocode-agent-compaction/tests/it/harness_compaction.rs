@@ -1,6 +1,5 @@
 #![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
-//! Port of hoocode `packages/agent/test/harness/compaction.test.ts`
-//! (v0.5.89), plus branch summarization and split-turn cases.
+//! Harness compaction cases, plus branch summarization and split-turn cases.
 
 use std::sync::{Arc, Mutex};
 
@@ -17,7 +16,7 @@ use hoocode_ai_types::{
 };
 use serde_json::json;
 
-/// Numbers entries `entry-0`, `entry-1`, ... like the TS `createId`.
+/// Numbers entries `entry-0`, `entry-1`, ...
 #[derive(Default)]
 struct Ids(usize);
 
@@ -264,7 +263,7 @@ fn serializes_conversation_with_truncated_tool_results() {
     assert!(result.contains(&"x".repeat(2000)));
 }
 
-// The rest of `coding-agent/test/compaction-serialization.test.ts`.
+// Serialization cases for compaction.
 
 #[test]
 fn serialize_does_not_truncate_short_tool_results() {
@@ -305,7 +304,7 @@ fn serialize_does_not_truncate_user_or_assistant_messages() {
 /// `(reasoning, api_key)` of each summarization request.
 type Seen = Arc<Mutex<Vec<(Option<ThinkingLevel>, Option<String>)>>>;
 
-/// Also the three cases of `coding-agent/test/compaction-summary-reasoning.test.ts`.
+/// Reasoning pass-through cases for the summary request.
 #[tokio::test]
 async fn passes_reasoning_through_generate_summary_only_for_reasoning_models_with_thinking_enabled()
 {
@@ -391,7 +390,7 @@ async fn returns_a_compaction_result_with_file_details() {
     assert!(result.tokens_after.is_some());
 }
 
-// --- beyond the TS file ---
+// --- branch summarization and split turns ---
 
 #[tokio::test]
 async fn empty_and_failed_summaries_are_errors() {

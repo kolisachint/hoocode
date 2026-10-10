@@ -1,13 +1,15 @@
 #![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
-//! Port of hoocode `packages/coding-agent/test/compaction.test.ts` (v0.5.89):
-//! the harness compaction functions over coding-agent sessions, including the
-//! v1 `large-session.jsonl` fixture (read from the pinned hoocode checkout,
-//! migrated by `hoocode-code-session`). The two LLM cases are `#[ignore]`d
-//! and need `ANTHROPIC_OAUTH_TOKEN`.
+//! Compaction over coding-agent sessions: the harness compaction functions,
+//! plus a large synthetic v1 session. The session is generated in code (no
+//! checked-in fixture) and migrated on load by `hoocode-code-session`, which
+//! exercises the legacy v1 format. The LLM cases are `#[ignore]`d and need
+//! `ANTHROPIC_OAUTH_TOKEN`.
 
+use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use hoocode_agent_compaction::*;
 use hoocode_agent_session::{build_session_context, FileEntry};
@@ -15,6 +17,7 @@ use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{
     AssistantMessage, Content, Model, StopReason, Usage, UserContent, UserMessage,
 };
+use serde_json::json;
 
 fn usage(input: u64, output: u64, cache_read: u64, cache_write: u64) -> Usage {
     Usage {
@@ -47,7 +50,7 @@ fn assistant(text: &str, usage: Option<Usage>) -> AgentMessage {
     })
 }
 
-/// `test-id-N` entries chained through `parentId`, like the TS helpers.
+/// `test-id-N` entries chained through `parentId`.
 #[derive(Default)]
 struct Chain {
     counter: usize,
@@ -157,16 +160,94 @@ fn role(entry: &FileEntry) -> &'static str {
     }
 }
 
-/// `loadLargeSessionEntries`.
+/// User/assistant turns in the synthetic session. Each turn is four message
+/// entries: user, assistant tool call, tool result, assistant answer.
+const LARGE_SESSION_TURNS: usize = 30;
+
+/// Writes a v1 session (header without `version`, entries without `id` or
+/// `parentId`) to `CARGO_TARGET_TMPDIR` and returns its path. Loading it migrates
+/// it to the current format. It has 120 message entries, including tool calls
+/// and tool results.
+fn write_large_session_v1() -> PathBuf {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("large-session-{}-{n}.jsonl", std::process::id()));
+
+    // The session starts on haiku and switches to sonnet mid-way, so the
+    // model_change sits inside the session, not before the first message.
+    const SWITCH_TURN: usize = 15;
+    let mut lines = vec![json!({
+        "type": "session", "id": "large-session", "timestamp": NOW, "cwd": "/work/synthetic",
+    })];
+    for turn in 0..LARGE_SESSION_TURNS {
+        let model = if turn < SWITCH_TURN {
+            "claude-haiku-4-5"
+        } else {
+            "claude-sonnet-4-5"
+        };
+        if turn == SWITCH_TURN {
+            lines.push(json!({
+                "type": "model_change", "timestamp": NOW,
+                "provider": "anthropic", "modelId": model,
+            }));
+        }
+        let input = 2_000 + turn as u64 * 1_000;
+        let call_id = format!("call_{turn}");
+        let file = format!("notes-{turn}.txt");
+        lines.push(json!({
+            "type": "message", "timestamp": NOW,
+            "message": {"role": "user", "content": format!("Turn {turn}: read {file}"), "timestamp": 1},
+        }));
+        lines.push(json!({
+            "type": "message", "timestamp": NOW,
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": format!("Reading {file}.")},
+                    {"type": "toolCall", "id": call_id, "name": "read", "arguments": {"path": file}},
+                ],
+                "api": "anthropic-messages", "provider": "anthropic", "model": model,
+                "usage": {"input": input, "output": 120, "cacheRead": 0, "cacheWrite": 0},
+                "stopReason": "toolUse", "timestamp": 2,
+            },
+        }));
+        lines.push(json!({
+            "type": "message", "timestamp": NOW,
+            "message": {
+                "role": "toolResult", "toolCallId": call_id, "toolName": "read",
+                "content": [{"type": "text", "text": format!("note {turn}: alpha beta gamma")}],
+                "isError": false, "timestamp": 3,
+            },
+        }));
+        lines.push(json!({
+            "type": "message", "timestamp": NOW,
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": format!("Note {turn} says alpha beta gamma.")}],
+                "api": "anthropic-messages", "provider": "anthropic", "model": model,
+                "usage": {"input": input + 300, "output": 40, "cacheRead": 0, "cacheWrite": 0},
+                "stopReason": "stop", "timestamp": 4,
+            },
+        }));
+    }
+
+    let mut text = String::new();
+    for line in &lines {
+        text.push_str(&line.to_string());
+        text.push('\n');
+    }
+    fs::write(&path, text).expect("write synthetic session");
+    path
+}
+
+/// `loadLargeSessionEntries`: writes the synthetic v1 session, then loads and
+/// migrates it. The header is dropped, as the cut-point helpers expect entries only.
 fn load_large_session_entries() -> Vec<FileEntry> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/hoocode-pin/packages/coding-agent/test/fixtures/large-session.jsonl");
-    assert!(
-        path.exists(),
-        "{} missing: run migration/tui-parity/setup_hoocode.sh",
-        path.display()
-    );
+    let path = write_large_session_v1();
     let loaded = hoocode_code_session::load_session_file(&path);
+    fs::remove_file(&path).ok();
+    assert!(loaded.migrated, "v1 session should be migrated on load");
     loaded
         .entries
         .into_iter()
@@ -463,7 +544,7 @@ fn re_summarizes_previously_kept_messages_when_the_window_moves_past_them() {
     );
 }
 
-// --- Large session fixture ---
+// --- Large session (synthetic v1) ---
 
 #[test]
 fn parses_the_large_session() {
