@@ -58,8 +58,9 @@ fn manifest() -> Value {
 }
 
 fn scenario(name: &str) -> Value {
-    // Scenario JSON moved to scripts/tui/scenarios with the mock (TUI plan T0.6).
-    read_json(&root().join(format!("scripts/tui/scenarios/{name}.json")))
+    // Replay-only scenarios (print/json/rpc) live with this test; scripts/tui/scenarios holds only the screen goldens.
+    let file = format!("tests/fixtures/replay-scenarios/{name}.json");
+    read_json(&Path::new(env!("CARGO_MANIFEST_DIR")).join(file))
 }
 
 // ---------------------------------------------------------------------------
