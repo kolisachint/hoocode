@@ -1,5 +1,4 @@
-//! Shared compaction helpers: hoocode `harness/compaction/utils.ts`
-//! (v0.5.89): file-operation tracking, conversation serialization for the
+//! Shared compaction helpers: file-operation tracking, conversation serialization for the
 //! summarizer, and its system prompt.
 
 use std::collections::HashSet;

@@ -1,5 +1,4 @@
-//! Context compaction: hoocode `harness/compaction/compaction.ts` (v0.5.89).
-//! Pure functions over session tree entries; the session layer persists the
+//! Context compaction. Pure functions over session tree entries; the session layer persists the
 //! result and reloads.
 
 use std::collections::HashMap;
@@ -331,7 +330,7 @@ pub fn find_turn_start_index(
 pub struct CutPointResult {
     /// First entry to keep.
     pub first_kept_entry_index: usize,
-    /// The user message starting the turn being split (`-1` in TS).
+    /// The user message starting the turn being split, if any.
     pub turn_start_index: Option<usize>,
     /// The cut is not at a user message.
     pub is_split_turn: bool,

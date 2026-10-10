@@ -1,5 +1,4 @@
-//! Context compaction and branch summarization for long sessions: port of
-//! hoocode `packages/agent/src/harness/compaction/` (v0.5.89).
+//! Context compaction and branch summarization for long sessions.
 //!
 //! [`prepare_compaction`] picks what to summarize from a session path,
 //! [`compact`] asks the model for the summary, and the session layer writes
