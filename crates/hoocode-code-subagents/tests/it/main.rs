@@ -12,7 +12,7 @@ mod output_verifier;
 mod pool;
 mod result;
 mod runner;
-mod shipped_prose_ts;
+mod shipped_prose;
 mod subagent_skills;
 mod subagent_spawn_audit_ts;
 mod token_budget;

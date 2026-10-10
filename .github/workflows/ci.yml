@@ -62,8 +62,6 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      - name: Pinned hoocode fixtures
-        run: scripts/ci/fetch_hoocode_fixtures.sh
       - run: cargo nextest run -P ci --locked --workspace --no-fail-fast
 
   test-macos:
@@ -83,8 +81,6 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      - name: Pinned hoocode fixtures
-        run: scripts/ci/fetch_hoocode_fixtures.sh
       - run: cargo nextest run -P ci --locked --workspace --no-fail-fast
 
   doc:
@@ -168,7 +164,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 migration/check_dep_firewall.py
+      - run: python3 scripts/ci/check_dep_firewall.py
       # The curl installer runs under any /bin/sh; check it parses under dash too.
       - name: install.sh syntax
         run: |

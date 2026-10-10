@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Level-2 screen goldens for the hoocode TUI (hoocode only, no reference app).
 
-Forked from ``migration/tui-parity/harness.py`` with the hoocode-ts half removed.
+Forked from the since-deleted ``harness.py`` (2026-10-10), with no reference app left.
 Each scenario runs the real ``hoocode`` binary inside a fixed-size tmux terminal
 against the scripted mock LLM, sends the scripted keys, and captures the screen at
 each named ``snapshot`` step. The capture is normalized (``normalize.json``) and
@@ -24,11 +24,10 @@ scenario that fails a step. It prints a unified diff of the styled text for each
 difference. ``update`` leaves a scenario's goldens alone when that scenario fails.
 
 Tools: the scenarios and the normalizer use hoocode's tool names (Read, Shell, ...), so
-the tool-name rules of ``normalize.json`` are not applied here. They exist only to map
-hoocode-ts names to hoocode's for the parity harness.
+the old tool-name rules of ``normalize.json`` are not applied here (see ``TOOL_WORDS``).
 
 Scenario files, the mock LLM and the normalizer rules live in this directory
-(``scripts/tui``). The hoocode-ts parity gate is retired (TUI plan T0.6).
+(``scripts/tui``). There is no reference app: the parity gate is gone (TUI plan T0.6).
 
 Env: ``HOOCODE_BIN`` runs that binary instead of building ``target/debug/hoocode``.
 """
@@ -62,8 +61,8 @@ GOLDEN = ROOT / "tests" / "golden" / "tui"
 CONFIG_DIR = ".hoocode"
 DEFAULT_ARGS = ["--offline", "--provider", "mock", "--model", "mock-model"]
 
-# Tool names the parity harness maps between hoocode-ts and hoocode. Used only to drop
-# those rules from normalize.json (see the module docstring).
+# Old tool names that some normalize.json rules still map. Used only to drop those
+# rules from normalize.json (see the module docstring).
 TOOL_WORDS = ["read", "bash", "edit", "write", "SearchCodebase", "SearchHooCode", "ask_options",
               "webfetch", "websearch", "Task", "TaskOutput"]
 
@@ -85,8 +84,7 @@ _BIN: list[str] | None = None
 
 
 def hoocode_cmd() -> list[str]:
-    """The hoocode binary. Built once per process with the debug profile the parity
-    harness uses (`cargo build` is a no-op when up to date)."""
+    """The hoocode binary. Built once per process with `cargo build` (a no-op when up to date)."""
     global _BIN
     if _BIN is None:
         if "HOOCODE_BIN" in os.environ:
@@ -120,7 +118,7 @@ class Tmux:
         env_args = ["env", "-i"] + [f"{k}={v}" for k, v in sorted(env.items())]
         # The options come from the server's config file so they apply before the app
         # starts (an app that exits within milliseconds would otherwise lose the
-        # "Pane is dead" line). See harness.py for the sh wrapper's reason.
+        # "Pane is dead" line). The sh wrapper passes the app's exit status through.
         conf = Path(tempfile.gettempdir()) / f"{self.socket}.conf"
         conf.write_text("set-option -g remain-on-exit on\nset-option -g history-limit 10000\n")
         wrapped = ["sh", "-c", '"$@"; exit $?', "sh", *argv]
@@ -313,14 +311,13 @@ class Normalizer:
 
 
 # hoocode's stderr note for --print and --mode json (crates/hoocode-code-cli/src/runtime.rs).
-# It is blanked, row for row, on screen: the goldens are not compared with hoocode-ts, which
-# prints no note, and the note's wrapped tail is blanked with it.
+# It is blanked, row for row, on screen, and the note's wrapped tail is blanked with it.
 NOTE = re.compile(r"^Note: --(print|mode json) does not ask for tool approval;.*$")
 NOTE_TAIL = "run without it."
 
 
 def is_tool_rule(pattern: str) -> bool:
-    """True for a normalize.json rule that maps hoocode-ts tool names (see TOOL_WORDS)."""
+    """True for a normalize.json rule that maps an old tool name (see TOOL_WORDS)."""
     return any(name in pattern for name in TOOL_WORDS)
 
 
@@ -501,7 +498,7 @@ def run_scenario(name: str, out: Path) -> dict:
     write_files(sc, work)
     for rel, target in (sc.get("symlinks") or {}).items():
         if "{HOOCODE_PKG}" in target:
-            raise StepError(f"{name} links into the hoocode-ts package; the goldens do not depend on hoocode-ts")
+            raise StepError(f"{name} links into a TS package; the goldens depend on no other app")
         p = work / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.symlink_to(target)

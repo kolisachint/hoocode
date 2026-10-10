@@ -35,7 +35,7 @@ code-main (bin `hoocode`)
 
 Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding agent;
 `code-*` is the product; `tui-*` is a UI library with no agent knowledge.
-`migration/dep-firewall.json` keeps volatile third-party crates in their owner crate.
+`scripts/ci/dep-firewall.json` keeps volatile third-party crates in their owner crate.
 
 ## Where to change things
 

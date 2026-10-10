@@ -1,7 +1,7 @@
 name: Build binaries
 
 # Release binaries, shipped as `hoocode` (the Rust build; the crate's binary is
-# `hoocode`) plus the `hoocode-ts` shim that runs the TypeScript hoocode.
+# `hoocode`).
 
 on:
   workflow_call:
@@ -49,7 +49,6 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
           # No Windows build: it was the slowest leg of every release.
-          # Windows users run the TypeScript build (hoocode-ts).
 
     steps:
       - uses: actions/checkout@v4
@@ -103,8 +102,7 @@ jobs:
           mkdir -p "dist/$name"
           cp README.md LICENSE "dist/$name/"
           cp "target/$TARGET/release/hoocode" "dist/$name/hoocode"
-          cp scripts/shims/hoocode-ts "dist/$name/"
-          chmod +x "dist/$name/hoocode" "dist/$name/hoocode-ts"
+          chmod +x "dist/$name/hoocode"
           tar czf "dist/$name.tar.gz" -C dist "$name"
           echo "file=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"
 

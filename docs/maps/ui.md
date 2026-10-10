@@ -72,7 +72,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 
 | Opened by | Picker | File |
 |---|---|---|
-| `/settings` | settings pane | `settings_selector.rs` (uses `tui-components/src/settings_list.rs`). No External tools category: the external-tools layer went with `fd`/`rg` (reliability 1.4), so the top level is the tool rows, then the categories. Tool rows are in hoocode-ts's order (sorted by its tool names, `tool_row_sort_key`: Shell, Edit, Read, Write). The top-level **Models** row shows `all models` or `N models` (from `scopedModels`); Enter closes the pane and opens `/scoped-models` (`SettingsChange::OpenScopedModels`, handled in `hoocode-code-tui-app/src/mode/settings.rs`). |
+| `/settings` | settings pane | `settings_selector.rs` (uses `tui-components/src/settings_list.rs`). No External tools category: the external-tools layer went with `fd`/`rg` (reliability 1.4), so the top level is the tool rows, then the categories. Tool rows are sorted by tool name (`tool_row_sort_key`: Shell, Edit, Read, Write). The top-level **Models** row shows `all models` or `N models` (from `scopedModels`); Enter closes the pane and opens `/scoped-models` (`SettingsChange::OpenScopedModels`, handled in `hoocode-code-tui-app/src/mode/settings.rs`). |
 | `/model` | model picker | `model_selector.rs` |
 | `/scoped-models` | scoped models | `scoped_models_selector.rs`. Loads `scopedModels` (`hoocode-code-tui-app/src/mode/models.rs`, `concrete_scoped_entries`), one row per model with an effort column and a category column, a header line above the rows. Keys: enter toggles, alt+a/alt+x all/clear, alt+g provider, alt+up/alt+down reorder (order is priority), **tab** cycles the row's effort through the model's supported levels then unset, **alt+j** cycles its category none, cheap, fast, standard, capable then none, alt+s saves full entries (`Persist(Vec<ScopedModel>)`, validated first). Alias is kept, not edited. Typing filters the list. |
 | thinking level, theme, `/color` | one-list pickers | `small_selectors.rs`, `framed_list.rs` |
@@ -190,6 +190,6 @@ A key that is not a scroll key un-pins at the prompt, then does its usual job.
   `tests/golden/tui/<scenario>/`. Scenarios are in `scripts/tui/scenarios/`. A deliberate
   change is accepted with `goldens.py update <scenario>` and shows in the diff. Component goldens
   (`tests/golden/<crate>/`) run in nextest; accept them with `UPDATE_GOLDENS=1`. The screens
-  need not match hoocode-ts (TUI plan, Not doing).
+  are hoocode's own (there is no TS reference).
 - Concurrency ([concurrency.md](../design/concurrency.md)): the UI thread never does
   file or network I/O. Work off the UI thread reports back through `AppEvent`.

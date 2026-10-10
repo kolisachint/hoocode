@@ -1,8 +1,4 @@
-//! The mode and grill halves of the pin's `coding-agent/test/shipped-prose.test.ts`
-//! (the Task half is in hoocode-code-subagents' `tests/shipped_prose_ts.rs`).
-//! Like the TS, they compare against the template *files*, not literals. The
-//! crate carries copies of hoocode's `templates/`, so when the pinned checkout
-//! is present the copies are also checked against it byte for byte.
+//! The mode and grill prompts are built from the template files, not literals.
 
 use std::path::{Path, PathBuf};
 
@@ -87,47 +83,3 @@ fn carries_every_mode_template() {
     modes.sort();
     assert_eq!(modes, ["ask", "build", "debug", "plan"]);
 }
-
-#[test]
-fn template_copies_match_the_pin() {
-    let pin = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/hoocode-pin/packages/coding-agent/templates");
-    if !pin.is_dir() {
-        eprintln!("pinned hoocode not built: skipping the copy check");
-        return;
-    }
-    for rel in [
-        "modes/ask/system.md",
-        "modes/build/system.md",
-        "modes/debug/system.md",
-        "modes/plan/system.md",
-        "prompts/grill-me.md",
-        "prompts/grill-plan.md",
-        "prompts/grill-bridge.md",
-    ] {
-        // The one declared divergence: the ask tool is AskUserQuestion here and
-        // ask_options in the pin. Map ours back to the pinned wording first.
-        let mut ours = std::fs::read_to_string(templates().join(rel)).unwrap();
-        for (file, ours_text, pinned) in DECLARED_MODE_DIVERGENCES {
-            if *file == rel {
-                ours = ours.replace(ours_text, pinned);
-            }
-        }
-        assert_eq!(
-            ours,
-            std::fs::read_to_string(pin.join(rel)).unwrap(),
-            "{rel} differs from the pin"
-        );
-    }
-}
-
-/// `(file, our text, pinned text)`: the tool renamed from `ask_options` to
-/// `AskUserQuestion`. Nothing else in these templates may differ from the pin.
-const DECLARED_MODE_DIVERGENCES: &[(&str, &str, &str)] = &[
-    ("modes/plan/system.md", "`AskUserQuestion`", "`ask_options`"),
-    (
-        "prompts/grill-me.md",
-        "AskUserQuestion tool",
-        "ask_options tool",
-    ),
-];

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Install the Rust build as `hoocode` (plus the `hoocode-ts` shim for the
-# TypeScript one).
+# Install the Rust build as `hoocode` (and its `hoo` alias).
 #
 # Usage: scripts/install.sh [--prefix DIR]
 #   --prefix DIR    install into DIR (default: ~/.hoocode/bin when the curl
@@ -32,13 +31,7 @@ mkdir -p "$PREFIX"
 install -m 755 "$TARGET_DIR/release/hoocode" "$PREFIX/.hoocode.new"
 mv -f "$PREFIX/.hoocode.new" "$PREFIX/hoocode"
 [[ -e "$PREFIX/hoo" ]] || ln -s hoocode "$PREFIX/hoo"
-# Keep an existing hoocode-ts (e.g. the curl installer's link to a real TS
-# install); the shim only fills the gap.
-if [[ ! -e "$PREFIX/hoocode-ts" ]]; then
-  install -m 755 "$ROOT/scripts/shims/hoocode-ts" "$PREFIX/hoocode-ts"
-fi
-
-echo "installed: $PREFIX/hoocode (Rust); hoocode-ts: $PREFIX/hoocode-ts"
+echo "installed: $PREFIX/hoocode"
 case ":$PATH:" in
   *":$PREFIX:"*) ;;
   *) echo "note: $PREFIX is not on PATH" >&2 ;;

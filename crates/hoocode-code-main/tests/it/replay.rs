@@ -1,22 +1,18 @@
 #![allow(clippy::disallowed_methods)] // test code: threads that stand in for a peer, a slow tool or a second caller
 //! Level-1 fixture replay (migration task 13.2).
 //!
-//! Each scenario in `migration/tui-parity/replay.json` was recorded from the pinned
-//! hoocode by `harness.py record`: the app ran headless (stdin a pipe or /dev/null,
-//! stdout/stderr to files) against the scripted mock LLM. The recording holds
-//! hoocode's raw output under `tests/fixtures/hoocode-0.5.89/replay/<scenario>/` and
-//! the normalized rendering as the insta snapshot `snapshots/replay__<scenario>.snap`.
+//! Each scenario in `tests/fixtures/replay.json` runs `hoocode` headless (stdin a
+//! pipe or /dev/null, stdout/stderr to files) against a scripted mock LLM, and the
+//! normalized rendering is checked against the insta snapshot
+//! `snapshots/replay__<scenario>.snap`.
 //!
-//! This test runs `hoocode` the same way against a port of `mockllm.py` and asserts
-//! the same rendering: exit status, stdout (JSON lines masked like Level 2),
+//! The test asserts the rendering: exit status, stdout (JSON lines masked),
 //! stderr, model requests (where the scenario compares them), session files (entry
 //! ids remapped, timestamps masked) and work files.
 //!
-//! The snapshots are hoocode's output. Never accept hoocode output into them
-//! (`cargo insta accept`); re-record with `harness.py record` when the pin moves.
-//! Each test first re-normalizes the raw hoocode recording with the Rust
-//! normalizer below and checks it matches the snapshot, so this port and
-//! `harness.py` cannot drift apart silently.
+//! The snapshots are hoocode's output. Never accept a change into them without
+//! reviewing it (`cargo insta accept`). The frozen recordings under
+//! `tests/fixtures/hoocode-0.5.89/replay/` are kept for reference only.
 
 use std::collections::HashMap;
 use std::fs;
@@ -40,21 +36,13 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn parity_dir() -> PathBuf {
-    root().join("migration/tui-parity")
-}
-
-fn fixtures_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hoocode-0.5.89/replay")
-}
-
 fn read_json(path: &Path) -> Value {
     let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
 }
 
 fn manifest() -> Value {
-    read_json(&parity_dir().join("replay.json"))
+    read_json(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/replay.json"))
 }
 
 fn scenario(name: &str) -> Value {
@@ -124,7 +112,7 @@ fn pretty_sorted(value: &Value) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Normalizer (port of harness.py `Normalizer.apply_text`, `normalize_jsonl`)
+// Normalizer (`apply_text` and `normalize_jsonl`)
 // ---------------------------------------------------------------------------
 
 struct Normalizer {
@@ -161,14 +149,13 @@ fn path_pattern(path: &str) -> String {
 
 impl Normalizer {
     fn load(extra: Option<&Value>, paths: &[(&str, &str)]) -> Self {
-        // normalize.json moved to scripts/tui with the mock (TUI plan T0.6); replay.json stays.
+        // normalize.json lives in scripts/tui with the mock.
         let global = read_json(&root().join("scripts/tui/normalize.json"));
         let mut spec: Vec<Value> = global["rules"].as_array().cloned().unwrap_or_default();
         if let Some(Value::Array(extra)) = extra {
             spec.extend(extra.iter().cloned());
         }
-        // Replay-only: the harness runs both apps on one day, but a snapshot
-        // is compared on every later day, and the system prompt carries the date.
+        // A snapshot is compared on every later day, and the system prompt carries the date.
         spec.push(serde_json::json!({
             "pattern": r"Current date: \d{4}-\d{2}-\d{2}",
             "replace": "Current date: <DATE>",
@@ -328,7 +315,7 @@ fn normalize_session(raw: &str, normalizer: &Normalizer, opts: &Value) -> String
 }
 
 // ---------------------------------------------------------------------------
-// Rendering (port of harness.py `render_replay`)
+// Rendering
 // ---------------------------------------------------------------------------
 
 struct RawRun {
@@ -427,48 +414,6 @@ fn render(sc: &Value, raw: &RawRun) -> String {
     parts.join("\n")
 }
 
-/// The recorded hoocode run, from the fixture directory.
-fn load_recording(name: &str, sc: &Value) -> RawRun {
-    let dir = fixtures_dir().join(name);
-    let meta = read_json(&dir.join("meta.json"));
-    let read = |rel: &str| {
-        fs::read_to_string(dir.join(rel)).unwrap_or_else(|e| panic!("{name}/{rel}: {e}"))
-    };
-    let paths = ["HOME", "WORK", "TMP"]
-        .iter()
-        .map(|k| {
-            (
-                k.to_string(),
-                meta["paths"][*k].as_str().expect("path").to_string(),
-            )
-        })
-        .collect();
-    let mut sessions = Vec::new();
-    for i in 0.. {
-        let p = dir.join(format!("sessions/{i}.jsonl"));
-        if !p.exists() {
-            break;
-        }
-        sessions.push(fs::read_to_string(p).expect("session"));
-    }
-    let files = work_file_keys(sc)
-        .into_iter()
-        .map(|rel| {
-            let text = meta["files"][&rel].as_str().map(&read);
-            (rel, text)
-        })
-        .collect();
-    RawRun {
-        paths,
-        exit_status: meta["exit_status"].as_i64().expect("exit_status") as i32,
-        stdout: read("stdout"),
-        stderr: read("stderr"),
-        requests: read("requests.jsonl").lines().map(str::to_string).collect(),
-        sessions,
-        files,
-    }
-}
-
 fn work_file_keys(sc: &Value) -> Vec<String> {
     sc.get("work_files")
         .and_then(Value::as_object)
@@ -476,23 +421,12 @@ fn work_file_keys(sc: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The snapshot body (what follows the insta header).
-fn snapshot_body(name: &str) -> String {
-    let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/snapshots/replay__{name}.snap"));
-    let text = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("{}: {e} (run harness.py record {name})", path.display()));
-    let rest = text.strip_prefix("---\n").expect("insta header");
-    let end = rest.find("\n---\n").expect("insta header end");
-    rest[end + 5..].to_string()
-}
-
 // ---------------------------------------------------------------------------
 // Mock LLM (port of mockllm.py: OpenAI chat completions, streamed)
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Headless run (port of harness.py `run_headless`)
+// Headless run
 // ---------------------------------------------------------------------------
 
 fn capture<R: Read + Send + 'static>(mut src: R) -> Arc<Mutex<Vec<u8>>> {
@@ -760,13 +694,6 @@ fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
 
 fn replay(name: &str) {
     let sc = scenario(name);
-    let expected = snapshot_body(name);
-    let hoocode = render(&sc, &load_recording(name, &sc));
-    assert_eq!(
-        hoocode.trim_end(),
-        expected.trim_end(),
-        "normalizer drift: the Rust port renders hoocode's recording of {name} differently from harness.py"
-    );
     let hoocode = render(&sc, &run_hoocode(&sc));
     // The snapshot files predate the tests/it consolidation: keep the old
     // `replay__<name>` names instead of insta's module prefix (`it__replay__`).

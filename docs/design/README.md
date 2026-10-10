@@ -1,6 +1,7 @@
 # Design docs
 
-Start here. The migration from hoocode-ts is finished at the v0.6.0 pin. Everything
+Start here. The migration from hoocode-ts is finished. hoocode fully replaces it (decided
+2026-10-10), and no TS pin or parity check remains. Everything
 still to build is planned in the cards below. Each card was agreed with the user on
 2026-10-07 or later. The dated decision pages win if a card disagrees:
 [decisions-2026-10-07.md](../../archive/docs/decisions-2026-10-07.md) and
@@ -28,8 +29,6 @@ To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) 
   only when the standard can't cover it. Build for where the standards are going,
   not for legacy (example: drop deprecated MCP transports).
 - **Reliability before features.**
-- **hoocode-ts is a reference, not a mandate.** Follow it where it is good. Say so
-  where we deliberately differ.
 - **No new always-on token cost.** Tools that add schemas are opt-in or appear only
   when used.
 - **Licences:** copy code only from MIT sources (CLAUDE.md). Depending on a
@@ -47,12 +46,12 @@ first.** Don't pick one yourself.
 | Plan | Card | Phases | First step |
 |---|---|---|---|
 | Core | this page, "The core plan" | milestones 0a–8 | per the status line below |
-| TUI | [tui-activity.md](tui-activity.md) | T0 goldens (replaces L1/L2 parity) · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell. All work by Haiku subagents | T0 done 2026-10-09; next Phase S Now (N1) |
+| TUI | [tui-activity.md](tui-activity.md) | T0 goldens · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell. All work by Haiku subagents | T0 done 2026-10-09; next Phase S Now (N1) |
 
 ## The core plan, in priority order
 
 Agreed on 2026-10-08. One milestone at a time; each lands as one or more PRs that
-pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
+pass the done bar (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 **L** many.
 
 | # | Milestone | Card | Size | Needs | Why here |

@@ -1,6 +1,6 @@
 # hoocode
 
-Rust migration of the [HooCode](https://github.com/kolisachint/hoocode-ts) TypeScript coding-agent framework.
+hoocode is a coding agent in Rust. It fully replaces the earlier TypeScript build, hoocode-ts (retired 2026-10-10).
 
 This is a multi-crate workspace that mirrors the structure of the [pycortex](https://github.com/kolisachint/pycortex) Python migration. Each namespace (`ai`, `agent`, `code`, `tui`) is split into focused, version-locked crates published to crates.io.
 
@@ -38,20 +38,11 @@ npm install -g @kolisachint/hoocode     # or: bun add -g @kolisachint/hoocode
 ```
 
 The package pulls in only the binary for your platform (macOS or Linux, x64 or
-arm64). There is no Windows build; on Windows use the TypeScript build,
-[hoocode-ts](https://github.com/kolisachint/hoocode-ts).
+arm64). There is no Windows build yet.
 
 ### From source
 
-### Command names: `hoocode` and `hoocode-ts`
-
-This Rust build is installed as **`hoocode`**. The TypeScript original is reached as
-**`hoocode-ts`**, a small shim (`scripts/shims/hoocode-ts`) that runs the npm package
-`@kolisachint/hoocode-agent` (a global npm install if present, otherwise `npx`; set
-`HOOCODE_TS_BIN` to point it anywhere else). Only the installed names changed: the crates,
-the cargo binary (`hoocode`), the config directory and the in-app name are unchanged. If you
-also have the TS one installed globally from npm, put the Rust `hoocode` earlier on `PATH`
-(npm's `hoo` alias still runs the TS one).
+The command is **`hoocode`** (alias `hoo`).
 
 ```bash
 git clone https://github.com/kolisachint/hoocode
@@ -67,8 +58,7 @@ Plain cargo still works and installs the binary as `hoocode`:
 
 Download `hoocode-<target>.tar.gz` from the
 [GitHub Releases](https://github.com/kolisachint/hoocode/releases) page and check it
-against `SHA256SUMS`. It holds the `hoocode` binary and the `hoocode-ts` shim; put both
-on your `PATH`. Linux builds are static (musl) and run on any distro.
+against `SHA256SUMS`. It holds the `hoocode` binary; put it on your `PATH`. Linux builds are static (musl) and run on any distro.
 
 ## Usage
 
@@ -97,7 +87,6 @@ cargo build
 cargo check --workspace
 
 # Run all tests (CI uses nextest; `cargo test --workspace` works too)
-scripts/ci/fetch_hoocode_fixtures.sh   # pinned hoocode fixtures a few tests read
 cargo nextest run --workspace
 ```
 
@@ -163,7 +152,7 @@ hoocode -p "Summarize this repo"     # one-shot
 ```
 
 - Config, auth, sessions and settings live in `~/.hoocode` (override with
-  `HOOCODE_CODING_AGENT_DIR`), shared with hoocode-ts. Project overrides go in `./.hoocode/`.
+  `HOOCODE_CODING_AGENT_DIR`). Project overrides go in `./.hoocode/`.
   Data from the pre-1.2 home and project folders is merged in once, with backups
   (`hoocode migrate --dry-run` shows what would change).
 - The settings, `models.json`, `auth.json`, session JSONL and `hoo-config.json` formats match

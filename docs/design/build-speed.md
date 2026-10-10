@@ -42,7 +42,7 @@ Environments:
 | Slowest compile units | the `wasmtime` stack (cranelift-codegen, wasmparser, wasmtime, zstd-sys, wast, wit-parser, wasmtime-environ) ≈ 55s of the 243s CPU |
 | Linker | Already **LLD 21**: the Rust default on `x86_64-unknown-linux-gnu` since 1.90 |
 | Alternating `-p <crate>` and `--workspace` builds | 0 recompiles: Cargo keeps both feature variants (costs disk, not time) |
-| Fresh session `cargo test --workspace` | 3 failures (`agent-compaction`): `target/hoocode-pin` fixtures are missing until `scripts/ci/fetch_hoocode_fixtures.sh` runs |
+| Fresh session `cargo test --workspace` | 3 failures (`agent-compaction`) while the `target/hoocode-pin` fixtures were missing. The pin is gone (2026-10-10), so no fetch step remains |
 
 Test binaries come from 142 `crates/*/tests/*.rs` files (each its own binary) plus ~77
 lib/bin unit-test targets. **The bottleneck is linking and running test binaries, not compiling.**
@@ -98,7 +98,7 @@ Reproduce with the commands in §7.
 
 | Hook | Does | Notes |
 |---|---|---|
-| `SessionStart` | 1. In cloud sessions (`CLAUDE_CODE_REMOTE=true`): install `cargo-binstall`, then `cargo binstall -y cargo-nextest` (prebuilt, no compiling). 2. Run `scripts/ci/fetch_hoocode_fixtures.sh` (fixtures only, no hoocode-ts build; fixes the 3 fresh-session failures). 3. Start `cargo nextest run --workspace --no-run` **in the background**, logging to `target/warmup.log`, so the first real build is warm. | Idempotent; must return quickly (backgrounds long work). Installs only in cloud sessions; local machines are left alone. |
+| `SessionStart` | 1. In cloud sessions (`CLAUDE_CODE_REMOTE=true`): install `cargo-binstall`, then `cargo binstall -y cargo-nextest` (prebuilt, no compiling). 2. Start `cargo nextest run --workspace --no-run` **in the background**, logging to `target/warmup.log`, so the first real build is warm. | Idempotent; must return quickly (backgrounds long work). Installs only in cloud sessions; local machines are left alone. |
 | `PostToolUse` (`Edit\|Write` on `*.rs`) | `rustfmt --edition 2021 <file>` on the edited file only | Milliseconds. Removes fmt failures from the loop. No `cargo check` here: it would run once per file in a multi-file change. |
 | `Stop` | Map `git diff --name-only HEAD` (plus untracked files) to `crates/<name>/` → `cargo clippy -p <each> --all-targets -- -D warnings`. On failure, exit 2 with the short errors so the agent keeps working instead of handing off red code. | Skipped when no `.rs` changed. Bounded timeout. |
 
@@ -130,7 +130,7 @@ Reproduce with the commands in §7.
 - Errors: follow the existing hand-written error enums; don't add `anyhow`/`thiserror`.
 - New dependency: check the resolved version in `Cargo.lock`, and read the API from
   `cargo doc` / the source for that exact version, not from memory. Volatile crates obey the
-  dependency firewall (`migration/dep-firewall.json`).
+  dependency firewall (`scripts/ci/dep-firewall.json`).
 - `wasmtime` is behind the `wasm` feature; don't enable it in default builds.
 
 ### 4.4 macOS local setup (manual, once)
@@ -167,12 +167,12 @@ crates.io publishing is still blocked by the workspace itself: publishable crate
 crates marked `publish = false`, and internal workspace deps carry no `version`.
 
 Binaries ship as `hoocode-<target>` archives holding `hoocode` (the `hoocode` binary,
-renamed at packaging) and the `hoocode-ts` shim.
+renamed at packaging).
 
 ## 5. Implementation order
 
 Each step is its own PR, verified with Level 1 (`cargo fmt`, clippy `-D warnings`, tests,
-`migration/check_dep_firewall.py`), then re-measured with §7 and the §2 table updated.
+`scripts/ci/check_dep_firewall.py`), then re-measured with §7 and the §2 table updated.
 
 1. **D1 + D2 + D8**: line-tables-only, nextest (the L1 gate switches to
    `cargo nextest run -p …`), hooks.
@@ -183,7 +183,7 @@ Each step is its own PR, verified with Level 1 (`cargo fmt`, clippy `-D warnings
    tui-render's support as `mod render_support` via one cross-crate `#[path]` in its main.rs.
    `archive/migration/ts-tests.json` needed no scripted rewrite — `ts_tests.py generate` re-derives
    paths from the tree. `--test replay` → `--test it replay` in `archive/migration/ledger.json` and
-   `scripts/parity_test.sh`. replay.rs pins insta's old `replay__<name>` snapshot names with
+   `scripts/parity_test.sh` (deleted 2026-10-10). replay.rs pins insta's old `replay__<name>` snapshot names with
    `prepend_module_to_snapshot => false`. Test names gain a module prefix (`replay::foo`).
 3. **D9 + D12**: CI rework.
 4. **D5**: wasmtime behind the `wasm` feature.

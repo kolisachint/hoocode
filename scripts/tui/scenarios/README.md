@@ -2,8 +2,7 @@
 
 Each `*.json` file is one scenario, run against the real `hoocode` binary in a fixed tmux
 terminal with the mock LLM (`scripts/tui/goldens.py`). The screens are committed under
-`tests/golden/tui/<scenario>/`. The hoocode-ts comparison this format was built for is retired
-(TUI plan T0.6), so the `tool_needle` and ts-run notes below are history.
+`tests/golden/tui/<scenario>/`.
 
 ```jsonc
 {
@@ -19,8 +18,7 @@ terminal with the mock LLM (`scripts/tui/goldens.py`). The screens are committed
   "env": {},                                      // extra env (API keys are never inherited); {WORK}/{HOME}/{TMP} expand to the run's dirs
   "llm": [ {"text": "...", "thinking": "...", "tool_calls": [{"id": "...", "name": "Read", "arguments": {}}]},
            {"error": "boom", "status": 500},       // one entry per model request, see mockllm.py
-           // tool_calls use hoocode's tool names (Read, Shell, ...); the ts run gets the hoocode-ts names
-           // from harness.py TOOL_NAMES (llm_for_app)
+           // tool_calls use hoocode's tool names (Read, Shell, ...)
            {"text": "...", "delay_s": 5} ],         // delay_s: wait before answering
   "compare": "style",                             // "style" (default: text + colors/attrs) or "text"
   "mask_snapshots": ["pane"],                     // snapshots not compared (a known, intended difference); their contains asserts still run
@@ -47,7 +45,7 @@ terminal with the mock LLM (`scripts/tui/goldens.py`). The screens are committed
 
 `contains_line` takes a list of needle lists: one screen line must hold every needle of an
 entry (a tool's row and its switch value, say). Tool names in `contains` and `contains_line`
-are hoocode's; the ts run looks for hoocode-ts's name (`tool_needle` in `harness.py`).
+are hoocode's.
 
 Rules:
 
