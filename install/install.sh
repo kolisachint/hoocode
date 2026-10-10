@@ -11,8 +11,6 @@
 #   4. Adds ~/.hoocode/bin to PATH in your shell rc files (unless told not to).
 #
 # No root, no Node, nothing outside the install dir except the PATH line.
-# The TypeScript build is separate: `hoocode-ts`, from
-#   curl -fsSL https://kolisachint.github.io/hoocode-ts/install.sh | sh
 #
 # Options (flags or environment variables):
 #   --version <v>        HOOCODE_VERSION      release tag to install (default: latest)
@@ -126,8 +124,7 @@ case "$UNAME_S" in
         fi
         TARGET="$ARCH-apple-darwin"
         ;;
-    *) die "unsupported OS: $UNAME_S. The Rust build ships for macOS and Linux.
-    On Windows, use the TypeScript build: see https://kolisachint.github.io/hoocode-ts/" ;;
+    *) die "unsupported OS: $UNAME_S. The Rust build ships for macOS and Linux." ;;
 esac
 
 step "Platform: ${C_B}$TARGET${C_0}"
@@ -205,7 +202,7 @@ step "Installing into $BIN_DIR..."
 mkdir -p "$BIN_DIR"
 
 # Earlier TypeScript installs linked hoocode/hoo to ~/.hoocode/lib/hoocode. Those
-# names are this build's now; the TS build is `hoocode-ts`.
+# names are this build's now, so the old links are replaced.
 for _name in hoocode hoo; do
     if [ -L "$BIN_DIR/$_name" ] && [ "$(readlink "$BIN_DIR/$_name")" = "$INSTALL_DIR/lib/hoocode/hoocode" ]; then
         rm -f "$BIN_DIR/$_name"
