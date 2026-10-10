@@ -1,0 +1,38 @@
+{
+ "add": [
+  {
+   "id": "override-only",
+   "name": "Override Only",
+   "api": "openai-completions",
+   "provider": "zai",
+   "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+   "reasoning": false,
+   "input": [
+    "text"
+   ],
+   "cost": {
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0
+   },
+   "contextWindow": 1000,
+   "maxTokens": 500
+  }
+ ],
+ "allow": {
+  "minimax": [
+   "MiniMax-M2.7",
+   "MiniMax-M2.7-highspeed"
+  ]
+ },
+ "exclude": [
+  {
+   "provider": "openrouter",
+   "id": "vendor/excluded-new"
+  }
+ ],
+ "keep_prices": [
+  "openrouter"
+ ]
+}

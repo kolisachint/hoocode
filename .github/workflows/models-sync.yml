@@ -1,0 +1,57 @@
+name: Models sync
+
+# Weekly refresh of the model catalog from models.dev (crates/hoocode-models-sync).
+# The tool rewrites crates/hoocode-ai-models-catalog/data/models.json; this
+# workflow opens a PR with that change and the report as its body. Nothing is
+# merged or pushed to main by the bot.
+
+on:
+  schedule:
+    # Monday 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: models-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: models-sync
+      - name: Sync models.dev into the catalog
+        # The report goes to RUNNER_TEMP, not the repo, so it is not committed.
+        run: |
+          set -o pipefail
+          cargo run --locked -p hoocode-models-sync --bin models-sync \
+            | tee "$RUNNER_TEMP/report.md"
+      - name: Open the sync PR
+        # A PR opened with the default GITHUB_TOKEN does not trigger the CI
+        # workflows (GitHub's rule against recursive runs), so the PR would sit
+        # without checks. Set MODELS_SYNC_TOKEN to a fine-grained PAT with
+        # contents and pull-requests write access to get CI on the PR. Without
+        # it, the PR is still opened, but it needs a manual push or re-run.
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.MODELS_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          branch: bot/models-sync
+          title: "chore(models): sync catalog from models.dev"
+          body-path: ${{ runner.temp }}/report.md
+          commit-message: "chore(models): sync catalog from models.dev"
+          # Only the catalog file: the tool writes nothing else.
+          add-paths: crates/hoocode-ai-models-catalog/data/models.json
+          delete-branch: true

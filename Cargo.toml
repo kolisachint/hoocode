@@ -6,6 +6,7 @@ members = [
     "crates/hoocode-ai-env",
     "crates/hoocode-ai-models",
     "crates/hoocode-ai-models-catalog",
+    "crates/hoocode-models-sync",
     "crates/hoocode-ai-oauth",
     "crates/hoocode-ai-oauth-anthropic",
     "crates/hoocode-ai-oauth-github-copilot",
