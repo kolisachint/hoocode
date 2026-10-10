@@ -1851,6 +1851,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hoocode-models-sync"
+version = "0.1.14"
+dependencies = [
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "hoocode-runtime"
 version = "0.1.14"
 dependencies = [
@@ -3122,6 +3131,7 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "http",

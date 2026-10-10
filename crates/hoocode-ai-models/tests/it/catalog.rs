@@ -26,14 +26,27 @@ fn supports_xhigh(m: &Model) -> bool {
 }
 
 #[test]
-fn catalog_matches_the_pin() {
+fn catalog_is_generated_and_complete() {
+    // models.json is regenerated from models.dev (crates/hoocode-models-sync), and
+    // entries are never removed automatically, so the count only grows. Sanity
+    // bounds, not an exact count: an exact count would fail on every sync.
     let providers = get_providers();
     let total: usize = providers.iter().map(|p| get_models(p).len()).sum();
-    // hoocode v0.6.0: Object.values(MODELS) flattened (scripts/convert_models_to_json.py),
-    // minus the 47 azure-openai-responses entries (Azure dropped; the converter filters them),
-    // plus claude-haiku-5-5 from scripts/models_overrides.json (not in upstream v0.6.0 yet).
-    assert_eq!(total, 1182);
-    // hoocode's provider order (Object.entries(MODELS)).
+    assert!(total > 500, "catalog has only {total} models");
+    for provider in [
+        "anthropic",
+        "openai",
+        "google",
+        "github-copilot",
+        "openrouter",
+        "opencode",
+    ] {
+        assert!(
+            !get_models(provider).is_empty(),
+            "{provider} is in the catalog"
+        );
+    }
+    // hoocode's provider order (sorted by id, as the catalog file has it).
     assert_eq!(&providers[..3], ["anthropic", "cerebras", "deepseek"]);
     assert_eq!(providers.last(), Some(&"zai"));
 }

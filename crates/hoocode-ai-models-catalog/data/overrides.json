@@ -1,7 +1,6 @@
-[
- {
-  "before": "claude-haiku-4-5",
-  "model": {
+{
+ "add": [
+  {
    "id": "claude-haiku-5-5",
    "name": "Claude Haiku 5.5",
    "api": "anthropic-messages",
@@ -24,5 +23,20 @@
    "contextWindow": 1000000,
    "maxTokens": 128000
   }
- }
-]
+ ],
+ "allow": {
+  "minimax": [
+   "MiniMax-M2.7",
+   "MiniMax-M2.7-highspeed"
+  ],
+  "minimax-cn": [
+   "MiniMax-M2.7",
+   "MiniMax-M2.7-highspeed"
+  ]
+ },
+ "exclude": [],
+ "keep_prices": [
+  "openrouter",
+  "vercel-ai-gateway"
+ ]
+}
