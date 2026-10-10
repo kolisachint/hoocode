@@ -62,16 +62,6 @@ GOLDEN = ROOT / "tests" / "golden" / "tui"
 CONFIG_DIR = ".hoocode"
 DEFAULT_ARGS = ["--offline", "--provider", "mock", "--model", "mock-model"]
 
-# Scenarios that cannot run without the hoocode-ts package. They seed a package dir
-# from the pinned hoocode-ts build through `symlinks` and `HOOCODE_PACKAGE_DIR`
-# (the changelog notice reads its CHANGELOG.md from there). The goldens do not
-# depend on hoocode-ts, so they are not run. Add a scenario here only with a reason.
-EXCLUDED = {
-    "changelog-command": "needs the hoocode-ts package dir (symlinks to {HOOCODE_PKG}) for its CHANGELOG.md",
-    "changelog-startup": "needs the hoocode-ts package dir (symlinks to {HOOCODE_PKG}) for its CHANGELOG.md",
-    "changelog-startup-collapsed": "needs the hoocode-ts package dir (symlinks to {HOOCODE_PKG}) for its CHANGELOG.md",
-}
-
 # Tool names the parity harness maps between hoocode-ts and hoocode. Used only to drop
 # those rules from normalize.json (see the module docstring).
 TOOL_WORDS = ["read", "bash", "edit", "write", "SearchCodebase", "SearchHooCode", "ask_options",
@@ -349,7 +339,7 @@ def load_scenario(name: str) -> dict:
 
 
 def all_scenarios() -> list[str]:
-    return sorted(p.stem for p in SCENARIOS.glob("*.json") if p.stem not in EXCLUDED)
+    return sorted(p.stem for p in SCENARIOS.glob("*.json"))
 
 
 def write_models_json(home: Path, port: int, scenario: dict) -> None:
@@ -504,14 +494,14 @@ def run_scenario(name: str, out: Path) -> dict:
     """Run one scenario. Returns {"ok", "error", "snapshots": {name: (styled, plain)}}."""
     sc = load_scenario(name)
     out.mkdir(parents=True, exist_ok=True)
-    tmp = Path(tempfile.mkdtemp(prefix="goldens-"))
+    tmp = Path(tempfile.mkdtemp(prefix="goldens-")).resolve()
     home, work = tmp / "home", tmp / "work"
     home.mkdir()
     work.mkdir()
     write_files(sc, work)
     for rel, target in (sc.get("symlinks") or {}).items():
         if "{HOOCODE_PKG}" in target:
-            raise StepError(f"{name} links into the hoocode-ts package; add it to EXCLUDED")
+            raise StepError(f"{name} links into the hoocode-ts package; the goldens do not depend on hoocode-ts")
         p = work / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.symlink_to(target)
@@ -673,8 +663,6 @@ def main() -> int:
     if shutil.which("tmux") is None:
         sys.exit("tmux is required")
     names = all_scenarios() if args.scenario == "all" else [args.scenario]
-    if args.scenario != "all" and args.scenario in EXCLUDED:
-        sys.exit(f"{args.scenario} is excluded: {EXCLUDED[args.scenario]}")
     return {"run": cmd_run, "check": cmd_check, "update": cmd_update}[args.cmd](names)
 
 

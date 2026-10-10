@@ -47,8 +47,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Nightly toolchain
         run: rustup toolchain install nightly --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: fuzz
       - name: cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
       - name: Fuzz ${{ matrix.target }}
         run: >-
           cargo +nightly fuzz run ${{ matrix.target }} --

@@ -1,6 +1,6 @@
 # Concurrency: threads, lanes and limits
 
-Status: **agreed 2026-10-08**, design only ([decisions-2026-10-08.md](decisions-2026-10-08.md)).
+Status: **agreed 2026-10-08**, design only ([decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md)).
 Build order: phases 0–1 after [reliability.md](reliability.md) and before
 [mcp.md](mcp.md); phases 2–5 after MCP.
 
@@ -303,7 +303,7 @@ server that never answers, and the paused-pty run.
 ## Open questions
 
 None. The eight questions were answered on 2026-10-08 and are recorded in
-[decisions-2026-10-08.md](decisions-2026-10-08.md).
+[decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md).
 
 ## Details
 

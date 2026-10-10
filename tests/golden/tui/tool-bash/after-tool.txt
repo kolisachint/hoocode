@@ -1,3 +1,5 @@
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>
+
 «fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents
 
 
@@ -6,22 +8,20 @@
 
 «» Running them.
 
-«» «fg=#b5bd68»● «bold»$ printf 'alpha\nbeta\ngamma\n' | sort -r
+«»  «fg=#b5bd68»● «bold»Shell«»  printf 'alpha\nbeta\ngamma\n' | sort -r
+«»    «fg=#a8a8a8»gamma
+«»    «fg=#a8a8a8»beta
+«»    «fg=#a8a8a8»alpha
 
-«» «fg=#a8a8a8»gamma
-«» «fg=#a8a8a8»beta
-«» «fg=#a8a8a8»alpha
+«»    «fg=#a8a8a8»Took <DUR>
 
-«» «fg=#a8a8a8»Took <DUR>
-
-«» «fg=#d58181»● «bold»$ echo boom; exit 3
-
-«» «fg=#a8a8a8»boom
+«»  «fg=#d58181»● «bold»Shell«»  echo boom; exit 3
+«»    «fg=#a8a8a8»boom
 
 
-«» «fg=#a8a8a8»Command exited with code 3
+«»    «fg=#a8a8a8»Command exited with code 3
 
-«» «fg=#a8a8a8»Took <DUR>
+«»    «fg=#a8a8a8»Took <DUR>
 
 «» Sorted, then failed with 3.
 
@@ -30,5 +30,5 @@
 «<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
 «fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
 «fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
-«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.1%«» «fg=#989898»128k auto@87%«»  «fg=#989898»↑«fg=#a8a8a8»200«»  «fg=#989898»↓«fg=#a8a8a8»40«»                                                    «fg=#a8a8a8»mock-model
+«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»…<WORK>
+«fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«» «fg=#989898»of 128k«»  «fg=#a8a8a8»mock-model«»   «fg=#989898»↑«fg=#a8a8a8»200«» «fg=#989898»↓«fg=#a8a8a8»40

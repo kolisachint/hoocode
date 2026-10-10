@@ -9,20 +9,20 @@
 #   - the migrate crate: the one-time merge that reads the old ~/.cortexcode and
 #     <repo>/.cortexcode folders (naming-and-paths.md §3)
 #
-# Status: not wired into CI yet (.github/workflows is staged in migration/ci/). Run it
+# Status: not wired into CI yet (.github/workflows is staged in archive/migration/ci/). Run it
 # by hand: scripts/ci/no_cortex.sh
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
 ALLOW=(
-  ':(exclude)docs/design/naming-and-paths.md'
-  ':(exclude)docs/design/decisions-2026-10-07.md'
-  ':(exclude)docs/design/decisions-2026-10-08.md'
+  ':(exclude)archive/docs/naming-and-paths.md'
+  ':(exclude)archive/docs/decisions-2026-10-07.md'
+  ':(exclude)archive/docs/decisions-2026-10-08.md'
   ':(exclude)scripts/ci/no_cortex.sh'
   ':(exclude)scripts/rename/rename_to_hoocode.py'  # the one-shot step 0c tool names the old names by design
   ':(exclude)Cargo.lock'                            # regenerated from the crate names
-  ':(exclude)migration/ci/rename-to-hoocode.patch'  # the staged CI rename: it removes the old names
+  ':(exclude)archive/migration/ci/rename-to-hoocode.patch'  # the staged CI rename: it removes the old names
   ':(exclude)CLAUDE.md'                             # names the guard's target in its rule ("don't add new cortex names")
   ':(exclude)crates/hoocode-code-migrate'           # the merge code that reads the old folders (naming-and-paths.md §3)
 )

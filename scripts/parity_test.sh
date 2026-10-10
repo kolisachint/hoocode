@@ -7,7 +7,7 @@
 #            `cargo test --workspace`)
 #   Level 2  python3 scripts/tui/goldens.py check all
 #            (rendered TUI: real hoocode in tmux against the mock LLM, diffed with
-#            tests/golden/tui/; manual/nightly workflow staged in migration/ci/tui-parity.yml)
+#            tests/golden/tui/; manual/nightly workflow staged in archive/migration/ci/tui-parity.yml)
 #
 # This script is only a quick smoke: the binary starts, answers --version/--help,
 # the Level-1 replay passes, and (when tmux is installed) the startup golden passes.

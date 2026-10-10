@@ -1,10 +1,12 @@
 {
   "_comment": "Regex rules applied to BOTH apps' captured screens before comparison. {HOME}, {WORK}, {TMP} expand to the run's escaped temp paths. Keep rules minimal: every rule hides a potential difference. Tool-name rules (hoocode-ts -> hoocode, 2026-10-08) are generated from TOOL_NAMES in harness.py; harness.py refuses to run if they drift. The stderr note rule blanks the hoocode-only --print/--mode json note (also dropped on the hoocode side by harness.py).",
   "rules": [
-    {"pattern": "^┌─+ [a-z]+-[a-z]+ ──┐$", "replace": "┌<editor-top-border: session-name badge, color derived from random session id>┐", "style": "<masked>"},
+    {"pattern": "^┌─+ [a-z]+-[a-z]+ ──┐([┃░]?)$", "replace": "┌<editor-top-border: session-name badge, color derived from random session id>┐\\1", "style": "<masked>"},
     {"pattern": "{WORK}", "replace": "<WORK>"},
     {"pattern": "{HOME}", "replace": "<HOME>"},
     {"pattern": "{TMP}", "replace": "<TMP>"},
+    {"pattern": "[/A-Za-z0-9_.-]*/goldens-[A-Za-z0-9_]+/work", "replace": "<WORK>", "why": "The footer shortens a long cwd from the left (…/var/folders/…), so the exact {WORK} rule misses it on macOS."},
+    {"pattern": "[/A-Za-z0-9_.-]*/goldens-[A-Za-z0-9_]+/home", "replace": "<HOME>"},
     {"pattern": "/tmp/parity-[A-Za-z0-9_]+", "replace": "<TMP>"},
     {"pattern": "\\bhoo│code_", "replace": "<WORDMARK>"},
     {"pattern": "\\bhoo│code *$", "replace": "<WORDMARK>", "why": "The header cursor blinks: a hidden phase shows a space at the end of the brand row. Same mask, both phases."},

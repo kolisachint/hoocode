@@ -1,7 +1,7 @@
 «fg=#6e93ff»┌──────────────────────────────────────────────────────────────────────────────────────«bold;fg=#5cc8bb» sessions «fg=#6e93ff»──┐
 «fg=#6e93ff»│«» «bold»Resume Session (Current Folder)«»              «fg=#5cc8bb»◉ Current Folder«fg=#a8a8a8» | ○ All«»  «fg=#a8a8a8»Name: «fg=#5cc8bb»All«»  «fg=#a8a8a8»Sort: «fg=#5cc8bb»Threaded«» «fg=#6e93ff»│
 «fg=#6e93ff»│«» «fg=#989898»tab«fg=#a8a8a8» scope · re:<pattern> regex · "phrase" exact«»                                                  «fg=#6e93ff»│
-«fg=#6e93ff»│«» «fg=#989898»alt+o«fg=#a8a8a8» sort · «fg=#989898»alt+n«fg=#a8a8a8» named · «fg=#989898»alt+x«fg=#a8a8a8» delete · «fg=#989898»alt+p«fg=#a8a8a8» path (off)«»                                       «fg=#6e93ff»│
+«fg=#6e93ff»│«» «fg=#989898»option+o«fg=#a8a8a8» sort · «fg=#989898»option+n«fg=#a8a8a8» named · «fg=#989898»option+x«fg=#a8a8a8» delete · «fg=#989898»option+p«fg=#a8a8a8» path (off)«»                           «fg=#6e93ff»│
 «fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
 «fg=#6e93ff»│«» «fg=#a8a8a8»❯ «inverse» «»                                                                                              «fg=#6e93ff»│
 «fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│

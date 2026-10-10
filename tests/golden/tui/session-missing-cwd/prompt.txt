@@ -1,7 +1,0 @@
-«fg=#6e93ff»┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-«fg=#6e93ff»│«» «bold;fg=#5cc8bb»cwd from session file does not exist /nonexistent/parity-project continue in current cwd         «bold;fg=#6e93ff»│
-«fg=#6e93ff»│«» «bold;fg=#5cc8bb»<WORK>«»                                                                       «fg=#6e93ff»│
-«fg=#6e93ff»│«» «bg=#2a2a36» «bg=#2a2a36;fg=#5cc8bb»› Continue«bg=#2a2a36»                                                                                     «» «fg=#6e93ff»│
-«fg=#6e93ff»│«»    Cancel                                                                                        «fg=#6e93ff»│
-«fg=#6e93ff»│«» «fg=#989898»↑↓«fg=#a8a8a8» navigate«»  «fg=#989898»enter«fg=#a8a8a8» select«»  «fg=#989898»escape/ctrl+c«fg=#a8a8a8» cancel«»                                                  «fg=#6e93ff»│
-«fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘

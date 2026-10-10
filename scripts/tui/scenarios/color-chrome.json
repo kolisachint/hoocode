@@ -188,7 +188,7 @@
       ]
     },
     {
-      "wait_for": "Unknown chrome density",
+      "wait_for": "Unknown chrome stop",
       "timeout": 20
     },
     {
@@ -198,7 +198,7 @@
     {
       "snapshot": "chrome-error",
       "contains": [
-        "Unknown chrome density"
+        "Unknown chrome stop"
       ]
     }
   ]

@@ -1,6 +1,6 @@
 # RPC approval dialogs
 
-Status: **dropped 2026-10-08** ([decisions-2026-10-08.md](decisions-2026-10-08.md)). hoobot uses the
+Status: **dropped 2026-10-08** ([decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md)). hoobot uses the
 app-server, and rpc mode now denies gated tools when nobody can answer
 ([reliability.md](reliability.md)). Kept for the record.
 

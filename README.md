@@ -114,7 +114,7 @@ crates.io, off by default). Manual runs: Actions → Release.
 The port of hoocode **v0.6.0** (commit `2223437c`) is paused, and `hoocode` is usable as a
 daily coding agent. Phases 7, 8 and 11 are complete. Phase 10 is complete apart from the
 deferred items listed below. Every remaining task is **deferred** by user decision; none is
-in progress. Status per task: `python3 migration/ledger.py status`.
+in progress. Status per task: `python3 archive/migration/ledger.py status`.
 
 What works (the pinned hoocode behavior, checked against hoocode itself):
 
@@ -149,8 +149,8 @@ default-bundle system prompt in hoocode also advertises the DocSearch self-knowl
 from 12.4, so model requests differ in that one block.
 
 The plan and its rationale are in
-[`docs/design/ts-to-rust-migration.md`](docs/design/ts-to-rust-migration.md)
-(§0 status, §9 phases), and the handoff log is in `migration/PROGRESS.md`. To resume, take a
+[`archive/docs/ts-to-rust-migration.md`](archive/docs/ts-to-rust-migration.md)
+(§0 status, §9 phases), and the handoff log is in `archive/migration/PROGRESS.md`. To resume, take a
 deferred task out of `deferred` and say "continue migration" (see `CLAUDE.md`).
 
 ## Quick start

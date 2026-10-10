@@ -181,8 +181,8 @@ Each step is its own PR, verified with Level 1 (`cargo fmt`, clippy `-D warnings
    and declared once in `main.rs` (per-file `#[path]` mods lost to `clippy::duplicate_mod`),
    test files rewritten to `crate::common::`/`crate::support::`. tui-components shares
    tui-render's support as `mod render_support` via one cross-crate `#[path]` in its main.rs.
-   `migration/ts-tests.json` needed no scripted rewrite — `ts_tests.py generate` re-derives
-   paths from the tree. `--test replay` → `--test it replay` in `migration/ledger.json` and
+   `archive/migration/ts-tests.json` needed no scripted rewrite — `ts_tests.py generate` re-derives
+   paths from the tree. `--test replay` → `--test it replay` in `archive/migration/ledger.json` and
    `scripts/parity_test.sh`. replay.rs pins insta's old `replay__<name>` snapshot names with
    `prepend_module_to_snapshot => false`. Test names gain a module prefix (`replay::foo`).
 3. **D9 + D12**: CI rework.

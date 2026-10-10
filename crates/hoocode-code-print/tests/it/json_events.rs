@@ -1,6 +1,6 @@
 //! `--mode json` wire shapes: each event must print exactly as hoocode's
 //! `JSON.stringify(event)` (docs/json.md; lines recorded from the pinned
-//! hoocode with `scripts/tui/scenarios/json-basic.json`).
+//! hoocode with the json-basic scenario, since retired from scripts/tui/scenarios).
 
 use hoocode_agent_types::{AgentEvent, AgentMessage, AgentToolResult};
 use hoocode_ai_types::{

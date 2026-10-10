@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: subagents are no longer stopped in the middle of a long tool (2026-10-10)
+- **A running tool counts as progress.** The watchdog stopped any subagent that went 150s without a turn or tool event, so a long `cargo` build killed the agent mid-tool ("Ran out of time before completing."). Now it only stops a child that has no tool running. The heartbeat check and the 2-hour deadline are unchanged.
+- **The footer no longer misses a branch switch made right after startup.** The git HEAD watcher took its baseline on a background task, so a HEAD change that landed first was never seen.
+
+### Changed: footer has two modes (2026-10-10)
+- **Alt+Z switches between full and compact.** `bare` is gone; a saved `bare` loads as compact, and `/chrome bare` gives an error.
+- **The full footer has a fixed 22-cell left column**, so mode, context bar, model and tokens line up.
+- **The compact footer is one row.**
+
+### Changed: tool calls in peek and radar (2026-10-10)
+- **Peek view:** every tool block has a 2-space left margin, and its output starts under the tool name. Read, Write and Edit sit on a light band (new optional theme token `toolBandBg`, which falls back to `toolPendingBg`).
+- **Shell reads `● Shell  <cmd>`**, like the other tools, instead of `$ <cmd>`. No blank row after the call line.
+- **Write shows a 5-line, line-numbered preview** of what it wrote.
+- **Radar trims targets to 40 columns** with `…`, and shows only the first line of a command.
+
+### Changed: less process between an idea and a release (2026-10-10)
+- **Done = fmt, clippy and the tests of the crates you touched.** CI runs the whole workspace.
+- **Screen goldens cut to 10 scenarios, run before a release.** Review bundles and the `tui-review` skill are removed.
+- **CI:** a release no longer re-runs the gates (label `release:run-gates` forces them). macOS tests and subagent evals are off PRs. No test retries. Fuzzing uses a prebuilt `cargo-fuzz` and a cache.
+- **The finished TS→Rust migration is archived** under `archive/`.
+
 ### Changed: subagents may run for 2 hours; AgentOutput can cancel (2026-10-10)
 - **One 2-hour deadline for every subagent type.** The per-type 5-20 minute table is gone. Load scaling adds at most 30 minutes.
 - **Poll and cancel with `AgentOutput`.** Poll by `task_id`; stop a run you no longer need with `AgentOutput(task_id, cancel: true)`.

@@ -17,4 +17,4 @@
 «<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
 «fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
 «fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.1%«» «fg=#989898»128k auto@87%«»                                                      «fg=#a8a8a8»mock-model
+«bold;fg=#5cc8bb»BUILD«»  «fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«»  «fg=#a8a8a8»mock-model«»  «bold»work«»  «fg=#989898»◍ peek

@@ -1,6 +1,6 @@
 //! The marked lexer port and the Markdown component against the real
 //! pinned `marked` + markdown.ts on a corpus of inputs
-//! (`fixtures/markdown-gold.json`, from `migration/tools/goldens/markdown.mjs`).
+//! (`fixtures/markdown-gold.json`, from `archive/migration/tools/goldens/markdown.mjs`).
 
 use hoocode_tui_components::markdown::lexer::lex;
 

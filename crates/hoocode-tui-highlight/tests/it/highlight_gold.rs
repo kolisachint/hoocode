@@ -1,5 +1,5 @@
 //! cli-highlight's output against the pin's own (`fixtures/highlight-gold.json`,
-//! from `migration/tools/goldens/highlight.mjs`). Cases run in the
+//! from `archive/migration/tools/goldens/highlight.mjs`). Cases run in the
 //! generator's order on one thread: grammars compile once and share modes.
 
 use serde_json::Value;
