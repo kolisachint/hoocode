@@ -18,6 +18,7 @@ use hoocode_code_task_store::{
     task_store, Task, TaskAgent, TaskAgentKind, TaskKind, TaskStatus, TaskStore,
 };
 use hoocode_code_tui_keybindings::{app_key_label, format_key_text, raw_key_hint};
+use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_code_tui_theme::{agent_color_for, theme};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{truncate_to_width, visible_width};
@@ -33,8 +34,6 @@ fn task_status_icon(status: TaskStatus) -> &'static str {
     }
 }
 
-/// U+26A0 with VS15, so terminals draw it one cell wide.
-const WARNING_GLYPH: &str = "⚠\u{fe0e}";
 /// Marker for MCP-sourced rows, which have no owning agent.
 const MCP_SOURCE_GLYPH: &str = "⧉";
 /// The thin left rail that groups the pane.

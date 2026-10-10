@@ -29,7 +29,6 @@ impl Mode {
         } else {
             self.add_to_chat(as_component(&component));
         }
-        self.transcript.bash_components.push(component.clone());
         self.bash_component = Some(component);
         self.dirty.set(true);
 

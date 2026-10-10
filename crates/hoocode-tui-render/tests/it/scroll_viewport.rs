@@ -1,7 +1,10 @@
 //! Port of the pin's `test/scroll-viewport.test.ts`: a pinned view stays put.
 
 use crate::support::*;
-use hoocode_tui_render::{Component, ComponentHandle, Tui, TuiEvent};
+use hoocode_tui_render::{
+    default_scroll_status, scrollbar_glyphs, Component, ComponentHandle, ScrollStatus, Tui,
+    TuiEvent, SCROLLBAR_THUMB, SCROLLBAR_TRACK,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -28,8 +31,17 @@ fn setup() -> (Tui, Handle, Rc<RefCell<Lines>>) {
     setup_n(100)
 }
 
+/// A screen row without the scrollbar column, trailing blanks trimmed.
+fn text_of(row: &str) -> String {
+    row.chars()
+        .take(WIDTH as usize - 1)
+        .collect::<String>()
+        .trim_end()
+        .to_string()
+}
+
 fn window(term: &Handle) -> Vec<String> {
-    term.screen()[..VIEW].to_vec()
+    term.screen()[..VIEW].iter().map(|r| text_of(r)).collect()
 }
 
 fn status_row(term: &Handle) -> String {
@@ -197,7 +209,7 @@ fn indicator_says_where_and_top_and_can_be_replaced() {
     assert!(status_row(&term).contains("<<1/100>>"));
     let screen = term.screen();
     assert_eq!(screen.len(), HEIGHT as usize);
-    assert_eq!(screen[VIEW - 1], format!("line {VIEW}"));
+    assert_eq!(text_of(&screen[VIEW - 1]), format!("line {VIEW}"));
 }
 
 #[test]
@@ -355,4 +367,289 @@ fn search_ends_with_its_pinned_view() {
     assert!(tui.scroll_search_active());
     tui.scroll_to_live();
     assert!(!tui.scroll_search_active());
+}
+
+// --- the scrollbar ------------------------------------------------------------
+
+#[test]
+fn scrollbar_is_empty_when_everything_fits() {
+    assert!(scrollbar_glyphs(10, 10, 0).is_empty());
+    assert!(scrollbar_glyphs(10, 4, 0).is_empty());
+}
+
+#[test]
+fn scrollbar_has_one_glyph_per_row_in_two_shapes() {
+    let glyphs = scrollbar_glyphs(10, 40, 12);
+    assert_eq!(glyphs.len(), 10);
+    assert!(glyphs
+        .iter()
+        .all(|g| *g == SCROLLBAR_THUMB || *g == SCROLLBAR_TRACK));
+}
+
+#[test]
+fn scrollbar_thumb_is_at_least_one_row_long() {
+    let glyphs = scrollbar_glyphs(5, 1000, 0);
+    assert_eq!(glyphs.iter().filter(|g| **g == SCROLLBAR_THUMB).count(), 1);
+}
+
+#[test]
+fn scrollbar_thumb_runs_from_the_top_to_the_bottom_of_the_track() {
+    // 10 rows over 40: a thumb of 10*10/40 = 2 rows.
+    let at = |top| -> Vec<usize> {
+        scrollbar_glyphs(10, 40, top)
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| **g == SCROLLBAR_THUMB)
+            .map(|(i, _)| i)
+            .collect()
+    };
+    assert_eq!(at(0), [0, 1]);
+    assert_eq!(at(15), [4, 5]);
+    assert_eq!(at(30), [8, 9]);
+    // Out-of-range offsets are held to the ends.
+    assert_eq!(at(-5), [0, 1]);
+    assert_eq!(at(999), [8, 9]);
+}
+
+#[test]
+fn scrollbar_thumb_moves_down_as_the_view_goes_down() {
+    let start = |top| {
+        scrollbar_glyphs(10, 40, top)
+            .iter()
+            .position(|g| *g == SCROLLBAR_THUMB)
+    };
+    let starts: Vec<_> = (0..=30).map(start).collect();
+    assert!(starts.windows(2).all(|w| w[0] <= w[1]), "{starts:?}");
+}
+
+/// Rows of `width` cells, each `#` (the transcript fills what it is given).
+struct Wide(usize);
+
+impl Component for Wide {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        (0..self.0).map(|_| "#".repeat(width as usize)).collect()
+    }
+}
+
+#[test]
+fn the_transcript_is_one_column_narrower_and_the_bar_takes_the_last() {
+    let (terminal, term) = virtual_terminal(WIDTH, HEIGHT);
+    let mut tui = Tui::new(terminal, None);
+    tui.add_child(Rc::new(RefCell::new(Wide(60))));
+    let _events = tui.start();
+    tui.scroll_by_lines(-20);
+    let screen = term.screen();
+    for row in &screen[..VIEW] {
+        let mut cells = row.chars();
+        assert_eq!(
+            cells.by_ref().take(WIDTH as usize - 1).collect::<String>(),
+            "#".repeat(WIDTH as usize - 1),
+            "{row:?}"
+        );
+        let bar = cells.next().unwrap();
+        assert!(bar == SCROLLBAR_THUMB || bar == SCROLLBAR_TRACK, "{row:?}");
+    }
+    // 60 rows over 9: a one-row thumb.
+    let thumbs = screen[..VIEW]
+        .iter()
+        .filter(|r| r.ends_with(SCROLLBAR_THUMB))
+        .count();
+    assert_eq!(thumbs, 1);
+}
+
+#[test]
+fn a_live_frame_keeps_the_full_width_and_no_bar() {
+    let (terminal, term) = virtual_terminal(WIDTH, HEIGHT);
+    let mut tui = Tui::new(terminal, None);
+    tui.add_child(Rc::new(RefCell::new(Wide(3))));
+    let _events = tui.start();
+    assert_eq!(term.screen()[0], "#".repeat(WIDTH as usize));
+}
+
+// --- the picker at the bottom -------------------------------------------------
+
+/// A focusable picker showing fixed rows.
+struct Options(Vec<String>);
+
+impl Component for Options {
+    fn render(&mut self, _width: u16) -> Vec<String> {
+        self.0.clone()
+    }
+    fn is_focusable(&self) -> bool {
+        true
+    }
+}
+
+fn options(rows: &[&str]) -> Rc<RefCell<Options>> {
+    Rc::new(RefCell::new(Options(
+        rows.iter().map(|s| s.to_string()).collect(),
+    )))
+}
+
+#[test]
+fn a_focused_picker_paints_its_rows_above_the_status_row() {
+    let (mut tui, term, _) = setup();
+    tui.set_focus(Some(options(&["Option A", "Option B"])));
+    tui.scroll_by_lines(-20);
+    // Two picker rows: the transcript keeps HEIGHT - 3 rows above them.
+    let view = HEIGHT as usize - 3;
+    let screen = term.screen();
+    assert_eq!(screen[view], "Option A");
+    assert_eq!(screen[view + 1], "Option B");
+    assert!(status_row(&term).contains("/100"), "{}", status_row(&term));
+}
+
+/// A picker whose rows are shared, so a test can change them later.
+struct Growing(Rc<RefCell<Vec<String>>>);
+
+impl Component for Growing {
+    fn render(&mut self, _width: u16) -> Vec<String> {
+        self.0.borrow().clone()
+    }
+    fn is_focusable(&self) -> bool {
+        true
+    }
+}
+
+#[test]
+fn a_tall_picker_lets_go_of_the_pin_rather_than_clipping_its_top() {
+    let (mut tui, term, _) = setup();
+    let rows: Vec<String> = (1..=50).map(|i| format!("Row {i}")).collect();
+    tui.set_focus(Some(Rc::new(RefCell::new(Options(rows)))));
+    tui.scroll_by_lines(-20);
+    // Room above the status row is HEIGHT - 1, and one of it stays transcript,
+    // so 50 rows cannot fit: the view is live and no picker row is painted.
+    assert!(!tui.scroll_pinned());
+    assert!(!term.screen().iter().any(|r| r.contains("Row ")));
+}
+
+#[test]
+fn a_picker_that_just_fits_keeps_the_pin_and_shows_every_row() {
+    let (mut tui, term, _) = setup();
+    // HEIGHT - 2 rows: one transcript row, every picker row, the status row.
+    let rows: Vec<String> = (1..=HEIGHT as usize - 2)
+        .map(|i| format!("Row {i}"))
+        .collect();
+    tui.set_focus(Some(Rc::new(RefCell::new(Options(rows)))));
+    tui.scroll_by_lines(-20);
+    assert!(tui.scroll_pinned());
+    let screen = term.screen();
+    assert_eq!(screen[1], "Row 1");
+    assert_eq!(screen[HEIGHT as usize - 2], format!("Row {}", HEIGHT - 2));
+}
+
+#[test]
+fn a_picker_that_grows_while_pinned_lets_go_on_the_next_frame() {
+    let (mut tui, _term, _) = setup();
+    let rows = Rc::new(RefCell::new(vec!["Option A".to_string()]));
+    tui.set_focus(Some(Rc::new(RefCell::new(Growing(rows.clone())))));
+    tui.scroll_by_lines(-20);
+    assert!(tui.scroll_pinned());
+    *rows.borrow_mut() = (1..=50).map(|i| format!("Row {i}")).collect();
+    tui.request_render(false);
+    assert!(!tui.scroll_pinned());
+}
+
+#[test]
+fn the_prompt_is_not_painted_again_at_the_bottom() {
+    let (mut tui, term, _) = setup();
+    let prompt = options(&["prompt"]);
+    tui.scroll_prompt = Some(prompt.clone());
+    tui.set_focus(Some(prompt));
+    tui.scroll_by_lines(-20);
+    // Top is row 71 (0-based), so the last transcript row shows "line 80".
+    assert_eq!(
+        text_of(&term.screen()[VIEW - 1]),
+        format!("line {}", 71 + VIEW)
+    );
+}
+
+#[test]
+fn a_focused_picker_is_not_offered_the_arrows_or_escape_in_the_indicator() {
+    let (mut tui, term, _) = setup();
+    tui.set_focus(Some(options(&["Option A"])));
+    tui.scroll_by_lines(-20);
+    let status = status_row(&term);
+    assert!(status.contains("PgUp/PgDn page"), "{status}");
+    assert!(!status.contains("esc"), "{status}");
+    assert!(!status.contains('\u{2191}'), "{status}");
+}
+
+#[test]
+fn the_default_indicator_offers_the_arrows_and_escape_only_at_the_prompt() {
+    let mut status = ScrollStatus {
+        top: 1,
+        bottom: 9,
+        total: 100,
+        view_height: 9,
+        at_top: true,
+        at_bottom: false,
+        width: 120,
+        search: None,
+        picker: false,
+    };
+    let prompt = default_scroll_status(&status);
+    assert!(prompt.contains("esc live"), "{prompt}");
+    status.picker = true;
+    let picker = default_scroll_status(&status);
+    assert!(picker.contains("PgUp/PgDn page"), "{picker}");
+    assert!(!picker.contains("esc"), "{picker}");
+    assert!(!picker.contains('\u{2191}'), "{picker}");
+}
+
+// --- pressing the scrollbar ---------------------------------------------------
+
+fn press(tui: &mut Tui, row: usize, column: usize) {
+    send(tui, &format!("\x1b[<0;{column};{row}M"));
+}
+
+/// The 0-based transcript row of the thumb on screen.
+fn thumb_index(term: &Handle) -> usize {
+    term.screen()[..VIEW]
+        .iter()
+        .position(|r| r.ends_with(SCROLLBAR_THUMB))
+        .unwrap()
+}
+
+#[test]
+fn a_press_above_the_thumb_in_the_bar_column_pages_up() {
+    let (mut tui, term, _) = setup();
+    tui.scroll_by_lines(-20);
+    assert!(thumb_index(&term) > 0);
+    let before = top(&tui);
+    press(&mut tui, 1, WIDTH as usize);
+    assert_eq!(before - top(&tui), VIEW as i64 - 2);
+}
+
+#[test]
+fn a_press_below_the_thumb_in_the_bar_column_pages_down() {
+    let (mut tui, term, _) = setup();
+    tui.scroll_by_lines(-20);
+    assert!(thumb_index(&term) < VIEW - 1);
+    let before = top(&tui);
+    press(&mut tui, VIEW, WIDTH as usize);
+    assert_eq!(top(&tui) - before, VIEW as i64 - 2);
+}
+
+#[test]
+fn a_press_on_the_thumb_does_nothing() {
+    let (mut tui, term, _) = setup();
+    tui.scroll_by_lines(-20);
+    let before = top(&tui);
+    let row = thumb_index(&term) + 1;
+    press(&mut tui, row, WIDTH as usize);
+    assert_eq!(top(&tui), before);
+}
+
+#[test]
+fn a_press_elsewhere_or_while_live_does_nothing() {
+    let (mut tui, _, _) = setup();
+    tui.scroll_by_lines(-20);
+    let before = top(&tui);
+    press(&mut tui, 1, 5);
+    assert_eq!(top(&tui), before);
+
+    let (mut tui, _, _) = setup();
+    press(&mut tui, 1, WIDTH as usize);
+    assert!(!tui.scroll_pinned());
 }

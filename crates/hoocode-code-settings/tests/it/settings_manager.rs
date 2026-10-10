@@ -168,6 +168,10 @@ fn tool_output_view_defaults_round_trips_and_rejects_bogus() {
 
     write(&d.global_path(), &json!({"toolOutputView": "bogus"}));
     assert_eq!(d.manager().tool_output_view(), ToolOutputView::Peek);
+
+    // The retired third stop is saved as "full" by older versions: it reads as peek.
+    write(&d.global_path(), &json!({"toolOutputView": "full"}));
+    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Peek);
 }
 
 #[test]
@@ -179,7 +183,8 @@ fn tool_output_view_reads_retired_values_and_prefers_explicit() {
     };
     assert_eq!(read_view("collapsed"), ToolOutputView::Radar);
     assert_eq!(read_view("glance"), ToolOutputView::Peek);
-    assert_eq!(read_view("standard"), ToolOutputView::Full);
+    assert_eq!(read_view("standard"), ToolOutputView::Peek);
+    assert_eq!(read_view("full"), ToolOutputView::Peek);
     assert_eq!(read_view("peek"), ToolOutputView::Peek);
 
     write(

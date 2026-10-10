@@ -3,7 +3,6 @@
 
 use std::rc::Rc;
 
-use hoocode_code_tui_keybindings::key_hint;
 use hoocode_code_tui_theme::{get_language_from_path, highlight_code, theme};
 use hoocode_tui_render::Container;
 use serde_json::{json, Value};
@@ -12,7 +11,7 @@ use super::{text, trim_trailing_empty_lines};
 use crate::render_utils::{
     arg_or, invalid_arg_text, normalize_display_text, replace_tabs, shorten_path, str_arg,
 };
-use crate::tool_execution::{ToolRenderDefinition, ToolRenderResultOptions};
+use crate::tool_execution::ToolRenderDefinition;
 use crate::tool_output_view::PEEK_LINES;
 
 /// Lines re-highlighted as one block while the content streams in.
@@ -138,11 +137,7 @@ fn update_incremental(
     Some(cache)
 }
 
-fn format_write_call(
-    args: &Value,
-    options: ToolRenderResultOptions,
-    cache: Option<&HighlightCache>,
-) -> String {
+fn format_write_call(args: &Value, cache: Option<&HighlightCache>) -> String {
     let t = theme();
     let raw_path = str_arg(arg_or(args, "file_path", "path"));
     let content = str_arg(args.get("content"));
@@ -172,7 +167,7 @@ fn format_write_call(
             };
             let lines = trim_trailing_empty_lines(rendered);
             let total = lines.len();
-            let max = if options.expanded { total } else { PEEK_LINES };
+            let max = PEEK_LINES;
             let shown: Vec<String> = lines
                 .iter()
                 .take(max)
@@ -186,13 +181,9 @@ fn format_write_call(
                 .collect();
             text.push_str(&format!("\n\n{}", shown.join("\n")));
             if total > max {
-                text.push_str(&format!(
-                    "{} {})",
-                    t.fg(
-                        "muted",
-                        &format!("\n... ({} more lines, {total} total,", total - max)
-                    ),
-                    key_hint("app.tools.expand", "to expand")
+                text.push_str(&t.fg(
+                    "muted",
+                    &format!("\n... ({} more lines, {total} total)", total - max),
                 ));
             }
         }
@@ -225,11 +216,7 @@ pub fn definition() -> ToolRenderDefinition {
                     ctx.state.remove(CACHE_KEY);
                 }
             }
-            let options = ToolRenderResultOptions {
-                expanded: ctx.expanded,
-                is_partial: ctx.is_partial,
-            };
-            Ok(text(format_write_call(args, options, cache.as_ref())))
+            Ok(text(format_write_call(args, cache.as_ref())))
         })),
         render_result: Some(Rc::new(|result, _options, ctx| {
             if ctx.is_error {
@@ -248,6 +235,5 @@ pub fn definition() -> ToolRenderDefinition {
             }
             Ok(std::rc::Rc::new(std::cell::RefCell::new(Container::new())))
         })),
-        render_shell: None,
     }
 }

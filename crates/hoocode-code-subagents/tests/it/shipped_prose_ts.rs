@@ -55,6 +55,13 @@ fn leaves_no_substitution_token_in_the_rendered_prompt() {
 /// Everything else in these files must still match the pin byte for byte: a
 /// divergence nobody wrote down here is a bug, and this list is where it has to
 /// be declared.
+///
+/// 2026-10-10: user decision, 2h subagents + cancel. Every subagent type may run
+/// for up to 2 hours, and the parent can stop a run with
+/// `AgentOutput(cancel: true)`. The background-agents template gains one line
+/// that says so, so the model knows to poll a long run and cancel one it no
+/// longer needs. That entry must come before the `TaskOutput` rename entry: the
+/// rename rewrites every `AgentOutput` in the file, this line included.
 const DECLARED_DIVERGENCES: &[(&str, &str, &str)] = &[
     ("task-main.md", "**Task** tool", "**Agent** tool"),
     ("task-main.md", "call Task with", "call Agent with"),
@@ -65,6 +72,13 @@ const DECLARED_DIVERGENCES: &[(&str, &str, &str)] = &[
         "task-main.md",
         "Model tier (optional `complexity`): `fast` for quick reads/lookups, `standard` for multi-file edits, `capable` for deep architecture. Omit to use the agent's default; an agent pinning its own model ignores it.",
         "Model (optional `model`): a category (`cheap`, `fast`, `standard`, `capable`) or a scoped model's alias or id. `cheap` or `fast` for quick reads and lookups, `standard` for multi-file edits, `capable` for deep architecture. Omit it to use the agent's default model; an explicit `model` overrides the agent's own `model:`. Optional `effort` (`off` to `xhigh`) overrides the chosen scoped model's effort. The result says which model ran.",
+    ),
+    // 2026-10-10: user decision, 2h subagents + cancel. One added bullet after
+    // the pinned last line; the pinned text is the line it extends.
+    (
+        "task-background-agents.md",
+        "only when you genuinely can't proceed.",
+        "only when you genuinely can't proceed.\n- A long run can take up to 2 hours: poll it with `AgentOutput(\"explore#1\")`, and stop one whose result you no longer need with `AgentOutput(\"explore#1\", cancel: true)`.",
     ),
     ("task-background-agents.md", "`TaskOutput", "`AgentOutput"),
     ("task-background-none.md", "`TaskOutput", "`AgentOutput"),

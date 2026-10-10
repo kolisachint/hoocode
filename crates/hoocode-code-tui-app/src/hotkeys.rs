@@ -70,7 +70,7 @@ pub fn hotkeys_markdown() -> String {
     let undo = key_display_text("tui.editor.undo");
     let redo = key_display_text("tui.editor.redo");
     let win = if cfg!(windows) {
-        " (Ctrl+Enter on Windows Terminal)"
+        " (ctrl+enter on Windows Terminal)"
     } else {
         ""
     };
@@ -113,9 +113,9 @@ onto it. Press again or add `Shift` and you are back where you were.
 
 | Key | Action |
 |-----|--------|
-| `{view_forward}` / `{view_backward}` | Step tool output: radar → peek → full |
+| `{view_forward}` / `{view_backward}` | Step tool output: radar ↔ peek |
 | `{cycle_task_view}` / `{cycle_task_view_back}` | Step the task panel: tasks → subagents |
-| `{expand_tools}` | Jump to the full view and back, without moving the dial |
+| `{expand_tools}` | Toggle tool output between radar and peek |
 | `{toggle_thinking}` | Show or hide thinking blocks |
 
 **Screen** — how much room there is to see it in
@@ -183,7 +183,7 @@ screen in front of you).
 
 `Ctrl`+letter **acts on what is drawn right now** and shares its letter with the
 `Alt` key for the same subject. `{view_forward}` sets how much tool output there
-ever is, `{expand_tools}` jumps to all of it and back; `{cycle_thinking_level}`
+ever is, `{expand_tools}` flips between the two stops; `{cycle_thinking_level}`
 sets how much thinking there ever is, `{toggle_thinking}` shows or hides what you
 have. Two subjects, two letters, four keys.
 

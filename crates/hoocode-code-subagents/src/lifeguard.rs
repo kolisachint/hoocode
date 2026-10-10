@@ -27,13 +27,16 @@
 //! down gracefully; here the host calls [`SubagentLifeguard::graceful_shutdown`]
 //! from its own signal handling, since a library must not take over signals.
 //!
-//! Deviation: [`base_timeout_ms`] keeps hoocode's arms but also covers the
-//! agents we actually ship. `TIMEOUTS_MS` is keyed `explore`/`edit`/`test`/
-//! `review`/`doc`, and neither tree ships `edit`, `test`, `review` or `doc` —
-//! so every subagent fell through to the 5-minute default, including
-//! `code-review`. Four of ten recorded runs (`hoobot/.hoocode/dispatch`)
-//! died `timeout` at exactly 300s, three of them `code-review` holding 220-297s
-//! of finished work. See [`base_timeout_ms`] for the values and why.
+//! **Hard deadline: one value for every agent type (2026-10-10, user decision).**
+//! [`base_timeout_ms`] returns [`SUBAGENT_DEADLINE_MS`] (2 hours) for every
+//! type. This replaces the per-type 5-20 minute table. That table was itself
+//! the fix for the recorded runs (`hoobot/.hoocode/dispatch`): `TIMEOUTS_MS`
+//! was keyed on names we never shipped, so every agent got the 5-minute
+//! default, and four of ten runs died `timeout` at exactly 300s, three of them
+//! `code-review` holding 220-297s of finished work. Long runs are now the
+//! parent's to manage: it polls with `AgentOutput` and can stop one with
+//! `AgentOutput(cancel: true)`. Hung children are still reaped early by the
+//! stall checks above, so the long deadline costs only real work.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -44,30 +47,30 @@ use tokio::task::JoinHandle;
 
 use crate::agent_log::agent_log;
 
-/// Default hard timeout: `explore`'s, for any agent type not listed.
-const DEFAULT_TIMEOUT_MS: u64 = 5 * 60 * 1000;
-
-/// Base hard timeout per agent type (`explore`'s for any other type).
+/// Hard deadline for every subagent, whatever its type.
 ///
-/// hoocode's `edit`/`test`/`review`/`doc` arms are kept — they are dead in both
-/// trees, but an agent from a plugin can still be named one of those. The
-/// shipped agents get their own, from the recorded runs: a `code-review` that
-/// diffs a large tree needs more than the 5-minute default it was getting, and
-/// `general-purpose` reads, writes and runs tests, so it needs the most.
+/// Decision of 2026-10-10 (user): every type may run for up to 2 hours. The
+/// parent polls with `AgentOutput` and stops a run it no longer needs with
+/// `AgentOutput(cancel: true)`.
+pub const SUBAGENT_DEADLINE_MS: u64 = 2 * 60 * 60 * 1000;
+
+/// Most the load multiplier may add to a deadline: 30 minutes.
+const LOAD_HEADROOM_MS: u64 = 30 * 60 * 1000;
+
+/// The longest any run's budget can get under load: the base plus
+/// [`LOAD_HEADROOM_MS`], so 2h30m. `AgentOutput` derives its reconcile age
+/// from this.
+pub const MAX_SCALED_DEADLINE_MS: u64 = SUBAGENT_DEADLINE_MS + LOAD_HEADROOM_MS;
+
+/// Base hard deadline for an agent type: [`SUBAGENT_DEADLINE_MS`] for all of
+/// them (2026-10-10). The argument is kept so callers and plugin agents need no
+/// change.
 ///
 /// Wall-clock, before the load multiplier ([`SubagentLifeguard::set_external_load`]
-/// and the pool's own concurrency both widen it).
-pub fn base_timeout_ms(agent_type: &str) -> u64 {
-    match agent_type {
-        "edit" | "test" => 10 * 60 * 1000,
-        "review" => 8 * 60 * 1000,
-        // Diff-reading and file-scanning agents: the recorded code-review runs
-        // were still producing turns at 297s.
-        "code-review" | "security-review" => 15 * 60 * 1000,
-        "general-purpose" => 20 * 60 * 1000,
-        "explore" | "plan" => 10 * 60 * 1000,
-        _ => DEFAULT_TIMEOUT_MS,
-    }
+/// and the pool's own concurrency both widen it). Under load the budget never
+/// passes [`MAX_SCALED_DEADLINE_MS`]; see [`load_ceiling_ms`].
+pub fn base_timeout_ms(_agent_type: &str) -> u64 {
+    SUBAGENT_DEADLINE_MS
 }
 
 const HEARTBEAT_MISS_THRESHOLD_MS: u64 = 60_000;
@@ -85,6 +88,13 @@ const PARENT_SHUTDOWN_GRACE_MS: u64 = 5_000;
 const LOAD_TOLERANCE_PER_PROCESS: f64 = 0.5;
 /// Ceiling on the load multiplier: a stuck child is still reaped eventually.
 const MAX_LOAD_MULTIPLIER: f64 = 4.0;
+
+/// The most a run's hard deadline may reach under load: 4x the base, capped at
+/// the base plus [`LOAD_HEADROOM_MS`]. Uncapped, 4x a 2-hour base is 8 hours,
+/// which is why the multiplier is capped here and not on the stall budgets.
+fn load_ceiling_ms(base: u64) -> u64 {
+    ((base as f64 * MAX_LOAD_MULTIPLIER) as u64).min(base + LOAD_HEADROOM_MS)
+}
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -266,7 +276,8 @@ impl SubagentLifeguard {
         let base = base_timeout_ms(agent_type);
         state.started_at.insert(task_id.to_string(), now);
         state.base_timeout_ms.insert(task_id.to_string(), base);
-        let delay = (base as f64 * state.load_multiplier()).round() as u64;
+        let delay =
+            ((base as f64 * state.load_multiplier()).round() as u64).min(load_ceiling_ms(base));
         let handle = self.arm_timeout(task_id, delay);
         if let Some(old) = state.timeouts.insert(task_id.to_string(), handle) {
             old.abort();
@@ -510,7 +521,7 @@ impl SubagentLifeguard {
             if state.reaping.contains(task_id) {
                 return;
             }
-            // Under load, re-arm rather than kill, up to base * MAX_LOAD_MULTIPLIER.
+            // Under load, re-arm rather than kill, up to load_ceiling_ms(base).
             let now = now_ms();
             let started = state.started_at.get(task_id).copied().unwrap_or(now);
             let base = state
@@ -519,7 +530,7 @@ impl SubagentLifeguard {
                 .copied()
                 .unwrap_or_else(|| base_timeout_ms(&monitored.agent_type));
             let elapsed = now.saturating_sub(started);
-            let ceiling = (base as f64 * MAX_LOAD_MULTIPLIER) as u64;
+            let ceiling = load_ceiling_ms(base);
             let mult = state.load_multiplier();
             if mult > 1.0 && elapsed < ceiling {
                 let remaining = ceiling - elapsed;

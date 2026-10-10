@@ -10,11 +10,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use hoocode_code_tui_app::scroll_view::{install_scroll_view, jump_to_user_message, TurnDirection};
-use hoocode_code_tui_keybindings::AppKeybindingsManager;
+use hoocode_code_tui_app::scroll_view::{
+    format_scroll_status, install_scroll_view, jump_to_user_message, TurnDirection,
+};
+use hoocode_code_tui_keybindings::{key_text, AppKeybindingsManager};
 use hoocode_code_tui_theme::{get_editor_theme, init_theme};
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions};
-use hoocode_tui_render::{Component, ComponentHandle, Container, Tui, TuiEvent};
+use hoocode_tui_render::{Component, ComponentHandle, Container, ScrollStatus, Tui, TuiEvent};
 use hoocode_tui_terminal::Terminal;
 
 const WIDTH: u16 = 60;
@@ -181,16 +183,132 @@ fn does_nothing_on_page_down_having_nowhere_below_to_go() {
     assert!(!h.ui.scroll_pinned());
 }
 
+// --- with a picker focused -----------------------------------------------------
+
+/// A focusable picker that keeps every key it is sent.
+struct Picker(Rc<RefCell<Vec<String>>>);
+
+impl Component for Picker {
+    fn render(&mut self, _width: u16) -> Vec<String> {
+        vec!["pick one".into()]
+    }
+    fn is_focusable(&self) -> bool {
+        true
+    }
+    fn handle_input(&mut self, data: &str) {
+        self.0.borrow_mut().push(data.to_string());
+    }
+}
+
+/// Focus moves to a picker; the returned log holds the keys it is sent.
+fn with_picker(h: &mut Harness) -> Rc<RefCell<Vec<String>>> {
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let picker: ComponentHandle = Rc::new(RefCell::new(Picker(seen.clone())));
+    h.ui.set_focus(Some(picker));
+    seen
+}
+
+const CTRL_HOME: &str = "\x1b[7^";
+const CTRL_END: &str = "\x1b[8^";
+
 #[test]
-fn will_not_pin_while_another_surface_holds_focus() {
+fn a_picker_lets_the_wheel_pin_the_view() {
     let mut h = setup();
-    let other = block("picker", 1, false);
-    h.ui.set_focus(Some(other));
+    let seen = with_picker(&mut h);
     h.send(WHEEL_UP);
-    assert!(!h.ui.scroll_pinned());
-    // Nor on the prompt's page key: it belongs to the prompt.
+    assert!(h.ui.scroll_pinned());
+    assert!(seen.borrow().is_empty());
+}
+
+#[test]
+fn a_picker_lets_page_up_pin_the_view() {
+    let mut h = setup();
+    let seen = with_picker(&mut h);
     h.send(PAGE_UP);
+    assert!(h.ui.scroll_pinned());
+    assert!(seen.borrow().is_empty());
+}
+
+#[test]
+fn a_picker_gets_ctrl_home_and_ctrl_end_as_transcript_keys() {
+    let mut h = setup();
+    let seen = with_picker(&mut h);
+    h.send(CTRL_HOME);
+    assert!(h.ui.scroll_pinned());
+    assert_eq!(h.top(), 0);
+    h.send(CTRL_END);
     assert!(!h.ui.scroll_pinned());
+    assert!(seen.borrow().is_empty());
+}
+
+#[test]
+fn a_picker_gets_the_arrows_enter_and_escape_and_the_pin_stays() {
+    let mut h = pinned();
+    let seen = with_picker(&mut h);
+    let before = h.top();
+    h.send(UP);
+    h.send(DOWN);
+    h.send(ENTER);
+    h.send(ESCAPE);
+    assert!(h.ui.scroll_pinned());
+    assert_eq!(h.top(), before);
+    assert_eq!(*seen.borrow(), [UP, DOWN, ENTER, ESCAPE]);
+}
+
+#[test]
+fn a_picker_gets_slash_and_typed_text_and_no_search_opens() {
+    let mut h = pinned();
+    let seen = with_picker(&mut h);
+    h.send(SLASH);
+    h.send("x");
+    assert!(h.ui.scroll_pinned());
+    assert!(!h.ui.scroll_search_active());
+    assert_eq!(*seen.borrow(), [SLASH, "x"]);
+    assert_eq!(h.text(), "");
+}
+
+#[test]
+fn page_keys_under_a_picker_scroll_the_transcript_not_the_picker() {
+    let mut h = pinned();
+    let seen = with_picker(&mut h);
+    let before = h.top();
+    h.send(PAGE_UP);
+    let (_, _, view) = h.ui.get_scroll_position().unwrap();
+    assert_eq!(before - h.top(), view - 2);
+    assert!(seen.borrow().is_empty());
+}
+
+#[test]
+fn paging_down_past_the_bottom_returns_to_live_under_a_picker() {
+    let mut h = pinned();
+    let seen = with_picker(&mut h);
+    for _ in 0..20 {
+        h.send(PAGE_DOWN);
+    }
+    assert!(!h.ui.scroll_pinned());
+    assert!(seen.borrow().is_empty());
+}
+
+#[test]
+fn page_down_while_live_under_a_picker_is_taken_by_the_transcript() {
+    let mut h = setup();
+    let seen = with_picker(&mut h);
+    h.send(PAGE_DOWN);
+    assert!(!h.ui.scroll_pinned());
+    assert!(seen.borrow().is_empty());
+}
+
+#[test]
+fn a_picker_opening_during_a_pin_keeps_the_pin_and_gets_enter() {
+    let mut h = pinned();
+    let before = h.top();
+    // A question or picker takes focus while the reader is up in the history.
+    let seen = with_picker(&mut h);
+    assert!(h.ui.scroll_pinned());
+    assert_eq!(h.top(), before);
+    h.send(ENTER);
+    assert_eq!(*seen.borrow(), [ENTER]);
+    assert!(h.ui.scroll_pinned());
 }
 
 // --- once pinned ------------------------------------------------------------
@@ -453,4 +571,52 @@ fn leaves_slash_alone_at_the_prompt_where_it_starts_a_slash_command() {
     h.send(SLASH);
     assert!(!h.ui.scroll_search_active());
     assert_eq!(h.text(), "/");
+}
+
+// --- the indicator's hints ----------------------------------------------------
+
+fn indicator(picker: bool) -> String {
+    init_theme(Some("dark"), false);
+    AppKeybindingsManager::default().install();
+    format_scroll_status(&ScrollStatus {
+        top: 10,
+        bottom: 20,
+        total: 120,
+        view_height: 11,
+        at_top: false,
+        at_bottom: false,
+        width: 120,
+        search: None,
+        picker,
+    })
+}
+
+#[test]
+fn the_indicator_at_the_prompt_offers_the_arrows_and_escape() {
+    let text = indicator(false);
+    let up = key_text("app.scroll.lineUp");
+    let down = key_text("app.scroll.lineDown");
+    let top = key_text("app.scroll.top");
+    let exit = key_text("app.scroll.exit");
+    assert!(text.contains("PgUp/PgDn page"), "{text}");
+    assert!(text.contains(&format!("{up}/{down} line")), "{text}");
+    assert!(text.contains(&format!("{top} top")), "{text}");
+    assert!(text.contains(&format!("{exit} live")), "{text}");
+}
+
+#[test]
+fn the_indicator_with_a_picker_focused_offers_only_paging() {
+    let text = indicator(true);
+    assert!(text.contains("PgUp/PgDn page"), "{text}");
+    for id in [
+        "app.scroll.lineUp",
+        "app.scroll.lineDown",
+        "app.scroll.exit",
+    ] {
+        assert!(!text.contains(&key_text(id)), "{text}");
+    }
+    assert!(
+        !text.contains('\u{2191}') && !text.contains('\u{2193}'),
+        "{text}"
+    );
 }

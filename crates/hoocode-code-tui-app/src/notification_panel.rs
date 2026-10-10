@@ -13,6 +13,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use hoocode_code_tui_theme::theme;
+use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{apply_background_to_line, truncate_to_width, visible_width};
 
@@ -41,7 +42,7 @@ impl NotificationKind {
     fn glyph(self) -> &'static str {
         match self {
             NotificationKind::Info => "◦",
-            NotificationKind::Warning => "●",
+            NotificationKind::Warning => WARNING_GLYPH,
         }
     }
 }

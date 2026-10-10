@@ -146,9 +146,9 @@ impl Mode {
         let label = match reason {
             CompactionReason::Manual => format!("Compacting context... {cancel_hint}"),
             CompactionReason::Overflow => {
-                format!("Context overflow detected, Auto-compacting... {cancel_hint}")
+                format!("Context overflow detected, Auto-compacting… {cancel_hint}")
             }
-            CompactionReason::Threshold => format!("Auto-compacting... {cancel_hint}"),
+            CompactionReason::Threshold => format!("Auto-compacting… {cancel_hint}"),
         };
         let mut loader = Loader::new(
             Box::new(|s: &str| theme().fg("accent", s)),
@@ -180,7 +180,7 @@ impl Mode {
         let manual = reason == CompactionReason::Manual;
         if aborted {
             if manual {
-                self.show_error("Compaction cancelled");
+                self.show_status("Compaction cancelled");
             } else {
                 self.show_status("Auto-compaction cancelled");
             }

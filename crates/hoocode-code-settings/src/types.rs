@@ -89,17 +89,17 @@ impl From<hoocode_ai_types::ThinkingLevel> for ThinkingLevelSetting {
 }
 
 str_enum!(
-    /// `toolOutputView` (tool-output-view.ts).
-    ToolOutputView { Radar => "radar", Peek => "peek", Full => "full" }
+    /// `toolOutputView` (tool-output-view.ts). Two stops: the `full` stop is retired.
+    ToolOutputView { Radar => "radar", Peek => "peek" }
 );
 
 impl ToolOutputView {
-    /// The retired `toolOutputDisplay` values.
+    /// `LEGACY_TOOL_OUTPUT_VIEWS`: values older versions wrote. The retired
+    /// `standard` and `full` stops read as peek, the stop they now sit beside.
     pub fn from_legacy(value: &str) -> Option<Self> {
         match value {
             "collapsed" => Some(Self::Radar),
-            "glance" => Some(Self::Peek),
-            "standard" => Some(Self::Full),
+            "glance" | "standard" | "full" => Some(Self::Peek),
             _ => None,
         }
     }

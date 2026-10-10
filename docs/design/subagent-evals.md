@@ -90,13 +90,14 @@ v0.1.7 plus the ledger. **11 as declared, 1 known issue, 12 attempts recorded,
 
 ## 5. What the baseline found
 
-**A hang costs ten minutes, not one.** `parent_stall_reaped` expects the stall
+**A hang costs the whole deadline, not one stall window.** `parent_stall_reaped` expects the stall
 watchdog to reap a child that never answers. It does not: at 30s, 70s and 95s
 the child was still running and the ledger was still empty. The child writes its
 heartbeat on a timer, and the pool treats *any* stdout byte as liveness, so a
 child blocked inside a provider call looks busy forever. Only the hard
-per-agent deadline ends it — ten minutes for `explore`, twenty for
-`general-purpose`. This is the same class of failure as the October incident
+deadline ends it — ten minutes for `explore` and twenty for
+`general-purpose` at the time. Since 2026-10-10 every type has a 2-hour deadline, so the stall
+checks (H1 in `subagents.md` §5b) are what reap a hang early. This is the same class of failure as the October incident
 (deadline table keyed on agents nobody ships), wearing a different hat: a
 liveness signal that a hung process can keep sending. Owner: open.
 

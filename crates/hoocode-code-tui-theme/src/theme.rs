@@ -255,11 +255,6 @@ impl Theme {
         chalk::bold(text)
     }
 
-    /// Terminal-native blink (SGR 5).
-    pub fn blink(&self, text: &str) -> String {
-        format!("\x1b[5m{text}\x1b[25m")
-    }
-
     pub fn italic(&self, text: &str) -> String {
         chalk::italic(text)
     }

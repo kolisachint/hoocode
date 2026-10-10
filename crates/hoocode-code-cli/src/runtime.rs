@@ -1846,7 +1846,7 @@ mod tests {
         assert!(result.is_ok());
         let drawn = hoocode_tui_util::strip_vt_control_characters(&output.lock().unwrap());
         assert!(drawn.contains("❯"), "{drawn}");
-        assert!(drawn.contains("⬢ BUILD"), "{drawn}");
+        assert!(drawn.contains("BUILD · ◍ peek"), "{drawn}");
         assert!(drawn.contains("coding agent · v0.0.1"), "{drawn}");
         assert!(drawn.contains("hi"), "{drawn}");
         assert_eq!(*title.lock().unwrap(), "HooCode - w");
@@ -2222,15 +2222,13 @@ mod tests {
         }
 
         #[test]
-        fn peek_and_full_draw_each_trace_above_the_call_it_led_to() {
-            for view in ["peek", "full"] {
-                let lines = draw(two_turns(), json!({"toolOutputView": view}));
-                // The second trace is above its own call, not below it, and
-                // below the first call: the run is split at the trace.
-                assert!(at(&lines, "TRACE_ONE") < at(&lines, "QUERY_ONE"), "{view}");
-                assert!(at(&lines, "QUERY_ONE") < at(&lines, "TRACE_TWO"), "{view}");
-                assert!(at(&lines, "TRACE_TWO") < at(&lines, "QUERY_TWO"), "{view}");
-            }
+        fn peek_draws_each_trace_above_the_call_it_led_to() {
+            let lines = draw(two_turns(), json!({"toolOutputView": "peek"}));
+            // The second trace is above its own call, not below it, and
+            // below the first call: the run is split at the trace.
+            assert!(at(&lines, "TRACE_ONE") < at(&lines, "QUERY_ONE"));
+            assert!(at(&lines, "QUERY_ONE") < at(&lines, "TRACE_TWO"));
+            assert!(at(&lines, "TRACE_TWO") < at(&lines, "QUERY_TWO"));
         }
 
         #[test]
@@ -2277,13 +2275,15 @@ mod tests {
                 ],
                 json!({"toolOutputView": "radar"}),
             );
-            // Two chains of one call each, the spoken text between them.
+            // Two chains of one call each, the spoken text between them. A
+            // lone call in radar is a group-of-one row (`1 call · …`), so the
+            // rows are found by that stat, not by the tool's name.
             assert_eq!(line_of(&lines, "×2"), None, "{}", lines.join("\n"));
             let spoken_at = at(&lines, "SPOKEN");
             let calls: Vec<usize> = lines
                 .iter()
                 .enumerate()
-                .filter(|(_, l)| l.contains("● CodeSearch"))
+                .filter(|(_, l)| l.contains("● ") && l.contains("1 call"))
                 .map(|(i, _)| i)
                 .collect();
             assert!(calls.len() >= 2, "{}", lines.join("\n"));
@@ -2291,9 +2291,8 @@ mod tests {
         }
     }
 
-    /// The `jumpToFullView` / `setToolsExpanded` cases of the pin's
-    /// `test/interactive-mode-status.test.ts`, on the real interactive mode:
-    /// ctrl+o (`app.tools.expand`) and the footer's view stop.
+    /// The Ctrl+O (`app.tools.expand`) toggle and the footer's view stop, on
+    /// the real interactive mode. Ctrl+O flips radar and peek.
     mod interactive_mode_status {
         use super::*;
         use serde_json::json;
@@ -2363,37 +2362,45 @@ mod tests {
         const CTRL_O: &str = "\x0f";
 
         #[test]
-        fn lands_on_full_from_any_stop_and_goes_back_to_the_one_it_came_from() {
-            for (start, marker) in [("radar", "◌ radar"), ("peek", "◍ peek")] {
-                let (drawn, _) = run(json!({ "toolOutputView": start }), &[CTRL_O, CTRL_O]);
-                assert!(
-                    in_order(&drawn, &[marker, "◉ full", marker]),
-                    "{start}:\n{drawn}"
-                );
-            }
+        fn ctrl_o_toggles_between_radar_and_peek() {
+            let (drawn, _) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O, CTRL_O]);
+            assert!(
+                in_order(&drawn, &["◌ radar", "◍ peek", "◌ radar"]),
+                "{drawn}"
+            );
+            let (drawn, _) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O, CTRL_O]);
+            assert!(
+                in_order(&drawn, &["◍ peek", "◌ radar", "◍ peek"]),
+                "{drawn}"
+            );
         }
 
         #[test]
-        fn is_never_a_dead_keystroke_when_the_dial_is_already_at_full() {
-            // Nothing to return to: the default stop.
+        fn a_stored_full_setting_loads_as_peek_and_toggles_to_radar() {
+            let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[]);
+            assert!(drawn.contains("◍ peek"), "{drawn}");
+            assert!(!drawn.contains("◌ radar"), "{drawn}");
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
-            assert!(in_order(&drawn, &["◉ full", "◍ peek"]), "{drawn}");
+            assert!(in_order(&drawn, &["◍ peek", "◌ radar"]), "{drawn}");
         }
 
         #[test]
-        fn does_not_save_where_it_lands() {
+        fn the_toggled_choice_is_saved() {
             let (_, session) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O]);
+            assert_eq!(session.settings().tool_output_view().as_str(), "peek");
+            let (_, session) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O]);
             assert_eq!(session.settings().tool_output_view().as_str(), "radar");
         }
 
         #[test]
-        fn the_jump_to_full_expands_the_header_too() {
-            // `setToolsExpanded`: what folds but is not a tool call opens with
-            // the dial's top stop.
-            let (drawn, _) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O]);
-            let collapsed_end = drawn.find("◍ peek").unwrap();
-            assert!(!drawn[..collapsed_end].contains("Compose — the message in your hands"));
-            assert!(drawn[collapsed_end..].contains("Compose — the message in your hands"));
+        fn the_toggle_leaves_the_startup_header_compact() {
+            // The header opens under `verbose`, not with the dial.
+            let (drawn, _) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O]);
+            assert!(in_order(&drawn, &["◍ peek"]), "{drawn}");
+            assert!(
+                !drawn.contains("Compose — the message in your hands"),
+                "{drawn}"
+            );
         }
     }
 }

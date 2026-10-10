@@ -495,18 +495,20 @@ async fn passes_a_default_max_turns_cap_and_a_persisted_session() {
     p.dispose();
 }
 
-/// The child is told the same per-agent deadline the lifeguard enforces, so it
-/// can ask to wrap up and write a result before the parent kills it.
+/// The child is told the same deadline the lifeguard enforces, so it can ask to
+/// wrap up and write a result before the parent kills it. 2026-10-10: every
+/// agent type gets the 2-hour deadline.
 ///
 /// Without this the parent SIGKILLs at the deadline and `result.json` — only
 /// written after `prompt()` returns — never appears, so every finished turn is
 /// lost. Four of the ten recorded runs died that way holding 4-11 turns each.
 #[tokio::test]
-async fn passes_the_per_agent_deadline_so_the_child_can_wrap_up() {
+async fn passes_the_deadline_so_the_child_can_wrap_up() {
+    let two_hours_ms = 2 * 60 * 60 * 1000;
     for (agent, expected_ms) in [
-        ("code-review", 15 * 60 * 1000),
-        ("general-purpose", 20 * 60 * 1000),
-        ("explore", 10 * 60 * 1000),
+        ("code-review", two_hours_ms),
+        ("general-purpose", two_hours_ms),
+        ("explore", two_hours_ms),
     ] {
         let dir = setup();
         let p = pool(argv_recorder(dir.path()), 1, dir.path());

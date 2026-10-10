@@ -46,7 +46,8 @@ pub fn jump_to_user_message(
     direction: TurnDirection,
     is_user_message: &dyn Fn(&ComponentHandle) -> bool,
 ) -> bool {
-    let width = ui.terminal.columns();
+    // The offsets are kept at the width the transcript was last laid out at.
+    let width = ui.transcript_width();
     let (Some(root_offsets), Some(chat_offsets)) = (
         ui.child_row_offsets(width),
         chat.borrow().child_row_offsets(width),
@@ -143,21 +144,23 @@ pub fn format_scroll_status(status: &ScrollStatus) -> String {
         format!("{percent}%")
     };
     let left = format!("{position}  {place}");
-    let keys = [
-        format!(
-            "{}/{} line",
-            key_text("app.scroll.lineUp"),
-            key_text("app.scroll.lineDown")
-        ),
-        format!(
-            "{}/{} page",
-            key_text("app.scroll.pageUp"),
-            key_text("app.scroll.pageDown")
-        ),
-        format!("{} top", key_text("app.scroll.top")),
-        format!("{} live", key_text("app.scroll.exit")),
-    ]
-    .join(" · ");
+    // With a picker focused the arrows and escape are its keys: only paging
+    // is the transcript's to advertise.
+    let keys = if status.picker {
+        "PgUp/PgDn page".to_string()
+    } else {
+        [
+            format!(
+                "{}/{} line",
+                key_text("app.scroll.lineUp"),
+                key_text("app.scroll.lineDown")
+            ),
+            "PgUp/PgDn page".to_string(),
+            format!("{} top", key_text("app.scroll.top")),
+            format!("{} live", key_text("app.scroll.exit")),
+        ]
+        .join(" · ")
+    };
     // The keys only when they fit whole: a truncated chord reads as another.
     let gap = status.width - visible_width(&left) as i64 - visible_width(&keys) as i64 - 3;
     let body = if gap >= 0 {
@@ -194,9 +197,36 @@ impl ScrollView {
         jump_to_user_message(ui, &self.chat, direction, &*self.is_user_message);
     }
 
+    /// A picker has focus: it keeps every key it answers, and only the paging
+    /// keys move the transcript. Never un-pins, so an open question stays
+    /// readable while the reader is up in the history.
+    fn handle_picker(&mut self, ui: &mut Tui, data: &str) -> bool {
+        if is_key_release(data) {
+            return false;
+        }
+        if matches(data, "app.scroll.pageUp") {
+            ui.scroll_by_pages(-1);
+        } else if matches(data, "app.scroll.pageDown") {
+            ui.scroll_by_pages(1);
+        } else if matches(data, "app.scroll.top") {
+            ui.scroll_to_top();
+        } else if matches(data, "app.scroll.bottom") {
+            ui.scroll_to_live();
+        } else {
+            return false;
+        }
+        // The query line belongs to the prompt; it goes with the focus.
+        self.typing = None;
+        ui.clear_scroll_search();
+        true
+    }
+
     /// The prompt's scroll keys (hoocode's editor actions), while live.
     fn handle_live(&mut self, ui: &mut Tui, data: &str) -> bool {
-        if is_typed_text(data) || !self.editor_focused(ui) {
+        if !self.editor_focused(ui) {
+            return self.handle_picker(ui, data);
+        }
+        if is_typed_text(data) {
             return false;
         }
         if matches(data, "app.scroll.pageUp") {
@@ -231,6 +261,9 @@ impl ScrollView {
             // reaching the bottom): a stale query must not swallow keys.
             self.typing = None;
             return self.handle_live(ui, data);
+        }
+        if !self.editor_focused(ui) {
+            return self.handle_picker(ui, data);
         }
         // A key coming back up is not a decision to stop reading.
         if is_key_release(data) {
@@ -318,9 +351,9 @@ impl ScrollView {
     }
 }
 
-/// `installScrollView`: the indicator, the focus gate on pinning, and the
-/// keys. `editor` is the prompt; pinning is allowed only while it has focus
-/// (a picker keeps its own arrow keys).
+/// `installScrollView`: the indicator, the picker's share of the pinned
+/// view, and the keys. `editor` is the prompt. Pinning works from any focus;
+/// with a picker focused, the picker keeps its own keys (see `handle_picker`).
 pub fn install_scroll_view(
     ui: &mut Tui,
     editor: ComponentHandle,
@@ -328,10 +361,7 @@ pub fn install_scroll_view(
     is_user_message: IsUserMessage,
 ) {
     ui.set_scroll_status_formatter(Box::new(format_scroll_status));
-    let gate = editor.clone();
-    ui.can_pin_scroll = Some(Box::new(move |ui: &Tui| {
-        ui.focused().is_some_and(|f| Rc::ptr_eq(&f, &gate))
-    }));
+    ui.scroll_prompt = Some(editor.clone());
     let mut view = ScrollView {
         editor,
         chat,

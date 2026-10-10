@@ -225,14 +225,6 @@ fn shell_output_peek_80() {
     assert_golden!("shell_output_peek_80", render_golden(&mut block, 80));
 }
 
-#[test]
-fn shell_output_expanded_80() {
-    let _g = lock();
-    let mut block = tool("Shell", shell_args(), ToolOutputView::Full);
-    block.update_result(result(&output_lines(12), false, json!({})), false);
-    assert_golden!("shell_output_expanded_80", render_golden(&mut block, 80));
-}
-
 // ---- Agent tool block ----
 
 fn agent_args() -> Value {
@@ -297,7 +289,7 @@ fn agent_output_done_80() {
     let mut block = tool(
         "AgentOutput",
         json!({ "task_id": "explore#1" }),
-        ToolOutputView::Full,
+        ToolOutputView::Peek,
     );
     block.update_result(
         agent_output("Footer is in footer.rs, 340 lines.", "done"),
@@ -312,7 +304,7 @@ fn agent_output_running_80() {
     let mut block = tool(
         "AgentOutput",
         json!({ "task_id": "explore#1" }),
-        ToolOutputView::Full,
+        ToolOutputView::Peek,
     );
     block.update_result(agent_output("Still reading files.", "running"), true);
     assert_golden!("agent_output_running_80", render_golden(&mut block, 80));
@@ -324,7 +316,7 @@ fn agent_output_failed_80() {
     let mut block = tool(
         "AgentOutput",
         json!({ "task_id": "explore#1" }),
-        ToolOutputView::Full,
+        ToolOutputView::Peek,
     );
     block.update_result(
         agent_output("Stopped: tool limit reached.", "failed"),

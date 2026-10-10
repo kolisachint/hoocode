@@ -10,22 +10,25 @@ use hoocode_ai_types::{AssistantMessage, Content, StopReason};
 use hoocode_ai_util::is_long_retry_delay_error;
 use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_agent_session::stats::sum_assistant_usage;
+use hoocode_code_resources::skill_blocks::parse_skill_block;
 use hoocode_code_settings::ToolOutputView;
 use hoocode_code_tool_api::{truncate_tail, TruncationOptions, TruncationResult};
 use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_theme::{apply_block_fill, BlockFill};
 use hoocode_code_tui_theme::{get_markdown_theme, theme};
+use hoocode_code_tui_widgets::background_notice::{
+    parse_background_notice, BackgroundNoticeComponent,
+};
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
 use hoocode_code_tui_widgets::custom_message::{
     BranchSummaryMessageComponent, CompactionSummaryMessageComponent, CustomMessageComponent,
 };
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
+use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::{
-    cycle_tool_output_view, DEFAULT_TOOL_OUTPUT_VIEW, MAX_TOOL_OUTPUT_VIEW,
-};
+use hoocode_code_tui_widgets::tool_output_view::cycle_tool_output_view;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
@@ -33,7 +36,6 @@ use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
 
-use crate::expandable_text::Expandable;
 use crate::notification_panel::NotificationKind;
 use crate::resource_display::show_loaded_resources;
 
@@ -56,8 +58,12 @@ pub(super) struct Transcript {
     pub(super) latest_chain: Option<Rc<RefCell<ToolChainComponent>>>,
     /// The last status line, updated in place when nothing followed it.
     pub(super) last_status: RecordRows,
-    /// Every `!` row in the transcript, for the expand sweep.
-    pub(super) bash_components: Vec<Rc<RefCell<BashExecutionComponent>>>,
+    /// Every custom message in the transcript, for the dial sweep.
+    pub(super) custom_messages: Vec<Rc<RefCell<CustomMessageComponent>>>,
+    /// Every `<skill>` block in the transcript, for the dial sweep.
+    pub(super) skill_blocks: Vec<Rc<RefCell<SkillBlockComponent>>>,
+    /// Every background-subagent notice in the transcript, for the dial sweep.
+    pub(super) background_notices: Vec<Rc<RefCell<BackgroundNoticeComponent>>>,
     /// Every branch summary in the transcript, for the expand sweep.
     pub(super) branch_summaries: Vec<Rc<RefCell<BranchSummaryMessageComponent>>>,
     /// Every compaction summary in the transcript, for the expand sweep.
@@ -78,7 +84,9 @@ impl Transcript {
             latest_block: None,
             latest_chain: None,
             last_status: RecordRows::default(),
-            bash_components: Vec::new(),
+            custom_messages: Vec::new(),
+            skill_blocks: Vec::new(),
+            background_notices: Vec::new(),
             branch_summaries: Vec::new(),
             compaction_summaries: Vec::new(),
         }
@@ -118,7 +126,6 @@ impl Mode {
         let mut listing = (self.listing)(&self.session);
         listing.columns = Some(self.size.get().0 as usize);
         listing.verbose = self.verbose;
-        listing.expanded = self.expanded;
         for component in show_loaded_resources(&listing, false, true) {
             self.add_to_chat(component);
         }
@@ -181,8 +188,39 @@ impl Mode {
                 if !self.transcript.chat.borrow().children.is_empty() {
                     self.add_to_chat(as_component(&handle(Spacer::new(1))));
                 }
-                let component = UserMessageComponent::with_theme(&text, (self.markdown_theme())());
-                self.add_to_chat(as_component(&handle(component)));
+                match parse_skill_block(&text) {
+                    Some(skill) => {
+                        let component =
+                            handle(SkillBlockComponent::new(&skill.name, &skill.content));
+                        component
+                            .borrow_mut()
+                            .set_expanded(self.tool_output_view == ToolOutputView::Peek);
+                        self.transcript.skill_blocks.push(component.clone());
+                        self.add_to_chat(as_component(&component));
+                        if let Some(message) = skill.user_message {
+                            let component = UserMessageComponent::with_theme(
+                                &message,
+                                (self.markdown_theme())(),
+                            );
+                            self.add_to_chat(as_component(&handle(component)));
+                        }
+                    }
+                    None => match parse_background_notice(&text) {
+                        Some(notice) => {
+                            let component = handle(BackgroundNoticeComponent::new(notice));
+                            component
+                                .borrow_mut()
+                                .set_expanded(self.tool_output_view == ToolOutputView::Peek);
+                            self.transcript.background_notices.push(component.clone());
+                            self.add_to_chat(as_component(&component));
+                        }
+                        None => {
+                            let component =
+                                UserMessageComponent::with_theme(&text, (self.markdown_theme())());
+                            self.add_to_chat(as_component(&handle(component)));
+                        }
+                    },
+                }
                 if populate_history {
                     self.editor.borrow_mut().editor.add_to_history(&text);
                 }
@@ -199,9 +237,15 @@ impl Mode {
             }
             AgentMessage::Custom(custom) => {
                 if custom.display {
-                    let component =
-                        CustomMessageComponent::new(custom.clone(), self.markdown_theme());
-                    self.add_to_chat(as_component(&handle(component)));
+                    let component = handle(CustomMessageComponent::new(
+                        custom.clone(),
+                        self.markdown_theme(),
+                    ));
+                    component
+                        .borrow_mut()
+                        .set_expanded(self.tool_output_view == ToolOutputView::Peek);
+                    self.transcript.custom_messages.push(component.clone());
+                    self.add_to_chat(as_component(&component));
                 }
             }
             AgentMessage::CompactionSummary(summary) => {
@@ -210,7 +254,9 @@ impl Mode {
                     summary.clone(),
                     self.markdown_theme(),
                 ));
-                component.borrow_mut().set_expanded(self.expanded);
+                component
+                    .borrow_mut()
+                    .set_expanded(self.tool_output_view == ToolOutputView::Peek);
                 self.transcript.compaction_summaries.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
@@ -220,7 +266,9 @@ impl Mode {
                     summary.clone(),
                     self.markdown_theme(),
                 ));
-                component.borrow_mut().set_expanded(self.expanded);
+                component
+                    .borrow_mut()
+                    .set_expanded(self.tool_output_view == ToolOutputView::Peek);
                 self.transcript.branch_summaries.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
@@ -237,7 +285,6 @@ impl Mode {
                     bash.full_output_path.clone(),
                 );
                 let component = handle(component);
-                self.transcript.bash_components.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
             _ => {}
@@ -653,11 +700,9 @@ impl Mode {
     /// `applyToolOutputView`: move every block and chain to `view`.
     pub(super) fn apply_tool_output_view(&mut self, view: ToolOutputView, persist: bool) {
         let previous_thinking = self.thinking_display();
-        let was_expanded = self.tool_output_view == MAX_TOOL_OUTPUT_VIEW;
         self.tool_output_view = view;
         if persist {
             self.session.settings().set_tool_output_view(view);
-            self.view_before_jump = None;
         }
         self.footer.borrow_mut().set_tool_output_view(view);
         let thinking = self.thinking_display();
@@ -669,36 +714,44 @@ impl Mode {
                 component.borrow_mut().set_thinking_display(thinking);
             }
         }
-        let expanded = view == MAX_TOOL_OUTPUT_VIEW;
-        if expanded != was_expanded {
-            // "full" holds nothing back: the header opens with it.
-            self.expanded = expanded;
-            self.header.borrow_mut().set_expanded(expanded);
-            for component in &self.transcript.bash_components {
-                component.borrow_mut().set_expanded(expanded);
-            }
-            for component in &self.transcript.branch_summaries {
-                component.borrow_mut().set_expanded(expanded);
-            }
-            for component in &self.transcript.compaction_summaries {
-                component.borrow_mut().set_expanded(expanded);
-            }
+        // Peek opens each message's body; radar folds it to a row. The startup
+        // header and resource listing stay compact (they open under `verbose`).
+        let peek = view == ToolOutputView::Peek;
+        for component in &self.transcript.custom_messages {
+            component.borrow_mut().set_expanded(peek);
+        }
+        for component in &self.transcript.skill_blocks {
+            component.borrow_mut().set_expanded(peek);
+        }
+        for component in &self.transcript.background_notices {
+            component.borrow_mut().set_expanded(peek);
+        }
+        for component in &self.transcript.branch_summaries {
+            component.borrow_mut().set_expanded(peek);
+        }
+        for component in &self.transcript.compaction_summaries {
+            component.borrow_mut().set_expanded(peek);
         }
         self.dirty.set(true);
     }
 
-    /// `jumpToFullView`: to `full`, or back to where the jump started.
-    pub(super) fn jump_to_full_view(&mut self) {
-        if self.tool_output_view == MAX_TOOL_OUTPUT_VIEW {
-            let back = self
-                .view_before_jump
-                .take()
-                .unwrap_or(DEFAULT_TOOL_OUTPUT_VIEW);
-            self.apply_tool_output_view(back, false);
-            return;
-        }
-        self.view_before_jump = Some(self.tool_output_view);
-        self.apply_tool_output_view(MAX_TOOL_OUTPUT_VIEW, false);
+    /// `app.tools.expand` (Ctrl+O): flip between radar and peek, and save it.
+    pub(super) fn toggle_tool_output_view(&mut self) {
+        let next = match self.tool_output_view {
+            ToolOutputView::Radar => ToolOutputView::Peek,
+            ToolOutputView::Peek => ToolOutputView::Radar,
+        };
+        self.apply_tool_output_view(next, true);
+        // A toggle has no direction, so the notice carries no "steps back" note.
+        self.notifications.borrow_mut().notify(
+            NotificationKind::Info,
+            &format!("Tool output: {next}"),
+            &[],
+            None,
+            None,
+            Some("app.tools.expand"),
+        );
+        self.dirty.set(true);
     }
 
     /// `cycleToolOutputView`: one stop on the dial, saved.

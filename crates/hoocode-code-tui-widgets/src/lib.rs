@@ -2,6 +2,7 @@
 //! `modes/interactive/components/`.
 
 mod assistant_message;
+pub mod background_notice;
 pub mod bash_execution;
 pub mod brand;
 pub mod custom_message;
@@ -14,6 +15,7 @@ pub mod read_output;
 pub mod render_utils;
 pub mod selected_row_list;
 pub mod session_chip;
+pub mod skill_block;
 pub mod task_panel;
 pub mod tool_chain;
 pub mod tool_chain_summary;

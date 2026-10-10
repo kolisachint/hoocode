@@ -35,66 +35,13 @@ fn diff_text(n: usize) -> String {
     removed.chain(added).collect::<Vec<_>>().join("\n")
 }
 
-fn count_lines_containing(rendered: &str, needle: &str) -> usize {
-    strip(rendered)
-        .lines()
-        .filter(|l| l.contains(needle))
-        .count()
-}
-
 mod agent_output {
     use super::*;
 
+    /// The roster (`list`) keeps the peek trim: the first PEEK_LINES rows,
+    /// then a count of the rest. (2026-10-09: the dial has no Full stop.)
     #[test]
-    fn card_body_shows_the_peek_lines_and_counts_the_rest() {
-        let _g = lock();
-        let n = PEEK_LINES + 3;
-        let content = text_content(&card_text(n));
-        let details = json!({"task_id": "explore#1", "status": "done"});
-        let rendered = format_task_output_result(
-            &ToolResultView {
-                content: &content,
-                details: &details,
-            },
-            false,
-        );
-        let plain = strip(&rendered);
-        assert!(
-            plain.contains(&format!("output line {PEEK_LINES}")),
-            "{plain}"
-        );
-        assert!(
-            !plain.contains(&format!("output line {}", PEEK_LINES + 1)),
-            "{plain}"
-        );
-        assert!(plain.contains("... (3 more lines,"), "{plain}");
-        assert!(plain.ends_with("╰"), "{plain:?}");
-    }
-
-    #[test]
-    fn card_body_shows_every_line_when_expanded() {
-        let _g = lock();
-        let n = PEEK_LINES + 3;
-        let content = text_content(&card_text(n));
-        let details = json!({"task_id": "explore#1", "status": "done"});
-        let rendered = format_task_output_result(
-            &ToolResultView {
-                content: &content,
-                details: &details,
-            },
-            true,
-        );
-        let plain = strip(&rendered);
-        assert_eq!(
-            count_lines_containing(&rendered, "output line"),
-            n,
-            "{plain}"
-        );
-        assert!(!plain.contains("more lines"), "{plain}");
-    }
-
-    #[test]
-    fn roster_follows_the_peek_dial() {
+    fn roster_is_peek_trimmed() {
         let _g = lock();
         let mut roster = vec!["8 background subagents (8 running):".to_string()];
         roster.extend((1..=7).map(|i| format!("- explore#{i}  running  3s")));
@@ -104,15 +51,11 @@ mod agent_output {
             content: &content,
             details: &details,
         };
-
-        let peek = strip(&format_task_output_result(&view, false));
+        let peek = strip(&format_task_output_result(&view));
         assert!(peek.contains("- explore#4  running  3s"), "{peek}");
         assert!(!peek.contains("- explore#5  running  3s"), "{peek}");
-        assert!(peek.contains("... (3 more lines,"), "{peek}");
-
-        let full = strip(&format_task_output_result(&view, true));
-        assert!(full.contains("- explore#7  running  3s"), "{full}");
-        assert!(!full.contains("more lines"), "{full}");
+        assert!(peek.contains("more lines"), "{peek}");
+        let _ = (card_text(1), PEEK_LINES);
     }
 }
 
@@ -162,13 +105,9 @@ mod edit {
         let diff = diff_text(8);
         let peek = strip(&render_result(&diff, false));
         assert!(peek.contains("... ("), "{peek}");
-        assert!(peek.contains("more lines,"), "{peek}");
+        assert!(peek.contains("more lines"), "{peek}");
         assert!(peek.contains("old line 1"), "{peek}");
         assert!(!peek.contains("new line 8"), "{peek}");
-
-        let full = strip(&render_result(&diff, true));
-        assert!(full.contains("new line 8"), "{full}");
-        assert!(!full.contains("more lines,"), "{full}");
     }
 
     #[test]
@@ -193,7 +132,8 @@ mod edit {
         });
         let def = builtin_tool_definition("Edit").expect("Edit renderer");
 
-        for expanded in [false, true] {
+        {
+            let expanded = false;
             let mut state = serde_json::Map::new();
             let mut objects = std::collections::HashMap::new();
             let mut ctx = ToolRenderContext {
@@ -213,13 +153,8 @@ mod edit {
             let call = (def.render_call.as_ref().expect("Edit call slot"))(&args, &mut ctx)
                 .expect("render call");
             let plain = strip(&call.borrow_mut().render(120).join("\n"));
-            if expanded {
-                assert!(plain.contains("new 10"), "{plain}");
-                assert!(!plain.contains("more lines,"), "{plain}");
-            } else {
-                assert!(!plain.contains("new 10"), "{plain}");
-                assert!(plain.contains("more lines,"), "{plain}");
-            }
+            assert!(!plain.contains("new 10"), "{plain}");
+            assert!(plain.contains("more lines"), "{plain}");
         }
     }
 }

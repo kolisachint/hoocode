@@ -283,9 +283,9 @@ impl SettingsList {
     fn add_hint_line(&self, lines: &mut Vec<String>, width: usize) {
         lines.push(String::new());
         let text = if self.search_enabled {
-            "  Type to search · Enter/Space to change · Esc to cancel"
+            "  Type to search · Enter/Space to change · esc to cancel"
         } else {
-            "  Enter/Space to change · Esc to cancel"
+            "  Enter/Space to change · esc to cancel"
         };
         lines.push(truncate_to_width(
             &(self.theme.hint)(text),

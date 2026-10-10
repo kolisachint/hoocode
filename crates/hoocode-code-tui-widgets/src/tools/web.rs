@@ -9,15 +9,11 @@ use serde_json::Value;
 use super::search::js_number;
 use super::text;
 use crate::render_utils::{get_text_output, invalid_arg_text, str_arg};
-use crate::tool_execution::{ToolRenderDefinition, ToolRenderResultOptions, ToolResultView};
+use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
 use crate::tool_output_view::peek_block;
 
 /// The first lines of the output, peek-trimmed, as both web tools print it.
-fn peek_output(
-    result: &ToolResultView<'_>,
-    options: ToolRenderResultOptions,
-    show_images: bool,
-) -> String {
+fn peek_output(result: &ToolResultView<'_>, show_images: bool) -> String {
     let t = theme();
     let output = get_text_output(Some(result.content), show_images);
     let output = js_trim(&output);
@@ -25,7 +21,7 @@ fn peek_output(
         return String::new();
     }
     let lines: Vec<String> = output.split('\n').map(str::to_string).collect();
-    let body = peek_block(&lines, options.expanded, |shown| {
+    let body = peek_block(&lines, |shown| {
         shown.iter().map(|l| t.fg("toolOutput", l)).collect()
     });
     format!("\n{body}")
@@ -54,13 +50,9 @@ pub fn format_webfetch_call(args: &Value) -> String {
     )
 }
 
-pub fn format_webfetch_result(
-    result: &ToolResultView<'_>,
-    options: ToolRenderResultOptions,
-    show_images: bool,
-) -> String {
+pub fn format_webfetch_result(result: &ToolResultView<'_>, show_images: bool) -> String {
     let t = theme();
-    let mut text = peek_output(result, options, show_images);
+    let mut text = peek_output(result, show_images);
     if let Some(estimate) = present(result.details, "tokenEstimate") {
         let truncated = result
             .details
@@ -110,12 +102,8 @@ pub fn format_websearch_call(args: &Value) -> String {
     text
 }
 
-pub fn format_websearch_result(
-    result: &ToolResultView<'_>,
-    options: ToolRenderResultOptions,
-    show_images: bool,
-) -> String {
-    let mut text = peek_output(result, options, show_images);
+pub fn format_websearch_result(result: &ToolResultView<'_>, show_images: bool) -> String {
+    let mut text = peek_output(result, show_images);
     if let Some(estimate) = present(result.details, "tokenEstimate") {
         text.push_str(&format!(
             "\n{}",
@@ -128,27 +116,17 @@ pub fn format_websearch_result(
 pub fn webfetch_definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: Some(Rc::new(|args, _| Ok(text(format_webfetch_call(args))))),
-        render_result: Some(Rc::new(|result, options, ctx| {
-            Ok(text(format_webfetch_result(
-                result,
-                options,
-                ctx.show_images,
-            )))
+        render_result: Some(Rc::new(|result, _, ctx| {
+            Ok(text(format_webfetch_result(result, ctx.show_images)))
         })),
-        render_shell: None,
     }
 }
 
 pub fn websearch_definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: Some(Rc::new(|args, _| Ok(text(format_websearch_call(args))))),
-        render_result: Some(Rc::new(|result, options, ctx| {
-            Ok(text(format_websearch_result(
-                result,
-                options,
-                ctx.show_images,
-            )))
+        render_result: Some(Rc::new(|result, _, ctx| {
+            Ok(text(format_websearch_result(result, ctx.show_images)))
         })),
-        render_shell: None,
     }
 }

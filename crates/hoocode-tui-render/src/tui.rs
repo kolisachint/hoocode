@@ -47,6 +47,7 @@ use hoocode_tui_util::{
 };
 
 use crate::component::{Component, ComponentHandle, Container, FlexSpacer};
+use crate::scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB};
 
 /// Cursor position marker: a zero-width APC escape sequence terminals
 /// ignore. Components emit this at the cursor position when focused; the
@@ -161,6 +162,9 @@ pub struct ScrollStatus {
     pub width: i64,
     /// Present while a search is running.
     pub search: Option<ScrollSearchStatus>,
+    /// A picker (not the prompt) has focus: the arrows and escape go to it,
+    /// so the indicator must not advertise them.
+    pub picker: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,7 +188,11 @@ pub type HyperlinkHandler = Box<dyn FnMut(&str)>;
 pub fn default_scroll_status(status: &ScrollStatus) -> String {
     let position = format!("{}\u{2013}{}/{}", status.top, status.bottom, status.total);
     let where_ = if status.at_top { " top" } else { "" };
-    let keys = "\u{2191}\u{2193} line \u{b7} PgUp/PgDn page \u{b7} esc live";
+    let keys = if status.picker {
+        "PgUp/PgDn page"
+    } else {
+        "\u{2191}\u{2193} line \u{b7} PgUp/PgDn page \u{b7} esc live"
+    };
     let left = format!(" {position}{where_} ");
     let width = status.width.max(0) as usize;
     let body = if visible_width(&left) + visible_width(keys) < width {
@@ -316,6 +324,10 @@ pub struct Tui {
     /// Whether the view may pin right now (unset means always). Given the
     /// TUI so it can ask what holds focus.
     pub can_pin_scroll: Option<CanPinScroll>,
+    /// The prompt. While the view is pinned, a focused component that is not
+    /// the prompt is a picker: its lines paint at the bottom of the view.
+    /// Unset, every focused component counts as a picker.
+    pub scroll_prompt: Option<ComponentHandle>,
     /// Sees input after mouse reports and before the input listeners, with
     /// the TUI in hand; `true` consumes it. The app's scroll view keys.
     input_interceptor: Option<InputInterceptor>,
@@ -359,6 +371,7 @@ impl Tui {
             scroll_status_formatter: Box::new(default_scroll_status),
             scroll_search: None,
             can_pin_scroll: None,
+            scroll_prompt: None,
             input_interceptor: None,
             scroll_image_ids: HashMap::new(),
             scroll_placed_images: HashSet::new(),
@@ -381,6 +394,17 @@ impl Tui {
     /// True while the view is pinned rather than following the tail.
     pub fn scroll_pinned(&self) -> bool {
         self.scroll_offset.is_some()
+    }
+
+    /// The width the transcript is laid out at: one column less while pinned,
+    /// the last one being the scrollbar's.
+    pub fn transcript_width(&self) -> u16 {
+        let columns = self.terminal.columns();
+        if self.scroll_offset.is_some() {
+            columns.saturating_sub(1).max(1)
+        } else {
+            columns
+        }
     }
 
     /// Where the pinned window sits `(top, total, view_height)`, or `None`
@@ -417,9 +441,45 @@ impl Tui {
         spacer.borrow_mut().set_height((height - content).max(0))
     }
 
-    /// The screen rows a pinned window shows; the last row is the indicator.
+    /// The focused picker, when the view is pinned on a non-prompt focus.
+    fn scroll_pane(&self) -> Option<ComponentHandle> {
+        let focused = self.focused_component.clone()?;
+        match &self.scroll_prompt {
+            Some(prompt) if Rc::ptr_eq(prompt, &focused) => None,
+            _ => Some(focused),
+        }
+    }
+
+    /// The picker's lines at `width`, or none when the prompt has focus.
+    fn scroll_pane_lines(&self, width: u16) -> Vec<String> {
+        match self.scroll_pane() {
+            Some(pane) => pane.borrow_mut().render(width),
+            None => Vec::new(),
+        }
+    }
+
+    /// `(transcript rows, picker rows)` of a pinned screen whose picker is
+    /// `pane_len` lines tall. The status row is the last row; the transcript
+    /// keeps at least one row. A picker that cannot fit whole is never shown
+    /// pinned: `paint` lets go of the pin first (see `scroll_pane_fits`).
+    fn pinned_split(&self, pane_len: i64) -> (i64, i64) {
+        let room = self.terminal.rows() as i64 - 1;
+        let pane = pane_len.min((room - 1).max(0));
+        ((room - pane).max(1), pane)
+    }
+
+    /// Whether the focused picker, at the current width, fits whole beside
+    /// the transcript. A picker taller than that would hide its top rows.
+    fn scroll_pane_fits(&self) -> bool {
+        let pane_len = self.scroll_pane_lines(self.terminal.columns()).len() as i64;
+        self.pinned_split(pane_len).1 == pane_len
+    }
+
+    /// The screen rows a pinned window shows for the transcript; the status
+    /// row is the last, and a picker takes its share at the bottom.
     fn scroll_view_height(&self) -> i64 {
-        (self.terminal.rows() as i64 - 1).max(1)
+        let pane_len = self.scroll_pane_lines(self.terminal.columns()).len() as i64;
+        self.pinned_split(pane_len).0
     }
 
     /// Rows available to scroll through; the filler is not transcript.
@@ -987,6 +1047,9 @@ impl Tui {
                 self.scroll_by_lines(WHEEL_LINES);
             }
             MouseEventKind::Press => {
+                if event.button == 0 {
+                    self.press_scrollbar(event.row, event.column);
+                }
                 self.pressed_cell = (event.button == 0).then_some((event.row, event.column));
             }
             MouseEventKind::Release => {
@@ -1007,9 +1070,40 @@ impl Tui {
         }
     }
 
+    /// A press in the scrollbar column of a pinned view pages towards it:
+    /// above the thumb pages up, below it pages down, on it does nothing.
+    fn press_scrollbar(&mut self, row: i64, column: i64) {
+        let Some(top) = self.scroll_offset else {
+            return;
+        };
+        if column != self.terminal.columns() as i64 {
+            return;
+        }
+        let view_height = self.scroll_view_height();
+        let index = row - 1;
+        if index < 0 || index >= view_height {
+            return;
+        }
+        let glyphs = scrollbar_glyphs(view_height, self.scroll_total_lines, top);
+        let thumb: Vec<i64> = glyphs
+            .iter()
+            .enumerate()
+            .filter(|(_, glyph)| **glyph == SCROLLBAR_THUMB)
+            .map(|(i, _)| i as i64)
+            .collect();
+        let (Some(&first), Some(&last)) = (thumb.first(), thumb.last()) else {
+            return;
+        };
+        if index < first {
+            self.scroll_by_pages(-1);
+        } else if index > last {
+            self.scroll_by_pages(1);
+        }
+    }
+
     /// The link on the screen cell a mouse report names, through the window
     /// the last frame painted. A live buffer shorter than the screen is
-    /// declined rather than guessed at.
+    /// declined rather than guessed at. A picker's rows link to nothing.
     fn hyperlink_at_screen_cell(&self, row: i64, column: i64) -> Option<String> {
         let pinned = self.scroll_offset.is_some();
         let lines: &[String] = if pinned {
@@ -1018,6 +1112,9 @@ impl Tui {
             &self.previous_lines
         };
         if lines.is_empty() {
+            return None;
+        }
+        if pinned && row > self.scroll_view_height() {
             return None;
         }
         if !pinned && (lines.len() as i64) < self.terminal.rows() as i64 {
@@ -1198,6 +1295,12 @@ impl Tui {
 
     fn paint(&mut self) {
         if self.stopped {
+            return;
+        }
+        if self.scroll_offset.is_some() && !self.scroll_pane_fits() {
+            // The picker would clip its own top rows: let go of the pin. The
+            // release paints the live frame itself (or schedules it).
+            self.scroll_to_live();
             return;
         }
         if self.scroll_offset.is_some() {
@@ -1559,15 +1662,18 @@ impl Tui {
     fn render_scroll_view(&mut self) {
         let width = self.terminal.columns() as i64;
         let height = self.terminal.rows() as i64;
+        // The transcript gives up its last column to the scrollbar.
+        let transcript_width = self.transcript_width() as i64;
 
         // No fill while pinned: blank rows would be transcript to scroll past.
         if let Some(spacer) = &self.flex_spacer {
             spacer.borrow_mut().set_height(0);
         }
-        let lines = self.render(width.max(0) as u16);
+        let lines = self.render(transcript_width as u16);
         self.flat_lines = lines.clone();
 
-        let view_height = self.scroll_view_height();
+        let pane = self.scroll_pane_lines(width.max(0) as u16);
+        let (view_height, pane_rows) = self.pinned_split(pane.len() as i64);
         self.scroll_total_lines = lines.len() as i64;
         let max_offset = (lines.len() as i64 - view_height).max(0);
         // Re-clamped every frame: the transcript can shrink under the view.
@@ -1595,6 +1701,22 @@ impl Tui {
             }
         }
 
+        // One glyph per transcript row, last column, only when there is more to scroll.
+        for (row, glyph) in scrollbar_glyphs(view_height, lines.len() as i64, top)
+            .iter()
+            .enumerate()
+        {
+            buffer.push_str(&format!("\x1b[{};{width}H{glyph}", row + 1));
+        }
+        // The picker, bottom-aligned above the status row: its options stay in view.
+        let skip = pane.len() - pane_rows as usize;
+        for (i, line) in pane.iter().skip(skip).enumerate() {
+            buffer.push_str(&format!("\x1b[{};1H\x1b[2K", view_height + i as i64 + 1));
+            let text = line.replacen(CURSOR_MARKER, "", 1);
+            buffer.push_str(&normalize_terminal_output(&text));
+            buffer.push_str(SEGMENT_RESET);
+        }
+
         buffer.push_str(&format!("\x1b[{height};1H\x1b[2K"));
         let status = ScrollStatus {
             top: top + 1,
@@ -1605,6 +1727,7 @@ impl Tui {
             at_bottom: top >= max_offset,
             width,
             search: self.scroll_search_status(),
+            picker: self.scroll_pane().is_some(),
         };
         buffer.push_str(&(self.scroll_status_formatter)(&status));
         buffer.push_str("\x1b[?7h");

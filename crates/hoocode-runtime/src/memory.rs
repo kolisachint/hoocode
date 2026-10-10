@@ -257,6 +257,7 @@ pub fn child_rss_bytes(pid: u32) -> Option<u64> {
 }
 
 /// Resident pages (the second field of `statm`) times the page size.
+#[cfg(any(target_os = "linux", test))]
 fn parse_statm_resident(text: &str, page_size: u64) -> Option<u64> {
     let resident: u64 = text.split_whitespace().nth(1)?.parse().ok()?;
     resident.checked_mul(page_size)

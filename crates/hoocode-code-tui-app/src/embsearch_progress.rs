@@ -1,5 +1,6 @@
 //! Semantic-index progress routing (`core/embsearch/embsearch-progress.ts`):
-//! interactive mode shows it as a transient footer line; other modes log a
+//! interactive mode shows it as a transient line above the prompt (see
+//! `FooterComponent::transient_lines`); other modes log a
 //! dim stderr line.
 
 use crate::startup_progress::{self, StartupProgress};

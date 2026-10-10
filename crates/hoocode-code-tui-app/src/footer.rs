@@ -1,6 +1,16 @@
-//! The footer (`components/footer.ts`): identity and location on line 1,
-//! session vitals on line 2, then transient lines (extension statuses and
-//! startup progress). Every line is at most `width` cells.
+//! The footer (`components/footer.ts`): always two rows.
+//!
+//! Row 1 is identity and location: the folder name (never dropped), the
+//! branch, the session name, the path; on the right, subagents, the mode chip
+//! and the view dial. Row 2 is session vitals: model and effort, the context
+//! gauge with its percent (never dropped), the window, tokens, cost.
+//!
+//! When the width is short, parts go in a fixed order (see
+//! `line1_candidates` and `line2_candidates`). Transient messages (the
+//! warning, extension statuses, startup progress) are not rows: read them with
+//! [`FooterComponent::transient_lines`] and show them in the notification area.
+
+use std::path::Path;
 
 use hoocode_code_agent_session::format::{format_tokens, js_to_fixed};
 use hoocode_code_task_store::{task_store, TaskSource, TaskStatus};
@@ -9,7 +19,7 @@ use hoocode_tui_render::Component;
 use hoocode_tui_util::js_math::js_round;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
-use crate::brand::{BRAND_MARK, GIT_BRANCH_GLYPH};
+use crate::brand::GIT_BRANCH_GLYPH;
 use crate::footer_data::FooterDataProvider;
 use crate::progress_bar::{render_download_progress, render_progress_bar};
 use crate::session_chip::session_chip_fits;
@@ -49,43 +59,44 @@ pub fn tool_output_view_glyph(view: ToolOutputView) -> &'static str {
     match view {
         ToolOutputView::Radar => "◌",
         ToolOutputView::Peek => "◍",
-        ToolOutputView::Full => "◉",
     }
 }
 
-/// How many rows the footer takes.
+/// Which layout the footer uses. Both are two rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FooterDensity {
     #[default]
     Full,
+    /// Compact: row 1 drops the path and session; row 2 keeps only the
+    /// model, gauge and percent. The folder name stays on both layouts.
     Line,
 }
 
-/// `assembleLine`: `left` flush left, `right` flush right when it fits (≥2
-/// columns between), padded to `width`; else `left` padded or truncated.
-fn assemble_line(
-    width: usize,
-    left_plain: &str,
-    left_styled: &str,
-    right_plain: &str,
-    right_styled: &str,
-) -> String {
-    let lw = visible_width(left_plain);
-    if !right_plain.is_empty() && lw + 2 + visible_width(right_plain) <= width {
-        return format!(
-            "{left_styled}{}{right_styled}",
-            " ".repeat(width - lw - visible_width(right_plain))
-        );
-    }
-    if lw <= width {
-        return format!("{left_styled}{}", " ".repeat(width - lw));
-    }
-    truncate_to_width(left_styled, width, &theme().fg("dim", "…"), false)
+/// Plain and styled text of one piece of a row.
+type Piece = (String, String);
+
+/// `assembleLine`-style right alignment: `left` flush left, `right` flush
+/// right, with at least two columns between. `None` when they do not fit.
+fn fit_left_right(width: usize, left: &Piece, right: Option<&Piece>) -> Option<String> {
+    let lw = visible_width(&left.0);
+    let Some((right_plain, right_styled)) = right else {
+        return (lw <= width).then(|| left.1.clone());
+    };
+    let rw = visible_width(right_plain);
+    (lw + 2 + rw <= width)
+        .then(|| format!("{}{}{right_styled}", left.1, " ".repeat(width - lw - rw)))
+}
+
+/// Joins pieces with `sep`, plain and styled alike.
+fn join_pieces(pieces: &[Piece], sep: &str) -> Piece {
+    let plain: Vec<&str> = pieces.iter().map(|(p, _)| p.as_str()).collect();
+    let styled: Vec<&str> = pieces.iter().map(|(_, s)| s.as_str()).collect();
+    (plain.join(sep), styled.join(sep))
 }
 
 /// A compact context-fill gauge, coloured by proximity to the compaction
 /// trip point.
-fn context_gauge(percent: f64, error_level: f64, warn_level: f64) -> (String, String) {
+fn context_gauge(percent: f64, error_level: f64, warn_level: f64) -> Piece {
     const CELLS: usize = 8;
     let filled = (js_round(percent / 100.0 * CELLS as f64)).clamp(0.0, CELLS as f64) as usize;
     let fill = "▰".repeat(filled);
@@ -121,6 +132,24 @@ fn subagent_counts() -> (usize, usize) {
         }
     }
     counts
+}
+
+/// `◇2 running · 1 queued`. Queued is included: a pool with five slots and
+/// twelve dispatches is five running and seven waiting.
+fn subagent_piece(running: usize, queued: usize) -> Piece {
+    let t = theme();
+    if queued > 0 {
+        (
+            format!("◇{running} running · {queued} queued"),
+            t.fg("accent", &format!("◇{running}"))
+                + &t.fg("dim", &format!(" running · {queued} queued")),
+        )
+    } else {
+        (
+            format!("◇{running} running"),
+            t.fg("accent", &format!("◇{running}")) + &t.fg("dim", " running"),
+        )
+    }
 }
 
 /// Newlines, tabs and carriage returns become spaces; runs of spaces collapse.
@@ -198,6 +227,230 @@ fn tilde(path: &str) -> String {
     }
 }
 
+/// Shorter forms of `path`, cut from the left at a `/`, longest first:
+/// `~/github/hoocode` gives `…/hoocode`. Only forms narrower than `path`.
+fn shortened_paths(path: &str) -> Vec<String> {
+    let full = visible_width(path);
+    path.match_indices('/')
+        .filter_map(|(i, _)| path.get(i..))
+        .map(|suffix| format!("…{suffix}"))
+        .filter(|s| visible_width(s) < full)
+        .collect()
+}
+
+/// `$USD` for a cost. Under a cent it keeps a third digit, so real spend
+/// never reads `$0.00`.
+fn format_cost(cost: f64) -> String {
+    if cost > 0.0 && cost < 0.01 {
+        js_to_fixed(cost, 3)
+    } else {
+        js_to_fixed(cost, 2)
+    }
+}
+
+/// What row 1 can show, before any dropping.
+struct Line1Data {
+    name: String,
+    /// The path, `~`-shortened.
+    path: String,
+    branch: Option<String>,
+    session: Option<String>,
+    subagents: Option<Piece>,
+    mode: String,
+    dial: String,
+}
+
+/// One candidate for row 1: which optional parts are on.
+#[derive(Debug, Clone, PartialEq)]
+struct Line1Parts {
+    /// The path as shown (full or shortened); `None` drops it.
+    path: Option<String>,
+    session: bool,
+    subagents: bool,
+    branch: bool,
+    dial: bool,
+    chip: bool,
+}
+
+/// Row 1 candidates, most to least. Order of dropping: the path (shortened
+/// from the left first), the session, subagents, the branch, the dial, the
+/// mode chip. The folder name is always there; the last candidate is the
+/// name alone.
+fn line1_candidates(d: &Line1Data, compact: bool) -> Vec<Line1Parts> {
+    let mut p = Line1Parts {
+        path: None,
+        session: d.session.is_some() && !compact,
+        subagents: d.subagents.is_some(),
+        branch: d.branch.is_some(),
+        dial: true,
+        chip: true,
+    };
+    let mut out = Vec::new();
+    if !compact && !d.path.is_empty() {
+        out.push(Line1Parts {
+            path: Some(d.path.clone()),
+            ..p.clone()
+        });
+        out.extend(shortened_paths(&d.path).into_iter().map(|s| Line1Parts {
+            path: Some(s),
+            ..p.clone()
+        }));
+    }
+    out.push(p.clone());
+    p.session = false;
+    out.push(p.clone());
+    p.subagents = false;
+    out.push(p.clone());
+    p.branch = false;
+    out.push(p.clone());
+    p.dial = false;
+    out.push(p.clone());
+    p.chip = false;
+    out.push(p);
+    out
+}
+
+/// Row 1 as text, if the candidate fits `width`.
+fn fit_line1(width: usize, d: &Line1Data, p: &Line1Parts) -> Option<String> {
+    let t = theme();
+    let mut left = (d.name.clone(), t.bold(&t.fg("text", &d.name)));
+    if let Some(branch) = d.branch.as_ref().filter(|_| p.branch) {
+        left.0 += &format!("  {GIT_BRANCH_GLYPH} {branch}");
+        left.1 += &format!(
+            "  {} {}",
+            t.fg("dim", GIT_BRANCH_GLYPH),
+            t.fg("muted", branch)
+        );
+    }
+    if let Some(session) = d.session.as_ref().filter(|_| p.session) {
+        left.0 += &format!(" • {session}");
+        left.1 += &t.fg("dim", &format!(" • {session}"));
+    }
+    if let Some(path) = &p.path {
+        left.0 += &format!("  {path}");
+        left.1 += &format!("  {}", t.fg("dim", path));
+    }
+
+    let mut groups: Vec<Piece> = Vec::new();
+    if let Some(sub) = d.subagents.as_ref().filter(|_| p.subagents) {
+        groups.push(sub.clone());
+    }
+    let mut mode: Vec<Piece> = Vec::new();
+    if p.chip {
+        let chip_styled = if t.has_bg("brandBg") && t.has("brandText") {
+            t.bg("brandBg", &t.bold(&t.fg("brandText", &d.mode)))
+        } else {
+            t.bold(&t.fg("accent", &d.mode))
+        };
+        mode.push((d.mode.clone(), chip_styled));
+    }
+    if p.dial {
+        mode.push((d.dial.clone(), t.fg("dim", &d.dial)));
+    }
+    if !mode.is_empty() {
+        groups.push(join_pieces(&mode, " · "));
+    }
+    let right = (!groups.is_empty()).then(|| join_pieces(&groups, "  "));
+    fit_left_right(width, &left, right.as_ref())
+}
+
+/// What row 2 can show, before any dropping.
+struct Line2Data {
+    /// `(provider) ` before the model, when more than one provider is set up.
+    provider: Option<Piece>,
+    /// Model id and effort.
+    model: Piece,
+    /// The bar and the percent.
+    gauge: Piece,
+    /// ` of 200k`.
+    window: Option<Piece>,
+    /// `↑48k ↓3.1k`.
+    io: Vec<Piece>,
+    /// `R120k W50`.
+    cache: Vec<Piece>,
+    cost: Option<Piece>,
+}
+
+/// Which optional parts of row 2 are on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Line2Parts {
+    provider: bool,
+    window: bool,
+    cache: bool,
+    io: bool,
+    cost: bool,
+}
+
+/// Row 2 candidates, most to least. Order of dropping: provider prefix,
+/// cache (R/W), the ↑↓ tokens, cost, window. Model and percent are never
+/// dropped.
+fn line2_candidates(d: &Line2Data, compact: bool) -> Vec<Line2Parts> {
+    if compact {
+        return vec![Line2Parts {
+            provider: false,
+            window: false,
+            cache: false,
+            io: false,
+            cost: false,
+        }];
+    }
+    let mut p = Line2Parts {
+        provider: d.provider.is_some(),
+        window: d.window.is_some(),
+        cache: !d.cache.is_empty(),
+        io: !d.io.is_empty(),
+        cost: d.cost.is_some(),
+    };
+    let mut out = vec![p];
+    p.provider = false;
+    out.push(p);
+    p.cache = false;
+    out.push(p);
+    p.io = false;
+    out.push(p);
+    p.cost = false;
+    out.push(p);
+    p.window = false;
+    out.push(p);
+    out
+}
+
+/// Row 2 as styled text, if the candidate fits `width`.
+fn fit_line2(width: usize, d: &Line2Data, p: &Line2Parts) -> Option<String> {
+    let build = build_line2(d, p);
+    (visible_width(&build.0) <= width).then_some(build.1)
+}
+
+/// Row 2 with the parts in `p`: plain and styled.
+fn build_line2(d: &Line2Data, p: &Line2Parts) -> Piece {
+    let model = match (&d.provider, p.provider) {
+        (Some((pp, ps)), true) => (format!("{pp}{}", d.model.0), format!("{ps}{}", d.model.1)),
+        _ => d.model.clone(),
+    };
+    let gauge = match (&d.window, p.window) {
+        (Some((wp, ws)), true) => (format!("{}{wp}", d.gauge.0), format!("{}{ws}", d.gauge.1)),
+        _ => d.gauge.clone(),
+    };
+    let mut tokens: Vec<Piece> = Vec::new();
+    if p.io {
+        tokens.extend(d.io.iter().cloned());
+    }
+    if p.cache {
+        tokens.extend(d.cache.iter().cloned());
+    }
+    let (mut plain, mut styled) = join_pieces(&[model, gauge], "   ");
+    if !tokens.is_empty() {
+        let (tp, ts) = join_pieces(&tokens, " ");
+        plain += &format!("   {tp}");
+        styled += &format!("   {ts}");
+    }
+    if let Some((cp, cs)) = d.cost.as_ref().filter(|_| p.cost) {
+        plain += &format!("  {cp}");
+        styled += &format!("  {cs}");
+    }
+    (plain, styled)
+}
+
 pub struct FooterComponent {
     source: Box<dyn FooterSource>,
     data: FooterDataProvider,
@@ -205,7 +458,7 @@ pub struct FooterComponent {
     tool_output_view: ToolOutputView,
     session_chip_shown: bool,
     density: FooterDensity,
-    /// A warning shown above the transient lines (memory shedding, UI stall).
+    /// A warning (memory shedding, UI stall). Not a row: see `transient_lines`.
     notice: Option<String>,
 }
 
@@ -222,7 +475,7 @@ impl FooterComponent {
         }
     }
 
-    /// Sets or clears the warning line. `None` removes it.
+    /// Sets or clears the warning. `None` removes it.
     pub fn set_notice(&mut self, notice: Option<String>) {
         self.notice = notice;
     }
@@ -240,18 +493,22 @@ impl FooterComponent {
         self.tool_output_view = view;
     }
 
-    /// `line` keeps the mark, mode, gauge and model on one row.
+    /// `Line` is the compact layout: still two rows, with the path and session
+    /// left out of row 1 and the tokens and cost left out of row 2.
     pub fn set_density(&mut self, density: FooterDensity) {
         self.density = density;
     }
 
-    /// Whether the input box carries the session chip (line 1 then drops the
+    /// Whether the input box carries the session chip (row 1 then drops the
     /// name, when the chip fits).
     pub fn set_session_chip_shown(&mut self, shown: bool) {
         self.session_chip_shown = shown;
     }
 
-    fn transient_lines(&self, width: usize) -> Vec<String> {
+    /// The transient messages, not part of the footer's two rows: the
+    /// warning, then extension statuses, then startup progress. Each is at
+    /// most `width` cells. Show them in the notification area.
+    pub fn transient_lines(&self, width: usize) -> Vec<String> {
         let mut lines = Vec::new();
         if let Some(notice) = &self.notice {
             lines.push(truncate_to_width(
@@ -289,97 +546,51 @@ impl FooterComponent {
     fn render_lines(&self, width: usize) -> Vec<String> {
         let t = theme();
         let source = &self.source;
+        let compact = self.density == FooterDensity::Line;
         let (total_input, total_output, total_cache_read, total_cache_write, total_cost) =
             source.usage_totals();
         let model = source.model();
 
+        // ── Row 1 — identity & location
+        let cwd = source.cwd();
+        let name = Path::new(&cwd)
+            .file_name()
+            .map_or_else(|| cwd.clone(), |n| n.to_string_lossy().into_owned());
+        let session_name = if self.session_chip_shown && session_chip_fits(width) {
+            None
+        } else {
+            Some(source.display_name()).filter(|n| !n.is_empty())
+        };
+        let (n_sub, n_queued) = subagent_counts();
+        let view = self.tool_output_view;
+        let d1 = Line1Data {
+            name,
+            path: tilde(&cwd),
+            branch: self.data.get_git_branch(),
+            session: session_name,
+            subagents: (n_sub > 0 || n_queued > 0).then(|| subagent_piece(n_sub, n_queued)),
+            mode: self.data.get_active_mode().to_uppercase(),
+            dial: format!("{} {}", tool_output_view_glyph(view), view.as_str()),
+        };
+        let line1 = line1_candidates(&d1, compact)
+            .iter()
+            .find_map(|p| fit_line1(width, &d1, p))
+            .unwrap_or_else(|| {
+                truncate_to_width(
+                    &t.bold(&t.fg("text", &d1.name)),
+                    width,
+                    &t.fg("dim", "…"),
+                    false,
+                )
+            });
+
+        // ── Row 2 — session vitals
         let context_usage = source.context_usage();
         let context_window = context_usage
             .map(|(w, _)| w)
             .or_else(|| model.as_ref().map(|m| m.context_window))
             .unwrap_or(0);
         let context_percent_value = context_usage.and_then(|(_, p)| p).unwrap_or(0.0);
-        let context_percent = match context_usage {
-            Some((_, None)) => "?".to_string(),
-            _ => js_to_fixed(context_percent_value, 1),
-        };
-
-        let pwd = tilde(&source.cwd());
-        let branch = self.data.get_git_branch();
-        let session_name = if self.session_chip_shown && session_chip_fits(width) {
-            None
-        } else {
-            Some(source.display_name()).filter(|n| !n.is_empty())
-        };
-        let mode_label = self.data.get_active_mode();
-
-        // ── Line 1 — identity & location
-        let mode_up = mode_label.to_uppercase();
-        let chip = t.has_bg("brandBg") && t.has("brandText");
-        let brand = if chip {
-            format!(" {BRAND_MARK} {mode_up} ")
-        } else {
-            format!("{BRAND_MARK} {mode_up}")
-        };
-        let brand_styled = if chip {
-            t.bg("brandBg", &t.bold(&t.fg("brandText", &brand)))
-        } else {
-            t.bold(&t.fg("accent", &brand))
-        };
-        let mut l1_plain = format!("{brand}  {pwd}");
-        let mut l1_styled = format!("{brand_styled}  {}", t.fg("muted", &pwd));
-        if let Some(branch) = &branch {
-            l1_plain += &format!(" {GIT_BRANCH_GLYPH} {branch}");
-            l1_styled += &format!(
-                " {} {}",
-                t.fg("dim", GIT_BRANCH_GLYPH),
-                t.fg("muted", branch)
-            );
-        }
-        if let Some(name) = &session_name {
-            l1_plain += &format!(" • {name}");
-            l1_styled += &t.fg("dim", &format!(" • {name}"));
-        }
-        let (n_sub, n_queued) = subagent_counts();
-        let mut right: Vec<(String, String)> = Vec::new();
-        if n_sub > 0 || n_queued > 0 {
-            // Queued included: a pool with five slots and twelve dispatches is
-            // not "five running", it is five running and seven waiting.
-            let label = if n_queued > 0 {
-                format!("◇{n_sub} running · {n_queued} queued")
-            } else {
-                format!("◇{n_sub} running")
-            };
-            let styled = if n_queued > 0 {
-                t.fg("accent", &format!("◇{n_sub}"))
-                    + &t.fg("dim", &format!(" running · {n_queued} queued"))
-            } else {
-                t.fg("accent", &format!("◇{n_sub}")) + &t.fg("dim", " running")
-            };
-            right.push((label, styled));
-        }
-        let view = self.tool_output_view;
-        let view_text = format!("{} {}", tool_output_view_glyph(view), view.as_str());
-        right.push((view_text.clone(), t.fg("dim", &view_text)));
-        let l1_right_plain = right
-            .iter()
-            .map(|(p, _)| p.as_str())
-            .collect::<Vec<_>>()
-            .join("  ");
-        let l1_right_styled = right
-            .iter()
-            .map(|(_, s)| s.as_str())
-            .collect::<Vec<_>>()
-            .join("  ");
-        let line1 = assemble_line(
-            width,
-            &l1_plain,
-            &l1_styled,
-            &l1_right_plain,
-            &l1_right_styled,
-        );
-
-        // ── Line 2 — session vitals
         let mut threshold_percent: Option<f64> = None;
         if self.auto_compact_enabled && context_window > 0 {
             let effective = context_window as f64 - source.reserve_tokens() as f64;
@@ -389,18 +600,10 @@ impl FooterComponent {
         }
         let error_level = threshold_percent.map_or(90.0, |p| p - 3.0);
         let warn_level = threshold_percent.map_or(70.0, |p| p - 10.0);
-        let auto_indicator = match threshold_percent {
-            Some(p) => format!(" auto@{}%", js_to_fixed(p, 0)),
-            None if self.auto_compact_enabled => " auto".to_string(),
-            None => String::new(),
-        };
 
-        let (gauge_plain, gauge_styled) =
-            context_gauge(context_percent_value, error_level, warn_level);
-        let pct_text = if context_percent == "?" {
-            "?".to_string()
-        } else {
-            format!("{context_percent}%")
+        let pct_text = match context_usage {
+            Some((_, None)) => "?".to_string(),
+            _ => format!("{}%", js_to_fixed(context_percent_value, 0)),
         };
         let pct_color = if context_percent_value >= error_level {
             "error"
@@ -409,61 +612,52 @@ impl FooterComponent {
         } else {
             "muted"
         };
-        let win_text = format!("{}{auto_indicator}", format_tokens(context_window));
+        let (bar_plain, bar_styled) = context_gauge(context_percent_value, error_level, warn_level);
+        let gauge = (
+            format!("{bar_plain} {pct_text}"),
+            format!("{bar_styled} {}", t.fg(pct_color, &pct_text)),
+        );
+        let window = (context_window > 0).then(|| {
+            let text = format!(" of {}", format_tokens(context_window));
+            (text.clone(), t.fg("dim", &text))
+        });
 
-        let mut segs: Vec<(String, String)> = vec![(
-            format!("{gauge_plain} {pct_text} {win_text}"),
-            format!(
-                "{gauge_styled} {} {}",
-                t.fg(pct_color, &pct_text),
-                t.fg("dim", &win_text)
-            ),
-        )];
         let arrow = |a: &str, n: u64| {
             (
                 format!("{a}{}", format_tokens(n)),
                 t.fg("dim", a) + &t.fg("muted", &format_tokens(n)),
             )
         };
+        let mut io = Vec::new();
         if total_input > 0 {
-            segs.push(arrow("↑", total_input));
+            io.push(arrow("↑", total_input));
         }
         if total_output > 0 {
-            segs.push(arrow("↓", total_output));
+            io.push(arrow("↓", total_output));
         }
+        let mut cache = Vec::new();
         if total_cache_read > 0 {
-            segs.push(arrow("R", total_cache_read));
+            cache.push(arrow("R", total_cache_read));
         }
         if total_cache_write > 0 {
-            segs.push(arrow("W", total_cache_write));
+            cache.push(arrow("W", total_cache_write));
         }
         let using_subscription = model.is_some() && source.is_using_oauth();
-        if total_cost != 0.0 || using_subscription {
-            let cost = format!(
+        let cost = (total_cost != 0.0 || using_subscription).then(|| {
+            let text = format!(
                 "${}{}",
-                js_to_fixed(total_cost, 3),
+                format_cost(total_cost),
                 if using_subscription { " (sub)" } else { "" }
             );
-            segs.push((cost.clone(), t.fg("muted", &cost)));
-        }
-        let l2_plain = segs
-            .iter()
-            .map(|(p, _)| p.as_str())
-            .collect::<Vec<_>>()
-            .join("  ");
-        let l2_styled = segs
-            .iter()
-            .map(|(_, s)| s.as_str())
-            .collect::<Vec<_>>()
-            .join("  ");
+            (text.clone(), t.fg("muted", &text))
+        });
 
         let model_name = model
             .as_ref()
             .map(|m| m.id.clone())
             .filter(|id| !id.is_empty())
             .unwrap_or_else(|| "no-model".into());
-        let mut r2_plain = model_name.clone();
-        let mut r2_styled = t.fg("muted", &model_name);
+        let mut model_piece = (model_name.clone(), t.fg("muted", &model_name));
         if model.as_ref().is_some_and(|m| m.reasoning) {
             let level = source.thinking_level();
             let level = if level.is_empty() {
@@ -476,36 +670,44 @@ impl FooterComponent {
             } else {
                 level
             };
-            r2_plain += &format!(" • {text}");
-            r2_styled += &t.fg("dim", &format!(" • {text}"));
+            model_piece.0 += &format!(" • {text}");
+            model_piece.1 += &t.fg("dim", &format!(" • {text}"));
         }
-        if self.data.get_available_provider_count() > 1 {
-            if let Some(model) = &model {
-                let with_provider = format!("({}) {r2_plain}", model.provider);
-                if visible_width(&l2_plain) + 2 + visible_width(&with_provider) <= width {
-                    r2_plain = with_provider;
-                    r2_styled = t.fg("dim", &format!("({}) ", model.provider)) + &r2_styled;
-                }
-            }
-        }
-        let line2 = assemble_line(width, &l2_plain, &l2_styled, &r2_plain, &r2_styled);
+        let provider = model
+            .as_ref()
+            .filter(|_| self.data.get_available_provider_count() > 1)
+            .map(|m| {
+                (
+                    format!("({}) ", m.provider),
+                    t.fg("dim", &format!("({}) ", m.provider)),
+                )
+            });
 
-        if self.density == FooterDensity::Line {
-            let compact_plain = format!("{brand}  {}", segs[0].0);
-            let compact_styled = format!("{brand_styled}  {}", segs[0].1);
-            let mut lines = vec![assemble_line(
-                width,
-                &compact_plain,
-                &compact_styled,
-                &r2_plain,
-                &r2_styled,
-            )];
-            lines.extend(self.transient_lines(width));
-            return lines;
-        }
-        let mut lines = vec![line1, line2];
-        lines.extend(self.transient_lines(width));
-        lines
+        let d2 = Line2Data {
+            provider,
+            model: model_piece,
+            gauge,
+            window,
+            io,
+            cache,
+            cost,
+        };
+        let candidates = line2_candidates(&d2, compact);
+        let line2 = candidates
+            .iter()
+            .find_map(|p| fit_line2(width, &d2, p))
+            .unwrap_or_else(|| {
+                let last = candidates.last().copied().unwrap_or(Line2Parts {
+                    provider: false,
+                    window: false,
+                    cache: false,
+                    io: false,
+                    cost: false,
+                });
+                truncate_to_width(&build_line2(&d2, &last).1, width, &t.fg("dim", "…"), false)
+            });
+
+        vec![line1, line2]
     }
 }
 

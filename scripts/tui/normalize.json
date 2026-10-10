@@ -7,6 +7,7 @@
     {"pattern": "{TMP}", "replace": "<TMP>"},
     {"pattern": "/tmp/parity-[A-Za-z0-9_]+", "replace": "<TMP>"},
     {"pattern": "\\bhoo│code_", "replace": "<WORDMARK>"},
+    {"pattern": "\\bhoo│code *$", "replace": "<WORDMARK>", "why": "The header cursor blinks: a hidden phase shows a space at the end of the brand row. Same mask, both phases."},
     {"pattern": "\\bhoocode_", "replace": "<WORDMARK>"},
     {"pattern": "\\bHooCode\\b", "replace": "<APP>"},
     {"pattern": "\\bhoocode\\b", "replace": "<app>"},

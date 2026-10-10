@@ -1,11 +1,11 @@
 //! `core/tools/read.ts` renderers: the call line (compact for skills,
-//! resources and the app's own docs until expanded) and the numbered result.
+//! resources and the app's own docs) and the numbered result, trimmed to the
+//! peek budget.
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use hoocode_code_tool_api::{format_size, resolve_read_path, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES};
-use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_theme::{get_language_from_path, highlight_code, message_label, theme};
 use serde_json::Value;
 
@@ -15,7 +15,7 @@ use crate::read_output::render_read_output;
 use crate::render_utils::{
     arg_or, get_text_output, invalid_arg_text, replace_tabs, shorten_path, str_arg,
 };
-use crate::tool_execution::{ToolRenderDefinition, ToolRenderResultOptions, ToolResultView};
+use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
 use crate::tool_output_view::peek_block;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,13 +144,9 @@ fn compact_classification(args: &Value, cwd: &str) -> Option<(CompactKind, Strin
 
 fn format_compact_read_call(kind: &CompactKind, label: &str, args: &Value) -> String {
     let t = theme();
-    let expand_hint = t.fg(
-        "dim",
-        &format!(" ({} to expand)", key_text("app.tools.expand")),
-    );
     if *kind == CompactKind::Skill {
         return format!(
-            "{} {}{}{expand_hint}",
+            "{} {}{}",
             message_label("skill"),
             t.fg("customMessageText", label),
             format_line_range(args)
@@ -161,24 +157,14 @@ fn format_compact_read_call(kind: &CompactKind, label: &str, args: &Value) -> St
         _ => "resource",
     };
     format!(
-        "{} {}{}{expand_hint}",
+        "{} {}{}",
         t.fg("toolTitle", &t.bold(&format!("Read {kind}"))),
         t.fg("accent", label),
         format_line_range(args)
     )
 }
 
-fn format_read_result(
-    args: &Value,
-    result: &ToolResultView<'_>,
-    options: ToolRenderResultOptions,
-    show_images: bool,
-    cwd: &str,
-    is_error: bool,
-) -> String {
-    if !options.expanded && !is_error && compact_classification(args, cwd).is_some() {
-        return String::new();
-    }
+fn format_read_result(args: &Value, result: &ToolResultView<'_>, show_images: bool) -> String {
     let t = theme();
     let raw = raw_path(args);
     let output = get_text_output(Some(result.content), show_images);
@@ -193,7 +179,7 @@ fn format_read_result(
         .and_then(Value::as_f64)
         .map(|n| n as i64)
         .unwrap_or(1);
-    let body = peek_block(&lines, options.expanded, |shown| {
+    let body = peek_block(&lines, |shown| {
         render_read_output(&shown.join("\n"), start_line)
     });
     let mut text = format!("\n{body}");
@@ -248,26 +234,14 @@ fn format_read_result(
 pub fn definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: Some(Rc::new(|args, ctx| {
-            let compact = if ctx.expanded {
-                None
-            } else {
-                compact_classification(args, ctx.cwd)
-            };
+            let compact = compact_classification(args, ctx.cwd);
             Ok(text(match compact {
                 Some((kind, label)) => format_compact_read_call(&kind, &label, args),
                 None => format_read_call(args),
             }))
         })),
-        render_result: Some(Rc::new(|result, options, ctx| {
-            Ok(text(format_read_result(
-                ctx.args,
-                result,
-                options,
-                ctx.show_images,
-                ctx.cwd,
-                ctx.is_error,
-            )))
+        render_result: Some(Rc::new(|result, _, ctx| {
+            Ok(text(format_read_result(ctx.args, result, ctx.show_images)))
         })),
-        render_shell: None,
     }
 }

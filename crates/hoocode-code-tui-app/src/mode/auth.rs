@@ -345,7 +345,7 @@ impl Mode {
                     login.manual = Some(manual);
                 } else if login.provider.id == "github-copilot" {
                     // Copilot polls after onAuth.
-                    dialog.show_waiting("Waiting for browser authentication...");
+                    dialog.show_waiting("Waiting for browser authentication…");
                 }
             }
             LoginUpdate::Prompt { prompt, reply } => {

@@ -574,13 +574,13 @@ impl Component for SessionList {
                     format!("  No named sessions found. Press {toggle} to show all.")
                 } else {
                     format!(
-                        "  No named sessions in current folder. Press {toggle} to show all, or Tab to view all."
+                        "  No named sessions in current folder. Press {toggle} to show all, or tab to view all."
                     )
                 }
             } else if self.show_cwd {
                 "  No sessions found".to_string()
             } else {
-                "  No sessions in current folder. Press Tab to view all.".to_string()
+                "  No sessions in current folder. Press tab to view all.".to_string()
             };
             lines.push(t.fg("muted", &truncate_to_width(&message, w, "…", false)));
             return lines;

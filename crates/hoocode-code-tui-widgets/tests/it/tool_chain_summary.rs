@@ -11,6 +11,7 @@ fn call(tool: &str, subject: &str, lines: usize, is_error: bool, is_partial: boo
         output_lines: lines,
         is_error,
         is_partial,
+        outcome: None,
     }
 }
 

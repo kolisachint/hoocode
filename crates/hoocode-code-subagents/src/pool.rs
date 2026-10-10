@@ -1260,10 +1260,10 @@ impl PoolInner {
             .filter(|n| *n > 0)
             .unwrap_or(DEFAULT_SUBAGENT_MAX_TURNS);
         args.extend(["--max-turns".into(), max_turns.to_string()]);
-        // The same per-agent deadline `SubagentLifeguard` enforces, so the child
-        // can ask to wrap up and write a result before we kill it. The base is
-        // sent, not the load-scaled budget: under load we widen the kill, so the
-        // wrap-up still lands first.
+        // The same deadline `SubagentLifeguard` enforces (2 hours for every
+        // agent type, 2026-10-10), so the child can ask to wrap up and write a
+        // result before we kill it. The base is sent, not the load-scaled
+        // budget: under load we widen the kill, so the wrap-up still lands first.
         args.extend([
             "--deadline-ms".into(),
             crate::lifeguard::base_timeout_ms(&task.agent_type).to_string(),

@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use super::text;
 use crate::render_utils::{get_text_output, invalid_arg_text, str_arg};
-use crate::tool_execution::{ToolRenderDefinition, ToolRenderResultOptions, ToolResultView};
+use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
 use crate::tool_output_view::peek_block;
 
 /// A JS number as `String(n)` prints it.
@@ -52,11 +52,7 @@ fn format_search_call(args: &Value) -> String {
     text
 }
 
-fn format_search_result(
-    result: &ToolResultView<'_>,
-    options: ToolRenderResultOptions,
-    show_images: bool,
-) -> String {
+fn format_search_result(result: &ToolResultView<'_>, show_images: bool) -> String {
     let t = theme();
     let output = get_text_output(Some(result.content), show_images);
     let output = js_trim(&output);
@@ -64,7 +60,7 @@ fn format_search_result(
         return String::new();
     }
     let lines: Vec<String> = output.split('\n').map(str::to_string).collect();
-    let body = peek_block(&lines, options.expanded, |shown| {
+    let body = peek_block(&lines, |shown| {
         shown.iter().map(|l| t.fg("toolOutput", l)).collect()
     });
     format!("\n{body}")
@@ -73,9 +69,8 @@ fn format_search_result(
 pub fn definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: Some(Rc::new(|args, _ctx| Ok(text(format_search_call(args))))),
-        render_result: Some(Rc::new(|result, options, ctx| {
-            Ok(text(format_search_result(result, options, ctx.show_images)))
+        render_result: Some(Rc::new(|result, _, ctx| {
+            Ok(text(format_search_result(result, ctx.show_images)))
         })),
-        render_shell: None,
     }
 }

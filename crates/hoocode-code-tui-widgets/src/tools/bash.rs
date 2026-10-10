@@ -6,7 +6,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use hoocode_code_tool_api::{format_size, DEFAULT_MAX_BYTES};
-use hoocode_code_tui_keybindings::key_hint;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::Text;
@@ -63,7 +62,6 @@ pub fn format_bash_call(args: &Value) -> String {
 /// The result body (`BashResultRenderComponent`), laid out at render width.
 pub struct BashResult {
     styled_output: Option<String>,
-    expanded: bool,
     warning: Option<String>,
     timing: Option<String>,
 }
@@ -72,24 +70,16 @@ impl Component for BashResult {
     fn render(&mut self, width: u16) -> Vec<String> {
         let mut lines = Vec::new();
         if let Some(output) = &self.styled_output {
-            if self.expanded {
-                lines.extend(Text::new(format!("\n{output}"), 0, 0).render(width));
-            } else {
-                let preview = truncate_to_visual_lines(output, PEEK_LINES, width, 0);
-                lines.push(String::new());
-                if preview.skipped_count > 0 {
-                    let hint = format!(
-                        "{} {})",
-                        theme().fg(
-                            "muted",
-                            &format!("... ({} earlier lines,", preview.skipped_count)
-                        ),
-                        key_hint("app.tools.expand", "to expand")
-                    );
-                    lines.push(truncate_to_width(&hint, width as usize, "...", false));
-                }
-                lines.extend(preview.visual_lines);
+            let preview = truncate_to_visual_lines(output, PEEK_LINES, width, 0);
+            lines.push(String::new());
+            if preview.skipped_count > 0 {
+                let hint = theme().fg(
+                    "muted",
+                    &format!("... ({} earlier lines)", preview.skipped_count),
+                );
+                lines.push(truncate_to_width(&hint, width as usize, "...", false));
             }
+            lines.extend(preview.visual_lines);
         }
         for extra in [&self.warning, &self.timing].into_iter().flatten() {
             lines.extend(Text::new(extra.clone(), 0, 0).render(width));
@@ -177,7 +167,6 @@ fn build_result(
 
     BashResult {
         styled_output,
-        expanded: options.expanded,
         warning,
         timing,
     }
@@ -207,6 +196,5 @@ pub fn definition() -> ToolRenderDefinition {
             let body = build_result(result, options, ctx.show_images, started, ended);
             Ok(Rc::new(RefCell::new(body)))
         })),
-        render_shell: None,
     }
 }

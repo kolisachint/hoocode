@@ -15,7 +15,7 @@ update this page in the same commit.
 │ notification band ─ tips, transient notices, progress bar                    │
 │ ┌ prompt frame ─ editor, autocomplete; pickers and dialogs replace it ─────┐ │
 │ └──────────────────────────────────────────────────────────────────────────┘ │
-└ footer ─ model, cwd, git branch, session chip, cost, context use ────────────┘
+└ footer ─ 2 rows: folder, branch, path │ model, context, cost ────────────────┘
 ```
 
 | Region | Component | File |
@@ -30,7 +30,7 @@ update this page in the same commit.
 | Prompt editor | `CustomEditor` around `Editor` | `mode/input.rs` (`CustomEditor`); `tui-components/src/editor/` |
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
 | Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `mode/input.rs` `setup_autocomplete_provider`. `@file` uses the in-process finder `hoocode-code-tools::file_finder`, injected by `mode/input.rs` `at_file_finder` (no `fd`) and run on a worker thread (`autocomplete/file_search.rs`): typing never waits, and the editor re-asks when a walk finishes (`take_ready`). |
-| Footer | footer, footer data. A warning line (memory shedding, UI stall) sits above the transient lines; set by `mode/mod.rs` `sync_runtime_health` | `code-tui-app/src/footer.rs`, `footer_data.rs` |
+| Footer | footer, footer data. Always two rows: row 1 folder, branch, session, path, then mode chip and view dial; row 2 model, context gauge, tokens, cost. Compact keeps both rows. Transient messages show above the prompt, not in the footer: a warning line (memory shedding, UI stall), extension statuses and startup progress, read with `FooterComponent::transient_lines`. The warning is set by `mode/mod.rs` `sync_runtime_health` | `code-tui-app/src/footer.rs`, `footer_data.rs` |
 | Session chip | session chip | `code-tui-widgets/src/session_chip.rs` |
 | How much room chrome gets | chrome layout | `code-tui-app/src/chrome_layout.rs` |
 
@@ -43,7 +43,9 @@ update this page in the same commit.
 | Custom and branch-summary messages | `custom_message.rs` |
 | One tool call's block | `tool_execution.rs` |
 | A run of tool calls on one line; radar view | `tool_chain.rs`, `tool_chain_summary.rs`, `tool_signal.rs` |
-| Radar / peek / full dial | `tool_output_view.rs` (`peek_block`, the shared peek body) |
+| Dial: radar ↔ peek (Ctrl+O toggles, persisted). `peek_block` is the shared peek body | `tool_output_view.rs` |
+| `<skill …>` block of a `/skill:name` message (radar row / peek body) | `skill_block.rs` |
+| Background-run notice (radar row / peek body) | `background_notice.rs` |
 | `!` bash command typed by the user | `bash_execution.rs` |
 | Diffs | `diff.rs`, `jsdiff.rs` |
 | File content with line numbers | `read_output.rs` |
@@ -104,6 +106,51 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 To add one: add it to `BUILTIN_SLASH_COMMANDS`, add a `BuiltinCommand` variant and
 its parse arm, handle it in `run_builtin_command`, add a test, update this table.
 
+## Scroll-back (pinned view)
+
+Live: the view follows the newest output. Pinned: the view holds its row while output arrives.
+The TUI owns the mechanism; the app owns which key does what.
+
+**Behaviour**
+
+- Scrollbar: last column, only while pinned and the transcript is taller than the view.
+- The transcript renders one column narrower while the bar shows.
+- `┃` is the thumb, `░` the track. The shapes differ, not only the colour.
+- Click above the thumb: page up. Click below: page down. On the thumb: nothing.
+- A picker or ask-options pane with focus paints its lines at the bottom, above the status row.
+  The transcript keeps at least one row.
+- Pinning works from any focus. Picker keys never un-pin.
+- PgDn past the bottom, or the wheel reaching the bottom, returns to live.
+- Status row (bottom): position, then the keys: line, `PgUp/PgDn page`, top, live. Search has its own text.
+
+**Files**
+
+| Concern | Where |
+|---|---|
+| Pin, clamp, page, live, search, wheel, scrollbar click, picker split, paint | `tui-render/src/tui.rs`: `scroll_by_lines`, `scroll_by_pages`, `scroll_to_top`, `scroll_to_live`, `scroll_to_row`, `transcript_width`, `pinned_split`, `press_scrollbar`, `render_scroll_view`, `handle_mouse_event` |
+| Scrollbar glyphs (pure), `SCROLLBAR_THUMB`, `SCROLLBAR_TRACK` | `tui-render/src/scrollbar.rs` |
+| Prompt focus: `Tui.scroll_prompt`. Any other focus is a picker (`scroll_pane`) | `tui-render/src/tui.rs`; set in `install_scroll_view` |
+| Key routing, search, status text, keys at the prompt | `code-tui-app/src/scroll_view.rs`: `handle_live`, `handle_picker`, `handle_input`, `format_scroll_status`, `install_scroll_view` |
+| Jump to user message | `scroll_view.rs` `jump_to_user_message`, at `transcript_width()` |
+
+**Key routing**
+
+| Key | Prompt focused | Picker focused (live or pinned) |
+|---|---|---|
+| PgUp / PgDn | Page the transcript (pins) | Same |
+| Ctrl+Home / Ctrl+End | Top / live | Same |
+| Wheel | Scroll; wheel up pins | Same |
+| Scrollbar click | Pinned only: page toward the click | Same |
+| ↑ / ↓ | Pinned: one line. Live: the prompt | Picker |
+| Ctrl+↑ / Ctrl+↓ | Previous / next user message | Picker |
+| Ctrl+R | Pin at bottom, open search | Picker |
+| `/` | Pinned: search in view. Live: types `/` | Picker |
+| `n` / `p` | Search open: next / previous match. Else the prompt | Picker |
+| Esc | Search open: clear it. Else live | Picker |
+| Enter, typed text | Search open: the query (Enter commits). Else pinned: back to live, then the prompt | Picker, never un-pins |
+
+A key that is not a scroll key un-pins at the prompt, then does its usual job.
+
 ## Events and the loop
 
 | What | Where |
@@ -121,7 +168,7 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 
 | Concern | Crate / file |
 |---|---|
-| Differential renderer, frames, pinned scroll view | `tui-render/src/tui.rs`, `component.rs` |
+| Differential renderer, frames, pinned scroll view, scrollbar | `tui-render/src/tui.rs`, `component.rs`, `scrollbar.rs` |
 | Terminal: raw mode, stdin reader, resize (SIGWINCH), mouse | `tui-terminal/src/lib.rs`, `stdin_buffer.rs`, `mouse.rs` |
 | Terminal output: every write, in order; one pending frame | `tui-terminal/src/output.rs` (`hoocode-term-out`) |
 | Key parsing (Kitty, modifyOtherKeys), matching | `tui-keys` |

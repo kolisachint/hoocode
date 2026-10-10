@@ -125,6 +125,7 @@ pub fn total_memory_bytes() -> Option<u64> {
 }
 
 /// Parses the `MemTotal:` line of `/proc/meminfo` (value in kB).
+#[cfg(any(target_os = "linux", test))]
 fn parse_mem_total(meminfo: &str) -> Option<u64> {
     let line = meminfo.lines().find(|l| l.starts_with("MemTotal:"))?;
     let kib: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
