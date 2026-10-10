@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed: hoocode-ts pin, shim and parity checks (2026-10-10)
+- **hoocode fully replaces hoocode-ts.** The pinned TS checkout, the `hoocode-ts` shim (installer and release archives), the parity harness, the CI fixture fetch and the TS-comparison tests are gone.
+- **Compaction tests use a generated session** in the old v1 format instead of the TS `large-session.jsonl`.
+- **Moved:** `replay.json` to `crates/hoocode-code-main/tests/fixtures/`, and the dependency firewall check to `scripts/ci/`.
+
+### Changed: model catalog comes from models.dev (2026-10-10)
+- **New crate `hoocode-models-sync`** (`cargo run -p hoocode-models-sync --bin models-sync`) refreshes `data/models.json` from models.dev. Curated fields are kept and models are never removed automatically. Rules live in `data/overrides.json`.
+- **A weekly workflow** (`models-sync.yml`) opens a PR when the data changes. It needs a `MODELS_SYNC_TOKEN` secret for that PR to run CI.
+- **First sync:** 31 models added and 8 prices updated (DeepSeek, Fireworks, Anthropic cache read, Kimi K3 cache write).
+
+### Changed: smaller target/ (2026-10-10)
+- **Dev builds have `debug = false`.** A full build is 5.5 GB instead of 61 GB, and there are no `.o` debug files. Panic messages still show file:line.
+- **`scripts/dev/prune_target.sh`** removes build output unused for 3 days, old `cortex*` names, and an incremental cache over 5 GB. It is a dry run by default; `--apply` deletes and `--if-over GB` skips small dirs. `CLAUDE.md` runs it at session start.
+
 ### Fixed: subagents are no longer stopped in the middle of a long tool (2026-10-10)
 - **A running tool counts as progress.** The watchdog stopped any subagent that went 150s without a turn or tool event, so a long `cargo` build killed the agent mid-tool ("Ran out of time before completing."). Now it only stops a child that has no tool running. The heartbeat check and the 2-hour deadline are unchanged.
 - **The footer no longer misses a branch switch made right after startup.** The git HEAD watcher took its baseline on a background task, so a HEAD change that landed first was never seen.
