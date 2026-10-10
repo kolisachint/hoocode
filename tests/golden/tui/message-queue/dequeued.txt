@@ -1,6 +1,6 @@
 «»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
 «»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
-«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>
 
 
 
@@ -36,5 +36,5 @@
 «fg=#757575»│«»                                                                                                  «fg=#757575»│
 «fg=#757575»│«» and then this«inverse» «»                                                                                   «fg=#757575»│
 «fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
-«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.0%«» «fg=#989898»128k auto@87%«»                                                               «fg=#a8a8a8»mock-model
+«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»…<WORK>
+«fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«» «fg=#989898»of 128k«»  «fg=#a8a8a8»mock-model

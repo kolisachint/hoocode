@@ -34,8 +34,10 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       level: ${{ needs.level.outputs.level }}
-      # Optional labels: release:skip-gates (the PR's CI already covers it),
+      # Gates (ci.yml, re-run) are skipped by default: the PR's CI already ran.
+      # Add label release:run-gates to re-run them. Manual dispatch of
+      # release.yml runs them (its skip_gates input defaults to false).
       # release:crates (deferred: does nothing yet).
-      skip_gates: ${{ contains(github.event.pull_request.labels.*.name, 'release:skip-gates') }}
+      skip_gates: ${{ !contains(github.event.pull_request.labels.*.name, 'release:run-gates') }}
       publish_crates: ${{ contains(github.event.pull_request.labels.*.name, 'release:crates') }}
     secrets: inherit

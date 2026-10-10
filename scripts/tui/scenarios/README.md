@@ -52,13 +52,8 @@ are hoocode's; the ts run looks for hoocode-ts's name (`tool_needle` in `harness
 Rules:
 
 1. Accept a new scenario's screens with `python3 scripts/tui/goldens.py update <name>` after
-   checking them by eye (or with `review_bundle.py`). `goldens.py check <name>` must then pass.
+   checking them by eye. `goldens.py check <name>` must then pass. The set is kept small (about
+   10 key interactive screens) and runs once before a release: `goldens.py check all`.
 2. Prefer `wait_for` / `wait_stable` over `sleep`.
 3. Global normalization lives in `../normalize.json`. Add scenario-local rules only for
    scenario-specific randomness, and document why.
-5. Print-mode scenarios (`wait_exit`) snapshot with `"history": true` and set
-   `"settings": {"enableSemanticIndex": false}`. On exit tmux 3.4 writes its
-   "Pane is dead" line and scrolls the screen by one row. hoocode also prints an
-   `embsearch` warning to stderr unless the semantic index is off, and whether it
-   prints depends on the host's PATH. Without both settings, what stays visible
-   depends on the environment.

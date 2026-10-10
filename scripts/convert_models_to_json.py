@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Providers hoocode drops (docs/design/decisions-2026-10-08.md, "Dropped: Azure").
+# Providers hoocode drops (archive/docs/decisions-2026-10-08.md, "Dropped: Azure").
 # Keep them out of the regenerated catalog so the drop survives a pin bump.
 DROPPED_PROVIDERS = {"azure-openai-responses"}
 # Models hoocode has not shipped yet, merged in after the dump so they survive a

@@ -71,13 +71,14 @@ pub const THEME_COLORS: [&str; 57] = [
 ];
 
 /// Background tokens (`ThemeBg`).
-pub const THEME_BGS: [&str; 11] = [
+pub const THEME_BGS: [&str; 12] = [
     "selectedBg",
     "userMessageBg",
     "customMessageBg",
     "toolPendingBg",
     "toolSuccessBg",
     "toolErrorBg",
+    "toolBandBg",
     "warningBg",
     "brandBg",
     "headlineBg",

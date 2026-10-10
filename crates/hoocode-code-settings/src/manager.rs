@@ -876,11 +876,11 @@ impl SettingsManager {
     }
 
     /// The chrome dial's stop, or `None` when never set (the caller picks a
-    /// default from the terminal size).
+    /// default from the terminal size). A saved `bare` reads as `compact`.
     pub fn chrome_density(&self) -> Option<ChromeDensity> {
         self.get("chromeDensity")
             .and_then(Value::as_str)
-            .and_then(ChromeDensity::parse)
+            .and_then(|v| ChromeDensity::parse(v).or_else(|| ChromeDensity::from_legacy(v)))
     }
 
     pub fn set_chrome_density(&mut self, density: ChromeDensity) {

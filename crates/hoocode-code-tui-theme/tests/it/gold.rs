@@ -61,7 +61,8 @@ fn every_token_encodes_like_hoocode_in_both_modes() {
                     ));
                 }
             }
-            for token in THEME_BGS {
+            // toolBandBg is hoocode-only (not in the frozen TS gold), so skip it here.
+            for token in THEME_BGS.iter().filter(|t| **t != "toolBandBg") {
                 if theme.has_bg(token) != exp["bg"].get(token).is_some() {
                     failures.push(format!("{name} {key} has_bg({token}) differs"));
                 }
@@ -75,7 +76,9 @@ fn every_token_encodes_like_hoocode_in_both_modes() {
 fn resolved_and_export_colors_match_hoocode() {
     let gold = gold();
     for (name, expected) in gold["themes"].as_object().unwrap() {
-        let resolved = get_resolved_theme_colors(Some(name)).unwrap();
+        let mut resolved = get_resolved_theme_colors(Some(name)).unwrap();
+        // toolBandBg is hoocode-only (not in the frozen TS gold).
+        resolved.remove("toolBandBg");
         let exp: BTreeMap<String, String> =
             serde_json::from_value(expected["resolved"].clone()).unwrap();
         assert_eq!(resolved, exp, "{name}");

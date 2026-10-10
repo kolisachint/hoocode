@@ -71,5 +71,5 @@ as a seed in `corpus/<target>/` and a regression test in the owning crate.
    and a `corpus/<name>/` seed directory with a few small valid and broken inputs.
 3. Add `crates/<owner>/tests/.../fuzz_smoke.rs` with a `#[test]` that calls
    `smoke::run("<name>", <name>::run)`, and register the module in that crate's test
-   entry point. Add the target to `migration/ci/fuzz.patch` as well.
+   entry point. Add the target to `archive/migration/ci/fuzz.patch` as well.
 4. Update the table above and `docs/maps/packages.md` if a crate changed.

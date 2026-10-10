@@ -13,7 +13,7 @@ stop the same bug classes coming back.
 |---|---|
 | In `--mode rpc`, a tool that needs approval is **denied** when no client can answer | Today it runs without asking (`code-permissions` `evaluate`: `!has_ui` returns `Allow`; `code-cli` `build_permission_gate` attaches a UI only in interactive mode). hoobot users could run bash and edit files unchecked. |
 | `--print` and `--mode json` keep today's behaviour (allow), but say so | You ran the command yourself, and headless scripts depend on it. A one-line stderr notice lists which tools ran without approval. |
-| Data directories move to `~/.hoocode`, shared with hoocode-ts, after a one-time merge with backups ([naming-and-paths.md](naming-and-paths.md); changed 2026-10-08) | Rust is a drop-in replacement: one config, one login, one session list |
+| Data directories move to `~/.hoocode`, shared with hoocode-ts, after a one-time merge with backups ([naming-and-paths.md](../../archive/docs/naming-and-paths.md); changed 2026-10-08) | Rust is a drop-in replacement: one config, one login, one session list |
 | macOS is a supported dev platform: its test failures are bugs | It's the user's local machine |
 | Panics on user or model input are bugs | One crashed the TUI on 2026-10-02 (byte-slicing inside a multi-byte character) |
 
@@ -33,7 +33,7 @@ stop the same bug classes coming back.
      and in interactive mode still prompts.
    - Approval dialogs over rpc are dropped (2026-10-08); hoobot uses the
      app-server ([rpc-approvals.md](rpc-approvals.md) is kept for the record).
-2. **Paths** (changed 2026-10-08): [naming-and-paths.md](naming-and-paths.md) §2–4.
+2. **Paths** (changed 2026-10-08): [naming-and-paths.md](../../archive/docs/naming-and-paths.md) §2–4.
    Data moves to `~/.hoocode`, **shared with hoocode-ts** (drop-in replacement);
    `HOOCODE_` is the only env prefix; a one-time merge copies `~/.hoocode` and
    `<repo>/.hoocode/` in (hoocode wins, backups first). The crate and binary
@@ -51,7 +51,7 @@ stop the same bug classes coming back.
      Fixed: replay masks both spellings of each temp path (`/private`), `code-tool-api`
      compares names with `same_file_name` (NFC both sides), the `option+a` tip expects
      `option` on macOS, and the scoped-models footer test renders at 200 columns (cause
-     below). The job is `migration/ci/macos-tests.patch`, not yet applied. Not run on
+     below). The job is `archive/migration/ci/macos-tests.patch`, not yet applied. Not run on
      macOS (Linux only here).
      Scoped-models cause: `alt` is printed as `option` on macOS, so the 5-key footer is
      about 20 columns wider and wraps at 120, splitting "all enabled".
@@ -80,7 +80,7 @@ stop the same bug classes coming back.
      (list items are covered through the lexer; `list_item_regex` is crate-private).
      Smoke tests run on stable as `fuzz_smoke` in each owning crate. They replay seeds,
      their prefixes and deterministic mutations, so no `proptest` dependency was added.
-     The nightly job is `migration/ci/fuzz.patch`, not yet applied. The first run found
+     The nightly job is `archive/migration/ci/fuzz.patch`, not yet applied. The first run found
      a panic in `js_regex` `translate` (truncated `\u`, `\x`, `\p`), now fixed.
 
 6. **`@file` autocomplete without `fd`** (2026-10-08).

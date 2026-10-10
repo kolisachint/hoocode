@@ -1,6 +1,6 @@
 «»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
 «»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
-«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>
 
 
 

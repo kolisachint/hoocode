@@ -205,7 +205,7 @@ pub fn tips() -> Vec<Tip> {
             .rows(&["/cd <path> starts a session there. Bare /cd goes home, /cd - goes back."])
             .note("/cd"),
         Tip::new("chrome", "Small terminal? Take the chrome back")
-            .rows(&["/chrome compact, or /chrome bare to get every row for the conversation."])
+            .rows(&["/chrome compact shortens the footer and the task list."])
             .note("/chrome"),
         Tip::new("offline", "It works with no network").rows(&[
             "HOOCODE_OFFLINE=1 skips every startup fetch; search and completion fall back to built-ins.",

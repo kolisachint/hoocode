@@ -106,9 +106,20 @@ impl ToolOutputView {
 }
 
 str_enum!(
-    /// `chromeDensity` (chrome-density.ts).
-    ChromeDensity { Full => "full", Compact => "compact", Bare => "bare" }
+    /// `chromeDensity` (chrome-density.ts). Two stops: the `bare` stop is retired.
+    ChromeDensity { Full => "full", Compact => "compact" }
 );
+
+impl ChromeDensity {
+    /// Values older versions wrote. The retired `bare` stop reads as compact,
+    /// the stop that still shows the footer.
+    pub fn from_legacy(value: &str) -> Option<Self> {
+        match value {
+            "bare" => Some(Self::Compact),
+            _ => None,
+        }
+    }
+}
 
 str_enum!(
     /// `pluginInstallScope`.

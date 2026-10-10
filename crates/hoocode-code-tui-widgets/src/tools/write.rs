@@ -8,11 +8,12 @@ use hoocode_tui_render::Container;
 use serde_json::{json, Value};
 
 use super::{text, trim_trailing_empty_lines};
+use crate::read_output::render_read_output;
 use crate::render_utils::{
     arg_or, invalid_arg_text, normalize_display_text, replace_tabs, shorten_path, str_arg,
 };
 use crate::tool_execution::ToolRenderDefinition;
-use crate::tool_output_view::PEEK_LINES;
+use crate::tool_output_view::{peek_block, PEEK_LINES};
 
 /// Lines re-highlighted as one block while the content streams in.
 const WRITE_PARTIAL_FULL_HIGHLIGHT_LINES: usize = 50;
@@ -137,6 +138,23 @@ fn update_incremental(
     Some(cache)
 }
 
+/// The success preview: the first lines of the written content, numbered like
+/// Read, with the peek `... (N more lines)` hint. `None` for empty content.
+fn format_write_preview(raw_path: Option<&str>, content: &str) -> Option<String> {
+    let normalized = replace_tabs(&normalize_display_text(content));
+    let rendered: Vec<String> = match raw_path.and_then(get_language_from_path) {
+        Some(lang) => highlight_code(&normalized, Some(lang)),
+        None => normalized.split('\n').map(String::from).collect(),
+    };
+    let lines = trim_trailing_empty_lines(rendered);
+    if lines.is_empty() {
+        return None;
+    }
+    Some(peek_block(&lines, |shown| {
+        render_read_output(&shown.join("\n"), 1)
+    }))
+}
+
 fn format_write_call(args: &Value, cache: Option<&HighlightCache>) -> String {
     let t = theme();
     let raw_path = str_arg(arg_or(args, "file_path", "path"));
@@ -230,7 +248,12 @@ pub fn definition() -> ToolRenderDefinition {
                     .collect::<Vec<_>>()
                     .join("\n");
                 if !output.is_empty() {
-                    return Ok(text(format!("\n{}", theme().fg("error", &output))));
+                    return Ok(text(theme().fg("error", &output)));
+                }
+            } else if let Some(content) = str_arg(ctx.args.get("content")) {
+                let raw_path = str_arg(arg_or(ctx.args, "file_path", "path"));
+                if let Some(preview) = format_write_preview(raw_path.as_deref(), &content) {
+                    return Ok(text(preview));
                 }
             }
             Ok(std::rc::Rc::new(std::cell::RefCell::new(Container::new())))

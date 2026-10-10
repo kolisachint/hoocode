@@ -1,12 +1,16 @@
-//! The footer (`components/footer.ts`): always two rows.
+//! The footer (`components/footer.ts`). Two layouts (see `FooterDensity`):
+//! detailed, two rows, and short, one row.
 //!
-//! Row 1 is identity and location: the folder name (never dropped), the
-//! branch, the session name, the path; on the right, subagents, the mode chip
-//! and the view dial. Row 2 is session vitals: model and effort, the context
-//! gauge with its percent (never dropped), the window, tokens, cost.
+//! Detailed row 1 starts with the mode chip and the view dial, then the folder
+//! name (never dropped), the branch, the session name, the path; on the
+//! right, subagents. Row 2 starts with the context gauge and its percent
+//! (never dropped), then the window, model and effort, tokens, cache, cost.
+//!
+//! Short is one row: mode, gauge, branch, model, folder, cost, dial,
+//! subagents.
 //!
 //! When the width is short, parts go in a fixed order (see
-//! `line1_candidates` and `line2_candidates`). Transient messages (the
+//! `line1_candidates`, `line2_candidates` and `short_candidates`). Transient messages (the
 //! warning, extension statuses, startup progress) are not rows: read them with
 //! [`FooterComponent::transient_lines`] and show them in the notification area.
 
@@ -62,13 +66,12 @@ pub fn tool_output_view_glyph(view: ToolOutputView) -> &'static str {
     }
 }
 
-/// Which layout the footer uses. Both are two rows.
+/// Which layout the footer uses: detailed (two rows) or short (one row).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FooterDensity {
     #[default]
     Full,
-    /// Compact: row 1 drops the path and session; row 2 keeps only the
-    /// model, gauge and percent. The folder name stays on both layouts.
+    /// Short: one row, with the mode, the gauge and the folder name.
     Line,
 }
 
@@ -248,6 +251,93 @@ fn format_cost(cost: f64) -> String {
     }
 }
 
+/// Width of the left column in both detailed rows: the mode chip and the dial
+/// (row 1), the bar, percent, window and warning flag (row 2). Row 2's column
+/// ends with the one-cell flag slot (`!` or a space), so both rows line up.
+const LEFT_COLUMN: usize = 22;
+
+/// The mode chip is padded to this width: the longest mode name.
+const CHIP_WIDTH: usize = 5;
+
+/// The window part, `of 1.0M`, padded to this width.
+const WINDOW_WIDTH: usize = 7;
+
+/// Provider prefixes dropped from a model id in the short layout.
+const PROVIDER_PREFIXES: &[&str] = &[
+    "claude-",
+    "gpt-",
+    "gemini-",
+    "mistral-",
+    "llama-",
+    "deepseek-",
+    "grok-",
+    "qwen-",
+];
+
+/// The model id without a known provider prefix: `claude-opus-5-5` gives
+/// `opus-5-5`.
+fn short_model_name(id: &str) -> &str {
+    PROVIDER_PREFIXES
+        .iter()
+        .find_map(|prefix| id.strip_prefix(prefix))
+        .filter(|rest| !rest.is_empty())
+        .unwrap_or(id)
+}
+
+/// Thinking levels in the short layout. `high`, `low` and `off` are unchanged.
+fn short_level(level: &str) -> &str {
+    match level {
+        "medium" => "med",
+        "minimal" => "min",
+        other => other,
+    }
+}
+
+/// `text` padded on the right with spaces to `width` cells.
+fn pad_plain(text: &str, width: usize) -> String {
+    format!(
+        "{text}{}",
+        " ".repeat(width.saturating_sub(visible_width(text)))
+    )
+}
+
+/// `piece` padded on the right to `width` cells. The padding is unstyled.
+fn pad_piece(piece: Piece, width: usize) -> Piece {
+    let pad = " ".repeat(width.saturating_sub(visible_width(&piece.0)));
+    (piece.0 + &pad, piece.1 + &pad)
+}
+
+/// Pieces with no gap between them.
+fn cat_pieces(pieces: &[Piece]) -> Piece {
+    join_pieces(pieces, "")
+}
+
+/// A single unstyled space: a gap or an empty flag slot.
+fn space_piece() -> Piece {
+    (" ".to_string(), " ".to_string())
+}
+
+/// The mode chip, padded to `CHIP_WIDTH`, in the chip style.
+fn chip_piece(mode: &str) -> Piece {
+    let t = theme();
+    let text = pad_plain(mode, CHIP_WIDTH);
+    let styled = if t.has_bg("brandBg") && t.has("brandText") {
+        t.bg("brandBg", &t.bold(&t.fg("brandText", &text)))
+    } else {
+        t.bold(&t.fg("accent", &text))
+    };
+    (text, styled)
+}
+
+/// The percent, right-aligned in four cells: `  2%`, ` 88%`, `100%`.
+fn percent_piece(text: &str, color: &str) -> Piece {
+    let pad = " ".repeat(4usize.saturating_sub(visible_width(text)));
+    (
+        format!("{pad}{text}"),
+        format!("{pad}{}", theme().fg(color, text)),
+    )
+}
+
 /// What row 1 can show, before any dropping.
 struct Line1Data {
     name: String,
@@ -255,12 +345,14 @@ struct Line1Data {
     path: String,
     branch: Option<String>,
     session: Option<String>,
+    /// Detailed form: `◇2 running · 1 queued`.
     subagents: Option<Piece>,
     mode: String,
     dial: String,
 }
 
-/// One candidate for row 1: which optional parts are on.
+/// Which optional parts of row 1 are on. The mode chip and the dial are
+/// always on.
 #[derive(Debug, Clone, PartialEq)]
 struct Line1Parts {
     /// The path as shown (full or shortened); `None` drops it.
@@ -268,25 +360,20 @@ struct Line1Parts {
     session: bool,
     subagents: bool,
     branch: bool,
-    dial: bool,
-    chip: bool,
 }
 
 /// Row 1 candidates, most to least. Order of dropping: the path (shortened
-/// from the left first), the session, subagents, the branch, the dial, the
-/// mode chip. The folder name is always there; the last candidate is the
-/// name alone.
-fn line1_candidates(d: &Line1Data, compact: bool) -> Vec<Line1Parts> {
+/// from the left first), the session, subagents, the branch. The mode chip,
+/// the dial and the folder name are never dropped.
+fn line1_candidates(d: &Line1Data) -> Vec<Line1Parts> {
     let mut p = Line1Parts {
         path: None,
-        session: d.session.is_some() && !compact,
+        session: d.session.is_some(),
         subagents: d.subagents.is_some(),
         branch: d.branch.is_some(),
-        dial: true,
-        chip: true,
     };
     let mut out = Vec::new();
-    if !compact && !d.path.is_empty() {
+    if !d.path.is_empty() {
         out.push(Line1Parts {
             path: Some(d.path.clone()),
             ..p.clone()
@@ -302,55 +389,46 @@ fn line1_candidates(d: &Line1Data, compact: bool) -> Vec<Line1Parts> {
     p.subagents = false;
     out.push(p.clone());
     p.branch = false;
-    out.push(p.clone());
-    p.dial = false;
-    out.push(p.clone());
-    p.chip = false;
     out.push(p);
     out
 }
 
-/// Row 1 as text, if the candidate fits `width`.
-fn fit_line1(width: usize, d: &Line1Data, p: &Line1Parts) -> Option<String> {
+/// Row 1 with the parts in `p`: the left part (mode chip, dial and the
+/// identity, padded to `LEFT_COLUMN`) and the right part.
+fn row1_parts(d: &Line1Data, p: &Line1Parts) -> (Piece, Option<Piece>) {
     let t = theme();
-    let mut left = (d.name.clone(), t.bold(&t.fg("text", &d.name)));
+    let mut identity = (d.name.clone(), t.bold(&t.fg("text", &d.name)));
     if let Some(branch) = d.branch.as_ref().filter(|_| p.branch) {
-        left.0 += &format!("  {GIT_BRANCH_GLYPH} {branch}");
-        left.1 += &format!(
+        identity.0 += &format!("  {GIT_BRANCH_GLYPH} {branch}");
+        identity.1 += &format!(
             "  {} {}",
             t.fg("dim", GIT_BRANCH_GLYPH),
             t.fg("muted", branch)
         );
     }
     if let Some(session) = d.session.as_ref().filter(|_| p.session) {
-        left.0 += &format!(" • {session}");
-        left.1 += &t.fg("dim", &format!(" • {session}"));
+        identity.0 += &format!(" • {session}");
+        identity.1 += &t.fg("dim", &format!(" • {session}"));
     }
     if let Some(path) = &p.path {
-        left.0 += &format!("  {path}");
-        left.1 += &format!("  {}", t.fg("dim", path));
+        identity.0 += &format!("  {path}");
+        identity.1 += &format!("  {}", t.fg("dim", path));
     }
+    let head = pad_piece(
+        join_pieces(
+            &[chip_piece(&d.mode), (d.dial.clone(), t.fg("dim", &d.dial))],
+            " · ",
+        ),
+        LEFT_COLUMN,
+    );
+    let left = cat_pieces(&[head, identity]);
+    let right = d.subagents.clone().filter(|_| p.subagents);
+    (left, right)
+}
 
-    let mut groups: Vec<Piece> = Vec::new();
-    if let Some(sub) = d.subagents.as_ref().filter(|_| p.subagents) {
-        groups.push(sub.clone());
-    }
-    let mut mode: Vec<Piece> = Vec::new();
-    if p.chip {
-        let chip_styled = if t.has_bg("brandBg") && t.has("brandText") {
-            t.bg("brandBg", &t.bold(&t.fg("brandText", &d.mode)))
-        } else {
-            t.bold(&t.fg("accent", &d.mode))
-        };
-        mode.push((d.mode.clone(), chip_styled));
-    }
-    if p.dial {
-        mode.push((d.dial.clone(), t.fg("dim", &d.dial)));
-    }
-    if !mode.is_empty() {
-        groups.push(join_pieces(&mode, " · "));
-    }
-    let right = (!groups.is_empty()).then(|| join_pieces(&groups, "  "));
+/// Row 1 as text, if the candidate fits `width`.
+fn fit_line1(width: usize, d: &Line1Data, p: &Line1Parts) -> Option<String> {
+    let (left, right) = row1_parts(d, p);
     fit_left_right(width, &left, right.as_ref())
 }
 
@@ -360,14 +438,16 @@ struct Line2Data {
     provider: Option<Piece>,
     /// Model id and effort.
     model: Piece,
-    /// The bar and the percent.
+    /// The bar and the percent: `▰▰▰▱▱▱▱▱ 34%`, no flag.
     gauge: Piece,
-    /// ` of 200k`.
+    /// `!` at the warning threshold.
+    flag: Option<Piece>,
+    /// `of 200k`, padded to `WINDOW_WIDTH`.
     window: Option<Piece>,
     /// `↑48k ↓3.1k`.
     io: Vec<Piece>,
-    /// `R120k W50`.
-    cache: Vec<Piece>,
+    /// `cache 120k/50k`.
+    cache: Option<Piece>,
     cost: Option<Piece>,
 }
 
@@ -382,22 +462,12 @@ struct Line2Parts {
 }
 
 /// Row 2 candidates, most to least. Order of dropping: provider prefix,
-/// cache (R/W), the ↑↓ tokens, cost, window. Model and percent are never
-/// dropped.
-fn line2_candidates(d: &Line2Data, compact: bool) -> Vec<Line2Parts> {
-    if compact {
-        return vec![Line2Parts {
-            provider: false,
-            window: false,
-            cache: false,
-            io: false,
-            cost: false,
-        }];
-    }
+/// cache, the ↑↓ tokens, cost, window. Model and gauge are never dropped.
+fn line2_candidates(d: &Line2Data) -> Vec<Line2Parts> {
     let mut p = Line2Parts {
         provider: d.provider.is_some(),
         window: d.window.is_some(),
-        cache: !d.cache.is_empty(),
+        cache: d.cache.is_some(),
         io: !d.io.is_empty(),
         cost: d.cost.is_some(),
     };
@@ -415,40 +485,139 @@ fn line2_candidates(d: &Line2Data, compact: bool) -> Vec<Line2Parts> {
     out
 }
 
-/// Row 2 as styled text, if the candidate fits `width`.
+/// Row 2 with the parts in `p`, as plain and styled text.
+///
+/// With the window, the left column is `bar  NN% of 1.0M!` padded to
+/// `LEFT_COLUMN`; its last cell is the flag slot. One space follows it, then
+/// the model and the other groups, three spaces apart. Without the window,
+/// the flag follows the percent, and the column is still padded to
+/// `LEFT_COLUMN`, so the model starts in the same cell.
+fn build_line2(d: &Line2Data, p: &Line2Parts) -> Piece {
+    let left = match (&d.window, p.window) {
+        (Some(window), true) => {
+            let slot = d.flag.clone().unwrap_or_else(space_piece);
+            pad_piece(
+                cat_pieces(&[d.gauge.clone(), space_piece(), window.clone(), slot]),
+                LEFT_COLUMN,
+            )
+        }
+        _ => pad_piece(
+            cat_pieces(&[d.gauge.clone(), d.flag.clone().unwrap_or_default()]),
+            LEFT_COLUMN,
+        ),
+    };
+    let model = match (&d.provider, p.provider) {
+        (Some((pp, ps)), true) => (format!("{pp}{}", d.model.0), format!("{ps}{}", d.model.1)),
+        _ => d.model.clone(),
+    };
+    let mut groups = vec![model];
+    if p.io && !d.io.is_empty() {
+        groups.push(join_pieces(&d.io, " "));
+    }
+    if p.cache {
+        groups.extend(d.cache.clone());
+    }
+    if p.cost {
+        groups.extend(d.cost.clone());
+    }
+    cat_pieces(&[left, space_piece(), join_pieces(&groups, "   ")])
+}
+
+/// Row 2 as text, if the candidate fits `width`.
 fn fit_line2(width: usize, d: &Line2Data, p: &Line2Parts) -> Option<String> {
     let build = build_line2(d, p);
     (visible_width(&build.0) <= width).then_some(build.1)
 }
 
-/// Row 2 with the parts in `p`: plain and styled.
-fn build_line2(d: &Line2Data, p: &Line2Parts) -> Piece {
-    let model = match (&d.provider, p.provider) {
-        (Some((pp, ps)), true) => (format!("{pp}{}", d.model.0), format!("{ps}{}", d.model.1)),
-        _ => d.model.clone(),
+/// The short layout's parts, before any dropping. One row:
+/// `BUILD  ▱▱▱▱▱▱▱▱   2%  ⑂ main  opus-5-5 · med  hoocode  $0.30  ◌ radar  ◇2`.
+struct ShortData {
+    chip: Piece,
+    gauge: Piece,
+    branch: Option<Piece>,
+    model: Piece,
+    name: Piece,
+    cost: Option<Piece>,
+    dial: Piece,
+    subagents: Option<Piece>,
+}
+
+/// Which optional parts of the short layout are on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ShortParts {
+    subagents: bool,
+    cost: bool,
+    name: bool,
+    model: bool,
+    branch: bool,
+    dial: bool,
+}
+
+/// Short candidates, most to least. Order of dropping: subagents, cost, the
+/// folder name, the model, the branch, the dial. The mode chip and the gauge
+/// are never dropped.
+fn short_candidates(d: &ShortData) -> Vec<ShortParts> {
+    let mut p = ShortParts {
+        subagents: d.subagents.is_some(),
+        cost: d.cost.is_some(),
+        name: true,
+        model: true,
+        branch: d.branch.is_some(),
+        dial: true,
     };
-    let gauge = match (&d.window, p.window) {
-        (Some((wp, ws)), true) => (format!("{}{wp}", d.gauge.0), format!("{}{ws}", d.gauge.1)),
-        _ => d.gauge.clone(),
-    };
-    let mut tokens: Vec<Piece> = Vec::new();
-    if p.io {
-        tokens.extend(d.io.iter().cloned());
+    let mut out = vec![p];
+    p.subagents = false;
+    out.push(p);
+    p.cost = false;
+    out.push(p);
+    p.name = false;
+    out.push(p);
+    p.model = false;
+    out.push(p);
+    p.branch = false;
+    out.push(p);
+    p.dial = false;
+    out.push(p);
+    out
+}
+
+/// The short layout with the parts in `p`: two spaces between groups.
+fn build_short(d: &ShortData, p: &ShortParts) -> Piece {
+    let mut groups = vec![d.chip.clone(), d.gauge.clone()];
+    if p.branch {
+        groups.extend(d.branch.clone());
     }
-    if p.cache {
-        tokens.extend(d.cache.iter().cloned());
+    if p.model {
+        groups.push(d.model.clone());
     }
-    let (mut plain, mut styled) = join_pieces(&[model, gauge], "   ");
-    if !tokens.is_empty() {
-        let (tp, ts) = join_pieces(&tokens, " ");
-        plain += &format!("   {tp}");
-        styled += &format!("   {ts}");
+    if p.name {
+        groups.push(d.name.clone());
     }
-    if let Some((cp, cs)) = d.cost.as_ref().filter(|_| p.cost) {
-        plain += &format!("  {cp}");
-        styled += &format!("  {cs}");
+    if p.cost {
+        groups.extend(d.cost.clone());
     }
-    (plain, styled)
+    if p.dial {
+        groups.push(d.dial.clone());
+    }
+    if p.subagents {
+        groups.extend(d.subagents.clone());
+    }
+    join_pieces(&groups, "  ")
+}
+
+/// `◇2` for the short layout, `◇2 · 1 queued` when some wait.
+fn subagent_short_piece(running: usize, queued: usize) -> Piece {
+    let t = theme();
+    let head = format!("◇{running}");
+    if queued > 0 {
+        let tail = format!(" · {queued} queued");
+        (
+            format!("{head}{tail}"),
+            t.fg("accent", &head) + &t.fg("dim", &tail),
+        )
+    } else {
+        (head.clone(), t.fg("accent", &head))
+    }
 }
 
 pub struct FooterComponent {
@@ -493,8 +662,7 @@ impl FooterComponent {
         self.tool_output_view = view;
     }
 
-    /// `Line` is the compact layout: still two rows, with the path and session
-    /// left out of row 1 and the tokens and cost left out of row 2.
+    /// `Line` is the short layout: one row.
     pub fn set_density(&mut self, density: FooterDensity) {
         self.density = density;
     }
@@ -546,12 +714,11 @@ impl FooterComponent {
     fn render_lines(&self, width: usize) -> Vec<String> {
         let t = theme();
         let source = &self.source;
-        let compact = self.density == FooterDensity::Line;
         let (total_input, total_output, total_cache_read, total_cache_write, total_cost) =
             source.usage_totals();
         let model = source.model();
 
-        // ── Row 1 — identity & location
+        // ── Shared: identity & location
         let cwd = source.cwd();
         let name = Path::new(&cwd)
             .file_name()
@@ -562,29 +729,13 @@ impl FooterComponent {
             Some(source.display_name()).filter(|n| !n.is_empty())
         };
         let (n_sub, n_queued) = subagent_counts();
+        let has_subagents = n_sub > 0 || n_queued > 0;
         let view = self.tool_output_view;
-        let d1 = Line1Data {
-            name,
-            path: tilde(&cwd),
-            branch: self.data.get_git_branch(),
-            session: session_name,
-            subagents: (n_sub > 0 || n_queued > 0).then(|| subagent_piece(n_sub, n_queued)),
-            mode: self.data.get_active_mode().to_uppercase(),
-            dial: format!("{} {}", tool_output_view_glyph(view), view.as_str()),
-        };
-        let line1 = line1_candidates(&d1, compact)
-            .iter()
-            .find_map(|p| fit_line1(width, &d1, p))
-            .unwrap_or_else(|| {
-                truncate_to_width(
-                    &t.bold(&t.fg("text", &d1.name)),
-                    width,
-                    &t.fg("dim", "…"),
-                    false,
-                )
-            });
+        let dial = format!("{} {}", tool_output_view_glyph(view), view.as_str());
+        let mode = self.data.get_active_mode().to_uppercase();
+        let branch = self.data.get_git_branch();
 
-        // ── Row 2 — session vitals
+        // ── Shared: context gauge
         let context_usage = source.context_usage();
         let context_window = context_usage
             .map(|(w, _)| w)
@@ -612,16 +763,25 @@ impl FooterComponent {
         } else {
             "muted"
         };
+        // The `!` is the warning cue that does not depend on colour. It shows
+        // where the bar changes colour.
+        let flag =
+            (context_percent_value >= warn_level).then(|| ("!".to_string(), t.fg(pct_color, "!")));
         let (bar_plain, bar_styled) = context_gauge(context_percent_value, error_level, warn_level);
-        let gauge = (
-            format!("{bar_plain} {pct_text}"),
-            format!("{bar_styled} {}", t.fg(pct_color, &pct_text)),
-        );
+        let gauge = cat_pieces(&[
+            (bar_plain, bar_styled),
+            space_piece(),
+            percent_piece(&pct_text, pct_color),
+        ]);
         let window = (context_window > 0).then(|| {
-            let text = format!(" of {}", format_tokens(context_window));
+            let text = pad_plain(
+                &format!("of {}", format_tokens(context_window)),
+                WINDOW_WIDTH,
+            );
             (text.clone(), t.fg("dim", &text))
         });
 
+        // ── Shared: usage
         let arrow = |a: &str, n: u64| {
             (
                 format!("{a}{}", format_tokens(n)),
@@ -635,44 +795,41 @@ impl FooterComponent {
         if total_output > 0 {
             io.push(arrow("↓", total_output));
         }
-        let mut cache = Vec::new();
-        if total_cache_read > 0 {
-            cache.push(arrow("R", total_cache_read));
-        }
-        if total_cache_write > 0 {
-            cache.push(arrow("W", total_cache_write));
-        }
+        let cache = (total_cache_read > 0 || total_cache_write > 0).then(|| {
+            let figures = format!(
+                "{}/{}",
+                format_tokens(total_cache_read),
+                format_tokens(total_cache_write)
+            );
+            (
+                format!("cache {figures}"),
+                t.fg("dim", "cache ") + &t.fg("muted", &figures),
+            )
+        });
         let using_subscription = model.is_some() && source.is_using_oauth();
         let cost = (total_cost != 0.0 || using_subscription).then(|| {
             let text = format!(
                 "${}{}",
                 format_cost(total_cost),
-                if using_subscription { " (sub)" } else { "" }
+                if using_subscription { " sub" } else { "" }
             );
             (text.clone(), t.fg("muted", &text))
         });
 
+        // ── Shared: model
         let model_name = model
             .as_ref()
             .map(|m| m.id.clone())
             .filter(|id| !id.is_empty())
             .unwrap_or_else(|| "no-model".into());
-        let mut model_piece = (model_name.clone(), t.fg("muted", &model_name));
-        if model.as_ref().is_some_and(|m| m.reasoning) {
+        let level = model.as_ref().filter(|m| m.reasoning).map(|_| {
             let level = source.thinking_level();
-            let level = if level.is_empty() {
+            if level.is_empty() {
                 "off".to_string()
             } else {
                 level
-            };
-            let text = if level == "off" {
-                "thinking off".to_string()
-            } else {
-                level
-            };
-            model_piece.0 += &format!(" • {text}");
-            model_piece.1 += &t.fg("dim", &format!(" • {text}"));
-        }
+            }
+        });
         let provider = model
             .as_ref()
             .filter(|_| self.data.get_available_provider_count() > 1)
@@ -683,31 +840,135 @@ impl FooterComponent {
                 )
             });
 
-        let d2 = Line2Data {
-            provider,
-            model: model_piece,
-            gauge,
-            window,
-            io,
-            cache,
-            cost,
-        };
-        let candidates = line2_candidates(&d2, compact);
-        let line2 = candidates
-            .iter()
-            .find_map(|p| fit_line2(width, &d2, p))
-            .unwrap_or_else(|| {
-                let last = candidates.last().copied().unwrap_or(Line2Parts {
-                    provider: false,
-                    window: false,
-                    cache: false,
-                    io: false,
-                    cost: false,
-                });
-                truncate_to_width(&build_line2(&d2, &last).1, width, &t.fg("dim", "…"), false)
-            });
+        match self.density {
+            FooterDensity::Full => {
+                // ── Row 1 — identity & location
+                let d1 = Line1Data {
+                    name: name.clone(),
+                    path: tilde(&cwd),
+                    branch,
+                    session: session_name,
+                    subagents: has_subagents.then(|| subagent_piece(n_sub, n_queued)),
+                    mode: mode.clone(),
+                    dial: dial.clone(),
+                };
+                let line1 = line1_candidates(&d1)
+                    .iter()
+                    .find_map(|p| fit_line1(width, &d1, p))
+                    .unwrap_or_else(|| {
+                        let (left, right) = row1_parts(
+                            &d1,
+                            &Line1Parts {
+                                path: None,
+                                session: false,
+                                subagents: false,
+                                branch: false,
+                            },
+                        );
+                        let all = match right {
+                            Some(r) => cat_pieces(&[left, ("  ".into(), "  ".into()), r]),
+                            None => left,
+                        };
+                        truncate_to_width(&all.1, width, &t.fg("dim", "…"), false)
+                    });
 
-        vec![line1, line2]
+                // ── Row 2 — session vitals
+                let model_piece = {
+                    let mut piece = (model_name.clone(), t.fg("muted", &model_name));
+                    if let Some(level) = &level {
+                        let text = if level == "off" {
+                            "thinking off".to_string()
+                        } else {
+                            level.clone()
+                        };
+                        piece.0 += &format!(" · {text}");
+                        piece.1 += &t.fg("dim", &format!(" · {text}"));
+                    }
+                    piece
+                };
+                let d2 = Line2Data {
+                    provider,
+                    model: model_piece,
+                    gauge: gauge.clone(),
+                    flag: flag.clone(),
+                    window,
+                    io,
+                    cache,
+                    cost,
+                };
+                let candidates = line2_candidates(&d2);
+                let line2 = candidates
+                    .iter()
+                    .find_map(|p| fit_line2(width, &d2, p))
+                    .unwrap_or_else(|| {
+                        let last = candidates.last().copied().unwrap_or(Line2Parts {
+                            provider: false,
+                            window: false,
+                            cache: false,
+                            io: false,
+                            cost: false,
+                        });
+                        truncate_to_width(
+                            &build_line2(&d2, &last).1,
+                            width,
+                            &t.fg("dim", "…"),
+                            false,
+                        )
+                    });
+
+                vec![line1, line2]
+            }
+            FooterDensity::Line => {
+                let model_piece = {
+                    let short = short_model_name(&model_name);
+                    let mut piece = (short.to_string(), t.fg("muted", short));
+                    if let Some(level) = &level {
+                        let level = short_level(level);
+                        piece.0 += &format!(" · {level}");
+                        piece.1 += &t.fg("dim", &format!(" · {level}"));
+                    }
+                    piece
+                };
+                let cost_short = cost.clone();
+                let d = ShortData {
+                    chip: chip_piece(&mode),
+                    gauge: cat_pieces(&[gauge, flag.clone().unwrap_or_default()]),
+                    branch: branch.map(|b| {
+                        (format!("{GIT_BRANCH_GLYPH} {b}"), {
+                            t.fg("dim", GIT_BRANCH_GLYPH) + " " + &t.fg("muted", &b)
+                        })
+                    }),
+                    model: model_piece,
+                    name: (name.clone(), t.bold(&t.fg("text", &name))),
+                    cost: cost_short,
+                    dial: (dial.clone(), t.fg("dim", &dial)),
+                    subagents: has_subagents.then(|| subagent_short_piece(n_sub, n_queued)),
+                };
+                let line = short_candidates(&d)
+                    .iter()
+                    .find_map(|p| {
+                        let (plain, styled) = build_short(&d, p);
+                        (visible_width(&plain) <= width).then_some(styled)
+                    })
+                    .unwrap_or_else(|| {
+                        let last = short_candidates(&d).last().copied().unwrap_or(ShortParts {
+                            subagents: false,
+                            cost: false,
+                            name: false,
+                            model: false,
+                            branch: false,
+                            dial: false,
+                        });
+                        truncate_to_width(
+                            &build_short(&d, &last).1,
+                            width,
+                            &t.fg("dim", "…"),
+                            false,
+                        )
+                    });
+                vec![line]
+            }
+        }
     }
 }
 

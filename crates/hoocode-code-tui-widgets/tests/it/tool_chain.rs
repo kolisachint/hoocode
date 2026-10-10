@@ -321,8 +321,14 @@ fn a_single_call_in_peek_is_still_its_own_block() {
     );
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    // Peek draws the call's own block: a Shell call reads as `$ command`.
-    assert!(out.contains("$ npm run check"), "{out}");
+    // Peek draws the call's own block: a Shell call reads as `● Shell  command`,
+    // its output indented under the tool name, with no blank row after the call.
+    let rows: Vec<&str> = out.lines().map(str::trim_end).collect();
+    assert!(
+        rows.windows(2)
+            .any(|w| w == ["  ● Shell  npm run check", "    l1"]),
+        "{out}"
+    );
     assert!(!out.contains("1 call"), "{out}");
     assert!(!chain.is_summarised());
 }

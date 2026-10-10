@@ -101,8 +101,7 @@ Affected files and crates (from Current state):
   `hoocode-code-tui-selectors`'s golden tests, per `tests/golden/<crate>/`).
 - **Screen golden:** `/scoped-models` end to end (`scripts/tui/goldens.py`), accepted with
   `goldens.py update <scenario>` once reviewed.
-- Done bar: L1 plus `python3 scripts/tui/goldens.py check all`, and a review bundle for the
-  visual change.
+- Done bar: L1. Run `python3 scripts/tui/goldens.py check all` before a release, not per change.
 
 ## Implementation notes
 

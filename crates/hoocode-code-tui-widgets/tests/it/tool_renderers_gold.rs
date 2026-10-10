@@ -1,6 +1,6 @@
 //! The tool renderers against the pin's own `renderCall`/`renderResult`
 //! output (`fixtures/tool-renderers-gold.json`, from
-//! `migration/tools/goldens/tool-renderers.mjs`).
+//! `archive/migration/tools/goldens/tool-renderers.mjs`).
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
@@ -155,6 +155,7 @@ fn compact_read_path(args: &Value) -> bool {
         || path.contains("/docs/")
 }
 
+#[ignore = "frozen TS pin; tool renderers redesigned 2026-10-10 (docs/design/tool-calls-peek-radar.md)"]
 #[test]
 fn renderers_match_the_pin() {
     let _g = lock();

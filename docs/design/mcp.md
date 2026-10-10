@@ -1,6 +1,6 @@
 # MCP client
 
-Status: **built 2026-10-08** (`hoocode-agent-mcp`, `hoocode-code-mcp`; scope cut in [decisions-2026-10-08.md](decisions-2026-10-08.md)). Open: no load test, no conformance suite run, no manual real-server or OAuth run, plugin `mcp.json` not loaded (milestone 6). See [../../migration/PROGRESS.md](../../migration/PROGRESS.md).
+Status: **built 2026-10-08** (`hoocode-agent-mcp`, `hoocode-code-mcp`; scope cut in [decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md)). Open: no load test, no conformance suite run, no manual real-server or OAuth run, plugin `mcp.json` not loaded (milestone 6). See [../../archive/migration/PROGRESS.md](../../archive/migration/PROGRESS.md).
 Elicitation is answered in the TUI and declined in print and rpc (no question request there yet).
 Replaces ledger 9.1 and 10.11 (both `moved` to this card).
 

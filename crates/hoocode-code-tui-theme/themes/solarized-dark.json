@@ -50,6 +50,7 @@
 		"toolPendingBg": "toolPendingBg",
 		"toolSuccessBg": "toolSuccessBg",
 		"toolErrorBg": "toolErrorBg",
+		"toolBandBg": "base02",
 		"warningBg": "warningBg",
 		"toolTitle": "base1",
 		"toolOutput": "base0",

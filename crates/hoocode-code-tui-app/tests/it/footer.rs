@@ -1,6 +1,7 @@
-//! The footer: always two rows, and the fixed order in which parts drop when
-//! the width is short. Ports of `footer-width.test.ts`, the footer half of
-//! `startup-progress.test.ts`, and `subagent-footer.test.ts`.
+//! The footer: detailed (two rows) or short (one row), and the fixed order in
+//! which parts drop when the width is short. Ports of `footer-width.test.ts`,
+//! the footer half of `startup-progress.test.ts`, and
+//! `subagent-footer.test.ts`.
 //!
 //! Retired 2026-10-09 (user decision: footer layout B). The pinned golden
 //! (`fixtures/footer-gold.json`, hoocode's old layout) no longer describes the
@@ -158,7 +159,10 @@ fn hands_the_session_name_to_the_chip_once_the_box_is_wide_enough() {
     let mut f = footer(stub("refactor-auth"), 1);
     f.set_session_chip_shown(true);
     assert!(!plain(&f.render(120)[0]).contains("refactor-auth"));
-    assert!(plain(&f.render(40)[0]).contains("• refactor"));
+    // Below the chip's minimum width (48 cells) the chip does not fit, so the
+    // footer shows the name again. 46 is the narrowest width that still holds
+    // the 22-cell left column plus `project • refactor-auth`.
+    assert!(plain(&f.render(46)[0]).contains("• refactor"));
 }
 
 #[test]
@@ -193,7 +197,7 @@ fn renders_without_task_related_content() {
 }
 
 #[test]
-fn footer_is_two_rows_in_every_state() {
+fn footer_is_two_rows_detailed_and_one_row_short_in_every_state() {
     let _g = lock(Some("dark"));
     let dir = tempfile::tempdir().unwrap();
     let data = data_for(&dir, Some("main"));
@@ -206,11 +210,11 @@ fn footer_is_two_rows_in_every_state() {
         message: "binary not found".into(),
     });
     running_subagent();
-    for density in [FooterDensity::Full, FooterDensity::Line] {
+    for (density, height) in [(FooterDensity::Full, 2), (FooterDensity::Line, 1)] {
         f.set_density(density);
         for w in 7..=130u16 {
             let rows = f.render(w);
-            assert_eq!(rows.len(), 2, "{density:?} at {w}");
+            assert_eq!(rows.len(), height, "{density:?} at {w}");
             for row in rows {
                 assert!(visible_width(&row) <= w as usize, "{density:?} at {w}");
             }
@@ -225,54 +229,115 @@ fn folder_name_is_visible_at_40_60_80_and_120_in_both_layouts() {
     let _g = lock(Some("dark"));
     let dir = tempfile::tempdir().unwrap();
     let mut f = full_footer(&dir);
-    for density in [FooterDensity::Full, FooterDensity::Line] {
-        f.set_density(density);
-        for w in [40u16, 60, 80, 120] {
-            assert!(
-                plain(&f.render(w)[0]).starts_with("hoocode"),
-                "{density:?} at {w}"
-            );
-        }
+    f.set_density(FooterDensity::Full);
+    for w in [40u16, 60, 80, 120] {
+        assert!(
+            plain(&f.render(w)[0]).contains("hoocode"),
+            "detailed at {w}"
+        );
+    }
+    f.set_density(FooterDensity::Line);
+    for w in [80u16, 120] {
+        assert!(plain(&f.render(w)[0]).contains("hoocode"), "short at {w}");
     }
 }
 
 #[test]
-fn folder_name_is_never_dropped_and_only_truncated_below_its_width() {
+fn detailed_folder_name_is_whole_from_29_cells_up() {
+    // The fixed left column (22 cells: mode chip and dial) and the 7-cell
+    // folder name. Below 29 the row is cut from the right.
     let _g = lock(Some("dark"));
     let dir = tempfile::tempdir().unwrap();
     let mut f = full_footer(&dir);
-    for density in [FooterDensity::Full, FooterDensity::Line] {
-        f.set_density(density);
-        // The folder name is seven cells wide: whole from seven up.
-        for w in 7..=130u16 {
-            assert!(
-                plain(&f.render(w)[0]).starts_with("hoocode"),
-                "{density:?} at {w}"
-            );
-        }
-        assert_eq!(plain(&f.render(7)[0]), "hoocode");
-        let narrow = plain(&f.render(4)[0]);
-        assert!(
-            narrow.starts_with("hoo") && narrow.contains('…'),
-            "{narrow:?}"
-        );
-        assert!(visible_width(&narrow) <= 4);
+    for w in 29..=130u16 {
+        assert!(plain(&f.render(w)[0]).contains("hoocode"), "folder at {w}");
     }
+    assert!(plain(&f.render(29)[0]).ends_with("hoocode"));
+    assert!(visible_width(&f.render(4)[0]) <= 4);
 }
 
 #[test]
-fn compact_keeps_the_folder_and_drops_the_path_session_and_tokens() {
+fn short_is_one_row_and_drops_the_path_session_and_tokens() {
     let _g = lock(Some("dark"));
     let dir = tempfile::tempdir().unwrap();
     let mut f = full_footer(&dir);
     f.set_density(FooterDensity::Line);
     let rows: Vec<String> = f.render(120).iter().map(|r| plain(r)).collect();
-    assert_eq!(rows.len(), 2);
-    assert!(rows[0].starts_with("hoocode  ⑂ main"));
-    assert!(rows[0].ends_with("BUILD · ◍ peek"));
-    assert!(!rows[0].contains("/work") && !rows[0].contains("refactor-auth"));
-    assert!(rows[1].contains("sonnet-4-5") && rows[1].contains("34%"));
-    assert!(!rows[1].contains('↑') && !rows[1].contains('$') && !rows[1].contains("of 200k"));
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0],
+        "BUILD  ▰▰▰▱▱▱▱▱  34%  ⑂ main  sonnet-4-5 · high  hoocode  $0.21  ◍ peek"
+    );
+    let row = &rows[0];
+    assert!(!row.contains("/work") && !row.contains("refactor-auth"));
+    assert!(!row.contains('↑') && !row.contains("cache") && !row.contains("of 200k"));
+}
+
+#[test]
+fn short_drops_subagents_then_cost_then_folder_then_model_then_branch_then_dial() {
+    let _g = lock(Some("dark"));
+    task_store().clear();
+    let dir = tempfile::tempdir().unwrap();
+    let mut f = full_footer(&dir);
+    f.set_density(FooterDensity::Line);
+    running_subagent();
+    let at = |f: &mut FooterComponent, w: u16| plain(&f.render(w)[0]);
+    assert_eq!(
+        at(&mut f, 75),
+        "BUILD  ▰▰▰▱▱▱▱▱  34%  ⑂ main  sonnet-4-5 · high  hoocode  $0.21  ◍ peek  ◇1"
+    );
+    assert_eq!(
+        at(&mut f, 74),
+        "BUILD  ▰▰▰▱▱▱▱▱  34%  ⑂ main  sonnet-4-5 · high  hoocode  $0.21  ◍ peek"
+    );
+    assert_eq!(
+        at(&mut f, 70),
+        "BUILD  ▰▰▰▱▱▱▱▱  34%  ⑂ main  sonnet-4-5 · high  hoocode  ◍ peek"
+    );
+    assert_eq!(
+        at(&mut f, 63),
+        "BUILD  ▰▰▰▱▱▱▱▱  34%  ⑂ main  sonnet-4-5 · high  ◍ peek"
+    );
+    assert_eq!(at(&mut f, 54), "BUILD  ▰▰▰▱▱▱▱▱  34%  ⑂ main  ◍ peek");
+    assert_eq!(at(&mut f, 35), "BUILD  ▰▰▰▱▱▱▱▱  34%  ◍ peek");
+    assert_eq!(at(&mut f, 27), "BUILD  ▰▰▰▱▱▱▱▱  34%");
+    task_store().clear();
+}
+
+#[test]
+fn short_shows_the_model_short_and_the_warning_flag() {
+    let _g = lock(Some("dark"));
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = full_stub();
+    s.model = Some(FooterModel {
+        id: "claude-opus-5-5".into(),
+        provider: "test".into(),
+        context_window: 200_000,
+        reasoning: true,
+    });
+    s.thinking = "medium".into();
+    let mut f = FooterComponent::new(Box::new(s), data_for(&dir, Some("main")));
+    f.set_density(FooterDensity::Line);
+    let row = plain(&f.render(120)[0]);
+    assert!(row.contains("opus-5-5 · med  hoocode"), "{row:?}");
+    assert!(!row.contains("claude"), "{row:?}");
+
+    let mut warm = detailed_at(88.0, &dir);
+    warm.set_density(FooterDensity::Line);
+    assert!(plain(&warm.render(120)[0]).starts_with("BUILD  ▰▰▰▰▰▰▰▱  88%!  "));
+}
+
+/// The footer's stub with the context at `percent` of a 200k window.
+fn stub_at(percent: f64) -> Stub {
+    Stub {
+        ctx: Some((200_000, Some(percent))),
+        ..full_stub()
+    }
+}
+
+/// Detailed-layout footer for `stub_at(percent)` in a repo on `main`.
+fn detailed_at(percent: f64, dir: &tempfile::TempDir) -> FooterComponent {
+    FooterComponent::new(Box::new(stub_at(percent)), data_for(dir, Some("main")))
 }
 
 #[test]
@@ -282,9 +347,14 @@ fn row_one_matches_layout_b_at_120() {
     let dir = tempfile::tempdir().unwrap();
     let mut f = full_footer(&dir);
     let line = plain(&f.render(120)[0]);
-    assert_eq!(visible_width(&line), 120);
-    assert!(line.starts_with("hoocode  ⑂ main • refactor-auth  /work/hoocode"));
-    assert!(line.ends_with("BUILD · ◍ peek"));
+    // The mode chip and dial fill a 22-cell left column; the folder follows.
+    assert_eq!(
+        line,
+        format!(
+            "BUILD · ◍ peek{}hoocode  ⑂ main • refactor-auth  /work/hoocode",
+            " ".repeat(8)
+        )
+    );
 }
 
 #[test]
@@ -294,35 +364,97 @@ fn row_two_matches_layout_b_at_120_and_60() {
     let mut f = full_footer(&dir);
     assert_eq!(
         plain(&f.render(120)[1]),
-        "sonnet-4-5 • high   ▰▰▰▱▱▱▱▱ 34% of 200k   ↑48k ↓3.1k R120k  $0.21"
+        "▰▰▰▱▱▱▱▱  34% of 200k  sonnet-4-5 · high   ↑48k ↓3.1k   cache 120k/0   $0.21"
     );
-    // Cache goes first when the row is 60 wide.
+    // Cache, then the arrows go first when the row is 60 wide.
     assert_eq!(
         plain(&f.render(60)[1]),
-        "sonnet-4-5 • high   ▰▰▰▱▱▱▱▱ 34% of 200k   ↑48k ↓3.1k  $0.21"
+        "▰▰▰▱▱▱▱▱  34% of 200k  sonnet-4-5 · high   $0.21"
     );
 }
 
 #[test]
-fn row_one_drops_path_then_session_then_subagents_then_branch_then_dial_then_chip() {
+fn row_two_percent_sits_in_the_same_column_for_every_value() {
+    let _g = lock(Some("dark"));
+    let dir = tempfile::tempdir().unwrap();
+    let mut seen = Vec::new();
+    for percent in [2.0, 34.0, 88.0, 100.0] {
+        let row = plain(&detailed_at(percent, &dir).render(120)[1]);
+        let at = row.find("of 200k").expect("window shown");
+        seen.push(visible_width(&row[..at]));
+    }
+    // Bar (8), two spaces, percent (4 cells), one space: 14 before `of`.
+    assert_eq!(seen, vec![14, 14, 14, 14]);
+    assert!(plain(&detailed_at(2.0, &dir).render(120)[1]).starts_with("▱▱▱▱▱▱▱▱   2% of 200k"));
+    assert!(plain(&detailed_at(100.0, &dir).render(120)[1]).starts_with("▰▰▰▰▰▰▰▰ 100% of 200k"));
+}
+
+#[test]
+fn row_two_shows_the_warning_flag_only_at_the_warning_threshold() {
+    let _g = lock(Some("dark"));
+    let dir = tempfile::tempdir().unwrap();
+    // Auto-compact warns at about 82% of this window (reserve 16,384).
+    let calm = plain(&detailed_at(34.0, &dir).render(120)[1]);
+    assert!(calm.contains("of 200k  sonnet"), "{calm:?}");
+    assert!(!calm.contains('!'));
+    let warm = plain(&detailed_at(88.0, &dir).render(120)[1]);
+    assert!(
+        warm.contains("▰▰▰▰▰▰▰▱  88% of 200k! sonnet-4-5"),
+        "{warm:?}"
+    );
+}
+
+#[test]
+fn cost_says_sub_without_parens_when_on_a_subscription() {
+    let _g = lock(Some("dark"));
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = full_stub();
+    s.oauth = true;
+    let mut f = FooterComponent::new(Box::new(s), data_for(&dir, Some("main")));
+    assert!(plain(&f.render(120)[1]).ends_with("$0.21 sub"));
+    f.set_density(FooterDensity::Line);
+    assert!(plain(&f.render(120)[0]).ends_with("◍ peek"));
+    assert!(plain(&f.render(120)[0]).contains("$0.21 sub  ◍ peek"));
+}
+
+#[test]
+fn detailed_model_keeps_its_full_name_and_thinking_level() {
+    let _g = lock(Some("dark"));
+    let dir = tempfile::tempdir().unwrap();
+    let mut s = full_stub();
+    s.model = Some(FooterModel {
+        id: "claude-opus-5-5".into(),
+        provider: "test".into(),
+        context_window: 200_000,
+        reasoning: true,
+    });
+    s.thinking = "medium".into();
+    let mut f = FooterComponent::new(Box::new(s), data_for(&dir, Some("main")));
+    assert!(plain(&f.render(120)[1]).contains("claude-opus-5-5 · medium"));
+}
+
+#[test]
+fn row_one_drops_path_then_session_then_subagents_then_branch() {
     let _g = lock(Some("dark"));
     let dir = tempfile::tempdir().unwrap();
     let mut f = full_footer(&dir);
     running_subagent();
     let mut shortened_seen = false;
-    for w in 7..=130u16 {
+    for w in 29..=130u16 {
         let line = plain(&f.render(w)[0]);
         // In drop order. An item can only be missing when every item before
-        // it is missing too.
+        // it is missing too. The mode chip and the dial never drop.
         let parts = [
             ("path", line.contains('/')),
             ("session", line.contains("refactor-auth")),
             ("subagents", line.contains("◇1")),
             ("branch", line.contains("main")),
-            ("dial", line.contains('◍')),
-            ("chip", line.contains("BUILD")),
         ];
         assert!(line.contains("hoocode"), "folder at {w}: {line:?}");
+        assert!(
+            line.contains("BUILD") && line.contains('◍'),
+            "{w}: {line:?}"
+        );
         shortened_seen |= line.contains("…/hoocode");
         for (i, (name_i, shown_i)) in parts.iter().enumerate() {
             for (name_j, shown_j) in &parts[i + 1..] {
@@ -352,7 +484,7 @@ fn row_two_drops_cache_then_arrows_then_cost_then_window_and_keeps_model_and_per
     for w in 7..=130u16 {
         let line = plain(&f.render(w)[1]);
         let parts = [
-            ("cache", line.contains("R120k")),
+            ("cache", line.contains("cache 120k")),
             ("arrows", line.contains("↑48k")),
             ("cost", line.contains("$0.21")),
             ("window", line.contains("of 200k")),
@@ -368,23 +500,16 @@ fn row_two_drops_cache_then_arrows_then_cost_then_window_and_keeps_model_and_per
             }
         }
         assert!(visible_width(&line) <= w as usize);
-        // Model and percent are the last thing left: all parts gone is 32 wide.
-        if w >= 32 {
+        // Model and percent are the last thing left. With the window gone the
+        // 22-cell left column stays, so the model with its effort needs
+        // 22 + 1 + 17 (`sonnet-4-5 · high`) = 40 cells.
+        if w >= 40 {
             assert!(
                 line.contains("sonnet-4-5") && line.contains("34%"),
                 "{w}: {line:?}"
             );
         }
     }
-}
-
-#[test]
-fn compact_row_two_is_model_gauge_and_percent() {
-    let _g = lock(Some("dark"));
-    let dir = tempfile::tempdir().unwrap();
-    let mut f = full_footer(&dir);
-    f.set_density(FooterDensity::Line);
-    assert_eq!(plain(&f.render(120)[1]), "sonnet-4-5 • high   ▰▰▰▱▱▱▱▱ 34%");
 }
 
 #[test]

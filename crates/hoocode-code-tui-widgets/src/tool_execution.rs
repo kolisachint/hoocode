@@ -13,7 +13,9 @@ use std::rc::Rc;
 
 use hoocode_ai_types::Content;
 use hoocode_code_tui_theme::theme;
-use hoocode_tui_components::{BoxComponent, Image, ImageOptions, ImageTheme, Spacer, Text};
+use hoocode_tui_components::{
+    BoxComponent, ColorFn, Image, ImageOptions, ImageTheme, Spacer, Text,
+};
 use hoocode_tui_images::{get_capabilities, is_image_line, ImageProtocol};
 use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::{truncate_to_width, visible_width};
@@ -141,6 +143,11 @@ impl Component for PrefixFirstLine {
     fn invalidate(&mut self) {
         self.child.borrow_mut().invalidate();
     }
+}
+
+/// Whether a tool reads or writes a file: its peek block is banded.
+fn is_file_tool(name: &str) -> bool {
+    matches!(name, "Read" | "Write" | "Edit")
 }
 
 /// Indents every non-blank line of a child: a failure's body under a radar row.
@@ -414,15 +421,13 @@ impl ToolExecutionComponent {
         !self.should_show_signal_line()
     }
 
+    /// Peek indents under the tool name, past the `● ` dot; radar under its row.
     fn indent_under_signal_row(&self, component: ComponentHandle) -> ComponentHandle {
-        if self.should_show_signal_line() {
-            handle(IndentAll {
-                child: component,
-                indent: " ".repeat(3),
-            })
-        } else {
-            component
-        }
+        let indent = if self.should_show_signal_line() { 3 } else { 2 };
+        handle(IndentAll {
+            child: component,
+            indent: " ".repeat(indent),
+        })
     }
 
     /// Mark this block as the newest call in the transcript, or no longer it.
@@ -535,7 +540,17 @@ impl ToolExecutionComponent {
             .set_lines(if self.should_show_signal_line() { 0 } else { 1 });
 
         if self.has_renderer_definition() {
-            self.content_box.borrow_mut().set_bg_fn(None);
+            // Peek sits 2 columns in, past the dot; radar keeps 1.
+            let padding_x = if self.should_show_signal_line() { 1 } else { 2 };
+            self.content_box.borrow_mut().set_padding_x(padding_x);
+            // A peek file block gets a full-width band; everything else none.
+            let band_bg: Option<ColorFn> =
+                if !self.should_show_signal_line() && is_file_tool(&self.tool_name) {
+                    Some(Box::new(|s: &str| theme().bg("toolBandBg", s)))
+                } else {
+                    None
+                };
+            self.content_box.borrow_mut().set_bg_fn(band_bg);
             self.content_box.borrow_mut().clear();
 
             let t = theme();

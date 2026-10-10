@@ -1,6 +1,6 @@
 «»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
 «»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
-«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>  ctrl+o more
+«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>
 
 
 
@@ -18,9 +18,9 @@
 
 «» Running them.
 
-«» «fg=#ffff00»● «bold»$ printf 'alpha\nbeta\ngamma\n' | sort -r
+«»  «fg=#ffff00»● «bold»Shell«»  printf 'alpha\nbeta\ngamma\n' | sort -r
 
-«» «fg=#ffff00»● «bold»$ echo boom; exit 3
+«»  «fg=#ffff00»● «bold»Shell«»  echo boom; exit 3
 
 «<masked: blinking indicator>» <working-blink> Working...
 
@@ -30,5 +30,5 @@
 «fg=#6e93ff»│«»    Always (add to auto-allow for this mode)                                                      «fg=#6e93ff»│
 «fg=#6e93ff»│«» «fg=#989898»↑↓«fg=#a8a8a8» navigate«»  «fg=#989898»enter«fg=#a8a8a8» select«»  «fg=#989898»escape/ctrl+c«fg=#a8a8a8» cancel«»                                                  «fg=#6e93ff»│
 «fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-«bold;fg=#5cc8bb»⬢ BUILD«»  «fg=#a8a8a8»<WORK>«»                                                           «fg=#989898»◍ peek
-«fg=#989898»▱▱▱▱▱▱▱▱«» «fg=#a8a8a8»0.1%«» «fg=#989898»128k auto@87%«»  «fg=#989898»↑«fg=#a8a8a8»100«»  «fg=#989898»↓«fg=#a8a8a8»20«»                                                    «fg=#a8a8a8»mock-model
+«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»…<WORK>
+«fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«» «fg=#989898»of 128k«»  «fg=#a8a8a8»mock-model«»   «fg=#989898»↑«fg=#a8a8a8»100«» «fg=#989898»↓«fg=#a8a8a8»20

@@ -220,12 +220,16 @@ fn agent_output_peek_guards_every_wrapped_row_with_the_gutter() {
     let long = "a wrapped summary line that is long enough to need a second peek row\nnext";
     let lines = output_peek(long, 40);
     let rows = gutter_rows(&lines);
-    // Three peek rows (two of them the wrapped line), then the more-lines row.
+    // Three peek rows (all from the wrapped line), then the more-lines row.
     assert_eq!(rows.len(), 4, "{lines:?}");
     assert_eq!(rows[0], "│ a wrapped summary line that is");
     assert_eq!(
-        rows[1], "│ long enough to need a second peek",
+        rows[1], "│ long enough to need a second",
         "the continuation row keeps the gutter: {lines:?}"
+    );
+    assert_eq!(
+        rows[2], "│ peek row",
+        "the second continuation row keeps the gutter: {lines:?}"
     );
     assert_eq!(rows[3], "│ … 1 more line", "{lines:?}");
 }

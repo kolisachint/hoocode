@@ -1,5 +1,5 @@
 //! `printHelp` from hoocode `cli/args.ts`. The text itself is generated into
-//! `help_text.rs` by `migration/tools/gen_help_text.py`.
+//! `help_text.rs` by `archive/migration/tools/gen_help_text.py`.
 
 use crate::help_text::HELP_SEGMENTS;
 use std::io::Write;

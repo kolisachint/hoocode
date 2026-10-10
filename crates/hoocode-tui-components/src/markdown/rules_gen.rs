@@ -1,6 +1,6 @@
 //! The pinned `marked`'s compiled GFM rule sources, verbatim.
 //!
-//! Generated from `Lexer.rules` by `migration/tools/goldens/marked-rules.mjs`
+//! Generated from `Lexer.rules` by `archive/migration/tools/goldens/marked-rules.mjs`
 //! (block.gfm / inline.gfm). Do not edit by hand: regenerate instead. `del` is
 //! absent — markdown.ts overrides it with its strict-strikethrough rule.
 

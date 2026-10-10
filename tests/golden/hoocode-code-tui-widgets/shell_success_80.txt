@@ -1,8 +1,7 @@
 
- ● $ cargo test -p hoocode-code-tui-widgets
-
- test result: ok. 12 passed; 0 failed
+  ● Shell  cargo test -p hoocode-code-tui-widgets
+    test result: ok. 12 passed; 0 failed
 --- styles ---
-r1 c1-2 fg=#b5bd68
-r1 c3-42 bold
-r3 c1-36 fg=#a8a8a8
+r1 c2-3 fg=#b5bd68
+r1 c4-8 bold
+r2 c4-39 fg=#a8a8a8

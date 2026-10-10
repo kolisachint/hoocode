@@ -130,12 +130,12 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry(
             "app.chrome.cycleForward",
             &["alt+z"],
-            "Cycle chrome density (full → compact → bare)",
+            "Toggle chrome density (full ↔ compact)",
         ),
         entry(
             "app.chrome.cycleBackward",
             &["shift+alt+z"],
-            "Cycle chrome density backward",
+            "Toggle chrome density (full ↔ compact), backward",
         ),
         // ── Scroll — where in the transcript you are looking
         entry(

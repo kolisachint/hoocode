@@ -1,6 +1,6 @@
 # Plugins
 
-Status: **agreed 2026-10-07**, scope cut 2026-10-08 ([decisions-2026-10-08.md](decisions-2026-10-08.md)).
+Status: **agreed 2026-10-07**, scope cut 2026-10-08 ([decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md)).
 Design only. Replaces ledger 12.1 and 12.2.
 
 ## Goal

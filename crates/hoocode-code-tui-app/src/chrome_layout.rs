@@ -55,11 +55,9 @@ pub fn resolve_chrome(inputs: ChromeInputs) -> ChromeLayout {
         match inputs.density {
             ChromeDensity::Full => FooterLayout::Full,
             ChromeDensity::Compact => FooterLayout::Line,
-            ChromeDensity::Bare => FooterLayout::Hidden,
         }
     };
     let tasks = match inputs.density {
-        ChromeDensity::Bare => TasksLayout::Hidden,
         ChromeDensity::Compact => TasksLayout::Summary,
         ChromeDensity::Full => TasksLayout::Full,
     };
@@ -107,7 +105,8 @@ impl ChromeLayoutController {
         self.apply()
     }
 
-    /// Step the dial, wrapping.
+    /// Toggle the dial. With two stops, both `alt+z` and `shift+alt+z` land on
+    /// the other stop; the modular step below gives that in either direction.
     pub fn cycle_density(&mut self, forward: bool) -> ChromeDensity {
         let all = ChromeDensity::ALL;
         let at = all

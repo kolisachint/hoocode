@@ -33,13 +33,6 @@ fn resolves_each_stop() {
             tasks: T::Summary
         }
     );
-    assert_eq!(
-        resolve_chrome(quiet(ChromeDensity::Bare)),
-        ChromeLayout {
-            footer: F::Hidden,
-            tasks: T::Hidden
-        }
-    );
 }
 
 #[test]
@@ -72,9 +65,17 @@ fn accepts_the_stops_and_nothing_else() {
     for density in ChromeDensity::ALL {
         assert_eq!(ChromeDensity::parse(density.as_str()), Some(*density));
     }
-    for other in ["", "hidden", "FULL"] {
+    for other in ["", "hidden", "FULL", "bare"] {
         assert_eq!(ChromeDensity::parse(other), None);
     }
+}
+
+#[test]
+fn has_two_stops_and_the_retired_bare_stop_is_gone() {
+    assert_eq!(
+        ChromeDensity::ALL,
+        &[ChromeDensity::Full, ChromeDensity::Compact]
+    );
 }
 
 struct Setup {
@@ -125,17 +126,18 @@ fn moves_the_slots_to_match_the_stop() {
     assert_eq!(visible(&s), [true, true]);
     s.controller.set_density(ChromeDensity::Compact);
     assert_eq!(visible(&s), [true, true]);
-    s.controller.set_density(ChromeDensity::Bare);
-    assert_eq!(visible(&s), [false, false]);
+    s.controller.set_density(ChromeDensity::Full);
+    assert_eq!(visible(&s), [true, true]);
 }
 
 #[test]
-fn steps_and_wraps_like_every_other_dial() {
+fn alt_z_and_shift_alt_z_both_toggle_between_the_two_stops() {
     let mut s = setup(ChromeDensity::Full);
     assert_eq!(s.controller.cycle_density(true), ChromeDensity::Compact);
-    assert_eq!(s.controller.cycle_density(true), ChromeDensity::Bare);
     assert_eq!(s.controller.cycle_density(true), ChromeDensity::Full);
-    assert_eq!(s.controller.cycle_density(false), ChromeDensity::Bare);
+    assert_eq!(s.controller.cycle_density(false), ChromeDensity::Compact);
+    assert_eq!(s.controller.cycle_density(false), ChromeDensity::Full);
+    assert_eq!(visible(&s), [true, true]);
 }
 
 #[test]

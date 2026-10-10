@@ -1,20 +1,20 @@
-
-«fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents
-
-
-«bg=#1c1c26» first question
-
-
-«» First answer.
-
-«» «fg=#5cc8bb»- «»alpha item 1
-«» «fg=#5cc8bb»- «»alpha item 2
-«» «fg=#5cc8bb»- «»alpha item 3
-«» «fg=#5cc8bb»- «»alpha item 4
-«» «fg=#5cc8bb»- «»alpha item 5
-«» «fg=#5cc8bb»- «»alpha item 6
-«» «fg=#5cc8bb»- «»alpha item 7
-«» «fg=#5cc8bb»- «»alpha item 8
-«» «fg=#5cc8bb»- «»alpha item 9
-«» «fg=#5cc8bb»- «»alpha item 10
-«inverse» 4–22 of 78  5%                   up/down line · pageUp/pageDown page · ctrl+home top · escape live
+«»                                                                                                   ┃
+«fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents«»                                                                            ┃
+«»                                                                                                   ┃
+«bg=#1c1c26»                                                                                                   «»┃
+«bg=#1c1c26» first question                                                                                    «»░
+«bg=#1c1c26»                                                                                                   «»░
+«»                                                                                                   ░
+«» First answer.                                                                                     ░
+«»                                                                                                   ░
+«» «fg=#5cc8bb»- «»alpha item 1                                                                                    ░
+«» «fg=#5cc8bb»- «»alpha item 2                                                                                    ░
+«» «fg=#5cc8bb»- «»alpha item 3                                                                                    ░
+«» «fg=#5cc8bb»- «»alpha item 4                                                                                    ░
+«» «fg=#5cc8bb»- «»alpha item 5                                                                                    ░
+«» «fg=#5cc8bb»- «»alpha item 6                                                                                    ░
+«» «fg=#5cc8bb»- «»alpha item 7                                                                                    ░
+«» «fg=#5cc8bb»- «»alpha item 8                                                                                    ░
+«» «fg=#5cc8bb»- «»alpha item 9                                                                                    ░
+«» «fg=#5cc8bb»- «»alpha item 10                                                                                   ░
+«inverse» 4–22 of 78  5%                         up/down line · PgUp/PgDn page · ctrl+home top · escape live

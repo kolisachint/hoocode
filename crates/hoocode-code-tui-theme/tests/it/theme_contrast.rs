@@ -58,13 +58,14 @@ const MIN_CONTRAST: f64 = 7.0;
 /// CIEDE2000 floor for two tokens in the same group.
 const MIN_DIFFERENCE: f64 = 11.0;
 
-const BG_TOKENS: [&str; 7] = [
+const BG_TOKENS: [&str; 8] = [
     "selectedBg",
     "userMessageBg",
     "customMessageBg",
     "toolPendingBg",
     "toolSuccessBg",
     "toolErrorBg",
+    "toolBandBg",
     "warningBg",
 ];
 
@@ -1179,10 +1180,11 @@ mod solarized_themes {
     fn carries_each_tool_state_on_a_surface_that_reads_as_its_own() {
         for theme in SOLARIZED_THEMES {
             let c = colors(theme);
+            // toolBandBg is the file-tool peek tint (base2 on Solarized), not a tool state.
             let states: Vec<&str> = BG_TOKENS
                 .iter()
                 .copied()
-                .filter(|t| *t != "userMessageBg")
+                .filter(|t| *t != "userMessageBg" && *t != "toolBandBg")
                 .collect();
             let mut failures = Vec::new();
             for token in &states {

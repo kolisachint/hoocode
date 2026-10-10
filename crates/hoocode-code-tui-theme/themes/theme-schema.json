@@ -175,6 +175,10 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Tool execution box (error state)"
 				},
+				"toolBandBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Tint behind file-tool (Read/Write/Edit) output in the peek view (optional; falls back to toolPendingBg)"
+				},
 				"toolTitle": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Tool execution box title color"

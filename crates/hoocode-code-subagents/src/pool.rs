@@ -1485,8 +1485,13 @@ impl PoolInner {
             SubagentStdoutLine::Progress(event) => {
                 // Forward progress, not liveness: a child whose heartbeats come
                 // from a timer can be parked inside a provider call forever, and
-                // this is the signal that tells the difference.
-                self.lifeguard.record_progress(task_id);
+                // this is the signal that tells the difference. A tool in flight
+                // is tracked separately so a long build is not reaped as idle.
+                match event.get("type").and_then(|v| v.as_str()) {
+                    Some("tool_execution_start") => self.lifeguard.record_tool_start(task_id),
+                    Some("tool_execution_end") => self.lifeguard.record_tool_end(task_id),
+                    _ => self.lifeguard.record_progress(task_id),
+                }
                 self.emit(
                     "task_progress",
                     json!({"task_id": task_id, "agent_type": agent_type, "event": event}),

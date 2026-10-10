@@ -53,10 +53,7 @@ pub fn format_bash_call(args: &Value) -> String {
         Some(c) if !c.is_empty() => c,
         Some(_) => t.fg("toolOutput", "..."),
     };
-    format!(
-        "{}{suffix}",
-        t.fg("toolTitle", &t.bold(&format!("$ {display}")))
-    )
+    format!("{}  {display}{suffix}", t.fg("toolTitle", &t.bold("Shell")))
 }
 
 /// The result body (`BashResultRenderComponent`), laid out at render width.
@@ -71,7 +68,6 @@ impl Component for BashResult {
         let mut lines = Vec::new();
         if let Some(output) = &self.styled_output {
             let preview = truncate_to_visual_lines(output, PEEK_LINES, width, 0);
-            lines.push(String::new());
             if preview.skipped_count > 0 {
                 let hint = theme().fg(
                     "muted",

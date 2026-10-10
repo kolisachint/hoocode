@@ -1,6 +1,6 @@
 # Rich surfaces: MCP Apps
 
-Status: **deferred 2026-10-08** ([decisions-2026-10-08.md](decisions-2026-10-08.md)).
+Status: **deferred 2026-10-08** ([decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md)).
 Copilot canvases **dropped**. The plan below is kept for when a tool you use needs a
 browser UI. Design only. Replaces the canvas part of ledger 12.7.
 

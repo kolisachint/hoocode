@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rename cortexcode/cortex to hoocode (plan step 0c; docs/design/naming-and-paths.md §1).
+"""Rename cortexcode/cortex to hoocode (plan step 0c; archive/docs/naming-and-paths.md §1).
 
     python3 scripts/rename/rename_to_hoocode.py           # --dry-run (default): print the plan, write nothing
     python3 scripts/rename/rename_to_hoocode.py --apply   # git mv the paths, rewrite the text, git add it
@@ -36,9 +36,9 @@ from collections import Counter, defaultdict
 # Files whose content must keep the old names, and files that are never rewritten.
 SKIP_CONTENT = {
     "Cargo.lock",
-    "docs/design/naming-and-paths.md",
-    "docs/design/decisions-2026-10-07.md",
-    "docs/design/decisions-2026-10-08.md",
+    "archive/docs/naming-and-paths.md",
+    "archive/docs/decisions-2026-10-07.md",
+    "archive/docs/decisions-2026-10-08.md",
     "scripts/rename/rename_to_hoocode.py",
 }
 
@@ -86,7 +86,7 @@ MANUAL = {
         "say hoocode. Label them ts and rust (naming card §1) and check CONFIG_DIRS.",
     "crates/cortexcode-code-resources/src/package_discovery.rs":
         "a list of names (cortexcode, hoocode, pi) now holds hoocode twice; drop the duplicate.",
-    "migration/tools/gen_help_text.py":
+    "archive/migration/tools/gen_help_text.py":
         "the branding map (hoocode -> cortex, HooCode -> Cortex) is now a no-op; delete it or "
         "point it at the Rust names.",
     "migration/tui-parity/normalize.json":

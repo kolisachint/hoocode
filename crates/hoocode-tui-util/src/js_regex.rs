@@ -361,6 +361,10 @@ impl JsRegex {
 
     /// `exec` of a global regex whose `lastIndex` is `pos` (a byte offset).
     pub fn exec_at<'h>(&self, hay: &'h str, pos: usize) -> Option<Match<'h>> {
+        // fancy-regex steps by the lead byte's length from `pos`, so a `pos` inside a
+        // character walks past the end (and panics in regex-automata). Round up to the
+        // next boundary; past the end there is no match (JS `lastIndex > length`).
+        let pos = (pos..=hay.len()).find(|&i| hay.is_char_boundary(i))?;
         // A backtracking-limit error counts as no match, where JavaScript
         // would keep going: only pathological input gets here.
         let caps = self.re.captures_from_pos(hay, pos).ok().flatten()?;
