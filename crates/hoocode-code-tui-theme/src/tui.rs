@@ -323,6 +323,11 @@ pub fn get_markdown_theme() -> MarkdownTheme {
 /// The cursor every picker marks its selected row with.
 pub const SELECT_CURSOR: &str = "› ";
 
+/// The warning glyph: U+26A0 with VS15, so terminals draw it one cell wide and
+/// never as an emoji. One definition for every warning line; the glyph carries
+/// the meaning, not the colour alone.
+pub const WARNING_GLYPH: &str = "⚠\u{fe0e}";
+
 /// `styleInput`: an input line's caret in the muted color.
 pub fn style_input(input: &mut Input) -> &mut Input {
     input.prompt_color = Box::new(|text: &str| theme().fg("muted", text));

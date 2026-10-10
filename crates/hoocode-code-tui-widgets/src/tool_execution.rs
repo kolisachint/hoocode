@@ -12,11 +12,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use hoocode_ai_types::Content;
-use hoocode_code_tui_keybindings::key_hint;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::{BoxComponent, Image, ImageOptions, ImageTheme, Spacer, Text};
 use hoocode_tui_images::{get_capabilities, is_image_line, ImageProtocol};
-use hoocode_tui_render::{Component, ComponentHandle, Container};
+use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::{truncate_to_width, visible_width};
 use serde_json::Value;
 
@@ -25,13 +24,6 @@ use crate::tool_chain_summary::ChainEntry;
 use crate::tool_output_view::{ToolOutputView, DEFAULT_TOOL_OUTPUT_VIEW, PEEK_LINES};
 use crate::tool_signal::{tool_subject, ToolResult, ToolSignalComponent, ToolSignalInput};
 use crate::tools::builtin_tool_definition;
-
-/// Where a tool's block renders: the padded box, or bare (it frames itself).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RenderShell {
-    Default,
-    SelfRendered,
-}
 
 /// `ToolRenderContext`: what a renderer is told about the call.
 pub struct ToolRenderContext<'a> {
@@ -82,7 +74,6 @@ pub type RenderResultFn = Rc<
 pub struct ToolRenderDefinition {
     pub render_call: Option<RenderCallFn>,
     pub render_result: Option<RenderResultFn>,
-    pub render_shell: Option<RenderShell>,
 }
 
 /// `ToolExecutionOptions`.
@@ -180,11 +171,19 @@ impl Component for IndentAll {
     }
 }
 
-/// The shell the block's rows go into.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Shell {
-    Box,
-    SelfRender,
+/// What a frozen block draws at each stop, captured at `frozen_width`.
+struct FrozenLines {
+    radar: Vec<String>,
+    peek: Vec<String>,
+}
+
+impl FrozenLines {
+    fn for_view(&self, view: ToolOutputView) -> &[String] {
+        match view {
+            ToolOutputView::Radar => &self.radar,
+            ToolOutputView::Peek => &self.peek,
+        }
+    }
 }
 
 pub struct ToolExecutionComponent {
@@ -192,8 +191,6 @@ pub struct ToolExecutionComponent {
     leading_spacer: Rc<RefCell<Spacer>>,
     content_box: Rc<RefCell<BoxComponent>>,
     content_text: Rc<RefCell<Text>>,
-    self_render: Rc<RefCell<Container>>,
-    attached_shell: Option<Shell>,
     call_component: Option<ComponentHandle>,
     result_component: Option<ComponentHandle>,
     renderer_state: serde_json::Map<String, Value>,
@@ -216,9 +213,11 @@ pub struct ToolExecutionComponent {
     hide_component: bool,
     is_latest: bool,
     frozen: bool,
-    frozen_lines: Option<Vec<String>>,
+    frozen_lines: Option<FrozenLines>,
     frozen_width: usize,
-    frozen_truncated: Option<(usize, Vec<String>)>,
+    frozen_truncated: Option<(usize, ToolOutputView, Vec<String>)>,
+    /// The call's summary, taken when it freezes: its payloads are released then.
+    frozen_entry: Option<ChainEntry>,
 }
 
 impl ToolExecutionComponent {
@@ -236,8 +235,6 @@ impl ToolExecutionComponent {
             leading_spacer,
             content_box: Rc::new(RefCell::new(BoxComponent::new(1, 0, None))),
             content_text: Rc::new(RefCell::new(Text::new("", 1, 0))),
-            self_render: Rc::new(RefCell::new(Container::new())),
-            attached_shell: None,
             call_component: None,
             result_component: None,
             renderer_state: serde_json::Map::new(),
@@ -263,10 +260,10 @@ impl ToolExecutionComponent {
             frozen_lines: None,
             frozen_width: 0,
             frozen_truncated: None,
+            frozen_entry: None,
         };
         if this.has_renderer_definition() {
-            let shell = this.active_shell();
-            this.attach_shell(shell);
+            this.children.push(this.content_box.clone());
         } else {
             this.children.push(this.content_text.clone());
         }
@@ -302,18 +299,6 @@ impl ToolExecutionComponent {
         self.builtin_definition.is_some() || self.tool_definition.is_some()
     }
 
-    fn render_shell(&self) -> RenderShell {
-        self.tool_definition
-            .as_ref()
-            .and_then(|d| d.render_shell)
-            .or_else(|| {
-                self.builtin_definition
-                    .as_ref()
-                    .and_then(|d| d.render_shell)
-            })
-            .unwrap_or(RenderShell::Default)
-    }
-
     fn create_call_fallback(&self) -> ComponentHandle {
         let t = theme();
         handle(Text::new(t.fg("toolTitle", &t.bold(&self.tool_name)), 0, 0))
@@ -327,9 +312,6 @@ impl ToolExecutionComponent {
             return None;
         }
         let t = theme();
-        if self.view == ToolOutputView::Full {
-            return Some(handle(Text::new(t.fg("toolOutput", &output), 0, 0)));
-        }
         let lines: Vec<&str> = output.split('\n').collect();
         if lines.len() <= PEEK_LINES {
             return Some(handle(Text::new(t.fg("toolOutput", &output), 0, 0)));
@@ -338,11 +320,9 @@ impl ToolExecutionComponent {
         let remaining = lines.len() - PEEK_LINES;
         Some(handle(Text::new(
             format!(
-                "{}{}{}{}",
+                "{}{}",
                 t.fg("toolOutput", &shown),
-                t.fg("muted", &format!("\n... ({remaining} more lines, ")),
-                key_hint("app.tools.expand", "to expand"),
-                t.fg("muted", ")")
+                t.fg("muted", &format!("\n... ({remaining} more lines)"))
             ),
             0,
             0,
@@ -385,6 +365,9 @@ impl ToolExecutionComponent {
 
     /// This call's contribution to its chain's summary line.
     pub fn chain_entry(&self) -> ChainEntry {
+        if let Some(entry) = &self.frozen_entry {
+            return entry.clone();
+        }
         let output = if self.result.is_some() {
             self.text_output()
         } else {
@@ -400,6 +383,11 @@ impl ToolExecutionComponent {
             } else {
                 output.split('\n').count()
             },
+            outcome: crate::tools::subagent::task_outcome(
+                &self.tool_name,
+                &self.args,
+                self.result.as_ref(),
+            ),
         }
     }
 
@@ -494,6 +482,7 @@ impl ToolExecutionComponent {
     /// Freeze on the next render: capture the lines, release the payloads.
     pub fn freeze(&mut self) {
         if self.is_freezable() {
+            self.frozen_entry = Some(self.chain_entry());
             self.frozen = true;
         }
     }
@@ -508,48 +497,8 @@ impl ToolExecutionComponent {
         self.children.clear();
     }
 
-    /// The shell this block renders into: bare for a self-framing tool at the
-    /// `full` stop, the padded box everywhere else.
-    fn active_shell(&self) -> Shell {
-        if self.view != ToolOutputView::Full {
-            return Shell::Box;
-        }
-        match self.render_shell() {
-            RenderShell::SelfRendered => Shell::SelfRender,
-            RenderShell::Default => Shell::Box,
-        }
-    }
-
-    fn shell_handle(&self, shell: Shell) -> ComponentHandle {
-        match shell {
-            Shell::Box => self.content_box.clone(),
-            Shell::SelfRender => self.self_render.clone(),
-        }
-    }
-
-    fn attach_shell(&mut self, shell: Shell) {
-        if self.attached_shell == Some(shell) {
-            return;
-        }
-        if let Some(old) = self.attached_shell.take() {
-            let old_handle = self.shell_handle(old);
-            self.children.retain(|c| !Rc::ptr_eq(c, &old_handle));
-            match old {
-                Shell::Box => self.content_box.borrow_mut().clear(),
-                Shell::SelfRender => self.self_render.borrow_mut().clear(),
-            }
-        }
-        // The shell sits right after the leading spacer.
-        self.children
-            .insert(1.min(self.children.len()), self.shell_handle(shell));
-        self.attached_shell = Some(shell);
-    }
-
     fn add_to_shell(&mut self, component: ComponentHandle) {
-        match self.active_shell() {
-            Shell::Box => self.content_box.borrow_mut().add_child(component),
-            Shell::SelfRender => self.self_render.borrow_mut().add_child(component),
-        }
+        self.content_box.borrow_mut().add_child(component);
     }
 
     fn context(
@@ -561,7 +510,7 @@ impl ToolExecutionComponent {
                 execution_started: self.execution_started,
                 args_complete: self.args_complete,
                 is_partial: self.is_partial,
-                expanded: self.view == ToolOutputView::Full,
+                expanded: false,
                 show_images: self.show_images,
                 is_error: self.result.as_ref().is_some_and(|r| r.is_error),
             },
@@ -569,11 +518,16 @@ impl ToolExecutionComponent {
         )
     }
 
-    #[allow(unused_assignments)]
     fn update_display(&mut self) {
+        // A frozen block's lines are captured; nothing it shows changes now.
         if self.frozen {
             return;
         }
+        self.rebuild_display();
+    }
+
+    #[allow(unused_assignments)]
+    fn rebuild_display(&mut self) {
         let mut has_content = false;
         self.hide_component = false;
         self.leading_spacer
@@ -581,11 +535,8 @@ impl ToolExecutionComponent {
             .set_lines(if self.should_show_signal_line() { 0 } else { 1 });
 
         if self.has_renderer_definition() {
-            let shell = self.active_shell();
-            self.attach_shell(shell);
             self.content_box.borrow_mut().set_bg_fn(None);
             self.content_box.borrow_mut().clear();
-            self.self_render.borrow_mut().clear();
 
             let t = theme();
             let dot_color = if self.result.as_ref().is_some_and(|r| r.is_error) {
@@ -655,8 +606,9 @@ impl ToolExecutionComponent {
                         let args = self.args.clone();
                         let cwd = self.cwd.clone();
                         let id = self.tool_call_id.clone();
+                        // The dial has no stop that opens a result: renderers trim it.
                         let options = ToolRenderResultOptions {
-                            expanded: self.view == ToolOutputView::Full,
+                            expanded: false,
                             is_partial: self.is_partial,
                         };
                         let view = ToolResultView {
@@ -836,41 +788,15 @@ impl ToolRenderContextOwned {
 
 impl Component for ToolExecutionComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
+        if self.frozen {
+            return self.render_frozen(width);
+        }
         if self.hide_component {
             return Vec::new();
-        }
-        let w = width as usize;
-        if let Some(lines) = &self.frozen_lines {
-            // A narrower terminal re-truncates so no line overflows it.
-            if w >= self.frozen_width {
-                return lines.clone();
-            }
-            if let Some((cached_width, cached)) = &self.frozen_truncated {
-                if *cached_width == w {
-                    return cached.clone();
-                }
-            }
-            let truncated: Vec<String> = lines
-                .iter()
-                .map(|line| {
-                    if is_image_line(line) || visible_width(line) <= w {
-                        line.clone()
-                    } else {
-                        truncate_to_width(line, w, "...", false)
-                    }
-                })
-                .collect();
-            self.frozen_truncated = Some((w, truncated.clone()));
-            return truncated;
         }
         let mut lines = Vec::new();
         for child in &self.children {
             lines.extend(child.borrow_mut().render(width));
-        }
-        if self.frozen {
-            self.frozen_lines = Some(lines.clone());
-            self.frozen_width = w;
-            self.release_heavy_state();
         }
         lines
     }
@@ -884,5 +810,67 @@ impl Component for ToolExecutionComponent {
             child.borrow_mut().invalidate();
         }
         self.update_display();
+    }
+}
+
+impl ToolExecutionComponent {
+    /// A frozen block draws the lines captured for its current stop. The first
+    /// render after [`freeze`](Self::freeze) captures both stops.
+    fn render_frozen(&mut self, width: u16) -> Vec<String> {
+        if self.frozen_lines.is_none() {
+            self.capture_frozen(width);
+        }
+        let w = width as usize;
+        let view = self.view;
+        let Some(frozen) = &self.frozen_lines else {
+            return Vec::new();
+        };
+        let lines = frozen.for_view(view);
+        // A narrower terminal re-truncates so no line overflows it.
+        if w >= self.frozen_width {
+            return lines.to_vec();
+        }
+        if let Some((cached_width, cached_view, cached)) = &self.frozen_truncated {
+            if *cached_width == w && *cached_view == view {
+                return cached.clone();
+            }
+        }
+        let truncated: Vec<String> = lines
+            .iter()
+            .map(|line| {
+                if is_image_line(line) || visible_width(line) <= w {
+                    line.clone()
+                } else {
+                    truncate_to_width(line, w, "...", false)
+                }
+            })
+            .collect();
+        self.frozen_truncated = Some((w, view, truncated.clone()));
+        truncated
+    }
+
+    /// Draws the block at both stops, keeps both, and releases the payloads.
+    fn capture_frozen(&mut self, width: u16) {
+        let current = self.view;
+        let radar = self.draw_at(ToolOutputView::Radar, width);
+        let peek = self.draw_at(ToolOutputView::Peek, width);
+        self.view = current;
+        self.frozen_lines = Some(FrozenLines { radar, peek });
+        self.frozen_width = width as usize;
+        self.release_heavy_state();
+    }
+
+    /// The block's lines at `view`, drawn fresh.
+    fn draw_at(&mut self, view: ToolOutputView, width: u16) -> Vec<String> {
+        self.view = view;
+        self.rebuild_display();
+        if self.hide_component {
+            return Vec::new();
+        }
+        let mut lines = Vec::new();
+        for child in &self.children {
+            lines.extend(child.borrow_mut().render(width));
+        }
+        lines
     }
 }

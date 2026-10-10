@@ -6,45 +6,56 @@ use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use hoocode_code_subagents::lifeguard::{base_timeout_ms, LifeguardEvent, SubagentLifeguard};
+use hoocode_code_subagents::lifeguard::{
+    base_timeout_ms, LifeguardEvent, SubagentLifeguard, MAX_SCALED_DEADLINE_MS,
+    SUBAGENT_DEADLINE_MS,
+};
 
-/// Every shipped agent must have its own hard timeout.
-///
-/// hoocode's `TIMEOUTS_MS` is keyed `explore`/`edit`/`test`/`review`/`doc`, and
-/// neither tree ships `edit`, `test`, `review` or `doc` — so in both, every
-/// agent silently got the 5-minute default. Four of ten recorded runs in
-/// `hoobot/.hoocode/dispatch` died `timeout` at exactly 300s, three of them
-/// `code-review` that had been working for 220-297s.
+/// 2026-10-10 (user decision): every agent type, shipped or plugin, gets the
+/// same 2-hour hard deadline. The per-type 5-20 minute table is gone.
 #[test]
-fn every_shipped_agent_has_a_hard_timeout_worth_the_name() {
+fn every_agent_type_gets_the_two_hour_deadline() {
+    const HOURS_2: u64 = 2 * 60 * 60 * 1000;
+    assert_eq!(SUBAGENT_DEADLINE_MS, HOURS_2);
+    for agent in [
+        "code-review",
+        "security-review",
+        "general-purpose",
+        "explore",
+        "plan",
+    ] {
+        assert_eq!(base_timeout_ms(agent), HOURS_2, "{agent}");
+    }
+}
+
+/// hoocode's `edit`/`test`/`review` names are not special any more either.
+#[test]
+fn hoocodes_own_arm_names_get_the_same_deadline() {
+    for agent in ["edit", "test", "review"] {
+        assert_eq!(base_timeout_ms(agent), SUBAGENT_DEADLINE_MS, "{agent}");
+    }
+}
+
+/// An unknown agent type gets the same deadline as the rest.
+#[test]
+fn an_unknown_agent_type_gets_the_same_deadline() {
+    assert_eq!(base_timeout_ms("some-plugin-agent"), SUBAGENT_DEADLINE_MS);
+}
+
+/// The load multiplier cannot stretch a run past base + 30 minutes: 4x of a
+/// 2-hour base would be 8 hours. `AgentOutput` derives its reconcile age from
+/// this same ceiling.
+#[test]
+fn the_load_scaled_deadline_is_capped_at_base_plus_thirty_minutes() {
     const MINUTE: u64 = 60 * 1000;
-    // code-review read a whole multi-file diff for 297s and was killed at 300s.
-    assert_eq!(base_timeout_ms("code-review"), 15 * MINUTE);
-    assert_eq!(base_timeout_ms("security-review"), 15 * MINUTE);
-    // general-purpose reads, writes and runs tests: the heaviest.
-    assert_eq!(base_timeout_ms("general-purpose"), 20 * MINUTE);
-    // explore ran 308s and was still producing turns.
-    assert_eq!(base_timeout_ms("explore"), 10 * MINUTE);
-    assert_eq!(base_timeout_ms("plan"), 10 * MINUTE);
+    assert_eq!(MAX_SCALED_DEADLINE_MS, SUBAGENT_DEADLINE_MS + 30 * MINUTE);
+    // Checked at compile time: uncapped, 4x the base would exceed the ceiling.
+    const _: () = assert!(SUBAGENT_DEADLINE_MS * 4 > MAX_SCALED_DEADLINE_MS);
 }
 
-/// hoocode's arms are kept for plugin agents that use those names.
-#[test]
-fn keeps_hoocodes_own_timeout_arms() {
-    const MINUTE: u64 = 60 * 1000;
-    assert_eq!(base_timeout_ms("edit"), 10 * MINUTE);
-    assert_eq!(base_timeout_ms("test"), 10 * MINUTE);
-    assert_eq!(base_timeout_ms("review"), 8 * MINUTE);
-}
-
-/// An unknown agent type falls back to the default rather than to nothing.
-#[test]
-fn an_unknown_agent_type_gets_the_default_timeout() {
-    assert_eq!(base_timeout_ms("some-plugin-agent"), 5 * 60 * 1000);
-}
-
-/// The warm pool's run timeout tracks the same table, so a warm `code-review`
-/// is not killed at 180s while the cold pool would have allowed it 15 minutes.
+/// The warm pool's run timeout tracks the same deadline, so a warm
+/// `code-review` is not killed at 180s while the cold pool would have allowed
+/// it two hours.
 #[test]
 fn the_warm_run_timeout_tracks_the_agent_type() {
     // Asserted through the cold table because `warm_run_timeout` is private to

@@ -1209,3 +1209,177 @@ async fn slash_subagent_passes_the_session_model_as_inherited_not_asked() {
     set_subagent_pool_for_testing(None);
     task_store().clear();
 }
+
+// AgentOutput cancel (2026-10-10, user decision: 2h subagents + cancel).
+
+/// A child that sits until its process group is killed.
+fn sleeper_child(dir: &Path) -> PathBuf {
+    let path = dir.join("mock-sleeper.sh");
+    std::fs::write(&path, "#!/bin/sh\nsleep 30\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    path
+}
+
+async fn wait_until_running(pool: &SubagentPool, task_id: &str) {
+    for _ in 0..500 {
+        if pool.get_status(task_id) == hoocode_code_subagents::pool::TaskStatus::Running {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("{task_id} never started running");
+}
+
+#[test]
+fn agent_output_schema_declares_cancel() {
+    let tool = create_task_output_tool_definition();
+    assert_eq!(
+        tool.parameters["properties"]["cancel"]["description"],
+        "Stop the named running subagent (kills its process); requires task_id. Use when its result is no longer needed."
+    );
+    assert_eq!(tool.parameters["properties"]["cancel"]["type"], "boolean");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_output_cancel_stops_a_running_task() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let pool = install_pool(&cwd, sleeper_child(&cwd));
+    let inbox = subagent_inbox();
+    inbox.clear();
+    let task_id = "cancel-running";
+    inbox.start(task_id, "explore#1", "explore");
+    // The dispatch future is what the Agent tool awaits; its result settles the inbox.
+    let dispatch = {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            pool.dispatch(
+                "look around",
+                DispatchOptions {
+                    force_agent: Some("explore".into()),
+                    task_id: Some(task_id.into()),
+                    background: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+        })
+    };
+    wait_until_running(&pool, task_id).await;
+
+    let tool = create_task_output_tool_definition();
+    let r = execute(
+        tool.clone(),
+        json!({"task_id": "explore#1", "cancel": true}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    assert_eq!(text(&r), "Cancelled explore#1.");
+    assert_subset(&r.details, json!({"status": "cancelled", "ok": true}));
+
+    let result = dispatch.await.unwrap().unwrap();
+    inbox.finish(task_id, &result);
+    assert_eq!(
+        inbox.get(task_id).unwrap().lifecycle,
+        TaskLifecycle::Cancelled
+    );
+    assert_eq!(
+        pool.get_status(task_id),
+        hoocode_code_subagents::pool::TaskStatus::Cancelled
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    inbox.clear();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_output_cancel_on_a_finished_task_says_so() {
+    let _serial = SERIAL.lock().await;
+    let inbox = subagent_inbox();
+    inbox.clear();
+    inbox.start("t1", "explore#1", "explore");
+    inbox.finish("t1", &ok_result("t1", "already done"));
+    let tool = create_task_output_tool_definition();
+    let r = execute(
+        tool,
+        json!({"task_id": "explore#1", "cancel": true}),
+        ToolContext::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(text(&r), "explore#1 already finished (done).");
+    assert_subset(&r.details, json!({"status": "done", "ok": true}));
+    // The body is untouched: a cancel on a settled task does not eat it.
+    assert_eq!(inbox.get("t1").unwrap().lifecycle, TaskLifecycle::Done);
+    inbox.clear();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_output_cancel_needs_a_task_id_and_a_known_handle() {
+    let _serial = SERIAL.lock().await;
+    let inbox = subagent_inbox();
+    inbox.clear();
+    let tool = create_task_output_tool_definition();
+
+    let err = execute(
+        tool.clone(),
+        json!({"cancel": true}),
+        ToolContext::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("needs a task_id"), "{err}");
+
+    let err = execute(
+        tool.clone(),
+        json!({"task_id": "nope#9", "cancel": true}),
+        ToolContext::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("No background task \"nope#9\""),
+        "{err}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_output_cancel_cannot_combine_with_wait_or_list() {
+    let _serial = SERIAL.lock().await;
+    let inbox = subagent_inbox();
+    inbox.clear();
+    inbox.start("t1", "explore#1", "explore");
+    let tool = create_task_output_tool_definition();
+
+    let err = execute(
+        tool.clone(),
+        json!({"task_id": "explore#1", "cancel": true, "wait": true, "timeout_ms": 50}),
+        ToolContext::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("cannot be combined with wait or list"),
+        "{err}"
+    );
+    // Nothing was cancelled or waited on: the record is still running.
+    assert_eq!(inbox.get("t1").unwrap().lifecycle, TaskLifecycle::Running);
+
+    let err = execute(
+        tool,
+        json!({"task_id": "explore#1", "cancel": true, "list": true}),
+        ToolContext::default(),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("cannot be combined"), "{err}");
+    inbox.clear();
+}

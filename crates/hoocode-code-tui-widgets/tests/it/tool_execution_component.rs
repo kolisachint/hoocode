@@ -9,7 +9,7 @@ use std::rc::Rc;
 use crate::support::{lock, strip, strip_all};
 use hoocode_ai_types::Content;
 use hoocode_code_tui_widgets::tool_execution::{
-    RenderShell, ToolExecutionComponent, ToolExecutionOptions, ToolRenderDefinition,
+    ToolExecutionComponent, ToolExecutionOptions, ToolRenderDefinition,
 };
 use hoocode_code_tui_widgets::tool_output_view::{ToolOutputView, PEEK_LINES};
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
@@ -19,7 +19,7 @@ use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::visible_width;
 use serde_json::{json, Value};
 
-use ToolOutputView::{Full, Peek, Radar};
+use ToolOutputView::{Peek, Radar};
 
 fn cwd() -> String {
     std::env::current_dir()
@@ -91,7 +91,7 @@ mod parity {
             render_call: call_renderer("$ npm run check"),
             ..base()
         };
-        let mut c = component("custom_tool", "tool-dot", json!({}), Full, Some(def));
+        let mut c = component("custom_tool", "tool-dot", json!({}), Peek, Some(def));
         let lines = lines_of(&mut c, 120);
         let dot_line = lines.iter().find(|l| l.contains('●')).expect("dot line");
         assert!(dot_line.contains("$ npm run check"));
@@ -107,7 +107,7 @@ mod parity {
             ),
             ..base()
         };
-        let mut c = component("custom_tool", "tool-dot-wrap", json!({}), Full, Some(def));
+        let mut c = component("custom_tool", "tool-dot-wrap", json!({}), Peek, Some(def));
         let lines = lines_of(&mut c, 30);
         let dot = lines.iter().position(|l| l.contains('●')).unwrap();
         assert!(lines[dot].contains("$ cd"));
@@ -122,9 +122,8 @@ mod parity {
         let def = ToolRenderDefinition {
             render_call: call_renderer("custom call"),
             render_result: result_renderer("custom result"),
-            ..base()
         };
-        let mut c = component("custom_tool", "tool-1", json!({}), Full, Some(def));
+        let mut c = component("custom_tool", "tool-1", json!({}), Peek, Some(def));
         assert!(strip_all(&c.render(120)).contains("custom call"));
         c.update_result(result("done", false), false);
         let rendered = strip_all(&c.render(120));
@@ -139,7 +138,7 @@ mod parity {
             "Edit",
             "tool-2",
             json!({"path": "README.md", "oldText": "before", "newText": "after"}),
-            Full,
+            Peek,
             Some(base()),
         );
         c.update_result(
@@ -163,7 +162,7 @@ mod parity {
             "Read",
             "tool-3",
             json!({"file_path": "README.md"}),
-            Full,
+            Peek,
             None,
         );
         let rendered = strip_all(&c.render(120));
@@ -178,7 +177,7 @@ mod parity {
             "Read",
             "tool-4",
             json!({"path": "README.md"}),
-            Full,
+            Peek,
             Some(tools::read::definition()),
         );
         c.update_result(result("hello", false), false);
@@ -201,7 +200,7 @@ mod parity {
             "Read",
             "tool-4b",
             json!({"path": "notes.txt"}),
-            Full,
+            Peek,
             Some(def),
         );
         c.update_result(result("hello", false), false);
@@ -221,7 +220,7 @@ mod parity {
             "Read",
             "tool-4c",
             json!({"path": "README.md"}),
-            Full,
+            Peek,
             Some(def),
         );
         c.update_result(result("hello", false), false);
@@ -237,13 +236,12 @@ mod parity {
         let def = ToolRenderDefinition {
             render_call: call_renderer("override call"),
             render_result: result_renderer("override result"),
-            ..tools::read::definition()
         };
         let mut c = component(
             "Read",
             "tool-4d",
             json!({"path": "README.md"}),
-            Full,
+            Peek,
             Some(def),
         );
         c.update_result(result("hello", false), false);
@@ -261,13 +259,12 @@ mod parity {
         let def = ToolRenderDefinition {
             render_call: call_renderer("wrapped override call"),
             render_result: result_renderer("wrapped override result"),
-            ..base()
         };
         let mut c = component(
             "Read",
             "tool-4e",
             json!({"path": "README.md"}),
-            Full,
+            Peek,
             Some(def),
         );
         c.update_result(result("hello", false), false);
@@ -294,9 +291,8 @@ mod parity {
                 let token = ctx.state.get("token").and_then(Value::as_str).unwrap_or("");
                 Ok(text(format!("custom result {token}")))
             })),
-            ..base()
         };
-        let mut c = component("custom_tool", "tool-5", json!({}), Full, Some(def));
+        let mut c = component("custom_tool", "tool-5", json!({}), Peek, Some(def));
         c.update_result(result("done", false), false);
         let rendered = strip_all(&c.render(120));
         assert!(rendered.contains("custom call shared-token"));
@@ -314,13 +310,12 @@ mod parity {
                     ctx.args.get("foo").and_then(Value::as_str).unwrap_or("")
                 )))
             })),
-            ..base()
         };
         let mut c = component(
             "custom_tool",
             "tool-5b",
             json!({"foo": "bar"}),
-            Full,
+            Peek,
             Some(def),
         );
         c.update_result(result("done", false), false);
@@ -334,7 +329,7 @@ mod parity {
             "custom_tool",
             "tool-6",
             json!({"foo": "bar"}),
-            Full,
+            Peek,
             Some(base()),
         );
         c.update_result(result("done", false), false);
@@ -350,7 +345,7 @@ mod parity {
             "Write",
             "tool-7",
             json!({"path": "README.md", "content": "one\ntwo\n"}),
-            Full,
+            Peek,
             Some(tools::write::definition()),
         );
         let rendered = strip_all(&c.render(120));
@@ -366,7 +361,7 @@ mod parity {
             "Read",
             "tool-8",
             json!({"path": "notes.txt"}),
-            Full,
+            Peek,
             Some(tools::read::definition()),
         );
         c.update_result(result("one\ntwo\n", false), false);
@@ -379,9 +374,7 @@ mod parity {
     struct Compact {
         title: &'static str,
         path: String,
-        content: &'static str,
         compact: String,
-        hidden: &'static str,
         absent: Option<&'static str>,
     }
 
@@ -397,41 +390,40 @@ mod parity {
             Compact {
                 title: "SKILL.md",
                 path: format!("{cwd}/attio/SKILL.md"),
-                content:
-                    "---\nname: attio\ndescription: CRM helper\n---\n\n# Hidden skill instructions",
                 compact: "[skill] attio".into(),
-                hidden: "Hidden skill instructions",
                 absent: Some("read skill attio"),
             },
             Compact {
                 title: "AGENTS.md",
                 path: format!("{cwd}/.hoocode/AGENTS.md"),
-                content: "Hidden resource instructions",
                 compact: "Read resource .hoocode/AGENTS.md".into(),
-                hidden: "Hidden resource instructions",
                 absent: None,
             },
             Compact {
                 title: "outside AGENTS.md",
                 path: format!("{cwd}/../AGENTS.md"),
-                content: "Hidden outside resource instructions",
                 compact: format!("Read resource {outside}"),
-                hidden: "Hidden outside resource instructions",
                 absent: None,
             },
             Compact {
                 title: "documentation",
                 path: tools::read::readme_path().to_string_lossy().into_owned(),
-                content: "Hidden docs content",
                 compact: "Read docs README.md".into(),
-                hidden: "Hidden docs content",
                 absent: None,
             },
         ]
     }
 
+    /// Eight lines of result: more than the peek budget.
+    fn long_body() -> String {
+        (1..=8)
+            .map(|i| format!("Body line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     #[test]
-    fn renders_compact_read_results_until_expanded() {
+    fn renders_compact_read_calls_and_trims_the_body_to_peek() {
         let _g = lock();
         for s in compact_scenarios() {
             let mut c = component(
@@ -441,20 +433,21 @@ mod parity {
                 Peek,
                 Some(tools::read::definition()),
             );
-            c.update_result(result(s.content, false), false);
-            let collapsed = strip_all(&c.render(120));
-            assert!(collapsed.contains(&s.compact), "{}: {collapsed}", s.title);
-            assert!(!collapsed.contains(s.hidden), "{}", s.title);
+            c.update_result(result(&long_body(), false), false);
+            let rendered = strip_all(&c.render(120));
+            assert!(rendered.contains(&s.compact), "{}: {rendered}", s.title);
             if let Some(absent) = s.absent {
-                assert!(!collapsed.contains(absent), "{}", s.title);
+                assert!(!rendered.contains(absent), "{}", s.title);
             }
-            c.set_view(Full);
-            assert!(strip_all(&c.render(120)).contains(s.hidden), "{}", s.title);
+            assert!(rendered.contains("Body line 5"), "{}: {rendered}", s.title);
+            assert!(!rendered.contains("Body line 6"), "{}: {rendered}", s.title);
+            assert!(rendered.contains("3 more lines"), "{}: {rendered}", s.title);
+            assert!(!rendered.contains("to expand"), "{}", s.title);
         }
     }
 
     #[test]
-    fn shows_the_read_line_range_in_compact_reads_before_the_expand_hint() {
+    fn shows_the_read_line_range_in_compact_reads() {
         let _g = lock();
         let cwd = cwd();
         for (path, compact) in [
@@ -473,7 +466,7 @@ mod parity {
             );
             let collapsed = strip_all(&c.render(120));
             assert!(collapsed.contains(compact), "{collapsed}");
-            assert!(collapsed.find(":120-329").unwrap() < collapsed.find("to expand").unwrap());
+            assert!(!collapsed.contains("to expand"), "{collapsed}");
         }
     }
 }
@@ -491,43 +484,54 @@ mod view_dial {
                     "TRIMMED BODY"
                 }))
             })),
-            ..base()
         };
         let mut c = component("custom_tool", "view", args, view, Some(def));
         c.update_result(result("one\ntwo\nthree", false), false);
         c
     }
 
+    /// A finished `Read` of `count` rows.
+    fn read_of(count: usize, view: ToolOutputView) -> ToolExecutionComponent {
+        let body: Vec<String> = (1..=count).map(|i| format!("row {i}")).collect();
+        let mut c = component(
+            "Read",
+            "view-read",
+            json!({"path": "notes.txt"}),
+            view,
+            Some(tools::read::definition()),
+        );
+        c.update_result(result(&body.join("\n"), false), false);
+        c
+    }
+
     #[test]
-    fn full_shows_the_whole_result_body() {
+    fn peek_trims_a_read_result_to_five_lines_and_counts_the_rest() {
         let _g = lock();
-        let rendered = strip_all(&build(Full, json!({})).render(120));
-        assert!(rendered.contains("custom call"));
-        assert!(rendered.contains("RESULT BODY"));
+        let rendered = strip_all(&read_of(12, Peek).render(120));
+        assert!(rendered.contains("row 5"), "{rendered}");
+        assert!(!rendered.contains("row 6"), "{rendered}");
+        assert!(rendered.contains("7 more lines"), "{rendered}");
+        assert!(!rendered.contains("to expand"), "{rendered}");
     }
 
     #[test]
     fn peek_shows_the_call_line_and_a_trimmed_body_with_no_disclosure_caret() {
         let _g = lock();
-        let mut c = build(Peek, json!({}));
-        let trimmed = strip_all(&c.render(120));
+        let trimmed = strip_all(&build(Peek, json!({})).render(120));
         assert!(trimmed.contains("custom call"));
         assert!(trimmed.contains("TRIMMED BODY"));
         assert!(!trimmed.contains("RESULT BODY"));
         assert!(!trimmed.contains('▸'));
         assert!(!trimmed.contains('▾'));
-        c.set_view(Full);
-        assert!(strip_all(&c.render(120)).contains("RESULT BODY"));
     }
 
     #[test]
     fn a_failure_shows_why_it_failed_in_every_view_unasked() {
         let _g = lock();
-        for view in [Radar, Peek, Full] {
+        for view in [Radar, Peek] {
             let def = ToolRenderDefinition {
                 render_call: call_renderer("custom call"),
                 render_result: result_renderer("WHY IT BROKE"),
-                ..base()
             };
             let mut c = component(
                 "custom_tool",
@@ -549,7 +553,7 @@ mod view_dial {
         let _g = lock();
         let rendered = strip_all(&build(Radar, json!({"command": "npm run check"})).render(120));
         assert!(!rendered.contains("custom call"));
-        assert!(!rendered.contains("RESULT BODY"));
+        assert!(!rendered.contains("TRIMMED BODY"));
         assert!(rendered.contains("custom_to"));
         assert!(rendered.contains("npm run check"));
         assert!(rendered.contains("3 lines"));
@@ -560,10 +564,10 @@ mod view_dial {
         let _g = lock();
         let mut c = build(Radar, json!({"command": "npm run check"}));
         assert!(strip_all(&c.render(120)).contains("npm run check"));
-        c.set_view(Full);
-        let opened = strip_all(&c.render(120));
-        assert!(opened.contains("custom call"));
-        assert!(opened.contains("RESULT BODY"));
+        c.set_view(Peek);
+        let peeked = strip_all(&c.render(120));
+        assert!(peeked.contains("custom call"));
+        assert!(peeked.contains("TRIMMED BODY"));
         c.set_view(Radar);
         assert!(strip_all(&c.render(120)).contains("npm run check"));
     }
@@ -581,7 +585,6 @@ mod view_dial {
     fn radar_gives_a_self_rendering_tool_the_same_row_framing_as_every_other() {
         let _g = lock();
         let def = ToolRenderDefinition {
-            render_shell: Some(RenderShell::SelfRendered),
             render_call: call_renderer("custom call"),
             render_result: result_renderer("RESULT BODY"),
         };
@@ -600,8 +603,10 @@ mod view_dial {
             plain_row.find("npm run check")
         );
         assert_eq!(self_row.chars().count(), plain_row.chars().count());
-        c.set_view(Full);
-        assert!(strip_all(&c.render(120)).contains("RESULT BODY"));
+        c.set_view(Peek);
+        let peeked = strip_all(&c.render(120));
+        assert!(peeked.contains("custom call"));
+        assert!(!peeked.contains("to expand"));
     }
 
     #[test]
@@ -624,19 +629,22 @@ mod view_dial {
         assert!(trimmed.contains(&format!("line {PEEK_LINES}")));
         assert!(!trimmed.contains(&format!("line {}", PEEK_LINES + 1)));
         assert!(trimmed.contains("4 more lines"));
-        c.set_view(Full);
-        assert!(strip_all(&c.render(120)).contains(&format!("line {}", PEEK_LINES + 4)));
+        assert!(!trimmed.contains("to expand"));
     }
 
     #[test]
     fn set_view_switches_an_existing_block_live() {
         let _g = lock();
-        let mut c = build(Full, json!({}));
-        assert!(strip_all(&c.render(120)).contains("RESULT BODY"));
+        let mut c = build(Radar, json!({"command": "npm run check"}));
+        assert!(!strip_all(&c.render(120)).contains("custom call"));
         c.set_view(Peek);
-        assert!(!strip_all(&c.render(120)).contains("RESULT BODY"));
-        c.set_view(Full);
-        assert!(strip_all(&c.render(120)).contains("RESULT BODY"));
+        let peeked = strip_all(&c.render(120));
+        assert!(peeked.contains("custom call"));
+        assert!(peeked.contains("TRIMMED BODY"));
+        c.set_view(Radar);
+        let folded = strip_all(&c.render(120));
+        assert!(!folded.contains("custom call"));
+        assert!(folded.contains("npm run check"));
     }
 }
 
@@ -648,7 +656,7 @@ mod freeze {
             "Read",
             id,
             json!({"path": "README.md"}),
-            Full,
+            Peek,
             Some(tools::read::definition()),
         );
         c.update_result(result("hello world output", false), false);
@@ -662,7 +670,7 @@ mod freeze {
             "Read",
             "freeze-partial",
             json!({"path": "README.md"}),
-            Full,
+            Peek,
             Some(tools::read::definition()),
         );
         c.update_result(result("partial", false), true);

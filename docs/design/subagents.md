@@ -45,6 +45,9 @@ so every agent silently got the 5-minute default. hoocode has the same dead tabl
 same agent names — this is a faithful port of an upstream bug, and it is why three
 `code-review` runs died holding 220-297s of finished work.
 
+**Superseded 2026-10-10 (user):** the per-type table is gone. Every agent type gets one 2-hour
+deadline (`SUBAGENT_DEADLINE_MS`, `lifeguard.rs`). See §5.
+
 **The region errors are not in the artifacts.** `400 Upstream request failed: This Go model
 requires Global regions` appears in **zero** of the ten dispatch dirs. It may well have been
 seen live in the parent session, but the evidence base does not carry it, and the three most
@@ -100,8 +103,8 @@ Seven fixes to the child-process model. The pool's public API is unchanged; ever
 ### T3 in detail — the only structural change
 
 `--deadline-ms` is an internal flag (not in `--help`, like `--task-id`). The pool sends the
-**base** per-agent deadline, not the load-scaled budget: under load the parent widens its
-kill, so the wrap-up always lands first. Ninety seconds of lead covers the one or two turns a
+**base** deadline (2 hours), not the load-scaled budget: under load the parent widens its
+kill by at most 30 minutes (`MAX_SCALED_DEADLINE_MS`, 2h30m), so the wrap-up always lands first. Ninety seconds of lead covers the one or two turns a
 model needs to turn findings into a summary — recorded subagent turns took 5-65s.
 
 The pool side needed no change. `settle` already treats a valid `result.json` as success even
@@ -113,10 +116,9 @@ the verifier's 0.5 floor.
 
 Every one is commented in the source with the evidence.
 
-- **Timeout table** — hoocode's arms are kept for plugin agents that use those names, plus
-  real arms for the shipped five. (`lifeguard.rs`)
+- **Timeout table** — replaced 2026-10-10: one 2-hour deadline for every agent type. (`lifeguard.rs`)
 - **Warm run timeout** — hoocode's `WARM_RUN_TIMEOUT_MS` is a flat 180s for every agent; we
-  use the same per-agent table, never tighter. (`warm.rs`)
+  use the same base deadline, never tighter. (`warm.rs`)
 - **Token accounting** — `used` counts generated tokens; `peak_context` carries the context
   size. (`token_budget.rs`)
 - **`--deadline-ms`** and the wrap-up steer. (`runtime.rs`)
@@ -171,9 +173,11 @@ recorded runs.**
 - **The budget stays advisory.** T2 made the number honest; nothing enforces it. With `output`
   at 1.2k-22k against a 35k limit, enforcement would essentially never fire. Wall-clock is the
   primary stop, `--max-turns 50` the secondary one, the budget telemetry. Owner, 2026-10-03.
-- **The new deadlines stand as written** — `explore`/`plan` 10 min, `code-review`/
-  `security-review` 15 min, `general-purpose` 20 min — from four data points. Not measured
-  against a task corpus. Owner, 2026-10-03.
+- **Superseded 2026-10-10 (user): one 2-hour deadline for every type.** The 2026-10-03 per-type
+  deadlines (`explore`/`plan` 10 min, `code-review`/`security-review` 15 min, `general-purpose`
+  20 min) are withdrawn. The load multiplier adds at most 30 minutes. The parent polls with
+  `AgentOutput(task_id)` and stops a run with `AgentOutput(task_id, cancel: true)`. Stall checks
+  (§5b, H1 and H2) still reap a hung child early.
 - **Track 2 (in-process) not started.** Owner, 2026-10-03.
 
 ## 5b. P1 hardening (2026-10-05)
@@ -184,7 +188,7 @@ or `tests/it/lifeguard.rs`, plus one end-to-end scenario each.
 
 | | Fix | Where |
 |---|---|---|
-| H1 | **Liveness is two-tier.** Silence past 60s reaps; so does no *forward progress* (a `turn_end` or a tool event) past 150s, load-scaled. A child parked in a provider call keeps pinging and used to be invisible until its hard deadline — ten minutes for `explore`, measured alive at 95s | `lifeguard.rs` |
+| H1 | **Liveness is two-tier.** Silence past 60s reaps; so does no *forward progress* (a `turn_end` or a tool event) past 150s, load-scaled. A child parked in a provider call keeps pinging and used to be invisible until its hard deadline — ten minutes for `explore` at the time (the deadline is now 2 hours), measured alive at 95s | `lifeguard.rs` |
 | H2 | **A reap is SIGTERM, grace, SIGKILL.** The child catches SIGTERM, writes its partial `result.json` and exits, and the pool already accepts a valid result from a reaped task, so a stall kill returns work instead of discarding it. The grace escalates for a child too wedged to catch a signal | `lifeguard.rs`, `runtime.rs` |
 | H3 | **`pid` is written.** `sweep_old_agents` has always read `dispatch/<task>/pid` to ask whether a run is alive; nothing ever wrote it, so reaping was age-only and a real orphan was never detected | `pool.rs` |
 | H4 | **Admission control.** The queue was unbounded: a confused parent could enqueue hundreds of runs that never finish. It is refused at four per slot, with a message that says so | `pool.rs` |

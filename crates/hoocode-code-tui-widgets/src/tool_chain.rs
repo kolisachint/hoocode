@@ -75,9 +75,10 @@ impl ToolChainComponent {
         self.latest = latest;
     }
 
-    /// A chain of one is never summarised: its row says more than a phrase.
+    /// Radar summarises every chain, a lone call included, so one call and a
+    /// run of calls read the same (`Ran npm run check   1 call · 412 lines`).
     fn is_collapsed(&self) -> bool {
-        self.view == ToolOutputView::Radar && self.blocks.len() > 1
+        self.view == ToolOutputView::Radar && !self.blocks.is_empty()
     }
 
     /// The blank row that holds a radar run off whatever came before it.

@@ -81,6 +81,80 @@ fn rename_lines(lines: Option<Vec<String>>, ts: &str, rs: &str) -> Option<Vec<St
     lines.map(|ls| ls.iter().map(|l| rename_title(l, ts, rs)).collect())
 }
 
+/// Declared divergence from the pin (2026-10-09, user decision: dial is
+/// radar/peek only, ctrl+o toggles): the pinned `ctrl+o to expand` hints are
+/// gone from our renderers. Rewrites the pinned bytes of one line into our form
+/// and, when the pinned line was padded to the width, moves its trailing padding
+/// by the width the hint took, as `rename_title` does. A pinned line the pin left
+/// unpadded stays unpadded. Returns `None` when the line has no hint.
+fn drop_expand_hint(line: &str) -> Option<String> {
+    // (pinned bytes, our bytes): the result hints `(N more lines, ctrl+o to
+    // expand)` / `(N more lines, M total, ctrl+o to expand)`, and the call
+    // hints ` (ctrl+o to expand)`.
+    const FORMS: &[(&str, &str)] = &[
+        (
+            ",\x1b[39m \x1b[38;2;152;152;152mctrl+o\x1b[39m\x1b[38;2;168;168;168m to expand\x1b[39m)",
+            ")\x1b[39m",
+        ),
+        ("\x1b[38;2;152;152;152m (ctrl+o to expand)\x1b[39m", ""),
+    ];
+    let mut out = line.to_string();
+    let mut removed = 0usize;
+    for (from, to) in FORMS {
+        if out.contains(from) {
+            removed += strip(from).chars().count() - strip(to).chars().count();
+            out = out.replacen(from, to, 1);
+        }
+    }
+    if removed == 0 {
+        return None;
+    }
+    let body = out.trim_end_matches(' ');
+    let pad = out.len() - body.len();
+    let pad = if pad == 0 { 0 } else { pad + removed };
+    Some(format!("{body}{}", " ".repeat(pad)))
+}
+
+/// `drop_expand_hint` over a pinned render, counting the lines it rewrote.
+fn drop_hints(lines: Option<Vec<String>>, rewritten: &mut usize) -> Option<Vec<String>> {
+    lines.map(|ls| {
+        ls.into_iter()
+            .map(|l| match drop_expand_hint(&l) {
+                Some(ours) => {
+                    *rewritten += 1;
+                    ours
+                }
+                None => l,
+            })
+            .collect()
+    })
+}
+
+/// Declared divergence from the pin (2026-10-09, user decision: skills and
+/// agents are promoted to peek because the full stop was removed): a compact
+/// `Read` of a skill (`SKILL.md`), an `AGENTS.md`, or an app doc renders its
+/// body at peek, while the pin renders an empty body when `expanded` is false.
+/// These cases are not compared byte for byte; they must show the file's first
+/// content line instead (see `renderers_match_the_pin`).
+///
+/// Matches a `Read` whose path names one of those compact resources, collapsed,
+/// with an empty pinned result.
+fn is_peek_exempt(tool: &str, args: &Value, expanded: bool, want: Option<&[String]>) -> bool {
+    !expanded && tool == "Read" && compact_read_path(args) && matches!(want, Some([]))
+}
+
+/// Whether a `Read` path names a skill, an `AGENTS.md`, or an app doc.
+fn compact_read_path(args: &Value) -> bool {
+    let path = args["file_path"]
+        .as_str()
+        .or_else(|| args["path"].as_str())
+        .unwrap_or_default();
+    let file_name = path.rsplit('/').next().unwrap_or(path);
+    matches!(file_name, "SKILL.md" | "AGENTS.md")
+        || path.starts_with("docs/")
+        || path.contains("/docs/")
+}
+
 #[test]
 fn renderers_match_the_pin() {
     let _g = lock();
@@ -88,6 +162,13 @@ fn renderers_match_the_pin() {
         serde_json::from_str(include_str!("../fixtures/tool-renderers-gold.json")).unwrap();
     let mut failures = Vec::new();
     let mut renamed_cases = 0usize;
+    let mut hint_rewrites = 0usize;
+    let mut peek_exempt = 0usize;
+    // Declared divergence from the pin (2026-10-09, user decision: radar/peek
+    // dial). The Full stop is gone, so no block renders with `expanded` set;
+    // the pinned `expanded: true` cases describe a view we no longer have and
+    // are skipped. Counted below so the skip cannot grow silently.
+    let mut full_skipped = 0usize;
     // Declared divergence from the pin (2026-10-05): the subagent tools were
     // renamed and their transcript line rewritten (`Agent [explore]` is now
     // `Agent explore`), so the pinned bytes for those two cannot be ours. They
@@ -110,6 +191,10 @@ fn renderers_match_the_pin() {
         }
         let args = &case["args"];
         let expanded = case["expanded"].as_bool().unwrap();
+        if expanded {
+            full_skipped += 1;
+            continue;
+        }
         let is_error = case["isError"].as_bool().unwrap();
         let def = definition(tool);
         let mut state = serde_json::Map::new();
@@ -156,6 +241,7 @@ fn renderers_match_the_pin() {
         let call = call_component.map(|c| c.borrow_mut().render(120));
         let want_call: Option<Vec<String>> = serde_json::from_value(case["call"].clone()).unwrap();
         let want_call = rename_lines(want_call, ts_tool, tool);
+        let want_call = drop_hints(want_call, &mut hint_rewrites);
         if call != want_call {
             failures.push(format!(
                 "{tool} {args} call (expanded={expanded})\n  want {want_call:?}\n  got  {call:?}"
@@ -163,10 +249,23 @@ fn renderers_match_the_pin() {
         }
         let want_res: Option<Vec<String>> = serde_json::from_value(case["res"].clone()).unwrap();
         let want_res = rename_lines(want_res, ts_tool, tool);
+        let want_res = drop_hints(want_res, &mut hint_rewrites);
         // Durations are wall-clock: compare them as a placeholder.
         let res = res.map(normalize_took);
         let want_res = want_res.map(normalize_took);
-        if res != want_res {
+        if is_peek_exempt(tool, args, expanded, want_res.as_deref()) {
+            peek_exempt += 1;
+            let first_line = result["content"][0]["text"]
+                .as_str()
+                .and_then(|t| t.lines().next())
+                .unwrap_or_default();
+            let shown = strip(&res.unwrap_or_default().join("\n"));
+            if first_line.is_empty() || !shown.contains(first_line) {
+                failures.push(format!(
+                    "{tool} {args} result (expanded={expanded}, peek divergence)\n  want the first content line {first_line:?} in the output\n  got  {shown:?}"
+                ));
+            }
+        } else if res != want_res {
             failures.push(format!(
                 "{tool} {args} result (expanded={expanded})\n  want {want_res:?}\n  got  {res:?}"
             ));
@@ -175,6 +274,18 @@ fn renderers_match_the_pin() {
     assert!(
         renamed_cases > 0,
         "the fixture should still contain the renamed tools, or the divergence has rotted"
+    );
+    assert!(
+        hint_rewrites > 0,
+        "the fixture should still pin `ctrl+o to expand` hints, or the divergence has rotted"
+    );
+    assert_eq!(
+        full_skipped, 34,
+        "expected 34 pinned `expanded: true` cases skipped (the removed Full stop), got {full_skipped}"
+    );
+    assert_eq!(
+        peek_exempt, 2,
+        "expected 2 compact Read cases exempted at peek (the skill and AGENTS.md cases), got {peek_exempt}; the divergence has rotted or grown"
     );
     assert!(
         failures.is_empty(),

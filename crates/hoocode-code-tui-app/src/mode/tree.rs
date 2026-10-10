@@ -179,7 +179,7 @@ impl Mode {
             Box::new(|s: &str| theme().fg("accent", s)),
             Box::new(|s: &str| theme().fg("muted", s)),
             format!(
-                "Summarizing branch... ({} to cancel)",
+                "Summarizing branch… ({} to cancel)",
                 key_text("app.interrupt")
             ),
             None,

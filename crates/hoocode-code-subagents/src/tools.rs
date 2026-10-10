@@ -32,6 +32,7 @@ use crate::agent_log::agent_log;
 use crate::depth::{delegate_allow_list, is_delegate_allowed, ProcessEnv};
 use crate::inbox::{subagent_inbox, InboxRecord, TaskLifecycle};
 use crate::instance::get_subagent_pool;
+use crate::lifeguard;
 use crate::model_categories::{ModelRequest, ModelSelection};
 use crate::pool::TaskStatus as PoolTaskStatus;
 use crate::pool::{DispatchOptions, ResultStatus, SubagentPool, SubagentResult, TaskResult};
@@ -49,9 +50,11 @@ const TASK_BACKGROUND_NONE_PROMPT: &str =
     include_str!("../templates/prompts/task-background-none.md");
 
 /// How long a `running` record may sit with the pool saying nothing about it
-/// before `AgentOutput` stops believing it. Past the longest agent deadline
-/// (20 min) and the lifeguard's 4x load ceiling, plus a minute of slack.
-const RECONCILE_AGE_MS: u64 = 81 * 60 * 1000;
+/// before `AgentOutput` stops believing it. Past the largest budget a run can
+/// reach (the 2-hour deadline plus the lifeguard's load headroom, see
+/// `MAX_SCALED_DEADLINE_MS`), plus a minute of slack. 2026-10-10: was 81 min,
+/// when the longest deadline was 20 min.
+const RECONCILE_AGE_MS: u64 = lifeguard::MAX_SCALED_DEADLINE_MS + 60 * 1000;
 
 /// Default wait for `AgentOutput(wait: true)`.
 const TASK_OUTPUT_DEFAULT_TIMEOUT_MS: u64 = 120_000;
@@ -1099,7 +1102,8 @@ fn task_output_parameters() -> Value {
             "task_id": {"type": "string", "description": "Handle of a background subagent — its task_id or friendly label (e.g. \"explore#1\") from an Agent notification. Omit (or set list:true) to see every background task."},
             "list": {"type": "boolean", "description": "List all background subagents with their status (running/done/failed/cancelled) and current activity. No result bodies are returned."},
             "wait": {"type": "boolean", "description": "Block until the named task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier) — before returning. Bounded by timeout_ms."},
-            "timeout_ms": {"type": "number", "description": "Maximum time to block in wait mode, in milliseconds (default 120000)."}
+            "timeout_ms": {"type": "number", "description": "Maximum time to block in wait mode, in milliseconds (default 120000)."},
+            "cancel": {"type": "boolean", "description": "Stop the named running subagent (kills its process); requires task_id. Use when its result is no longer needed."}
         }
     })
 }
@@ -1114,6 +1118,7 @@ pub fn create_task_output_tool_definition() -> ToolDefinition {
             "Pass a task_id/label (e.g. \"explore#1\") to read a finished subagent's full result, or to see its status while it runs.",
             "Set list:true (or omit task_id) to list every background subagent with its status and current activity.",
             "Set wait:true to block until that task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier).",
+            "A long run can take up to 2 hours: poll it by task_id, and set cancel:true with a task_id to stop one whose result you no longer need.",
             "It never errors on a valid handle: a running task reports status, a finished one returns its result, an already-read one says so.",
         ]
         .join("\n"),
@@ -1128,12 +1133,88 @@ pub fn create_task_output_tool_definition() -> ToolDefinition {
         background_when: None,
         execute: Arc::new(|_id, params, _signal, _on_update, ctx| {
             let ctx = ctx.cloned();
-            Ok(block_on(execute_task_output(params, ctx)))
+            block_on(execute_task_output(params, ctx))
         }),
     }
 }
 
-async fn execute_task_output(params: Value, ctx: Option<ToolContext>) -> AgentToolResult {
+async fn execute_task_output(
+    params: Value,
+    ctx: Option<ToolContext>,
+) -> Result<AgentToolResult, ToolError> {
+    let handle = str_param(&params, "task_id")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    if params.get("cancel").and_then(Value::as_bool) == Some(true) {
+        return cancel_background_task(handle.as_deref(), &params, ctx.as_ref());
+    }
+    Ok(read_background_task(params, ctx, handle).await)
+}
+
+/// `AgentOutput(task_id, cancel: true)`: stop a running background subagent.
+/// The pool kills its process tree; the task then settles `cancelled` in the
+/// inbox when its dispatch returns. Errors on a missing or unknown handle, and
+/// when combined with `wait` or `list`.
+fn cancel_background_task(
+    handle: Option<&str>,
+    params: &Value,
+    ctx: Option<&ToolContext>,
+) -> Result<AgentToolResult, ToolError> {
+    if params.get("wait").and_then(Value::as_bool) == Some(true)
+        || params.get("list").and_then(Value::as_bool) == Some(true)
+    {
+        return Err("AgentOutput with cancel:true cannot be combined with wait or list.".into());
+    }
+    let Some(handle) = handle else {
+        return Err(
+            "AgentOutput with cancel:true needs a task_id, e.g. AgentOutput(\"explore#1\", cancel: true).".into(),
+        );
+    };
+    let Some(rec) = subagent_inbox().get(handle) else {
+        return Err(format!(
+            "No background task \"{handle}\". Call AgentOutput with list:true to see active tasks."
+        )
+        .into());
+    };
+    if rec.lifecycle != TaskLifecycle::Running {
+        return Ok(text_result(
+            format!(
+                "{} already finished ({}).",
+                rec.label,
+                rec.lifecycle.as_str()
+            ),
+            output_details(Some(handle), rec.lifecycle.as_str(), true, None),
+        ));
+    }
+    let cwd = ctx
+        .and_then(|c| c.cwd.clone())
+        .ok_or("AgentOutput with cancel:true needs a working directory.")?;
+    let models = ctx.map(|c| c.available_models.clone()).unwrap_or_default();
+    let pool = get_subagent_pool(&cwd, &models);
+    if pool.cancel(&rec.task_id) {
+        return Ok(text_result(
+            format!("Cancelled {}.", rec.label),
+            output_details(Some(handle), "cancelled", true, None),
+        ));
+    }
+    // The pool settled it before the inbox heard. A task the pool has forgotten
+    // without a settle is reported `failed`, as the reconcile would.
+    let status = match pool.get_status(&rec.task_id) {
+        PoolTaskStatus::Unknown | PoolTaskStatus::Running | PoolTaskStatus::Queued => "failed",
+        other => other.as_str(),
+    };
+    Ok(text_result(
+        format!("{} already finished ({status}).", rec.label),
+        output_details(Some(handle), status, true, None),
+    ))
+}
+
+async fn read_background_task(
+    params: Value,
+    ctx: Option<ToolContext>,
+    handle: Option<String>,
+) -> AgentToolResult {
     // Wire the inbox to the pool's progress stream for live activity.
     if let Some(cwd) = ctx.as_ref().and_then(|c| c.cwd.clone()) {
         let models = ctx
@@ -1162,11 +1243,6 @@ async fn execute_task_output(params: Value, ctx: Option<ToolContext>) -> AgentTo
             RECONCILE_AGE_MS,
         );
     }
-    let handle = str_param(&params, "task_id")
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-
     if params.get("wait").and_then(Value::as_bool) == Some(true) {
         let timeout = Duration::from_millis(
             params

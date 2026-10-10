@@ -1,20 +1,23 @@
-⬢ BUILD  /work/project • amber-harbor                                     ◍ peek
-▰▰▱▱▱▱▱▱ 31.0% 200k auto@92%  ↑48k  ↓9.8k  R120k  W3.4k  $0.420
+project • amber-harbor  /work/project                             BUILD · ◍ peek
+claude-sonnet-5 • medium   ▰▰▱▱▱▱▱▱ 31% of 200k   ↑48k ↓9.8k R120k W3.4k  $0.42
 --- styles ---
-r0 c0-6 fg=#5cc8bb bold
-r0 c9-21 fg=#a8a8a8
-r0 c22-36 fg=#989898
+r0 c0-6 bold
+r0 c7-21 fg=#989898
+r0 c24-36 fg=#989898
+r0 c66-70 fg=#5cc8bb bold
 r0 c74-79 fg=#989898
-r1 c0-1 fg=#5cc8bb
-r1 c2-7 fg=#989898
-r1 c9-13 fg=#a8a8a8
-r1 c15-27 fg=#989898
-r1 c30 fg=#989898
-r1 c31-33 fg=#a8a8a8
-r1 c36 fg=#989898
-r1 c37-40 fg=#a8a8a8
-r1 c43 fg=#989898
-r1 c44-47 fg=#a8a8a8
+r1 c0-14 fg=#a8a8a8
+r1 c15-23 fg=#989898
+r1 c27-28 fg=#5cc8bb
+r1 c29-34 fg=#989898
+r1 c36-38 fg=#a8a8a8
+r1 c39-46 fg=#989898
 r1 c50 fg=#989898
-r1 c51-54 fg=#a8a8a8
-r1 c57-62 fg=#a8a8a8
+r1 c51-53 fg=#a8a8a8
+r1 c55 fg=#989898
+r1 c56-59 fg=#a8a8a8
+r1 c61 fg=#989898
+r1 c62-65 fg=#a8a8a8
+r1 c67 fg=#989898
+r1 c68-71 fg=#a8a8a8
+r1 c74-78 fg=#a8a8a8

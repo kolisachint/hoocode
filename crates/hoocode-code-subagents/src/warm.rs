@@ -87,9 +87,9 @@ pub type WarmProgressCallback = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// Deviation: how long a warm run may take before it is treated as stalled.
 /// hoocode's `WARM_RUN_TIMEOUT_MS` is a flat 180s for every agent; we use the
-/// same per-agent table the cold pool's lifeguard uses, which is never tighter.
-/// A flat 3 minutes killed `code-review` runs that the cold pool would have
-/// allowed 15.
+/// same deadline the cold pool's lifeguard uses (2026-10-10: one 2-hour
+/// deadline for every agent type). A flat 3 minutes killed `code-review` runs
+/// that the cold pool would have allowed much longer.
 fn warm_run_timeout(agent_type: &str) -> Duration {
     Duration::from_millis(lifeguard::base_timeout_ms(agent_type))
 }

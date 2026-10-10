@@ -13,7 +13,7 @@ use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
 
-use ToolOutputView::{Full, Peek, Radar};
+use ToolOutputView::{Peek, Radar};
 
 struct Call {
     tool: &'static str,
@@ -171,15 +171,13 @@ fn the_dial_not_a_per_chain_toggle_is_what_turns_the_line_back_into_calls() {
 }
 
 #[test]
-fn is_a_plain_pass_through_in_peek_and_full() {
+fn is_a_plain_pass_through_in_peek() {
     let _g = lock();
-    for view in [Peek, Full] {
-        let mut chain = chain_of(view, run(), "p");
-        chain.close(ChainState::Done);
-        let out = render(&mut chain);
-        assert!(!out.contains('›'), "{view:?}");
-        assert!(out.contains("CodeSearch"), "{view:?}");
-    }
+    let mut chain = chain_of(Peek, run(), "p");
+    chain.close(ChainState::Done);
+    let out = render(&mut chain);
+    assert!(!out.contains('›'));
+    assert!(out.contains("CodeSearch"));
 }
 
 #[test]
@@ -235,7 +233,7 @@ fn a_failures_reason_hangs_off_its_radar_row_rather_than_starting_a_new_column()
     chain.close(ChainState::Done);
     let out = render(&mut chain);
     let lines: Vec<&str> = out.split('\n').collect();
-    let row = lines.iter().position(|l| l.contains("Shell")).unwrap();
+    let row = lines.iter().position(|l| l.contains('●')).unwrap();
     let body = lines
         .iter()
         .position(|l| l.contains("ASSERTION FAILED"))
@@ -246,15 +244,86 @@ fn a_failures_reason_hangs_off_its_radar_row_rather_than_starting_a_new_column()
 }
 
 #[test]
-fn a_chain_of_one_keeps_its_radar_row_instead_of_a_phrase() {
+fn a_chain_of_one_reads_like_a_run_in_radar() {
     let _g = lock();
     let first = run().remove(0);
     let mut chain = chain_of(Radar, vec![first], "one");
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    assert!(out.contains("CodeSearch"));
-    assert!(out.contains("2 lines"));
-    assert!(!out.contains("Explored"));
+    assert!(out.contains("Searched toolOutputView"));
+    assert!(out.contains("1 call · 2 lines"));
+    assert!(!out.contains("CodeSearch"));
+    assert!(chain.is_summarised());
+}
+
+#[test]
+fn a_single_call_in_radar_uses_the_group_summary_row() {
+    let _g = lock();
+    let mut chain = chain_of(
+        Radar,
+        vec![call(
+            "Shell",
+            json!({"command": "npm run check"}),
+            "l1\nl2\nl3",
+        )],
+        "single",
+    );
+    chain.close(ChainState::Done);
+    let lines = chain.render(100);
+    assert_eq!(lines[0], "");
+    let row = strip(&lines[1]);
+    assert!(row.starts_with(" ● Ran npm run check"), "{row:?}");
+    assert!(row.ends_with("1 call · 3 lines"), "{row:?}");
+    assert!(!row.contains("Shell"));
+}
+
+#[test]
+fn a_running_single_call_in_radar_still_says_running() {
+    let _g = lock();
+    let mut chain = chain_of(
+        Radar,
+        vec![Call {
+            pending: true,
+            ..call("Shell", json!({"command": "npm run check"}), "")
+        }],
+        "running1",
+    );
+    let out = render(&mut chain);
+    assert!(out.contains("Shell…"), "{out}");
+    assert!(out.contains("running"), "{out}");
+}
+
+#[test]
+fn a_failed_single_call_in_radar_still_shows_its_reason() {
+    let _g = lock();
+    let mut chain = chain_of(
+        Radar,
+        vec![Call {
+            is_error: true,
+            ..call("Shell", json!({"command": "bun test"}), "ASSERTION FAILED")
+        }],
+        "failed1",
+    );
+    chain.close(ChainState::Done);
+    let out = render(&mut chain);
+    assert!(out.contains("Ran bun test"), "{out}");
+    assert!(out.contains("1 call · 1 failed"), "{out}");
+    assert!(out.contains("ASSERTION FAILED"), "{out}");
+}
+
+#[test]
+fn a_single_call_in_peek_is_still_its_own_block() {
+    let _g = lock();
+    let mut chain = chain_of(
+        Peek,
+        vec![call("Shell", json!({"command": "npm run check"}), "l1")],
+        "peek1",
+    );
+    chain.close(ChainState::Done);
+    let out = render(&mut chain);
+    // Peek draws the call's own block: a Shell call reads as `$ command`.
+    assert!(out.contains("$ npm run check"), "{out}");
+    assert!(!out.contains("1 call"), "{out}");
     assert!(!chain.is_summarised());
 }
 
@@ -287,22 +356,16 @@ fn a_radar_run_of_one_gets_the_same_lead_in() {
     chain.close(ChainState::Done);
     let lines = chain.render(100);
     assert_eq!(lines[0], "");
-    assert!(strip(&lines[1]).contains("CodeSearch"));
+    assert!(strip(&lines[1]).contains("Searched toolOutputView"));
 }
 
 #[test]
 fn does_not_double_the_gap_where_the_blocks_already_draw_one() {
     let _g = lock();
-    for view in [Peek, Full] {
-        let mut chain = chain_of(view, run(), "nolead");
-        chain.close(ChainState::Done);
-        let lines = chain.render(100);
-        assert_eq!(
-            lines.iter().take(2).filter(|l| l.is_empty()).count(),
-            1,
-            "{view:?}"
-        );
-    }
+    let mut chain = chain_of(Peek, run(), "nolead");
+    chain.close(ChainState::Done);
+    let lines = chain.render(100);
+    assert_eq!(lines.iter().take(2).filter(|l| l.is_empty()).count(), 1);
 }
 
 #[test]

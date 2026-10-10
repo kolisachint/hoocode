@@ -8,9 +8,11 @@
 mod component;
 #[cfg(any(test, feature = "golden"))]
 pub mod golden;
+mod scrollbar;
 mod tui;
 
 pub use component::{Component, ComponentHandle, Container, FlexSpacer, Slot};
+pub use scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB, SCROLLBAR_TRACK};
 pub use tui::{
     default_scroll_status, CanPinScroll, FrameObserver, FrameTiming, HyperlinkHandler,
     InputInterceptor, InputListener, InputListenerResult, ScrollSearchStatus, ScrollStatus,

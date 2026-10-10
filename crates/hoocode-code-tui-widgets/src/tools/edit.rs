@@ -34,23 +34,21 @@ struct CallState {
     preview: Option<Preview>,
     preview_args_key: Option<String>,
     settled_error: bool,
-    /// The peek dial's stop at the last render of either slot.
-    expanded: bool,
 }
 
-/// The diff at the peek dial: the rendered diff, then the muted hint when
+/// The diff at the peek stop: the rendered diff, then the muted hint when
 /// lines were left out. `render_diff` pairs removed and added lines, so it
 /// renders the whole diff first and only then trims the rendered lines.
-fn diff_body(diff: &str, expanded: bool) -> String {
+fn diff_body(diff: &str) -> String {
     let lines: Vec<String> = render_diff(diff).split('\n').map(str::to_string).collect();
-    peek_block(&lines, expanded, |shown| shown.to_vec())
+    peek_block(&lines, |shown| shown.to_vec())
 }
 
-/// An error at the peek dial, each shown line in the error style.
-fn error_body(error: &str, expanded: bool) -> String {
+/// An error at the peek stop, each shown line in the error style.
+fn error_body(error: &str) -> String {
     let t = theme();
     let lines: Vec<String> = error.split('\n').map(str::to_string).collect();
-    peek_block(&lines, expanded, |shown| {
+    peek_block(&lines, |shown| {
         shown.iter().map(|l| t.fg("error", l)).collect()
     })
 }
@@ -142,8 +140,8 @@ impl Component for EditCall {
         ))));
         if let Some(preview) = &state.preview {
             let body = match preview {
-                Preview::Error(e) => error_body(e, state.expanded),
-                Preview::Diff { diff, .. } => diff_body(diff, state.expanded),
+                Preview::Error(e) => error_body(e),
+                Preview::Diff { diff, .. } => diff_body(diff),
             };
             b.add_child(Rc::new(RefCell::new(Spacer::new(1))));
             b.add_child(Rc::new(RefCell::new(Text::new(body, 0, 0))));
@@ -172,7 +170,6 @@ pub fn definition() -> ToolRenderDefinition {
             {
                 let mut s = state.borrow_mut();
                 s.args = args.clone();
-                s.expanded = ctx.expanded;
                 let input = preview_input(args);
                 let key = input.as_ref().map(|(p, _, raw)| args_key(p, raw));
                 if s.preview_args_key != key {
@@ -199,7 +196,7 @@ pub fn definition() -> ToolRenderDefinition {
             let call: ComponentHandle = Rc::new(RefCell::new(EditCall { state }));
             Ok(call)
         })),
-        render_result: Some(Rc::new(|result, options, ctx| {
+        render_result: Some(Rc::new(|result, _, ctx| {
             let existing = ctx.objects.contains_key(CALL_KEY);
             let result_diff = if ctx.is_error {
                 None
@@ -214,7 +211,6 @@ pub fn definition() -> ToolRenderDefinition {
             if existing {
                 let state = call_state(ctx.objects);
                 let mut s = state.borrow_mut();
-                s.expanded = options.expanded;
                 if let Some(diff) = &result_diff {
                     let first = result
                         .details
@@ -248,14 +244,14 @@ pub fn definition() -> ToolRenderDefinition {
                     .collect::<Vec<_>>()
                     .join("\n");
                 (!error.is_empty() && Some(&error) != preview_error.as_ref())
-                    .then(|| error_body(&error, options.expanded))
+                    .then(|| error_body(&error))
             } else {
                 result
                     .details
                     .get("diff")
                     .and_then(Value::as_str)
                     .filter(|d| !d.is_empty() && Some(d.to_string()) != preview_diff)
-                    .map(|d| diff_body(d, options.expanded))
+                    .map(diff_body)
             };
             let mut container = Container::new();
             if let Some(output) = output {
@@ -265,6 +261,5 @@ pub fn definition() -> ToolRenderDefinition {
             let handle: ComponentHandle = Rc::new(RefCell::new(container));
             Ok(handle)
         })),
-        render_shell: Some(crate::tool_execution::RenderShell::SelfRendered),
     }
 }

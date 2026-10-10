@@ -248,7 +248,8 @@ dirs if it hurts.
 - Structured results: status, files, verified, not verified.
 - One writer per worktree. No overlapping files.
 - The parent integrates. Children never merge or push.
-- Notify, don't poll.
+- Notify, don't poll. A long run may be checked with `AgentOutput(task_id)` and stopped
+  with `AgentOutput(task_id, cancel: true)` (2026-10-10).
 - Tools match capabilities. Read-only agents get read-only tools.
 
 ### Facts the design relies on

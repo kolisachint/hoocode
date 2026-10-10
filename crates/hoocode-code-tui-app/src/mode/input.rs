@@ -495,7 +495,7 @@ impl Mode {
             if !command.is_empty() {
                 if self.session.is_bash_running() {
                     self.show_warning(
-                        "A bash command is already running. Press Esc to cancel it first.",
+                        "A bash command is already running. Press esc to cancel it first.",
                     );
                     self.editor.borrow_mut().editor.set_text(&text);
                     return;
@@ -774,7 +774,7 @@ impl Mode {
             }
             Action::Exit => self.exit_requested = true,
             Action::Suspend => self.handle_ctrl_z(),
-            Action::ToolsExpand => self.jump_to_full_view(),
+            Action::ToolsExpand => self.toggle_tool_output_view(),
             Action::ViewForward | Action::ViewBackward => {
                 self.cycle_tool_output_view(action == Action::ViewForward)
             }

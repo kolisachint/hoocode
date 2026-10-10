@@ -14,6 +14,7 @@ use hoocode_tui_components::{
     BoxComponent, DefaultTextStyle, Markdown, MarkdownTheme, Spacer, Text,
 };
 use hoocode_tui_render::{Component, Container};
+use hoocode_tui_util::{truncate_to_width, visible_width};
 
 fn custom_text_markdown(text: &str, markdown_theme: MarkdownTheme) -> Markdown {
     Markdown::new(
@@ -28,11 +29,54 @@ fn custom_text_markdown(text: &str, markdown_theme: MarkdownTheme) -> Markdown {
     )
 }
 
+/// The hint a folded message ends with: Ctrl+O opens it at peek.
+fn peek_hint() -> String {
+    theme().fg(
+        "dim",
+        &format!(" · {} for peek", key_text("app.tools.expand")),
+    )
+}
+
+/// The folded (radar) line: label, plain summary and peek hint on one row.
+/// The summary gives way first: it is cut to the room the label and hint
+/// leave. If that room is under 10 columns the hint is dropped. The row is
+/// never wrapped onto a second row.
+struct OneRow {
+    label: String,
+    summary: String,
+    hint: String,
+}
+
+impl Component for OneRow {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        let width = width as usize;
+        let label_width = visible_width(&self.label);
+        let mut hint = self.hint.as_str();
+        let mut room = width.saturating_sub(label_width + 1 + visible_width(hint));
+        if room < 10 {
+            hint = "";
+            room = width.saturating_sub(label_width + 1);
+        }
+        let summary = truncate_to_width(&self.summary, room, "…", false);
+        let line = format!(
+            "{} {}{}",
+            self.label,
+            theme().fg("customMessageText", &summary),
+            hint
+        );
+        vec![truncate_to_width(&line, width, "…", false)]
+    }
+
+    fn invalidate(&mut self) {}
+}
+
 /// `CustomMessageComponent`: a displayed custom message, as its label over
-/// its markdown. (Extension message renderers arrive with 12.3.)
+/// its markdown. Radar folds it to its label and first line; peek (the
+/// default) shows all of it. (Extension message renderers arrive with 12.3.)
 pub struct CustomMessageComponent {
     message: CustomMessage,
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
+    expanded: bool,
     container: Container,
 }
 
@@ -41,21 +85,21 @@ impl CustomMessageComponent {
         let mut this = Self {
             message,
             markdown_theme,
+            expanded: true,
             container: Container::new(),
         };
         this.rebuild();
         this
     }
 
+    pub fn set_expanded(&mut self, expanded: bool) {
+        self.expanded = expanded;
+        self.rebuild();
+    }
+
     fn rebuild(&mut self) {
         let mut sheet = BoxComponent::new(1, 1, None);
         apply_block_fill(&mut sheet, BlockFill::CustomMessageBg);
-        sheet.add_child(Rc::new(RefCell::new(Text::new(
-            message_label(&self.message.custom_type),
-            0,
-            0,
-        ))));
-        sheet.add_child(Rc::new(RefCell::new(Spacer::new(1))));
         let text = match &self.message.content {
             UserContent::Text(text) => text.clone(),
             UserContent::Blocks(blocks) => blocks
@@ -67,10 +111,25 @@ impl CustomMessageComponent {
                 .collect::<Vec<_>>()
                 .join("\n"),
         };
-        sheet.add_child(Rc::new(RefCell::new(custom_text_markdown(
-            &text,
-            (self.markdown_theme)(),
-        ))));
+        if self.expanded {
+            sheet.add_child(Rc::new(RefCell::new(Text::new(
+                message_label(&self.message.custom_type),
+                0,
+                0,
+            ))));
+            sheet.add_child(Rc::new(RefCell::new(Spacer::new(1))));
+            sheet.add_child(Rc::new(RefCell::new(custom_text_markdown(
+                &text,
+                (self.markdown_theme)(),
+            ))));
+        } else {
+            let first = text.lines().map(str::trim).find(|l| !l.is_empty());
+            sheet.add_child(Rc::new(RefCell::new(OneRow {
+                label: message_label(&self.message.custom_type),
+                summary: first.unwrap_or("").to_string(),
+                hint: peek_hint(),
+            })));
+        }
         self.container.clear();
         self.container
             .add_child(Rc::new(RefCell::new(Spacer::new(1))));
@@ -136,10 +195,9 @@ impl BranchSummaryMessageComponent {
         } else {
             sheet.add_child(Rc::new(RefCell::new(Text::new(
                 format!(
-                    "{}{}{}",
-                    t.fg("customMessageText", "Branch summary ("),
-                    t.fg("dim", &key_text("app.tools.expand")),
-                    t.fg("customMessageText", " to expand)")
+                    "{}{}",
+                    t.fg("customMessageText", "Branch summary"),
+                    peek_hint()
                 ),
                 0,
                 0,
@@ -220,10 +278,9 @@ impl CompactionSummaryMessageComponent {
         } else {
             sheet.add_child(Rc::new(RefCell::new(Text::new(
                 format!(
-                    "{}{}{}",
-                    t.fg("customMessageText", &format!("{summary_text} (")),
-                    t.fg("dim", &key_text("app.tools.expand")),
-                    t.fg("customMessageText", " to expand)")
+                    "{}{}",
+                    t.fg("customMessageText", &summary_text),
+                    peek_hint()
                 ),
                 0,
                 0,

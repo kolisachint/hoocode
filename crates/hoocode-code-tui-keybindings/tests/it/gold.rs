@@ -12,8 +12,25 @@ fn gold() -> Value {
 #[cfg(not(windows))]
 #[test]
 fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() {
+    /// Declared divergence from the pin (2026-10-09, user decision: dial is
+    /// radar/peek only, ctrl+o toggles). The pinned descriptions below describe
+    /// the old three-stop dial; ours describe the two-stop one. An expected row
+    /// is rewritten only when its pinned text matches exactly, and every entry
+    /// must match, so a stale entry fails instead of rotting.
+    const DECLARED: &[(&str, &str, &str)] = &[
+        (
+            "app.view.cycleForward",
+            "Cycle tool output view (radar → peek → full)",
+            "Cycle tool output view (radar ↔ peek)",
+        ),
+        (
+            "app.tools.expand",
+            "Jump to the full view from wherever you are, and back again",
+            "Toggle tool output between radar and peek",
+        ),
+    ];
     let gold = gold();
-    let expected: Vec<(String, Vec<String>, String)> = gold["table"]
+    let mut expected: Vec<(String, Vec<String>, String)> = gold["table"]
         .as_array()
         .unwrap()
         .iter()
@@ -30,6 +47,18 @@ fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() 
             )
         })
         .collect();
+    let mut used = 0usize;
+    for (id, pinned, ours) in DECLARED {
+        if let Some(row) = expected.iter_mut().find(|r| r.0 == *id && r.2 == *pinned) {
+            row.2 = ours.to_string();
+            used += 1;
+        }
+    }
+    assert_eq!(
+        used,
+        DECLARED.len(),
+        "every declared divergence must match its pinned row exactly"
+    );
     let actual: Vec<(String, Vec<String>, String)> = keybindings()
         .into_iter()
         .map(|e| {

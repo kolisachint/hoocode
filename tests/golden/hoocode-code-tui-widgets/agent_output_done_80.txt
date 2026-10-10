@@ -1,16 +1,11 @@
 
- ● AgentOutput explore#1
- ╭ ✓ done explore#1
- │ Footer is in footer.rs, 340 lines.
- ╰
+ ● AgentOutput explore#1 · done
+   │ Footer is in footer.rs, 340 lines.
 --- styles ---
 r1 c1-2 fg=#b5bd68
 r1 c3-14 bold
 r1 c15-23 fg=#56b6c2
-r2 c1 fg=#757575
-r2 c3 fg=#b5bd68
-r2 c5-8 fg=#b5bd68 bold
-r2 c10-18 fg=#56b6c2
-r3 c1 fg=#757575
-r3 c3-36 fg=#a8a8a8
-r4 c1 fg=#757575
+r1 c24-26 fg=#989898
+r1 c27-30 fg=#b5bd68
+r2 c3 fg=#757575
+r2 c5-38 fg=#a8a8a8

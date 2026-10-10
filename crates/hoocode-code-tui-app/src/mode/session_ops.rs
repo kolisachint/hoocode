@@ -250,7 +250,7 @@ impl Mode {
         reload_box.add_child(as_component(&handle(Text::new(
             t.fg(
                 "muted",
-                "Reloading keybindings, extensions, skills, prompts, themes...",
+                "Reloading keybindings, extensions, skills, prompts, themes…",
             ),
             1,
             0,
@@ -732,8 +732,7 @@ impl Mode {
     /// reaches the banner on the next rebuild (a second /new or /reload),
     /// everything else at once.
     fn apply_session_theme(&mut self) {
-        let expanded = self.verbose || self.expanded;
-        self.header.borrow_mut().set_expanded(expanded);
+        self.header.borrow_mut().set_expanded(self.verbose);
         let theme_name = self.session.settings().theme();
         if let Some(name) = theme_name {
             if let Err(error) = set_theme(&name, true) {

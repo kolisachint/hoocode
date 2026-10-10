@@ -789,10 +789,9 @@ fn tool_settings_submenu(
             "tool-output-view",
             "View",
             format!(
-                "How much of a tool call the transcript shows, least to most. 'radar': {}. 'peek': {}. 'full': {}.",
+                "How much of a tool call the transcript shows, least to most. 'radar': {}. 'peek': {}.",
                 tool_output_view_description(ToolOutputView::Radar),
-                tool_output_view_description(ToolOutputView::Peek),
-                tool_output_view_description(ToolOutputView::Full)
+                tool_output_view_description(ToolOutputView::Peek)
             ),
             view.as_str().into(),
             TOOL_OUTPUT_VIEWS.iter().map(|v| v.as_str().to_string()).collect(),
@@ -868,7 +867,7 @@ impl FlagStringEditSubmenu {
             0,
         ))));
         container.add_child(Rc::new(RefCell::new(Text::new(
-            t.fg("muted", "Enter a value · Enter to save · Esc to cancel"),
+            t.fg("muted", "Enter a value · Enter to save · esc to cancel"),
             0,
             0,
         ))));
@@ -1019,7 +1018,7 @@ impl SelectSubmenu {
         container.add_child(list.clone());
         container.add_child(Rc::new(RefCell::new(Spacer::new(1))));
         container.add_child(Rc::new(RefCell::new(Text::new(
-            t.fg("dim", "  Enter to select · Esc to go back"),
+            t.fg("dim", "  Enter to select · esc to go back"),
             0,
             0,
         ))));

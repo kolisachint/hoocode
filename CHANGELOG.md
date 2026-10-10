@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: subagents may run for 2 hours; AgentOutput can cancel (2026-10-10)
+- **One 2-hour deadline for every subagent type.** The per-type 5-20 minute table is gone. Load scaling adds at most 30 minutes.
+- **Poll and cancel with `AgentOutput`.** Poll by `task_id`; stop a run you no longer need with `AgentOutput(task_id, cancel: true)`.
+- **Stall detection still reaps hung children early**, so a child stuck in a provider call does not hold the full deadline.
+
+### Changed: header cursor blinks; wording cleanup (2026-10-10)
+- **The header cursor blinks** every 530 ms, driven by the app clock (Ghostty ignores SGR 5). It stops
+  after the first prompt, or while the view is scrolled back, and then stays solid.
+- **Warnings use `⚠`** in the notification band, not `●`. One `WARNING_GLYPH` serves every warning line.
+- **Ellipses are `…`** in the status and dialog labels: reloading, summarizing, auto-compacting,
+  waiting for browser login.
+- **Key names are lowercase** in hints: `esc`, `tab`, `ctrl+enter`.
+- **Compaction cancelled** is a status line, not an error.
+- **The header hint** no longer shows `ctrl+o more`. The header expands only under `verbose`.
+- **The `ctrl+o` hint** on the tool-output row reads `to toggle radar and peek`.
+
+### Added: scroll back while a picker is open, and a scrollbar (2026-10-10)
+- **Scroll with a picker open.** PgUp/PgDn, Ctrl+Home/End and the wheel move the transcript while a
+  picker or question has focus. Arrows, Enter, Esc and typing still go to the picker and never un-pin.
+- **Scrollbar** in the last column while scrolled back: `┃` is the thumb, `░` the track. Click above
+  the thumb to page up, below it to page down.
+
+### Changed: footer is always two rows, layout B; the folder name is never dropped (2026-10-09)
+
+### Changed: the tool output dial is radar/peek only (2026-10-09)
+- **Two stops, not three.** The dial is `radar` and `peek`. The `full` stop is gone; a saved `full`
+  view reads as `peek`.
+- **Ctrl+O toggles** between `radar` and `peek`. Alt+O still cycles the dial.
+- **The `ctrl+o to expand` hints are gone.** Truncated tool output now ends with `... (N more lines)`
+  and no longer names a key.
+
 ### Added: app-server clients choose the effort and see the scope (2026-10-09)
 - `thread/start`, `thread/resume` and `turn/start` take an optional `effort`. An explicit effort the model
   does not support is rejected, not silently changed.

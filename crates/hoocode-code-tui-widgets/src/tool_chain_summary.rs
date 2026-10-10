@@ -10,7 +10,7 @@
 //!
 //! Everything here is pure and deterministic.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -26,7 +26,30 @@ pub struct ChainEntry {
     pub is_partial: bool,
     /// Lines of text output the call returned.
     pub output_lines: usize,
+    /// What a subagent call said about its task; `None` for other tools and
+    /// for calls that report no outcome (a background placeholder, a roster).
+    pub outcome: Option<TaskOutcome>,
 }
+
+/// A subagent call's word on its task, as a group line counts it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskOutcome {
+    pub state: TaskState,
+    /// The task an `AgentOutput` call asked about. Polls of one task count
+    /// once, with its latest state. `None` counts the call on its own.
+    pub task: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskState {
+    Done,
+    Failed,
+    Stopped,
+    Running,
+}
+
+/// The tools whose calls are delegated work.
+pub const SUBAGENT_TOOLS: [&str; 2] = ["Agent", "AgentOutput"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChainState {
@@ -152,6 +175,13 @@ fn plural(n: usize, one: &str) -> String {
 
 /// The flush-right stats for either rendering.
 pub fn chain_stats(entries: &[ChainEntry], state: ChainState) -> String {
+    // A group with delegated work says what it came to, never a line count.
+    if entries
+        .iter()
+        .any(|e| SUBAGENT_TOOLS.contains(&e.tool.as_str()))
+    {
+        return subagent_stats(entries, state);
+    }
     let failed = entries.iter().filter(|e| e.is_error).count();
     let mut parts = Vec::new();
     if state == ChainState::Running {
@@ -174,6 +204,47 @@ pub fn chain_stats(entries: &[ChainEntry], state: ChainState) -> String {
                 parts.push(plural(lines, "line"));
             }
         }
+    }
+    parts.join(" · ")
+}
+
+/// One word per task in the calls: a task polled several times settles once,
+/// on its last word; a call that names no task counts on its own.
+fn task_states<'a>(entries: impl Iterator<Item = &'a ChainEntry>) -> Vec<TaskState> {
+    let mut by_task: BTreeMap<&str, TaskState> = BTreeMap::new();
+    let mut states: Vec<TaskState> = Vec::new();
+    for outcome in entries.filter_map(|e| e.outcome.as_ref()) {
+        match outcome.task.as_deref() {
+            Some(task) => {
+                by_task.insert(task, outcome.state);
+            }
+            None => states.push(outcome.state),
+        }
+    }
+    states.extend(by_task.into_values());
+    states
+}
+
+/// A settled run with delegated work: outcome counts, never a line count.
+/// Falls back to the call count when no call says how it ended.
+fn subagent_stats(entries: &[ChainEntry], state: ChainState) -> String {
+    let states = task_states(entries.iter());
+    let count = |want: TaskState| states.iter().filter(|s| **s == want).count();
+    let mut parts: Vec<String> = [
+        (count(TaskState::Done), "done"),
+        (count(TaskState::Failed), "failed"),
+        (count(TaskState::Stopped), "stopped"),
+        (count(TaskState::Running), "running"),
+    ]
+    .into_iter()
+    .filter(|(n, _)| *n > 0)
+    .map(|(n, word)| format!("{n} {word}"))
+    .collect();
+    if parts.is_empty() {
+        parts.push(plural(entries.len(), "call"));
+    }
+    if state == ChainState::Interrupted {
+        parts.push("interrupted".into());
     }
     parts.join(" · ")
 }
@@ -225,7 +296,7 @@ const FAMILIES: [ToolFamily; 6] = [
         verb: "Delegated",
         noun: "task",
         tail: "task",
-        tools: &["Agent", "AgentOutput"],
+        tools: &SUBAGENT_TOOLS,
         subject_is_path: false,
         act: None,
     },
@@ -309,6 +380,13 @@ fn usable_as_target(subject: &str) -> bool {
 }
 
 fn family_phrase(family: &ToolFamily, matched: &[&ChainEntry], long: bool) -> String {
+    // Delegated work counts tasks, as the stats do, not calls: a poll is no task.
+    let units = if family.noun == "task" {
+        task_states(matched.iter().copied()).len()
+    } else {
+        0
+    };
+    let count = if units > 0 { units } else { matched.len() };
     let subjects: Vec<String> = matched
         .iter()
         .map(|e| match family.act {
@@ -318,7 +396,8 @@ fn family_phrase(family: &ToolFamily, matched: &[&ChainEntry], long: bool) -> St
         .filter(|s| !s.is_empty())
         .collect();
     let distinct: BTreeSet<&String> = subjects.iter().collect();
-    if subjects.len() == matched.len() && distinct.len() == 1 {
+    // A task group counts its tasks even when the calls share a subject.
+    if units == 0 && subjects.len() == matched.len() && distinct.len() == 1 {
         return format!("{} {}", family.verb, subjects[0]);
     }
     let target = if family.subject_is_path {
@@ -337,7 +416,7 @@ fn family_phrase(family: &ToolFamily, matched: &[&ChainEntry], long: bool) -> St
     if family.noun == "search" {
         return "Explored".into();
     }
-    format!("{} {}", family.verb, plural(matched.len(), family.noun))
+    format!("{} {}", family.verb, plural(count, family.noun))
 }
 
 fn family_matches<'a>(entries: &'a [ChainEntry], family: &ToolFamily) -> Vec<&'a ChainEntry> {

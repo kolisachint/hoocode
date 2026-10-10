@@ -15,7 +15,7 @@ use hoocode_tui_render::{Component, ComponentHandle};
 
 use crate::visual_truncate::truncate_to_visual_lines;
 
-/// Preview line limit when not expanded.
+/// Preview line limit for a `!` command. The dial does not expand it.
 const PREVIEW_LINES: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,11 +197,7 @@ impl BashExecutionComponent {
                 if self.expanded {
                     parts.push(format!("({})", key_hint("app.tools.expand", "to collapse")));
                 } else {
-                    parts.push(format!(
-                        "{} ({})",
-                        t.fg("muted", &format!("... {hidden} more lines")),
-                        key_hint("app.tools.expand", "to expand")
-                    ));
+                    parts.push(t.fg("muted", &format!("... {hidden} more lines")));
                 }
             }
             match self.status {

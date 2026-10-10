@@ -1,2 +1,3 @@
 - Background agents run non-blocking (or force per call with `background: true`): you get a short "explore#1 finished" notification and pull the full result with `AgentOutput` (e.g. `AgentOutput("explore#1")`); `AgentOutput(list: true)` shows what's running.
 - After dispatching, don't idle — keep doing independent work (read/edit unrelated files, draft, dispatch more); barrier with `AgentOutput(wait: true)` (a named task, or all outstanding when no id) only when you genuinely can't proceed.
+- A long run can take up to 2 hours: poll it with `AgentOutput("explore#1")`, and stop one whose result you no longer need with `AgentOutput("explore#1", cancel: true)`.

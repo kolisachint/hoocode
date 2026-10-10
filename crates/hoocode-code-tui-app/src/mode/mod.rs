@@ -31,14 +31,16 @@ use hoocode_code_tui_selectors::session_selector::SessionSelectorComponent;
 use hoocode_code_tui_selectors::settings_selector::{SettingsChange, SettingsSelectorComponent};
 use hoocode_code_tui_selectors::tree_selector::TreeSelectorComponent;
 use hoocode_code_tui_selectors::user_message_selector::UserMessageSelectorComponent;
+use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_code_tui_theme::{
     get_editor_theme, init_theme, on_theme_change, set_registered_themes, set_theme, theme,
     ThinkingBorderLevel,
 };
+use hoocode_code_tui_widgets::background_notice::BackgroundNoticeComponent;
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
+use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
-use hoocode_code_tui_widgets::tool_output_view::MAX_TOOL_OUTPUT_VIEW;
 use hoocode_code_tui_widgets::UserMessageComponent;
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle, Loader, Spacer};
 use hoocode_tui_render::{Component, ComponentHandle, Container, FlexSpacer, Slot, Tui, TuiEvent};
@@ -63,7 +65,7 @@ use crate::startup_progress;
 use crate::tips::{
     render_tip, tip_ttl, TipRotation, TipRotationOptions, TipsController, TipsControllerOptions,
 };
-use crate::wordmark::{build_compact_wordmark, CompactWordmarkOptions};
+use crate::wordmark::{build_compact_wordmark, CompactWordmarkOptions, CursorBlink};
 
 mod auth;
 mod bash;
@@ -186,6 +188,23 @@ fn as_component<C: Component + 'static>(c: &Rc<RefCell<C>>) -> ComponentHandle {
     c.clone()
 }
 
+/// The footer's transient lines (warning, extension statuses, startup
+/// progress), shown in the notification area above the prompt. Hidden exactly
+/// when the footer slot is.
+struct FooterTransientLines {
+    footer: Rc<RefCell<FooterComponent>>,
+    footer_slot: Rc<RefCell<Slot>>,
+}
+
+impl Component for FooterTransientLines {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        if !self.footer_slot.borrow().visible() {
+            return Vec::new();
+        }
+        self.footer.borrow().transient_lines(width as usize)
+    }
+}
+
 fn thinking_border_level(level: &str) -> ThinkingBorderLevel {
     match level {
         "minimal" => ThinkingBorderLevel::Minimal,
@@ -197,8 +216,17 @@ fn thinking_border_level(level: &str) -> ThinkingBorderLevel {
     }
 }
 
+/// Whether the header cursor blinks: only while the transcript is empty (the
+/// header is still the top of the screen, so a resumed session never blinks),
+/// and not while the view is pinned to a scrolled-back transcript.
+pub(crate) fn cursor_should_blink(chat_empty: bool, pinned: bool) -> bool {
+    chat_empty && !pinned
+}
+
 /// The banner's logo (the compact wordmark, or the name on a narrow screen).
-fn logo(columns: u16, version: &str, cwd: &str) -> String {
+/// `cursor_visible` is the app-driven blink state: a space when hidden, so the
+/// brand does not shift.
+fn logo(columns: u16, version: &str, cwd: &str, cursor_visible: bool) -> String {
     let t = theme();
     if columns < 40 {
         return t.bold(&t.fg("accent", APP_NAME)) + &t.fg("dim", &format!(" v{version}"));
@@ -208,10 +236,12 @@ fn logo(columns: u16, version: &str, cwd: &str) -> String {
     let dim = |s: &str| theme().fg("dim", s);
     let muted = |s: &str| theme().fg("muted", s);
     let cursor = |s: &str| {
-        let t = theme();
-        t.blink(&t.fg("accent", s))
+        if cursor_visible {
+            theme().fg("accent", s)
+        } else {
+            " ".repeat(s.chars().count())
+        }
     };
-    let note = || theme().fg("dim", &format!("  {} more", key_text("app.tools.expand")));
     build_compact_wordmark(&CompactWordmarkOptions {
         app_name: APP_NAME,
         version,
@@ -222,7 +252,6 @@ fn logo(columns: u16, version: &str, cwd: &str) -> String {
         dim: &dim,
         muted: &muted,
         cursor: Some(&cursor),
-        note: Some(&note),
     })
 }
 
@@ -275,7 +304,7 @@ fn expanded_instructions() -> String {
             "app.tasks.cycleBackward",
             "task panel view",
         ),
-        hint("app.tools.expand", "to jump to full output and back"),
+        hint("app.tools.expand", "to toggle radar and peek"),
         hint("app.thinking.toggle", "to show or hide thinking"),
         group("Go — sessions and places"),
         hint("app.session.resume", "to resume a session"),
@@ -309,6 +338,9 @@ struct Mode {
     dirty: Rc<Cell<bool>>,
     perf: Perf,
     header: Rc<RefCell<ExpandableText>>,
+    /// The header cursor's app-driven blink. It stops once the transcript has
+    /// content: the header is then off the top.
+    cursor_blink: CursorBlink,
     status: Rc<RefCell<Container>>,
     loader: Option<Rc<RefCell<Loader>>>,
     stream_render_at: Option<Instant>,
@@ -317,7 +349,6 @@ struct Mode {
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
     tool_output_view: ToolOutputView,
-    view_before_jump: Option<ToolOutputView>,
     hide_thinking_block: bool,
     chain_closed_for_current_message: bool,
     dial_reverse_taught: HashSet<&'static str>,
@@ -332,11 +363,11 @@ struct Mode {
     notifications: Rc<RefCell<NotificationPanel>>,
     tips: TipsController,
     footer: Rc<RefCell<FooterComponent>>,
+    /// The warning now (shedding or UI stall), if any: shown above the prompt.
     runtime_notice: Option<String>,
     shedding_shown: bool,
     footer_data: FooterDataProvider,
     chrome: ChromeLayoutController,
-    expanded: bool,
     last_sigint: Option<Instant>,
     tx: Sender<AppEvent>,
     rx: Receiver<AppEvent>,
@@ -578,15 +609,20 @@ impl Mode {
             ))
         };
 
-        let expanded = options.verbose || tool_output_view == MAX_TOOL_OUTPUT_VIEW;
+        // The startup header and resource listing open only under `verbose`.
+        let expanded = options.verbose;
         let (version, cwd) = (
             options.version.clone(),
             format_display_path(&session.cwd().to_string_lossy()),
         );
         let columns = size.get().0;
         let (v1, c1, v2, c2) = (version.clone(), cwd.clone(), version.clone(), cwd.clone());
+        // The header's cursor blinks by app clock (Ghostty ignores SGR 5).
+        let cursor_blink = CursorBlink::new();
+        let cursor_on = cursor_blink.visible();
+        let cursor_on2 = cursor_on.clone();
         let header = handle(ExpandableText::new(
-            move || logo(columns, &v1, &c1),
+            move || logo(columns, &v1, &c1, cursor_on.get()),
             move || {
                 let onboarding = theme().fg(
                     "dim",
@@ -596,7 +632,7 @@ impl Mode {
                 );
                 format!(
                     "{}\n{}\n\n{onboarding}",
-                    logo(columns, &v2, &c2),
+                    logo(columns, &v2, &c2, cursor_on2.get()),
                     expanded_instructions()
                 )
             },
@@ -631,6 +667,10 @@ impl Mode {
         tui.add_child(as_component(&widget_above));
         tui.add_child(tasks_slot.clone());
         tui.add_child(as_component(&notifications));
+        tui.add_child(handle(FooterTransientLines {
+            footer: footer.clone(),
+            footer_slot: footer_slot.clone(),
+        }));
         tui.add_child(as_component(&editor_container));
         tui.add_child(as_component(&handle(Container::new()))); // widgets below
         tui.add_child(footer_slot.clone());
@@ -642,10 +682,11 @@ impl Mode {
             as_component(&editor),
             chat.clone(),
             Rc::new(|child: &ComponentHandle| {
-                child
-                    .borrow()
-                    .as_any()
-                    .is_some_and(|any| any.is::<UserMessageComponent>())
+                child.borrow().as_any().is_some_and(|any| {
+                    any.is::<UserMessageComponent>()
+                        || any.is::<SkillBlockComponent>()
+                        || any.is::<BackgroundNoticeComponent>()
+                })
             }),
         );
 
@@ -659,6 +700,7 @@ impl Mode {
             dirty,
             perf,
             header,
+            cursor_blink,
             transcript: Transcript::new(chat),
             status,
             loader: None,
@@ -668,7 +710,6 @@ impl Mode {
             turn_cost_anchor: None,
             turn_stop_reason: None,
             tool_output_view,
-            view_before_jump: None,
             hide_thinking_block,
             chain_closed_for_current_message: false,
             dial_reverse_taught: HashSet::new(),
@@ -687,7 +728,6 @@ impl Mode {
             shedding_shown: false,
             footer_data,
             chrome,
-            expanded,
             last_sigint: None,
             tx,
             rx,
@@ -748,7 +788,7 @@ impl Mode {
 
     /// Acts on the watchdog once per loop turn. A hard-limit trip aborts the turn
     /// and flushes the session. Shedding changes clear the render caches. The
-    /// footer warning follows the stall flag and shedding. The stall flag can only
+    /// warning above the prompt follows the stall flag and shedding. The stall flag can only
     /// show once the loop turns again, since a stuck loop cannot draw it.
     fn sync_runtime_health(&mut self) {
         for event in hoocode_runtime::take_memory_events() {
@@ -772,12 +812,13 @@ impl Mode {
             self.dirty.set(true);
         }
         let notice = if hoocode_runtime::watchdog::ui_stalled() {
-            Some("UI stalled: no response for 2 s; keys are queued".to_string())
+            Some(format!(
+                "{WARNING_GLYPH} UI stalled: no response for 2 s; keys are queued"
+            ))
         } else if shedding {
-            Some(
-                "Memory above the soft limit: no new subagents; tool calls run one at a time"
-                    .to_string(),
-            )
+            Some(format!(
+                "{WARNING_GLYPH} Memory above the soft limit: no new subagents; tool calls run one at a time"
+            ))
         } else {
             None
         };
@@ -788,6 +829,14 @@ impl Mode {
         }
     }
 
+    /// Whether the header cursor should blink now (see `cursor_should_blink`).
+    fn cursor_blink_running(&self) -> bool {
+        cursor_should_blink(
+            self.transcript.chat.borrow().children.is_empty(),
+            self.tui.scroll_pinned(),
+        )
+    }
+
     fn next_wakeup(&self) -> Duration {
         let now = Instant::now();
         let mut wait = Duration::from_millis(250);
@@ -795,6 +844,7 @@ impl Mode {
             self.notifications.borrow().deadline(),
             self.tips.deadline(),
             self.editor.borrow().editor.autocomplete_deadline(),
+            self.cursor_blink.deadline(),
         ];
         for deadline in deadlines.into_iter().flatten() {
             wait = wait.min(deadline.saturating_duration_since(now));
@@ -1059,6 +1109,12 @@ impl Mode {
             if self.tips.poll() {
                 self.dirty.set(true);
             }
+            // The header cursor's blink: re-render the header when it flips.
+            let running = self.cursor_blink_running();
+            if self.cursor_blink.advance(Instant::now(), running) {
+                self.header.borrow_mut().refresh();
+                self.dirty.set(true);
+            }
             if self
                 .selector
                 .as_ref()
@@ -1167,6 +1223,19 @@ impl Mode {
         }
         self.session.dispose();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod cursor_blink_tests {
+    use super::cursor_should_blink;
+
+    #[test]
+    fn blinks_only_on_an_empty_unpinned_transcript() {
+        assert!(cursor_should_blink(true, false));
+        assert!(!cursor_should_blink(false, false));
+        assert!(!cursor_should_blink(true, true));
+        assert!(!cursor_should_blink(false, true));
     }
 }
 
