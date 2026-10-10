@@ -203,21 +203,23 @@ impl FooterDataProvider {
             return;
         };
         let weak = Arc::downgrade(&self.inner);
+        let reftable = paths.common_git_dir.join("reftable");
+        let watched = [
+            paths.head_path.clone(),
+            reftable.clone(),
+            reftable.join("tables.list"),
+        ];
+        let signature = move || {
+            watched
+                .iter()
+                .map(|p| file_signature(p))
+                .collect::<Vec<_>>()
+        };
+        // Baseline is taken here, before the task is spawned: a HEAD write that
+        // lands before the Low-lane task first runs must still be seen as a change.
+        let mut last = signature();
         // A file watcher is housekeeping: it polls on the Low lane (hoocode-bg).
         hoocode_runtime::spawn_bg(async move {
-            let reftable = paths.common_git_dir.join("reftable");
-            let watched = [
-                paths.head_path.clone(),
-                reftable.clone(),
-                reftable.join("tables.list"),
-            ];
-            let signature = || {
-                watched
-                    .iter()
-                    .map(|p| file_signature(p))
-                    .collect::<Vec<_>>()
-            };
-            let mut last = signature();
             let mut pending: Option<Instant> = None;
             loop {
                 tokio::time::sleep(WATCH_POLL).await;

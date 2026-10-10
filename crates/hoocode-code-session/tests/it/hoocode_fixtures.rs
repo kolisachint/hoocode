@@ -168,3 +168,28 @@ fn v1_session_loads_through_typed_entries() {
     assert_eq!(loaded.unrecognized, 0);
     assert_eq!(loaded.entries.len(), 4);
 }
+
+#[test]
+fn non_object_lines_are_skipped_and_migration_does_not_panic() {
+    // Regression for the `session_jsonl` fuzz crash: a bare number or string line
+    // used to reach `value["id"] = ...` and panic in serde_json's IndexMut.
+    let path = std::env::temp_dir().join(format!(
+        "hoocode-non-object-lines-{}.jsonl",
+        std::process::id()
+    ));
+    let content = concat!(
+        "{\"type\":\"session\",\"verwiof\":1,\"id\":\"abc\"}\n",
+        "{\"ty\":\"abb\"}\n",
+        "1615\n",
+        "\"str\"\n",
+    );
+    std::fs::write(&path, content).unwrap();
+
+    let mut entries = load_raw_entries(&path);
+    assert_eq!(entries.len(), 2, "numbers and strings are skipped");
+    assert!(entries.iter().all(Value::is_object));
+    assert!(migrate_session_entries(&mut entries));
+
+    let _ = load_session_file(&path);
+    let _ = std::fs::remove_file(&path);
+}

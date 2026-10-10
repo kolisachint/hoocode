@@ -1079,7 +1079,8 @@ pub fn load_raw_entries(path: impl AsRef<Path>) -> Vec<serde_json::Value> {
         .trim()
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str(l).ok())
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(serde_json::Value::is_object)
         .collect();
     match entries.first() {
         None => entries,
@@ -1113,6 +1114,9 @@ fn migrate_v1_to_v2(entries: &mut [serde_json::Value]) {
     let mut ids = std::collections::HashSet::new();
     let mut prev_id: Option<String> = None;
     for i in 0..entries.len() {
+        if !entries[i].is_object() {
+            continue;
+        }
         if entries[i]["type"] == "session" {
             entries[i]["version"] = 2.into();
             continue;
@@ -1140,6 +1144,9 @@ fn migrate_v1_to_v2(entries: &mut [serde_json::Value]) {
 /// v2 → v3: the `hookMessage` role was renamed to `custom`.
 fn migrate_v2_to_v3(entries: &mut [serde_json::Value]) {
     for entry in entries.iter_mut() {
+        if !entry.is_object() {
+            continue;
+        }
         if entry["type"] == "session" {
             entry["version"] = 3.into();
         } else if entry["type"] == "message" && entry["message"]["role"] == "hookMessage" {

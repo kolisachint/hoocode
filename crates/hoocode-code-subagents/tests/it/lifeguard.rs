@@ -295,6 +295,31 @@ async fn progress_keeps_a_slow_child_alive() {
     let _ = child.wait();
 }
 
+/// A running tool is busy work, not a stall: a child inside an 18-minute
+/// `cargo build` emits nothing between `tool_execution_start` and
+/// `tool_execution_end`. Once the tool ends, the progress check applies again.
+#[tokio::test]
+async fn a_running_tool_is_not_a_progress_stall() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    let mut child = sleeper();
+    guard.monitor("t1", "explore", child.id());
+    guard.record_tool_start("t1");
+    guard.record_heartbeat("t1");
+    guard.set_last_progress_for_testing("t1", now_ms() - 200_000);
+    guard.check_heartbeats();
+    assert!(stalled.lock().unwrap().is_empty());
+    // The tool ends and the child goes quiet: now the progress check applies.
+    guard.record_tool_end("t1");
+    guard.record_heartbeat("t1");
+    guard.set_last_progress_for_testing("t1", now_ms() - 200_000);
+    guard.check_heartbeats();
+    assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
+    assert!(child.wait().unwrap().code().is_none());
+    guard.dispose();
+}
+
 /// A reap is SIGTERM, grace, SIGKILL — so a child that can still write its
 /// result gets the chance. `sleep` dies on SIGTERM, which is the point: the
 /// pool then sees the exit and settles the task from whatever it wrote.

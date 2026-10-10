@@ -12,7 +12,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 futures-executor = "0.3"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 hoocode-ai-sse = { path = "../crates/hoocode-ai-sse" }
 hoocode-code-models = { path = "../crates/hoocode-code-models" }
 hoocode-code-rpc = { path = "../crates/hoocode-code-rpc" }

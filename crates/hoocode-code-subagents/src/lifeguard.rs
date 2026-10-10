@@ -15,7 +15,9 @@
 //! deadline. Silence past [`HEARTBEAT_MISS_THRESHOLD_MS`] is therefore one
 //! signal, and *no forward progress* past [`PROGRESS_STALL_THRESHOLD_MS`] is
 //! the other; both reap the same way. The progress bar is generous because a
-//! recorded subagent turn took up to 65s.
+//! recorded subagent turn took up to 65s. A child with a tool in flight counts
+//! as making progress (a long build is busy work), so only a child parked with
+//! no tool running can trip the progress check.
 //!
 //! **Reaping is SIGTERM, grace, then SIGKILL.** A child that gets SIGTERM
 //! writes its partial `result.json` and exits (see `runtime.rs`), and the
@@ -173,6 +175,9 @@ struct State {
     /// Last forward progress (a turn or tool event), per task. Unlike
     /// `last_heartbeat` this does not move on a ping.
     last_progress: HashMap<String, u64>,
+    /// Tools currently running per task (started minus ended, saturating). A
+    /// task with a count above zero is busy, so the progress check skips it.
+    tools_in_flight: HashMap<String, u32>,
     /// Reaped (SIGTERM sent) but not yet exited: not re-reported each tick,
     /// and the grace timer that escalates to SIGKILL is held here.
     reaping: HashSet<String>,
@@ -322,6 +327,35 @@ impl SubagentLifeguard {
         self.state().processes.contains_key(task_id)
     }
 
+    /// A tool started in a monitored child. Counts as progress, and keeps the
+    /// child from being reaped as idle until the matching [`record_tool_end`].
+    pub fn record_tool_start(&self, task_id: &str) {
+        let mut state = self.state();
+        if state.processes.contains_key(task_id) {
+            let count = state
+                .tools_in_flight
+                .entry(task_id.to_string())
+                .or_insert(0);
+            *count = count.saturating_add(1);
+            state.last_progress.insert(task_id.to_string(), now_ms());
+        }
+    }
+
+    /// A tool finished in a monitored child. Counts as progress. The count
+    /// saturates at zero, so an unmatched end is harmless.
+    pub fn record_tool_end(&self, task_id: &str) {
+        let mut state = self.state();
+        if state.processes.contains_key(task_id) {
+            if let Some(count) = state.tools_in_flight.get_mut(task_id) {
+                *count = count.saturating_sub(1);
+                if *count == 0 {
+                    state.tools_in_flight.remove(task_id);
+                }
+            }
+            state.last_progress.insert(task_id.to_string(), now_ms());
+        }
+    }
+
     /// Test hook: backdate a task's last heartbeat.
     #[doc(hidden)]
     pub fn set_last_heartbeat_for_testing(&self, task_id: &str, at_ms: u64) {
@@ -390,12 +424,15 @@ impl SubagentLifeguard {
                         .last_heartbeat
                         .get(*id)
                         .is_some_and(|last| now.saturating_sub(*last) as f64 > threshold);
-                    // A pinging child that has not finished a turn or run a
-                    // tool in minutes is parked, not busy.
-                    let idle = state
-                        .last_progress
-                        .get(*id)
-                        .is_some_and(|last| now.saturating_sub(*last) as f64 > progress_threshold);
+                    // A pinging child that has not finished a turn in minutes
+                    // and has no tool running is parked, not busy. A tool in
+                    // flight is busy work (a build can run 18 minutes), so it is
+                    // never idle; the heartbeat check above still applies.
+                    let tool_running = state.tools_in_flight.get(*id).is_some_and(|n| *n > 0);
+                    let idle = !tool_running
+                        && state.last_progress.get(*id).is_some_and(|last| {
+                            now.saturating_sub(*last) as f64 > progress_threshold
+                        });
                     silent || idle
                 })
                 .cloned()
@@ -565,6 +602,7 @@ impl SubagentLifeguard {
         state.processes.remove(task_id);
         state.last_heartbeat.remove(task_id);
         state.last_progress.remove(task_id);
+        state.tools_in_flight.remove(task_id);
         state.started_at.remove(task_id);
         state.base_timeout_ms.remove(task_id);
         state.reaping.remove(task_id);
@@ -607,6 +645,7 @@ impl SubagentLifeguard {
             state.processes.clear();
             state.last_heartbeat.clear();
             state.last_progress.clear();
+            state.tools_in_flight.clear();
             state.started_at.clear();
             state.base_timeout_ms.clear();
             state.reaping.clear();
