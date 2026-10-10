@@ -1,11 +1,11 @@
-project • amber-harbor  /work/project                             BUILD · ◍ peek
-no-model   ▱▱▱▱▱▱▱▱ 0%
+BUILD · ◍ peek        project • amber-harbor  /work/project
+▱▱▱▱▱▱▱▱   0%          no-model
 --- styles ---
-r0 c0-6 bold
-r0 c7-21 fg=#989898
-r0 c24-36 fg=#989898
-r0 c66-70 fg=#5cc8bb bold
-r0 c74-79 fg=#989898
-r1 c0-7 fg=#a8a8a8
-r1 c11-18 fg=#989898
-r1 c20-21 fg=#a8a8a8
+r0 c0-4 fg=#5cc8bb bold
+r0 c8-13 fg=#989898
+r0 c22-28 bold
+r0 c29-43 fg=#989898
+r0 c46-58 fg=#989898
+r1 c0-7 fg=#989898
+r1 c11-12 fg=#a8a8a8
+r1 c23-30 fg=#a8a8a8

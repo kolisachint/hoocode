@@ -163,11 +163,11 @@ fn steps_a_dial_on_the_band_as_fast_as_the_dial_is_stepped() {
     let mut s = setup(None);
     s.topic("Chrome: compact", "app.chrome");
     s.advance(1000);
-    s.topic("Chrome: bare", "app.chrome");
-    assert_eq!(s.showing().as_deref(), Some("Chrome: bare"));
+    s.topic("Chrome: full", "app.chrome");
+    assert_eq!(s.showing().as_deref(), Some("Chrome: full"));
     assert!(s.pending().is_empty());
     s.advance(INFO - 1);
-    assert_eq!(s.showing().as_deref(), Some("Chrome: bare"));
+    assert_eq!(s.showing().as_deref(), Some("Chrome: full"));
     s.advance(1);
     assert_eq!(s.showing(), None);
 }
@@ -176,9 +176,9 @@ fn steps_a_dial_on_the_band_as_fast_as_the_dial_is_stepped() {
 fn keeps_two_different_dials_apart() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
-    s.topic("Chrome: bare", "app.chrome");
+    s.topic("Chrome: full", "app.chrome");
     s.topic("Thinking level: high", "app.thinking");
-    assert_eq!(s.showing().as_deref(), Some("Chrome: bare"));
+    assert_eq!(s.showing().as_deref(), Some("Chrome: full"));
     assert_eq!(s.pending(), ["Thinking level: high"]);
 }
 
@@ -188,9 +188,9 @@ fn replaces_a_queued_glimpse_of_the_same_dial_without_jumping_the_queue() {
     let mut s = setup(None);
     s.warning("held");
     s.topic("Chrome: compact", "app.chrome");
-    s.topic("Chrome: bare", "app.chrome");
+    s.topic("Chrome: full", "app.chrome");
     assert_eq!(s.showing().as_deref(), Some("held"));
-    assert_eq!(s.pending(), ["Chrome: bare"]);
+    assert_eq!(s.pending(), ["Chrome: full"]);
 }
 
 #[test]

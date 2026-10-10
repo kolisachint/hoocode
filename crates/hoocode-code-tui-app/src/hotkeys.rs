@@ -124,7 +124,7 @@ which never hides.
 
 | Key | Steps | Through |
 |-----|-------|---------|
-| `{chrome_forward}` / `{chrome_backward}` | Chrome | full → compact (one-row footer, no task list) → bare (neither) — `/chrome` picks one |
+| `{chrome_forward}` / `{chrome_backward}` | Chrome | full ↔ compact (the short footer, the task summary) — `/chrome full` or `/chrome compact` picks one |
 
 It also gets out of the way on its own: the footer lends its rows to the
 completion list while that is open, and the task list keeps its counts but drops

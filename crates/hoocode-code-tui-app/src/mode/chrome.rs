@@ -229,7 +229,7 @@ impl Mode {
         }
     }
 
-    /// `handleChromeCommand`: `/chrome` names the stop, `/chrome <stop>`
+    /// `handleChromeCommand`: `/chrome` names the stop, `/chrome <full|compact>`
     /// sets it (the dial's only way in where alt never arrives).
     pub(super) fn handle_chrome_command(&mut self, text: &str) {
         let argument = text
@@ -237,25 +237,76 @@ impl Mode {
             .unwrap_or(text)
             .trim()
             .to_lowercase();
-        let all: Vec<&str> = ChromeDensity::ALL.iter().map(|d| d.as_str()).collect();
         if argument.is_empty() {
             self.show_status(&format!(
                 "Chrome: {} — {}",
                 self.chrome.density(),
-                all.join(" · ")
+                chrome_stops()
             ));
             return;
         }
-        let Some(density) = ChromeDensity::parse(&argument) else {
-            self.show_error(&format!(
-                "Unknown chrome density \"{argument}\". Try: {}",
-                all.join(", ")
-            ));
-            return;
+        let density = match parse_chrome_stop(&argument) {
+            Ok(density) => density,
+            Err(message) => {
+                self.show_error(&message);
+                return;
+            }
         };
         self.chrome.set_density(density);
         self.session.settings().set_chrome_density(density);
         self.dirty.set(true);
         self.show_status(&format!("Chrome: {density}"));
+    }
+}
+
+/// The valid stops, as the user types them: `full · compact`.
+fn chrome_stops() -> String {
+    let all: Vec<&str> = ChromeDensity::ALL.iter().map(|d| d.as_str()).collect();
+    all.join(" · ")
+}
+
+/// The argument of `/chrome`, parsed. `bare` was a stop until it was retired:
+/// it gets its own message, and the message names the two stops that are left.
+fn parse_chrome_stop(argument: &str) -> Result<ChromeDensity, String> {
+    if let Some(density) = ChromeDensity::parse(argument) {
+        return Ok(density);
+    }
+    let all: Vec<&str> = ChromeDensity::ALL.iter().map(|d| d.as_str()).collect();
+    if argument == "bare" {
+        return Err(format!(
+            "\"bare\" is no longer a chrome stop. Use: {}",
+            all.join(", ")
+        ));
+    }
+    Err(format!(
+        "Unknown chrome stop \"{argument}\". Use: {}",
+        all.join(", ")
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn takes_the_two_stops() {
+        assert_eq!(parse_chrome_stop("full"), Ok(ChromeDensity::Full));
+        assert_eq!(parse_chrome_stop("compact"), Ok(ChromeDensity::Compact));
+    }
+
+    #[test]
+    fn bare_is_refused_and_the_error_names_the_two_stops() {
+        let err = parse_chrome_stop("bare").unwrap_err();
+        assert_eq!(
+            err,
+            "\"bare\" is no longer a chrome stop. Use: full, compact"
+        );
+    }
+
+    #[test]
+    fn anything_else_is_an_unknown_stop_naming_the_two_stops() {
+        let err = parse_chrome_stop("nope").unwrap_err();
+        assert_eq!(err, "Unknown chrome stop \"nope\". Use: full, compact");
+        assert_eq!(chrome_stops(), "full · compact");
     }
 }

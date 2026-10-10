@@ -66,7 +66,7 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
     },
     BuiltinSlashCommand {
         name: "chrome",
-        description: "Set how much screen the chrome gets: /chrome <full|compact|bare> (bare = show stops)",
+        description: "Set how much screen the chrome gets: /chrome <full|compact>",
     },
     BuiltinSlashCommand {
         name: "session",
