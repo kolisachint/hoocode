@@ -23,6 +23,7 @@ ALLOW=(
   ':(exclude)scripts/rename/rename_to_hoocode.py'  # the one-shot step 0c tool names the old names by design
   ':(exclude)Cargo.lock'                            # regenerated from the crate names
   ':(exclude)archive/migration/ci/rename-to-hoocode.patch'  # the staged CI rename: it removes the old names
+  ':(exclude)scripts/dev/prune_target.sh'          # deletes stale build output under the old cortex* names
   ':(exclude)CLAUDE.md'                             # names the guard's target in its rule ("don't add new cortex names")
   ':(exclude)crates/hoocode-code-migrate'           # the merge code that reads the old folders (naming-and-paths.md §3)
 )

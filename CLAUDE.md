@@ -4,6 +4,10 @@ hoocode (Rust) fully replaces the TypeScript hoocode-ts (decided 2026-10-10). No
 reference, pin, shim or parity checks remain; don't ask about TS parity.
 
 - The TS→Rust migration is finished; its records are in `archive/`.
+- **Disk (2026-10-10):** dev builds have `debug = false`. At session start run
+  `scripts/dev/prune_target.sh --apply --if-over 15` without asking. It keeps current
+  builds and deletes stale units (older than 3 days, old `cortex*` names) and an
+  oversized incremental cache. Never `cargo clean` unless the user asks.
 - Build speed / agent loop design (profiles, nextest, test layout, hooks, CI):
   `docs/design/build-speed.md`. Its §4.3 rules join this file as they are implemented.
 - Done = `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo nextest run -p <touched crates>`. CI runs the full workspace. Component goldens run in nextest (`UPDATE_GOLDENS=1` accepts them). Screen goldens (about 10 key screens, `scripts/tui/goldens.py`) are a pre-release check, not per change.
