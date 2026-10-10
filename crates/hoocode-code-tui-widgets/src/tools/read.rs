@@ -182,7 +182,7 @@ fn format_read_result(args: &Value, result: &ToolResultView<'_>, show_images: bo
     let body = peek_block(&lines, |shown| {
         render_read_output(&shown.join("\n"), start_line)
     });
-    let mut text = format!("\n{body}");
+    let mut text = body;
 
     let truncation = result.details.get("truncation");
     if let Some(tr) = truncation.filter(|tr| tr.get("truncated") == Some(&Value::Bool(true))) {

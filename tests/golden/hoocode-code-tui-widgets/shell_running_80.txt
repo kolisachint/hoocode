@@ -1,10 +1,9 @@
 
- ● $ cargo test -p hoocode-code-tui-widgets
-
- test case_01 ... ok
- test case_02 ... ok
+  ● Shell  cargo test -p hoocode-code-tui-widgets
+    test case_01 ... ok
+    test case_02 ... ok
 --- styles ---
-r1 c1-2 fg=#ffff00
-r1 c3-42 bold
-r3 c1-19 fg=#a8a8a8
-r4 c1-19 fg=#a8a8a8
+r1 c2-3 fg=#ffff00
+r1 c4-8 bold
+r2 c4-22 fg=#a8a8a8
+r3 c4-22 fg=#a8a8a8

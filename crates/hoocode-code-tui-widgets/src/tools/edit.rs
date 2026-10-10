@@ -115,6 +115,9 @@ fn format_edit_call(args: &Value) -> String {
     format!("{} {display}", t.fg("toolTitle", &t.bold("Edit")))
 }
 
+/// Background tint callback for the inner box of an edit call.
+type BoxBgFn = Box<dyn Fn(&str) -> String>;
+
 /// The call component: rebuilt from the shared state at render time, so a
 /// preview the result slot settles shows without re-running the call slot.
 struct EditCall {
@@ -124,15 +127,17 @@ struct EditCall {
 impl Component for EditCall {
     fn render(&mut self, width: u16) -> Vec<String> {
         let state = self.state.borrow();
-        let banded = state.preview.is_some() || state.settled_error;
-        let bg: Box<dyn Fn(&str) -> String> = match (&state.preview, state.settled_error) {
-            (Some(Preview::Error(_)), _) | (None, true) => {
-                Box::new(|s: &str| theme().bg("toolErrorBg", s))
-            }
-            (Some(Preview::Diff { .. }), _) => Box::new(|s: &str| theme().bg("toolSuccessBg", s)),
-            (None, false) => Box::new(|s: &str| theme().bg("toolPendingBg", s)),
+        // Only an error tints the inner box; otherwise the outer band shows.
+        let is_error = match (&state.preview, state.settled_error) {
+            (Some(Preview::Error(_)), _) | (None, true) => true,
+            (Some(Preview::Diff { .. }), _) | (None, false) => false,
         };
-        let mut b = BoxComponent::new(if banded { 1 } else { 0 }, 0, Some(bg));
+        let err_bg: Option<BoxBgFn> = if is_error {
+            Some(Box::new(|s: &str| theme().bg("toolErrorBg", s)))
+        } else {
+            None
+        };
+        let mut b = BoxComponent::new(0, 0, err_bg);
         b.add_child(Rc::new(RefCell::new(Text::new(
             format_edit_call(&state.args),
             0,
@@ -143,7 +148,6 @@ impl Component for EditCall {
                 Preview::Error(e) => error_body(e),
                 Preview::Diff { diff, .. } => diff_body(diff),
             };
-            b.add_child(Rc::new(RefCell::new(Spacer::new(1))));
             b.add_child(Rc::new(RefCell::new(Text::new(body, 0, 0))));
         }
         b.render(width)

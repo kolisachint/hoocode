@@ -60,10 +60,9 @@ fn format_search_result(result: &ToolResultView<'_>, show_images: bool) -> Strin
         return String::new();
     }
     let lines: Vec<String> = output.split('\n').map(str::to_string).collect();
-    let body = peek_block(&lines, |shown| {
+    peek_block(&lines, |shown| {
         shown.iter().map(|l| t.fg("toolOutput", l)).collect()
-    });
-    format!("\n{body}")
+    })
 }
 
 pub fn definition() -> ToolRenderDefinition {

@@ -291,6 +291,12 @@ pub fn create_theme(
             bg.push(("warningBg".to_string(), v));
         }
     }
+    // The tool peek band falls back to the pending tint when a theme omits it.
+    if !bg.iter().any(|(k, _)| k == "toolBandBg") {
+        if let Some((_, v)) = bg.iter().find(|(k, _)| k == "toolPendingBg").cloned() {
+            bg.push(("toolBandBg".to_string(), v));
+        }
+    }
     Theme::new(
         fg,
         bg,

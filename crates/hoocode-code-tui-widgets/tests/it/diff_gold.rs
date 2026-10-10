@@ -1,5 +1,5 @@
 //! jsdiff `diffWords` and the pin's `renderDiff` against the real ones
-//! (`fixtures/diff-gold.json`, from `migration/tools/goldens/diff.mjs`).
+//! (`fixtures/diff-gold.json`, from `archive/migration/tools/goldens/diff.mjs`).
 
 use crate::support::lock;
 use hoocode_code_tui_widgets::diff::render_diff;

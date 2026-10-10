@@ -73,7 +73,7 @@ pub const REQUIRED_COLOR_TOKENS: [&str; 51] = [
 
 /// Every color property the schema declares, in declaration order, with
 /// whether it is optional.
-const COLOR_PROPERTIES: [(&str, bool); 67] = [
+const COLOR_PROPERTIES: [(&str, bool); 68] = [
     ("accent", false),
     ("border", false),
     ("borderAccent", false),
@@ -94,6 +94,7 @@ const COLOR_PROPERTIES: [(&str, bool); 67] = [
     ("toolPendingBg", false),
     ("toolSuccessBg", false),
     ("toolErrorBg", false),
+    ("toolBandBg", true),
     ("warningBg", true),
     ("toolTitle", false),
     ("toolOutput", false),

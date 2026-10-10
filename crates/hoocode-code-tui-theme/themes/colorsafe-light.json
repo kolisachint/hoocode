@@ -17,6 +17,7 @@
 		"userMsgBg": "#f2f3f5",
 		"customMsgBg": "#f5f0f4",
 		"toolPendingBg": "#f4f5f7",
+		"toolBandBg": "#f8f9fa",
 		"toolSuccessBg": "#edf5f2",
 		"toolErrorBg": "#f9f0ea",
 		"warningBg": "#e8e5dc"
@@ -43,6 +44,7 @@
 		"toolPendingBg": "toolPendingBg",
 		"toolSuccessBg": "toolSuccessBg",
 		"toolErrorBg": "toolErrorBg",
+		"toolBandBg": "toolBandBg",
 		"warningBg": "warningBg",
 		"toolTitle": "ink",
 		"toolOutput": "gray",

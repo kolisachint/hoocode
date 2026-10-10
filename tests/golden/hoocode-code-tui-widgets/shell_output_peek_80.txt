@@ -1,18 +1,17 @@
 
- ● $ cargo test -p hoocode-code-tui-widgets
-
- ... (7 earlier lines)
- test case_08 ... ok
- test case_09 ... ok
- test case_10 ... ok
- test case_11 ... ok
- test case_12 ... ok
+  ● Shell  cargo test -p hoocode-code-tui-widgets
+    ... (7 earlier lines)
+    test case_08 ... ok
+    test case_09 ... ok
+    test case_10 ... ok
+    test case_11 ... ok
+    test case_12 ... ok
 --- styles ---
-r1 c1-2 fg=#b5bd68
-r1 c3-42 bold
-r3 c1-21 fg=#a8a8a8
-r4 c1-19 fg=#a8a8a8
-r5 c1-19 fg=#a8a8a8
-r6 c1-19 fg=#a8a8a8
-r7 c1-19 fg=#a8a8a8
-r8 c1-19 fg=#a8a8a8
+r1 c2-3 fg=#b5bd68
+r1 c4-8 bold
+r2 c4-24 fg=#a8a8a8
+r3 c4-22 fg=#a8a8a8
+r4 c4-22 fg=#a8a8a8
+r5 c4-22 fg=#a8a8a8
+r6 c4-22 fg=#a8a8a8
+r7 c4-22 fg=#a8a8a8

@@ -1,10 +1,10 @@
 
- ● Agent explore · Find the footer code
-   │ Found the footer in footer.rs.
+  ● Agent explore · Find the footer code
+      │ Found the footer in footer.rs.
 --- styles ---
-r1 c1-2 fg=#b5bd68
-r1 c3-8 bold
-r1 c9-15 fg=#56b6c2
-r1 c17-38 fg=#989898
-r2 c3 fg=#757575
-r2 c5-34 fg=#a8a8a8
+r1 c2-3 fg=#b5bd68
+r1 c4-9 bold
+r1 c10-16 fg=#56b6c2
+r1 c18-39 fg=#989898
+r2 c6 fg=#757575
+r2 c8-37 fg=#a8a8a8

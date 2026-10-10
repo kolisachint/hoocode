@@ -23,6 +23,8 @@ const VERB_WIDTH: usize = 14;
 const VERB_GAP: usize = 2;
 /// Minimum space kept for the flush-right signal before the subject is trimmed.
 const MIN_SIGNAL_GAP: usize = 2;
+/// Radar target width in display columns. A longer target ends in `…`.
+const RADAR_TARGET_WIDTH: usize = 40;
 
 /// Argument names that carry a call's subject, most specific first.
 const SUBJECT_KEYS: [&str; 12] = [
@@ -49,8 +51,8 @@ fn utf16_len(s: &str) -> usize {
     s.encode_utf16().count()
 }
 
-/// `toolSubject`: the single most identifying argument, on one line.
-pub fn tool_subject(args: &Value, cwd: &str) -> String {
+/// The most identifying argument as written, before whitespace is collapsed.
+fn subject_source(args: &Value, cwd: &str) -> String {
     let Some(record) = args.as_object() else {
         return String::new();
     };
@@ -64,10 +66,26 @@ pub fn tool_subject(args: &Value, cwd: &str) -> String {
     // Paths are the most common subject and the least readable in absolute form.
     let relative = hoocode_code_paths::cwd_relative_path(Path::new(subject), Path::new(cwd))
         .map(|p| p.to_string_lossy().into_owned());
-    let display = match &relative {
-        Some(r) if utf16_len(r) < utf16_len(subject) => r.as_str(),
-        _ => subject,
-    };
+    match relative {
+        Some(r) if utf16_len(&r) < utf16_len(subject) => r,
+        _ => subject.to_string(),
+    }
+}
+
+/// The radar target: the first non-blank line, cut to `RADAR_TARGET_WIDTH` columns.
+fn radar_target(args: &Value, cwd: &str) -> String {
+    let source = subject_source(args, cwd);
+    let first = source
+        .lines()
+        .map(js_trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("");
+    truncate_to_width(first, RADAR_TARGET_WIDTH, "…", false)
+}
+
+/// `toolSubject`: the single most identifying argument, on one line.
+pub fn tool_subject(args: &Value, cwd: &str) -> String {
+    let display = subject_source(args, cwd);
     // Multi-line commands collapse to one line.
     let mut out = String::new();
     let mut in_space = false;
@@ -137,7 +155,7 @@ pub fn render_tool_signal_line(input: &ToolSignalInput, width: usize) -> String 
     let name: String = input.tool_name.chars().take(VERB_WIDTH).collect();
     let verb = format!("{name:<w$}", w = VERB_WIDTH + VERB_GAP);
     let (signal, color) = tool_signal(input);
-    let subject = tool_subject(&input.args, &input.cwd);
+    let subject = radar_target(&input.args, &input.cwd);
 
     let available = width;
     let signal_width = if signal.is_empty() {
