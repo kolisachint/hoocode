@@ -173,10 +173,14 @@ hoocode-tui-util = { path = "crates/hoocode-tui-util" }
 
 hoocode-runtime = { path = "crates/hoocode-runtime" }
 
-# Full debuginfo across ~220 test binaries does not fit a cloud session's disk
-# and slows every link; file:line backtraces are kept (build-speed.md D1).
+# No debuginfo in dev builds (build-speed.md D1, changed 2026-10-10). The TS
+# migration is over. target/ reached 61 GB, mostly ~647k .o files kept for macOS
+# debug info. Panic file:line still comes from Location::caller. To get line
+# tables back for one hot-path crate, add:
+#   [profile.dev.package.<crate>]
+#   debug = "line-tables-only"
 [profile.dev]
-debug = "line-tables-only"
+debug = false
 
 # Regex compilation is very slow unoptimized: the markdown renderer's rules
 # (tens of patterns) took ~1 s to build on first use in dev builds, which

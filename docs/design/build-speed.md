@@ -55,7 +55,7 @@ Reproduce with the commands in §7.
 
 | # | Change | Where | Why |
 |---|---|---|---|
-| D1 | `[profile.dev] debug = "line-tables-only"` | root `Cargo.toml` | Full debuginfo × 219 binaries does not fit a session's disk. Backtraces keep file:line. |
+| D1 | `[profile.dev] debug = false` (was `"line-tables-only"`, changed 2026-10-10) | root `Cargo.toml` | Full debuginfo × 219 binaries did not fit a session's disk. The line-tables-only setting still left ~647k `.o` files for macOS debug info, and `target/` reached 61 GB. The migration is over, so debuginfo is off. Panic file:line still comes from `Location::caller`. No test depends on backtrace line numbers. To get line tables back for one crate, use `[profile.dev.package.<crate>] debug = "line-tables-only"`. |
 | D2 | `cargo nextest run` for the test loop; doctests only via `cargo test --doc` in CI | CI, `CLAUDE.md` | Runs binaries in parallel. Estimated 45s → ~12–15s (bounded by `highlight_gold`). |
 | D3 | **One integration-test binary per crate**: `crates/X/tests/*.rs` → `crates/X/tests/it/<name>.rs` + `tests/it/main.rs` (`mod <name>;` per file). Cargo auto-discovers `tests/it/main.rs` as test target `it`. | all crates with `tests/` | ~219 → ~77 binaries. Estimated relink after a base-crate edit 48s → ~20s, test build ~13 GB → ~5 GB. |
 | D4 | `doctest = false` in `[lib]` of crates with no doctests | crate `Cargo.toml`s | Stops rustdoc running 73 times for 1 doctest. |
