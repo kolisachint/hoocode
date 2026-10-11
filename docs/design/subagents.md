@@ -11,8 +11,9 @@ Not a migration-ledger task: the migration is paused and this was taken out of i
 ## 1. The problem, and what the evidence actually said
 
 Subagents were failing on every recorded run. In `hoobot/.hoocode/dispatch/`, a clean
-success deletes its dispatch dir (`pool.rs`, clean-success branch), so every dir left on disk
-is a failure. **Ten dirs, zero successes.**
+success deleted its dispatch dir (`pool.rs`, clean-success branch), so every dir left on disk
+was a failure. (Changed 2026-10-11: dirs are kept, so a run can be resumed by label, and
+`prune_dispatch_dirs` keeps the newest 50 and drops anything older than 24h at dispatch time.) **Ten dirs, zero successes.**
 
 | Outcome | Count | What the parent was told |
 |---|---|---|
@@ -188,8 +189,8 @@ or `tests/it/lifeguard.rs`, plus one end-to-end scenario each.
 
 | | Fix | Where |
 |---|---|---|
-| H1 | **Liveness is two-tier.** Silence past 60s reaps; so does no *forward progress* (a `turn_end` or a tool event) past 150s, load-scaled. A child parked in a provider call keeps pinging and used to be invisible until its hard deadline — ten minutes for `explore` at the time (the deadline is now 2 hours), measured alive at 95s | `lifeguard.rs` |
-| H2 | **A reap is SIGTERM, grace, SIGKILL.** The child catches SIGTERM, writes its partial `result.json` and exits, and the pool already accepts a valid result from a reaped task, so a stall kill returns work instead of discarding it. The grace escalates for a child too wedged to catch a signal | `lifeguard.rs`, `runtime.rs` |
+| H1 | **Liveness is two-tier.** Silence past 60s reaps; so does no *forward progress* (a `turn_end` or a tool event) past 600s (10 min; 150s reaped long thinking turns), load-scaled. A tool in flight is bounded by the larger of 15 min × load and the tool's declared timeout plus 60 s; a tool with timeout 0 has no bound. `HOOCODE_SUBAGENT_STALL_MS` overrides the 600s in the parent (the lifeguard runs there; the evals set 20s). A child parked in a provider call keeps pinging and used to be invisible until its hard deadline — ten minutes for `explore` at the time (the deadline is now 2 hours), measured alive at 95s | `lifeguard.rs` |
+| H2 | **A reap is a signal, grace, SIGKILL.** A stall (silence, no progress, memory) sends SIGUSR1 to the **child pid only**; the hard deadline sends SIGTERM to the process group. The child writes its partial `result.json` and exits (the grace is 30s), and the pool already accepts a valid result from a reaped task. The grace escalates to SIGKILL for a child too wedged to catch a signal. **After a reaped child exits**, its process group is swept: SIGTERM, then SIGKILL after the grace if anything remains. A stall signal does not reach the grandchildren (node workers ignore SIGUSR1), so without the sweep they would be orphaned. **Limit:** the sweep covers the child's own process group only. A nested subagent (a child that dispatches a subagent of its own) runs in its own process group, so the sweep does not reach it | `lifeguard.rs`, `runtime.rs` |
 | H3 | **`pid` is written.** `sweep_old_agents` has always read `dispatch/<task>/pid` to ask whether a run is alive; nothing ever wrote it, so reaping was age-only and a real orphan was never detected | `pool.rs` |
 | H4 | **Admission control.** The queue was unbounded: a confused parent could enqueue hundreds of runs that never finish. It is refused at four per slot, with a message that says so | `pool.rs` |
 | H5 | **Ageing instead of starvation.** Priority gained a step per minute waited, so a `code-review` cannot sit behind a stream of `explore` runs forever | `pool.rs` |
@@ -199,7 +200,8 @@ or `tests/it/lifeguard.rs`, plus one end-to-end scenario each.
 | H9 | **Writes are not swallowed.** `write_file_atomic(result.json)` was `let _ =`: a full disk gave a clean child exit with no result and a parent told only that it failed. It returns, logs, and exits non-zero | `result.rs`, `runtime.rs` |
 | H10 | **Settings deep-merge.** `instance.rs` used `global.extend(project)`, which replaced the whole `modelCategories` object — a project setting one tier silently lost the other two | `instance.rs` |
 | H11 | **`complexity` is validated at the tool.** An unrecognised tier used to pass through as a model id and kill the child at startup; it now falls back to the parent's model with one log line | `tools.rs` |
-| H12 | **The ledger reports what the child reported.** A run SIGTERMed and wrapped up settles `complete` in the pool (the file is valid) while `result.json` says `partial`. The ledger now keeps `partial` visible | `pool.rs` |
+| H12 | **The ledger reports what the child reported.** A run SIGTERMed at its deadline and wrapped up settles `partial` in the pool, matching `result.json`. It used to settle `complete` because the file was valid, which hid the cut-short run | `pool.rs` |
+| H13 | **A resumed session survives the prune.** `resume` touches the dispatch dir and its `session.jsonl`, and the prune never removes a dir whose task the pool is running or has queued (`prune_dispatch_dirs_keeping`). Before, an old session could be deleted between `resume` and the child's first write | `pool.rs` |
 
 ## 5c. P2: the runner seam (2026-10-05)
 
@@ -288,6 +290,25 @@ checked only against the Rust build's own tests (`tests/it/shipped_prose.rs`).
 run for up to 2 hours, and the parent can stop a run with
 `AgentOutput(task_id, cancel: true)`. The background-agents template tells the
 model to poll a long run and to cancel one it no longer needs.
+
+## 5e. Reliability pass (2026-10-11)
+
+- **Background tasks outlive a run.** `hoocode-agent-loop` keeps one background
+  manager per session id in a registry (cap 64; idle entries are evicted first). A
+  task that settles after its run ended is delivered by the next run of that session.
+  An entry is dropped when its run ends with no work left.
+- **Tool-only final message.** The warm worker reads the last text with
+  `get_last_assistant_text_with_origin` (RPC, in `hoocode-code-rpc`), which walks back
+  past a tool-only message. The reply carries `stale`: true when an assistant message
+  after that text has a tool call. Only then does the summary start with
+  `(from an earlier turn) `. An empty aborted wrap-up after the text does not make it
+  stale, so the text stays the answer.
+- **Shell default timeout.** A bash call with no `timeout` gets 600 s, but only inside a
+  subagent; the main session has no default limit. `HOOCODE_BASH_DEFAULT_TIMEOUT_SECS`
+  overrides the 600 s. `timeout: 0` means no limit.
+- **Lifeguard tool bound.** A tool in flight is reaped at the larger of 15 min × load
+  and the tool's declared timeout plus 60 s. A tool with timeout 0 has no bound.
+- **Read on a directory.** `Read` on a directory returns a listing, not an error.
 
 ## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 

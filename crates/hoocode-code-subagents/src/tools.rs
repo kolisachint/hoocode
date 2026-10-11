@@ -352,6 +352,10 @@ struct Background {
     label: String,
 }
 
+/// The tool result's `details`. `poolTaskId` is this run's own pool task (the
+/// id the task panel keys its agent state by). A resumed run gets a new one:
+/// its transcript lives under the original session's task id, which the
+/// `resume_task_id` label resolves to.
 fn details(
     subagent_type: &str,
     ok: bool,
@@ -402,10 +406,14 @@ fn finalize_dispatch_result(
     subagent_type: &str,
     run_id: &str,
     task_id: u64,
-    resume_handle: Option<&str>,
+    resume_label: Option<&str>,
     background: Option<&Background>,
 ) -> Result<AgentToolResult, ToolError> {
     let result = dispatch.result.as_ref();
+    // Every outcome names the label to resume by, when the run left a session.
+    let resume_line = resume_label
+        .map(|label| format!("\nresume_task_id: {label}"))
+        .unwrap_or_default();
     // A retry on the session's model says so; the first attempt's model is
     // otherwise what the line reports.
     let line = if result.and_then(|r| r.used_inherited_model_fallback) == Some(true) {
@@ -464,7 +472,10 @@ fn finalize_dispatch_result(
                 "failed ✗"
             };
             return Ok(text_result(
-                format!("{} {verdict} — {reason}\n{line}", background.label),
+                format!(
+                    "{} {verdict} — {reason}\n{line}{resume_line}",
+                    background.label
+                ),
                 details(
                     subagent_type,
                     false,
@@ -488,7 +499,10 @@ fn finalize_dispatch_result(
                 String::from_utf16_lossy(&units[units.len().saturating_sub(500)..])
             )
         };
-        return Err(format!("Subagent ({subagent_type}) failed: {reason}{stderr}\n{line}").into());
+        return Err(format!(
+            "Subagent ({subagent_type}) failed: {reason}{stderr}\n{line}{resume_line}"
+        )
+        .into());
     };
 
     let fallback_note = (result.used_inherited_model_fallback == Some(true))
@@ -509,13 +523,13 @@ fn finalize_dispatch_result(
         .filter(|s| !s.is_empty())
         .unwrap_or("(subagent returned no output)")
         .to_string();
-    // `result.status === "partial"` in hoocode (the pool itself only reports
-    // complete/failed, so result.json's own status does not count).
+    // A result.json with status "partial" settles as ResultStatus::Partial
+    // (pool.rs settle); its session stays resumable.
     let partial = result.status == Some(ResultStatus::Partial);
     if partial {
-        if let Some(handle) = resume_handle {
+        if let Some(label) = resume_label {
             answer.push_str(&format!(
-                "\n\n[Partial result. To continue this subagent, call Agent again with resume_task_id=\"{handle}\".]"
+                "\n\n[Partial result. To continue this subagent, call Agent again with resume_task_id=\"{label}\".]"
             ));
         }
     }
@@ -533,7 +547,7 @@ fn finalize_dispatch_result(
             String::new()
         };
         let text = format!(
-            "{} finished ✓{partial_note} — {}.{tail}\nRead the full result with AgentOutput(\"{}\").\n{line}",
+            "{} finished ✓{partial_note} — {}.{tail}\nRead the full result with AgentOutput(\"{}\").\n{line}{resume_line}",
             background.label,
             summarize(&answer),
             background.label
@@ -551,8 +565,8 @@ fn finalize_dispatch_result(
         ));
     }
     Ok(text_result(
-        format!("{line}\n\n{answer}"),
-        details(subagent_type, true, None, task_id, resume_handle, false),
+        format!("{line}\n\n{answer}{resume_line}"),
+        details(subagent_type, true, None, task_id, Some(run_id), false),
     ))
 }
 
@@ -594,6 +608,30 @@ fn str_param<'a>(params: &'a Value, key: &str) -> Option<&'a str> {
     params.get(key).and_then(Value::as_str)
 }
 
+/// A flag as the model sent it: a JSON bool, or the string "true"/"false"
+/// (models often quote booleans). Anything else is unset.
+fn lenient_bool(value: Option<&Value>) -> Option<bool> {
+    match value? {
+        Value::Bool(flag) => Some(*flag),
+        Value::String(text) => match text.trim().to_ascii_lowercase().as_str() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The handle a run is resumed by: its label, once the run left a
+/// `session.jsonl` under `session_id`'s dispatch dir. `None` otherwise, so no
+/// `resume_task_id` line is offered for a session that does not exist.
+fn resumable_label(cwd: &Path, session_id: &str, label: &str) -> Option<String> {
+    hoocode_code_paths::dispatch_task_dir(cwd, session_id)
+        .join("session.jsonl")
+        .exists()
+        .then(|| label.to_string())
+}
+
 fn task_parameters() -> Value {
     json!({
         "type": "object",
@@ -605,7 +643,7 @@ fn task_parameters() -> Value {
             "model": {"type": "string", "description": "Which model the subagent runs on: a category (cheap, fast, standard, capable), or the alias or id of a scoped model (listed in the system prompt when scoped models are set). Omit to use the agent's default model. An explicit model overrides the agent's own `model:`. When scoped models are set, a subagent can only use one of them."},
             "effort": {"type": "string", "enum": ["off", "minimal", "low", "medium", "high", "xhigh"], "description": "Thinking level for the subagent. Overrides the effort of the chosen scoped model; omit to use that model's effort."},
             "background": {"type": "boolean", "description": "Set true to run non-blocking: you get a short notification when it finishes and pull the full result with AgentOutput; set false to wait and get the answer inline. Defaults to the agent's own background setting."},
-            "resume_task_id": {"type": "string", "description": "Optional. To continue a previous subagent run, pass its task_id (returned by an earlier Agent or AgentOutput call). The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction."}
+            "resume_task_id": {"type": "string", "description": "Optional. To continue a previous subagent run, pass the label from its result's `resume_task_id:` line (e.g. \"explore#1\"). A raw task_id from an earlier Agent or AgentOutput call also works. The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction."}
         }
     })
 }
@@ -630,7 +668,7 @@ pub fn create_task_tool_definition(cwd: &Path) -> ToolDefinition {
         background: false,
         // A per-call `background` wins; else the agent's own default.
         background_when: Some(Arc::new(move |call: &AgentToolCall| {
-            match call.arguments.get("background").and_then(Value::as_bool) {
+            match lenient_bool(call.arguments.get("background")) {
                 Some(value) => value,
                 None => predicate_agents.contains(
                     call.arguments
@@ -764,17 +802,31 @@ async fn execute_task(
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
+        // The model names a label (`explore#4`); the session lives under the
+        // original pool task id. A raw task id is accepted too.
+        let session_id = subagent_inbox()
+            .session_id_for(resume_id)
+            .unwrap_or_else(|| resume_id.to_string());
         let run_id = new_dispatch_task_id();
         let label = subagent_inbox().next_label(&subagent_type);
+        // This run continues the same session, so its label resumes that session too.
+        subagent_inbox().bind_label(&label, &session_id);
         let task_id = create_dispatch_task(&summary, &subagent_type, &run_id);
         register_subagent_dispatch(&run_id, &label);
         set_status(task_id, TaskStatus::InProgress);
+        // A background resume is pulled with AgentOutput, so it needs an inbox record.
+        let is_background = lenient_bool(params.get("background"))
+            .unwrap_or_else(|| background_agents.contains(&subagent_type));
+        if is_background {
+            subagent_inbox().observe(&pool);
+            subagent_inbox().start(&run_id, &label, &subagent_type);
+        }
         let outcome = cancel_on_abort(
             &pool,
             &run_id,
             signal,
             pool.resume(
-                resume_id,
+                &session_id,
                 &prompt,
                 DispatchOptions {
                     model: ask.clone(),
@@ -788,18 +840,21 @@ async fn execute_task(
         )
         .await;
         return match outcome {
-            // The session lives under the original id: keep it as the handle.
-            Ok(dispatch) => finalize_dispatch_result(
-                &model_line,
-                &dispatch,
-                &subagent_type,
-                &run_id,
-                task_id,
-                Some(resume_id),
-                None,
-            ),
+            Ok(dispatch) => {
+                subagent_inbox().finish(&run_id, &dispatch);
+                finalize_dispatch_result(
+                    &model_line,
+                    &dispatch,
+                    &subagent_type,
+                    &run_id,
+                    task_id,
+                    resumable_label(&cwd, &session_id, &label).as_deref(),
+                    None,
+                )
+            }
             Err(error) => {
                 mark_dispatch_failed(task_id, &run_id);
+                subagent_inbox().fail(&run_id, &error.0, TaskLifecycle::Failed);
                 Err(error.0.into())
             }
         };
@@ -827,6 +882,8 @@ async fn execute_task(
 
     let pool_task_id = new_dispatch_task_id();
     let label = subagent_inbox().next_label(&subagent_type);
+    // The label is what the model sees; it resumes this run's session.
+    subagent_inbox().bind_label(&label, &pool_task_id);
     let task_id = create_dispatch_task(&summary, &subagent_type, &pool_task_id);
     register_subagent_dispatch(&pool_task_id, &label);
     set_status(task_id, TaskStatus::InProgress);
@@ -840,9 +897,7 @@ async fn execute_task(
     } else {
         None
     };
-    let is_background = params
-        .get("background")
-        .and_then(Value::as_bool)
+    let is_background = lenient_bool(params.get("background"))
         .unwrap_or_else(|| background_agents.contains(&subagent_type));
     let warm_options = WarmDispatchOptions {
         agent_type: subagent_type.clone(),
@@ -904,7 +959,7 @@ async fn execute_task(
                             &subagent_type,
                             &pool_task_id,
                             task_id,
-                            Some(&pool_task_id),
+                            resumable_label(&cwd, &pool_task_id, &label).as_deref(),
                             Some(&background),
                         );
                     }
@@ -930,7 +985,7 @@ async fn execute_task(
                     &subagent_type,
                     &pool_task_id,
                     task_id,
-                    Some(&pool_task_id),
+                    resumable_label(&cwd, &pool_task_id, &label).as_deref(),
                     Some(&background),
                 )
             }
@@ -968,7 +1023,7 @@ async fn execute_task(
                         &subagent_type,
                         &pool_task_id,
                         task_id,
-                        None,
+                        resumable_label(&cwd, &pool_task_id, &label).as_deref(),
                         None,
                     );
                 }
@@ -988,18 +1043,15 @@ async fn execute_task(
     )
     .await;
     match outcome {
-        Ok(dispatch) => {
-            let handle = dispatch.task_id.clone();
-            finalize_dispatch_result(
-                &model_line,
-                &dispatch,
-                &subagent_type,
-                &pool_task_id,
-                task_id,
-                handle.as_deref(),
-                None,
-            )
-        }
+        Ok(dispatch) => finalize_dispatch_result(
+            &model_line,
+            &dispatch,
+            &subagent_type,
+            &pool_task_id,
+            task_id,
+            resumable_label(&cwd, &pool_task_id, &label).as_deref(),
+            None,
+        ),
         Err(error) => {
             mark_dispatch_failed(task_id, &pool_task_id);
             Err(error.0.into())

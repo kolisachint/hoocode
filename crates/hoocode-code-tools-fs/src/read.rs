@@ -5,6 +5,8 @@
 //! continuation notice. Images are sent as attachments (resized to fit),
 //! structured documents (docx/xlsx/pptx/pdf) get a note instead of bytes, and
 //! a re-read that an earlier live read already covers returns a pointer.
+//! A directory comes back as a listing of its immediate children (see
+//! [`format_directory_listing`] for the order, the cap and the paging).
 //! Interactive rendering (`renderCall`/`renderResult`) arrives with phase 11.
 
 use crate::read_dedup::{
@@ -27,6 +29,17 @@ use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Most entries one directory listing shows. The rest are cut off with a line
+/// that says how many were left out.
+pub const MAX_DIRECTORY_ENTRIES: usize = 500;
+
+/// One immediate child of a directory that `read` lists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectoryEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
 /// Pluggable operations for the read tool. Override these to delegate file
 /// reading to remote systems (for example SSH).
 pub trait ReadOperations: Send + Sync {
@@ -37,6 +50,15 @@ pub trait ReadOperations: Send + Sync {
     /// Detect an image MIME type; `None` for non-images. The default never
     /// detects images (an operations object without `detectImageMimeType`).
     fn detect_image_mime_type(&self, _absolute_path: &Path) -> Result<Option<String>, ToolError> {
+        Ok(None)
+    }
+    /// The immediate children of a directory; `None` when the path is not a
+    /// directory. The default lists nothing, so a directory read fails as a
+    /// file read does.
+    fn list_directory(
+        &self,
+        _absolute_path: &Path,
+    ) -> Result<Option<Vec<DirectoryEntry>>, ToolError> {
         Ok(None)
     }
 }
@@ -75,6 +97,91 @@ impl ReadOperations for LocalReadOperations {
             .map_err(|e| node_fs_error(e, "read", None))?;
         Ok(detect_supported_image_mime_type(&head).map(str::to_string))
     }
+
+    /// Immediate children through the `ignore` walker, so hidden entries and
+    /// `.gitignore`d ones are left out (as in the search and `@file` finders).
+    fn list_directory(
+        &self,
+        absolute_path: &Path,
+    ) -> Result<Option<Vec<DirectoryEntry>>, ToolError> {
+        if !absolute_path.is_dir() {
+            return Ok(None);
+        }
+        // Surface an unreadable directory with Node's scandir error; the walk
+        // below skips entries it cannot read.
+        std::fs::read_dir(absolute_path)
+            .map_err(|e| node_fs_error(e, "scandir", Some(&display(absolute_path))))?;
+        let walker = ignore::WalkBuilder::new(absolute_path)
+            .max_depth(Some(1))
+            .require_git(false)
+            .build();
+        let entries = walker
+            .filter_map(Result::ok)
+            .filter(|entry| entry.depth() == 1)
+            .map(|entry| DirectoryEntry {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                is_dir: entry.path().is_dir(),
+            })
+            .collect();
+        Ok(Some(entries))
+    }
+}
+
+/// The `read` output for a directory: a header line, then the immediate
+/// children. Directories come first, each group sorted by name
+/// (case-insensitive), and a directory's name ends in `/`.
+///
+/// `offset` (1-indexed, as for text reads) and `limit` page through the list.
+/// Either way at most [`MAX_DIRECTORY_ENTRIES`] are shown. When entries are
+/// left out, a last line says how many and gives the `offset` to continue from.
+pub fn format_directory_listing(
+    path: &str,
+    mut entries: Vec<DirectoryEntry>,
+    offset: Option<f64>,
+    limit: Option<f64>,
+) -> Result<String, ToolError> {
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let total = entries.len();
+    let start = match offset {
+        Some(o) if o != 0.0 && !o.is_nan() => (o - 1.0).max(0.0) as usize,
+        _ => 0,
+    };
+    if start > total {
+        return Err(format!(
+            "Offset {} is beyond end of directory ({} entries total)",
+            js_number(offset.unwrap_or(0.0)),
+            total
+        )
+        .into());
+    }
+    let page = limit
+        .filter(|l| l.is_finite() && *l >= 1.0)
+        .map_or(MAX_DIRECTORY_ENTRIES, |l| {
+            (l as usize).min(MAX_DIRECTORY_ENTRIES)
+        });
+    let end = (start + page).min(total);
+
+    let mut text = format!("Directory: {path} ({total} entries)");
+    for entry in &entries[start..end] {
+        text.push('\n');
+        text.push_str(&entry.name);
+        if entry.is_dir {
+            text.push('/');
+        }
+    }
+    let remaining = total - end;
+    if remaining > 0 {
+        text.push_str(&format!(
+            "\n\n… {remaining} more entries not shown. Use offset={} to continue.",
+            end + 1
+        ));
+    }
+    Ok(text)
 }
 
 /// `fs.access(path, R_OK)`.
@@ -200,6 +307,11 @@ impl ReadCall<'_> {
         let absolute = resolve_read_path(self.path, self.cwd);
         let absolute_str = display(&absolute);
         self.ops.access(&absolute)?;
+        if let Some(entries) = self.ops.list_directory(&absolute)? {
+            let listing =
+                format_directory_listing(&absolute_str, entries, self.offset, self.limit)?;
+            return Ok((vec![text_block(listing)], Value::Null));
+        }
         let mime_type = self.ops.detect_image_mime_type(&absolute)?;
         let non_vision_note = non_vision_image_note(self.ctx.and_then(|c| c.model.as_ref()));
         let doc_hint = doc_format_hint(&absolute_str);
@@ -427,8 +539,8 @@ pub fn create_read_tool_definition(
     // Math.round(maxBytes / 1024)
     let kb = (options.max_output_bytes * 2 + 1024) / 2048;
     let description = format!(
-        "Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to {} lines or {}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
-        options.max_output_lines, kb
+        "Read the contents of a file, or list a directory: reading a directory returns its immediate children (directories end in /; hidden and .gitignored entries are left out; at most {} are shown). Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to {} lines or {}KB (whichever is hit first). Use offset/limit for large files or long directory listings. When you need the full file, continue with offset until complete.",
+        MAX_DIRECTORY_ENTRIES, options.max_output_lines, kb
     );
     ToolDefinition {
         ordered_start: false,
@@ -481,7 +593,7 @@ pub fn read_parameters_schema() -> Value {
         "type": "object",
         "required": ["path"],
         "properties": {
-            "path": {"type": "string", "description": "Path to the file to read (relative or absolute)"},
+            "path": {"type": "string", "description": "Path to the file or directory to read (relative or absolute)"},
             "offset": {"type": "number", "description": "Line number to start reading from (1-indexed)"},
             "limit": {"type": "number", "description": "Maximum number of lines to read"}
         }

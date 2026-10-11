@@ -9,4 +9,4 @@ Guidelines:
 - The subagent cannot see this conversation and returns ONLY its final answer — pass all context (files, constraints, prior findings) in `prompt`.
 {{BACKGROUND_GUIDANCE}}
 - When working a TodoWrite plan, mark the item in_progress BEFORE dispatching: each dispatch is attributed to the current in_progress item in the task panel.
-- To continue a previous subagent, call Agent with `resume_task_id` set to its task_id; it resumes with its full transcript and `prompt` is your follow-up.
+- To continue a previous subagent, call Agent with `resume_task_id` set to the label from its result's `resume_task_id:` line (e.g. `explore#1`); it resumes with its full transcript and `prompt` is your follow-up.

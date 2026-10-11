@@ -124,6 +124,18 @@ fn respects_timeout() {
 }
 
 #[test]
+fn command_stdin_is_null_so_reads_return_at_once() {
+    // A command that reads stdin must see EOF, not block on the caller's stdin.
+    let cwd = std::env::current_dir().unwrap();
+    let result = run(
+        &bash(&cwd, Default::default()),
+        json!({"command": "cat; echo stdin-done", "timeout": 5}),
+    )
+    .unwrap();
+    assert!(text(&result).contains("stdin-done"), "{}", text(&result));
+}
+
+#[test]
 fn includes_full_output_path_for_truncated_timeout_and_abort_errors() {
     let dir = TestDir::new();
     for (error, expected) in [
@@ -132,7 +144,7 @@ fn includes_full_output_path_for_truncated_timeout_and_abort_errors() {
     ] {
         let chunks = (1..=3000).map(|i| format!("{i}\n").into_bytes()).collect();
         let tool = bash(&dir.0, scripted(chunks, Err(error.into())));
-        let message = run(&tool, json!({"command": "chatty-fail"}))
+        let message = run(&tool, json!({"command": "chatty-fail", "timeout": 5}))
             .unwrap_err()
             .to_string();
         assert!(message.contains(expected), "{message}");

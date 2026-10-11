@@ -291,6 +291,7 @@ fn write_mode(root: &std::path::Path, name: &str, body: &str) {
 
 #[test]
 fn project_mode_wins_over_external_dirs() {
+    let _env = crate::support::hermetic();
     let (cwd, a) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     write_mode(
         &cwd.path()
@@ -312,6 +313,7 @@ fn project_mode_wins_over_external_dirs() {
 
 #[test]
 fn external_dirs_are_searched_in_declared_order() {
+    let _env = crate::support::hermetic();
     let (cwd, a, b) = (
         tempfile::tempdir().unwrap(),
         tempfile::tempdir().unwrap(),
@@ -328,6 +330,7 @@ fn external_dirs_are_searched_in_declared_order() {
 
 #[test]
 fn falls_through_to_second_external_when_first_does_not_have_the_mode() {
+    let _env = crate::support::hermetic();
     let (cwd, a, b) = (
         tempfile::tempdir().unwrap(),
         tempfile::tempdir().unwrap(),
@@ -343,6 +346,7 @@ fn falls_through_to_second_external_when_first_does_not_have_the_mode() {
 
 #[test]
 fn falls_back_to_mode_defaults_when_nothing_matches() {
+    let _env = crate::support::hermetic();
     let cwd = tempfile::tempdir().unwrap();
     let prompt = build_mode_system_prompt("ask", cwd.path(), &[]).unwrap();
     let default = DEFAULT_MODE_PROMPTS

@@ -144,3 +144,25 @@ async fn subagent_inbox_lifecycle() {
     );
     inbox.clear();
 }
+
+#[tokio::test]
+async fn session_bindings_are_capped_like_records() {
+    let inbox = subagent_inbox();
+    inbox.clear();
+    // Binding the same label again does not count as a new entry.
+    inbox.bind_label("explore#1", "t-first");
+    inbox.bind_label("explore#1", "t-first-again");
+    assert_eq!(
+        inbox.session_id_for("explore#1").as_deref(),
+        Some("t-first-again")
+    );
+    for i in 2..=60 {
+        inbox.bind_label(&format!("explore#{i}"), &format!("t{i}"));
+    }
+    // The oldest bindings are gone; the newest 50 still resolve.
+    assert_eq!(inbox.session_id_for("explore#1"), None);
+    assert_eq!(inbox.session_id_for("explore#10"), None);
+    assert_eq!(inbox.session_id_for("explore#11").as_deref(), Some("t11"));
+    assert_eq!(inbox.session_id_for("explore#60").as_deref(), Some("t60"));
+    inbox.clear();
+}

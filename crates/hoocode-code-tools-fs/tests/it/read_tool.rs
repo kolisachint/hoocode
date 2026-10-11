@@ -349,10 +349,100 @@ fn fractional_limit_prints_js_numbers() {
 }
 
 #[test]
-fn a_directory_fails_like_node() {
+fn a_directory_lists_its_children_directories_first() {
     let dir = tempfile::tempdir().unwrap();
-    let err = exec(&read_tool(), "dir", json!({ "path": p(dir.path()) })).unwrap_err();
-    assert_eq!(err, "EISDIR: illegal operation on a directory, read");
+    std::fs::write(dir.path().join("b.txt"), "").unwrap();
+    std::fs::write(dir.path().join("A.md"), "").unwrap();
+    std::fs::create_dir(dir.path().join("zeta")).unwrap();
+    std::fs::create_dir(dir.path().join("sub")).unwrap();
+    let result = exec(&read_tool(), "dir", json!({ "path": p(dir.path()) })).unwrap();
+    assert_eq!(
+        text_output(&result),
+        format!(
+            "Directory: {} (4 entries)\nsub/\nzeta/\nA.md\nb.txt",
+            p(dir.path())
+        )
+    );
+    assert!(result.details.is_null());
+}
+
+#[test]
+fn an_empty_directory_lists_zero_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(
+        read_text(json!({ "path": p(dir.path()) })),
+        format!("Directory: {} (0 entries)", p(dir.path()))
+    );
+}
+
+#[test]
+fn a_directory_listing_leaves_out_hidden_and_gitignored_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(".gitignore"), "ignored.log\nbuild/\n").unwrap();
+    std::fs::write(dir.path().join(".hidden"), "").unwrap();
+    std::fs::write(dir.path().join("ignored.log"), "").unwrap();
+    std::fs::write(dir.path().join("kept.txt"), "").unwrap();
+    std::fs::create_dir(dir.path().join("build")).unwrap();
+    std::fs::create_dir(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src").join("deep.rs"), "").unwrap();
+    assert_eq!(
+        read_text(json!({ "path": p(dir.path()) })),
+        format!("Directory: {} (2 entries)\nsrc/\nkept.txt", p(dir.path()))
+    );
+}
+
+#[test]
+fn a_directory_listing_is_capped_with_a_truncation_line() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..502 {
+        std::fs::write(dir.path().join(format!("f{i:04}.txt")), "").unwrap();
+    }
+    let text = read_text(json!({ "path": p(dir.path()) }));
+    let lines: Vec<&str> = text.split('\n').collect();
+    assert_eq!(
+        lines[0],
+        format!("Directory: {} (502 entries)", p(dir.path()))
+    );
+    assert_eq!(lines[1], "f0000.txt");
+    assert_eq!(lines[500], "f0499.txt");
+    assert_eq!(lines[501], "");
+    assert_eq!(
+        lines[502],
+        "… 2 more entries not shown. Use offset=501 to continue."
+    );
+    assert_eq!(lines.len(), 503);
+}
+
+#[test]
+fn offset_and_limit_page_through_a_directory_listing() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["a", "b", "c"] {
+        std::fs::write(dir.path().join(name), "").unwrap();
+    }
+    assert_eq!(
+        read_text(json!({ "path": p(dir.path()), "offset": 2, "limit": 1 })),
+        format!(
+            "Directory: {} (3 entries)\nb\n\n… 1 more entries not shown. Use offset=3 to continue.",
+            p(dir.path())
+        )
+    );
+    assert_eq!(
+        read_text(json!({ "path": p(dir.path()), "offset": 3 })),
+        format!("Directory: {} (3 entries)\nc", p(dir.path()))
+    );
+}
+
+#[test]
+fn a_directory_offset_past_the_end_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a"), "").unwrap();
+    let err = exec(
+        &read_tool(),
+        "dir",
+        json!({ "path": p(dir.path()), "offset": 5 }),
+    )
+    .unwrap_err();
+    assert_eq!(err, "Offset 5 is beyond end of directory (1 entries total)");
 }
 
 #[test]
@@ -409,7 +499,7 @@ fn description_reflects_the_output_caps() {
     let tool = read_tool();
     assert_eq!(
         tool.description,
-        "Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to 800 lines or 32KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete."
+        "Read the contents of a file, or list a directory: reading a directory returns its immediate children (directories end in /; hidden and .gitignored entries are left out; at most 500 are shown). Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to 800 lines or 32KB (whichever is hit first). Use offset/limit for large files or long directory listings. When you need the full file, continue with offset until complete."
     );
     assert_eq!(tool.parameters["required"], json!(["path"]));
 }

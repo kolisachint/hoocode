@@ -148,6 +148,13 @@ async fn prompt_and_wait_collects_events_up_to_agent_end() {
         s.client.get_last_assistant_text().await.unwrap().as_deref(),
         Some("hello")
     );
+    assert_eq!(
+        s.client
+            .get_last_assistant_text_with_origin()
+            .await
+            .unwrap(),
+        Some(("hello".to_string(), false))
+    );
     let messages = s.client.get_messages().await.unwrap();
     assert_eq!(messages.len(), 2);
     let stats = s.client.get_session_stats().await.unwrap();
@@ -177,6 +184,13 @@ async fn commands_round_trip_and_errors_reject() {
     assert_eq!(err.0, "Model not found: nope/missing");
     assert!(s.client.get_fork_messages().await.unwrap().is_empty());
     assert_eq!(s.client.get_last_assistant_text().await.unwrap(), None);
+    assert_eq!(
+        s.client
+            .get_last_assistant_text_with_origin()
+            .await
+            .unwrap(),
+        None
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

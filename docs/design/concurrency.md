@@ -118,7 +118,7 @@ Start values; Phase 0's load test tunes them. Only these four are settings:
 | SSE line or event | 16 MiB | Stream error | — |
 | Process memory, soft | lower of 2 GiB and 25% of RAM | Shed load (below) | `performance.memorySoftLimitMb` |
 | Process memory, hard | lower of 4 GiB and 50% of RAM | Abort the turn, flush session, show a notice | `performance.memoryHardLimitMb` |
-| Subagent child memory | 2 GiB each | Lifeguard reap: SIGTERM, grace, SIGKILL (today's path) | — |
+| Subagent child memory | 2 GiB each | Lifeguard reap: SIGUSR1 (stall), SIGTERM (deadline), grace, SIGKILL | — |
 
 Shedding at the soft limit: no new subagent dispatches, parallel tools drop to 1,
 render caches are cleared, and the footer shows a warning. It lifts once memory is

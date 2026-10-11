@@ -487,6 +487,17 @@ impl RpcClient {
         Ok(data["text"].as_str().map(String::from))
     }
 
+    /// The last text, walking back past a tool-only final message, and whether
+    /// it is stale (a tool call followed the message it came from).
+    pub async fn get_last_assistant_text_with_origin(&self) -> Result<Option<(String, bool)>> {
+        let data = self
+            .send_data(json!({"type": "get_last_assistant_text_with_origin"}))
+            .await?;
+        Ok(data["text"]
+            .as_str()
+            .map(|text| (text.to_string(), data["stale"].as_bool().unwrap_or(false))))
+    }
+
     pub async fn set_session_name(&self, name: &str) -> Result<()> {
         self.send_ok(json!({"type": "set_session_name", "name": name}))
             .await

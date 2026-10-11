@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use hoocode_agent_types::{AgentTool, AgentToolResult, AgentToolUpdateCallback};
 use hoocode_ai_types::{Content, TextContent};
 use hoocode_code_tool_api::{
-    format_size, wrap_tool_definition, ToolContextFactory, ToolDefinition, ToolError, TruncatedBy,
-    DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES,
+    format_size, js_number, wrap_tool_definition, ToolContextFactory, ToolDefinition, ToolError,
+    TruncatedBy, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES,
 };
 use serde_json::{json, Map, Value};
 
@@ -54,6 +54,60 @@ pub struct BashToolOptions {
 
 const BASH_UPDATE_THROTTLE: Duration = Duration::from_millis(100);
 
+/// Timeout in seconds that a subagent gets when the model omits `timeout` (or
+/// passes a negative or non-finite value). A command still running at the
+/// deadline has its whole process group killed, and its partial output is
+/// returned. The main session has no default limit. An explicit positive
+/// `timeout` is honored in both contexts; an explicit `0` means no limit.
+pub const DEFAULT_BASH_TIMEOUT_SECS: f64 = 600.0;
+
+/// Env var that overrides [`DEFAULT_BASH_TIMEOUT_SECS`] in a subagent (a positive number of seconds).
+pub const DEFAULT_BASH_TIMEOUT_ENV: &str = "HOOCODE_BASH_DEFAULT_TIMEOUT_SECS";
+
+/// Env var the subagent pool sets in every child (`HOOCODE_SUBAGENT_DEPTH`,
+/// see `depth.rs` in `hoocode-code-subagents`). A process with depth 1 or more
+/// is a subagent. This crate sits below the subagents crate, so the name is
+/// repeated here rather than imported.
+pub const SUBAGENT_DEPTH_ENV: &str = "HOOCODE_SUBAGENT_DEPTH";
+
+/// Whether this process is a subagent, from the raw depth variable.
+fn is_subagent_context(depth: Option<&str>) -> bool {
+    depth
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .is_some_and(|n| n > 0)
+}
+
+/// The default timeout for this context: `None` (no limit) in the main
+/// session; in a subagent, the env override when it is a positive number, else
+/// [`DEFAULT_BASH_TIMEOUT_SECS`].
+fn default_timeout_for_context(subagent: bool, override_raw: Option<&str>) -> Option<f64> {
+    subagent.then(|| parse_default_timeout(override_raw))
+}
+
+fn parse_default_timeout(raw: Option<&str>) -> f64 {
+    raw.and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|t| t.is_finite() && *t > 0.0)
+        .unwrap_or(DEFAULT_BASH_TIMEOUT_SECS)
+}
+
+/// Maps the model's `timeout` argument to the limit used for the run.
+///
+/// Returns `(limit, defaulted)`: `limit` is `None` for no limit, and
+/// `defaulted` is true when the limit came from the context default rather
+/// than the model. An explicit `0` is unlimited and a positive value is used
+/// as given. Omitted, negative and non-finite values get the default, which
+/// is no limit when `default_timeout` is `None` (the main session).
+fn resolve_timeout(requested: Option<f64>, default_timeout: Option<f64>) -> (Option<f64>, bool) {
+    match requested {
+        Some(0.0) => (None, false),
+        Some(t) if t.is_finite() && t > 0.0 => (Some(t), false),
+        _ => match default_timeout {
+            Some(secs) => (Some(secs), true),
+            None => (None, false),
+        },
+    }
+}
+
 fn text_content(text: impl Into<String>) -> Content {
     Content::Text(TextContent {
         text_signature: None,
@@ -61,14 +115,25 @@ fn text_content(text: impl Into<String>) -> Content {
     })
 }
 
-/// The TypeBox schema hoocode sends for `bash`.
+/// The TypeBox schema hoocode sends for `bash` in the main session (no default timeout).
 pub fn bash_parameters_schema() -> Value {
+    bash_parameters_schema_with(None)
+}
+
+fn bash_parameters_schema_with(default_timeout: Option<f64>) -> Value {
+    let timeout_description = match default_timeout {
+        Some(secs) => format!(
+            "Timeout in seconds (optional; defaults to {}s when omitted; the command is killed at the timeout; 0 means no limit)",
+            js_number(secs)
+        ),
+        None => "Timeout in seconds (optional; 0 means no limit)".to_owned(),
+    };
     json!({
         "type": "object",
         "required": ["command"],
         "properties": {
             "command": {"type": "string", "description": "Bash command to execute"},
-            "timeout": {"type": "number", "description": "Timeout in seconds (optional, no default timeout)"}
+            "timeout": {"type": "number", "description": timeout_description}
         }
     })
 }
@@ -200,10 +265,13 @@ struct BashCall<'a> {
 }
 
 impl BashCall<'_> {
+    /// `timeout` is `None` for no limit. `defaulted` marks a limit the model
+    /// did not pass, which changes the timeout message.
     fn run(
         &self,
         command: &str,
         timeout: Option<f64>,
+        defaulted: bool,
         signal: Option<hoocode_ai_types::AbortSignal>,
         on_update: Option<AgentToolUpdateCallback>,
     ) -> Result<AgentToolResult, ToolError> {
@@ -303,7 +371,13 @@ impl BashCall<'_> {
                     return Err(append_status(&text, "Command aborted").into());
                 }
                 if let Some(secs) = message.strip_prefix("timeout:") {
-                    let status = format!("Command timed out after {secs} seconds");
+                    let status = if defaulted {
+                        format!(
+                            "Command timed out after {secs}s (default timeout; pass a larger `timeout` for long commands)"
+                        )
+                    } else {
+                        format!("Command timed out after {secs} seconds")
+                    };
                     return Err(append_status(&text, &status).into());
                 }
                 Err(error)
@@ -325,10 +399,24 @@ impl BashCall<'_> {
     }
 }
 
-/// `createBashToolDefinition`.
+/// `createBashToolDefinition`. Subagents get the default timeout; the main
+/// session gets none (decided 2026-10-11).
 pub fn create_bash_tool_definition(
     cwd: impl Into<PathBuf>,
     options: BashToolOptions,
+) -> ToolDefinition {
+    let subagent = is_subagent_context(std::env::var(SUBAGENT_DEPTH_ENV).ok().as_deref());
+    let default_timeout = default_timeout_for_context(
+        subagent,
+        std::env::var(DEFAULT_BASH_TIMEOUT_ENV).ok().as_deref(),
+    );
+    build_bash_tool_definition(cwd, options, default_timeout)
+}
+
+fn build_bash_tool_definition(
+    cwd: impl Into<PathBuf>,
+    options: BashToolOptions,
+    default_timeout: Option<f64>,
 ) -> ToolDefinition {
     let cwd: PathBuf = cwd.into();
     let ops: Arc<dyn BashOperations> = options.operations.clone().unwrap_or_else(|| {
@@ -338,8 +426,16 @@ pub fn create_bash_tool_definition(
     let max_lines = options.max_output_lines.unwrap_or(DEFAULT_MAX_LINES);
     // Math.round(maxBytes / 1024)
     let kb = (max_bytes * 2 + 1024) / 2048;
+    let timeout_clause = match default_timeout {
+        Some(secs) => format!(
+            "Subagents default to {}s: without a timeout the command is killed after {}s and its partial output is returned; pass a larger timeout for long-running commands, or 0 for no limit.",
+            js_number(secs),
+            js_number(secs)
+        ),
+        None => "A timeout of 0 means no limit.".to_owned(),
+    };
     let description = format!(
-        "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last {max_lines} lines or {kb}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds."
+        "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last {max_lines} lines or {kb}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds. {timeout_clause}"
     );
     ToolDefinition {
         ordered_start: false,
@@ -349,7 +445,7 @@ pub fn create_bash_tool_definition(
         description,
         prompt_snippet: Some("Run builds, tests, linters, git, and package managers".into()),
         prompt_guidelines: Vec::new(),
-        parameters: bash_parameters_schema(),
+        parameters: bash_parameters_schema_with(default_timeout),
         prepare_arguments: None,
         execution_mode: None,
         background: false,
@@ -358,7 +454,8 @@ pub fn create_bash_tool_definition(
                 .get("command")
                 .and_then(Value::as_str)
                 .ok_or("The \"command\" argument must be of type string")?;
-            let timeout = args.get("timeout").and_then(Value::as_f64);
+            let (timeout, defaulted) =
+                resolve_timeout(args.get("timeout").and_then(Value::as_f64), default_timeout);
             BashCall {
                 cwd: &cwd,
                 ops: ops.as_ref(),
@@ -366,7 +463,7 @@ pub fn create_bash_tool_definition(
                 max_bytes,
                 max_lines,
             }
-            .run(command, timeout, signal, on_update)
+            .run(command, timeout, defaulted, signal, on_update)
         }),
     }
 }
@@ -436,5 +533,189 @@ mod format_output_tests {
         assert!(!text.contains("undefined"), "got: {text}");
         assert!(!text.contains("Full output"), "got: {text}");
         assert!(text.ends_with("of 3000]"), "got: {text}");
+    }
+}
+
+#[cfg(test)]
+mod default_timeout_tests {
+    use super::*;
+
+    fn run_with_default(default: f64, args: Value) -> Result<AgentToolResult, ToolError> {
+        let cwd = std::env::current_dir().unwrap();
+        let tool = build_bash_tool_definition(&cwd, BashToolOptions::default(), Some(default));
+        (tool.execute)("call".into(), args, None, None, None)
+    }
+
+    #[test]
+    fn parses_the_env_override_and_falls_back_on_junk() {
+        assert_eq!(parse_default_timeout(None), DEFAULT_BASH_TIMEOUT_SECS);
+        assert_eq!(parse_default_timeout(Some("45")), 45.0);
+        assert_eq!(parse_default_timeout(Some(" 2.5 ")), 2.5);
+        for junk in ["", "0", "-3", "abc", "NaN", "inf"] {
+            assert_eq!(parse_default_timeout(Some(junk)), DEFAULT_BASH_TIMEOUT_SECS);
+        }
+    }
+
+    #[test]
+    fn subagent_schema_and_description_name_the_default() {
+        let cwd = std::env::current_dir().unwrap();
+        let tool = build_bash_tool_definition(&cwd, BashToolOptions::default(), Some(600.0));
+        assert!(
+            tool.description.contains("Subagents default to 600s"),
+            "{}",
+            tool.description
+        );
+        assert!(
+            tool.description.contains("killed after 600s"),
+            "{}",
+            tool.description
+        );
+        let timeout = &tool.parameters["properties"]["timeout"]["description"];
+        assert!(
+            timeout.as_str().unwrap().contains("defaults to 600s"),
+            "{timeout}"
+        );
+    }
+
+    #[test]
+    fn main_session_schema_and_description_promise_no_default() {
+        let cwd = std::env::current_dir().unwrap();
+        let tool = build_bash_tool_definition(&cwd, BashToolOptions::default(), None);
+        assert!(
+            !tool.description.contains("default"),
+            "{}",
+            tool.description
+        );
+        assert!(!tool.description.contains("killed after"));
+        assert!(tool.description.contains("0 means no limit"));
+        let timeout = &tool.parameters["properties"]["timeout"]["description"];
+        assert!(!timeout.as_str().unwrap().contains("default"), "{timeout}");
+        assert_eq!(bash_parameters_schema()["required"], json!(["command"]));
+    }
+
+    #[test]
+    fn subagent_context_is_read_from_the_depth_variable() {
+        assert!(!is_subagent_context(None));
+        assert!(!is_subagent_context(Some("")));
+        assert!(!is_subagent_context(Some("0")));
+        assert!(!is_subagent_context(Some("-2")));
+        assert!(!is_subagent_context(Some("nope")));
+        assert!(is_subagent_context(Some("1")));
+        assert!(is_subagent_context(Some(" 2 ")));
+    }
+
+    #[test]
+    fn default_timeout_applies_to_subagents_only() {
+        // Main session: no default at all, whatever the override says.
+        assert_eq!(default_timeout_for_context(false, None), None);
+        assert_eq!(default_timeout_for_context(false, Some("45")), None);
+        // Subagent: the default, or the positive override.
+        assert_eq!(
+            default_timeout_for_context(true, None),
+            Some(DEFAULT_BASH_TIMEOUT_SECS)
+        );
+        assert_eq!(default_timeout_for_context(true, Some("45")), Some(45.0));
+        assert_eq!(
+            default_timeout_for_context(true, Some("junk")),
+            Some(DEFAULT_BASH_TIMEOUT_SECS)
+        );
+    }
+
+    #[test]
+    fn main_session_omitted_timeout_has_no_limit() {
+        // With no default, an omitted timeout runs unbounded (here: finishes in 0.5s).
+        let cwd = std::env::current_dir().unwrap();
+        let tool = build_bash_tool_definition(&cwd, BashToolOptions::default(), None);
+        let result = (tool.execute)(
+            "call".into(),
+            json!({"command": "sleep 0.5; echo unbounded"}),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let shown = result
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                Content::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(shown.contains("unbounded"), "{shown}");
+    }
+
+    #[test]
+    fn omitted_timeout_uses_the_default_and_keeps_partial_output() {
+        let started = std::time::Instant::now();
+        let err = run_with_default(0.5, json!({"command": "echo partial; sleep 30"})).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("partial"), "{message}");
+        assert!(
+            message.contains(
+                "Command timed out after 0.5s (default timeout; pass a larger `timeout` for long commands)"
+            ),
+            "{message}"
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn resolves_the_requested_timeout() {
+        // omitted -> default; explicit 0 -> unlimited; positive -> as given.
+        assert_eq!(resolve_timeout(None, Some(600.0)), (Some(600.0), true));
+        assert_eq!(resolve_timeout(Some(0.0), Some(600.0)), (None, false));
+        assert_eq!(resolve_timeout(Some(-0.0), Some(600.0)), (None, false));
+        assert_eq!(resolve_timeout(Some(2.5), Some(600.0)), (Some(2.5), false));
+        // negative and non-finite -> default
+        for bad in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(resolve_timeout(Some(bad), Some(600.0)), (Some(600.0), true));
+        }
+        // main session (no default): omitted and bad values are unlimited
+        assert_eq!(resolve_timeout(None, None), (None, false));
+        assert_eq!(resolve_timeout(Some(-1.0), None), (None, false));
+        assert_eq!(resolve_timeout(Some(2.5), None), (Some(2.5), false));
+    }
+
+    #[test]
+    fn negative_timeout_falls_back_to_the_default() {
+        let err = run_with_default(0.5, json!({"command": "sleep 30", "timeout": -1})).unwrap_err();
+        assert!(err.to_string().contains("(default timeout;"), "{err}");
+    }
+
+    #[test]
+    fn explicit_zero_timeout_means_no_limit() {
+        // The default (0.2s) would kill this; an explicit 0 must not.
+        let cwd = std::env::current_dir().unwrap();
+        let tool = build_bash_tool_definition(&cwd, BashToolOptions::default(), Some(0.2));
+        let result = (tool.execute)(
+            "call".into(),
+            json!({"command": "sleep 0.5; echo finished", "timeout": 0}),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let shown = result
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                Content::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(shown.contains("finished"), "{shown}");
+    }
+
+    #[test]
+    fn explicit_timeout_wins_over_the_default() {
+        let err =
+            run_with_default(600.0, json!({"command": "sleep 30", "timeout": 0.5})).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("Command timed out after 0.5 seconds"),
+            "{message}"
+        );
+        assert!(!message.contains("default timeout"), "{message}");
     }
 }

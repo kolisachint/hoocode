@@ -66,6 +66,7 @@ fn auto_starts(actions: &[ModeAction]) -> Vec<(&str, Option<u64>, &str)> {
 
 #[test]
 fn runs_both_phases_against_the_plan_by_default() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
     let actions = extension(dir.path()).command("grill", "");
@@ -78,6 +79,7 @@ fn runs_both_phases_against_the_plan_by_default() {
 
 #[test]
 fn restricts_itself_to_the_requested_phase() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
     let actions = extension(dir.path()).command("grill", "plan");
@@ -86,6 +88,7 @@ fn restricts_itself_to_the_requested_phase() {
 
 #[test]
 fn declines_with_a_pointer_to_plan_when_there_is_no_plan() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let actions = extension(dir.path()).command("grill", "");
     assert!(sent(&actions).is_empty());
@@ -95,6 +98,7 @@ fn declines_with_a_pointer_to_plan_when_there_is_no_plan() {
 
 #[test]
 fn shows_usage_for_an_unknown_subcommand_instead_of_guessing() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
     let actions = extension(dir.path()).command("grill", "everything");
@@ -104,6 +108,7 @@ fn shows_usage_for_an_unknown_subcommand_instead_of_guessing() {
 
 #[test]
 fn drops_the_interrogation_phase_while_an_autonomous_loop_is_running() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
     let ext = extension(dir.path());
@@ -118,6 +123,7 @@ fn drops_the_interrogation_phase_while_an_autonomous_loop_is_running() {
 
 #[test]
 fn asks_again_once_the_loop_stops() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
     let ext = extension(dir.path());
@@ -130,6 +136,7 @@ fn asks_again_once_the_loop_stops() {
 
 #[test]
 fn takes_the_objective_and_completion_condition_from_the_plan() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
     let actions = extension(dir.path()).command("goal", "");
@@ -142,6 +149,7 @@ fn takes_the_objective_and_completion_condition_from_the_plan() {
 
 #[test]
 fn prefers_an_explicit_objective_but_keeps_the_plans_verification() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
     let actions = extension(dir.path()).command("goal", "make the parser tests pass");
@@ -153,6 +161,7 @@ fn prefers_an_explicit_objective_but_keeps_the_plans_verification() {
 
 #[test]
 fn runs_free_standing_with_no_plan_at_all() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let actions = extension(dir.path()).command("goal", "make the parser tests pass");
     let starts = auto_starts(&actions);
@@ -162,6 +171,7 @@ fn runs_free_standing_with_no_plan_at_all() {
 
 #[test]
 fn passes_the_turn_budget_through_to_the_loop() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let actions = extension(dir.path()).command("goal", "--max-turns 25 ship it");
     assert_eq!(auto_starts(&actions)[0].1, Some(25));
@@ -169,6 +179,7 @@ fn passes_the_turn_budget_through_to_the_loop() {
 
 #[test]
 fn declines_when_there_is_neither_an_objective_nor_a_plan_goal() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let actions = extension(dir.path()).command("goal", "");
     assert!(auto_starts(&actions).is_empty());
@@ -177,6 +188,7 @@ fn declines_when_there_is_neither_an_objective_nor_a_plan_goal() {
 
 #[test]
 fn shows_usage_for_a_malformed_budget() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     write_plan(dir.path());
     let actions = extension(dir.path()).command("goal", "--max-turns lots ship it");
@@ -189,6 +201,7 @@ fn shows_usage_for_a_malformed_budget() {
 #[test]
 fn appends_the_mode_block_and_substitutes_the_plan_path() {
     use hoocode_code_agent_session::ExtensionHooks;
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let build = extension(dir.path());
     let prompt = build.before_agent_start("hi", "BASE").unwrap();
@@ -228,6 +241,7 @@ fn appends_the_mode_block_and_substitutes_the_plan_path() {
 #[test]
 fn light_mode_adds_no_appendix() {
     use hoocode_code_agent_session::ExtensionHooks;
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let ext = ModesExtension::with_config(
         ModeSession {

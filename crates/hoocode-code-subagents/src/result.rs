@@ -11,6 +11,9 @@ use std::path::Path;
 
 use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{Content, StopReason};
+use hoocode_code_agent_session::stats::{
+    last_assistant_text_with_origin, FROM_EARLIER_TURN_PREFIX,
+};
 use hoocode_code_task_store::{Task, TaskSource, TaskStatus, TaskUsage};
 use serde_json::{json, Map, Value};
 
@@ -196,26 +199,14 @@ fn collect_changed_files(messages: &[AgentMessage]) -> Vec<String> {
     files
 }
 
-/// The last non-empty assistant text, trimmed.
+/// The last non-empty assistant text, trimmed. When tool calls followed that
+/// text, it is prefixed so the parent knows it may be stale narration.
 fn derive_summary(messages: &[AgentMessage]) -> String {
-    for message in messages.iter().rev() {
-        let AgentMessage::Assistant(assistant) = message else {
-            continue;
-        };
-        let text: String = assistant
-            .content
-            .iter()
-            .filter_map(|c| match c {
-                Content::Text(t) => Some(t.text.as_str()),
-                _ => None,
-            })
-            .collect();
-        let trimmed = text.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
+    match last_assistant_text_with_origin(messages) {
+        Some((text, true)) => format!("{FROM_EARLIER_TURN_PREFIX}{text}"),
+        Some((text, false)) => text,
+        None => String::new(),
     }
-    String::new()
 }
 
 fn last_assistant(messages: &[AgentMessage]) -> Option<&hoocode_ai_types::AssistantMessage> {
@@ -249,12 +240,28 @@ pub struct BuildSubagentResultOptions {
     /// The run was asked to wrap up because it was nearing its wall-clock
     /// deadline. Same treatment: the work is usable, but it was cut short.
     pub reached_deadline: bool,
+    /// The supervisor stopped the run for lack of progress or over the memory
+    /// limit. Not a deadline: the run did not use up its time.
+    pub stalled: bool,
 }
 
 impl BuildSubagentResultOptions {
     /// Whether the run was cut short rather than finished on its own terms.
     fn cut_short(&self) -> bool {
-        self.reached_max_turns || self.reached_deadline
+        self.reached_max_turns || self.reached_deadline || self.stalled
+    }
+
+    /// The stop reason named in the summary when the run has no final text.
+    fn stop_reason(&self) -> Option<&'static str> {
+        if self.stalled {
+            Some("stalled")
+        } else if self.reached_deadline {
+            Some("deadline")
+        } else if self.reached_max_turns {
+            Some("max-turns")
+        } else {
+            None
+        }
     }
 }
 
@@ -264,6 +271,43 @@ fn or_else(text: String, fallback: &str) -> String {
     } else {
         text
     }
+}
+
+/// The summary for a run with no final text anywhere in its transcript: the
+/// stop reason, the turn count, and the last tool it called. `stop` is the
+/// supervisor's reason when it cut the run short; otherwise the final
+/// assistant message's own stop reason is named.
+fn no_text_summary(messages: &[AgentMessage], stop: Option<&str>) -> String {
+    let stop = stop.map(str::to_string).unwrap_or_else(|| {
+        last_assistant(messages)
+            .map(|a| {
+                match a.stop_reason {
+                    StopReason::Stop => "stop",
+                    StopReason::Length => "length",
+                    StopReason::ToolUse => "tool-use",
+                    StopReason::Error => "error",
+                    StopReason::Aborted => "aborted",
+                }
+                .to_string()
+            })
+            .unwrap_or_else(|| "unknown".to_string())
+    });
+    let turns = messages
+        .iter()
+        .filter(|m| matches!(m, AgentMessage::Assistant(_)))
+        .count();
+    let last_tool = messages
+        .iter()
+        .rev()
+        .find_map(|m| match m {
+            AgentMessage::Assistant(a) => a.content.iter().rev().find_map(|c| match c {
+                Content::ToolCall(call) => Some(call.name.clone()),
+                _ => None,
+            }),
+            _ => None,
+        })
+        .unwrap_or_else(|| "none".to_string());
+    format!("No final text. Stop reason: {stop}; turns: {turns}; last tool: {last_tool}")
 }
 
 /// `buildSubagentResult`: the `result.json` payload for a finished session.
@@ -276,13 +320,11 @@ pub fn build_subagent_result(
 ) -> SubagentResultFile {
     let files_changed = collect_changed_files(messages);
     if options.cut_short() {
-        let reason = if options.reached_deadline {
-            "Ran out of time before completing."
-        } else {
-            "Reached the turn limit before completing."
-        };
         return SubagentResultFile {
-            summary: or_else(derive_summary(messages), reason),
+            summary: or_else(
+                derive_summary(messages),
+                &no_text_summary(messages, options.stop_reason()),
+            ),
             files_changed,
             confidence: 0.6,
             status: ResultStatus::Partial,
@@ -306,10 +348,7 @@ pub fn build_subagent_result(
         };
     }
     SubagentResultFile {
-        summary: or_else(
-            derive_summary(messages),
-            "Task completed with no textual summary.",
-        ),
+        summary: or_else(derive_summary(messages), &no_text_summary(messages, None)),
         files_changed,
         confidence: 0.9,
         status: ResultStatus::Complete,

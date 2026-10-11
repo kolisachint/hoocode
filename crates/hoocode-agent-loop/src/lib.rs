@@ -15,7 +15,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
@@ -165,24 +165,43 @@ async fn run_loop(
     config: &AgentLoopConfig,
     emit: &mut AgentEventSink,
 ) -> Result<(), BoxError> {
+    let background = BackgroundTaskManager::for_session(
+        config.session_id.as_deref(),
+        config.on_background_task_count_change.clone(),
+    );
+    let result = run_loop_with_background(context, new_messages, config, emit, &background).await;
+    // Every exit path ends here, so an idle session entry is dropped at run end.
+    if let Some(session_id) = config.session_id.as_deref() {
+        SESSION_BACKGROUND_TASKS.release(session_id, &background);
+    }
+    result
+}
+
+async fn run_loop_with_background(
+    context: &mut AgentContext,
+    new_messages: &mut Vec<AgentMessage>,
+    config: &AgentLoopConfig,
+    emit: &mut AgentEventSink,
+    background: &BackgroundTaskManager,
+) -> Result<(), BoxError> {
     let mut settings = TurnSettings {
         model: config.model.clone(),
         reasoning: config.reasoning.clone(),
     };
     let mut first_turn = true;
-    let background = BackgroundTaskManager::new(config.on_background_task_count_change.clone());
 
-    // Steering typed while waiting for the run to start.
-    let mut pending = collect_pending_messages(context, config, &background)?;
+    // Steering typed while waiting for the run to start. Completions that
+    // arrived after the previous run ended are delivered here, first.
+    let mut pending = collect_pending_messages(context, config, background)?;
 
     loop {
         let mut has_more_tool_calls = true;
 
-        while has_more_tool_calls || !pending.is_empty() || background.pending_count() > 0 {
+        while has_more_tool_calls || !pending.is_empty() || background.has_work() {
             // Nothing to act on, but background work is in flight: wait for it.
             if !has_more_tool_calls && pending.is_empty() {
                 background.wait_for_next().await;
-                pending = collect_pending_messages(context, config, &background)?;
+                pending = collect_pending_messages(context, config, background)?;
                 if pending.is_empty() {
                     continue;
                 }
@@ -226,7 +245,7 @@ async fn run_loop(
             let mut tool_results = Vec::new();
             has_more_tool_calls = false;
             if has_tool_calls {
-                let batch = execute_tool_calls(context, &message, config, emit, &background).await;
+                let batch = execute_tool_calls(context, &message, config, emit, background).await;
                 has_more_tool_calls = !batch.terminate;
                 for result in &batch.messages {
                     context
@@ -277,7 +296,7 @@ async fn run_loop(
                 }
             }
 
-            pending = collect_pending_messages(context, config, &background)?;
+            pending = collect_pending_messages(context, config, background)?;
         }
 
         // The agent would stop here; queued follow-ups start another round.
@@ -1162,26 +1181,135 @@ fn background_result_message(
     }
 }
 
+type CountChangeFn = Arc<dyn Fn(usize) + Send + Sync>;
+
+/// Most session managers kept at once. Past this, idle ones are evicted.
+const MAX_SESSION_BACKGROUND_MANAGERS: usize = 64;
+
+/// Background managers by session id. They outlive a single run, so a task
+/// that settles after its run ended (error, abort, or a stop between runs) is
+/// delivered by the next run of the same session instead of being dropped.
+/// An entry is dropped when its run ends with no work left, and the map is capped.
+static SESSION_BACKGROUND_TASKS: LazyLock<SessionRegistry> =
+    LazyLock::new(SessionRegistry::default);
+
+#[derive(Default)]
+struct SessionRegistry {
+    entries: Mutex<RegistryEntries>,
+}
+
+#[derive(Default)]
+struct RegistryEntries {
+    map: HashMap<String, RegistryEntry>,
+    /// Bumped on every lookup; orders eviction (least recently used first).
+    clock: u64,
+}
+
+struct RegistryEntry {
+    manager: Arc<BackgroundTaskManager>,
+    last_used: u64,
+}
+
+impl RegistryEntries {
+    /// Evicts the least recently used entry that no live run holds. With
+    /// `idle_only`, entries that still have work (in-flight tasks or undelivered
+    /// results) are kept. Returns whether an entry was removed.
+    fn evict_one(&mut self, idle_only: bool) -> bool {
+        let victim = self
+            .map
+            .iter()
+            .filter(|(_, e)| Arc::strong_count(&e.manager) == 1)
+            .filter(|(_, e)| !idle_only || !e.manager.has_work())
+            .min_by_key(|(_, e)| e.last_used)
+            .map(|(id, _)| id.clone());
+        match victim {
+            Some(id) => self.map.remove(&id).is_some(),
+            None => false,
+        }
+    }
+}
+
+impl SessionRegistry {
+    /// The manager of `session_id`, created when missing. At `cap` entries an
+    /// idle entry is evicted first, then one with undelivered work. Entries a
+    /// live run holds are never evicted, so the map only exceeds `cap` while
+    /// that many runs are live at once.
+    fn manager_for(&self, session_id: &str, cap: usize) -> Arc<BackgroundTaskManager> {
+        let mut entries = self.entries.lock().unwrap();
+        entries.clock += 1;
+        let now = entries.clock;
+        if let Some(entry) = entries.map.get_mut(session_id) {
+            entry.last_used = now;
+            return entry.manager.clone();
+        }
+        while entries.map.len() >= cap {
+            if !entries.evict_one(true) && !entries.evict_one(false) {
+                break;
+            }
+        }
+        let manager = Arc::new(BackgroundTaskManager::new(None));
+        entries.map.insert(
+            session_id.to_string(),
+            RegistryEntry {
+                manager: manager.clone(),
+                last_used: now,
+            },
+        );
+        manager
+    }
+
+    /// Drops `session_id`'s entry once its run has ended, when `manager` has no
+    /// work left and no other run holds it (the map and the ending run: two).
+    fn release(&self, session_id: &str, manager: &Arc<BackgroundTaskManager>) {
+        let mut entries = self.entries.lock().unwrap();
+        let ours = entries
+            .map
+            .get(session_id)
+            .is_some_and(|e| Arc::ptr_eq(&e.manager, manager));
+        if ours && !manager.has_work() && Arc::strong_count(manager) == 2 {
+            entries.map.remove(session_id);
+        }
+    }
+}
+
 /// `createBackgroundTaskManager`: detached background tool runs.
 struct BackgroundTaskManager {
     inflight: Arc<AtomicUsize>,
     results: Arc<Mutex<Vec<SettledBackgroundTask>>>,
     settled: Arc<tokio::sync::Notify>,
-    on_count_change: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+    /// Set by each run that uses this manager.
+    on_count_change: Mutex<Option<CountChangeFn>>,
 }
 
 impl BackgroundTaskManager {
-    fn new(on_count_change: Option<Arc<dyn Fn(usize) + Send + Sync>>) -> Self {
+    fn new(on_count_change: Option<CountChangeFn>) -> Self {
         Self {
             inflight: Arc::new(AtomicUsize::new(0)),
             results: Arc::new(Mutex::new(Vec::new())),
             settled: Arc::new(tokio::sync::Notify::new()),
-            on_count_change,
+            on_count_change: Mutex::new(on_count_change),
         }
+    }
+
+    /// The manager of `session_id`, shared by all of its runs. Without a
+    /// session id the manager lasts for one run only.
+    fn for_session(session_id: Option<&str>, on_count_change: Option<CountChangeFn>) -> Arc<Self> {
+        let Some(session_id) = session_id else {
+            return Arc::new(Self::new(on_count_change));
+        };
+        let manager =
+            SESSION_BACKGROUND_TASKS.manager_for(session_id, MAX_SESSION_BACKGROUND_MANAGERS);
+        *manager.on_count_change.lock().unwrap() = on_count_change;
+        manager
     }
 
     fn pending_count(&self) -> usize {
         self.inflight.load(Ordering::SeqCst)
+    }
+
+    /// Work is in flight, or a settled result waits to be collected.
+    fn has_work(&self) -> bool {
+        self.pending_count() > 0 || !self.results.lock().unwrap().is_empty()
     }
 
     fn drain_results(&self) -> Vec<SettledBackgroundTask> {
@@ -1206,13 +1334,13 @@ impl BackgroundTaskManager {
         signal: Option<AbortSignal>,
         assistant_message: AssistantMessage,
     ) {
+        let on_count_change = self.on_count_change.lock().unwrap().clone();
         let count = self.inflight.fetch_add(1, Ordering::SeqCst) + 1;
-        report_count(&self.on_count_change, count);
+        report_count(&on_count_change, count);
 
         let inflight = self.inflight.clone();
         let results = self.results.clone();
         let settled = self.settled.clone();
-        let on_count_change = self.on_count_change.clone();
         let tool = prepared.tool.clone();
         let tool_call = prepared.tool_call.clone();
         let args = prepared.args.clone();
@@ -1236,7 +1364,7 @@ impl BackgroundTaskManager {
 }
 
 /// A throwing count callback must not break background dispatch.
-fn report_count(callback: &Option<Arc<dyn Fn(usize) + Send + Sync>>, count: usize) {
+fn report_count(callback: &Option<CountChangeFn>, count: usize) {
     if let Some(callback) = callback {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback(count)));
     }

@@ -2087,6 +2087,12 @@ impl AgentSession {
         stats::get_last_assistant_text(&self.messages())
     }
 
+    /// The last text, walking back past a tool-only final message, and whether
+    /// it is stale (tool calls followed it) (subagent summaries).
+    pub fn last_assistant_text_with_origin(&self) -> Option<(String, bool)> {
+        stats::last_assistant_text_with_origin(&self.messages())
+    }
+
     /// The conversation as markdown (`/copy`).
     pub fn get_transcript_markdown(&self, selection: &TranscriptSelection) -> String {
         stats::session_to_markdown(&self.messages(), selection)

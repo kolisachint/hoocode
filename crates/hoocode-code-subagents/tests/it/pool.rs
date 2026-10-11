@@ -6,10 +6,10 @@
 //! The mock children are shell scripts (hoocode's are Node scripts); argv is
 //! recorded NUL-separated.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Once};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use hoocode_code_models::ResolvedScoped;
 use hoocode_code_resources::{AgentDefinition, AgentRegistry, AgentSource};
@@ -394,7 +394,7 @@ async fn fails_and_emits_task_failed_when_output_verification_fails() {
 }
 
 #[tokio::test]
-async fn emits_task_done_and_removes_the_dispatch_dir_on_success() {
+async fn emits_task_done_and_keeps_the_dispatch_dir_on_success() {
     let dir = setup();
     let p = pool(mock(dir.path(), 0, 0), 2, dir.path());
     let done = record(&p, "task_done");
@@ -405,7 +405,8 @@ async fn emits_task_done_and_removes_the_dispatch_dir_on_success() {
     let result = p.wait_for("t1").await.unwrap();
     assert!(result.ok);
     assert_eq!(result.result_data.as_ref().unwrap()["status"], "complete");
-    wait_until_gone(&dispatch_dir).await;
+    // Kept so the run stays resumable; pruning happens at dispatch time.
+    assert!(dispatch_dir.join("result.json").exists());
     let done = done.lock().unwrap();
     assert_eq!(done.len(), 1);
     assert_eq!(done[0]["task_id"], "t1");
@@ -471,6 +472,177 @@ async fn falls_back_to_the_stderr_tail_without_result_json() {
     assert!(!result.ok);
     assert_eq!(result.error.as_deref(), Some("mock error"));
     p.dispose();
+}
+
+#[tokio::test]
+async fn a_note_line_is_never_the_failure_reason() {
+    let dir = setup();
+    let exe = script(
+        dir.path(),
+        "mock-noted.sh",
+        "echo 'Error: bad frobnicate input' >&2\necho 'Note: approvals are auto-approved' >&2\necho 'trailing chatter' >&2\nexit 1",
+    );
+    let p = pool(exe, 1, dir.path());
+    p.spawn(task("noted", "explore", "hello")).unwrap();
+    let result = p.wait_for("noted").await.unwrap();
+    assert!(!result.ok);
+    assert_eq!(result.error.as_deref(), Some("Error: bad frobnicate input"));
+    p.dispose();
+}
+
+#[tokio::test]
+async fn a_partial_result_settles_as_partial_and_stays_resumable() {
+    let dir = setup();
+    let exe = script(
+        dir.path(),
+        "mock-partial.sh",
+        &format!(
+            "{TASK_ID}\nmkdir -p {DIR}/dispatch/$tid\necho '{{}}' >> {DIR}/dispatch/$tid/session.jsonl\nprintf '%s' '{}' > {DIR}/dispatch/$tid/result.json\necho '{DONE_LINE}'\nexit 0",
+            result_json("halfway there", "partial", 0.6)
+        ),
+    );
+    let p = pool(exe, 1, dir.path());
+    p.spawn(task("half", "explore", "hello")).unwrap();
+    let result = p.wait_for("half").await.unwrap();
+    assert!(result.ok);
+    assert_eq!(result.status, Some(ResultStatus::Partial));
+    assert!(hoocode_code_paths::dispatch_task_dir(dir.path(), "half")
+        .join("session.jsonl")
+        .exists());
+    let resumed = p
+        .resume("half", "keep going", DispatchOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        resumed.result.as_ref().and_then(|r| r.status),
+        Some(ResultStatus::Partial)
+    );
+    p.dispose();
+}
+
+/// A dispatch dir named `name` (under the test cwd) whose mtime is `age` ago.
+fn aged_dispatch_dir(cwd: &Path, name: &str, age: Duration) -> PathBuf {
+    let path = hoocode_code_paths::dispatch_task_dir(cwd, name);
+    std::fs::create_dir_all(&path).unwrap();
+    set_age(&path, age);
+    path
+}
+
+fn set_age(path: &Path, age: Duration) {
+    let when = std::time::SystemTime::now() - age;
+    std::fs::File::open(path)
+        .unwrap()
+        .set_modified(when)
+        .unwrap();
+}
+
+const DAY: Duration = Duration::from_secs(24 * 60 * 60);
+
+#[test]
+fn prune_keeps_the_newest_fifty_and_removes_only_old_dirs() {
+    let dir = setup();
+    let cwd = dir.path();
+    // 60 old dirs, `dispatch-000` the newest of them.
+    for i in 0..60 {
+        let age = 2 * DAY + Duration::from_secs(60 * i);
+        aged_dispatch_dir(cwd, &format!("dispatch-{i:03}"), age);
+    }
+    // A fresh dir is the newest overall, so it takes rank 0 of the 50.
+    aged_dispatch_dir(cwd, "dispatch-fresh", Duration::ZERO);
+    prune_dispatch_dirs(cwd, 50, DAY);
+    let root = hoocode_code_paths::dispatch_root(cwd);
+    assert!(root.join("dispatch-fresh").exists());
+    for i in 0..49 {
+        assert!(root.join(format!("dispatch-{i:03}")).exists(), "{i}");
+    }
+    for i in 49..60 {
+        assert!(!root.join(format!("dispatch-{i:03}")).exists(), "{i}");
+    }
+}
+
+#[test]
+fn prune_keeps_recent_dirs_beyond_the_count_and_ignores_other_dirs() {
+    let dir = setup();
+    let cwd = dir.path();
+    aged_dispatch_dir(cwd, "dispatch-a", Duration::ZERO);
+    aged_dispatch_dir(cwd, "dispatch-b", Duration::from_secs(60 * 60));
+    aged_dispatch_dir(cwd, "dispatch-c", 2 * DAY);
+    aged_dispatch_dir(cwd, "dispatch-d", 2 * DAY + Duration::from_secs(60));
+    aged_dispatch_dir(cwd, "not-a-dispatch", 3 * DAY);
+    prune_dispatch_dirs(cwd, 1, DAY);
+    let root = hoocode_code_paths::dispatch_root(cwd);
+    // `b` is beyond the count but not yet a day old; `c` and `d` are both.
+    assert!(root.join("dispatch-a").exists());
+    assert!(root.join("dispatch-b").exists());
+    assert!(!root.join("dispatch-c").exists());
+    assert!(!root.join("dispatch-d").exists());
+    assert!(root.join("not-a-dispatch").exists());
+}
+
+#[test]
+fn prune_spares_an_old_dir_whose_session_is_still_being_written() {
+    let dir = setup();
+    let cwd = dir.path();
+    aged_dispatch_dir(cwd, "dispatch-now", Duration::ZERO);
+    // A resumed run appends to an old session: the file is fresh, the dir is not.
+    let resumed = aged_dispatch_dir(cwd, "dispatch-resumed", 3 * DAY);
+    let session = resumed.join("session.jsonl");
+    std::fs::write(&session, "{\"type\":\"message\"}\n").unwrap();
+    set_age(&resumed, 3 * DAY);
+    aged_dispatch_dir(cwd, "dispatch-idle", 3 * DAY);
+    prune_dispatch_dirs(cwd, 1, DAY);
+    let root = hoocode_code_paths::dispatch_root(cwd);
+    assert!(root.join("dispatch-now").exists());
+    assert!(resumed.exists(), "a session being written must survive");
+    assert!(!root.join("dispatch-idle").exists());
+}
+
+/// Resuming a session makes it the newest thing on disk. A prune that runs
+/// straight after cannot take it, even though it was written days ago and the
+/// prune keeps nothing by count.
+#[tokio::test]
+async fn resume_keeps_the_session_it_continues_from_being_pruned() {
+    let dir = setup();
+    let cwd = dir.path();
+    let p = pool(result_writer(cwd, 0), 1, cwd);
+    let original = aged_dispatch_dir(cwd, "dispatch-orig", 3 * DAY);
+    let session = original.join("session.jsonl");
+    std::fs::write(&session, "{\"type\":\"session\"}\n").unwrap();
+    std::fs::write(
+        original.join("dispatch-log.json"),
+        r#"{"agent_type":"explore"}"#,
+    )
+    .unwrap();
+    set_age(&session, 3 * DAY);
+    set_age(&original, 3 * DAY);
+    aged_dispatch_dir(cwd, "dispatch-idle", 3 * DAY);
+    p.resume("dispatch-orig", "follow-up", DispatchOptions::default())
+        .await
+        .unwrap();
+    let modified = std::fs::metadata(&original).unwrap().modified().unwrap();
+    assert!(
+        SystemTime::now().duration_since(modified).unwrap() < Duration::from_secs(60),
+        "resume should touch the dispatch dir"
+    );
+    prune_dispatch_dirs(cwd, 0, DAY);
+    assert!(original.exists(), "the session being resumed must survive");
+    assert!(!hoocode_code_paths::dispatch_task_dir(cwd, "dispatch-idle").exists());
+    p.dispose();
+}
+
+/// A dir whose task the pool is running or has queued is never removed, even
+/// when it is old and beyond the keep count.
+#[test]
+fn prune_never_removes_a_dir_whose_task_is_live() {
+    let dir = setup();
+    let cwd = dir.path();
+    aged_dispatch_dir(cwd, "dispatch-running", 3 * DAY);
+    aged_dispatch_dir(cwd, "dispatch-finished", 3 * DAY);
+    let live = HashSet::from(["dispatch-running".to_string()]);
+    prune_dispatch_dirs_keeping(cwd, 0, DAY, &live);
+    let root = hoocode_code_paths::dispatch_root(cwd);
+    assert!(root.join("dispatch-running").exists());
+    assert!(!root.join("dispatch-finished").exists());
 }
 
 #[tokio::test]
@@ -802,7 +974,7 @@ async fn a_late_stall_does_not_clobber_a_clean_completion() {
     assert_eq!(result.status, Some(ResultStatus::Complete));
     assert_eq!(result.result_data.unwrap()["summary"], "background done");
     assert_eq!(p.get_status("race"), TaskStatus::Done);
-    wait_until_gone(&hoocode_code_paths::dispatch_task_dir(dir.path(), "race")).await;
+    assert!(hoocode_code_paths::dispatch_task_dir(dir.path(), "race").exists());
     p.dispose();
 }
 
@@ -1290,15 +1462,4 @@ async fn should_retry_with_inherited_model_rules() {
         agent(AgentSource::Project, "claude-haiku-4-5"),
         &with_parent
     ));
-}
-
-/// Cleanup runs on `hoocode-bg`, so a removed dispatch dir can take a moment to disappear.
-async fn wait_until_gone(path: &std::path::Path) {
-    for _ in 0..500 {
-        if !path.exists() {
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
-    panic!("{} was not removed", path.display());
 }

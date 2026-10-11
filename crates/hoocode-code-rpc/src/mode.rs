@@ -616,6 +616,13 @@ impl RpcMode {
             "get_last_assistant_text" => {
                 ok(Some(json!({ "text": session.get_last_assistant_text() })))
             }
+            "get_last_assistant_text_with_origin" => {
+                let found = session.last_assistant_text_with_origin();
+                ok(Some(json!({
+                    "text": found.as_ref().map(|(text, _)| text),
+                    "stale": found.is_some_and(|(_, stale)| stale),
+                })))
+            }
             "set_session_name" => {
                 let name = command.str("name")?;
                 let name = name.trim();

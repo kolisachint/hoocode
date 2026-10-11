@@ -18,9 +18,7 @@ fn prompt_with_mode() -> Option<String> {
 
 #[test]
 fn mode_appendix_only_in_top_level_sessions() {
-    for prefix in hoocode_code_paths::ENV_PREFIXES {
-        std::env::remove_var(format!("{prefix}SUBAGENT_DEPTH"));
-    }
+    let _env = crate::support::hermetic();
     let top = prompt_with_mode().unwrap();
     assert!(top.contains("<!-- hoo-core: mode="));
 

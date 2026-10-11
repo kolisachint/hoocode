@@ -225,6 +225,10 @@ pub fn collect_user_messages_for_forking(session_manager: &SessionManager) -> Ve
         .collect()
 }
 
+/// Prefix for a subagent summary whose text is stale: the run made tool calls
+/// after the assistant message the text came from, so it may be narration.
+pub const FROM_EARLIER_TURN_PREFIX: &str = "(from an earlier turn) ";
+
 /// `getLastAssistantText`: the text of the last assistant message (skipping
 /// empty aborted ones), trimmed; `None` when empty.
 pub fn get_last_assistant_text(messages: &[AgentMessage]) -> Option<String> {
@@ -239,6 +243,34 @@ pub fn get_last_assistant_text(messages: &[AgentMessage]) -> Option<String> {
     let text = text_of(&last.content);
     let text = text.trim();
     (!text.is_empty()).then(|| text.to_string())
+}
+
+/// The text of the last assistant message that has any text (skipping empty
+/// aborted ones), plus whether it is stale: `true` when that message or any
+/// assistant message after it contains a tool call, so the run kept working
+/// after that text (a run cut mid-tool leaves its own tool call unanswered).
+/// Empty or aborted messages after it do not count. `None` when no assistant
+/// message has text.
+pub fn last_assistant_text_with_origin(messages: &[AgentMessage]) -> Option<(String, bool)> {
+    let (index, text) = messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, m)| match m {
+            AgentMessage::Assistant(a)
+                if !(a.stop_reason == StopReason::Aborted && a.content.is_empty()) =>
+            {
+                let text = text_of(&a.content);
+                let text = text.trim();
+                (!text.is_empty()).then(|| (index, text.to_string()))
+            }
+            _ => None,
+        })?;
+    let stale = messages[index..].iter().any(|m| match m {
+        AgentMessage::Assistant(a) => a.content.iter().any(|c| matches!(c, Content::ToolCall(_))),
+        _ => false,
+    });
+    Some((text, stale))
 }
 
 /// `TranscriptSelection`: how much of a session a copy takes.
@@ -335,4 +367,147 @@ pub fn export_session_branch_to_jsonl(
     }
     std::fs::write(&path, format!("{}\n", lines.join("\n")))?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod last_assistant_text_tests {
+    use super::*;
+    use hoocode_ai_types::{AssistantMessage, ToolCallContent};
+
+    fn assistant(content: Vec<Content>, stop_reason: StopReason) -> AgentMessage {
+        AgentMessage::Assistant(AssistantMessage {
+            content,
+            stop_reason,
+            ..Default::default()
+        })
+    }
+
+    fn tool_call_only() -> AgentMessage {
+        assistant(
+            vec![Content::ToolCall(ToolCallContent {
+                id: "t".into(),
+                name: "Bash".into(),
+                arguments: serde_json::json!({"command": "ls"}),
+                thought_signature: None,
+            })],
+            StopReason::ToolUse,
+        )
+    }
+
+    fn narration(text: &str) -> AgentMessage {
+        assistant(vec![Content::text(text)], StopReason::ToolUse)
+    }
+
+    #[test]
+    fn strict_getter_stops_at_the_final_assistant_message() {
+        // Existing callers (/copy, the RPC command) keep the original
+        // behavior: a tool-only final message means no text.
+        let messages = [narration("Found it at pool.rs:176."), tool_call_only()];
+        assert_eq!(get_last_assistant_text(&messages), None);
+        let messages = [narration("Done."), tool_call_only()];
+        assert_eq!(get_last_assistant_text(&messages), None);
+    }
+
+    #[test]
+    fn strict_getter_returns_the_final_text() {
+        let messages = [narration("first"), narration("  second  ")];
+        assert_eq!(
+            get_last_assistant_text(&messages).as_deref(),
+            Some("second")
+        );
+    }
+
+    #[test]
+    fn origin_walks_back_past_a_tool_only_final_message() {
+        let messages = [narration("Found it at pool.rs:176."), tool_call_only()];
+        assert_eq!(
+            last_assistant_text_with_origin(&messages),
+            Some(("Found it at pool.rs:176.".to_string(), true))
+        );
+    }
+
+    #[test]
+    fn origin_is_false_when_the_final_message_has_the_text() {
+        let messages = [tool_call_only(), narration("  Answer.  ")];
+        assert_eq!(
+            last_assistant_text_with_origin(&messages),
+            Some(("Answer.".to_string(), false))
+        );
+    }
+
+    #[test]
+    fn origin_skips_an_empty_aborted_final_message_without_marking_it_stale() {
+        // A deadline wrap-up that aborts with no content: the earlier text is
+        // the answer, so there is no prefix.
+        let aborted = assistant(Vec::new(), StopReason::Aborted);
+        let messages = [narration("Partial plan."), aborted];
+        assert_eq!(
+            last_assistant_text_with_origin(&messages),
+            Some(("Partial plan.".to_string(), false))
+        );
+    }
+
+    #[test]
+    fn origin_is_stale_when_a_tool_call_follows_the_text() {
+        // Tool calls after the text, then an empty aborted message: the run
+        // kept working, so the text may be stale.
+        let aborted = assistant(Vec::new(), StopReason::Aborted);
+        let messages = [
+            narration("Found it at pool.rs:176."),
+            tool_call_only(),
+            aborted,
+        ];
+        assert_eq!(
+            last_assistant_text_with_origin(&messages),
+            Some(("Found it at pool.rs:176.".to_string(), true))
+        );
+    }
+
+    #[test]
+    fn origin_is_stale_when_the_text_message_itself_has_a_tool_call() {
+        // "Checking pool.rs next" + Read, then the run was cut mid-tool: the
+        // message's own tool call counts, so the text is not the answer.
+        let text_and_call = assistant(
+            vec![
+                Content::text("Checking pool.rs next"),
+                Content::ToolCall(ToolCallContent {
+                    id: "r".into(),
+                    name: "Read".into(),
+                    arguments: serde_json::json!({"path": "pool.rs"}),
+                    thought_signature: None,
+                }),
+            ],
+            StopReason::ToolUse,
+        );
+        assert_eq!(
+            last_assistant_text_with_origin(&[text_and_call]),
+            Some(("Checking pool.rs next".to_string(), true))
+        );
+    }
+
+    #[test]
+    fn origin_ignores_user_and_tool_result_messages_after_the_text() {
+        // Only assistant tool calls make the text stale; a plain wrap-up user
+        // message after the text does not.
+        let user = AgentMessage::User(hoocode_ai_types::UserMessage {
+            content: hoocode_ai_types::UserContent::Text("Stop and summarize.".into()),
+            ..Default::default()
+        });
+        let messages = [narration("Summary of findings."), user];
+        assert_eq!(
+            last_assistant_text_with_origin(&messages),
+            Some(("Summary of findings.".to_string(), false))
+        );
+    }
+
+    #[test]
+    fn origin_is_none_when_no_assistant_message_has_text() {
+        assert_eq!(last_assistant_text_with_origin(&[tool_call_only()]), None);
+        assert_eq!(last_assistant_text_with_origin(&[]), None);
+    }
+
+    #[test]
+    fn prefix_constant_is_the_documented_wording() {
+        assert_eq!(FROM_EARLIER_TURN_PREFIX, "(from an earlier turn) ");
+    }
 }

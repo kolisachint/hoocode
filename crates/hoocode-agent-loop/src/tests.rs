@@ -1189,6 +1189,187 @@ async fn create_background_result_message_shapes_the_follow_up() {
     ));
 }
 
+/// A background task still running when a run ends early (`stop` is Error or
+/// Aborted) must not be dropped: the next run of the session delivers it
+/// before its first model turn.
+async fn background_result_reaches_the_next_run_after(label: &str, stop: StopReason) {
+    let session = format!("persist-{label}");
+    let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+    let g = gate.clone();
+    let bg = background_tool("bg", move |args| {
+        let (lock, cvar) = &*g;
+        let guard = lock.lock().unwrap();
+        let _ = cvar
+            .wait_timeout_while(guard, Duration::from_secs(5), |open| !*open)
+            .unwrap();
+        Ok(echo_result("bg-result: ", &args))
+    });
+
+    // Run 1: start the background task, then the model stops early.
+    let mut config = identity_config();
+    config.session_id = Some(session.clone());
+    mock_stream(&mut config, move |n, _| match n {
+        0 => tool_calls(&[("bg-1", "bg", serde_json::json!({"value": "hello"}))]),
+        _ => assistant(vec![Content::text("cut short")], stop),
+    });
+    let (_, first) = collect(agent_loop(vec![user("go")], context_with(vec![bg]), config)).await;
+    assert!(matches!(
+        first.last(),
+        Some(AgentMessage::Assistant(a)) if a.stop_reason == stop
+    ));
+    // Work is still pending, so the run's end keeps the session entry.
+    assert!(registry_has(&session));
+
+    // The task settles after run 1 has ended.
+    *gate.0.lock().unwrap() = true;
+    gate.1.notify_all();
+    let manager = BackgroundTaskManager::for_session(Some(&session), None);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while manager.pending_count() > 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the background task settles");
+    drop(manager);
+
+    // Run 2: the next prompt, with run 1's history.
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink = seen.clone();
+    let mut config = identity_config();
+    config.session_id = Some(session.clone());
+    mock_stream(&mut config, move |_, context| {
+        *sink.lock().unwrap() = context
+            .messages
+            .iter()
+            .filter_map(|m| match m {
+                Message::User(u) => Some(text_of(&u.content.blocks())),
+                _ => None,
+            })
+            .collect();
+        text("ok")
+    });
+    let context = AgentContext::new(String::new(), first, vec![]);
+    let (_, second) = collect(agent_loop(vec![user("next")], context, config)).await;
+
+    let seen = seen.lock().unwrap();
+    let delivered = |t: &String| t.contains("bg-result: hello");
+    assert_eq!(seen.iter().filter(|t| delivered(t)).count(), 1, "{seen:?}");
+    assert!(second
+        .iter()
+        .any(|m| matches!(m, AgentMessage::User(u) if delivered(&text_of(&u.content.blocks())))));
+    // Delivered and idle: the run's end drops the entry.
+    assert!(!registry_has(&session));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn background_result_after_an_error_reaches_the_next_run() {
+    background_result_reaches_the_next_run_after("error", StopReason::Error).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn background_result_after_an_abort_reaches_the_next_run() {
+    background_result_reaches_the_next_run_after("aborted", StopReason::Aborted).await;
+}
+
+/// Whether the process-wide session registry holds `session_id`.
+fn registry_has(session_id: &str) -> bool {
+    SESSION_BACKGROUND_TASKS
+        .entries
+        .lock()
+        .unwrap()
+        .map
+        .contains_key(session_id)
+}
+
+fn registry_keeps(registry: &SessionRegistry, session_id: &str) -> bool {
+    registry
+        .entries
+        .lock()
+        .unwrap()
+        .map
+        .contains_key(session_id)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn idle_session_entry_is_dropped_when_the_run_ends() {
+    let session = "release-idle-run".to_string();
+    let mut config = identity_config();
+    config.session_id = Some(session.clone());
+    mock_stream(&mut config, |_, _| text("done"));
+    let _ = collect(agent_loop(vec![user("go")], context_with(vec![]), config)).await;
+    assert!(!registry_has(&session));
+}
+
+#[test]
+fn release_keeps_an_entry_with_work_or_another_holder() {
+    let registry = SessionRegistry::default();
+    let manager = registry.manager_for("s", 8);
+    manager
+        .results
+        .lock()
+        .unwrap()
+        .push(SettledBackgroundTask::Failed("undelivered".into()));
+    registry.release("s", &manager);
+    assert!(registry_keeps(&registry, "s"), "undelivered result");
+
+    let _ = manager.drain_results();
+    let other = manager.clone();
+    registry.release("s", &manager);
+    assert!(registry_keeps(&registry, "s"), "another run holds it");
+
+    drop(other);
+    registry.release("s", &manager);
+    assert!(!registry_keeps(&registry, "s"), "idle and unheld");
+}
+
+#[test]
+fn registry_evicts_an_idle_entry_before_one_with_work() {
+    let registry = SessionRegistry::default();
+    // "work" is the older entry, so plain LRU would evict it first.
+    let work = registry.manager_for("work", 2);
+    work.results
+        .lock()
+        .unwrap()
+        .push(SettledBackgroundTask::Failed("kept".into()));
+    drop(work);
+    drop(registry.manager_for("idle", 2));
+
+    drop(registry.manager_for("third", 2));
+    assert!(registry_keeps(&registry, "work"));
+    assert!(!registry_keeps(&registry, "idle"));
+    assert!(registry_keeps(&registry, "third"));
+}
+
+#[test]
+fn registry_evicts_the_oldest_entry_with_work_when_all_are_unheld() {
+    let registry = SessionRegistry::default();
+    for id in ["old", "new"] {
+        let manager = registry.manager_for(id, 2);
+        manager
+            .results
+            .lock()
+            .unwrap()
+            .push(SettledBackgroundTask::Failed(id.into()));
+    }
+    drop(registry.manager_for("third", 2));
+    assert!(!registry_keeps(&registry, "old"));
+    assert!(registry_keeps(&registry, "new"));
+    assert!(registry_keeps(&registry, "third"));
+    assert_eq!(registry.entries.lock().unwrap().map.len(), 2);
+}
+
+#[test]
+fn registry_never_evicts_an_entry_a_live_run_holds() {
+    let registry = SessionRegistry::default();
+    let a = registry.manager_for("a", 1);
+    let b = registry.manager_for("b", 1);
+    assert!(registry_keeps(&registry, "a"));
+    assert!(registry_keeps(&registry, "b"));
+    assert_eq!(registry.entries.lock().unwrap().map.len(), 2);
+    drop((a, b));
+}
+
 // ---------------------------------------------------------------------------
 // performance.maxParallelTools: at most N calls of a batch run at once
 // ---------------------------------------------------------------------------
