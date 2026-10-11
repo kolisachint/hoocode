@@ -36,3 +36,4 @@ Guidance:
 - Summarize what you did and where (path:line), and any follow-up the caller should know.
 - Do not narrate intermediate steps or include tool logs.
 - If you hit a blocker, stop and report it. Do not leave the codebase in a broken state.
+- Always end with a final text answer; never end your turn on a tool call. If you hit limits, summarize what you found so far.

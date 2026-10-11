@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use hoocode_code_subagents::warm::*;
 
-const FAKE_CHILD: &str = r#"fail=0; exit_on_prompt=0; slow_prompt=0
+const FAKE_CHILD: &str = r#"fail=0; exit_on_prompt=0; slow_prompt=0; earlier=false
 for a in "$@"; do
-  case "$a" in --fail-prompt) fail=1;; --exit-on-prompt) exit_on_prompt=1;; --slow-prompt) slow_prompt=1;; esac
+  case "$a" in --fail-prompt) fail=1;; --exit-on-prompt) exit_on_prompt=1;; --slow-prompt) slow_prompt=1;; --earlier-text) earlier=true;; esac
 done
 gen=0; n=0; last=
 field() { printf '%s' "$line" | sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"; }
@@ -39,6 +39,8 @@ while IFS= read -r line; do
     new_session) gen=$((gen + 1)); respond new_session ',"data":{"cancelled":false}' ;;
     get_last_assistant_text)
       respond get_last_assistant_text ",\"data\":{\"text\":\"ANSWER pid=$$ gen=$gen n=$n for=$last\"}" ;;
+    get_last_assistant_text_with_origin)
+      respond get_last_assistant_text_with_origin ",\"data\":{\"text\":\"ANSWER pid=$$ gen=$gen n=$n for=$last\",\"stale\":$earlier}" ;;
     get_session_stats)
       respond get_session_stats ',"data":{"tokens":{"input":11,"output":7,"cacheRead":3,"cacheWrite":0},"cost":0.002}' ;;
     *) [ -n "$id" ] && respond "$type" "" ;;
@@ -133,6 +135,21 @@ async fn reports_live_tool_activity_and_clears_it_at_the_end() {
     let seen = activity.lock().unwrap().clone();
     assert!(seen.contains(&"CodeSearch".to_string()));
     assert_eq!(seen.last().map(String::as_str), Some(""));
+    pool.dispose().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn marks_a_summary_taken_from_an_earlier_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = make(dir.path(), &["--earlier-text"]);
+    let result = pool.dispatch("trace the bug", &opts(), None).await.unwrap();
+    assert!(
+        result
+            .summary
+            .starts_with("(from an earlier turn) ANSWER pid="),
+        "{}",
+        result.summary
+    );
     pool.dispose().await;
 }
 

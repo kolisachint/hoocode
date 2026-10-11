@@ -4,3 +4,4 @@ mod mode_commands;
 mod mode_subagent_appendix;
 mod mode_tool_filter;
 mod shipped_prose;
+mod support;

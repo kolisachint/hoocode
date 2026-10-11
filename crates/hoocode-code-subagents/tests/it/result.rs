@@ -47,6 +47,55 @@ fn uses_the_last_assistant_text_as_the_summary() {
 }
 
 #[test]
+fn prefixes_a_summary_taken_from_an_earlier_turn() {
+    // The final message is tool-only, so the summary is earlier narration.
+    let result = build(&[
+        assistant_text("Found it at pool.rs:176."),
+        assistant_tool_call("Read", json!({"path": "src/pool.rs"})),
+    ]);
+    assert_eq!(
+        result.summary,
+        "(from an earlier turn) Found it at pool.rs:176."
+    );
+}
+
+#[test]
+fn no_prefix_when_only_an_empty_aborted_message_follows_the_text() {
+    // A deadline wrap-up aborts with no content: the earlier text is the
+    // answer, not stale narration.
+    let aborted = assistant(
+        Vec::new(),
+        StopReason::Aborted,
+        Some("Request was aborted."),
+    );
+    let result = build(&[assistant_text("Summary of findings."), aborted]);
+    assert_eq!(result.summary, "Summary of findings.");
+}
+
+#[test]
+fn prefixes_a_summary_when_a_tool_call_follows_an_aborted_wrap_up_text() {
+    let result = build(&[
+        assistant_text("Found it at pool.rs:176."),
+        assistant_tool_call("Read", json!({"path": "src/pool.rs"})),
+        assistant(Vec::new(), StopReason::Aborted, None),
+    ]);
+    assert_eq!(
+        result.summary,
+        "(from an earlier turn) Found it at pool.rs:176."
+    );
+}
+
+#[test]
+fn no_prefix_when_the_final_message_has_the_text() {
+    let result = build(&[
+        assistant_text("older"),
+        assistant_tool_call("Read", json!({"path": "src/pool.rs"})),
+        assistant_text("final answer"),
+    ]);
+    assert_eq!(result.summary, "final answer");
+}
+
+#[test]
 fn collects_changed_files_from_edit_write_tool_calls() {
     let result = build(&[
         assistant_tool_call("Edit", json!({"path": "src/a.ts"})),
@@ -159,8 +208,44 @@ fn a_deadline_wrap_up_with_no_assistant_text_still_verifies() {
     );
     assert_eq!(result.status, ResultStatus::Partial);
     assert!(!result.summary.is_empty());
-    assert!(result.summary.contains("time"));
+    // No final text: the summary names the stop reason, the turn count and the
+    // last tool called, instead of a bare "ran out of time".
+    assert!(result
+        .summary
+        .starts_with("No final text. Stop reason: deadline;"));
+    assert!(result.summary.contains("last tool: Edit"));
     assert!(result.confidence >= 0.5);
+}
+
+/// A stall (SIGUSR1) with no assistant text names `stalled`, not `deadline`:
+/// the run did not use up its time.
+#[test]
+fn a_stall_with_no_assistant_text_names_the_stall_not_the_deadline() {
+    let result = build_subagent_result(
+        &[assistant_tool_call("Bash", json!({"command": "sleep 99"}))],
+        None,
+        BuildSubagentResultOptions {
+            stalled: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(result.status, ResultStatus::Partial);
+    assert!(result
+        .summary
+        .starts_with("No final text. Stop reason: stalled;"));
+    assert!(!result.summary.contains("deadline"));
+}
+
+/// A run that finished without any text still gets a verifier-passing summary
+/// that says how it stopped.
+#[test]
+fn a_complete_run_with_no_text_says_why_it_has_no_summary() {
+    let result = build(&[assistant_tool_call("Read", json!({"path": "a.rs"}))]);
+    assert_eq!(result.status, ResultStatus::Complete);
+    assert_eq!(
+        result.summary,
+        "No final text. Stop reason: tool-use; turns: 1; last tool: Read"
+    );
 }
 
 /// Without the flag the run is still a clean `complete` — the deadline only

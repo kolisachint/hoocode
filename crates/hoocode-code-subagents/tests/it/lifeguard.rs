@@ -2,13 +2,15 @@
 //! lifeguard.test.ts. Children are `sleep` processes in their own process
 //! group (as the pool spawns them).
 
+use std::collections::HashMap;
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hoocode_code_subagents::lifeguard::{
-    base_timeout_ms, LifeguardEvent, SubagentLifeguard, MAX_SCALED_DEADLINE_MS,
-    SUBAGENT_DEADLINE_MS,
+    base_timeout_ms, progress_stall_ms_from_env, tool_limit_from_start, LifeguardEvent,
+    SubagentLifeguard, ToolLimit, MAX_SCALED_DEADLINE_MS, PROGRESS_STALL_THRESHOLD_MS,
+    STALL_THRESHOLD_ENV, SUBAGENT_DEADLINE_MS, TOOL_IN_FLIGHT_STALL_MS, TOOL_TIMEOUT_MARGIN_MS,
 };
 
 /// 2026-10-10 (user decision): every agent type, shipped or plugin, gets the
@@ -268,9 +270,9 @@ async fn stalls_a_child_that_pings_but_makes_no_progress() {
     let mut child = sleeper();
     guard.monitor("t1", "explore", child.id());
     // Heartbeats are current — the child is demonstrably alive — but it has
-    // finished nothing for longer than the progress threshold.
+    // finished nothing for longer than the progress threshold (10 minutes).
     guard.record_heartbeat("t1");
-    guard.set_last_progress_for_testing("t1", now_ms() - 200_000);
+    guard.set_last_progress_for_testing("t1", now_ms() - (PROGRESS_STALL_THRESHOLD_MS + 60_000));
     guard.check_heartbeats();
     assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
     assert!(child.wait().unwrap().code().is_none());
@@ -305,24 +307,25 @@ async fn a_running_tool_is_not_a_progress_stall() {
     let stalled = stalled_ids(&guard);
     let mut child = sleeper();
     guard.monitor("t1", "explore", child.id());
-    guard.record_tool_start("t1");
+    guard.record_tool_start("t1", "c1", ToolLimit::Undeclared);
     guard.record_heartbeat("t1");
-    guard.set_last_progress_for_testing("t1", now_ms() - 200_000);
+    // Well past the progress threshold, but inside the tool bound (15 min).
+    guard.set_last_progress_for_testing("t1", now_ms() - (PROGRESS_STALL_THRESHOLD_MS + 60_000));
     guard.check_heartbeats();
     assert!(stalled.lock().unwrap().is_empty());
     // The tool ends and the child goes quiet: now the progress check applies.
-    guard.record_tool_end("t1");
+    guard.record_tool_end("t1", "c1");
     guard.record_heartbeat("t1");
-    guard.set_last_progress_for_testing("t1", now_ms() - 200_000);
+    guard.set_last_progress_for_testing("t1", now_ms() - (PROGRESS_STALL_THRESHOLD_MS + 60_000));
     guard.check_heartbeats();
     assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
     assert!(child.wait().unwrap().code().is_none());
     guard.dispose();
 }
 
-/// A reap is SIGTERM, grace, SIGKILL — so a child that can still write its
-/// result gets the chance. `sleep` dies on SIGTERM, which is the point: the
-/// pool then sees the exit and settles the task from whatever it wrote.
+/// A stall reap is SIGUSR1 (the child writes its partial result and reports
+/// `stalled`), then SIGKILL after the grace. `sleep` dies on SIGUSR1 by its
+/// default action, which is the point: the status says which signal arrived.
 #[cfg(unix)]
 #[tokio::test]
 async fn a_stalled_child_is_terminated_before_it_is_killed() {
@@ -335,9 +338,34 @@ async fn a_stalled_child_is_terminated_before_it_is_killed() {
     guard.set_last_heartbeat_for_testing("t1", now_ms() - 70_000);
     guard.check_heartbeats();
     assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
-    // SIGTERM reached it rather than SIGKILL: `sleep` dies of the signal, and
-    // the status says which one.
+    // SIGUSR1 reached it, not SIGKILL and not SIGTERM: a stall is reported as
+    // a stall, never as a run that ran out of time.
     use std::os::unix::process::ExitStatusExt;
+    let status = tokio::task::spawn_blocking(move || child.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        status.signal(),
+        Some(libc::SIGUSR1),
+        "expected death by SIGUSR1, got {status:?}"
+    );
+    guard.untrack("t1");
+    guard.dispose();
+}
+
+/// A hard-deadline reap is SIGTERM (not SIGUSR1), so the child reports
+/// `deadline`. `sleep` dies of the signal, and the status names it.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_deadline_reap_sends_sigterm() {
+    use std::os::unix::process::ExitStatusExt;
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    guard.set_term_grace_for_testing(500);
+    let mut child = sleeper();
+    guard.monitor("t1", "explore", child.id());
+    guard.set_timeout_for_testing("t1", Duration::from_millis(10));
     let status = tokio::task::spawn_blocking(move || child.wait())
         .await
         .unwrap()
@@ -351,8 +379,34 @@ async fn a_stalled_child_is_terminated_before_it_is_killed() {
     guard.dispose();
 }
 
-/// The backstop still holds: a child that ignores SIGTERM is killed after the
-/// grace period, because a wedged process can also be deaf to a signal.
+/// A tool in flight is busy work up to [`TOOL_IN_FLIGHT_STALL_MS`] with no
+/// progress event; beyond that it is a wedged tool and is reaped.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_tool_in_flight_past_its_bound_is_stalled() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    let mut child = sleeper();
+    guard.monitor("t1", "explore", child.id());
+    guard.record_tool_start("t1", "c1", ToolLimit::Undeclared);
+    guard.record_heartbeat("t1");
+    // Just inside the bound: still busy work.
+    guard.set_last_progress_for_testing("t1", now_ms() - (TOOL_IN_FLIGHT_STALL_MS - 60_000));
+    guard.check_heartbeats();
+    assert!(stalled.lock().unwrap().is_empty());
+    // Just past the bound: wedged, reaped.
+    guard.record_heartbeat("t1");
+    guard.set_last_progress_for_testing("t1", now_ms() - (TOOL_IN_FLIGHT_STALL_MS + 60_000));
+    guard.check_heartbeats();
+    assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
+    assert!(child.wait().unwrap().code().is_none());
+    guard.dispose();
+}
+
+/// The backstop still holds: a child that ignores the stall signal is killed
+/// after the grace period, because a wedged process can also be deaf to a
+/// signal. The same child ignores SIGTERM, so the deadline path is covered too.
 ///
 /// `/bin/sh`'s `trap ''` is not used for this: under a test harness the shell
 /// does not reliably end up with SIG_IGN, and a test that passes for the wrong
@@ -361,9 +415,9 @@ async fn a_stalled_child_is_terminated_before_it_is_killed() {
 #[cfg(unix)]
 fn term_deaf_sleeper() -> Child {
     let mut command = Command::new("python3");
-    command
-        .arg("-c")
-        .arg("import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)");
+    command.arg("-c").arg(
+        "import signal, time\nfor s in (signal.SIGTERM, signal.SIGUSR1): signal.signal(s, signal.SIG_IGN)\ntime.sleep(30)",
+    );
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
     command.spawn().unwrap()
@@ -377,7 +431,7 @@ async fn deaf_sleeper_ready(_child: &Child) {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn a_child_that_ignores_sigterm_is_killed_after_the_grace() {
+async fn a_child_that_ignores_the_stall_signal_is_killed_after_the_grace() {
     use std::os::unix::process::ExitStatusExt;
     let dir = tempfile::tempdir().unwrap();
     let guard = SubagentLifeguard::new(dir.path());
@@ -396,33 +450,389 @@ async fn a_child_that_ignores_sigterm_is_killed_after_the_grace() {
     assert_eq!(
         status.signal(),
         Some(libc::SIGKILL),
+        "a signal-deaf child should have been escalated to SIGKILL, got {status:?}"
+    );
+    guard.untrack("t1");
+    guard.dispose();
+}
+
+/// Same escalation on the deadline path: the child ignores SIGTERM, so the
+/// grace timer must still end it.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_child_that_ignores_sigterm_is_killed_after_the_deadline_grace() {
+    use std::os::unix::process::ExitStatusExt;
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    guard.set_term_grace_for_testing(300);
+    let mut child = term_deaf_sleeper();
+    deaf_sleeper_ready(&child).await;
+    guard.monitor("t1", "explore", child.id());
+    guard.set_timeout_for_testing("t1", Duration::from_millis(10));
+    let status = tokio::task::spawn_blocking(move || child.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        status.signal(),
+        Some(libc::SIGKILL),
         "a SIGTERM-deaf child should have been escalated to SIGKILL, got {status:?}"
     );
     guard.untrack("t1");
     guard.dispose();
 }
 
-/// Untracking (the child exited) cancels the escalation, so a healthy late exit
-/// is never killed after the fact.
+/// A child that winds down on the stall signal and exits within the grace is
+/// not escalated: it leaves with its own status (code 0), not SIGKILL. The
+/// escalation timer is cancelled when the child is untracked at its exit.
 #[cfg(unix)]
 #[tokio::test]
-async fn exiting_cancels_the_escalation_timer() {
+async fn a_child_that_exits_within_the_grace_is_not_escalated() {
     let dir = tempfile::tempdir().unwrap();
     let guard = SubagentLifeguard::new(dir.path());
     guard.set_term_grace_for_testing(400);
-    let mut child = term_deaf_sleeper();
-    deaf_sleeper_ready(&child).await;
+    let ready = dir.path().join("ready");
+    // Exits at once on SIGUSR1, the way a child that writes its partial result
+    // does. `ready` is written after the handler is installed.
+    let script = "import os,signal,time,sys; signal.signal(signal.SIGUSR1, lambda s, f: os._exit(0)); open(sys.argv[1], 'w').close(); time.sleep(30)";
+    let mut command = Command::new("python3");
+    command.arg("-c").arg(script).arg(&ready);
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    let mut child = command.spawn().unwrap();
+    for _ in 0..500 {
+        if ready.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(ready.exists(), "the child never became ready");
     guard.monitor("t1", "explore", child.id());
     guard.set_last_heartbeat_for_testing("t1", now_ms() - 70_000);
     guard.check_heartbeats();
+    let status = tokio::task::spawn_blocking(move || child.wait())
+        .await
+        .unwrap()
+        .unwrap();
     guard.untrack("t1");
-    tokio::time::sleep(Duration::from_millis(1_200)).await;
-    assert!(
-        child.try_wait().unwrap().is_none(),
-        "the escalation should have been cancelled when the child was untracked"
+    // Well past the grace: a timer that was not cancelled would have fired.
+    tokio::time::sleep(Duration::from_millis(1_000)).await;
+    assert_eq!(
+        status.code(),
+        Some(0),
+        "a child that exits on the stall signal should not be escalated, got {status:?}"
     );
-    let _ = child.kill();
+    guard.dispose();
+}
+
+/// The no-progress threshold can be lowered for a pool through its environment
+/// (the evals use this to make a stall reap take seconds). A value that is not
+/// a positive integer keeps the 10-minute default.
+#[test]
+fn the_progress_stall_threshold_reads_the_env_override() {
+    let with = |value: &str| HashMap::from([(STALL_THRESHOLD_ENV.to_string(), value.to_string())]);
+    assert_eq!(
+        progress_stall_ms_from_env(&HashMap::new()),
+        PROGRESS_STALL_THRESHOLD_MS
+    );
+    assert_eq!(progress_stall_ms_from_env(&with("20000")), 20_000);
+    assert_eq!(progress_stall_ms_from_env(&with(" 5000 ")), 5_000);
+    for bad in ["0", "-1", "soon", ""] {
+        assert_eq!(
+            progress_stall_ms_from_env(&with(bad)),
+            PROGRESS_STALL_THRESHOLD_MS,
+            "{bad:?}"
+        );
+    }
+}
+
+/// The configured threshold is what the progress check uses.
+#[tokio::test]
+async fn the_progress_check_uses_the_configured_threshold() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    guard.set_progress_stall_ms(20_000);
+    let mut child = sleeper();
+    guard.monitor("t1", "explore", child.id());
+    guard.record_heartbeat("t1");
+    guard.set_last_progress_for_testing("t1", now_ms() - 25_000);
+    guard.check_heartbeats();
+    assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
+    assert!(child.wait().unwrap().code().is_none());
+    guard.dispose();
+}
+
+/// A shell as the pool spawns a child: a group leader running `script`.
+#[cfg(unix)]
+fn shell_child(script: &str) -> Child {
+    let mut command = Command::new("sh");
+    command.arg("-c").arg(script);
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    command.spawn().unwrap()
+}
+
+/// The pid a script wrote to `path` (it writes it right after it starts).
+#[cfg(unix)]
+fn read_pid(path: &std::path::Path) -> libc::pid_t {
+    for _ in 0..500 {
+        if let Some(pid) = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+        {
+            return pid;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("no pid written to {}", path.display());
+}
+
+#[cfg(unix)]
+fn is_alive(pid: libc::pid_t) -> bool {
+    // SAFETY: signal 0 only probes for the process.
+    unsafe { libc::kill(pid, 0) == 0 }
+}
+
+/// Waits for `pid` to be gone. Orphans are reparented and reaped by init.
+#[cfg(unix)]
+async fn wait_until_dead(pid: libc::pid_t, within: Duration) -> bool {
+    let until = std::time::Instant::now() + within;
+    while std::time::Instant::now() < until {
+        if !is_alive(pid) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    false
+}
+
+/// A stall signal goes to the child alone. Its grandchild (a `sleep` in the
+/// same group) is untouched while the child winds down, and the group is swept
+/// once the child has exited, so the grandchild does not outlive the run.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_stall_signal_reaches_the_child_only_and_the_group_is_swept_on_exit() {
+    use std::os::unix::process::ExitStatusExt;
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    guard.set_term_grace_for_testing(500);
+    let pid_file = dir.path().join("grandchild.pid");
+    let mut child = shell_child(&format!(
+        "sleep 30 & echo $! > '{}'; wait",
+        pid_file.display()
+    ));
+    let grandchild = read_pid(&pid_file);
+    guard.monitor("t1", "explore", child.id());
+    guard.set_last_heartbeat_for_testing("t1", now_ms() - 70_000);
+    guard.check_heartbeats();
+    assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
+    let status = tokio::task::spawn_blocking(move || child.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(status.signal(), Some(libc::SIGUSR1));
+    assert!(
+        is_alive(grandchild),
+        "a stall signal must not reach the grandchild"
+    );
+    // The child has exited: its group is swept, so the grandchild goes too.
+    guard.untrack("t1");
+    assert!(
+        wait_until_dead(grandchild, Duration::from_secs(3)).await,
+        "the group should be swept after a stalled child exits"
+    );
+    guard.dispose();
+}
+
+/// A grandchild that ignores SIGTERM is still ended: the sweep escalates to
+/// SIGKILL after the grace, so a stall reap never leaves an orphan behind.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_term_deaf_grandchild_is_killed_by_the_sweep_after_the_grace() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    guard.set_term_grace_for_testing(300);
+    let pid_file = dir.path().join("grandchild.pid");
+    let ready = dir.path().join("ready");
+    // Python sets SIG_IGN before it writes `ready`, so the SIGTERM below cannot
+    // land before the disposition is in place.
+    let python = format!(
+        "python3 -c \"import signal,time,sys; signal.signal(signal.SIGTERM, signal.SIG_IGN); open(sys.argv[1],'w').close(); time.sleep(30)\" '{}' & echo $! > '{}'; wait",
+        ready.display(),
+        pid_file.display()
+    );
+    let mut child = shell_child(&python);
+    let grandchild = read_pid(&pid_file);
+    for _ in 0..500 {
+        if ready.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(ready.exists(), "the grandchild never became ready");
+    guard.monitor("t1", "explore", child.id());
+    guard.set_last_heartbeat_for_testing("t1", now_ms() - 70_000);
+    guard.check_heartbeats();
+    let _ = tokio::task::spawn_blocking(move || child.wait())
+        .await
+        .unwrap();
+    guard.untrack("t1");
+    // Still there right after the child left: SIGTERM is ignored.
+    assert!(is_alive(grandchild));
+    assert!(
+        wait_until_dead(grandchild, Duration::from_secs(5)).await,
+        "the SIGTERM-deaf grandchild should have been SIGKILLed after the grace"
+    );
+    guard.dispose();
+}
+
+/// The tool-in-flight bound follows the load multiplier like the progress
+/// bound: four external tasks make the multiplier 3, so a tool that is past
+/// the unloaded bound is still busy work.
+#[cfg(unix)]
+#[tokio::test]
+async fn the_tool_in_flight_bound_widens_under_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    let mut child = sleeper();
+    guard.monitor("t1", "explore", child.id());
+    guard.set_external_load(4);
+    guard.record_tool_start("t1", "c1", ToolLimit::Undeclared);
+    guard.record_heartbeat("t1");
+    // Past the unloaded bound, inside the loaded one (3 x 15 minutes).
+    guard.set_last_progress_for_testing("t1", now_ms() - (TOOL_IN_FLIGHT_STALL_MS + 60_000));
+    guard.check_heartbeats();
+    assert!(stalled.lock().unwrap().is_empty());
+    // Past the loaded bound too: wedged.
+    guard.record_heartbeat("t1");
+    guard.set_last_progress_for_testing("t1", now_ms() - (3 * TOOL_IN_FLIGHT_STALL_MS + 60_000));
+    guard.check_heartbeats();
+    assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
+    assert!(child.wait().unwrap().code().is_none());
+    guard.dispose();
+}
+
+/// What a Shell start event declares: `0` is unlimited, a positive timeout is
+/// the limit, and an omitted timeout is the subagent default (600s, or the env
+/// override). Other tools declare nothing.
+#[test]
+fn a_shell_start_declares_its_timeout() {
+    let none = HashMap::new();
+    let shell = |args: serde_json::Value| tool_limit_from_start("Shell", Some(&args), &none);
+    assert_eq!(
+        shell(serde_json::json!({"command": "x"})),
+        ToolLimit::Declared(600_000)
+    );
+    assert_eq!(
+        shell(serde_json::json!({"command": "x", "timeout": 0})),
+        ToolLimit::Unlimited
+    );
+    assert_eq!(
+        shell(serde_json::json!({"command": "x", "timeout": 1200})),
+        ToolLimit::Declared(1_200_000)
+    );
+    // Negative and non-finite-like values fall back to the default, as the tool does.
+    assert_eq!(
+        shell(serde_json::json!({"command": "x", "timeout": -5})),
+        ToolLimit::Declared(600_000)
+    );
+    assert_eq!(
+        tool_limit_from_start("Read", Some(&serde_json::json!({"path": "a"})), &none),
+        ToolLimit::Undeclared
+    );
+    assert_eq!(
+        tool_limit_from_start("Shell", None, &none),
+        ToolLimit::Declared(600_000)
+    );
+}
+
+/// The subagent default follows the same env override as the Shell tool.
+#[test]
+fn a_shell_default_timeout_honors_the_env_override() {
+    let env = HashMap::from([(
+        "HOOCODE_BASH_DEFAULT_TIMEOUT_SECS".to_string(),
+        "45".to_string(),
+    )]);
+    assert_eq!(
+        tool_limit_from_start("Shell", Some(&serde_json::json!({"command": "x"})), &env),
+        ToolLimit::Declared(45_000)
+    );
+    let junk = HashMap::from([(
+        "HOOCODE_BASH_DEFAULT_TIMEOUT_SECS".to_string(),
+        "nope".to_string(),
+    )]);
+    assert_eq!(
+        tool_limit_from_start("Shell", Some(&serde_json::json!({"command": "x"})), &junk),
+        ToolLimit::Declared(600_000)
+    );
+}
+
+/// A Shell with a declared 20-minute timeout is busy past the 15-minute
+/// default bound, and is reaped only after its timeout plus the margin.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_declared_tool_timeout_raises_the_bound() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    let mut child = sleeper();
+    guard.monitor("t1", "general-purpose", child.id());
+    guard.record_tool_start("t1", "c1", ToolLimit::Declared(1_200_000));
+    guard.record_heartbeat("t1");
+    // Past the 15-minute default, inside 20 minutes + margin: still running.
+    guard.set_last_progress_for_testing("t1", now_ms() - (TOOL_IN_FLIGHT_STALL_MS + 60_000));
+    guard.check_heartbeats();
+    assert!(stalled.lock().unwrap().is_empty());
+    // Past the declared timeout plus the margin: wedged.
+    guard.record_heartbeat("t1");
+    guard.set_last_progress_for_testing(
+        "t1",
+        now_ms() - (1_200_000 + TOOL_TIMEOUT_MARGIN_MS + 60_000),
+    );
+    guard.check_heartbeats();
+    assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
+    assert!(child.wait().unwrap().code().is_none());
+    guard.dispose();
+}
+
+/// A tool that declared no limit (timeout 0) is never reaped for lack of
+/// progress, however long it has been silent.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unlimited_tool_is_not_a_progress_stall() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    let mut child = sleeper();
+    guard.monitor("t1", "general-purpose", child.id());
+    guard.record_tool_start("t1", "c1", ToolLimit::Unlimited);
+    guard.record_heartbeat("t1");
+    guard.set_last_progress_for_testing("t1", now_ms() - 10 * TOOL_IN_FLIGHT_STALL_MS);
+    guard.check_heartbeats();
+    assert!(stalled.lock().unwrap().is_empty());
+    guard.dispose();
     let _ = child.wait();
+}
+
+/// Tools are matched by call id: ending one unlimited tool leaves the other
+/// (undeclared) one in flight, so the 15-minute bound applies again.
+#[cfg(unix)]
+#[tokio::test]
+async fn tools_are_tracked_by_call_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    let mut child = sleeper();
+    guard.monitor("t1", "general-purpose", child.id());
+    guard.record_tool_start("t1", "c1", ToolLimit::Undeclared);
+    guard.record_tool_start("t1", "c2", ToolLimit::Unlimited);
+    guard.record_tool_end("t1", "c2");
+    guard.record_heartbeat("t1");
+    guard.set_last_progress_for_testing("t1", now_ms() - (TOOL_IN_FLIGHT_STALL_MS + 60_000));
+    guard.check_heartbeats();
+    assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
+    assert!(child.wait().unwrap().code().is_none());
     guard.dispose();
 }
 

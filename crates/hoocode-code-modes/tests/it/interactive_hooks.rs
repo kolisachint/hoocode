@@ -34,6 +34,7 @@ fn reload_event() -> SessionEvent {
 
 #[test]
 fn session_start_re_resolves_the_mode_and_returns_its_tool_filter() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let ext = ModesExtension::with_config(session(dir.path(), false), &HooConfig::new());
     assert_eq!(ext.active().mode, "build");
@@ -60,6 +61,7 @@ fn session_start_re_resolves_the_mode_and_returns_its_tool_filter() {
 
 #[test]
 fn mode_completions_are_the_known_modes_in_order() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let ext = ModesExtension::with_config(session(dir.path(), false), &HooConfig::new());
     assert_eq!(
@@ -80,6 +82,7 @@ fn mode_completions_are_the_known_modes_in_order() {
 
 #[test]
 fn commands_are_listed_as_a_temporary_extension() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let ext = ModesExtension::with_config(session(dir.path(), false), &HooConfig::new());
     let commands = ext.commands();
@@ -94,6 +97,7 @@ fn commands_are_listed_as_a_temporary_extension() {
 
 #[test]
 fn light_mode_sets_no_badge() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let ext = ModesExtension::with_config(session(dir.path(), true), &HooConfig::new());
     assert_eq!(ext.active_mode(), None);
@@ -101,6 +105,7 @@ fn light_mode_sets_no_badge() {
 
 #[test]
 fn command_actions_become_ui_requests_in_order() {
+    let _env = crate::support::hermetic();
     let dir = tempfile::tempdir().unwrap();
     let ext = ModesExtension::with_config(session(dir.path(), false), &HooConfig::new());
     #[allow(clippy::disallowed_methods)] // test: a runtime of its own

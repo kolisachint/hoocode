@@ -59,6 +59,7 @@ fn dispatch_output() -> String {
         executable: "/bin/true".into(),
         cwd: Some(cwd.path().to_path_buf()),
         max_concurrency: Some(1),
+        env: Some(crate::root_pool_env()),
         ..Default::default()
     });
     let output = capture_stderr(|| {

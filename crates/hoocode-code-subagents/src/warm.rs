@@ -17,6 +17,7 @@ use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::Duration;
 
 use hoocode_ai_types::Model;
+use hoocode_code_agent_session::stats::FROM_EARLIER_TURN_PREFIX;
 use hoocode_code_resources::{
     load_agent_registry, AgentRegistry, LoadAgentRegistryOptions, MODEL_INHERIT,
 };
@@ -201,12 +202,18 @@ impl WarmSubagentWorker {
             .await
             .map_err(|e| e.0)?;
         let failure = first_turn_error(&events);
-        let summary = self
+        // The text may be stale narration when the worker made tool calls
+        // after it; say so in the summary.
+        let summary = match self
             .client
-            .get_last_assistant_text()
+            .get_last_assistant_text_with_origin()
             .await
             .map_err(|e| e.0)?
-            .unwrap_or_default();
+        {
+            Some((text, true)) => format!("{FROM_EARLIER_TURN_PREFIX}{text}"),
+            Some((text, false)) => text,
+            None => String::new(),
+        };
         let usage = self.read_usage().await;
         Ok(match failure {
             Some(error) => WarmRunResult {

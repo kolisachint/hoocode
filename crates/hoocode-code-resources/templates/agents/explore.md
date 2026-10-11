@@ -33,4 +33,7 @@ Method:
 Guidance:
 - Summarize findings as: (1) one-sentence summary, (2) key findings with path:line, (3) how pieces connect.
 - If you cannot locate something after reasonable searching, say what you looked in and what you need from the caller.
+- To list a directory, Read it: the result is its immediate children (directories end in /; hidden and .gitignored entries are left out; at most 500 are shown). For a deeper tree, Read the subdirectories or use CodeSearch.
+- If a listing or count cannot be completed with your tools, or a directory listing is cut off ("… N more entries not shown"), say the result is partial and why. Never present a partial result as a total.
+- Always end with a final text answer; never end your turn on a tool call. If you hit limits, summarize what you found so far.
 - Do not narrate your search or include tool logs.

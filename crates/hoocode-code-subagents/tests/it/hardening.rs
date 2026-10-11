@@ -440,7 +440,9 @@ async fn a_done_announces_the_outcome_the_child_reported() {
     p.dispose();
     assert!(result.ok);
     let done = seen.lock().unwrap().first().cloned().unwrap();
-    assert_eq!(done["status"], "complete");
+    // A partial run is a success the model may resume: it says so.
+    assert_eq!(done["status"], "partial");
+    assert_eq!(result.status, Some(ResultStatus::Partial));
     assert_eq!(done["confidence"], 0.8);
     assert_eq!(done["files_changed"], json!(["a.rs"]));
 }

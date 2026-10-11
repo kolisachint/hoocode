@@ -123,6 +123,7 @@ fn pool(exe: PathBuf, max: usize, cwd: &Path) -> SubagentPool {
         executable: exe,
         max_concurrency: Some(max),
         cwd: Some(cwd.to_path_buf()),
+        env: Some(crate::root_pool_env()),
         ..Default::default()
     })
 }
@@ -173,9 +174,9 @@ async fn a_clean_success_records_one_usable_attempt() {
     p.spawn(task("t1", "explore", "hello")).unwrap();
     let result = p.wait_for("t1").await.unwrap();
     assert!(result.ok);
-    // A clean success deletes its dispatch dir on hoocode-bg, so before the
-    // ledger the only evidence of this run was that absence.
-    wait_until_gone(&hoocode_code_paths::dispatch_task_dir(dir.path(), "t1")).await;
+    // A clean success keeps its dispatch dir (resumable); the ledger line is
+    // the record of the attempt either way.
+    assert!(hoocode_code_paths::dispatch_task_dir(dir.path(), "t1").exists());
 
     let attempt = only_attempt(dir.path());
     assert_eq!(attempt.task_id, "t1");
@@ -288,6 +289,7 @@ async fn the_inherited_model_retry_is_a_second_line() {
         executable: fallback_recorder(dir.path()),
         max_concurrency: Some(2),
         cwd: Some(dir.path().to_path_buf()),
+        env: Some(crate::root_pool_env()),
         ..Default::default()
     });
     p.set_registry(registry_with_pinned_model("explore", "mock/pinned"));
@@ -447,15 +449,4 @@ async fn the_ledger_is_a_shape_not_a_second_result() {
         .collect();
     assert_eq!(lines.len(), 1);
     assert!(lines[0].get("summary").is_none());
-}
-
-/// Cleanup runs on `hoocode-bg`, so a removed dispatch dir can take a moment to disappear.
-async fn wait_until_gone(path: &std::path::Path) {
-    for _ in 0..500 {
-        if !path.exists() {
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
-    panic!("{} was not removed", path.display());
 }

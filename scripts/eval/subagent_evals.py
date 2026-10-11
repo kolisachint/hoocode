@@ -115,6 +115,8 @@ class Scenario:
     timeout_s: int = 120
     slow: bool = False
     known_issue: str | None = None
+    # Extra environment for the parent process (the lifeguard runs there).
+    env: dict[str, str] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------
@@ -206,8 +208,9 @@ SCENARIOS: list[Scenario] = [
             "system: the child kept writing its heartbeat while blocked inside a provider call, "
             "so the stall watchdog could not see it and only the ten-minute hard deadline ended "
             "the run — measured alive at 95s with an empty ledger. Liveness is two-tier now "
-            "(silence, or no forward progress) and a reap is SIGTERM-then-grace-then-SIGKILL, so "
-            "the child gets to write its partial result on the way out."
+            "(silence, or no forward progress). A stall reap is SIGUSR1 to the child, then SIGTERM "
+            "and SIGKILL to its process group after the grace, so the child gets to write its "
+            "partial result on the way out."
         ),
         routes={
             "child": child_route([{"hang": True}]),
@@ -216,8 +219,13 @@ SCENARIOS: list[Scenario] = [
             ),
         },
         prompt="Describe the repository layout using a subagent.",
-        # Reaped at ~150s (the no-progress threshold) plus the 30s SIGTERM grace.
-        timeout_s=260,
+        # The no-progress threshold is 600s in production. The parent gets
+        # HOOCODE_SUBAGENT_STALL_MS=20000 so the reap lands in about 25s (the
+        # 5s lifeguard tick), then the child has its 30s SIGUSR1 grace. The
+        # production value is 10 minutes: this scenario proves the path, not the
+        # threshold.
+        env={"HOOCODE_SUBAGENT_STALL_MS": "20000"},
+        timeout_s=120,
         slow=True,
         # Reaped, and the child wrote its partial result on the way out: the
         # ledger says `partial` because the child's own result.json says so,
@@ -578,6 +586,7 @@ def with_fault(scenario: Scenario, fault: dict[str, Any]) -> Scenario:
         timeout_s=scenario.timeout_s,
         slow=scenario.slow,
         known_issue=scenario.known_issue,
+        env=dict(scenario.env),
     )
 
 
@@ -606,6 +615,7 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
                 "HOOCODE_SUBAGENT_DEPTH": "0",
             }
         )
+        env.update(scenario.env)
         try:
             completed = subprocess.run(
                 argv,

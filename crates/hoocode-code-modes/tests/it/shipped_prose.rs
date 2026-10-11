@@ -28,6 +28,7 @@ fn serves_the_built_in_mode_defaults_from_templates() {
 
 #[test]
 fn is_what_the_mode_resolver_falls_back_to() {
+    let _env = crate::support::hermetic();
     assert_eq!(
         build_mode_system_prompt("build", Path::new("/nonexistent"), &[]).as_deref(),
         default_mode_prompt("build")

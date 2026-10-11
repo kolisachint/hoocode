@@ -1383,3 +1383,160 @@ async fn agent_output_cancel_cannot_combine_with_wait_or_list() {
     assert!(err.to_string().contains("cannot be combined"), "{err}");
     inbox.clear();
 }
+
+// Resume by label, partial results and the string `background` flag. The
+// mock child records its argv and, like a real run, leaves a session.jsonl
+// under the `--session` path it was given.
+
+fn session_child(dir: &Path, summary: &str, status: &str) -> PathBuf {
+    let path = dir.join("mock-session.sh");
+    let result =
+        json!({"summary": summary, "files_changed": [], "confidence": 0.9, "status": status});
+    std::fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\nprintf '%s\\0' \"$@\" > argv.bin\ntid=unknown; sess=; prev=; for a in \"$@\"; do [ \"$prev\" = \"--task-id\" ] && tid=$a; [ \"$prev\" = \"--session\" ] && sess=$a; prev=$a; done\nmkdir -p \"$(dirname \"$sess\")\"\necho '{{\"type\":\"session\"}}' >> \"$sess\"\nmkdir -p {DIR}/dispatch/$tid\nprintf '%s' '{result}' > {DIR}/dispatch/$tid/result.json\nexit 0\n"
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    path
+}
+
+/// The `resume_task_id: <label>` line a finished run ends with.
+fn resume_label_in(text: &str) -> Option<String> {
+    text.lines()
+        .find_map(|line| line.strip_prefix("resume_task_id: "))
+        .map(str::to_string)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_resumes_by_its_label_and_continues_the_original_session() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    let pool = install_pool(&cwd, session_child(&cwd, "Mapped the crate", "complete"));
+
+    let first = execute(
+        tool.clone(),
+        json!({"description": "Map", "prompt": "Map the crate", "subagent_type": "general-purpose"}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    let label = resume_label_in(&text(&first)).expect("a finished run names its label");
+    assert!(label.starts_with("general-purpose#"), "{label}");
+    let original = first.details["poolTaskId"].as_str().unwrap().to_string();
+    let session = hoocode_code_paths::dispatch_task_dir(&cwd, &original).join("session.jsonl");
+    assert!(session.exists());
+
+    let resumed = execute(
+        tool.clone(),
+        json!({"description": "Go on", "prompt": "Go deeper", "subagent_type": "general-purpose", "resume_task_id": label}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    assert!(
+        text(&resumed).contains("\n\nMapped the crate\n"),
+        "{}",
+        text(&resumed)
+    );
+    assert_ne!(resumed.details["poolTaskId"], json!(original));
+    let argv = argv_of(&cwd);
+    assert_eq!(
+        argv.iter()
+            .position(|a| a == "--session")
+            .map(|i| PathBuf::from(&argv[i + 1])),
+        Some(session.clone()),
+        "the resumed run must append to the original session"
+    );
+    // The resumed run's own label resumes the same session again.
+    let label2 = resume_label_in(&text(&resumed)).expect("a resumed run names its label");
+    assert_ne!(label2, label);
+    execute(
+        tool.clone(),
+        json!({"description": "Again", "prompt": "Once more", "subagent_type": "general-purpose", "resume_task_id": label2}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_partial_run_says_how_to_resume_it() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    let pool = install_pool(&cwd, session_child(&cwd, "Read half the files", "partial"));
+
+    let r = execute(
+        tool.clone(),
+        json!({"description": "Survey", "prompt": "Survey", "subagent_type": "general-purpose"}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    let label = resume_label_in(&text(&r)).expect("a partial run names its label");
+    assert!(
+        text(&r).contains(&format!(
+            "[Partial result. To continue this subagent, call Agent again with resume_task_id=\"{label}\".]"
+        )),
+        "{}",
+        text(&r)
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_string_background_false_runs_in_the_foreground() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    // explore runs in the background by default; the quoted "false" must win.
+    let pool = install_pool(
+        &cwd,
+        session_child(&cwd, "Found the entry point", "complete"),
+    );
+    let r = execute(
+        tool.clone(),
+        json!({"description": "Find", "prompt": "Find it", "subagent_type": "explore", "background": "false"}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    assert!(text(&r).starts_with("[model: "), "{}", text(&r));
+    assert!(
+        text(&r).contains("\n\nFound the entry point\n"),
+        "{}",
+        text(&r)
+    );
+    assert!(r.details.get("background").is_none(), "{}", r.details);
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}

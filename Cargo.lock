@@ -1701,6 +1701,7 @@ dependencies = [
  "hoocode-code-media",
  "hoocode-code-tool-api",
  "hoocode-tui-util",
+ "ignore",
  "libc",
  "regex",
  "regex-lite",

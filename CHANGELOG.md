@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: subagent reliability (2026-10-11)
+- **Background tasks survive their run.** A task that settles after its run ended is delivered by the next run of the same session. Managers are kept per session (cap 64, idle first evicted).
+- **A tool-only final message no longer blanks the summary.** The summary falls back to the last text. It says `(from an earlier turn)` only when tool calls came after that text; an empty aborted wrap-up does not count. New RPC command `get_last_assistant_text_with_origin`.
+- **Shell calls time out after 600 s by default, inside subagents only.** The main session has no default limit. `timeout: 0` means no limit; `HOOCODE_BASH_DEFAULT_TIMEOUT_SECS` overrides the 600 s.
+- **A tool in flight is bounded** by the larger of 15 min × load and its declared timeout. A tool with timeout 0 has no bound.
+- **Nested subagents are not swept.** A child's own subagents run in their own process groups, so the post-reap sweep does not reach them.
+- **A run cut short at its deadline settles `partial`** in the pool, matching `result.json`. It used to show `complete`.
+- **`Read` on a directory returns a listing.**
+- **`resume_task_id` takes the label** from a result's `resume_task_id:` line (e.g. `explore#1`). A raw task id still works.
+- **Stalled children get SIGUSR1 first,** then a grace period, then SIGKILL. After a reaped child exits, its process group is swept.
+- **Resumed sessions survive the dispatch prune** while their task is running or queued.
+
 ### Removed: hoocode-ts pin, shim and parity checks (2026-10-10)
 - **hoocode fully replaces hoocode-ts.** The pinned TS checkout, the `hoocode-ts` shim (installer and release archives), the parity harness, the CI fixture fetch and the TS-comparison tests are gone.
 - **Compaction tests use a generated session** in the old v1 format instead of the TS `large-session.jsonl`.
@@ -19,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed: smaller target/ (2026-10-10)
 - **Dev builds have `debug = false`.** A full build is 5.5 GB instead of 61 GB, and there are no `.o` debug files. Panic messages still show file:line.
-- **`scripts/dev/prune_target.sh`** removes build output unused for 3 days, old `cortex*` names, and an incremental cache over 5 GB. It is a dry run by default; `--apply` deletes and `--if-over GB` skips small dirs. `CLAUDE.md` runs it at session start.
+- **`scripts/dev/prune_target.sh`** removes build output unused for 3 days, old names that started with the previous project name, and an incremental cache over 5 GB. It is a dry run by default; `--apply` deletes and `--if-over GB` skips small dirs. `CLAUDE.md` runs it at session start.
 
 ### Fixed: subagents are no longer stopped in the middle of a long tool (2026-10-10)
 - **A running tool counts as progress.** The watchdog stopped any subagent that went 150s without a turn or tool event, so a long `cargo` build killed the agent mid-tool ("Ran out of time before completing."). Now it only stops a child that has no tool running. The heartbeat check and the 2-hour deadline are unchanged.

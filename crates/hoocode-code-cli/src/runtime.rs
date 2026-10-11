@@ -961,16 +961,12 @@ pub fn run_print_mode(
         .deadline_ms
         .filter(|ms| is_subagent && *ms > 0)
         .map(|ms| deadline_wrap_up(&session, ms, reached_deadline.clone()));
-    // The lifeguard SIGTERMs before it kills. Both paths write the result file
-    // through `result_written`, so exactly one of them wins.
-    let _terminator = task_id.as_ref().map(|id| {
-        termination_handler(
-            session.clone(),
-            id.clone(),
-            reached_deadline.clone(),
-            result_written.clone(),
-        )
-    });
+    // The lifeguard signals before it kills: SIGUSR1 for a stall, SIGTERM at the
+    // deadline. Both paths write the result file through `result_written`, so
+    // exactly one of them wins.
+    let _terminator = task_id
+        .as_ref()
+        .map(|id| termination_handler(session.clone(), id.clone(), result_written.clone()));
 
     // `session.prompt(initialMessage)` then each remaining message in turn.
     let mut initial_images = Some(initial_images);
@@ -1025,6 +1021,7 @@ pub fn run_print_mode(
             hoocode_code_subagents::result::BuildSubagentResultOptions {
                 reached_max_turns: reached_max_turns.load(std::sync::atomic::Ordering::SeqCst),
                 reached_deadline: reached_deadline.load(std::sync::atomic::Ordering::SeqCst),
+                stalled: false,
             },
         );
         // This subagent's own task subtree, for the parent to render below
@@ -1388,49 +1385,49 @@ const SUBAGENT_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(3
 /// recorded subagent runs took 5-65s a turn.
 const DEADLINE_WRAP_UP_LEAD: std::time::Duration = std::time::Duration::from_secs(90);
 
-/// Ask a spawned subagent to wrap up shortly before its deadline.
+/// Stop a spawned child at the lifeguard's signal and write its partial result.
 ///
-/// `deadline_ms` is the same per-agent deadline the parent's lifeguard enforces
-/// (the pool passes it as `--deadline-ms`). The parent widens its own budget
-/// under load, so this always fires before the process is killed, whatever the
-/// multiplier ends up being.
+/// The lifeguard stops a spawned child in one of two ways, and the child must
+/// tell them apart so a stall is never reported as a run that ran out of time:
 ///
-/// Unlike the turn cap, this is wall-clock and does not wait for a turn
-/// boundary: the steer lands wherever the run happens to be, and the model sees
-/// it at the start of its next turn.
-/// SIGTERM means "wrap up now": the pool's lifeguard sends it before it
-/// escalates to SIGKILL, and a subagent killed outright loses everything it had
-/// finished — the October 2026 incident in a new disguise.
+/// - `SIGTERM`: the hard deadline passed (`reached_deadline`).
+/// - `SIGUSR1`: no progress or over the memory limit (`stalled`). Not a
+///   deadline: the run did not use up its time.
 ///
-/// A child parked inside a provider call will not read a steer, so this does
-/// not ask: it writes the partial result from whatever the session already
-/// holds and exits. `build_subagent_result` gives that a real summary and
-/// confidence 0.6, which clears the verifier's 0.5 floor, and the pool already
-/// accepts a valid result from a reaped task.
+/// Either way the child writes the partial result from whatever the session
+/// already holds and exits. A child parked inside a provider call will not read
+/// a steer, so this does not ask. `build_subagent_result` gives that a real
+/// summary and confidence 0.6, which clears the verifier's 0.5 floor, and the
+/// pool already accepts a valid result from a reaped task.
 ///
-/// Returns `None` off unix (no SIGTERM to catch), or when another path already
-/// owns the result file.
+/// The signal handlers are installed synchronously, before this returns, so a
+/// lifeguard signal can never reach the default action (which would kill the
+/// child without a result).
+///
+/// Returns `None` when the handlers cannot be installed, and always off unix.
 #[cfg(unix)]
 fn termination_handler(
     session: AgentSession,
     task_id: String,
-    reached_deadline: Arc<std::sync::atomic::AtomicBool>,
     result_written: Arc<std::sync::atomic::AtomicBool>,
 ) -> Option<tokio::task::JoinHandle<()>> {
     use tokio::signal::unix::{signal, SignalKind};
-    let handle = async_runtime().spawn(async move {
-        // Registered inside the task: installing a signal handler needs a
-        // reactor, and this function is called from synchronous code.
-        let Ok(mut stream) = signal(SignalKind::terminate()) else {
-            return;
+    // Registered here, inside the runtime context, so the handlers exist
+    // before the child does any work.
+    let runtime = async_runtime();
+    let _enter = runtime.enter();
+    let mut terminate = signal(SignalKind::terminate()).ok()?;
+    let mut stall = signal(SignalKind::user_defined1()).ok()?;
+    let handle = runtime.spawn(async move {
+        let stalled = tokio::select! {
+            _ = terminate.recv() => false,
+            _ = stall.recv() => true,
         };
-        stream.recv().await;
         if result_written.swap(true, std::sync::atomic::Ordering::SeqCst) {
             return;
         }
-        // Claim it as cut short so the result settles `partial` with the
-        // deadline's wording rather than reading as a finished run.
-        reached_deadline.store(true, std::sync::atomic::Ordering::SeqCst);
+        // SIGTERM is the deadline stop; SIGUSR1 is a stall. Only the deadline
+        // claims the run ran out of time.
         let stats = session.get_session_stats();
         let result = hoocode_code_subagents::result::build_subagent_result(
             &session.messages(),
@@ -1443,7 +1440,8 @@ fn termination_handler(
             }),
             hoocode_code_subagents::result::BuildSubagentResultOptions {
                 reached_max_turns: false,
-                reached_deadline: true,
+                reached_deadline: !stalled,
+                stalled,
             },
         );
         let cwd = std::path::PathBuf::from(session.session_manager().cwd());
@@ -1458,12 +1456,21 @@ fn termination_handler(
 fn termination_handler(
     _session: AgentSession,
     _task_id: String,
-    _reached_deadline: Arc<std::sync::atomic::AtomicBool>,
     _result_written: Arc<std::sync::atomic::AtomicBool>,
 ) -> Option<tokio::task::JoinHandle<()>> {
     None
 }
 
+/// Ask a spawned subagent to wrap up shortly before its deadline.
+///
+/// `deadline_ms` is the same per-agent deadline the parent's lifeguard enforces
+/// (the pool passes it as `--deadline-ms`). The parent widens its own budget
+/// under load, so this always fires before the process is killed, whatever the
+/// multiplier ends up being.
+///
+/// Unlike the turn cap, this is wall-clock and does not wait for a turn
+/// boundary: the steer lands wherever the run happens to be, and the model sees
+/// it at the start of its next turn.
 fn deadline_wrap_up(
     session: &AgentSession,
     deadline_ms: u64,

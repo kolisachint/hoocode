@@ -10,7 +10,7 @@
 //!         ├─▶ failed / stalled / timeout / cancelled
 //! ```
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -121,6 +121,12 @@ struct InboxState {
     order: Vec<String>,
     label_counters: HashMap<String, u64>,
     observed_pools: HashSet<u64>,
+    /// Model-facing label (`explore#4`) -> the task id whose dispatch dir holds
+    /// its `session.jsonl`. A resumed run is bound to the original session.
+    session_ids: HashMap<String, String>,
+    /// Labels in binding order, so `session_ids` is capped like `records`:
+    /// the oldest binding goes once more than `MAX_SETTLED` are held.
+    session_order: VecDeque<String>,
 }
 
 impl InboxState {
@@ -240,6 +246,32 @@ impl SubagentInbox {
             .or_insert(0);
         *n += 1;
         format!("{agent_type}#{n}")
+    }
+
+    /// Record that `label` (the handle the model sees) resumes the session
+    /// stored under `session_id`. Called at every dispatch, foreground and
+    /// background.
+    pub fn bind_label(&self, label: &str, session_id: &str) {
+        let mut state = self.state();
+        if state
+            .session_ids
+            .insert(label.to_string(), session_id.to_string())
+            .is_none()
+        {
+            state.session_order.push_back(label.to_string());
+        }
+        while state.session_order.len() > MAX_SETTLED {
+            if let Some(oldest) = state.session_order.pop_front() {
+                state.session_ids.remove(&oldest);
+            }
+        }
+    }
+
+    /// The task id whose session a `resume_task_id` handle names. Accepts a
+    /// label (`explore#4`); `None` for anything else, which the caller takes
+    /// as a raw task id.
+    pub fn session_id_for(&self, handle: &str) -> Option<String> {
+        self.state().session_ids.get(handle).cloned()
     }
 
     /// Track a pool's `task_progress` so running records carry a live
@@ -425,6 +457,8 @@ impl SubagentInbox {
         state.records.clear();
         state.order.clear();
         state.label_counters.clear();
+        state.session_ids.clear();
+        state.session_order.clear();
     }
 }
 

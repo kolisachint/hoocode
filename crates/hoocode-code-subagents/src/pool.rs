@@ -11,7 +11,7 @@
 //! (advisory, never kills) and `task_progress` (coarse lifecycle events for
 //! the UI).
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -35,7 +35,10 @@ use crate::depth::{
 use crate::dispatch::DispatchEvaluator;
 use crate::events::{classify_subagent_line, SubagentStdoutLine};
 use crate::ledger;
-use crate::lifeguard::{kill_process_tree, LifeguardEvent, SubagentLifeguard};
+use crate::lifeguard::{
+    kill_process_tree, progress_stall_ms_from_env, tool_limit_from_start, LifeguardEvent,
+    SubagentLifeguard,
+};
 use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
 use crate::output_verifier::OutputVerifier;
 use crate::result::write_file_atomic;
@@ -490,6 +493,10 @@ impl SubagentPool {
             .cwd
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| ".".into()));
         let lifeguard = SubagentLifeguard::new(&cwd);
+        // The lifeguard runs in this process, so the stall override is read
+        // from the parent's environment (the child env is cleared and rebuilt).
+        let env = options.env.unwrap_or_else(|| std::env::vars().collect());
+        lifeguard.set_progress_stall_ms(progress_stall_ms_from_env(&env));
         static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let skill_paths = options.skill_paths.clone();
         let inner = Arc::new(PoolInner {
@@ -505,7 +512,7 @@ impl SubagentPool {
                 options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY) * QUEUE_PER_SLOT
             }),
             max_completed: options.max_completed.unwrap_or(MAX_COMPLETED),
-            env: options.env.unwrap_or_else(|| std::env::vars().collect()),
+            env,
             default_token_budget: options.default_token_budget.unwrap_or(0),
             settings: options.settings,
             available_models: options.available_models,
@@ -824,6 +831,16 @@ impl SubagentPool {
         agent_log(&format!(
             "[DISPATCH] agent={agent_type} depth={child_depth} reason={reason} complexity={complexity} task_id={task_id}"
         ));
+        // Housekeeping: old dispatch dirs go on the Low lane, off the dispatch path.
+        // Dirs of tasks this pool is running or has queued are never removed.
+        // Liveness is queried per dir at removal time, not snapshotted here.
+        let cwd = self.inner.cwd.clone();
+        let inner = Arc::clone(&self.inner);
+        hoocode_runtime::spawn_bg(async move {
+            prune_dispatch_dirs_checked(&cwd, DISPATCH_KEEP, DISPATCH_MAX_AGE, &|name| {
+                inner.is_live_task(name)
+            });
+        });
         self.inner.write_dispatch_log(
             &task_id,
             &agent_type,
@@ -880,6 +897,12 @@ impl SubagentPool {
                 "No resumable session for task \"{task_id}\" (expected {}).",
                 session_file.display()
             )));
+        }
+        // Resuming makes the session the newest thing on disk, so the prune
+        // (which ages a dir by its newest activity) cannot delete it between
+        // now and the child's first write.
+        if let Some(dir) = session_file.parent() {
+            touch_dispatch_dir(dir);
         }
         let agent_type = self
             .inner
@@ -1016,6 +1039,14 @@ impl PoolInner {
     fn session_file(&self, task_id: &str, cwd: Option<&Path>) -> PathBuf {
         hoocode_code_paths::dispatch_task_dir(cwd.unwrap_or(&self.cwd), task_id)
             .join("session.jsonl")
+    }
+
+    /// Task ids this pool is running or has queued: their dispatch dirs are
+    /// never pruned.
+    /// Whether the pool is running or has queued this task.
+    fn is_live_task(&self, task_id: &str) -> bool {
+        let state = self.state();
+        state.slots.contains_key(task_id) || state.queue.iter().any(|t| t.task_id == task_id)
     }
 
     fn read_dispatch_agent_type(&self, task_id: &str) -> Option<String> {
@@ -1487,9 +1518,20 @@ impl PoolInner {
                 // from a timer can be parked inside a provider call forever, and
                 // this is the signal that tells the difference. A tool in flight
                 // is tracked separately so a long build is not reaped as idle.
-                match event.get("type").and_then(|v| v.as_str()) {
-                    Some("tool_execution_start") => self.lifeguard.record_tool_start(task_id),
-                    Some("tool_execution_end") => self.lifeguard.record_tool_end(task_id),
+                let call_id = event
+                    .get("toolCallId")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                match event.get("type").and_then(Value::as_str) {
+                    Some("tool_execution_start") => {
+                        let tool = event
+                            .get("toolName")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
+                        let limit = tool_limit_from_start(tool, event.get("args"), &self.env);
+                        self.lifeguard.record_tool_start(task_id, call_id, limit);
+                    }
+                    Some("tool_execution_end") => self.lifeguard.record_tool_end(task_id, call_id),
                     _ => self.lifeguard.record_progress(task_id),
                 }
                 self.emit(
@@ -1497,7 +1539,16 @@ impl PoolInner {
                     json!({"task_id": task_id, "agent_type": agent_type, "event": event}),
                 );
             }
-            SubagentStdoutLine::Ignore => {}
+            SubagentStdoutLine::Ignore => {
+                // Not forwarded to the UI, but a model turn ending (message_end)
+                // or streaming is progress: a long turn must not be reaped as stalled.
+                if ["message_start", "message_update", "message_end"]
+                    .iter()
+                    .any(|t| line.contains(&format!("\"{t}\"")))
+                {
+                    self.lifeguard.record_progress(task_id);
+                }
+            }
         }
     }
 
@@ -1648,13 +1699,19 @@ impl PoolInner {
                 return false;
             }
             result.result_data = self.read_result_json(task_id, &cwd);
-            // Clean success: the in-memory result carries result_data, so the
-            // dispatch dir goes (resume only works for unsuccessful tasks).
-            // Cleanup is housekeeping: it runs on the Low lane, off the settle path.
-            let dir = hoocode_code_paths::dispatch_task_dir(&cwd, task_id);
-            hoocode_runtime::spawn_bg(async move {
-                let _ = std::fs::remove_dir_all(dir);
-            });
+            // A partial result is still a success, but the model may resume it:
+            // the dispatch dir (and its session.jsonl) is kept. Dirs are pruned
+            // at dispatch time, see `prune_dispatch_dirs`.
+            if result
+                .result_data
+                .as_ref()
+                .and_then(|d| d.get("status"))
+                .and_then(Value::as_str)
+                == Some("partial")
+            {
+                result.status = Some(ResultStatus::Partial);
+            }
+            let status = result.status.unwrap_or(ResultStatus::Complete);
             self.record_attempt(
                 task,
                 &result,
@@ -1671,7 +1728,7 @@ impl PoolInner {
                     "agent_type": task.agent_type,
                     "duration": duration,
                     "tokens_generated": tokens_generated,
-                    "status": "complete",
+                    "status": status.as_str(),
                     "confidence": result.result_data.as_ref().and_then(|d| d.get("confidence")).cloned().unwrap_or(Value::Null),
                     "files_changed": result.result_data.as_ref().and_then(|d| d.get("files_changed")).cloned().unwrap_or(Value::Null),
                 }),
@@ -1875,7 +1932,8 @@ impl PoolInner {
             &task.task_id,
             &task.agent_type,
             task.background.unwrap_or(false),
-            crate::depth::current_subagent_depth(&crate::depth::ProcessEnv) as u8 + 1,
+            // The pool's own env, the same one `child_env` stamps children from.
+            current_subagent_depth(&self.env) as u8 + 1,
             task.model.as_deref(),
             resolved.as_deref(),
             task.provider.as_deref(),
@@ -1966,15 +2024,188 @@ fn derive_failure_reason(result: &SubagentResult) -> String {
     if !summary.is_empty() {
         return summary.to_string();
     }
+    // `Note:` lines are benign chatter (e.g. the json-mode approval notice),
+    // never the cause of a failure.
     let lines: Vec<&str> = result
         .stderr
         .split('\n')
         .map(str::trim)
-        .filter(|l| !l.is_empty())
+        .filter(|l| !l.is_empty() && !l.starts_with("Note:"))
         .collect();
-    let tail = lines[lines.len().saturating_sub(5)..].join("\n");
+    // Prefer lines that look like the real error over whatever came last.
+    let errors: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| looks_like_error(l))
+        .collect();
+    let picked = if errors.is_empty() {
+        &lines[..]
+    } else {
+        &errors[..]
+    };
+    let tail = picked[picked.len().saturating_sub(5)..].join("\n");
     if !tail.is_empty() {
         return tail;
     }
     format!("Exited with code {}", js_code(result.exit_code))
+}
+
+/// A stderr line that names a failure (error, ENOSPC, missing API key, ...).
+fn looks_like_error(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    [
+        "error",
+        "failed",
+        "failure",
+        "enospc",
+        "no api key",
+        "panic",
+        "unauthorized",
+        "forbidden",
+        "quota",
+        "rate limit",
+        "denied",
+        "exception",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
+/// Dispatch dirs are kept so a model can resume them. Keep the newest `keep`
+/// `dispatch-*` dirs; remove the rest once they are older than `max_age`.
+///
+/// A dir's age is its most recent activity: its own mtime or any direct
+/// entry's (a resumed run appends to the old `session.jsonl` without touching
+/// the dir's mtime), so a session that is still running is never removed.
+pub fn prune_dispatch_dirs(cwd: &Path, keep: usize, max_age: Duration) {
+    prune_dispatch_dirs_keeping(cwd, keep, max_age, &HashSet::new());
+}
+
+/// [`prune_dispatch_dirs`], never removing the dirs named in `live` (tasks
+/// the pool is running or has queued).
+pub fn prune_dispatch_dirs_keeping(
+    cwd: &Path,
+    keep: usize,
+    max_age: Duration,
+    live: &HashSet<String>,
+) {
+    prune_dispatch_dirs_checked(cwd, keep, max_age, &|name| live.contains(name));
+}
+
+/// [`prune_dispatch_dirs_keeping`] with liveness asked per dir. The listing is
+/// a snapshot, so a dir can be resumed or a task queued after it was read; the
+/// age and liveness are checked again right before its removal.
+fn prune_dispatch_dirs_checked(
+    cwd: &Path,
+    keep: usize,
+    max_age: Duration,
+    is_live: &dyn Fn(&str) -> bool,
+) {
+    let Ok(entries) = std::fs::read_dir(hoocode_code_paths::dispatch_root(cwd)) else {
+        return;
+    };
+    let mut dirs: Vec<(SystemTime, PathBuf)> = entries
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().starts_with("dispatch-"))
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| Some((last_activity(&e.path())?, e.path())))
+        .collect();
+    dirs.sort_by(|a, b| b.0.cmp(&a.0));
+    let is_old = |modified: SystemTime| {
+        SystemTime::now()
+            .duration_since(modified)
+            .is_ok_and(|age| age > max_age)
+    };
+    for (index, (modified, path)) in dirs.into_iter().enumerate() {
+        if index < keep || !is_old(modified) {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        if is_live(name) {
+            continue;
+        }
+        // Re-check just before removal: the dir may have been resumed (its
+        // activity is newer now) or its task started since the listing.
+        let fresh = last_activity(&path).is_some_and(is_old);
+        if fresh && !is_live(name) {
+            let _ = std::fs::remove_dir_all(path);
+        }
+    }
+}
+
+/// Mark a dispatch dir (and its `session.jsonl`, if any) as just used, so the
+/// prune treats a session being resumed as recent.
+fn touch_dispatch_dir(dir: &Path) {
+    let now = SystemTime::now();
+    for path in [dir.to_path_buf(), dir.join("session.jsonl")] {
+        if let Ok(file) = std::fs::File::open(&path) {
+            let _ = file.set_modified(now);
+        }
+    }
+}
+
+/// The newest mtime among a dispatch dir and its direct entries.
+fn last_activity(dir: &Path) -> Option<SystemTime> {
+    let own = std::fs::metadata(dir).ok()?.modified().ok()?;
+    let newest_entry = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|e| e.metadata().ok()?.modified().ok())
+        .max();
+    Some(newest_entry.map_or(own, |entry| entry.max(own)))
+}
+
+/// Dispatch dirs kept at most this many (newest first).
+const DISPATCH_KEEP: usize = 50;
+/// ...and removed only once older than this.
+const DISPATCH_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+
+#[cfg(test)]
+mod prune_recheck_tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    fn old_dir(cwd: &Path, name: &str) -> PathBuf {
+        let path = hoocode_code_paths::dispatch_task_dir(cwd, name);
+        std::fs::create_dir_all(&path).unwrap();
+        let when = SystemTime::now() - Duration::from_secs(3 * 24 * 60 * 60);
+        std::fs::File::open(&path)
+            .unwrap()
+            .set_modified(when)
+            .unwrap();
+        path
+    }
+
+    /// A task that starts after the listing (so the first liveness check says
+    /// "not live") must still be kept: the re-check right before removal sees it.
+    #[test]
+    fn a_task_started_after_the_listing_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = old_dir(dir.path(), "dispatch-race");
+        let calls = Cell::new(0);
+        prune_dispatch_dirs_checked(dir.path(), 0, DISPATCH_MAX_AGE, &|_| {
+            calls.set(calls.get() + 1);
+            // First query (the listing pass) says idle; the re-check says live.
+            calls.get() > 1
+        });
+        assert!(
+            calls.get() >= 2,
+            "liveness must be re-checked before removal"
+        );
+        assert!(path.exists());
+    }
+
+    /// Control: an old idle dir is removed.
+    #[test]
+    fn an_old_idle_dir_is_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = old_dir(dir.path(), "dispatch-idle");
+        prune_dispatch_dirs_checked(dir.path(), 0, DISPATCH_MAX_AGE, &|_| false);
+        assert!(!path.exists());
+    }
 }
