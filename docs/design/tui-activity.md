@@ -70,6 +70,7 @@ Needs: nothing. Start here.
 - **T0.4 and T0.5:** retired 2026-10-10. `review_bundle.py` and the `tui-review` skill are removed. Screen goldens are a pre-release check of about 10 key screens, not per change.
 - **T0.6:** parity is retired. The done bar is L1 plus `goldens.py check all`. `ledger.py` is read-only. Open items:
   - The CI job is staged at `archive/migration/ci/tui-parity.yml`. The user must copy it into `.github/workflows/`, because the token cannot push workflows.
+  - The guards CI job (naming check and `packages.py --check`) is staged at `archive/migration/ci/guards.patch`. The user applies it with `git apply archive/migration/ci/guards.patch`.
   - Done 2026-10-10: the fixture fetch is removed. `scripts/ci/fetch_hoocode_fixtures.sh` is deleted, and SessionStart fetches nothing for the TS pin.
 - **Replay fixtures** (`hoocode-0.5.89/`) are frozen. `replay.json` moved to `crates/hoocode-code-main/tests/fixtures/` on 2026-10-10. No re-recording path remains.
 
@@ -244,9 +245,9 @@ Pending the user's answer. Each is a question for the user, not work in progress
    - `ResourceListing.custom_themes` and `extension_diagnostics` reported test-only. Verify before removing.
 6. **Shell and Schedule `TaskKind` variants.** Deferred to T5 and T4.2. T1.3 stays open until then.
 7. **Flaky tests** (fix or quarantine):
-   - Screen goldens: print-tool-bash, scroll-view, mode-cycle.
-   - Races: `hoocode-code-rpc` `fork_branches` and `a_closed_agent`.
-   - `hoocode-ai-oauth-anthropic` uses fixed port 53692, which collides under concurrent runs.
+   - Fixed 2026-10-14: races `hoocode-code-rpc` `fork_branches` and `a_closed_agent`.
+   - Fixed 2026-10-14: `hoocode-ai-oauth-anthropic` tests use an ephemeral port (production stays 53692).
+   - Still open: screen goldens print-tool-bash, scroll-view, mode-cycle.
 
 ## Details
 

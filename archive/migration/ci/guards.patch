@@ -7,7 +7,7 @@ index b4879c0..f657721 100644
            fi
  
 +  guards:
-+    # Cheap repo guards: no new cortex names (no_cortex.sh uses git grep, so the
++    # Cheap repo guards: the old-name guard (it uses git grep, so the
 +    # checkout must be a normal one) and the crate map matches the workspace.
 +    runs-on: ubuntu-latest
 +    steps:

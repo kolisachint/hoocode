@@ -59,7 +59,7 @@ pass the done bar (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 0a | Close the migration ledger: `moved` status; mark 9.1, 10.2e, 10.11, 12.1–12.7, 13.4 with their cards; one line each in plan §0.3 and `PROGRESS.md` | this page | S | — | Bookkeeping before code |
 | 0b | Delete the 11 unused crates (move `hoocode-ai`'s tests to `ai-registry` first; fix dep firewall, `generate_crates.sh`, CI, release scripts) | [decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md) | S | 0a | Less to rename and build |
 | 0c | Rename everything to hoocode, one mechanical commit, no other branch open | [naming-and-paths.md](../../archive/docs/naming-and-paths.md) §1 | M | 0b | Touches every file; must not race other work |
-| 0d | `scripts/maps/packages.py` (regenerates [../maps/packages.md](../maps/packages.md), `--check` in CI) and the `no_hoocode.sh` guard | [naming-and-paths.md](../../archive/docs/naming-and-paths.md) §1 | S | 0c | Keeps the maps and names honest from here on |
+| 0d | `scripts/maps/packages.py` (regenerates [../maps/packages.md](../maps/packages.md), `--check` in CI) and the `scripts/ci/no_cortex.sh` guard | [naming-and-paths.md](../../archive/docs/naming-and-paths.md) §1 | S | 0c | Keeps the maps and names honest from here on |
 | 1 | Reliability, in this order: **1.1** rpc fails closed (security); **1.2** `~/.hoocode` paths, `HOOCODE_` env, one-time merge; **1.3** macOS test fixes and CI job; **1.4** `@file` without `fd`; **1.5** panic audit; **1.6** fuzzing | [reliability.md](reliability.md), [naming-and-paths.md](../../archive/docs/naming-and-paths.md) §2–4 | L | 0c | Reliability before features |
 | 2 | Concurrency phases 0–1: `/perf` and the load test, then one runtime and the caps | [concurrency.md](concurrency.md) | M | 1 | Sets the runtime rules before MCP brings rmcp |
 | 3 | `DocSearch`; close the 8 `l1_done` tasks | [semantic-search.md](semantic-search.md) part A | S | 2 | Small; finishes the migration's loose ends |
@@ -74,6 +74,8 @@ pass the done bar (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 the 8 `l1_done` tasks) is done. Milestones 4 (MCP client) and 5 (concurrency phases 2-5) are
 built, not yet load-tested. Open items are listed in the 2026-10-08 (second session) entry in
 [../../archive/migration/PROGRESS.md](../../archive/migration/PROGRESS.md).
+
+**Status (2026-10-14), 0d:** `packages.py` is in place and `--check` passes. The guards CI job is staged at `archive/migration/ci/guards.patch`. It waits on the user to apply it with `git apply`.
 
 **Only if the numbers or a need say so:** concurrency phase 6 (highlighting off the UI
 thread), MCP Apps ([canvas-and-mcp-apps.md](canvas-and-mcp-apps.md)), the MCP Tasks
