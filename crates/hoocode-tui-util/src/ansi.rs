@@ -587,6 +587,18 @@ mod tests {
     }
 
     #[test]
+    fn ansi_runs_csi_final_byte_is_0x40_to_0x7e() {
+        // 0x7f is not a parameter byte, but it is not a final byte either: the
+        // CSI runs on to the `m`.
+        assert_eq!(
+            runs("a\x1b[1\x7fm"),
+            [AnsiRun::Text("a"), AnsiRun::Ansi("\x1b[1\x7fm")]
+        );
+        // A space is an intermediate byte, so no final byte means no sequence.
+        assert_eq!(runs("a\x1b[\x20"), [AnsiRun::Text("a\x1b[\x20")]);
+    }
+
+    #[test]
     fn ansi_runs_utf8_text_stays_whole() {
         assert_eq!(
             runs("é界\x1b[1m🙂"),

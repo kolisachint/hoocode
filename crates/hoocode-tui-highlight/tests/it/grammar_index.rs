@@ -143,6 +143,22 @@ fn supports_language_matches_the_dump() {
     assert!(!hoocode_tui_highlight::supports_language(""));
 }
 
+/// Every name and alias `supports_language` answers for loads: `highlight`
+/// finds its grammar and compiles it, so the index never promises a language
+/// the chunks cannot provide.
+#[test]
+fn every_supported_name_loads() {
+    let doc: Value = serde_json::from_str(DUMP).expect("dump parses");
+    let names = doc["languages"].as_object().expect("languages").keys();
+    let aliases = doc["aliases"].as_object().expect("aliases").keys();
+    for name in names.chain(aliases) {
+        assert!(
+            hoocode_tui_highlight::highlight_tree("x", name, true).is_some(),
+            "{name} is supported but highlight cannot load it"
+        );
+    }
+}
+
 /// The index and chunks are exactly what the dump generates.
 #[test]
 fn index_matches_the_dump() {
