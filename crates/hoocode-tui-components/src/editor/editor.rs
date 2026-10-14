@@ -1597,8 +1597,6 @@ impl Editor {
         };
         if force && explicit_tab && suggestions.items.len() == 1 {
             let item = suggestions.items[0].clone();
-            self.push_undo_snapshot();
-            self.last_action = None;
             self.apply_completion(&item, &suggestions.prefix);
             self.emit_change();
             self.request_render();
@@ -1615,8 +1613,13 @@ impl Editor {
         self.request_render();
     }
 
-    /// Run the provider's `applyCompletion` and adopt its result.
+    /// Run the provider's `applyCompletion` and adopt its result, as one undo step.
     fn apply_completion(&mut self, item: &AutocompleteItem, prefix: &str) {
+        if self.autocomplete_provider.is_none() {
+            return;
+        }
+        self.push_undo_snapshot();
+        self.last_action = None;
         let Some(provider) = &self.autocomplete_provider else {
             return;
         };
@@ -1786,8 +1789,6 @@ impl Editor {
             if kb.matches(&data, "tui.input.tab") {
                 if let Some(selected) = self.selected_autocomplete_item() {
                     if self.autocomplete_provider.is_some() {
-                        self.push_undo_snapshot();
-                        self.last_action = None;
                         let prefix = self.autocomplete_prefix.clone();
                         self.apply_completion(&selected, &prefix);
                         self.cancel_autocomplete();
@@ -1799,8 +1800,6 @@ impl Editor {
             if kb.matches(&data, "tui.select.confirm") {
                 if let Some(selected) = self.selected_autocomplete_item() {
                     if self.autocomplete_provider.is_some() {
-                        self.push_undo_snapshot();
-                        self.last_action = None;
                         let prefix = self.autocomplete_prefix.clone();
                         self.apply_completion(&selected, &prefix);
                         if prefix.starts_with('/') {
