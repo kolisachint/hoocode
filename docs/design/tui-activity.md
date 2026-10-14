@@ -24,7 +24,7 @@ Haiku subagents implement. The main session orchestrates, briefs and merges.
 | 4 | X15 | Colour follows the switch (#11). **Done 2026-10-14**: `color_enabled()` reads `NO_COLOR` and FORCE_COLOR wins (#18); theme `fg` and `bg` follow chalk. Fill is not changed (see the X15 row). |
 | 5 | N14 | Marker only (#3). **Done 2026-10-14**: the `/model` picker shows `expired`; `spawn_refresh` deleted (decisions-2026-10-14.md #19). |
 | 6 | X18 | Task panel key hint (#5). **Won't build by default** (#20): the default config binds one key, so it changes nothing. |
-| 7 | T0.3 | `scroll-view` waits for its final text (#9). **Done 2026-10-14** for the startup wait (`scroll-view.json`, now `wait_for` the footer `mock-model`). **Open:** startup wait added; search snapshots still differ (match `alpha item 25` 1/2 vs golden `beta item 25` 2/2) — open. |
+| 7 | T0.3 | `scroll-view` waits for its final text (#9) and picks its match explicitly (#21). **Done 2026-10-14.** The startup wait is `wait_for` the footer `mock-model`. The search types the unique query `beta item 25` in one step, so the match is `beta item 25` at 1/1 whatever the view position (user, 2026-10-14). Golden accepted; three checks pass. |
 
 **Open questions** (the user has not decided; each row has a proposed default):
 
