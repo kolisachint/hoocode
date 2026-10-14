@@ -208,8 +208,8 @@ struct ScrollSearch {
     query: String,
     matches: Vec<i64>,
     index: i64,
-    /// Buffer length the matches were measured at.
-    measured_at: i64,
+    /// Buffer length the matches were measured at; `None` for an empty query.
+    measured_at: Option<i64>,
     typing: bool,
 }
 
@@ -265,13 +265,23 @@ struct CursorPos {
 
 const MIN_LINES_RENDERED_START: i64 = 0;
 
+/// A frame size as the baseline stores it. A zero size has always meant
+/// "nothing painted yet", so it maps to `None`.
+fn known_size(size: i64) -> Option<i64> {
+    (size != 0).then_some(size)
+}
+
 pub struct Tui {
     pub terminal: Box<dyn Terminal>,
     root: Container,
 
     previous_lines: Vec<String>,
-    previous_width: i64,
-    previous_height: i64,
+    /// The size of the last live frame; `None` until one is painted.
+    previous_width: Option<i64>,
+    previous_height: Option<i64>,
+    /// Set by `request_render(true)`: the next live paint clears and redraws
+    /// the whole screen. Cleared by that paint.
+    force_redraw: bool,
     previous_kitty_image_ids: HashSet<u32>,
     saw_image_line: bool,
 
@@ -341,8 +351,9 @@ impl Tui {
             terminal,
             root: Container::new(),
             previous_lines: Vec::new(),
-            previous_width: 0,
-            previous_height: 0,
+            previous_width: None,
+            previous_height: None,
+            force_redraw: false,
             previous_kitty_image_ids: HashSet::new(),
             saw_image_line: false,
             focused_component: None,
@@ -589,7 +600,7 @@ impl Tui {
                 query: String::new(),
                 matches: Vec::new(),
                 index: -1,
-                measured_at: -1,
+                measured_at: None,
                 typing,
             });
             self.request_render(false);
@@ -612,7 +623,7 @@ impl Tui {
             query: query.to_string(),
             matches,
             index,
-            measured_at: self.search_buffer().len() as i64,
+            measured_at: Some(self.search_buffer().len() as i64),
             typing,
         });
         if let Some(row) = target {
@@ -704,7 +715,7 @@ impl Tui {
         let needs = self
             .scroll_search
             .as_ref()
-            .is_some_and(|s| !s.query.is_empty() && s.measured_at != total);
+            .is_some_and(|s| !s.query.is_empty() && s.measured_at != Some(total));
         if !needs {
             return;
         }
@@ -712,7 +723,7 @@ impl Tui {
         let matches = self.find_scroll_matches(&query);
         let search = self.scroll_search.as_mut().unwrap();
         search.matches = matches;
-        search.measured_at = total;
+        search.measured_at = Some(total);
         if search.index >= search.matches.len() as i64 {
             search.index = search.matches.len() as i64 - 1;
         }
@@ -932,8 +943,7 @@ impl Tui {
     pub fn request_render(&mut self, force: bool) {
         if force {
             self.previous_lines.clear();
-            self.previous_width = -1;
-            self.previous_height = -1;
+            self.force_redraw = true;
             self.hardware_cursor_row = 0;
             self.max_lines_rendered = 0;
             self.previous_viewport_top = 0;
@@ -1302,15 +1312,14 @@ impl Tui {
             self.render_scroll_view();
             return;
         }
+        let forced = std::mem::take(&mut self.force_redraw);
         let width = self.terminal.columns() as i64;
         let height = self.terminal.rows() as i64;
-        let width_changed = self.previous_width != 0 && self.previous_width != width;
-        let height_changed = self.previous_height != 0 && self.previous_height != height;
-        let previous_buffer_length = if self.previous_height > 0 {
-            self.previous_viewport_top + self.previous_height
-        } else {
-            height
-        };
+        let width_changed = self.previous_width.is_some_and(|w| w != width);
+        let height_changed = self.previous_height.is_some_and(|h| h != height);
+        let previous_buffer_length = self
+            .previous_height
+            .map_or(height, |h| self.previous_viewport_top + h);
         let mut prev_viewport_top = if height_changed {
             (previous_buffer_length - height).max(0)
         } else {
@@ -1331,13 +1340,13 @@ impl Tui {
         self.last_cursor_pos = cursor_pos;
 
         // --- First render: output everything without clearing. ---
-        if self.previous_lines.is_empty() && !width_changed && !height_changed {
+        if self.previous_lines.is_empty() && !forced && !width_changed && !height_changed {
             self.full_render(new_lines, width, height, false);
             return;
         }
 
-        // --- Width change: always needs a full re-render (wrapping changes). ---
-        if width_changed {
+        // --- Forced, or width change: a full re-render (wrapping changes). ---
+        if forced || width_changed {
             self.full_render(new_lines, width, height, true);
             return;
         }
@@ -1358,8 +1367,8 @@ impl Tui {
 
         // --- Full-buffer diff to find first/last changed lines. ---
         let prev_line_count = self.previous_lines.len() as i64;
-        let mut first_changed: i64 = -1;
-        let mut last_changed: i64 = -1;
+        // (first, last) changed row; `None` when the frames match.
+        let mut changed: Option<(i64, i64)> = None;
         let max_lines = (new_lines.len() as i64).max(prev_line_count);
         for i in 0..max_lines {
             let old_line = if i < prev_line_count {
@@ -1373,24 +1382,21 @@ impl Tui {
                 ""
             };
             if old_line != new_line {
-                if first_changed == -1 {
-                    first_changed = i;
-                }
-                last_changed = i;
+                changed = Some(changed.map_or((i, i), |(first, _)| (first, i)));
             }
         }
 
         let appended_lines = (new_lines.len() as i64) > prev_line_count;
         if appended_lines {
-            if first_changed == -1 {
-                first_changed = prev_line_count;
-            }
-            last_changed = new_lines.len() as i64 - 1;
+            let first = changed.map_or(prev_line_count, |(first, _)| first);
+            changed = Some((first, new_lines.len() as i64 - 1));
         }
-        if first_changed != -1 {
-            last_changed = self.expand_last_changed_for_kitty_images(first_changed, last_changed);
+        if let Some((first, last)) = changed {
+            let last = self.expand_last_changed_for_kitty_images(first, last);
+            changed = Some((first, last));
         }
-        let append_start = appended_lines && first_changed == prev_line_count && first_changed > 0;
+        let append_start = appended_lines
+            && changed.is_some_and(|(first, _)| first == prev_line_count && first > 0);
 
         // --- The window has to move *back* over the buffer. ---
         // A buffer taller than the screen shrank, so rows the reader scrolled
@@ -1424,8 +1430,8 @@ impl Tui {
             self.write_frame(&buffer);
             self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
             self.previous_lines = new_lines;
-            self.previous_width = width;
-            self.previous_height = height;
+            self.previous_width = known_size(width);
+            self.previous_height = known_size(height);
             self.previous_viewport_top = window_top;
             self.max_lines_rendered = self
                 .max_lines_rendered
@@ -1434,12 +1440,12 @@ impl Tui {
         }
 
         // --- No changes: still may need to move the hardware cursor. ---
-        if first_changed == -1 {
+        let Some((first_changed, last_changed)) = changed else {
             self.position_hardware_cursor(&cursor_pos, new_lines.len() as i64);
             self.previous_viewport_top = prev_viewport_top;
-            self.previous_height = height;
+            self.previous_height = known_size(height);
             return;
-        }
+        };
 
         // --- All changes are deleted lines: nothing to render, just clear. ---
         if first_changed >= new_lines.len() as i64 {
@@ -1490,8 +1496,8 @@ impl Tui {
             }
             self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
             self.previous_lines = new_lines;
-            self.previous_width = width;
-            self.previous_height = height;
+            self.previous_width = known_size(width);
+            self.previous_height = known_size(height);
             self.previous_viewport_top = prev_viewport_top;
             return;
         }
@@ -1573,8 +1579,8 @@ impl Tui {
 
         self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
         self.previous_lines = new_lines;
-        self.previous_width = width;
-        self.previous_height = height;
+        self.previous_width = known_size(width);
+        self.previous_height = known_size(height);
     }
 
     /// Paints `new_lines` whole and keeps them as the differential baseline.
@@ -1610,8 +1616,8 @@ impl Tui {
 
         self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
         self.previous_lines = new_lines;
-        self.previous_width = width;
-        self.previous_height = height;
+        self.previous_width = known_size(width);
+        self.previous_height = known_size(height);
     }
 
     /// The escape sequence that parks the hardware cursor for this frame
@@ -2126,6 +2132,29 @@ mod tests {
         assert!(out.contains("hello"));
         // Column move to col 6 (1-indexed) after "hello".
         assert!(out.contains("\x1b[6G"));
+    }
+
+    #[test]
+    fn forced_redraw_clears_once_even_when_content_is_unchanged() {
+        let (mut tui, handles) = new_tui(40, 10);
+        let component = TestComponent::new();
+        component.borrow_mut().lines = vec!["a".to_string()];
+        tui.add_child(component);
+        tui.request_render(false);
+        handles.writes.clear();
+
+        tui.request_render(true);
+        assert!(
+            handles.writes.joined().contains("\x1b[2J"),
+            "forced redraw should clear the screen"
+        );
+        handles.writes.clear();
+
+        tui.request_render(false);
+        assert!(
+            !handles.writes.joined().contains("\x1b[2J"),
+            "the force is spent after one paint"
+        );
     }
 
     #[test]
