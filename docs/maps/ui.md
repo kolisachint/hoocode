@@ -23,7 +23,7 @@ update this page in the same commit.
 | Whole screen, event loop | `InteractiveMode` (`Mode`) | `hoocode-code-tui-app/src/mode/mod.rs` (struct, setup, loop); the rest is split by concern into `mode/*.rs`: `input` (editor and keys), `transcript` (`Transcript`: the chat container and the components that track it; reset replaces it), `events` (agent and session events), `prompt_queue`, `session_ops`, `session_op` (the session operations that run off the UI thread: `SessionOpDone`, `SessionOutcome`, `finish_session_op`), `tree`, `models`, `auth`, `settings`, `dialogs`, `subagents`, `bash`, `clipboard`, `mcp`, `chrome` (footer, title, colour), `commands` (slash commands) |
 | Transcript scroll-back view | scroll view | `hoocode-code-tui-app/src/scroll_view.rs` |
 | Startup banner | wordmark | `hoocode-code-tui-app/src/wordmark.rs` |
-| Startup resource listing (skills, commands, agents, MCP, themes, context; no extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
+| Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
 | Task panel | task panel | `code-tui-widgets/src/task_panel.rs` |
 | Notification band | notification panel, tips | `hoocode-code-tui-app/src/notification_panel.rs`, `tips.rs` |
 | Progress bar | progress bar, startup progress | `hoocode-code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |

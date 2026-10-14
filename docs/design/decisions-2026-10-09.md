@@ -48,7 +48,7 @@ Where this page disagrees with an earlier one, this page wins.
 
 | # | Question | Answer |
 |---|---|---|
-| 34 | Expired OAuth token on model menus (N14 remainder) | Non-blocking lookup: the menu opens at once with the model shown unavailable, the refresh runs in the background, and the menu redraws when it lands. Replaces the blocking `AuthStorage::get_api_key_blocking` call |
+| 34 | Expired OAuth token on model menus (N14 remainder) | Non-blocking lookup: the menu opens at once with the model shown unavailable, the refresh runs in the background, and the menu redraws when it lands. Replaces the blocking `AuthStorage::get_api_key_blocking` call. **Superseded 2026-10-14:** marker only, no refresh or redraw; see [decisions-2026-10-14.md](decisions-2026-10-14.md) #3. |
 | 35 | UI-thread `block_on` guard | Stays a source-scan test in `mode/` (`every_ui_thread_block_on_is_a_marked_n14_exception`). The clippy `disallowed-methods` rule comes with core concurrency phase 1 (concurrency.md), not with N14 |
 | 36 | Edit and AgentOutput tool blocks | Follow the shared peek dial through `peek_block`, as Read and WebFetch do. This is the N11 follow-up, done now |
 | 37 | Feature phases (T2 and later) | Wait until the user has reviewed the branch. No T2 work starts before that review |
