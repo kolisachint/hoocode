@@ -23,16 +23,18 @@ const MAX_RESULTS: usize = 100;
 /// `(base directory, query)`.
 type Key = (PathBuf, String);
 
+/// The query the current generation asked for. Its walk is running until `ready` is set.
+struct Wanted {
+    key: Key,
+    /// Matches for `key`, once its walk has finished.
+    ready: Option<Vec<FileMatch>>,
+}
+
 #[derive(Default)]
 struct State {
     /// Bumped each time the wanted query changes.
     generation: u64,
-    /// The query the current generation asked for.
-    wanted: Option<Key>,
-    /// Whether the walk for the current generation is still running.
-    walking: bool,
-    /// Matches for `wanted`, once its walk has finished.
-    ready: Option<Vec<FileMatch>>,
+    wanted: Option<Wanted>,
     /// Matches of the last finished walk, with its base. Shown while a newer
     /// walk runs; cleared by [`FileSearch::forget`].
     last: Option<(PathBuf, Vec<FileMatch>)>,
@@ -76,15 +78,16 @@ impl FileSearch {
     pub fn results(&self, base: &Path, query: &str) -> Vec<FileMatch> {
         let key = (base.to_path_buf(), query.to_string());
         let mut state = lock(&self.state);
-        if state.wanted.as_ref() == Some(&key) {
-            if let Some(ready) = &state.ready {
+        if state.wanted.as_ref().is_some_and(|w| w.key == key) {
+            if let Some(ready) = state.wanted.as_ref().and_then(|w| w.ready.as_ref()) {
                 return ready.clone();
             }
         } else {
             state.generation += 1;
-            state.wanted = Some(key.clone());
-            state.ready = None;
-            state.walking = true;
+            state.wanted = Some(Wanted {
+                key: key.clone(),
+                ready: None,
+            });
             let request = Request {
                 generation: state.generation,
                 key,
@@ -107,7 +110,10 @@ impl FileSearch {
 
     /// Whether a walk for the current query is still running.
     pub fn walk_pending(&self) -> bool {
-        lock(&self.state).walking
+        lock(&self.state)
+            .wanted
+            .as_ref()
+            .is_some_and(|w| w.ready.is_none())
     }
 
     /// Whether a walk for the current query has finished since the last call.
@@ -127,8 +133,9 @@ fn run_worker(finder: &FileFinder, inbox: &Receiver<Request>, state: &Mutex<Stat
         let mut state = lock(state);
         if request.generation == state.generation {
             state.last = Some((base.clone(), found.clone()));
-            state.ready = Some(found);
-            state.walking = false;
+            if let Some(wanted) = &mut state.wanted {
+                wanted.ready = Some(found);
+            }
             state.completed = true;
         }
     }
