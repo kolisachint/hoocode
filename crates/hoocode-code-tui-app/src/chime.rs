@@ -20,6 +20,28 @@ pub fn turn_chime_due(elapsed: Duration, stop_reason: Option<StopReason>) -> boo
     elapsed > TURN_CHIME_MIN && matches!(stop_reason, Some(reason) if reason != StopReason::Aborted)
 }
 
+/// When the current prompt was submitted. Set at submit and taken when its
+/// `PromptDone` arrives, so a run that starts after that (auto-compaction's
+/// continuation) cannot leave an old start time behind for the next prompt.
+#[derive(Debug, Default)]
+pub struct TurnTimer {
+    started: Option<Instant>,
+}
+
+impl TurnTimer {
+    /// A prompt was submitted at `now`; replaces any earlier start.
+    pub fn begin(&mut self, now: Instant) {
+        self.started = Some(now);
+    }
+
+    /// The prompt ended at `now`: whether it chimes. False when no prompt is open.
+    pub fn end(&mut self, now: Instant, stop_reason: Option<StopReason>) -> bool {
+        self.started.take().is_some_and(|started| {
+            turn_chime_due(now.saturating_duration_since(started), stop_reason)
+        })
+    }
+}
+
 /// Drops the chimes that come within [`CHIME_DEBOUNCE`] of the last one rung.
 #[derive(Debug, Default)]
 pub struct ChimeDebounce {
@@ -64,6 +86,28 @@ mod tests {
         assert!(
             turn_chime_due(long, Some(StopReason::Error)),
             "a failed turn still finished"
+        );
+    }
+
+    #[test]
+    fn a_prompt_chimes_by_its_own_start_not_a_stale_one() {
+        let start = Instant::now();
+        let stop = Some(StopReason::Stop);
+        let mut timer = TurnTimer::default();
+        timer.begin(start);
+        assert!(timer.end(start + Duration::from_secs(60), stop));
+        assert!(
+            !timer.end(start + Duration::from_secs(61), stop),
+            "a second end with no prompt open does not chime"
+        );
+
+        // A continuation run ends after the first prompt; the next prompt is short.
+        timer.begin(start);
+        assert!(timer.end(start + Duration::from_secs(20), stop));
+        timer.begin(start + Duration::from_secs(600));
+        assert!(
+            !timer.end(start + Duration::from_secs(602), stop),
+            "the 2 s prompt must not inherit the time since the last prompt"
         );
     }
 

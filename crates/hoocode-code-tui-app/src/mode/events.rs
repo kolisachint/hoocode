@@ -109,10 +109,7 @@ impl Mode {
 
     /// The turn that just ended (`PromptDone`): chime when it ran long enough.
     pub(super) fn finish_turn_chime(&mut self) {
-        let Some(started) = self.turn_started_at.take() else {
-            return;
-        };
-        if turn_chime_due(started.elapsed(), self.turn_stop_reason) {
+        if self.turn_timer.end(Instant::now(), self.turn_stop_reason) {
             self.ring_chime();
         }
     }
@@ -259,7 +256,6 @@ impl Mode {
         match event {
             AgentEvent::AgentStart => {
                 self.tips.on_turn_start();
-                self.turn_started_at.get_or_insert_with(Instant::now);
                 self.stop_working_loader();
                 let loader = self.create_working_loader();
                 self.status.borrow_mut().add_child(as_component(&loader));

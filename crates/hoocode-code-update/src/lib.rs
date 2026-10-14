@@ -43,9 +43,20 @@ pub fn parse_version(text: &str) -> Option<[u64; 3]> {
     parts.next().is_none().then_some(out)
 }
 
+/// Whether `text` is a pre-release (`1.2.3-beta.1`). Build metadata (`+...`) does not count.
+fn is_prerelease(text: &str) -> bool {
+    let core = text.trim().trim_start_matches('v');
+    core.split('+')
+        .next()
+        .is_some_and(|core| core.contains('-'))
+}
+
 /// Whether `latest` is a newer release than `running`. Unparseable input is never newer.
+/// On the same `major.minor.patch`, a release is newer than its own pre-release
+/// (`1.0.0` after `1.0.0-beta.1`). Two pre-releases of one version are not ordered.
 pub fn is_newer(latest: &str, running: &str) -> bool {
     match (parse_version(latest), parse_version(running)) {
+        (Some(l), Some(r)) if l == r => !is_prerelease(latest) && is_prerelease(running),
         (Some(latest), Some(running)) => latest > running,
         _ => false,
     }
@@ -144,10 +155,18 @@ pub fn curl_bin_dir() -> PathBuf {
     root.join("bin")
 }
 
+/// [`install_method`] after resolving symlinks on both sides. Some platforms report
+/// the path the binary was launched by (npm's and bun's bin links), not its real
+/// location under `node_modules`. A path that cannot be resolved is used as it is.
+pub fn install_method_resolved(exe: &Path, curl_bin_dir: &Path) -> InstallMethod {
+    let resolve = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    install_method(&resolve(exe), &resolve(curl_bin_dir))
+}
+
 /// The update command for the running binary, if its install method has one.
 pub fn current_update_command() -> Option<&'static str> {
     let exe = std::env::current_exe().ok()?;
-    update_command(install_method(&exe, &curl_bin_dir()))
+    update_command(install_method_resolved(&exe, &curl_bin_dir()))
 }
 
 /// A newer release than the running one.
@@ -301,6 +320,48 @@ mod tests {
         assert!(!is_newer("1.0.0-beta", "1.0.0"));
         assert!(!is_newer("garbage", "0.1.17"));
         assert!(!is_newer("0.1.18", "garbage"));
+    }
+
+    #[test]
+    fn a_release_is_newer_than_its_own_prerelease() {
+        assert!(is_newer("1.0.0", "1.0.0-beta.1"), "running a pre-release");
+        assert!(is_newer("v1.0.0", "1.0.0-rc.2"));
+        assert!(!is_newer("1.0.0-beta.2", "1.0.0"), "a pre-release is older");
+        assert!(
+            !is_newer("1.0.0", "1.0.0+build.5"),
+            "build metadata is not a pre-release"
+        );
+        assert!(is_newer("1.0.1-rc.1", "1.0.0"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_npm_bin_resolves_to_its_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir
+            .path()
+            .join("lib/node_modules/@kolisachint/hoocode-linux-x64/bin");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("hoocode"), "").unwrap();
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::os::unix::fs::symlink(real.join("hoocode"), bin.join("hoocode")).unwrap();
+        let curl = dir.path().join(".hoocode/bin");
+
+        assert_eq!(
+            install_method(&bin.join("hoocode"), &curl),
+            InstallMethod::Other,
+            "the unresolved link is not under node_modules"
+        );
+        assert_eq!(
+            install_method_resolved(&bin.join("hoocode"), &curl),
+            InstallMethod::Npm
+        );
+        assert_eq!(
+            install_method_resolved(Path::new("/no/such/hoocode"), &curl),
+            InstallMethod::Other,
+            "an unresolvable path falls back to the plain check"
+        );
     }
 
     #[test]

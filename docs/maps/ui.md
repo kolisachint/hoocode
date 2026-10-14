@@ -26,7 +26,7 @@ update this page in the same commit.
 | Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
 | Task panel | task panel | `code-tui-widgets/src/task_panel.rs` |
 | Notification band | notification panel, tips, startup update notice | `hoocode-code-tui-app/src/notification_panel.rs`, `tips.rs`; the update notice is polled by `poll_update_notice` in `mode/events.rs` from `hoocode-code-update` |
-| Completion bell (`chimeOnTurnComplete`): one `\x07` when a turn over 10 s ends (not after an abort) or when `AskUserQuestion` opens; repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` (pure timing); rung by `ring_chime` and `finish_turn_chime` in `mode/events.rs`, and at the `AskOptions` dialog in `mode/mod.rs` |
+| Completion bell (`chimeOnTurnComplete`): one `\x07` when a turn over 10 s ends (not after an abort) or when `AskUserQuestion` opens (not MCP elicitation forms); repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` (pure timing, `TurnTimer` set at prompt submit); rung by `ring_chime` and `finish_turn_chime` in `mode/events.rs`, and at the `AskOptions` dialog in `mode/mod.rs` when its request has `chime` set (`dialog_bridge.rs`) |
 | Progress bar | progress bar, startup progress | `hoocode-code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
 | Prompt editor | `CustomEditor` around `Editor` | `mode/input.rs` (`CustomEditor`); `tui-components/src/editor/` |
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
