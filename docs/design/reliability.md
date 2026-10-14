@@ -19,7 +19,7 @@ stop the same bug classes coming back.
 
 ## What we build
 
-1. **rpc fail-closed.** Built 2026-10-08 (`claude/1.1-rpc-fails-closed`).
+1. **rpc fail-closed.** Built 2026-10-08 (`claude/1.1-rpc-fails-closed`). **Status (2026-10-14): done.**
    - `evaluate` takes an `ApprovalChannel` (`Ui`, or `Headless { fail_closed }`).
      A gated call that needs approval is `Block`ed when `fail_closed`, with a
      message that names `auto_allow` in hoo-config.json.
@@ -28,16 +28,31 @@ stop the same bug classes coming back.
      Warm workers opt out of their own gate with the internal `HOOCODE_INTERNAL_WARM_WORKER`,
      unless their parent is fail-closed (the inherited flag wins).
    - print and json keep `Allow` and print a one-line stderr note.
-   - MCP and plugin tools stay ungated (TODO in `code-permissions`).
+   - MCP and plugin tools are gated too (2026-10-14, commit `fbc9eb7`). In rpc they are
+     blocked unless `auto_allow` lists them (`mcp_*` names and the plugin lifecycle tools
+     `SearchPlugins`, `ListPlugins`, `SuggestPluginInstall`, `InstallPlugin`, `ProposePlugin`).
+     A UI and print still run them without asking.
+   - Print and json: the stderr note names the approval tools that ran (2026-10-14,
+     commit `aaf488f`). It is one line after the run, and absent when none ran.
    - Tests: a gated tool in rpc is blocked, in print is allowed with the notice,
-     and in interactive mode still prompts.
+     and in interactive mode still prompts. An MCP or plugin tool is blocked in rpc
+     unless auto-allowed (`permission_gate.rs`), and the print note is checked end to end
+     (`hoocode-code-main` `approval_note.rs`).
    - Approval dialogs over rpc are dropped (2026-10-08); hoobot uses the
      app-server ([rpc-approvals.md](rpc-approvals.md) is kept for the record).
 2. **Paths** (changed 2026-10-08): [naming-and-paths.md](../../archive/docs/naming-and-paths.md) §2–4.
+   **Status (2026-10-14): done.** `agent_dir()` is `~/.hoocode`, `hoocode-code-migrate` runs
+   the one-time merge at startup, and the `.agents` scope is documented (below).
    Data moves to `~/.hoocode`, **shared with hoocode-ts** (drop-in replacement);
    `HOOCODE_` is the only env prefix; a one-time merge copies `~/.hoocode` and
    `<repo>/.hoocode/` in (hoocode wins, backups first). The crate and binary
    rename is §1 of that card and happens in step 0, before this card.
+   - **`.agents` is a cross-vendor scope (decided 2026-10-14, kept).** `~/.agents` and
+     `<project>/.agents` use the Agent Skills and AGENTS.md layout that other tools share
+     (`hoocode-code-paths`: `user_agents_dir`, `collect_agents_ancestor_dirs`). hoocode reads
+     skills, commands, agents, AGENTS.md and MCP config from them and writes none of them, with
+     one exception: the scheduled-task store `<project>/.agents/scheduled_tasks.json` (and its
+     `.lock`), which hoocode-ts shares. The MCP trust store stays in `~/.hoocode`.
 3. **macOS test failures** (all four fail on a clean checkout):
    - `code-main` replay: temp paths resolve under `/private` on macOS, so
      canonicalize both sides;
@@ -47,12 +62,16 @@ stop the same bug classes coming back.
    - `tui-selectors` scoped-models hint: find the cause, then fix.
    - Add a macOS test job to `ci.yml`. `binaries.yml` already uses `macos-latest`
      runners for release builds, but no tests run there.
-   - **Status (2026-10-08, branch `claude/1.3-macos-tests`): fixes done, macOS job staged.**
+   - **Status (2026-10-14): job applied; PR run staged.** The `test-macos` job is in `ci.yml`
+     (patch `archive/migration/ci/applied/macos-tests.patch`). Its run on pull requests (the removed
+     `if:` line) is staged in `archive/migration/ci/step1-workflows.patch`, which the user applies
+     and pushes, because the session token cannot change workflows (decision 15 in
+     [decisions-2026-10-14.md](decisions-2026-10-14.md)). Until then the job skips PRs. The fixes below are on the branch.
+     Not run on macOS in this session (Linux only here).
      Fixed: replay masks both spellings of each temp path (`/private`), `code-tool-api`
      compares names with `same_file_name` (NFC both sides), the `option+a` tip expects
      `option` on macOS, and the scoped-models footer test renders at 200 columns (cause
-     below). The job is `archive/migration/ci/macos-tests.patch`, not yet applied. Not run on
-     macOS (Linux only here).
+     below).
      Scoped-models cause: `alt` is printed as `option` on macOS, so the 5-key footer is
      about 20 columns wider and wraps at 120, splitting "all enabled".
 4. **Panic audit.**
@@ -62,7 +81,7 @@ stop the same bug classes coming back.
      network is fixed (char-boundary-safe helpers, `?`, or a logged fallback).
    - Add `clippy::string_slice` as a warning in the TUI and tool crates so new
      slices get a second look.
-   - Status (2026-10-08, branch `claude/1.5-panic-audit`): **built.** Every string
+   - Status (2026-10-14): **done** (built 2026-10-08, branch `claude/1.5-panic-audit`). Every string
      slice in the 23 TUI and tool crates goes through `text_slice` (`prefix`,
      `suffix_from`, `range`; a copy in `hoocode-tui-util` and one in
      `hoocode-code-tool-api`) and `clippy::string_slice` is on there. Input panics
@@ -74,17 +93,18 @@ stop the same bug classes coming back.
    Rust) for: session JSONL parse, settings and `models.json` parse, SSE parser,
    terminal key parser, markdown renderer, and list-item detection. An optional
    nightly `cargo-fuzz` CI job runs the same targets for longer.
-   - **Status (2026-10-08, branch `claude/1.6-fuzzing`): done, except the CI job is staged.**
+   - **Status (2026-10-14): done.** The nightly CI job is `.github/workflows/fuzz.yml`
+     (built 2026-10-08, branch `claude/1.6-fuzzing`).
      Targets are in `fuzz/` (see `fuzz/README.md`): `sse`, `rpc_jsonl`, `session_jsonl`,
      `settings_json`, `models_json`, `tui_keys`, `js_regex`, `ansi_wrap`, `markdown`
      (list items are covered through the lexer; `list_item_regex` is crate-private).
      Smoke tests run on stable as `fuzz_smoke` in each owning crate. They replay seeds,
      their prefixes and deterministic mutations, so no `proptest` dependency was added.
-     The nightly job is `archive/migration/ci/fuzz.patch`, not yet applied. The first run found
+     The first run found
      a panic in `js_regex` `translate` (truncated `\u`, `\x`, `\p`), now fixed.
 
 6. **`@file` autocomplete without `fd`** (2026-10-08).
-   - Status (2026-10-08, `claude/1.4b-finder-async`): **done.** The walk is in
+   - Status (2026-10-14): **done** (built 2026-10-08, `claude/1.4b-finder-async`). The walk is in
      `hoocode-code-tools` (`file_finder`, the `ignore` crate) and the app injects it,
      so `@` works with no `fd` installed. Results are capped at 100 matches and 20 shown,
      as before. The walk runs on a worker thread (`tui-components/src/autocomplete/file_search.rs`):
@@ -108,6 +128,9 @@ stop the same bug classes coming back.
 
 Done when: all six land, CI is green on Linux and macOS, and every item has
 regression tests.
+
+**Closed 2026-10-14.** All six are done in code and have regression tests. The one open
+check is the first macOS run of `test-macos` on a pull request.
 
 ## Not doing
 

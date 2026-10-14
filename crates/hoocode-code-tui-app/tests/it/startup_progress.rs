@@ -27,28 +27,28 @@ fn keys() -> Vec<String> {
 #[test]
 fn set_list_keeps_entries_in_insertion_order() {
     let _g = lock(None);
-    startup_progress::set(dl("fd", "fd", 1, 10));
-    startup_progress::set(dl("rg", "ripgrep", 2, 20));
-    assert_eq!(keys(), ["fd", "rg"]);
+    startup_progress::set(dl("alpha", "alpha", 1, 10));
+    startup_progress::set(dl("beta", "beta", 2, 20));
+    assert_eq!(keys(), ["alpha", "beta"]);
 }
 
 #[test]
 fn updating_an_existing_key_replaces_in_place_without_reordering() {
     let _g = lock(None);
-    startup_progress::set(dl("fd", "fd", 1, 10));
-    startup_progress::set(dl("rg", "ripgrep", 2, 20));
-    startup_progress::set(dl("fd", "fd", 9, 10));
-    assert_eq!(keys(), ["fd", "rg"]);
-    assert_eq!(startup_progress::list()[0], dl("fd", "fd", 9, 10));
+    startup_progress::set(dl("alpha", "alpha", 1, 10));
+    startup_progress::set(dl("beta", "beta", 2, 20));
+    startup_progress::set(dl("alpha", "alpha", 9, 10));
+    assert_eq!(keys(), ["alpha", "beta"]);
+    assert_eq!(startup_progress::list()[0], dl("alpha", "alpha", 9, 10));
 }
 
 #[test]
 fn remove_drops_one_key_clear_wipes_all() {
     let _g = lock(None);
-    startup_progress::set(dl("fd", "fd", 1, 10));
-    startup_progress::set(dl("rg", "ripgrep", 2, 20));
-    startup_progress::remove("fd");
-    assert_eq!(keys(), ["rg"]);
+    startup_progress::set(dl("alpha", "alpha", 1, 10));
+    startup_progress::set(dl("beta", "beta", 2, 20));
+    startup_progress::remove("alpha");
+    assert_eq!(keys(), ["beta"]);
     startup_progress::clear();
     assert!(startup_progress::list().is_empty());
 }
@@ -61,12 +61,12 @@ fn subscribe_fires_on_set_remove_clear_and_stops_after_unsubscribe() {
     let sub = startup_progress::subscribe(move || {
         sink.fetch_add(1, Ordering::SeqCst);
     });
-    startup_progress::set(dl("fd", "fd", 1, 10));
-    startup_progress::remove("fd");
+    startup_progress::set(dl("alpha", "alpha", 1, 10));
+    startup_progress::remove("alpha");
     startup_progress::clear(); // already empty: no notification
     assert_eq!(n.load(Ordering::SeqCst), 2);
     sub.unsubscribe();
-    startup_progress::set(dl("rg", "ripgrep", 1, 2));
+    startup_progress::set(dl("beta", "beta", 1, 2));
     assert_eq!(n.load(Ordering::SeqCst), 2);
 }
 

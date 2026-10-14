@@ -1,0 +1,67 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index b4879c0..bf40571 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -68,7 +68,6 @@ jobs:
+     # Same command as `test`, on macOS (docs/design/reliability.md §1.3): the
+     # macOS-only failures (/private temp paths, NFD names, option+ key labels)
+     # must not come back. Blocking once it has run green.
+-    if: github.event_name != 'pull_request'
+     runs-on: macos-latest
+     steps:
+       - uses: actions/checkout@v4
+@@ -109,6 +108,15 @@ jobs:
+             exit 1
+           fi
+ 
++  guards:
++    # Cheap repo guards: the old-name guard (it uses git grep, so the
++    # checkout must be a normal one) and the crate map matches the workspace.
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - run: scripts/ci/no_cortex.sh
++      - run: python3 scripts/maps/packages.py --check
++
+   subagent-evals:
+     # Subagent reliability, measured end to end against a scripted mock
+     # provider (docs/design/subagent-evals.md). Non-blocking until it has run
+diff --git a/.github/workflows/tui-parity.yml b/.github/workflows/tui-parity.yml
+new file mode 100644
+index 0000000..8545436
+--- /dev/null
++++ b/.github/workflows/tui-parity.yml
+@@ -0,0 +1,33 @@
++name: TUI goldens (level 2)
++
++# Runs the hoocode-only screen goldens (scripts/tui/goldens.py check): the real hoocode binary
++# in tmux against the scripted mock LLM, diffed with tests/golden/tui/. The hoocode-ts parity
++# gate is retired (TUI plan T0.6). Manual and nightly; the same check is the local done bar.
++on:
++  workflow_dispatch:
++    inputs:
++      scenario:
++        description: "Scenario name or 'all'"
++        default: all
++  schedule:
++    - cron: "17 3 * * *"
++
++jobs:
++  goldens:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: dtolnay/rust-toolchain@stable
++      - uses: Swatinem/rust-cache@v2
++      - name: Install tmux
++        run: sudo apt-get update && sudo apt-get install -y tmux
++      - name: Build hoocode
++        run: cargo build -p hoocode-code-main --bin hoocode
++      - name: Check screen goldens
++        run: python3 scripts/tui/goldens.py check "${{ inputs.scenario || 'all' }}"
++      - name: Upload screens on failure
++        if: failure()
++        uses: actions/upload-artifact@v4
++        with:
++          name: tui-goldens
++          path: target/tui-goldens/
