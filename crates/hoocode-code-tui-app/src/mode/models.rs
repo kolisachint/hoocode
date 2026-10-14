@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use hoocode_ai_types::{Model, ThinkingLevel, Transport};
+use hoocode_code_auth::AuthReadiness;
 use hoocode_code_models::{find_exact_model_reference_match, resolve_scoped_models};
 use hoocode_code_settings::{ScopedModel, SettingsManager};
 use hoocode_code_tui_selectors::model_selector::{ModelSelectorComponent, ModelSelectorEvent};
@@ -73,6 +74,19 @@ fn entries_to_save(
     let mut all = picked;
     all.extend(unavailable_entries(saved, available));
     all
+}
+
+/// The providers among `models` whose stored OAuth token has expired, each
+/// once, in model order. `readiness` must not do network I/O (the menu is
+/// drawn on the UI thread).
+fn expired_providers(models: &[Model], readiness: impl Fn(&str) -> AuthReadiness) -> Vec<String> {
+    let mut seen = HashSet::new();
+    models
+        .iter()
+        .filter(|m| seen.insert(m.provider.as_str()))
+        .filter(|m| readiness(&m.provider) == AuthReadiness::NeedsRefresh)
+        .map(|m| m.provider.clone())
+        .collect()
 }
 
 /// The notice for Anthropic subscription auth (`ANTHROPIC_SUBSCRIPTION_AUTH_*`).
@@ -212,9 +226,12 @@ impl Mode {
     /// `showModelSelector`.
     pub(super) fn show_model_selector(&mut self, initial_search: Option<&str>) {
         let load_error = self.session.model_registry().error().map(String::from);
-        let selector = handle(ModelSelectorComponent::new(
+        let available = self.session.get_available_models();
+        // N14 (decision 3): the marker only. Reads the cached token state, no refresh.
+        let expired = expired_providers(&available, |p| self.auth_storage.readiness(p, false));
+        let mut selector = ModelSelectorComponent::new(
             self.session.model(),
-            Ok(self.session.get_available_models()),
+            Ok(available),
             load_error,
             self.session
                 .scoped_models()
@@ -222,7 +239,9 @@ impl Mode {
                 .map(|s| s.model)
                 .collect(),
             initial_search,
-        ));
+        );
+        selector.set_expired_providers(expired);
+        let selector = handle(selector);
         {
             let mut container = self.editor_container.borrow_mut();
             container.clear();
@@ -396,6 +415,22 @@ mod tests {
             "contextWindow": 128000, "maxTokens": 8192,
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn expired_marker_goes_to_providers_that_need_a_refresh() {
+        let models = vec![
+            model("stale", "s-1"),
+            model("stale", "s-2"),
+            model("fresh", "f-1"),
+            model("none", "n-1"),
+        ];
+        let expired = expired_providers(&models, |p| match p {
+            "stale" => AuthReadiness::NeedsRefresh,
+            "none" => AuthReadiness::Missing,
+            _ => AuthReadiness::Ready,
+        });
+        assert_eq!(expired, vec!["stale".to_string()]);
     }
 
     /// The picker opens on the saved list with each concrete model's effort,

@@ -25,6 +25,7 @@ use hoocode_ai_provider_openai_responses::{apply_service_tier_pricing, mapped_ef
 use hoocode_ai_stream::{
     create_assistant_message_event_stream, spawn_producer, AssistantMessageEventStream,
 };
+use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     AbortSignal, AssistantMessageEvent, Context, Model, OnPayload, OnResponse, SimpleStreamOptions,
     StopReason, Transport,
@@ -107,7 +108,7 @@ impl CodexError {
         match self {
             Self::Api(m) | Self::Protocol(m) => m.clone(),
             Self::Other(e) => e.message.clone(),
-            Self::Aborted => "Request was aborted".to_string(),
+            Self::Aborted => ABORTED_MESSAGE.to_string(),
         }
     }
 
@@ -128,7 +129,7 @@ fn aborted(signal: Option<&AbortSignal>) -> bool {
     signal.is_some_and(AbortSignal::aborted)
 }
 
-/// Await `future`, or fail with `Request was aborted` once `signal` fires.
+/// Await `future`, or fail with [`ABORTED_MESSAGE`] once `signal` fires.
 pub(crate) async fn abortable<F: std::future::Future>(
     signal: Option<&AbortSignal>,
     future: F,

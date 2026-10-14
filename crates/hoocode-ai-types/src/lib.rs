@@ -129,6 +129,10 @@ pub enum CacheRetention {
 // Stop reason
 // ---------------------------------------------------------------------------
 
+/// The error text every provider reports when a request is aborted. The TUI
+/// matches on it, so every provider uses this one text.
+pub const ABORTED_MESSAGE: &str = "Request was aborted";
+
 /// Reason why an assistant message stopped generating (TS `StopReason`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

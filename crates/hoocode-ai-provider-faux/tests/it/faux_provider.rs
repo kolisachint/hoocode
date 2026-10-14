@@ -12,6 +12,7 @@ use hoocode_ai_provider_faux::{
     FauxTokenSize, RegisterFauxProviderOptions,
 };
 use hoocode_ai_registry::{complete_simple, stream_simple};
+use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     now_ms, AbortSignal, AssistantMessage, AssistantMessageEvent, CacheRetention, Content, Context,
     ImageContent, Message, Model, SimpleStreamOptions, StopReason, Tool, ToolResultMessage,
@@ -613,7 +614,7 @@ async fn streams_an_explicit_assistant_error_message_as_a_terminal_error() {
 
 #[tokio::test]
 async fn streams_an_explicit_assistant_aborted_message_as_a_terminal_error() {
-    assert_terminal_error(StopReason::Aborted, "Request was aborted").await;
+    assert_terminal_error(StopReason::Aborted, ABORTED_MESSAGE).await;
 }
 
 #[tokio::test]

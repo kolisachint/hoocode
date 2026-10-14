@@ -4,11 +4,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use hoocode_ai_types::{AssistantMessage, Content, StopReason};
+use hoocode_ai_types::{AssistantMessage, Content, StopReason, ABORTED_MESSAGE};
 use hoocode_code_tui_theme::{get_markdown_theme, theme};
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::{DefaultTextStyle, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
+use hoocode_tui_util::js_regex::is_js_space;
 
 use crate::wrap_zone;
 
@@ -29,10 +30,6 @@ pub enum ThinkingDisplay {
 /// Markdown; above it the text is segmented at stable block boundaries so each
 /// update re-parses only the growing tail.
 const SEGMENT_MIN_CHARS: usize = 2048;
-
-fn is_js_space(c: char) -> bool {
-    js_trim(c.encode_utf8(&mut [0; 4])).is_empty()
-}
 
 /// Up to three leading spaces, then the rest. `None` for four or more: an
 /// indented code line, which no block pattern here matches.
@@ -174,10 +171,6 @@ pub fn segment_streaming_markdown(text: &str) -> Vec<String> {
 }
 
 type ThemeFactory = Rc<dyn Fn() -> MarkdownTheme>;
-
-/// The error a request reports when it was aborted and gave no reason of its
-/// own. The abort line shows any other message as it is.
-const ABORTED_MESSAGE: &str = "Request was aborted";
 
 /// Which Markdown child a block is, across streaming updates: a content block
 /// (text or thinking, by its index), or one chunk of such a block once it is

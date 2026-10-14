@@ -53,9 +53,6 @@ pub struct ResourceListing {
     /// Dispatchable agents (empty when the Agent tool is off): name, description.
     pub agents: Vec<(String, String)>,
     pub mcp: Vec<McpServerStatus>,
-    pub extension_diagnostics: Vec<ResourceDiagnostic>,
-    /// Themes loaded from files (path + source).
-    pub custom_themes: Vec<ListedItem>,
     pub theme_diagnostics: Vec<ResourceDiagnostic>,
     pub columns: Option<usize>,
     pub quiet_startup: bool,
@@ -427,12 +424,7 @@ pub fn show_loaded_resources(
     };
 
     let mut source_infos: Vec<(String, SourceInfo)> = Vec::new();
-    for item in listing
-        .skills
-        .iter()
-        .chain(&listing.templates)
-        .chain(&listing.custom_themes)
-    {
+    for item in listing.skills.iter().chain(&listing.templates) {
         if let Some(info) = &item.source_info {
             source_infos.retain(|(k, _)| *k != item.path);
             source_infos.push((item.path.clone(), info.clone()));
@@ -471,10 +463,6 @@ pub fn show_loaded_resources(
                 listing.mcp.len(),
                 plural(listing.mcp.len(), "mcp server", None),
             ));
-        }
-        if !listing.custom_themes.is_empty() {
-            let n = listing.custom_themes.len();
-            cells.push((Category::Themes, n, plural(n, "theme", None)));
         }
 
         if cells.is_empty() {
@@ -639,14 +627,6 @@ pub fn show_loaded_resources(
                 .join("\n");
             detail_sections.push(format!("{}\n{list}", section_header("MCP")));
         }
-        if !listing.custom_themes.is_empty() {
-            let list = format_scope_groups(
-                &build_scope_groups(&listing.custom_themes),
-                &|i| format_display_path(&i.path),
-                &|i| get_short_path(&i.path, i.source_info.as_ref()),
-            );
-            detail_sections.push(format!("{}\n{list}", section_header("Themes")));
-        }
         if !detail_sections.is_empty() {
             let details = detail_sections.join("\n\n");
             out.push(handle(ExpandableText::new(
@@ -667,7 +647,6 @@ pub fn show_loaded_resources(
         for (title, diagnostics) in [
             ("[Skill conflicts]", &listing.skill_diagnostics),
             ("[Prompt conflicts]", &listing.prompt_diagnostics),
-            ("[Extension issues]", &listing.extension_diagnostics),
             ("[Theme conflicts]", &listing.theme_diagnostics),
         ] {
             if diagnostics.is_empty() {

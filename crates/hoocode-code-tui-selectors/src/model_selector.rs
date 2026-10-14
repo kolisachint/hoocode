@@ -6,6 +6,7 @@
 //! [`ModelSelectorEvent::Select`] arrives.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use hoocode_ai_models::models_are_equal;
@@ -43,6 +44,8 @@ struct State {
     filtered: Vec<Model>,
     selected: usize,
     error: Option<String>,
+    /// Providers whose stored OAuth token has expired (see `set_expired_providers`).
+    expired: HashSet<String>,
 }
 
 impl State {
@@ -120,13 +123,18 @@ impl Component for ModelList {
                     model.id.clone()
                 };
                 let badge = t.fg("muted", &format!("[{}]", model.provider));
+                let expired = if state.expired.contains(&model.provider) {
+                    t.fg("warning", " expired")
+                } else {
+                    String::new()
+                };
                 let check = if models_are_equal(state.current.as_ref(), Some(model)) {
                     t.fg("success", " ✓")
                 } else {
                     String::new()
                 };
                 SelectableRow {
-                    text: format!("{prefix}{id} {badge}{check}"),
+                    text: format!("{prefix}{id} {badge}{expired}{check}"),
                     selected,
                 }
             })
@@ -203,6 +211,7 @@ impl ModelSelectorComponent {
             filtered: Vec::new(),
             selected: 0,
             error,
+            expired: HashSet::new(),
         };
         state.filtered = state.active().to_vec();
         state.selected = state
@@ -252,6 +261,12 @@ impl ModelSelectorComponent {
             events: Vec::new(),
             submitted,
         }
+    }
+
+    /// Marks the models of these providers `expired`: their stored OAuth token
+    /// needs a refresh. The marker only; the picker never refreshes.
+    pub fn set_expired_providers(&mut self, providers: impl IntoIterator<Item = String>) {
+        self.state.borrow_mut().expired = providers.into_iter().collect();
     }
 
     /// Events since the last call.

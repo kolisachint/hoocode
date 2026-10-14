@@ -31,11 +31,6 @@ pub use assistant_message::{
 };
 pub use user_message::UserMessageComponent;
 
-/// JavaScript's `\s` (and `String.prototype.trim`) whitespace.
-pub(crate) fn is_js_space(c: char) -> bool {
-    hoocode_tui_components::markdown::js_trim(c.encode_utf8(&mut [0; 4])).is_empty()
-}
-
 /// Whether `s` is empty after `String.prototype.trim`.
 pub(crate) fn is_blank(s: &str) -> bool {
     hoocode_tui_components::markdown::js_trim(s).is_empty()

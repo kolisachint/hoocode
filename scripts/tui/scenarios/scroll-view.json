@@ -1,5 +1,5 @@
 {
-  "description": "The scroll view (11.7): after two long answers, PageUp pins the transcript (alternate screen, themed indicator row), Up steps a line, ctrl+up jumps to the previous user message, '/' opens the search query line and typing fills it (one key at a time, digits only: the random session name on the editor border is in the searched buffer), Enter keeps it, Escape drops the search and a second Escape returns to live.",
+  "description": "The scroll view (11.7): after two long answers, PageUp pins the transcript (alternate screen, themed indicator row), Up steps a line, ctrl+up jumps to the previous user message, '/' opens the search query line and the query 'beta item 25' is typed in one step: it matches one row whatever the view position, so the search selects that match explicitly (1/1), and Enter keeps it, Escape drops the search and a second Escape returns to live.",
   "phase": "11.7",
   "terminal": {
     "cols": 100,
@@ -19,7 +19,7 @@
       "timeout": 30
     },
     {
-      "wait_stable": 1.0,
+      "wait_for": "mock-model",
       "timeout": 20
     },
     {
@@ -119,14 +119,7 @@
       "timeout": 20
     },
     {
-      "type": "2"
-    },
-    {
-      "wait_stable": 1.0,
-      "timeout": 20
-    },
-    {
-      "type": "5"
+      "type": "beta item 25"
     },
     {
       "wait_stable": 1.0,
@@ -135,7 +128,7 @@
     {
       "snapshot": "search-typing",
       "contains": [
-        "search: 25"
+        "search: beta item 25"
       ]
     },
     {
@@ -150,7 +143,7 @@
     {
       "snapshot": "search-kept",
       "contains": [
-        "search: 25"
+        "search: beta item 25"
       ]
     },
     {

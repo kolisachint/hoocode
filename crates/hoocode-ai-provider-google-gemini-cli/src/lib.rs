@@ -19,6 +19,7 @@ use hoocode_ai_provider_google::{
 use hoocode_ai_stream::{
     create_assistant_message_event_stream, spawn_producer, AssistantMessageEventStream,
 };
+use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     AbortSignal, AssistantMessage, AssistantMessageEvent, Content, Context, Model, OnPayload,
     SimpleStreamOptions, StopReason, TextContent, ThinkingBudgets, ThinkingContent, ThinkingLevel,
@@ -53,7 +54,6 @@ const BASE_DELAY_MS: u64 = 1000;
 const MAX_EMPTY_STREAM_RETRIES: u32 = 2;
 const EMPTY_STREAM_BASE_DELAY_MS: u64 = 500;
 const CLAUDE_THINKING_BETA_HEADER: &str = "interleaved-thinking-2025-05-14";
-const ABORTED: &str = "Request was aborted";
 const NO_AUTH: &str =
     "Google Cloud Code Assist requires OAuth authentication. Use /login to authenticate.";
 
@@ -592,7 +592,7 @@ async fn run(
     let outcome = match &signal {
         Some(signal) => tokio::select! {
             biased;
-            _ = signal.cancelled(), if !signal.aborted() => Err(ABORTED.to_string()),
+            _ = signal.cancelled(), if !signal.aborted() => Err(ABORTED_MESSAGE.to_string()),
             r = drive(&model, &context, &options, &mut state, &sender) => r,
         },
         None => drive(&model, &context, &options, &mut state, &sender).await,
@@ -758,7 +758,7 @@ async fn drive(
         return Err("Cloud Code Assist API returned an empty response".to_string());
     }
     if options.signal.as_ref().is_some_and(AbortSignal::aborted) {
-        return Err(ABORTED.to_string());
+        return Err(ABORTED_MESSAGE.to_string());
     }
     if matches!(
         state.output.stop_reason,

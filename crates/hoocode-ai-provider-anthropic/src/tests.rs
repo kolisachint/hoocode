@@ -271,7 +271,7 @@ fn test_abort_mid_stream_keeps_partial_content() {
 
     let msg = s.result_blocking();
     assert_eq!(msg.stop_reason, StopReason::Aborted);
-    assert_eq!(msg.error_message.as_deref(), Some("Request was aborted"));
+    assert_eq!(msg.error_message.as_deref(), Some(ABORTED_MESSAGE));
     assert_eq!(msg.usage.input, 10);
     match msg.content.as_slice() {
         [Content::Text(t)] => assert_eq!(t.text, "15 + 27 = 42. "),
