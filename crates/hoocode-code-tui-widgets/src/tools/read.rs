@@ -2,11 +2,15 @@
 //! resources and the app's own docs) and the numbered result, trimmed to the
 //! peek budget.
 
+use std::any::Any;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use hoocode_code_tool_api::{format_size, resolve_read_path, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES};
-use hoocode_code_tui_theme::{get_language_from_path, highlight_code, message_label, theme};
+use hoocode_code_tui_theme::{get_language_from_path, highlight_code, message_label, theme, Theme};
 use serde_json::Value;
 
 use super::search::js_number;
@@ -16,7 +20,7 @@ use crate::render_utils::{
     arg_or, get_text_output, invalid_arg_text, replace_tabs, shorten_path, str_arg,
 };
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
-use crate::tool_output_view::peek_block;
+use crate::tool_output_view::{peek_window, PEEK_LINES};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CompactKind {
@@ -164,22 +168,86 @@ fn format_compact_read_call(kind: &CompactKind, label: &str, args: &Value) -> St
     )
 }
 
-fn format_read_result(args: &Value, result: &ToolResultView<'_>, show_images: bool) -> String {
+/// The peek window of a Read result: the first lines it shows, highlighted,
+/// and how many lines the result has in all. Highlighting reads the whole
+/// output: the closing colour the highlighter appends at the end can make the
+/// last line non-empty, so a prefix alone could miscount the lines.
+#[derive(Debug, Clone)]
+struct ReadPreview {
+    lang: Option<&'static str>,
+    /// The theme the highlighting used: a theme switch re-highlights.
+    theme: Arc<Theme>,
+    output: String,
+    total: usize,
+    shown: Vec<String>,
+}
+
+/// Renderer state for the Read result, kept in the block's objects.
+const PREVIEW_KEY: &str = "read.preview";
+
+fn preview_state(objects: &mut HashMap<String, Rc<dyn Any>>) -> Rc<RefCell<Option<ReadPreview>>> {
+    if let Some(existing) = objects.get(PREVIEW_KEY) {
+        if let Ok(state) = existing.clone().downcast::<RefCell<Option<ReadPreview>>>() {
+            return state;
+        }
+    }
+    let state = Rc::new(RefCell::new(None));
+    objects.insert(PREVIEW_KEY.into(), state.clone());
+    state
+}
+
+fn build_preview(output: &str, lang: Option<&'static str>) -> ReadPreview {
+    let rendered: Vec<String> = match lang {
+        Some(lang) => highlight_code(&replace_tabs(output), Some(lang)),
+        None => output.split('\n').map(str::to_string).collect(),
+    };
+    let mut lines = trim_trailing_empty_lines(rendered);
+    let total = lines.len();
+    lines.truncate(PEEK_LINES);
+    ReadPreview {
+        lang,
+        theme: theme(),
+        output: output.to_string(),
+        total,
+        shown: lines,
+    }
+}
+
+/// The memoized preview, rebuilt only when the output, the language or the
+/// theme changed (the highlight colours come from the theme).
+fn ensure_preview<'a>(
+    memo: &'a mut Option<ReadPreview>,
+    output: &str,
+    lang: Option<&'static str>,
+) -> &'a ReadPreview {
+    let current = theme();
+    let fresh = memo
+        .as_ref()
+        .is_some_and(|p| p.lang == lang && p.output == output && Arc::ptr_eq(&p.theme, &current));
+    if !fresh {
+        *memo = Some(build_preview(output, lang));
+    }
+    memo.as_ref().expect("set above when stale")
+}
+
+fn format_read_result(
+    args: &Value,
+    result: &ToolResultView<'_>,
+    show_images: bool,
+    memo: &RefCell<Option<ReadPreview>>,
+) -> String {
     let t = theme();
     let raw = raw_path(args);
     let output = get_text_output(Some(result.content), show_images);
     let lang = raw.as_deref().and_then(get_language_from_path);
-    let rendered: Vec<String> = match lang {
-        Some(lang) => highlight_code(&replace_tabs(&output), Some(lang)),
-        None => output.split('\n').map(str::to_string).collect(),
-    };
-    let lines = trim_trailing_empty_lines(rendered);
+    let mut memo = memo.borrow_mut();
+    let preview = ensure_preview(&mut memo, &output, lang);
     let start_line = args
         .get("offset")
         .and_then(Value::as_f64)
         .map(|n| n as i64)
         .unwrap_or(1);
-    let body = peek_block(&lines, |shown| {
+    let body = peek_window(preview.total, &preview.shown, |shown| {
         render_read_output(&shown.join("\n"), start_line)
     });
     let mut text = body;
@@ -241,7 +309,68 @@ pub fn definition() -> ToolRenderDefinition {
             }))
         })),
         render_result: Some(Rc::new(|result, _, ctx| {
-            Ok(text(format_read_result(ctx.args, result, ctx.show_images)))
+            let memo = preview_state(ctx.objects);
+            Ok(text(format_read_result(
+                ctx.args,
+                result,
+                ctx.show_images,
+                &memo,
+            )))
         })),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_counts_every_line_and_shows_the_first_few() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let output = "a\nb\nc\nd\ne\nf\ng\n\n";
+        let preview = build_preview(output, None);
+        assert_eq!(preview.total, 7, "trailing empty lines are not counted");
+        assert_eq!(preview.shown, ["a", "b", "c", "d", "e"]);
+        let block = super::peek_window(preview.total, &preview.shown, |s| s.to_vec());
+        assert!(block.contains("... (2 more lines)"), "{block}");
+    }
+
+    #[test]
+    fn preview_is_reused_for_the_same_output_and_rebuilt_on_change() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let mut memo = None;
+        ensure_preview(&mut memo, "let a = 1;\n", Some("rust"));
+        if let Some(p) = memo.as_mut() {
+            p.shown = vec!["SENTINEL".into()];
+        }
+        ensure_preview(&mut memo, "let a = 1;\n", Some("rust"));
+        assert_eq!(
+            memo.as_ref().unwrap().shown,
+            ["SENTINEL"],
+            "same output hits the memo"
+        );
+        ensure_preview(&mut memo, "let a = 2;\n", Some("rust"));
+        assert_ne!(
+            memo.as_ref().unwrap().shown,
+            ["SENTINEL"],
+            "new output rebuilds"
+        );
+        ensure_preview(&mut memo, "let a = 2;\n", None);
+        assert_eq!(memo.as_ref().unwrap().lang, None, "a new language rebuilds");
+    }
+
+    #[test]
+    fn preview_is_rebuilt_when_the_theme_changes() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let mut memo = None;
+        ensure_preview(&mut memo, "let a = 1;\n", Some("rust"));
+        // The same colours under another theme instance: the highlight is stale.
+        memo.as_mut().unwrap().theme = Arc::new((*theme()).clone());
+        memo.as_mut().unwrap().shown = vec!["SENTINEL".into()];
+        let shown = ensure_preview(&mut memo, "let a = 1;\n", Some("rust"))
+            .shown
+            .clone();
+        assert_ne!(shown, ["SENTINEL"], "a theme switch re-highlights");
+        assert!(Arc::ptr_eq(&memo.as_ref().unwrap().theme, &theme()));
     }
 }

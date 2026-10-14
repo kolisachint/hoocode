@@ -71,9 +71,33 @@ pub fn apply_background_to_line(
     width: usize,
     bg_fn: impl Fn(&str) -> String,
 ) -> String {
+    let opener = if line.contains("\x1b[") {
+        band_opener(&bg_fn)
+    } else {
+        String::new()
+    };
+    apply_background_with_opener(line, width, &opener, bg_fn)
+}
+
+/// The background opener of a band: the sequence `bg_fn` puts before its text.
+/// Compute it once per band and pass it to [`apply_background_with_opener`].
+pub fn band_opener(bg_fn: &impl Fn(&str) -> String) -> String {
+    let sentinel = "\u{0}";
+    let painted = bg_fn(sentinel);
+    painted.split(sentinel).next().unwrap_or("").to_string()
+}
+
+/// [`apply_background_to_line`] with the band's opener already computed by
+/// [`band_opener`].
+pub fn apply_background_with_opener(
+    line: &str,
+    width: usize,
+    opener: &str,
+    bg_fn: impl Fn(&str) -> String,
+) -> String {
     let visible_len = visible_width(line);
     let padding = " ".repeat(width.saturating_sub(visible_len));
-    let repaired = repair_nested_bg_resets(line, &bg_fn);
+    let repaired = repair_nested_bg_resets(line, opener);
     bg_fn(&format!("{repaired}{padding}"))
 }
 
@@ -94,13 +118,10 @@ fn clears_background(params: &str) -> bool {
 /// ends with a full `ESC[0m`, would otherwise leave a hole from there to the
 /// end of the row. The opener is recovered from `bg_fn` itself; only the
 /// background is restored.
-fn repair_nested_bg_resets(line: &str, bg_fn: &impl Fn(&str) -> String) -> String {
+fn repair_nested_bg_resets(line: &str, opener: &str) -> String {
     if !line.contains("\x1b[") {
         return line.to_string();
     }
-    let sentinel = "\u{0}";
-    let painted = bg_fn(sentinel);
-    let opener = painted.split(sentinel).next().unwrap_or("");
     if opener.is_empty() {
         return line.to_string();
     }
@@ -650,6 +671,26 @@ mod tests {
     fn test_apply_background_to_line_pads() {
         let out = apply_background_to_line("hi", 5, |s| format!("[{s}]"));
         assert_eq!(out, "[hi   ]");
+    }
+
+    #[test]
+    fn test_band_opener_matches_per_line_repair() {
+        let band = |s: &str| format!("\x1b[44m{s}\x1b[49m");
+        let opener = band_opener(&band);
+        assert_eq!(opener, "\x1b[44m");
+        // A nested full reset inside the line is repaired with the band's opener,
+        // exactly as the per-line function does.
+        for line in ["ab\x1b[0mcd", "a\x1b[49mb", "plain", "x\x1b[31my\x1b[39m"] {
+            assert_eq!(
+                apply_background_with_opener(line, 8, &opener, band),
+                apply_background_to_line(line, 8, band),
+                "line {line:?}"
+            );
+        }
+        assert_eq!(
+            apply_background_with_opener("ab\x1b[0mcd", 6, &opener, band),
+            "\x1b[44mab\x1b[0m\x1b[44mcd  \x1b[49m"
+        );
     }
 
     #[test]

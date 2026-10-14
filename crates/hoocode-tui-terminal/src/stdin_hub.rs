@@ -87,14 +87,15 @@ impl Feed {
         // Taken after `process`: the buffer stamps the start of the sequence
         // with its own clock, which is no later than this one, so the deadline
         // is never earlier than the buffer's own timeout.
-        self.arm_flush();
+        self.arm_flush(Instant::now());
         self.deliver(events);
     }
 
-    /// Sets the ESC-timer deadline while an incomplete sequence is held.
-    fn arm_flush(&mut self) {
-        self.flush_at = (self.buf.has_pending() || !self.utf8_tail.is_empty())
-            .then(|| Instant::now() + self.buf.timeout());
+    /// The one place the ESC-timer deadline is set: `now` plus the buffer's
+    /// timeout while an incomplete sequence or UTF-8 tail is held.
+    fn arm_flush(&mut self, now: Instant) {
+        let held = self.buf.has_pending() || !self.utf8_tail.is_empty();
+        self.flush_at = held.then(|| now + self.buf.timeout());
     }
 
     /// Flushes the incomplete sequence once its deadline has passed.
@@ -114,10 +115,8 @@ impl Feed {
                 events.extend(self.buf.process(&text));
             }
             self.deliver(events);
-            if self.buf.has_pending() {
-                // Not yet old enough by the buffer's clock: check again later.
-                self.flush_at = Some(Instant::now() + self.buf.timeout());
-            }
+            // Still held: not yet old enough by the buffer's clock. Check again later.
+            self.arm_flush(now);
         }
     }
 

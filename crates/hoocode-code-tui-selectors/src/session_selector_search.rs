@@ -3,7 +3,7 @@
 //! text and cwd.
 
 use hoocode_code_session::SessionInfo;
-use hoocode_tui_fuzzy::fuzzy_match;
+use hoocode_tui_fuzzy::FuzzyQuery;
 use hoocode_tui_util::js_regex::{byte_to_utf16, is_js_space, js_trim, JsRegex};
 
 /// How the list is ordered.
@@ -21,14 +21,14 @@ pub enum NameFilter {
     Named,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TokenKind {
-    Fuzzy,
-    Phrase,
+/// One search token: a fuzzy word (lowered once, here) or a quoted phrase.
+enum Token {
+    Fuzzy(FuzzyQuery),
+    Phrase(String),
 }
 
 enum ParsedQuery {
-    Tokens(Vec<(TokenKind, String)>),
+    Tokens(Vec<Token>),
     /// `None` when the pattern did not compile (nothing matches).
     Regex(Option<JsRegex>),
 }
@@ -97,26 +97,30 @@ fn parse_search_query(query: &str) -> Option<ParsedQuery> {
     let mut tokens = Vec::new();
     let mut buf = String::new();
     let mut in_quote = false;
-    let flush = |buf: &mut String, tokens: &mut Vec<(TokenKind, String)>, kind| {
+    let flush = |buf: &mut String, tokens: &mut Vec<Token>, phrase: bool| {
         let v = js_trim(buf).to_string();
         buf.clear();
         if !v.is_empty() {
-            tokens.push((kind, v));
+            tokens.push(if phrase {
+                Token::Phrase(v)
+            } else {
+                Token::Fuzzy(FuzzyQuery::new(&v))
+            });
         }
     };
     for ch in trimmed.chars() {
         if ch == '"' {
             if in_quote {
-                flush(&mut buf, &mut tokens, TokenKind::Phrase);
+                flush(&mut buf, &mut tokens, true);
                 in_quote = false;
             } else {
-                flush(&mut buf, &mut tokens, TokenKind::Fuzzy);
+                flush(&mut buf, &mut tokens, false);
                 in_quote = true;
             }
             continue;
         }
         if !in_quote && is_js_space(ch) {
-            flush(&mut buf, &mut tokens, TokenKind::Fuzzy);
+            flush(&mut buf, &mut tokens, false);
             continue;
         }
         buf.push(ch);
@@ -128,12 +132,12 @@ fn parse_search_query(query: &str) -> Option<ParsedQuery> {
             trimmed
                 .split(is_js_space)
                 .filter(|t| !t.is_empty())
-                .map(|t| (TokenKind::Fuzzy, t.to_string()))
+                .map(|t| Token::Fuzzy(FuzzyQuery::new(t)))
                 .collect(),
         ));
     }
 
-    flush(&mut buf, &mut tokens, TokenKind::Fuzzy);
+    flush(&mut buf, &mut tokens, false);
     Some(ParsedQuery::Tokens(tokens))
 }
 
@@ -147,10 +151,9 @@ fn match_session(session: &SessionInfo, parsed: &ParsedQuery) -> MatchResult {
     let tokens = match parsed {
         ParsedQuery::Regex(None) => return no,
         ParsedQuery::Regex(Some(re)) => {
-            let idx = re.search(&text);
-            if idx < 0 {
+            let Some(idx) = re.search(&text) else {
                 return no;
-            }
+            };
             return MatchResult {
                 matches: true,
                 score: idx as f64 * 0.1,
@@ -161,9 +164,9 @@ fn match_session(session: &SessionInfo, parsed: &ParsedQuery) -> MatchResult {
 
     let mut total = 0.0;
     let mut normalized: Option<String> = None;
-    for (kind, value) in tokens {
-        match kind {
-            TokenKind::Phrase => {
+    for token in tokens {
+        match token {
+            Token::Phrase(value) => {
                 let normalized =
                     normalized.get_or_insert_with(|| normalize_whitespace_lower(&text));
                 let phrase = normalize_whitespace_lower(value);
@@ -175,8 +178,8 @@ fn match_session(session: &SessionInfo, parsed: &ParsedQuery) -> MatchResult {
                 };
                 total += byte_to_utf16(normalized, idx) as f64 * 0.1;
             }
-            TokenKind::Fuzzy => {
-                let m = fuzzy_match(value, &text);
+            Token::Fuzzy(query) => {
+                let m = query.score(&text);
                 if !m.matches {
                     return no;
                 }

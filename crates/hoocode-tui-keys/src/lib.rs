@@ -20,6 +20,6 @@ pub use kitty::{
     decode_kitty_printable, decode_modify_other_keys_printable, decode_printable_key,
     is_key_release, parse_kitty_sequence, ParsedKittySequence,
 };
-pub use matching::matches_key;
+pub use matching::{matches_key, KeySpec};
 pub use parse::parse_key;
 pub use state::{is_kitty_protocol_active, set_kitty_protocol_active};

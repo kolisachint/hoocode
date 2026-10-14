@@ -34,18 +34,18 @@ fn is_js_space(c: char) -> bool {
     js_trim(c.encode_utf8(&mut [0; 4])).is_empty()
 }
 
-/// Up to three leading spaces, then the rest.
-fn after_indent(line: &str) -> &str {
+/// Up to three leading spaces, then the rest. `None` for four or more: an
+/// indented code line, which no block pattern here matches.
+fn after_indent(line: &str) -> Option<&str> {
     let spaces = line.bytes().take(4).take_while(|&b| b == b' ').count();
-    if spaces > 3 {
-        return "\u{0}";
-    }
-    hoocode_tui_util::text_slice::suffix_from(line, spaces)
+    (spaces <= 3).then(|| hoocode_tui_util::text_slice::suffix_from(line, spaces))
 }
 
 /// `/^ {0,3}(?:[-*+] |\d{1,9}[.)] )/`
 fn is_list_item(line: &str) -> bool {
-    let rest = after_indent(line);
+    let Some(rest) = after_indent(line) else {
+        return false;
+    };
     if matches!(rest.as_bytes(), [b'-' | b'*' | b'+', b' ', ..]) {
         return true;
     }
@@ -57,15 +57,17 @@ fn is_list_item(line: &str) -> bool {
 
 /// `/^ {0,3}(?:```|~~~)/`
 fn is_fence(line: &str) -> bool {
-    let rest = after_indent(line);
-    rest.starts_with("```") || rest.starts_with("~~~")
+    after_indent(line).is_some_and(|rest| rest.starts_with("```") || rest.starts_with("~~~"))
 }
 
 /// `/^ {0,3}\[[^\]]+\]: /m`
 fn has_link_def(text: &str) -> bool {
     let starts = std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1));
     for start in starts {
-        let rest = after_indent(hoocode_tui_util::text_slice::suffix_from(text, start));
+        let Some(rest) = after_indent(hoocode_tui_util::text_slice::suffix_from(text, start))
+        else {
+            continue;
+        };
         let Some(label) = rest.strip_prefix('[') else {
             continue;
         };
@@ -82,7 +84,9 @@ fn has_link_def(text: &str) -> bool {
 
 /// `/^ {0,3}(?:=+|-+)\s*$/`
 fn is_setext_underline(line: &str) -> bool {
-    let rest = after_indent(line);
+    let Some(rest) = after_indent(line) else {
+        return false;
+    };
     let Some(first) = rest.chars().next().filter(|c| *c == '=' || *c == '-') else {
         return false;
     };
@@ -171,6 +175,20 @@ pub fn segment_streaming_markdown(text: &str) -> Vec<String> {
 
 type ThemeFactory = Rc<dyn Fn() -> MarkdownTheme>;
 
+/// The error a request reports when it was aborted and gave no reason of its
+/// own. The abort line shows any other message as it is.
+const ABORTED_MESSAGE: &str = "Request was aborted";
+
+/// Which Markdown child a block is, across streaming updates: a content block
+/// (text or thinking, by its index), or one chunk of such a block once it is
+/// segmented.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum BlockKey {
+    Text(usize),
+    Thinking(usize),
+    Segment { of: Box<BlockKey>, index: usize },
+}
+
 struct CachedMarkdown {
     md: Rc<RefCell<Markdown>>,
     text: String,
@@ -183,11 +201,12 @@ pub struct AssistantMessageComponent {
     thinking_display: ThinkingDisplay,
     markdown_theme: ThemeFactory,
     hidden_thinking_label: String,
-    last_message: Option<AssistantMessage>,
+    /// Shared with the caller's streaming message, so a delta does not copy it.
+    last_message: Option<Rc<AssistantMessage>>,
     has_tool_calls: bool,
     /// Markdown children reused across streaming updates, keyed by content
     /// index and kind, so finished blocks keep their render caches.
-    markdown_cache: HashMap<String, CachedMarkdown>,
+    markdown_cache: HashMap<BlockKey, CachedMarkdown>,
     has_segmented_blocks: bool,
     /// Whether the last `update_content` was a streaming update, so a
     /// `refresh` (e.g. a thinking toggle mid-stream) keeps the same form.
@@ -231,8 +250,13 @@ impl AssistantMessageComponent {
         this
     }
 
-    fn reuse_markdown(&mut self, key: &str, text: &str, thinking: bool) -> Rc<RefCell<Markdown>> {
-        if let Some(entry) = self.markdown_cache.get_mut(key) {
+    fn reuse_markdown(
+        &mut self,
+        key: BlockKey,
+        text: &str,
+        thinking: bool,
+    ) -> Rc<RefCell<Markdown>> {
+        if let Some(entry) = self.markdown_cache.get_mut(&key) {
             if entry.text != text {
                 entry.md.borrow_mut().set_text(text);
                 entry.text = text.to_string();
@@ -252,7 +276,7 @@ impl AssistantMessageComponent {
             style,
         )));
         self.markdown_cache.insert(
-            key.to_string(),
+            key,
             CachedMarkdown {
                 md: md.clone(),
                 text: text.to_string(),
@@ -263,22 +287,26 @@ impl AssistantMessageComponent {
 
     /// Add one markdown block; large blocks still streaming are segmented so
     /// only the tail chunk re-parses per update.
-    fn add_markdown_block(&mut self, key_base: &str, text: &str, streaming: bool, thinking: bool) {
+    fn add_markdown_block(&mut self, key: BlockKey, text: &str, streaming: bool, thinking: bool) {
         if streaming && text.encode_utf16().count() >= SEGMENT_MIN_CHARS {
             let chunks = segment_streaming_markdown(text);
             if chunks.len() > 1 {
-                for (k, chunk) in chunks.iter().enumerate() {
-                    if k > 0 {
+                for (index, chunk) in chunks.iter().enumerate() {
+                    if index > 0 {
                         self.content.add_child(handle(Spacer::new(1)));
                     }
-                    let md = self.reuse_markdown(&format!("{key_base}:seg:{k}"), chunk, thinking);
+                    let segment = BlockKey::Segment {
+                        of: Box::new(key.clone()),
+                        index,
+                    };
+                    let md = self.reuse_markdown(segment, chunk, thinking);
                     self.content.add_child(md);
                 }
                 self.has_segmented_blocks = true;
                 return;
             }
         }
-        let md = self.reuse_markdown(key_base, text, thinking);
+        let md = self.reuse_markdown(key, text, thinking);
         self.content.add_child(md);
     }
 
@@ -295,7 +323,7 @@ impl AssistantMessageComponent {
     fn refresh(&mut self) {
         if let Some(message) = self.last_message.clone() {
             let streaming = self.streaming;
-            self.update_content(&message, streaming);
+            self.update_shared(message, streaming);
         }
     }
 
@@ -311,12 +339,19 @@ impl AssistantMessageComponent {
     }
 
     pub fn update_content(&mut self, message: &AssistantMessage, streaming: bool) {
+        self.update_shared(Rc::new(message.clone()), streaming);
+    }
+
+    /// [`Self::update_content`] for a message the caller already holds in an
+    /// `Rc`: each streaming delta then shares it instead of copying it.
+    pub fn update_shared(&mut self, message: Rc<AssistantMessage>, streaming: bool) {
         self.last_message = Some(message.clone());
         self.streaming = streaming;
 
         // A final render replaces streaming segments with the single form.
         if !streaming && self.has_segmented_blocks {
-            self.markdown_cache.retain(|key, _| !key.contains(":seg:"));
+            self.markdown_cache
+                .retain(|key, _| !matches!(key, BlockKey::Segment { .. }));
             self.has_segmented_blocks = false;
         }
 
@@ -330,12 +365,7 @@ impl AssistantMessageComponent {
         for (i, content) in message.content.iter().enumerate() {
             match content {
                 Content::Text(t) if !is_blank(&t.text) => {
-                    self.add_markdown_block(
-                        &format!("{i}:text"),
-                        js_trim(&t.text),
-                        streaming,
-                        false,
-                    );
+                    self.add_markdown_block(BlockKey::Text(i), js_trim(&t.text), streaming, false);
                 }
                 Content::Thinking(t) if !is_blank(&t.thinking) => {
                     if self.thinking_display == ThinkingDisplay::Omit {
@@ -350,7 +380,7 @@ impl AssistantMessageComponent {
                         self.content.add_child(handle(Text::new(label, 1, 0)));
                     } else {
                         let text = format!("✻ {}", js_trim(&t.thinking));
-                        self.add_markdown_block(&format!("{i}:thinking"), &text, streaming, true);
+                        self.add_markdown_block(BlockKey::Thinking(i), &text, streaming, true);
                     }
                     if visible_after {
                         self.content.add_child(handle(Spacer::new(1)));
@@ -370,7 +400,7 @@ impl AssistantMessageComponent {
             match message.stop_reason {
                 StopReason::Aborted => {
                     let abort_message = match message.error_message.as_deref() {
-                        Some(m) if !m.is_empty() && m != "Request was aborted" => m.to_string(),
+                        Some(m) if !m.is_empty() && m != ABORTED_MESSAGE => m.to_string(),
                         _ => "Operation aborted".to_string(),
                     };
                     self.content.add_child(handle(Spacer::new(1)));
@@ -451,7 +481,55 @@ mod tests {
             component.has_segmented_blocks,
             "a display change mid-stream must not drop the streaming form"
         );
-        assert!(component.markdown_cache.keys().any(|k| k.contains(":seg:")));
+        assert!(component
+            .markdown_cache
+            .keys()
+            .any(|k| matches!(k, BlockKey::Segment { .. })));
+    }
+
+    #[test]
+    fn indented_four_or_more_spaces_is_not_a_block_prefix() {
+        assert_eq!(after_indent("   - item"), Some("- item"));
+        assert_eq!(after_indent("    - item"), None);
+        assert!(!is_list_item("    - item"));
+        assert!(!is_fence("    ```"));
+        assert!(!is_setext_underline("    ==="));
+    }
+
+    #[test]
+    fn shared_update_keeps_the_callers_message_without_a_copy() {
+        let message = Rc::new(streaming_message());
+        let mut component = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
+        component.update_shared(message.clone(), true);
+        let held = component.last_message.clone().expect("the message is held");
+        assert!(
+            Rc::ptr_eq(&held, &message),
+            "the held message is the caller's"
+        );
+        component.set_thinking_display(ThinkingDisplay::Label);
+        assert!(
+            component.has_segmented_blocks,
+            "a refresh reuses the held message"
+        );
+    }
+
+    #[test]
+    fn aborted_without_a_reason_shows_operation_aborted() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let rendered = |error: Option<&str>| {
+            let message = AssistantMessage {
+                stop_reason: StopReason::Aborted,
+                error_message: error.map(String::from),
+                ..Default::default()
+            };
+            let mut component = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
+            component.update_content(&message, false);
+            component.render(80).join("\n")
+        };
+        assert!(rendered(Some(ABORTED_MESSAGE)).contains("Operation aborted"));
+        assert!(rendered(None).contains("Operation aborted"));
+        assert!(rendered(Some("Aborted after 2 retry attempts"))
+            .contains("Aborted after 2 retry attempts"));
     }
 
     #[test]
@@ -461,6 +539,9 @@ mod tests {
         component.update_content(&message, true);
         component.update_content(&message, false);
         assert!(!component.has_segmented_blocks);
-        assert!(!component.markdown_cache.keys().any(|k| k.contains(":seg:")));
+        assert!(!component
+            .markdown_cache
+            .keys()
+            .any(|k| matches!(k, BlockKey::Segment { .. })));
     }
 }

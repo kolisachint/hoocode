@@ -5,7 +5,7 @@
   "hoocode_commit": "2223437c99cc4279ad40a39d8ff9268a5c8ee0fd"
  },
  "summary": {
-  "ported": 298,
+  "ported": 297,
   "equivalent": 2,
   "n.a.": 7,
   "pending": 94,
@@ -3044,12 +3044,6 @@
    "status": "ported",
    "rust": [
     "crates/hoocode-tui-components/tests/it/lists_and_input.rs"
-   ]
-  },
-  "packages/tui/test/sixel.test.ts": {
-   "status": "ported",
-   "rust": [
-    "crates/hoocode-tui-components/tests/it/sixel.rs"
    ]
   },
   "packages/tui/test/stdin-buffer.test.ts": {

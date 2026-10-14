@@ -10,6 +10,7 @@ use hoocode_code_tui_widgets::tool_signal::{
     render_tool_signal_line, tool_signal, tool_subject, ToolResult, ToolSignalInput,
 };
 use serde_json::json;
+use std::rc::Rc;
 
 use ToolOutputView::{Peek, Radar};
 
@@ -124,7 +125,7 @@ mod radar_signal_row {
             ..Default::default()
         };
         let with = |result: Option<ToolResult>, is_partial: bool| ToolSignalInput {
-            result,
+            result: result.map(Rc::new),
             is_partial,
             ..base.clone()
         };
@@ -163,7 +164,7 @@ mod radar_signal_row {
                 tool_name: tool_name.into(),
                 args: json!({ "command": command }),
                 cwd: cwd(),
-                result: Some(text_result(out, false)),
+                result: Some(Rc::new(text_result(out, false))),
                 is_partial: false,
                 show_images: false,
                 is_latest: false,

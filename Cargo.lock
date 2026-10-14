@@ -1388,6 +1388,7 @@ dependencies = [
  "hoocode-code-tools-fs",
  "hoocode-code-tools-optin",
  "hoocode-code-tui-app",
+ "hoocode-code-tui-theme",
  "hoocode-runtime",
  "hoocode-tui-fuzzy",
  "hoocode-tui-terminal",

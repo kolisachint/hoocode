@@ -38,9 +38,7 @@ use hoocode_tui_images::{
     allocate_image_id, delete_kitty_image, get_capabilities, set_cell_dimensions, CellDimensions,
 };
 use hoocode_tui_keys::is_key_release;
-use hoocode_tui_terminal::{
-    mouse_sequence_length, parse_mouse_event, MouseEvent, MouseEventKind, Terminal,
-};
+use hoocode_tui_terminal::{parse_mouse_report, MouseEvent, MouseEventKind, Terminal};
 use hoocode_tui_util::{
     bare_url_at, hyperlink_at, normalize_terminal_output, slice_by_column,
     strip_vt_control_characters, truncate_to_width, visible_width,
@@ -1015,16 +1013,13 @@ impl Tui {
         let mut out = String::new();
         let mut saw_report = false;
         while !rest.is_empty() {
-            let length = mouse_sequence_length(rest);
-            if length == 0 {
+            let Some((event, length)) = parse_mouse_report(rest) else {
                 let ch = rest.chars().next().unwrap();
                 out.push(ch);
                 rest = hoocode_tui_util::text_slice::suffix_from(rest, ch.len_utf8());
                 continue;
-            }
-            if let Some(event) =
-                parse_mouse_event(hoocode_tui_util::text_slice::prefix(rest, length))
-            {
+            };
+            if let Some(event) = event {
                 self.handle_mouse_event(event);
             }
             saw_report = true;

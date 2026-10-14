@@ -46,7 +46,7 @@ use super::*;
 pub(super) struct Transcript {
     pub(super) chat: Rc<RefCell<Container>>,
     pub(super) streaming: Option<Rc<RefCell<AssistantMessageComponent>>>,
-    pub(super) streaming_message: Option<AssistantMessage>,
+    pub(super) streaming_message: Option<Rc<AssistantMessage>>,
     /// Tool blocks by call id, until their execution ends.
     pub(super) pending_tools: HashMap<String, Rc<RefCell<ToolExecutionComponent>>>,
     /// The chain collecting tool calls, if the agent is mid-run.
@@ -427,7 +427,7 @@ impl Mode {
             &self.transcript.streaming,
             &self.transcript.streaming_message,
         ) {
-            component.borrow_mut().update_content(message, true);
+            component.borrow_mut().update_shared(message.clone(), true);
             self.dirty.set(true);
         }
     }
@@ -608,7 +608,7 @@ impl Mode {
             {
                 let mut c = component.borrow_mut();
                 c.set_thinking_display(self.thinking_display());
-                c.update_content(&message, true);
+                c.update_shared(message.clone(), true);
             }
             self.add_to_chat(as_component(&component));
             self.transcript.streaming = Some(component);

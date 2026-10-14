@@ -17,7 +17,9 @@ use std::collections::VecDeque;
 
 use hoocode_tui_images::is_image_line;
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{apply_background_to_line, visible_width, wrap_text_with_ansi};
+use hoocode_tui_util::{
+    apply_background_with_opener, band_opener, visible_width, wrap_text_with_ansi,
+};
 
 use lexer::Token;
 use render::Renderer;
@@ -127,6 +129,8 @@ impl Component for Markdown {
             .as_ref()
             .and_then(|s| s.bg_color.as_ref());
         let mut content_lines = Vec::new();
+        // One band: every line below shares this opener.
+        let band = bg_fn.map(|bg_fn| (band_opener(&|s: &str| bg_fn(s)), bg_fn));
 
         for line in &wrapped_lines {
             if is_image_line(line) {
@@ -134,10 +138,13 @@ impl Component for Markdown {
                 continue;
             }
             let line_with_margins = format!("{left_margin}{line}{right_margin}");
-            if let Some(bg_fn) = bg_fn {
-                content_lines.push(apply_background_to_line(&line_with_margins, width, |s| {
-                    bg_fn(s)
-                }));
+            if let Some((opener, bg_fn)) = &band {
+                content_lines.push(apply_background_with_opener(
+                    &line_with_margins,
+                    width,
+                    opener,
+                    |s| bg_fn(s),
+                ));
             } else {
                 let visible_len = visible_width(&line_with_margins);
                 content_lines.push(format!(
@@ -150,8 +157,10 @@ impl Component for Markdown {
         let empty_line = " ".repeat(width);
         let mut empty_lines = Vec::with_capacity(self.padding_y);
         for _ in 0..self.padding_y {
-            let line = match bg_fn {
-                Some(bg_fn) => apply_background_to_line(&empty_line, width, |s| bg_fn(s)),
+            let line = match &band {
+                Some((opener, bg_fn)) => {
+                    apply_background_with_opener(&empty_line, width, opener, |s| bg_fn(s))
+                }
                 None => empty_line.clone(),
             };
             empty_lines.push(line);

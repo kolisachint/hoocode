@@ -5,9 +5,10 @@
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use hoocode_code_tools_fs::edit_diff::{compute_edits_diff, Edit};
-use hoocode_code_tui_theme::theme;
+use hoocode_code_tui_theme::{theme, Theme};
 use hoocode_tui_components::{BoxComponent, Spacer, Text};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use serde_json::{json, Value};
@@ -34,6 +35,9 @@ struct CallState {
     preview: Option<Preview>,
     preview_args_key: Option<String>,
     settled_error: bool,
+    /// The last diff, its body and the theme it was coloured with, so a
+    /// repaint does not render it again.
+    diff_body: Option<DiffBodyMemo>,
 }
 
 /// The diff at the peek stop: the rendered diff, then the muted hint when
@@ -42,6 +46,24 @@ struct CallState {
 fn diff_body(diff: &str) -> String {
     let lines: Vec<String> = render_diff(diff).split('\n').map(str::to_string).collect();
     peek_block(&lines, |shown| shown.to_vec())
+}
+
+/// (theme, diff, body): the colours come from the theme, so a theme switch
+/// renders the body again.
+type DiffBodyMemo = (Arc<Theme>, String, String);
+
+/// [`diff_body`], reused while the diff and the theme are the ones last rendered.
+fn cached_diff_body(memo: &mut Option<DiffBodyMemo>, diff: &str) -> String {
+    let current = theme();
+    if let Some((_, _, body)) = memo
+        .as_ref()
+        .filter(|(th, key, _)| Arc::ptr_eq(th, &current) && key == diff)
+    {
+        return body.clone();
+    }
+    let body = diff_body(diff);
+    *memo = Some((current, diff.to_string(), body.clone()));
+    body
 }
 
 /// An error at the peek stop, each shown line in the error style.
@@ -126,7 +148,8 @@ struct EditCall {
 
 impl Component for EditCall {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let state = self.state.borrow();
+        let mut guard = self.state.borrow_mut();
+        let state = &mut *guard;
         // Only an error tints the inner box; otherwise the outer band shows.
         let is_error = match (&state.preview, state.settled_error) {
             (Some(Preview::Error(_)), _) | (None, true) => true,
@@ -146,7 +169,7 @@ impl Component for EditCall {
         if let Some(preview) = &state.preview {
             let body = match preview {
                 Preview::Error(e) => error_body(e),
-                Preview::Diff { diff, .. } => diff_body(diff),
+                Preview::Diff { diff, .. } => cached_diff_body(&mut state.diff_body, diff),
             };
             b.add_child(Rc::new(RefCell::new(Text::new(body, 0, 0))));
         }
@@ -265,5 +288,31 @@ pub fn definition() -> ToolRenderDefinition {
             let handle: ComponentHandle = Rc::new(RefCell::new(container));
             Ok(handle)
         })),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diff_body_is_reused_while_the_diff_is_unchanged() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let diff = "-old\n+new\n";
+        let mut memo = Some((theme(), diff.to_string(), "SENTINEL".to_string()));
+        assert_eq!(cached_diff_body(&mut memo, diff), "SENTINEL");
+        let other = "-a\n+b\n";
+        assert_eq!(cached_diff_body(&mut memo, other), diff_body(other));
+        assert_eq!(memo.as_ref().map(|(_, k, _)| k.as_str()), Some(other));
+    }
+
+    #[test]
+    fn diff_body_is_rendered_again_after_a_theme_switch() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let diff = "-old\n+new\n";
+        // Same colours, another theme instance: the memo must not be used.
+        let other_instance = Arc::new((*theme()).clone());
+        let mut memo = Some((other_instance, diff.to_string(), "SENTINEL".to_string()));
+        assert_eq!(cached_diff_body(&mut memo, diff), diff_body(diff));
     }
 }

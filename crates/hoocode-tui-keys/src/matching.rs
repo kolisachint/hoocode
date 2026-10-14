@@ -12,28 +12,43 @@ use crate::kitty::{
 };
 use crate::state::is_kitty_protocol_active;
 
-struct ParsedKeyId {
+/// A key identifier such as `"ctrl+c"` or `"shift+ctrl+p"`, parsed once: the
+/// key name (the last `+` part) and its modifier bits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeySpec {
     key: String,
-    ctrl: bool,
-    shift: bool,
-    alt: bool,
-    super_mod: bool,
+    modifier: u32,
 }
 
-fn parse_key_id(key_id: &str) -> Option<ParsedKeyId> {
-    let lower = key_id.to_lowercase();
-    let parts: Vec<&str> = lower.split('+').collect();
-    let key = parts.last()?.to_string();
-    if key.is_empty() {
-        return None;
+impl KeySpec {
+    /// Parses a key identifier. `None` when it names no key.
+    pub fn parse(key_id: &str) -> Option<Self> {
+        let lower = key_id.to_lowercase();
+        let parts: Vec<&str> = lower.split('+').collect();
+        let key = parts.last()?.to_string();
+        if key.is_empty() {
+            return None;
+        }
+        let mut modifier = 0u32;
+        if parts.contains(&"shift") {
+            modifier |= modifiers::SHIFT;
+        }
+        if parts.contains(&"alt") {
+            modifier |= modifiers::ALT;
+        }
+        if parts.contains(&"ctrl") {
+            modifier |= modifiers::CTRL;
+        }
+        if parts.contains(&"super") {
+            modifier |= modifiers::SUPER;
+        }
+        Some(Self { key, modifier })
     }
-    Some(ParsedKeyId {
-        key,
-        ctrl: parts.contains(&"ctrl"),
-        shift: parts.contains(&"shift"),
-        alt: parts.contains(&"alt"),
-        super_mod: parts.contains(&"super"),
-    })
+
+    /// Whether raw terminal input `data` is a press of this key.
+    pub fn matches(&self, data: &str) -> bool {
+        matches_spec(data, &self.key, self.modifier)
+    }
 }
 
 /// Raw 0x08 (BS) is ambiguous: Windows Terminal uses it for Ctrl+Backspace,
@@ -70,36 +85,16 @@ fn is_digit_key(key: &str) -> bool {
 }
 
 /// Match raw terminal input `data` against a key identifier like `"ctrl+c"`,
-/// `"escape"`, or `"shift+ctrl+p"`.
+/// `"escape"`, or `"shift+ctrl+p"`. Callers that match the same key often
+/// should keep the [`KeySpec`].
 pub fn matches_key(data: &str, key_id: &str) -> bool {
-    let Some(parsed) = parse_key_id(key_id) else {
-        return false;
-    };
-    let ParsedKeyId {
-        key,
-        ctrl,
-        shift,
-        alt,
-        super_mod,
-    } = parsed;
+    KeySpec::parse(key_id).is_some_and(|spec| spec.matches(data))
+}
 
-    let mut modifier = 0u32;
-    if shift {
-        modifier |= modifiers::SHIFT;
-    }
-    if alt {
-        modifier |= modifiers::ALT;
-    }
-    if ctrl {
-        modifier |= modifiers::CTRL;
-    }
-    if super_mod {
-        modifier |= modifiers::SUPER;
-    }
-
+fn matches_spec(data: &str, key: &str, modifier: u32) -> bool {
     let kitty_active = is_kitty_protocol_active();
 
-    match key.as_str() {
+    match key {
         "escape" | "esc" => {
             if modifier != 0 {
                 return false;
@@ -176,66 +171,58 @@ pub fn matches_key(data: &str, key_id: &str) -> bool {
             "pageDown",
             functional_codepoints::PAGE_DOWN,
         ),
-        "up" => matches_arrow(
-            data,
-            modifier,
-            kitty_active,
-            "up",
-            arrow_codepoints::UP,
-            "\x1bp",
-        ),
-        "down" => matches_arrow(
-            data,
-            modifier,
-            kitty_active,
-            "down",
-            arrow_codepoints::DOWN,
-            "\x1bn",
-        ),
-        "left" => matches_left_right(
-            data,
-            modifier,
-            kitty_active,
-            "left",
-            arrow_codepoints::LEFT,
-            "\x1b[1;3D",
-            "\x1bB",
-            "\x1bb",
-            "\x1b[1;5D",
-        ),
-        "right" => matches_left_right(
-            data,
-            modifier,
-            kitty_active,
-            "right",
-            arrow_codepoints::RIGHT,
-            "\x1b[1;3C",
-            "\x1bF",
-            "\x1bf",
-            "\x1b[1;5C",
-        ),
+        "up" => matches_arrow(data, modifier, "up", arrow_codepoints::UP, "\x1bp"),
+        "down" => matches_arrow(data, modifier, "down", arrow_codepoints::DOWN, "\x1bn"),
+        "left" => matches_left_right(data, modifier, kitty_active, &LEFT),
+        "right" => matches_left_right(data, modifier, kitty_active, &RIGHT),
         "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" => {
             if modifier != 0 {
                 return false;
             }
-            legacy_key(&key).is_some_and(|k| matches_legacy_sequence(data, k.plain))
+            legacy_key(key).is_some_and(|k| matches_legacy_sequence(data, k.plain))
         }
-        _ => matches_printable(data, &key, modifier, kitty_active),
+        _ => matches_printable(data, key, modifier, kitty_active),
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn matches_left_right(
-    data: &str,
-    modifier: u32,
-    kitty_active: bool,
-    name: &str,
+/// What [`matches_left_right`] needs for one horizontal arrow key.
+#[derive(Clone, Copy)]
+struct LeftRightArgs {
+    name: &'static str,
     codepoint: i32,
-    alt_csi: &str,
-    alt_legacy_ss3: &str,
-    alt_legacy_ansi: &str,
-    ctrl_csi: &str,
-) -> bool {
+    alt_csi: &'static str,
+    alt_legacy_ss3: &'static str,
+    alt_legacy_ansi: &'static str,
+    ctrl_csi: &'static str,
+}
+
+const LEFT: LeftRightArgs = LeftRightArgs {
+    name: "left",
+    codepoint: arrow_codepoints::LEFT,
+    alt_csi: "\x1b[1;3D",
+    alt_legacy_ss3: "\x1bB",
+    alt_legacy_ansi: "\x1bb",
+    ctrl_csi: "\x1b[1;5D",
+};
+
+const RIGHT: LeftRightArgs = LeftRightArgs {
+    name: "right",
+    codepoint: arrow_codepoints::RIGHT,
+    alt_csi: "\x1b[1;3C",
+    alt_legacy_ss3: "\x1bF",
+    alt_legacy_ansi: "\x1bf",
+    ctrl_csi: "\x1b[1;5C",
+};
+
+fn matches_left_right(data: &str, modifier: u32, kitty_active: bool, args: &LeftRightArgs) -> bool {
+    let LeftRightArgs {
+        name,
+        codepoint,
+        alt_csi,
+        alt_legacy_ss3,
+        alt_legacy_ansi,
+        ctrl_csi,
+    } = *args;
     if modifier == modifiers::ALT {
         return data == alt_csi
             || (!kitty_active && data == alt_legacy_ss3)
@@ -257,16 +244,8 @@ fn matches_left_right(
     matches_kitty_sequence(data, codepoint, modifier)
 }
 
-fn matches_arrow(
-    data: &str,
-    modifier: u32,
-    kitty_active: bool,
-    name: &str,
-    codepoint: i32,
-    alt_legacy: &str,
-) -> bool {
+fn matches_arrow(data: &str, modifier: u32, name: &str, codepoint: i32, alt_legacy: &str) -> bool {
     if modifier == modifiers::ALT {
-        let _ = kitty_active;
         return data == alt_legacy || matches_kitty_sequence(data, codepoint, modifiers::ALT);
     }
     if modifier == 0 {
@@ -555,5 +534,36 @@ mod tests {
             .read()
             .unwrap_or_else(|e| e.into_inner());
         assert!(matches_key("\x1b[99;7u", "ctrl+alt+c"));
+    }
+
+    #[test]
+    fn key_spec_parses_once_and_matches_like_matches_key() {
+        let _kitty = crate::state::KITTY_TEST_LOCK
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        let spec = KeySpec::parse("Shift+Ctrl+P").expect("a key name");
+        assert_eq!(spec, KeySpec::parse("shift+ctrl+p").unwrap());
+        assert!(spec.matches("\x1b[112;6u"));
+        for data in ["\x1b[112;6u", "P", "\x10", "p", "\x1b[1;5A"] {
+            assert_eq!(
+                spec.matches(data),
+                matches_key(data, "shift+ctrl+p"),
+                "{data:?}"
+            );
+        }
+        assert!(KeySpec::parse("").is_none());
+        assert!(KeySpec::parse("ctrl+").is_none());
+    }
+
+    #[test]
+    fn test_matches_key_left_and_right_with_modifiers() {
+        let _kitty = crate::state::KITTY_TEST_LOCK
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        assert!(matches_key("\x1b[1;5D", "ctrl+left"));
+        assert!(matches_key("\x1bf", "alt+right"));
+        assert!(matches_key("\x1b[1;3C", "alt+right"));
+        assert!(!matches_key("\x1b[1;5D", "ctrl+right"));
+        assert!(matches_key("\x1b[D", "left"));
     }
 }

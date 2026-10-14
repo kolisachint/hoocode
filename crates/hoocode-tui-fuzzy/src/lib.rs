@@ -120,32 +120,58 @@ fn swapped_alnum_query(query_lower: &str) -> Option<String> {
     }
 }
 
+/// A query lowered once, with its digit/letter-swapped form. Matching one
+/// query against many texts (a filter, a search) then lowers the query once.
+#[derive(Debug, Clone)]
+pub struct FuzzyQuery {
+    query: Vec<char>,
+    swapped: Option<Vec<char>>,
+}
+
+impl FuzzyQuery {
+    pub fn new(query: &str) -> Self {
+        let query_lower = query.to_lowercase();
+        Self {
+            swapped: swapped_alnum_query(&query_lower).map(|s| s.chars().collect()),
+            query: query_lower.chars().collect(),
+        }
+    }
+
+    /// Match against `text`, lower-cased here.
+    pub fn score(&self, text: &str) -> FuzzyMatch {
+        self.score_lowered(&lower_chars(text))
+    }
+
+    /// Match against text that is already lower-cased (see [`lower_chars`]).
+    fn score_lowered(&self, text_lower: &[char]) -> FuzzyMatch {
+        let primary = match_query(&self.query, text_lower);
+        if primary.matches {
+            return primary;
+        }
+
+        let Some(swapped) = &self.swapped else {
+            return primary;
+        };
+        let swapped_match = match_query(swapped, text_lower);
+        if !swapped_match.matches {
+            return primary;
+        }
+
+        FuzzyMatch {
+            matches: true,
+            score: swapped_match.score + 5.0,
+        }
+    }
+}
+
+/// The lower-cased characters of `text`.
+fn lower_chars(text: &str) -> Vec<char> {
+    text.to_lowercase().chars().collect()
+}
+
 /// Fuzzy-match `query` against `text`. Lower score is a better match.
 pub fn fuzzy_match(query: &str, text: &str) -> FuzzyMatch {
-    let query_lower = query.to_lowercase();
-    let text_lower = text.to_lowercase();
-    let text_chars: Vec<char> = text_lower.chars().collect();
-
-    let query_chars: Vec<char> = query_lower.chars().collect();
-    let primary = match_query(&query_chars, &text_chars);
-    if primary.matches {
-        return primary;
-    }
-
-    let Some(swapped_query) = swapped_alnum_query(&query_lower) else {
-        return primary;
-    };
-
-    let swapped_chars: Vec<char> = swapped_query.chars().collect();
-    let swapped_match = match_query(&swapped_chars, &text_chars);
-    if !swapped_match.matches {
-        return primary;
-    }
-
-    FuzzyMatch {
-        matches: true,
-        score: swapped_match.score + 5.0,
-    }
+    FuzzyQuery::new(query).score(text)
 }
 
 /// Filter and sort `items` by fuzzy-match quality against `query` (best
@@ -156,19 +182,19 @@ pub fn fuzzy_filter<T: Clone>(items: &[T], query: &str, get_text: impl Fn(&T) ->
         return items.to_vec();
     }
 
-    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    let tokens: Vec<FuzzyQuery> = trimmed.split_whitespace().map(FuzzyQuery::new).collect();
     if tokens.is_empty() {
         return items.to_vec();
     }
 
     let mut results: Vec<(T, f64)> = Vec::new();
     for item in items {
-        let text = get_text(item);
+        let text = lower_chars(&get_text(item));
         let mut total_score = 0.0;
         let mut all_match = true;
 
         for token in &tokens {
-            let m = fuzzy_match(token, &text);
+            let m = token.score_lowered(&text);
             if m.matches {
                 total_score += m.score;
             } else {
@@ -370,5 +396,22 @@ mod fuzzy_test_ts {
         assert_eq!(r.len(), 2);
         let names: Vec<_> = r.iter().map(|i| i.0).collect();
         assert!(names.contains(&"foo") && names.contains(&"foobar"));
+    }
+
+    #[test]
+    fn test_fuzzy_query_scores_like_fuzzy_match() {
+        for (query, text) in [
+            ("hello", "hello world"),
+            ("2V", "v2-model"),
+            ("GS", "get_stuff"),
+            ("zz", "abc"),
+            ("", "anything"),
+        ] {
+            assert_eq!(
+                FuzzyQuery::new(query).score(text),
+                fuzzy_match(query, text),
+                "{query:?} against {text:?}"
+            );
+        }
     }
 }

@@ -140,6 +140,8 @@ pub fn main(argv: &[String]) -> i32 {
         std::env::set_var("HOOCODE_SKIP_VERSION_CHECK", "1");
     }
     let env = Env::detect();
+    // Theme styles follow the same colour decision as the CLI's own output.
+    hoocode_code_tui_theme::chalk::set_enabled(env.color);
     let mut stdout = std::io::stdout();
     let mut stderr = std::io::stderr();
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));

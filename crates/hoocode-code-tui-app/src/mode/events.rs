@@ -241,7 +241,7 @@ impl Mode {
                     self.transcript.assistant_components.push(component.clone());
                     self.chain_closed_for_current_message = false;
                     self.transcript.streaming = Some(component);
-                    self.transcript.streaming_message = Some(assistant.clone());
+                    self.transcript.streaming_message = Some(Rc::new(assistant.clone()));
                 }
                 _ => {}
             },
@@ -249,6 +249,10 @@ impl Mode {
                 if let (Some(_), AgentMessage::Assistant(assistant)) =
                     (&self.transcript.streaming, message)
                 {
+                    // The render scheduled here reads `streaming_message`, so the
+                    // new message is stored before it, not after.
+                    let assistant = Rc::new(assistant);
+                    self.transcript.streaming_message = Some(assistant.clone());
                     self.schedule_streaming_render();
                     // Whatever this message first puts on screen ends the run
                     // its previous calls formed.
@@ -273,7 +277,6 @@ impl Mode {
                             }
                         }
                     }
-                    self.transcript.streaming_message = Some(assistant);
                 }
             }
             AgentEvent::MessageEnd { message } => {

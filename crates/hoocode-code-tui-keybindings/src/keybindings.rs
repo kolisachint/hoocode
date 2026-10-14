@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use hoocode_tui_keys::{KeybindingDefinition, KeybindingsManager, TUI_KEYBINDINGS};
 use serde_json::{Map, Value};
@@ -330,26 +331,35 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
     ]
 }
 
+/// The table `keybindings` returns, built once: it is constant for the
+/// process (the only input is the platform).
+fn table() -> &'static [KeybindingEntry] {
+    static TABLE: OnceLock<Vec<KeybindingEntry>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut all: Vec<KeybindingEntry> = TUI_KEYBINDINGS
+            .iter()
+            .map(|(id, keys, description)| entry(id, keys, description))
+            .collect();
+        all.extend(app_keybindings());
+        all
+    })
+}
+
 /// `KEYBINDINGS`: the TUI library's bindings, then the app's, in declaration
 /// order.
 pub fn keybindings() -> Vec<KeybindingEntry> {
-    let mut all: Vec<KeybindingEntry> = TUI_KEYBINDINGS
-        .iter()
-        .map(|(id, keys, description)| entry(id, keys, description))
-        .collect();
-    all.extend(app_keybindings());
-    all
+    table().to_vec()
 }
 
 /// The definition of one binding, if it exists.
 pub fn keybinding(id: &str) -> Option<KeybindingEntry> {
-    keybindings().into_iter().find(|e| e.id == id)
+    table().iter().find(|e| e.id == id).cloned()
 }
 
 /// [`keybindings`] as the TUI manager's definition map.
 pub fn keybinding_definitions() -> HashMap<String, KeybindingDefinition> {
-    keybindings()
-        .into_iter()
+    table()
+        .iter()
         .map(|e| {
             (
                 e.id.to_string(),
