@@ -2184,6 +2184,13 @@ fn prune_dispatch_dirs_checked(
     }
 }
 
+/// Whether a run's child process is still alive, from the pid its dispatch dir
+/// records. A run with no settle record and no live child was cut short: the
+/// app quit, or the process died before it settled.
+pub fn run_is_live(cwd: &Path, task_id: &str) -> bool {
+    crate::lifeguard::has_running_pid(&hoocode_code_paths::dispatch_task_dir(cwd, task_id))
+}
+
 /// One line of a run's description: its first line, cut short.
 fn describe_task(task: &str) -> String {
     task.lines()

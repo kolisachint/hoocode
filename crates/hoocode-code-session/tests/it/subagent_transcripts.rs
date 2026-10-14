@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{AssistantMessage, Content, Message, StopReason, UserMessage};
 use hoocode_code_session::{
-    append_custom_entry_to_file, load_entries_from_file, session_id_of_file, subagents_dir,
-    FileEntry, SessionManager, SESSION_FLUSH_DEADLINE,
+    append_custom_entry_to_file, build_session_info, list_subagent_sessions,
+    load_entries_from_file, session_id_of_file, subagents_dir, FileEntry, SessionManager,
+    SubagentState, SESSION_FLUSH_DEADLINE, SUBAGENT_RUN_ENTRY,
 };
 
 fn user(text: &str) -> AgentMessage {
@@ -144,4 +145,87 @@ fn header_id(entries: &[FileEntry]) -> String {
         Some(FileEntry::Session(header)) => header.id.clone(),
         other => panic!("no header first: {other:?}"),
     }
+}
+
+/// The parent's listing of its runs: each transcript is a run, with the state
+/// its newest `subagent_run` record and the liveness check give.
+#[test]
+fn a_parents_runs_are_listed_with_their_state() {
+    let dir = temp_dir("runs");
+    let parent = parent_with_history(&dir);
+    let transcripts = subagents_dir(&parent);
+    std::fs::create_dir_all(&transcripts).unwrap();
+    for name in ["run-a.jsonl", "run-b.jsonl", "run-c.jsonl"] {
+        let child = transcripts.join(name);
+        let mut manager = SessionManager::open(child.clone(), None, None);
+        manager.set_parent_session(parent.to_string_lossy().into_owned());
+        manager.append_message(user("scan the repo"));
+        manager.append_message(assistant("done"));
+        manager
+            .flush(SESSION_FLUSH_DEADLINE)
+            .expect("writes reached the OS");
+    }
+    let record = |task: &str, child: &str, outcome: serde_json::Value| {
+        append_custom_entry_to_file(
+            &parent,
+            SUBAGENT_RUN_ENTRY,
+            serde_json::json!({
+                "taskId": task,
+                "agentType": "explore",
+                "description": "scan the repo",
+                "childFile": child,
+                "outcome": outcome,
+            }),
+        )
+        .expect("record appended");
+    };
+    // run-a: dispatched, then settled.
+    record("run-a", "run-a.jsonl", serde_json::Value::Null);
+    record("run-a", "run-a.jsonl", serde_json::json!("complete"));
+    // run-b: dispatched, never settled, its process gone.
+    record("run-b", "run-b.jsonl", serde_json::Value::Null);
+    // run-c: dispatched, never settled, its process still alive.
+    record("run-c", "run-c.jsonl", serde_json::Value::Null);
+    session_flush();
+
+    let parent_info = build_session_info(&parent).expect("the parent lists");
+    let runs = list_subagent_sessions(&[parent_info], &|task, _cwd| task == "run-c");
+    assert_eq!(runs.len(), 3, "{runs:?}");
+    let by_task = |task: &str| {
+        runs.iter()
+            .find(|r| r.subagent.as_ref().is_some_and(|s| s.task_id == task))
+            .unwrap_or_else(|| panic!("no row for {task}"))
+    };
+    for task in ["run-a", "run-b", "run-c"] {
+        let row = by_task(task);
+        assert_eq!(
+            row.parent_session_path.as_deref(),
+            Some(parent.to_string_lossy().as_ref())
+        );
+        assert_eq!(row.subagent.as_ref().unwrap().agent_type, "explore");
+    }
+    assert_eq!(
+        by_task("run-a").subagent.as_ref().unwrap().state,
+        SubagentState::Finished("complete".into())
+    );
+    assert_eq!(
+        by_task("run-b").subagent.as_ref().unwrap().state,
+        SubagentState::Interrupted
+    );
+    assert_eq!(
+        by_task("run-c").subagent.as_ref().unwrap().state,
+        SubagentState::Running
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A session without a subagents dir has no runs, and the parent's own
+/// listing is not changed by its runs.
+#[test]
+fn a_session_with_no_runs_lists_none() {
+    let dir = temp_dir("no-runs");
+    let parent = parent_with_history(&dir);
+    let parent_info = build_session_info(&parent).expect("the parent lists");
+    assert!(list_subagent_sessions(&[parent_info], &|_, _| false).is_empty());
+    let _ = std::fs::remove_dir_all(dir);
 }

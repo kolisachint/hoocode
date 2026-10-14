@@ -12,7 +12,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use chrono::{DateTime, Utc};
 use hoocode_code_session::identity::session_slug_for;
-use hoocode_code_session::SessionInfo;
+use hoocode_code_session::{SessionInfo, SubagentRun, SubagentState};
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_selectors::session_selector::{
     ListEvent, LoadSink, SessionSelectorComponent, SessionSelectorOptions, SessionsLoader,
@@ -471,4 +471,95 @@ fn keeps_rows_inside_the_width() {
             );
         }
     }
+}
+
+// ---- subagent runs ----------------------------------------------------------
+
+/// A parent session and one subagent run of it, as the picker's loader lists them.
+fn parent_and_run(state: SubagentState) -> Vec<SessionInfo> {
+    let parent_path = PathBuf::from("/tmp/parent-run.jsonl");
+    let parent = make(
+        "parent",
+        Make {
+            path: Some(parent_path.clone()),
+            name: Some("Parent"),
+            modified: Some("2026-01-01T00:00:00Z"),
+            ..Default::default()
+        },
+    );
+    let mut run = make(
+        "run-1",
+        Make {
+            path: Some(PathBuf::from("/tmp/parent-run/subagents/run-1.jsonl")),
+            parent: Some(parent_path),
+            first_message: Some("scan the repo"),
+            modified: Some("2026-01-01T00:00:00Z"),
+            ..Default::default()
+        },
+    );
+    run.subagent = Some(SubagentRun {
+        task_id: "run-1".into(),
+        agent_type: "explore".into(),
+        state,
+    });
+    vec![parent, run]
+}
+
+#[test]
+fn a_subagent_run_nests_under_its_parent_in_the_threaded_view() {
+    let _g = lock();
+    let mut s = selector(
+        parent_and_run(SubagentState::Finished("complete".into())),
+        default_options(),
+        None,
+    );
+    let out = render(&mut s, 120);
+    assert!(out.contains("└─ scan the repo"), "{out}");
+    assert!(out.contains("explore · complete"), "{out}");
+}
+
+#[test]
+fn an_interrupted_or_running_run_says_so_in_its_row() {
+    let _g = lock();
+    let mut s = selector(
+        parent_and_run(SubagentState::Interrupted),
+        default_options(),
+        None,
+    );
+    assert!(render(&mut s, 120).contains("explore · interrupted"));
+    let mut s = selector(
+        parent_and_run(SubagentState::Running),
+        default_options(),
+        None,
+    );
+    assert!(render(&mut s, 120).contains("explore · running"));
+}
+
+/// A search matches the parent rows only: a run whose own text matches is not
+/// listed by itself, and a search does not draw the thread.
+#[test]
+fn a_search_matches_the_parent_rows_only() {
+    let _g = lock();
+    let sessions = parent_and_run(SubagentState::Finished("complete".into()));
+    let mut s = selector(sessions, default_options(), None);
+    // "scan" is only in the run's own text.
+    for ch in "scan".chars() {
+        press_list(&mut s, &ch.to_string());
+    }
+    let out = render(&mut s, 120);
+    assert!(!out.contains("scan the repo"), "{out}");
+    assert!(!out.contains("└─ "), "{out}");
+}
+
+#[test]
+fn a_search_still_finds_the_parent() {
+    let _g = lock();
+    let sessions = parent_and_run(SubagentState::Finished("complete".into()));
+    let mut s = selector(sessions, default_options(), None);
+    for ch in "parent".chars() {
+        press_list(&mut s, &ch.to_string());
+    }
+    let out = render(&mut s, 120);
+    assert!(out.contains("Parent"), "{out}");
+    assert!(!out.contains("└─ "), "{out}");
 }

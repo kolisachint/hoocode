@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use hoocode_code_paths::{canonicalize_path, home_dir};
 use hoocode_code_session::identity::{session_color_slot_for, session_slug_for};
-use hoocode_code_session::{subagents_dir, SessionInfo};
+use hoocode_code_session::{subagents_dir, SessionInfo, SubagentRun, SubagentState};
 use hoocode_code_tui_keybindings::{key_hint, key_text};
 use hoocode_code_tui_theme::{
     paint_selected_row, select_gutter, session_color_token, style_input, theme, SELECT_CURSOR,
@@ -314,6 +314,20 @@ fn flatten_session_tree(roots: &[TreeNode]) -> Vec<FlatNode> {
     out
 }
 
+/// A subagent run's row label: its type, and where the run stands.
+fn subagent_label(run: &SubagentRun) -> String {
+    let state = match &run.state {
+        SubagentState::Finished(status) => status.clone(),
+        SubagentState::Running => "running".to_string(),
+        SubagentState::Interrupted => "interrupted".to_string(),
+    };
+    if run.agent_type.is_empty() {
+        state
+    } else {
+        format!("{} · {state}", run.agent_type)
+    }
+}
+
 /// What a key did to the list, for its owner to act on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListEvent {
@@ -418,8 +432,15 @@ impl SessionList {
         if self.sort_mode == SortMode::Threaded && js_trim(query).is_empty() {
             self.filtered = flatten_session_tree(&build_session_tree(&name_filtered));
         } else {
+            // A subagent run is listed under its parent in the threaded view
+            // only. A search or another sort matches the parent rows alone.
+            let parents: Vec<SessionInfo> = name_filtered
+                .iter()
+                .filter(|s| s.subagent.is_none())
+                .cloned()
+                .collect();
             self.filtered =
-                filter_and_sort_sessions(&name_filtered, query, self.sort_mode, NameFilter::All)
+                filter_and_sort_sessions(&parents, query, self.sort_mode, NameFilter::All)
                     .into_iter()
                     .map(|session| FlatNode {
                         session,
@@ -649,10 +670,16 @@ impl Component for SessionList {
             };
 
             let age = format_session_date(session.modified, now);
-            let mut right = format!("{} {age}", session.message_count);
-            if !has_name {
-                right = format!("{} {right}", session_slug_for(&session.id));
-            }
+            let mut right = match &session.subagent {
+                Some(run) => format!("{} {age}", subagent_label(run)),
+                None => {
+                    let mut right = format!("{} {age}", session.message_count);
+                    if !has_name {
+                        right = format!("{} {right}", session_slug_for(&session.id));
+                    }
+                    right
+                }
+            };
             if self.show_cwd && !session.cwd.is_empty() {
                 right = format!("{} {right}", shorten_path(&session.cwd));
             }
