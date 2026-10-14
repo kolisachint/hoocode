@@ -19,6 +19,11 @@ use std::rc::Rc;
 use super::js_regex::{js_slice_from, js_trim, js_trim_end, JsRegex};
 use super::rules::{list_item_regex, IndentRules, RULES};
 
+/// marked's own tab stop for list-item indentation (`replace(/\t/g, '    ')`).
+/// It is not a surface width: the render paths expand tabs before lexing, with
+/// `RENDER_TAB_WIDTH`, so this only applies to text the lexer gets raw.
+const MARKED_TAB: &str = "    ";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
     Space,
@@ -666,7 +671,7 @@ impl Lexer {
                 while !src.is_empty() {
                     let raw_line = first_line(&src).to_string();
                     next_line = raw_line.clone();
-                    let next_line_without_tabs = next_line.replace('\t', "    ");
+                    let next_line_without_tabs = next_line.replace('\t', MARKED_TAB);
                     if rules.fences_begin.test(&next_line)
                         || rules.heading_begin.test(&next_line)
                         || rules.html_begin.test(&next_line)
@@ -691,7 +696,7 @@ impl Lexer {
                         if RULES
                             .other
                             .non_space_char
-                            .search(&line.replace('\t', "    "))
+                            .search(&line.replace('\t', MARKED_TAB))
                             .is_some_and(|f| f >= 4)
                         {
                             break;
