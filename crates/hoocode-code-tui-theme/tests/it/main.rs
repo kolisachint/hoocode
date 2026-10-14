@@ -13,6 +13,7 @@ pub(crate) fn global_theme_lock() -> MutexGuard<'static, ()> {
 
 mod gold;
 mod schema;
+mod theme_color_switch;
 mod theme_contrast;
 mod theme_cutout_tokens;
 mod theme_export;

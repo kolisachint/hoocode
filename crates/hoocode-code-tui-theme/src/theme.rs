@@ -153,6 +153,16 @@ pub struct Theme {
     fill_colors: HashMap<String, String>,
 }
 
+/// `open text close` when colour is on, else `text`. Pure so the switch
+/// can be tested without the process-wide chalk flag.
+fn paint(enabled: bool, open: &str, text: &str, close: &str) -> String {
+    if enabled {
+        format!("{open}{text}{close}")
+    } else {
+        text.to_string()
+    }
+}
+
 impl Theme {
     /// `new Theme(fgColors, bgColors, mode, options)`. Fails on a color value
     /// that cannot be encoded (an invalid hex).
@@ -220,12 +230,13 @@ impl Theme {
     /// Panics on an unknown token, as hoocode throws; check [`Theme::has`]
     /// first for optional tokens.
     pub fn fg(&self, color: &str, text: &str) -> String {
-        format!("{}{text}\x1b[39m", self.get_fg_ansi(color))
+        paint(chalk::enabled(), self.get_fg_ansi(color), text, "\x1b[39m")
     }
 
     /// `bg`: `text` on a background token, resetting only the background.
+    /// Plain text when chalk's colour switch is off.
     pub fn bg(&self, color: &str, text: &str) -> String {
-        format!("{}{text}\x1b[49m", self.get_bg_ansi(color))
+        paint(chalk::enabled(), self.get_bg_ansi(color), text, "\x1b[49m")
     }
 
     /// `fill`: `text` as a filled chip in a foreground token, with legible

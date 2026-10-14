@@ -78,12 +78,35 @@ impl Env {
 
 /// chalk's default level comes from `supports-color` on stdout.
 fn color_enabled() -> bool {
-    match std::env::var("FORCE_COLOR") {
-        Ok(v) if v == "0" || v == "false" => return false,
-        Ok(_) => return true,
-        Err(_) => {}
+    let force = std::env::var("FORCE_COLOR").ok();
+    let no_color = std::env::var("NO_COLOR").ok();
+    let term = std::env::var("TERM").ok();
+    color_from_env(
+        force.as_deref(),
+        no_color.as_deref(),
+        std::io::stdout().is_terminal(),
+        term.as_deref(),
+    )
+}
+
+/// The colour decision from its inputs, so tests need no process env.
+/// `FORCE_COLOR` wins over `NO_COLOR` when both are set (decisions-2026-10-14 #1).
+/// `NO_COLOR`: any non-empty value turns colour off (no-color.org).
+fn color_from_env(
+    force: Option<&str>,
+    no_color: Option<&str>,
+    stdout_tty: bool,
+    term: Option<&str>,
+) -> bool {
+    match force {
+        Some("0" | "false") => return false,
+        Some(_) => return true,
+        None => {}
     }
-    std::io::stdout().is_terminal() && std::env::var("TERM").map_or(true, |t| t != "dumb")
+    if no_color.is_some_and(|v| !v.is_empty()) {
+        return false;
+    }
+    stdout_tty && term != Some("dumb")
 }
 
 pub(crate) fn red(color: bool, text: &str) -> String {
@@ -516,5 +539,44 @@ mod tests {
             resolve_app_mode(&p(&["--mode", "text"]), true),
             AppMode::Interactive
         );
+    }
+
+    #[test]
+    fn color_follows_force_color() {
+        // FORCE_COLOR on (any value but 0/false) turns colour on, even off a tty.
+        assert!(color_from_env(Some("1"), None, false, Some("dumb")));
+        assert!(color_from_env(Some("yes"), None, false, None));
+        // FORCE_COLOR=0 or false turns it off, even on a tty.
+        assert!(!color_from_env(Some("0"), None, true, Some("xterm")));
+        assert!(!color_from_env(Some("false"), None, true, Some("xterm")));
+    }
+
+    #[test]
+    fn no_color_turns_colour_off() {
+        assert!(!color_from_env(None, Some("1"), true, Some("xterm")));
+        assert!(!color_from_env(None, Some("anything"), true, Some("xterm")));
+    }
+
+    #[test]
+    fn empty_no_color_is_ignored() {
+        // no-color.org: only a non-empty value counts.
+        assert!(color_from_env(None, Some(""), true, Some("xterm")));
+        assert!(!color_from_env(None, Some(""), false, Some("xterm")));
+    }
+
+    #[test]
+    fn force_color_wins_over_no_color() {
+        assert!(color_from_env(Some("1"), Some("1"), false, None));
+        assert!(color_from_env(Some("1"), Some("1"), true, None));
+        // Both set and FORCE_COLOR off: off, as before.
+        assert!(!color_from_env(Some("0"), Some("1"), true, Some("xterm")));
+    }
+
+    #[test]
+    fn colour_without_overrides_needs_a_capable_tty() {
+        assert!(color_from_env(None, None, true, Some("xterm-256color")));
+        assert!(color_from_env(None, None, true, None));
+        assert!(!color_from_env(None, None, false, Some("xterm")));
+        assert!(!color_from_env(None, None, true, Some("dumb")));
     }
 }
