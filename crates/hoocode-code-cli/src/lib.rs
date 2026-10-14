@@ -90,7 +90,7 @@ fn color_enabled() -> bool {
 }
 
 /// The colour decision from its inputs, so tests need no process env.
-/// `FORCE_COLOR` wins over `NO_COLOR` when both are set (decisions-2026-10-14.md #14).
+/// `FORCE_COLOR` wins over `NO_COLOR` when both are set (decisions-2026-10-14.md #18).
 /// `NO_COLOR`: any non-empty value turns colour off (no-color.org).
 fn color_from_env(
     force: Option<&str>,
