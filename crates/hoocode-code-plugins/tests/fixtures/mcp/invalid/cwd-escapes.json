@@ -1,0 +1,7 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "outside": {"type": "stdio", "command": "x", "cwd": "${PLUGIN_ROOT}/../elsewhere"},
+    "bare": {"type": "stdio", "command": "x", "cwd": "data/work"}
+  }
+}

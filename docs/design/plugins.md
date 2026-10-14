@@ -1,7 +1,36 @@
 # Plugins
 
 Status: **agreed 2026-10-07**, scope cut 2026-10-08 ([decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md)).
-Design only. Replaces ledger 12.1 and 12.2.
+Replaces ledger 12.1 and 12.2.
+
+**Built so far (2026-10-14): part 1, Load.** Crate `hoocode-code-plugins`: Agent Plugins and
+Claude layouts, discovery and precedence, project folder trust, `<plugin>:<skill>` skills, subagent
+files, and MCP servers in the MCP config. The loader also runs at session start (`hoocode-code-cli`
+`runtime.rs`). Not built: part 2 (install, `/plugin`), part 3 (model tools). Choices made while
+building part 1:
+
+- **Precedence** follows the order in "What we build": project, then user. An untrusted project
+  plugin is not found, so it does not take its name from the user's plugin. Within one folder the
+  first name in sorted order wins. Plugin MCP config is ordered after `mcp.json` (user, project).
+- **Folder trust** for project plugins is one grant per folder, kept in the MCP trust file. Its
+  fingerprint covers every file in the project plugin folders, so any change asks again. Only the
+  grant API exists (`trust_project_plugins`); the prompt is not wired into the UI yet, so an
+  untrusted folder shows a warning line at start.
+- **Plugin MCP servers** are trusted once their plugin loads (user plugins are the user's own;
+  project plugins passed folder trust), so they need no second grant. Their values are not
+  expanded: only `${PLUGIN_ROOT}` and `${PLUGIN_DATA}` are, and only for Agent Plugins.
+- **`PLUGIN_DATA`** is `~/.agents/plugin-data/<name>`, created when the plugin has an Agent Plugins
+  `mcp.json`.
+- **Claude layout:** `.mcp.json`, or the manifest's inline `mcpServers`. Claude's own variables
+  (for example `${CLAUDE_PLUGIN_ROOT}`) are not expanded, since this repo has no spec for them.
+  The Claude manifest's name follows the Agent Plugins name rules.
+- **Skill `allowed-tools`:** a plugin skill's list is kept only when the user approved that exact
+  list (stored in the MCP trust file, keyed by `<plugin>:<skill>`). Nothing in hoocode reads
+  `allowed-tools` at run time yet, so the gate has no effect on tools until something does.
+- **Schemas** are not bundled as JSON. The Agent Plugins rules are hand-coded from the 1.0.0
+  specification, and the only `$schema` values accepted are the 1.0.0 identifiers.
+- **Not yet:** `hoocode-code-capabilities` still reports no plugin entries (its TODO), and a
+  plugin's warnings appear as startup lines only (no `/plugin list`).
 
 ## Goal
 

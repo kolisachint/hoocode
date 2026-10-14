@@ -27,8 +27,8 @@ use hoocode_agent_mcp::{
 use hoocode_agent_types::{AgentToolResult, AgentToolUpdateCallback};
 use hoocode_ai_types::{AbortSignal, Content, ImageContent};
 use hoocode_code_mcp::{
-    discover, load, ConfigSources, McpConfig, ServerState, Source, Transport, TrustStatus,
-    TrustStore,
+    discover, load_with_plugin_servers, ConfigSources, McpConfig, PluginServers, ServerState,
+    Source, Transport, TrustStatus, TrustStore,
 };
 use hoocode_code_tool_api::{ToolDefinition, ToolError};
 use hoocode_runtime::io_handle;
@@ -119,15 +119,32 @@ impl McpHub {
     /// The hub for a folder: the user's `mcp.json`, the folder's `.agents/mcp.json`, and the
     /// trust store in the agent directory. No plugin sources yet.
     pub fn for_folder(folder: &Path) -> Self {
+        Self::for_folder_with_plugins(folder, &[])
+    }
+
+    /// [`for_folder`](Self::for_folder), plus the servers of the loaded plugins.
+    pub fn for_folder_with_plugins(folder: &Path, plugin_servers: &[PluginServers]) -> Self {
         let sources = ConfigSources::new(folder.to_path_buf(), Vec::new());
-        Self::load(&sources, TrustStore::default_path())
+        Self::load_with_plugins(&sources, plugin_servers, TrustStore::default_path())
     }
 
     /// Read the sources and the trust store, and mark every effective server. Nothing starts
     /// yet; call [`start`](Self::start). An unreadable trust file trusts nothing.
     pub fn load(sources: &ConfigSources, trust_path: impl Into<PathBuf>) -> Self {
+        Self::load_with_plugins(sources, &[], trust_path)
+    }
+
+    /// [`load`](Self::load), plus plugin servers. A plugin server's values are not expanded:
+    /// the Agent Plugins rules allow only `${PLUGIN_ROOT}` and `${PLUGIN_DATA}`, and the plugin
+    /// loader has already replaced those, so no ambient variable reaches a plugin's command, env
+    /// or URL.
+    pub fn load_with_plugins(
+        sources: &ConfigSources,
+        plugin_servers: &[PluginServers],
+        trust_path: impl Into<PathBuf>,
+    ) -> Self {
         let trust_path = trust_path.into();
-        let config = load(sources);
+        let config = load_with_plugin_servers(sources, plugin_servers);
         let trust =
             TrustStore::load(&trust_path).unwrap_or_else(|_| TrustStore::empty(&trust_path));
         let discovery = discover(&config, &trust);
@@ -145,18 +162,21 @@ impl McpHub {
                 // Expansion reads the environment now, after the trust check: the trust
                 // fingerprint saw the text as written. A failure names the variable, not its
                 // value, and the entry stays out of the start queue.
-                let (config, secrets, status) =
-                    match (server.transport.expanded_values(&lookup), status) {
-                        (Ok((transport, secrets)), status) => {
-                            (Some(to_client_config(&transport)), secrets, status)
-                        }
-                        (Err(_), McpStatus::Disabled) => (None, Vec::new(), McpStatus::Disabled),
-                        (Err(error), _) => (
-                            None,
-                            Vec::new(),
-                            McpStatus::Failed(format!("mcp.json: {error}")),
-                        ),
-                    };
+                let expanded = match server.source {
+                    Source::Plugin { .. } => Ok((server.transport.clone(), Vec::new())),
+                    _ => server.transport.expanded_values(&lookup),
+                };
+                let (config, secrets, status) = match (expanded, status) {
+                    (Ok((transport, secrets)), status) => {
+                        (Some(to_client_config(&transport)), secrets, status)
+                    }
+                    (Err(_), McpStatus::Disabled) => (None, Vec::new(), McpStatus::Disabled),
+                    (Err(error), _) => (
+                        None,
+                        Vec::new(),
+                        McpStatus::Failed(format!("mcp.json: {error}")),
+                    ),
+                };
                 Entry {
                     name: server.name.clone(),
                     source: server.source.clone(),

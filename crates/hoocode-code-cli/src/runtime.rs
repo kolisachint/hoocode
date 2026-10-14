@@ -292,9 +292,24 @@ fn resource_loader(
     cwd: &std::path::Path,
     agent_dir: &std::path::Path,
     settings: &Arc<Mutex<SettingsManager>>,
+    plugins: &hoocode_code_plugins::PluginSet,
 ) -> DefaultResources {
     let no_skills = args.no_skills == Some(true) || light;
     let agent_dir_str = agent_dir.to_string_lossy().into_owned();
+    // A plugin's skills and subagents are skills and agents: none in light mode or with
+    // --no-skills. Its MCP servers are separate (see attach_mcp).
+    let (plugin_skill_paths, plugin_agent_paths) = if no_skills {
+        (Vec::new(), Vec::new())
+    } else {
+        (plugins.skill_entries(), plugins.agent_files())
+    };
+    // Plugin skills' allowed-tools take effect only after the user approved them.
+    let trust = hoocode_code_plugins::load_default_trust();
+    let gate_allowed_tools: Box<
+        dyn Fn(hoocode_code_resources::LoadSkillsResult) -> hoocode_code_resources::LoadSkillsResult
+            + Send
+            + Sync,
+    > = Box::new(move |result| hoocode_code_plugins::skills::gate_allowed_tools(result, &trust));
     let mut skill_paths = resolve_cli_paths(cwd, &args.skills);
     if !no_skills {
         let gate = hoocode_code_resources::builtin_skills::BuiltinSkillGate {
@@ -320,6 +335,9 @@ fn resource_loader(
         additional_skill_paths: skill_paths,
         additional_prompt_template_paths: resolve_cli_paths(cwd, &args.prompt_templates),
         additional_slash_command_paths: resolve_cli_paths(cwd, &args.slash_commands),
+        plugin_skill_paths,
+        plugin_agent_paths,
+        skills_override: Some(gate_allowed_tools),
         no_skills,
         no_prompt_templates: args.no_prompt_templates == Some(true),
         no_slash_commands: args.no_slash_commands == Some(true),
@@ -327,6 +345,31 @@ fn resource_loader(
         system_prompt,
         ..Default::default()
     })
+}
+
+/// The plugins for this session (`docs/design/plugins.md`). Their problems join `diagnostics`,
+/// one line each, like the other resource diagnostics.
+fn load_session_plugins(
+    cwd: &std::path::Path,
+    diagnostics: &mut Diagnostics,
+) -> hoocode_code_plugins::PluginSet {
+    let trust = hoocode_code_plugins::load_default_trust();
+    let set = hoocode_code_plugins::load_plugins(&hoocode_code_plugins::LoadOptions::new(
+        cwd.to_path_buf(),
+        &trust,
+    ));
+    for d in &set.diagnostics {
+        let kind = match d.severity {
+            hoocode_code_plugins::Severity::Error => DiagnosticKind::Error,
+            hoocode_code_plugins::Severity::Warning => DiagnosticKind::Warning,
+        };
+        let label = match &d.plugin {
+            Some(name) => format!("plugin {name}"),
+            None => d.path.display().to_string(),
+        };
+        diagnostics.push((kind, format!("{label}: {}", d.message)));
+    }
+    set
 }
 
 /// Extension-registered tools in hoocode, SDK tools here: AskUserQuestion always
@@ -599,6 +642,7 @@ fn create_runtime(
         }
     }
 
+    let plugins = load_session_plugins(&cwd, &mut diagnostics);
     let (session, services) = assemble_session(
         args,
         cwd,
@@ -611,6 +655,7 @@ fn create_runtime(
         session_start_event,
         interactive,
         gate,
+        &plugins,
     );
     (session, services, diagnostics)
 }
@@ -643,6 +688,7 @@ fn assemble_session(
     session_start_event: Option<SessionStartEvent>,
     interactive: bool,
     gate: Option<Arc<dyn PermissionGate>>,
+    plugins: &hoocode_code_plugins::PluginSet,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
     // main.ts: the light preset is an allowlist of the four short-schema tools
@@ -678,7 +724,7 @@ fn assemble_session(
     // main.ts: the main-session subagent instructions when subagents are on.
     let subagents_on = !light && args.subagent.unwrap_or_else(|| settings.enable_subagent());
     let settings = Arc::new(Mutex::new(settings));
-    let resources = resource_loader(args, light, &cwd, &agent_dir, &settings);
+    let resources = resource_loader(args, light, &cwd, &agent_dir, &settings, plugins);
     if subagents_on {
         resources
             .loader()
@@ -755,7 +801,13 @@ fn assemble_session(
         session.set_active_tools_by_name(&tools);
     }
     if mcp_wanted(args, light) {
-        attach_mcp(&session, &services.cwd, interactive, mode_restricted);
+        attach_mcp(
+            &session,
+            &services.cwd,
+            interactive,
+            mode_restricted,
+            plugins,
+        );
     }
     (session, services)
 }
@@ -783,8 +835,14 @@ fn attach_mcp(
     cwd: &std::path::Path,
     interactive: bool,
     mode_restricted: bool,
+    plugins: &hoocode_code_plugins::PluginSet,
 ) {
-    let hub = std::sync::Arc::new(hoocode_code_agent_session::mcp::McpHub::for_folder(cwd));
+    let hub = std::sync::Arc::new(
+        hoocode_code_agent_session::mcp::McpHub::for_folder_with_plugins(
+            cwd,
+            &plugins.mcp_servers(),
+        ),
+    );
     if interactive {
         hub.set_elicitation(std::sync::Arc::new(
             hoocode_code_tui_app::mcp_elicitation::TuiElicitation,
@@ -1817,6 +1875,7 @@ mod tests {
             None,
             false,
             None,
+            &hoocode_code_plugins::PluginSet::default(),
         );
         (session.system_prompt(), session.get_active_tool_names())
     }
@@ -1884,6 +1943,7 @@ mod tests {
             None,
             true,
             None,
+            &hoocode_code_plugins::PluginSet::default(),
         );
         let output = Arc::new(Mutex::new(String::new()));
         let title = Arc::new(Mutex::new(String::new()));
@@ -2247,6 +2307,7 @@ mod tests {
                 None,
                 true,
                 None,
+                &hoocode_code_plugins::PluginSet::default(),
             );
             let output = Arc::new(Mutex::new(String::new()));
             let terminal = ScriptedTerminal {
@@ -2382,6 +2443,7 @@ mod tests {
                 None,
                 true,
                 None,
+                &hoocode_code_plugins::PluginSet::default(),
             );
             let output = Arc::new(Mutex::new(String::new()));
             let mut script: Vec<(u64, &'static str)> = vec![(300, "")];

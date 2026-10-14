@@ -1,0 +1,5 @@
+{
+  "name": "claude-demo",
+  "version": "0.3.0",
+  "description": "A Claude plugin with a skill, a subagent and MCP servers in .mcp.json"
+}

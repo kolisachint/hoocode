@@ -1,0 +1,1 @@
+Not an agent definition: only *.md files in agents/ load.
