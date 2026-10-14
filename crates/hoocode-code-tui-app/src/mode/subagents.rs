@@ -56,11 +56,26 @@ impl Mode {
             inherited_model: self.session_model_ref(),
             ..Default::default()
         };
+        let failed = format!("Subagent ({mode}) failed");
+        self.spawn_dispatch(cwd, available, task, options, mode, failed);
+    }
+
+    /// Runs one dispatch off the UI thread and posts `SubagentDone(mode, outcome)`.
+    /// A subagent that reports a failure reads as `"{failed}: {reason}"`.
+    fn spawn_dispatch(
+        &self,
+        cwd: PathBuf,
+        models: Vec<hoocode_ai_types::Model>,
+        prompt: String,
+        options: DispatchOptions,
+        mode: String,
+        failed: String,
+    ) {
         let tx = self.tx.clone();
         self.runtime.spawn(async move {
             // The pool's lifeguard runs on this runtime, so it is made here.
-            let pool = get_subagent_pool(&cwd, &available);
-            let outcome = match pool.dispatch(&task, options).await {
+            let pool = get_subagent_pool(&cwd, &models);
+            let outcome = match pool.dispatch(&prompt, options).await {
                 Ok(dispatched) => match dispatched.result {
                     Some(result) if result.ok => Ok(result
                         .result_data
@@ -69,7 +84,7 @@ impl Mode {
                         .and_then(|v| v.as_str())
                         .map(str::to_string)),
                     result => Err(format!(
-                        "Subagent ({mode}) failed: {}",
+                        "{failed}: {}",
                         result
                             .and_then(|r| r.error)
                             .unwrap_or_else(|| "unknown error".into())
@@ -173,29 +188,14 @@ impl Mode {
             inherited_model: self.session_model_ref(),
             ..Default::default()
         };
-        let tx = self.tx.clone();
-        self.runtime.spawn(async move {
-            let pool = get_subagent_pool(&cwd, &models);
-            let outcome = pool.dispatch(&prompt, options).await;
-            let text = match outcome {
-                Ok(dispatched) => match dispatched.result {
-                    Some(result) if result.ok => Ok(result
-                        .result_data
-                        .as_ref()
-                        .and_then(|data| data.get("summary"))
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string)),
-                    other => Err(format!(
-                        "retry failed: {}",
-                        other
-                            .and_then(|r| r.error)
-                            .unwrap_or_else(|| "unknown error".into())
-                    )),
-                },
-                Err(error) => Err(error.to_string()),
-            };
-            let _ = tx.send(AppEvent::SubagentDone(agent_type, text));
-        });
+        self.spawn_dispatch(
+            cwd,
+            models,
+            prompt,
+            options,
+            agent_type,
+            "retry failed".into(),
+        );
     }
 
     /// `/subagent-stats [24h|7d|all]`: what the dispatch ledger says about
