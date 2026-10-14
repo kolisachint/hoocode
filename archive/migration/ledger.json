@@ -11,7 +11,8 @@
   "done": "L1 and L2 green (or L2 n/a with reason)",
   "blocked": "see log",
   "deferred": "needs a user go/no-go",
-  "moved": "moved to a design card (moved_to); closed, like done"
+  "moved": "moved to a design card (moved_to); closed, like done",
+  "dropped": "dropped by the user; closed, like moved (no card; see the decision named in the log)"
  },
  "tasks": [
   {
@@ -7242,8 +7243,7 @@
    "id": "13.4",
    "title": "TS test port ledger: every one of the 400 TS test files marked ported/equivalent/n.a.",
    "phase": 13,
-   "status": "moved",
-   "moved_to": "docs/design/ts-to-rust-migration.md",
+   "status": "dropped",
    "depends": [
     "13.4a",
     "13.4b",
@@ -7274,6 +7274,12 @@
      "commit": "3e0f14e",
      "kind": "move",
      "text": "No design card; the TS test port ledger stays in the plan (§0.3) and migration/ts-tests.json."
+    },
+    {
+     "at": "2026-10-14T00:00:00Z",
+     "commit": "-",
+     "kind": "dropped",
+     "text": "Dropped by the user, not moved. No card; see docs/design/decisions-2026-10-14.md."
     }
    ]
   }
