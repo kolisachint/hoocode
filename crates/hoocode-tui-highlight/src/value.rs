@@ -8,6 +8,8 @@
 //! rules, and the engine is ported against them.
 
 use std::cell::RefCell;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use hoocode_tui_util::js_regex::JsRegex;
@@ -205,17 +207,9 @@ pub fn str_v(s: &str) -> V {
     V::Str(Rc::from(s))
 }
 
-// ---- loading the dump ------------------------------------------------------
+// ---- loading the grammars --------------------------------------------------
 
-/// The grammars, as `hljs-grammars.mjs` dumped them.
-pub struct Grammars {
-    /// Language name -> its definition object.
-    pub languages: Vec<(String, Obj)>,
-    pub aliases: Vec<(String, String)>,
-    pub system_symbols: std::collections::HashSet<String>,
-}
-
-fn decode(value: &serde_json::Value, nodes: &[Obj]) -> V {
+fn decode(value: &serde_json::Value, nodes: &HashMap<u64, Obj>) -> V {
     use serde_json::Value as J;
     match value {
         J::Null => V::Null,
@@ -225,7 +219,7 @@ fn decode(value: &serde_json::Value, nodes: &[Obj]) -> V {
         J::Array(items) => new_arr(items.iter().map(|v| decode(v, nodes)).collect()),
         J::Object(map) => {
             if let Some(id) = map.get("$ref").and_then(J::as_u64) {
-                return V::Obj(nodes[id as usize].clone());
+                return V::Obj(nodes[&id].clone());
             }
             if let Some(items) = map.get("$arr").and_then(J::as_array) {
                 return new_arr(items.iter().map(|v| decode(v, nodes)).collect());
@@ -251,14 +245,33 @@ fn decode(value: &serde_json::Value, nodes: &[Obj]) -> V {
     }
 }
 
-pub fn load(json: &str) -> Grammars {
-    let doc: serde_json::Value = serde_json::from_str(json).expect("grammar dump");
-    let raw_nodes = doc["nodes"].as_array().expect("nodes");
-    let nodes: Vec<Obj> = raw_nodes.iter().map(|_| new_obj()).collect();
-    for (node, raw) in nodes.iter().zip(raw_nodes) {
+/// Decodes one language's chunk (format: `tests/it/grammar_index.rs`) into the
+/// node table and returns the language's root object.
+///
+/// A node is one object per table, whichever chunk loads it first: a node
+/// shared by two languages stays one object, as when the whole dump was
+/// decoded at once. A chunk holds every node reachable from its root, so each
+/// `$ref` resolves within the table.
+pub fn load_chunk(json: &str, root: u64, table: &mut HashMap<u64, Obj>) -> Obj {
+    let doc: serde_json::Value = serde_json::from_str(json).expect("grammar chunk");
+    let raw_nodes = doc["nodes"].as_object().expect("nodes");
+    let mut fresh = HashSet::new();
+    for key in raw_nodes.keys() {
+        let id: u64 = key.parse().expect("node id");
+        if let Entry::Vacant(slot) = table.entry(id) {
+            slot.insert(new_obj());
+            fresh.insert(id);
+        }
+    }
+    for (key, raw) in raw_nodes {
+        let id: u64 = key.parse().expect("node id");
+        if !fresh.contains(&id) {
+            continue;
+        }
+        let node = table[&id].clone();
         let mut props = Vec::new();
         for (k, v) in raw["props"].as_object().expect("props") {
-            let value = decode(v, &nodes);
+            let value = decode(v, table);
             // JSON has no `undefined`; the dumper wrote it as null, and
             // `undefined`-valued keys behave as absent for the engine.
             if matches!(value, V::Null) && v.is_null() {
@@ -271,35 +284,5 @@ pub fn load(json: &str) -> Grammars {
         data.props = props;
         data.frozen = raw["frozen"].as_bool().unwrap_or(false);
     }
-    let languages = doc["languages"]
-        .as_object()
-        .expect("languages")
-        .iter()
-        .map(|(name, v)| {
-            let obj = decode(v, &nodes)
-                .as_obj()
-                .cloned()
-                .expect("language object");
-            (name.clone(), obj)
-        })
-        .collect();
-    let aliases = doc["aliases"]
-        .as_object()
-        .expect("aliases")
-        .iter()
-        .map(|(a, n)| (a.clone(), n.as_str().unwrap_or("").to_string()))
-        .collect();
-    let system_symbols = doc["systemSymbols"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|s| s.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    Grammars {
-        languages,
-        aliases,
-        system_symbols,
-    }
+    table[&root].clone()
 }
