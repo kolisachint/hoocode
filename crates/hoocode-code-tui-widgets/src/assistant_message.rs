@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use hoocode_ai_types::{AssistantMessage, Content, StopReason};
+use hoocode_ai_types::{AssistantMessage, Content, StopReason, ABORTED_MESSAGE};
 use hoocode_code_tui_theme::{get_markdown_theme, theme};
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::{DefaultTextStyle, Markdown, MarkdownTheme, Spacer, Text};
@@ -171,10 +171,6 @@ pub fn segment_streaming_markdown(text: &str) -> Vec<String> {
 }
 
 type ThemeFactory = Rc<dyn Fn() -> MarkdownTheme>;
-
-/// The error a request reports when it was aborted and gave no reason of its
-/// own. The abort line shows any other message as it is.
-const ABORTED_MESSAGE: &str = "Request was aborted";
 
 /// Which Markdown child a block is, across streaming updates: a content block
 /// (text or thinking, by its index), or one chunk of such a block once it is

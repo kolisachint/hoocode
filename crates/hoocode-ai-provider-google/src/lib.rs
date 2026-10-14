@@ -16,6 +16,7 @@ use futures_util::StreamExt;
 use hoocode_ai_stream::{
     create_assistant_message_event_stream, spawn_producer, AssistantMessageEventStream,
 };
+use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     AbortSignal, AssistantMessage, AssistantMessageEvent, Content, Context, Model,
     SimpleStreamOptions, StopReason, TextContent, ThinkingContent, ToolCallContent,
@@ -106,7 +107,7 @@ async fn run(
         // fetch's AbortError when the signal fires mid-request.
         Some(signal) => tokio::select! {
             biased;
-            _ = signal.cancelled(), if !signal.aborted() => Err("This operation was aborted".to_string()),
+            _ = signal.cancelled(), if !signal.aborted() => Err(ABORTED_MESSAGE.to_string()),
             r = drive(&model, &context, &options, vertex, &mut state, &sender) => r,
         },
         None => drive(&model, &context, &options, vertex, &mut state, &sender).await,
@@ -199,7 +200,7 @@ async fn drive(
     state.close_block(sender);
 
     if options.signal.as_ref().is_some_and(AbortSignal::aborted) {
-        return Err("Request was aborted".to_string());
+        return Err(ABORTED_MESSAGE.to_string());
     }
     if matches!(
         state.output.stop_reason,

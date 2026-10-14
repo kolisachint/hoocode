@@ -587,7 +587,7 @@ fn a_server_delay_over_the_cap_fails_after_the_catch_block_retries() {
         panic!()
     };
     assert_eq!(error.stop_reason, StopReason::Aborted);
-    assert_eq!(error.error_message.as_deref(), Some(ABORTED));
+    assert_eq!(error.error_message.as_deref(), Some(ABORTED_MESSAGE));
 }
 
 #[test]

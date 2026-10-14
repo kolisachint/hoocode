@@ -16,6 +16,7 @@ use futures_util::StreamExt;
 use hoocode_ai_stream::{
     create_assistant_message_event_stream, spawn_producer, AssistantMessageEventStream,
 };
+use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     AbortSignal, AssistantMessage, AssistantMessageEvent, Content, Context, Model, OnPayload,
     OnResponse, SimpleStreamOptions, StopReason, TextContent, ThinkingContent, ToolCallContent,
@@ -75,18 +76,9 @@ async fn run(
             .await
             .map_err(Some),
     };
-    // Cancelled before the response arrived: the SDK's APIUserAbortError
-    // ("Request was aborted."). Mid-stream the SDK's iterator just ends and
-    // the provider throws its own "Request was aborted".
-    let outcome = outcome.map_err(|error| {
-        error.unwrap_or_else(|| {
-            RequestError::plain(if state.response_started {
-                "Request was aborted"
-            } else {
-                "Request was aborted."
-            })
-        })
-    });
+    // Cancelled: the same text as every provider, before or mid-stream.
+    let outcome =
+        outcome.map_err(|error| error.unwrap_or_else(|| RequestError::plain(ABORTED_MESSAGE)));
     match outcome {
         Ok(()) => {
             let message = state.output.clone();
@@ -184,7 +176,6 @@ async fn drive(
     let url = format!("{}/chat/completions", model.base_url.trim_end_matches('/'));
 
     let response = create_with_param_fallback(model, &url, &headers, params, options).await?;
-    state.response_started = true;
     OnResponse::notify(
         options.on_response.as_ref(),
         hoocode_ai_util::provider_response(&response),
@@ -214,10 +205,10 @@ async fn drive(
 
     state.finish_blocks(sender);
     if options.signal.as_ref().is_some_and(AbortSignal::aborted) {
-        return Err(RequestError::plain("Request was aborted"));
+        return Err(RequestError::plain(ABORTED_MESSAGE));
     }
     match state.output.stop_reason {
-        StopReason::Aborted => Err(RequestError::plain("Request was aborted")),
+        StopReason::Aborted => Err(RequestError::plain(ABORTED_MESSAGE)),
         StopReason::Error => Err(RequestError::plain(
             state
                 .output
@@ -308,8 +299,6 @@ struct StreamState {
     /// Stream index of each tool-call block, by content index.
     stream_index: HashMap<usize, i64>,
     scratch: HashMap<usize, ToolCallScratch>,
-    /// The HTTP response arrived (an abort after this is mid-stream).
-    response_started: bool,
 }
 
 impl StreamState {
@@ -327,7 +316,6 @@ impl StreamState {
             tool_calls_by_id: HashMap::new(),
             stream_index: HashMap::new(),
             scratch: HashMap::new(),
-            response_started: false,
         }
     }
 

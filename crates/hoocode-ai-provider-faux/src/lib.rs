@@ -23,6 +23,7 @@ use hoocode_ai_registry::{register_api_provider, unregister_api_providers, BoxEr
 use hoocode_ai_stream::{
     create_assistant_message_event_stream, spawn_producer, AssistantMessageEventStream,
 };
+use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     now_ms, AbortSignal, AssistantMessage, AssistantMessageEvent, CacheRetention, Content, Context,
     Cost, Message, Model, ModelCost, SimpleStreamOptions, StopReason, TextContent, ThinkingContent,
@@ -558,7 +559,7 @@ impl FauxProvider {
                 .is_some_and(|s| s.aborted())
                 .then(|| AssistantMessage {
                     stop_reason: StopReason::Aborted,
-                    error_message: Some("Request was aborted".to_string()),
+                    error_message: Some(ABORTED_MESSAGE.to_string()),
                     timestamp: now_ms(),
                     ..partial.clone()
                 })
