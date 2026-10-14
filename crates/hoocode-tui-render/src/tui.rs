@@ -1332,13 +1332,13 @@ impl Tui {
 
         // --- First render: output everything without clearing. ---
         if self.previous_lines.is_empty() && !width_changed && !height_changed {
-            self.full_render(&new_lines, width, height, false);
+            self.full_render(new_lines, width, height, false);
             return;
         }
 
         // --- Width change: always needs a full re-render (wrapping changes). ---
         if width_changed {
-            self.full_render(&new_lines, width, height, true);
+            self.full_render(new_lines, width, height, true);
             return;
         }
 
@@ -1346,13 +1346,13 @@ impl Tui {
         // on Termux, whose height changes with the software keyboard (a full
         // redraw there replays the whole history on every toggle). ---
         if height_changed && std::env::var_os("TERMUX_VERSION").is_none_or(|v| v.is_empty()) {
-            self.full_render(&new_lines, width, height, true);
+            self.full_render(new_lines, width, height, true);
             return;
         }
 
         // --- Content shrunk below the working area: clear empty rows. ---
         if self.clear_on_shrink && (new_lines.len() as i64) < self.max_lines_rendered {
-            self.full_render(&new_lines, width, height, true);
+            self.full_render(new_lines, width, height, true);
             return;
         }
 
@@ -1403,7 +1403,7 @@ impl Tui {
             && window_top < prev_viewport_top
         {
             if (new_lines.len() as i64) < height || self.saw_image_line {
-                self.full_render(&new_lines, width, height, true);
+                self.full_render(new_lines, width, height, true);
                 return;
             }
             let mut buffer = String::from("\x1b[?2026h");
@@ -1448,7 +1448,7 @@ impl Tui {
                 buffer.push_str(&self.delete_changed_kitty_images(first_changed, last_changed));
                 let target_row = (new_lines.len() as i64 - 1).max(0);
                 if target_row < prev_viewport_top {
-                    self.full_render(&new_lines, width, height, true);
+                    self.full_render(new_lines, width, height, true);
                     return;
                 }
                 let line_diff = {
@@ -1464,7 +1464,7 @@ impl Tui {
                 buffer.push('\r');
                 let extra_lines = prev_line_count - new_lines.len() as i64;
                 if extra_lines > height {
-                    self.full_render(&new_lines, width, height, true);
+                    self.full_render(new_lines, width, height, true);
                     return;
                 }
                 if extra_lines > 0 {
@@ -1498,7 +1498,7 @@ impl Tui {
 
         // --- Changes above the previous viewport require a full redraw. ---
         if first_changed < prev_viewport_top {
-            self.full_render(&new_lines, width, height, true);
+            self.full_render(new_lines, width, height, true);
             return;
         }
 
@@ -1577,7 +1577,9 @@ impl Tui {
         self.previous_height = height;
     }
 
-    fn full_render(&mut self, new_lines: &[String], width: i64, height: i64, clear: bool) {
+    /// Paints `new_lines` whole and keeps them as the differential baseline.
+    /// Takes the frame by value so the baseline is a move, not a copy.
+    fn full_render(&mut self, new_lines: Vec<String>, width: i64, height: i64, clear: bool) {
         self.full_redraw_count += 1;
         let mut buffer = String::from("\x1b[?2026h");
         if clear {
@@ -1597,16 +1599,17 @@ impl Tui {
         buffer.push_str("\x1b[?2026l");
         self.write_frame(&buffer);
 
+        let line_count = new_lines.len() as i64;
         if clear {
-            self.max_lines_rendered = new_lines.len() as i64;
+            self.max_lines_rendered = line_count;
         } else {
-            self.max_lines_rendered = self.max_lines_rendered.max(new_lines.len() as i64);
+            self.max_lines_rendered = self.max_lines_rendered.max(line_count);
         }
-        let buffer_length = height.max(new_lines.len() as i64);
+        let buffer_length = height.max(line_count);
         self.previous_viewport_top = (buffer_length - height).max(0);
 
-        self.previous_lines = new_lines.to_vec();
-        self.previous_kitty_image_ids = self.collect_kitty_image_ids(new_lines);
+        self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
+        self.previous_lines = new_lines;
         self.previous_width = width;
         self.previous_height = height;
     }
