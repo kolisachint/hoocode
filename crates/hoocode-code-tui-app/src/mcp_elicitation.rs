@@ -14,7 +14,7 @@ use std::pin::Pin;
 
 use hoocode_code_agent_session::mcp::{ElicitationAnswer, ElicitationHandler, ElicitationRequest};
 use hoocode_code_permissions::PermissionUi;
-use hoocode_code_tools_optin::{AskOption, AskOptionsHost, AskQuestion};
+use hoocode_code_tools_optin::{AskOption, AskQuestion};
 use hoocode_runtime::run_blocking;
 use serde_json::{json, Map, Value};
 
@@ -76,7 +76,7 @@ fn ask(server: &str, request: ElicitationRequest) -> ElicitationAnswer {
             let answers = if questions.is_empty() {
                 Some(Vec::new())
             } else {
-                TuiAskOptionsHost.ask_options(&questions, None)
+                TuiAskOptionsHost.ask_form(&questions)
             };
             match answers {
                 Some(answers) => ElicitationAnswer::Accept(Some(content(&fields, &answers))),

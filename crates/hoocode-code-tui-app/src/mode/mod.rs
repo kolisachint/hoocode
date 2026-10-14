@@ -47,7 +47,7 @@ use hoocode_tui_render::{Component, ComponentHandle, Container, FlexSpacer, Slot
 use hoocode_tui_terminal::Terminal;
 
 use crate::changelog::changelog_for_display;
-use crate::chime::{turn_chime_due, ChimeDebounce, BELL};
+use crate::chime::{ChimeDebounce, TurnTimer, BELL};
 use crate::chrome_layout::{
     ChromeLayoutController, ChromeSurfaces, FooterLayout, TasksLayout, SMALL_TERMINAL_ROWS,
 };
@@ -351,8 +351,8 @@ struct Mode {
     scheduler_tick_at: Instant,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
-    /// When the current turn started (set at `AgentStart`, taken at `PromptDone`).
-    turn_started_at: Option<Instant>,
+    /// When the current prompt was submitted (set at submit, taken at `PromptDone`).
+    turn_timer: TurnTimer,
     chime: ChimeDebounce,
     update_notice: Option<std::sync::mpsc::Receiver<hoocode_code_update::UpdateAvailable>>,
     tool_output_view: ToolOutputView,
@@ -716,7 +716,7 @@ impl Mode {
             scheduler_tick_at: Instant::now() + hoocode_code_scheduler::TICK_INTERVAL,
             turn_cost_anchor: None,
             turn_stop_reason: None,
-            turn_started_at: None,
+            turn_timer: TurnTimer::default(),
             chime: ChimeDebounce::default(),
             update_notice: options.update_notice,
             tool_output_view,
@@ -1085,8 +1085,14 @@ impl Mode {
                         reply,
                     }) => self.show_selector(&title, options, reply),
                     AppEvent::Dialog(DialogRequest::Notify(message)) => self.show_record(&message),
-                    AppEvent::Dialog(DialogRequest::AskOptions { questions, reply }) => {
-                        self.ring_chime();
+                    AppEvent::Dialog(DialogRequest::AskOptions {
+                        questions,
+                        reply,
+                        chime,
+                    }) => {
+                        if chime {
+                            self.ring_chime();
+                        }
                         self.show_ask_options(questions, reply)
                     }
                     AppEvent::Dialog(DialogRequest::HideAskOptions) => self.hide_ask_options(None),

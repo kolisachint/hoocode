@@ -519,6 +519,9 @@ def run_scenario(name: str, out: Path) -> dict:
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "TZ": "UTC",
+        # No version check: a request would race the first frame, and a newer release
+        # in the registry would put a notice on the golden screens.
+        "HOOCODE_OFFLINE": "1",
         # `{WORK}`, `{HOME}` and `{TMP}` in a value name this run's temp dirs.
         **{k: v.replace("{WORK}", subs["WORK"]).replace("{HOME}", subs["HOME"]).replace("{TMP}", subs["TMP"])
            for k, v in (sc.get("env") or {}).items()},

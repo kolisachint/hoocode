@@ -44,8 +44,9 @@ reference was ported). Version check: `crates/hoocode-code-update` (state in
 `~/.hoocode/version-check.json`; the latest version seen is kept, so a newer release
 is announced on later starts without a request). Install commands: curl for
 `~/.hoocode/bin` (`https://kolisachint.github.io/hoocode/install.sh`), npm or bun inside
-`node_modules`. Chime: `crates/hoocode-code-tui-app/src/chime.rs`. Open: the help line for `hoocode update`
-("Update hoocode and installed extensions") promises more than the command does.
+`node_modules`. Chime: `crates/hoocode-code-tui-app/src/chime.rs`; it rings for AskUserQuestion only,
+not for MCP elicitation forms. Review fixes 2026-10-14: pre-releases compare below their release,
+symlinked npm and bun bins resolve to their package, and a turn chimes by its own submit time.
 
 ## Not doing
 
