@@ -277,6 +277,7 @@ fn preserves_selection_through_multiple_empty_filter_switches() {
 
 const UP: &str = "\x1b[A";
 const DOWN: &str = "\x1b[B";
+const HOME: &str = "\x1b[H";
 const CTRL_LEFT: &str = "\x1b[1;5D";
 const CTRL_RIGHT: &str = "\x1b[1;5C";
 const ALT_LEFT: &str = "\x1b[1;3D";
@@ -431,6 +432,8 @@ fn folding_the_root_hides_descendants_behind_filtered_out_entries() {
 }
 
 fn navigate_to(s: &mut TreeSelectorComponent, id: &str) -> Option<String> {
+    // Home first: the cursor clamps at the ends, so the search below starts at the top.
+    press(s, HOME);
     let mut current = None;
     for _ in 0..20 {
         press(s, DOWN);

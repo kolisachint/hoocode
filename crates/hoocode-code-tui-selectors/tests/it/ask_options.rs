@@ -86,7 +86,7 @@ fn renders_header_question_options_and_custom_row() {
 }
 
 #[test]
-fn moves_the_cursor_and_wraps() {
+fn moves_the_cursor_and_clamps_at_both_ends() {
     let _g = lock();
     let (mut c, _, _) = pane();
     c.handle_input(DOWN);
@@ -96,7 +96,7 @@ fn moves_the_cursor_and_wraps() {
     c.handle_input(UP);
     assert!(out(&mut c).contains("› 1 hoocode-ai"));
     c.handle_input(UP);
-    assert!(out(&mut c).contains("(3/3)"));
+    assert!(out(&mut c).contains("(1/3)"), "up at the top stays put");
 }
 
 #[test]

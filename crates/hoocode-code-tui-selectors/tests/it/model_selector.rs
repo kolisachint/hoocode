@@ -175,7 +175,7 @@ fn typing_narrows_and_enter_selects_the_highlighted_model() {
 }
 
 #[test]
-fn up_and_down_wrap_and_tab_switches_scope() {
+fn up_and_down_clamp_and_tab_switches_scope() {
     let _g = lock();
     let models = faux();
     let mut selector = ModelSelectorComponent::new(
@@ -193,10 +193,11 @@ fn up_and_down_wrap_and_tab_switches_scope() {
     selector.handle_input("\t");
     let rendered = strip(&selector.render(100));
     assert_eq!(listed_ids(&rendered, "faux").len(), 3);
+    // The current model (One) is first; up at the top stays put.
     selector.handle_input("\x1b[A");
-    assert!(strip(&selector.render(100)).contains("Model Name: Three"));
-    selector.handle_input("\x1b[B");
     assert!(strip(&selector.render(100)).contains("Model Name: One"));
+    selector.handle_input("\x1b[B");
+    assert!(strip(&selector.render(100)).contains("Model Name: Two"));
 }
 
 #[test]

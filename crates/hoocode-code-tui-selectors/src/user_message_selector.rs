@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use hoocode_code_tui_theme::{paint_selected_row, select_gutter, theme, SELECT_CURSOR};
 use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
-use hoocode_tui_components::Text;
+use hoocode_tui_components::{PickerCursor, Text};
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::js_regex::is_js_space;
@@ -31,8 +31,7 @@ pub enum UserMessageEvent {
 /// `UserMessageList`: two rows per message, oldest first.
 pub struct UserMessageList {
     messages: Vec<UserMessageItem>,
-    selected_index: usize,
-    max_visible: usize,
+    cursor: PickerCursor,
     events: Vec<UserMessageEvent>,
 }
 
@@ -41,10 +40,11 @@ impl UserMessageList {
         let initial = initial_selected_id.and_then(|id| messages.iter().position(|m| m.id == id));
         // The given message, else the most recent.
         let selected_index = initial.unwrap_or(messages.len().saturating_sub(1));
+        let mut cursor = PickerCursor::new(messages.len(), 10);
+        cursor.select(selected_index);
         Self {
             messages,
-            selected_index,
-            max_visible: 10,
+            cursor,
             events: Vec::new(),
         }
     }
@@ -66,16 +66,13 @@ impl Component for UserMessageList {
             return lines;
         }
 
-        let start = (self.selected_index as i64 - (self.max_visible / 2) as i64)
-            .min(len as i64 - self.max_visible as i64)
-            .max(0) as usize;
-        let end = (start + self.max_visible).min(len);
+        let window = self.cursor.window();
 
-        for i in start..end {
+        for i in window.clone() {
             let message = &self.messages[i];
-            let is_selected = i == self.selected_index;
+            let is_selected = i == self.cursor.selected();
             // Blank between entries, none after the last.
-            if i > start {
+            if i > window.start {
                 lines.push(String::new());
             }
             let normalized = message.text.replace('\n', " ");
@@ -100,30 +97,18 @@ impl Component for UserMessageList {
             lines.push(t.fg("muted", &format!("  Message {} of {len}", i + 1)));
         }
 
-        if start > 0 || end < len {
-            lines.push(t.fg("muted", &format!("  ({}/{len})", self.selected_index + 1)));
+        if let Some(footer) = self.cursor.footer() {
+            lines.push(t.fg("muted", &format!("  {footer}")));
         }
         lines
     }
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        let len = self.messages.len();
-        if kb.matches(data, "tui.select.up") {
-            // Older, wrapping to the newest.
-            self.selected_index = if self.selected_index == 0 {
-                len.saturating_sub(1)
-            } else {
-                self.selected_index - 1
-            };
-        } else if kb.matches(data, "tui.select.down") {
-            self.selected_index = if self.selected_index + 1 >= len {
-                0
-            } else {
-                self.selected_index + 1
-            };
+        if self.cursor.handle_key(data, &kb) {
+            // Navigation: the cursor clamps at both ends.
         } else if kb.matches(data, "tui.select.confirm") {
-            if let Some(selected) = self.messages.get(self.selected_index) {
+            if let Some(selected) = self.messages.get(self.cursor.selected()) {
                 self.events
                     .push(UserMessageEvent::Select(selected.id.clone()));
             }

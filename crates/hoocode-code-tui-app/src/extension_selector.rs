@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use hoocode_code_tui_keybindings::{key_hint, raw_key_hint};
 use hoocode_code_tui_theme::{select_gutter, theme, SELECT_CURSOR};
+use hoocode_tui_components::PickerCursor;
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::{Component, ComponentHandle};
 
@@ -76,7 +77,7 @@ pub enum SelectorOutcome {
 pub struct ExtensionSelectorComponent {
     frame: InputFrame,
     options: Vec<String>,
-    selected_index: usize,
+    cursor: PickerCursor,
     list: Rc<RefCell<SelectedRowList>>,
     base_title: String,
     countdown: Option<CountdownTimer>,
@@ -108,8 +109,8 @@ impl ExtensionSelectorComponent {
         ));
         let mut this = Self {
             frame,
+            cursor: PickerCursor::new(options.len(), 10),
             options,
-            selected_index: 0,
             list,
             base_title: title.to_string(),
             countdown,
@@ -126,7 +127,7 @@ impl ExtensionSelectorComponent {
             .iter()
             .enumerate()
             .map(|(i, option)| {
-                let selected = i == self.selected_index;
+                let selected = i == self.cursor.selected();
                 SelectableRow {
                     text: if selected {
                         format!(
@@ -190,15 +191,13 @@ impl Component for ExtensionSelectorComponent {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        if kb.matches(data, "tui.select.up") || data == "k" {
-            self.selected_index = self.selected_index.saturating_sub(1);
+        if data == "k" || data == "j" {
+            self.cursor.step(if data == "k" { -1 } else { 1 });
             self.update_list();
-        } else if kb.matches(data, "tui.select.down") || data == "j" {
-            self.selected_index =
-                (self.selected_index + 1).min(self.options.len().saturating_sub(1));
+        } else if self.cursor.handle_key(data, &kb) {
             self.update_list();
         } else if kb.matches(data, "tui.select.confirm") || data == "\n" {
-            if let Some(selected) = self.options.get(self.selected_index).cloned() {
+            if let Some(selected) = self.options.get(self.cursor.selected()).cloned() {
                 (self.on_done)(SelectorOutcome::Selected(selected));
             }
         } else if kb.matches(data, "tui.select.cancel") {

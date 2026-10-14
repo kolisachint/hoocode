@@ -21,6 +21,7 @@ use hoocode_tui_util::{
 
 use crate::color::ColorFn;
 use crate::input::Input;
+use crate::picker_cursor::PickerCursor;
 
 pub enum SubmenuOutcome {
     Selected(String),
@@ -67,8 +68,7 @@ pub struct SettingsList {
     items: Vec<SettingItem>,
     filtered_indices: Vec<usize>,
     theme: Rc<SettingsListTheme>,
-    selected_index: usize,
-    max_visible: usize,
+    cursor: PickerCursor,
     pub on_change: Option<OnChangeFn>,
     pub on_cancel: Option<Box<dyn FnMut()>>,
     search_input: Option<Input>,
@@ -89,7 +89,7 @@ impl SettingsList {
         theme: SettingsListTheme,
         options: SettingsListOptions,
     ) -> Self {
-        let filtered_indices = (0..items.len()).collect();
+        let filtered_indices: Vec<usize> = (0..items.len()).collect();
         let search_enabled = options.enable_search;
         let theme = Rc::new(theme);
         let search_input = search_enabled.then(|| {
@@ -100,11 +100,10 @@ impl SettingsList {
             input
         });
         Self {
+            cursor: PickerCursor::new(filtered_indices.len(), max_visible),
             items,
             filtered_indices,
             theme,
-            selected_index: 0,
-            max_visible,
             on_change: None,
             on_cancel: None,
             search_input,
@@ -186,11 +185,7 @@ impl SettingsList {
             return lines;
         }
 
-        let start_index = self
-            .selected_index
-            .saturating_sub(self.max_visible / 2)
-            .min(display_indices.len().saturating_sub(self.max_visible));
-        let end_index = (start_index + self.max_visible).min(display_indices.len());
+        let window = self.cursor.window();
 
         let max_label_width = self
             .items
@@ -203,11 +198,11 @@ impl SettingsList {
         for (i, &item_idx) in display_indices
             .iter()
             .enumerate()
-            .take(end_index)
-            .skip(start_index)
+            .take(window.end)
+            .skip(window.start)
         {
             let item = &self.items[item_idx];
-            let is_selected = i == self.selected_index;
+            let is_selected = i == self.cursor.selected();
             // Unselected rows are indented by the cursor's width.
             let prefix_width = visible_width(&self.theme.cursor);
             let prefix = if is_selected {
@@ -255,8 +250,8 @@ impl SettingsList {
             });
         }
 
-        if start_index > 0 || end_index < display_indices.len() {
-            let scroll_text = format!("  ({}/{})", self.selected_index + 1, display_indices.len());
+        if let Some(footer) = self.cursor.footer() {
+            let scroll_text = format!("  {footer}");
             lines.push((self.theme.hint)(&truncate_to_width(
                 &scroll_text,
                 width_usize.saturating_sub(2),
@@ -265,7 +260,7 @@ impl SettingsList {
             )));
         }
 
-        if let Some(&idx) = display_indices.get(self.selected_index) {
+        if let Some(&idx) = display_indices.get(self.cursor.selected()) {
             if let Some(desc) = &self.items[idx].description {
                 lines.push(String::new());
                 let wrapped = wrap_text_with_ansi(desc, width_usize.saturating_sub(2));
@@ -308,24 +303,8 @@ impl SettingsList {
             (0..self.items.len()).collect()
         };
 
-        if kb.matches(data, "tui.select.up") {
-            if display_indices.is_empty() {
-                return;
-            }
-            self.selected_index = if self.selected_index == 0 {
-                display_indices.len() - 1
-            } else {
-                self.selected_index - 1
-            };
-        } else if kb.matches(data, "tui.select.down") {
-            if display_indices.is_empty() {
-                return;
-            }
-            self.selected_index = if self.selected_index == display_indices.len() - 1 {
-                0
-            } else {
-                self.selected_index + 1
-            };
+        if self.cursor.handle_key(data, kb) {
+            // Navigation: the cursor clamps at both ends.
         } else if kb.matches(data, "tui.select.confirm") || data == " " {
             self.activate_item(&display_indices);
         } else if kb.matches(data, "tui.select.cancel") {
@@ -368,12 +347,12 @@ impl SettingsList {
     }
 
     fn activate_item(&mut self, display_indices: &[usize]) {
-        let Some(&idx) = display_indices.get(self.selected_index) else {
+        let Some(&idx) = display_indices.get(self.cursor.selected()) else {
             return;
         };
 
         if self.items[idx].submenu.is_some() {
-            self.submenu_item_index = Some(self.selected_index);
+            self.submenu_item_index = Some(self.cursor.selected());
             self.submenu_item = Some(idx);
             let slot = Rc::new(RefCell::new(None));
             self.submenu_result_slot = Some(slot.clone());
@@ -403,7 +382,7 @@ impl SettingsList {
         self.submenu_result_slot = None;
         self.submenu_item = None;
         if let Some(idx) = self.submenu_item_index.take() {
-            self.selected_index = idx;
+            self.cursor.select(idx);
         }
     }
 
@@ -428,7 +407,7 @@ impl SettingsList {
             .collect();
         let filtered = fuzzy_filter(&views, query, |v| v.label.clone());
         self.filtered_indices = filtered.into_iter().map(|v| v.index).collect();
-        self.selected_index = 0;
+        self.cursor.reset(self.filtered_indices.len());
     }
 }
 
@@ -544,14 +523,17 @@ mod tests {
     }
 
     #[test]
-    fn navigation_wraps() {
+    fn navigation_clamps_at_both_ends() {
         let mut list = SettingsList::new(
             vec![item("a", vec!["1"]), item("b", vec!["1"])],
             5,
             theme(),
             SettingsListOptions::default(),
         );
-        list.handle_input_with("\x1b[A", &kb()); // up wraps to last
-        assert_eq!(list.selected_index, 1);
+        list.handle_input_with("\x1b[A", &kb()); // up at the top stays put
+        assert_eq!(list.cursor.selected(), 0);
+        list.handle_input_with("\x1b[B", &kb());
+        list.handle_input_with("\x1b[B", &kb()); // down at the bottom stays put
+        assert_eq!(list.cursor.selected(), 1);
     }
 }

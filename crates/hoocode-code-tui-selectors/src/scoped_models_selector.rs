@@ -14,7 +14,7 @@ use hoocode_code_tui_keybindings::{format_key_text, key_text};
 use hoocode_code_tui_theme::{select_gutter, style_input, theme, SELECT_CURSOR};
 use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
 use hoocode_code_tui_widgets::selected_row_list::{SelectableRow, SelectedRowList};
-use hoocode_tui_components::{Input, Spacer, Text};
+use hoocode_tui_components::{Input, PickerCursor, Spacer, Text};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_render::{Component, ComponentHandle};
@@ -29,6 +29,7 @@ pub const CATEGORY_KEY: &str = "alt+j";
 /// Width of the effort and category columns (`standard` and `minimal` fit).
 const EFFORT_WIDTH: usize = 8;
 const CATEGORY_WIDTH: usize = 8;
+const MAX_VISIBLE: usize = 8;
 
 /// `None` = all enabled (no filter); `Some` = an explicit ordered list of
 /// `provider/id`s.
@@ -192,7 +193,7 @@ struct State {
     /// the same session restores its effort and category.
     extras: HashMap<String, Extras>,
     filtered: Vec<Item>,
-    selected: usize,
+    cursor: PickerCursor,
     dirty: bool,
 }
 
@@ -288,11 +289,7 @@ impl Component for ModelList {
         if len == 0 {
             return Text::new(t.fg("muted", "  No matching models"), 0, 0).render(width);
         }
-        const MAX_VISIBLE: usize = 8;
-        let start = (state.selected as isize - (MAX_VISIBLE / 2) as isize)
-            .min(len as isize - MAX_VISIBLE as isize)
-            .max(0) as usize;
-        let end = (start + MAX_VISIBLE).min(len);
+        let window = state.cursor.window();
         let all_enabled = state.enabled.is_none();
         let name_width = state
             .filtered
@@ -306,10 +303,10 @@ impl Component for ModelList {
             pad("effort", EFFORT_WIDTH)
         );
         let mut lines = Text::new(t.fg("dim", &header), 0, 0).render(width);
-        let rows = (start..end)
+        let rows = window
             .map(|i| {
                 let item = &state.filtered[i];
-                let selected = i == state.selected;
+                let selected = i == state.cursor.selected();
                 let prefix = if selected {
                     t.fg("accent", SELECT_CURSOR)
                 } else {
@@ -343,11 +340,11 @@ impl Component for ModelList {
             })
             .collect();
         lines.extend(SelectedRowList::new(rows, 0).render(width));
-        if start > 0 || end < len {
-            let info = t.fg("muted", &format!("  ({}/{len})", state.selected + 1));
+        if let Some(footer) = state.cursor.footer() {
+            let info = t.fg("muted", &format!("  {footer}"));
             lines.extend(Text::new(info, 0, 0).render(width));
         }
-        let name = &state.filtered[state.selected].model.name;
+        let name = &state.filtered[state.cursor.selected()].model.name;
         lines.extend(Spacer::new(1).render(width));
         lines
             .extend(Text::new(t.fg("muted", &format!("  Model Name: {name}")), 0, 0).render(width));
@@ -405,10 +402,11 @@ impl ScopedModelsSelectorComponent {
             enabled: (!enabled_ids.is_empty()).then_some(enabled_ids),
             extras,
             filtered: Vec::new(),
-            selected: 0,
+            cursor: PickerCursor::new(0, MAX_VISIBLE),
             dirty: false,
         };
         state.filtered = state.build_items();
+        state.cursor.reset(state.filtered.len());
 
         let mut frame = InputFrame::new(InputFrameOptions::default());
         frame.set_title("models");
@@ -465,7 +463,8 @@ impl ScopedModelsSelectorComponent {
                 format!("{} {}", i.model.id, i.model.provider)
             })
         };
-        state.selected = state.selected.min(state.filtered.len().saturating_sub(1));
+        let len = state.filtered.len();
+        state.cursor.set_query(len);
         self.footer.borrow_mut().set_text(state.footer_text());
     }
 
@@ -490,7 +489,7 @@ impl ScopedModelsSelectorComponent {
     fn edit_selected(&mut self, edit: impl FnOnce(&mut Extras, &Model)) {
         {
             let mut state = self.state.borrow_mut();
-            let Some(item) = state.filtered.get(state.selected).cloned() else {
+            let Some(item) = state.filtered.get(state.cursor.selected()).cloned() else {
                 return;
             };
             let extras = state.extras.entry(item.full_id).or_default();
@@ -559,18 +558,8 @@ impl Component for ScopedModelsSelectorComponent {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        if kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down") {
-            let up = kb.matches(data, "tui.select.up");
-            let mut state = self.state.borrow_mut();
-            let len = state.filtered.len();
-            if len > 0 {
-                state.selected = match (up, state.selected) {
-                    (true, 0) => len - 1,
-                    (true, i) => i - 1,
-                    (false, i) if i + 1 == len => 0,
-                    (false, i) => i + 1,
-                };
-            }
+        let navigated = self.state.borrow_mut().cursor.handle_key(data, &kb);
+        if navigated {
             return;
         }
 
@@ -583,9 +572,9 @@ impl Component for ScopedModelsSelectorComponent {
                     state.enabled.clone(),
                     state
                         .filtered
-                        .get(state.selected)
+                        .get(state.cursor.selected())
                         .map(|i| i.full_id.clone()),
-                    state.selected,
+                    state.cursor.selected(),
                 )
             };
             let (Some(ids), Some(item)) = (&enabled, item) else {
@@ -597,7 +586,8 @@ impl Component for ScopedModelsSelectorComponent {
             let delta: isize = if reorder_up { -1 } else { 1 };
             let target = index as isize + delta;
             if target >= 0 && (target as usize) < ids.len() {
-                self.state.borrow_mut().selected = (selected as isize + delta).max(0) as usize;
+                let target = (selected as isize + delta).max(0) as usize;
+                self.state.borrow_mut().cursor.select(target);
                 self.apply(move_id(&enabled, &item, delta));
             }
             return;
@@ -610,7 +600,7 @@ impl Component for ScopedModelsSelectorComponent {
                     state.enabled.clone(),
                     state
                         .filtered
-                        .get(state.selected)
+                        .get(state.cursor.selected())
                         .map(|i| i.full_id.clone()),
                 )
             };
@@ -638,7 +628,7 @@ impl Component for ScopedModelsSelectorComponent {
         if kb.matches(data, "app.models.toggleProvider") {
             let next = {
                 let state = self.state.borrow();
-                state.filtered.get(state.selected).map(|item| {
+                state.filtered.get(state.cursor.selected()).map(|item| {
                     let provider = &item.model.provider;
                     let ids: Vec<String> = state
                         .all
