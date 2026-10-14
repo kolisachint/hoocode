@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use hoocode_code_paths::{canonicalize_path, home_dir};
 use hoocode_code_session::identity::{session_color_slot_for, session_slug_for};
-use hoocode_code_session::SessionInfo;
+use hoocode_code_session::{subagents_dir, SessionInfo};
 use hoocode_code_tui_keybindings::{key_hint, key_text};
 use hoocode_code_tui_theme::{
     paint_selected_row, select_gutter, session_color_token, style_input, theme, SELECT_CURSOR,
@@ -731,6 +731,24 @@ impl Component for SessionList {
 
 // ---- deleting --------------------------------------------------------------
 
+/// A deleted session takes its subagent transcripts with it: `<session>/subagents/`.
+/// They are trashed like the session file when a `trash` command exists, else
+/// removed. A subagent run's own row has no such dir, so this is a no-op there.
+pub fn delete_subagent_transcripts(session: &Path) {
+    let dir = subagents_dir(session);
+    if !dir.is_dir() {
+        return;
+    }
+    let trashed = std::process::Command::new("trash")
+        .arg(&dir)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .is_ok_and(|out| out.status.success());
+    if !trashed {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
 enum DeleteMethod {
     Trash,
     Unlink,
@@ -1199,6 +1217,7 @@ impl SessionSelectorComponent {
     fn delete_session(&mut self, path: PathBuf) {
         match delete_session_file(&path) {
             Ok(method) => {
+                delete_subagent_transcripts(&path);
                 if let Some(s) = &mut self.current_sessions {
                     s.retain(|x| x.path != path);
                 }

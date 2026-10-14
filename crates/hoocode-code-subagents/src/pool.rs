@@ -23,7 +23,7 @@ use hoocode_code_resources::{
     MODEL_INHERIT,
 };
 use hoocode_code_rpc::JsonlLineReader;
-use hoocode_code_session::subagents_dir;
+use hoocode_code_session::{append_custom_entry_to_file, subagents_dir, SUBAGENT_RUN_ENTRY};
 use regex::Regex;
 use serde_json::{json, Map, Value};
 use tokio::sync::oneshot;
@@ -627,6 +627,12 @@ impl SubagentPool {
                 )));
             }
             let mut task = task;
+            // Written under the lock and before the task is queued, so no pull
+            // can start the run (and write its settle record) ahead of this one.
+            if let Some(parent) = &task.parent_session_file {
+                let child = self.inner.child_session_file(&task);
+                write_run_record(parent, &task, &child, None);
+            }
             let now = now_ms();
             task.queued_at.get_or_insert(now);
             let p = effective_priority(&task.agent_type, task.queued_at.unwrap_or(now), now);
@@ -1738,7 +1744,7 @@ impl PoolInner {
             }
             result.result_data = self.read_result_json(task_id, &cwd);
             // A partial result is still a success, but the model may resume it:
-            // the dispatch dir (and its session.jsonl) is kept. Dirs are pruned
+            // the transcript and the dispatch dir are kept. Dirs are pruned
             // at dispatch time, see `prune_dispatch_dirs`.
             if result
                 .result_data
@@ -1962,6 +1968,8 @@ impl PoolInner {
             .and_then(|data| data.get("status"))
             .and_then(Value::as_str)
             .filter(|status| !status.is_empty());
+        let status =
+            reported.unwrap_or_else(|| result.status.map(|s| s.as_str()).unwrap_or("failed"));
         let attempt = ledger::attempt_from_result(
             &task.task_id,
             &task.agent_type,
@@ -1972,7 +1980,7 @@ impl PoolInner {
             resolved.as_deref(),
             task.provider.as_deref(),
             task.use_inherited_model_fallback,
-            reported.unwrap_or_else(|| result.status.map(|s| s.as_str()).unwrap_or("failed")),
+            status,
             result.ok,
             verified,
             duration_ms,
@@ -1992,6 +2000,10 @@ impl PoolInner {
             .as_deref()
             .and_then(hoocode_code_session::session_id_of_file);
         ledger::append(&cwd, &attempt);
+        if let Some(parent) = &task.parent_session_file {
+            let child = self.child_session_file(task);
+            write_run_record(parent, task, &child, Some(status));
+        }
     }
 
     fn resolve_waiter(&self, task_id: &str, result: SubagentResult) {
@@ -2169,6 +2181,38 @@ fn prune_dispatch_dirs_checked(
         if fresh && !is_live(name) {
             let _ = std::fs::remove_dir_all(path);
         }
+    }
+}
+
+/// One line of a run's description: its first line, cut short.
+fn describe_task(task: &str) -> String {
+    task.lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .chars()
+        .take(120)
+        .collect()
+}
+
+/// Append a `subagent_run` record for a run to its parent session. Written
+/// twice: at dispatch with no `outcome`, and at settle with the status it
+/// settled with. The newest record for a transcript is the run's state. A
+/// failure to write is logged and does not fail the run: the record is the
+/// parent's view of it, not the run's result.
+fn write_run_record(parent: &Path, task: &SubagentPoolTask, child: &Path, outcome: Option<&str>) {
+    let data = json!({
+        "taskId": task.task_id,
+        "agentType": task.agent_type,
+        "description": describe_task(&task.task),
+        "childFile": child.file_name().map(|n| n.to_string_lossy().into_owned()),
+        "outcome": outcome,
+    });
+    if let Err(err) = append_custom_entry_to_file(parent, SUBAGENT_RUN_ENTRY, data) {
+        agent_log(&format!(
+            "[SUBAGENT] could not record run {} in its parent session: {err}",
+            task.task_id
+        ));
     }
 }
 

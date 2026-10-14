@@ -1594,3 +1594,109 @@ async fn resume_without_a_parent_still_finds_a_dispatch_dir_transcript() {
     );
     p.dispose();
 }
+
+/// The `subagent_run` records in a parent session, oldest first.
+fn run_records(parent: &Path) -> Vec<Value> {
+    hoocode_code_session::load_entries_from_file(parent)
+        .into_iter()
+        .filter_map(|entry| match entry {
+            hoocode_code_session::FileEntry::Custom {
+                custom_type, data, ..
+            } if custom_type == "subagent_run" => data,
+            _ => None,
+        })
+        .collect()
+}
+
+/// A run records its dispatch (no outcome) and its settle (the outcome) in
+/// the parent session, and the description is the task's first line.
+#[tokio::test]
+async fn a_run_records_its_dispatch_and_its_settle_in_the_parent() {
+    let dir = setup();
+    let parent = parent_session(dir.path(), "parent-rec");
+    let p = pool(argv_and_result_recorder(dir.path()), 1, dir.path());
+    p.dispatch(
+        "audit the module\nsecond line of the task",
+        DispatchOptions {
+            force_agent: Some("explore".into()),
+            task_id: Some("rec-1".into()),
+            parent_session_file: Some(parent.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let records = run_records(&parent);
+    assert_eq!(records.len(), 2, "{records:?}");
+    assert_eq!(records[0]["taskId"], "rec-1");
+    assert_eq!(records[0]["agentType"], "explore");
+    assert_eq!(records[0]["description"], "audit the module");
+    assert_eq!(records[0]["childFile"], "rec-1.jsonl");
+    assert!(records[0]["outcome"].is_null());
+    assert_eq!(records[1]["taskId"], "rec-1");
+    assert_eq!(records[1]["outcome"], "complete");
+    p.dispose();
+}
+
+/// A failed run settles with its failure, so the parent does not show it as
+/// interrupted.
+#[tokio::test]
+async fn a_failed_run_records_the_failure_in_the_parent() {
+    let dir = setup();
+    let parent = parent_session(dir.path(), "parent-fail");
+    let p = pool(mock(dir.path(), 1, 0), 1, dir.path());
+    let mut t = task("fail-1", "explore", "try");
+    t.parent_session_file = Some(parent.clone());
+    p.spawn(t).unwrap();
+    let result = p.wait_for("fail-1").await.unwrap();
+    assert!(!result.ok);
+    let records = run_records(&parent);
+    assert_eq!(records.len(), 2, "{records:?}");
+    assert!(records[1]["outcome"].is_string(), "{records:?}");
+    p.dispose();
+}
+
+/// A finished run keeps its transcript. Success used to delete the dispatch
+/// dir's session; the transcript now lives as long as the parent session.
+#[tokio::test]
+async fn a_successful_run_keeps_its_transcript() {
+    let dir = setup();
+    let parent = parent_session(dir.path(), "parent-keep");
+    let transcripts = hoocode_code_session::subagents_dir(&parent);
+    let transcript = transcripts.join("keep-1.jsonl");
+    let exe = script(
+        dir.path(),
+        "mock-keep.sh",
+        &format!(
+            "{TASK_ID}\nmkdir -p '{}'\necho '{{}}' > '{}'\nmkdir -p {DIR}/dispatch/$tid\nprintf '%s' '{}' > {DIR}/dispatch/$tid/result.json\necho '{DONE_LINE}'\nexit 0",
+            transcripts.display(),
+            transcript.display(),
+            result_json("kept", "complete", 0.9)
+        ),
+    );
+    let p = pool(exe, 1, dir.path());
+    let mut t = task("keep-1", "explore", "work");
+    t.parent_session_file = Some(parent.clone());
+    p.spawn(t).unwrap();
+    let result = p.wait_for("keep-1").await.unwrap();
+    assert!(result.ok);
+    assert!(transcript.exists(), "a finished run keeps its transcript");
+    p.dispose();
+}
+
+/// The dispatch-time sweep works on dispatch dirs only: a session's
+/// `subagents/` is outside it, however old.
+#[test]
+fn the_dispatch_sweep_spares_a_sessions_subagents_dir() {
+    let dir = setup();
+    let cwd = dir.path();
+    let parent = parent_session(cwd, "parent-sweep");
+    let subdir = hoocode_code_session::subagents_dir(&parent);
+    let transcript = subdir.join("old.jsonl");
+    std::fs::create_dir_all(&subdir).unwrap();
+    std::fs::write(&transcript, "{}\n").unwrap();
+    set_age(&transcript, 3 * DAY);
+    set_age(&subdir, 3 * DAY);
+    prune_dispatch_dirs(cwd, 0, DAY);
+    assert!(transcript.exists(), "the sweep must not touch subagents/");
+}
