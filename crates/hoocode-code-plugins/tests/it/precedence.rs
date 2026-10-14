@@ -1,5 +1,5 @@
-//! Precedence: the first plugin found wins a name. A project plugin is found only once its
-//! folder is trusted, so it wins over the user's plugin of the same name only then.
+//! Precedence: a user plugin wins a name over a project plugin, and the first plugin in sorted
+//! order wins within one folder. A project plugin is loaded only once its folder is trusted.
 
 use hoocode_code_mcp::TrustStore;
 use hoocode_code_plugins::{trust_project_plugins, PluginScope, Severity};
@@ -20,7 +20,7 @@ fn write_plugin(root: &std::path::Path, name: &str, skill: &str) {
 }
 
 #[test]
-fn a_trusted_project_plugin_wins_a_name_over_the_user_plugin() {
+fn a_trusted_project_plugin_does_not_replace_the_user_plugin_of_the_same_name() {
     let sb = Sandbox::new();
     let project = sb.project_plugins().join("shared-project");
     write_plugin(&project, "shared", "from-project");
@@ -39,10 +39,15 @@ fn a_trusted_project_plugin_wins_a_name_over_the_user_plugin() {
     options.user_plugins_dir = user;
     let set = hoocode_code_plugins::load_plugins(&options);
 
+    // The user's plugin wins; the repository's copy is skipped with a warning.
     let winner = plugin(&set, "shared");
-    assert_eq!(winner.scope, PluginScope::Project);
-    assert!(winner.root.ends_with("shared-project"));
+    assert_eq!(winner.scope, PluginScope::User);
+    assert!(winner.root.ends_with("shared-user"));
     assert_eq!(set.plugins.iter().filter(|p| p.name == "shared").count(), 1);
+    assert!(set
+        .skill_entries()
+        .iter()
+        .all(|e| !e.path.contains("from-project")));
     assert!(set
         .diagnostics
         .iter()

@@ -195,3 +195,85 @@ fn a_skills_entry_that_is_a_file_is_an_invalid_component() {
         .iter()
         .any(|d| d.message.starts_with("skills is not a folder")));
 }
+
+/// Claude `.mcp.json` servers: a stdio `command` or `cwd` must stay inside the plugin, as in
+/// Agent Plugins. A `./` command is run from the plugin, not from the session's folder.
+#[test]
+fn claude_stdio_paths_are_held_to_the_plugin_root() {
+    let sb = Sandbox::new();
+    let (user, root) = user_folder_with(&sb, "claude-paths-user");
+    write(
+        &root.join(".claude-plugin/plugin.json"),
+        r#"{"name": "linky"}"#,
+    );
+    std::fs::remove_file(root.join("plugin.json")).unwrap();
+    write(
+        &root.join(".mcp.json"),
+        r#"{"mcpServers": {
+            "bare": {"command": "npx", "args": ["-y", "x"]},
+            "local": {"command": "./server.js", "cwd": "./sub"},
+            "up": {"command": "../../bin/evil"},
+            "absolute": {"command": "/bin/sh"},
+            "placeholder": {"command": "${CLAUDE_PLUGIN_ROOT}/server.js"},
+            "cwd-up": {"command": "npx", "cwd": "../.."},
+            "cwd-absolute": {"command": "npx", "cwd": "/tmp"},
+            "remote": {"type": "streamable-http", "url": "https://example.com/mcp"}
+        }}"#,
+    );
+
+    let trust = empty_trust(&sb);
+    let mut options = sb.options(&trust);
+    options.user_plugins_dir = user;
+    let set = hoocode_code_plugins::load_plugins(&options);
+    let p = plugin(&set, "linky");
+    let mut names: Vec<&str> = p.mcp_servers.iter().map(|s| s.name.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["bare", "local", "remote"]);
+
+    let local = p.mcp_servers.iter().find(|s| s.name == "local").unwrap();
+    let Transport::Stdio { command, .. } = &local.transport else {
+        panic!("local is not stdio");
+    };
+    assert_eq!(command, &p.root.join("server.js").to_string_lossy());
+
+    let errors: Vec<&str> = set
+        .diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error && d.plugin.as_deref() == Some("linky"))
+        .filter_map(|d| d.server.as_deref())
+        .collect();
+    assert_eq!(errors.len(), 5, "{:?}", set.diagnostics);
+    for name in ["up", "absolute", "placeholder", "cwd-up", "cwd-absolute"] {
+        assert!(errors.contains(&name), "{name} was not refused");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_claude_command_that_links_outside_the_plugin_is_refused() {
+    let sb = Sandbox::new();
+    let outside = sb.repo.parent().unwrap().join("outside-bin");
+    write(&outside.join("server"), "#!/bin/sh\n");
+    let (user, root) = user_folder_with(&sb, "claude-link-user");
+    write(
+        &root.join(".claude-plugin/plugin.json"),
+        r#"{"name": "linky"}"#,
+    );
+    std::fs::remove_file(root.join("plugin.json")).unwrap();
+    std::os::unix::fs::symlink(outside.join("server"), root.join("server")).unwrap();
+    write(
+        &root.join(".mcp.json"),
+        r#"{"mcpServers": {"linked": {"command": "./server"}}}"#,
+    );
+
+    let trust = empty_trust(&sb);
+    let mut options = sb.options(&trust);
+    options.user_plugins_dir = user;
+    let set = hoocode_code_plugins::load_plugins(&options);
+    let p = plugin(&set, "linky");
+    assert!(p.mcp_servers.is_empty());
+    assert!(set
+        .diagnostics
+        .iter()
+        .any(|d| d.server.as_deref() == Some("linked") && d.message.contains("leaves")));
+}

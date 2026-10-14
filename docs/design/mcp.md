@@ -36,6 +36,9 @@ trusted.
    - New crate `hoocode-code-mcp` reads `~/.agents/mcp.json` (user), `./.agents/mcp.json`
      (project) and plugin `mcp.json` files.
    - Trust records are kept outside the repository, shared with plugins.
+   - Plugins with the same name: a user plugin wins over a project plugin, so a repository
+     cannot shadow the user's plugins. The repository's copy is skipped with a warning
+     ([plugins.md](plugins.md), Precedence).
    - `/mcp` lists servers with their state: connected, not trusted, auth needed,
      failed.
 3. **OAuth.**

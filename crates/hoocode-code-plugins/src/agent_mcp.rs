@@ -219,7 +219,9 @@ fn stdio(obj: &Map<String, Value>, ctx: &McpContext<'_>) -> Result<Transport, St
 
     let mut env = BTreeMap::new();
     for (name, value) in string_map(obj, "env")? {
-        if name == PLUGIN_ROOT_VAR || name == PLUGIN_DATA_VAR {
+        // Case-insensitive: on Windows `plugin_root` would name the same variable.
+        if name.eq_ignore_ascii_case(PLUGIN_ROOT_VAR) || name.eq_ignore_ascii_case(PLUGIN_DATA_VAR)
+        {
             return Err(format!("\"env\" must not set {name}; the client sets it"));
         }
         env.insert(name, expand(&value, &root, &data));
@@ -248,7 +250,8 @@ fn stdio(obj: &Map<String, Value>, ctx: &McpContext<'_>) -> Result<Transport, St
 }
 
 /// `command` is one token: a bare executable name, or a `./` path inside the plugin (§7.2.1).
-fn resolve_command(command: &str, root: &Path) -> Result<String, String> {
+/// Shared with the Claude layout, whose `command` gets the same containment.
+pub(crate) fn resolve_command(command: &str, root: &Path) -> Result<String, String> {
     if command.is_empty() || command.chars().any(char::is_whitespace) {
         return Err("\"command\" must be one executable token".to_owned());
     }
@@ -507,6 +510,16 @@ mod tests {
         );
         assert!(out.servers.is_empty());
         assert_eq!(errors(&out).len(), 1);
+        // Any case of the names is refused, so no second variable differs only by case.
+        for name in ["plugin_root", "Plugin_Data"] {
+            let out = parse(
+                &f,
+                &doc(&format!(
+                    r#""s": {{"type": "stdio", "command": "x", "env": {{"{name}": "/tmp"}}}}"#
+                )),
+            );
+            assert!(out.servers.is_empty(), "{name} was accepted");
+        }
     }
 
     #[test]

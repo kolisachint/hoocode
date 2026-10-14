@@ -56,6 +56,32 @@ fn a_change_to_the_project_plugins_asks_again() {
     assert_ne!(again.fingerprint, prompt.fingerprint);
 }
 
+/// Retargeting a symbolic link changes which skill loads, so it asks again, even when both
+/// targets are inside the plugin and hold the same files.
+#[cfg(unix)]
+#[test]
+fn retargeting_a_skill_link_asks_again() {
+    let sb = Sandbox::new();
+    let dir = sb.add_project_plugin("tool-pack");
+    write(
+        &dir.join("skills/second/SKILL.md"),
+        "---\nname: second\ndescription: second\n---\n",
+    );
+    std::os::unix::fs::symlink("lint", dir.join("skills/alias")).unwrap();
+    let trust = TrustStore::empty(&sb.trust_path);
+    let prompt = sb.load(&trust).pending_project_trust.unwrap();
+    trust_project_plugins(&sb.trust_path, &prompt).unwrap();
+    assert!(sb.load(&sb.trust()).pending_project_trust.is_none());
+
+    std::fs::remove_file(dir.join("skills/alias")).unwrap();
+    std::os::unix::fs::symlink("second", dir.join("skills/alias")).unwrap();
+    let again = sb
+        .load(&sb.trust())
+        .pending_project_trust
+        .expect("a retargeted link asks again");
+    assert_ne!(again.fingerprint, prompt.fingerprint);
+}
+
 #[test]
 fn project_mcp_servers_follow_the_folder_trust() {
     let sb = Sandbox::new();

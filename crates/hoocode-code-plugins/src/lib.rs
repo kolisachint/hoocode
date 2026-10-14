@@ -7,9 +7,10 @@
 //! - **Claude**: `.claude-plugin/plugin.json`, `skills/`, `agents/`, and `.mcp.json` (or an
 //!   inline `mcpServers` in the manifest).
 //!
-//! [`load_plugins`] reads `<cwd>/.agents/plugins/` (project; needs folder trust) and
-//! `~/.agents/plugins/` (user). The first plugin found wins by name. The result is a
-//! [`PluginSet`]: [`PluginSet::skill_entries`] for the skill loader (skills are named
+//! [`load_plugins`] reads `~/.agents/plugins/` (user) and `<cwd>/.agents/plugins/` (project;
+//! needs folder trust). A user plugin wins a name over a project plugin, so a repository cannot
+//! shadow the user's plugins; within one folder the first name in sorted order wins. The result
+//! is a [`PluginSet`]: [`PluginSet::skill_entries`] for the skill loader (skills are named
 //! `<plugin>:<skill>`), [`PluginSet::agent_files`] for subagent definitions, and
 //! [`PluginSet::mcp_servers`] for the MCP config. Hooks, commands, themes and providers are
 //! skipped with a warning.
@@ -73,6 +74,8 @@ pub struct PluginDiagnostic {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LoadedPlugin {
     pub name: String,
+    /// The manifest's `description`, or empty.
+    pub description: String,
     pub format: PluginFormat,
     pub scope: PluginScope,
     /// The canonical plugin folder.
