@@ -13,6 +13,7 @@ mod image;
 mod input;
 mod loader;
 pub mod markdown;
+mod picker_cursor;
 mod select_list;
 mod settings_list;
 mod spacer;
@@ -41,6 +42,7 @@ pub use image::{Image, ImageOptions, ImageTheme};
 pub use input::{Input, DEFAULT_INPUT_PROMPT};
 pub use loader::{Loader, LoaderIndicatorOptions};
 pub use markdown::{DefaultTextStyle, HeadingFn, HighlightCodeFn, Markdown, MarkdownTheme};
+pub use picker_cursor::PickerCursor;
 pub use select_list::{SelectItem, SelectList, SelectListLayoutOptions, SelectListTheme};
 pub use settings_list::{
     SettingItem, SettingsList, SettingsListOptions, SettingsListTheme, SubmenuFactory,

@@ -18,7 +18,7 @@ use hoocode_code_tui_theme::{
 };
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
 use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
-use hoocode_tui_components::{Input, TruncatedText};
+use hoocode_tui_components::{Input, PickerCursor, TruncatedText};
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::truncate_to_width;
@@ -228,9 +228,8 @@ pub struct TreeList {
     index_by_id: HashMap<String, usize>,
     flat_nodes: Vec<FlatNode>,
     filtered_nodes: Vec<FlatNode>,
-    selected_index: usize,
+    cursor: PickerCursor,
     current_leaf_id: Option<String>,
-    max_visible_lines: usize,
     filter_mode: TreeFilterMode,
     search_query: String,
     tool_calls: HashMap<String, (String, Value)>,
@@ -266,9 +265,8 @@ impl TreeList {
             index_by_id,
             flat_nodes: Vec::new(),
             filtered_nodes: Vec::new(),
-            selected_index: 0,
+            cursor: PickerCursor::new(0, max_visible_lines),
             current_leaf_id: current_leaf_id.map(String::from),
-            max_visible_lines,
             filter_mode: initial_filter_mode.unwrap_or(TreeFilterMode::Default),
             search_query: String::new(),
             tool_calls: HashMap::new(),
@@ -288,7 +286,8 @@ impl TreeList {
         let target = initial_selected_id
             .map(String::from)
             .or_else(|| list.current_leaf_id.clone());
-        list.selected_index = list.find_nearest_visible_index(target.as_deref());
+        let nearest = list.find_nearest_visible_index(target.as_deref());
+        list.cursor.select(nearest);
         list.last_selected_id = list.selected_id();
         list
     }
@@ -321,7 +320,7 @@ impl TreeList {
 
     fn selected_id(&self) -> Option<String> {
         self.filtered_nodes
-            .get(self.selected_index)
+            .get(self.cursor.selected())
             .map(|f| self.nodes[f.node].id.clone())
     }
 
@@ -578,12 +577,12 @@ impl TreeList {
             filtered.retain(|f| !skip.contains(&self.nodes[f.node].id));
         }
         self.filtered_nodes = filtered;
+        self.cursor.set_query(self.filtered_nodes.len());
         self.recalculate_visual_structure();
 
         if let Some(last) = self.last_selected_id.clone() {
-            self.selected_index = self.find_nearest_visible_index(Some(&last));
-        } else if self.selected_index >= self.filtered_nodes.len() {
-            self.selected_index = self.filtered_nodes.len().saturating_sub(1);
+            let nearest = self.find_nearest_visible_index(Some(&last));
+            self.cursor.select(nearest);
         }
         if !self.filtered_nodes.is_empty() {
             if let Some(id) = self.selected_id() {
@@ -913,7 +912,7 @@ impl TreeList {
     /// `findBranchSegmentStart`.
     fn find_branch_segment_start(&self, down: bool) -> usize {
         let Some(selected) = self.selected_id() else {
-            return self.selected_index;
+            return self.cursor.selected();
         };
         let index: HashMap<&str, usize> = self
             .filtered_nodes
@@ -946,7 +945,7 @@ impl TreeList {
                 .map_or(0, Vec::len);
             if siblings > 1 {
                 let start = index[current.as_str()];
-                if start < self.selected_index {
+                if start < self.cursor.selected() {
                     return start;
                 }
             }
@@ -1009,15 +1008,11 @@ impl Component for TreeList {
             ));
             return lines;
         }
-        let len = self.filtered_nodes.len();
-        let start = (self.selected_index as isize - (self.max_visible_lines / 2) as isize)
-            .min(len as isize - self.max_visible_lines as isize)
-            .max(0) as usize;
-        let end = (start + self.max_visible_lines).min(len);
-        for i in start..end {
+        let window = self.cursor.window();
+        for i in window {
             let flat = &self.filtered_nodes[i];
             let node = &self.nodes[flat.node];
-            let selected = i == self.selected_index;
+            let selected = i == self.cursor.selected();
             let cursor = if selected {
                 t.fg("accent", SELECT_CURSOR)
             } else {
@@ -1091,12 +1086,7 @@ impl Component for TreeList {
         lines.push(truncate_to_width(
             &t.fg(
                 "muted",
-                &format!(
-                    "  ({}/{}){}",
-                    self.selected_index + 1,
-                    len,
-                    self.status_labels()
-                ),
+                &format!("  {}{}", self.cursor.position(), self.status_labels()),
             ),
             w,
             "...",
@@ -1107,26 +1097,18 @@ impl Component for TreeList {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        let len = self.filtered_nodes.len();
-        if kb.matches(data, "tui.select.up") {
-            self.selected_index = if self.selected_index == 0 {
-                len.saturating_sub(1)
-            } else {
-                self.selected_index - 1
-            };
-        } else if kb.matches(data, "tui.select.down") {
-            self.selected_index = if self.selected_index + 1 >= len {
-                0
-            } else {
-                self.selected_index + 1
-            };
+        if self.cursor.handle_key(data, &kb) {
+            // Navigation: the cursor clamps at both ends.
         } else if kb.matches(data, "app.tree.foldOrUp") {
             match self.selected_id() {
                 Some(id) if self.is_foldable(&id) && !self.folded.contains(&id) => {
                     self.folded.insert(id);
                     self.apply_filter();
                 }
-                _ => self.selected_index = self.find_branch_segment_start(false),
+                _ => {
+                    let target = self.find_branch_segment_start(false);
+                    self.cursor.select(target);
+                }
             }
         } else if kb.matches(data, "app.tree.unfoldOrDown") {
             match self.selected_id() {
@@ -1134,16 +1116,15 @@ impl Component for TreeList {
                     self.folded.remove(&id);
                     self.apply_filter();
                 }
-                _ => self.selected_index = self.find_branch_segment_start(true),
+                _ => {
+                    let target = self.find_branch_segment_start(true);
+                    self.cursor.select(target);
+                }
             }
-        } else if kb.matches(data, "tui.editor.cursorLeft") || kb.matches(data, "tui.select.pageUp")
-        {
-            self.selected_index = self.selected_index.saturating_sub(self.max_visible_lines);
-        } else if kb.matches(data, "tui.editor.cursorRight")
-            || kb.matches(data, "tui.select.pageDown")
-        {
-            self.selected_index =
-                (self.selected_index + self.max_visible_lines).min(len.saturating_sub(1));
+        } else if kb.matches(data, "tui.editor.cursorLeft") {
+            self.cursor.page(false);
+        } else if kb.matches(data, "tui.editor.cursorRight") {
+            self.cursor.page(true);
         } else if kb.matches(data, "tui.select.confirm") {
             if let Some(id) = self.selected_id() {
                 self.events.push(TreeEvent::Select(id));
@@ -1176,7 +1157,7 @@ impl Component for TreeList {
                 self.apply_filter();
             }
         } else if kb.matches(data, "app.tree.editLabel") {
-            if let Some(f) = self.filtered_nodes.get(self.selected_index) {
+            if let Some(f) = self.filtered_nodes.get(self.cursor.selected()) {
                 let node = &self.nodes[f.node];
                 self.label_edit = Some((node.id.clone(), node.label.clone()));
             }

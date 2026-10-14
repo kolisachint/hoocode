@@ -5,6 +5,7 @@ use hoocode_tui_render::Component;
 use hoocode_tui_util::{apply_background_to_line, truncate_to_width, visible_width};
 
 use crate::color::ColorFn;
+use crate::picker_cursor::PickerCursor;
 
 /// Used when a theme does not name its own cursor: `›`, the app pickers' one
 /// cursor.
@@ -55,8 +56,7 @@ pub struct SelectListLayoutOptions {
 pub struct SelectList {
     items: Vec<SelectItem>,
     filtered_items: Vec<SelectItem>,
-    selected_index: usize,
-    max_visible: usize,
+    cursor: PickerCursor,
     theme: SelectListTheme,
     layout: SelectListLayoutOptions,
 
@@ -75,9 +75,8 @@ impl SelectList {
         let filtered_items = items.clone();
         Self {
             items,
+            cursor: PickerCursor::new(filtered_items.len(), max_visible),
             filtered_items,
-            selected_index: 0,
-            max_visible,
             theme,
             layout,
             on_select: None,
@@ -94,41 +93,25 @@ impl SelectList {
             .filter(|item| item.value.to_lowercase().starts_with(&filter_lower))
             .cloned()
             .collect();
-        self.selected_index = 0;
+        self.cursor.reset(self.filtered_items.len());
     }
 
     pub fn set_selected_index(&mut self, index: usize) {
-        let max = self.filtered_items.len().saturating_sub(1);
-        self.selected_index = index.min(max);
+        self.cursor.select(index);
     }
 
     pub fn get_selected_item(&self) -> Option<&SelectItem> {
-        self.filtered_items.get(self.selected_index)
+        self.filtered_items.get(self.cursor.selected())
     }
 
     pub fn handle_input_with(&mut self, key_data: &str, kb: &KeybindingsManager) {
-        if kb.matches(key_data, "tui.select.up") {
-            if self.filtered_items.is_empty() {
-                return;
+        let before = self.cursor.selected();
+        if self.cursor.handle_key(key_data, kb) {
+            if self.cursor.selected() != before {
+                self.notify_selection_change();
             }
-            self.selected_index = if self.selected_index == 0 {
-                self.filtered_items.len() - 1
-            } else {
-                self.selected_index - 1
-            };
-            self.notify_selection_change();
-        } else if kb.matches(key_data, "tui.select.down") {
-            if self.filtered_items.is_empty() {
-                return;
-            }
-            self.selected_index = if self.selected_index == self.filtered_items.len() - 1 {
-                0
-            } else {
-                self.selected_index + 1
-            };
-            self.notify_selection_change();
         } else if kb.matches(key_data, "tui.select.confirm") {
-            if let Some(item) = self.filtered_items.get(self.selected_index).cloned() {
+            if let Some(item) = self.filtered_items.get(self.cursor.selected()).cloned() {
                 if let Some(cb) = &mut self.on_select {
                     cb(&item);
                 }
@@ -141,7 +124,7 @@ impl SelectList {
     }
 
     fn notify_selection_change(&mut self) {
-        if let Some(item) = self.filtered_items.get(self.selected_index).cloned() {
+        if let Some(item) = self.filtered_items.get(self.cursor.selected()).cloned() {
             if let Some(cb) = &mut self.on_selection_change {
                 cb(&item);
             }
@@ -273,15 +256,9 @@ impl Component for SelectList {
 
         let primary_column_width = self.primary_column_width();
 
-        let start_index = self
-            .selected_index
-            .saturating_sub(self.max_visible / 2)
-            .min(self.filtered_items.len().saturating_sub(self.max_visible));
-        let end_index = (start_index + self.max_visible).min(self.filtered_items.len());
-
-        for i in start_index..end_index {
+        for i in self.cursor.window() {
             let item = &self.filtered_items[i];
-            let is_selected = i == self.selected_index;
+            let is_selected = i == self.cursor.selected();
             let description_single_line = item.description.as_deref().map(normalize_to_single_line);
             lines.push(self.render_item(
                 item,
@@ -292,14 +269,9 @@ impl Component for SelectList {
             ));
         }
 
-        if start_index > 0 || end_index < self.filtered_items.len() {
-            let scroll_text = format!(
-                "  ({}/{})",
-                self.selected_index + 1,
-                self.filtered_items.len()
-            );
+        if let Some(footer) = self.cursor.footer() {
             lines.push((self.theme.scroll_info)(&truncate_to_width(
-                &scroll_text,
+                &format!("  {footer}"),
                 width.saturating_sub(2),
                 "",
                 false,
@@ -363,12 +335,15 @@ mod tests {
     }
 
     #[test]
-    fn navigation_wraps_around() {
+    fn navigation_clamps_at_both_ends() {
         let mut list = SelectList::new(items(3), 5, theme(), SelectListLayoutOptions::default());
         let kb = kb();
-        list.handle_input_with("\x1b[A", &kb); // up wraps to last
+        list.handle_input_with("\x1b[A", &kb); // up at the top stays put
+        assert_eq!(list.get_selected_item().unwrap().value, "item0");
+        list.handle_input_with("\x1b[F", &kb); // end
+        list.handle_input_with("\x1b[B", &kb); // down at the bottom stays put
         assert_eq!(list.get_selected_item().unwrap().value, "item2");
-        list.handle_input_with("\x1b[B", &kb); // down wraps to first
+        list.handle_input_with("\x1b[H", &kb); // home
         assert_eq!(list.get_selected_item().unwrap().value, "item0");
     }
 

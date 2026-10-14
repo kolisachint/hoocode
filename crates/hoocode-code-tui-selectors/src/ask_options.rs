@@ -11,8 +11,8 @@ use std::rc::Rc;
 use hoocode_code_tools_optin::ask_options::AskQuestion;
 use hoocode_code_tui_theme::{select_gutter, theme, SELECT_CURSOR};
 use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
-use hoocode_tui_components::{Input, DEFAULT_INPUT_PROMPT};
-use hoocode_tui_keys::get_keybindings;
+use hoocode_tui_components::{Input, PickerCursor, DEFAULT_INPUT_PROMPT};
+use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
@@ -33,7 +33,9 @@ impl Default for AskOptionsOptions {
 struct State {
     questions: Vec<AskQuestion>,
     step: usize,
-    index: usize,
+    /// The highlighted row: an option, or the custom row after the options.
+    /// Its length is the current step's row count.
+    cursor: PickerCursor,
     answers: Vec<String>,
     custom_input: Input,
     focused: bool,
@@ -50,7 +52,7 @@ impl State {
 
     fn is_on_custom_row(&self) -> bool {
         let q = self.current();
-        q.allow_custom && self.index == q.options.len()
+        q.allow_custom && self.cursor.selected() == q.options.len()
     }
 
     /// How the arrows divide between the step and the custom row's text: the
@@ -143,7 +145,7 @@ impl State {
         lines.push(String::new());
 
         for (i, o) in cur.options.iter().enumerate() {
-            let active = i == self.index;
+            let active = i == self.cursor.selected();
             let cursor = t.fg(
                 "accent",
                 &if active {
@@ -169,7 +171,7 @@ impl State {
         }
 
         if cur.allow_custom {
-            let active = self.index == cur.options.len();
+            let active = self.cursor.selected() == cur.options.len();
             let cursor = t.fg(
                 "accent",
                 &if active {
@@ -210,10 +212,7 @@ impl State {
             }
         }
 
-        lines.push(t.fg(
-            "dim",
-            &format!("({}/{})", self.index + 1, Self::row_count(cur)),
-        ));
+        lines.push(t.fg("dim", &self.cursor.position()));
         lines
     }
 }
@@ -252,10 +251,11 @@ impl AskOptionsComponent {
         on_cancel: Box<dyn FnMut()>,
         options: AskOptionsOptions,
     ) -> Self {
+        let rows = questions.first().map_or(0, State::row_count);
         let state = Rc::new(RefCell::new(State {
+            cursor: PickerCursor::new(rows, 10),
             questions,
             step: 0,
-            index: 0,
             answers: Vec::new(),
             custom_input: Input::new(),
             focused: false,
@@ -285,7 +285,7 @@ impl AskOptionsComponent {
             }
             value
         } else {
-            let index = state.index;
+            let index = state.cursor.selected();
             state.current().options[index].label.clone()
         };
         let step = state.step;
@@ -295,7 +295,8 @@ impl AskOptionsComponent {
         state.answers[step] = value;
         if step < state.questions.len() - 1 {
             state.step += 1;
-            state.index = 0;
+            let rows = State::row_count(state.current());
+            state.cursor.reset(rows);
             state.custom_input.set_value("");
         } else {
             let answers = state.answers.clone();
@@ -310,7 +311,8 @@ impl AskOptionsComponent {
             return;
         }
         state.step -= 1;
-        state.index = 0;
+        let rows = State::row_count(state.current());
+        state.cursor.reset(rows);
         state.custom_input.set_value("");
     }
 }
@@ -325,32 +327,15 @@ impl Component for AskOptionsComponent {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        let (rows, on_custom, option_count) = {
+        let (on_custom, option_count) = {
             let state = self.state.borrow();
             let cur = state.current();
-            (
-                State::row_count(cur),
-                state.is_on_custom_row(),
-                cur.options.len(),
-            )
+            (state.is_on_custom_row(), cur.options.len())
         };
 
-        if kb.matches(data, "tui.select.up") {
-            let mut state = self.state.borrow_mut();
-            state.index = if state.index == 0 {
-                rows - 1
-            } else {
-                state.index - 1
-            };
-            return;
-        }
-        if kb.matches(data, "tui.select.down") {
-            let mut state = self.state.borrow_mut();
-            state.index = if state.index == rows - 1 {
-                0
-            } else {
-                state.index + 1
-            };
+        // Home and End belong to the custom answer's text while it has focus.
+        let text_jump = on_custom && (matches_key(data, "home") || matches_key(data, "end"));
+        if !text_jump && self.state.borrow_mut().cursor.handle_key(data, &kb) {
             return;
         }
         let (next, back) = self.state.borrow().custom_arrows();
@@ -379,7 +364,7 @@ impl Component for AskOptionsComponent {
         if let (Some(c @ '1'..='9'), None) = (chars.next(), chars.next()) {
             let n = c as usize - '1' as usize;
             if n < option_count {
-                self.state.borrow_mut().index = n;
+                self.state.borrow_mut().cursor.select(n);
                 self.confirm();
             }
         }

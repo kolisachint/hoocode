@@ -25,7 +25,7 @@ use hoocode_code_tui_theme::{
 use hoocode_code_tui_widgets::brand::GIT_BRANCH_GLYPH;
 use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
 use hoocode_home::shorten_path;
-use hoocode_tui_components::{Input, Spacer, Text};
+use hoocode_tui_components::{Input, PickerCursor, Spacer, Text};
 use hoocode_tui_keys::{get_keybindings, KeybindingsManager};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use hoocode_tui_util::js_regex::js_trim;
@@ -322,7 +322,7 @@ pub enum ListEvent {
 pub struct SessionList {
     all_sessions: Vec<SessionInfo>,
     filtered: Vec<FlatNode>,
-    selected_index: usize,
+    cursor: PickerCursor,
     search_input: Input,
     show_cwd: bool,
     sort_mode: SortMode,
@@ -331,7 +331,6 @@ pub struct SessionList {
     show_path: bool,
     confirming_delete_path: Option<PathBuf>,
     current_session_canonical: Option<PathBuf>,
-    max_visible: usize,
     now: Option<DateTime<Utc>>,
 }
 
@@ -347,7 +346,7 @@ impl SessionList {
         let mut list = Self {
             all_sessions: Vec::new(),
             filtered: Vec::new(),
-            selected_index: 0,
+            cursor: PickerCursor::new(0, 10),
             search_input,
             show_cwd: false,
             sort_mode,
@@ -356,7 +355,6 @@ impl SessionList {
             show_path: false,
             confirming_delete_path: None,
             current_session_canonical: current_session_file.map(canonical),
-            max_visible: 10,
             now: None,
         };
         list.filter_sessions("");
@@ -366,7 +364,7 @@ impl SessionList {
     /// The path of the highlighted session.
     pub fn selected_session_path(&self) -> Option<&Path> {
         self.filtered
-            .get(self.selected_index)
+            .get(self.cursor.selected())
             .map(|n| n.session.path.as_path())
     }
 
@@ -418,9 +416,7 @@ impl SessionList {
                     })
                     .collect();
         }
-        self.selected_index = self
-            .selected_index
-            .min(self.filtered.len().saturating_sub(1));
+        self.cursor.set_query(self.filtered.len());
     }
 
     fn set_confirming_delete_path(&mut self, path: Option<PathBuf>, events: &mut Vec<ListEvent>) {
@@ -429,7 +425,7 @@ impl SessionList {
     }
 
     fn start_delete_confirmation(&mut self, events: &mut Vec<ListEvent>) {
-        let Some(selected) = self.filtered.get(self.selected_index) else {
+        let Some(selected) = self.filtered.get(self.cursor.selected()) else {
             return;
         };
         let path = selected.session.path.clone();
@@ -512,7 +508,7 @@ impl SessionList {
             return events;
         }
         if kb.matches(data, "app.session.rename") {
-            if let Some(selected) = self.filtered.get(self.selected_index) {
+            if let Some(selected) = self.filtered.get(self.cursor.selected()) {
                 events.push(ListEvent::Rename(selected.session.path.clone()));
             }
             return events;
@@ -527,17 +523,10 @@ impl SessionList {
             return events;
         }
 
-        let last = self.filtered.len().saturating_sub(1);
-        if kb.matches(data, "tui.select.up") {
-            self.selected_index = self.selected_index.saturating_sub(1);
-        } else if kb.matches(data, "tui.select.down") {
-            self.selected_index = (self.selected_index + 1).min(last);
-        } else if kb.matches(data, "tui.select.pageUp") {
-            self.selected_index = self.selected_index.saturating_sub(self.max_visible);
-        } else if kb.matches(data, "tui.select.pageDown") {
-            self.selected_index = (self.selected_index + self.max_visible).min(last);
+        if self.cursor.handle_key(data, &kb) {
+            // Navigation: the cursor clamps at both ends.
         } else if kb.matches(data, "tui.select.confirm") {
-            if let Some(selected) = self.filtered.get(self.selected_index) {
+            if let Some(selected) = self.filtered.get(self.cursor.selected()) {
                 events.push(ListEvent::Select(selected.session.path.clone()));
             }
         } else if kb.matches(data, "tui.select.cancel") {
@@ -575,17 +564,13 @@ impl Component for SessionList {
             return lines;
         }
 
-        let len = self.filtered.len();
-        let start = (self.selected_index as i64 - (self.max_visible / 2) as i64)
-            .min(len as i64 - self.max_visible as i64)
-            .max(0) as usize;
-        let end = (start + self.max_visible).min(len);
+        let window = self.cursor.window();
         let now = self.now.unwrap_or_else(Utc::now);
 
-        for i in start..end {
+        for i in window {
             let node = &self.filtered[i];
             let session = &node.session;
-            let is_selected = i == self.selected_index;
+            let is_selected = i == self.cursor.selected();
             let is_confirming_delete =
                 self.confirming_delete_path.as_deref() == Some(session.path.as_path());
             let is_current = self.is_current_session_path(&session.path);
@@ -698,8 +683,8 @@ impl Component for SessionList {
             });
         }
 
-        if start > 0 || end < len {
-            let scroll = format!("  ({}/{})", self.selected_index + 1, len);
+        if let Some(footer) = self.cursor.footer() {
+            let scroll = format!("  {footer}");
             lines.push(t.fg("muted", &truncate_to_width(&scroll, w, "", false)));
         }
         lines

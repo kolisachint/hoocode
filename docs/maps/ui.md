@@ -71,6 +71,8 @@ update this page in the same commit.
 
 They replace the prompt frame while open. All in `code-tui-selectors/src/` unless noted.
 
+Every picker moves its cursor with `PickerCursor` (`tui-components/src/picker_cursor.rs`): up and down, PgUp and PgDn by a window, Home and End to the ends. The ends clamp; nothing wraps (decision 29). The visible window and the `(n/len)` footer come from the same type. The `hoocode config` list skips its group headers and counts resources in its footer. In a picker with a query line, Home and End jump the list, so the query line has no Home or End. Ask options: Home and End edit the custom answer while it has focus.
+
 | Opened by | Picker | File |
 |---|---|---|
 | `/settings` | settings pane | `settings_selector.rs` (uses `tui-components/src/settings_list.rs`). No External tools category: the external-tools layer went with `fd`/`rg` (reliability 1.4), so the top level is the tool rows, then the categories. Tool rows are sorted by tool name (`tool_row_sort_key`: Shell, Edit, Read, Write). The top-level **Models** row shows `all models` or `N models` (from `scopedModels`); Enter closes the pane and opens `/scoped-models` (`SettingsChange::OpenScopedModels`, handled in `hoocode-code-tui-app/src/mode/settings.rs`). |
@@ -177,7 +179,7 @@ A key that is not a scroll key un-pins at the prompt, then does its usual job.
 | Terminal output: every write, in order; one pending frame | `tui-terminal/src/output.rs` (`hoocode-term-out`) |
 | Key parsing (Kitty, modifyOtherKeys), matching | `tui-keys` |
 | App key map, `keybindings.json`, hint text | `code-tui-keybindings` |
-| Components: text, input, select list, loader, box, image | `tui-components/src/` |
+| Components: text, input, select list, picker cursor, loader, box, image | `tui-components/src/` |
 | Markdown (port of `marked` v15) | `tui-components/src/markdown/` |
 | Syntax highlighting (port of highlight.js 10.7.3) | `tui-highlight` |
 | Images (Kitty, iTerm2) | `tui-images` |
