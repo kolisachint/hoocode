@@ -72,7 +72,9 @@ pub fn agent_dir() -> PathBuf {
     }
 }
 
-/// `getUserAgentsDir`: the cross-vendor `~/.agents` scope (read only).
+/// `getUserAgentsDir`: the cross-vendor `~/.agents` scope (Agent Skills and AGENTS.md
+/// layout), read only. hoocode reads skills, commands, agents, context files and MCP
+/// config here and writes none of them. See `docs/design/reliability.md` (1.2).
 pub fn user_agents_dir() -> PathBuf {
     match env_override(ENV_USER_AGENTS_DIR) {
         Some(dir) => expand_tilde_path(&dir),
@@ -237,7 +239,9 @@ fn find_git_repo_root(start: &Path) -> Option<PathBuf> {
 }
 
 /// `collectAgentsAncestorDirs`: `.agents/<subdir>` from `start` up to the
-/// git root (or the filesystem root outside a repo), closest first.
+/// git root (or the filesystem root outside a repo), closest first. This is the
+/// project side of the cross-vendor `.agents` scope: read only, except the
+/// scheduled-task store `.agents/scheduled_tasks.json` (shared with hoocode-ts).
 pub fn collect_agents_ancestor_dirs(start: &Path, subdir: &str) -> Vec<PathBuf> {
     let start = resolve(start);
     let git_root = find_git_repo_root(&start);

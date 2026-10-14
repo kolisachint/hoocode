@@ -38,6 +38,12 @@ stop the same bug classes coming back.
    `HOOCODE_` is the only env prefix; a one-time merge copies `~/.hoocode` and
    `<repo>/.hoocode/` in (hoocode wins, backups first). The crate and binary
    rename is §1 of that card and happens in step 0, before this card.
+   - **`.agents` is a cross-vendor scope (decided 2026-10-14, kept).** `~/.agents` and
+     `<project>/.agents` use the Agent Skills and AGENTS.md layout that other tools share
+     (`hoocode-code-paths`: `user_agents_dir`, `collect_agents_ancestor_dirs`). hoocode reads
+     skills, commands, agents, AGENTS.md and MCP config from them and writes none of them, with
+     one exception: the scheduled-task store `<project>/.agents/scheduled_tasks.json` (and its
+     `.lock`), which hoocode-ts shares. The MCP trust store stays in `~/.hoocode`.
 3. **macOS test failures** (all four fail on a clean checkout):
    - `code-main` replay: temp paths resolve under `/private` on macOS, so
      canonicalize both sides;
