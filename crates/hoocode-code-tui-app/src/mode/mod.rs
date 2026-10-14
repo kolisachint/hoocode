@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use hoocode_ai_types::{ImageContent, StopReason};
 use hoocode_code_agent_session::stats::AssistantUsageTotals;
 use hoocode_code_agent_session::{
-    AgentSession, AgentSessionEvent, AgentSessionRuntime, StreamingBehavior,
+    AgentSession, AgentSessionEvent, AgentSessionRuntime, NavigateTreeResult, StreamingBehavior,
 };
 use hoocode_code_auth::AuthStorage;
 use hoocode_code_media::clipboard_image::ClipboardImage;
@@ -85,9 +85,7 @@ mod subagents;
 mod transcript;
 mod tree;
 
-use self::{
-    auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, transcript::*, tree::*,
-};
+use self::{auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, transcript::*};
 
 pub use self::events::plan_settle_outcome;
 pub use self::input::{at_file_finder, command_path_argument};
@@ -171,6 +169,33 @@ enum AppEvent {
     CompactionQueueFailed(Vec<(String, StreamingBehavior)>, String),
     /// A message typed while streaming could not be queued.
     QueueError(String),
+    /// The `/import` confirm, or the confirm for a stored cwd that is gone, answered.
+    ImportAnswer {
+        input: String,
+        cwd_fallback: Option<String>,
+        choice: Option<String>,
+    },
+    /// The confirm for a stored cwd that is gone, on `/resume`, answered.
+    ResumeAnswer {
+        path: PathBuf,
+        fallback: String,
+        choice: Option<String>,
+    },
+    /// "Summarize branch?" answered, for the tree entry `entry_id`.
+    TreeSummaryAnswer {
+        entry_id: String,
+        choice: Option<String>,
+    },
+    /// The custom summary instructions answered (`None`: cancelled).
+    TreeInstructionsAnswer {
+        entry_id: String,
+        text: Option<String>,
+    },
+    /// A summarizing tree navigation ended. A panicked one is an `Err`.
+    TreeNavigated {
+        entry_id: String,
+        outcome: Box<Result<NavigateTreeResult, String>>,
+    },
 }
 
 /// `new Date().toISOString()`.
@@ -379,14 +404,12 @@ struct Mode {
     is_oauth: Rc<dyn Fn(&str) -> bool>,
     auth_storage: Arc<AuthStorage>,
     login: Option<LoginStep>,
-    pending_cwd_prompt: Option<(PathBuf, String, mpsc::Receiver<Option<String>>)>,
     ask_options: Option<OpenAskOptions>,
     anthropic_warning_shown: bool,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
     last_escape: Option<Instant>,
-    pending_tree_summary: Option<PendingTreeAnswer>,
-    pending_tree_instructions: Option<PendingTreeAnswer>,
-    tree_navigation: Option<TreeNavigation>,
+    /// The target of a summarizing tree navigation in flight (Escape cancels it).
+    tree_navigation: Option<String>,
     editor_dialog: Option<OpenEditorDialog>,
     pending_messages: Rc<RefCell<Container>>,
     is_bash_mode: bool,
@@ -397,7 +420,6 @@ struct Mode {
     task_panel: Rc<RefCell<TaskPanelComponent>>,
     task_store_subscription: Option<hoocode_code_task_store::Subscription<'static>>,
     previous_cwd: Rc<RefCell<Option<PathBuf>>>,
-    pending_import: Option<(String, Option<String>, mpsc::Receiver<Option<String>>)>,
     restarted_input: Option<Receiver<TuiEvent>>,
     /// The session operation running off the UI thread, if any (`session_op.rs`).
     session_op: Option<&'static str>,
@@ -733,13 +755,10 @@ impl Mode {
             auth_storage: options.auth_storage,
             login: None,
             picker: None,
-            pending_cwd_prompt: None,
             ask_options: None,
             anthropic_warning_shown: false,
             settings_changes: Rc::default(),
             last_escape: None,
-            pending_tree_summary: None,
-            pending_tree_instructions: None,
             tree_navigation: None,
             editor_dialog: None,
             pending_messages,
@@ -751,7 +770,6 @@ impl Mode {
             task_panel,
             task_store_subscription: None,
             previous_cwd: Rc::new(RefCell::new(None)),
-            pending_import: None,
             restarted_input: None,
             session_op: None,
             mode_dial_after: None,
@@ -1042,7 +1060,13 @@ impl Mode {
                         title,
                         options,
                         reply,
-                    }) => self.show_selector(&title, options, reply),
+                    }) => self.show_selector(
+                        &title,
+                        options,
+                        Box::new(move |choice| {
+                            let _ = reply.send(choice);
+                        }),
+                    ),
                     AppEvent::Dialog(DialogRequest::Notify(message)) => self.show_record(&message),
                     AppEvent::Dialog(DialogRequest::AskOptions { questions, reply }) => {
                         self.show_ask_options(questions, reply)
@@ -1067,6 +1091,25 @@ impl Mode {
                         self.show_error(&error);
                     }
                     AppEvent::QueueError(error) => self.show_error(&error),
+                    AppEvent::ImportAnswer {
+                        input,
+                        cwd_fallback,
+                        choice,
+                    } => self.import_answered(input, cwd_fallback, choice),
+                    AppEvent::ResumeAnswer {
+                        path,
+                        fallback,
+                        choice,
+                    } => self.resume_answered(path, fallback, choice),
+                    AppEvent::TreeSummaryAnswer { entry_id, choice } => {
+                        self.tree_summary_answered(entry_id, choice)
+                    }
+                    AppEvent::TreeInstructionsAnswer { entry_id, text } => {
+                        self.tree_instructions_answered(entry_id, text)
+                    }
+                    AppEvent::TreeNavigated { entry_id, outcome } => {
+                        self.tree_navigated(entry_id, *outcome)
+                    }
                     AppEvent::ThemeChanged => {
                         self.tui.invalidate();
                         self.update_editor_border_color();
@@ -1101,16 +1144,11 @@ impl Mode {
                     }
                 }
             }
-            self.poll_cwd_prompt();
-            self.poll_import_confirm();
             self.poll_tree_selector();
             self.poll_fork_selector();
             self.poll_model_selectors();
             self.poll_login();
             self.poll_settings_selector();
-            self.poll_tree_summary();
-            self.poll_tree_instructions();
-            self.poll_tree_navigation();
             if self.loader.as_ref().is_some_and(|l| l.borrow_mut().tick()) {
                 self.dirty.set(true);
             }
@@ -1157,8 +1195,8 @@ impl Mode {
         if let Some((_, reply)) = self.ask_options.take() {
             let _ = reply.send(None);
         }
-        if let Some((_, reply)) = self.editor_dialog.take() {
-            let _ = reply.send(None);
+        if let Some((_, answer)) = self.editor_dialog.take() {
+            answer(None);
         }
         progress.unsubscribe();
         self.footer_data.off_branch_change(branch);
