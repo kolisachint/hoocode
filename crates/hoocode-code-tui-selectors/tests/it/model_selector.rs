@@ -135,6 +135,28 @@ fn lists_the_current_model_first_ticked_then_by_provider() {
 }
 
 #[test]
+fn marks_only_the_models_of_expired_providers() {
+    let _g = lock();
+    let models = vec![model("alpha", "a-1", "A"), model("beta", "b-1", "B")];
+    let mut selector = ModelSelectorComponent::new(None, Ok(models), None, vec![], None);
+    selector.set_expired_providers(["beta".to_string()]);
+    let rendered = strip(&selector.render(100));
+    assert!(rendered.contains("b-1 [beta] expired"), "{rendered}");
+    assert!(rendered.contains("a-1 [alpha]"), "{rendered}");
+    assert!(!rendered.contains("a-1 [alpha] expired"), "{rendered}");
+    assert_eq!(rendered.matches("expired").count(), 1, "{rendered}");
+}
+
+#[test]
+fn no_model_is_marked_expired_by_default() {
+    let _g = lock();
+    let models = vec![model("alpha", "a-1", "A")];
+    let mut selector = ModelSelectorComponent::new(None, Ok(models), None, vec![], None);
+    let rendered = strip(&selector.render(100));
+    assert!(!rendered.contains("expired"), "{rendered}");
+}
+
+#[test]
 fn typing_narrows_and_enter_selects_the_highlighted_model() {
     let _g = lock();
     let models = faux();

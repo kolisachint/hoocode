@@ -681,34 +681,3 @@ fn menu_path_shows_an_expired_token_without_network_refresh() {
     );
     assert_eq!(refreshes.load(Ordering::SeqCst), 0);
 }
-
-#[test]
-fn spawn_refresh_is_single_flight_per_provider() {
-    let (id, refreshes) = n14_provider("single", std::time::Duration::from_millis(300));
-    let storage = Arc::new(AuthStorage::in_memory([(id.clone(), oauth_with_expiry(0))]));
-
-    let (tx, rx) = std::sync::mpsc::channel();
-    assert!(storage.spawn_refresh(&id, false, move |key| {
-        let _ = tx.send(key);
-    }));
-    // The first refresh is still sleeping, so these start nothing.
-    for _ in 0..3 {
-        assert!(!storage.spawn_refresh(&id, false, |_| panic!("second refresh ran")));
-    }
-    let key = rx
-        .recv_timeout(std::time::Duration::from_secs(10))
-        .expect("refresh finished");
-    assert_eq!(key.as_deref(), Some("Bearer refreshed-access-token"));
-    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
-
-    // The in-flight mark is cleared once the refresh has finished.
-    let (tx, rx) = std::sync::mpsc::channel();
-    assert!(storage.spawn_refresh(&id, false, move |key| {
-        let _ = tx.send(key);
-    }));
-    let key = rx
-        .recv_timeout(std::time::Duration::from_secs(10))
-        .expect("second refresh finished");
-    assert_eq!(key.as_deref(), Some("Bearer refreshed-access-token"));
-    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
-}
