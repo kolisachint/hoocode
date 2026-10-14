@@ -5,7 +5,7 @@ Input: eight read-only reviews of the TUI, subagent and parity code (summarised 
 
 **T0 done 2026-10-09** (T0.1 to T0.6). The hoocode-ts parity gate is retired: the done bar is
 L1, and screen goldens as a pre-release check (`python3 scripts/tui/goldens.py check all`, about 10 scenarios). `ledger.py` is read-only. The phase
-tables below stay as the record. **Phase S, tier Now is done 2026-10-09** (N1 to N13 and X11; N10 with T1.1; N12 with T1.4; N11 with the Edit and AgentOutput follow-up, decision 36), except two parts: N14's exit-time abort (waits on the ordered shutdown, concurrency.md §4) and T1.2 partial (the event handlers still take `&mut Mode`). Decision 34's menu UI is an open decision (see Open decisions). **Next step awaits the user's pick:** T2 or Phase S Next (e.g. X2). Feature phases (T2 and later) wait for the user's review of the branch (decision 37).
+tables below stay as the record. **Phase S, tier Now is done 2026-10-09** (N1 to N13 and X11; N10 with T1.1; N12 with T1.4; N11 with the Edit and AgentOutput follow-up, decision 36), except two parts: N14's exit-time abort (waits on the ordered shutdown, concurrency.md §4) and T1.2 partial (the event handlers still take `&mut Mode`). Decision 34's menu UI is an open decision (see Open decisions). **Next step awaits the user's pick:** Phase S Next X2–X4 and X12–X15 landed 2026-10-14 (some partly); next: X6 (visible picker changes), M-size rows X5, X7–X10, X16, or T2. Feature phases (T2 and later) wait for the user's review of the branch (decision 37).
 
 This is the **TUI plan**. It runs side by side with the core plan in
 [README.md](README.md); neither is ahead of the other. Before implementing any step, ask the
@@ -106,19 +106,19 @@ subagent that takes a row still confirms it before changing code.
 
 | # | Work | Was | Size |
 |---|---|---|---|
-| X2 | Bash streaming: `update_display` joins and truncates the whole buffer on every chunk (O(N²), unbounded memory). Use a bounded tail. Compute tool result text once and hold `ToolResult` in an `Rc`. | TB7 P, TB8 V | S |
-| X3 | `read.rs` highlights the whole file on every render. Highlight the visible prefix and memo it, reusing the write tool's `HighlightCache` pattern. Memo the Edit diff. | TB6 P, HI6 corrected | S |
-| X4 | Images: decode only the header for dimensions. Cache the encoded sequence on `Image`. | HI7 V | S |
+| X2 | Bash streaming: `update_display` joins and truncates the whole buffer on every chunk (O(N²), unbounded memory). Use a bounded tail. Compute tool result text once and hold `ToolResult` in an `Rc`. **Partly done 2026-10-14** (this branch): Bash `!` output keeps a bounded tail (`OutputTail`, ≤801 lines / 2×max bytes) and renders byte-identical. `ToolResult` is held in `Rc` (tool block, `ToolSignalInput`). Left: compute the result text once (needs the renderer API changed for ~6 renderers). | TB7 P, TB8 V | S |
+| X3 | `read.rs` highlights the whole file on every render. Highlight the visible prefix and memo it, reusing the write tool's `HighlightCache` pattern. Memo the Edit diff. **Partly done 2026-10-14** (this branch): Read preview memo (total line count and the first peek lines) and Edit diff memo. Both rebuild when the output, language or theme changes (`Arc::ptr_eq` on the theme). Left: highlighting only the visible prefix. The highlighter adds a closing colour line for an open token at end of input, which changes the "N more lines" count. | TB6 P, HI6 corrected | S |
+| X4 | Images: decode only the header for dimensions. Cache the encoded sequence on `Image`. **Done 2026-10-14** (this branch): only the header is decoded for dimensions (`decode_prefix`). JPEG scans a prefix first, then falls back to the full decode. `Image` caches its rendered lines under a `RenderKey` (protocol, width, cell size, id). | HI7 V | S |
 | X5 | Grammar: a small name/alias index so `supports_language` doesn't parse the 1.1 MB JSON, then per-language load. Measure the first-code-block stall first. | HI8 V | M–L |
 | X6 | `PickerCursor` in tui-components: window (7 copies), `step` (**clamp at both ends, every picker**, decision 29), the "(n/len)" footer (5 copies), and `set_query` for the 3 fuzzy pickers. `/model`, `/tree`, the user-message picker and scoped models stop wrapping (visible). PgUp/PgDn and Home/End jump. | PK1 P, PK2 corrected, PK3 corrected, PK4 P | S |
 | X7 | One `home_dir` + `shorten_path` policy in a std-only leaf (7 copies, 6 behaviours). Rule: HOME if set and non-empty, else the passwd entry, never "/" (decision 28). Paths shown when HOME is unset change. | UT5 P | M |
 | X8 | One `ansi_runs()` iterator for the 10 ANSI scan loops. Keep two named tab widths (render 3, editor and input 4); both are deliberate. | UT3 P | M |
 | X9 | Renderer after N8: one frame copy on full redraw (RN5); `Option` sentinels plus an explicit force-redraw flag (RN6); `move_rows` shared with `Terminal::move_by` (RN4); then split `paint` (RN9). | RN4–RN6 V/P, RN9 P | M |
 | X10 | Loop state: an `ActivePicker` enum for the picker slots only (not the `pending_*` receivers); the 5 `try_recv` pollers → `AppEvent`; one subagent dispatch helper; `EditorChanged` only on a `!` transition. | IM3 P, IM4 P, IM6 P, IM7 V | M |
-| X12 | Messages: `summary_sheet` for branch and compaction (2 copies); `BlockKey` enum and no deep clone per delta; a shared `ABORTED_MESSAGE` const (it misses the OpenAI "aborted." variant today); `after_indent` returns an `Option`. | MS2 P, MS3 V, MS4 V, MS6 P, MS5 P | S |
-| X13 | Terminal: one paste-end helper searching only the new tail (with a split-marker overlap); one `terminated_by`; `parse_mouse_report -> (event, len)`; one ESC-deadline clock, with the test-only methods under `cfg(test)`; drop the unused `_now`. | TM5 V, TM6 V, TM7 V, TM9 P, TM11 P | S |
-| X14 | Keys: a pre-parsed `KeySpec` plus a `\x1b[` fast path; a pre-lowered fuzzy matcher, also used by the session search; a `OnceLock` for `keybindings()`; the dead `kitty_active` parameter and an args struct for `matches_left_right`. | KY3 V, KY4 V, KY10 V, KY9 P, KY5 P | S |
-| X15 | Theme and util: wire `chalk::set_enabled(color_enabled())`; pass the bg opener once per band; skip the tab copy when there are no tabs; `JsRegex::search` returns `Option` (still UTF-16). | UT6 V, UT8 P, UT10 P | S |
+| X12 | Messages: `summary_sheet` for branch and compaction (2 copies); `BlockKey` enum and no deep clone per delta; a shared `ABORTED_MESSAGE` const (it misses the OpenAI "aborted." variant today); `after_indent` returns an `Option`. **Partly done 2026-10-14** (this branch): `summary_sheet` is shared; `BlockKey` is an enum; `after_indent` returns `Option`. The streaming message is an `Rc`, so there is no deep clone per delta. Also fixed: the newest delta is stored before the throttled render runs. `ABORTED_MESSAGE` is a const. Left: matching OpenAI's "Request was aborted." It changes visible text, so it needs the user's call (open decision 8). | MS2 P, MS3 V, MS4 V, MS6 P, MS5 P | S |
+| X13 | Terminal: one paste-end helper searching only the new tail (with a split-marker overlap); one `terminated_by`; `parse_mouse_report -> (event, len)`; one ESC-deadline clock, with the test-only methods under `cfg(test)`; drop the unused `_now`. **Done 2026-10-14** (this branch): one paste-end helper searches only the new tail (split-marker tests cover it). `string_sequence_status` replaces the three terminator checks. `parse_mouse_report` returns `Option<(Option<MouseEvent>, len)>`: the inner `None` means a malformed X10 report, which is consumed. `Feed::arm_flush` is the one writer of the ESC deadline. Test-only methods are under `cfg(test)`, and `_now` is dropped. N6 is unchanged. | TM5 V, TM6 V, TM7 V, TM9 P, TM11 P | S |
+| X14 | Keys: a pre-parsed `KeySpec` plus a `\x1b[` fast path; a pre-lowered fuzzy matcher, also used by the session search; a `OnceLock` for `keybindings()`; the dead `kitty_active` parameter and an args struct for `matches_left_right`. **Done 2026-10-14** (this branch): `KeySpec` is parsed once (the keybindings manager keeps `specs_by_id`). About 30 literal `matches_key` sites still parse per call. Also: a `\x1b[` fast path; `FuzzyQuery` (pre-lowered, shared with the session search); a `OnceLock` keybinding table; `kitty_active` removed from `matches_arrow`; `LeftRightArgs`. | KY3 V, KY4 V, KY10 V, KY9 P, KY5 P | S |
+| X15 | Theme and util: wire `chalk::set_enabled(color_enabled())`; pass the bg opener once per band; skip the tab copy when there are no tabs; `JsRegex::search` returns `Option` (still UTF-16). **Done 2026-10-14** (this branch), with one open point: `chalk::set_enabled(color_enabled())` in the CLI `main`; `band_opener` once per band (Text, Markdown); `visible_width` copies only when there are tabs; `JsRegex::search` returns `Option`. Open: `theme.fg/bg` still emit colour when colour is off (only bold, italic and the like honour chalk), and `color_enabled()` ignores `NO_COLOR`. Both need the user's call (open decision 9). | UT6 V, UT8 P, UT10 P | S |
 | X16 | Small structure: `startup_progress` → a single slot, removing the dead Download/Work branches; one scroll-key table; camelCase TS names → Rust names (file provenance stays); j/k as named bindings in `extension_selector`; frame sizing helpers shared with editor and box; the shared undo-coalescing predicate; `apply_completion` helper (3 tails); one autocomplete item builder, with `CmdView` → `AutocompleteItem`; a keyed `file_search` slot; drop the unused bold/underline/strike flags. | AP8 V, AP9 V, AP13 P, PK7 V, ED3 P, ED4 P, MC7 P, MC8 V, MC9 V, MC2 V | M |
 
 **Later** (keep; do only after `/perf` shows the cost, or when the file is touched anyway):
@@ -234,20 +234,36 @@ Pending the user's answer. Each is a question for the user, not work in progress
 2. **N6, unterminated ESC P, `_` or `]`.** The parser reads it as Alt+key. Confirm that reading.
 3. **Banner wording.** The panel key hint says "shift+tab or tab". Confirm the wording.
 4. **Edit peek.** It also trims the pending call-slot diff. Confirm that stays.
-5. **Cleanups (not started):**
-   - Duplicates left: `is_js_space` (`hoocode-agent-harness` messages.rs and output_compression.rs,
-     `hoocode-code-tools-fs` edit_diff.rs), `is_ws` (`hoocode-code-tui-widgets` jsdiff.rs), and the
-     u16 `js_trim` in edit_diff.rs.
-   - `TaskAgent` role, state and handoff are no longer read by the panel (N9); the store still writes them.
-   - `--team`: the cited `docs/design/README.md:145` has no such line (the file is 101 lines). The live
-     mentions are `archive/docs/ts-to-rust-migration.md:1270` and `docs/design/extras.md:18`.
-   - Stale sixel entry in `archive/migration/ts-tests.json` (line 3049, `packages/tui/test/sixel.test.ts`).
-   - `ResourceListing.custom_themes` and `extension_diagnostics` reported test-only. Verify before removing.
+5. **Cleanups (partly done 2026-10-14):**
+   - Duplicates, whitespace part: **done 2026-10-14** (this branch). One copy in `hoocode-tui-util`
+     js_regex, including `is_js_space_unit` and `js_trim_units`. `hoocode-agent-harness` keeps one
+     crate-local copy, because agent-* must not depend on tui-*. Left: the wrappers in tui-widgets
+     `lib.rs:35` and `assistant_message.rs:33` over the tui-components markdown `js_trim`. `jsdiff.rs`'s `is_ws`
+     and the u16 `js_trim` in `edit_diff.rs` now use the tui-util copies.
+   - `TaskAgent.handoff`: **removed 2026-10-14** (this branch). `role` stays (one tui-widgets test
+     reads it). `state` stays (tests read it).
+   - `--team`: **fixed 2026-10-14** (this branch) in `docs/design/extras.md`.
+   - Sixel entry: **removed 2026-10-14** (this branch) from `archive/migration/ts-tests.json` by hand.
+     Regenerate the file when the TS pin returns.
+   - `ResourceListing.custom_themes` and `extension_diagnostics`: stay. The render code reads them, but
+     nothing produces them, so the branches are dead. Removal is the user's call (open decision 10).
 6. **Shell and Schedule `TaskKind` variants.** Deferred to T5 and T4.2. T1.3 stays open until then.
 7. **Flaky tests** (fix or quarantine):
    - Fixed 2026-10-14: races `hoocode-code-rpc` `fork_branches` and `a_closed_agent`.
    - Fixed 2026-10-14: `hoocode-ai-oauth-anthropic` tests use an ephemeral port (production stays 53692).
    - Still open: screen goldens print-tool-bash, scroll-view, mode-cycle.
+8. **OpenAI abort text (X12).** `ABORTED_MESSAGE` is one const now. The OpenAI path says "Request was
+   aborted." Decide whether every provider uses that text. It changes visible text.
+9. **Colour when colour is off (X15).** `theme.fg/bg` still emit colour when colour is off; only bold,
+   italic and the like honour chalk. `color_enabled()` ignores `NO_COLOR`. Decide whether both follow
+   the switch.
+10. **Dead render branches (cleanup 5).** `ResourceListing.custom_themes` and `extension_diagnostics`
+    are read by render code, and nothing produces them. Remove the branches and the fields, or keep
+    them for a planned producer?
+11. **Known bug: lone ESC not flushed (`hoocode-tui-terminal` stdin_hub).** A pre-existing race. After
+    `Terminal::stop()` and `start()`, a lone ESC read while unsubscribed is replayed on subscribe, but
+    the reader stays in `poll(-1)`. So ESC is not flushed until the next byte, and ESC then `a` reads as
+    Alt+a. The fix needs a self-pipe to wake the unix poll loop. Suggested as a card; not started.
 
 ## Details
 
