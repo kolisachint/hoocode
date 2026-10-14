@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 
 use super::search::js_number;
 use super::text;
-use crate::render_utils::{get_text_output, invalid_arg_text, str_arg};
+use crate::render_utils::{invalid_arg_text, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolRenderResultOptions, ToolResultView};
 use crate::tool_output_view::PEEK_LINES;
 use crate::visual_truncate::truncate_to_visual_lines;
@@ -92,8 +92,7 @@ fn build_result(
     ended_at: Option<f64>,
 ) -> BashResult {
     let t = theme();
-    let output = get_text_output(Some(result.content), show_images);
-    let output = js_trim(&output);
+    let output = js_trim(result.text(show_images));
     let styled_output = (!output.is_empty()).then(|| {
         output
             .split('\n')

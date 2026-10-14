@@ -7,7 +7,7 @@ use hoocode_tui_components::markdown::js_trim;
 use serde_json::Value;
 
 use super::text;
-use crate::render_utils::{get_text_output, invalid_arg_text, str_arg};
+use crate::render_utils::{invalid_arg_text, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
 use crate::tool_output_view::peek_block;
 
@@ -54,8 +54,7 @@ fn format_search_call(args: &Value) -> String {
 
 fn format_search_result(result: &ToolResultView<'_>, show_images: bool) -> String {
     let t = theme();
-    let output = get_text_output(Some(result.content), show_images);
-    let output = js_trim(&output);
+    let output = js_trim(result.text(show_images));
     if output.is_empty() {
         return String::new();
     }
