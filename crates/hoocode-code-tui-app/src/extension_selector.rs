@@ -15,6 +15,12 @@ use crate::input_frame::{InputFrame, InputFrameOptions};
 
 pub use hoocode_code_tui_widgets::selected_row_list::{SelectableRow, SelectedRowList};
 
+/// Vi-style moves, on top of the `tui.select.up` and `tui.select.down` bindings.
+const VI_UP: &str = "k";
+const VI_DOWN: &str = "j";
+/// The newline byte (Enter), accepted as a confirm besides `tui.select.confirm`.
+const NEWLINE: &str = "\n";
+
 /// A text styler.
 pub type ColorFn = Box<dyn Fn(&str) -> String>;
 
@@ -190,14 +196,14 @@ impl Component for ExtensionSelectorComponent {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        if kb.matches(data, "tui.select.up") || data == "k" {
+        if kb.matches(data, "tui.select.up") || data == VI_UP {
             self.selected_index = self.selected_index.saturating_sub(1);
             self.update_list();
-        } else if kb.matches(data, "tui.select.down") || data == "j" {
+        } else if kb.matches(data, "tui.select.down") || data == VI_DOWN {
             self.selected_index =
                 (self.selected_index + 1).min(self.options.len().saturating_sub(1));
             self.update_list();
-        } else if kb.matches(data, "tui.select.confirm") || data == "\n" {
+        } else if kb.matches(data, "tui.select.confirm") || data == NEWLINE {
             if let Some(selected) = self.options.get(self.selected_index).cloned() {
                 (self.on_done)(SelectorOutcome::Selected(selected));
             }
