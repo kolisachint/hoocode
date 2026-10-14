@@ -276,3 +276,70 @@ fn rpc_still_enforces_allowed_write_paths_on_writes() {
         v => panic!("{v:?}"),
     }
 }
+
+// Reliability 1.1: MCP and plugin tools are gated in rpc (fail-closed) only.
+
+fn tool_call(channel: ApprovalChannel, config: Value, tool: &str) -> Verdict {
+    let d = cwd();
+    let c = config.as_object().unwrap().clone();
+    evaluate(&c, d.path(), tool, &json!({}), channel)
+}
+
+#[test]
+fn rpc_blocks_an_mcp_tool_unless_it_is_auto_allowed() {
+    let config = json!({"active_mode": "build", "modes": {"build": {}}});
+    match tool_call(RPC, config, "mcp_fs_read_file") {
+        Verdict::Block(reason) => {
+            assert!(
+                reason.starts_with("Tool \"mcp_fs_read_file\" needs approval"),
+                "{reason}"
+            );
+            assert!(reason.contains("auto_allow for mode \"build\""), "{reason}");
+        }
+        v => panic!("{v:?}"),
+    }
+}
+
+#[test]
+fn rpc_allows_an_auto_allowed_mcp_tool() {
+    let config =
+        json!({"active_mode": "build", "modes": {"build": {"auto_allow": ["mcp_fs_read_file"]}}});
+    assert_eq!(tool_call(RPC, config, "mcp_fs_read_file"), Verdict::Allow);
+}
+
+#[test]
+fn rpc_blocks_a_plugin_lifecycle_tool_unless_it_is_auto_allowed() {
+    let none = json!({"active_mode": "build", "modes": {"build": {}}});
+    for tool in ["InstallPlugin", "ProposePlugin", "SearchPlugins"] {
+        assert!(
+            matches!(tool_call(RPC, none.clone(), tool), Verdict::Block(_)),
+            "{tool} should be blocked in rpc"
+        );
+    }
+    let allowed =
+        json!({"active_mode": "build", "modes": {"build": {"auto_allow": ["InstallPlugin"]}}});
+    assert_eq!(
+        tool_call(RPC, allowed.clone(), "InstallPlugin"),
+        Verdict::Allow
+    );
+    assert!(matches!(
+        tool_call(RPC, allowed, "ProposePlugin"),
+        Verdict::Block(_)
+    ));
+}
+
+#[test]
+fn a_ui_does_not_prompt_for_an_mcp_or_plugin_tool() {
+    let config = json!({"active_mode": "build", "modes": {"build": {}}});
+    assert_eq!(
+        tool_call(UI, config.clone(), "mcp_fs_read_file"),
+        Verdict::Allow
+    );
+    assert_eq!(tool_call(UI, config, "InstallPlugin"), Verdict::Allow);
+}
+
+#[test]
+fn print_allows_an_mcp_tool_without_asking() {
+    let config = json!({"active_mode": "build", "modes": {"build": {}}});
+    assert_eq!(tool_call(PRINT, config, "mcp_fs_read_file"), Verdict::Allow);
+}

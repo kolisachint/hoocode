@@ -7,16 +7,16 @@
 
 use crate::args::Mode;
 use crate::{Args, DiagnosticKind};
-use hoocode_agent_types::PermissionGate;
+use hoocode_agent_types::{AgentEvent, PermissionGate};
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_app_server::{ModelEntry, ScopedInfo};
 use hoocode_code_auth::AuthStorage;
 use hoocode_code_permissions::{ApprovalChannel, HooPermissionGate};
 
 use hoocode_code_agent_session::{
-    create_agent_session, AgentSession, AgentSessionRuntime, AgentSessionRuntimeDiagnostic,
-    AgentSessionServices, BaseTools, CreateAgentSessionOptions, CreatedRuntime, DefaultResources,
-    PromptOptions, SessionStartEvent,
+    create_agent_session, AgentSession, AgentSessionEvent, AgentSessionRuntime,
+    AgentSessionRuntimeDiagnostic, AgentSessionServices, BaseTools, CreateAgentSessionOptions,
+    CreatedRuntime, DefaultResources, PromptOptions, SessionStartEvent,
 };
 use hoocode_code_models::{
     clamp_effort, match_scoped_model, parse_thinking_level, resolve_cli_model, resolve_model_scope,
@@ -845,21 +845,66 @@ pub fn run_print_mode(
     output: &mut dyn Write,
     err: &mut dyn Write,
 ) -> std::io::Result<i32> {
+    let ran = Arc::new(Mutex::new(std::collections::BTreeSet::new()));
+    let code = run_print_body(args, mode, stdin_content, color, output, err, &ran);
+    // After the run, so the note names only the tools that actually ran.
+    if let ApprovalChannel::Headless { fail_closed: false } = headless_approval_channel_for(args) {
+        let names = ran.lock().map(|set| set.clone()).unwrap_or_default();
+        if let Some(note) = ungated_run_note(print_mode_label(mode), &names) {
+            writeln!(err, "{note}")?;
+        }
+    }
+    code
+}
+
+/// The `--print` / `--mode json` label used in the approval note.
+fn print_mode_label(mode: PrintMode) -> &'static str {
+    match mode {
+        PrintMode::Json => "--mode json",
+        PrintMode::Text => "--print",
+    }
+}
+
+/// The one stderr line for a print or json run that asked nobody for approval:
+/// it names the tools that ran and would have needed approval in rpc. `None`
+/// when no such tool ran.
+fn ungated_run_note(mode_label: &str, ran: &std::collections::BTreeSet<String>) -> Option<String> {
+    let names: Vec<&str> = ran
+        .iter()
+        .map(String::as_str)
+        .filter(|name| hoocode_code_permissions::is_approval_tool(name))
+        .collect();
+    (!names.is_empty()).then(|| {
+        format!(
+            "Note: {mode_label} does not ask for tool approval; these tools ran without it: {}.",
+            names.join(", ")
+        )
+    })
+}
+
+/// The run itself. `ran` collects the names of the tools that started.
+fn run_print_body(
+    args: &Args,
+    mode: PrintMode,
+    stdin_content: Option<String>,
+    color: bool,
+    output: &mut dyn Write,
+    err: &mut dyn Write,
+    ran: &Arc<Mutex<std::collections::BTreeSet<String>>>,
+) -> std::io::Result<i32> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let home = std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_default();
-    if let ApprovalChannel::Headless { fail_closed: false } = headless_approval_channel_for(args) {
-        let mode = match mode {
-            PrintMode::Json => "--mode json",
-            PrintMode::Text => "--print",
-        };
-        writeln!(
-            err,
-            "Note: {mode} does not ask for tool approval; Shell, Write, Edit, WebFetch and WebSearch run without it."
-        )?;
-    }
     let (session, diagnostics) = build_session(args, false);
+    let ran_tools = Arc::clone(ran);
+    let _ran_subscription = session.subscribe(move |event| {
+        if let AgentSessionEvent::Agent(AgentEvent::ToolExecutionStart { tool_name, .. }) = event {
+            if let Ok(mut set) = ran_tools.lock() {
+                set.insert(tool_name.clone());
+            }
+        }
+    });
     let mut messages = args.messages.clone();
     let (initial_message, initial_images) = match crate::initial_message::prepare_initial_message(
         &args.file_args,
@@ -1739,6 +1784,22 @@ pub fn run_interactive_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn approval_note_names_only_the_approval_tools_that_ran() {
+        let ran: std::collections::BTreeSet<String> = ["Read", "Write", "mcp_fs_list", "Shell"]
+            .iter()
+            .map(|t| t.to_string())
+            .collect();
+        assert_eq!(
+            ungated_run_note("--print", &ran).as_deref(),
+            Some("Note: --print does not ask for tool approval; these tools ran without it: Shell, Write, mcp_fs_list.")
+        );
+        let read_only: std::collections::BTreeSet<String> =
+            ["Read", "Grep"].iter().map(|t| t.to_string()).collect();
+        assert_eq!(ungated_run_note("--mode json", &read_only), None);
+        assert_eq!(ungated_run_note("--mode json", &Default::default()), None);
+    }
 
     /// A session over in-memory settings, models and session, in `/w`.
     fn prompt_for(argv: &[&str]) -> (String, Vec<String>) {

@@ -551,8 +551,8 @@ fn startup_progress_lines_are_transient_in_order_and_clamped() {
     let mut f = full_footer(&dir);
     assert!(f.transient_lines(120).is_empty());
     startup_progress::set(StartupProgress::Download {
-        key: "fd".into(),
-        label: "fd".into(),
+        key: "alpha".into(),
+        label: "alpha".into(),
         received_bytes: 3_670_016,
         total_bytes: Some(8_388_608),
     });
@@ -561,13 +561,13 @@ fn startup_progress_lines_are_transient_in_order_and_clamped() {
     assert!(line.contains("3.5 MB / 8.0 MB") && line.contains("44%"));
 
     startup_progress::set(StartupProgress::Download {
-        key: "rg".into(),
-        label: "ripgrep".into(),
+        key: "beta".into(),
+        label: "beta".into(),
         received_bytes: 1_048_576,
         total_bytes: None,
     });
     let line = last_line(&mut f, 120);
-    assert!(line.contains("ripgrep") && line.contains("1.0 MB") && !line.contains('%'));
+    assert!(line.contains("beta") && line.contains("1.0 MB") && !line.contains('%'));
 
     startup_progress::set(StartupProgress::Error {
         key: "semantic-index".into(),
@@ -576,7 +576,7 @@ fn startup_progress_lines_are_transient_in_order_and_clamped() {
     });
     let lines: Vec<String> = f.transient_lines(120).iter().map(|l| plain(l)).collect();
     assert_eq!(lines.len(), 3);
-    assert!(lines[0].contains("fd") && lines[1].contains("ripgrep"));
+    assert!(lines[0].contains("alpha") && lines[1].contains("beta"));
     assert!(lines[2].contains("Semantic search index unavailable: binary not found"));
 
     startup_progress::set(StartupProgress::Download {

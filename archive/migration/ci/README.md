@@ -1,5 +1,10 @@
 # Pending CI changes (apply manually)
 
+Applied and kept in `applied/`: macos-tests, fuzz, delete-crates-doc-step, rename-to-hoocode.
+Not applied: the guards job, the TUI parity workflow, and the macOS job on PRs. They are in
+`step1-workflows.patch` (2026-10-14). The session token lacks workflow scope, so the user applies
+that patch and pushes it. The commands below still name the old paths.
+
 The session's GitHub token can't modify `.github/workflows/`, so these changes are
 staged here. To apply them:
 
@@ -7,7 +12,7 @@ staged here. To apply them:
 git apply migration/ci/delete-crates-doc-step.patch      # drop the agent-mcp doc-test step (crate deleted, 0b)
 git apply migration/ci/ci.yml.patch                     # ledger + dependency-firewall checks in CI
 git apply migration/ci/rename-to-hoocode.patch            # step 0c: workflow binary and crate names -> hoocode (after the rename)
-cp migration/ci/tui-parity.yml .github/workflows/       # manual/nightly TUI goldens job (goldens.py check)
+git apply migration/ci/step1-workflows.patch            # guards job, manual/nightly TUI goldens job, macOS job on PRs (step 1 / 0d / T0.6)
 git apply migration/ci/fuzz.patch                       # nightly cargo-fuzz job for fuzz/ (plan 1.6); adds .github/workflows/fuzz.yml
 # then paste migration/ci/msrv-job.yml under `jobs:` in .github/workflows/ci.yml
 git apply migration/ci/macos-tests.patch                # reliability 1.3: test-macos job (macos-latest, same nextest command as `test`)

@@ -26,3 +26,14 @@ numbered on from 2 above. Each row points at the same item in that list.
 | 11 | Colour when colour is off, X15 (open decision 9) | **Both follow the switch.** `color_enabled()` reads `NO_COLOR` (any non-empty value means off, per no-color.org). Theme `fg` and `bg` respect chalk's switch. Reason: a user who turns colour off should get none. |
 | 12 | Dead render branches (open decision 10) | **Remove** the `extension_diagnostics` and `custom_themes` fields, their render branches and their tests (N12 follow-up). Reason: nothing produces either field. |
 | 13 | Lone ESC not flushed after resubscribe (open decision 11) | **New card X17** (Phase S, Next, size S). Add a self-pipe that wakes the unix poll loop on replay. Reason: a held ESC waits for the next key, and then ESC followed by `a` reads as Alt+a. |
+
+### Reliability step 1 (answered 2026-10-14)
+
+Made while closing [reliability.md](reliability.md) (step 1). The answers are in that page.
+
+| # | Question | Answer |
+|---|---|---|
+| 14 | MCP and plugin tools in rpc (1.1, decision c) | **Gated in rpc (fail-closed).** `mcp_*` tools and the plugin lifecycle tools are blocked unless `auto_allow` lists them. A UI and print still run them without asking. Reason: a hoobot user could run an MCP tool unchecked. Prompting for MCP tools in the UI is not part of this. |
+| 15 | macOS job on pull requests (1.3) | **Decided: the `test-macos` job runs on pull requests too.** Its `pull_request` exclusion is removed in `archive/migration/ci/step1-workflows.patch`. The session token cannot push workflows, so the user applies and pushes it. Reason: macOS failures are bugs, so a PR must show them. |
+| 16 | Staged CI: guards and TUI parity (0d, T0.6) | **Staged, not applied.** The `guards` job (`no_cortex.sh`, `packages.py --check`) and the `tui-parity` workflow (manual and nightly goldens) are in `archive/migration/ci/step1-workflows.patch`. The session token lacks workflow scope, so the user runs `git apply archive/migration/ci/step1-workflows.patch` and pushes. |
+| 17 | `.agents` scope (1.2) | **Kept, and documented as a cross-vendor scope.** `~/.agents` and `<project>/.agents` are read for skills, commands, agents, AGENTS.md and MCP config, the layout other tools share. hoocode writes there only the scheduled-task store (`<project>/.agents/scheduled_tasks.json`), so "read-only" has that one exception. |
