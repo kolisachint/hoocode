@@ -257,7 +257,7 @@ impl Component for OAuthSelectorComponent {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        let navigated = self.state.borrow_mut().cursor.handle_key(data, &kb);
+        let navigated = self.state.borrow_mut().cursor.handle_query_key(data, &kb);
         if navigated {
             return;
         }

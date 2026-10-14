@@ -523,7 +523,7 @@ impl SessionList {
             return events;
         }
 
-        if self.cursor.handle_key(data, &kb) {
+        if self.cursor.handle_query_key(data, &kb) {
             // Navigation: the cursor clamps at both ends.
         } else if kb.matches(data, "tui.select.confirm") {
             if let Some(selected) = self.filtered.get(self.cursor.selected()) {

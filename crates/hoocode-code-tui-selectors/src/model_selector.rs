@@ -329,7 +329,7 @@ impl Component for ModelSelectorComponent {
             }
             return;
         }
-        let navigated = self.state.borrow_mut().cursor.handle_key(data, &kb);
+        let navigated = self.state.borrow_mut().cursor.handle_query_key(data, &kb);
         if navigated {
             return;
         }

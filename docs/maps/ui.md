@@ -71,7 +71,7 @@ update this page in the same commit.
 
 They replace the prompt frame while open. All in `code-tui-selectors/src/` unless noted.
 
-Every picker moves its cursor with `PickerCursor` (`tui-components/src/picker_cursor.rs`): up and down, PgUp and PgDn by a window, Home and End to the ends. The ends clamp; nothing wraps (decision 29). The visible window and the `(n/len)` footer come from the same type. The `hoocode config` list skips its group headers and counts resources in its footer. In a picker with a query line, Home and End jump the list, so the query line has no Home or End. Ask options: Home and End edit the custom answer while it has focus.
+Every picker moves its cursor with `PickerCursor` (`tui-components/src/picker_cursor.rs`): up and down, PgUp and PgDn by a window, Home and End to the ends. The ends clamp; nothing wraps (decision 29). The visible window and the `(n/len)` footer come from the same type. The `hoocode config` list skips its group headers and counts resources in its footer. In a picker with a query line (`/model`, scoped models, `/login`, `/resume`, `hoocode config`), Home and End stay with the query's text cursor, and only PgUp and PgDn jump the list (`handle_query_key`). The `/tree` query has no text cursor, so there Home and End jump the list. Ask options: Home and End edit the custom answer while it has focus.
 
 | Opened by | Picker | File |
 |---|---|---|
