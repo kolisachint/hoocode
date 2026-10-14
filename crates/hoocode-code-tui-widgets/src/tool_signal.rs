@@ -13,6 +13,7 @@ use hoocode_ai_types::Content;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_render::Component;
+use hoocode_tui_util::js_regex::is_js_space;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 use serde_json::Value;
 
@@ -91,7 +92,7 @@ pub fn tool_subject(args: &Value, cwd: &str) -> String {
     let mut out = String::new();
     let mut in_space = false;
     for c in display.chars() {
-        if crate::is_js_space(c) {
+        if is_js_space(c) {
             if !in_space {
                 out.push(' ');
             }

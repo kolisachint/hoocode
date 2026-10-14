@@ -2,6 +2,7 @@
 //! ` 12 line`) coloured, with word-level inverse on a one-line change.
 
 use hoocode_code_tui_theme::theme;
+use hoocode_tui_util::js_regex::is_js_space;
 
 use crate::jsdiff::diff_words;
 use crate::render_utils::replace_tabs;
@@ -16,12 +17,12 @@ struct DiffLine<'a> {
 fn parse_diff_line(line: &str) -> Option<DiffLine<'_>> {
     let mut chars = line.char_indices();
     let (_, prefix) = chars.next()?;
-    if !(prefix == '+' || prefix == '-' || crate::is_js_space(prefix)) {
+    if !(prefix == '+' || prefix == '-' || is_js_space(prefix)) {
         return None;
     }
     let rest = hoocode_tui_util::text_slice::suffix_from(line, prefix.len_utf8());
     // `(\s*\d*)\s(.*)`: the greedy groups backtrack until a whitespace follows.
-    let spaces = rest.len() - rest.trim_start_matches(crate::is_js_space).len();
+    let spaces = rest.len() - rest.trim_start_matches(is_js_space).len();
     let digits = hoocode_tui_util::text_slice::suffix_from(rest, spaces)
         .bytes()
         .take_while(u8::is_ascii_digit)
@@ -32,7 +33,7 @@ fn parse_diff_line(line: &str) -> Option<DiffLine<'_>> {
         if let Some(c) = after
             .chars()
             .next()
-            .filter(|c| crate::is_js_space(*c) && *c != '\n')
+            .filter(|c| is_js_space(*c) && *c != '\n')
         {
             // `.` excludes line terminators; content must not contain them.
             let content = hoocode_tui_util::text_slice::suffix_from(after, c.len_utf8());
@@ -67,7 +68,7 @@ fn render_intra_line_diff(old: &str, new: &str) -> (String, String) {
         if part.removed {
             let mut value = part.value.as_str();
             if first_removed {
-                let ws = value.len() - value.trim_start_matches(crate::is_js_space).len();
+                let ws = value.len() - value.trim_start_matches(is_js_space).len();
                 removed.push_str(hoocode_tui_util::text_slice::prefix(value, ws));
                 value = hoocode_tui_util::text_slice::suffix_from(value, ws);
                 first_removed = false;
@@ -78,7 +79,7 @@ fn render_intra_line_diff(old: &str, new: &str) -> (String, String) {
         } else if part.added {
             let mut value = part.value.as_str();
             if first_added {
-                let ws = value.len() - value.trim_start_matches(crate::is_js_space).len();
+                let ws = value.len() - value.trim_start_matches(is_js_space).len();
                 added.push_str(hoocode_tui_util::text_slice::prefix(value, ws));
                 value = hoocode_tui_util::text_slice::suffix_from(value, ws);
                 first_added = false;
