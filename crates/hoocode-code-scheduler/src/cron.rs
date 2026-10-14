@@ -90,20 +90,74 @@ fn parse_field(field: &str, min: i64, max: i64) -> Field {
             (min, max)
         };
         // Walk lo, lo+step, ... up to hi, keeping the values inside min..=max.
+        // Saturating: a huge step or bound from a stored expression must not
+        // overflow (a panic in debug builds).
         let mut v = lo;
         if v < min {
             // Jump to the first value of the progression at or above min.
-            let skipped = (min - v + step - 1) / step;
-            v += skipped * step;
+            let skipped = min.saturating_sub(v).saturating_add(step - 1) / step;
+            v = v.saturating_add(skipped.saturating_mul(step));
         }
         while v <= hi && v <= max {
             if v >= min {
                 allowed.insert(v);
             }
-            v += step;
+            v = v.saturating_add(step);
         }
     }
     Field::Values(allowed)
+}
+
+/// Whether `expr` is a 5-field expression this matcher reads as written: each
+/// comma-separated part is `*`, `N` or `N-M`, optionally with `/S` (S of at
+/// least 1), and every value lies in its field's range. Returns the reason
+/// otherwise. `/loop` refuses an expression this rejects; the tools keep the
+/// lenient matcher.
+pub fn validate(expr: &str) -> Result<(), String> {
+    let fields = split_fields(expr);
+    let [minute, hour, dom, month, dow] = fields[..] else {
+        return Err(format!(
+            "A cron expression has 5 fields (minute hour day-of-month month day-of-week): \"{expr}\""
+        ));
+    };
+    let checks = [
+        ("minute", minute, 0, 59),
+        ("hour", hour, 0, 23),
+        ("day-of-month", dom, 1, 31),
+        ("month", month, 1, 12),
+        ("day-of-week", dow, 0, 7),
+    ];
+    for (name, field, min, max) in checks {
+        check_field(field, min, max)
+            .map_err(|why| format!("The {name} field \"{field}\" is not valid: {why}."))?;
+    }
+    Ok(())
+}
+
+/// One field's parts, each checked as [`validate`] describes.
+fn check_field(field: &str, min: i64, max: i64) -> Result<(), String> {
+    for part in field.split(',') {
+        let range = match part.split_once('/') {
+            Some((range, step)) => {
+                if !step.parse::<i64>().is_ok_and(|s| s >= 1) {
+                    return Err(format!("\"{part}\" needs a step of at least 1"));
+                }
+                range
+            }
+            None => part,
+        };
+        if range == "*" {
+            continue;
+        }
+        let (lo, hi) = range.split_once('-').unwrap_or((range, range));
+        let (Ok(lo), Ok(hi)) = (lo.parse::<i64>(), hi.parse::<i64>()) else {
+            return Err(format!("\"{part}\" is not a number, a range or *"));
+        };
+        if lo < min || hi > max || lo > hi {
+            return Err(format!("\"{part}\" must stay within {min}-{max}"));
+        }
+    }
+    Ok(())
 }
 
 /// `matchesCron`: true when `now` matches the 5-field expression.
@@ -116,10 +170,11 @@ pub fn matches(expr: &str, now: &DateTime<Local>) -> bool {
     let minute = parse_field(m, 0, 59).allows(i64::from(now.minute()));
     let hour = parse_field(h, 0, 23).allows(i64::from(now.hour()));
     let month = parse_field(mon, 1, 12).allows(i64::from(now.month()));
-    // Cron allows 0 or 7 for Sunday; the TS code maps every "7" to "0".
     let dow_value = i64::from(now.weekday().num_days_from_sunday());
     let dom_field = parse_field(dom, 1, 31);
-    let dow_field = parse_field(&dow.replace('7', "0"), 0, 6);
+    // Cron allows 0 or 7 for Sunday. The field is read over 0..=7 so a range
+    // such as `1-7` keeps its end; Sunday (0) matches when either is listed.
+    let dow_field = parse_field(dow, 0, 7);
 
     if !(minute && hour && month) {
         return false;
@@ -129,7 +184,7 @@ pub fn matches(expr: &str, now: &DateTime<Local>) -> bool {
     let dom_restricted = dom != "*";
     let dow_restricted = dow != "*";
     let day_of_month = dom_field.allows(i64::from(now.day()));
-    let day_of_week = dow_field.allows(dow_value);
+    let day_of_week = dow_field.allows(dow_value) || (dow_value == 0 && dow_field.allows(7));
     if dom_restricted && dow_restricted {
         day_of_month || day_of_week
     } else {
@@ -193,6 +248,60 @@ mod tests {
         assert!(!matches("* * * *", &at(9, 0)));
         assert!(!matches("x * * * *", &at(9, 0)));
         assert!(!matches("*/0 * * * *", &at(9, 0)));
+    }
+
+    #[test]
+    fn a_range_ending_in_seven_covers_sunday_too() {
+        // 2026-10-12 is a Monday, 2026-10-11 a Sunday.
+        let monday = Local
+            .with_ymd_and_hms(2026, 10, 12, 9, 0, 0)
+            .single()
+            .unwrap();
+        let sunday = Local
+            .with_ymd_and_hms(2026, 10, 11, 9, 0, 0)
+            .single()
+            .unwrap();
+        assert!(matches("0 9 * * 1-7", &monday));
+        assert!(matches("0 9 * * 1-7", &sunday));
+        assert!(matches("0 9 * * 5,7", &sunday));
+        assert!(!matches("0 9 * * 1-6", &sunday));
+    }
+
+    #[test]
+    fn huge_steps_and_bounds_do_not_overflow() {
+        // Stored by hand or by a tool; must match without panicking.
+        assert!(matches("1/9223372036854775807 * * * *", &at(9, 1)));
+        assert!(!matches("1/9223372036854775807 * * * *", &at(9, 2)));
+        assert!(!matches("-9223372036854775807/2 * * * *", &at(9, 0)));
+        assert!(!matches("9223372036854775807 * * * *", &at(9, 0)));
+    }
+
+    #[test]
+    fn validate_accepts_what_the_matcher_reads_and_refuses_the_rest() {
+        for ok in [
+            "*/10 * * * *",
+            "0 9 * * 1-5",
+            "0 12 * * 7",
+            "0,30 9-17/2 1,15 * *",
+            "0 0 31 12 0-7",
+        ] {
+            assert_eq!(validate(ok), Ok(()), "{ok}");
+        }
+        for bad in [
+            "60 * * * *",
+            "*/0 * * * *",
+            "x * * * *",
+            "0 0 0 * *",
+            "0 0 * 13 *",
+            "0 0 * * 8",
+            "5-3 * * * *",
+            "1/ * * * *",
+            "1-x * * * *",
+            "*/5 * * * * *",
+        ] {
+            assert!(validate(bad).is_err(), "{bad} should be refused");
+        }
+        assert!(validate("60 * * * *").unwrap_err().contains("minute"));
     }
 
     #[test]
