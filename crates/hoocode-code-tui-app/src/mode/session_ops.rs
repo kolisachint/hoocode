@@ -65,12 +65,14 @@ impl Mode {
             })
             .collect();
         let selector = handle(UserMessageSelectorComponent::new(items, Some(&initial)));
-        self.show_in_editor_slot(as_component(&selector));
-        self.fork_selector = Some(selector);
+        self.set_picker(
+            ActivePicker::Fork(selector.clone()),
+            as_component(&selector),
+        );
     }
 
     pub(super) fn poll_fork_selector(&mut self) {
-        let Some(selector) = &self.fork_selector else {
+        let Some(ActivePicker::Fork(selector)) = &self.picker else {
             return;
         };
         let Some(event) = selector
@@ -81,7 +83,7 @@ impl Mode {
         else {
             return;
         };
-        self.fork_selector = None;
+        self.picker = None;
         self.restore_editor();
         if let UserMessageEvent::Select(entry_id) = event {
             self.fork_session(&entry_id, ForkPosition::Before);
@@ -561,7 +563,7 @@ impl Mode {
 
     /// `showSessionSelector`: the session picker in the editor's slot.
     pub(super) fn show_session_selector(&mut self) {
-        if self.session_runtime.is_none() || self.session_selector.is_some() {
+        if self.session_runtime.is_none() || matches!(self.picker, Some(ActivePicker::Session(_))) {
             return;
         }
         let (session_dir, current_file) = {
@@ -604,20 +606,17 @@ impl Mode {
             },
             current_file.as_deref(),
         ));
-        {
-            let mut container = self.editor_container.borrow_mut();
-            container.clear();
-            container.add_child(as_component(&selector));
-        }
-        self.tui.set_focus(Some(as_component(&selector)));
-        self.session_selector = Some(selector);
-        self.dirty.set(true);
+        self.set_picker(
+            ActivePicker::Session(selector.clone()),
+            as_component(&selector),
+        );
     }
 
     pub(super) fn close_session_selector(&mut self) {
-        if self.session_selector.take().is_none() {
+        if !matches!(self.picker, Some(ActivePicker::Session(_))) {
             return;
         }
+        self.picker = None;
         {
             let mut container = self.editor_container.borrow_mut();
             container.clear();

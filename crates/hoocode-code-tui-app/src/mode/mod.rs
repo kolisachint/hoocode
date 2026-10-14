@@ -358,7 +358,8 @@ struct Mode {
     code_block_indent: String,
     editor: Rc<RefCell<CustomEditor>>,
     editor_container: Rc<RefCell<Container>>,
-    selector: Option<OpenSelector>,
+    /// The picker in the editor's slot (`dialogs.rs`).
+    picker: Option<ActivePicker>,
     actions: Rc<RefCell<Vec<Action>>>,
     notifications: Rc<RefCell<NotificationPanel>>,
     tips: TipsController,
@@ -378,14 +379,9 @@ struct Mode {
     is_oauth: Rc<dyn Fn(&str) -> bool>,
     auth_storage: Arc<AuthStorage>,
     login: Option<LoginStep>,
-    session_selector: Option<Rc<RefCell<SessionSelectorComponent>>>,
     pending_cwd_prompt: Option<(PathBuf, String, mpsc::Receiver<Option<String>>)>,
     ask_options: Option<OpenAskOptions>,
-    tree_selector: Option<(Rc<RefCell<TreeSelectorComponent>>, Option<String>)>,
-    model_selector: Option<Rc<RefCell<ModelSelectorComponent>>>,
-    scoped_models_selector: Option<Rc<RefCell<ScopedModelsSelectorComponent>>>,
     anthropic_warning_shown: bool,
-    settings_selector: Option<Rc<RefCell<SettingsSelectorComponent>>>,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
     last_escape: Option<Instant>,
     pending_tree_summary: Option<PendingTreeAnswer>,
@@ -400,7 +396,6 @@ struct Mode {
     compaction_queue: Vec<(String, StreamingBehavior)>,
     task_panel: Rc<RefCell<TaskPanelComponent>>,
     task_store_subscription: Option<hoocode_code_task_store::Subscription<'static>>,
-    fork_selector: Option<Rc<RefCell<UserMessageSelectorComponent>>>,
     previous_cwd: Rc<RefCell<Option<PathBuf>>>,
     pending_import: Option<(String, Option<String>, mpsc::Receiver<Option<String>>)>,
     restarted_input: Option<Receiver<TuiEvent>>,
@@ -719,7 +714,6 @@ impl Mode {
             code_block_indent,
             editor,
             editor_container,
-            selector: None,
             actions,
             notifications,
             tips,
@@ -738,14 +732,10 @@ impl Mode {
             is_oauth,
             auth_storage: options.auth_storage,
             login: None,
-            session_selector: None,
+            picker: None,
             pending_cwd_prompt: None,
             ask_options: None,
-            tree_selector: None,
-            model_selector: None,
-            scoped_models_selector: None,
             anthropic_warning_shown: false,
-            settings_selector: None,
             settings_changes: Rc::default(),
             last_escape: None,
             pending_tree_summary: None,
@@ -760,7 +750,6 @@ impl Mode {
             compaction_queue: Vec::new(),
             task_panel,
             task_store_subscription: None,
-            fork_selector: None,
             previous_cwd: Rc::new(RefCell::new(None)),
             pending_import: None,
             restarted_input: None,
@@ -859,25 +848,7 @@ impl Mode {
                 wait = wait.min(due.saturating_duration_since(now));
             }
         }
-        if let Some(deadline) = self
-            .selector
-            .as_ref()
-            .and_then(|(s, _)| s.borrow().deadline())
-        {
-            wait = wait.min(deadline.saturating_duration_since(now));
-        }
-        if let Some(deadline) = self
-            .fork_selector
-            .as_ref()
-            .and_then(|s| s.borrow().deadline())
-        {
-            wait = wait.min(deadline.saturating_duration_since(now));
-        }
-        if let Some(deadline) = self
-            .tree_selector
-            .as_ref()
-            .and_then(|(s, _)| s.borrow().deadline())
-        {
+        if let Some(deadline) = self.picker.as_ref().and_then(|p| p.deadline()) {
             wait = wait.min(deadline.saturating_duration_since(now));
         }
         if self.stream_render_pending {
@@ -1115,11 +1086,7 @@ impl Mode {
                 self.header.borrow_mut().refresh();
                 self.dirty.set(true);
             }
-            if self
-                .selector
-                .as_ref()
-                .is_some_and(|(s, _)| s.borrow_mut().poll())
-            {
+            if self.poll_picker_component() {
                 self.dirty.set(true);
             }
             if self.last_tool_tick.elapsed() >= Duration::from_secs(1) {
@@ -1133,13 +1100,6 @@ impl Mode {
                         self.dirty.set(true);
                     }
                 }
-            }
-            if self
-                .session_selector
-                .as_ref()
-                .is_some_and(|s| s.borrow_mut().poll())
-            {
-                self.dirty.set(true);
             }
             self.poll_cwd_prompt();
             self.poll_import_confirm();
@@ -1191,8 +1151,8 @@ impl Mode {
 
         hoocode_runtime::watchdog::ui_stopped();
         set_dialog_sink(None);
-        if let Some((_, reply)) = self.selector.take() {
-            let _ = reply.send(None);
+        if let Some(picker) = self.picker.take() {
+            picker.dispose();
         }
         if let Some((_, reply)) = self.ask_options.take() {
             let _ = reply.send(None);

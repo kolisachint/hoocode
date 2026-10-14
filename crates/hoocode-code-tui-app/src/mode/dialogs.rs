@@ -15,11 +15,42 @@ use crate::extension_selector::{ExtensionSelectorComponent, SelectorOutcome};
 
 use super::*;
 
-/// The open extension selector and the channel its answer goes back on.
-pub(super) type OpenSelector = (
-    Rc<RefCell<ExtensionSelectorComponent>>,
-    mpsc::Sender<Option<String>>,
-);
+/// The picker in the editor's slot. There is at most one: a picker shown over
+/// another replaces it, and the replaced one is disposed (`set_picker`).
+pub(super) enum ActivePicker {
+    /// An extension selector and the channel its answer goes back on.
+    Selector(
+        Rc<RefCell<ExtensionSelectorComponent>>,
+        mpsc::Sender<Option<String>>,
+    ),
+    Session(Rc<RefCell<SessionSelectorComponent>>),
+    /// The session tree, and the leaf it opened on.
+    Tree(Rc<RefCell<TreeSelectorComponent>>, Option<String>),
+    Fork(Rc<RefCell<UserMessageSelectorComponent>>),
+    Model(Rc<RefCell<ModelSelectorComponent>>),
+    ScopedModels(Rc<RefCell<ScopedModelsSelectorComponent>>),
+    Settings(Rc<RefCell<SettingsSelectorComponent>>),
+}
+
+impl ActivePicker {
+    /// The deadline the loop must wake for, if the picker has one.
+    pub(super) fn deadline(&self) -> Option<Instant> {
+        match self {
+            ActivePicker::Selector(s, _) => s.borrow().deadline(),
+            ActivePicker::Fork(s) => s.borrow().deadline(),
+            ActivePicker::Tree(s, _) => s.borrow().deadline(),
+            _ => None,
+        }
+    }
+
+    /// The picker is gone. An extension selector's asker gets no answer.
+    pub(super) fn dispose(self) {
+        if let ActivePicker::Selector(selector, reply) = self {
+            selector.borrow_mut().dispose();
+            let _ = reply.send(None);
+        }
+    }
+}
 
 /// The open options pane and the channel its answers go back on.
 pub(super) type OpenAskOptions = (
@@ -37,6 +68,31 @@ pub(super) type OpenEditorDialog = (
 pub(super) type Outcomes = Rc<RefCell<Vec<SelectorOutcome>>>;
 
 impl Mode {
+    /// Puts `picker` in the editor's slot, focused, after disposing the picker
+    /// that was there. `child` is the component the slot shows.
+    pub(super) fn set_picker(&mut self, picker: ActivePicker, child: ComponentHandle) {
+        if let Some(previous) = self.picker.take() {
+            previous.dispose();
+        }
+        {
+            let mut container = self.editor_container.borrow_mut();
+            container.clear();
+            container.add_child(child.clone());
+        }
+        self.tui.set_focus(Some(child));
+        self.picker = Some(picker);
+        self.dirty.set(true);
+    }
+
+    /// The selector pickers' own timers and loads (`poll`). True if anything changed.
+    pub(super) fn poll_picker_component(&mut self) -> bool {
+        match &self.picker {
+            Some(ActivePicker::Selector(selector, _)) => selector.borrow_mut().poll(),
+            Some(ActivePicker::Session(selector)) => selector.borrow_mut().poll(),
+            _ => false,
+        }
+    }
+
     /// `showSelector`: swap the selector into the editor's slot.
     pub(super) fn show_selector(
         &mut self,
@@ -44,10 +100,6 @@ impl Mode {
         options: Vec<String>,
         reply: mpsc::Sender<Option<String>>,
     ) {
-        if let Some((previous, previous_reply)) = self.selector.take() {
-            previous.borrow_mut().dispose();
-            let _ = previous_reply.send(None);
-        }
         let sink = self.actions.clone();
         let selector = handle(ExtensionSelectorComponent::new(
             title,
@@ -55,19 +107,18 @@ impl Mode {
             None,
             Box::new(move |outcome| sink.borrow_mut().push(Action::SelectorDone(outcome))),
         ));
-        {
-            let mut container = self.editor_container.borrow_mut();
-            container.clear();
-            container.add_child(as_component(&selector));
-        }
-        self.tui.set_focus(Some(as_component(&selector)));
-        self.selector = Some((selector, reply));
-        self.dirty.set(true);
+        self.set_picker(
+            ActivePicker::Selector(selector.clone(), reply),
+            as_component(&selector),
+        );
     }
 
     /// `hideSelector` + `restoreEditor`, answering the asker.
     pub(super) fn close_selector(&mut self, outcome: SelectorOutcome) {
-        let Some((selector, reply)) = self.selector.take() else {
+        if !matches!(self.picker, Some(ActivePicker::Selector(..))) {
+            return;
+        }
+        let Some(ActivePicker::Selector(selector, reply)) = self.picker.take() else {
             return;
         };
         selector.borrow_mut().dispose();

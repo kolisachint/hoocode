@@ -37,18 +37,14 @@ impl Mode {
             initial_selected_id.as_deref(),
             Some(filter),
         ));
-        {
-            let mut container = self.editor_container.borrow_mut();
-            container.clear();
-            container.add_child(as_component(&selector));
-        }
-        self.tui.set_focus(Some(as_component(&selector)));
-        self.tree_selector = Some((selector, leaf));
-        self.dirty.set(true);
+        self.set_picker(
+            ActivePicker::Tree(selector.clone(), leaf.clone()),
+            as_component(&selector),
+        );
     }
 
     pub(super) fn poll_tree_selector(&mut self) {
-        let Some((selector, leaf)) = &self.tree_selector else {
+        let Some(ActivePicker::Tree(selector, leaf)) = &self.picker else {
             return;
         };
         let events = selector.borrow_mut().poll(Instant::now());
@@ -63,12 +59,12 @@ impl Mode {
                     self.dirty.set(true);
                 }
                 TreeEvent::Cancel => {
-                    self.tree_selector = None;
+                    self.picker = None;
                     self.restore_editor();
                     return;
                 }
                 TreeEvent::Select(id) => {
-                    self.tree_selector = None;
+                    self.picker = None;
                     self.restore_editor();
                     if leaf.as_deref() == Some(id.as_str()) {
                         // Selecting the current leaf is a no-op.
