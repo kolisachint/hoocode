@@ -19,7 +19,7 @@
       "timeout": 30
     },
     {
-      "wait_stable": 1.0,
+      "wait_for": "mock-model",
       "timeout": 20
     },
     {

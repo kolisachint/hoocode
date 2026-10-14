@@ -24,7 +24,7 @@ Haiku subagents implement. The main session orchestrates, briefs and merges.
 | 4 | X15 | Colour follows the switch (#11). **Done 2026-10-14**: `color_enabled()` reads `NO_COLOR` and FORCE_COLOR wins (#14); theme `fg` and `bg` follow chalk. Fill is not changed (see the X15 row). |
 | 5 | N14 | Marker only (#3). **Done 2026-10-14**: the `/model` picker shows `expired`; `spawn_refresh` deleted (decisions-2026-10-14.md #15). |
 | 6 | X18 | Task panel key hint (#5). |
-| 7 | T0.3 | `scroll-view` waits for its final text (#9). |
+| 7 | T0.3 | `scroll-view` waits for its final text (#9). **Done 2026-10-14** for the startup wait (`scroll-view.json`, now `wait_for` the footer `mock-model`). **Open:** the three search snapshots still differ from the golden (see T0.3 outcome). |
 
 **Open questions** (the user has not decided; each row has a proposed default):
 
@@ -91,6 +91,7 @@ Needs: nothing. Start here.
   - Follow-up: add an injectable clock when T1 or T3 touches those widgets.
 - **T0.3:** `scripts/tui/goldens.py` ran 67 scenarios (165 screens). Cut on 2026-10-10 to about 10 key interactive screens, run once before a release. Print, json, rpc and changelog scenarios are dropped.
   - Flaky fix, **answered 2026-10-14** (decisions-2026-10-14.md #9; open decision 7), size S: `scripts/tui/scenarios/scroll-view.json:22` waits for its final text, not `wait_stable: 1.0`. Drop `mode-cycle` (no scenario exists) and `print-tool-bash` (only a replay fixture) from the flaky list. Quarantine nothing.
+  - **Outcome (2026-10-14):** line 22 now waits for `mock-model`. Not verified as a fix. `goldens.py check scroll-view` run 7 times on the real binary: the three search snapshots (`search-typing`, `search-kept`, `search-dropped`) differ in every run since, and the original scenario differs the same way (3 of 3). The difference is the selected match: the golden has `beta item 25` at `2/2`, the binary shows `alpha item 25` at `1/2`. Not a startup race, so it is not fixed here. Open: accept the new screen (`goldens.py update scroll-view`) or fix the search order. Needs the user's call.
 - **T0.4 and T0.5:** retired 2026-10-10. `review_bundle.py` and the `tui-review` skill are removed. Screen goldens are a pre-release check of about 10 key screens, not per change.
 - **T0.6:** parity is retired. The done bar is L1 plus `goldens.py check all`. `ledger.py` is read-only. Open items:
   - The CI job is staged at `archive/migration/ci/tui-parity.yml`. The user must copy it into `.github/workflows/`, because the token cannot push workflows.
@@ -276,7 +277,8 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
 7. **ANSWERED 2026-10-14** (#9: fix and prune; quarantine nothing; work in T0.3). **Flaky tests** (fix or quarantine):
    - Fixed 2026-10-14 (`244ab05`): races `hoocode-code-rpc` `fork_branches` and `a_closed_agent`.
    - Fixed 2026-10-14 (`50efc28`): `hoocode-ai-oauth-anthropic` tests use an ephemeral port (production stays 53692).
-   - Still open: screen goldens print-tool-bash, scroll-view, mode-cycle.
+   - Pruned 2026-10-14: `mode-cycle` (no scenario exists) and `print-tool-bash` (only a replay fixture) are off the list.
+   - Still open: `scroll-view` (search snapshots, see T0.3 outcome).
 8. **ANSWERED 2026-10-14** (#10: one shared const, no period). **OpenAI abort text (X12).** `ABORTED_MESSAGE` is one const now. The OpenAI path says "Request was
    aborted." Decide whether every provider uses that text. It changes visible text.
 9. **ANSWERED 2026-10-14** (#11: both follow the switch). **Colour when colour is off (X15).** `theme.fg/bg` still emit colour when colour is off; only bold,
