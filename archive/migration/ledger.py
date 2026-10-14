@@ -20,15 +20,40 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-LEDGER = ROOT / "migration" / "ledger.json"
+# ROOT is the repo root (this file lives in archive/migration/). moved_to paths and
+# scripts/ are repo-relative; the ledger itself sits next to this file.
+ROOT = Path(__file__).resolve().parents[2]
+LEDGER = Path(__file__).resolve().parent / "ledger.json"
 # Screen scenarios moved from migration/tui-parity/ to scripts/tui/ in T0.6.
 SCENARIOS = ROOT / "scripts" / "tui" / "scenarios"
 # "moved" tasks are closed in the ledger: their work now lives in a design card
-# (moved_to). Dependents of a moved task are ready, like dependents of a done one.
-DONEISH = {"done", "l1_done", "moved"}
-STATUSES = {"todo", "in_progress", "l1_done", "done", "blocked", "deferred", "moved"}
+# (moved_to). "dropped" tasks are closed with no card. Dependents of either are ready,
+# like dependents of a done one.
+DONEISH = {"done", "l1_done", "moved", "dropped"}
+STATUSES = {"todo", "in_progress", "l1_done", "done", "blocked", "deferred", "moved", "dropped"}
 MUTATING = {"start", "note", "block", "move", "verify"}
+# Screen scenarios cut on 2026-10-10 (TUI plan T0.3, docs/design/tui-activity.md: "cut to
+# about 10 key interactive screens"). The files were deleted in commit 993a7f3. Done tasks in
+# ledger.json still name them. The ledger history is not rewritten, so the check accepts a
+# missing scenario only if it is listed here.
+CUT_SCENARIOS = frozenset(
+    {
+    "ask-options", "bash-command", "cd-reload", "changelog-command", "changelog-startup",
+    "changelog-startup-collapsed", "compact-cancel", "compact-command", "compact-empty",
+    "compact-queue", "config-selector", "copy-command", "export-import", "external-editor",
+    "file-autocomplete", "fork-clone", "fork-clone-persisted", "info-commands",
+    "json-basic", "json-error", "json-subagent-child", "list-models", "login-api-key",
+    "message-queue-escape", "mode-cycle", "mode-plan", "model-completions",
+    "model-selector", "paste-image-empty", "print-basic", "print-context-files",
+    "print-continue", "print-error", "print-file-image", "print-multi", "print-retry",
+    "print-todo-write", "print-tool-bash", "print-tool-bash-light", "print-tool-edit",
+    "print-tool-edit-light", "print-tool-invalid-light", "print-tool-read",
+    "print-tool-read-light", "print-tool-read-paging", "print-tool-search", "rpc-basic",
+    "rpc-session", "session-missing-cwd", "session-resume-inapp", "session-surface-sync",
+    "session-surface-sync-reload", "session-tree", "settings-pane", "startup",
+    "subagent-command", "thinking-toggle-pending-tool", "todo-write", "tool-read"
+    }
+)
 FROZEN = (
     "ledger.py is read-only since 2026-10-09 (TUI plan T0.6). '{cmd}' would change the ledger and is refused.\n"
     "New work is tracked in the phase tables of docs/design/tui-activity.md.\n"
@@ -110,7 +135,8 @@ def show(t: dict) -> None:
     if isinstance(l2, list):
         for s in l2:
             exists = (SCENARIOS / f"{s}.json").exists()
-            print(f"  L2 scenario: {s}{'' if exists else '  (not written yet)'}")
+            note = "" if exists else ("  (cut in T0.3)" if s in CUT_SCENARIOS else "  (not written yet)")
+            print(f"  L2 scenario: {s}{note}")
     else:
         print(f"  L2: {l2}")
     if t["notes"]:
@@ -132,7 +158,7 @@ def cmd_check(led: dict) -> int:
                 errs.append(f"{t['id']}: unknown dependency {d}")
         if t["status"] == "done" and isinstance(t["l2"], list):
             for s in t["l2"]:
-                if not (SCENARIOS / f"{s}.json").exists():
+                if not (SCENARIOS / f"{s}.json").exists() and s not in CUT_SCENARIOS:
                     errs.append(f"{t['id']}: done but L2 scenario {s} does not exist")
         if t["status"] == "moved":
             target = t.get("moved_to", "")

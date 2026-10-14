@@ -196,7 +196,7 @@ later the same day (65 crates), so `ai-provider-azure` is listed below too.
 | Crate | Why | What moved or is left |
 |---|---|---|
 | 5 umbrellas: `hoocode`, `agent`, `ai`, `code`, `tui` | Only for crates.io, which is dropped | `ai`'s tests moved to `ai-registry` (below); `ai`'s `oauth_providers` test was dropped, as it only tested the umbrella's own install wrapper |
-| `agent-mcp` | Not wired into the binary; [mcp.md](../design/mcp.md) rebuilds MCP on rmcp | Nothing; its stub server idea returns as rmcp test servers |
+| `agent-mcp` | **Kept 2026-10-14, not deleted.** It is the home of the MCP client that [mcp.md](../design/mcp.md) (card 9.1) rebuilds on rmcp | See [decisions-2026-10-14.md](../design/decisions-2026-10-14.md) |
 | `agent-orchestrator`, `agent-tools` | hoocode SDK ports the product never calls; `code-agent-session` does the job | Nothing |
 | `ai-images` | No tool or command generates images | Not done: `ai-models-catalog`'s `IMAGE_MODELS_JSON` and `data/image-models.json` still exist and are maintained by hand (models.dev lists no image models). A follow-up. |
 | `code-extensions` | Unused WASM host; costs ~55 s per clean build | `build-speed.md` D5 no longer applies |

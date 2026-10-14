@@ -61,10 +61,12 @@ code nothing calls.
 
 ### Crates to delete (11: 76 → 65)
 
+**Note (2026-10-14):** `agent-mcp` is kept, so the delete count is now 10. See [decisions-2026-10-14.md](../../docs/design/decisions-2026-10-14.md). The row below is unchanged.
+
 | Crate | Why |
 |---|---|
 | `cortexcode`, `cortexcode-agent`, `cortexcode-ai`, `cortexcode-code`, `cortexcode-tui` | Umbrellas, only for crates.io. `cortexcode-ai`'s cross-provider tests move to `ai-registry`. |
-| `agent-mcp` | Not wired into the binary; mcp.md rebuilds MCP on rmcp |
+| `agent-mcp` | Not wired into the binary; mcp.md rebuilds MCP on rmcp. **Superseded 2026-10-14: kept as the home of the 9.1 MCP client** ([decisions-2026-10-14.md](../../docs/design/decisions-2026-10-14.md)) |
 | `agent-orchestrator`, `agent-tools` | SDK ports the product never calls |
 | `ai-images` | No tool or command uses image generation |
 | `code-extensions` | Unused WASM host |

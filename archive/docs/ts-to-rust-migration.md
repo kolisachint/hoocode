@@ -138,6 +138,18 @@ with `python3 migration/ledger.py status`.
   keep a hand-written transport) and 10.2e (see its ledger `block` entry).
 - **Resuming:** move a task back to `todo` in the ledger (it is a user decision, so note it
   in the task log), then follow `.claude/skills/continue-migration/SKILL.md`.
+
+**Update 2026-10-14:** the tasks below are closed in the ledger.
+
+- **9.1** moved to [docs/design/mcp.md](../../docs/design/mcp.md).
+- **10.2e** moved to [docs/design/web-tools.md](../../docs/design/web-tools.md).
+- **10.11** moved to [docs/design/mcp.md](../../docs/design/mcp.md).
+- **12.1** and **12.2** moved to [docs/design/plugins.md](../../docs/design/plugins.md).
+- **12.3** moved to [docs/design/extension-runtime.md](../../docs/design/extension-runtime.md).
+- **12.4** moved to [docs/design/semantic-search.md](../../docs/design/semantic-search.md).
+- **12.5** moved to [docs/design/scheduler-and-loop.md](../../docs/design/scheduler-and-loop.md).
+- **12.6** and **12.7** moved to [docs/design/extras.md](../../docs/design/extras.md).
+- **13.4** dropped on 2026-10-14 (user decision; no card).
 - **2026-10-08:** added the `moved` status (closed, like `done`). Tasks 9.1, 10.2e, 10.11,
   12.1–12.7 and 13.4 are `moved` to their design cards (13.4 has none, so it stays here).
 
