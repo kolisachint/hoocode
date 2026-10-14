@@ -1700,3 +1700,19 @@ fn the_dispatch_sweep_spares_a_sessions_subagents_dir() {
     prune_dispatch_dirs(cwd, 0, DAY);
     assert!(transcript.exists(), "the sweep must not touch subagents/");
 }
+
+/// A run is live while the pid its dispatch dir records is a live process. A
+/// run whose child is gone (or never started) is not.
+#[test]
+fn a_run_is_live_only_while_its_recorded_pid_is_alive() {
+    let dir = setup();
+    let cwd = dir.path();
+    let dispatch = hoocode_code_paths::dispatch_task_dir(cwd, "pid-run");
+    std::fs::create_dir_all(&dispatch).unwrap();
+    assert!(!run_is_live(cwd, "pid-run"), "no pid file, not live");
+    std::fs::write(dispatch.join("pid"), std::process::id().to_string()).unwrap();
+    assert!(run_is_live(cwd, "pid-run"), "our own pid is alive");
+    // Far above any pid this machine hands out: no such process.
+    std::fs::write(dispatch.join("pid"), "4194303").unwrap();
+    assert!(!run_is_live(cwd, "pid-run"), "a dead pid is not live");
+}

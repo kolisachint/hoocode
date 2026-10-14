@@ -7,6 +7,7 @@ use hoocode_code_resources::agent_registry::{load_agent_registry, LoadAgentRegis
 use hoocode_code_subagents::instance::get_subagent_pool;
 use hoocode_code_subagents::ledger;
 use hoocode_code_subagents::pool::DispatchOptions;
+use hoocode_code_tui_selectors::session_selector::SubagentRunRef;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::{Spacer, Text};
 
@@ -87,6 +88,42 @@ impl Mode {
                 Err(error) => Err(error.to_string()),
             };
             let _ = tx.send(AppEvent::SubagentDone(mode, outcome));
+        });
+    }
+
+    /// Resume an interrupted subagent run from the session picker: the same
+    /// transcript continues with a follow-up prompt, through the pool's
+    /// `resume`. Its summary lands in this session the way a finished run's does.
+    pub(super) fn resume_subagent(&mut self, run: SubagentRunRef) {
+        const FOLLOW_UP: &str = "Continue the task you were interrupted in. Pick up where your last step left off, finish the work, and report the result.";
+        self.show_status(&format!("Resuming {} subagent…", run.agent_type));
+        let cwd = self.session.cwd().to_path_buf();
+        let models = self.session.get_available_models();
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let pool = get_subagent_pool(&cwd, &models);
+            let options = DispatchOptions {
+                parent_session_file: Some(run.parent.clone()),
+                ..Default::default()
+            };
+            let outcome = match pool.resume(&run.task_id, FOLLOW_UP, options).await {
+                Ok(dispatched) => match dispatched.result {
+                    Some(result) if result.ok => Ok(result
+                        .result_data
+                        .as_ref()
+                        .and_then(|data| data.get("summary"))
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)),
+                    other => Err(format!(
+                        "Resume failed: {}",
+                        other
+                            .and_then(|r| r.error)
+                            .unwrap_or_else(|| "unknown error".into())
+                    )),
+                },
+                Err(error) => Err(error.to_string()),
+            };
+            let _ = tx.send(AppEvent::SubagentDone(run.agent_type, outcome));
         });
     }
 

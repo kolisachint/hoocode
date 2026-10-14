@@ -563,3 +563,151 @@ fn a_search_still_finds_the_parent() {
     assert!(out.contains("Parent"), "{out}");
     assert!(!out.contains("└─ "), "{out}");
 }
+
+// ---- interrupted runs: view or resume ---------------------------------------
+
+const DOWN_KEY: &str = "\x1b[B";
+
+/// A parent with one run that stopped before it settled.
+fn interrupted_run_rows() -> Vec<SessionInfo> {
+    let parent_path = PathBuf::from("/tmp/parent-int.jsonl");
+    let parent = make(
+        "parent",
+        Make {
+            path: Some(parent_path.clone()),
+            name: Some("Parent"),
+            modified: Some("2026-01-01T00:00:00Z"),
+            ..Default::default()
+        },
+    );
+    let mut run = make(
+        "run-2",
+        Make {
+            path: Some(PathBuf::from("/tmp/parent-int/subagents/run-2.jsonl")),
+            parent: Some(parent_path),
+            first_message: Some("audit the module"),
+            modified: Some("2026-01-01T00:00:00Z"),
+            ..Default::default()
+        },
+    );
+    run.subagent = Some(SubagentRun {
+        task_id: "run-2".into(),
+        agent_type: "general-purpose".into(),
+        state: SubagentState::Interrupted,
+    });
+    vec![parent, run]
+}
+
+fn options_with_resume(
+    sink: Rc<RefCell<Vec<hoocode_code_tui_selectors::session_selector::SubagentRunRef>>>,
+) -> SessionSelectorOptions {
+    SessionSelectorOptions {
+        keybindings: Some(keybindings()),
+        resume_subagent: Some(Box::new(move |run| sink.borrow_mut().push(run))),
+        ..Default::default()
+    }
+}
+
+/// Enter on an interrupted run opens its choice, and the header says what the
+/// keys do.
+#[test]
+fn enter_on_an_interrupted_run_opens_its_choice() {
+    let _g = lock();
+    let resumed = Rc::new(RefCell::new(Vec::new()));
+    let mut s = selector(interrupted_run_rows(), options_with_resume(resumed), None);
+    press_list(&mut s, DOWN_KEY);
+    let events = press_list(&mut s, "\r");
+    assert_eq!(events, vec![ListEvent::SubagentChoiceChange(true)]);
+    let out = render(&mut s, 120);
+    assert!(out.contains("v view · r resume · esc back"), "{out}");
+}
+
+/// `r` resumes the run the choice was opened on, with its parent and transcript.
+#[test]
+fn r_resumes_the_interrupted_run() {
+    let _g = lock();
+    let resumed = Rc::new(RefCell::new(Vec::new()));
+    let mut s = selector(
+        interrupted_run_rows(),
+        options_with_resume(resumed.clone()),
+        None,
+    );
+    press_list(&mut s, DOWN_KEY);
+    press_list(&mut s, "\r");
+    let events = press_list(&mut s, "r");
+    assert_eq!(
+        events,
+        vec![
+            ListEvent::SubagentChoiceChange(false),
+            ListEvent::ResumeSubagent(
+                hoocode_code_tui_selectors::session_selector::SubagentRunRef {
+                    child: PathBuf::from("/tmp/parent-int/subagents/run-2.jsonl"),
+                    parent: PathBuf::from("/tmp/parent-int.jsonl"),
+                    task_id: "run-2".into(),
+                    agent_type: "general-purpose".into(),
+                }
+            ),
+        ]
+    );
+    assert_eq!(resumed.borrow().len(), 1);
+}
+
+/// `v` views the transcript: the run's file is opened like any session.
+#[test]
+fn v_views_the_interrupted_run() {
+    let _g = lock();
+    let mut s = selector(interrupted_run_rows(), default_options(), None);
+    press_list(&mut s, DOWN_KEY);
+    press_list(&mut s, "\r");
+    let events = press_list(&mut s, "v");
+    assert_eq!(
+        events,
+        vec![
+            ListEvent::SubagentChoiceChange(false),
+            ListEvent::Select(PathBuf::from("/tmp/parent-int/subagents/run-2.jsonl")),
+        ]
+    );
+}
+
+/// Escape closes the choice and leaves the picker open.
+#[test]
+fn esc_backs_out_of_the_choice_without_cancelling_the_picker() {
+    let _g = lock();
+    let mut s = selector(interrupted_run_rows(), default_options(), None);
+    press_list(&mut s, DOWN_KEY);
+    press_list(&mut s, "\r");
+    let events = press_list(&mut s, "\x1b");
+    assert_eq!(events, vec![ListEvent::SubagentChoiceChange(false)]);
+}
+
+/// Without a resume callback (the `--resume` picker) the choice offers view
+/// only, and `r` does nothing.
+#[test]
+fn without_a_resume_callback_r_does_nothing() {
+    let _g = lock();
+    let mut s = selector(interrupted_run_rows(), default_options(), None);
+    press_list(&mut s, DOWN_KEY);
+    press_list(&mut s, "\r");
+    let events = press_list(&mut s, "r");
+    assert!(events.is_empty(), "{events:?}");
+    assert!(render(&mut s, 120).contains("v view · esc back"));
+}
+
+/// Enter on a run that settled opens its transcript directly, no choice.
+#[test]
+fn enter_on_a_finished_run_opens_its_transcript() {
+    let _g = lock();
+    let mut rows = interrupted_run_rows();
+    if let Some(run) = rows[1].subagent.as_mut() {
+        run.state = SubagentState::Finished("complete".into());
+    }
+    let mut s = selector(rows, default_options(), None);
+    press_list(&mut s, DOWN_KEY);
+    let events = press_list(&mut s, "\r");
+    assert_eq!(
+        events,
+        vec![ListEvent::Select(PathBuf::from(
+            "/tmp/parent-int/subagents/run-2.jsonl"
+        ))]
+    );
+}
