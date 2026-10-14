@@ -93,8 +93,7 @@ Needs: nothing. Start here.
   - Flaky fix, **answered 2026-10-14** (decisions-2026-10-14.md #9; open decision 7), size S: `scripts/tui/scenarios/scroll-view.json:22` waits for its final text, not `wait_stable: 1.0`. Drop `mode-cycle` (no scenario exists) and `print-tool-bash` (only a replay fixture) from the flaky list. Quarantine nothing.
 - **T0.4 and T0.5:** retired 2026-10-10. `review_bundle.py` and the `tui-review` skill are removed. Screen goldens are a pre-release check of about 10 key screens, not per change.
 - **T0.6:** parity is retired. The done bar is L1 plus `goldens.py check all`. `ledger.py` is read-only. Open items:
-  - The CI job is staged at `archive/migration/ci/tui-parity.yml`. The user must copy it into `.github/workflows/`, because the token cannot push workflows.
-  - The guards CI job (naming check and `packages.py --check`) is staged at `archive/migration/ci/guards.patch`. The user applies it locally with `git apply archive/migration/ci/guards.patch`, because the session token can't push workflow files.
+  - The TUI parity workflow (`tui-parity.yml`) and the guards CI job (naming check and `packages.py --check`) are staged in `archive/migration/ci/step1-workflows.patch`, not in `.github/workflows/`. The user applies it with `git apply archive/migration/ci/step1-workflows.patch` and pushes, because the session token lacks workflow scope.
   - Done 2026-10-10: the fixture fetch is removed. `scripts/ci/fetch_hoocode_fixtures.sh` is deleted, and SessionStart fetches nothing for the TS pin.
 - **Replay fixtures** (`hoocode-0.5.89/`) are frozen. `replay.json` moved to `crates/hoocode-code-main/tests/fixtures/` on 2026-10-10. No re-recording path remains.
 

@@ -9,7 +9,7 @@
 #   - the migrate crate: the one-time merge that reads the old ~/.cortexcode and
 #     <repo>/.cortexcode folders (naming-and-paths.md §3)
 #
-# Status: wired into CI as the `guards` job in .github/workflows/ci.yml. Run it by hand too:
+# Status: CI job `guards` is staged in archive/migration/ci/step1-workflows.patch (not yet applied). Run it by hand too:
 # scripts/ci/no_cortex.sh
 set -euo pipefail
 

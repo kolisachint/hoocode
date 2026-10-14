@@ -62,9 +62,11 @@ stop the same bug classes coming back.
    - `tui-selectors` scoped-models hint: find the cause, then fix.
    - Add a macOS test job to `ci.yml`. `binaries.yml` already uses `macos-latest`
      runners for release builds, but no tests run there.
-   - **Status (2026-10-14): done in CI; the first macOS PR run is the check.** The `test-macos`
-     job runs on pull requests and pushes (decision 15 in [decisions-2026-10-14.md](decisions-2026-10-14.md)).
-     Its patch is `archive/migration/ci/applied/macos-tests.patch`. The fixes below are on the branch.
+   - **Status (2026-10-14): job applied; PR run staged.** The `test-macos` job is in `ci.yml`
+     (patch `archive/migration/ci/applied/macos-tests.patch`). Its run on pull requests (the removed
+     `if:` line) is staged in `archive/migration/ci/step1-workflows.patch`, which the user applies
+     and pushes, because the session token cannot change workflows (decision 15 in
+     [decisions-2026-10-14.md](decisions-2026-10-14.md)). Until then the job skips PRs. The fixes below are on the branch.
      Not run on macOS in this session (Linux only here).
      Fixed: replay masks both spellings of each temp path (`/private`), `code-tool-api`
      compares names with `same_file_name` (NFC both sides), the `option+a` tip expects
