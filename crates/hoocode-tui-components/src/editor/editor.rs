@@ -567,7 +567,7 @@ impl Editor {
     fn normalize_text(text: &str) -> String {
         text.replace("\r\n", "\n")
             .replace('\r', "\n")
-            .replace('\t', "    ")
+            .replace('\t', &" ".repeat(hoocode_tui_util::EDITOR_TAB_WIDTH))
     }
 
     fn insert_text_at_cursor_internal(&mut self, text: &str) {

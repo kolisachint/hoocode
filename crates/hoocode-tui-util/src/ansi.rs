@@ -3,6 +3,8 @@
 //! Ported from TypeScript `@kolisachint/hoocode-tui` → `utils.ts`
 //! (`extractAnsiCode`, `AnsiCodeTracker`, OSC-8 hyperlink helpers).
 
+use unicode_segmentation::UnicodeSegmentation;
+
 /// Find the ANSI escape sequence starting at byte offset `pos`, if any.
 /// Recognizes CSI (`ESC [ ... <final byte>`), OSC (`ESC ] ... BEL` or `ESC ] ... ESC \`),
 /// and APC (`ESC _ ... BEL` or `ESC _ ... ESC \`) sequences.
@@ -41,6 +43,54 @@ pub fn extract_ansi_code(s: &str, pos: usize) -> Option<(&str, usize)> {
             None
         }
         _ => None,
+    }
+}
+
+/// One run of a string as split by [`ansi_runs`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AnsiRun<'a> {
+    /// A sequence [`extract_ansi_code`] recognises, verbatim.
+    Ansi(&'a str),
+    /// The text between sequences. A lone ESC or an unterminated sequence is text.
+    Text(&'a str),
+}
+
+/// Splits `s` into the [`AnsiRun::Ansi`] sequences and the maximal
+/// [`AnsiRun::Text`] runs between them, in order. Joining the runs gives `s`
+/// back. Every scan of a line for escapes goes through this, so CSI, OSC (BEL
+/// or ST) and APC are skipped the same way everywhere.
+pub(crate) fn ansi_runs(s: &str) -> AnsiRuns<'_> {
+    AnsiRuns { s, pos: 0 }
+}
+
+pub(crate) struct AnsiRuns<'a> {
+    s: &'a str,
+    pos: usize,
+}
+
+impl<'a> Iterator for AnsiRuns<'a> {
+    type Item = AnsiRun<'a>;
+
+    fn next(&mut self) -> Option<AnsiRun<'a>> {
+        let s = self.s;
+        let start = self.pos;
+        if start >= s.len() {
+            return None;
+        }
+        if let Some((code, len)) = extract_ansi_code(s, start) {
+            self.pos = start + len;
+            return Some(AnsiRun::Ansi(code));
+        }
+        // The byte at `start` is text. The run ends at the next ESC that starts
+        // a sequence, or at the end. Both ends are char boundaries because ESC
+        // is ASCII.
+        let bytes = s.as_bytes();
+        let mut end = start + 1;
+        while end < bytes.len() && !(bytes[end] == 0x1b && extract_ansi_code(s, end).is_some()) {
+            end += 1;
+        }
+        self.pos = end;
+        Some(AnsiRun::Text(crate::text_slice::range(s, start, end)))
     }
 }
 
@@ -301,36 +351,16 @@ impl AnsiCodeTracker {
 
 /// Feed every ANSI code found in `text` into `tracker`.
 pub fn update_tracker_from_text(text: &str, tracker: &mut AnsiCodeTracker) {
-    let mut i = 0;
-    while i < text.len() {
-        if let Some((code, len)) = extract_ansi_code(text, i) {
+    for run in ansi_runs(text) {
+        if let AnsiRun::Ansi(code) = run {
             tracker.process(code);
-            i += len;
-        } else {
-            i += char_len_at(text, i);
         }
     }
-}
-
-fn char_len_at(s: &str, byte_idx: usize) -> usize {
-    crate::text_slice::suffix_from(s, byte_idx)
-        .chars()
-        .next()
-        .map(|c| c.len_utf8())
-        .unwrap_or(1)
 }
 
 // ---------------------------------------------------------------------------
 // Link lookup for mouse clicks (`hyperlinkAt`, `bareUrlAt`)
 // ---------------------------------------------------------------------------
-
-/// The next grapheme of `rest` (`segmenter.segment(rest)` first segment).
-fn first_grapheme(rest: &str) -> &str {
-    use unicode_segmentation::UnicodeSegmentation;
-    rest.graphemes(true)
-        .next()
-        .unwrap_or(crate::text_slice::prefix(rest, char_len_at(rest, 0)))
-}
 
 /// The URL of the OSC 8 hyperlink covering `column` (0-based display cells,
 /// the way a mouse report counts them), if there is one.
@@ -345,24 +375,33 @@ pub fn hyperlink_at(line: &str, column: i64) -> Option<String> {
     let column = column as usize;
     let mut active: Option<String> = None;
     let mut col = 0;
-    let mut i = 0;
-    while i < line.len() {
-        if let Some((code, len)) = extract_ansi_code(line, i) {
-            if let Some(hyperlink) = parse_osc8_hyperlink(code) {
-                active = hyperlink.map(|(_, url, _)| url);
+    for run in ansi_runs(line) {
+        match run {
+            AnsiRun::Ansi(code) => {
+                if let Some(hyperlink) = parse_osc8_hyperlink(code) {
+                    active = hyperlink.map(|(_, url, _)| url);
+                }
             }
-            i += len;
-            continue;
+            AnsiRun::Text(text) => {
+                for grapheme in text.graphemes(true) {
+                    let width = crate::width::grapheme_width(grapheme);
+                    if column < col + width {
+                        return active;
+                    }
+                    col += width;
+                }
+            }
         }
-        let text = first_grapheme(crate::text_slice::suffix_from(line, i));
-        let width = crate::width::grapheme_width(text);
-        if column < col + width {
-            return active;
-        }
-        col += width;
-        i += text.len();
     }
     None
+}
+
+fn char_len_at(s: &str, byte_idx: usize) -> usize {
+    crate::text_slice::suffix_from(s, byte_idx)
+        .chars()
+        .next()
+        .map(|c| c.len_utf8())
+        .unwrap_or(1)
 }
 
 /// Characters a bare URL cannot contain: `[\s<>"'`\x00-\x1f]`.
@@ -442,17 +481,15 @@ pub fn bare_url_at(line: &str, column: i64) -> Option<String> {
     let mut text = String::new();
     let mut cell_of: Vec<usize> = Vec::new();
     let mut col = 0;
-    let mut i = 0;
-    while i < line.len() {
-        if let Some((_, len)) = extract_ansi_code(line, i) {
-            i += len;
+    for run in ansi_runs(line) {
+        let AnsiRun::Text(visible) = run else {
             continue;
+        };
+        for grapheme in visible.graphemes(true) {
+            cell_of.extend(std::iter::repeat_n(col, grapheme.len()));
+            text.push_str(grapheme);
+            col += crate::width::grapheme_width(grapheme);
         }
-        let grapheme = first_grapheme(crate::text_slice::suffix_from(line, i));
-        cell_of.extend(std::iter::repeat_n(col, grapheme.len()));
-        text.push_str(grapheme);
-        col += crate::width::grapheme_width(grapheme);
-        i += grapheme.len();
     }
     for (start_index, matched) in bare_url_matches(&text) {
         let url = trim_url_tail(matched);
@@ -501,6 +538,84 @@ mod tests {
         let (code, len) = extract_ansi_code(s, 0).unwrap();
         assert_eq!(code, "\x1b]8;;https://x\x07");
         assert_eq!(len, code.len());
+    }
+
+    fn runs(s: &str) -> Vec<AnsiRun<'_>> {
+        ansi_runs(s).collect()
+    }
+
+    #[test]
+    fn ansi_runs_csi_between_text() {
+        assert_eq!(
+            runs("ab\x1b[31mcd\x1b[0m"),
+            [
+                AnsiRun::Text("ab"),
+                AnsiRun::Ansi("\x1b[31m"),
+                AnsiRun::Text("cd"),
+                AnsiRun::Ansi("\x1b[0m"),
+            ]
+        );
+    }
+
+    #[test]
+    fn ansi_runs_osc_bel_and_st() {
+        assert_eq!(
+            runs("\x1b]8;;u\x07x\x1b]8;;\x1b\\"),
+            [
+                AnsiRun::Ansi("\x1b]8;;u\x07"),
+                AnsiRun::Text("x"),
+                AnsiRun::Ansi("\x1b]8;;\x1b\\"),
+            ]
+        );
+    }
+
+    #[test]
+    fn ansi_runs_unterminated_sequences_are_text() {
+        // No final byte, and no BEL or ST: the ESC stays in the text run.
+        assert_eq!(runs("a\x1b[31"), [AnsiRun::Text("a\x1b[31")]);
+        assert_eq!(runs("a\x1b]8;;http"), [AnsiRun::Text("a\x1b]8;;http")]);
+    }
+
+    #[test]
+    fn ansi_runs_lone_esc_is_text() {
+        assert_eq!(runs("\x1bx"), [AnsiRun::Text("\x1bx")]);
+        assert_eq!(runs("a\x1b"), [AnsiRun::Text("a\x1b")]);
+        assert_eq!(
+            runs("\x1b\x1b[1m"),
+            [AnsiRun::Text("\x1b"), AnsiRun::Ansi("\x1b[1m")]
+        );
+    }
+
+    #[test]
+    fn ansi_runs_utf8_text_stays_whole() {
+        assert_eq!(
+            runs("é界\x1b[1m🙂"),
+            [
+                AnsiRun::Text("é界"),
+                AnsiRun::Ansi("\x1b[1m"),
+                AnsiRun::Text("🙂"),
+            ]
+        );
+        // An unrecognised ESC in front of a multi-byte character.
+        assert_eq!(runs("\x1bé"), [AnsiRun::Text("\x1bé")]);
+    }
+
+    #[test]
+    fn ansi_runs_join_back_to_input() {
+        for s in [
+            "",
+            "plain",
+            "\x1b[1mx\x1b[0m",
+            "\x1b[",
+            "é\x1b_apc\x1b\\\x1b]x",
+        ] {
+            let joined: String = ansi_runs(s)
+                .map(|run| match run {
+                    AnsiRun::Ansi(t) | AnsiRun::Text(t) => t,
+                })
+                .collect();
+            assert_eq!(joined, s);
+        }
     }
 
     #[test]

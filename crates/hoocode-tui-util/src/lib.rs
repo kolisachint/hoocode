@@ -16,4 +16,4 @@ pub use text::{
     is_whitespace_char, normalize_terminal_output, slice_by_column, slice_with_width,
     strip_vt_control_characters, truncate_to_width, wrap_text_with_ansi,
 };
-pub use width::visible_width;
+pub use width::{visible_width, EDITOR_TAB_WIDTH, RENDER_TAB_WIDTH};

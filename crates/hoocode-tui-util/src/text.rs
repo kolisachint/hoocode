@@ -7,7 +7,7 @@
 
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::ansi::{extract_ansi_code, update_tracker_from_text, AnsiCodeTracker};
+use crate::ansi::{ansi_runs, update_tracker_from_text, AnsiCodeTracker, AnsiRun};
 use crate::width::{grapheme_width, visible_width};
 
 // ---------------------------------------------------------------------------
@@ -52,15 +52,10 @@ pub fn strip_vt_control_characters(s: &str) -> String {
         return s.to_string();
     }
     let mut out = String::with_capacity(s.len());
-    let mut i = 0;
-    while i < s.len() {
-        if let Some((_, len)) = extract_ansi_code(s, i) {
-            i += len;
-            continue;
+    for run in ansi_runs(s) {
+        if let AnsiRun::Text(visible) = run {
+            out.push_str(visible);
         }
-        let ch = crate::text_slice::suffix_from(s, i).chars().next().unwrap();
-        out.push(ch);
-        i += ch.len_utf8();
     }
     out
 }
@@ -125,7 +120,9 @@ fn repair_nested_bg_resets(line: &str, opener: &str) -> String {
     if opener.is_empty() {
         return line.to_string();
     }
-    // `/\x1b\[([0-9;]*)m/g`, scanning the original line only.
+    // `/\x1b\[([0-9;]*)m/g`, scanning the original line only. This does not use
+    // `ansi_runs`: it matches SGR-shaped text anywhere, including inside an OSC
+    // payload or after a CSI that is not SGR, which the shared scanner skips.
     let mut out = String::with_capacity(line.len());
     let mut rest = line;
     while let Some(pos) = rest.find("\x1b[") {
@@ -164,35 +161,30 @@ fn split_into_tokens_with_ansi(text: &str) -> Vec<String> {
     let mut current = String::new();
     let mut pending_ansi = String::new();
     let mut in_whitespace = false;
-    let mut i = 0;
 
-    while i < text.len() {
-        if let Some((code, len)) = extract_ansi_code(text, i) {
-            pending_ansi.push_str(code);
-            i += len;
-            continue;
+    for run in ansi_runs(text) {
+        let visible = match run {
+            AnsiRun::Ansi(code) => {
+                pending_ansi.push_str(code);
+                continue;
+            }
+            AnsiRun::Text(visible) => visible,
+        };
+        for ch in visible.chars() {
+            let char_is_space = ch == ' ';
+
+            if char_is_space != in_whitespace && !current.is_empty() {
+                tokens.push(std::mem::take(&mut current));
+            }
+
+            if !pending_ansi.is_empty() {
+                current.push_str(&pending_ansi);
+                pending_ansi.clear();
+            }
+
+            in_whitespace = char_is_space;
+            current.push(ch);
         }
-
-        let ch_len = crate::text_slice::suffix_from(text, i)
-            .chars()
-            .next()
-            .map(|c| c.len_utf8())
-            .unwrap_or(1);
-        let ch = crate::text_slice::range(text, i, i + ch_len);
-        let char_is_space = ch == " ";
-
-        if char_is_space != in_whitespace && !current.is_empty() {
-            tokens.push(std::mem::take(&mut current));
-        }
-
-        if !pending_ansi.is_empty() {
-            current.push_str(&pending_ansi);
-            pending_ansi.clear();
-        }
-
-        in_whitespace = char_is_space;
-        current.push_str(ch);
-        i += ch_len;
     }
 
     if !pending_ansi.is_empty() {
@@ -212,20 +204,12 @@ fn break_long_word(word: &str, width: usize, tracker: &mut AnsiCodeTracker) -> V
     }
 
     let mut segments = Vec::new();
-    let mut i = 0;
-    while i < word.len() {
-        if let Some((code, len)) = extract_ansi_code(word, i) {
-            segments.push(Seg::Ansi(code));
-            i += len;
-        } else {
-            let mut end = i;
-            while end < word.len() && extract_ansi_code(word, end).is_none() {
-                end += 1;
+    for run in ansi_runs(word) {
+        match run {
+            AnsiRun::Ansi(code) => segments.push(Seg::Ansi(code)),
+            AnsiRun::Text(visible) => {
+                segments.extend(visible.graphemes(true).map(Seg::Grapheme));
             }
-            for g in crate::text_slice::range(word, i, end).graphemes(true) {
-                segments.push(Seg::Grapheme(g));
-            }
-            i = end;
         }
     }
 
@@ -381,30 +365,20 @@ enum Piece<'a> {
 
 fn pieces(text: &str) -> Vec<Piece<'_>> {
     let mut out = Vec::new();
-    let mut i = 0;
-    while i < text.len() {
-        if let Some((code, len)) = crate::ansi::extract_ansi_code(text, i) {
-            out.push(Piece::Ansi(code));
-            i += len;
-            continue;
+    for run in ansi_runs(text) {
+        match run {
+            AnsiRun::Ansi(code) => out.push(Piece::Ansi(code)),
+            AnsiRun::Text(visible) => {
+                for (k, part) in visible.split('\t').enumerate() {
+                    if k > 0 {
+                        out.push(Piece::Tab);
+                    }
+                    if !part.is_empty() {
+                        out.push(Piece::Run(part));
+                    }
+                }
+            }
         }
-        if text.as_bytes()[i] == b'\t' {
-            out.push(Piece::Tab);
-            i += 1;
-            continue;
-        }
-        let mut end = i;
-        while end < text.len()
-            && text.as_bytes()[end] != b'\t'
-            && crate::ansi::extract_ansi_code(text, end).is_none()
-        {
-            end += crate::text_slice::suffix_from(text, end)
-                .chars()
-                .next()
-                .map_or(1, char::len_utf8);
-        }
-        out.push(Piece::Run(crate::text_slice::range(text, i, end)));
-        i = end;
     }
     out
 }
@@ -589,45 +563,39 @@ pub fn slice_with_width(
     let mut result = String::new();
     let mut result_width = 0usize;
     let mut current_col = 0usize;
-    let mut i = 0;
     let mut pending_ansi = String::new();
 
-    while i < line.len() {
-        if let Some((code, len)) = extract_ansi_code(line, i) {
-            if current_col >= start_col && current_col < end_col {
-                result.push_str(code);
-            } else if current_col < start_col {
-                pending_ansi.push_str(code);
-            }
-            i += len;
-            continue;
-        }
-
-        let mut text_end = i;
-        while text_end < line.len() && extract_ansi_code(line, text_end).is_none() {
-            text_end += 1;
-        }
-
-        for g in crate::text_slice::range(line, i, text_end).graphemes(true) {
-            let w = grapheme_width(g);
-            let in_range = current_col >= start_col && current_col < end_col;
-            let fits = !strict || current_col + w <= end_col;
-            if in_range && fits {
-                if !pending_ansi.is_empty() {
-                    result.push_str(&pending_ansi);
-                    pending_ansi.clear();
+    for run in ansi_runs(line) {
+        match run {
+            AnsiRun::Ansi(code) => {
+                if current_col >= start_col && current_col < end_col {
+                    result.push_str(code);
+                } else if current_col < start_col {
+                    pending_ansi.push_str(code);
                 }
-                result.push_str(g);
-                result_width += w;
             }
-            current_col += w;
-            if current_col >= end_col {
-                break;
+            AnsiRun::Text(visible) => {
+                for g in visible.graphemes(true) {
+                    let w = grapheme_width(g);
+                    let in_range = current_col >= start_col && current_col < end_col;
+                    let fits = !strict || current_col + w <= end_col;
+                    if in_range && fits {
+                        if !pending_ansi.is_empty() {
+                            result.push_str(&pending_ansi);
+                            pending_ansi.clear();
+                        }
+                        result.push_str(g);
+                        result_width += w;
+                    }
+                    current_col += w;
+                    if current_col >= end_col {
+                        break;
+                    }
+                }
+                if current_col >= end_col {
+                    break;
+                }
             }
-        }
-        i = text_end;
-        if current_col >= end_col {
-            break;
         }
     }
 
