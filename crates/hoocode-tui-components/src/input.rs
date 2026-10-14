@@ -484,7 +484,7 @@ impl Input {
         let clean_text = pasted_text
             .replace("\r\n", "")
             .replace(['\r', '\n'], "")
-            .replace('\t', "    ");
+            .replace('\t', &" ".repeat(hoocode_tui_util::EDITOR_TAB_WIDTH));
 
         self.value.insert_str(self.cursor, &clean_text);
         self.cursor += clean_text.len();

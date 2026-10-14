@@ -102,7 +102,12 @@ impl Component for Markdown {
         }
 
         if self.cached_tokens.as_ref().map(|(t, _)| t) != Some(&self.text) {
-            let tokens = lexer::lex(&self.text.replace('\t', "   ")).tokens;
+            let tokens = lexer::lex(
+                &self
+                    .text
+                    .replace('\t', &" ".repeat(hoocode_tui_util::RENDER_TAB_WIDTH)),
+            )
+            .tokens;
             self.cached_tokens = Some((self.text.clone(), tokens));
         }
         let tokens = &self.cached_tokens.as_ref().unwrap().1;

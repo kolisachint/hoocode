@@ -14,7 +14,7 @@
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthChar;
 
-use crate::ansi::extract_ansi_code;
+use crate::text::strip_vt_control_characters;
 
 fn could_be_emoji(segment: &str) -> bool {
     let Some(cp) = segment.chars().next().map(|c| c as u32) else {
@@ -107,9 +107,17 @@ fn is_printable_ascii(s: &str) -> bool {
     s.bytes().all(|b| (0x20..=0x7e).contains(&b))
 }
 
+/// Columns a tab takes when rendered. The transcript, markdown and text
+/// components expand tabs to this many spaces, and so does `visible_width`.
+pub const RENDER_TAB_WIDTH: usize = 3;
+
+/// Columns a tab becomes in the editor and the single-line input on paste.
+/// This is deliberately not [`RENDER_TAB_WIDTH`]: the two surfaces differ.
+pub const EDITOR_TAB_WIDTH: usize = 4;
+
 /// Calculate the visible width of a string in terminal columns: ANSI escape
-/// codes and tabs (expanded to 3 columns) don't count, wide/emoji graphemes
-/// count as 2.
+/// codes and tabs (expanded to [`RENDER_TAB_WIDTH`] columns) don't count,
+/// wide/emoji graphemes count as 2.
 pub fn visible_width(s: &str) -> usize {
     if s.is_empty() {
         return 0;
@@ -118,29 +126,14 @@ pub fn visible_width(s: &str) -> usize {
         return s.len();
     }
 
-    // Tabs are 3 columns; the copy is only made when there is a tab to expand.
+    // The copy is only made when there is a tab to expand.
     let mut clean = if s.contains('\t') {
-        std::borrow::Cow::Owned(s.replace('\t', "   "))
+        std::borrow::Cow::Owned(s.replace('\t', &" ".repeat(RENDER_TAB_WIDTH)))
     } else {
         std::borrow::Cow::Borrowed(s)
     };
     if clean.contains('\x1b') {
-        let mut stripped = String::with_capacity(clean.len());
-        let mut i = 0;
-        while i < clean.len() {
-            if let Some((_, len)) = extract_ansi_code(&clean, i) {
-                i += len;
-            } else {
-                let ch_len = crate::text_slice::suffix_from(&clean, i)
-                    .chars()
-                    .next()
-                    .map(|c| c.len_utf8())
-                    .unwrap_or(1);
-                stripped.push_str(crate::text_slice::range(&clean, i, i + ch_len));
-                i += ch_len;
-            }
-        }
-        clean = std::borrow::Cow::Owned(stripped);
+        clean = std::borrow::Cow::Owned(strip_vt_control_characters(&clean));
     }
 
     clean.graphemes(true).map(grapheme_width).sum()
