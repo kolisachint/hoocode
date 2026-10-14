@@ -4,8 +4,10 @@
 //! that is running; chunks wait while none is. The reader also owns the ESC
 //! timer: an incomplete sequence (a lone ESC above all) is flushed once its
 //! deadline passes with no more input. On Unix the reader waits in `poll(2)`
-//! with that deadline as its timeout, so no thread sleeps for it. Elsewhere a
-//! short-lived timer thread does the same.
+//! with that deadline as its timeout, so no thread sleeps for it. A self-pipe
+//! wakes that wait when a subscriber arrives, so the reader picks up the
+//! deadline of a replayed ESC. Elsewhere a short-lived timer thread does the
+//! same.
 //!
 //! Every chunk goes through [`interrupt::observe`] before the terminal sees it,
 //! so Ctrl+C aborts even when the UI loop is busy.
@@ -198,6 +200,15 @@ static READER: Once = Once::new();
 
 /// Makes `feed` the receiver of stdin, replaying what arrived while none was.
 pub(crate) fn subscribe(feed: Arc<Mutex<Feed>>) {
+    attach(feed);
+    READER.call_once(|| {
+        let _ = spawn_named_thread("hoocode-input", reader);
+    });
+}
+
+/// Installs `feed` as the receiver, replays the held chunks into it, and wakes
+/// the reader so that its wait uses the ESC deadline the replay may have set.
+fn attach(feed: Arc<Mutex<Feed>>) {
     let mut hub = lock(&HUB);
     let now = Instant::now();
     let pending = std::mem::take(&mut hub.pending);
@@ -209,9 +220,8 @@ pub(crate) fn subscribe(feed: Arc<Mutex<Feed>>) {
     }
     hub.feed = Some(feed);
     drop(hub);
-    READER.call_once(|| {
-        let _ = spawn_named_thread("hoocode-input", reader);
-    });
+    #[cfg(unix)]
+    wake::wake();
 }
 
 /// Stops delivering stdin; input waits for the next subscriber.
@@ -223,14 +233,24 @@ fn current_feed() -> Option<Arc<Mutex<Feed>>> {
     lock(&HUB).feed.clone()
 }
 
-/// The reader loop: wait for input or the ESC deadline, then deliver.
+/// The reader thread: reads stdin for the process.
 fn reader() {
+    reader_loop(STDIN_FD);
+}
+
+#[cfg(unix)]
+const STDIN_FD: libc::c_int = libc::STDIN_FILENO;
+#[cfg(not(unix))]
+const STDIN_FD: i32 = 0;
+
+/// The reader loop: wait for input, the ESC deadline or a wake-up, then deliver.
+fn reader_loop(input: i32) {
     let mut chunk = [0u8; 4096];
     loop {
         let deadline = current_feed().and_then(|feed| lock(&feed).flush_at);
-        match wait_readable(deadline) {
+        match wait_readable(input, deadline) {
             Readiness::Readable => {
-                let n = match read_stdin(&mut chunk) {
+                let n = match read_input(input, &mut chunk) {
                     Ok(0) => break,
                     Ok(n) => n,
                     Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
@@ -254,7 +274,7 @@ fn reader() {
                     lock(&feed).tick(Instant::now());
                 }
             }
-            Readiness::Interrupted => {}
+            Readiness::Woken | Readiness::Interrupted => {}
             Readiness::Failed => break,
         }
     }
@@ -263,13 +283,15 @@ fn reader() {
 enum Readiness {
     Readable,
     TimedOut,
+    /// The self-pipe was written: recompute the deadline and wait again.
+    Woken,
     Interrupted,
     Failed,
 }
 
-/// Waits until stdin is readable or `deadline` passes.
+/// Waits until `input` is readable, the self-pipe is written, or `deadline` passes.
 #[cfg(unix)]
-fn wait_readable(deadline: Option<Instant>) -> Readiness {
+fn wait_readable(input: libc::c_int, deadline: Option<Instant>) -> Readiness {
     let timeout_ms = match deadline {
         None => -1,
         Some(due) => {
@@ -278,14 +300,27 @@ fn wait_readable(deadline: Option<Instant>) -> Readiness {
             libc::c_int::try_from(wait.as_micros().div_ceil(1000)).unwrap_or(libc::c_int::MAX)
         }
     };
-    let mut fds = libc::pollfd {
-        fd: libc::STDIN_FILENO,
-        events: libc::POLLIN,
-        revents: 0,
-    };
-    // SAFETY: one valid pollfd, and the count matches.
-    let ready = unsafe { libc::poll(&mut fds, 1, timeout_ms) };
+    let (wake_fd, _) = wake::fds();
+    let mut fds = [
+        libc::pollfd {
+            fd: input,
+            events: libc::POLLIN,
+            revents: 0,
+        },
+        // A negative fd is ignored by poll: no self-pipe, no wake-ups.
+        libc::pollfd {
+            fd: wake_fd,
+            events: libc::POLLIN,
+            revents: 0,
+        },
+    ];
+    // SAFETY: `fds` holds two valid pollfd structs, and the count matches.
+    let ready = unsafe { libc::poll(fds.as_mut_ptr(), 2, timeout_ms) };
     match ready {
+        r if r > 0 && fds[1].revents != 0 => {
+            wake::drain();
+            Readiness::Woken
+        }
         r if r > 0 => Readiness::Readable,
         0 => Readiness::TimedOut,
         _ => match io::Error::last_os_error().kind() {
@@ -298,22 +333,81 @@ fn wait_readable(deadline: Option<Instant>) -> Readiness {
 /// Elsewhere the read itself blocks; the ESC timer is a thread (see
 /// [`arm_flush_timer`]), so there is nothing to wait for here.
 #[cfg(not(unix))]
-fn wait_readable(_deadline: Option<Instant>) -> Readiness {
+fn wait_readable(_input: i32, _deadline: Option<Instant>) -> Readiness {
     Readiness::Readable
 }
 
 /// Reads stdin without std's buffer, so `poll` sees exactly what is unread.
 #[cfg(unix)]
-fn read_stdin(buf: &mut [u8]) -> io::Result<usize> {
+fn read_input(fd: libc::c_int, buf: &mut [u8]) -> io::Result<usize> {
     // SAFETY: `buf` is valid for `buf.len()` bytes.
-    let n = unsafe { libc::read(libc::STDIN_FILENO, buf.as_mut_ptr().cast(), buf.len()) };
+    let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
     usize::try_from(n).map_err(|_| io::Error::last_os_error())
 }
 
 #[cfg(not(unix))]
-fn read_stdin(buf: &mut [u8]) -> io::Result<usize> {
+fn read_input(_fd: i32, buf: &mut [u8]) -> io::Result<usize> {
     use std::io::Read;
     io::stdin().read(buf)
+}
+
+/// The self-pipe that wakes the Unix reader's `poll` (see [`attach`]).
+#[cfg(unix)]
+mod wake {
+    use std::sync::OnceLock;
+
+    use libc::c_int;
+
+    /// (read end, write end), both non-blocking and close-on-exec. `(-1, -1)`
+    /// when the pipe cannot be made: wake-ups are then lost, as before.
+    static PIPE: OnceLock<(c_int, c_int)> = OnceLock::new();
+
+    fn pipe() -> (c_int, c_int) {
+        *PIPE.get_or_init(|| {
+            let mut fds: [c_int; 2] = [-1; 2];
+            // SAFETY: `fds` has room for the two descriptors pipe(2) writes.
+            if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+                return (-1, -1);
+            }
+            for fd in fds {
+                // SAFETY: `fd` is a descriptor this function just opened.
+                unsafe {
+                    let flags = libc::fcntl(fd, libc::F_GETFL);
+                    libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+                    libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
+                }
+            }
+            (fds[0], fds[1])
+        })
+    }
+
+    /// (read end, write end) of the self-pipe.
+    pub(super) fn fds() -> (c_int, c_int) {
+        pipe()
+    }
+
+    /// Wakes a reader that is waiting in `poll`.
+    pub(super) fn wake() {
+        let (_, write) = pipe();
+        let byte = 1u8;
+        // SAFETY: one byte from a valid local. A full pipe (EAGAIN) already holds a wake-up.
+        unsafe {
+            libc::write(write, (&byte as *const u8).cast(), 1);
+        }
+    }
+
+    /// Empties the self-pipe so the next wait does not return at once.
+    pub(super) fn drain() {
+        let (read, _) = pipe();
+        let mut buf = [0u8; 64];
+        loop {
+            // SAFETY: `buf` is valid for `buf.len()` bytes.
+            let n = unsafe { libc::read(read, buf.as_mut_ptr().cast(), buf.len()) };
+            if n <= 0 {
+                break;
+            }
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -461,5 +555,69 @@ mod tests {
     #[test]
     fn lone_lead_byte_then_ascii_is_meta_then_key() {
         assert_eq!(feed_reads(&[&[0xE9], b"x"]), "\x1bix");
+    }
+}
+
+/// The lone ESC after a resubscribe (X17): the reader must wake and flush it.
+#[cfg(all(test, unix))]
+mod wake_tests {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use super::*;
+
+    fn pipe_pair() -> (libc::c_int, libc::c_int) {
+        let mut fds: [libc::c_int; 2] = [-1; 2];
+        // SAFETY: `fds` has room for the two descriptors pipe(2) writes.
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        (fds[0], fds[1])
+    }
+
+    /// A key read while no feed was subscribed waits in the hub. The reader
+    /// is already blocked in `poll` with no deadline, so only the self-pipe
+    /// can make it re-read the ESC deadline the replay arms.
+    #[test]
+    fn replayed_lone_escape_flushes_at_its_timeout_and_is_not_alt_a() {
+        let (input_read, input_write) = pipe_pair();
+        let (tx, rx) = mpsc::channel::<String>();
+        let feed = Feed::new(
+            Arc::new(AtomicBool::new(true)),
+            Arc::new(Mutex::new(Instant::now())),
+            Writer {
+                handle: None,
+                log: None,
+            },
+            Box::new(move |seq: &str| {
+                let _ = tx.send(seq.to_owned());
+            }),
+        );
+        spawn_named_thread("hoocode-input-test", move || reader_loop(input_read))
+            .expect("reader thread");
+        // Let the reader reach its poll with no deadline.
+        std::thread::sleep(Duration::from_millis(50));
+
+        lock(&HUB).pending.push(b"\x1b".to_vec());
+        attach(Arc::new(Mutex::new(feed)));
+
+        let wait = Duration::from_secs(5);
+        let first = rx
+            .recv_timeout(wait)
+            .expect("the replayed ESC is flushed without more input");
+        assert_eq!(first, "\x1b");
+
+        // A key typed after the flush is its own input, not Alt+a.
+        let key = b"a";
+        // SAFETY: one byte from a valid local, to the pipe this test owns.
+        unsafe {
+            libc::write(input_write, key.as_ptr().cast(), 1);
+        }
+        assert_eq!(rx.recv_timeout(wait).expect("the key is delivered"), "a");
+
+        // Closing the input ends the reader thread; detach the test feed.
+        // SAFETY: both descriptors were opened by pipe_pair and are closed once.
+        unsafe {
+            libc::close(input_write);
+        }
+        unsubscribe();
     }
 }
