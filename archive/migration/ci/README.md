@@ -1,5 +1,8 @@
 # Pending CI changes (apply manually)
 
+Applied (2026-10-14) and moved to `applied/`: macos-tests, fuzz, guards, tui-parity,
+delete-crates-doc-step, rename-to-hoocode. The commands below still name the old paths.
+
 The session's GitHub token can't modify `.github/workflows/`, so these changes are
 staged here. To apply them:
 

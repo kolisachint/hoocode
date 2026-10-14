@@ -1,0 +1,33 @@
+name: TUI goldens (level 2)
+
+# Runs the hoocode-only screen goldens (scripts/tui/goldens.py check): the real hoocode binary
+# in tmux against the scripted mock LLM, diffed with tests/golden/tui/. The hoocode-ts parity
+# gate is retired (TUI plan T0.6). Manual and nightly; the same check is the local done bar.
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Scenario name or 'all'"
+        default: all
+  schedule:
+    - cron: "17 3 * * *"
+
+jobs:
+  goldens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: Build hoocode
+        run: cargo build -p hoocode-code-main --bin hoocode
+      - name: Check screen goldens
+        run: python3 scripts/tui/goldens.py check "${{ inputs.scenario || 'all' }}"
+      - name: Upload screens on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-goldens
+          path: target/tui-goldens/
