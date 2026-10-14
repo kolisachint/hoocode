@@ -89,6 +89,16 @@ pub trait Terminal: Send {
     fn set_alternate_screen(&mut self, _active: bool) {}
 }
 
+/// The escape that moves the cursor `lines` rows: down when positive, up when
+/// negative. Empty when `lines` is 0, so callers can append it unconditionally.
+pub fn move_rows(lines: i64) -> String {
+    match lines.cmp(&0) {
+        std::cmp::Ordering::Greater => format!("\x1b[{lines}B"),
+        std::cmp::Ordering::Less => format!("\x1b[{}A", -lines),
+        std::cmp::Ordering::Equal => String::new(),
+    }
+}
+
 /// Resolves terminal dimensions the same way hoocode's `columns`/`rows`
 /// getters do: measured size, then an env var override, then a default.
 fn resolve_dimension(measured: Option<u16>, env_var: Option<&str>, default: u16) -> u16 {
@@ -562,10 +572,9 @@ impl Terminal for ProcessTerminal {
     }
 
     fn move_by(&mut self, lines: i32) {
-        match lines.cmp(&0) {
-            std::cmp::Ordering::Greater => self.raw_write(&format!("\x1b[{lines}B")),
-            std::cmp::Ordering::Less => self.raw_write(&format!("\x1b[{}A", -lines)),
-            std::cmp::Ordering::Equal => {}
+        let moves = move_rows(i64::from(lines));
+        if !moves.is_empty() {
+            self.raw_write(&moves);
         }
     }
 
@@ -637,6 +646,13 @@ impl Drop for ProcessTerminal {
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
+
+    #[test]
+    fn move_rows_moves_down_up_or_not_at_all() {
+        assert_eq!(move_rows(3), "\x1b[3B");
+        assert_eq!(move_rows(-2), "\x1b[2A");
+        assert_eq!(move_rows(0), "");
+    }
 
     /// Stop must not wait out the interval: the old keepalive slept for a full
     /// second before it could see the stop. The interval here is far longer than

@@ -38,7 +38,7 @@ use hoocode_tui_images::{
     allocate_image_id, delete_kitty_image, get_capabilities, set_cell_dimensions, CellDimensions,
 };
 use hoocode_tui_keys::is_key_release;
-use hoocode_tui_terminal::{parse_mouse_report, MouseEvent, MouseEventKind, Terminal};
+use hoocode_tui_terminal::{move_rows, parse_mouse_report, MouseEvent, MouseEventKind, Terminal};
 use hoocode_tui_util::{
     bare_url_at, hyperlink_at, normalize_terminal_output, slice_by_column,
     strip_vt_control_characters, truncate_to_width, visible_width,
@@ -925,10 +925,9 @@ impl Tui {
         if !self.previous_lines.is_empty() {
             let target_row = self.previous_lines.len() as i64;
             let line_diff = target_row - self.hardware_cursor_row;
-            if line_diff > 0 {
-                self.terminal.write(&format!("\x1b[{line_diff}B"));
-            } else if line_diff < 0 {
-                self.terminal.write(&format!("\x1b[{}A", -line_diff));
+            let moves = move_rows(line_diff);
+            if !moves.is_empty() {
+                self.terminal.write(&moves);
             }
             self.terminal.write("\r\n");
         }
@@ -1462,11 +1461,7 @@ impl Tui {
                     let target_screen_row = target_row - viewport_top;
                     target_screen_row - current_screen_row
                 };
-                if line_diff > 0 {
-                    buffer.push_str(&format!("\x1b[{line_diff}B"));
-                } else if line_diff < 0 {
-                    buffer.push_str(&format!("\x1b[{}A", -line_diff));
-                }
+                buffer.push_str(&move_rows(line_diff));
                 buffer.push('\r');
                 let extra_lines = prev_line_count - new_lines.len() as i64;
                 if extra_lines > height {
@@ -1535,11 +1530,7 @@ impl Tui {
             let target_screen_row = move_target_row - viewport_top;
             target_screen_row - current_screen_row
         };
-        if line_diff > 0 {
-            buffer.push_str(&format!("\x1b[{line_diff}B"));
-        } else if line_diff < 0 {
-            buffer.push_str(&format!("\x1b[{}A", -line_diff));
-        }
+        buffer.push_str(&move_rows(line_diff));
 
         buffer.push_str(if append_start { "\r\n" } else { "\r" });
 
@@ -1642,11 +1633,7 @@ impl Tui {
         let target_col = cursor_pos.col.max(0);
         let row_delta = target_row - self.hardware_cursor_row;
         let mut buffer = String::new();
-        if row_delta > 0 {
-            buffer.push_str(&format!("\x1b[{row_delta}B"));
-        } else if row_delta < 0 {
-            buffer.push_str(&format!("\x1b[{}A", -row_delta));
-        }
+        buffer.push_str(&move_rows(row_delta));
         buffer.push_str(&format!("\x1b[{}G", target_col + 1));
         self.hardware_cursor_row = target_row;
         buffer.push_str(visibility);
