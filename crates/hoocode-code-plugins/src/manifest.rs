@@ -30,6 +30,8 @@ const AUTHOR_FIELDS: [&str; 3] = ["name", "email", "url"];
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgentPluginManifest {
     pub name: String,
+    /// The `description` field, or empty.
+    pub description: String,
     /// The `$schema` value. The MCP file must target the same version.
     pub schema: String,
     /// Unknown top-level fields and a non-object `extensions`. Reported, then ignored.
@@ -40,6 +42,8 @@ pub struct AgentPluginManifest {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClaudeManifest {
     pub name: String,
+    /// The `description` field, or empty.
+    pub description: String,
 }
 
 /// The plugin name rules (§5.5): 1 to 64 characters of `a-z`, `0-9`, `-` and `.`; alphanumeric
@@ -127,9 +131,18 @@ pub fn parse_agent_plugin_manifest(text: &str) -> Result<AgentPluginManifest, St
 
     Ok(AgentPluginManifest {
         name,
+        description: description_of(root),
         schema,
         warnings,
     })
+}
+
+/// The `description` text of a manifest object, or empty (the field is checked as a string).
+fn description_of(root: &Map<String, Value>) -> String {
+    root.get("description")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn check_author(author: &Value) -> Result<(), String> {
@@ -164,8 +177,14 @@ pub fn parse_claude_manifest(text: &str) -> Result<ClaudeManifest, String> {
         .and_then(Value::as_str)
         .ok_or_else(|| "name is required and must be a string".to_owned())?;
     validate_name(name).map_err(|e| format!("name \"{name}\" {e}"))?;
+    let description = value
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
     Ok(ClaudeManifest {
         name: name.to_owned(),
+        description,
     })
 }
 

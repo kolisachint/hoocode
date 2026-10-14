@@ -303,13 +303,21 @@ fn resource_loader(
     } else {
         (plugins.skill_entries(), plugins.agent_files())
     };
-    // Plugin skills' allowed-tools take effect only after the user approved them.
+    // Plugin skills' allowed-tools take effect only after the user approved them. The gate
+    // needs the plugin skill folders to tell a plugin skill from any other.
     let trust = hoocode_code_plugins::load_default_trust();
+    let plugin_skill_dirs: Vec<std::path::PathBuf> = plugins
+        .plugins
+        .iter()
+        .flat_map(|plugin| plugin.skill_dirs.iter().cloned())
+        .collect();
     let gate_allowed_tools: Box<
         dyn Fn(hoocode_code_resources::LoadSkillsResult) -> hoocode_code_resources::LoadSkillsResult
             + Send
             + Sync,
-    > = Box::new(move |result| hoocode_code_plugins::skills::gate_allowed_tools(result, &trust));
+    > = Box::new(move |result| {
+        hoocode_code_plugins::skills::gate_allowed_tools(result, &trust, &plugin_skill_dirs)
+    });
     let mut skill_paths = resolve_cli_paths(cwd, &args.skills);
     if !no_skills {
         let gate = hoocode_code_resources::builtin_skills::BuiltinSkillGate {

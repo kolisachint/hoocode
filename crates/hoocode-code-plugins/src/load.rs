@@ -4,11 +4,13 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use hoocode_code_mcp::{parse_document, Severity as McpSeverity, Source, TrustStore};
+use hoocode_code_mcp::{
+    parse_document, ServerDef, Severity as McpSeverity, Source, Transport, TrustStore,
+};
 
-use crate::agent_mcp::{parse_mcp, McpContext};
+use crate::agent_mcp::{parse_mcp, resolve_command, McpContext};
 use crate::manifest::{parse_agent_plugin_manifest, parse_claude_manifest};
-use crate::paths::within;
+use crate::paths::{plugin_relative, within};
 use crate::trust::{fingerprint, plugin_roots};
 use crate::{
     LoadedPlugin, PluginDiagnostic, PluginFormat, PluginScope, PluginSet, ProjectTrustPrompt,
@@ -47,7 +49,8 @@ impl<'a> LoadOptions<'a> {
 }
 
 /// Load the plugins for one session. Project plugins load only when the folder's trust matches
-/// them; the first plugin found wins a name. Nothing here starts a process.
+/// them. User plugins are read first, so a user plugin wins a name over a project plugin; within
+/// one folder the first name in sorted order wins. Nothing here starts a process.
 pub fn load_plugins(options: &LoadOptions<'_>) -> PluginSet {
     let mut set = PluginSet::default();
     let project_dir = options
@@ -88,11 +91,17 @@ pub fn load_plugins(options: &LoadOptions<'_>) -> PluginSet {
         });
     }
 
+    // The user's plugins come first, so a repository cannot replace one by name (mcp.md). A
+    // project plugin that is not trusted is not a candidate at all.
     let project_candidates = if trusted { project_roots } else { Vec::new() };
-    let candidates = project_candidates
+    let candidates = user_roots
         .into_iter()
-        .map(|root| (root, PluginScope::Project))
-        .chain(user_roots.into_iter().map(|root| (root, PluginScope::User)));
+        .map(|root| (root, PluginScope::User))
+        .chain(
+            project_candidates
+                .into_iter()
+                .map(|root| (root, PluginScope::Project)),
+        );
 
     let mut claimed: BTreeMap<String, PathBuf> = BTreeMap::new();
     for (dir, scope) in candidates {
@@ -196,16 +205,16 @@ fn load_one(
     };
 
     // The name and the MCP schema version come from the manifest; the rest of the checks follow.
-    let (name, schema, warnings) = match format {
+    let (name, description, schema, warnings) = match format {
         PluginFormat::AgentPlugins => match parse_agent_plugin_manifest(&text) {
-            Ok(m) => (m.name, Some(m.schema), m.warnings),
+            Ok(m) => (m.name, m.description, Some(m.schema), m.warnings),
             Err(reason) => {
                 diags.push(reject(&manifest_path, reason));
                 return None;
             }
         },
         PluginFormat::Claude => match parse_claude_manifest(&text) {
-            Ok(m) => (m.name, None, Vec::new()),
+            Ok(m) => (m.name, m.description, None, Vec::new()),
             Err(reason) => {
                 diags.push(reject(&manifest_path, reason));
                 return None;
@@ -219,6 +228,7 @@ fn load_one(
     let mut plugin = LoadedPlugin {
         data_dir: options.data_root.join(&name),
         name,
+        description,
         format,
         scope,
         root: root.clone(),
@@ -371,8 +381,40 @@ fn load_agent_plugins_mcp(
     diags.extend(parsed.diagnostics);
 }
 
+/// The stdio paths of a Claude server, held to the plugin root: `command` is a bare name or a
+/// `./` path inside the plugin (returned as that absolute path), and `cwd` is a `./` path inside
+/// it. Other transports pass unchanged.
+fn contain_claude_stdio(root: &Path, transport: &Transport) -> Result<Transport, String> {
+    let Transport::Stdio {
+        command,
+        args,
+        env,
+        cwd,
+    } = transport
+    else {
+        return Ok(transport.clone());
+    };
+    let command = resolve_command(command, root)?;
+    let cwd = match cwd {
+        None => None,
+        Some(text) => Some(
+            plugin_relative(root, text)
+                .ok_or_else(|| format!("\"cwd\" \"{text}\" must be a ./ path inside the plugin"))?
+                .to_string_lossy()
+                .into_owned(),
+        ),
+    };
+    Ok(Transport::Stdio {
+        command,
+        args: args.clone(),
+        env: env.clone(),
+        cwd,
+    })
+}
+
 /// Claude MCP: `.mcp.json` when present, else the manifest's inline `mcpServers`. The entries
-/// are read by `hoocode-code-mcp`'s own parser; no variables are expanded.
+/// are read by `hoocode-code-mcp`'s own parser; no variables are expanded, and the stdio paths
+/// are held to the plugin root (see [`contain_claude_stdio`]).
 fn load_claude_mcp(
     plugin: &mut LoadedPlugin,
     manifest_path: &Path,
@@ -411,7 +453,7 @@ fn load_claude_mcp(
         marketplace_trusted: true,
     };
     let mut raw = Vec::new();
-    let servers = parse_document(&text, &source, &mut raw);
+    let parsed = parse_document(&text, &source, &mut raw);
     for d in raw {
         diags.push(PluginDiagnostic {
             plugin: Some(plugin.name.clone()),
@@ -423,6 +465,22 @@ fn load_claude_mcp(
             },
             message: d.message,
         });
+    }
+    // The same containment as Agent Plugins for a stdio command and cwd: a server whose paths
+    // leave the plugin is skipped. Without this, a `./` command would run from the session's
+    // folder, not the plugin's.
+    let mut servers = Vec::new();
+    for def in parsed {
+        match contain_claude_stdio(&plugin.root, &def.transport) {
+            Ok(transport) => servers.push(ServerDef { transport, ..def }),
+            Err(reason) => diags.push(PluginDiagnostic {
+                plugin: Some(plugin.name.clone()),
+                path: source_path.clone(),
+                server: Some(def.name.clone()),
+                severity: Severity::Error,
+                message: format!("invalid server, skipped: {reason}"),
+            }),
+        }
     }
     if !servers.is_empty() {
         plugin.mcp_path = Some(source_path);

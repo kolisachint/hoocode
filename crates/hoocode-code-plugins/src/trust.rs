@@ -34,8 +34,11 @@ pub(crate) fn plugin_roots(dir: &Path) -> Vec<PathBuf> {
     roots
 }
 
-/// A hash of the plugin folders: each folder's name, and the path and bytes of every file in it.
-/// Symlinked folders are not followed, so a link cannot change the grant silently.
+/// A hash of the plugin folders: each folder's name, and every entry in it. A file counts by its
+/// path and bytes. A symbolic link counts by its path and its target text, so retargeting a link
+/// asks again even when both targets hold the same files (a link to a folder is not followed,
+/// and its target's files are counted where they live). Symlinked folders are not followed, so
+/// a link cannot change the grant silently.
 pub(crate) fn fingerprint(roots: &[PathBuf]) -> String {
     let mut hasher = Sha256::new();
     for root in roots {
@@ -54,9 +57,22 @@ pub(crate) fn fingerprint(roots: &[PathBuf]) -> String {
                 .unwrap_or(&file)
                 .to_string_lossy()
                 .into_owned();
+            // One kind byte per entry keeps a link and a file with the same text apart.
+            match fs::read_link(&file) {
+                Ok(target) => {
+                    hasher.update(b"L");
+                    hasher.update(rel.as_bytes());
+                    hasher.update(b"\0");
+                    hasher.update(target.to_string_lossy().as_bytes());
+                    hasher.update(b"\0");
+                }
+                Err(_) => {
+                    hasher.update(b"F");
+                    hasher.update(rel.as_bytes());
+                    hasher.update(b"\0");
+                }
+            }
             let bytes = fs::read(&file).unwrap_or_default();
-            hasher.update(rel.as_bytes());
-            hasher.update(b"\0");
             hasher.update((bytes.len() as u64).to_le_bytes());
             hasher.update(&bytes);
         }
