@@ -1,0 +1,20 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index b4879c0..f657721 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -109,6 +109,15 @@ jobs:
+             exit 1
+           fi
+ 
++  guards:
++    # Cheap repo guards: no new cortex names (no_cortex.sh uses git grep, so the
++    # checkout must be a normal one) and the crate map matches the workspace.
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - run: scripts/ci/no_cortex.sh
++      - run: python3 scripts/maps/packages.py --check
++
+   subagent-evals:
+     # Subagent reliability, measured end to end against a scripted mock
+     # provider (docs/design/subagent-evals.md). Non-blocking until it has run

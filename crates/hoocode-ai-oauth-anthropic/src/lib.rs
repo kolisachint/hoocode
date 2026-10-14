@@ -18,7 +18,11 @@ const SCOPES: &str =
 
 /// `REDIRECT_URI`.
 pub fn redirect_uri() -> String {
-    format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}")
+    redirect_uri_on(CALLBACK_PORT)
+}
+
+fn redirect_uri_on(port: u16) -> String {
+    format!("http://localhost:{port}{CALLBACK_PATH}")
 }
 
 /// `CALLBACK_HOST`: `HOOCODE_OAUTH_CALLBACK_HOST` (or the hoocode spelling),
@@ -32,13 +36,16 @@ fn callback_host() -> String {
 
 /// The authorize URL for a PKCE pair (`state` is the verifier).
 pub fn authorize_url(challenge: &str, verifier: &str) -> String {
-    let redirect = redirect_uri();
+    authorize_url_for(challenge, verifier, &redirect_uri())
+}
+
+fn authorize_url_for(challenge: &str, verifier: &str, redirect: &str) -> String {
     let query = url::form_urlencoded::Serializer::new(String::new())
         .extend_pairs([
             ("code", "true"),
             ("client_id", CLIENT_ID),
             ("response_type", "code"),
-            ("redirect_uri", redirect.as_str()),
+            ("redirect_uri", redirect),
             ("scope", SCOPES),
             ("code_challenge", challenge),
             ("code_challenge_method", "S256"),
@@ -198,21 +205,31 @@ pub async fn login_anthropic(
     fetch: &dyn Fetch,
     callbacks: &dyn OAuthLoginCallbacks,
 ) -> Result<OAuthCredentials, String> {
+    login_anthropic_on_port(fetch, callbacks, CALLBACK_PORT).await
+}
+
+/// `loginAnthropic` with the callback server on `port` (0 = ephemeral, for
+/// tests); the redirect URI follows the port actually bound.
+async fn login_anthropic_on_port(
+    fetch: &dyn Fetch,
+    callbacks: &dyn OAuthLoginCallbacks,
+    port: u16,
+) -> Result<OAuthCredentials, String> {
     let pkce = generate_pkce();
     let verifier = pkce.verifier.clone();
     let mut server = CallbackServer::start(CallbackServerOptions {
         host: callback_host(),
-        port: CALLBACK_PORT,
+        port,
         path: CALLBACK_PATH.to_string(),
         expected_state: verifier.clone(),
         label: "Anthropic".to_string(),
         validation: hoocode_ai_oauth::CallbackValidation::CodeAndState,
     })
     .await?;
-    let redirect = redirect_uri();
+    let redirect = redirect_uri_on(server.port());
 
     callbacks.on_auth(OAuthAuthInfo {
-        url: authorize_url(&pkce.challenge, &verifier),
+        url: authorize_url_for(&pkce.challenge, &verifier, &redirect),
         instructions: Some(
             "Complete login in your browser. If the browser is on another machine, paste the final redirect URL here."
                 .to_string(),
