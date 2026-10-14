@@ -133,7 +133,11 @@ pub fn create_session_manager(
     if let Some(session) = &args.session {
         return match resolve_session_path(session, cwd, session_dir.as_deref()) {
             ResolvedSession::Path(p) | ResolvedSession::Local(p) => {
-                SessionManager::open(p, session_dir, None)
+                let mut manager = SessionManager::open(p, session_dir, None);
+                if let Some(parent) = &args.parent_session {
+                    manager.set_parent_session(parent.clone());
+                }
+                manager
             }
             ResolvedSession::Global { path, cwd: other } => {
                 let yellow = |t: &str| {
@@ -208,6 +212,30 @@ mod tests {
             Some(
                 "Error: --fork cannot be combined with --session, --continue, --no-session".into()
             )
+        );
+    }
+
+    /// A subagent child opens its own transcript and names the session that
+    /// dispatched it (`--parent-session`), so the header carries the parent.
+    #[test]
+    fn a_subagent_child_names_its_parent_in_the_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let transcript = dir.path().join("p").join("subagents").join("t1.jsonl");
+        let args = parse(&[
+            "--session",
+            transcript.to_str().unwrap(),
+            "--parent-session",
+            "/sessions/p.jsonl",
+        ]);
+        let env = Env {
+            stdin_is_tty: false,
+            color: false,
+        };
+        let manager = create_session_manager(&args, "/w", None, env, None);
+        assert_eq!(manager.session_file(), Some(transcript.as_path()));
+        assert_eq!(
+            manager.header().parent_session.as_deref(),
+            Some("/sessions/p.jsonl")
         );
     }
 

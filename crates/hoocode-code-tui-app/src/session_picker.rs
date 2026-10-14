@@ -9,8 +9,11 @@ use std::time::Duration;
 
 use hoocode_code_agent_session::runtime::{format_missing_session_cwd_prompt, SessionCwdIssue};
 use hoocode_code_resources::package_resolve::ResolvedPaths;
-use hoocode_code_session::{list_all_sessions, list_sessions, SessionInfo, SessionListProgress};
+use hoocode_code_session::{
+    list_all_sessions, list_sessions, list_subagent_sessions, SessionInfo, SessionListProgress,
+};
 use hoocode_code_settings::SettingsManager;
+use hoocode_code_subagents::pool::run_is_live;
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_selectors::config_selector::ConfigSelectorComponent;
 use hoocode_code_tui_selectors::session_selector::{
@@ -37,16 +40,33 @@ where
     })
 }
 
+/// The sessions with their subagent runs added: each run is a row under its
+/// parent. A run with no settle record is running while its child is alive,
+/// else interrupted.
+fn with_subagent_runs(mut sessions: Vec<SessionInfo>) -> Vec<SessionInfo> {
+    let runs = list_subagent_sessions(&sessions, &|task_id, cwd| {
+        run_is_live(std::path::Path::new(cwd), task_id)
+    });
+    sessions.extend(runs);
+    sessions
+}
+
 /// The current folder's sessions (`SessionManager.list(cwd, sessionDir)`).
 pub fn current_sessions_loader(session_dir: PathBuf) -> SessionsLoader {
     threaded_loader(move |progress| {
-        list_sessions(&session_dir, Some(progress)).map_err(|e| e.to_string())
+        list_sessions(&session_dir, Some(progress))
+            .map(with_subagent_runs)
+            .map_err(|e| e.to_string())
     })
 }
 
 /// Every project's sessions (`SessionManager.listAll`).
 pub fn all_sessions_loader() -> SessionsLoader {
-    threaded_loader(|progress| list_all_sessions(Some(progress)).map_err(|e| e.to_string()))
+    threaded_loader(|progress| {
+        list_all_sessions(Some(progress))
+            .map(with_subagent_runs)
+            .map_err(|e| e.to_string())
+    })
 }
 
 /// Run `component` on its own TUI until `done` holds an answer (`None` when

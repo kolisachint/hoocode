@@ -35,7 +35,9 @@ use crate::instance::get_subagent_pool;
 use crate::lifeguard;
 use crate::model_categories::{ModelRequest, ModelSelection};
 use crate::pool::TaskStatus as PoolTaskStatus;
-use crate::pool::{DispatchOptions, ResultStatus, SubagentPool, SubagentResult, TaskResult};
+use crate::pool::{
+    run_transcript, DispatchOptions, ResultStatus, SubagentPool, SubagentResult, TaskResult,
+};
 use crate::warm::{
     get_warm_subagent_pool, warm_subagents_enabled, WarmDispatchOptions, WarmProgressCallback,
     WarmRunResult,
@@ -622,14 +624,16 @@ fn lenient_bool(value: Option<&Value>) -> Option<bool> {
     }
 }
 
-/// The handle a run is resumed by: its label, once the run left a
-/// `session.jsonl` under `session_id`'s dispatch dir. `None` otherwise, so no
-/// `resume_task_id` line is offered for a session that does not exist.
-fn resumable_label(cwd: &Path, session_id: &str, label: &str) -> Option<String> {
-    hoocode_code_paths::dispatch_task_dir(cwd, session_id)
-        .join("session.jsonl")
-        .exists()
-        .then(|| label.to_string())
+/// The handle a run is resumed by: its label, once the run left a transcript
+/// (see [`run_transcript`]). `None` otherwise, so no `resume_task_id` line is
+/// offered for a session that does not exist.
+fn resumable_label(
+    cwd: &Path,
+    parent_session: Option<&Path>,
+    session_id: &str,
+    label: &str,
+) -> Option<String> {
+    run_transcript(cwd, session_id, parent_session).map(|_| label.to_string())
 }
 
 fn task_parameters() -> Value {
@@ -717,6 +721,8 @@ async fn execute_task(
         .map(|c| c.available_models.clone())
         .unwrap_or_default();
     let model = ctx.as_ref().and_then(|c| c.model.clone());
+    // The dispatching session: its subagents' transcripts go under it.
+    let parent_session = ctx.as_ref().and_then(|c| c.session_file.clone());
     let pool = get_subagent_pool(&cwd, &available);
     let ask = str_param(&params, "model")
         .map(str::trim)
@@ -834,6 +840,7 @@ async fn execute_task(
                     effort: effort.clone(),
                     provider,
                     task_id: Some(run_id.clone()),
+                    parent_session_file: parent_session.clone(),
                     ..Default::default()
                 },
             ),
@@ -848,7 +855,8 @@ async fn execute_task(
                     &subagent_type,
                     &run_id,
                     task_id,
-                    resumable_label(&cwd, &session_id, &label).as_deref(),
+                    resumable_label(&cwd, parent_session.as_deref(), &session_id, &label)
+                        .as_deref(),
                     None,
                 )
             }
@@ -929,6 +937,7 @@ async fn execute_task(
         effort: effort.clone(),
         provider: provider.clone(),
         session_file: fork_session_file.clone(),
+        parent_session_file: parent_session.clone(),
         task_id: Some(pool_task_id.clone()),
         background: Some(is_background),
     };
@@ -959,7 +968,8 @@ async fn execute_task(
                             &subagent_type,
                             &pool_task_id,
                             task_id,
-                            resumable_label(&cwd, &pool_task_id, &label).as_deref(),
+                            resumable_label(&cwd, parent_session.as_deref(), &pool_task_id, &label)
+                                .as_deref(),
                             Some(&background),
                         );
                     }
@@ -985,7 +995,8 @@ async fn execute_task(
                     &subagent_type,
                     &pool_task_id,
                     task_id,
-                    resumable_label(&cwd, &pool_task_id, &label).as_deref(),
+                    resumable_label(&cwd, parent_session.as_deref(), &pool_task_id, &label)
+                        .as_deref(),
                     Some(&background),
                 )
             }
@@ -1023,7 +1034,8 @@ async fn execute_task(
                         &subagent_type,
                         &pool_task_id,
                         task_id,
-                        resumable_label(&cwd, &pool_task_id, &label).as_deref(),
+                        resumable_label(&cwd, parent_session.as_deref(), &pool_task_id, &label)
+                            .as_deref(),
                         None,
                     );
                 }
@@ -1049,7 +1061,7 @@ async fn execute_task(
             &subagent_type,
             &pool_task_id,
             task_id,
-            resumable_label(&cwd, &pool_task_id, &label).as_deref(),
+            resumable_label(&cwd, parent_session.as_deref(), &pool_task_id, &label).as_deref(),
             None,
         ),
         Err(error) => {

@@ -16,7 +16,7 @@ use hoocode_code_session::SessionManager;
 use hoocode_code_settings::EditorBorder;
 use hoocode_code_tui_keybindings::{key_display_text, AppKeybindingsManager};
 use hoocode_code_tui_selectors::session_selector::{
-    SessionSelectorComponent, SessionSelectorOptions,
+    SessionSelectorComponent, SessionSelectorOptions, SubagentRunRef,
 };
 use hoocode_code_tui_selectors::user_message_selector::{
     UserMessageEvent, UserMessageItem, UserMessageSelectorComponent,
@@ -584,6 +584,7 @@ impl Mode {
         };
         let on_select = self.actions.clone();
         let on_cancel = self.actions.clone();
+        let on_resume = self.actions.clone();
         let selector = handle(SessionSelectorComponent::new(
             session_picker::current_sessions_loader(session_dir),
             session_picker::all_sessions_loader(),
@@ -609,6 +610,9 @@ impl Mode {
                 })),
                 show_rename_hint: Some(true),
                 keybindings: None,
+                resume_subagent: Some(Box::new(move |run: SubagentRunRef| {
+                    on_resume.borrow_mut().push(Action::SubagentResume(run))
+                })),
             },
             current_file.as_deref(),
         ));

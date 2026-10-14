@@ -71,6 +71,8 @@ pub struct DispatchAttempt {
     pub budget_exceeded: Option<bool>,
     /// A one-line cause: truncation, newlines collapsed.
     pub error: Option<String>,
+    /// The id of the session that dispatched this attempt, when there was one.
+    pub parent_session: Option<String>,
 }
 
 /// `<cwd>/.hoocode/dispatch/ledger.jsonl`.
@@ -111,6 +113,7 @@ impl DispatchAttempt {
             "exit_code": self.exit_code,
             "budget_exceeded": self.budget_exceeded,
             "error": self.error,
+            "parent_session": self.parent_session,
         })
         .to_string()
     }
@@ -148,6 +151,7 @@ impl DispatchAttempt {
                 .map(|v| v as i32),
             budget_exceeded: flag("budget_exceeded"),
             error: text("error"),
+            parent_session: text("parent_session"),
         })
     }
 }
@@ -399,6 +403,7 @@ pub fn attempt_from_result(
         exit_code,
         budget_exceeded,
         error: error.and_then(clean_error),
+        parent_session: None,
     }
 }
 

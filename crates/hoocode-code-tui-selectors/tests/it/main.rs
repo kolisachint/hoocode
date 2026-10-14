@@ -12,6 +12,7 @@ mod plugin_settings_keyboard;
 mod scoped_models_golden;
 mod session_selector;
 mod session_selector_search;
+mod session_subagent_delete;
 mod settings_token_surface;
 mod support;
 mod tree_selector;

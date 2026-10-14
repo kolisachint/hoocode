@@ -26,6 +26,7 @@ fn make(id: &str, modified: &str, text: &str, name: Option<&str>) -> SessionInfo
         message_count: 1,
         first_message: "(no messages)".to_string(),
         all_messages_text: text.to_string(),
+        subagent: None,
     }
 }
 

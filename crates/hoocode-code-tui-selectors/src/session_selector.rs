@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use hoocode_code_paths::canonicalize_path;
 use hoocode_code_session::identity::{session_color_slot_for, session_slug_for};
-use hoocode_code_session::SessionInfo;
+use hoocode_code_session::{subagents_dir, SessionInfo, SubagentRun, SubagentState};
 use hoocode_code_tui_keybindings::{key_hint, key_text};
 use hoocode_code_tui_theme::{
     paint_selected_row, select_gutter, session_color_token, style_input, theme, SELECT_CURSOR,
@@ -91,6 +91,9 @@ struct SessionSelectorHeader {
     status: Option<(StatusKind, String)>,
     status_deadline: Option<Instant>,
     show_rename_hint: bool,
+    /// An interrupted subagent run is highlighted: the hint offers view/resume.
+    choosing_subagent: bool,
+    can_resume: bool,
 }
 
 impl SessionSelectorHeader {
@@ -173,6 +176,16 @@ impl Component for SessionSelectorHeader {
             );
             (
                 t.fg("error", &truncate_to_width(&confirm, width, "…", false)),
+                String::new(),
+            )
+        } else if self.choosing_subagent {
+            let hint = if self.can_resume {
+                "Interrupted run · v view · r resume · esc back"
+            } else {
+                "Interrupted run · v view · esc back"
+            };
+            (
+                t.fg("accent", &truncate_to_width(hint, width, "…", false)),
                 String::new(),
             )
         } else if let Some((kind, message)) = &self.status {
@@ -303,6 +316,46 @@ fn flatten_session_tree(roots: &[TreeNode]) -> Vec<FlatNode> {
     out
 }
 
+/// A subagent run's row label: its type, and where the run stands.
+fn subagent_label(run: &SubagentRun) -> String {
+    let state = match &run.state {
+        SubagentState::Finished(status) => status.clone(),
+        SubagentState::Running => "running".to_string(),
+        SubagentState::Interrupted => "interrupted".to_string(),
+    };
+    if run.agent_type.is_empty() {
+        state
+    } else {
+        format!("{} · {state}", run.agent_type)
+    }
+}
+
+/// A subagent run, as the picker hands it to its owner to resume.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubagentRunRef {
+    /// The run's transcript.
+    pub child: PathBuf,
+    /// The session that dispatched the run.
+    pub parent: PathBuf,
+    /// The run's task id: the transcript's file stem.
+    pub task_id: String,
+    pub agent_type: String,
+}
+
+/// The run a row is, when it stopped before it settled (`interrupted`).
+fn interrupted_run(session: &SessionInfo) -> Option<SubagentRunRef> {
+    let run = session.subagent.as_ref()?;
+    if run.state != SubagentState::Interrupted {
+        return None;
+    }
+    Some(SubagentRunRef {
+        child: session.path.clone(),
+        parent: PathBuf::from(session.parent_session_path.as_ref()?),
+        task_id: run.task_id.clone(),
+        agent_type: run.agent_type.clone(),
+    })
+}
+
 /// What a key did to the list, for its owner to act on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListEvent {
@@ -315,6 +368,10 @@ pub enum ListEvent {
     DeleteConfirmationChange(Option<PathBuf>),
     DeleteSession(PathBuf),
     Rename(PathBuf),
+    /// The choice on an interrupted run opened (`true`) or closed.
+    SubagentChoiceChange(bool),
+    /// Resume an interrupted run (`r` in its choice).
+    ResumeSubagent(SubagentRunRef),
     Error(String),
 }
 
@@ -332,6 +389,9 @@ pub struct SessionList {
     confirming_delete_path: Option<PathBuf>,
     current_session_canonical: Option<PathBuf>,
     now: Option<DateTime<Utc>>,
+    /// An interrupted run whose choice (view or resume) is open.
+    choosing: Option<SubagentRunRef>,
+    can_resume: bool,
 }
 
 impl SessionList {
@@ -356,6 +416,8 @@ impl SessionList {
             confirming_delete_path: None,
             current_session_canonical: current_session_file.map(canonical),
             now: None,
+            choosing: None,
+            can_resume: false,
         };
         list.filter_sessions("");
         list
@@ -405,8 +467,15 @@ impl SessionList {
         if self.sort_mode == SortMode::Threaded && js_trim(query).is_empty() {
             self.filtered = flatten_session_tree(&build_session_tree(&name_filtered));
         } else {
+            // A subagent run is listed under its parent in the threaded view
+            // only. A search or another sort matches the parent rows alone.
+            let parents: Vec<SessionInfo> = name_filtered
+                .iter()
+                .filter(|s| s.subagent.is_none())
+                .cloned()
+                .collect();
             self.filtered =
-                filter_and_sort_sessions(&name_filtered, query, self.sort_mode, NameFilter::All)
+                filter_and_sort_sessions(&parents, query, self.sort_mode, NameFilter::All)
                     .into_iter()
                     .map(|session| FlatNode {
                         session,
@@ -472,6 +541,24 @@ impl SessionList {
         let kb = get_keybindings();
         let mut events = Vec::new();
 
+        // An open choice on an interrupted run takes every key: v views the
+        // transcript, r resumes the run (when resuming is possible), esc backs out.
+        if let Some(run) = self.choosing.take() {
+            let close = ListEvent::SubagentChoiceChange(false);
+            if kb.matches(data, "tui.select.cancel") {
+                events.push(close);
+            } else if data == "v" {
+                events.push(close);
+                events.push(ListEvent::Select(run.child));
+            } else if data == "r" && self.can_resume {
+                events.push(close);
+                events.push(ListEvent::ResumeSubagent(run));
+            } else {
+                self.choosing = Some(run);
+            }
+            return events;
+        }
+
         // A pending delete takes every key.
         if let Some(path) = self.confirming_delete_path.clone() {
             if kb.matches(data, "tui.select.confirm") {
@@ -527,7 +614,13 @@ impl SessionList {
             // Navigation: the cursor clamps at both ends.
         } else if kb.matches(data, "tui.select.confirm") {
             if let Some(selected) = self.filtered.get(self.cursor.selected()) {
-                events.push(ListEvent::Select(selected.session.path.clone()));
+                match interrupted_run(&selected.session) {
+                    Some(run) => {
+                        self.choosing = Some(run);
+                        events.push(ListEvent::SubagentChoiceChange(true));
+                    }
+                    None => events.push(ListEvent::Select(selected.session.path.clone())),
+                }
             }
         } else if kb.matches(data, "tui.select.cancel") {
             events.push(ListEvent::Cancel);
@@ -623,10 +716,16 @@ impl Component for SessionList {
             };
 
             let age = format_session_date(session.modified, now);
-            let mut right = format!("{} {age}", session.message_count);
-            if !has_name {
-                right = format!("{} {right}", session_slug_for(&session.id));
-            }
+            let mut right = match &session.subagent {
+                Some(run) => format!("{} {age}", subagent_label(run)),
+                None => {
+                    let mut right = format!("{} {age}", session.message_count);
+                    if !has_name {
+                        right = format!("{} {right}", session_slug_for(&session.id));
+                    }
+                    right
+                }
+            };
             if self.show_cwd && !session.cwd.is_empty() {
                 right = format!("{} {right}", shorten_path(&session.cwd));
             }
@@ -704,6 +803,24 @@ impl Component for SessionList {
 }
 
 // ---- deleting --------------------------------------------------------------
+
+/// A deleted session takes its subagent transcripts with it: `<session>/subagents/`.
+/// They are trashed like the session file when a `trash` command exists, else
+/// removed. A subagent run's own row has no such dir, so this is a no-op there.
+pub fn delete_subagent_transcripts(session: &Path) {
+    let dir = subagents_dir(session);
+    if !dir.is_dir() {
+        return;
+    }
+    let trashed = std::process::Command::new("trash")
+        .arg(&dir)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .is_ok_and(|out| out.status.success());
+    if !trashed {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
 
 enum DeleteMethod {
     Trash,
@@ -810,6 +927,9 @@ pub type SessionsLoader = Box<dyn FnMut(LoadSink)>;
 /// Renames a session; the picker reloads afterwards.
 pub type RenameSessionFn = Box<dyn FnMut(&Path, &str) -> Result<(), String>>;
 
+/// Resumes an interrupted subagent run (see [`SubagentRunRef`]).
+pub type ResumeSubagentFn = Box<dyn FnMut(SubagentRunRef)>;
+
 #[derive(Default)]
 pub struct SessionSelectorOptions {
     pub rename_session: Option<RenameSessionFn>,
@@ -817,6 +937,8 @@ pub struct SessionSelectorOptions {
     pub show_rename_hint: Option<bool>,
     /// The manager the named-filter key is read from (the app's by default).
     pub keybindings: Option<Rc<KeybindingsManager>>,
+    /// Resumes an interrupted subagent run. Without it the choice offers view only.
+    pub resume_subagent: Option<ResumeSubagentFn>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -840,6 +962,7 @@ pub struct SessionSelectorComponent {
     on_select: Box<dyn FnMut(PathBuf)>,
     on_cancel: Box<dyn FnMut()>,
     rename_session: Option<RenameSessionFn>,
+    resume_subagent: Option<ResumeSubagentFn>,
     current_loading: bool,
     all_loading: bool,
     all_load_seq: u64,
@@ -867,6 +990,7 @@ impl SessionSelectorComponent {
             )
         });
         let can_rename = options.rename_session.is_some();
+        let can_resume = options.resume_subagent.is_some();
         let header = Rc::new(RefCell::new(SessionSelectorHeader {
             scope: SessionScope::Current,
             sort_mode: SortMode::Threaded,
@@ -878,6 +1002,8 @@ impl SessionSelectorComponent {
             status: None,
             status_deadline: None,
             show_rename_hint: options.show_rename_hint.unwrap_or(can_rename),
+            choosing_subagent: false,
+            can_resume,
         }));
         let session_list = Rc::new(RefCell::new(SessionList::new(
             SortMode::Threaded,
@@ -894,6 +1020,7 @@ impl SessionSelectorComponent {
             *sink.borrow_mut() = Some(value.to_string());
         }));
 
+        session_list.borrow_mut().can_resume = can_resume;
         let (tx, rx) = channel();
         let mut selector = Self {
             frame: InputFrame::new(InputFrameOptions {
@@ -912,6 +1039,7 @@ impl SessionSelectorComponent {
             on_select,
             on_cancel,
             rename_session: options.rename_session,
+            resume_subagent: options.resume_subagent,
             current_loading: false,
             all_loading: false,
             all_load_seq: 0,
@@ -1173,6 +1301,7 @@ impl SessionSelectorComponent {
     fn delete_session(&mut self, path: PathBuf) {
         match delete_session_file(&path) {
             Ok(method) => {
+                delete_subagent_transcripts(&path);
                 if let Some(s) = &mut self.current_sessions {
                     s.retain(|x| x.path != path);
                 }
@@ -1221,6 +1350,15 @@ impl SessionSelectorComponent {
                 ListEvent::TogglePath(show) => self.header.borrow_mut().show_path = show,
                 ListEvent::DeleteConfirmationChange(path) => {
                     self.header.borrow_mut().confirming_delete = path.is_some();
+                }
+                ListEvent::SubagentChoiceChange(open) => {
+                    self.header.borrow_mut().choosing_subagent = open;
+                }
+                ListEvent::ResumeSubagent(run) => {
+                    self.header.borrow_mut().set_status(None, None);
+                    if let Some(resume) = self.resume_subagent.as_mut() {
+                        resume(run);
+                    }
                 }
                 ListEvent::DeleteSession(path) => self.delete_session(path),
                 ListEvent::Rename(path) => {

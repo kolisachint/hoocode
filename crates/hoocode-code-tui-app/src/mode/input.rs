@@ -20,6 +20,8 @@ use hoocode_tui_components::{
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::Component;
 
+use hoocode_code_tui_selectors::session_selector::SubagentRunRef;
+
 use crate::extension_editor::EditorOutcome;
 use crate::extension_selector::SelectorOutcome;
 use crate::startup_progress;
@@ -60,6 +62,8 @@ pub(super) enum Action {
     ResumeSession,
     /// The session selector closed, with the chosen file.
     SessionSelectorDone(Option<PathBuf>),
+    /// An interrupted subagent run was chosen to resume from the session selector.
+    SubagentResume(SubagentRunRef),
     /// The options pane closed: the answers, or `None` when skipped.
     AskOptionsDone(Option<Vec<String>>),
     /// The multi-line editor dialog closed.
@@ -850,6 +854,10 @@ impl Mode {
                 if let Some(path) = path {
                     self.handle_resume_session(path, None);
                 }
+            }
+            Action::SubagentResume(run) => {
+                self.close_session_selector();
+                self.resume_subagent(run);
             }
             Action::AutocompleteVisibility(visible) => {
                 if self.chrome.set_autocomplete_open(visible) {
