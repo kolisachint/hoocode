@@ -101,6 +101,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | `/perf`: threads, RSS, frame and keystroke timing, stalls (Phase 0 counters) | `handle_perf_command` in `mode/commands.rs`; collector and report in `hoocode-code-tui-app/src/perf.rs` (`format_report`) |
 | `/chrome`: `/chrome` names the stop; `/chrome full` or `/chrome compact` sets it and saves `chromeDensity`. `bare` is refused with an error that names the two stops. A saved `bare` loads as compact | `handle_chrome_command` in `mode/chrome.rs`; the dial is `hoocode-code-tui-app/src/chrome_layout.rs` |
 | Mode commands (`/mode`, `/plan`, `/grill`, `/goal`, `/approve`) | `code-modes` |
+| `/loop`: scheduled prompts (`/loop "<cron>"` or `<N>m\|h\|d` with a prompt, `once`, `list`, `delete <id>`, `stop`) and `/loop auto [--max-turns N] <task>`. Forms parsed in `code-scheduler` `loop_command.rs`; the handler and the auto-loop turn flow are in `mode/loop_command.rs` (`PromptDone` and `MessageEnd` call into it; `tick_scheduler` reports late and skipped prompts). The auto-loop flag and halt, read by the `AskUserQuestion` host, are `auto_loop.rs` | `code-tui-app` `mode/loop_command.rs`, `auto_loop.rs`; `code-scheduler` `loop_command.rs` |
 | MCP tools in the transcript | `mcp_<server>_<tool>` tools use the generic tool block (no renderer); progress reports arrive as partial results and show there |
 | Skill and prompt-template commands | `code-resources` |
 

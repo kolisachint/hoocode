@@ -66,7 +66,7 @@ pass the done bar (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 4 | MCP client on rmcp; then a short guide for the webtools MCP server | [mcp.md](mcp.md), [web-tools.md](web-tools.md) | L | 2 | The main missing capability |
 | 5 | Concurrency phases 2–5: terminal-output thread, session writer, lanes and priority, watchdog and memory limits | [concurrency.md](concurrency.md) | L | 4 | Built against the real MCP and tool load |
 | 6 | Plugins: load, install, opt-in model tools | [plugins.md](plugins.md) | L | 4 | Delivers skills, MCP servers and subagents |
-| 7 | Scheduler and `/loop` | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
+| 7 | **Done 2026-10-14.** Scheduler and `/loop`: the `/loop` forms, `/loop auto`, the 10-minute late-fire rule | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
 | 8 | Version check and completion chime | [extras.md](extras.md) | S | 0c | Small polish |
 | 9 | Subagent orchestration: background by default, subagent brief, worktree protocol by instruction, child prompt fixes, evals | [subagent-orchestration.md](subagent-orchestration.md) | M | — | Parent stops waiting on subagents; writers stop sharing one tree |
 
@@ -75,7 +75,7 @@ the 8 `l1_done` tasks) is done. Milestones 4 (MCP client) and 5 (concurrency pha
 built, not yet load-tested. Open items are listed in the 2026-10-08 (second session) entry in
 [../../archive/migration/PROGRESS.md](../../archive/migration/PROGRESS.md).
 
-**Status (2026-10-14):** steps 0a–0d are done. The 0d CI wiring (guards job, TUI parity workflow) is staged, not applied: the session token lacks workflow scope. The user applies `git apply archive/migration/ci/step1-workflows.patch` and pushes it ([tui-activity.md](tui-activity.md) T0.6). `agent-mcp` is kept as the home of the 9.1 MCP client ([decisions-2026-10-14.md](decisions-2026-10-14.md)). **Step 1 (reliability 1.1–1.6) is done in code** ([reliability.md](reliability.md)); the macOS job on PRs is staged in `step1-workflows.patch` and is not live until the user pushes it. **Next core step: 6** (plugins); 4 and 5 still need their load test, and step 7's `/loop` forms remain.
+**Status (2026-10-14):** steps 0a–0d are done. The 0d CI wiring (guards job, TUI parity workflow) is staged, not applied: the session token lacks workflow scope. The user applies `git apply archive/migration/ci/step1-workflows.patch` and pushes it ([tui-activity.md](tui-activity.md) T0.6). `agent-mcp` is kept as the home of the 9.1 MCP client ([decisions-2026-10-14.md](decisions-2026-10-14.md)). **Step 1 (reliability 1.1–1.6) is done in code** ([reliability.md](reliability.md)); the macOS job on PRs is staged in `step1-workflows.patch` and is not live until the user pushes it. **Step 7 is done in code 2026-10-14** (`/loop`, `/loop auto`, the late-fire rule; [scheduler-and-loop.md](scheduler-and-loop.md)); its TUI Schedule tab is T4.2. **Next core step: 6** (plugins); 4 and 5 still need their load test.
 
 **Only if the numbers or a need say so:** concurrency phase 6 (highlighting off the UI
 thread), MCP Apps ([canvas-and-mcp-apps.md](canvas-and-mcp-apps.md)), the MCP Tasks

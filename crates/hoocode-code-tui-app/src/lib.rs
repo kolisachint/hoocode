@@ -2,6 +2,7 @@
 //! `modes/interactive/`.
 
 pub use hoocode_code_tui_widgets::brand;
+pub mod auto_loop;
 pub mod changelog;
 pub mod chrome_layout;
 pub mod dialog_bridge;

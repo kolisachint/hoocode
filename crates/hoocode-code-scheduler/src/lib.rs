@@ -6,9 +6,9 @@
 //! submits each returned prompt as a user message, as `TaskScheduler` does in
 //! hoocode-ts (`core/scheduler.ts`).
 //!
-//! Not here yet: `/loop` (the slash command and `/loop auto`), and firing
-//! while a turn is running (a due task waits for the next idle tick in the
-//! same minute only, as in hoocode-ts).
+//! `/loop` is parsed by [`loop_command`]; the TUI runs it. A task due while the
+//! agent is busy fires on the next idle tick if that tick is within
+//! [`store::LATE_FIRE_MINUTES`] of its due minute, and is skipped otherwise.
 
 use std::path::Path;
 use std::time::Duration;
@@ -16,11 +16,15 @@ use std::time::Duration;
 use chrono::{DateTime, Local};
 
 pub mod cron;
+pub mod loop_command;
 pub mod store;
 pub mod tools;
 
 pub use cron::{is_five_field, matches as cron_matches};
-pub use store::{ScheduledTask, TaskStore, LEGACY_STORE_RELATIVE_PATH, STORE_RELATIVE_PATH};
+pub use store::{
+    Claimed, ScheduledTask, TaskStore, LATE_FIRE_MINUTES, LEGACY_STORE_RELATIVE_PATH,
+    STORE_RELATIVE_PATH,
+};
 pub use tools::{
     create_cron_create_tool_definition, create_cron_delete_tool_definition,
     create_cron_list_tool_definition, create_cron_tool_definitions, CRON_CREATE_TOOL_NAME,
@@ -31,15 +35,15 @@ pub use tools::{
 pub const TICK_INTERVAL: Duration = Duration::from_secs(30);
 
 /// One tick for the working directory `cwd` at local time `now`: the prompts of
-/// the tasks due in this minute, claimed so that no other process fires them
-/// again. Callers check that the agent is idle first. A store that cannot be
-/// written fires nothing this tick (TS persistence is best effort; the claim
-/// is what keeps a task from firing twice).
-pub fn claim_due(cwd: &Path, now: &DateTime<Local>) -> Vec<String> {
+/// the tasks due (see [`TaskStore::claim_due`]), claimed so that no other
+/// process fires them again. Callers check that the agent is idle first. A
+/// store that cannot be written fires nothing this tick (TS persistence is best
+/// effort; the claim is what keeps a task from firing twice).
+pub fn claim_due(cwd: &Path, now: &DateTime<Local>) -> Claimed {
     TaskStore::for_cwd(cwd).claim_due(now).unwrap_or_default()
 }
 
 /// [`claim_due`] at the current local time.
-pub fn claim_due_now(cwd: &Path) -> Vec<String> {
+pub fn claim_due_now(cwd: &Path) -> Claimed {
     claim_due(cwd, &Local::now())
 }

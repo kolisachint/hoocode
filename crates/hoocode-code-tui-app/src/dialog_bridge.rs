@@ -83,6 +83,16 @@ impl AskOptionsHost for TuiAskOptionsHost {
         true
     }
 
+    /// During `/loop auto` the tool answers from recommended options (or halts)
+    /// without a pane.
+    fn auto_loop_active(&self) -> bool {
+        crate::auto_loop::is_active()
+    }
+
+    fn halt_loop(&self, reason: &str) {
+        crate::auto_loop::halt(reason);
+    }
+
     fn ask_options(
         &self,
         questions: &[AskQuestion],
