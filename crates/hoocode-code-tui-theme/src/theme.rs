@@ -240,10 +240,11 @@ impl Theme {
     }
 
     /// `fill`: `text` as a filled chip in a foreground token, with legible
-    /// ink; colored text when the token is not fillable.
+    /// ink; colored text when the token is not fillable. Plain text when
+    /// chalk's colour switch is off (N15, `NO_COLOR`).
     pub fn fill(&self, color: &str, text: &str) -> String {
         match self.fill_colors.get(color) {
-            Some(ansi) => format!("{ansi}{text}\x1b[39m\x1b[49m"),
+            Some(ansi) => paint(chalk::enabled(), ansi, text, "\x1b[39m\x1b[49m"),
             None => self.fg(color, text),
         }
     }
