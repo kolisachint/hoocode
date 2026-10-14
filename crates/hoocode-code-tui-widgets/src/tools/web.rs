@@ -8,15 +8,14 @@ use serde_json::Value;
 
 use super::search::js_number;
 use super::text;
-use crate::render_utils::{get_text_output, invalid_arg_text, str_arg};
+use crate::render_utils::{invalid_arg_text, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
 use crate::tool_output_view::peek_block;
 
 /// The first lines of the output, peek-trimmed, as both web tools print it.
 fn peek_output(result: &ToolResultView<'_>, show_images: bool) -> String {
     let t = theme();
-    let output = get_text_output(Some(result.content), show_images);
-    let output = js_trim(&output);
+    let output = js_trim(result.text(show_images));
     if output.is_empty() {
         return String::new();
     }

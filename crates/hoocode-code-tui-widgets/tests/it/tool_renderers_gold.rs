@@ -223,6 +223,7 @@ fn renderers_match_the_pin() {
                 let view = ToolResultView {
                     content: &content,
                     details: &details,
+                    text: &hoocode_code_tui_widgets::tool_signal::ResultText::default(),
                 };
                 let options = ToolRenderResultOptions {
                     expanded,

@@ -14,9 +14,9 @@ use hoocode_code_tui_theme::{get_language_from_path, highlight_code, message_lab
 use serde_json::Value;
 
 use super::search::js_number;
-use super::{text, trim_trailing_empty_lines};
+use super::text;
 use crate::read_output::render_read_output;
-use crate::render_utils::{arg_or, get_text_output, invalid_arg_text, replace_tabs, str_arg};
+use crate::render_utils::{arg_or, invalid_arg_text, replace_tabs, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
 use crate::tool_output_view::{peek_window, PEEK_LINES};
 use hoocode_home::shorten_path;
@@ -168,9 +168,9 @@ fn format_compact_read_call(kind: &CompactKind, label: &str, args: &Value) -> St
 }
 
 /// The peek window of a Read result: the first lines it shows, highlighted,
-/// and how many lines the result has in all. Highlighting reads the whole
-/// output: the closing colour the highlighter appends at the end can make the
-/// last line non-empty, so a prefix alone could miscount the lines.
+/// and how many lines the result has in all. Only the window is highlighted;
+/// the count is taken from the raw text, because the highlighter appends a
+/// closing colour line when a token is open at the end of its input.
 #[derive(Debug, Clone)]
 struct ReadPreview {
     lang: Option<&'static str>,
@@ -195,20 +195,45 @@ fn preview_state(objects: &mut HashMap<String, Rc<dyn Any>>) -> Rc<RefCell<Optio
     state
 }
 
+/// Raw lines the highlighter reads past the peek window. Highlighting is
+/// stateful: whether a token open at a line's end is kept depends on the text
+/// after it. The margin keeps the visible lines identical to a full highlight
+/// on real files (tests); it is not a proof for every input.
+const HIGHLIGHT_LOOKAHEAD: usize = 16;
+
 fn build_preview(output: &str, lang: Option<&'static str>) -> ReadPreview {
-    let rendered: Vec<String> = match lang {
-        Some(lang) => highlight_code(&replace_tabs(output), Some(lang)),
-        None => output.split('\n').map(str::to_string).collect(),
+    let text = match lang {
+        Some(_) => replace_tabs(output),
+        None => output.to_string(),
     };
-    let mut lines = trim_trailing_empty_lines(rendered);
-    let total = lines.len();
-    lines.truncate(PEEK_LINES);
+    let lines: Vec<&str> = text.split('\n').collect();
+    // `trim_trailing_empty_lines` on the raw lines.
+    let total = lines
+        .iter()
+        .rposition(|l| !l.is_empty())
+        .map_or(0, |i| i + 1);
+    let shown: Vec<String> = match lang {
+        Some(lang) if total > 0 => {
+            let window = lines.len().min(PEEK_LINES + HIGHLIGHT_LOOKAHEAD);
+            let mut code = lines[..window].join("\n");
+            if window < lines.len() {
+                code.push('\n');
+            }
+            let mut rendered = highlight_code(&code, Some(lang));
+            rendered.truncate(total.min(PEEK_LINES));
+            rendered
+        }
+        _ => lines[..total.min(PEEK_LINES)]
+            .iter()
+            .map(|l| l.to_string())
+            .collect(),
+    };
     ReadPreview {
         lang,
         theme: theme(),
         output: output.to_string(),
         total,
-        shown: lines,
+        shown,
     }
 }
 
@@ -237,10 +262,10 @@ fn format_read_result(
 ) -> String {
     let t = theme();
     let raw = raw_path(args);
-    let output = get_text_output(Some(result.content), show_images);
+    let output = result.text(show_images);
     let lang = raw.as_deref().and_then(get_language_from_path);
     let mut memo = memo.borrow_mut();
-    let preview = ensure_preview(&mut memo, &output, lang);
+    let preview = ensure_preview(&mut memo, output, lang);
     let start_line = args
         .get("offset")
         .and_then(Value::as_f64)
@@ -371,5 +396,75 @@ mod tests {
             .clone();
         assert_ne!(shown, ["SENTINEL"], "a theme switch re-highlights");
         assert!(Arc::ptr_eq(&memo.as_ref().unwrap().theme, &theme()));
+    }
+
+    /// The path before the window: highlight the whole output, then trim and
+    /// cut. Kept here as the reference the window must reproduce.
+    fn full_highlight_preview(output: &str, lang: &'static str) -> (usize, Vec<String>) {
+        let rendered = highlight_code(&replace_tabs(output), Some(lang));
+        let mut lines = super::super::trim_trailing_empty_lines(rendered);
+        let total = lines.len();
+        lines.truncate(PEEK_LINES);
+        (total, lines)
+    }
+
+    fn assert_same_as_full_highlight(output: &str, lang: &'static str) {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let (old_total, old_shown) = full_highlight_preview(output, lang);
+        let new = build_preview(output, Some(lang));
+        assert_eq!(new.shown, old_shown, "visible lines differ for {lang}");
+        assert_eq!(new.total, old_total, "line count differs for {lang}");
+    }
+
+    #[test]
+    fn a_large_read_output_renders_as_the_full_highlight_did() {
+        // Two real source files, several hundred lines each.
+        assert_same_as_full_highlight(include_str!("read.rs"), "rust");
+        assert_same_as_full_highlight(
+            include_str!("../../../hoocode-code-tui-theme/src/tui.rs"),
+            "rust",
+        );
+    }
+
+    #[test]
+    fn a_multi_line_token_across_the_window_renders_as_before() {
+        let mut output = String::from("fn a() {}\n/* a comment that\n");
+        for i in 0..200 {
+            output.push_str(&format!("still inside line {i}\n"));
+        }
+        output.push_str("*/\nlet x = 1;\n");
+        assert_same_as_full_highlight(&output, "rust");
+        // A string still open at the end: the count is the file's lines (201),
+        // where the old count also took the highlighter's colour-only line.
+        let mut string = String::from("let s = \"open\n");
+        for i in 0..200 {
+            string.push_str(&format!("line {i}\n"));
+        }
+        let (_, old_shown) = full_highlight_preview(&string, "rust");
+        let new = build_preview(&string, Some("rust"));
+        assert_eq!(new.shown, old_shown, "visible lines differ");
+        assert_eq!(new.total, 201);
+    }
+
+    #[test]
+    fn the_line_count_comes_from_the_raw_text() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        // A string left open at the end: the highlighter adds a colour-only
+        // line, which is not a line of the file.
+        let preview = build_preview("let s = \"open\nmore\n\n", Some("rust"));
+        assert_eq!(preview.total, 2);
+        assert!(preview.shown.len() <= 2, "{:?}", preview.shown);
+    }
+
+    #[test]
+    fn only_the_window_is_highlighted() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let output: String = (0..5000).map(|i| format!("let v{i} = {i};\n")).collect();
+        let preview = build_preview(&output, Some("rust"));
+        assert_eq!(preview.total, 5000);
+        assert_eq!(preview.shown.len(), PEEK_LINES);
+        let head: String = (0..10).map(|i| format!("let v{i} = {i};\n")).collect();
+        let (_, full) = full_highlight_preview(&head, "rust");
+        assert_eq!(preview.shown, full, "the first lines are the same");
     }
 }
