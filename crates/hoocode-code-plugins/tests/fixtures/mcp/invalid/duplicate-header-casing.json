@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "dup": {
+      "type": "streamable-http",
+      "url": "https://api.example.com/mcp",
+      "headers": {"X-Key": "1", "x-key": "2"}
+    }
+  }
+}

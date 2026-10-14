@@ -30,6 +30,7 @@ hoocode-code-migrate = { workspace = true }
 hoocode-code-models = { workspace = true }
 hoocode-code-auth = { workspace = true }
 hoocode-code-resources = { workspace = true }
+hoocode-code-plugins = { workspace = true }
 hoocode-code-modes = { workspace = true }
 hoocode-code-permissions = { workspace = true }
 hoocode-tui-fuzzy = { workspace = true }

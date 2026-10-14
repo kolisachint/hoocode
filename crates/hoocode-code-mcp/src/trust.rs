@@ -63,6 +63,23 @@ struct Grant {
 struct TrustFile {
     version: u32,
     grants: BTreeMap<String, Grant>,
+    /// Folder -> fingerprint of the project plugins the user trusted there (see
+    /// `hoocode-code-plugins`). Optional, so an older file still reads.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    project_plugins: BTreeMap<String, String>,
+    /// `<plugin>:<skill>` -> fingerprint of the `allowed-tools` the user approved for it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    skill_tools: BTreeMap<String, String>,
+}
+
+/// Fingerprint of an `allowed-tools` list, order-sensitive: `sha256:` over the names.
+pub fn tools_fingerprint(tools: &[String]) -> String {
+    let mut hasher = Sha256::new();
+    for tool in tools {
+        hasher.update(tool.as_bytes());
+        hasher.update(b"\n");
+    }
+    format!("sha256:{:x}", hasher.finalize())
 }
 
 /// What changed since the grant, by server name.
@@ -189,7 +206,7 @@ impl TrustStore {
             path: path.into(),
             file: TrustFile {
                 version: FORMAT_VERSION,
-                grants: BTreeMap::new(),
+                ..TrustFile::default()
             },
         }
     }
@@ -235,6 +252,34 @@ impl TrustStore {
     /// Whether `key` has any grant.
     pub fn has_grant(&self, key: &str) -> bool {
         self.file.grants.contains_key(key)
+    }
+
+    /// Approve the project plugins of `folder` as they are now. `fingerprint` is the hash the
+    /// plugin loader computes over the set (`hoocode-code-plugins`); any change to the set makes
+    /// [`project_plugins_trusted`](Self::project_plugins_trusted) false again.
+    pub fn grant_project_plugins(&mut self, folder: &str, fingerprint: &str) {
+        self.file
+            .project_plugins
+            .insert(folder.to_owned(), fingerprint.to_owned());
+    }
+
+    /// Whether the project plugins of `folder` still match the approved `fingerprint`.
+    pub fn project_plugins_trusted(&self, folder: &str, fingerprint: &str) -> bool {
+        self.file.project_plugins.get(folder).map(String::as_str) == Some(fingerprint)
+    }
+
+    /// Approve the `allowed-tools` list `tools` for the skill `skill` (`<plugin>:<skill>`).
+    pub fn approve_skill_tools(&mut self, skill: &str, tools: &[String]) {
+        self.file
+            .skill_tools
+            .insert(skill.to_owned(), tools_fingerprint(tools));
+    }
+
+    /// Whether `tools` is exactly the list the user approved for `skill`. A changed list
+    /// needs a new approval.
+    pub fn skill_tools_approved(&self, skill: &str, tools: &[String]) -> bool {
+        self.file.skill_tools.get(skill).map(String::as_str)
+            == Some(tools_fingerprint(tools).as_str())
     }
 
     /// Trust status of `source` whose declared servers are `declared`.
@@ -543,5 +588,57 @@ mod tests {
         // A fresh lock directory is held by someone else.
         let result = TrustStore::update(&path, |_| {});
         assert!(matches!(result, Err(TrustError::Locked(_))), "{result:?}");
+    }
+}
+
+#[cfg(test)]
+mod approval_tests {
+    use super::*;
+
+    #[test]
+    fn project_plugin_grant_holds_until_the_fingerprint_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trust.json");
+        let mut store = TrustStore::empty(&path);
+        assert!(!store.project_plugins_trusted("/repo", "sha256:a"));
+        store.grant_project_plugins("/repo", "sha256:a");
+        assert!(store.project_plugins_trusted("/repo", "sha256:a"));
+        assert!(!store.project_plugins_trusted("/repo", "sha256:b"));
+        assert!(!store.project_plugins_trusted("/other", "sha256:a"));
+
+        store.save().unwrap();
+        let loaded = TrustStore::load(&path).unwrap();
+        assert!(loaded.project_plugins_trusted("/repo", "sha256:a"));
+    }
+
+    #[test]
+    fn skill_tools_approval_binds_to_the_exact_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trust.json");
+        let mut store = TrustStore::empty(&path);
+        let tools = vec!["Read".to_owned(), "Shell".to_owned()];
+        assert!(!store.skill_tools_approved("plug:skill", &tools));
+        store.approve_skill_tools("plug:skill", &tools);
+        assert!(store.skill_tools_approved("plug:skill", &tools));
+        // Same names in another order, or a list with one more name, need a new approval.
+        let reordered = vec!["Shell".to_owned(), "Read".to_owned()];
+        assert!(!store.skill_tools_approved("plug:skill", &reordered));
+        let longer = vec!["Read".to_owned(), "Shell".to_owned(), "Write".to_owned()];
+        assert!(!store.skill_tools_approved("plug:skill", &longer));
+        assert!(!store.skill_tools_approved("plug:other", &tools));
+
+        store.save().unwrap();
+        assert!(TrustStore::load(&path)
+            .unwrap()
+            .skill_tools_approved("plug:skill", &tools));
+    }
+
+    #[test]
+    fn older_trust_files_without_the_new_sections_still_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trust.json");
+        std::fs::write(&path, r#"{"version": 1, "grants": {}}"#).unwrap();
+        let store = TrustStore::load(&path).unwrap();
+        assert!(!store.project_plugins_trusted("/repo", "sha256:a"));
     }
 }

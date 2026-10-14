@@ -1374,6 +1374,7 @@ dependencies = [
  "hoocode-code-modes",
  "hoocode-code-paths",
  "hoocode-code-permissions",
+ "hoocode-code-plugins",
  "hoocode-code-print",
  "hoocode-code-prompts",
  "hoocode-code-resources",
@@ -1490,6 +1491,19 @@ dependencies = [
  "hoocode-code-modes",
  "regex",
  "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "hoocode-code-plugins"
+version = "0.1.17"
+dependencies = [
+ "hoocode-code-mcp",
+ "hoocode-code-paths",
+ "hoocode-code-resources",
+ "hoocode-code-settings",
+ "serde_json",
+ "sha2",
  "tempfile",
 ]
 

@@ -58,6 +58,12 @@ pub struct DefaultResourceLoaderOptions {
     /// Shared with the session services; created for `cwd` when absent.
     pub settings: Option<Arc<Mutex<SettingsManager>>>,
     pub additional_skill_paths: Vec<String>,
+    /// Skill directories contributed by plugins. Each `metadata.namespace` is the plugin id,
+    /// so the skills are named `<plugin>:<skill>`. Kept here (not only in `extend_resources`)
+    /// so that every `reload()` applies them again.
+    pub plugin_skill_paths: Vec<PathEntry>,
+    /// Agent definition files contributed by plugins; applied on every `reload()`.
+    pub plugin_agent_paths: Vec<String>,
     pub additional_prompt_template_paths: Vec<String>,
     pub additional_slash_command_paths: Vec<String>,
     pub no_skills: bool,
@@ -304,6 +310,23 @@ impl DefaultResourceLoader {
         self.extension_prompt_source_infos.clear();
         self.skill_namespaces.clear();
 
+        // Plugin skills: a plugin's skill directory is named `<plugin>:<skill>` by the skill
+        // loader, through the namespace registered here (keyed by the resolved path).
+        let plugin_skills: Vec<String> = if self.options.no_skills {
+            Vec::new()
+        } else {
+            self.options
+                .plugin_skill_paths
+                .iter()
+                .map(|e| self.resolve_resource_path(&e.path))
+                .collect()
+        };
+        for (entry, path) in self.options.plugin_skill_paths.iter().zip(&plugin_skills) {
+            if let Some(ns) = &entry.metadata.namespace {
+                self.skill_namespaces.insert(path.clone(), ns.clone());
+            }
+        }
+
         let mut metadata_by_path: MetadataByPath = Vec::new();
         let enabled = |list: &[crate::package_resolve::ResolvedResource],
                        metadata_by_path: &mut MetadataByPath| {
@@ -324,10 +347,16 @@ impl DefaultResourceLoader {
             .collect();
         let _enabled_themes = enabled(&resolved.themes, &mut metadata_by_path);
         let _enabled_extensions = enabled(&resolved.extensions, &mut metadata_by_path);
-        let enabled_agents: Vec<String> = enabled(&resolved.agents, &mut metadata_by_path)
+        let mut enabled_agents: Vec<String> = enabled(&resolved.agents, &mut metadata_by_path)
             .into_iter()
             .map(|r| r.path)
             .collect();
+        enabled_agents.extend(
+            self.options
+                .plugin_agent_paths
+                .iter()
+                .map(|p| self.resolve_resource_path(p)),
+        );
 
         // `mapSkillPath`: an auto/package skill directory holding SKILL.md is its file.
         let enabled_skills: Vec<String> = enabled_skill_resources
@@ -350,7 +379,8 @@ impl DefaultResourceLoader {
             })
             .collect();
 
-        let additional_skills = self.options.additional_skill_paths.clone();
+        let mut additional_skills = self.options.additional_skill_paths.clone();
+        additional_skills.extend(plugin_skills);
         let skill_paths = if self.options.no_skills {
             self.merge_paths(&[], &additional_skills)
         } else {
