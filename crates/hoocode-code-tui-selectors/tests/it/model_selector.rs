@@ -175,6 +175,29 @@ fn typing_narrows_and_enter_selects_the_highlighted_model() {
 }
 
 #[test]
+fn home_and_end_stay_in_the_query_but_page_keys_move_the_list() {
+    let _g = lock();
+    let models = faux();
+    let mut selector =
+        ModelSelectorComponent::new(Some(models[0].clone()), Ok(models), None, vec![], None);
+    // The query line keeps Home and End: the list cursor does not move.
+    selector.handle_input("\x1b[F");
+    selector.handle_input("\x1b[H");
+    selector.handle_input("\r");
+    match selector.take_events().as_slice() {
+        [ModelSelectorEvent::Select(m)] => assert_eq!(m.id, "faux-1"),
+        other => panic!("unexpected {other:?}"),
+    }
+    // PgDn jumps the list by a page, clamped to the last row.
+    selector.handle_input("\x1b[6~");
+    selector.handle_input("\r");
+    match selector.take_events().as_slice() {
+        [ModelSelectorEvent::Select(m)] => assert_eq!(m.id, "faux-3"),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
 fn up_and_down_clamp_and_tab_switches_scope() {
     let _g = lock();
     let models = faux();

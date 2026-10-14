@@ -667,12 +667,6 @@ impl Component for ResourceList {
             if target >= 0 {
                 self.cursor.select(target as usize);
             }
-        } else if matches_key(data, "home") {
-            self.select_first_item();
-        } else if matches_key(data, "end") {
-            if let Some(last) = self.filtered.iter().rposition(Self::is_item) {
-                self.cursor.select(last);
-            }
         } else if kb.matches(data, "tui.select.cancel") {
             if let Some(cb) = &mut self.on_cancel {
                 cb();

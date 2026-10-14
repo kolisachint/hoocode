@@ -515,6 +515,24 @@ mod view_dial {
     }
 
     #[test]
+    fn a_streamed_read_shows_each_new_result_and_drops_the_one_before() {
+        let _g = lock();
+        let mut c = component(
+            "Read",
+            "stream-read",
+            json!({"path": "notes.rs"}),
+            Peek,
+            Some(tools::read::definition()),
+        );
+        c.update_result(result("let old = 1;", false), true);
+        assert!(strip_all(&c.render(120)).contains("old = 1"));
+        c.update_result(result("let a = 1;\nlet b = 2;\nlet c = 3;", false), false);
+        let rendered = strip_all(&c.render(120));
+        assert!(rendered.contains("let c = 3;"), "{rendered}");
+        assert!(!rendered.contains("old = 1"), "{rendered}");
+    }
+
+    #[test]
     fn peek_shows_the_call_line_and_a_trimmed_body_with_no_disclosure_caret() {
         let _g = lock();
         let trimmed = strip_all(&build(Peek, json!({})).render(120));

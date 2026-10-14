@@ -150,11 +150,12 @@ pub struct ToolResult {
 
 /// A tool result as a block holds it: shared through an `Rc` by the block and
 /// its renderers, with the text they show memoized beside it. Reads go to the
-/// result itself (`Deref`).
+/// result itself (`Deref`). The result is private, so the memo cannot go
+/// stale: a changed result is a new holder (`ToolExecutionComponent::update_result`).
 #[derive(Debug, Default)]
 pub struct ResultHolder {
-    pub result: ToolResult,
-    pub memo: ResultText,
+    result: ToolResult,
+    pub(crate) memo: ResultText,
 }
 
 impl ResultHolder {
@@ -163,6 +164,10 @@ impl ResultHolder {
             result,
             memo: ResultText::default(),
         }
+    }
+
+    pub fn result(&self) -> &ToolResult {
+        &self.result
     }
 
     /// The result's text (ANSI stripped, sanitized), computed once per image
@@ -319,6 +324,38 @@ line two
         assert_ne!(with, without, "the two modes are memoized apart");
         assert_eq!(shared.text(true).as_ptr(), with);
         assert_eq!(shared.text(false).as_ptr(), without);
+    }
+
+    #[test]
+    fn the_image_mode_memoizes_its_own_text() {
+        use hoocode_ai_types::ImageContent;
+        use hoocode_tui_images::{
+            reset_capabilities_cache, set_capabilities, ImageProtocol, TerminalCapabilities,
+        };
+        set_capabilities(TerminalCapabilities {
+            images: Some(ImageProtocol::Kitty),
+            true_color: true,
+            hyperlinks: true,
+        });
+        let shared = Rc::new(ResultHolder::new(ToolResult {
+            content: vec![
+                Content::text("before"),
+                Content::Image(ImageContent {
+                    data: "AAAA".into(),
+                    media_type: "image/png".into(),
+                }),
+            ],
+            ..Default::default()
+        }));
+        // The image is drawn in one mode and a placeholder in the other, so
+        // a shared memo would hand one mode's text to the other.
+        let drawn = shared.text(true).to_string();
+        let placeholder = shared.text(false).to_string();
+        reset_capabilities_cache();
+        assert!(!drawn.contains("[image/png]"), "{drawn:?}");
+        assert!(placeholder.contains("[image/png]"), "{placeholder:?}");
+        assert_eq!(shared.text(true), drawn);
+        assert_eq!(shared.text(false), placeholder);
     }
 
     #[test]

@@ -403,7 +403,7 @@ impl ToolExecutionComponent {
             outcome: crate::tools::subagent::task_outcome(
                 &self.tool_name,
                 &self.args,
-                self.result.as_deref().map(|held| &held.result),
+                self.result.as_deref().map(ResultHolder::result),
             ),
         }
     }

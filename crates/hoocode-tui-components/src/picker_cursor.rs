@@ -103,6 +103,17 @@ impl PickerCursor {
     /// Whether the cursor moved is not reported; callers that notify on a
     /// change compare [`Self::selected`] before and after.
     pub fn handle_key(&mut self, data: &str, kb: &KeybindingsManager) -> bool {
+        self.navigate(data, kb, true)
+    }
+
+    /// As [`Self::handle_key`], for a picker with a query line: Home and End
+    /// are left to the query's text cursor, so only PgUp and PgDn jump the
+    /// list there.
+    pub fn handle_query_key(&mut self, data: &str, kb: &KeybindingsManager) -> bool {
+        self.navigate(data, kb, false)
+    }
+
+    fn navigate(&mut self, data: &str, kb: &KeybindingsManager, ends: bool) -> bool {
         if kb.matches(data, "tui.select.up") {
             self.step(-1);
         } else if kb.matches(data, "tui.select.down") {
@@ -111,9 +122,9 @@ impl PickerCursor {
             self.page(false);
         } else if kb.matches(data, "tui.select.pageDown") {
             self.page(true);
-        } else if matches_key(data, "home") {
+        } else if ends && matches_key(data, "home") {
             self.home();
-        } else if matches_key(data, "end") {
+        } else if ends && matches_key(data, "end") {
             self.end();
         } else {
             return false;
@@ -241,6 +252,19 @@ mod tests {
     }
 
     #[test]
+    fn query_key_leaves_home_and_end_to_the_query() {
+        let kb = kb();
+        let mut c = PickerCursor::new(12, 4);
+        assert!(!c.handle_query_key("\x1b[F", &kb), "end is not navigation");
+        assert!(!c.handle_query_key("\x1b[H", &kb), "home is not navigation");
+        assert_eq!(c.selected(), 0);
+        assert!(c.handle_query_key("\x1b[6~", &kb), "pageDown is handled");
+        assert_eq!(c.selected(), 4);
+        assert!(c.handle_query_key("\x1b[B", &kb), "down is handled");
+        assert_eq!(c.selected(), 5);
+    }
+
+    #[test]
     fn set_query_clamps_and_reset_returns_to_top() {
         let mut c = PickerCursor::new(10, 5);
         c.select(7);
@@ -276,6 +300,41 @@ mod tests {
         assert_eq!(c.window(), 25..30);
         c.select(15);
         assert_eq!(c.window(), 13..18, "the cursor sits in the middle");
+    }
+
+    #[test]
+    fn window_holds_the_cursor_for_every_size_and_position() {
+        let kb = kb();
+        for len in 0..14 {
+            for max in 0..9 {
+                let mut c = PickerCursor::new(len, max);
+                for _ in 0..(len + 2) {
+                    let w = c.window();
+                    assert_eq!(w.len(), max.min(len), "len {len}, max {max}");
+                    if len > 0 && max > 0 {
+                        assert!(w.contains(&c.selected()), "len {len}, max {max}: {w:?}");
+                    }
+                    c.handle_key("\x1b[B", &kb);
+                }
+                // Then a shrink (set_query), then a page up from the end.
+                c.set_query(len / 2);
+                assert!(c.is_empty() || c.selected() < c.len());
+                c.handle_key("\x1b[6~", &kb);
+                assert!(c.is_empty() || c.selected() < c.len());
+            }
+        }
+    }
+
+    #[test]
+    fn empty_list_handles_every_key() {
+        let kb = kb();
+        let mut c = PickerCursor::new(0, 0);
+        for key in ["\x1b[A", "\x1b[B", "\x1b[5~", "\x1b[6~", "\x1b[H", "\x1b[F"] {
+            assert!(c.handle_key(key, &kb));
+            assert_eq!(c.selected(), 0);
+            assert_eq!(c.window(), 0..0);
+            assert_eq!(c.footer(), None);
+        }
     }
 
     #[test]
