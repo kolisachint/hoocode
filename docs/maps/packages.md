@@ -143,9 +143,9 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-permissions` | Permission gate for the hoocode coding agent: per-mode tool policy from hoo-config.json and approval prompts | 4 | 354 / 346 | keep |
 | `code-print` | Output formatting for the hoocode coding agent | 1 | 298 / 280 | keep |
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 801 / 0 | keep |
-| `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 6 | 4433 / 2995 | keep |
+| `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 6 | 4437 / 2995 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1565 / 1046 | keep |
-| `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 926 / 0 | keep |
+| `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 1517 / 0 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 1871 / 415 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2322 / 1744 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 8978 / 8486 | keep |
@@ -162,7 +162,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 14290 / 5259 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 14643 / 5259 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 734 / 868 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8027 / 3420 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 5 | 2384 / 2547 | keep |
@@ -178,8 +178,8 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 2328 / 275 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1050 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1975 / 582 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2627 / 1981 | keep |
-| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3040 / 112 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2742 / 1981 | keep |
+| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3056 / 112 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 14 | 2246 / 611 | keep |
 
 ### Other

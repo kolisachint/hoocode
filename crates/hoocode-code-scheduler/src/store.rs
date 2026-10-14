@@ -25,6 +25,15 @@ pub const STORE_RELATIVE_PATH: &str = ".agents/scheduled_tasks.json";
 /// The store hoocode-ts wrote before `.agents/`; read when the new store is absent.
 pub const LEGACY_STORE_RELATIVE_PATH: &str = ".hoocode/scheduled_tasks.json";
 
+/// A task due while the agent was busy still fires on the next idle tick when
+/// that tick comes within this many minutes of its due minute; later, it is
+/// skipped and reported.
+pub const LATE_FIRE_MINUTES: i64 = 10;
+/// How far back a tick looks for a task's due minute. A day covers hourly and
+/// daily schedules. A rarer schedule whose due minute is older than this is
+/// not reported as skipped.
+const LOOKBACK_MINUTES: i64 = 24 * 60;
+
 /// A lock file older than this belongs to a process that died holding it.
 const STALE_LOCK: Duration = Duration::from_secs(10);
 /// How long to wait for the lock before going ahead without it (best effort, as TS).
@@ -50,6 +59,16 @@ pub struct ScheduledTask {
     /// Minute-bucket key (epoch minutes) of the last fire.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run_minute: Option<i64>,
+}
+
+/// What one tick claimed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Claimed {
+    /// Prompts to submit now, in stored order.
+    pub fired: Vec<String>,
+    /// Prompts whose due minute is more than [`LATE_FIRE_MINUTES`] old. They
+    /// do not run; the caller says so.
+    pub skipped: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -181,33 +200,59 @@ impl TaskStore {
         })
     }
 
-    /// `tick(now)` without the idle check: claim every task due at `now` and
-    /// return the prompts to submit, in stored order. A recurring task is
-    /// marked with its minute so it fires once per minute; a one-shot task is
-    /// removed. Callers check that the agent is idle first.
-    pub fn claim_due(&self, now: &DateTime<Local>) -> io::Result<Vec<String>> {
+    /// `tick(now)` without the idle check: claim the tasks due at `now`.
+    ///
+    /// A task is due at its latest matching minute after its last fire (or
+    /// after it was created). A tick up to [`LATE_FIRE_MINUTES`] after that
+    /// minute fires it; a later tick skips it and reports it. Either way the
+    /// due minute is recorded, so each due minute is handled once. A one-shot
+    /// task is removed. Callers check that the agent is idle first.
+    pub fn claim_due(&self, now: &DateTime<Local>) -> io::Result<Claimed> {
         self.with_lock(|| {
-            let minute_key = now.timestamp().div_euclid(60);
+            let now_minute = now.timestamp().div_euclid(60);
             let mut tasks = self.read();
-            let mut fired = Vec::new();
+            let mut claimed = Claimed::default();
             let mut spent = Vec::new();
             for task in tasks.iter_mut() {
-                if task.last_run_minute == Some(minute_key) || !cron::matches(&task.cron, now) {
+                let created_minute = i64::try_from(task.created_at / 60_000).unwrap_or(i64::MAX);
+                let floor = task
+                    .last_run_minute
+                    .map_or(created_minute, |minute| (minute + 1).max(created_minute));
+                let Some(due) = latest_due_minute(&task.cron, now, now_minute, floor) else {
                     continue;
+                };
+                task.last_run_minute = Some(due);
+                if now_minute - due <= LATE_FIRE_MINUTES {
+                    claimed.fired.push(task.prompt.clone());
+                } else {
+                    claimed.skipped.push(task.prompt.clone());
                 }
-                task.last_run_minute = Some(minute_key);
-                fired.push(task.prompt.clone());
                 if !task.recurring {
                     spent.push(task.id.clone());
                 }
             }
-            if !fired.is_empty() {
+            if !claimed.fired.is_empty() || !claimed.skipped.is_empty() {
                 tasks.retain(|t| !spent.contains(&t.id));
                 self.write(&tasks)?;
             }
-            Ok(fired)
+            Ok(claimed)
         })
     }
+}
+
+/// The latest minute in `floor..=now_minute`, and within [`LOOKBACK_MINUTES`]
+/// of it, at which `cron` matches. `now` is a time in `now_minute`.
+fn latest_due_minute(
+    cron: &str,
+    now: &DateTime<Local>,
+    now_minute: i64,
+    floor: i64,
+) -> Option<i64> {
+    let lowest = floor.max(now_minute - LOOKBACK_MINUTES);
+    (lowest..=now_minute).rev().find(|minute| {
+        let at = *now - chrono::Duration::minutes(now_minute - minute);
+        cron::matches(cron, &at)
+    })
 }
 
 /// `Date.now().toString(36) + counter.toString(36)`, prefixed `task_`.
@@ -344,27 +389,93 @@ mod tests {
         );
     }
 
+    /// Adds a task created at `created_at` (ms), without `create`'s clock.
+    fn put(store: &TaskStore, cron: &str, prompt: &str, recurring: bool, created_at: u64) {
+        let mut tasks = store.read();
+        tasks.push(ScheduledTask {
+            id: new_id(),
+            cron: cron.into(),
+            prompt: prompt.into(),
+            recurring,
+            created_at,
+            last_run_minute: None,
+        });
+        store.write(&tasks).unwrap();
+    }
+
+    fn at(hour: u32, minute: u32, second: u32) -> DateTime<Local> {
+        Local
+            .with_ymd_and_hms(2026, 10, 8, hour, minute, second)
+            .single()
+            .unwrap()
+    }
+
     #[test]
     fn claim_fires_each_matching_minute_once_and_drops_one_shots() {
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(&dir);
-        store.create("30 9 * * *", "recurring", true).unwrap();
-        store.create("30 9 * * *", "once", false).unwrap();
-        let due = Local
-            .with_ymd_and_hms(2026, 10, 8, 9, 30, 10)
-            .single()
-            .unwrap();
-        assert_eq!(store.claim_due(&due).unwrap(), vec!["recurring", "once"]);
+        put(&store, "30 9 * * *", "recurring", true, 0);
+        put(&store, "30 9 * * *", "once", false, 0);
+        let claimed = store.claim_due(&at(9, 30, 10)).unwrap();
+        assert_eq!(claimed.fired, vec!["recurring", "once"]);
+        assert!(claimed.skipped.is_empty());
         // A second tick in the same minute fires nothing.
-        let later = Local
-            .with_ymd_and_hms(2026, 10, 8, 9, 30, 40)
-            .single()
-            .unwrap();
-        assert!(store.claim_due(&later).unwrap().is_empty());
+        assert_eq!(store.claim_due(&at(9, 30, 40)).unwrap(), Claimed::default());
         let tasks = store.list();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].prompt, "recurring");
         assert!(tasks[0].last_run_minute.is_some());
+    }
+
+    #[test]
+    fn a_task_due_while_busy_fires_on_the_next_idle_tick_within_ten_minutes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(&dir);
+        put(&store, "30 9 * * *", "recurring", true, 0);
+        put(&store, "30 9 * * *", "once", false, 0);
+        // Busy from 9:30; the first idle tick is at 9:39, nine minutes late.
+        let claimed = store.claim_due(&at(9, 39, 5)).unwrap();
+        assert_eq!(claimed.fired, vec!["recurring", "once"]);
+        assert!(claimed.skipped.is_empty());
+        // It fired once: the rest of that tick and the next ones claim nothing.
+        assert_eq!(store.claim_due(&at(9, 39, 35)).unwrap(), Claimed::default());
+        assert_eq!(store.claim_due(&at(9, 40, 5)).unwrap(), Claimed::default());
+        assert_eq!(store.list().len(), 1);
+    }
+
+    #[test]
+    fn a_task_due_more_than_ten_minutes_ago_is_skipped_with_a_notice_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(&dir);
+        put(&store, "30 9 * * *", "recurring", true, 0);
+        put(&store, "30 9 * * *", "once", false, 0);
+        // Eleven minutes late: not run, reported.
+        let claimed = store.claim_due(&at(9, 41, 5)).unwrap();
+        assert!(claimed.fired.is_empty());
+        assert_eq!(claimed.skipped, vec!["recurring", "once"]);
+        // Reported once: a later idle tick does not repeat it, and the one-shot is gone.
+        assert_eq!(store.claim_due(&at(9, 42, 5)).unwrap(), Claimed::default());
+        let tasks = store.list();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].prompt, "recurring");
+    }
+
+    #[test]
+    fn a_task_created_after_its_due_minute_does_not_fire_for_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(&dir);
+        let created = Local
+            .with_ymd_and_hms(2026, 10, 8, 9, 35, 0)
+            .single()
+            .unwrap();
+        put(
+            &store,
+            "30 9 * * *",
+            "late",
+            true,
+            u64::try_from(created.timestamp_millis()).unwrap(),
+        );
+        assert_eq!(store.claim_due(&at(9, 36, 0)).unwrap(), Claimed::default());
     }
 
     #[test]

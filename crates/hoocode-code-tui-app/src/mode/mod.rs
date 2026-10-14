@@ -76,6 +76,7 @@ mod commands;
 mod dialogs;
 mod events;
 mod input;
+mod loop_command;
 mod mcp;
 mod models;
 mod prompt_queue;
@@ -349,6 +350,8 @@ struct Mode {
     stream_render_at: Option<Instant>,
     stream_render_pending: bool,
     scheduler_tick_at: Instant,
+    /// The `/loop auto` run in progress, if any.
+    auto_loop: Option<loop_command::LoopRun>,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
     /// When the current prompt was submitted (set at submit, taken at `PromptDone`).
@@ -714,6 +717,7 @@ impl Mode {
             stream_render_at: None,
             stream_render_pending: false,
             scheduler_tick_at: Instant::now() + hoocode_code_scheduler::TICK_INTERVAL,
+            auto_loop: None,
             turn_cost_anchor: None,
             turn_stop_reason: None,
             turn_timer: TurnTimer::default(),
@@ -1045,6 +1049,7 @@ impl Mode {
             self.drain_extension_ui_requests();
             self.tick_scheduler();
             self.poll_update_notice();
+            self.advance_auto_loop();
             self.sync_runtime_health();
             if let Some(restarted) = self.restarted_input.take() {
                 input = restarted;
@@ -1076,6 +1081,8 @@ impl Mode {
                         }
                         if let Some(next) = queued.pop() {
                             self.prompt(next);
+                        } else {
+                            self.auto_loop_turn_done();
                         }
                     }
                     AppEvent::Rerender => self.dirty.set(true),

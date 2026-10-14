@@ -56,6 +56,7 @@ pub(super) enum BuiltinCommand {
     SubagentCancel,
     SubagentRetry,
     SubagentStats,
+    Loop,
     /// A built-in whose handler lands with a later task.
     Pending(&'static str),
 }
@@ -94,6 +95,7 @@ impl BuiltinCommand {
             "subagent-cancel" => Self::SubagentCancel,
             "subagent-retry" => Self::SubagentRetry,
             "subagent-stats" => Self::SubagentStats,
+            "loop" => Self::Loop,
             _ => {
                 let builtin = BUILTIN_SLASH_COMMANDS.iter().find(|c| c.name == name)?;
                 Self::Pending(builtin.name)
@@ -117,7 +119,8 @@ impl BuiltinCommand {
             | Self::Subagent
             | Self::SubagentCancel
             | Self::SubagentRetry
-            | Self::SubagentStats => true,
+            | Self::SubagentStats
+            | Self::Loop => true,
             Self::Pending(_) => false,
             _ => false,
         }
@@ -179,6 +182,10 @@ impl Mode {
             BuiltinCommand::SubagentCancel => self.cancel_newest_subagent(text),
             BuiltinCommand::SubagentRetry => self.retry_newest_subagent(text),
             BuiltinCommand::SubagentStats => self.handle_subagent_stats_command(text),
+            BuiltinCommand::Loop => {
+                let args = text.strip_prefix("/loop").unwrap_or_default();
+                self.handle_loop_command(args);
+            }
             BuiltinCommand::Pending(name) => {
                 // Wired by its own ledger task (see 11.4e).
                 self.show_status(&format!("/{name} is not available yet"));
