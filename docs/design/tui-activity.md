@@ -11,6 +11,29 @@ This is the **TUI plan**. It runs side by side with the core plan in
 [README.md](README.md); neither is ahead of the other. Before implementing any step, ask the
 user which plan and which step to take next.
 
+## Next session (2026-10-14)
+
+Status: **proposed, not confirmed by the user.** Ask which step to start with before any build.
+Haiku subagents implement. The main session orchestrates, briefs and merges.
+
+| Order | Card | Note |
+|---|---|---|
+| 1 | N12 and N13 (deletions) | N12 follow-up (#12): remove `extension_diagnostics` and `custom_themes`. N13 (#7): finish the `js_trim` wrappers. |
+| 2 | X17 | Lone ESC: self-pipe in `stdin_hub.rs`. |
+| 3 | X12 | Shared abort const (#10). |
+| 4 | X15 | Colour follows the switch (#11). |
+| 5 | N14 | Marker only (#3). |
+| 6 | X18 | Task panel key hint (#5). |
+| 7 | T0.3 | `scroll-view` waits for its final text (#9). |
+
+**Open questions** (the user has not decided; each row has a proposed default):
+
+| # | Question | Proposed default |
+|---|---|---|
+| 1 | `FORCE_COLOR` vs `NO_COLOR` precedence (X15). `hoocode-code-cli/src/lib.rs:81` reads `FORCE_COLOR`. | `FORCE_COLOR` wins. |
+| 2 | `spawn_refresh` (`hoocode-code-auth/src/lib.rs:517`) has no UI caller after the N14 marker-only change. | Delete it at build time if nothing else calls it. |
+| 3 | Does the default config bind more than one key to `app.tasks.cycleForward`? Checked 2026-10-14: no. Only `alt+l` (`hoocode-code-tui-keybindings/src/keybindings.rs:121`). | X18 changes nothing by default. The user decides whether to build it. |
+
 ## Goal
 
 1. Save each subagent's transcript next to its parent session, so `/resume` brings them back

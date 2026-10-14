@@ -75,7 +75,7 @@ the 8 `l1_done` tasks) is done. Milestones 4 (MCP client) and 5 (concurrency pha
 built, not yet load-tested. Open items are listed in the 2026-10-08 (second session) entry in
 [../../archive/migration/PROGRESS.md](../../archive/migration/PROGRESS.md).
 
-**Status (2026-10-14):** steps 0a–0d are done, except the CI wiring of 0d. The user applies `archive/migration/ci/guards.patch` locally (`git apply archive/migration/ci/guards.patch`), because the session token can't push workflow files. `agent-mcp` is kept as the home of the 9.1 MCP client ([decisions-2026-10-14.md](decisions-2026-10-14.md)).
+**Status (2026-10-14):** steps 0a–0d are done today, except the CI wiring of 0d. The remaining user action is `git apply archive/migration/ci/guards.patch` (the session token can't push workflow files), plus copying `archive/migration/ci/tui-parity.yml` into `.github/workflows/` ([tui-activity.md](tui-activity.md) T0.6). `agent-mcp` is kept as the home of the 9.1 MCP client ([decisions-2026-10-14.md](decisions-2026-10-14.md)). **Next core step: 1** (reliability 1.1–1.6). Its status is not recorded, so audit 1.1–1.6 before starting.
 
 **Only if the numbers or a need say so:** concurrency phase 6 (highlighting off the UI
 thread), MCP Apps ([canvas-and-mcp-apps.md](canvas-and-mcp-apps.md)), the MCP Tasks
