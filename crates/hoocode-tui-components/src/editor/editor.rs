@@ -951,6 +951,12 @@ impl Editor {
         self.set_cursor_col(len);
     }
 
+    /// Whether the last edit was a kill: the next kill then accumulates into the same
+    /// kill-ring entry.
+    fn last_was_kill(&self) -> bool {
+        self.last_action == Some(LastAction::Kill)
+    }
+
     fn kill_push(&mut self, text: &str, prepend: bool, accumulate: bool) {
         self.kill_ring.push(
             text,
@@ -980,7 +986,7 @@ impl Editor {
     fn delete_to_start_of_line(&mut self) {
         self.history_index = -1;
         let line = self.current_line().to_string();
-        let was_kill = self.last_action == Some(LastAction::Kill);
+        let was_kill = self.last_was_kill();
         if self.state.cursor_col > 0 {
             self.push_undo_snapshot();
             let deleted = slice16(&line, 0, self.state.cursor_col).to_string();
@@ -999,7 +1005,7 @@ impl Editor {
     fn delete_to_end_of_line(&mut self) {
         self.history_index = -1;
         let line = self.current_line().to_string();
-        let was_kill = self.last_action == Some(LastAction::Kill);
+        let was_kill = self.last_was_kill();
         if self.state.cursor_col < len16(&line) {
             self.push_undo_snapshot();
             let deleted = slice16_from(&line, self.state.cursor_col).to_string();
@@ -1020,13 +1026,13 @@ impl Editor {
         if self.state.cursor_col == 0 {
             if self.state.cursor_line > 0 {
                 self.push_undo_snapshot();
-                let was_kill = self.last_action == Some(LastAction::Kill);
+                let was_kill = self.last_was_kill();
                 self.kill_push("\n", true, was_kill);
                 self.merge_with_previous_line();
             }
         } else {
             self.push_undo_snapshot();
-            let was_kill = self.last_action == Some(LastAction::Kill);
+            let was_kill = self.last_was_kill();
             let old_col = self.state.cursor_col;
             self.move_word_backwards();
             let delete_from = self.state.cursor_col;
@@ -1050,13 +1056,13 @@ impl Editor {
         if self.state.cursor_col >= len16(&line) {
             if self.state.cursor_line + 1 < self.state.lines.len() {
                 self.push_undo_snapshot();
-                let was_kill = self.last_action == Some(LastAction::Kill);
+                let was_kill = self.last_was_kill();
                 self.kill_push("\n", false, was_kill);
                 self.merge_with_next_line();
             }
         } else {
             self.push_undo_snapshot();
-            let was_kill = self.last_action == Some(LastAction::Kill);
+            let was_kill = self.last_was_kill();
             let old_col = self.state.cursor_col;
             self.move_word_forwards();
             let delete_to = self.state.cursor_col;
