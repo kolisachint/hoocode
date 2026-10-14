@@ -174,7 +174,13 @@ async fn run_loop(
     if let Some(session_id) = config.session_id.as_deref() {
         SESSION_BACKGROUND_TASKS.release(session_id, &background);
     }
-    result
+    result?;
+    // AgentEnd completes the event stream, so it is emitted only after the
+    // release: a consumer that sees the run end finds the entry already dropped.
+    emit(AgentEvent::AgentEnd {
+        messages: new_messages.clone(),
+    });
+    Ok(())
 }
 
 async fn run_loop_with_background(
@@ -232,9 +238,6 @@ async fn run_loop_with_background(
                     message,
                     tool_results: vec![],
                 });
-                emit(AgentEvent::AgentEnd {
-                    messages: new_messages.clone(),
-                });
                 return Ok(());
             }
 
@@ -289,9 +292,6 @@ async fn run_loop_with_background(
                     ..turn
                 };
                 if should_stop(turn)? {
-                    emit(AgentEvent::AgentEnd {
-                        messages: new_messages.clone(),
-                    });
                     return Ok(());
                 }
             }
@@ -311,9 +311,6 @@ async fn run_loop_with_background(
         break;
     }
 
-    emit(AgentEvent::AgentEnd {
-        messages: new_messages.clone(),
-    });
     Ok(())
 }
 
