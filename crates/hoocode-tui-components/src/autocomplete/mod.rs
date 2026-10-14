@@ -143,6 +143,24 @@ pub struct CombinedAutocompleteProvider {
     file_search: Option<FileSearch>,
 }
 
+/// A file or directory completion; a directory is labelled with a trailing `/`.
+fn path_item(
+    value: String,
+    name: String,
+    is_directory: bool,
+    description: Option<String>,
+) -> AutocompleteItem {
+    AutocompleteItem {
+        value,
+        label: if is_directory {
+            format!("{name}/")
+        } else {
+            name
+        },
+        description,
+    }
+}
+
 fn cursor_line_text(lines: &[String], cursor_line: usize, cursor_col: usize) -> String {
     let line = lines.get(cursor_line).map(String::as_str).unwrap_or("");
     let byte_end = char_index_to_byte(line, cursor_col);
@@ -329,15 +347,7 @@ impl CombinedAutocompleteProvider {
                 },
             );
 
-            suggestions.push(AutocompleteItem {
-                value,
-                label: if is_directory {
-                    format!("{name}/")
-                } else {
-                    name
-                },
-                description: None,
-            });
+            suggestions.push(path_item(value, name, is_directory, None));
         }
 
         suggestions.sort_by(|a, b| {
@@ -477,15 +487,12 @@ impl CombinedAutocompleteProvider {
                 },
             );
 
-            suggestions.push(AutocompleteItem {
+            suggestions.push(path_item(
                 value,
-                label: if entry.is_directory {
-                    format!("{entry_name}/")
-                } else {
-                    entry_name
-                },
-                description: Some(display_path),
-            });
+                entry_name,
+                entry.is_directory,
+                Some(display_path),
+            ));
         }
 
         suggestions
@@ -532,13 +539,7 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
 
             if space_index.is_none() {
                 let prefix = hoocode_tui_util::text_slice::suffix_from(&text_before_cursor, 1);
-                #[derive(Clone)]
-                struct CmdView {
-                    name: String,
-                    label: String,
-                    description: Option<String>,
-                }
-                let command_items: Vec<CmdView> = self
+                let command_items: Vec<AutocompleteItem> = self
                     .commands
                     .iter()
                     .map(|cmd| {
@@ -551,28 +552,21 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
                             None if !desc.is_empty() => Some(desc.to_string()),
                             None => None,
                         };
-                        CmdView {
-                            name: name.clone(),
+                        AutocompleteItem {
+                            value: name.clone(),
                             label: name,
                             description: full_desc,
                         }
                     })
                     .collect();
 
-                let filtered = fuzzy_filter(&command_items, prefix, |item| item.name.clone());
+                let filtered = fuzzy_filter(&command_items, prefix, |item| item.value.clone());
                 if filtered.is_empty() {
                     return None;
                 }
 
                 return Some(AutocompleteSuggestions {
-                    items: filtered
-                        .into_iter()
-                        .map(|item| AutocompleteItem {
-                            value: item.name,
-                            label: item.label,
-                            description: item.description,
-                        })
-                        .collect(),
+                    items: filtered,
                     prefix: text_before_cursor.clone(),
                 });
             }
