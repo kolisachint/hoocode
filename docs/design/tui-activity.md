@@ -23,16 +23,16 @@ Haiku subagents implement. The main session orchestrates, briefs and merges.
 | 3 | X12 | Shared abort const (#10). **Done 2026-10-14.** |
 | 4 | X15 | Colour follows the switch (#11). **Done 2026-10-14**: `color_enabled()` reads `NO_COLOR` and FORCE_COLOR wins (#14); theme `fg` and `bg` follow chalk. Fill is not changed (see the X15 row). |
 | 5 | N14 | Marker only (#3). **Done 2026-10-14**: the `/model` picker shows `expired`; `spawn_refresh` deleted (decisions-2026-10-14.md #15). |
-| 6 | X18 | Task panel key hint (#5). |
+| 6 | X18 | Task panel key hint (#5). **Won't build by default** (#16): the default config binds one key, so it changes nothing. |
 | 7 | T0.3 | `scroll-view` waits for its final text (#9). **Done 2026-10-14** for the startup wait (`scroll-view.json`, now `wait_for` the footer `mock-model`). **Open:** the three search snapshots still differ from the golden (see T0.3 outcome). |
 
 **Open questions** (the user has not decided; each row has a proposed default):
 
 | # | Question | Proposed default |
 |---|---|---|
-| 1 | `FORCE_COLOR` vs `NO_COLOR` precedence (X15). `hoocode-code-cli/src/lib.rs:81` reads `FORCE_COLOR`. | `FORCE_COLOR` wins. |
-| 2 | `spawn_refresh` (`hoocode-code-auth/src/lib.rs:517`) has no UI caller after the N14 marker-only change. | Delete it at build time if nothing else calls it. **Deleted 2026-10-14** (decisions-2026-10-14.md #2). |
-| 3 | Does the default config bind more than one key to `app.tasks.cycleForward`? Checked 2026-10-14: no. Only `alt+l` (`hoocode-code-tui-keybindings/src/keybindings.rs:121`). | X18 changes nothing by default. The user decides whether to build it. |
+| 1 | `FORCE_COLOR` vs `NO_COLOR` precedence (X15). `hoocode-code-cli/src/lib.rs:81` reads `FORCE_COLOR`. | `FORCE_COLOR` wins. **Answered 2026-10-14: `FORCE_COLOR` wins** (decisions-2026-10-14.md #14). |
+| 2 | `spawn_refresh` (`hoocode-code-auth/src/lib.rs:517`) has no UI caller after the N14 marker-only change. | Delete it at build time if nothing else calls it. **Deleted 2026-10-14** (decisions-2026-10-14.md #15). |
+| 3 | Does the default config bind more than one key to `app.tasks.cycleForward`? Checked 2026-10-14: no. Only `alt+l` (`hoocode-code-tui-keybindings/src/keybindings.rs:121`). | X18 changes nothing by default. **Answered 2026-10-14: X18 is not built** (decisions-2026-10-14.md #16). |
 
 ## Goal
 
@@ -146,7 +146,7 @@ subagent that takes a row still confirms it before changing code.
 | X15 | Theme and util: wire `chalk::set_enabled(color_enabled())`; pass the bg opener once per band; skip the tab copy when there are no tabs; `JsRegex::search` returns `Option` (still UTF-16). **Done 2026-10-14** (`a7a3129`), with one open point: `chalk::set_enabled(color_enabled())` in the CLI `main`; `band_opener` once per band (Text, Markdown); `visible_width` copies only when there are tabs; `JsRegex::search` returns `Option`. Open, now decided 2026-10-14 (decisions-2026-10-14.md #11), size S: both follow the switch. **Built 2026-10-14** (#14 for precedence; `fill` chips still emit colour with the switch off, not in the decision). `theme.fg/bg` still emit colour when colour is off, because only bold, italic and the like honour chalk. Fix in `crates/hoocode-code-tui-theme/src/theme.rs:222-227` (chalk at `chalk.rs:12`). `color_enabled()` (`crates/hoocode-code-cli/src/lib.rs:80`) must read `NO_COLOR`: any non-empty value means off. | UT6 V, UT8 P, UT10 P | S |
 | X16 | Small structure: `startup_progress` → a single slot, removing the dead Download/Work branches; one scroll-key table; camelCase TS names → Rust names (file provenance stays); j/k as named bindings in `extension_selector`; frame sizing helpers shared with editor and box; the shared undo-coalescing predicate; `apply_completion` helper (3 tails); one autocomplete item builder, with `CmdView` → `AutocompleteItem`; a keyed `file_search` slot; drop the unused bold/underline/strike flags. | AP8 V, AP9 V, AP13 P, PK7 V, ED3 P, ED4 P, MC7 P, MC8 V, MC9 V, MC2 V | M |
 | X17 | Terminal: a lone ESC is not flushed after a resubscribe. `subscribe` (`crates/hoocode-tui-terminal/src/stdin_hub.rs:200-215`) replays held chunks, but the reader (`:227-260`) stays in `poll(-1)`, so ESC waits for the next byte, and ESC then `a` reads as Alt+a. Add a self-pipe that wakes the unix poll loop, so the reader re-reads `flush_at`. Regression tests: a replayed lone ESC flushes as Escape within the timeout, and ESC followed later by `a` is not Alt+a. **Done 2026-10-14** (`stdin_hub::wake_tests`; the test fails with the wake call removed). **New 2026-10-14** (decisions-2026-10-14.md #13; open decision 11). | new | S |
-| X18 | Task panel key hint: show every key of `app.tasks.cycleForward` joined with " or ", the same format as the mode dial (N7). Today `app_key_label` (`crates/hoocode-code-tui-keybindings/src/hints.rs:101`) returns only the first key, and `crates/hoocode-code-tui-widgets/src/task_panel.rs:304` uses it. Use `get_keys` instead. A golden moves only when the key has a second binding. **New 2026-10-14** (decisions-2026-10-14.md #5; open decision 3). | new | XS |
+| X18 | **Won't build by default** (decisions-2026-10-14.md #16). Task panel key hint: show every key of `app.tasks.cycleForward` joined with " or ", the same format as the mode dial (N7). Today `app_key_label` (`crates/hoocode-code-tui-keybindings/src/hints.rs:101`) returns only the first key, and `crates/hoocode-code-tui-widgets/src/task_panel.rs:304` uses it. Use `get_keys` instead. A golden moves only when the key has a second binding. **New 2026-10-14** (decisions-2026-10-14.md #5; open decision 3). | new | XS |
 
 **Later** (keep; do only after `/perf` shows the cost, or when the file is touched anyway):
 
