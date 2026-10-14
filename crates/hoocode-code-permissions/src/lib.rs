@@ -10,6 +10,21 @@ use std::sync::Arc;
 /// `GATED_TOOLS`: prompted in interactive sessions.
 pub const GATED_TOOLS: [&str; 5] = ["Shell", "Write", "Edit", "WebFetch", "WebSearch"];
 
+/// The plugin lifecycle tools. They are not in [`GATED_TOOLS`]; in fail-closed
+/// (rpc) mode they are gated like one, so they need `auto_allow`.
+pub const PLUGIN_TOOLS: [&str; 5] = [
+    "SearchPlugins",
+    "ListPlugins",
+    "SuggestPluginInstall",
+    "InstallPlugin",
+    "ProposePlugin",
+];
+
+/// MCP tools are named `mcp_<server>_<tool>` (`hoocode-agent-mcp`'s naming).
+fn is_mcp_or_plugin_tool(tool_name: &str) -> bool {
+    tool_name.starts_with("mcp_") || PLUGIN_TOOLS.contains(&tool_name)
+}
+
 /// The three prompt choices, in order.
 pub const CHOICES: [&str; 3] = [
     "Yes (once)",
@@ -219,15 +234,17 @@ pub fn evaluate(
         }
     }
 
-    // TODO(reliability 1.1, decision c): MCP and plugin tools are not in
-    // GATED_TOOLS, so they run ungated in every mode. See docs/design/reliability.md.
     let fail_closed = match channel {
         ApprovalChannel::Ui => false,
         // print/json: nobody is asked, and the CLI prints one notice per run.
         ApprovalChannel::Headless { fail_closed: false } => return Verdict::Allow,
         ApprovalChannel::Headless { fail_closed: true } => true,
     };
-    if !GATED_TOOLS.contains(&tool_name) {
+    // MCP and plugin tools are gated only where nobody can answer (rpc). A UI
+    // still runs them without a prompt, as before.
+    let gated =
+        GATED_TOOLS.contains(&tool_name) || (fail_closed && is_mcp_or_plugin_tool(tool_name));
+    if !gated {
         return Verdict::Allow;
     }
     if tool_name == "Write" || tool_name == "Edit" {
