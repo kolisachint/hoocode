@@ -31,8 +31,8 @@ use super::word_wrap::{
 use crate::autocomplete::{AutocompleteItem, AutocompleteProvider, AutocompleteSuggestions};
 use crate::color::ColorFn;
 use crate::frame::{
-    render_frame_edge, FrameBorderChars, FrameBorderCharsOverride, FrameBorderStyle, FrameEdge,
-    FrameEdgeOptions, FrameLabel,
+    padded_columns, render_frame_edge, FrameBorderChars, FrameBorderCharsOverride,
+    FrameBorderStyle, FrameEdge, FrameEdgeOptions, FrameLabel,
 };
 use crate::select_list::{SelectItem, SelectList, SelectListLayoutOptions, SelectListTheme};
 
@@ -1968,9 +1968,7 @@ impl Component for Editor {
         let bare = self.border == FrameBorderStyle::None;
         let border_width = usize::from(is_box);
         let inner_width = width.saturating_sub(border_width * 2).max(1);
-        let max_padding = (inner_width - 1) / 2;
-        let padding_x = self.padding_x.min(max_padding);
-        let content_width = inner_width.saturating_sub(padding_x * 2).max(1);
+        let (padding_x, content_width) = padded_columns(inner_width, self.padding_x);
 
         let prompt_prefix_width = if self.prompt_prefix.is_empty() {
             0
