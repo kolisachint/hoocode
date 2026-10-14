@@ -120,20 +120,9 @@ fn js_sort<T>(items: &mut [T], mut compare: impl FnMut(&T, &T) -> Ordering) {
     }
 }
 
-fn home_dir() -> String {
-    hoocode_code_resources::package_resolve::home_dir()
-}
-
 /// `formatBaseDir`: `~` for home, `/` separators, a trailing `/`.
 fn format_base_dir(base_dir: &str) -> String {
-    let home = home_dir();
-    let display = if base_dir == home {
-        "~".to_string()
-    } else if let Some(rest) = base_dir.strip_prefix(&home) {
-        format!("~{}", rest.replace('\\', "/"))
-    } else {
-        base_dir.replace('\\', "/")
-    };
+    let display = hoocode_home::shorten_path(base_dir).replace('\\', "/");
     if display.ends_with('/') {
         display
     } else {

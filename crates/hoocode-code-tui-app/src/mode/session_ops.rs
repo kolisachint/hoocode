@@ -146,9 +146,13 @@ impl Mode {
     pub(super) fn handle_change_directory(&mut self, text: &str) {
         let raw = text.strip_prefix("/cd").unwrap_or(text).trim();
         let previous_cwd = self.session.cwd().to_path_buf();
-        let home = home_dir();
+        let home = hoocode_home::home_dir();
         let target = if raw.is_empty() || raw == "~" {
-            home.clone()
+            let Some(home) = home else {
+                self.show_warning("No home directory to change to");
+                return;
+            };
+            home
         } else if raw == "-" {
             let Some(previous) = self.previous_cwd.borrow().clone() else {
                 self.show_warning("No previous directory to return to");
@@ -157,7 +161,13 @@ impl Mode {
             previous
         } else {
             let expanded = match raw.strip_prefix("~/") {
-                Some(rest) => home.join(rest),
+                Some(rest) => {
+                    let Some(home) = &home else {
+                        self.show_warning("No home directory to change to");
+                        return;
+                    };
+                    home.join(rest)
+                }
                 None => PathBuf::from(raw),
             };
             resolve_path(&previous_cwd, &expanded)

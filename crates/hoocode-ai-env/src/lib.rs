@@ -74,7 +74,7 @@ fn check_vertex_adc_credentials() -> bool {
     if let Some(gac_path) = env_value("GOOGLE_APPLICATION_CREDENTIALS") {
         return std::path::Path::new(&gac_path).exists();
     }
-    dirs::home_dir().is_some_and(|home| {
+    hoocode_home::home_dir().is_some_and(|home| {
         home.join(".config")
             .join("gcloud")
             .join("application_default_credentials.json")

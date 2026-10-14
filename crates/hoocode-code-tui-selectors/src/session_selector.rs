@@ -15,7 +15,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use hoocode_code_paths::{canonicalize_path, home_dir};
+use hoocode_code_paths::canonicalize_path;
 use hoocode_code_session::identity::{session_color_slot_for, session_slug_for};
 use hoocode_code_session::SessionInfo;
 use hoocode_code_tui_keybindings::{key_hint, key_text};
@@ -24,6 +24,7 @@ use hoocode_code_tui_theme::{
 };
 use hoocode_code_tui_widgets::brand::GIT_BRANCH_GLYPH;
 use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
+use hoocode_home::shorten_path;
 use hoocode_tui_components::{Input, Spacer, Text};
 use hoocode_tui_keys::{get_keybindings, KeybindingsManager};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
@@ -43,18 +44,6 @@ pub enum SessionScope {
 
 /// Branches that name no particular piece of work.
 const DEFAULT_BRANCHES: [&str; 4] = ["main", "master", "trunk", "develop"];
-
-fn shorten_path(path: &str) -> String {
-    let home = home_dir();
-    let home = home.to_string_lossy();
-    if path.is_empty() {
-        return String::new();
-    }
-    match path.strip_prefix(&*home) {
-        Some(rest) => format!("~{rest}"),
-        None => path.to_string(),
-    }
-}
 
 /// `formatSessionDate`: the age of `date` in one short unit.
 pub fn format_session_date(date: DateTime<Utc>, now: DateTime<Utc>) -> String {

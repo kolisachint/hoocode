@@ -47,7 +47,7 @@ pub fn normalize_piped_stdin(data: &str) -> Option<String> {
 }
 
 /// `resolveReadPath` (`core/tools/path-utils.ts`), shared with the read tool.
-pub fn resolve_read_path(file_path: &str, cwd: &Path, home: &Path) -> PathBuf {
+pub fn resolve_read_path(file_path: &str, cwd: &Path, home: Option<&Path>) -> PathBuf {
     hoocode_code_tool_api::path_utils::resolve_read_path_with_home(file_path, cwd, home)
 }
 
@@ -71,7 +71,7 @@ pub struct ProcessedFiles {
 pub fn process_file_arguments(
     file_args: &[String],
     cwd: &Path,
-    home: &Path,
+    home: Option<&Path>,
     auto_resize_images: bool,
 ) -> Result<ProcessedFiles, String> {
     process_file_arguments_with(
@@ -86,7 +86,7 @@ pub fn process_file_arguments(
 pub fn process_file_arguments_with(
     file_args: &[String],
     cwd: &Path,
-    home: &Path,
+    home: Option<&Path>,
     resize: Option<ImageResizeOptions>,
 ) -> Result<ProcessedFiles, String> {
     let mut out = ProcessedFiles::default();
@@ -151,7 +151,7 @@ pub fn prepare_initial_message(
     stdin_content: Option<&str>,
     auto_resize_images: bool,
     cwd: &Path,
-    home: &Path,
+    home: Option<&Path>,
 ) -> Result<(Option<String>, Vec<ImageContent>), String> {
     if file_args.is_empty() {
         return Ok((
@@ -248,7 +248,7 @@ mod tests {
     }
 
     fn process(dir: &Path, args: &[&str]) -> Result<ProcessedFiles, String> {
-        process_file_arguments(&msgs(args), dir, Path::new("/nohome"), true)
+        process_file_arguments(&msgs(args), dir, None, true)
     }
 
     #[test]
@@ -292,13 +292,8 @@ mod tests {
         }];
         // Within limits: passed through unchanged, with or without auto-resize.
         for auto_resize in [true, false] {
-            let files = process_file_arguments(
-                &msgs(&["i.png", "a.txt"]),
-                dir,
-                Path::new("/nohome"),
-                auto_resize,
-            )
-            .unwrap();
+            let files =
+                process_file_arguments(&msgs(&["i.png", "a.txt"]), dir, None, auto_resize).unwrap();
             assert_eq!(files.text, expected_text);
             assert_eq!(files.images, expected_images);
         }
@@ -315,13 +310,8 @@ mod tests {
             max_height: 1,
             ..Default::default()
         };
-        let files = process_file_arguments_with(
-            &msgs(&["wide.png"]),
-            dir,
-            Path::new("/nohome"),
-            Some(options),
-        )
-        .unwrap();
+        let files =
+            process_file_arguments_with(&msgs(&["wide.png"]), dir, None, Some(options)).unwrap();
         assert_eq!(
             files.text,
             format!(
@@ -339,15 +329,9 @@ mod tests {
         let dir = dir.path();
         std::fs::write(dir.join("i.png"), tiny_png()).unwrap();
         let mut m = msgs(&["describe", "next"]);
-        let (message, images) = prepare_initial_message(
-            &msgs(&["i.png"]),
-            &mut m,
-            Some("stdin\n"),
-            true,
-            dir,
-            Path::new("/nohome"),
-        )
-        .unwrap();
+        let (message, images) =
+            prepare_initial_message(&msgs(&["i.png"]), &mut m, Some("stdin\n"), true, dir, None)
+                .unwrap();
         assert_eq!(
             message.unwrap(),
             format!(
@@ -360,7 +344,7 @@ mod tests {
 
         let mut m = msgs(&["only"]);
         let (message, images) =
-            prepare_initial_message(&[], &mut m, None, true, dir, Path::new("/nohome")).unwrap();
+            prepare_initial_message(&[], &mut m, None, true, dir, None).unwrap();
         assert_eq!(message.as_deref(), Some("only"));
         assert!(images.is_empty());
     }
@@ -395,13 +379,9 @@ mod tests {
             max_bytes: 1,
             ..Default::default()
         };
-        let files = process_file_arguments_with(
-            &msgs(&["test.png"]),
-            dir.path(),
-            Path::new("/nohome"),
-            Some(options),
-        )
-        .unwrap();
+        let files =
+            process_file_arguments_with(&msgs(&["test.png"]), dir.path(), None, Some(options))
+                .unwrap();
         assert!(files.images.is_empty());
         assert!(files.text.contains("Image omitted"));
         assert_eq!(

@@ -259,14 +259,6 @@ pub fn command_path_argument(text: &str, command: &str) -> Option<String> {
     )
 }
 
-/// `os.homedir()`.
-pub(super) fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
-}
-
 /// `path.resolve(base, path)`: absolute and normalized, without touching
 /// the filesystem.
 pub(super) fn resolve_path(base: &Path, path: &Path) -> PathBuf {
@@ -289,12 +281,12 @@ pub(super) fn resolve_path(base: &Path, path: &Path) -> PathBuf {
 fn change_directory_completions(
     cwd: &Path,
     previous_cwd: Option<&Path>,
-    home: &Path,
+    home: Option<&Path>,
     prefix: &str,
 ) -> Vec<AutocompleteItem> {
-    let expanded = match prefix.strip_prefix("~/") {
-        Some(rest) => format!("{}/{rest}", home.to_string_lossy()),
-        None => prefix.to_string(),
+    let expanded = match (prefix.strip_prefix("~/"), home) {
+        (Some(rest), Some(home)) => format!("{}/{rest}", home.to_string_lossy()),
+        _ => prefix.to_string(),
     };
     let ends_with_sep = expanded.ends_with('/') || expanded.ends_with(std::path::MAIN_SEPARATOR);
     let (base, partial) = if ends_with_sep {
@@ -327,11 +319,13 @@ fn change_directory_completions(
                 description: None,
             });
         }
-        completions.push(AutocompleteItem {
-            value: "~".into(),
-            label: format!("~ ({})", home.display()),
-            description: None,
-        });
+        if let Some(home) = home {
+            completions.push(AutocompleteItem {
+                value: "~".into(),
+                label: format!("~ ({})", home.display()),
+                description: None,
+            });
+        }
     }
     let Ok(entries) = std::fs::read_dir(&search_dir) else {
         return completions;
@@ -624,7 +618,7 @@ impl Mode {
                                 let completions = change_directory_completions(
                                     session.cwd(),
                                     previous.borrow().as_deref(),
-                                    &home_dir(),
+                                    hoocode_home::home_dir().as_deref(),
                                     prefix,
                                 );
                                 (!completions.is_empty()).then_some(completions)

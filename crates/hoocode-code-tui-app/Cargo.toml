@@ -45,6 +45,7 @@ hoocode-code-tools-optin = { workspace = true }
 hoocode-code-tui-selectors = { workspace = true }
 hoocode-code-tui-theme = { workspace = true }
 hoocode-code-tui-widgets = { workspace = true }
+hoocode-home = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-tui-components = { workspace = true }
 hoocode-tui-fuzzy = { workspace = true }

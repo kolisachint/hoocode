@@ -17,4 +17,4 @@ publish = true
 doctest = false
 
 [dependencies]
-dirs = "5"
+hoocode-home = { workspace = true }

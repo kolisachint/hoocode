@@ -10,10 +10,11 @@ use serde_json::{json, Value};
 use super::{text, trim_trailing_empty_lines};
 use crate::read_output::render_read_output;
 use crate::render_utils::{
-    arg_or, invalid_arg_text, normalize_display_text, replace_tabs, shorten_path, str_arg,
+    arg_or, invalid_arg_text, normalize_display_text, replace_tabs, str_arg,
 };
 use crate::tool_execution::ToolRenderDefinition;
 use crate::tool_output_view::{peek_block, PEEK_LINES};
+use hoocode_home::shorten_path;
 
 /// Lines re-highlighted as one block while the content streams in.
 const WRITE_PARTIAL_FULL_HIGHLIGHT_LINES: usize = 50;
