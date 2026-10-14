@@ -25,7 +25,8 @@ update this page in the same commit.
 | Startup banner | wordmark | `hoocode-code-tui-app/src/wordmark.rs` |
 | Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
 | Task panel | task panel | `code-tui-widgets/src/task_panel.rs` |
-| Notification band | notification panel, tips | `hoocode-code-tui-app/src/notification_panel.rs`, `tips.rs` |
+| Notification band | notification panel, tips, startup update notice | `hoocode-code-tui-app/src/notification_panel.rs`, `tips.rs`; the update notice is polled by `poll_update_notice` in `mode/events.rs` from `hoocode-code-update` |
+| Completion bell (`chimeOnTurnComplete`): one `\x07` when a turn over 10 s ends (not after an abort) or when `AskUserQuestion` opens; repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` (pure timing); rung by `ring_chime` and `finish_turn_chime` in `mode/events.rs`, and at the `AskOptions` dialog in `mode/mod.rs` |
 | Progress bar | progress bar, startup progress | `hoocode-code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
 | Prompt editor | `CustomEditor` around `Editor` | `mode/input.rs` (`CustomEditor`); `tui-components/src/editor/` |
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
@@ -84,6 +85,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | `/login`, `/logout` | provider pickers, login dialog | `oauth_selector.rs`, `login_dialog.rs`; flow in `hoocode-code-tui-app/src/login_controller.rs` |
 | `AskUserQuestion` tool | options pane | `ask_options.rs` |
 | `hoocode config` | resource list | `config_selector.rs` |
+| `hoocode update` (CLI, no TUI): prints the update command for the install method; never replaces the binary | `hoocode-code-update/src/lib.rs` (`run_update_command`); dispatched in `hoocode-code-cli/src/lib.rs` |
 | `/hotkeys` | shortcuts page | `hoocode-code-tui-app/src/hotkeys.rs` |
 | `/changelog` | changelog | `hoocode-code-tui-app/src/changelog.rs` |
 | Questions from code off the UI thread | select / editor dialogs | `hoocode-code-tui-app/src/dialog_bridge.rs`, `extension_selector.rs`, `extension_editor.rs` |

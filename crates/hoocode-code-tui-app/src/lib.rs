@@ -3,6 +3,7 @@
 
 pub use hoocode_code_tui_widgets::brand;
 pub mod changelog;
+pub mod chime;
 pub mod chrome_layout;
 pub mod dialog_bridge;
 pub mod embsearch_progress;

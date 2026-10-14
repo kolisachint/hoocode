@@ -32,6 +32,7 @@ hoocode-ai-util = { workspace = true }
 hoocode-code-tool-bash = { workspace = true }
 hoocode-tui-images = { workspace = true }
 hoocode-code-paths = { workspace = true }
+hoocode-code-update = { workspace = true }
 hoocode-code-permissions = { workspace = true }
 hoocode-code-resources = { workspace = true }
 hoocode-code-subagents = { workspace = true }

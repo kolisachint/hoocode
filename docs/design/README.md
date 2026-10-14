@@ -67,7 +67,7 @@ pass the done bar (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 5 | Concurrency phases 2–5: terminal-output thread, session writer, lanes and priority, watchdog and memory limits | [concurrency.md](concurrency.md) | L | 4 | Built against the real MCP and tool load |
 | 6 | Plugins: load, install, opt-in model tools | [plugins.md](plugins.md) | L | 4 | Delivers skills, MCP servers and subagents |
 | 7 | Scheduler and `/loop` | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
-| 8 | Version check and completion chime | [extras.md](extras.md) | S | 0c | Small polish |
+| 8 | **Done 2026-10-14.** Version check (`hoocode-code-update`, `hoocode update`) and completion chime (`chime.rs`). Open: the live registry request is not in tests (no network there) | [extras.md](extras.md) | S | 0c | Small polish |
 | 9 | Subagent orchestration: background by default, subagent brief, worktree protocol by instruction, child prompt fixes, evals | [subagent-orchestration.md](subagent-orchestration.md) | M | — | Parent stops waiting on subagents; writers stop sharing one tree |
 
 **Status (2026-10-08):** milestone 2 (concurrency phases 0-1) is done. Milestone 3 (DocSearch;

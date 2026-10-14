@@ -1389,6 +1389,7 @@ dependencies = [
  "hoocode-code-tools-optin",
  "hoocode-code-tui-app",
  "hoocode-code-tui-theme",
+ "hoocode-code-update",
  "hoocode-runtime",
  "hoocode-tui-fuzzy",
  "hoocode-tui-terminal",
@@ -1755,6 +1756,7 @@ dependencies = [
  "hoocode-code-tui-selectors",
  "hoocode-code-tui-theme",
  "hoocode-code-tui-widgets",
+ "hoocode-code-update",
  "hoocode-runtime",
  "hoocode-tui-components",
  "hoocode-tui-fuzzy",
@@ -1850,6 +1852,19 @@ dependencies = [
  "serde_json",
  "tempfile",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "hoocode-code-update"
+version = "0.1.17"
+dependencies = [
+ "hoocode-ai-util",
+ "hoocode-code-paths",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

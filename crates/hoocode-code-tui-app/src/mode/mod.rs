@@ -47,6 +47,7 @@ use hoocode_tui_render::{Component, ComponentHandle, Container, FlexSpacer, Slot
 use hoocode_tui_terminal::Terminal;
 
 use crate::changelog::changelog_for_display;
+use crate::chime::{turn_chime_due, ChimeDebounce, BELL};
 use crate::chrome_layout::{
     ChromeLayoutController, ChromeSurfaces, FooterLayout, TasksLayout, SMALL_TERMINAL_ROWS,
 };
@@ -122,6 +123,8 @@ pub struct InteractiveOptions {
     pub terminal: Option<Box<dyn Terminal>>,
     /// `--perf-log`: one JSON line of the UI's counters a second is appended here.
     pub perf_log: Option<std::path::PathBuf>,
+    /// The startup version check's result (`hoocode-code-update`), polled by the loop.
+    pub update_notice: Option<std::sync::mpsc::Receiver<hoocode_code_update::UpdateAvailable>>,
 }
 
 use session_op::{SessionOpDone, SessionOutcome};
@@ -348,6 +351,10 @@ struct Mode {
     scheduler_tick_at: Instant,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
+    /// When the current turn started (set at `AgentStart`, taken at `PromptDone`).
+    turn_started_at: Option<Instant>,
+    chime: ChimeDebounce,
+    update_notice: Option<std::sync::mpsc::Receiver<hoocode_code_update::UpdateAvailable>>,
     tool_output_view: ToolOutputView,
     hide_thinking_block: bool,
     chain_closed_for_current_message: bool,
@@ -709,6 +716,9 @@ impl Mode {
             scheduler_tick_at: Instant::now() + hoocode_code_scheduler::TICK_INTERVAL,
             turn_cost_anchor: None,
             turn_stop_reason: None,
+            turn_started_at: None,
+            chime: ChimeDebounce::default(),
+            update_notice: options.update_notice,
             tool_output_view,
             hide_thinking_block,
             chain_closed_for_current_message: false,
@@ -1034,6 +1044,7 @@ impl Mode {
             hoocode_runtime::watchdog::ui_beat("ui-loop:input-done");
             self.drain_extension_ui_requests();
             self.tick_scheduler();
+            self.poll_update_notice();
             self.sync_runtime_health();
             if let Some(restarted) = self.restarted_input.take() {
                 input = restarted;
@@ -1059,6 +1070,7 @@ impl Mode {
                         self.show_turn_cost();
                         self.settle_dangling_plan_items();
                         self.tips.on_turn_end();
+                        self.finish_turn_chime();
                         if let Err(error) = result {
                             self.show_error(&error);
                         }
@@ -1074,6 +1086,7 @@ impl Mode {
                     }) => self.show_selector(&title, options, reply),
                     AppEvent::Dialog(DialogRequest::Notify(message)) => self.show_record(&message),
                     AppEvent::Dialog(DialogRequest::AskOptions { questions, reply }) => {
+                        self.ring_chime();
                         self.show_ask_options(questions, reply)
                     }
                     AppEvent::Dialog(DialogRequest::HideAskOptions) => self.hide_ask_options(None),

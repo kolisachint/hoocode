@@ -1755,6 +1755,16 @@ pub fn run_interactive_mode(
         return Err(RuntimeError::Setup("invalid model options".into()));
     }
     start_semantic_index(args, &session);
+    // The version check runs on the IO runtime; the TUI polls its result.
+    let update_notice = hoocode_code_update::start_startup_check(
+        &async_runtime(),
+        hoocode_code_paths::VERSION,
+        hoocode_code_update::check_enabled(
+            true,
+            hoocode_code_paths::is_offline_mode(),
+            session.settings().check_for_updates(),
+        ),
+    );
 
     hoocode_code_tui_app::mode::run_interactive(hoocode_code_tui_app::mode::InteractiveOptions {
         session,
@@ -1776,6 +1786,7 @@ pub fn run_interactive_mode(
         model_fallback_message: None,
         terminal: None,
         perf_log: args.perf_log.as_ref().map(std::path::PathBuf::from),
+        update_notice,
     })
     .map(|()| 0)
     .map_err(RuntimeError::Setup)
@@ -1909,6 +1920,7 @@ mod tests {
                 model_fallback_message: None,
                 terminal: Some(Box::new(terminal)),
                 perf_log: None,
+                update_notice: None,
             },
         );
         assert!(result.is_ok());
@@ -2270,6 +2282,7 @@ mod tests {
                     model_fallback_message: None,
                     terminal: Some(Box::new(terminal)),
                     perf_log: None,
+                    update_notice: None,
                 },
             )
             .unwrap();
@@ -2408,6 +2421,7 @@ mod tests {
                     model_fallback_message: None,
                     terminal: Some(Box::new(terminal)),
                     perf_log: None,
+                    update_notice: None,
                 },
             )
             .unwrap();

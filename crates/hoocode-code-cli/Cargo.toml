@@ -24,6 +24,7 @@ hoocode-code-agent-session = { workspace = true }
 hoocode-code-print = { workspace = true }
 hoocode-code-session = { workspace = true }
 hoocode-code-paths = { workspace = true }
+hoocode-code-update = { workspace = true }
 hoocode-code-settings = { workspace = true }
 hoocode-code-migrate = { workspace = true }
 hoocode-code-models = { workspace = true }

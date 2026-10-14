@@ -1,6 +1,6 @@
 # Extras
 
-Status: **agreed 2026-10-07**, design only. Replaces ledger 12.6 and the rest of 12.7.
+Status: **agreed 2026-10-07**. Items 1 and 2 under "What we build" are **done 2026-10-14**. Replaces ledger 12.6 and the rest of 12.7.
 
 ## Goal
 
@@ -38,6 +38,14 @@ Decide which of hoocode-ts's smaller features `hoocode` gets.
 
 Done when: both work, with hoocode-ts's `version-check` and `completion-chime`
 tests ported.
+
+Done 2026-10-14: both items are built, with their own unit tests (no TypeScript
+reference was ported). Version check: `crates/hoocode-code-update` (state in
+`~/.hoocode/version-check.json`; the latest version seen is kept, so a newer release
+is announced on later starts without a request). Install commands: curl for
+`~/.hoocode/bin` (`https://kolisachint.github.io/hoocode/install.sh`), npm or bun inside
+`node_modules`. Chime: `crates/hoocode-code-tui-app/src/chime.rs`. Open: the help line for `hoocode update`
+("Update hoocode and installed extensions") promises more than the command does.
 
 ## Not doing
 

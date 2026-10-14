@@ -391,6 +391,7 @@ const DEFAULT_SETTINGS_JSON: &str = r#"{
     "deferMcpSchemas": true,
     "enableWebTools": false,
     "enableSemanticIndex": true,
+    "checkForUpdates": true,
     "embsearchThresholdBytes": 0,
     "learnMaxSessions": 20,
     "learnMaxAgeDays": 30,

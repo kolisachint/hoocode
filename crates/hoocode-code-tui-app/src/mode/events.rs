@@ -72,6 +72,51 @@ impl Mode {
         }
     }
 
+    /// The startup update notice, once, when the version check reports a newer release.
+    pub(super) fn poll_update_notice(&mut self) {
+        let Some(receiver) = &self.update_notice else {
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(update) => {
+                self.update_notice = None;
+                let (title, body) = hoocode_code_update::notice_text(&update);
+                let body: Vec<&str> = body.iter().map(String::as_str).collect();
+                self.notifications.borrow_mut().notify(
+                    NotificationKind::Info,
+                    &title,
+                    &body,
+                    None,
+                    Some(Duration::from_secs(15)),
+                    Some("update"),
+                );
+                self.dirty.set(true);
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.update_notice = None,
+        }
+    }
+
+    /// Rings the bell when the setting allows and the debounce lets it through.
+    pub(super) fn ring_chime(&mut self) {
+        if !self.session.settings().chime_on_turn_complete() {
+            return;
+        }
+        if self.chime.allow(Instant::now()) {
+            self.tui.terminal.write(BELL);
+        }
+    }
+
+    /// The turn that just ended (`PromptDone`): chime when it ran long enough.
+    pub(super) fn finish_turn_chime(&mut self) {
+        let Some(started) = self.turn_started_at.take() else {
+            return;
+        };
+        if turn_chime_due(started.elapsed(), self.turn_stop_reason) {
+            self.ring_chime();
+        }
+    }
+
     /// `TaskScheduler.tick`: every [`hoocode_code_scheduler::TICK_INTERVAL`],
     /// while the agent is idle, submit the prompts of the tasks due this minute
     /// as follow-up messages (`fire` in `extensions/core/loop.ts`).
@@ -214,6 +259,7 @@ impl Mode {
         match event {
             AgentEvent::AgentStart => {
                 self.tips.on_turn_start();
+                self.turn_started_at.get_or_insert_with(Instant::now);
                 self.stop_working_loader();
                 let loader = self.create_working_loader();
                 self.status.borrow_mut().add_child(as_component(&loader));

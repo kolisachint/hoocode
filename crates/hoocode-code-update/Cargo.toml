@@ -1,0 +1,27 @@
+[package]
+name = "hoocode-code-update"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Startup version check and the `hoocode update` command for the hoocode coding agent"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-ai-util = { workspace = true }
+hoocode-code-paths = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt"] }
+
+[dev-dependencies]
+tempfile = "3"

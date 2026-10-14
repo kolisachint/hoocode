@@ -31,15 +31,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Package-manager subcommands that hoocode handles before `parseArgs`
 /// (`handlePackageCommand`, `handleResourcesCommand`). Not ported yet;
-/// `config` (`handleConfigCommand`) is.
-const SUBCOMMANDS: [&str; 6] = [
-    "install",
-    "remove",
-    "uninstall",
-    "update",
-    "list",
-    "resources",
-];
+/// `config` (`handleConfigCommand`) and `update` (see `hoocode-code-update`) are.
+const SUBCOMMANDS: [&str; 5] = ["install", "remove", "uninstall", "list", "resources"];
 
 /// `resolveAppMode` in `main.ts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +179,9 @@ pub fn main(argv: &[String]) -> i32 {
     }
     if argv.first().is_some_and(|a| a == "config") {
         return config_command::run_config_command(env.color, &mut stderr);
+    }
+    if argv.first().is_some_and(|a| a == "update") {
+        return hoocode_code_update::run_update_command(&mut stdout);
     }
     if let Some(cmd) = argv.first().filter(|a| SUBCOMMANDS.contains(&a.as_str())) {
         let _ = writeln!(
