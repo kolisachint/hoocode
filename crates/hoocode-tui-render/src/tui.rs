@@ -257,6 +257,17 @@ pub struct FrameTiming {
 /// See [`Tui::set_frame_observer`].
 pub type FrameObserver = Box<dyn FnMut(FrameTiming)>;
 
+/// The frame-level numbers the paint steps share.
+#[derive(Clone, Copy)]
+struct FrameGeometry {
+    width: i64,
+    height: i64,
+    /// The buffer row at the top of the screen before this frame.
+    prev_viewport_top: i64,
+    /// Lines in the frame this one replaces.
+    prev_line_count: i64,
+}
+
 #[derive(Clone, Copy)]
 struct CursorPos {
     row: i64,
@@ -1311,6 +1322,12 @@ impl Tui {
             self.render_scroll_view();
             return;
         }
+        self.paint_live();
+    }
+
+    /// A live paint: a full redraw when the screen cannot be diffed, else the
+    /// rows that changed since the last frame.
+    fn paint_live(&mut self) {
         let forced = std::mem::take(&mut self.force_redraw);
         let width = self.terminal.columns() as i64;
         let height = self.terminal.rows() as i64;
@@ -1319,14 +1336,74 @@ impl Tui {
         let previous_buffer_length = self
             .previous_height
             .map_or(height, |h| self.previous_viewport_top + h);
-        let mut prev_viewport_top = if height_changed {
+        let prev_viewport_top = if height_changed {
             (previous_buffer_length - height).max(0)
         } else {
             self.previous_viewport_top
         };
-        let mut viewport_top = prev_viewport_top;
-        let mut hardware_cursor_row = self.hardware_cursor_row;
 
+        let (new_lines, cursor_pos) = self.build_live_frame(width, height);
+        let line_count = new_lines.len() as i64;
+        if let Some(clear) =
+            self.full_redraw_clear(forced, width_changed, height_changed, line_count)
+        {
+            self.full_render(new_lines, width, height, clear);
+            return;
+        }
+
+        let geo = FrameGeometry {
+            width,
+            height,
+            prev_viewport_top,
+            prev_line_count: self.previous_lines.len() as i64,
+        };
+        let (changed, append_start) = self.changed_rows(&new_lines);
+
+        // --- The window has to move *back* over the buffer. ---
+        // A buffer taller than the screen shrank, so rows the reader scrolled
+        // past come back at the top; the append-only path cannot express that,
+        // so the visible window is painted in place. Only trees with a flex
+        // spacer take this path.
+        let window_top = (line_count - height).max(0);
+        if self.flex_spacer.is_some()
+            && line_count < geo.prev_line_count
+            && window_top < prev_viewport_top
+        {
+            if line_count < height || self.saw_image_line {
+                self.full_render(new_lines, width, height, true);
+                return;
+            }
+            self.paint_window_in_place(new_lines, geo, cursor_pos);
+            return;
+        }
+
+        // --- No changes: still may need to move the hardware cursor. ---
+        let Some(changed) = changed else {
+            self.position_hardware_cursor(&cursor_pos, line_count);
+            self.previous_viewport_top = prev_viewport_top;
+            self.previous_height = known_size(height);
+            return;
+        };
+        let (first_changed, _) = changed;
+
+        // --- All changes are deleted lines: nothing to render, just clear. ---
+        if first_changed >= line_count {
+            self.paint_deleted_lines(new_lines, geo, cursor_pos, changed);
+            return;
+        }
+
+        // --- Changes above the previous viewport require a full redraw. ---
+        if first_changed < prev_viewport_top {
+            self.full_render(new_lines, width, height, true);
+            return;
+        }
+
+        self.paint_differential(new_lines, geo, cursor_pos, changed, append_start);
+    }
+
+    /// Flattens the tree for this frame, fits the filler to the screen and
+    /// takes the cursor marker out. Returns the frame and the cursor position.
+    fn build_live_frame(&mut self, width: i64, height: i64) -> (Vec<String>, Option<CursorPos>) {
         let mut new_lines = self.render(width.max(0) as u16);
         // The frame has to exist before its leftover rows can be counted, so
         // the fill is settled by flattening again.
@@ -1337,34 +1414,42 @@ impl Tui {
 
         let cursor_pos = self.extract_cursor_position(&mut new_lines, height);
         self.last_cursor_pos = cursor_pos;
+        (new_lines, cursor_pos)
+    }
 
-        // --- First render: output everything without clearing. ---
+    /// Whether this frame needs a full redraw, and if so whether it clears the
+    /// screen first. `None` leaves the frame to the differential paths.
+    fn full_redraw_clear(
+        &self,
+        forced: bool,
+        width_changed: bool,
+        height_changed: bool,
+        line_count: i64,
+    ) -> Option<bool> {
+        // The first frame writes everything without clearing.
         if self.previous_lines.is_empty() && !forced && !width_changed && !height_changed {
-            self.full_render(new_lines, width, height, false);
-            return;
+            return Some(false);
         }
-
-        // --- Forced, or width change: a full re-render (wrapping changes). ---
+        // Forced, or width change: a full re-render (wrapping changes).
         if forced || width_changed {
-            self.full_render(new_lines, width, height, true);
-            return;
+            return Some(true);
         }
-
         // --- Height change: full re-render to keep the viewport aligned, except
         // on Termux, whose height changes with the software keyboard (a full
         // redraw there replays the whole history on every toggle). ---
         if height_changed && std::env::var_os("TERMUX_VERSION").is_none_or(|v| v.is_empty()) {
-            self.full_render(new_lines, width, height, true);
-            return;
+            return Some(true);
         }
-
         // --- Content shrunk below the working area: clear empty rows. ---
-        if self.clear_on_shrink && (new_lines.len() as i64) < self.max_lines_rendered {
-            self.full_render(new_lines, width, height, true);
-            return;
+        if self.clear_on_shrink && line_count < self.max_lines_rendered {
+            return Some(true);
         }
+        None
+    }
 
-        // --- Full-buffer diff to find first/last changed lines. ---
+    /// Full-buffer diff: the `(first, last)` rows that differ from the last
+    /// frame (`None` when none do), and whether the frame only appends.
+    fn changed_rows(&self, new_lines: &[String]) -> (Option<(i64, i64)>, bool) {
         let prev_line_count = self.previous_lines.len() as i64;
         // (first, last) changed row; `None` when the frames match.
         let mut changed: Option<(i64, i64)> = None;
@@ -1396,114 +1481,125 @@ impl Tui {
         }
         let append_start = appended_lines
             && changed.is_some_and(|(first, _)| first == prev_line_count && first > 0);
+        (changed, append_start)
+    }
 
-        // --- The window has to move *back* over the buffer. ---
-        // A buffer taller than the screen shrank, so rows the reader scrolled
-        // past come back at the top; the append-only path cannot express that,
-        // so the visible window is painted in place. Only trees with a flex
-        // spacer take this path.
-        let window_top = (new_lines.len() as i64 - height).max(0);
-        if self.flex_spacer.is_some()
-            && (new_lines.len() as i64) < prev_line_count
-            && window_top < prev_viewport_top
-        {
-            if (new_lines.len() as i64) < height || self.saw_image_line {
+    /// Paints the window of a shrunken buffer in place: the whole screen, since
+    /// the append-only path cannot move the window back over the buffer.
+    fn paint_window_in_place(
+        &mut self,
+        new_lines: Vec<String>,
+        geo: FrameGeometry,
+        cursor_pos: Option<CursorPos>,
+    ) {
+        let FrameGeometry { width, height, .. } = geo;
+        let line_count = new_lines.len() as i64;
+        let window_top = (line_count - height).max(0);
+        let mut buffer = String::from("\x1b[?2026h");
+        // Autowrap off: the bottom row must not wrap into a scroll.
+        buffer.push_str("\x1b[?7l");
+        for row in 0..height {
+            buffer.push_str(&format!("\x1b[{};1H\x1b[2K", row + 1));
+            let line = new_lines
+                .get((window_top + row) as usize)
+                .cloned()
+                .unwrap_or_default();
+            buffer.push_str(&self.emit_line(&line, width));
+        }
+        buffer.push_str("\x1b[?7h");
+        self.hardware_cursor_row = line_count - 1;
+        buffer.push_str(&self.build_hardware_cursor_move(&cursor_pos, line_count));
+        buffer.push_str("\x1b[?2026l");
+        self.write_frame(&buffer);
+        self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
+        self.previous_lines = new_lines;
+        self.previous_width = known_size(width);
+        self.previous_height = known_size(height);
+        self.previous_viewport_top = window_top;
+        self.max_lines_rendered = self
+            .max_lines_rendered
+            .max(self.previous_lines.len() as i64);
+    }
+
+    /// The frame only shortened: clear the rows past its end.
+    fn paint_deleted_lines(
+        &mut self,
+        new_lines: Vec<String>,
+        geo: FrameGeometry,
+        cursor_pos: Option<CursorPos>,
+        changed: (i64, i64),
+    ) {
+        let FrameGeometry {
+            width,
+            height,
+            prev_viewport_top,
+            prev_line_count,
+        } = geo;
+        let (first_changed, last_changed) = changed;
+        let line_count = new_lines.len() as i64;
+        if prev_line_count > line_count {
+            let mut buffer = String::from("\x1b[?2026h");
+            buffer.push_str(&self.delete_changed_kitty_images(first_changed, last_changed));
+            let target_row = (line_count - 1).max(0);
+            if target_row < prev_viewport_top {
                 self.full_render(new_lines, width, height, true);
                 return;
             }
-            let mut buffer = String::from("\x1b[?2026h");
-            // Autowrap off: the bottom row must not wrap into a scroll.
-            buffer.push_str("\x1b[?7l");
-            for row in 0..height {
-                buffer.push_str(&format!("\x1b[{};1H\x1b[2K", row + 1));
-                let line = new_lines
-                    .get((window_top + row) as usize)
-                    .cloned()
-                    .unwrap_or_default();
-                buffer.push_str(&self.emit_line(&line, width));
+            let line_diff = {
+                let current_screen_row = self.hardware_cursor_row - prev_viewport_top;
+                let target_screen_row = target_row - prev_viewport_top;
+                target_screen_row - current_screen_row
+            };
+            buffer.push_str(&move_rows(line_diff));
+            buffer.push('\r');
+            let extra_lines = prev_line_count - line_count;
+            if extra_lines > height {
+                self.full_render(new_lines, width, height, true);
+                return;
             }
-            buffer.push_str("\x1b[?7h");
-            self.hardware_cursor_row = new_lines.len() as i64 - 1;
-            buffer.push_str(&self.build_hardware_cursor_move(&cursor_pos, new_lines.len() as i64));
-            buffer.push_str("\x1b[?2026l");
-            self.write_frame(&buffer);
-            self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
-            self.previous_lines = new_lines;
-            self.previous_width = known_size(width);
-            self.previous_height = known_size(height);
-            self.previous_viewport_top = window_top;
-            self.max_lines_rendered = self
-                .max_lines_rendered
-                .max(self.previous_lines.len() as i64);
-            return;
-        }
-
-        // --- No changes: still may need to move the hardware cursor. ---
-        let Some((first_changed, last_changed)) = changed else {
-            self.position_hardware_cursor(&cursor_pos, new_lines.len() as i64);
-            self.previous_viewport_top = prev_viewport_top;
-            self.previous_height = known_size(height);
-            return;
-        };
-
-        // --- All changes are deleted lines: nothing to render, just clear. ---
-        if first_changed >= new_lines.len() as i64 {
-            if prev_line_count > new_lines.len() as i64 {
-                let mut buffer = String::from("\x1b[?2026h");
-                buffer.push_str(&self.delete_changed_kitty_images(first_changed, last_changed));
-                let target_row = (new_lines.len() as i64 - 1).max(0);
-                if target_row < prev_viewport_top {
-                    self.full_render(new_lines, width, height, true);
-                    return;
-                }
-                let line_diff = {
-                    let current_screen_row = hardware_cursor_row - prev_viewport_top;
-                    let target_screen_row = target_row - viewport_top;
-                    target_screen_row - current_screen_row
-                };
-                buffer.push_str(&move_rows(line_diff));
-                buffer.push('\r');
-                let extra_lines = prev_line_count - new_lines.len() as i64;
-                if extra_lines > height {
-                    self.full_render(new_lines, width, height, true);
-                    return;
-                }
-                if extra_lines > 0 {
+            if extra_lines > 0 {
+                buffer.push_str("\x1b[1B");
+            }
+            for i in 0..extra_lines {
+                buffer.push_str("\r\x1b[2K");
+                if i < extra_lines - 1 {
                     buffer.push_str("\x1b[1B");
                 }
-                for i in 0..extra_lines {
-                    buffer.push_str("\r\x1b[2K");
-                    if i < extra_lines - 1 {
-                        buffer.push_str("\x1b[1B");
-                    }
-                }
-                if extra_lines > 0 {
-                    buffer.push_str(&format!("\x1b[{extra_lines}A"));
-                }
-                self.hardware_cursor_row = target_row;
-                buffer.push_str(
-                    &self.build_hardware_cursor_move(&cursor_pos, new_lines.len() as i64),
-                );
-                buffer.push_str("\x1b[?2026l");
-                self.write_frame(&buffer);
-            } else {
-                self.position_hardware_cursor(&cursor_pos, new_lines.len() as i64);
             }
-            self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
-            self.previous_lines = new_lines;
-            self.previous_width = known_size(width);
-            self.previous_height = known_size(height);
-            self.previous_viewport_top = prev_viewport_top;
-            return;
+            if extra_lines > 0 {
+                buffer.push_str(&format!("\x1b[{extra_lines}A"));
+            }
+            self.hardware_cursor_row = target_row;
+            buffer.push_str(&self.build_hardware_cursor_move(&cursor_pos, line_count));
+            buffer.push_str("\x1b[?2026l");
+            self.write_frame(&buffer);
+        } else {
+            self.position_hardware_cursor(&cursor_pos, line_count);
         }
+        self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
+        self.previous_lines = new_lines;
+        self.previous_width = known_size(width);
+        self.previous_height = known_size(height);
+        self.previous_viewport_top = prev_viewport_top;
+    }
 
-        // --- Changes above the previous viewport require a full redraw. ---
-        if first_changed < prev_viewport_top {
-            self.full_render(new_lines, width, height, true);
-            return;
-        }
+    /// The differential paint: rewrite the changed rows from the first one to
+    /// the end, scrolling the screen first when the change lies below it.
+    fn paint_differential(
+        &mut self,
+        new_lines: Vec<String>,
+        geo: FrameGeometry,
+        cursor_pos: Option<CursorPos>,
+        changed: (i64, i64),
+        append_start: bool,
+    ) {
+        let (width, height, prev_line_count) = (geo.width, geo.height, geo.prev_line_count);
+        let (first_changed, last_changed) = changed;
+        let line_count = new_lines.len() as i64;
+        let mut prev_viewport_top = geo.prev_viewport_top;
+        let mut viewport_top = prev_viewport_top;
+        let mut hardware_cursor_row = self.hardware_cursor_row;
 
-        // --- Differential render from first changed line to end. ---
         let mut buffer = String::from("\x1b[?2026h");
         buffer.push_str(&self.delete_changed_kitty_images(first_changed, last_changed));
         let prev_viewport_bottom = prev_viewport_top + height - 1;
@@ -1534,7 +1630,7 @@ impl Tui {
 
         buffer.push_str(if append_start { "\r\n" } else { "\r" });
 
-        let render_end = last_changed.min(new_lines.len() as i64 - 1);
+        let render_end = last_changed.min(line_count - 1);
         for i in first_changed..=render_end {
             if i > first_changed {
                 buffer.push_str("\r\n");
@@ -1544,14 +1640,14 @@ impl Tui {
         }
 
         let mut final_cursor_row = render_end;
-        if prev_line_count > new_lines.len() as i64 {
-            if render_end < new_lines.len() as i64 - 1 {
-                let move_down = new_lines.len() as i64 - 1 - render_end;
+        if prev_line_count > line_count {
+            if render_end < line_count - 1 {
+                let move_down = line_count - 1 - render_end;
                 buffer.push_str(&format!("\x1b[{move_down}B"));
-                final_cursor_row = new_lines.len() as i64 - 1;
+                final_cursor_row = line_count - 1;
             }
-            let extra_lines = prev_line_count - new_lines.len() as i64;
-            for _ in new_lines.len() as i64..prev_line_count {
+            let extra_lines = prev_line_count - line_count;
+            for _ in line_count..prev_line_count {
                 buffer.push_str("\r\n\x1b[2K");
             }
             buffer.push_str(&format!("\x1b[{extra_lines}A"));
@@ -1560,12 +1656,12 @@ impl Tui {
         self.hardware_cursor_row = final_cursor_row;
         // Inside the synchronized block, so the frame is never presented with
         // the cursor still parked at the end of the last redrawn line.
-        buffer.push_str(&self.build_hardware_cursor_move(&cursor_pos, new_lines.len() as i64));
+        buffer.push_str(&self.build_hardware_cursor_move(&cursor_pos, line_count));
 
         buffer.push_str("\x1b[?2026l");
         self.write_frame(&buffer);
 
-        self.max_lines_rendered = self.max_lines_rendered.max(new_lines.len() as i64);
+        self.max_lines_rendered = self.max_lines_rendered.max(line_count);
         self.previous_viewport_top = prev_viewport_top.max(final_cursor_row - height + 1);
 
         self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
