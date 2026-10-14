@@ -241,6 +241,13 @@ fn thinking_border_level(level: &str) -> ThinkingBorderLevel {
     }
 }
 
+/// Whether `text` flips the bash-mode (`!`) state recorded in `last`. It records the new state,
+/// and reports only a change, so the mode hears about a flip rather than every keystroke.
+fn bash_mode_flip(last: &Cell<bool>, text: &str) -> Option<bool> {
+    let now = text.trim_start().starts_with('!');
+    (last.replace(now) != now).then_some(now)
+}
+
 /// Whether the header cursor blinks: only while the transcript is empty (the
 /// header is still the top of the screen, so a resumed session never blinks),
 /// and not while the view is pinned to a scrolled-back transcript.
@@ -515,9 +522,11 @@ impl Mode {
             sink.borrow_mut().push(Action::Submit(text.to_string()))
         }));
         let sink = actions.clone();
+        let bash_mode = Cell::new(false);
         editor.on_change = Some(Box::new(move |text: &str| {
-            sink.borrow_mut()
-                .push(Action::EditorChanged(text.to_string()))
+            if let Some(now) = bash_mode_flip(&bash_mode, text) {
+                sink.borrow_mut().push(Action::EditorChanged(now));
+            }
         }));
         let sink = actions.clone();
         editor.on_autocomplete_visibility_change = Some(Box::new(move |visible| {
@@ -1221,6 +1230,21 @@ impl Mode {
         }
         self.session.dispose();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod bash_mode_flip_tests {
+    use super::*;
+
+    #[test]
+    fn reports_only_the_flip_into_and_out_of_bash_mode() {
+        let last = Cell::new(false);
+        assert_eq!(bash_mode_flip(&last, "ls"), None);
+        assert_eq!(bash_mode_flip(&last, "!l"), Some(true));
+        assert_eq!(bash_mode_flip(&last, "!ls"), None);
+        assert_eq!(bash_mode_flip(&last, "  !!ls"), None);
+        assert_eq!(bash_mode_flip(&last, ""), Some(false));
     }
 }
 
