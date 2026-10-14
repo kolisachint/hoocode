@@ -68,22 +68,9 @@ fn locale_cmp(a: &str, b: &str) -> Ordering {
         .then_with(|| a.cmp(b))
 }
 
-fn home_dir() -> Option<String> {
-    std::env::var("HOME")
-        .ok()
-        .filter(|h| !h.is_empty())
-        .or_else(|| std::env::var("USERPROFILE").ok().filter(|h| !h.is_empty()))
-}
-
 /// `formatDisplayPath`: the home directory as `~`.
 pub fn format_display_path(p: &str) -> String {
-    match home_dir() {
-        Some(home) if p.starts_with(&home) => format!(
-            "~{}",
-            hoocode_tui_util::text_slice::suffix_from(p, home.len())
-        ),
-        _ => p.to_string(),
-    }
+    hoocode_home::shorten_path(p)
 }
 
 fn format_context_path(p: &str, cwd: &str) -> String {

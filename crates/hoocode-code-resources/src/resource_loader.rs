@@ -187,22 +187,20 @@ impl DefaultResourceLoader {
         self.append_system_prompt.push(text.into());
     }
 
-    fn home(&self) -> String {
-        self.options.home.clone().unwrap_or_else(home_dir)
+    fn home(&self) -> Option<String> {
+        self.options.home.clone().or_else(home_dir)
     }
 
     /// `resolveResourcePath`: `~` expansion, then against the cwd.
     fn resolve_resource_path(&self, p: &str) -> String {
         let trimmed = p.trim();
         let home = self.home();
-        let expanded = if trimmed == "~" {
-            home
-        } else if let Some(rest) = trimmed.strip_prefix("~/") {
-            node_path::join(&[&home, rest])
-        } else if let Some(rest) = trimmed.strip_prefix('~') {
-            node_path::join(&[&home, rest])
-        } else {
-            trimmed.to_string()
+        let expanded = match (home.as_deref(), trimmed.strip_prefix('~')) {
+            (Some(home), Some("")) => home.to_string(),
+            (Some(home), Some(rest)) => {
+                node_path::join(&[home, rest.strip_prefix('/').unwrap_or(rest)])
+            }
+            _ => trimmed.to_string(),
         };
         node_path::resolve(&self.options.cwd, &expanded)
     }
@@ -402,8 +400,10 @@ impl DefaultResourceLoader {
             .map(|p| p.to_string_lossy().into_owned()),
         );
         default_slash_dirs.push(node_path::join(&[&self.options.agent_dir, "commands"]));
-        default_slash_dirs.push(node_path::join(&[&home, ".agents", "commands"]));
-        default_slash_dirs.push(node_path::join(&[&home, ".claude", "commands"]));
+        if let Some(home) = &home {
+            default_slash_dirs.push(node_path::join(&[home, ".agents", "commands"]));
+            default_slash_dirs.push(node_path::join(&[home, ".claude", "commands"]));
+        }
         default_slash_dirs.retain(|d| exists(d));
         let additional_slash = self.options.additional_slash_command_paths.clone();
         let slash_paths = if feature_disabled {

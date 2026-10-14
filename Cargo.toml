@@ -4,6 +4,7 @@ members = [
 
     # AI namespace
     "crates/hoocode-ai-env",
+    "crates/hoocode-home",
     "crates/hoocode-ai-models",
     "crates/hoocode-ai-models-catalog",
     "crates/hoocode-models-sync",
@@ -99,6 +100,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 
 hoocode-ai-env = { path = "crates/hoocode-ai-env" }
+hoocode-home = { path = "crates/hoocode-home" }
 hoocode-ai-models = { path = "crates/hoocode-ai-models" }
 hoocode-ai-models-catalog = { path = "crates/hoocode-ai-models-catalog" }
 hoocode-ai-oauth = { path = "crates/hoocode-ai-oauth" }

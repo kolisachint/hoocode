@@ -6,16 +6,6 @@ use hoocode_code_tui_theme::theme;
 use hoocode_tui_images::{get_capabilities, get_image_dimensions, image_fallback};
 use serde_json::Value;
 
-/// `shortenPath`: the home directory as `~`.
-pub fn shorten_path(path: &str) -> String {
-    let home = hoocode_code_tool_api::path_utils::home_dir();
-    let home = home.to_string_lossy();
-    match path.strip_prefix(home.as_ref()) {
-        Some(rest) if !home.is_empty() => format!("~{rest}"),
-        _ => path.to_string(),
-    }
-}
-
 /// `str(value)`: a string as itself, `null`/missing as `""`, anything else
 /// as `None` (an invalid argument).
 pub fn str_arg(value: Option<&Value>) -> Option<String> {

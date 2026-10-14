@@ -33,30 +33,24 @@ fn normalize_file_url(file_path: &str) -> String {
         .unwrap_or_else(|| stripped.to_string())
 }
 
-/// The user's home directory as Node's `os.homedir()` reports it on POSIX.
-pub fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
-}
-
 /// `expandPath`: file URL → path, strip a leading `@`, normalize unicode
-/// spaces, expand `~` against `home`.
-pub fn expand_path_with_home(file_path: &str, home: &Path) -> String {
+/// spaces, expand `~` against `home` (left as written when there is no home).
+pub fn expand_path_with_home(file_path: &str, home: Option<&Path>) -> String {
     let url_normalized = normalize_file_url(file_path);
     let without_at = url_normalized.strip_prefix('@').unwrap_or(&url_normalized);
     let normalized: String = without_at
         .chars()
         .map(|c| if is_unicode_space(c) { ' ' } else { c })
         .collect();
-    let home = home.to_string_lossy();
-    if normalized == "~" {
-        return home.into_owned();
-    }
-    if let Some(rest) = normalized.strip_prefix('~') {
-        if rest.starts_with('/') {
-            return format!("{home}{rest}");
+    if let Some(home) = home {
+        let home = home.to_string_lossy();
+        if normalized == "~" {
+            return home.into_owned();
+        }
+        if let Some(rest) = normalized.strip_prefix('~') {
+            if rest.starts_with('/') {
+                return format!("{home}{rest}");
+            }
         }
     }
     normalized
@@ -64,7 +58,7 @@ pub fn expand_path_with_home(file_path: &str, home: &Path) -> String {
 
 /// `expandPath` against the real home directory.
 pub fn expand_path(file_path: &str) -> String {
-    expand_path_with_home(file_path, &home_dir())
+    expand_path_with_home(file_path, hoocode_home::home_dir().as_deref())
 }
 
 /// Node's `path.resolve(cwd, p)`: absolute, with `.` and `..` resolved
@@ -88,7 +82,7 @@ pub fn node_resolve(cwd: &Path, p: &str) -> PathBuf {
 }
 
 /// `resolveToCwd`: expand, then resolve relative paths against `cwd`.
-pub fn resolve_to_cwd_with_home(file_path: &str, cwd: &Path, home: &Path) -> PathBuf {
+pub fn resolve_to_cwd_with_home(file_path: &str, cwd: &Path, home: Option<&Path>) -> PathBuf {
     let expanded = expand_path_with_home(file_path, home);
     // path.resolve also normalizes an absolute path.
     node_resolve(cwd, &expanded)
@@ -96,7 +90,7 @@ pub fn resolve_to_cwd_with_home(file_path: &str, cwd: &Path, home: &Path) -> Pat
 
 /// `resolveToCwd` against the real home directory.
 pub fn resolve_to_cwd(file_path: &str, cwd: &Path) -> PathBuf {
-    resolve_to_cwd_with_home(file_path, cwd, &home_dir())
+    resolve_to_cwd_with_home(file_path, cwd, hoocode_home::home_dir().as_deref())
 }
 
 fn file_exists(path: &str) -> bool {
@@ -145,7 +139,7 @@ fn try_curly_quote_variant(s: &str) -> String {
 }
 
 /// `resolveReadPath` with an explicit home directory.
-pub fn resolve_read_path_with_home(file_path: &str, cwd: &Path, home: &Path) -> PathBuf {
+pub fn resolve_read_path_with_home(file_path: &str, cwd: &Path, home: Option<&Path>) -> PathBuf {
     let resolved = resolve_to_cwd_with_home(file_path, cwd, home);
     let text = resolved.to_string_lossy().into_owned();
     if file_exists(&text) {
@@ -179,7 +173,7 @@ pub fn resolve_read_path_with_home(file_path: &str, cwd: &Path, home: &Path) -> 
 /// `resolveReadPath`: resolve against `cwd`, then try the macOS filename
 /// variants when the plain path does not exist.
 pub fn resolve_read_path(file_path: &str, cwd: &Path) -> PathBuf {
-    resolve_read_path_with_home(file_path, cwd, &home_dir())
+    resolve_read_path_with_home(file_path, cwd, hoocode_home::home_dir().as_deref())
 }
 
 #[cfg(test)]
@@ -199,7 +193,7 @@ mod tests {
 
     #[test]
     fn expand_path_handles_at_tilde_url_and_unicode_spaces() {
-        let home = Path::new("/home/u");
+        let home = Some(Path::new("/home/u"));
         assert_eq!(expand_path_with_home("~", home), "/home/u");
         assert_eq!(expand_path_with_home("~/a.txt", home), "/home/u/a.txt");
         assert_eq!(expand_path_with_home("~a", home), "~a");
@@ -214,7 +208,7 @@ mod tests {
 
     #[test]
     fn only_triple_slash_file_urls_are_converted() {
-        let home = Path::new("/h");
+        let home = Some(Path::new("/h"));
         assert_eq!(expand_path_with_home("file://x/y", home), "file://x/y");
         assert_eq!(expand_path_with_home("file:///a/../b", home), "/b");
         // An encoded slash makes fileURLToPath throw: the prefix is stripped instead.
@@ -260,7 +254,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("hoocode-path-utils-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let home = Path::new("/nonexistent-home");
+        let home = Some(Path::new("/nonexistent-home"));
 
         let am = "Screenshot 2024 at 10.00.00\u{202F}AM.png";
         std::fs::write(dir.join(am), "x").unwrap();

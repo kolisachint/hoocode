@@ -59,9 +59,7 @@ fn well_known_file() -> Option<String> {
         std::env::var("APPDATA").ok()?
     } else {
         std::env::var("CLOUDSDK_CONFIG").ok().or_else(|| {
-            std::env::var("HOME")
-                .ok()
-                .map(|h| format!("{h}/.config/gcloud"))
+            hoocode_home::home_dir().map(|h| format!("{}/.config/gcloud", h.to_string_lossy()))
         })?
     };
     let dir = if cfg!(windows) {

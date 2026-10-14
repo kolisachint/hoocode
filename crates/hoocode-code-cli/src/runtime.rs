@@ -893,9 +893,7 @@ fn run_print_body(
     ran: &Arc<Mutex<std::collections::BTreeSet<String>>>,
 ) -> std::io::Result<i32> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let home = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_default();
+    let home = hoocode_home::home_dir();
     let (session, diagnostics) = build_session(args, false);
     let ran_tools = Arc::clone(ran);
     let _ran_subscription = session.subscribe(move |event| {
@@ -912,7 +910,7 @@ fn run_print_body(
         stdin_content.as_deref(),
         session.settings().image_auto_resize(),
         &cwd,
-        &home,
+        home.as_deref(),
     ) {
         Ok(prepared) => prepared,
         Err(message) => {
@@ -1729,9 +1727,7 @@ pub fn run_interactive_mode(
     let session = session_runtime.session().clone();
     let color = crate::Env::detect().color;
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let home = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_default();
+    let home = hoocode_home::home_dir();
     let mut messages = args.messages.clone();
     let (initial_message, initial_images) = match crate::initial_message::prepare_initial_message(
         &args.file_args,
@@ -1739,7 +1735,7 @@ pub fn run_interactive_mode(
         None,
         session.settings().image_auto_resize(),
         &cwd,
-        &home,
+        home.as_deref(),
     ) {
         Ok(prepared) => prepared,
         Err(message) => {

@@ -132,25 +132,9 @@ fn normalize(s: &str) -> String {
     s.replace(['\n', '\t'], " ").trim().to_string()
 }
 
-fn home() -> String {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_default()
-}
-
 /// `formatToolCall`: a one-line summary of a tool call.
 fn format_tool_call(name: &str, args: &Value) -> String {
-    let shorten = |p: String| -> String {
-        let home = home();
-        if !home.is_empty() && p.starts_with(&home) {
-            format!(
-                "~{}",
-                hoocode_tui_util::text_slice::suffix_from(&p, home.len())
-            )
-        } else {
-            p
-        }
-    };
+    let shorten = |p: String| -> String { hoocode_home::shorten_path(&p) };
     // `String(args.x || "")`: a missing or empty value is "".
     let arg = |key: &str| -> String {
         match args.get(key) {

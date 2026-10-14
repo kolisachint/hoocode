@@ -46,6 +46,7 @@ hoocode-code-tools-fs = { workspace = true }
 hoocode-code-tool-bash = { workspace = true }
 hoocode-code-tools-optin = { workspace = true }
 hoocode-ai-env = { workspace = true }
+hoocode-home = { workspace = true }
 hoocode-ai-oauth = { workspace = true }
 hoocode-ai-oauth-anthropic = { workspace = true }
 hoocode-ai-oauth-github-copilot = { workspace = true }

@@ -984,7 +984,7 @@ dependencies = [
 name = "hoocode-ai-env"
 version = "0.1.17"
 dependencies = [
- "dirs",
+ "hoocode-home",
 ]
 
 [[package]]
@@ -1102,6 +1102,7 @@ dependencies = [
  "hoocode-ai-stream",
  "hoocode-ai-types",
  "hoocode-ai-util",
+ "hoocode-home",
  "jsonwebtoken",
  "reqwest 0.12.28",
  "serde",
@@ -1389,6 +1390,7 @@ dependencies = [
  "hoocode-code-tools-optin",
  "hoocode-code-tui-app",
  "hoocode-code-tui-theme",
+ "hoocode-home",
  "hoocode-runtime",
  "hoocode-tui-fuzzy",
  "hoocode-tui-terminal",
@@ -1448,11 +1450,11 @@ dependencies = [
 name = "hoocode-code-models"
 version = "0.1.17"
 dependencies = [
- "dirs",
  "glob",
  "hoocode-ai-models",
  "hoocode-ai-types",
  "hoocode-code-settings",
+ "hoocode-home",
  "serde",
  "serde_json",
  "tempfile",
@@ -1473,7 +1475,7 @@ dependencies = [
 name = "hoocode-code-paths"
 version = "0.1.17"
 dependencies = [
- "dirs",
+ "hoocode-home",
  "serde_json",
  "tempfile",
  "url",
@@ -1514,11 +1516,11 @@ dependencies = [
 name = "hoocode-code-resources"
 version = "0.1.17"
 dependencies = [
- "dirs",
  "glob",
  "hoocode-agent-harness",
  "hoocode-code-paths",
  "hoocode-code-settings",
+ "hoocode-home",
  "ignore",
  "serde",
  "serde_json",
@@ -1624,6 +1626,7 @@ version = "0.1.17"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
+ "hoocode-home",
  "hoocode-tui-util",
  "serde",
  "serde_json",
@@ -1755,6 +1758,7 @@ dependencies = [
  "hoocode-code-tui-selectors",
  "hoocode-code-tui-theme",
  "hoocode-code-tui-widgets",
+ "hoocode-home",
  "hoocode-runtime",
  "hoocode-tui-components",
  "hoocode-tui-fuzzy",
@@ -1800,6 +1804,7 @@ dependencies = [
  "hoocode-code-tui-keybindings",
  "hoocode-code-tui-theme",
  "hoocode-code-tui-widgets",
+ "hoocode-home",
  "hoocode-tui-components",
  "hoocode-tui-fuzzy",
  "hoocode-tui-keys",
@@ -1840,6 +1845,7 @@ dependencies = [
  "hoocode-code-tools-fs",
  "hoocode-code-tui-keybindings",
  "hoocode-code-tui-theme",
+ "hoocode-home",
  "hoocode-tui-components",
  "hoocode-tui-images",
  "hoocode-tui-keys",
@@ -1850,6 +1856,13 @@ dependencies = [
  "serde_json",
  "tempfile",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "hoocode-home"
+version = "0.1.17"
+dependencies = [
+ "dirs",
 ]
 
 [[package]]
@@ -1876,6 +1889,7 @@ dependencies = [
 name = "hoocode-tui-components"
 version = "0.1.17"
 dependencies = [
+ "hoocode-home",
  "hoocode-runtime",
  "hoocode-tui-editing",
  "hoocode-tui-fuzzy",

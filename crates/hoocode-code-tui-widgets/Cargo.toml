@@ -26,6 +26,7 @@ hoocode-code-subagents = { workspace = true }
 hoocode-code-task-store = { workspace = true }
 hoocode-code-tool-api = { workspace = true }
 hoocode-code-tool-bash = { workspace = true }
+hoocode-home = { workspace = true }
 hoocode-code-tools-fs = { workspace = true }
 hoocode-code-tui-keybindings = { workspace = true }
 hoocode-code-tui-theme = { workspace = true }

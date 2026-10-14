@@ -16,11 +16,10 @@ use serde_json::Value;
 use super::search::js_number;
 use super::{text, trim_trailing_empty_lines};
 use crate::read_output::render_read_output;
-use crate::render_utils::{
-    arg_or, get_text_output, invalid_arg_text, replace_tabs, shorten_path, str_arg,
-};
+use crate::render_utils::{arg_or, get_text_output, invalid_arg_text, replace_tabs, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
 use crate::tool_output_view::{peek_window, PEEK_LINES};
+use hoocode_home::shorten_path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CompactKind {

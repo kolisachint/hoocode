@@ -1,0 +1,20 @@
+[package]
+name = "hoocode-home"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The user's home directory and `~` display: one policy for every hoocode crate"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+# Only for the passwd fallback: dirs 5 (already in the workspace) reads $HOME and then getpwuid_r.
+dirs = "5"
