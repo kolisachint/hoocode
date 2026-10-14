@@ -25,6 +25,14 @@ fn is_mcp_or_plugin_tool(tool_name: &str) -> bool {
     tool_name.starts_with("mcp_") || PLUGIN_TOOLS.contains(&tool_name)
 }
 
+/// Whether a call to `tool_name` is one an approval-asking client would be
+/// asked about: the interactive gated tools, plus the MCP and plugin tools that
+/// rpc gates. Print and json run these without asking; the CLI names the ones
+/// that ran.
+pub fn is_approval_tool(tool_name: &str) -> bool {
+    GATED_TOOLS.contains(&tool_name) || is_mcp_or_plugin_tool(tool_name)
+}
+
 /// The three prompt choices, in order.
 pub const CHOICES: [&str; 3] = [
     "Yes (once)",
