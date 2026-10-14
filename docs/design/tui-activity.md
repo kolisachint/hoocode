@@ -183,7 +183,7 @@ Needs: Phase S tier Now.
 
 | Step | Work | Size |
 |---|---|---|
-| T2.1 | Pool: the child's `--session` points at `<parent>/subagents/<task_id>.jsonl`. `Header.parent_session` is set. `dispatch-log.json` and ledger lines carry the parent session id. | S |
+| T2.1 | Pool: the child's `--session` points at `<parent>/subagents/<task_id>.jsonl`. `Header.parent_session` is set. `dispatch-log.json` and ledger lines carry the parent session id. **Done 2026-10-14:** the pool passes the child an internal `--parent-session`, which sets the header of a new transcript. `run_transcript` finds a resume's transcript under the parent, else in the dispatch dir (runs from before this change). The Agent tool and the TUI `/subagent` commands pass the parent. Warm workers (opt-in) still keep no transcript; not changed. | S |
 | T2.2 | Parent session: a `subagent_run` custom entry at dispatch, and a second one with the outcome at settle (append-only; the last one wins). Success no longer deletes the transcript. The sweep spares `subagents/`. Deleting a session deletes its dir. | S |
 | T2.3 | `/resume`: subagent runs nest under their parent session in the threaded view. Search matches the parent row only. | S |
 | T2.4 | After restart, `subagent_run` runs with no outcome entry are shown as `interrupted`. Enter on such a row offers View / Resume (the existing `SubagentPool::resume`). | S |

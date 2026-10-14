@@ -13,9 +13,11 @@ pub mod manager;
 pub use context::{build_session_context, ModelRef, SessionContext};
 pub use entry::{CustomMessageContent, FileEntry, Header, CURRENT_SESSION_VERSION};
 pub use manager::{
-    build_session_info, create_session_id, default_session_dir, default_sessions_root, encode_cwd,
-    find_most_recent_session, flush_session_writes, generate_id, list_all_sessions, list_sessions,
-    load_entries_from_file, load_raw_entries, load_session_file, migrate_session_entries,
-    LoadedSession, NewSessionOptions, SessionError, SessionInfo, SessionListProgress,
-    SessionManager, SessionTreeNode, SESSION_FLUSH_DEADLINE,
+    append_custom_entry_to_file, build_session_info, create_session_id, default_session_dir,
+    default_sessions_root, encode_cwd, find_most_recent_session, flush_session_writes, generate_id,
+    list_all_sessions, list_sessions, list_subagent_sessions, load_entries_from_file,
+    load_raw_entries, load_session_file, migrate_session_entries, session_id_of_file,
+    subagents_dir, LoadedSession, NewSessionOptions, SessionError, SessionInfo,
+    SessionListProgress, SessionManager, SessionTreeNode, SubagentRun, SubagentState,
+    SESSION_FLUSH_DEADLINE, SUBAGENT_RUN_ENTRY,
 };

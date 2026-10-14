@@ -68,6 +68,9 @@ pub struct Args {
     /// child wraps up shortly before it rather than being killed at it.
     pub deadline_ms: Option<u64>,
     pub session: Option<String>,
+    /// Internal: the session that dispatched this subagent. Written into the
+    /// header of a new `--session` file, so the transcript names its parent.
+    pub parent_session: Option<String>,
     pub fork: Option<String>,
     pub session_dir: Option<String>,
     /// Append one JSON line of the UI's performance counters a second to this file.
@@ -249,6 +252,10 @@ pub fn parse_args(args: &[String]) -> Args {
             "--session" if has_next => {
                 i += 1;
                 result.session = Some(args[i].clone());
+            }
+            "--parent-session" if has_next => {
+                i += 1;
+                result.parent_session = Some(args[i].clone());
             }
             "--fork" if has_next => {
                 i += 1;

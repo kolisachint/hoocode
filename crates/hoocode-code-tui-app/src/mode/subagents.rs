@@ -22,6 +22,14 @@ impl Mode {
             .map(|m| format!("{}/{}", m.provider, m.id))
     }
 
+    /// The session file subagents dispatched from here are recorded under.
+    fn parent_session_file(&self) -> Option<std::path::PathBuf> {
+        self.session
+            .session_manager()
+            .session_file()
+            .map(|p| p.to_path_buf())
+    }
+
     /// `handleSubagent`: `/subagent <mode> <task>` runs one subagent of that
     /// type off the UI thread; [`Self::finish_subagent`] reports it.
     pub(super) fn handle_subagent_command(&mut self, text: &str) {
@@ -54,6 +62,7 @@ impl Mode {
         let options = DispatchOptions {
             force_agent: Some(mode.clone()),
             inherited_model: self.session_model_ref(),
+            parent_session_file: self.parent_session_file(),
             ..Default::default()
         };
         let tx = self.tx.clone();
@@ -171,6 +180,7 @@ impl Mode {
         let options = DispatchOptions {
             force_agent: Some(agent_type.clone()),
             inherited_model: self.session_model_ref(),
+            parent_session_file: self.parent_session_file(),
             ..Default::default()
         };
         let tx = self.tx.clone();
