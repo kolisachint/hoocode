@@ -12,10 +12,7 @@ use super::lexer::{Token, TokenType};
 pub struct DefaultTextStyle {
     pub color: Option<ColorFn>,
     pub bg_color: Option<ColorFn>,
-    pub bold: bool,
     pub italic: bool,
-    pub strikethrough: bool,
-    pub underline: bool,
 }
 
 pub type HighlightCodeFn = Box<dyn Fn(&str, Option<&str>) -> Vec<String>>;
@@ -87,17 +84,8 @@ impl Renderer<'_> {
         if let Some(color) = &style.color {
             styled = color(&styled);
         }
-        if style.bold {
-            styled = (self.theme.bold)(&styled);
-        }
         if style.italic {
             styled = (self.theme.italic)(&styled);
-        }
-        if style.strikethrough {
-            styled = (self.theme.strikethrough)(&styled);
-        }
-        if style.underline {
-            styled = (self.theme.underline)(&styled);
         }
         styled
     }
