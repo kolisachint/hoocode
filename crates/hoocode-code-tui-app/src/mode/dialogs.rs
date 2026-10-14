@@ -15,11 +15,39 @@ use crate::extension_selector::{ExtensionSelectorComponent, SelectorOutcome};
 
 use super::*;
 
-/// The open extension selector and the channel its answer goes back on.
-pub(super) type OpenSelector = (
-    Rc<RefCell<ExtensionSelectorComponent>>,
-    mpsc::Sender<Option<String>>,
-);
+/// The picker in the editor's slot. There is at most one: a picker shown over
+/// another replaces it, and the replaced one is disposed (`set_picker`).
+pub(super) enum ActivePicker {
+    /// An extension selector and the callback its answer goes to.
+    Selector(Rc<RefCell<ExtensionSelectorComponent>>, Answer),
+    Session(Rc<RefCell<SessionSelectorComponent>>),
+    /// The session tree, and the leaf it opened on.
+    Tree(Rc<RefCell<TreeSelectorComponent>>, Option<String>),
+    Fork(Rc<RefCell<UserMessageSelectorComponent>>),
+    Model(Rc<RefCell<ModelSelectorComponent>>),
+    ScopedModels(Rc<RefCell<ScopedModelsSelectorComponent>>),
+    Settings(Rc<RefCell<SettingsSelectorComponent>>),
+}
+
+impl ActivePicker {
+    /// The deadline the loop must wake for, if the picker has one.
+    pub(super) fn deadline(&self) -> Option<Instant> {
+        match self {
+            ActivePicker::Selector(s, _) => s.borrow().deadline(),
+            ActivePicker::Fork(s) => s.borrow().deadline(),
+            ActivePicker::Tree(s, _) => s.borrow().deadline(),
+            _ => None,
+        }
+    }
+
+    /// The picker is gone. An extension selector's asker gets no answer.
+    pub(super) fn dispose(self) {
+        if let ActivePicker::Selector(selector, answer) = self {
+            selector.borrow_mut().dispose();
+            answer(None);
+        }
+    }
+}
 
 /// The open options pane and the channel its answers go back on.
 pub(super) type OpenAskOptions = (
@@ -28,26 +56,54 @@ pub(super) type OpenAskOptions = (
 );
 
 /// The open editor dialog and where its text goes.
-pub(super) type OpenEditorDialog = (
-    Rc<RefCell<ExtensionEditorComponent>>,
-    mpsc::Sender<Option<String>>,
-);
+pub(super) type OpenEditorDialog = (Rc<RefCell<ExtensionEditorComponent>>, Answer);
+
+/// Where a selector's or editor dialog's answer goes (`None` = cancelled). It runs on the
+/// UI thread, so a mode question posts its `AppEvent` here and needs no poll.
+pub(super) type Answer = Box<dyn FnOnce(Option<String>)>;
 
 /// A pane's answers, collected by its `on_done`.
 pub(super) type Outcomes = Rc<RefCell<Vec<SelectorOutcome>>>;
 
 impl Mode {
-    /// `showSelector`: swap the selector into the editor's slot.
-    pub(super) fn show_selector(
-        &mut self,
-        title: &str,
-        options: Vec<String>,
-        reply: mpsc::Sender<Option<String>>,
-    ) {
-        if let Some((previous, previous_reply)) = self.selector.take() {
-            previous.borrow_mut().dispose();
-            let _ = previous_reply.send(None);
+    /// Puts `picker` in the editor's slot, focused, after disposing the picker
+    /// that was there. `child` is the component the slot shows.
+    pub(super) fn set_picker(&mut self, picker: ActivePicker, child: ComponentHandle) {
+        if let Some(previous) = self.picker.take() {
+            previous.dispose();
         }
+        {
+            let mut container = self.editor_container.borrow_mut();
+            container.clear();
+            container.add_child(child.clone());
+        }
+        self.tui.set_focus(Some(child));
+        self.picker = Some(picker);
+        self.dirty.set(true);
+    }
+
+    /// An answer that posts `event(choice)` to the loop, which handles it there.
+    pub(super) fn answer_to(
+        &self,
+        event: impl FnOnce(Option<String>) -> AppEvent + 'static,
+    ) -> Answer {
+        let tx = self.tx.clone();
+        Box::new(move |choice| {
+            let _ = tx.send(event(choice));
+        })
+    }
+
+    /// The selector pickers' own timers and loads (`poll`). True if anything changed.
+    pub(super) fn poll_picker_component(&mut self) -> bool {
+        match &self.picker {
+            Some(ActivePicker::Selector(selector, _)) => selector.borrow_mut().poll(),
+            Some(ActivePicker::Session(selector)) => selector.borrow_mut().poll(),
+            _ => false,
+        }
+    }
+
+    /// `showSelector`: swap the selector into the editor's slot.
+    pub(super) fn show_selector(&mut self, title: &str, options: Vec<String>, answer: Answer) {
         let sink = self.actions.clone();
         let selector = handle(ExtensionSelectorComponent::new(
             title,
@@ -55,23 +111,22 @@ impl Mode {
             None,
             Box::new(move |outcome| sink.borrow_mut().push(Action::SelectorDone(outcome))),
         ));
-        {
-            let mut container = self.editor_container.borrow_mut();
-            container.clear();
-            container.add_child(as_component(&selector));
-        }
-        self.tui.set_focus(Some(as_component(&selector)));
-        self.selector = Some((selector, reply));
-        self.dirty.set(true);
+        self.set_picker(
+            ActivePicker::Selector(selector.clone(), answer),
+            as_component(&selector),
+        );
     }
 
     /// `hideSelector` + `restoreEditor`, answering the asker.
     pub(super) fn close_selector(&mut self, outcome: SelectorOutcome) {
-        let Some((selector, reply)) = self.selector.take() else {
+        if !matches!(self.picker, Some(ActivePicker::Selector(..))) {
+            return;
+        }
+        let Some(ActivePicker::Selector(selector, answer)) = self.picker.take() else {
             return;
         };
         selector.borrow_mut().dispose();
-        let _ = reply.send(match outcome {
+        answer(match outcome {
             SelectorOutcome::Selected(option) => Some(option),
             SelectorOutcome::Cancelled => None,
         });
@@ -145,9 +200,9 @@ impl Mode {
     }
 
     /// `showEditor`: the multi-line editor dialog in the editor's slot.
-    pub(super) fn show_editor_dialog(&mut self, title: &str, reply: mpsc::Sender<Option<String>>) {
+    pub(super) fn show_editor_dialog(&mut self, title: &str, answer: Answer) {
         if let Some((_, previous)) = self.editor_dialog.take() {
-            let _ = previous.send(None);
+            previous(None);
         }
         let rows = self.size.clone();
         let flag = self.dirty.clone();
@@ -167,16 +222,16 @@ impl Mode {
             container.add_child(as_component(&dialog));
         }
         self.tui.set_focus(Some(as_component(&dialog)));
-        self.editor_dialog = Some((dialog, reply));
+        self.editor_dialog = Some((dialog, answer));
         self.dirty.set(true);
     }
 
     /// `hideEditor`, answering the asker.
     pub(super) fn close_editor_dialog(&mut self, outcome: EditorOutcome) {
-        let Some((_, reply)) = self.editor_dialog.take() else {
+        let Some((_, answer)) = self.editor_dialog.take() else {
             return;
         };
-        let _ = reply.send(match outcome {
+        answer(match outcome {
             EditorOutcome::Submitted(text) => Some(text),
             EditorOutcome::Cancelled => None,
         });

@@ -1,6 +1,5 @@
 //! The session tree (`/tree`): the selector, branch summaries and navigation.
 
-use std::sync::mpsc::{self};
 use std::time::Instant;
 
 use hoocode_code_agent_session::{NavigateTreeOptions, NavigateTreeResult};
@@ -10,13 +9,6 @@ use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::{Loader, Spacer};
 
 use super::*;
-
-/// A question waiting on a dialog: the tree entry it is about, and where
-/// the answer arrives.
-pub(super) type PendingTreeAnswer = (String, mpsc::Receiver<Option<String>>);
-
-/// A summarizing tree navigation in flight: the target and its result.
-pub(super) type TreeNavigation = (String, mpsc::Receiver<Result<NavigateTreeResult, String>>);
 
 impl Mode {
     /// `showTreeSelector`: the session tree in the editor's slot.
@@ -37,18 +29,14 @@ impl Mode {
             initial_selected_id.as_deref(),
             Some(filter),
         ));
-        {
-            let mut container = self.editor_container.borrow_mut();
-            container.clear();
-            container.add_child(as_component(&selector));
-        }
-        self.tui.set_focus(Some(as_component(&selector)));
-        self.tree_selector = Some((selector, leaf));
-        self.dirty.set(true);
+        self.set_picker(
+            ActivePicker::Tree(selector.clone(), leaf.clone()),
+            as_component(&selector),
+        );
     }
 
     pub(super) fn poll_tree_selector(&mut self) {
-        let Some((selector, leaf)) = &self.tree_selector else {
+        let Some(ActivePicker::Tree(selector, leaf)) = &self.picker else {
             return;
         };
         let events = selector.borrow_mut().poll(Instant::now());
@@ -63,12 +51,12 @@ impl Mode {
                     self.dirty.set(true);
                 }
                 TreeEvent::Cancel => {
-                    self.tree_selector = None;
+                    self.picker = None;
                     self.restore_editor();
                     return;
                 }
                 TreeEvent::Select(id) => {
-                    self.tree_selector = None;
+                    self.picker = None;
                     self.restore_editor();
                     if leaf.as_deref() == Some(id.as_str()) {
                         // Selecting the current leaf is a no-op.
@@ -86,7 +74,7 @@ impl Mode {
 
     /// "Summarize branch?" for a tree selection.
     fn ask_tree_summary(&mut self, entry_id: String) {
-        let (reply, answer) = mpsc::channel();
+        let answer = self.answer_to(move |choice| AppEvent::TreeSummaryAnswer { entry_id, choice });
         self.show_selector(
             "Summarize branch?",
             vec![
@@ -94,47 +82,26 @@ impl Mode {
                 "Summarize".into(),
                 "Summarize with custom prompt".into(),
             ],
-            reply,
+            answer,
         );
-        self.pending_tree_summary = Some((entry_id, answer));
     }
 
-    pub(super) fn poll_tree_summary(&mut self) {
-        let Some((_, answer)) = &self.pending_tree_summary else {
-            return;
-        };
-        let choice = match answer.try_recv() {
-            Ok(choice) => choice,
-            Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => None,
-        };
-        let Some((entry_id, _)) = self.pending_tree_summary.take() else {
-            return;
-        };
+    /// "Summarize branch?" answered.
+    pub(super) fn tree_summary_answered(&mut self, entry_id: String, choice: Option<String>) {
         match choice.as_deref() {
             // Escape: back to the tree, on the same entry.
             None => self.show_tree_selector(Some(entry_id)),
             Some("Summarize with custom prompt") => {
-                let (reply, answer) = mpsc::channel();
-                self.show_editor_dialog("Custom summarization instructions", reply);
-                self.pending_tree_instructions = Some((entry_id, answer));
+                let answer =
+                    self.answer_to(move |text| AppEvent::TreeInstructionsAnswer { entry_id, text });
+                self.show_editor_dialog("Custom summarization instructions", answer);
             }
             Some(choice) => self.navigate_tree(entry_id, choice != "No summary", None),
         }
     }
 
-    pub(super) fn poll_tree_instructions(&mut self) {
-        let Some((_, answer)) = &self.pending_tree_instructions else {
-            return;
-        };
-        let text = match answer.try_recv() {
-            Ok(text) => text,
-            Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => None,
-        };
-        let Some((entry_id, _)) = self.pending_tree_instructions.take() else {
-            return;
-        };
+    /// The custom summary instructions answered.
+    pub(super) fn tree_instructions_answered(&mut self, entry_id: String, text: Option<String>) {
         match text {
             // Cancelled: back to the summary question.
             None => self.ask_tree_summary(entry_id),
@@ -188,32 +155,36 @@ impl Mode {
         let loader = handle(loader);
         self.status.borrow_mut().add_child(as_component(&loader));
         self.loader = Some(loader);
-        let (done, result) = mpsc::channel();
-        let wake = self.tx.clone();
-        self.runtime.spawn(async move {
-            let outcome = session
+        let tx = self.tx.clone();
+        let task = self.runtime.spawn(async move {
+            session
                 .navigate_tree(&target, options)
                 .await
-                .map_err(|e| e.to_string());
-            let _ = done.send(outcome);
-            let _ = wake.send(AppEvent::Rerender);
+                .map_err(|e| e.to_string())
         });
-        self.tree_navigation = Some((entry_id, result));
+        self.tree_navigation = Some(entry_id.clone());
+        self.runtime.spawn(async move {
+            // A panicked summary reads as a failed one.
+            let outcome = task
+                .await
+                .unwrap_or_else(|_| Err("Branch summarization failed".into()));
+            let _ = tx.send(AppEvent::TreeNavigated {
+                entry_id,
+                outcome: Box::new(outcome),
+            });
+        });
         self.dirty.set(true);
     }
 
-    pub(super) fn poll_tree_navigation(&mut self) {
-        let Some((_, result)) = &self.tree_navigation else {
+    /// A summarizing tree navigation ended.
+    pub(super) fn tree_navigated(
+        &mut self,
+        entry_id: String,
+        outcome: Result<NavigateTreeResult, String>,
+    ) {
+        if self.tree_navigation.take().is_none() {
             return;
-        };
-        let outcome = match result.try_recv() {
-            Ok(outcome) => outcome,
-            Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => Err("Branch summarization failed".into()),
-        };
-        let Some((entry_id, _)) = self.tree_navigation.take() else {
-            return;
-        };
+        }
         self.stop_working_loader();
         self.finish_tree_navigation(entry_id, outcome);
     }

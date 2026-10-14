@@ -143,19 +143,17 @@ impl Mode {
             sink.borrow_mut().push(change)
         }));
         let list = selector.borrow().settings_list();
-        {
-            let mut container = self.editor_container.borrow_mut();
-            container.clear();
-            container.add_child(as_component(&selector));
-        }
+        self.set_picker(
+            ActivePicker::Settings(selector.clone()),
+            as_component(&selector),
+        );
+        // The list takes the keys, not the pane.
         self.tui.set_focus(Some(list));
-        self.settings_selector = Some(selector);
-        self.dirty.set(true);
     }
 
     /// Apply what the settings pane asked for.
     pub(super) fn poll_settings_selector(&mut self) {
-        if self.settings_selector.is_none() {
+        if !matches!(self.picker, Some(ActivePicker::Settings(_))) {
             return;
         }
         let changes = std::mem::take(&mut *self.settings_changes.borrow_mut());
@@ -166,8 +164,15 @@ impl Mode {
             self.apply_settings_change(change);
         }
         // The pane priced the change before it was applied.
-        if let Some(selector) = &self.settings_selector {
+        if let Some(ActivePicker::Settings(selector)) = &self.picker {
             selector.borrow().refresh_token_surface();
+        }
+    }
+
+    /// Gives the editor back if the settings pane is the picker up.
+    fn close_settings_selector(&mut self) {
+        if matches!(self.picker, Some(ActivePicker::Settings(_))) {
+            self.picker = None;
         }
     }
 
@@ -176,7 +181,7 @@ impl Mode {
         self.dirty.set(true);
         match change {
             SettingsChange::Cancel => {
-                self.settings_selector = None;
+                self.close_settings_selector();
                 self.restore_editor();
             }
             SettingsChange::AutoCompact(enabled) => {
@@ -376,7 +381,7 @@ impl Mode {
             }
             SettingsChange::OpenScopedModels => {
                 // The pane gives way to the picker, as /scoped-models does.
-                self.settings_selector = None;
+                self.close_settings_selector();
                 self.restore_editor();
                 self.show_models_selector();
             }

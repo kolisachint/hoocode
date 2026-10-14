@@ -64,8 +64,8 @@ pub(super) enum Action {
     AskOptionsDone(Option<Vec<String>>),
     /// The multi-line editor dialog closed.
     EditorDialogDone(EditorOutcome),
-    /// The prompt text changed (`onChange`).
-    EditorChanged(String),
+    /// The prompt turned into or out of bash mode (`!`); sent only on that flip.
+    EditorChanged(bool),
     /// `app.clipboard.copyMessage`: `/copy` with no argument.
     CopyMessage,
     /// `app.clipboard.pasteImage`.
@@ -420,10 +420,9 @@ fn prefix_autocomplete_description(
 
 impl Mode {
     /// The editor's `onChange`: entering or leaving bash mode.
-    fn on_editor_change(&mut self, text: &str) {
-        let was_bash_mode = self.is_bash_mode;
-        self.is_bash_mode = text.trim_start().starts_with('!');
-        if was_bash_mode != self.is_bash_mode {
+    fn on_editor_change(&mut self, bash_mode: bool) {
+        if self.is_bash_mode != bash_mode {
+            self.is_bash_mode = bash_mode;
             self.update_editor_border_color();
             self.update_editor_prompt_prefix();
         }
@@ -810,7 +809,7 @@ impl Mode {
             Action::SessionTree => self.show_tree_selector(None),
             Action::ModeForward => self.cycle_agent_mode(true),
             Action::ModeBackward => self.cycle_agent_mode(false),
-            Action::EditorChanged(text) => self.on_editor_change(&text),
+            Action::EditorChanged(bash_mode) => self.on_editor_change(bash_mode),
             Action::CopyMessage => self.handle_copy_command(""),
             Action::PasteImage => self.handle_clipboard_image_paste(),
             Action::HotkeysOpen => self.handle_hotkeys_command(),

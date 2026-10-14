@@ -131,6 +131,13 @@ pub struct FrameEdgeOptions<'a> {
     pub hidden: usize,
 }
 
+/// The horizontal padding a band of `band` columns keeps, and the content width it leaves.
+/// Padding gives way rather than pushing content off the band's end. `band` is at least 1.
+pub fn padded_columns(band: usize, padding_x: usize) -> (usize, usize) {
+    let padding_x = padding_x.min((band - 1) / 2);
+    (padding_x, band.saturating_sub(padding_x * 2).max(1))
+}
+
 /// One horizontal edge of a frame (`renderFrameEdge`): the rule, the scroll
 /// indicator that eats into it, the label that rides what is left, and the
 /// corners in box mode.

@@ -1,7 +1,6 @@
 //! Session operations: new, resume, fork, clone, name, compact, `/cd`, reload, export and import.
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self};
 use std::time::Instant;
 
 use hoocode_agent_types::AgentEvent;
@@ -65,12 +64,14 @@ impl Mode {
             })
             .collect();
         let selector = handle(UserMessageSelectorComponent::new(items, Some(&initial)));
-        self.show_in_editor_slot(as_component(&selector));
-        self.fork_selector = Some(selector);
+        self.set_picker(
+            ActivePicker::Fork(selector.clone()),
+            as_component(&selector),
+        );
     }
 
     pub(super) fn poll_fork_selector(&mut self) {
-        let Some(selector) = &self.fork_selector else {
+        let Some(ActivePicker::Fork(selector)) = &self.picker else {
             return;
         };
         let Some(event) = selector
@@ -81,7 +82,7 @@ impl Mode {
         else {
             return;
         };
-        self.fork_selector = None;
+        self.picker = None;
         self.restore_editor();
         if let UserMessageEvent::Select(entry_id) = event {
             self.fork_session(&entry_id, ForkPosition::Before);
@@ -334,33 +335,32 @@ impl Mode {
             self.show_error("Usage: /import <path.jsonl>");
             return;
         };
-        let (reply, answer) = mpsc::channel();
-        self.show_selector(
-            &format!("Import session\nReplace current session with {input}?"),
-            vec!["Yes".into(), "No".into()],
-            reply,
-        );
-        self.pending_import = Some((input, None, answer));
+        let title = format!("Import session\nReplace current session with {input}?");
+        self.ask_import(&title, input, None);
     }
 
-    /// An `/import` confirm answered.
-    pub(super) fn poll_import_confirm(&mut self) {
-        let Some((_, _, answer)) = &self.pending_import else {
-            return;
-        };
-        let confirmed = match answer.try_recv() {
-            Ok(choice) => choice.as_deref() == Some("Yes"),
-            Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => false,
-        };
-        let Some((input, fallback, _)) = self.pending_import.take() else {
-            return;
-        };
-        if confirmed {
-            self.import_session(input, fallback);
+    /// The `/import` confirm, or the confirm for a stored cwd that is gone, answered.
+    pub(super) fn import_answered(
+        &mut self,
+        input: String,
+        cwd_fallback: Option<String>,
+        choice: Option<String>,
+    ) {
+        if choice.as_deref() == Some("Yes") {
+            self.import_session(input, cwd_fallback);
         } else {
             self.show_status("Import cancelled");
         }
+    }
+
+    /// Asks the import confirm; the answer comes back as `import_answered`.
+    fn ask_import(&mut self, title: &str, input: String, cwd_fallback: Option<String>) {
+        let answer = self.answer_to(move |choice| AppEvent::ImportAnswer {
+            input,
+            cwd_fallback,
+            choice,
+        });
+        self.show_selector(title, vec!["Yes".into(), "No".into()], answer);
     }
 
     /// `runtimeHost.importFromJsonl`; a stored cwd that is gone asks first.
@@ -401,13 +401,11 @@ impl Mode {
                 self.show_record(&format!("Session imported from: {input}"));
             }
             Err(RuntimeError::MissingSessionCwd(issue)) if !overridden => {
-                let (reply, answer) = mpsc::channel();
                 let title = format!(
                     "Session cwd not found\n{}",
                     format_missing_session_cwd_prompt(&issue)
                 );
-                self.show_selector(&title, vec!["Yes".into(), "No".into()], reply);
-                self.pending_import = Some((input, Some(issue.fallback_cwd), answer));
+                self.ask_import(&title, input, Some(issue.fallback_cwd));
             }
             Err(error @ RuntimeError::ImportFileNotFound(_)) => {
                 self.show_error(&format!("Failed to import session: {error}"))
@@ -571,7 +569,7 @@ impl Mode {
 
     /// `showSessionSelector`: the session picker in the editor's slot.
     pub(super) fn show_session_selector(&mut self) {
-        if self.session_runtime.is_none() || self.session_selector.is_some() {
+        if self.session_runtime.is_none() || matches!(self.picker, Some(ActivePicker::Session(_))) {
             return;
         }
         let (session_dir, current_file) = {
@@ -614,20 +612,17 @@ impl Mode {
             },
             current_file.as_deref(),
         ));
-        {
-            let mut container = self.editor_container.borrow_mut();
-            container.clear();
-            container.add_child(as_component(&selector));
-        }
-        self.tui.set_focus(Some(as_component(&selector)));
-        self.session_selector = Some(selector);
-        self.dirty.set(true);
+        self.set_picker(
+            ActivePicker::Session(selector.clone()),
+            as_component(&selector),
+        );
     }
 
     pub(super) fn close_session_selector(&mut self) {
-        if self.session_selector.take().is_none() {
+        if !matches!(self.picker, Some(ActivePicker::Session(_))) {
             return;
         }
+        self.picker = None;
         {
             let mut container = self.editor_container.borrow_mut();
             container.clear();
@@ -678,13 +673,16 @@ impl Mode {
                 });
             }
             Err(RuntimeError::MissingSessionCwd(issue)) if !overridden => {
-                let (reply, answer) = mpsc::channel();
                 let title = format!(
                     "Session cwd not found\n{}",
                     format_missing_session_cwd_prompt(&issue)
                 );
-                self.show_selector(&title, vec!["Yes".into(), "No".into()], reply);
-                self.pending_cwd_prompt = Some((path, issue.fallback_cwd, answer));
+                let answer = self.answer_to(move |choice| AppEvent::ResumeAnswer {
+                    path,
+                    fallback: issue.fallback_cwd,
+                    choice,
+                });
+                self.show_selector(&title, vec!["Yes".into(), "No".into()], answer);
             }
             Err(error) => {
                 // `handleFatalRuntimeError`.
@@ -695,19 +693,13 @@ impl Mode {
     }
 
     /// The missing-cwd confirm answered: resume in the fallback cwd, or not.
-    pub(super) fn poll_cwd_prompt(&mut self) {
-        let Some((_, _, answer)) = &self.pending_cwd_prompt else {
-            return;
-        };
-        let confirmed = match answer.try_recv() {
-            Ok(choice) => choice.as_deref() == Some("Yes"),
-            Err(mpsc::TryRecvError::Empty) => return,
-            Err(mpsc::TryRecvError::Disconnected) => false,
-        };
-        let Some((path, fallback, _)) = self.pending_cwd_prompt.take() else {
-            return;
-        };
-        if confirmed {
+    pub(super) fn resume_answered(
+        &mut self,
+        path: PathBuf,
+        fallback: String,
+        choice: Option<String>,
+    ) {
+        if choice.as_deref() == Some("Yes") {
             self.handle_resume_session(path, Some(fallback));
         } else {
             self.show_status("Resume cancelled");

@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use hoocode_ai_types::{ImageContent, StopReason};
 use hoocode_code_agent_session::stats::AssistantUsageTotals;
 use hoocode_code_agent_session::{
-    AgentSession, AgentSessionEvent, AgentSessionRuntime, StreamingBehavior,
+    AgentSession, AgentSessionEvent, AgentSessionRuntime, NavigateTreeResult, StreamingBehavior,
 };
 use hoocode_code_auth::AuthStorage;
 use hoocode_code_media::clipboard_image::ClipboardImage;
@@ -87,9 +87,7 @@ mod subagents;
 mod transcript;
 mod tree;
 
-use self::{
-    auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, transcript::*, tree::*,
-};
+use self::{auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, transcript::*};
 
 pub use self::events::plan_settle_outcome;
 pub use self::input::{at_file_finder, command_path_argument};
@@ -175,6 +173,33 @@ enum AppEvent {
     CompactionQueueFailed(Vec<(String, StreamingBehavior)>, String),
     /// A message typed while streaming could not be queued.
     QueueError(String),
+    /// The `/import` confirm, or the confirm for a stored cwd that is gone, answered.
+    ImportAnswer {
+        input: String,
+        cwd_fallback: Option<String>,
+        choice: Option<String>,
+    },
+    /// The confirm for a stored cwd that is gone, on `/resume`, answered.
+    ResumeAnswer {
+        path: PathBuf,
+        fallback: String,
+        choice: Option<String>,
+    },
+    /// "Summarize branch?" answered, for the tree entry `entry_id`.
+    TreeSummaryAnswer {
+        entry_id: String,
+        choice: Option<String>,
+    },
+    /// The custom summary instructions answered (`None`: cancelled).
+    TreeInstructionsAnswer {
+        entry_id: String,
+        text: Option<String>,
+    },
+    /// A summarizing tree navigation ended. A panicked one is an `Err`.
+    TreeNavigated {
+        entry_id: String,
+        outcome: Box<Result<NavigateTreeResult, String>>,
+    },
 }
 
 /// `new Date().toISOString()`.
@@ -218,6 +243,13 @@ fn thinking_border_level(level: &str) -> ThinkingBorderLevel {
         "xhigh" => ThinkingBorderLevel::Xhigh,
         _ => ThinkingBorderLevel::Off,
     }
+}
+
+/// Whether `text` flips the bash-mode (`!`) state recorded in `last`. It records the new state,
+/// and reports only a change, so the mode hears about a flip rather than every keystroke.
+fn bash_mode_flip(last: &Cell<bool>, text: &str) -> Option<bool> {
+    let now = text.trim_start().starts_with('!');
+    (last.replace(now) != now).then_some(now)
 }
 
 /// Whether the header cursor blinks: only while the transcript is empty (the
@@ -370,7 +402,8 @@ struct Mode {
     code_block_indent: String,
     editor: Rc<RefCell<CustomEditor>>,
     editor_container: Rc<RefCell<Container>>,
-    selector: Option<OpenSelector>,
+    /// The picker in the editor's slot (`dialogs.rs`).
+    picker: Option<ActivePicker>,
     actions: Rc<RefCell<Vec<Action>>>,
     notifications: Rc<RefCell<NotificationPanel>>,
     tips: TipsController,
@@ -390,19 +423,12 @@ struct Mode {
     is_oauth: Rc<dyn Fn(&str) -> bool>,
     auth_storage: Arc<AuthStorage>,
     login: Option<LoginStep>,
-    session_selector: Option<Rc<RefCell<SessionSelectorComponent>>>,
-    pending_cwd_prompt: Option<(PathBuf, String, mpsc::Receiver<Option<String>>)>,
     ask_options: Option<OpenAskOptions>,
-    tree_selector: Option<(Rc<RefCell<TreeSelectorComponent>>, Option<String>)>,
-    model_selector: Option<Rc<RefCell<ModelSelectorComponent>>>,
-    scoped_models_selector: Option<Rc<RefCell<ScopedModelsSelectorComponent>>>,
     anthropic_warning_shown: bool,
-    settings_selector: Option<Rc<RefCell<SettingsSelectorComponent>>>,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
     last_escape: Option<Instant>,
-    pending_tree_summary: Option<PendingTreeAnswer>,
-    pending_tree_instructions: Option<PendingTreeAnswer>,
-    tree_navigation: Option<TreeNavigation>,
+    /// The target of a summarizing tree navigation in flight (Escape cancels it).
+    tree_navigation: Option<String>,
     editor_dialog: Option<OpenEditorDialog>,
     pending_messages: Rc<RefCell<Container>>,
     is_bash_mode: bool,
@@ -412,9 +438,7 @@ struct Mode {
     compaction_queue: Vec<(String, StreamingBehavior)>,
     task_panel: Rc<RefCell<TaskPanelComponent>>,
     task_store_subscription: Option<hoocode_code_task_store::Subscription<'static>>,
-    fork_selector: Option<Rc<RefCell<UserMessageSelectorComponent>>>,
     previous_cwd: Rc<RefCell<Option<PathBuf>>>,
-    pending_import: Option<(String, Option<String>, mpsc::Receiver<Option<String>>)>,
     restarted_input: Option<Receiver<TuiEvent>>,
     /// The session operation running off the UI thread, if any (`session_op.rs`).
     session_op: Option<&'static str>,
@@ -510,9 +534,11 @@ impl Mode {
             sink.borrow_mut().push(Action::Submit(text.to_string()))
         }));
         let sink = actions.clone();
+        let bash_mode = Cell::new(false);
         editor.on_change = Some(Box::new(move |text: &str| {
-            sink.borrow_mut()
-                .push(Action::EditorChanged(text.to_string()))
+            if let Some(now) = bash_mode_flip(&bash_mode, text) {
+                sink.borrow_mut().push(Action::EditorChanged(now));
+            }
         }));
         let sink = actions.clone();
         editor.on_autocomplete_visibility_change = Some(Box::new(move |visible| {
@@ -736,7 +762,6 @@ impl Mode {
             code_block_indent,
             editor,
             editor_container,
-            selector: None,
             actions,
             notifications,
             tips,
@@ -755,18 +780,11 @@ impl Mode {
             is_oauth,
             auth_storage: options.auth_storage,
             login: None,
-            session_selector: None,
-            pending_cwd_prompt: None,
+            picker: None,
             ask_options: None,
-            tree_selector: None,
-            model_selector: None,
-            scoped_models_selector: None,
             anthropic_warning_shown: false,
-            settings_selector: None,
             settings_changes: Rc::default(),
             last_escape: None,
-            pending_tree_summary: None,
-            pending_tree_instructions: None,
             tree_navigation: None,
             editor_dialog: None,
             pending_messages,
@@ -777,9 +795,7 @@ impl Mode {
             compaction_queue: Vec::new(),
             task_panel,
             task_store_subscription: None,
-            fork_selector: None,
             previous_cwd: Rc::new(RefCell::new(None)),
-            pending_import: None,
             restarted_input: None,
             session_op: None,
             mode_dial_after: None,
@@ -876,25 +892,7 @@ impl Mode {
                 wait = wait.min(due.saturating_duration_since(now));
             }
         }
-        if let Some(deadline) = self
-            .selector
-            .as_ref()
-            .and_then(|(s, _)| s.borrow().deadline())
-        {
-            wait = wait.min(deadline.saturating_duration_since(now));
-        }
-        if let Some(deadline) = self
-            .fork_selector
-            .as_ref()
-            .and_then(|s| s.borrow().deadline())
-        {
-            wait = wait.min(deadline.saturating_duration_since(now));
-        }
-        if let Some(deadline) = self
-            .tree_selector
-            .as_ref()
-            .and_then(|(s, _)| s.borrow().deadline())
-        {
+        if let Some(deadline) = self.picker.as_ref().and_then(|p| p.deadline()) {
             wait = wait.min(deadline.saturating_duration_since(now));
         }
         if self.stream_render_pending {
@@ -1094,7 +1092,13 @@ impl Mode {
                         title,
                         options,
                         reply,
-                    }) => self.show_selector(&title, options, reply),
+                    }) => self.show_selector(
+                        &title,
+                        options,
+                        Box::new(move |choice| {
+                            let _ = reply.send(choice);
+                        }),
+                    ),
                     AppEvent::Dialog(DialogRequest::Notify(message)) => self.show_record(&message),
                     AppEvent::Dialog(DialogRequest::AskOptions {
                         questions,
@@ -1126,6 +1130,25 @@ impl Mode {
                         self.show_error(&error);
                     }
                     AppEvent::QueueError(error) => self.show_error(&error),
+                    AppEvent::ImportAnswer {
+                        input,
+                        cwd_fallback,
+                        choice,
+                    } => self.import_answered(input, cwd_fallback, choice),
+                    AppEvent::ResumeAnswer {
+                        path,
+                        fallback,
+                        choice,
+                    } => self.resume_answered(path, fallback, choice),
+                    AppEvent::TreeSummaryAnswer { entry_id, choice } => {
+                        self.tree_summary_answered(entry_id, choice)
+                    }
+                    AppEvent::TreeInstructionsAnswer { entry_id, text } => {
+                        self.tree_instructions_answered(entry_id, text)
+                    }
+                    AppEvent::TreeNavigated { entry_id, outcome } => {
+                        self.tree_navigated(entry_id, *outcome)
+                    }
                     AppEvent::ThemeChanged => {
                         self.tui.invalidate();
                         self.update_editor_border_color();
@@ -1145,11 +1168,7 @@ impl Mode {
                 self.header.borrow_mut().refresh();
                 self.dirty.set(true);
             }
-            if self
-                .selector
-                .as_ref()
-                .is_some_and(|(s, _)| s.borrow_mut().poll())
-            {
+            if self.poll_picker_component() {
                 self.dirty.set(true);
             }
             if self.last_tool_tick.elapsed() >= Duration::from_secs(1) {
@@ -1164,23 +1183,11 @@ impl Mode {
                     }
                 }
             }
-            if self
-                .session_selector
-                .as_ref()
-                .is_some_and(|s| s.borrow_mut().poll())
-            {
-                self.dirty.set(true);
-            }
-            self.poll_cwd_prompt();
-            self.poll_import_confirm();
             self.poll_tree_selector();
             self.poll_fork_selector();
             self.poll_model_selectors();
             self.poll_login();
             self.poll_settings_selector();
-            self.poll_tree_summary();
-            self.poll_tree_instructions();
-            self.poll_tree_navigation();
             if self.loader.as_ref().is_some_and(|l| l.borrow_mut().tick()) {
                 self.dirty.set(true);
             }
@@ -1221,14 +1228,14 @@ impl Mode {
 
         hoocode_runtime::watchdog::ui_stopped();
         set_dialog_sink(None);
-        if let Some((_, reply)) = self.selector.take() {
-            let _ = reply.send(None);
+        if let Some(picker) = self.picker.take() {
+            picker.dispose();
         }
         if let Some((_, reply)) = self.ask_options.take() {
             let _ = reply.send(None);
         }
-        if let Some((_, reply)) = self.editor_dialog.take() {
-            let _ = reply.send(None);
+        if let Some((_, answer)) = self.editor_dialog.take() {
+            answer(None);
         }
         progress.unsubscribe();
         self.footer_data.off_branch_change(branch);
@@ -1253,6 +1260,21 @@ impl Mode {
         }
         self.session.dispose();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod bash_mode_flip_tests {
+    use super::*;
+
+    #[test]
+    fn reports_only_the_flip_into_and_out_of_bash_mode() {
+        let last = Cell::new(false);
+        assert_eq!(bash_mode_flip(&last, "ls"), None);
+        assert_eq!(bash_mode_flip(&last, "!l"), Some(true));
+        assert_eq!(bash_mode_flip(&last, "!ls"), None);
+        assert_eq!(bash_mode_flip(&last, "  !!ls"), None);
+        assert_eq!(bash_mode_flip(&last, ""), Some(false));
     }
 }
 
