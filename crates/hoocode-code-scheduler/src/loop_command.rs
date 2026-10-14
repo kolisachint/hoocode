@@ -13,7 +13,7 @@
 //! /loop auto [--max-turns N] <task>
 //! ```
 
-use crate::cron::is_five_field;
+use crate::cron::validate as validate_cron;
 
 /// The reply token that ends `/loop auto`. The same token as
 /// `AUTO_LOOP_DONE_TOKEN` in hoocode-code-modes.
@@ -94,11 +94,7 @@ fn parse_schedule(text: &str) -> Result<(String, String), String> {
                 return Err("The cron expression needs a closing \".".into());
             };
             let cron = cron.trim();
-            if !is_five_field(cron) {
-                return Err(format!(
-                    "A cron expression has 5 fields (minute hour day-of-month month day-of-week): \"{cron}\""
-                ));
-            }
+            validate_cron(cron)?;
             (cron.to_string(), rest.trim())
         }
         None => {
@@ -293,6 +289,18 @@ mod tests {
         assert!(parse_loop_args(r#""*/5 * * * *""#)
             .unwrap_err()
             .contains("Missing the prompt"));
+    }
+
+    #[test]
+    fn a_quoted_cron_whose_fields_cannot_match_is_refused() {
+        // Such a task would be stored and never fire.
+        assert!(parse_loop_args(r#""60 * * * *" x"#)
+            .unwrap_err()
+            .contains("minute field"));
+        assert!(parse_loop_args(r#""0 9 * * foo" x"#).is_err());
+        assert!(parse_loop_args(r#""*/0 * * * *" x"#).is_err());
+        assert!(parse_loop_args(r#""x * * * *" x"#).is_err());
+        assert!(parse_loop_args(r#""0 9 * * 1-7" x"#).is_ok());
     }
 
     #[test]

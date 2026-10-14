@@ -149,12 +149,14 @@ impl TaskStore {
         Ok(())
     }
 
-    /// Run `f` holding the process lock and the lock file. If the lock file
-    /// cannot be taken within [`LOCK_WAIT`], run `f` anyway, as TS does.
-    fn with_lock<T>(&self, f: impl FnOnce() -> T) -> T {
+    /// Run `f` holding the process lock and the lock file. `f` is told whether
+    /// the lock file was taken: when it was not within [`LOCK_WAIT`], `f` still
+    /// runs (a create or delete is best effort, as TS), but a fire claim must
+    /// not, since another process may be claiming the same minute.
+    fn with_lock<T>(&self, f: impl FnOnce(bool) -> T) -> T {
         let _process = PROCESS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let _file = FileLock::acquire(self.lock_path());
-        f()
+        let file = FileLock::acquire(self.lock_path());
+        f(file.held())
     }
 
     fn lock_path(&self) -> PathBuf {
@@ -178,7 +180,7 @@ impl TaskStore {
             created_at: now_millis(),
             last_run_minute: None,
         };
-        self.with_lock(|| {
+        self.with_lock(|_| {
             let mut tasks = self.read();
             tasks.push(task.clone());
             self.write(&tasks)
@@ -188,7 +190,7 @@ impl TaskStore {
 
     /// `delete(id)`: true when a task with that id was removed.
     pub fn delete(&self, id: &str) -> io::Result<bool> {
-        self.with_lock(|| {
+        self.with_lock(|_| {
             let mut tasks = self.read();
             let before = tasks.len();
             tasks.retain(|t| t.id != id);
@@ -208,7 +210,13 @@ impl TaskStore {
     /// due minute is recorded, so each due minute is handled once. A one-shot
     /// task is removed. Callers check that the agent is idle first.
     pub fn claim_due(&self, now: &DateTime<Local>) -> io::Result<Claimed> {
-        self.with_lock(|| {
+        self.with_lock(|held| {
+            // Without the lock file another process could claim the same minute
+            // too, so this tick fires nothing; the next tick claims it, still
+            // within the late window for a task due a moment ago.
+            if !held {
+                return Ok(Claimed::default());
+            }
             let now_minute = now.timestamp().div_euclid(60);
             let mut tasks = self.read();
             let mut claimed = Claimed::default();
@@ -292,6 +300,11 @@ struct FileLock {
 }
 
 impl FileLock {
+    /// Whether the lock file is ours.
+    fn held(&self) -> bool {
+        self.path.is_some()
+    }
+
     fn acquire(path: PathBuf) -> Self {
         if let Some(dir) = path.parent() {
             let _ = fs::create_dir_all(dir);
@@ -476,6 +489,42 @@ mod tests {
             u64::try_from(created.timestamp_millis()).unwrap(),
         );
         assert_eq!(store.claim_due(&at(9, 36, 0)).unwrap(), Claimed::default());
+    }
+
+    #[test]
+    fn two_stores_on_one_file_fire_a_due_task_once() {
+        // Two sessions on the same directory: the second claim sees the first's
+        // due minute, and the task is not fired again.
+        let dir = tempfile::tempdir().unwrap();
+        put(&store_in(&dir), "30 9 * * *", "shared", true, 0);
+        let first = store_in(&dir);
+        let second = store_in(&dir);
+        assert_eq!(
+            first.claim_due(&at(9, 30, 10)).unwrap().fired,
+            vec!["shared"]
+        );
+        assert_eq!(
+            second.claim_due(&at(9, 30, 12)).unwrap(),
+            Claimed::default()
+        );
+    }
+
+    #[test]
+    fn a_claim_that_cannot_take_the_lock_fires_nothing_and_waits_for_the_next_tick() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(&dir);
+        put(&store, "30 9 * * *", "recurring", true, 0);
+        // Another process holds a fresh lock file.
+        std::fs::create_dir_all(dir.path().join(".agents")).unwrap();
+        let lock = dir.path().join(".agents/scheduled_tasks.json.lock");
+        std::fs::write(&lock, "").unwrap();
+        assert_eq!(store.claim_due(&at(9, 30, 10)).unwrap(), Claimed::default());
+        assert!(store.list()[0].last_run_minute.is_none());
+        std::fs::remove_file(&lock).unwrap();
+        assert_eq!(
+            store.claim_due(&at(9, 30, 40)).unwrap().fired,
+            vec!["recurring"]
+        );
     }
 
     #[test]

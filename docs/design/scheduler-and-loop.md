@@ -16,7 +16,12 @@ the late-fire rule):
   `/loop "<cron>" <prompt>`, `/loop <N>m|<N>h|<N>d <prompt>` (an interval becomes
   `*/N * * * *`, `0 */N * * *` or `0 0 */N * *`; minutes and hours must divide evenly),
   `/loop once <schedule> <prompt>`, `/loop list`, `/loop delete <id>`, `/loop stop`.
-  `stop` ends `/loop auto` and removes every scheduled prompt in the directory.
+  `stop` ends `/loop auto` and removes the scheduled prompts this session's `/loop`
+  created (kept in memory per session, with their store). Prompts from an earlier
+  session, from the model's Cron tools, or from another session stay; `/loop delete <id>`
+  removes any of them. The store has no origin field, so the session list is the record.
+  A quoted cron is checked field by field (`validate`) and refused with a usage message
+  when it cannot match.
 - Done 2026-10-14, item 4: `/loop auto [--max-turns N] <task>` (default 10). The first
   prompt is turn 1; after each turn that did not end the loop, the continuation is sent.
   The loop ends when a reply contains `LOOP_DONE`, at the cap, or when a turn is aborted
@@ -32,6 +37,15 @@ the late-fire rule):
   looks back a day for a due minute, so a schedule whose last due minute is older than a
   day (weekly, monthly) is not reported as skipped. A task is never due for a minute
   before its creation.
+- Done 2026-10-14, review fixes: a fire claim fires nothing when it cannot take the lock
+  file within 3 seconds (the next tick claims it, still inside the late window); the
+  cron matcher reads `1-7` as Monday to Sunday (it used to become the empty `1-0`) and
+  no longer overflows on huge steps; a request that returns an error ends `/loop auto`
+  as an interruption. Known, not fixed: two processes can both take over one stale lock
+  file at the same instant (a lock held by a process that died), which needs `flock`
+  (`File::try_lock`, Rust 1.89; the workspace MSRV is 1.88); a scheduled prompt claimed on
+  the same tick as an auto-loop continuation can collide with it, and the session then
+  refuses the second prompt, which ends `/loop auto` with an error notice.
 - Not done: the Schedule tab in the activity panel (T4.2 in [tui-activity.md](tui-activity.md)).
 - Differences from hoocode-ts: `CronCreate` returns a tool error when the store cannot be
   written (TS ignores the write error); the store is re-read on every operation, so a

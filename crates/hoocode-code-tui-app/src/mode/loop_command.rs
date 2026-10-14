@@ -21,6 +21,36 @@ pub(super) struct LoopRun {
     next: Option<String>,
 }
 
+/// A scheduled prompt `/loop` created in this session, with the store it is in.
+pub(super) type LoopTask = (TaskStore, String);
+
+/// Removes the scheduled prompts `/loop` created in this session. Returns how
+/// many were removed; one already fired and removed, or deleted, counts zero.
+pub(super) fn delete_loop_tasks(tasks: Vec<LoopTask>) -> usize {
+    tasks
+        .iter()
+        .filter(|(store, id)| store.delete(id).unwrap_or(false))
+        .count()
+}
+
+/// What `/loop auto` does after a turn ends. A halt from `AskUserQuestion` ends
+/// the run first, then a turn that was aborted or failed (`failed` is the
+/// request's own result), then the reply and the turn cap.
+pub(super) fn next_auto_step(
+    state: &mut AutoLoop,
+    halt: Option<String>,
+    stop: Option<StopReason>,
+    failed: bool,
+) -> AutoNext {
+    if let Some(reason) = halt {
+        return AutoNext::Stop(AutoEnd::Halted(reason));
+    }
+    if failed || matches!(stop, Some(StopReason::Aborted | StopReason::Error)) {
+        return AutoNext::Stop(AutoEnd::Interrupted);
+    }
+    state.turn_ended()
+}
+
 /// The text of an assistant message's blocks, one block per line.
 pub(super) fn reply_text(content: &[Content]) -> String {
     content
@@ -72,17 +102,18 @@ impl Mode {
     }
 
     fn create_scheduled_prompt(&mut self, schedule: Schedule, prompt: &str) {
-        match self
-            .scheduled_prompts()
-            .create(&schedule.cron, prompt, schedule.recurring)
-        {
-            Ok(task) => self.show_status(&format!(
-                "Scheduled {} ({}, {}): {}",
-                task.id,
-                kind(schedule.recurring),
-                schedule.cron,
-                preview(prompt)
-            )),
+        let store = self.scheduled_prompts();
+        match store.create(&schedule.cron, prompt, schedule.recurring) {
+            Ok(task) => {
+                self.show_status(&format!(
+                    "Scheduled {} ({}, {}): {}",
+                    task.id,
+                    kind(schedule.recurring),
+                    schedule.cron,
+                    preview(prompt)
+                ));
+                self.loop_tasks.push((store, task.id));
+            }
             Err(error) => self.show_error(&format!("Could not save the schedule: {error}")),
         }
     }
@@ -110,7 +141,10 @@ impl Mode {
 
     fn delete_scheduled_prompt(&mut self, id: &str) {
         match self.scheduled_prompts().delete(id) {
-            Ok(true) => self.show_status(&format!("Deleted {id}.")),
+            Ok(true) => {
+                self.loop_tasks.retain(|(_, known)| known != id);
+                self.show_status(&format!("Deleted {id}."));
+            }
             Ok(false) => {
                 self.show_warning(&format!("No scheduled prompt {id}. /loop list shows them."))
             }
@@ -118,19 +152,17 @@ impl Mode {
         }
     }
 
-    /// `/loop stop`: end `/loop auto`, and remove every scheduled prompt in
-    /// this directory.
+    /// `/loop stop`: end `/loop auto`, and remove the scheduled prompts `/loop`
+    /// created in this session. Prompts from `/loop` in an earlier session, or
+    /// made by the model's Cron tools, stay; `/loop delete` removes those.
     fn stop_loops(&mut self) {
         let was_auto = self.auto_loop.is_some();
         self.end_auto_loop(AutoEnd::Stopped);
-        let store = self.scheduled_prompts();
-        let removed = store
-            .list()
-            .iter()
-            .filter(|t| store.delete(&t.id).unwrap_or(false))
-            .count();
+        let removed = delete_loop_tasks(std::mem::take(&mut self.loop_tasks));
         if removed > 0 {
-            self.show_status(&format!("Removed {removed} scheduled prompt(s)."));
+            self.show_status(&format!(
+                "Removed {removed} scheduled prompt(s) created by /loop in this session."
+            ));
         } else if !was_auto {
             self.show_status("Nothing to stop.");
         }
@@ -162,21 +194,17 @@ impl Mode {
     }
 
     /// `PromptDone` of a turn while `/loop auto` runs: the next prompt, or the
-    /// end of the run.
-    pub(super) fn auto_loop_turn_done(&mut self) {
+    /// end of the run. `failed` is whether the request itself returned an error.
+    pub(super) fn auto_loop_turn_done(&mut self, failed: bool) {
         let Some(run) = self.auto_loop.as_mut() else {
             return;
         };
-        let next = if let Some(reason) = auto_loop::take_halt() {
-            AutoNext::Stop(AutoEnd::Halted(reason))
-        } else if matches!(
+        let next = next_auto_step(
+            &mut run.state,
+            auto_loop::take_halt(),
             self.turn_stop_reason,
-            Some(StopReason::Aborted | StopReason::Error)
-        ) {
-            AutoNext::Stop(AutoEnd::Interrupted)
-        } else {
-            run.state.turn_ended()
-        };
+            failed,
+        );
         match next {
             AutoNext::Prompt(text) => {
                 if let Some(run) = self.auto_loop.as_mut() {
@@ -259,6 +287,62 @@ mod tests {
         let content = vec![Content::text("Drafted."), Content::text("LOOP_DONE")];
         assert_eq!(reply_text(&content), "Drafted.\nLOOP_DONE");
         assert_eq!(reply_text(&[]), "");
+    }
+
+    #[test]
+    fn a_failed_or_aborted_turn_ends_the_auto_loop() {
+        let (mut run, _) = AutoLoop::start("task", 10);
+        assert_eq!(
+            next_auto_step(&mut run, None, None, true),
+            AutoNext::Stop(AutoEnd::Interrupted)
+        );
+        assert_eq!(run.turns(), 1, "a failed turn starts no next turn");
+        let (mut run, _) = AutoLoop::start("task", 10);
+        assert_eq!(
+            next_auto_step(&mut run, None, Some(StopReason::Aborted), false),
+            AutoNext::Stop(AutoEnd::Interrupted)
+        );
+        assert_eq!(
+            next_auto_step(&mut run, None, Some(StopReason::Error), false),
+            AutoNext::Stop(AutoEnd::Interrupted)
+        );
+    }
+
+    #[test]
+    fn a_halt_wins_and_a_clean_turn_continues() {
+        let (mut run, _) = AutoLoop::start("task", 10);
+        assert_eq!(
+            next_auto_step(
+                &mut run,
+                Some("no default".into()),
+                Some(StopReason::Stop),
+                false
+            ),
+            AutoNext::Stop(AutoEnd::Halted("no default".into()))
+        );
+        let (mut run, _) = AutoLoop::start("task", 10);
+        assert!(matches!(
+            next_auto_step(&mut run, None, Some(StopReason::Stop), false),
+            AutoNext::Prompt(_)
+        ));
+        assert_eq!(run.turns(), 2);
+    }
+
+    #[test]
+    fn delete_loop_tasks_removes_only_the_listed_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = TaskStore::for_cwd(dir.path());
+        let mine = store.create("*/5 * * * *", "mine", true).unwrap();
+        let theirs = store.create("*/5 * * * *", "theirs", true).unwrap();
+        let removed = delete_loop_tasks(vec![
+            (store.clone(), mine.id.clone()),
+            // Already removed, as a fired one-shot would be.
+            (store.clone(), "task_gone".into()),
+        ]);
+        assert_eq!(removed, 1);
+        let left = store.list();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].id, theirs.id);
     }
 
     #[test]

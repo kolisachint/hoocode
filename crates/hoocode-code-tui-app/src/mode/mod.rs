@@ -352,6 +352,8 @@ struct Mode {
     scheduler_tick_at: Instant,
     /// The `/loop auto` run in progress, if any.
     auto_loop: Option<loop_command::LoopRun>,
+    /// The scheduled prompts `/loop` created in this session (`/loop stop` removes them).
+    loop_tasks: Vec<loop_command::LoopTask>,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
     /// When the current prompt was submitted (set at submit, taken at `PromptDone`).
@@ -718,6 +720,7 @@ impl Mode {
             stream_render_pending: false,
             scheduler_tick_at: Instant::now() + hoocode_code_scheduler::TICK_INTERVAL,
             auto_loop: None,
+            loop_tasks: Vec::new(),
             turn_cost_anchor: None,
             turn_stop_reason: None,
             turn_timer: TurnTimer::default(),
@@ -1076,13 +1079,14 @@ impl Mode {
                         self.settle_dangling_plan_items();
                         self.tips.on_turn_end();
                         self.finish_turn_chime();
+                        let failed = result.is_err();
                         if let Err(error) = result {
                             self.show_error(&error);
                         }
                         if let Some(next) = queued.pop() {
                             self.prompt(next);
                         } else {
-                            self.auto_loop_turn_done();
+                            self.auto_loop_turn_done(failed);
                         }
                     }
                     AppEvent::Rerender => self.dirty.set(true),
