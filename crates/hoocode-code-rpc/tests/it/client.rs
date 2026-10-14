@@ -252,9 +252,16 @@ async fn a_closed_agent_fails_pending_and_later_requests() {
     let (client_writer, agent_reader) = tokio::io::duplex(4096);
     let (agent_writer, client_reader) = tokio::io::duplex(4096);
     let client = RpcClient::attach(RpcClientOptions::default(), client_reader, client_writer);
+    // Register before closing the pipes: the reader task only sees EOF once
+    // `agent_writer` is dropped, so this listener cannot miss the exit.
+    let exited = Arc::new(tokio::sync::Notify::new());
+    let signal = exited.clone();
+    let _exit = client.on_exit(move |_| signal.notify_one());
     drop(agent_reader);
     drop(agent_writer);
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tokio::time::timeout(Duration::from_secs(10), exited.notified())
+        .await
+        .expect("the reader task should observe the closed pipe");
     let err = client.get_state().await.unwrap_err();
     assert!(err.0.starts_with("Agent process has exited"), "{err}");
     let err = client

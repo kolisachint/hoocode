@@ -57,6 +57,7 @@ hoocode-agent-core = { workspace = true }
 hoocode-agent-compaction = { workspace = true }
 hoocode-agent-types = { workspace = true }
 hoocode-code-tui-app = { workspace = true }
+hoocode-code-tui-theme = { workspace = true }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "io-std"] }
 url = "2"

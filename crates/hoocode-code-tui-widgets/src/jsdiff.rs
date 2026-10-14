@@ -12,20 +12,7 @@ pub struct Change {
     pub count: usize,
 }
 
-/// JavaScript's `\s`.
-fn is_ws(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200A}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202F}'
-                | '\u{205F}'
-                | '\u{3000}'
-                | '\u{FEFF}'
-    )
-}
+use hoocode_tui_util::js_regex::{is_js_space, js_trim};
 
 /// `extendedWordChars`.
 fn is_word_char(c: char) -> bool {
@@ -52,8 +39,8 @@ fn raw_parts(value: &str) -> Vec<String> {
             while j < chars.len() && is_word_char(chars[j]) {
                 j += 1;
             }
-        } else if is_ws(c) {
-            while j < chars.len() && is_ws(chars[j]) {
+        } else if is_js_space(c) {
+            while j < chars.len() && is_js_space(chars[j]) {
                 j += 1;
             }
         }
@@ -64,7 +51,7 @@ fn raw_parts(value: &str) -> Vec<String> {
 }
 
 fn has_ws(s: &str) -> bool {
-    s.chars().any(is_ws)
+    s.chars().any(is_js_space)
 }
 
 /// `WordDiff.tokenize`: whitespace stitched onto the neighbouring tokens.
@@ -95,10 +82,6 @@ fn tokenize(value: &str) -> Vec<String> {
     tokens
 }
 
-fn js_trim(s: &str) -> &str {
-    s.trim_matches(is_ws)
-}
-
 fn equals(left: &str, right: &str) -> bool {
     js_trim(left) == js_trim(right)
 }
@@ -112,7 +95,7 @@ fn join(tokens: &[String]) -> String {
             if i == 0 {
                 t.as_str()
             } else {
-                t.trim_start_matches(is_ws)
+                t.trim_start_matches(is_js_space)
             }
         })
         .collect()
@@ -278,7 +261,7 @@ fn diff_tokens(old: &[String], new: &[String]) -> Vec<Change> {
 }
 
 fn leading_ws(s: &str) -> &str {
-    let end = s.find(|c: char| !is_ws(c)).unwrap_or(s.len());
+    let end = s.find(|c: char| !is_js_space(c)).unwrap_or(s.len());
     hoocode_tui_util::text_slice::prefix(s, end)
 }
 
@@ -286,7 +269,7 @@ fn trailing_ws(s: &str) -> &str {
     let start = s
         .char_indices()
         .rev()
-        .find(|(_, c)| !is_ws(*c))
+        .find(|(_, c)| !is_js_space(*c))
         .map(|(i, c)| i + c.len_utf8())
         .unwrap_or(0);
     hoocode_tui_util::text_slice::suffix_from(s, start)

@@ -699,21 +699,18 @@ impl Agent {
                 messages: vec![message],
             });
         }
+        // Clear the run state and release the slot under one lock order (`active`
+        // then `state`, as `begin_run` takes them), so nobody sees
+        // `is_streaming == false` while the slot is still held, or the reverse.
+        let mut active = self.shared.active.lock().unwrap();
         {
             let mut state = self.shared.state.lock().unwrap();
             state.is_streaming = false;
             state.streaming_message = None;
             state.pending_tool_calls.clear();
         }
-        self.release_run();
-    }
-
-    fn release_run(&self) {
-        *self.shared.active.lock().unwrap() = None;
-        {
-            let mut state = self.shared.state.lock().unwrap();
-            state.is_streaming = false;
-        }
+        *active = None;
+        drop(active);
         self.shared.idle.notify_waiters();
     }
 

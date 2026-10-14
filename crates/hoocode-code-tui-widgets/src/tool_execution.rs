@@ -216,7 +216,7 @@ pub struct ToolExecutionComponent {
     cwd: String,
     execution_started: bool,
     args_complete: bool,
-    result: Option<ToolResult>,
+    result: Option<Rc<ToolResult>>,
     hide_component: bool,
     is_latest: bool,
     frozen: bool,
@@ -360,7 +360,7 @@ impl ToolExecutionComponent {
     }
 
     pub fn update_result(&mut self, result: ToolResult, is_partial: bool) {
-        self.result = Some(result);
+        self.result = Some(Rc::new(result));
         self.is_partial = is_partial;
         self.update_display();
     }
@@ -393,7 +393,7 @@ impl ToolExecutionComponent {
             outcome: crate::tools::subagent::task_outcome(
                 &self.tool_name,
                 &self.args,
-                self.result.as_ref(),
+                self.result.as_deref(),
             ),
         }
     }

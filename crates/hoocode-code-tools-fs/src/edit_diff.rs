@@ -9,6 +9,7 @@
 use std::path::Path;
 use std::sync::LazyLock;
 
+use hoocode_tui_util::js_regex::{is_js_space_unit, js_trim_units};
 use unicode_normalization::UnicodeNormalization;
 
 /// One replacement (`Edit`).
@@ -63,24 +64,6 @@ const CR: u16 = b'\r' as u16;
 const TAB: u16 = b'\t' as u16;
 const SPACE: u16 = b' ' as u16;
 
-/// JS `\s`.
-fn is_js_space(u: u16) -> bool {
-    matches!(
-        u,
-        0x09..=0x0d
-            | 0x20
-            | 0xa0
-            | 0x1680
-            | 0x2000..=0x200a
-            | 0x2028
-            | 0x2029
-            | 0x202f
-            | 0x205f
-            | 0x3000
-            | 0xfeff
-    )
-}
-
 /// `haystack.indexOf(needle, from)`.
 fn index_of(haystack: &[u16], needle: &[u16], from: usize) -> Option<usize> {
     if needle.is_empty() {
@@ -112,18 +95,6 @@ fn join_lines(lines: &[U16]) -> U16 {
 /// Length of the leading `[ \t]*`.
 fn indent_len(line: &[u16]) -> usize {
     line.iter().take_while(|&&u| u == SPACE || u == TAB).count()
-}
-
-/// JS `trim()`.
-fn js_trim(text: &[u16]) -> &[u16] {
-    let start = text.iter().take_while(|&&u| is_js_space(u)).count();
-    let end = text.len()
-        - text[start..]
-            .iter()
-            .rev()
-            .take_while(|&&u| is_js_space(u))
-            .count();
-    &text[start..end]
 }
 
 /// The code point at `i` and its UTF-16 length (a lone surrogate is itself).
@@ -270,7 +241,10 @@ fn normalize_line_whitespace_with_map(text: &[u16]) -> NormalizedWithMap {
                 expanded_map.push(i);
             }
         }
-        let leading = expanded.iter().take_while(|&&u| is_js_space(u)).count();
+        let leading = expanded
+            .iter()
+            .take_while(|&&u| is_js_space_unit(u))
+            .count();
         let mut emitted = U16::new();
         let mut emitted_map = Vec::new();
         for (i, &unit) in expanded.iter().enumerate() {
@@ -285,7 +259,7 @@ fn normalize_line_whitespace_with_map(text: &[u16]) -> NormalizedWithMap {
             emitted_map.push(expanded_map[i]);
         }
         let mut end = emitted.len();
-        while end > 0 && is_js_space(emitted[end - 1]) {
+        while end > 0 && is_js_space_unit(emitted[end - 1]) {
             end -= 1;
         }
         out.extend_from_slice(&emitted[..end]);
@@ -366,7 +340,10 @@ fn normalize_for_fuzzy_match(text: &[u16]) -> U16 {
                     expanded.push(u);
                 }
             }
-            let leading = expanded.iter().take_while(|&&u| is_js_space(u)).count();
+            let leading = expanded
+                .iter()
+                .take_while(|&&u| is_js_space_unit(u))
+                .count();
             let mut normalized = expanded[..leading].to_vec();
             // rest.replace(/ {2,}/g, " ")
             for &u in &expanded[leading..] {
@@ -379,7 +356,7 @@ fn normalize_for_fuzzy_match(text: &[u16]) -> U16 {
                 - normalized
                     .iter()
                     .rev()
-                    .take_while(|&&u| is_js_space(u))
+                    .take_while(|&&u| is_js_space_unit(u))
                     .count();
             normalized.truncate(end);
             normalized
@@ -578,7 +555,7 @@ fn find_edit_spans(
 }
 
 fn block_normalize_line(line: &[u16]) -> U16 {
-    js_trim(&normalize_for_fuzzy_match(line)).to_vec()
+    js_trim_units(&normalize_for_fuzzy_match(line)).to_vec()
 }
 
 /// Blocks whose lines equal oldText's lines ignoring leading/trailing

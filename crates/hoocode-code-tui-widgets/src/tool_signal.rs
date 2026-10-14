@@ -7,6 +7,7 @@
 //! ```
 
 use std::path::Path;
+use std::rc::Rc;
 
 use hoocode_ai_types::Content;
 use hoocode_code_tui_theme::theme;
@@ -117,7 +118,8 @@ pub struct ToolSignalInput {
     pub tool_name: String,
     pub args: Value,
     pub cwd: String,
-    pub result: Option<ToolResult>,
+    /// Shared with the tool block, so each rebuild hands it over without a copy.
+    pub result: Option<Rc<ToolResult>>,
     pub is_partial: bool,
     pub show_images: bool,
     /// The newest call in the transcript. Themes that set `activeToolBg` mark it.

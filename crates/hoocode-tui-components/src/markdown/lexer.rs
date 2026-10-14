@@ -646,8 +646,12 @@ impl Lexer {
                 indent = cap1.len() + 1;
                 item_contents = String::new();
             } else {
-                let found = RULES.other.non_space_char.search(&cap2);
-                let found = if found > 4 { 1 } else { found.max(0) as usize };
+                let found =
+                    RULES
+                        .other
+                        .non_space_char
+                        .search(&cap2)
+                        .map_or(0, |f| if f > 4 { 1 } else { f });
                 item_contents = js_slice_from(&line, found).to_string();
                 indent = found + cap1.len();
             }
@@ -671,7 +675,11 @@ impl Lexer {
                     {
                         break;
                     }
-                    if RULES.other.non_space_char.search(&next_line_without_tabs) >= indent as isize
+                    if RULES
+                        .other
+                        .non_space_char
+                        .search(&next_line_without_tabs)
+                        .is_some_and(|f| f >= indent)
                         || js_trim(&next_line).is_empty()
                     {
                         item_contents.push('\n');
@@ -684,7 +692,7 @@ impl Lexer {
                             .other
                             .non_space_char
                             .search(&line.replace('\t', "    "))
-                            >= 4
+                            .is_some_and(|f| f >= 4)
                         {
                             break;
                         }

@@ -1,8 +1,8 @@
 //! Inline image component, ported from `components/image.ts`.
 
 use hoocode_tui_images::{
-    allocate_image_id, get_capabilities, get_image_dimensions, image_fallback, render_image,
-    ImageDimensions, ImageProtocol, ImageRenderOptions,
+    allocate_image_id, get_capabilities, get_cell_dimensions, get_image_dimensions, image_fallback,
+    render_image, CellDimensions, ImageDimensions, ImageProtocol, ImageRenderOptions,
 };
 use hoocode_tui_render::Component;
 
@@ -21,6 +21,15 @@ pub struct ImageOptions {
     pub image_id: Option<u32>,
 }
 
+/// What the encoded lines depend on. A change in any of these re-encodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RenderKey {
+    protocol: ImageProtocol,
+    max_width: u32,
+    cell: CellDimensions,
+    image_id: Option<u32>,
+}
+
 pub struct Image {
     base64_data: String,
     mime_type: String,
@@ -28,6 +37,8 @@ pub struct Image {
     theme: ImageTheme,
     options: ImageOptions,
     image_id: Option<u32>,
+    /// The lines of the last successful render, reused while the key holds.
+    cached: Option<(RenderKey, Vec<String>)>,
 }
 
 impl Image {
@@ -54,6 +65,7 @@ impl Image {
             theme,
             options,
             image_id,
+            cached: None,
         }
     }
 
@@ -82,6 +94,18 @@ impl Component for Image {
 
         if protocol == ImageProtocol::Kitty && self.image_id.is_none() {
             self.image_id = Some(allocate_image_id());
+        }
+
+        let key = RenderKey {
+            protocol,
+            max_width,
+            cell: get_cell_dimensions(),
+            image_id: self.image_id,
+        };
+        if let Some((cached_key, lines)) = &self.cached {
+            if *cached_key == key {
+                return lines.clone();
+            }
         }
 
         let result = render_image(
@@ -127,6 +151,7 @@ impl Component for Image {
             String::new()
         };
         lines.push(format!("{move_up}{}{move_down}", result.sequence));
+        self.cached = Some((key, lines.clone()));
         lines
     }
 }
@@ -170,6 +195,45 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("image/png"));
         reset_capabilities_cache();
+    }
+
+    #[test]
+    fn reuses_the_encoded_lines_until_the_key_changes() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        set_capabilities(TerminalCapabilities {
+            images: Some(ImageProtocol::Kitty),
+            true_color: true,
+            hyperlinks: true,
+        });
+        set_cell_dimensions(CellDimensions {
+            width_px: 10,
+            height_px: 10,
+        });
+        let mut image = Image::new(
+            "AAAA",
+            "image/png",
+            theme(),
+            ImageOptions::default(),
+            Some(ImageDimensions {
+                width_px: 20,
+                height_px: 20,
+            }),
+        );
+        let first = image.render(4);
+        assert_eq!(image.render(4), first);
+        // A wider band re-encodes at its own row count.
+        let wide = image.render(12);
+        assert_ne!(wide.len(), first.len());
+        // So does a change of protocol.
+        set_capabilities(TerminalCapabilities {
+            images: Some(ImageProtocol::ITerm2),
+            true_color: true,
+            hyperlinks: true,
+        });
+        let iterm = image.render(12);
+        assert!(iterm[iterm.len() - 1].contains("\x1b]1337;File="));
+        reset_capabilities_cache();
+        set_cell_dimensions(CellDimensions::default());
     }
 
     #[test]

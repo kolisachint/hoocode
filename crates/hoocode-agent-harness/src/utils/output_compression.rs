@@ -7,26 +7,13 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
+use super::is_js_space;
+
 /// Below this many bytes compression costs more than it saves.
 const MIN_COMPRESSION_SIZE: usize = 1024;
 
 fn regex(cell: &'static OnceLock<Regex>, pattern: &str) -> &'static Regex {
     cell.get_or_init(|| Regex::new(pattern).expect("valid regex"))
-}
-
-/// JS `trimEnd()` whitespace (Rust's differs in U+FEFF and U+0085).
-fn is_js_space(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200A}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202F}'
-                | '\u{205F}'
-                | '\u{3000}'
-                | '\u{FEFF}'
-    )
 }
 
 fn js_trim_end(line: &str) -> &str {

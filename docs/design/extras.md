@@ -15,7 +15,7 @@ Decide which of hoocode-ts's smaller features `hoocode` gets.
 | Completion chime | **Yes** | |
 | Thinking escalation | No (for now) | On by default in hoocode-ts; Rust reads its config but ignores it |
 | `/learn` | No | |
-| Teams (`--team`, hooteams client) | No | |
+| Teams (hooteams client) | No | The `--team` flag was removed with the teams lens (N9, decision 27). |
 | Voice (voicetools) | No | |
 | HTML export, `/share` | No | |
 | Install telemetry | No | hoocode-ts's version sends nothing anyway; keep accepting the setting key |

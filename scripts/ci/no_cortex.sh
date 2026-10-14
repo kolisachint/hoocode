@@ -32,7 +32,7 @@ ALLOW=(
 # this one follows). It is stripped before the check, so a line that also has a real old
 # name still fails. The .cortexcode folders, CORTEX* env names and cortex-debug log were
 # renamed in step 1.2, so they are no longer exempt.
-EXEMPT='s/pycortex//Ig'
+EXEMPT='s/pycortex//Ig; s/no_cortex//g'  # and this guard's own name
 
 # git grep exits 1 when nothing matches, which is the pass case.
 set +e

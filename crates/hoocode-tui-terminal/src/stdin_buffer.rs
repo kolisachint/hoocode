@@ -51,9 +51,9 @@ fn is_complete_sequence(data: &[char]) -> SeqStatus {
             }
             is_complete_csi_sequence(data)
         }
-        ']' => is_complete_osc_sequence(data),
-        'P' => is_complete_dcs_sequence(data),
-        '_' => is_complete_apc_sequence(data),
+        ']' => string_sequence_status(data, ']', &[&[ESC, '\\'], &['\x07']]),
+        'P' => string_sequence_status(data, 'P', &[&[ESC, '\\']]),
+        '_' => string_sequence_status(data, '_', &[&[ESC, '\\']]),
         'O' => {
             if after_esc.len() >= 2 {
                 SeqStatus::Complete
@@ -61,7 +61,6 @@ fn is_complete_sequence(data: &[char]) -> SeqStatus {
                 SeqStatus::Incomplete
             }
         }
-        _ if after_esc.len() == 1 => SeqStatus::Complete,
         _ => SeqStatus::Complete,
     }
 }
@@ -100,41 +99,17 @@ fn is_complete_csi_sequence(data: &[char]) -> SeqStatus {
     SeqStatus::Incomplete
 }
 
-fn is_complete_osc_sequence(data: &[char]) -> SeqStatus {
-    if data.len() < 2 || data[0] != ESC || data[1] != ']' {
+/// A string sequence (OSC, DCS or APC: `ESC` plus `introducer`) is complete
+/// once it ends with one of its `terminators`.
+fn string_sequence_status(data: &[char], introducer: char, terminators: &[&[char]]) -> SeqStatus {
+    if data.len() < 2 || data[0] != ESC || data[1] != introducer {
         return SeqStatus::Complete;
     }
-    if ends_with(data, &[ESC, '\\']) || ends_with(data, &['\x07']) {
+    if terminators.iter().any(|t| data.ends_with(t)) {
         SeqStatus::Complete
     } else {
         SeqStatus::Incomplete
     }
-}
-
-fn is_complete_dcs_sequence(data: &[char]) -> SeqStatus {
-    if data.len() < 2 || data[0] != ESC || data[1] != 'P' {
-        return SeqStatus::Complete;
-    }
-    if ends_with(data, &[ESC, '\\']) {
-        SeqStatus::Complete
-    } else {
-        SeqStatus::Incomplete
-    }
-}
-
-fn is_complete_apc_sequence(data: &[char]) -> SeqStatus {
-    if data.len() < 2 || data[0] != ESC || data[1] != '_' {
-        return SeqStatus::Complete;
-    }
-    if ends_with(data, &[ESC, '\\']) {
-        SeqStatus::Complete
-    } else {
-        SeqStatus::Incomplete
-    }
-}
-
-fn ends_with(data: &[char], suffix: &[char]) -> bool {
-    data.len() >= suffix.len() && &data[data.len() - suffix.len()..] == suffix
 }
 
 /// Parses the codepoint of an unmodified Kitty "printable" CSI-u sequence,
@@ -260,24 +235,11 @@ impl StdinBuffer {
 
         if self.paste_mode {
             let appended: String = self.buffer.iter().collect();
+            let searched_to = self.paste_buffer.len();
             self.paste_buffer.push_str(&appended);
             self.buffer.clear();
 
-            if let Some(end_idx) = self.paste_buffer.find(BRACKETED_PASTE_END) {
-                let pasted =
-                    hoocode_tui_util::text_slice::prefix(&self.paste_buffer, end_idx).to_string();
-                let remaining = hoocode_tui_util::text_slice::suffix_from(
-                    &self.paste_buffer,
-                    end_idx + BRACKETED_PASTE_END.len(),
-                )
-                .to_string();
-
-                self.paste_mode = false;
-                self.paste_buffer.clear();
-                self.pending_kitty_printable_codepoint = None;
-
-                out.push(StdinEvent::Paste(pasted));
-
+            if let Some(remaining) = self.finish_paste_if_ended(searched_to, out) {
                 if !remaining.is_empty() {
                     self.process_inner(&remaining, out);
                 }
@@ -313,21 +275,7 @@ impl StdinBuffer {
             self.paste_mode = true;
             self.paste_buffer = after_start;
 
-            if let Some(end_idx) = self.paste_buffer.find(BRACKETED_PASTE_END) {
-                let pasted =
-                    hoocode_tui_util::text_slice::prefix(&self.paste_buffer, end_idx).to_string();
-                let remaining = hoocode_tui_util::text_slice::suffix_from(
-                    &self.paste_buffer,
-                    end_idx + BRACKETED_PASTE_END.len(),
-                )
-                .to_string();
-
-                self.paste_mode = false;
-                self.paste_buffer.clear();
-                self.pending_kitty_printable_codepoint = None;
-
-                out.push(StdinEvent::Paste(pasted));
-
+            if let Some(remaining) = self.finish_paste_if_ended(0, out) {
                 if !remaining.is_empty() {
                     self.process_inner(&remaining, out);
                 }
@@ -345,6 +293,38 @@ impl StdinBuffer {
         if !self.buffer.is_empty() {
             self.pending_since = Some(Instant::now());
         }
+    }
+
+    /// Ends the bracketed paste if its end marker is in the paste buffer. Only
+    /// the text from `searched_to` on is searched: the caller has already
+    /// searched everything before it. The last `BRACKETED_PASTE_END.len() - 1`
+    /// bytes before it are searched again, so a marker split across two reads
+    /// is still found. On a match, emits the paste and returns the input that
+    /// followed the marker.
+    fn finish_paste_if_ended(
+        &mut self,
+        searched_to: usize,
+        out: &mut Vec<StdinEvent>,
+    ) -> Option<String> {
+        let overlap = BRACKETED_PASTE_END.len() - 1;
+        let tail = hoocode_tui_util::text_slice::suffix_from(
+            &self.paste_buffer,
+            searched_to.saturating_sub(overlap),
+        );
+        let end_idx = self.paste_buffer.len() - tail.len() + tail.find(BRACKETED_PASTE_END)?;
+        let pasted = hoocode_tui_util::text_slice::prefix(&self.paste_buffer, end_idx).to_string();
+        let remaining = hoocode_tui_util::text_slice::suffix_from(
+            &self.paste_buffer,
+            end_idx + BRACKETED_PASTE_END.len(),
+        )
+        .to_string();
+
+        self.paste_mode = false;
+        self.paste_buffer.clear();
+        self.pending_kitty_printable_codepoint = None;
+
+        out.push(StdinEvent::Paste(pasted));
+        Some(remaining)
     }
 
     fn emit_data_sequence(&mut self, sequence: String, out: &mut Vec<StdinEvent>) {
@@ -426,10 +406,14 @@ impl StdinBuffer {
         self.pending_kitty_printable_codepoint = None;
     }
 
+    /// The held, incomplete input (for the tests; the reader never reads it).
+    #[cfg(test)]
     pub fn buffer_contents(&self) -> String {
         self.buffer.iter().collect()
     }
 
+    /// Same as [`StdinBuffer::clear`] (for the tests).
+    #[cfg(test)]
     pub fn destroy(&mut self) {
         self.clear();
     }
@@ -940,5 +924,54 @@ mod tests {
         assert!(b.has_pending(), "the second introducer waits in turn");
         let ev = b.poll_timeout(Instant::now() + Duration::from_secs(1));
         assert_eq!(data_strings(&ev), vec!["\x1b_", "z"]);
+    }
+
+    /// The paste end marker split across two reads, at every split point: the
+    /// paste ends at the marker, and what follows it is input.
+    #[test]
+    fn paste_end_marker_split_across_two_reads() {
+        for split in 1..BRACKETED_PASTE_END.len() {
+            let mut b = StdinBuffer::new(StdinBufferOptions::default());
+            let (head, tail) = BRACKETED_PASTE_END.split_at(split);
+            let mut all = b.process(&format!("\x1b[200~hello{head}"));
+            assert!(all.is_empty(), "split {split}: waits for the marker");
+            all.extend(b.process(&format!("{tail}x")));
+            assert_eq!(paste_strings(&all), vec!["hello"], "split {split}");
+            assert_eq!(data_strings(&all), vec!["x"], "split {split}");
+        }
+    }
+
+    /// The end marker arriving one byte per read.
+    #[test]
+    fn paste_end_marker_one_byte_per_read() {
+        let mut b = StdinBuffer::new(StdinBufferOptions::default());
+        let mut all = b.process("\x1b[200~ab");
+        for ch in BRACKETED_PASTE_END.chars() {
+            all.extend(b.process(&ch.to_string()));
+        }
+        all.extend(b.process("c"));
+        assert_eq!(paste_strings(&all), vec!["ab"]);
+        assert_eq!(data_strings(&all), vec!["c"]);
+    }
+
+    /// A split marker after multi-byte text: the overlap starts inside a
+    /// character, so the search must begin at the next char boundary.
+    #[test]
+    fn paste_end_marker_split_after_multibyte_text() {
+        let mut b = StdinBuffer::new(StdinBufferOptions::default());
+        assert!(b.process("\x1b[200~世界界\x1b[20").is_empty());
+        let ev = b.process("1~");
+        assert_eq!(paste_strings(&ev), vec!["世界界"]);
+    }
+
+    /// A partial marker that does not complete leaves the paste open, and the
+    /// text is kept as paste content.
+    #[test]
+    fn paste_keeps_waiting_for_a_marker_that_does_not_complete() {
+        let mut b = StdinBuffer::new(StdinBufferOptions::default());
+        assert!(b.process("\x1b[200~x\x1b[201").is_empty());
+        assert!(b.process("x").is_empty());
+        let ev = b.process("\x1b[201~");
+        assert_eq!(paste_strings(&ev), vec!["x\x1b[201x"]);
     }
 }

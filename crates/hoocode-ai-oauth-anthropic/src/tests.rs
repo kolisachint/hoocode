@@ -80,7 +80,6 @@ async fn keeps_the_localhost_redirect_uri_for_manual_callback_login() {
         let body = body_of(request);
         assert_eq!(body["grant_type"], "authorization_code");
         assert_eq!(body["code"], "manual-code");
-        assert_eq!(body["redirect_uri"], "http://localhost:53692/callback");
         json_response(
             json!({"access_token": "access-token", "refresh_token": "refresh-token", "expires_in": 3600}),
         )
@@ -88,10 +87,24 @@ async fn keeps_the_localhost_redirect_uri_for_manual_callback_login() {
     let callbacks = ManualPaste {
         auth_url: Mutex::new(String::new()),
     };
-    let credentials = login_anthropic(&fetch, &callbacks).await.unwrap();
+    // Port 0: the callback server binds an ephemeral port, so parallel test
+    // processes never collide on the production 53692.
+    let credentials = login_anthropic_on_port(&fetch, &callbacks, 0)
+        .await
+        .unwrap();
     assert_eq!(credentials.access, "access-token");
     assert_eq!(credentials.refresh, "refresh-token");
     assert_eq!(fetch.requests.lock().unwrap().len(), 1);
+    // The token exchange uses the redirect URI the authorize URL advertised.
+    let auth = url::Url::parse(&callbacks.auth_url.lock().unwrap()).unwrap();
+    let advertised = auth
+        .query_pairs()
+        .find(|(k, _)| k == "redirect_uri")
+        .map(|(_, v)| v.into_owned())
+        .unwrap();
+    assert!(advertised.starts_with("http://localhost:") && advertised.ends_with("/callback"));
+    let requests = fetch.requests.lock().unwrap();
+    assert_eq!(body_of(&requests[0])["redirect_uri"], advertised);
 }
 
 #[tokio::test]

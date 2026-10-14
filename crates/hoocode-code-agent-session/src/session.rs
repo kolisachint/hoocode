@@ -9,6 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use hoocode_agent_core::{Agent, QueueMode as AgentQueueMode, Subscription};
@@ -467,6 +468,9 @@ struct Inner {
     agent_subscription: Mutex<Option<Subscription>>,
     retry: Mutex<RetryState>,
     retry_notify: tokio::sync::Notify,
+    /// Set once the current run has emitted `agent_end`; the run still holds
+    /// its slot until its listeners return (see `prompt_inner`).
+    run_ended: std::sync::atomic::AtomicBool,
     compaction: Mutex<CompactionState>,
     mcp: Mutex<Option<Arc<McpHub>>>,
 }
@@ -602,6 +606,7 @@ impl AgentSession {
             agent_subscription: Mutex::new(None),
             retry: Mutex::new(RetryState::default()),
             retry_notify: tokio::sync::Notify::new(),
+            run_ended: std::sync::atomic::AtomicBool::new(false),
             compaction: Mutex::new(CompactionState::default()),
             mcp: Mutex::new(None),
         });
@@ -728,6 +733,11 @@ impl AgentSession {
     /// `_processAgentEvent`, run synchronously as the agent emits; the
     /// `agent_end` tail (retry backoff, compaction) runs in the background.
     fn process_agent_event(&self, event: &AgentEvent) {
+        match event {
+            AgentEvent::AgentStart => self.inner.run_ended.store(false, Ordering::SeqCst),
+            AgentEvent::AgentEnd { .. } => self.inner.run_ended.store(true, Ordering::SeqCst),
+            _ => {}
+        }
         if let AgentEvent::AgentEnd { messages } = event {
             self.arm_retry_for_agent_end(messages);
         }
@@ -1499,6 +1509,16 @@ impl AgentSession {
             crate::hooks::ExpandedInput::plain(text)
         };
 
+        // `agent_end` reaches listeners (including RPC clients, which may prompt
+        // at once) before the run releases its slot. A plain prompt in that
+        // window waits for the release, bounded, rather than being refused.
+        if options.streaming_behavior.is_none() && self.inner.run_ended.load(Ordering::SeqCst) {
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                self.inner.agent.wait_for_idle(),
+            )
+            .await;
+        }
         if self.is_streaming() {
             match options.streaming_behavior {
                 None => {

@@ -7,6 +7,8 @@ use hoocode_agent_types::{
 use hoocode_ai_types::{AssistantMessage, Content, Message, UserContent, UserMessage};
 use serde_json::{json, Value};
 
+use crate::utils::is_js_space;
+
 // Constants and conversions ported from hoocode `packages/agent/src/harness/messages.ts`.
 
 pub const COMPACTION_SUMMARY_PREFIX: &str =
@@ -114,21 +116,6 @@ fn js_len(text: &str) -> usize {
 fn js_slice(text: &str, n: usize) -> String {
     let units: Vec<u16> = text.encode_utf16().take(n).collect();
     String::from_utf16_lossy(&units)
-}
-
-/// JS `trimEnd()`/`trim()` whitespace (differs from Rust's in U+FEFF / U+0085).
-fn is_js_space(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200A}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202F}'
-                | '\u{205F}'
-                | '\u{3000}'
-                | '\u{FEFF}'
-    )
 }
 
 /// `firstLine`: the first non-blank line, trimmed and capped at `max`.

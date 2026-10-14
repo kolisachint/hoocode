@@ -74,34 +74,18 @@ fn match_sgr(data: &str) -> Option<(&str, &str, &str, char, usize)> {
     Some((fields[0], fields[1], fields[2], final_byte, 3 + pos + 1))
 }
 
-/// The X10 payload bytes (JS `charCodeAt`: UTF-16 units, here chars).
-fn x10_payload(data: &str) -> Option<[u32; 3]> {
+/// The X10 payload: three chars (JS `charCodeAt`: UTF-16 units, here chars)
+/// and the byte length of the whole report, prefix included.
+fn x10_payload(data: &str) -> Option<([u32; 3], usize)> {
     let rest = data.strip_prefix(X10_PREFIX)?;
     let mut chars = rest.chars();
-    Some([
+    let payload = [
         chars.next()? as u32,
         chars.next()? as u32,
         chars.next()? as u32,
-    ])
-}
-
-/// Whether `data` starts with a mouse report.
-pub fn is_mouse_sequence(data: &str) -> bool {
-    match_sgr(data).is_some() || x10_payload(data).is_some()
-}
-
-/// How many bytes the leading mouse report occupies, or 0 if there is none.
-pub fn mouse_sequence_length(data: &str) -> usize {
-    if let Some((.., len)) = match_sgr(data) {
-        return len;
-    }
-    if let Some(rest) = data.strip_prefix(X10_PREFIX) {
-        let payload: usize = rest.chars().take(3).map(char::len_utf8).sum();
-        if rest.chars().take(3).count() == 3 {
-            return X10_PREFIX.len() + payload;
-        }
-    }
-    0
+    ];
+    let bytes: usize = rest.chars().take(3).map(char::len_utf8).sum();
+    Some((payload, X10_PREFIX.len() + bytes))
 }
 
 fn decode(flags: i64, column: i64, row: i64, pressed: bool) -> MouseEvent {
@@ -150,20 +134,23 @@ fn decode(flags: i64, column: i64, row: i64, pressed: bool) -> MouseEvent {
     }
 }
 
-/// Read the mouse report at the start of `data`. Coordinates stay 1-based.
-pub fn parse_mouse_event(data: &str) -> Option<MouseEvent> {
-    if let Some((flags, column, row, final_byte, _)) = match_sgr(data) {
-        return Some(decode(
-            flags.parse().ok()?,
-            column.parse().ok()?,
-            row.parse().ok()?,
-            final_byte == 'M',
-        ));
+/// Reads the mouse report at the start of `data`, both encodings, and returns
+/// it with its length in bytes. Coordinates stay 1-based. `None` when `data`
+/// does not start with a report. The event is `None` when the report is
+/// malformed (X10 coordinates below zero): it is still a report, so the
+/// caller skips its `length` bytes.
+pub fn parse_mouse_report(data: &str) -> Option<(Option<MouseEvent>, usize)> {
+    if let Some((flags, column, row, final_byte, len)) = match_sgr(data) {
+        let event = match (flags.parse(), column.parse(), row.parse()) {
+            (Ok(flags), Ok(column), Ok(row)) => Some(decode(flags, column, row, final_byte == 'M')),
+            _ => None,
+        };
+        return Some((event, len));
     }
-    let [flags, column, row] = x10_payload(data)?;
+    let ([flags, column, row], len) = x10_payload(data)?;
     let (flags, column, row) = (flags as i64 - 32, column as i64 - 32, row as i64 - 32);
     if flags < 0 || column < 0 || row < 0 {
-        return None;
+        return Some((None, len));
     }
-    Some(decode(flags, column, row, true))
+    Some((Some(decode(flags, column, row, true)), len))
 }

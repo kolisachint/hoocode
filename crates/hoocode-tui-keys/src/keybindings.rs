@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::matching::matches_key;
+use crate::matching::KeySpec;
 
 /// A single keybinding's default key(s) and description.
 #[derive(Debug, Clone)]
@@ -49,6 +49,8 @@ pub struct KeybindingsManager {
     definitions: HashMap<String, KeybindingDefinition>,
     user_bindings: HashMap<String, Vec<String>>,
     keys_by_id: HashMap<String, Vec<String>>,
+    /// `keys_by_id` parsed once, so a keypress does not parse the key names.
+    specs_by_id: HashMap<String, Vec<KeySpec>>,
     conflicts: Vec<KeybindingConflict>,
 }
 
@@ -61,6 +63,7 @@ impl KeybindingsManager {
             definitions,
             user_bindings,
             keys_by_id: HashMap::new(),
+            specs_by_id: HashMap::new(),
             conflicts: Vec::new(),
         };
         manager.rebuild();
@@ -69,6 +72,7 @@ impl KeybindingsManager {
 
     fn rebuild(&mut self) {
         self.keys_by_id.clear();
+        self.specs_by_id.clear();
         self.conflicts.clear();
 
         let mut user_claims: HashMap<String, HashSet<String>> = HashMap::new();
@@ -102,15 +106,17 @@ impl KeybindingsManager {
                 Some(user_keys) => normalize_keys(Some(user_keys)),
                 None => normalize_keys(Some(&definition.default_keys)),
             };
+            let specs = keys.iter().filter_map(|key| KeySpec::parse(key)).collect();
+            self.specs_by_id.insert(id.clone(), specs);
             self.keys_by_id.insert(id, keys);
         }
     }
 
     /// Whether raw terminal input `data` matches any key bound to `keybinding`.
     pub fn matches(&self, data: &str, keybinding: &str) -> bool {
-        self.keys_by_id
+        self.specs_by_id
             .get(keybinding)
-            .is_some_and(|keys| keys.iter().any(|key| matches_key(data, key)))
+            .is_some_and(|specs| specs.iter().any(|spec| spec.matches(data)))
     }
 
     pub fn get_keys(&self, keybinding: &str) -> Vec<String> {
@@ -413,5 +419,19 @@ mod tests {
         assert_eq!(c[0].key, "ctrl+x");
         assert_eq!(c[0].keybindings, ["tui.input.submit", "tui.select.confirm"]);
         assert_eq!(m.get_keys("tui.editor.cursorLeft"), ["left", "ctrl+b"]);
+    }
+
+    #[test]
+    fn test_set_user_bindings_replaces_the_parsed_keys() {
+        let mut m = manager();
+        assert!(m.matches("\x1b[A", "tui.editor.cursorUp"));
+        let mut user = HashMap::new();
+        user.insert(
+            "tui.editor.cursorUp".to_string(),
+            vec!["ctrl+k".to_string(), "not a key+".to_string()],
+        );
+        m.set_user_bindings(user);
+        assert!(!m.matches("\x1b[A", "tui.editor.cursorUp"));
+        assert!(m.matches("\x0b", "tui.editor.cursorUp"), "ctrl+k");
     }
 }

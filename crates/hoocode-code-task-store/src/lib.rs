@@ -80,7 +80,6 @@ pub struct TaskAgent {
     pub role: Option<String>,
     pub kind: TaskAgentKind,
     pub state: Option<TaskAgentState>,
-    pub handoff: Option<String>,
     /// Live activity of a running subagent; `""` clears it.
     pub activity: Option<String>,
     pub stats: Option<AgentStats>,
@@ -166,7 +165,6 @@ pub struct TaskAgentPatch {
     pub role: Option<String>,
     pub kind: Option<TaskAgentKind>,
     pub state: Option<TaskAgentState>,
-    pub handoff: Option<String>,
     pub activity: Option<String>,
     pub stats: Option<AgentStats>,
     pub attempt: Option<u32>,
@@ -295,9 +293,6 @@ fn apply_agent_patch(agent: &mut TaskAgent, patch: TaskAgentPatch) {
     }
     if patch.activity.is_some() {
         agent.activity = patch.activity;
-    }
-    if patch.handoff.is_some() {
-        agent.handoff = patch.handoff;
     }
     if patch.stats.is_some() {
         agent.stats = patch.stats;
@@ -469,7 +464,6 @@ impl TaskStore {
                     role: patch.role,
                     kind,
                     state: patch.state,
-                    handoff: patch.handoff,
                     activity: patch.activity,
                     stats: patch.stats,
                     attempt: patch.attempt,

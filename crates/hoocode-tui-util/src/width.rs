@@ -118,7 +118,12 @@ pub fn visible_width(s: &str) -> usize {
         return s.len();
     }
 
-    let mut clean = s.replace('\t', "   ");
+    // Tabs are 3 columns; the copy is only made when there is a tab to expand.
+    let mut clean = if s.contains('\t') {
+        std::borrow::Cow::Owned(s.replace('\t', "   "))
+    } else {
+        std::borrow::Cow::Borrowed(s)
+    };
     if clean.contains('\x1b') {
         let mut stripped = String::with_capacity(clean.len());
         let mut i = 0;
@@ -135,7 +140,7 @@ pub fn visible_width(s: &str) -> usize {
                 i += ch_len;
             }
         }
-        clean = stripped;
+        clean = std::borrow::Cow::Owned(stripped);
     }
 
     clean.graphemes(true).map(grapheme_width).sum()

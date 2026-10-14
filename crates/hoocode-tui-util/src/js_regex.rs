@@ -47,6 +47,36 @@ pub fn js_trim_end(s: &str) -> &str {
     s.trim_end_matches(is_js_space)
 }
 
+/// [`is_js_space`] for a UTF-16 code unit (every code point in the set is a single unit).
+pub fn is_js_space_unit(u: u16) -> bool {
+    matches!(
+        u,
+        0x09..=0x0d
+            | 0x20
+            | 0xa0
+            | 0x1680
+            | 0x2000..=0x200a
+            | 0x2028
+            | 0x2029
+            | 0x202f
+            | 0x205f
+            | 0x3000
+            | 0xfeff
+    )
+}
+
+/// `String.prototype.trim` over UTF-16 code units.
+pub fn js_trim_units(units: &[u16]) -> &[u16] {
+    let start = units.iter().take_while(|&&u| is_js_space_unit(u)).count();
+    let end = units.len()
+        - units[start..]
+            .iter()
+            .rev()
+            .take_while(|&&u| is_js_space_unit(u))
+            .count();
+    &units[start..end]
+}
+
 /// The byte offset of UTF-16 index `idx` in `s` (clamped to the end; an index
 /// inside a surrogate pair rounds up to the next character).
 pub fn utf16_to_byte(s: &str, idx: usize) -> usize {
@@ -385,12 +415,10 @@ impl JsRegex {
         self.re.is_match(hay).unwrap_or(false)
     }
 
-    /// `hay.search(regex)` as a UTF-16 index, `-1` when absent.
-    pub fn search(&self, hay: &str) -> isize {
-        match self.re.find(hay).ok().flatten() {
-            Some(m) => byte_to_utf16(hay, m.start()) as isize,
-            None => -1,
-        }
+    /// `hay.search(regex)` as a UTF-16 index, `None` when absent.
+    pub fn search(&self, hay: &str) -> Option<usize> {
+        let m = self.re.find(hay).ok().flatten()?;
+        Some(byte_to_utf16(hay, m.start()))
     }
 
     /// `hay.replace(regex, f)`; `global` replaces every match.
@@ -459,6 +487,16 @@ mod tests {
         // BOM is JavaScript whitespace; U+0085 is Unicode whitespace but not JavaScript's.
         assert_eq!(js_trim("\u{feff} a \u{feff}"), "a");
         assert_eq!(js_trim("\u{85}a\u{85}"), "\u{85}a\u{85}");
+    }
+
+    #[test]
+    fn unit_whitespace_matches_the_char_whitespace_set() {
+        for u in 0..=0xffff_u16 {
+            let by_char = char::from_u32(u32::from(u)).is_some_and(is_js_space);
+            assert_eq!(is_js_space_unit(u), by_char, "U+{u:04X}");
+        }
+        let units: Vec<u16> = "\u{feff} a\u{3000}".encode_utf16().collect();
+        assert_eq!(String::from_utf16_lossy(js_trim_units(&units)), "a");
     }
 
     use super::*;

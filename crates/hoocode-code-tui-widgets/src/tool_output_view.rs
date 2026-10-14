@@ -35,11 +35,21 @@ pub fn tool_output_view_description(view: ToolOutputView) -> &'static str {
 /// empty output.
 pub fn peek_block(lines: &[String], style: impl FnOnce(&[String]) -> Vec<String>) -> String {
     let shown = lines.len().min(PEEK_LINES);
-    let body = style(&lines[..shown]).join("\n");
-    if lines.len() <= shown {
+    peek_window(lines.len(), &lines[..shown], style)
+}
+
+/// [`peek_block`] for a caller that has built only the lines it shows: `shown`
+/// is the first [`PEEK_LINES`] of `total` lines, styled by `style`.
+pub fn peek_window(
+    total: usize,
+    shown: &[String],
+    style: impl FnOnce(&[String]) -> Vec<String>,
+) -> String {
+    let body = style(shown).join("\n");
+    if total <= shown.len() {
         return body;
     }
-    let remaining = lines.len() - shown;
+    let remaining = total - shown.len();
     format!(
         "{body}{}",
         theme().fg("muted", &format!("\n... ({remaining} more lines)"))

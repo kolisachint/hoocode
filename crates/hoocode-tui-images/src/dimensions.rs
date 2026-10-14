@@ -9,14 +9,35 @@ pub struct ImageDimensions {
     pub height_px: u32,
 }
 
+/// Base64 characters decoded for the fixed-position headers: 64 characters
+/// are 48 bytes, past the 30 bytes a WebP VP8X header reads.
+const HEADER_CHARS: usize = 64;
+
+/// Base64 characters decoded first for a JPEG marker scan. Usually the frame
+/// header is inside this; when it is not, the scan retries on the whole input.
+const JPEG_SCAN_CHARS: usize = 128 * 1024;
+
 fn decode(base64_data: &str) -> Option<Vec<u8>> {
     base64::engine::general_purpose::STANDARD
         .decode(base64_data)
         .ok()
 }
 
+/// Decode at most `max_chars` characters. The bool is true when the input was
+/// longer, so the prefix holds only whole 4-character groups.
+fn decode_prefix(base64_data: &str, max_chars: usize) -> Option<(Vec<u8>, bool)> {
+    if base64_data.len() <= max_chars {
+        return Some((decode(base64_data)?, false));
+    }
+    let take = max_chars / 4 * 4;
+    let buf = base64::engine::general_purpose::STANDARD
+        .decode(&base64_data.as_bytes()[..take])
+        .ok()?;
+    Some((buf, true))
+}
+
 pub fn get_png_dimensions(base64_data: &str) -> Option<ImageDimensions> {
-    let buf = decode(base64_data)?;
+    let buf = decode_prefix(base64_data, HEADER_CHARS)?.0;
     if buf.len() < 24 {
         return None;
     }
@@ -32,7 +53,18 @@ pub fn get_png_dimensions(base64_data: &str) -> Option<ImageDimensions> {
 }
 
 pub fn get_jpeg_dimensions(base64_data: &str) -> Option<ImageDimensions> {
-    let buf = decode(base64_data)?;
+    if let Some((buf, cut)) = decode_prefix(base64_data, JPEG_SCAN_CHARS) {
+        match scan_jpeg(&buf) {
+            Some(dims) => return Some(dims),
+            None if !cut => return None,
+            None => {}
+        }
+    }
+    // The frame header is past the prefix: scan the whole input.
+    scan_jpeg(&decode(base64_data)?)
+}
+
+fn scan_jpeg(buf: &[u8]) -> Option<ImageDimensions> {
     if buf.len() < 2 {
         return None;
     }
@@ -68,7 +100,7 @@ pub fn get_jpeg_dimensions(base64_data: &str) -> Option<ImageDimensions> {
 }
 
 pub fn get_gif_dimensions(base64_data: &str) -> Option<ImageDimensions> {
-    let buf = decode(base64_data)?;
+    let buf = decode_prefix(base64_data, HEADER_CHARS)?.0;
     if buf.len() < 10 {
         return None;
     }
@@ -85,7 +117,7 @@ pub fn get_gif_dimensions(base64_data: &str) -> Option<ImageDimensions> {
 }
 
 pub fn get_webp_dimensions(base64_data: &str) -> Option<ImageDimensions> {
-    let buf = decode(base64_data)?;
+    let buf = decode_prefix(base64_data, HEADER_CHARS)?.0;
     if buf.len() < 30 {
         return None;
     }
@@ -190,6 +222,68 @@ mod tests {
         let dims = get_webp_dimensions(&b64(&buf)).unwrap();
         assert_eq!(dims.width_px, 100);
         assert_eq!(dims.height_px, 200);
+    }
+
+    /// A SOF0 segment (frame header), without SOI.
+    fn jpeg_frame(width: u16, height: u16) -> Vec<u8> {
+        let mut buf = vec![0xff, 0xc0, 0, 0x11, 8];
+        buf.extend_from_slice(&height.to_be_bytes());
+        buf.extend_from_slice(&width.to_be_bytes());
+        buf.extend_from_slice(&[3; 12]);
+        buf
+    }
+
+    /// An APP0 segment whose length field is 0xffff (65535 bytes including the length).
+    fn max_app_segment() -> Vec<u8> {
+        let mut seg = vec![0xff, 0xe0, 0xff, 0xff];
+        seg.resize(2 + 65535, 0);
+        seg
+    }
+
+    #[test]
+    fn jpeg_dimensions_from_the_frame_header() {
+        let mut buf = vec![0xff, 0xd8];
+        buf.extend(jpeg_frame(200, 300));
+        let dims = get_jpeg_dimensions(&b64(&buf)).unwrap();
+        assert_eq!(dims.width_px, 200);
+        assert_eq!(dims.height_px, 300);
+    }
+
+    #[test]
+    fn jpeg_dimensions_past_the_scan_prefix() {
+        // Two maximal APP segments push the frame header past the first decoded
+        // prefix, so the scan falls back to the whole input.
+        let mut buf = vec![0xff, 0xd8];
+        buf.extend(max_app_segment());
+        buf.extend(max_app_segment());
+        buf.extend(jpeg_frame(640, 480));
+        assert!(buf.len() > JPEG_SCAN_CHARS / 4 * 3);
+        let dims = get_jpeg_dimensions(&b64(&buf)).unwrap();
+        assert_eq!(dims.width_px, 640);
+        assert_eq!(dims.height_px, 480);
+    }
+
+    #[test]
+    fn png_dimensions_ignore_the_payload_after_the_header() {
+        let mut buf = vec![0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        buf.extend_from_slice(&100u32.to_be_bytes());
+        buf.extend_from_slice(&200u32.to_be_bytes());
+        buf.extend((0..200_000u32).map(|i| (i % 251) as u8));
+        let dims = get_png_dimensions(&b64(&buf)).unwrap();
+        assert_eq!(dims.width_px, 100);
+        assert_eq!(dims.height_px, 200);
+    }
+
+    #[test]
+    fn decode_prefix_is_the_start_of_the_whole_decode() {
+        let bytes: Vec<u8> = (0..1000u32).map(|i| (i * 7) as u8).collect();
+        let data = b64(&bytes);
+        let (prefix, cut) = decode_prefix(&data, HEADER_CHARS).unwrap();
+        assert!(cut);
+        assert_eq!(prefix, bytes[..HEADER_CHARS / 4 * 3]);
+        let (whole, cut) = decode_prefix(&data, usize::MAX).unwrap();
+        assert!(!cut);
+        assert_eq!(whole, bytes);
     }
 
     #[test]

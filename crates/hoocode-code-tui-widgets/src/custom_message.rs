@@ -147,6 +147,34 @@ impl Component for CustomMessageComponent {
     }
 }
 
+/// A summary message's sheet: its label, then either the folded line (the
+/// caller's text in the folded style, with the peek hint) or the markdown body.
+fn summary_sheet(
+    label: String,
+    folded: &str,
+    body: &str,
+    expanded: bool,
+    markdown_theme: &Rc<dyn Fn() -> MarkdownTheme>,
+) -> BoxComponent {
+    let mut sheet = BoxComponent::new(1, 1, None);
+    apply_block_fill(&mut sheet, BlockFill::CustomMessageBg);
+    sheet.add_child(Rc::new(RefCell::new(Text::new(label, 0, 0))));
+    sheet.add_child(Rc::new(RefCell::new(Spacer::new(1))));
+    if expanded {
+        sheet.add_child(Rc::new(RefCell::new(custom_text_markdown(
+            body,
+            (markdown_theme)(),
+        ))));
+    } else {
+        sheet.add_child(Rc::new(RefCell::new(Text::new(
+            format!("{}{}", theme().fg("customMessageText", folded), peek_hint()),
+            0,
+            0,
+        ))));
+    }
+    sheet
+}
+
 /// `BranchSummaryMessageComponent`: the summary of an abandoned branch,
 /// folded to one line until expanded.
 pub struct BranchSummaryMessageComponent {
@@ -177,33 +205,14 @@ impl BranchSummaryMessageComponent {
     }
 
     fn update_display(&mut self) {
-        let t = theme();
-        let mut sheet = BoxComponent::new(1, 1, None);
-        apply_block_fill(&mut sheet, BlockFill::CustomMessageBg);
-        sheet.add_child(Rc::new(RefCell::new(Text::new(
+        let body = format!("**Branch Summary**\n\n{}", self.message.summary);
+        self.sheet = summary_sheet(
             message_label("branch"),
-            0,
-            0,
-        ))));
-        sheet.add_child(Rc::new(RefCell::new(Spacer::new(1))));
-        if self.expanded {
-            let text = format!("**Branch Summary**\n\n{}", self.message.summary);
-            sheet.add_child(Rc::new(RefCell::new(custom_text_markdown(
-                &text,
-                (self.markdown_theme)(),
-            ))));
-        } else {
-            sheet.add_child(Rc::new(RefCell::new(Text::new(
-                format!(
-                    "{}{}",
-                    t.fg("customMessageText", "Branch summary"),
-                    peek_hint()
-                ),
-                0,
-                0,
-            ))));
-        }
-        self.sheet = sheet;
+            "Branch summary",
+            &body,
+            self.expanded,
+            &self.markdown_theme,
+        );
     }
 }
 
@@ -247,7 +256,6 @@ impl CompactionSummaryMessageComponent {
     }
 
     fn update_display(&mut self) {
-        let t = theme();
         let before = self.message.tokens_before;
         let summary_text = match self.message.tokens_after {
             Some(after) if before > 0 => {
@@ -261,32 +269,14 @@ impl CompactionSummaryMessageComponent {
             }
             _ => format!("Compacted from {} tokens", group_digits(before)),
         };
-        let mut sheet = BoxComponent::new(1, 1, None);
-        apply_block_fill(&mut sheet, BlockFill::CustomMessageBg);
-        sheet.add_child(Rc::new(RefCell::new(Text::new(
+        let body = format!("**{summary_text}**\n\n{}", self.message.summary);
+        self.sheet = summary_sheet(
             message_label("compaction"),
-            0,
-            0,
-        ))));
-        sheet.add_child(Rc::new(RefCell::new(Spacer::new(1))));
-        if self.expanded {
-            let text = format!("**{summary_text}**\n\n{}", self.message.summary);
-            sheet.add_child(Rc::new(RefCell::new(custom_text_markdown(
-                &text,
-                (self.markdown_theme)(),
-            ))));
-        } else {
-            sheet.add_child(Rc::new(RefCell::new(Text::new(
-                format!(
-                    "{}{}",
-                    t.fg("customMessageText", &summary_text),
-                    peek_hint()
-                ),
-                0,
-                0,
-            ))));
-        }
-        self.sheet = sheet;
+            &summary_text,
+            &body,
+            self.expanded,
+            &self.markdown_theme,
+        );
     }
 }
 

@@ -40,9 +40,18 @@ fn parse_i32(m: Option<regex::Match>) -> Option<i32> {
     m.and_then(|m| m.as_str().parse().ok())
 }
 
+/// Every sequence in this module starts with CSI. Input that does not (most
+/// keypresses) is rejected before any regex runs.
+fn is_csi(data: &str) -> bool {
+    data.starts_with("\x1b[")
+}
+
 /// Parse a Kitty keyboard-protocol escape sequence (CSI-u, modified arrow
 /// keys, modified functional keys, or modified Home/End).
 pub fn parse_kitty_sequence(data: &str) -> Option<ParsedKittySequence> {
+    if !is_csi(data) {
+        return None;
+    }
     if let Some(caps) = CSI_U_RE.captures(data) {
         let codepoint = parse_i32(caps.get(1))?;
         let shifted_key = caps
@@ -158,6 +167,9 @@ pub fn matches_kitty_sequence(data: &str, expected_codepoint: i32, expected_modi
 
 /// Parse xterm's `modifyOtherKeys` sequence: `CSI 27 ; modifiers ; keycode ~`.
 pub fn parse_modify_other_keys_sequence(data: &str) -> Option<ParsedModifyOtherKeysSequence> {
+    if !is_csi(data) {
+        return None;
+    }
     let caps = MODIFY_OTHER_KEYS_RE.captures(data)?;
     let mod_value = parse_i32(caps.get(1))?;
     let codepoint = parse_i32(caps.get(2))?;
@@ -202,6 +214,9 @@ const KITTY_PRINTABLE_ALLOWED_MODIFIERS: u32 = modifiers::SHIFT | LOCK_MASK;
 /// only a plain-or-Shift printable key (Ctrl/Alt/unsupported modifiers are
 /// rejected — those are handled by keybinding matching instead).
 pub fn decode_kitty_printable(data: &str) -> Option<char> {
+    if !is_csi(data) {
+        return None;
+    }
     let caps = CSI_U_RE.captures(data)?;
     let codepoint = parse_i32(caps.get(1))?;
     let shifted_key = caps
@@ -348,5 +363,14 @@ mod tests {
     #[test]
     fn test_is_key_release_ignores_bracketed_paste() {
         assert!(!is_key_release("\x1b[200~90:62:3F:A5\x1b[201~"));
+    }
+
+    #[test]
+    fn test_input_without_csi_is_not_a_kitty_sequence() {
+        for data in ["a", "\x1bOA", "97u", "\x1bP\x1b[97u", ""] {
+            assert!(parse_kitty_sequence(data).is_none(), "{data:?}");
+            assert!(parse_modify_other_keys_sequence(data).is_none(), "{data:?}");
+            assert_eq!(decode_kitty_printable(data), None, "{data:?}");
+        }
     }
 }

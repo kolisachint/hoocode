@@ -12,10 +12,7 @@ mod output;
 mod stdin_buffer;
 mod stdin_hub;
 
-pub use mouse::{
-    is_mouse_sequence, mouse_sequence_length, parse_mouse_event, MouseEvent, MouseEventKind,
-    MOUSE_DISABLE, MOUSE_ENABLE,
-};
+pub use mouse::{parse_mouse_report, MouseEvent, MouseEventKind, MOUSE_DISABLE, MOUSE_ENABLE};
 pub use output::{DrainedWake, OutputHandle, OutputThread, OUTPUT_QUEUE_CAP, OUTPUT_THREAD_NAME};
 pub use stdin_buffer::{StdinBuffer, StdinBufferOptions, StdinEvent};
 
@@ -135,15 +132,14 @@ fn resolve_write_log_path() -> Option<PathBuf> {
     }
     let path = PathBuf::from(&env);
     if path.is_dir() {
-        let now = std::time::SystemTime::now();
-        let ts = humantime_like_timestamp(now);
+        let ts = humantime_like_timestamp();
         Some(path.join(format!("tui-{ts}-{}.log", std::process::id())))
     } else {
         Some(path)
     }
 }
 
-fn humantime_like_timestamp(_now: std::time::SystemTime) -> String {
+fn humantime_like_timestamp() -> String {
     // Coarse, dependency-free timestamp (no chrono dependency): seconds since epoch.
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
