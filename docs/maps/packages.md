@@ -83,7 +83,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `home` | The user's home directory and `~` display: one policy for every hoocode crate | 11 | 113 / 0 | keep |
+| `home` | The user's home directory and `~` display: one policy for every hoocode crate | 11 | 153 / 0 | keep |
 | `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 14 | 1800 / 979 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
@@ -156,13 +156,13 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-tools` | Coding tools for the hoocode coding agent | 4 | 1609 / 0 | keep |
 | `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3353 / 2478 | keep |
 | `code-tools-optin` | Opt-in tools for the hoocode coding agent: TodoWrite and AskUserQuestion | 3 | 549 / 540 | keep |
-| `code-update` | Startup version check and the `hoocode update` command for the hoocode coding agent | 2 | 444 / 0 | keep |
+| `code-update` | Startup version check and the `hoocode update` command for the hoocode coding agent | 2 | 505 / 0 | keep |
 
 ### Coding agent UI (`code-tui-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 14183 / 5259 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 14290 / 5259 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 734 / 868 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8027 / 3420 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 5 | 2384 / 2547 | keep |
@@ -172,15 +172,15 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 9673 / 7129 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 9680 / 7129 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 307 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 417 / 0 | keep |
-| `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 1946 / 72 | keep |
+| `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 2328 / 275 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1050 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1975 / 582 | keep |
 | `tui-render` | Differential rendering for the hoocode TUI | 4 | 2627 / 1981 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3040 / 112 | keep |
-| `tui-util` | Shared utilities for the hoocode TUI | 14 | 2170 / 611 | keep |
+| `tui-util` | Shared utilities for the hoocode TUI | 14 | 2246 / 611 | keep |
 
 ### Other
 
