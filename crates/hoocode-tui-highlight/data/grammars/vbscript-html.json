@@ -1,0 +1,1 @@
+{"root":3386,"nodes":{"3386":{"frozen":false,"props":{"name":"VBScript in HTML","subLanguage":"xml","contains":{"$arr":[{"$ref":3387}]}}},"3387":{"frozen":false,"props":{"begin":"<%","end":"%>","subLanguage":"vbscript"}}}}

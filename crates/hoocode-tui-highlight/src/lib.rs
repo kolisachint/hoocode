@@ -7,40 +7,55 @@
 //! - [`highlight`]: `cli-highlight`'s `highlight`, which colors the token tree
 //!   with a caller theme and falls back to its `DEFAULT_THEME`.
 //!
-//! Grammars are compiled by mutating them in place (as highlight.js does), so
-//! each thread keeps its own copy.
+//! Grammars load on demand: [`grammar_index`] names every language and alias
+//! (generated from the dump), and each language's chunk in `data/grammars/`
+//! holds only the nodes it reaches. Grammars are compiled by mutating them in
+//! place (as highlight.js does), so each thread keeps its own copy.
 
 mod engine;
+mod grammar_index;
 mod value;
 
-use std::collections::HashSet;
+use std::cell::{OnceCell, RefCell};
+use std::collections::{HashMap, HashSet};
 
 use engine::{Node, Registry};
-use value::{get, Callback, Grammars, Obj, V};
+use value::{get, Callback, Obj, V};
 
-const GRAMMARS: &str = include_str!("../data/hljs-grammars.json");
+/// The language a name or alias names, as highlight.js looks it up (lowercased).
+fn canonical(name: &str) -> Option<&'static str> {
+    let name = name.to_lowercase();
+    let is_language = |l: &str| grammar_index::LANGUAGES.iter().any(|(n, _, _)| *n == l);
+    if let Some((lang, _, _)) = grammar_index::LANGUAGES
+        .iter()
+        .find(|(n, _, _)| *n == name.as_str())
+    {
+        return Some(lang);
+    }
+    grammar_index::ALIASES
+        .iter()
+        .find(|(a, _)| *a == name.as_str())
+        .map(|(_, target)| *target)
+        .filter(|target| is_language(target))
+}
 
 struct Embedded {
-    grammars: Grammars,
+    /// Every node loaded so far, by its id in the dump, shared across languages.
+    nodes: RefCell<HashMap<u64, Obj>>,
+    system_symbols: OnceCell<HashSet<String>>,
 }
 
 impl Registry for Embedded {
     fn language(&self, name: &str) -> Option<(Obj, Vec<Callback>)> {
-        let name = name.to_lowercase();
-        let find = |n: &str| {
-            self.grammars
-                .languages
-                .iter()
-                .find(|(k, _)| k == n)
-                .map(|(_, o)| o.clone())
+        let canonical = canonical(name)?;
+        let (_, root, chunk) = grammar_index::LANGUAGES
+            .iter()
+            .find(|(n, _, _)| *n == canonical)?;
+        let cached = self.nodes.borrow().get(root).cloned();
+        let lang = match cached {
+            Some(lang) => lang,
+            None => value::load_chunk(chunk, *root, &mut self.nodes.borrow_mut()),
         };
-        let lang = find(&name).or_else(|| {
-            self.grammars
-                .aliases
-                .iter()
-                .find(|(a, _)| *a == name)
-                .and_then(|(_, n)| find(n))
-        })?;
         let extensions = match get(&lang, "compilerExtensions") {
             V::Arr(items) => items
                 .borrow()
@@ -56,27 +71,33 @@ impl Registry for Embedded {
     }
 
     fn language_names(&self) -> Vec<String> {
-        self.grammars
-            .languages
+        grammar_index::LANGUAGES
             .iter()
-            .map(|(k, _)| k.clone())
+            .map(|(name, _, _)| name.to_string())
             .collect()
     }
 
     fn system_symbols(&self) -> &HashSet<String> {
-        &self.grammars.system_symbols
+        self.system_symbols.get_or_init(|| {
+            serde_json::from_str::<Vec<String>>(grammar_index::SYSTEM_SYMBOLS)
+                .expect("system symbols")
+                .into_iter()
+                .collect()
+        })
     }
 }
 
 thread_local! {
     static REGISTRY: Embedded = Embedded {
-        grammars: value::load(GRAMMARS),
+        nodes: RefCell::new(HashMap::new()),
+        system_symbols: OnceCell::new(),
     };
 }
 
-/// `supportsLanguage`: a language name or alias highlight.js knows.
+/// `supportsLanguage`: a language name or alias highlight.js knows. Answered
+/// from the index; no grammar is loaded.
 pub fn supports_language(name: &str) -> bool {
-    REGISTRY.with(|r| r.language(name).is_some())
+    canonical(name).is_some()
 }
 
 /// The outcome of highlighting: the token tree, or the code as plain text

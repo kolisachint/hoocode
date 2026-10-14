@@ -1,0 +1,1 @@
+{"root":542,"nodes":{"542":{"frozen":false,"props":{"name":"Clojure REPL","contains":{"$arr":[{"$ref":543}]}}},"543":{"frozen":false,"props":{"className":"meta","begin":{"$re":"^([\\w.-]+|\\s*#_)?=>","flags":""},"starts":{"$ref":544}}},"544":{"frozen":false,"props":{"end":{"$re":"$","flags":""},"subLanguage":"clojure"}}}}
