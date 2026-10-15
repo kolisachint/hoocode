@@ -17,7 +17,7 @@
 //! and reports back as `AppEvent::AttachLoaded` / `AgentRunsListed`.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -363,7 +363,7 @@ impl Mode {
             .as_mut()
             .map(|a| std::mem::take(&mut a.queued))
             .unwrap_or_default();
-        for event in queued {
+        for event in drop_covered(queued, &run.messages) {
             self.apply_child_event(event);
         }
         self.show_main();
@@ -650,6 +650,82 @@ fn str_field(event: &Value, key: &str) -> String {
         .to_string()
 }
 
+/// A message's identity for the dedupe: its role and its timestamp.
+fn message_key(message: &AgentMessage) -> (&'static str, i64) {
+    let role = match message {
+        AgentMessage::User(_) => "user",
+        AgentMessage::Assistant(_) => "assistant",
+        AgentMessage::ToolResult(_) => "toolResult",
+        _ => "other",
+    };
+    (role, message.timestamp())
+}
+
+/// The queued events the history does not already show.
+///
+/// The history is read after some of the run's events arrived. A message that
+/// ended on disk before the read has its deltas and its `message_end` queued
+/// as well, and applying them on top of the history would show its text
+/// twice. Such a message is covered: the history holds its key. A tool call
+/// is covered when the history holds the call (its block is rebuilt from the
+/// assistant message, so its start is dropped) and a tool result when the
+/// history holds the result (its end is dropped). Everything else is kept, in
+/// order. A message's deltas wait for its end; deltas with no end yet belong
+/// to a message still streaming, which the history cannot hold.
+fn drop_covered(queued: Vec<Value>, history: &[AgentMessage]) -> Vec<Value> {
+    let mut keys = HashSet::new();
+    let mut calls = HashSet::new();
+    let mut results = HashSet::new();
+    for message in history {
+        keys.insert(message_key(message));
+        match message {
+            AgentMessage::Assistant(assistant) => {
+                for content in &assistant.content {
+                    if let Content::ToolCall(call) = content {
+                        calls.insert(call.id.clone());
+                    }
+                }
+            }
+            AgentMessage::ToolResult(result) => {
+                results.insert(result.tool_call_id.clone());
+            }
+            _ => {}
+        }
+    }
+    let mut kept = Vec::new();
+    let mut deltas = Vec::new();
+    for event in queued {
+        let kind = event
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        match kind {
+            "message_update" => deltas.push(event),
+            "message_end" => {
+                let covered = event
+                    .get("message")
+                    .cloned()
+                    .and_then(|m| serde_json::from_value::<AgentMessage>(m).ok())
+                    .is_some_and(|m| keys.contains(&message_key(&m)));
+                if covered {
+                    deltas.clear();
+                } else {
+                    kept.append(&mut deltas);
+                    kept.push(event);
+                }
+            }
+            "tool_execution_start" if calls.contains(&str_field(&event, "toolCallId")) => {}
+            "tool_execution_end" if results.contains(&str_field(&event, "toolCallId")) => {}
+            _ => {
+                kept.append(&mut deltas);
+                kept.push(event);
+            }
+        }
+    }
+    kept.append(&mut deltas);
+    kept
+}
+
 #[cfg(test)]
 mod tests {
     use hoocode_ai_types::{Message, StopReason, UserMessage};
@@ -772,6 +848,113 @@ mod tests {
         .expect("record appended");
         let _ = flush_session_writes(SESSION_FLUSH_DEADLINE);
         parent_path
+    }
+
+    fn assistant_at(content: Vec<Content>, timestamp: i64) -> AgentMessage {
+        AgentMessage::Assistant(AssistantMessage {
+            content,
+            stop_reason: StopReason::Stop,
+            timestamp,
+            ..Default::default()
+        })
+    }
+
+    fn delta(text: &str) -> Value {
+        serde_json::json!({
+            "type": "message_update",
+            "assistantMessageEvent": {"type": "text_delta", "delta": text},
+        })
+    }
+
+    fn end(message: &AgentMessage) -> Value {
+        serde_json::json!({
+            "type": "message_end",
+            "message": serde_json::to_value(message).expect("message json"),
+        })
+    }
+
+    fn kinds(events: &[Value]) -> Vec<String> {
+        events
+            .iter()
+            .map(|e| {
+                let kind = e["type"].as_str().unwrap_or_default();
+                match e
+                    .pointer("/assistantMessageEvent/delta")
+                    .and_then(Value::as_str)
+                {
+                    Some(text) => format!("{kind}:{text}"),
+                    None => kind.to_string(),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_history_read_mid_run_does_not_show_queued_messages_twice() {
+        // Attached while the child streams: message 2 ended on disk before the
+        // read, message 3 is still streaming. The queue holds both messages'
+        // deltas, and message 2's end.
+        let done = assistant_at(vec![Content::text("42")], 2);
+        let history = vec![user("question"), done.clone()];
+        let queued = vec![
+            delta("4"),
+            delta("2"),
+            end(&done),
+            delta("Hel"),
+            delta("lo"),
+        ];
+        let kept = drop_covered(queued, &history);
+        assert_eq!(
+            kinds(&kept),
+            vec!["message_update:Hel", "message_update:lo"],
+            "the covered message's deltas and end go; the streaming one stays"
+        );
+    }
+
+    #[test]
+    fn a_queued_message_the_history_lacks_is_kept_with_its_end() {
+        let fresh = assistant_at(vec![Content::text("42")], 5);
+        let queued = vec![
+            delta("42"),
+            end(&fresh),
+            serde_json::json!({"type": "task_done"}),
+        ];
+        let kept = drop_covered(queued, &[user("question")]);
+        assert_eq!(
+            kinds(&kept),
+            vec!["message_update:42", "message_end", "task_done"]
+        );
+    }
+
+    #[test]
+    fn tool_events_follow_the_history_they_are_in() {
+        let call = Content::ToolCall(hoocode_ai_types::ToolCallContent {
+            id: "call_1".into(),
+            name: "Read".into(),
+            arguments: serde_json::json!({}),
+            thought_signature: None,
+        });
+        let asked = assistant_at(vec![call], 2);
+        let result = AgentMessage::ToolResult(hoocode_ai_types::ToolResultMessage {
+            tool_call_id: "call_1".into(),
+            tool_name: "Read".into(),
+            content: vec![Content::text("ok")],
+            details: None,
+            is_error: false,
+            timestamp: 3,
+        });
+        let start = serde_json::json!({"type": "tool_execution_start", "toolCallId": "call_1"});
+        let end_tool = serde_json::json!({"type": "tool_execution_end", "toolCallId": "call_1"});
+        // The call is in the history, its result is not: the block is rebuilt
+        // from the history, so its start is dropped and its end still applies.
+        let kept = drop_covered(
+            vec![start.clone(), end_tool.clone()],
+            std::slice::from_ref(&asked),
+        );
+        assert_eq!(kinds(&kept), vec!["tool_execution_end"]);
+        // The result is in the history too: nothing about the call is replayed.
+        let kept = drop_covered(vec![start, end_tool], &[asked, result]);
+        assert!(kept.is_empty(), "{kept:?}");
     }
 
     #[test]
