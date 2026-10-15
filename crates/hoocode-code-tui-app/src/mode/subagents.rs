@@ -117,7 +117,13 @@ impl Mode {
             .and_then(serde_json::Value::as_str)
             .is_some_and(|kind| kind.starts_with("task_"));
         live::apply(task_id, &event);
-        for block in self.tool_blocks() {
+        // Only Agent blocks can hold a run: the name is checked first, so the
+        // shared call-to-run table is read for those alone (once per block).
+        let agent_blocks = self
+            .tool_blocks()
+            .into_iter()
+            .filter(|block| block.borrow().tool_name() == "Agent");
+        for block in agent_blocks {
             let call = block.borrow().tool_call_id().to_string();
             if run_for_tool_call(&call).as_deref() != Some(task_id) {
                 continue;
