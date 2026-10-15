@@ -36,6 +36,7 @@ pub fn is_read_only(tool_name: &str) -> bool {
             | "CronList"
             | "SearchPlugins"
             | "ListPlugins"
+            | "ShellOutput"
             | "grep"
             | "find"
             | "ls"

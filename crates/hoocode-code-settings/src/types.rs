@@ -387,6 +387,7 @@ const DEFAULT_SETTINGS_JSON: &str = r#"{
     "nestedSubagentConcurrency": 2,
     "enableTodoWrite": true,
     "enablePluginTools": false,
+    "enableBackgroundShell": false,
     "pluginInstallScope": "user",
     "deferMcpSchemas": true,
     "enableWebTools": false,

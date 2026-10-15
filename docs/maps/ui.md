@@ -57,6 +57,7 @@ update this page in the same commit.
 | Tool | File |
 |---|---|
 | `Shell` | `bash.rs` |
+| `ShellOutput`, `ShellKill` (opt-in) | none: the default block (no renderer yet; T5.3 adds the Shell tab) |
 | `Read` (and skills) | `read.rs` |
 | `Edit` | `edit.rs` |
 | `Write` | `write.rs` |

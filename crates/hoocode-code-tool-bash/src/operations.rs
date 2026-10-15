@@ -170,6 +170,35 @@ async fn run_launch(
     let _ = outcome.send(result);
 }
 
+/// The shell command for one run: the shell's args and the command as the last
+/// argument, in its own process group (a job object on Windows), with its
+/// stdin closed and its stdout and stderr piped.
+pub(crate) fn build_command(
+    shell: &str,
+    args: &[String],
+    command: &str,
+    cwd: &Path,
+    env: &ShellEnv,
+    nice: u64,
+) -> CommandWrap {
+    let mut wrap = CommandWrap::with_new(shell, |cmd| {
+        cmd.args(args)
+            .arg(command)
+            .current_dir(cwd)
+            .env_clear()
+            .envs(env)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        hoocode_runtime::lower_child_priority(cmd.as_std_mut(), nice);
+    });
+    #[cfg(unix)]
+    wrap.wrap(ProcessGroup::leader());
+    #[cfg(windows)]
+    wrap.wrap(process_wrap::tokio::JobObject);
+    wrap
+}
+
 async fn run_child(launch: Launch, chunks: mpsc::SyncSender<Vec<u8>>) -> Outcome {
     let Launch {
         shell,
@@ -181,21 +210,7 @@ async fn run_child(launch: Launch, chunks: mpsc::SyncSender<Vec<u8>>) -> Outcome
         timeout,
         nice,
     } = launch;
-    let mut wrap = CommandWrap::with_new(&shell, |cmd| {
-        cmd.args(&args)
-            .arg(&command)
-            .current_dir(&cwd)
-            .env_clear()
-            .envs(&env)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        hoocode_runtime::lower_child_priority(cmd.as_std_mut(), nice);
-    });
-    #[cfg(unix)]
-    wrap.wrap(ProcessGroup::leader());
-    #[cfg(windows)]
-    wrap.wrap(process_wrap::tokio::JobObject);
+    let mut wrap = build_command(&shell, &args, &command, &cwd, &env, nice);
     let mut child = wrap.spawn().map_err(|e| {
         let code = node_fs_error(e, "spawn", None).code;
         format!("spawn {shell} {code}")

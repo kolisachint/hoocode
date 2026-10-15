@@ -18,7 +18,7 @@ use hoocode_code_models::{
 use hoocode_code_session::{FileEntry, SessionManager};
 use hoocode_code_settings::SettingsManager;
 use hoocode_code_tool_api::ToolDefinition;
-use hoocode_code_tool_bash::BashToolOptions;
+use hoocode_code_tool_bash::{completion_notice, BashToolOptions, JobRegistry};
 use hoocode_code_tools_fs::ReadToolOptions;
 
 use crate::auth_guidance::{format_auth_failed_message, format_no_models_available_message};
@@ -101,6 +101,9 @@ pub struct CreateAgentSessionOptions {
     pub enable_web_tools: bool,
     /// Default: [`default_base_tools`].
     pub base_tools: Option<BaseTools>,
+    /// The session's background shell jobs (`enableBackgroundShell`). Ignored
+    /// when `base_tools` is set.
+    pub background_jobs: Option<JobRegistry>,
     pub extensions: Option<Arc<dyn ExtensionHooks>>,
     /// hoocode: the gate consulted before each tool call.
     pub permission_gate: Option<Arc<dyn PermissionGate>>,
@@ -120,6 +123,15 @@ pub struct CreatedAgentSession {
 /// `createAllToolDefinitions` for the default session: read, bash, edit,
 /// write and CodeSearch with their settings.
 pub fn default_base_tools(ctx: &BaseToolsContext<'_>) -> Vec<ToolDefinition> {
+    default_base_tools_with_jobs(ctx, None)
+}
+
+/// [`default_base_tools`] for a session with background shell jobs: `Shell`
+/// takes `run_in_background` and starts its jobs in `jobs`.
+pub fn default_base_tools_with_jobs(
+    ctx: &BaseToolsContext<'_>,
+    jobs: Option<JobRegistry>,
+) -> Vec<ToolDefinition> {
     let settings = ctx.settings;
     let read = ReadToolOptions {
         auto_resize_images: settings.image_auto_resize(),
@@ -134,6 +146,7 @@ pub fn default_base_tools(ctx: &BaseToolsContext<'_>) -> Vec<ToolDefinition> {
         max_output_bytes: Some(settings.tool_output_max_bytes() as usize),
         max_output_lines: Some(settings.tool_output_max_lines() as usize),
         nice: settings.performance_bash_nice(),
+        jobs,
         ..Default::default()
     };
     hoocode_code_tools::default_tool_definitions(
@@ -395,6 +408,25 @@ pub fn create_agent_session(
         };
         Ok(hoocode_code_tools_fs::evict_superseded_reads(&messages, &options).unwrap_or(messages))
     });
+    // A background shell job that finished since the last model call is told
+    // to the model once, at the end of that call's messages (not kept in the transcript).
+    let background_jobs = options.background_jobs.clone();
+    let transform_context: TransformContextFn = match background_jobs.clone() {
+        None => transform_context,
+        Some(jobs) => {
+            let base = transform_context;
+            Arc::new(move |messages, signal| {
+                let mut messages = base(messages, signal)?;
+                for info in jobs.take_completions() {
+                    messages.push(AgentMessage::User(hoocode_ai_types::UserMessage {
+                        content: vec![Content::text(completion_notice(&info))].into(),
+                        timestamp: hoocode_ai_types::now_ms(),
+                    }));
+                }
+                Ok(messages)
+            })
+        }
+    };
 
     // Resolve auth per request (models.json keys and headers, attribution).
     let base_stream = options
@@ -513,9 +545,12 @@ pub fn create_agent_session(
         initial_active_tool_names: Some(initial_active_tool_names),
         allowed_tool_names,
         disallowed_tool_names: options.disallowed_tools,
-        base_tools: options
-            .base_tools
-            .unwrap_or_else(|| BaseTools::Factory(Arc::new(default_base_tools))),
+        base_tools: options.base_tools.unwrap_or_else(|| match background_jobs {
+            None => BaseTools::Factory(Arc::new(default_base_tools)),
+            Some(jobs) => BaseTools::Factory(Arc::new(move |ctx| {
+                default_base_tools_with_jobs(ctx, Some(jobs.clone()))
+            })),
+        }),
         extensions: options.extensions,
         session_start_event: options.session_start_event,
     });

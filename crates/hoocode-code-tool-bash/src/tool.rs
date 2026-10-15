@@ -1,7 +1,7 @@
 //! The `bash` tool (`createBashToolDefinition` in core/tools/bash.ts).
 //! Interactive rendering (`renderCall`/`renderResult`) arrives with phase 11.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -14,6 +14,7 @@ use hoocode_code_tool_api::{
 use serde_json::{json, Map, Value};
 
 use crate::accumulator::{OutputAccumulator, OutputAccumulatorOptions, OutputSnapshot};
+use crate::jobs::JobRegistry;
 use crate::operations::{BashExecOptions, BashOperations, LocalBashOperations};
 use crate::shell::{get_shell_env, ShellEnv};
 
@@ -50,6 +51,10 @@ pub struct BashToolOptions {
     /// `performance.bashNice`: niceness of the commands' child processes. 0
     /// (the default) runs them at normal priority.
     pub nice: u64,
+    /// The session's background jobs. When set, `Shell` takes
+    /// `run_in_background` and the schema says so; without it (the default)
+    /// the schema is unchanged.
+    pub jobs: Option<JobRegistry>,
 }
 
 const BASH_UPDATE_THROTTLE: Duration = Duration::from_millis(100);
@@ -153,6 +158,47 @@ fn check_command(options: &BashToolOptions, command: &str) -> Result<(), ToolErr
         return Err("Command blocked: does not match any allowed command pattern".into());
     }
     Ok(())
+}
+
+/// The command as it will run: the command prefix on its own line, then the
+/// spawn hook's changes. Shared by the foreground and background paths.
+fn resolve_spawn(options: &BashToolOptions, command: &str, cwd: &Path) -> BashSpawnContext {
+    let resolved = match &options.command_prefix {
+        Some(prefix) if !prefix.is_empty() => format!("{prefix}\n{command}"),
+        _ => command.to_owned(),
+    };
+    let base = BashSpawnContext {
+        command: resolved,
+        cwd: cwd.to_path_buf(),
+        env: get_shell_env(),
+    };
+    match &options.spawn_hook {
+        Some(hook) => hook(base),
+        None => base,
+    }
+}
+
+/// `run_in_background: true`: start the job and return its id at once. The
+/// timeout does not apply to a background job.
+fn start_background(
+    cwd: &Path,
+    options: &BashToolOptions,
+    jobs: &JobRegistry,
+    command: &str,
+) -> Result<AgentToolResult, ToolError> {
+    check_command(options, command)?;
+    let spawn = resolve_spawn(options, command, cwd);
+    let info = jobs.spawn(&spawn.command, &spawn.cwd, spawn.env)?;
+    let text = format!(
+        "Started background job {id}: `{command}`.\nIts output goes to {log}. Read it with ShellOutput (id \"{id}\") and stop it with ShellKill. A notice arrives when it finishes.",
+        id = info.id,
+        log = info.log_path.display()
+    );
+    Ok(AgentToolResult {
+        content: vec![text_content(text)],
+        details: json!({"jobId": info.id, "logPath": info.log_path.display().to_string()}),
+        terminate: false,
+    })
 }
 
 /// Output plus the throttle state `emitOutputUpdate` works on.
@@ -277,19 +323,7 @@ impl BashCall<'_> {
     ) -> Result<AgentToolResult, ToolError> {
         check_command(self.options, command)?;
 
-        let resolved = match &self.options.command_prefix {
-            Some(prefix) if !prefix.is_empty() => format!("{prefix}\n{command}"),
-            _ => command.to_owned(),
-        };
-        let base = BashSpawnContext {
-            command: resolved,
-            cwd: self.cwd.clone(),
-            env: get_shell_env(),
-        };
-        let spawn = match &self.options.spawn_hook {
-            Some(hook) => hook(base),
-            None => base,
-        };
+        let spawn = resolve_spawn(self.options, command, self.cwd);
 
         let progress = Arc::new(Mutex::new(Progress {
             output: OutputAccumulator::new(OutputAccumulatorOptions {
@@ -434,9 +468,22 @@ fn build_bash_tool_definition(
         ),
         None => "A timeout of 0 means no limit.".to_owned(),
     };
+    let background_clause = if options.jobs.is_some() {
+        " Pass run_in_background true to start a long-running command (a server, a watcher, a long build) detached: it returns a job id at once. ShellOutput reads its output and ShellKill stops it."
+    } else {
+        ""
+    };
     let description = format!(
-        "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last {max_lines} lines or {kb}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds. {timeout_clause}"
+        "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last {max_lines} lines or {kb}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds. {timeout_clause}{background_clause}"
     );
+    let mut parameters = bash_parameters_schema_with(default_timeout);
+    if options.jobs.is_some() {
+        parameters["properties"]["run_in_background"] = json!({
+            "type": "boolean",
+            "description": "Run the command detached and return a job id at once (optional; the timeout does not apply)"
+        });
+    }
+    let jobs = options.jobs.clone();
     ToolDefinition {
         ordered_start: false,
         background_when: None,
@@ -445,7 +492,7 @@ fn build_bash_tool_definition(
         description,
         prompt_snippet: Some("Run builds, tests, linters, git, and package managers".into()),
         prompt_guidelines: Vec::new(),
-        parameters: bash_parameters_schema_with(default_timeout),
+        parameters,
         prepare_arguments: None,
         execution_mode: None,
         background: false,
@@ -454,6 +501,11 @@ fn build_bash_tool_definition(
                 .get("command")
                 .and_then(Value::as_str)
                 .ok_or("The \"command\" argument must be of type string")?;
+            if let Some(jobs) = &jobs {
+                if args.get("run_in_background").and_then(Value::as_bool) == Some(true) {
+                    return start_background(&cwd, &options, jobs, command);
+                }
+            }
             let (timeout, defaulted) =
                 resolve_timeout(args.get("timeout").and_then(Value::as_f64), default_timeout);
             BashCall {

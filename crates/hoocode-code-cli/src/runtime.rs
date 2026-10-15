@@ -401,6 +401,7 @@ fn custom_tools(
     settings: &SettingsManager,
     cwd: &std::path::Path,
     interactive: bool,
+    jobs: Option<&hoocode_code_tool_bash::JobRegistry>,
 ) -> Vec<ToolDefinition> {
     let ask_host: Arc<dyn hoocode_code_tools_optin::AskOptionsHost> = if interactive {
         Arc::new(hoocode_code_tui_app::dialog_bridge::TuiAskOptionsHost)
@@ -428,6 +429,16 @@ fn custom_tools(
             hoocode_code_tools_optin::StoreRef::Global,
         ));
     }
+    // Background shell jobs (`enableBackgroundShell`): the job tools. Shell itself takes
+    // `run_in_background` through the session's base tools.
+    if let Some(jobs) = jobs {
+        tools.push(hoocode_code_tool_bash::create_shell_output_tool_definition(
+            jobs.clone(),
+        ));
+        tools.push(hoocode_code_tool_bash::create_shell_kill_tool_definition(
+            jobs.clone(),
+        ));
+    }
     // Plugin tools (`docs/design/plugins.md`, part 3): off by default, and never in a subagent.
     // A one-shot child has a task id; a warm worker has none but runs under a subagent depth
     // (its env is set by the pool). Its `--disallowed-tools` denies them too (pool.rs, warm.rs).
@@ -451,6 +462,26 @@ fn custom_tools(
         ));
     }
     tools
+}
+
+/// The session's background shell jobs (`enableBackgroundShell`). Logs go to
+/// `<session>/jobs/` (the session file without `.jsonl`, as the subagent
+/// transcripts do), or to a per-process folder for a session that is not saved.
+fn background_job_registry(
+    session_manager: &SessionManager,
+    settings: &SettingsManager,
+) -> hoocode_code_tool_bash::JobRegistry {
+    let dir = match session_manager.session_file() {
+        Some(file) => file.with_extension("").join("jobs"),
+        None => std::env::temp_dir()
+            .join("hoocode-jobs")
+            .join(std::process::id().to_string()),
+    };
+    hoocode_code_tool_bash::JobRegistry::new(
+        dir,
+        hoocode_code_tool_bash::LocalBashOperations::new(settings.shell_path())
+            .with_nice(settings.performance_bash_nice()),
+    )
 }
 
 /// Whether the plugin tools are on: `--enable-plugintools`, else the `enablePluginTools` setting
@@ -741,6 +772,9 @@ fn assemble_session(
     plugins: &hoocode_code_plugins::PluginSet,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
+    // Background shell jobs (`enableBackgroundShell`); the light preset has none.
+    let jobs = (!light && settings.enable_background_shell())
+        .then(|| background_job_registry(&session_manager, &settings));
     // main.ts: the light preset is an allowlist of the four short-schema tools
     // (their order is the active order), which also keeps extension tools off.
     let (base_tools, custom, tools) = if light {
@@ -758,7 +792,11 @@ fn assemble_session(
             ),
         )
     } else {
-        (None, custom_tools(args, &settings, &cwd, interactive), None)
+        (
+            None,
+            custom_tools(args, &settings, &cwd, interactive, jobs.as_ref()),
+            None,
+        )
     };
     // main.ts: explicit tool flags win over the light preset's allowlist.
     let explicit =
@@ -836,6 +874,7 @@ fn assemble_session(
             no_tools,
             custom_tools: custom,
             base_tools,
+            background_jobs: jobs,
             permission_gate: Some(
                 gate.unwrap_or_else(|| build_permission_gate(args, interactive, &services.cwd)),
             ),
@@ -2622,7 +2661,7 @@ mod plugin_tool_gate_tests {
 
     fn names_for(argv: &[&str], settings: &SettingsManager) -> Vec<String> {
         let args = crate::args::parse_args(&argv.iter().map(|a| a.to_string()).collect::<Vec<_>>());
-        custom_tools(&args, settings, std::path::Path::new("/w"), false)
+        custom_tools(&args, settings, std::path::Path::new("/w"), false, None)
             .into_iter()
             .map(|t| t.name)
             .collect()
