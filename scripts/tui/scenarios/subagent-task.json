@@ -1,5 +1,5 @@
 {
-  "description": "Print mode (default bundle, subagents on by default): the model delegates with the Task tool to the general-purpose agent in the foreground; a real child process (the same app, --mode json --task-id) answers from the same mock LLM, and its answer comes back inline as the tool result the parent's final answer builds on.",
+  "description": "Print mode (default bundle, subagents on by default): the model delegates with the Agent tool. Agent runs in the background by default (core step 9, 4c), so the parent's turn ends while a real child process (the same app, --mode json --task-id) answers from the same mock LLM. The child's result arrives as a follow-up notification at the next turn boundary, and the parent's final answer builds on it.",
   "phase": "10.9f",
   "terminal": {
     "cols": 140,
@@ -31,6 +31,9 @@
           }
         }
       ]
+    },
+    {
+      "text": "The subagent is running in the background. I will report its answer when it finishes."
     },
     {
       "text": "42"
