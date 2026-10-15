@@ -7,6 +7,7 @@ mod memory;
 mod session_io;
 mod shutdown;
 mod watchdog;
+mod watchdog_forced;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
