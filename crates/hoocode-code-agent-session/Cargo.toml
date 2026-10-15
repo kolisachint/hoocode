@@ -35,6 +35,7 @@ hoocode-code-resources = { workspace = true }
 hoocode-code-paths = { workspace = true }
 hoocode-code-prompts = { workspace = true }
 hoocode-code-session = { workspace = true }
+hoocode-code-task-store = { workspace = true }
 hoocode-code-settings = { workspace = true }
 hoocode-code-tool-api = { workspace = true }
 hoocode-code-tool-bash = { workspace = true }

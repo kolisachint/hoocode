@@ -30,11 +30,13 @@ use hoocode_code_mcp::{
     discover, load_with_plugin_servers, ConfigSources, McpConfig, PluginServers, ServerState,
     Source, Transport, TrustStatus, TrustStore,
 };
+use hoocode_code_task_store::{ActionNotifier, RowAction, RowActions, TaskStore};
 use hoocode_code_tool_api::{ToolDefinition, ToolError};
 use hoocode_runtime::io_handle;
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
+use crate::mcp_rows::{CallTracker, CALL_KEY_PREFIX, SERVER_KEY_PREFIX};
 pub use hoocode_agent_mcp::{ElicitationAnswer, ElicitationHandler, ElicitationRequest};
 pub use hoocode_code_mcp::TrustPrompt;
 
@@ -113,6 +115,8 @@ pub struct McpHub {
     state: Arc<Mutex<HubState>>,
     /// Signalled whenever a server finishes connecting or failing. Paired with `state`.
     changed: Arc<Condvar>,
+    /// Publishes the task-panel rows of the servers and of in-flight calls.
+    tracker: Arc<CallTracker>,
 }
 
 impl McpHub {
@@ -202,7 +206,29 @@ impl McpHub {
             data_dir,
             state: Arc::new(Mutex::new(state)),
             changed: Arc::new(Condvar::new()),
+            tracker: Arc::new(CallTracker::default()),
         }
+    }
+
+    /// Publishes this hub's rows (each server's state, and each in-flight call that runs for a
+    /// second) into the task store, and lets the panel's row actions reach the hub (`Login` on a
+    /// server row, `Abort` on a call row). Set it once, at attach. Store listeners must not call the
+    /// hub: rows are published under the hub's lock.
+    pub fn set_task_rows(&self, store: &'static TaskStore) {
+        self.tracker.set_store(Some(store));
+        store.set_row_actions(Some(Arc::new(self.clone())));
+        self.publish_rows();
+    }
+
+    /// Makes the server rows match the servers' current states. Called under the hub's lock.
+    fn publish_rows_locked(&self, state: &HubState) {
+        let servers: Vec<McpServerInfo> = state.entries.iter().map(server_info).collect();
+        self.tracker.publish_servers(&servers);
+    }
+
+    fn publish_rows(&self) {
+        let state = lock(&self.state);
+        self.publish_rows_locked(&state);
     }
 
     /// Answers the servers' elicitation requests with `handler`. Set it before
@@ -305,7 +331,9 @@ impl McpHub {
                 return;
             };
             entry.status = McpStatus::Connecting;
-            vec![(index, entry.name.clone(), config)]
+            let job = (index, entry.name.clone(), config);
+            self.publish_rows_locked(&state);
+            vec![job]
         };
         self.spawn_jobs(jobs);
     }
@@ -318,7 +346,9 @@ impl McpHub {
                 return;
             }
             state.started = true;
-            connecting_jobs(&mut state)
+            let jobs = connecting_jobs(&mut state);
+            self.publish_rows_locked(&state);
+            jobs
         };
         self.spawn_jobs(jobs);
     }
@@ -363,6 +393,7 @@ impl McpHub {
                     indices.push(index);
                 }
             }
+            self.publish_rows_locked(&state);
             if !state.started || state.shut_down {
                 Vec::new()
             } else {
@@ -404,6 +435,7 @@ impl McpHub {
                 .filter_map(|e| e.client.take())
                 .collect()
         };
+        self.tracker.clear();
         if clients.is_empty() {
             return;
         }
@@ -463,6 +495,7 @@ impl McpHub {
             let elicitation = elicitation.clone();
             let notifier = notifier.clone();
             let changed = changed.clone();
+            let tracker = self.tracker.clone();
             io_handle().spawn(async move {
                 let outcome = connect_and_list(&name, config, &data_dir, elicitation).await;
                 if lock(&state).shut_down {
@@ -475,12 +508,13 @@ impl McpHub {
                 let mut guard = lock(&state);
                 match outcome {
                     Ok((client, tools)) => {
-                        let definitions = definitions(&client, &name, tools);
+                        let definitions = definitions(&client, &name, tools, &tracker);
                         let entry = &mut guard.entries[index];
                         entry.status = McpStatus::Connected;
                         entry.tools = definitions;
                         entry.client = Some(client);
                         guard.generation += 1;
+                        publish_server_rows(&tracker, &guard.entries);
                         changed.notify_all();
                     }
                     Err(error) => {
@@ -488,6 +522,7 @@ impl McpHub {
                         let status = redact_status(status_for(&error), &secrets);
                         let needs_login = status == McpStatus::AuthNeeded;
                         guard.entries[index].status = status;
+                        publish_server_rows(&tracker, &guard.entries);
                         changed.notify_all();
                         drop(guard);
                         if let (true, Some(notify)) = (needs_login, notifier) {
@@ -500,6 +535,34 @@ impl McpHub {
             });
         }
     }
+}
+
+/// The panel's row actions on this hub's rows. `Login` on a server row runs [`McpHub::login`], the
+/// code path of `/mcp login <server>`; `Abort` on a call row cancels that call.
+impl RowActions for McpHub {
+    fn perform(&self, key: &str, action: RowAction, notify: ActionNotifier) -> Result<(), String> {
+        match action {
+            RowAction::Login => {
+                let name = key
+                    .strip_prefix(SERVER_KEY_PREFIX)
+                    .ok_or_else(|| "Only an MCP server row can log in.".to_owned())?;
+                self.login(name, move |message| notify(message))
+            }
+            RowAction::Abort => {
+                let id = key
+                    .strip_prefix(CALL_KEY_PREFIX)
+                    .and_then(|id| id.parse::<u64>().ok())
+                    .ok_or_else(|| "Only an MCP call row can be aborted.".to_owned())?;
+                self.tracker.abort(id)
+            }
+        }
+    }
+}
+
+/// Publishes the server rows of `entries` (called under the hub's lock, see [`McpHub::set_task_rows`]).
+fn publish_server_rows(tracker: &CallTracker, entries: &[Entry]) {
+    let servers: Vec<McpServerInfo> = entries.iter().map(server_info).collect();
+    tracker.publish_servers(&servers);
 }
 
 /// Entries that are trusted and not started yet, as spawn jobs. Marks them `Connecting`.
@@ -635,8 +698,21 @@ fn to_client_config(transport: &Transport) -> McpServerConfig {
     }
 }
 
+/// Where a call came from, for its task-panel row.
+struct CallSite {
+    tracker: Arc<CallTracker>,
+    server: String,
+    /// The tool's name on the server (not the `mcp_<server>_<tool>` name the model sees).
+    tool: String,
+}
+
 /// One [`ToolDefinition`] per listed tool. Calls go to the client on the io runtime.
-fn definitions(client: &McpClient, server: &str, tools: Vec<McpTool>) -> Vec<ToolDefinition> {
+fn definitions(
+    client: &McpClient,
+    server: &str,
+    tools: Vec<McpTool>,
+    tracker: &Arc<CallTracker>,
+) -> Vec<ToolDefinition> {
     tools
         .into_iter()
         .map(|tool| {
@@ -644,6 +720,11 @@ fn definitions(client: &McpClient, server: &str, tools: Vec<McpTool>) -> Vec<Too
             let remote = tool.name.clone();
             let client = client.clone();
             let handle = io_handle();
+            let site = CallSite {
+                tracker: tracker.clone(),
+                server: server.to_owned(),
+                tool: remote.clone(),
+            };
             ToolDefinition {
                 label: name.clone(),
                 name,
@@ -657,7 +738,7 @@ fn definitions(client: &McpClient, server: &str, tools: Vec<McpTool>) -> Vec<Too
                 background_when: None,
                 ordered_start: false,
                 execute: Arc::new(move |_id, params, signal, on_update, _ctx| {
-                    call_blocking(&handle, &client, &remote, params, signal, on_update)
+                    call_blocking(&handle, &client, &remote, params, signal, on_update, &site)
                 }),
             }
         })
@@ -665,7 +746,8 @@ fn definitions(client: &McpClient, server: &str, tools: Vec<McpTool>) -> Vec<Too
 }
 
 /// Runs one `tools/call` from a tool's blocking thread. The turn's abort signal cancels the
-/// call; progress reports go to `on_update` as text.
+/// call; progress reports go to `on_update` as text. The call's task-panel row (and the
+/// `Abort` action on it) follow the call: see [`CallTracker`].
 fn call_blocking(
     handle: &Handle,
     client: &McpClient,
@@ -673,8 +755,16 @@ fn call_blocking(
     params: serde_json::Value,
     signal: Option<AbortSignal>,
     on_update: Option<AgentToolUpdateCallback>,
+    site: &CallSite,
 ) -> Result<AgentToolResult, ToolError> {
     let cancel = CancellationToken::new();
+    let _row = CallTracker::start(
+        &site.tracker,
+        &site.server,
+        &site.tool,
+        cancel.clone(),
+        handle,
+    );
     let (progress_tx, mut progress_rx) = tokio::sync::watch::channel(None::<ToolProgress>);
     let options = CallOptions {
         cancel: cancel.clone(),

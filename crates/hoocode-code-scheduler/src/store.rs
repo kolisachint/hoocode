@@ -66,9 +66,21 @@ pub struct ScheduledTask {
 pub struct Claimed {
     /// Prompts to submit now, in stored order.
     pub fired: Vec<String>,
+    /// The tasks behind `fired`, as they were when they fired (a one-shot is
+    /// already gone from the store).
+    pub fired_jobs: Vec<ScheduledTask>,
     /// Prompts whose due minute is more than [`LATE_FIRE_MINUTES`] old. They
     /// do not run; the caller says so.
     pub skipped: Vec<String>,
+}
+
+/// One tick's claim and, when the store could be read under the lock, the
+/// store's tasks after it: what the task panel shows.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Tick {
+    pub claimed: Claimed,
+    /// `None` when the lock was not taken (nothing was read).
+    pub jobs: Option<Vec<ScheduledTask>>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -210,12 +222,19 @@ impl TaskStore {
     /// due minute is recorded, so each due minute is handled once. A one-shot
     /// task is removed. Callers check that the agent is idle first.
     pub fn claim_due(&self, now: &DateTime<Local>) -> io::Result<Claimed> {
+        self.claim_due_tick(now).map(|tick| tick.claimed)
+    }
+
+    /// [`claim_due`](Self::claim_due), and the store's tasks after the claim
+    /// (see [`Tick`]). The tasks are read under the same lock, so the panel
+    /// costs no extra read.
+    pub fn claim_due_tick(&self, now: &DateTime<Local>) -> io::Result<Tick> {
         self.with_lock(|held| {
             // Without the lock file another process could claim the same minute
             // too, so this tick fires nothing; the next tick claims it, still
             // within the late window for a task due a moment ago.
             if !held {
-                return Ok(Claimed::default());
+                return Ok(Tick::default());
             }
             let now_minute = now.timestamp().div_euclid(60);
             let mut tasks = self.read();
@@ -232,6 +251,7 @@ impl TaskStore {
                 task.last_run_minute = Some(due);
                 if now_minute - due <= LATE_FIRE_MINUTES {
                     claimed.fired.push(task.prompt.clone());
+                    claimed.fired_jobs.push(task.clone());
                 } else {
                     claimed.skipped.push(task.prompt.clone());
                 }
@@ -243,7 +263,10 @@ impl TaskStore {
                 tasks.retain(|t| !spent.contains(&t.id));
                 self.write(&tasks)?;
             }
-            Ok(claimed)
+            Ok(Tick {
+                claimed,
+                jobs: Some(tasks),
+            })
         })
     }
 }
@@ -489,6 +512,33 @@ mod tests {
             u64::try_from(created.timestamp_millis()).unwrap(),
         );
         assert_eq!(store.claim_due(&at(9, 36, 0)).unwrap(), Claimed::default());
+    }
+
+    #[test]
+    fn a_tick_reports_the_fired_jobs_and_the_store_after_the_claim() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(&dir);
+        put(&store, "30 9 * * *", "recurring", true, 0);
+        put(&store, "30 9 * * *", "once", false, 0);
+        put(&store, "0 3 * * *", "other", true, 0);
+        let tick = store.claim_due_tick(&at(9, 30, 10)).unwrap();
+        assert_eq!(tick.claimed.fired, vec!["recurring", "once"]);
+        // The fired jobs are as they were when they fired, the one-shot included.
+        let fired: Vec<(&str, bool)> = tick
+            .claimed
+            .fired_jobs
+            .iter()
+            .map(|j| (j.prompt.as_str(), j.recurring))
+            .collect();
+        assert_eq!(fired, vec![("recurring", true), ("once", false)]);
+        // The store after the claim: the one-shot is gone, the others remain.
+        let live: Vec<String> = tick
+            .jobs
+            .expect("the lock was taken")
+            .into_iter()
+            .map(|j| j.prompt)
+            .collect();
+        assert_eq!(live, vec!["recurring", "other"]);
     }
 
     #[test]

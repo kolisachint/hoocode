@@ -966,6 +966,8 @@ fn attach_mcp(
             &plugins.mcp_servers(),
         ),
     );
+    // The panel's MCP tab reads the hub's rows from the process-wide task store.
+    hub.set_task_rows(hoocode_code_task_store::task_store());
     if interactive {
         hub.set_elicitation(std::sync::Arc::new(
             hoocode_code_tui_app::mcp_elicitation::TuiElicitation,

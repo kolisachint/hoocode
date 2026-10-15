@@ -389,6 +389,8 @@ struct Mode {
     auto_loop: Option<loop_command::LoopRun>,
     /// The scheduled prompts `/loop` created in this session (`/loop stop` removes them).
     loop_tasks: Vec<loop_command::LoopTask>,
+    /// Scheduled prompts fired and not yet finished: their Schedule rows in the task panel.
+    scheduled_runs: hoocode_code_scheduler::Runs,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
     /// A `/plugin` change made while a turn ran: applied when the turn ends (`PromptDone`).
@@ -756,6 +758,7 @@ impl Mode {
             scheduler_tick_at: Instant::now() + hoocode_code_scheduler::TICK_INTERVAL,
             auto_loop: None,
             loop_tasks: Vec::new(),
+            scheduled_runs: Default::default(),
             turn_cost_anchor: None,
             turn_stop_reason: None,
             plugin_reload_pending: false,
@@ -1087,6 +1090,13 @@ impl Mode {
                         self.close_open_chain(outcome);
                         self.show_turn_cost();
                         self.settle_dangling_plan_items();
+                        let run_ok =
+                            result.is_ok() && self.turn_stop_reason == Some(StopReason::Stop);
+                        self.scheduled_runs.run_finished(
+                            task_store(),
+                            run_ok,
+                            &chrono::Local::now(),
+                        );
                         self.tips.on_turn_end();
                         self.finish_turn_chime();
                         let failed = result.is_err();

@@ -126,7 +126,15 @@ impl Mode {
         if self.session.is_streaming() || self.session.is_compacting() {
             return;
         }
-        let claimed = hoocode_code_scheduler::claim_due_now(self.session.cwd());
+        // The tick's store read also feeds the Schedule rows (no extra read here).
+        let tick = hoocode_code_scheduler::tick_now(self.session.cwd());
+        let claimed = tick.claimed;
+        self.scheduled_runs.publish_tick(
+            task_store(),
+            tick.jobs.as_deref(),
+            &claimed.fired_jobs,
+            &chrono::Local::now(),
+        );
         self.report_scheduled_prompts(&claimed);
         // The first prompt starts a turn; the rest queue behind it, as the
         // follow-up they would be in TS once the first has begun.
@@ -256,6 +264,7 @@ impl Mode {
     fn handle_agent_event(&mut self, event: AgentEvent) {
         match event {
             AgentEvent::AgentStart => {
+                self.scheduled_runs.run_started(task_store());
                 self.tips.on_turn_start();
                 self.stop_working_loader();
                 let loader = self.create_working_loader();
