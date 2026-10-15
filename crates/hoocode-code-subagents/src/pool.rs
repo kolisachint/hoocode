@@ -110,8 +110,11 @@ const OUTPUT_JSON_STDERR_TAIL_CHARS: usize = 8 * 1024;
 /// Cap on one un-terminated stdout line (a runaway writer is dropped).
 const MAX_SUBAGENT_EVENT_LINE_CHARS: usize = 8 * 1024 * 1024;
 /// How long to wait for stdio to close after the child exits (grandchildren
-/// may hold the pipes).
-const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
+/// may hold the pipes). The pipes are drained by tasks on `hoocode-io`, so the
+/// final result line can arrive a little after the exit; under load 100 ms was
+/// too short and the line could be missed. The wait only costs time when a
+/// leftover process keeps the pipe open.
+const EXIT_STDIO_GRACE: Duration = Duration::from_millis(500);
 
 /// The env prefix hoocode stamps on children (read back via any prefix).
 const CHILD_ENV_PREFIX: &str = "HOOCODE_";

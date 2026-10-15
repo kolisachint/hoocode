@@ -87,3 +87,42 @@ async fn a_large_output_arrives_whole() {
     assert!(out.iter().all(|&b| b == 0));
     assert_eq!(handle.wait().await.unwrap(), Some(0));
 }
+
+/// Open pipe ends of this process (Linux only: read from `/proc/self/fd`).
+#[cfg(target_os = "linux")]
+fn open_pipe_fds() -> usize {
+    let Ok(fds) = std::fs::read_dir("/proc/self/fd") else {
+        return 0;
+    };
+    fds.filter_map(|fd| std::fs::read_link(fd.ok()?.path()).ok())
+        .filter(|target| target.to_string_lossy().starts_with("pipe:"))
+        .count()
+}
+
+/// Dropping the receivers while the child is silent (and keeps its pipe open)
+/// must stop the pump: its read end closes without waiting for any output.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_silent_child_pipe_is_closed_once_the_receivers_go() {
+    let _serial = crate::SERIAL.lock().await;
+    let before = open_pipe_fds();
+    // `exec` so the child is `sleep` itself and holds the pipes until killed.
+    let mut handle = runner()
+        .spawn(spec("exec sleep 30"))
+        .expect("spawn /bin/sh");
+    let (stdout, stderr) = handle.take_streams();
+    assert!(open_pipe_fds() > before, "the pipes should be open");
+    drop(stdout);
+    drop(stderr);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while open_pipe_fds() > before && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        open_pipe_fds(),
+        before,
+        "the pump must close its pipe read ends after the receivers are dropped"
+    );
+    handle.kill();
+    let _ = handle.wait().await;
+}

@@ -345,7 +345,8 @@ during the load run (`scripts/perf/load_scenario.py --scenario load`, before the
 - The bash-only run peaked at 13 threads and had no blocking-pool threads. Its bash calls return
   quickly and run as background jobs on `hoocode-io`.
 - **Fix (commit b8862c2, `code-subagents`):** the pipes are read by tasks on `hoocode-io`, as `Shell`
-  pipes already are. No thread is started for them. A test checks that no pipe thread appears while a child
+  pipes already are. On Unix no thread is started for them (on Windows tokio reads child pipes on its
+  blocking pool, so the saving is Unix-only). A test checks that no pipe thread appears while a child
   runs, and that 4 MiB of output arrives whole. The test fails on the old code (2 threads) and passes now.
 - **Left open (design question, not changed):** tool bodies and child `wait()` calls share the io blocking
   pool, which has no cap (tokio's default is 512). Capping it now would risk a deadlock: an Agent body holds
