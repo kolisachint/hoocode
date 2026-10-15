@@ -22,6 +22,7 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TARGET="${CARGO_TARGET_DIR:-$REPO/target}"
+case $TARGET in /*) ;; *) TARGET="$REPO/$TARGET" ;; esac
 LOG="$TARGET/warmup.log"
 STAMP="$TARGET/.warmup-stamp"
 LOCK="$TARGET/.warmup.lock"
@@ -36,7 +37,8 @@ note() {
 state_key() {
   {
     cat "$REPO/Cargo.lock" 2>/dev/null
-    rustc -V 2>/dev/null
+    # In the repo, so rust-toolchain.toml picks the toolchain cargo will use.
+    (cd "$REPO" && rustc -V 2>/dev/null)
   } | cksum
 }
 

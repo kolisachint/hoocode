@@ -153,7 +153,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 9638 / 9547 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1112 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1074 / 125 | keep |
-| `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 2923 / 1463 | keep |
+| `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 3021 / 1463 | keep |
 | `code-tool-search` | CodeSearch for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking | 1 | 1957 / 1185 | keep |
 | `code-tools` | Coding tools for the hoocode coding agent | 4 | 1703 / 0 | keep |
 | `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3353 / 2478 | keep |
@@ -181,7 +181,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1050 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1959 / 583 | keep |
 | `tui-render` | Differential rendering for the hoocode TUI | 4 | 2754 / 1997 | keep |
-| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3225 / 211 | keep |
+| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3232 / 211 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 14 | 2258 / 611 | keep |
 
 ### Other

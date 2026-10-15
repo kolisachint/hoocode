@@ -124,8 +124,9 @@ warning and exits 0. The second runs `scripts/dev/prune_target.sh --apply --if-o
   `HOOCODE_WARMUP_MIN_FREE_GB` (default 8), when another warm-up holds `<target>/.warmup.lock`, or
   when `HOOCODE_WARMUP=0`. It always exits 0.
 - Unlike the install step, it is not limited to cloud sessions (`CLAUDE_CODE_REMOTE`). It runs
-  wherever the hook runs and is skipped when the target is already warm. Set `HOOCODE_WARMUP=0` to
-  opt out locally.
+  wherever the hook runs and is skipped when the target is already warm. While the background build
+  runs it holds cargo's build lock, so a cargo command in the session waits ("Blocking waiting for
+  file lock") until it finishes. Set `HOOCODE_WARMUP=0` to opt out locally.
 - Checked on 2026-10-15 in the worktree: `bash -n` passes, the hook JSON parses, and the
   background build started with the foreground call returning in 0.09 s (then killed). The skip
   paths (warm stamp, low disk, opt-out, cargo missing, lock held) were each confirmed. The

@@ -48,6 +48,13 @@ impl Hook {
     }
 
     /// The part of the hook that does not depend on the panic payload.
+    ///
+    /// The hook runs before unwinding, so it cannot tell a caught panic
+    /// (`catch_unwind`) from an uncaught one. A UI-thread panic that is caught
+    /// therefore still restores the terminal and flushes the session. So
+    /// `catch_unwind` must not be used on the UI thread during a live session.
+    /// Check any existing `catch_unwind` (for example in `hoocode-ai-registry`'s
+    /// `session_resources`) against this before it runs on the UI thread.
     fn handle(&self, thread: ThreadId, report: &str) {
         if thread == self.ui_thread && !self.restored.swap(true, Ordering::SeqCst) {
             (self.effects.restore)();
