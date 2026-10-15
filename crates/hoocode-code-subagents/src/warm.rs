@@ -32,7 +32,7 @@ use crate::depth::{
 };
 use crate::lifeguard;
 use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
-use crate::pool::DEFAULT_SUBAGENT_MAX_TURNS;
+use crate::pool::{subagent_disallowed_tools, DEFAULT_SUBAGENT_MAX_TURNS};
 use hoocode_code_models::ResolvedScoped;
 
 /// Usage totals pulled from a worker after a task.
@@ -319,12 +319,8 @@ fn build_worker_args(
     if let Some(tools) = tools.filter(|t| !t.is_empty()) {
         args.extend(["--tools".into(), tools.join(",")]);
     }
-    if let Some(disallowed) = def
-        .and_then(|d| d.disallowed_tools.as_ref())
-        .filter(|t| !t.is_empty())
-    {
-        args.extend(["--disallowed-tools".into(), disallowed.join(",")]);
-    }
+    let disallowed = subagent_disallowed_tools(def.and_then(|d| d.disallowed_tools.as_deref()));
+    args.extend(["--disallowed-tools".into(), disallowed.join(",")]);
     if can_child_delegate {
         args.push("--enable-subagents".into());
         if let Some(to) = def

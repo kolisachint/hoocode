@@ -3,11 +3,47 @@
 Status: **agreed 2026-10-07**, scope cut 2026-10-08 ([decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md)).
 Replaces ledger 12.1 and 12.2.
 
-**Built so far (2026-10-14): parts 1 and 2, Load and Install.** Crate `hoocode-code-plugins`: Agent
+**Built so far (2026-10-15): parts 1, 2 and 3, Load, Install and Model tools.** Crate `hoocode-code-plugins`: Agent
 Plugins and Claude layouts, discovery and precedence, project folder trust, `<plugin>:<skill>`
 skills, subagent files, and MCP servers in the MCP config. The loader also runs at session start
 (`hoocode-code-cli` `runtime.rs`). Part 2 adds `install.rs` and `marketplace.rs` and the `/plugin`
-command (`hoocode-code-tui-app` `mode/plugin.rs`). Not built: part 3 (model tools).
+command (`hoocode-code-tui-app` `mode/plugin.rs`). Part 3 is below.
+
+Part 3 choices (2026-10-15):
+
+- **Where.** The five tools are in `hoocode-code-tools-optin` (`plugins.rs`), registered in the
+  CLI's `custom_tools` only when `enablePluginTools` is on (or `--enable-plugintools`). They
+  arrive at the next session, as the settings pane says. Their logic is `hoocode-code-plugins`
+  `model.rs` (search, trusted-only install, reload) and `propose.rs` (the writer).
+- **Subagents.** A child process has a task id, so it does not register them. Every child is also
+  started with the five names in `--disallowed-tools` (`hoocode-code-subagents` `pool.rs`,
+  `subagent_disallowed_tools`, used by both spawn paths), whatever its definition lists.
+- **Permissions** (`hoocode-code-tools` `permissions.rs`). SearchPlugins and ListPlugins are
+  read-only. InstallPlugin is granted without a prompt, and refuses any marketplace the user has
+  not trusted. UninstallPlugin and ProposePlugin are dangerous, so the Ask policy prompts for them.
+  An unknown tool is denied by the policy, so every new name is classed there.
+- **Installs** search every listed marketplace (a stale one is fetched, as `/plugin` does). Only
+  the official directory is trusted, so the model installs only from it. A plugin that is in
+  another marketplace is refused with the `/plugin install name@marketplace` the user can run.
+  The same name in two marketplaces needs `name@marketplace`.
+- **ProposePlugin** writes one Agent Plugins package: `plugin.json` with the 1.0 `$schema` and
+  `extensions.hoocode.origin`; `skills/<name>/SKILL.md`; `mcp.json` only when there are servers.
+  Never a Claude or Copilot layout. The package is checked with the loader's own parsers in a
+  staging folder, and only then moves into place. Its record names `ProposePlugin` as the
+  marketplace and is untrusted.
+- **Ask before anything runnable.** Skills are passive and load at once. An MCP server is held by
+  the untrusted record until the user grants it in `/mcp` (the existing grant path, which the
+  startup trust prompt also uses). The policy's prompt for ProposePlugin is a second gate. A
+  project proposal waits for `/plugin trust`, as every project plugin does. Agent Plugins 1.0 has
+  no subagents, and the loader reads no `agents/` folder in that layout, so a proposal cannot add
+  a subagent; the "subagent with write or shell tools" rule has nothing to apply to.
+- **Not done, found while building.** A tool result does not reload the TUI, so skills and MCP
+  servers of a change go live on `/reload` (or the next session). A proposed plugin's record
+  names `ProposePlugin`, which is not a marketplace, so `/plugin update` reports it as no longer
+  listed. The `plugin-authoring` skill still names `UpdatePlugin` and hooks: its tests pin that
+  text (the content hash and the "second hook" guidance), so it is left as it is until someone
+  decides to change it. The `--platform` help text still describes Claude and Copilot layouts for
+  ProposePlugin.
 
 Part 2 choices (2026-10-14):
 

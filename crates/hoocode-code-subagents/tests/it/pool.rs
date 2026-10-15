@@ -853,10 +853,13 @@ async fn forwards_an_agents_disallowed_tools() {
         "---\nname: limited\ndescription: restricted agent.\ntools: Read, CodeSearch, Shell\ndisallowedTools: Shell\n---\nbody",
     );
     let argv = run_with_cap(dir.path(), "limited", "1").await;
-    assert_eq!(
-        arg_after(&argv, "--disallowed-tools").as_deref(),
-        Some("Shell")
-    );
+    let denied = arg_after(&argv, "--disallowed-tools").unwrap_or_default();
+    let denied: Vec<&str> = denied.split(',').collect();
+    assert!(denied.contains(&"Shell"), "{denied:?}");
+    // Every child is denied the plugin tools, whatever its definition says.
+    for name in hoocode_code_subagents::pool::PLUGIN_TOOL_NAMES {
+        assert!(denied.contains(&name), "{name} missing: {denied:?}");
+    }
 }
 
 #[tokio::test]

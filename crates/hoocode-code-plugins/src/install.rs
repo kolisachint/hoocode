@@ -100,7 +100,7 @@ impl Paths {
         self.state.join(INSTALLS_FILE)
     }
 
-    fn staging_dir(&self) -> PathBuf {
+    pub(crate) fn staging_dir(&self) -> PathBuf {
         self.state.join(STAGING_DIR)
     }
 
@@ -217,6 +217,15 @@ fn write_records(path: &Path, records: &[Record]) -> Result<(), String> {
 /// The records of this install, for the listing and for updates.
 pub fn records(paths: &Paths) -> Result<Vec<Record>, String> {
     read_records(&paths.installs_path())
+}
+
+/// Record a plugin that did not come from a marketplace (`ProposePlugin`). Replaces any record
+/// with the same root.
+pub fn add_record(paths: &Paths, record: Record) -> Result<(), String> {
+    let mut records = records(paths)?;
+    records.retain(|r| r.root != record.root);
+    records.push(record);
+    write_records(&paths.installs_path(), &records)
 }
 
 /// What an install did.

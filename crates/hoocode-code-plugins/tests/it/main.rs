@@ -6,6 +6,8 @@ mod install;
 mod layouts;
 mod manifests;
 mod mcp_fixtures;
+mod model;
 mod precedence;
+mod propose;
 mod trust;
 mod wiring;

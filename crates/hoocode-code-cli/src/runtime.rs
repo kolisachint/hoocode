@@ -332,10 +332,10 @@ fn resource_loader(
     let mut skill_paths = resolve_cli_paths(cwd, &args.skills);
     if !no_skills {
         let gate = hoocode_code_resources::builtin_skills::BuiltinSkillGate {
-            enable_plugin_tools: settings
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .enable_plugin_tools(),
+            enable_plugin_tools: plugin_tools_enabled(
+                args,
+                &settings.lock().unwrap_or_else(|e| e.into_inner()),
+            ),
         };
         skill_paths.extend(hoocode_code_resources::builtin_skills::builtin_skill_paths(
             gate,
@@ -428,7 +428,32 @@ fn custom_tools(
             hoocode_code_tools_optin::StoreRef::Global,
         ));
     }
+    // Plugin tools (`docs/design/plugins.md`, part 3): off by default, and never in a subagent
+    // child (a child has a task id). Its `--disallowed-tools` denies them too (pool.rs).
+    if args.task_id.is_none() && plugin_tools_enabled(args, settings) {
+        let default_scope = match settings.plugin_install_scope() {
+            hoocode_code_settings::PluginInstallScope::Project => {
+                hoocode_code_plugins::install::Scope::Project
+            }
+            _ => hoocode_code_plugins::install::Scope::User,
+        };
+        let host = hoocode_code_tools_optin::PluginToolHost {
+            paths: hoocode_code_plugins::install::Paths::for_cwd(cwd),
+            trust_path: hoocode_code_plugins::install::default_trust_path(),
+            default_scope,
+        };
+        tools.extend(hoocode_code_tools_optin::create_plugin_tool_definitions(
+            Arc::new(host),
+        ));
+    }
     tools
+}
+
+/// Whether the plugin tools are on: `--enable-plugintools`, else the `enablePluginTools` setting
+/// (off by default).
+fn plugin_tools_enabled(args: &Args, settings: &SettingsManager) -> bool {
+    args.enable_plugin_tools
+        .unwrap_or_else(|| settings.enable_plugin_tools())
 }
 
 /// main.ts's subagent block of `buildSessionOptions`: seed the tree-wide depth
@@ -2584,6 +2609,72 @@ mod mcp_wanted_tests {
         assert!(!mcp_wanted(&args(&["--tools", "Read"]), false));
         assert!(!mcp_wanted(&args(&["--no-tools"]), false));
         assert!(!mcp_wanted(&args(&[]), true));
+    }
+}
+
+#[cfg(test)]
+mod plugin_tool_gate_tests {
+    use super::*;
+
+    fn names_for(argv: &[&str], settings: &SettingsManager) -> Vec<String> {
+        let args = crate::args::parse_args(&argv.iter().map(|a| a.to_string()).collect::<Vec<_>>());
+        custom_tools(&args, settings, std::path::Path::new("/w"), false)
+            .into_iter()
+            .map(|t| t.name)
+            .collect()
+    }
+
+    fn plugin_tools_in(names: &[String]) -> Vec<String> {
+        names
+            .iter()
+            .filter(|n| hoocode_code_tools_optin::PLUGIN_TOOL_NAMES.contains(&n.as_str()))
+            .cloned()
+            .collect()
+    }
+
+    fn with_setting(enabled: bool) -> SettingsManager {
+        let mut settings = SettingsManager::in_memory(Default::default());
+        settings.set_enable_plugin_tools(enabled);
+        settings
+    }
+
+    #[test]
+    fn plugin_tools_are_absent_by_default() {
+        let names = names_for(&[], &SettingsManager::in_memory(Default::default()));
+        assert!(plugin_tools_in(&names).is_empty(), "{names:?}");
+    }
+
+    #[test]
+    fn plugin_tools_are_present_with_the_flag_or_the_setting() {
+        let all: Vec<String> = hoocode_code_tools_optin::PLUGIN_TOOL_NAMES
+            .iter()
+            .map(|n| n.to_string())
+            .collect();
+        let by_flag = names_for(
+            &["--enable-plugintools"],
+            &SettingsManager::in_memory(Default::default()),
+        );
+        assert_eq!(plugin_tools_in(&by_flag), all);
+        let by_setting = names_for(&[], &with_setting(true));
+        assert_eq!(plugin_tools_in(&by_setting), all);
+        assert!(plugin_tools_in(&names_for(&[], &with_setting(false))).is_empty());
+    }
+
+    #[test]
+    fn a_subagent_child_never_gets_the_plugin_tools() {
+        let names = names_for(
+            &["--enable-plugintools", "--task-id", "t1"],
+            &with_setting(true),
+        );
+        assert!(plugin_tools_in(&names).is_empty(), "{names:?}");
+    }
+
+    #[test]
+    fn the_subagent_deny_list_names_the_same_tools() {
+        assert_eq!(
+            hoocode_code_subagents::pool::PLUGIN_TOOL_NAMES.to_vec(),
+            hoocode_code_tools_optin::PLUGIN_TOOL_NAMES.to_vec()
+        );
     }
 }
 
