@@ -393,22 +393,20 @@ fn summarize_agent_description_cases() {
 #[test]
 fn build_task_main_prompt_contents() {
     isolate_agent_dir();
-    let cwd = tempfile::tempdir().unwrap();
-    let prompt = build_task_main_prompt(cwd.path());
+    let prompt = build_task_main_prompt();
     assert!(prompt.contains("<available_agents>"));
     assert!(!prompt.contains("- explore: "));
     assert!(prompt.contains("Dispatch independent subtasks in the same turn"));
     assert!(prompt.contains("Keep inline only trivial single-step edits"));
     assert!(!prompt.contains("Default to handling small, quick, or single-file work inline"));
     assert!(prompt.contains("mark the item in_progress BEFORE dispatching"));
-    // Built-in explore/plan are background agents: the background block is in.
-    assert!(prompt.contains("don't idle"));
-    assert!(prompt.contains("AgentOutput(wait: true)"));
+    // Every agent is a background agent by default, so the parent guidance is always in.
+    assert!(prompt.contains("keep working on anything that does not need their results"));
+    assert!(prompt.contains("Call AgentOutput with wait:true only when"));
     assert!(!prompt.contains("DO NOT stop and wait"));
     assert!(prompt.contains("Delegate when you need only the final result"));
     assert!(!prompt.contains("WHEN TO USE:"));
     assert_eq!(prompt.matches("cannot see this conversation").count(), 1);
-    assert_eq!(prompt.matches("final answer").count(), 2);
     assert!(!prompt.contains("When to delegate:"));
     assert!(!prompt.contains("Delegate proactively when work is self-contained"));
 }

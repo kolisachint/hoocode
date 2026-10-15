@@ -46,10 +46,6 @@ use crate::warm::{
 pub use hoocode_code_resources::summarize_agent_description;
 
 const TASK_MAIN_PROMPT: &str = include_str!("../templates/prompts/task-main.md");
-const TASK_BACKGROUND_AGENTS_PROMPT: &str =
-    include_str!("../templates/prompts/task-background-agents.md");
-const TASK_BACKGROUND_NONE_PROMPT: &str =
-    include_str!("../templates/prompts/task-background-none.md");
 
 /// How long a `running` record may sit with the pool saying nothing about it
 /// before `AgentOutput` stops believing it. Past the largest budget a run can
@@ -84,18 +80,10 @@ fn collect_background_agent_names(cwd: &Path) -> HashSet<String> {
 }
 
 /// `buildTaskMainPrompt`: the main-session delegation instructions appended
-/// to the system prompt. The heavier background/barrier guidance is only
-/// included when the project has background-capable agents.
-pub fn build_task_main_prompt(cwd: &Path) -> String {
-    let guidance = if collect_background_agent_names(cwd).is_empty() {
-        TASK_BACKGROUND_NONE_PROMPT
-    } else {
-        TASK_BACKGROUND_AGENTS_PROMPT
-    };
-    TASK_MAIN_PROMPT
-        .replacen("{{BACKGROUND_GUIDANCE}}", guidance.trim(), 1)
-        .trim()
-        .to_string()
+/// to the system prompt. One template for every project: every agent runs in
+/// the background unless its definition or the call says otherwise.
+pub fn build_task_main_prompt() -> String {
+    TASK_MAIN_PROMPT.trim().to_string()
 }
 
 /// JS `.length` (UTF-16 units) and `slice(0, n)`.

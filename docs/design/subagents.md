@@ -288,8 +288,10 @@ checked only against the Rust build's own tests (`tests/it/shipped_prose.rs`).
 
 **Decision 2026-10-10 (user): 2-hour runs and cancel.** Every subagent type may
 run for up to 2 hours, and the parent can stop a run with
-`AgentOutput(task_id, cancel: true)`. The background-agents template tells the
-model to poll a long run and to cancel one it no longer needs.
+`AgentOutput(task_id, cancel: true)`. The parent guidance template
+(`task-main.md`) tells the model to poll a long run and to cancel one it no
+longer needs. (2026-10-15: there is one template now; see the note in
+[subagent-orchestration.md](subagent-orchestration.md) §1.)
 
 ## 5e. Reliability pass (2026-10-11)
 

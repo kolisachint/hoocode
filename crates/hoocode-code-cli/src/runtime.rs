@@ -778,7 +778,7 @@ fn assemble_session(
     if subagents_on {
         resources
             .loader()
-            .add_append_system_prompt(hoocode_code_subagents::tools::build_task_main_prompt(&cwd));
+            .add_append_system_prompt(hoocode_code_subagents::tools::build_task_main_prompt());
     }
     // AgentSession's constructor: forward the skill paths to subagents.
     let skill_paths = resources.loader().skill_paths();
