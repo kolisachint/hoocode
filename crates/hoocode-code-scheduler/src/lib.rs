@@ -17,12 +17,14 @@ use chrono::{DateTime, Local};
 
 pub mod cron;
 pub mod loop_command;
+pub mod rows;
 pub mod store;
 pub mod tools;
 
 pub use cron::{is_five_field, matches as cron_matches};
+pub use rows::Runs;
 pub use store::{
-    Claimed, ScheduledTask, TaskStore, LATE_FIRE_MINUTES, LEGACY_STORE_RELATIVE_PATH,
+    Claimed, ScheduledTask, TaskStore, Tick, LATE_FIRE_MINUTES, LEGACY_STORE_RELATIVE_PATH,
     STORE_RELATIVE_PATH,
 };
 pub use tools::{
@@ -46,4 +48,18 @@ pub fn claim_due(cwd: &Path, now: &DateTime<Local>) -> Claimed {
 /// [`claim_due`] at the current local time.
 pub fn claim_due_now(cwd: &Path) -> Claimed {
     claim_due(cwd, &Local::now())
+}
+
+/// [`claim_due`] for a tick, with the store's tasks after the claim (for the
+/// task panel's Schedule rows; see [`rows`]). Nothing is read when the lock is
+/// not taken.
+pub fn tick(cwd: &Path, now: &DateTime<Local>) -> Tick {
+    TaskStore::for_cwd(cwd)
+        .claim_due_tick(now)
+        .unwrap_or_default()
+}
+
+/// [`tick`] at the current local time.
+pub fn tick_now(cwd: &Path) -> Tick {
+    tick(cwd, &Local::now())
 }

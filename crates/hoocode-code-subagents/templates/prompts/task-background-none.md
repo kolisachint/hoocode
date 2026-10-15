@@ -1,1 +1,0 @@
-- You can force any task to run in the background with `background: true` (non-blocking): keep working, then pull its result with `AgentOutput` (e.g. `AgentOutput("explore#1")`) or block on it with `AgentOutput(wait: true)`.

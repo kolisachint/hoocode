@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
 
-use hoocode_agent_types::{AgentToolCall, AgentToolResult};
+use hoocode_agent_types::{AgentToolCall, AgentToolResult, AgentToolUpdateCallback};
 use hoocode_ai_types::Content;
 use hoocode_code_resources::agent_registry::EMBEDDED_AGENT_PROMPTS;
 use hoocode_code_resources::{parse_agent_definition, AgentSource};
@@ -19,6 +19,7 @@ use hoocode_code_subagents::instance::{
     dispose_subagent_pool, get_subagent_pool, set_scoped_models_override,
     set_subagent_pool_for_testing,
 };
+use hoocode_code_subagents::live::run_for_tool_call;
 use hoocode_code_subagents::pool::{
     DispatchOptions, ResultStatus, SubagentPool, SubagentPoolOptions, SubagentResult, TaskResult,
 };
@@ -393,22 +394,20 @@ fn summarize_agent_description_cases() {
 #[test]
 fn build_task_main_prompt_contents() {
     isolate_agent_dir();
-    let cwd = tempfile::tempdir().unwrap();
-    let prompt = build_task_main_prompt(cwd.path());
+    let prompt = build_task_main_prompt();
     assert!(prompt.contains("<available_agents>"));
     assert!(!prompt.contains("- explore: "));
     assert!(prompt.contains("Dispatch independent subtasks in the same turn"));
     assert!(prompt.contains("Keep inline only trivial single-step edits"));
     assert!(!prompt.contains("Default to handling small, quick, or single-file work inline"));
     assert!(prompt.contains("mark the item in_progress BEFORE dispatching"));
-    // Built-in explore/plan are background agents: the background block is in.
-    assert!(prompt.contains("don't idle"));
-    assert!(prompt.contains("AgentOutput(wait: true)"));
+    // Every agent is a background agent by default, so the parent guidance is always in.
+    assert!(prompt.contains("keep working on anything that does not need their results"));
+    assert!(prompt.contains("Call AgentOutput with wait:true only when"));
     assert!(!prompt.contains("DO NOT stop and wait"));
     assert!(prompt.contains("Delegate when you need only the final result"));
     assert!(!prompt.contains("WHEN TO USE:"));
     assert_eq!(prompt.matches("cannot see this conversation").count(), 1);
-    assert_eq!(prompt.matches("final answer").count(), 2);
     assert!(!prompt.contains("When to delegate:"));
     assert!(!prompt.contains("Delegate proactively when work is self-contained"));
 }
@@ -434,9 +433,9 @@ fn the_task_tool_runs_in_the_background_per_agent_or_argument() {
         name: "Agent".into(),
         arguments: args,
     };
-    // Built-in explore is a background agent; general-purpose is not.
+    // Every agent is a background agent by default, general-purpose included (card 9, D1).
     assert!(predicate(&call(json!({"subagent_type": "explore"}))));
-    assert!(!predicate(&call(
+    assert!(predicate(&call(
         json!({"subagent_type": "general-purpose"})
     )));
     // A per-call argument overrides either way.
@@ -445,6 +444,38 @@ fn the_task_tool_runs_in_the_background_per_agent_or_argument() {
     )));
     assert!(predicate(&call(
         json!({"subagent_type": "general-purpose", "background": true})
+    )));
+}
+
+#[test]
+fn an_agent_is_background_unless_its_definition_says_background_false() {
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let agents = dir.path().join(DIR).join("agents");
+    std::fs::create_dir_all(&agents).unwrap();
+    std::fs::write(
+        agents.join("fg-only.md"),
+        "---\nname: fg-only\ndescription: Waits for its answer.\nbackground: false\n---\nBody.",
+    )
+    .unwrap();
+    let tool = create_task_tool_definition(dir.path());
+    let predicate = tool.background_when.clone().unwrap();
+    let call = |args: Value| AgentToolCall {
+        id: "c".into(),
+        name: "Agent".into(),
+        arguments: args,
+    };
+    assert!(predicate(&call(
+        json!({"subagent_type": "general-purpose"})
+    )));
+    // The definition's opt-out makes foreground the agent's default.
+    assert!(!predicate(&call(json!({"subagent_type": "fg-only"}))));
+    // The call's argument wins over the definition in both directions.
+    assert!(predicate(&call(
+        json!({"subagent_type": "fg-only", "background": true})
+    )));
+    assert!(!predicate(&call(
+        json!({"subagent_type": "general-purpose", "background": "false"})
     )));
 }
 
@@ -522,7 +553,7 @@ async fn task_tool_execute_paths() {
     let pool = install_pool(&cwd, mock_child(&cwd, "Found it in main.rs", "complete", 0));
     let r = execute(
         tool.clone(),
-        json!({"description": "Find the bug", "prompt": "Find the bug", "subagent_type": "general-purpose"}),
+        json!({"description": "Find the bug", "prompt": "Find the bug", "subagent_type": "general-purpose", "background": false}),
         ctx(&cwd),
     )
     .await
@@ -581,7 +612,7 @@ async fn task_tool_execute_paths() {
     let pool = install_pool(&cwd, mock_child(&cwd, "Task failed: quota", "failed", 1));
     let err = execute(
         tool.clone(),
-        json!({"description": "Do it", "prompt": "Do it", "subagent_type": "general-purpose"}),
+        json!({"description": "Do it", "prompt": "Do it", "subagent_type": "general-purpose", "background": false}),
         ctx(&cwd),
     )
     .await
@@ -899,6 +930,68 @@ async fn the_models_override_is_passed_to_nested_children() {
     task_store().clear();
 }
 
+/// T3.2: an Agent call announces its pool run at dispatch, as a partial whose
+/// details carry `poolTaskId`, and the run is findable by the call id after.
+#[tokio::test]
+async fn the_agent_call_announces_its_run_at_dispatch() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let agents = cwd.join(DIR).join("agents");
+    std::fs::create_dir_all(&agents).unwrap();
+    std::fs::write(
+        agents.join("helper.md"),
+        "---\nname: helper\ndescription: Inherits the model.\ntools: read\nmodel: inherit\n---\nHelp.",
+    )
+    .unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    let pool = SubagentPool::new(SubagentPoolOptions {
+        executable: argv_child(&cwd),
+        cwd: Some(cwd.clone()),
+        ..Default::default()
+    });
+    set_subagent_pool_for_testing(Some(pool.clone()));
+    let partials = Arc::new(std::sync::Mutex::new(Vec::<AgentToolResult>::new()));
+    let sink = partials.clone();
+    let on_update: AgentToolUpdateCallback =
+        Box::new(move |partial| sink.lock().unwrap().push(partial));
+    let args = json!({
+        "description": "quick read",
+        "prompt": "read one file",
+        "subagent_type": "helper",
+        "background": false,
+    });
+    let tool_ctx = ctx(&cwd);
+    let execute = tool.execute.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        execute(
+            "call-announce".into(),
+            args,
+            None,
+            Some(on_update),
+            Some(&tool_ctx),
+        )
+    })
+    .await
+    .unwrap();
+    let partials = partials.lock().unwrap();
+    let first = partials.first().expect("a partial at dispatch");
+    let run = first.details["poolTaskId"].as_str().expect("the run's id");
+    assert!(!run.is_empty());
+    assert_eq!(first.details["status"], "running");
+    assert_eq!(
+        run_for_tool_call("call-announce").as_deref(),
+        Some(run),
+        "the call finds its run by id"
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}
+
 #[tokio::test]
 async fn the_inherited_model_fallback_switches_away_from_a_model_tier() {
     let _serial = SERIAL.lock().await;
@@ -972,8 +1065,7 @@ fn a_project_agent_opting_into_background_runs_detached() {
     };
     assert!(predicate(&call("watcher")));
     assert!(predicate(&call("explore")));
-    assert!(!predicate(&call("general-purpose")));
-    assert!(!predicate(&call("does-not-exist")));
+    assert!(predicate(&call("general-purpose")));
 }
 
 fn active_tool_names(with_task: bool) -> Vec<String> {
@@ -1132,7 +1224,7 @@ async fn a_scoped_category_runs_on_its_model_and_the_result_names_it() {
     };
     let result = execute(
         tool.clone(),
-        json!({"description": "quick read", "prompt": "read one file", "subagent_type": "general-purpose", "model": "fast"}),
+        json!({"description": "quick read", "prompt": "read one file", "subagent_type": "general-purpose", "model": "fast", "background": false}),
         with_models(),
     )
     .await
@@ -1488,7 +1580,7 @@ async fn a_partial_run_says_how_to_resume_it() {
 
     let r = execute(
         tool.clone(),
-        json!({"description": "Survey", "prompt": "Survey", "subagent_type": "general-purpose"}),
+        json!({"description": "Survey", "prompt": "Survey", "subagent_type": "general-purpose", "background": false}),
         ctx(&cwd),
     )
     .await
@@ -1505,6 +1597,86 @@ async fn a_partial_run_says_how_to_resume_it() {
     set_subagent_pool_for_testing(None);
     task_store().clear();
     subagent_inbox().clear();
+}
+
+/// A partial run keeps its session, so `resume_task_id` continues it. Checked
+/// with and without a parent session (its transcript sits under `subagents/`).
+async fn a_partial_run_resumes_its_session(parent: Option<PathBuf>) {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    let pool = install_pool(&cwd, session_child(&cwd, "Read half the files", "partial"));
+    let parent_ctx = || ToolContext {
+        session_file: parent.clone(),
+        ..ctx(&cwd)
+    };
+
+    let first = execute(
+        tool.clone(),
+        json!({"description": "Survey", "prompt": "Survey", "subagent_type": "general-purpose", "background": false}),
+        parent_ctx(),
+    )
+    .await
+    .unwrap();
+    let label = resume_label_in(&text(&first)).expect("a partial run names its label");
+    let original = first.details["poolTaskId"].as_str().unwrap().to_string();
+    let session = match &parent {
+        Some(parent) => {
+            hoocode_code_session::subagents_dir(parent).join(format!("{original}.jsonl"))
+        }
+        None => hoocode_code_paths::dispatch_task_dir(&cwd, &original).join("session.jsonl"),
+    };
+    assert!(session.exists(), "a partial run keeps its session");
+
+    let resumed = execute(
+        tool.clone(),
+        json!({"description": "Go on", "prompt": "Finish it", "subagent_type": "general-purpose", "resume_task_id": label, "background": false}),
+        parent_ctx(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !text(&resumed).contains("No resumable session"),
+        "{}",
+        text(&resumed)
+    );
+    let argv = argv_of(&cwd);
+    assert_eq!(
+        argv.iter()
+            .position(|a| a == "--session")
+            .map(|i| PathBuf::from(&argv[i + 1])),
+        Some(session),
+        "the resumed run must append to the partial run's session"
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_partial_run_resumes_its_session_in_the_dispatch_dir() {
+    a_partial_run_resumes_its_session(None).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_partial_run_resumes_its_session_under_the_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    // A real parent session: a header line, so the run can record itself in it.
+    let parent = dir.path().join("parent.jsonl");
+    let header = json!({
+        "type": "session",
+        "version": 3,
+        "id": "parent-partial",
+        "timestamp": "2026-10-15T00:00:00.000Z",
+        "cwd": dir.path().to_string_lossy(),
+    });
+    std::fs::write(&parent, format!("{header}\n")).unwrap();
+    a_partial_run_resumes_its_session(Some(parent)).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1535,6 +1707,36 @@ async fn a_string_background_false_runs_in_the_foreground() {
         text(&r)
     );
     assert!(r.details.get("background").is_none(), "{}", r.details);
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn general_purpose_runs_in_the_background_when_the_call_says_nothing() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    let pool = install_pool(&cwd, mock_child(&cwd, "Read the module", "complete", 0));
+    let r = execute(
+        tool.clone(),
+        json!({"description": "Read it", "prompt": "Read the module", "subagent_type": "general-purpose"}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    // A notification, not the answer: the body waits in the inbox for AgentOutput.
+    assert!(
+        text(&r).starts_with("general-purpose#1 finished ✓"),
+        "{}",
+        text(&r)
+    );
+    assert_subset(&r.details, json!({"ok": true, "background": true}));
     pool.dispose();
     set_subagent_pool_for_testing(None);
     task_store().clear();

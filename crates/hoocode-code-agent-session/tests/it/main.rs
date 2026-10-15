@@ -1,4 +1,5 @@
 mod anthropic_subscription_auth_ts;
+mod background_notices;
 mod bash_persistence;
 mod common;
 mod compaction;
@@ -9,6 +10,7 @@ mod format;
 mod json_events;
 mod mcp;
 mod mcp_auth;
+mod mcp_rows;
 mod prompt;
 mod provider_health;
 mod queue;

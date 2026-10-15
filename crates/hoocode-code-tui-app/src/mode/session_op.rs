@@ -113,6 +113,9 @@ impl Mode {
             return None;
         }
         let runtime = self.session_runtime.take()?;
+        // A session switch replaces the transcript the attached view parked:
+        // the view goes back to the session first (the view belongs to the old one).
+        self.detach();
         self.start_session_op(label);
         Some(runtime)
     }

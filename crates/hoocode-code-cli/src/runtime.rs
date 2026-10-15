@@ -343,9 +343,13 @@ fn resource_loader(
         ));
     }
     // main.ts: `systemPrompt: parsed.systemPrompt ?? (lightMode ? LIGHT_SYSTEM_PROMPT : undefined)`
+    let in_subagent = hoocode_code_subagents::depth::current_subagent_depth(
+        &hoocode_code_subagents::depth::ProcessEnv,
+    ) > 0;
     let system_prompt = args
         .system_prompt
         .clone()
+        .map(|body| child_system_prompt(body, in_subagent))
         .or_else(|| light.then(|| hoocode_code_prompts::LIGHT_SYSTEM_PROMPT.to_string()));
     DefaultResources::loaded(DefaultResourceLoaderOptions {
         cwd: cwd.to_string_lossy().into_owned(),
@@ -401,6 +405,7 @@ fn custom_tools(
     settings: &SettingsManager,
     cwd: &std::path::Path,
     interactive: bool,
+    jobs: Option<&hoocode_code_tool_bash::JobRegistry>,
 ) -> Vec<ToolDefinition> {
     let ask_host: Arc<dyn hoocode_code_tools_optin::AskOptionsHost> = if interactive {
         Arc::new(hoocode_code_tui_app::dialog_bridge::TuiAskOptionsHost)
@@ -428,6 +433,16 @@ fn custom_tools(
             hoocode_code_tools_optin::StoreRef::Global,
         ));
     }
+    // Background shell jobs (`enableBackgroundShell`): the job tools. Shell itself takes
+    // `run_in_background` through the session's base tools.
+    if let Some(jobs) = jobs {
+        tools.push(hoocode_code_tool_bash::create_shell_output_tool_definition(
+            jobs.clone(),
+        ));
+        tools.push(hoocode_code_tool_bash::create_shell_kill_tool_definition(
+            jobs.clone(),
+        ));
+    }
     // Plugin tools (`docs/design/plugins.md`, part 3): off by default, and never in a subagent.
     // A one-shot child has a task id; a warm worker has none but runs under a subagent depth
     // (its env is set by the pool). Its `--disallowed-tools` denies them too (pool.rs, warm.rs).
@@ -451,6 +466,26 @@ fn custom_tools(
         ));
     }
     tools
+}
+
+/// The session's background shell jobs (`enableBackgroundShell`). Logs go to
+/// `<session>/jobs/` (the session file without `.jsonl`, as the subagent
+/// transcripts do), or to a per-process folder for a session that is not saved.
+fn background_job_registry(
+    session_manager: &SessionManager,
+    settings: &SettingsManager,
+) -> hoocode_code_tool_bash::JobRegistry {
+    let dir = match session_manager.session_file() {
+        Some(file) => file.with_extension("").join("jobs"),
+        None => std::env::temp_dir()
+            .join("hoocode-jobs")
+            .join(std::process::id().to_string()),
+    };
+    hoocode_code_tool_bash::JobRegistry::new(
+        dir,
+        hoocode_code_tool_bash::LocalBashOperations::new(settings.shell_path())
+            .with_nice(settings.performance_bash_nice()),
+    )
 }
 
 /// Whether the plugin tools are on: `--enable-plugintools`, else the `enablePluginTools` setting
@@ -507,7 +542,7 @@ fn subagent_tools(
         );
     }
     let enabled = args.subagent.unwrap_or_else(|| settings.enable_subagent());
-    if light || !depth::can_spawn_subagent(None, &ProcessEnv) || !enabled {
+    if !subagents_allowed(light, enabled, depth::can_spawn_subagent(None, &ProcessEnv)) {
         return Vec::new();
     }
     if !is_subagent_child
@@ -527,6 +562,29 @@ fn subagent_tools(
         hoocode_code_subagents::tools::create_task_tool_definition(cwd),
         hoocode_code_subagents::tools::create_task_output_tool_definition(),
     ]
+}
+
+/// The system prompt a subagent child runs with: its agent body, then the base
+/// guidelines (card 9, 4f). A custom body replaces the default prompt, so without
+/// this block a child would lose the base rules. A user's `--system-prompt` (and
+/// light mode) is not a subagent body and is returned unchanged.
+fn child_system_prompt(body: String, in_subagent: bool) -> String {
+    if in_subagent {
+        format!(
+            "{body}\n\n{}",
+            hoocode_code_prompts::base_guidelines_block()
+        )
+    } else {
+        body
+    }
+}
+
+/// Whether this process gets the Agent and AgentOutput tools, and so the
+/// delegation block in its system prompt. One rule for both (card 9, 4e): off
+/// in light mode, when subagents are disabled, and at the depth cap, where a
+/// child has no Agent tool to delegate with.
+fn subagents_allowed(light: bool, enabled: bool, can_spawn: bool) -> bool {
+    !light && enabled && can_spawn
 }
 
 /// An env flag that is set to exactly `1`.
@@ -741,6 +799,9 @@ fn assemble_session(
     plugins: &hoocode_code_plugins::PluginSet,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
+    // Background shell jobs (`enableBackgroundShell`); the light preset has none.
+    let jobs = (!light && settings.enable_background_shell())
+        .then(|| background_job_registry(&session_manager, &settings));
     // main.ts: the light preset is an allowlist of the four short-schema tools
     // (their order is the active order), which also keeps extension tools off.
     let (base_tools, custom, tools) = if light {
@@ -758,7 +819,11 @@ fn assemble_session(
             ),
         )
     } else {
-        (None, custom_tools(args, &settings, &cwd, interactive), None)
+        (
+            None,
+            custom_tools(args, &settings, &cwd, interactive, jobs.as_ref()),
+            None,
+        )
     };
     // main.ts: explicit tool flags win over the light preset's allowlist.
     let explicit =
@@ -772,13 +837,20 @@ fn assemble_session(
         None
     };
     // main.ts: the main-session subagent instructions when subagents are on.
-    let subagents_on = !light && args.subagent.unwrap_or_else(|| settings.enable_subagent());
+    let subagents_on = subagents_allowed(
+        light,
+        args.subagent.unwrap_or_else(|| settings.enable_subagent()),
+        hoocode_code_subagents::depth::can_spawn_subagent(
+            None,
+            &hoocode_code_subagents::depth::ProcessEnv,
+        ),
+    );
     let settings = Arc::new(Mutex::new(settings));
     let resources = resource_loader(args, light, &cwd, &agent_dir, &settings, plugins);
     if subagents_on {
         resources
             .loader()
-            .add_append_system_prompt(hoocode_code_subagents::tools::build_task_main_prompt(&cwd));
+            .add_append_system_prompt(hoocode_code_subagents::tools::build_task_main_prompt());
     }
     // AgentSession's constructor: forward the skill paths to subagents.
     let skill_paths = resources.loader().skill_paths();
@@ -836,6 +908,7 @@ fn assemble_session(
             no_tools,
             custom_tools: custom,
             base_tools,
+            background_jobs: jobs,
             permission_gate: Some(
                 gate.unwrap_or_else(|| build_permission_gate(args, interactive, &services.cwd)),
             ),
@@ -893,6 +966,8 @@ fn attach_mcp(
             &plugins.mcp_servers(),
         ),
     );
+    // The panel's MCP tab reads the hub's rows from the process-wide task store.
+    hub.set_task_rows(hoocode_code_task_store::task_store());
     if interactive {
         hub.set_elicitation(std::sync::Arc::new(
             hoocode_code_tui_app::mcp_elicitation::TuiElicitation,
@@ -1086,19 +1161,20 @@ fn run_print_body(
             &serde_json::to_value(&header).unwrap_or_default(),
         ));
         let tx = tx.clone();
+        // A subagent's text deltas are coalesced at the source (T3.1): the parent
+        // only consumes the event types `child_stdout_events` lets through.
+        let deltas = std::sync::Mutex::new(hoocode_code_subagents::live::DeltaCoalescer::default());
         session.subscribe(move |event| {
             let value = event.to_json();
-            // The parent only consumes progress events and message_end usage;
-            // the per-delta firehose is dropped at the source.
-            if is_subagent {
-                let kind = value.get("type").and_then(serde_json::Value::as_str);
-                if !kind.is_some_and(|k| {
-                    hoocode_code_subagents::events::SUBAGENT_STDOUT_EVENT_TYPES.contains(&k)
-                }) {
-                    return;
-                }
+            if !is_subagent {
+                let _ = tx.send(json_line(&value));
+                return;
             }
-            let _ = tx.send(json_line(&value));
+            let mut deltas = deltas.lock().unwrap_or_else(|e| e.into_inner());
+            let now = std::time::Instant::now();
+            for out in hoocode_code_subagents::live::child_stdout_events(value, &mut deltas, now) {
+                let _ = tx.send(json_line(&out));
+            }
         })
     });
     drop(tx);
@@ -1901,6 +1977,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_subagent_child_keeps_the_base_guidelines_and_a_user_body_is_unchanged() {
+        assert_eq!(
+            child_system_prompt("Be a reviewer.".into(), true),
+            format!(
+                "Be a reviewer.\n\n{}",
+                hoocode_code_prompts::base_guidelines_block()
+            )
+        );
+        assert_eq!(child_system_prompt("Be terse.".into(), false), "Be terse.");
+    }
+
+    #[test]
+    fn the_delegation_block_follows_the_agent_tool_gate() {
+        // Light mode, a disabled setting or the depth cap: no Agent tool, so no block.
+        assert!(subagents_allowed(false, true, true));
+        assert!(!subagents_allowed(true, true, true));
+        assert!(!subagents_allowed(false, false, true));
+        assert!(!subagents_allowed(false, true, false));
+    }
+
+    #[test]
     fn approval_note_names_only_the_approval_tools_that_ran() {
         let ran: std::collections::BTreeSet<String> = ["Read", "Write", "mcp_fs_list", "Shell"]
             .iter()
@@ -2622,7 +2719,7 @@ mod plugin_tool_gate_tests {
 
     fn names_for(argv: &[&str], settings: &SettingsManager) -> Vec<String> {
         let args = crate::args::parse_args(&argv.iter().map(|a| a.to_string()).collect::<Vec<_>>());
-        custom_tools(&args, settings, std::path::Path::new("/w"), false)
+        custom_tools(&args, settings, std::path::Path::new("/w"), false, None)
             .into_iter()
             .map(|t| t.name)
             .collect()
@@ -2640,6 +2737,31 @@ mod plugin_tool_gate_tests {
         let mut settings = SettingsManager::in_memory(Default::default());
         settings.set_enable_plugin_tools(enabled);
         settings
+    }
+
+    #[test]
+    fn background_job_tools_are_registered_only_with_a_job_registry() {
+        use hoocode_code_tool_bash::{
+            JobRegistry, LocalBashOperations, SHELL_KILL_TOOL_NAME, SHELL_OUTPUT_TOOL_NAME,
+        };
+        let settings = SettingsManager::in_memory(Default::default());
+        assert!(!settings.enable_background_shell());
+        let args = crate::args::parse_args(&[]);
+        let cwd = std::path::Path::new("/w");
+        let off: Vec<String> = custom_tools(&args, &settings, cwd, false, None)
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert!(!off.iter().any(|n| n == SHELL_OUTPUT_TOOL_NAME), "{off:?}");
+        assert!(!off.iter().any(|n| n == SHELL_KILL_TOOL_NAME), "{off:?}");
+
+        let jobs = JobRegistry::new("/unused/jobs", LocalBashOperations::new(None));
+        let on: Vec<String> = custom_tools(&args, &settings, cwd, false, Some(&jobs))
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert!(on.iter().any(|n| n == SHELL_OUTPUT_TOOL_NAME), "{on:?}");
+        assert!(on.iter().any(|n| n == SHELL_KILL_TOOL_NAME), "{on:?}");
     }
 
     #[test]

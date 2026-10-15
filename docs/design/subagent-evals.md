@@ -1,7 +1,8 @@
 # Subagent evals: measuring whether a dispatch works
 
-Status: **as-built, 2026-10-05.** Companion to `subagents.md`, which is the
-incident record; this file is the instrument. Not a migration-ledger task.
+Status: **as-built, 2026-10-05; re-measured 2026-10-15** (§4). Companion to
+`subagents.md`, which is the incident record; this file is the instrument. Not a
+migration-ledger task.
 
 ## 1. Why
 
@@ -67,6 +68,17 @@ answer), `abort_after` (send N bytes of SSE, then drop the connection) and
 `error` (`{"status": …, "message": …}`). An exhausted route answers
 `500 mock: script exhausted`, so a runaway run fails loudly instead of hanging.
 
+Each request is logged with `tool_calls` (the names the turn answered with) and
+`sees` (which configured needles the body carried). That is how
+`parent_tool_calls_before_result` finds the request that delivers a background
+child's result: the notification shows the result cut to about 80 characters, so
+the needle is its prefix.
+
+A scenario with `worktree: true` gets a temp git repo for the parent, with a bare
+origin. The routes use `<REPO>`, `<WT>` and `<ORIGIN>` placeholders. Its checks
+(`branch_commits`, `parent_status_unchanged`, `nothing_pushed`) read the repo
+after the run.
+
 ## 4. Baseline, 2026-10-05
 
 Twelve scenarios, 175s with `--include-slow`, against `target/debug/hoocode` at
@@ -86,11 +98,29 @@ v0.1.7 plus the ledger. **11 as declared, 1 known issue, 12 attempts recorded,
 | `parent_region_error_falls_back` | region rejection retries on the parent's model | failed → complete | 0.7 |
 | `parent_unknown_complexity_tier` | a bad tier never reaches a child | rejected by the parent, no dispatch | 0.6 |
 | `parent_queue_saturation` | 8 dispatches, 5 slots | 8 attempts, 8 usable, none stuck | 20 |
-| `parent_stall_reaped` | a hung child is reaped in ~1 min | **KNOWN: it is not** | 100 |
+| `parent_stall_reaped` | a hung child is reaped in ~1 min | ~~KNOWN: it is not~~ **reaped at 25s, partial (2026-10-15)** | 26 |
+
+### Re-run, 2026-10-15
+
+`scripts/eval/subagent_evals.py --include-slow` against `target/debug/hoocode`
+built from the worktree at `91f6191` plus the scenarios below: **18 of 18 as
+declared, 15 attempts, 14 usable (93%), 107s.** The one unusable attempt is
+`parent_region_error_falls_back`'s first try, as declared. `parent_stall_reaped`
+passes: the stall watchdog reaps the hung child at 25.6s, and the child writes
+its partial result on the way out. The KNOWN note was stale.
+
+| scenario | what it pins down | result | s |
+| --- | --- | --- | --- |
+| `parent_works_while_background_runs` | the parent makes a Read between a background dispatch and the child's result | complete, 1 tool call in between | 3.6 |
+| `worktree_writer_commits_on_branch` | a general-purpose child commits on `agent/eval-writer` in a temp worktree (D5 layout); the branch holds 1 commit, the parent's status is unchanged, the origin has no new refs | complete | 1.0 |
+
+The writer scenario checks the mechanics only: the mock child runs the git
+commands. It does not show that a real model follows the brief
+(`subagent-orchestration.md` §5).
 
 ## 5. What the baseline found
 
-**A hang costs the whole deadline, not one stall window.** `parent_stall_reaped` expects the stall
+**A hang costs the whole deadline, not one stall window. (Fixed 2026-10-05; measured 2026-10-15.)** `parent_stall_reaped` expects the stall
 watchdog to reap a child that never answers. It does not: at 30s, 70s and 95s
 the child was still running and the ledger was still empty. The child writes its
 heartbeat on a timer, and the pool treats *any* stdout byte as liveness, so a
@@ -99,7 +129,9 @@ deadline ends it — ten minutes for `explore` and twenty for
 `general-purpose` at the time. Since 2026-10-10 every type has a 2-hour deadline, so the stall
 checks (H1 in `subagents.md` §5b) are what reap a hang early. This is the same class of failure as the October incident
 (deadline table keyed on agents nobody ships), wearing a different hat: a
-liveness signal that a hung process can keep sending. Owner: open.
+liveness signal that a hung process can keep sending. Owner: closed. Re-measured
+2026-10-15 (§4): `parent_stall_reaped` passes, with the reap at 25.6s and a partial
+result from the child. The stall watchdog now does the reaping.
 
 **A truncated stream still settles `complete`.** The runtime finalises whatever
 text arrived, so a provider that dies mid-sentence produces a `complete` result

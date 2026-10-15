@@ -120,12 +120,17 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry(
             "app.tasks.cycleForward",
             &["alt+l"],
-            "Cycle task panel view (tasks → subagents, skips empty lenses)",
+            "Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty tabs)",
         ),
         entry(
             "app.tasks.cycleBackward",
             &["shift+alt+l"],
             "Cycle task panel view backward",
+        ),
+        entry(
+            "app.panel.focus",
+            &["ctrl+g"],
+            "Focus the task panel (again returns to the prompt)",
         ),
         // ── Screen — how much room there is
         entry(
@@ -226,6 +231,43 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             "app.scroll.searchPrevious",
             &["p"],
             "Previous search match (pinned view)",
+        ),
+        entry("app.panel.nextTab", &["tab"], "Task panel: next tab"),
+        entry(
+            "app.panel.prevTab",
+            &["shift+tab"],
+            "Task panel: previous tab",
+        ),
+        entry("app.panel.up", &["up"], "Task panel: pick the row above"),
+        entry(
+            "app.panel.down",
+            &["down"],
+            "Task panel: pick the row below",
+        ),
+        entry(
+            "app.panel.open",
+            &["enter"],
+            "Task panel: open the picked row",
+        ),
+        entry(
+            "app.panel.cancel",
+            &["x"],
+            "Task panel: cancel the picked run (press twice)",
+        ),
+        entry(
+            "app.panel.exit",
+            &["escape"],
+            "Task panel: back to the prompt",
+        ),
+        entry(
+            "app.subagent.attach",
+            &["ctrl+n"],
+            "Attach to the subagent run of the last Agent block (read-only)",
+        ),
+        entry(
+            "app.subagent.detach",
+            &["escape"],
+            "Back from an attached subagent run to the session",
         ),
         entry(
             "app.options.next",

@@ -1,6 +1,6 @@
 # Subagent orchestration: background by default, worktrees for writers
 
-Status: **agreed 2026-10-09. Design only; nothing is built this round (D8).**
+Status: **agreed 2026-10-09; built 2026-10-15** (core plan step 9). Every item is done except 4g (dropped) and the rust half of 4h (a Shell filter, later).
 Decisions D1–D9 are the user's, taken 2026-10-09. Builds on
 [subagents.md](subagents.md) (as-built) and [subagent-evals.md](subagent-evals.md).
 
@@ -46,11 +46,13 @@ Problems this card fixes (verified against the code on 2026-10-09):
 
 ## What we build
 
-Nothing here is built this round (D8). Tags show what each item needs later:
+Built 2026-10-15; each row carries its as-built note. Tags show what each item needed:
 **[text]** prompt or template wording only. **[rust]** Rust change. **[eval]** test
 or harness change.
 
 ### 1. Parent guidance [text] — fixes P3, P12
+
+**Done 2026-10-15.** One template, `task-main.md`, carries the guidance, the brief (§2) and the worktree summary (§3). The two `task-background-*.md` files are gone. The agent-file rows below are the other worker's and are not done here.
 
 Files: `templates/prompts/task-main.md` and the two `task-background-*.md` files.
 
@@ -73,14 +75,14 @@ Fix "isolated" wording. It means separate process and context, never files.
 
 | File | Line | Change |
 |---|---|---|
-| `task-main.md` | 1 | "run in their own isolated context" → "run as separate processes with their own context" |
-| `task-main.md` | 3 | "fix one isolated bug" → "fix one bug" |
-| `tools.rs` | 6, 599 | Same wording change in the doc comment and the tool description |
-| `explore.md` | 22 | Same |
-| `general-purpose.md` | 19 | Same |
-| `plan.md` | 23 | Same |
-| `code-review.md` | 21-22 | Same |
-| `security-review.md` | 22 | Same |
+| `task-main.md` | 1 | **Done 2026-10-15.** "run in their own isolated context" → "run as separate processes with their own context" |
+| `task-main.md` | 3 | **Done 2026-10-15.** "fix one isolated bug" → "fix one bug" |
+| `tools.rs` | 6, 599 | **Done 2026-10-15.** Same wording change in the doc comment and the tool description ("runs as a separate process with its own, fresh context") |
+| `explore.md` | 22 | Same. **Done 2026-10-15** |
+| `general-purpose.md` | 19 | Same. **Done 2026-10-15** |
+| `plan.md` | 23 | Same. **Done 2026-10-15** |
+| `code-review.md` | 21-22 | Same. **Done 2026-10-15** |
+| `security-review.md` | 22 | Same. **Done 2026-10-15** |
 
 ### 2. The subagent brief [text] — fixes P8, P9
 
@@ -131,7 +133,7 @@ Who does what:
    the parent's own files too.
 6. Put the Workspace path, branch and base in the brief.
 
-**Subagent, inside the worktree**
+**Subagent, inside the worktree** (review 2026-10-15: no child body carries these rules, so the parent's writer bullet in `task-main.md` puts them in the brief's Constraints; the child gets them that way)
 
 1. Work only under the worktree path. Use absolute paths for Read, Edit and Write.
    Use `git -C <path>` for git.
@@ -161,15 +163,15 @@ Who does what:
 
 | # | Change | Where | Fixes | Tag |
 |---|---|---|---|---|
-| 4a | Add `background: true` to the frontmatter. It stays true if the default changes | `general-purpose.md:15-17` | P1 | text |
-| 4b | Keep `background: false` as a value. Stop dropping it to None | `agent_frontmatter.rs:272-286`, `b.then_some(true)` | P2 | rust, small |
-| 4c | Background by default for every agent. Tool param still overrides | `tools.rs:73-80`, `:810-813` | D1 | rust, small |
-| 4d | Final-answer rule in every body (text below) | `explore.md`, `code-review.md`, `security-review.md`; `general-purpose.md:35` and `plan.md:36` already say a version | P9 | text |
-| 4e | Gate the delegation block on the same depth check as the tool. Children at the cap get no block | `runtime.rs:620`, `:626`; compare `:347` | P5 | rust, small |
-| 4f | Keep base guidelines for custom bodies. Append a short base block, do not replace | `pool.rs:1152-1154` passes the body as `--system-prompt`; `system_prompt.rs:351-369` returns before the base guidelines | P6 | rust, small |
+| 4a | Add `background: true` to the frontmatter. It stays true if the default changes | `general-purpose.md:15-17` | P1 | text. **Done 2026-10-15** |
+| 4b | **Done 2026-10-15.** Keep `background: false` as a value. Stop dropping it to None. As built: the frontmatter flag reads `Some(*b)` (the flag helper is shared, so `fork: false` is now `Some(false)` too; every consumer tests `== Some(true)`, so nothing changes for fork) | `agent_frontmatter.rs` flag helper, was `b.then_some(true)` | P2 | rust, small |
+| 4c | **Done 2026-10-15.** Background by default for every agent. Tool param still overrides. As built: `collect_foreground_agent_names` lists the agents with `background: false`; `runs_in_background` gives the call's argument, else background unless the agent is in that list (Q1). Same rule in the Agent tool's `background_when` and in `execute_task` (resume and new dispatch) | `tools.rs` (`collect_background_agent_names` was `:73-80`; the dispatch sites were `:810-813`) | D1 | rust, small |
+| 4d | Final-answer rule in every body (text below) | `explore.md`, `code-review.md`, `security-review.md`; `general-purpose.md:35` and `plan.md:36` already say a version | P9 | text. **Done 2026-10-15** (all five bodies carry the same rule) |
+| 4e | **Done 2026-10-15.** Gate the delegation block on the same depth check as the tool. Children at the cap get no block. As built: `subagents_allowed(light, enabled, can_spawn)` in `code-cli` `runtime.rs` is the one rule; `subagent_tools` and the block both call it | `code-cli` `runtime.rs` (was `:620`, `:626`; compare `:347`) | P5 | rust, small |
+| 4f | **Done 2026-10-15.** Keep base guidelines for custom bodies. Append a short base block, do not replace. As built: the six generic guidelines are one `BASE_GUIDELINES` const in `code-prompts` `system_prompt.rs`, used by the default prompt and by `base_guidelines_block()`. The CLI appends that block to a body only when the process is a subagent child (depth > 0; `child_system_prompt` in `code-cli` `runtime.rs`). A user's `--system-prompt` and light mode stay replacements, as before | `pool.rs:1152-1154` passes the body as `--system-prompt`; `system_prompt.rs:351-369` returned before the base guidelines | P6 | rust, small |
 | 4g | Dropped (Q8): every agent keeps AGENTS.md and CLAUDE.md | — | P7 | — |
-| 4h | Review agents: the brief lists the only git commands allowed (`git diff`, `git log`, `git show`) and says "no other Shell" | `code-review.md:16`, `security-review.md:17` | P10 | text now; rust later (a Shell filter) |
-| 4i | One prompt wrapper for all three paths. Give `context` a real value or remove it | `pool.rs:1111`, `:1225-1234`; `tools.rs:834` | P8 | rust, small |
+| 4h | Review agents: the brief lists the only git commands allowed (`git diff`, `git log`, `git show`) and says "no other Shell" | `code-review.md:16`, `security-review.md:17` | P10 | text now (**Done 2026-10-15**); rust later (a Shell filter) |
+| 4i | **Done 2026-10-15.** One prompt wrapper for all three paths. Give `context` a real value or remove it. As built: `context` is removed (the brief in the task text is the context). `pool::child_prompt` is the one wrapper (`Task: <prompt>`), used by the command line, the in-process run spec and the warm worker. The brief itself is the parent's job (§2) | `pool.rs` (was `:1111`, `:1225-1234`); `tools.rs` (was `:834`) | P8 | rust, small |
 
 Final-answer rule for 4d (same text in every body):
 
@@ -180,6 +182,12 @@ from the brief. Do not say "see above".
 ```
 
 ### 5. Evals — fixes P4, and checks §3 [eval]
+
+**Done 2026-10-15.** Both scenarios were added to `scripts/eval/subagent_evals.py`,
+with the `parent_tool_calls_before_result` Expect field and the writer checks
+(`branch_commits`, `parent_status_unchanged`, `nothing_pushed`). Run against the
+worktree build: both pass, and the full `--include-slow` suite is 18/18 as declared
+(details in [subagent-evals.md](subagent-evals.md) §4).
 
 Two new scenarios in `scripts/eval/subagent_evals.py`:
 
@@ -196,9 +204,11 @@ trial on a real session.
 
 | # | Item | Fix | Fixes | Tag |
 |---|---|---|---|---|
-| 6a | Resume | Keep the dispatch dir when a result is partial. Add a test that `resume_task_id` finds the session. Confirm the bug with a run first | P11 | rust, small |
-| 6b | Eval doc | Re-run `parent_stall_reaped`. Then change `subagent-evals.md:89` and §5 from KNOWN to the measured result. Do not mark a pass without a run | P14 | text, after a run |
-| 6c | Tool wording | "Isolated" fix in §1. Remove the template split in §1 | P12 | text |
+| 6a | **Done 2026-10-15, bug not reproduced.** Resume | Keep the dispatch dir when a result is partial. Add a test that `resume_task_id` finds the session. Confirm the bug with a run first | P11 | rust, small |
+| 6b | Eval doc | Re-run `parent_stall_reaped`. Then change `subagent-evals.md:89` and §5 from KNOWN to the measured result. Do not mark a pass without a run | P14 | text, after a run. **Done 2026-10-15:** `--include-slow` run, 18/18 as declared; `parent_stall_reaped` passes (reaped at 25.6s, partial). `subagent-evals.md` :89 and §5 updated |
+| 6c | **Done 2026-10-15.** Tool wording | "Isolated" fix in §1. Remove the template split in §1 | P12 | text |
+
+6a as built: the failing-first test was written, and it passed. A partial run keeps its dispatch dir and its session, with and without a parent session, and `resume_task_id` finds it (`a_partial_run_resumes_its_session_*` in `tests/it/tools.rs`). The settle code does not delete a partial's dir, and no code deletes a clean success's dir either. So no behaviour changed. Not in P11: dispatch dirs older than 24 h, beyond the newest 50, are pruned (`DISPATCH_KEEP`, `DISPATCH_MAX_AGE` in `pool.rs`). That applies to every run, complete or partial, so a resume of an old run can fail. Not changed here.
 
 ## Not doing
 

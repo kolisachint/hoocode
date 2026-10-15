@@ -343,3 +343,23 @@ fn print_allows_an_mcp_tool_without_asking() {
     let config = json!({"active_mode": "build", "modes": {"build": {}}});
     assert_eq!(tool_call(PRINT, config, "mcp_fs_read_file"), Verdict::Allow);
 }
+
+#[test]
+fn shell_kill_asks_like_shell_and_shell_output_only_reads() {
+    let config = json!({"active_mode": "build", "modes": {"build": {}}});
+    assert_eq!(tool_call(UI, config.clone(), "ShellKill"), Verdict::Prompt);
+    assert_eq!(tool_call(UI, config.clone(), "ShellOutput"), Verdict::Allow);
+
+    // rpc has nobody to answer, so a ShellKill is blocked unless auto-allowed.
+    assert!(matches!(
+        tool_call(RPC, config.clone(), "ShellKill"),
+        Verdict::Block(_)
+    ));
+    assert_eq!(
+        tool_call(RPC, config.clone(), "ShellOutput"),
+        Verdict::Allow
+    );
+
+    // print does not ask anyone; the CLI names the tools that ran.
+    assert_eq!(tool_call(PRINT, config, "ShellKill"), Verdict::Allow);
+}

@@ -511,7 +511,7 @@ async fn task_tool_abort_marks_the_run_cancelled_across_store_roster_and_inbox()
         };
         (tool.execute)(
             "c1".into(),
-            json!({"description": "long job", "prompt": "do the long job", "subagent_type": "general-purpose"}),
+            json!({"description": "long job", "prompt": "do the long job", "subagent_type": "general-purpose", "background": false}),
             Some(signal),
             None,
             Some(&ctx),

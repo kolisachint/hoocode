@@ -6,6 +6,7 @@ use hoocode_code_agent_session::format::group_digits;
 use hoocode_code_resources::agent_registry::{load_agent_registry, LoadAgentRegistryOptions};
 use hoocode_code_subagents::instance::get_subagent_pool;
 use hoocode_code_subagents::ledger;
+use hoocode_code_subagents::live::{self as live, run_for_tool_call};
 use hoocode_code_subagents::pool::DispatchOptions;
 use hoocode_code_tui_selectors::session_selector::SubagentRunRef;
 use hoocode_code_tui_theme::theme;
@@ -24,7 +25,7 @@ impl Mode {
     }
 
     /// The session file subagents dispatched from here are recorded under.
-    fn parent_session_file(&self) -> Option<std::path::PathBuf> {
+    pub(super) fn parent_session_file(&self) -> Option<std::path::PathBuf> {
         self.session
             .session_manager()
             .session_file()
@@ -106,6 +107,43 @@ impl Mode {
         });
     }
 
+    /// A live event of a subagent run (T3.1). The run's activity tail moves, and
+    /// the Agent tool block that dispatched the run redraws: its live tail
+    /// while the run is going, its result once it settles. A run's start and
+    /// end re-render the block in full, since they switch between the two.
+    pub(super) fn apply_subagent_event(&mut self, task_id: &str, event: serde_json::Value) {
+        let lifecycle = event
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|kind| kind.starts_with("task_"));
+        live::apply(task_id, &event);
+        // Only Agent blocks can hold a run: the name is checked first, so the
+        // shared call-to-run table is read for those alone (once per block).
+        let agent_blocks = self
+            .tool_blocks()
+            .into_iter()
+            .filter(|block| block.borrow().tool_name() == "Agent");
+        for block in agent_blocks {
+            let call = block.borrow().tool_call_id().to_string();
+            if run_for_tool_call(&call).as_deref() != Some(task_id) {
+                continue;
+            }
+            let mut block = block.borrow_mut();
+            if lifecycle {
+                block.refresh();
+            } else {
+                block.invalidate();
+            }
+        }
+        // The attached view shows the run's own events; the session's blocks
+        // above are not on screen, so they need no render of their own.
+        if self.attached_to(task_id) {
+            self.apply_attached_event(event);
+        } else if self.attached.is_none() {
+            self.dirty.set(true);
+        }
+    }
+
     /// Resume an interrupted subagent run from the session picker: the same
     /// transcript continues with a follow-up prompt, through the pool's
     /// `resume`. Its summary lands in this session the way a finished run's does.
@@ -153,27 +191,30 @@ impl Mode {
             .strip_prefix("/subagent-cancel")
             .map_or("", str::trim)
             .to_string();
+        // The pool is made, and its statuses read, on the tools pool (see
+        // `cancel_subagent_run`); the outcome comes back as a status line.
         let cwd = self.session.cwd().to_path_buf();
-        let models = self.session.get_available_models();
-        let pool = get_subagent_pool(&cwd, &models);
-        let status = pool.statuses();
-        let candidate = status
-            .iter()
-            .filter(|(_, state)| state.is_running())
-            .filter(|(id, _)| wanted.is_empty() || id.contains(&wanted))
-            .max_by_key(|(_, state)| state.since());
-        let Some((task_id, _)) = candidate else {
-            let message = if wanted.is_empty() {
-                "No subagent is running.".to_string()
-            } else {
-                format!("No running subagent matches \"{wanted}\".")
+        let session = self.session.clone();
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let models = session.get_available_models();
+            let pool = get_subagent_pool(&cwd, &models);
+            let status = pool.statuses();
+            let candidate = status
+                .iter()
+                .filter(|(_, state)| state.is_running())
+                .filter(|(id, _)| wanted.is_empty() || id.contains(&wanted))
+                .max_by_key(|(_, state)| state.since());
+            let message = match candidate {
+                None if wanted.is_empty() => "No subagent is running.".to_string(),
+                None => format!("No running subagent matches \"{wanted}\"."),
+                Some((task_id, _)) if pool.cancel(task_id) => {
+                    format!("Cancelling subagent {task_id}…")
+                }
+                Some(_) => "That subagent has already ended.".to_string(),
             };
-            self.show_status(&message);
-            return;
-        };
-        if pool.cancel(task_id) {
-            self.show_status(&format!("Cancelling subagent {task_id}…"));
-        }
+            let _ = tx.send(AppEvent::Status(message));
+        });
     }
 
     /// `/subagent-retry [agent] [task]`: dispatch again, on the same inputs.

@@ -150,6 +150,10 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
         description: "Subagent reliability from the dispatch ledger: /subagent-stats [24h|7d|all]",
     },
     BuiltinSlashCommand {
+        name: "agents",
+        description: "Attach to a subagent run of this session (read-only)",
+    },
+    BuiltinSlashCommand {
         name: "loop",
         description: "Schedule a prompt (/loop 5m <prompt>) or run until done (/loop auto <task>)",
     },

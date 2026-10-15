@@ -7,8 +7,8 @@ a subagent dispatch interleaves the parent's and the child's requests, and the
 order in which two processes happen to make calls is not something a test
 should depend on.
 
-So this mock routes on the request instead. Every turn the pool builds carries
-`Context from the calling agent:` and then `Task: …`, so a body containing
+So this mock routes on the request instead. Every child's prompt ends in
+`Task: …` (`pool::child_prompt`, on every dispatch path), so a body containing
 `Task: ` is a child and everything else is a dispatching session. Each route
 has its own script and its own cursor.
 
@@ -30,6 +30,9 @@ Turn keys (all optional):
 
 An exhausted route answers `500 mock: script exhausted` rather than looping, so
 a runaway run fails loudly instead of hanging.
+
+Each log line also says `tool_calls` (the names the turn answered with) and
+`sees` (which configured `needles` the request body contained).
 """
 
 from __future__ import annotations
@@ -40,8 +43,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-# The pool builds every child's prompt ending in `Task: <task>` (pool.rs
-# `build_args`), and the dispatching session's last user message is the user's
+# Every child's prompt ends in `Task: <task>` (pool.rs `child_prompt`), and the
+# dispatching session's last user message is the user's
 # own prompt. Routing on the *last user message only* is what keeps a child's
 # request from matching a Task tool description in the parent's body.
 CHILD_MARKER = "Task: "
@@ -90,10 +93,15 @@ class MockProvider:
         routes: dict[str, Route],
         log_path: str | None = None,
         default: str = "parent",
+        needles: dict[str, str] | None = None,
     ):
         self.routes = routes
         self.log_path = log_path
         self.default = default if default in routes else next(iter(routes))
+        # Named substrings the log should note when a request body carries them,
+        # e.g. {"child_result": "<the child's summary>"} marks the request that
+        # delivers a background child's result to the parent.
+        self.needles = dict(needles or {})
         self.log_lock = threading.Lock()
         self.server: ThreadingHTTPServer | None = None
         self.thread: threading.Thread | None = None
@@ -156,6 +164,7 @@ class MockProvider:
     def record(self, route: str, turn: dict[str, Any], body: dict[str, Any]) -> None:
         if self.log_path is None:
             return
+        serialized = json.dumps(body, ensure_ascii=False)
         entry = {
             "route": route,
             "turn_index": self.routes[route].cursor - 1,
@@ -164,6 +173,10 @@ class MockProvider:
             "messages": len(body.get("messages") or []),
             "tools": [t.get("function", {}).get("name") for t in body.get("tools") or []],
             "served": sorted(k for k in turn if k not in ("text", "reasoning")),
+            # The tool calls this turn answered with, in order: what the model did.
+            "tool_calls": [call.get("name") for call in turn.get("tool_calls") or []],
+            # Which needles this request's body carried: what the model was told.
+            "sees": sorted(name for name, needle in self.needles.items() if needle in serialized),
             "last_user": last_user_text(body)[-120:],
         }
         with self.log_lock:

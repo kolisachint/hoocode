@@ -117,7 +117,6 @@ async fn the_run_spec_carries_what_a_command_line_would_have_said() {
     });
     p.spawn(SubagentPoolTask {
         model: Some("mock/pinned".into()),
-        context: Some("from the parent".into()),
         ..task("t1", "code-review")
     })
     .unwrap();
@@ -126,13 +125,9 @@ async fn the_run_spec_carries_what_a_command_line_would_have_said() {
     let spec = seen.lock().unwrap().last().cloned().unwrap();
     assert_eq!(spec.task_id, "t1");
     assert_eq!(spec.agent_type, "code-review");
-    assert!(
-        spec.prompt.starts_with("Context from the calling agent:"),
-        "the runner must see the same prompt the child would: {:?}",
-        spec.prompt
-    );
-    assert!(spec.prompt.contains("from the parent"));
-    assert!(spec.prompt.ends_with("Task: work"));
+    // The runner sees the one child prompt the command line would carry.
+    assert_eq!(spec.prompt, "Task: work");
+    assert_eq!(spec.argv.last().map(String::as_str), Some("Task: work"));
     assert_eq!(spec.max_turns, DEFAULT_SUBAGENT_MAX_TURNS);
     assert!(
         spec.argv.iter().any(|a| a == "--mode"),

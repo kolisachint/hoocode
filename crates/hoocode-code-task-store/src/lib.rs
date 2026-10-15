@@ -42,6 +42,27 @@ impl TaskStatus {
 pub enum TaskSource {
     Subagent,
     Mcp,
+    /// A scheduled job (`/loop`, the Cron tools).
+    Schedule,
+}
+
+/// An action a row offers the panel (Enter or `x` on the row). The producer
+/// performs it through [`RowActions`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowAction {
+    /// Log in to an MCP server that needs a login (`/mcp login <server>`).
+    Login,
+    /// Cancel an in-flight MCP call.
+    Abort,
+}
+
+/// Receives a line of text for the user from an action (a login link, an outcome).
+pub type ActionNotifier = Arc<dyn Fn(String) + Send + Sync>;
+
+/// Performs the [`RowAction`]s of the rows a producer owns. `key` is the row's
+/// stable key ([`Task::key`]). Called off the store's lock.
+pub trait RowActions: Send + Sync {
+    fn perform(&self, key: &str, action: RowAction, notify: ActionNotifier) -> Result<(), String>;
 }
 
 /// `TaskAgentKind`.
@@ -130,6 +151,14 @@ pub struct Task {
     pub created_at: u64,
     pub updated_at: u64,
     pub usage: Option<TaskUsage>,
+    /// Stable identity of a row its producer keeps up to date (a scheduled job,
+    /// an MCP server, an MCP call). A keyed row keeps its `id` until it is
+    /// removed, and survives [`TaskStore::reset`].
+    pub key: Option<String>,
+    /// Epoch milliseconds of the next run, for a schedule row.
+    pub next_at: Option<u64>,
+    /// The action the panel can offer on this row, if any.
+    pub action: Option<RowAction>,
 }
 
 /// `CreateTaskOptions`.
@@ -140,6 +169,8 @@ pub struct CreateTaskOptions {
     pub agent: Option<String>,
     pub parent_task_id: Option<u64>,
     pub linked_task_id: Option<u64>,
+    /// The row's stable key (see [`Task::key`]).
+    pub key: Option<String>,
 }
 
 /// `TaskPatch`: `None` leaves a field alone, except `note`, where
@@ -156,6 +187,10 @@ pub struct TaskPatch {
     pub parent_task_id: Option<u64>,
     pub linked_task_id: Option<u64>,
     pub todo_content: Option<String>,
+    /// `Some(None)` clears it.
+    pub next_at: Option<Option<u64>>,
+    /// `Some(None)` clears it.
+    pub action: Option<Option<RowAction>>,
 }
 
 /// `TaskAgentPatch`.
@@ -185,16 +220,17 @@ pub fn task_owner_id(agent: Option<&str>, source: Option<TaskSource>) -> String 
     }
 }
 
-/// What a task row stands for in the task panel. Shell and schedule rows are
-/// added with their producers (T4.2, T5).
+/// What a task row stands for in the task panel. Shell rows come with T5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskKind {
     /// The main agent's own TodoWrite plan item.
     Plan,
     /// A dispatched subagent run.
     Subagent,
-    /// An MCP call.
+    /// An MCP server's state, or an MCP call.
     Mcp,
+    /// A scheduled job: its fire, run and finish, and its next run.
+    Schedule,
 }
 
 impl Task {
@@ -214,6 +250,7 @@ impl Task {
         match self.source {
             Some(TaskSource::Subagent) => TaskKind::Subagent,
             Some(TaskSource::Mcp) => TaskKind::Mcp,
+            Some(TaskSource::Schedule) => TaskKind::Schedule,
             None => TaskKind::Plan,
         }
     }
@@ -229,6 +266,7 @@ struct State {
     mutation_count: u64,
     listeners: Vec<(u64, Listener)>,
     next_listener: u64,
+    row_actions: Option<Arc<dyn RowActions>>,
 }
 
 /// `TaskStore`.
@@ -322,6 +360,7 @@ impl TaskStore {
                 mutation_count: 0,
                 listeners: Vec::new(),
                 next_listener: 0,
+                row_actions: None,
             }),
         }
     }
@@ -389,6 +428,9 @@ impl TaskStore {
             created_at: now,
             updated_at: now,
             usage: None,
+            key: options.key,
+            next_at: None,
+            action: None,
         };
         state.next_id += 1;
         state.tasks.push(task.clone());
@@ -432,8 +474,147 @@ impl TaskStore {
         if let Some(note) = patch.note {
             task.note = note;
         }
+        if let Some(next_at) = patch.next_at {
+            task.next_at = next_at;
+        }
+        if let Some(action) = patch.action {
+            task.action = action;
+        }
         task.updated_at = now_ms();
         self.emit(state);
+    }
+
+    /// Creates the row with `key` when there is none, then applies `title` (when
+    /// not empty) and `patch` to it, in one step: a keyed row is never seen
+    /// twice. Returns the row.
+    pub fn upsert_keyed(
+        &self,
+        key: &str,
+        title: &str,
+        options: CreateTaskOptions,
+        patch: TaskPatch,
+    ) -> Task {
+        let mut state = self.lock();
+        let now = now_ms();
+        let index = match state
+            .tasks
+            .iter()
+            .position(|t| t.key.as_deref() == Some(key))
+        {
+            Some(index) => index,
+            None => {
+                let id = state.next_id;
+                state.next_id += 1;
+                state.tasks.push(Task {
+                    id,
+                    title: String::new(),
+                    status: TaskStatus::Pending,
+                    source: options.source,
+                    subagent_mode: options.subagent_mode,
+                    agent: options.agent,
+                    parent_task_id: options.parent_task_id,
+                    linked_task_id: options.linked_task_id,
+                    note: None,
+                    todo_content: None,
+                    created_at: now,
+                    updated_at: now,
+                    usage: None,
+                    key: Some(key.to_owned()),
+                    next_at: None,
+                    action: None,
+                });
+                state.tasks.len() - 1
+            }
+        };
+        let task = &mut state.tasks[index];
+        if !title.is_empty() {
+            task.title = title.to_owned();
+        }
+        if let Some(status) = patch.status {
+            task.status = status;
+        }
+        if let Some(note) = patch.note {
+            task.note = note;
+        }
+        if let Some(next_at) = patch.next_at {
+            task.next_at = next_at;
+        }
+        if let Some(action) = patch.action {
+            task.action = action;
+        }
+        if patch.subagent_mode.is_some() {
+            task.subagent_mode = patch.subagent_mode;
+        }
+        task.updated_at = now;
+        let row = task.clone();
+        self.emit(state);
+        row
+    }
+
+    /// Removes the row with `key`. True when there was one.
+    pub fn remove_keyed(&self, key: &str) -> bool {
+        self.remove_keys_where(|k| k == key) > 0
+    }
+
+    /// Removes every keyed row whose key `pred` accepts; returns how many went.
+    pub fn remove_keys_where(&self, pred: impl Fn(&str) -> bool) -> usize {
+        let mut state = self.lock();
+        let before = state.tasks.len();
+        state.tasks.retain(|t| match t.key.as_deref() {
+            Some(key) => !pred(key),
+            None => true,
+        });
+        let removed = before - state.tasks.len();
+        if removed > 0 {
+            self.emit(state);
+        }
+        removed
+    }
+
+    /// The row with `key`, if there is one.
+    pub fn find_keyed(&self, key: &str) -> Option<Task> {
+        self.lock()
+            .tasks
+            .iter()
+            .find(|t| t.key.as_deref() == Some(key))
+            .cloned()
+    }
+
+    /// Registers who performs the rows' [`RowAction`]s, replacing any earlier
+    /// one; `None` removes it.
+    pub fn set_row_actions(&self, handler: Option<Arc<dyn RowActions>>) {
+        self.lock().row_actions = handler;
+    }
+
+    /// Performs `action` on row `id`. Errors when the row is gone, does not offer
+    /// `action`, or no handler is registered. The handler runs off the store's lock.
+    pub fn perform(
+        &self,
+        id: u64,
+        action: RowAction,
+        notify: ActionNotifier,
+    ) -> Result<(), String> {
+        let (key, handler) = {
+            let state = self.lock();
+            let task = state
+                .tasks
+                .iter()
+                .find(|t| t.id == id)
+                .ok_or_else(|| "That row is gone.".to_owned())?;
+            if task.action != Some(action) {
+                return Err(format!("That row has no {action:?} action."));
+            }
+            let key = task
+                .key
+                .clone()
+                .ok_or_else(|| "That row has no key.".to_owned())?;
+            let handler = state
+                .row_actions
+                .clone()
+                .ok_or_else(|| "Nothing performs that action.".to_owned())?;
+            (key, handler)
+        };
+        handler.perform(&key, action, notify)
     }
 
     /// `upsertAgent`: merge into an agent with the same id, or create it.
@@ -545,14 +726,15 @@ impl TaskStore {
         self.emit(state);
     }
 
-    /// `reset`: drop finished tasks (a new user message arrived); numbering
-    /// restarts once nothing active remains. Agents with stats survive.
+    /// `reset`: drop finished tasks (a new user message arrived). Keyed rows are
+    /// kept whatever their status, since their producer owns them. Numbering
+    /// restarts once nothing is left. Agents with stats survive.
     pub fn reset(&self) {
         let mut state = self.lock();
         let active: Vec<Task> = state
             .tasks
             .iter()
-            .filter(|t| t.status.is_active())
+            .filter(|t| t.status.is_active() || t.key.is_some())
             .cloned()
             .collect();
         if active.len() == state.tasks.len() && state.next_id == 1 {
@@ -654,5 +836,186 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(call.kind(), TaskKind::Mcp);
+        let job = task(CreateTaskOptions {
+            source: Some(TaskSource::Schedule),
+            ..Default::default()
+        });
+        assert_eq!(job.kind(), TaskKind::Schedule);
+        assert!(!job.is_plan_item());
+    }
+
+    fn schedule_options(key: &str) -> CreateTaskOptions {
+        CreateTaskOptions {
+            source: Some(TaskSource::Schedule),
+            key: Some(key.to_owned()),
+            ..Default::default()
+        }
+    }
+
+    fn status_patch(status: TaskStatus) -> TaskPatch {
+        TaskPatch {
+            status: Some(status),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_keyed_row_keeps_its_id_across_updates_and_survives_reset() {
+        let store = TaskStore::new();
+        let first = store.upsert_keyed(
+            "schedule:a",
+            "check the build",
+            schedule_options("schedule:a"),
+            status_patch(TaskStatus::Pending),
+        );
+        let again = store.upsert_keyed(
+            "schedule:a",
+            "check the build",
+            schedule_options("schedule:a"),
+            TaskPatch {
+                next_at: Some(Some(42)),
+                ..status_patch(TaskStatus::InProgress)
+            },
+        );
+        assert_eq!(first.id, again.id, "one row per key");
+        assert_eq!(store.list().len(), 1);
+        let row = store.find_keyed("schedule:a").unwrap();
+        assert_eq!(row.status, TaskStatus::InProgress);
+        assert_eq!(row.next_at, Some(42));
+        assert_eq!(row.kind(), TaskKind::Schedule);
+
+        // A finished plan item goes; the keyed row stays, with its id.
+        let plan = store.create("plan", CreateTaskOptions::default());
+        store.update(plan.id, status_patch(TaskStatus::Done));
+        store.upsert_keyed(
+            "schedule:a",
+            "",
+            CreateTaskOptions::default(),
+            status_patch(TaskStatus::Done),
+        );
+        store.reset();
+        let kept = store.list();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].key.as_deref(), Some("schedule:a"));
+        assert_eq!(kept[0].id, first.id);
+        assert_eq!(
+            kept[0].title, "check the build",
+            "an empty title keeps the old one"
+        );
+    }
+
+    #[test]
+    fn a_removed_keyed_row_leaves_the_store_and_others_stay() {
+        let store = TaskStore::new();
+        for key in ["schedule:a", "schedule:b", "mcp-server:docs"] {
+            store.upsert_keyed(key, key, CreateTaskOptions::default(), TaskPatch::default());
+        }
+        assert!(store.remove_keyed("schedule:a"));
+        assert!(!store.remove_keyed("schedule:a"), "already gone");
+        let removed = store.remove_keys_where(|k| k.starts_with("schedule:"));
+        assert_eq!(removed, 1);
+        let keys: Vec<Option<String>> = store.list().into_iter().map(|t| t.key).collect();
+        assert_eq!(keys, vec![Some("mcp-server:docs".to_owned())]);
+    }
+
+    #[test]
+    fn a_keyed_row_is_notified_once_per_mutation_and_batches_collapse() {
+        let store = TaskStore::new();
+        let hits = std::sync::Arc::new(AtomicU64::new(0));
+        let counter = hits.clone();
+        let _sub = store.subscribe(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        });
+        store.batch(|s| {
+            s.upsert_keyed(
+                "schedule:a",
+                "a",
+                CreateTaskOptions::default(),
+                TaskPatch::default(),
+            );
+            s.upsert_keyed(
+                "schedule:b",
+                "b",
+                CreateTaskOptions::default(),
+                TaskPatch::default(),
+            );
+        });
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        store.remove_keys_where(|_| true);
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
+        // Nothing removed: no notification.
+        store.remove_keys_where(|_| true);
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
+    }
+
+    /// Records what it was asked to do, and answers with `result`.
+    struct Recorder {
+        calls: Mutex<Vec<(String, RowAction)>>,
+        result: Result<(), String>,
+    }
+
+    impl RowActions for Recorder {
+        fn perform(
+            &self,
+            key: &str,
+            action: RowAction,
+            notify: ActionNotifier,
+        ) -> Result<(), String> {
+            self.calls.lock().unwrap().push((key.to_owned(), action));
+            notify("from the handler".to_owned());
+            self.result.clone()
+        }
+    }
+
+    #[test]
+    fn a_row_action_goes_to_the_handler_with_the_row_key_only_when_offered() {
+        let store = TaskStore::new();
+        let recorder = Arc::new(Recorder {
+            calls: Mutex::new(Vec::new()),
+            result: Ok(()),
+        });
+        store.set_row_actions(Some(recorder.clone()));
+        store.upsert_keyed(
+            "mcp-call:7",
+            "echo",
+            CreateTaskOptions::default(),
+            TaskPatch {
+                action: Some(Some(RowAction::Abort)),
+                ..Default::default()
+            },
+        );
+        let id = store.find_keyed("mcp-call:7").unwrap().id;
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        let notify: ActionNotifier = Arc::new(move |m| sink.lock().unwrap().push(m));
+
+        // A row does not offer Login, so the handler is not asked.
+        let refused = store.perform(id, RowAction::Login, notify.clone());
+        assert!(refused.unwrap_err().contains("no Login action"));
+        assert!(recorder.calls.lock().unwrap().is_empty());
+
+        store.perform(id, RowAction::Abort, notify.clone()).unwrap();
+        assert_eq!(
+            *recorder.calls.lock().unwrap(),
+            vec![("mcp-call:7".to_owned(), RowAction::Abort)]
+        );
+        assert_eq!(*seen.lock().unwrap(), vec!["from the handler".to_owned()]);
+
+        // A removed row is gone; with no handler, nothing performs the action.
+        store.remove_keyed("mcp-call:7");
+        assert!(store.perform(id, RowAction::Abort, notify.clone()).is_err());
+        store.set_row_actions(None);
+        store.upsert_keyed(
+            "mcp-call:8",
+            "echo",
+            CreateTaskOptions::default(),
+            TaskPatch {
+                action: Some(Some(RowAction::Abort)),
+                ..Default::default()
+            },
+        );
+        let id = store.find_keyed("mcp-call:8").unwrap().id;
+        let none = store.perform(id, RowAction::Abort, notify).unwrap_err();
+        assert!(none.contains("Nothing performs"), "{none}");
     }
 }

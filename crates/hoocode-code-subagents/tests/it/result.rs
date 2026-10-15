@@ -291,6 +291,9 @@ fn task(id: u64, source: Option<TaskSource>, mode: Option<&str>, parent: Option<
         created_at: 0,
         updated_at: 0,
         usage: None,
+        key: None,
+        next_at: None,
+        action: None,
     }
 }
 

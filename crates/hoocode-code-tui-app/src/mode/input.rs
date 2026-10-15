@@ -12,7 +12,6 @@ use hoocode_code_agent_session::{AgentSession, PromptOptions, StreamingBehavior}
 use hoocode_code_paths::APP_NAME;
 use hoocode_code_resources::BUILTIN_SLASH_COMMANDS;
 use hoocode_code_settings::DoubleEscapeAction;
-use hoocode_code_tui_widgets::task_panel::TaskPanelView;
 use hoocode_tui_components::{
     ArgumentCompletionsFn, AutocompleteItem, CombinedAutocompleteProvider, CommandEntry, Editor,
     FileFinder, FileMatch, SlashCommand,
@@ -91,15 +90,21 @@ pub(super) enum Action {
     FollowUp,
     /// `app.message.dequeue`: every queued message back to the prompt.
     Dequeue,
-    /// `app.tasks.cycleForward` / `cycleBackward`: step the task panel lens.
+    /// `app.tasks.cycleForward` / `cycleBackward`: step the task panel tab.
     TasksForward,
     TasksBackward,
+    /// `app.panel.focus`: give the task panel the keyboard.
+    PanelFocus,
+    /// `app.subagent.attach`: attach to the newest Agent block's run.
+    SubagentAttach,
 }
 
 /// Bindings the prompt answers to, and their action (`CustomEditor.onAction`).
-const EDITOR_ACTIONS: [(&str, Action); 29] = [
+const EDITOR_ACTIONS: [(&str, Action); 31] = [
     ("app.tasks.cycleForward", Action::TasksForward),
     ("app.tasks.cycleBackward", Action::TasksBackward),
+    ("app.panel.focus", Action::PanelFocus),
+    ("app.subagent.attach", Action::SubagentAttach),
     ("app.message.followUp", Action::FollowUp),
     ("app.message.dequeue", Action::Dequeue),
     (
@@ -834,19 +839,17 @@ impl Mode {
             Action::TasksForward | Action::TasksBackward => {
                 let forward = action == Action::TasksForward;
                 let view = self.task_panel.borrow_mut().cycle_view(forward);
-                let label = match view {
-                    TaskPanelView::Plan => "tasks",
-                    TaskPanelView::Subagents => "subagents",
-                };
                 self.show_dial_step(
                     if forward {
                         "app.tasks.cycleBackward"
                     } else {
                         "app.tasks.cycleForward"
                     },
-                    &format!("Task panel: {label}"),
+                    &format!("Task panel: {}", view.label()),
                 );
             }
+            Action::PanelFocus => self.focus_task_panel(),
+            Action::SubagentAttach => self.attach_newest_agent_block(),
             Action::AskOptionsDone(answers) => self.hide_ask_options(answers),
             Action::EditorDialogDone(outcome) => self.close_editor_dialog(outcome),
             Action::SessionSelectorDone(path) => {

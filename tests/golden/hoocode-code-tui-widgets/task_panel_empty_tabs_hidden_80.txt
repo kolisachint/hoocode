@@ -1,0 +1,12 @@
+▎  Plan 1/1  MCP 1/1                                                ctrl+g focus
+▎ ✓ Read the migration plan
+--- styles ---
+r0 c0 fg=#b5bd68
+r0 c3-6 fg=#5cc8bb bold
+r0 c8-10 fg=#a8a8a8
+r0 c12-20 fg=#989898
+r0 c68-73 fg=#989898
+r0 c74-79 fg=#a8a8a8
+r1 c0 fg=#b5bd68
+r1 c2 fg=#b5bd68
+r1 c4-26 fg=#a8a8a8

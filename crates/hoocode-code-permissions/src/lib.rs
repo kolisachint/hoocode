@@ -7,8 +7,16 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// `GATED_TOOLS`: prompted in interactive sessions.
-pub const GATED_TOOLS: [&str; 5] = ["Shell", "Write", "Edit", "WebFetch", "WebSearch"];
+/// `GATED_TOOLS`: prompted in interactive sessions. `ShellKill` stops a background
+/// job, so it asks like `Shell`; `ShellOutput` only reads and is not gated.
+pub const GATED_TOOLS: [&str; 6] = [
+    "Shell",
+    "Write",
+    "Edit",
+    "WebFetch",
+    "WebSearch",
+    "ShellKill",
+];
 
 /// The plugin lifecycle tools. They are not in [`GATED_TOOLS`]; in fail-closed
 /// (rpc) mode they are gated like one, so they need `auto_allow`.

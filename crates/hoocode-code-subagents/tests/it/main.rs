@@ -6,6 +6,7 @@ mod hardening;
 mod inbox;
 mod ledger;
 mod lifeguard;
+mod live;
 mod model_categories;
 mod model_selection;
 mod output_verifier;

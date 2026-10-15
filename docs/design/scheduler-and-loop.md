@@ -46,7 +46,7 @@ the late-fire rule):
   (`File::try_lock`, Rust 1.89; the workspace MSRV is 1.88); a scheduled prompt claimed on
   the same tick as an auto-loop continuation can collide with it, and the session then
   refuses the second prompt, which ends `/loop auto` with an error notice.
-- Not done: the Schedule tab in the activity panel (T4.2 in [tui-activity.md](tui-activity.md)).
+- Done 2026-10-15, T4.2: the jobs are rows in the task store (Schedule kind, `rows.rs`): fire, run, finish and next run. The Schedule tab's rendering is T4.1 ([tui-activity.md](tui-activity.md)).
 - Differences from hoocode-ts: `CronCreate` returns a tool error when the store cannot be
   written (TS ignores the write error); the store is re-read on every operation, so a
   task another process created is not lost.

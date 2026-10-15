@@ -10,18 +10,21 @@ use std::rc::Rc;
 use hoocode_ai_types::Content;
 use hoocode_code_agent_session::format::format_duration_secs;
 use hoocode_code_subagents::inbox::subagent_inbox;
+use hoocode_code_subagents::live::{self as live, run_for_tool_call};
 use hoocode_code_tui_theme::{agent_color_for, theme};
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::Text;
 use hoocode_tui_render::{Component, ComponentHandle};
-use hoocode_tui_util::wrap_text_with_ansi;
+use hoocode_tui_util::{truncate_to_width, wrap_text_with_ansi};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
 
 use super::text;
 use crate::tool_chain_summary::{TaskOutcome, TaskState};
-use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
+use crate::tool_execution::{
+    ToolRenderContext, ToolRenderDefinition, ToolRenderResultOptions, ToolResultView,
+};
 use crate::tool_output_view::peek_block;
 use crate::tool_signal::ToolResult;
 
@@ -296,11 +299,79 @@ fn peek_body(text: String) -> ComponentHandle {
     Rc::new(RefCell::new(PeekBody { text }))
 }
 
+/// The renderer state key a block sets while its subagent run is live (the
+/// block is then not frozen; see `ToolExecutionComponent::is_freezable`).
+pub(crate) const LIVE_KEY: &str = "subagent.live";
+
+/// The rows an Agent block shows while its run is going: the last few rows of
+/// the run's activity, behind the peek gutter. Once the run settles, the
+/// block's own result (`fallback`) takes over.
+struct LiveTail {
+    run: Option<String>,
+    fallback: String,
+    /// The call is still streaming its partial result (the run is starting).
+    partial: bool,
+}
+
+impl LiveTail {
+    fn is_live(&self) -> bool {
+        self.partial || self.run.as_deref().is_some_and(live::is_running)
+    }
+}
+
+impl Component for LiveTail {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        if !self.is_live() {
+            return summary_rows(&self.fallback, width as usize);
+        }
+        let t = theme();
+        let gutter = peek_gutter();
+        let rows = self.run.as_deref().map(live::tail).unwrap_or_default();
+        if rows.is_empty() {
+            return vec![format!("{gutter}{}", t.fg("muted", "starting…"))];
+        }
+        let inner = (width as usize).saturating_sub(GUTTER_WIDTH).max(1);
+        rows.iter()
+            .map(|row| {
+                let row = truncate_to_width(row, inner, "…", false);
+                format!("{gutter}{}", t.fg("toolOutput", &row))
+            })
+            .collect()
+    }
+}
+
+/// The result slot of an Agent call: the live tail for its run, or the result
+/// text once settled. The run is the one the partial named, or else the one
+/// this call dispatched (a background call's placeholder names none).
+fn agent_result(
+    result: &ToolResultView<'_>,
+    options: ToolRenderResultOptions,
+    ctx: &mut ToolRenderContext<'_>,
+) -> ComponentHandle {
+    let run = result
+        .details
+        .get("poolTaskId")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| run_for_tool_call(ctx.tool_call_id));
+    let view = LiveTail {
+        run,
+        fallback: result_text(result.content),
+        partial: options.is_partial,
+    };
+    if view.is_live() {
+        ctx.state.insert(LIVE_KEY.into(), Value::Bool(true));
+    } else {
+        ctx.state.remove(LIVE_KEY);
+    }
+    Rc::new(RefCell::new(view))
+}
+
 pub fn task_definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: Some(Rc::new(|args, _| Ok(text(format_task_call(args))))),
-        render_result: Some(Rc::new(|result, _, _| {
-            Ok(peek_body(result_text(result.content)))
+        render_result: Some(Rc::new(|result, options, ctx| {
+            Ok(agent_result(result, options, ctx))
         })),
     }
 }

@@ -6,6 +6,7 @@
 
 use std::path::Path;
 use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::time::Instant;
 
 use hoocode_ai_types::Model;
 use hoocode_code_models::{resolve_scoped_models, ResolvedScoped};
@@ -14,6 +15,7 @@ use hoocode_code_task_store::{task_store, TaskAgentPatch};
 use serde_json::Value;
 
 use crate::depth::{pool_concurrency_for_depth, ProcessEnv};
+use crate::live::{LiveForwarder, LiveSink};
 use crate::model_categories::CategorySettings;
 use crate::pool::{SubagentPool, SubagentPoolOptions};
 
@@ -30,8 +32,17 @@ struct Instance {
 
 static INSTANCE: LazyLock<Mutex<Instance>> = LazyLock::new(Mutex::default);
 
+/// Where the UI receives live run events (set by the TUI; `None` elsewhere).
+static LIVE_SINK: LazyLock<Mutex<Option<LiveSink>>> = LazyLock::new(Mutex::default);
+
 fn instance() -> MutexGuard<'static, Instance> {
     INSTANCE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Sets (or clears) where live run events go. Read at each event, so it may be
+/// set before or after the pool exists.
+pub fn set_live_sink(sink: Option<LiveSink>) {
+    *LIVE_SINK.lock().unwrap_or_else(|e| e.into_inner()) = sink;
 }
 
 /// `getSubagentSpawnCommand`: this executable, no prefix args.
@@ -134,8 +145,28 @@ fn create_pool(
         ..Default::default()
     });
     wire_progress_to_task_store(&pool);
+    wire_live_events(&pool);
     instance.pool = Some(pool.clone());
     pool
+}
+
+/// Forwards every child event to the live sink (T3.1): the pool's events, run
+/// through [`LiveForwarder`] (text deltas coalesced, a run's end flushed).
+/// `create_pool` calls it; public so a test can attach it to its own pool.
+pub fn wire_live_events(pool: &SubagentPool) {
+    let forwarder = Mutex::new(LiveForwarder::default());
+    pool.on(move |event| {
+        let sink = LIVE_SINK.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let Some(sink) = sink else { return };
+        let pairs = forwarder.lock().unwrap_or_else(|e| e.into_inner()).forward(
+            event,
+            Instant::now(),
+            sink.throttle,
+        );
+        for (task_id, value) in pairs {
+            (sink.send)(task_id, value);
+        }
+    });
 }
 
 /// Live subagent detail on the task panel's roster row (keyed by the pool task

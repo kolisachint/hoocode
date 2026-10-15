@@ -105,6 +105,11 @@ impl Mode {
         let store = self.scheduled_prompts();
         match store.create(&schedule.cron, prompt, schedule.recurring) {
             Ok(task) => {
+                hoocode_code_scheduler::rows::publish_created(
+                    hoocode_code_task_store::task_store(),
+                    &task,
+                    &chrono::Local::now(),
+                );
                 self.show_status(&format!(
                     "Scheduled {} ({}, {}): {}",
                     task.id,
@@ -142,6 +147,11 @@ impl Mode {
     fn delete_scheduled_prompt(&mut self, id: &str) {
         match self.scheduled_prompts().delete(id) {
             Ok(true) => {
+                hoocode_code_scheduler::rows::publish_removed(
+                    hoocode_code_task_store::task_store(),
+                    id,
+                    &self.scheduled_runs,
+                );
                 self.loop_tasks.retain(|(_, known)| known != id);
                 self.show_status(&format!("Deleted {id}."));
             }
@@ -158,6 +168,13 @@ impl Mode {
     fn stop_loops(&mut self) {
         let was_auto = self.auto_loop.is_some();
         self.end_auto_loop(AutoEnd::Stopped);
+        for (_, id) in &self.loop_tasks {
+            hoocode_code_scheduler::rows::publish_removed(
+                hoocode_code_task_store::task_store(),
+                id,
+                &self.scheduled_runs,
+            );
+        }
         let removed = delete_loop_tasks(std::mem::take(&mut self.loop_tasks));
         if removed > 0 {
             self.show_status(&format!(

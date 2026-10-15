@@ -2,6 +2,7 @@
 #![allow(clippy::string_slice)]
 
 mod assistant_message;
+mod attach_view;
 mod background_notice;
 mod bash_execution_width;
 mod custom_message_radar;
@@ -13,6 +14,7 @@ mod message_block_sheets;
 mod selected_row_list;
 mod streaming_segmentation;
 mod subagent_folding;
+mod subagent_live_tail;
 mod support;
 mod task_panel;
 mod theme_block_rendering;

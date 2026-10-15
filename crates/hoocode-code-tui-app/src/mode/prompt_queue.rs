@@ -89,6 +89,9 @@ impl Mode {
     /// back into the prompt ahead of what is typed; `abort` then stops the run.
     pub(super) fn restore_queued_messages_to_editor(&mut self, abort: bool) -> usize {
         let (steering, follow_up) = self.session.clear_queue();
+        // The queue is gone: a scheduled prompt waiting in it will not run.
+        self.scheduled_runs
+            .drop_waiting(task_store(), &chrono::Local::now());
         let mut queued: Vec<String> = steering;
         let mut compaction_follow_up = Vec::new();
         for (text, behavior) in std::mem::take(&mut self.compaction_queue) {

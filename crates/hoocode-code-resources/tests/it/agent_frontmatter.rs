@@ -181,6 +181,14 @@ fn captures_the_background_flag_and_leaves_it_undefined_when_absent() {
 }
 
 #[test]
+fn keeps_background_false_as_a_value_not_an_absence() {
+    let raw = "---\nname: fg\ndescription: An agent that stays in the foreground.\nbackground: false\n---\nbody";
+    let (agent, d) = parse(raw, AgentSource::Project);
+    assert_eq!(agent.unwrap().background, Some(false));
+    assert!(d.is_empty(), "{d:?}");
+}
+
+#[test]
 fn warns_when_background_is_not_a_boolean() {
     let raw = "---\nname: bad-bg\ndescription: Agent with invalid background.\nbackground: yes\n---\nbody";
     let (agent, d) = parse(raw, AgentSource::Project);

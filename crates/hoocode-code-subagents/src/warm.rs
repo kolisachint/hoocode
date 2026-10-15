@@ -579,7 +579,9 @@ impl WarmSubagentPool {
         let mut worker = worker?;
         let timeout = warm_run_timeout(&options.agent_type);
         self.state().in_flight += 1;
-        let outcome = worker.run(prompt, on_activity, timeout).await;
+        // The same child prompt the cold paths build (card 9, 4i).
+        let task = crate::pool::child_prompt(prompt);
+        let outcome = worker.run(&task, on_activity, timeout).await;
         {
             let mut state = self.state();
             state.in_flight = state.in_flight.saturating_sub(1);

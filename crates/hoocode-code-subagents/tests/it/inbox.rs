@@ -43,6 +43,8 @@ fn fail_result(task_id: &str, status: ResultStatus, error: &str) -> TaskResult {
 
 #[tokio::test]
 async fn subagent_inbox_lifecycle() {
+    // The inbox is process-wide: take the same lock the other modules take.
+    let _serial = crate::SERIAL.lock().await;
     let inbox = subagent_inbox();
 
     // allocates monotonic per-agent labels
@@ -147,6 +149,7 @@ async fn subagent_inbox_lifecycle() {
 
 #[tokio::test]
 async fn session_bindings_are_capped_like_records() {
+    let _serial = crate::SERIAL.lock().await;
     let inbox = subagent_inbox();
     inbox.clear();
     // Binding the same label again does not count as a new entry.

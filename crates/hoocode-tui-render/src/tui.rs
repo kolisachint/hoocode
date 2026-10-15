@@ -434,6 +434,18 @@ impl Tui {
             .map(|top| (top, self.scroll_total_lines, self.scroll_view_height()))
     }
 
+    /// Puts the view back where [`Self::get_scroll_position`] said it was: the
+    /// top row of a pinned window, or the tail (`None`). Used when the app
+    /// swaps one transcript for another and back (the attached subagent view).
+    pub fn restore_scroll_top(&mut self, top: Option<i64>) {
+        match top {
+            Some(top) => self.set_scroll_offset(top),
+            None => {
+                self.scroll_to_live();
+            }
+        }
+    }
+
     /// Let the app paint the indicator in its own theme.
     pub fn set_scroll_status_formatter(&mut self, formatter: ScrollStatusFormatter) {
         self.scroll_status_formatter = formatter;

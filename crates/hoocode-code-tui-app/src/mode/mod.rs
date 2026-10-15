@@ -20,6 +20,7 @@ use hoocode_code_media::rich_clipboard::CopyFlavour;
 use hoocode_code_paths::{APP_NAME, VERSION};
 use hoocode_code_settings::{ChromeDensity, EditorBorder, ToolOutputView};
 use hoocode_code_subagents::agent_log::{agent_log, set_terminal_owned_by_tui};
+use hoocode_code_subagents::live::LiveSink;
 use hoocode_code_task_store::task_store;
 use hoocode_code_tool_bash::BashResult;
 use hoocode_code_tui_keybindings::{
@@ -68,6 +69,7 @@ use crate::tips::{
 };
 use crate::wordmark::{build_compact_wordmark, CompactWordmarkOptions, CursorBlink};
 
+mod attach;
 mod auth;
 mod bash;
 mod chrome;
@@ -85,6 +87,7 @@ mod session_op;
 mod session_ops;
 mod settings;
 mod subagents;
+mod task_panel;
 mod transcript;
 mod tree;
 
@@ -168,12 +171,23 @@ enum AppEvent {
     PastedImage(Option<ClipboardImage>),
     /// A `/subagent` run ended: its mode, and its summary or error.
     SubagentDone(String, Result<Option<String>, String>),
+    /// A live event of a subagent run (`hoocode_code_subagents::live`): its pool
+    /// task id, then the child's event (or `{"type": "task_*"}` for a lifecycle step).
+    Subagent(String, serde_json::Value),
+    /// The attached run's transcript was read (or failed), with its run id.
+    AttachLoaded(String, Result<attach::LoadedRun, String>),
+    /// `/agents`'s runs were listed (or failed).
+    AgentRunsListed(Result<Vec<attach::RunRow>, String>),
+    /// The `/agents` picker answered: the run to attach to, if one was chosen.
+    AttachPicked(Option<attach::RunRow>),
     /// A session operation run off the UI thread ended (`session_op.rs`).
     SessionOp(Box<session_op::SessionOpDone>),
     /// Queued messages sent after a compaction failed; they go back.
     CompactionQueueFailed(Vec<(String, StreamingBehavior)>, String),
     /// A message typed while streaming could not be queued.
     QueueError(String),
+    /// A status line from off the UI thread (a subagent cancel's outcome).
+    Status(String),
     /// The `/import` confirm, or the confirm for a stored cwd that is gone, answered.
     ImportAnswer {
         input: String,
@@ -369,6 +383,10 @@ fn expanded_instructions() -> String {
 struct Mode {
     /// The chat transcript and the components that track it (`transcript.rs`).
     transcript: Transcript,
+    /// The attached subagent view, while one is shown (`attach.rs`).
+    attached: Option<attach::Attached>,
+    /// The attached view's header row, above the chat (empty when not attached).
+    attach_slot: Rc<RefCell<Container>>,
     session: AgentSession,
     runtime: tokio::runtime::Handle,
     tui: Tui,
@@ -389,6 +407,8 @@ struct Mode {
     auto_loop: Option<loop_command::LoopRun>,
     /// The scheduled prompts `/loop` created in this session (`/loop stop` removes them).
     loop_tasks: Vec<loop_command::LoopTask>,
+    /// Scheduled prompts fired and not yet finished: their Schedule rows in the task panel.
+    scheduled_runs: hoocode_code_scheduler::Runs,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
     /// A `/plugin` change made while a turn ran: applied when the turn ends (`PromptDone`).
@@ -706,6 +726,8 @@ impl Mode {
         tui.add_child(as_component(&header_container));
         tui.add_child(as_component(&screen_fill));
         tui.set_flex_spacer(Some(screen_fill.clone()));
+        let attach_slot = handle(Container::new());
+        tui.add_child(as_component(&attach_slot));
         tui.add_child(as_component(&chat));
         let pending_messages = handle(Container::new());
         tui.add_child(as_component(&pending_messages));
@@ -749,6 +771,8 @@ impl Mode {
             header,
             cursor_blink,
             transcript: Transcript::new(chat),
+            attached: None,
+            attach_slot,
             status,
             loader: None,
             stream_render_at: None,
@@ -756,6 +780,7 @@ impl Mode {
             scheduler_tick_at: Instant::now() + hoocode_code_scheduler::TICK_INTERVAL,
             auto_loop: None,
             loop_tasks: Vec::new(),
+            scheduled_runs: Default::default(),
             turn_cost_anchor: None,
             turn_stop_reason: None,
             plugin_reload_pending: false,
@@ -828,7 +853,10 @@ impl Mode {
             let terminal = &self.tui.terminal;
             self.size.set((terminal.columns(), terminal.rows()));
         }
+        // Keys reach the screen's components with the view they show on screen.
+        self.show_attached();
         self.tui.accept_event(event);
+        self.show_main();
     }
 
     /// Acts on the watchdog once per loop turn. A hard-limit trip aborts the turn
@@ -971,6 +999,17 @@ impl Mode {
                 .send(AppEvent::Dialog(request))
                 .is_ok()
         })));
+        // Live events of subagent runs (T3.1), throttled to the streaming rate.
+        let tx = Mutex::new(self.tx.clone());
+        hoocode_code_subagents::instance::set_live_sink(Some(LiveSink {
+            throttle: STREAM_RENDER_THROTTLE,
+            send: Arc::new(move |task_id, event| {
+                let _ = tx
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .send(AppEvent::Subagent(task_id, event));
+            }),
+        }));
         self.ask_mcp_trust();
         let tx = self.tx.clone();
         on_theme_change(move || {
@@ -1049,6 +1088,8 @@ impl Mode {
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
             }
+            self.poll_attached_prompt();
+            self.drain_task_panel_events();
             loop {
                 let pending: Vec<Action> = self.actions.borrow_mut().drain(..).collect();
                 if pending.is_empty() {
@@ -1073,7 +1114,13 @@ impl Mode {
                         if self.turn_cost_anchor.is_none() {
                             self.turn_cost_anchor = anchor;
                         }
-                        self.handle_session_event(*event)
+                        // While an attached view is on screen, the session's
+                        // changes are drawn on the next tick, not now.
+                        let dirty = self.dirty.get();
+                        self.handle_session_event(*event);
+                        if self.attached.is_some() {
+                            self.dirty.set(dirty);
+                        }
                     }
                     AppEvent::PromptDone(result) => {
                         // The request has ended (retries and continuations
@@ -1087,6 +1134,13 @@ impl Mode {
                         self.close_open_chain(outcome);
                         self.show_turn_cost();
                         self.settle_dangling_plan_items();
+                        let run_ok =
+                            result.is_ok() && self.turn_stop_reason == Some(StopReason::Stop);
+                        self.scheduled_runs.run_finished(
+                            task_store(),
+                            run_ok,
+                            &chrono::Local::now(),
+                        );
                         self.tips.on_turn_end();
                         self.finish_turn_chime();
                         let failed = result.is_err();
@@ -1138,6 +1192,16 @@ impl Mode {
                     AppEvent::CopyDone(subject, result) => self.finish_copy(&subject, result),
                     AppEvent::PastedImage(image) => self.insert_pasted_image(image),
                     AppEvent::SubagentDone(mode, result) => self.finish_subagent(&mode, result),
+                    AppEvent::Subagent(task_id, event) => {
+                        self.apply_subagent_event(&task_id, event)
+                    }
+                    AppEvent::AttachLoaded(run_id, result) => self.attach_loaded(run_id, result),
+                    AppEvent::AgentRunsListed(result) => self.agent_runs_listed(result),
+                    AppEvent::AttachPicked(row) => {
+                        if let Some(row) = row {
+                            self.attach_run(row.run_id, Some((row.agent_type, row.description)));
+                        }
+                    }
                     AppEvent::SessionOp(done) => self.finish_session_op(*done),
                     AppEvent::CompactionQueueFailed(queued, error) => {
                         self.session.clear_queue();
@@ -1146,6 +1210,7 @@ impl Mode {
                         self.show_error(&error);
                     }
                     AppEvent::QueueError(error) => self.show_error(&error),
+                    AppEvent::Status(message) => self.show_status(&message),
                     AppEvent::ImportAnswer {
                         input,
                         cwd_fallback,
@@ -1191,6 +1256,10 @@ impl Mode {
             }
             if self.last_tool_tick.elapsed() >= Duration::from_secs(1) {
                 self.last_tool_tick = Instant::now();
+                // The attached view is drawn once a second; the session's changes wait for it.
+                if self.attached.is_some() {
+                    self.dirty.set(true);
+                }
                 if self.task_panel.borrow().ticking() {
                     self.dirty.set(true);
                 }
@@ -1237,15 +1306,18 @@ impl Mode {
                 break;
             }
             // Input and resizes this pass, and anything else that changed, render once here.
+            self.show_attached();
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
             }
             self.tui.flush_scheduled_render();
+            self.show_main();
             self.perf.end_iteration(iteration_started);
         }
 
         hoocode_runtime::watchdog::ui_stopped();
         set_dialog_sink(None);
+        hoocode_code_subagents::instance::set_live_sink(None);
         if let Some(picker) = self.picker.take() {
             picker.dispose();
         }

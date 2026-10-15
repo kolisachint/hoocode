@@ -1175,6 +1175,12 @@ impl SettingsManager {
         self.set("enablePluginTools", Some(enabled.into()));
     }
 
+    /// Background shell jobs (`Shell` with `run_in_background`, `ShellOutput`,
+    /// `ShellKill`). Off by default: the schema is unchanged while it is off.
+    pub fn enable_background_shell(&self) -> bool {
+        self.bool_or("enableBackgroundShell", false)
+    }
+
     /// Where an autonomous InstallPlugin puts a plugin; anything but
     /// `"project"` is the user scope.
     pub fn plugin_install_scope(&self) -> PluginInstallScope {

@@ -88,6 +88,7 @@ fn source_str(source: TaskSource) -> &'static str {
     match source {
         TaskSource::Subagent => "subagent",
         TaskSource::Mcp => "mcp",
+        TaskSource::Schedule => "schedule",
     }
 }
 

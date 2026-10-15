@@ -20,7 +20,7 @@ pub enum PermissionPolicy {
 pub fn is_dangerous(tool_name: &str) -> bool {
     matches!(
         tool_name,
-        "Shell" | "Write" | "Edit" | "UninstallPlugin" | "ProposePlugin"
+        "Shell" | "ShellKill" | "Write" | "Edit" | "UninstallPlugin" | "ProposePlugin"
     )
 }
 
@@ -36,6 +36,7 @@ pub fn is_read_only(tool_name: &str) -> bool {
             | "CronList"
             | "SearchPlugins"
             | "ListPlugins"
+            | "ShellOutput"
             | "grep"
             | "find"
             | "ls"
@@ -340,6 +341,37 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn background_shell_tools_ask_for_a_kill_and_only_read_output() {
+        struct Yes;
+        impl PermissionGate for Yes {
+            fn request(&self, _: &AgentToolCall) -> PermissionDecision {
+                PermissionDecision::Grant
+            }
+        }
+        let call = |name: &str| AgentToolCall {
+            id: "1".into(),
+            name: name.into(),
+            arguments: serde_json::json!({}),
+        };
+        assert!(is_read_only("ShellOutput"));
+        assert!(!is_read_only("ShellKill"));
+        assert!(is_dangerous("ShellKill"));
+        // ShellKill asks like Shell: refused with no prompt, granted by one. ShellOutput is
+        // read-only and runs without one.
+        let ask = PolicyPermissionGate::new(PermissionPolicy::Ask, true, None);
+        assert!(matches!(
+            ask.request(&call("ShellKill")),
+            PermissionDecision::Deny { .. }
+        ));
+        assert_eq!(ask.request(&call("ShellOutput")), PermissionDecision::Grant);
+        let prompted = PolicyPermissionGate::ask(std::sync::Arc::new(Yes));
+        assert_eq!(
+            prompted.request(&call("ShellKill")),
+            PermissionDecision::Grant
+        );
     }
 
     #[test]

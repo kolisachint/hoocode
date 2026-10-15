@@ -3,27 +3,23 @@
 use hoocode_code_subagents::events::*;
 use serde_json::{json, Value};
 
+/// T3.1: the parent forwards every event the child writes to the UI, so the
+/// shared set is the forwarded set (it used to be the progress set alone).
 #[test]
-fn parent_progress_forwarding_stays_in_lockstep_with_the_shared_set() {
-    assert_eq!(FORWARDED_SUBAGENT_EVENTS, SUBAGENT_PROGRESS_EVENTS);
-}
-
-#[test]
-fn the_child_emits_every_event_the_parent_consumes() {
+fn the_parent_forwards_every_event_the_child_writes() {
+    assert_eq!(FORWARDED_SUBAGENT_EVENTS, SUBAGENT_STDOUT_EVENT_TYPES);
     for t in SUBAGENT_PROGRESS_EVENTS {
-        assert!(SUBAGENT_STDOUT_EVENT_TYPES.contains(t));
+        assert!(FORWARDED_SUBAGENT_EVENTS.contains(t));
     }
     assert!(SUBAGENT_STDOUT_EVENT_TYPES.contains(&"message_end"));
 }
 
+/// T3.1: the child keeps assistant text as coalesced `message_update` deltas.
+/// Every other per-delta event is still dropped at the source.
 #[test]
-fn the_child_drops_the_per_delta_firehose_at_the_source() {
-    for t in [
-        "message_start",
-        "message_update",
-        "tool_execution_update",
-        "turn_start",
-    ] {
+fn the_child_drops_the_per_delta_firehose_but_keeps_coalesced_text() {
+    assert!(SUBAGENT_STDOUT_EVENT_TYPES.contains(&"message_update"));
+    for t in ["message_start", "tool_execution_update", "turn_start"] {
         assert!(!SUBAGENT_STDOUT_EVENT_TYPES.contains(&t));
     }
 }
@@ -49,14 +45,12 @@ fn forwards_coarse_lifecycle_events_as_progress() {
 }
 
 #[test]
-fn drops_per_delta_and_large_body_events() {
-    for t in [
-        "message_start",
-        "message_update",
-        "message_end",
-        "tool_execution_update",
-        "turn_start",
-    ] {
+fn forwards_message_update_and_message_end_and_drops_other_per_delta_events() {
+    for t in ["message_update", "message_end"] {
+        let event = json!({"type": t, "foo": 1});
+        assert_eq!(classify_subagent_line(&event.to_string()), progress(event));
+    }
+    for t in ["message_start", "tool_execution_update", "turn_start"] {
         assert_eq!(
             classify_subagent_line(&json!({"type": t}).to_string()),
             SubagentStdoutLine::Ignore
