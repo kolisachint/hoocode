@@ -48,6 +48,24 @@ first.** Don't pick one yourself.
 | Core | this page, "The core plan" | milestones 0a–8 | per the status line below |
 | TUI | [tui-activity.md](tui-activity.md) | T0 goldens · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell. All work by Haiku subagents | T0 done 2026-10-09; T3, T4 and T5 done 2026-10-15 (T5.3 closed T1.3 too) |
 
+## Next session (from 2026-10-15)
+
+Status: **proposed, not confirmed by the user.** Ask the user which item to start with
+before any work. Both plans are open here: say which plan and which step.
+
+| # | Item | Plan | Card | Recommendation |
+|---|---|---|---|---|
+| 1 | Core step 5 follow-up. Thread ceiling missed: 34 threads for 3 s against 26; not profiled which pool spawns the extra threads. Keystroke p99 unstable: one bash run gave 70.6 ms against the 16 ms target, cause unknown | Core | [concurrency.md](concurrency.md) | Profile the thread spawns. Rerun the bash scenario 5 times with `scripts/perf/load_scenario.py` |
+| 2 | Burst frame-build cost (about 100–125 ms rolling p99) is not separated from lane effects (phases 4 and 5). Watchdog stall and starvation probes not run under load | Core | [concurrency.md](concurrency.md) | Separate the burst cost from the lane effects, then run the probes under load. May point to phase 6 |
+| 3 | macOS load run (phase 0) | Core | [concurrency.md](concurrency.md) | User runs it on their Mac |
+| 4 | CI wiring patch not applied (step 0d). The session token lacks workflow scope | Core | [step1-workflows.patch](../../archive/migration/ci/step1-workflows.patch) | User runs `git apply` on the patch and pushes |
+| 5 | T5.3 low items: (a) attach view stops following once the shell exits, even while a background descendant still writes; (b) on a no-pid spawn failure the child is not waited on, so it can stay a zombie | TUI | [tui-activity.md](tui-activity.md) | Track only |
+| 6 | TUI leftovers: N14 exit-time abort (waits on the ordered shutdown); T1.2 handler signature (partial) | TUI | [tui-activity.md](tui-activity.md), [concurrency.md](concurrency.md) §4 | Do the N14 abort with the ordered shutdown. Leave T1.2 until a change touches that code |
+| 7 | Phase S tier Later, L1–L6. L7 stays held until asked | TUI | [tui-activity.md](tui-activity.md) | Do each only when `/perf` shows the cost, or when the file is touched anyway |
+| 8 | Tooling: `cargo nextest` is not installed in the cloud container. Subagents used `cargo test -p` | Core | [build-speed.md](build-speed.md) | Add it to the environment setup |
+
+PR #74 (T5.3 plus the core 4/5 load test) is open and green. It waits for the user's review and merge.
+
 ## The core plan, in priority order
 
 Agreed on 2026-10-08. One milestone at a time; each lands as one or more PRs that

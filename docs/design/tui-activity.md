@@ -11,7 +11,9 @@ This is the **TUI plan**. It runs side by side with the core plan in
 [README.md](README.md); neither is ahead of the other. Before implementing any step, ask the
 user which plan and which step to take next.
 
-## Next session (2026-10-14)
+## Session 2026-10-14 (done)
+
+What comes next: see [Next session (from 2026-10-15)](README.md#next-session-from-2026-10-15) in the core plan README.
 
 Status: **proposed, not confirmed by the user.** Ask which step to start with before any build.
 Haiku subagents implement. The main session orchestrates, briefs and merges.
