@@ -1659,6 +1659,7 @@ dependencies = [
  "hoocode-agent-harness",
  "hoocode-agent-types",
  "hoocode-ai-types",
+ "hoocode-code-task-store",
  "hoocode-code-tool-api",
  "hoocode-runtime",
  "libc",

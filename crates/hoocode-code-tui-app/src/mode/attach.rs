@@ -29,12 +29,15 @@ use hoocode_code_session::{
 };
 use hoocode_code_subagents::live::run_for_tool_call;
 use hoocode_code_subagents::pool::run_is_live;
+use hoocode_code_task_store::{task_store, TaskStatus};
+use hoocode_code_tool_bash::jobs::{follow_log, JobRead, JobState};
 use hoocode_code_tui_widgets::attach_view::{AttachHeader, AttachPrompt};
 use hoocode_code_tui_widgets::AssistantMessageComponent;
 use hoocode_runtime::run_blocking;
 use serde_json::Value;
 
 use super::dialogs::Answer;
+use super::job_tail::{self, JobTail};
 use super::*;
 
 /// The description shown for a run: its first line, cut short.
@@ -60,6 +63,8 @@ pub(super) struct Attached {
     parked_children: Vec<ComponentHandle>,
     /// The session's scroll position, put back on detach.
     main_scroll: Option<i64>,
+    /// Set when the view shows a shell job's output (T5.3), not a run.
+    job: Option<JobTail>,
 }
 
 /// A run's transcript and listing row, read off the UI thread.
@@ -315,6 +320,7 @@ impl Mode {
             parked: Transcript::new(self.transcript.chat.clone()),
             parked_children: Vec::new(),
             main_scroll,
+            job: None,
         });
         self.dirty.set(true);
         let job_id = run_id.clone();
@@ -367,6 +373,142 @@ impl Mode {
             self.apply_child_event(event);
         }
         self.show_main();
+        self.dirty.set(true);
+    }
+
+    /// `Enter` on a shell row (T5.3): attaches to the job's output, shown as
+    /// plain text and followed while the job runs. The same swap as a run, with
+    /// no child events: the output is read by [`Mode::poll_shell_tail`].
+    pub(super) fn attach_job(&mut self, key: String) {
+        if self.attached_to(&key) {
+            return;
+        }
+        let Some(task) = task_store().find_keyed(&key) else {
+            self.show_status("That job's row is gone.");
+            return;
+        };
+        let Some(path) = task.log_path.clone() else {
+            self.show_status("That job has no output file.");
+            return;
+        };
+        self.detach();
+        let header = Rc::new(RefCell::new(AttachHeader::new(
+            "shell",
+            &task.title,
+            &job_tail::state_word(&task),
+        )));
+        let prompt = Rc::new(RefCell::new(AttachPrompt::for_output()));
+        let main_scroll = self.tui.get_scroll_position().map(|(top, _, _)| top);
+        // The output starts at its tail, as a run's view does.
+        self.tui.scroll_to_live();
+        {
+            let mut slot = self.attach_slot.borrow_mut();
+            slot.clear();
+            slot.add_child(as_component(&header));
+        }
+        {
+            let mut slot = self.editor_container.borrow_mut();
+            slot.clear();
+            slot.add_child(as_component(&prompt));
+        }
+        self.tui.set_focus(Some(as_component(&prompt)));
+        let tail = JobTail::new(path);
+        let view = tail.component();
+        self.attached = Some(Attached {
+            run_id: key,
+            shown: None,
+            header,
+            prompt,
+            loaded: true,
+            queued: Vec::new(),
+            child_text: String::new(),
+            main_in: true,
+            parked: Transcript::new(self.transcript.chat.clone()),
+            parked_children: Vec::new(),
+            main_scroll,
+            job: Some(tail),
+        });
+        // The output goes into the attached half, which is shown while the view is up.
+        self.show_attached();
+        self.add_to_chat(view);
+        self.show_main();
+        self.poll_shell_tail();
+    }
+
+    /// Asks the tools pool for the attached job's next output, unless a read is
+    /// already out or the job is settled. Called once a second from the tick.
+    pub(super) fn poll_shell_tail(&mut self) {
+        let Some(attached) = self.attached.as_mut() else {
+            return;
+        };
+        let key = attached.run_id.clone();
+        let Some(tail) = attached.job.as_mut() else {
+            return;
+        };
+        if tail.reading || tail.settled {
+            return;
+        }
+        tail.reading = true;
+        let path = tail.path.clone();
+        let since = tail.since();
+        let running = task_store()
+            .find_keyed(&key)
+            .is_some_and(|t| t.status == TaskStatus::InProgress);
+        let state = if running {
+            JobState::Running
+        } else {
+            JobState::Exited(None)
+        };
+        // The read runs on the tools pool. If the pool cannot run it, the view is
+        // told, so `reading` is cleared and the view does not freeze.
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let result = match run_blocking(move || {
+                follow_log(&path, state, since).map_err(|e| e.to_string())
+            })
+            .await
+            {
+                Ok(result) => result,
+                Err(error) => Err(format!("The job's output could not be read: {error}")),
+            };
+            let _ = tx.send(AppEvent::ShellTail(key, since, result));
+        });
+    }
+
+    /// A read of the attached job's output came back: its text is added, and the
+    /// header shows the row's state. A read that failed says why, and the view
+    /// stops following. `since` is the position the read started from: a read
+    /// from an earlier position (the view was detached and attached again while
+    /// it was out) is dropped, so no text is shown twice. A read for a job no
+    /// longer attached is dropped too.
+    pub(super) fn shell_tail_read(
+        &mut self,
+        key: String,
+        since: Option<u64>,
+        result: Result<JobRead, String>,
+    ) {
+        if !self.attached_to(&key) {
+            return;
+        }
+        let row = task_store().find_keyed(&key);
+        let finished = row
+            .as_ref()
+            .is_none_or(|task| task.status != TaskStatus::InProgress);
+        if let (Some(attached), Some(task)) = (self.attached.as_ref(), row.as_ref()) {
+            attached
+                .header
+                .borrow_mut()
+                .set_state(&job_tail::state_word(task));
+        }
+        if let Some(tail) = self.attached.as_mut().and_then(|a| a.job.as_mut()) {
+            if tail.accepts(since) {
+                tail.reading = false;
+                match result {
+                    Ok(read) => tail.apply(read, finished),
+                    Err(message) => tail.fail(&message),
+                }
+            }
+        }
         self.dirty.set(true);
     }
 

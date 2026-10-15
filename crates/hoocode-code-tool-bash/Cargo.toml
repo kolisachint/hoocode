@@ -20,6 +20,7 @@ doctest = false
 hoocode-agent-harness = { workspace = true }
 hoocode-agent-types = { workspace = true }
 hoocode-ai-types = { workspace = true }
+hoocode-code-task-store = { workspace = true }
 hoocode-code-tool-api = { workspace = true }
 hoocode-runtime = { workspace = true }
 process-wrap = { version = "10", default-features = false, features = ["tokio1", "process-group", "job-object"] }

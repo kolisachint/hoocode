@@ -5,6 +5,7 @@
 //! inside [`TaskStore::batch`] notify once, when the outermost batch ends.
 //! Listeners run outside the store's lock, so they may read the store.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -44,6 +45,8 @@ pub enum TaskSource {
     Mcp,
     /// A scheduled job (`/loop`, the Cron tools).
     Schedule,
+    /// A background shell job (`Shell` with `run_in_background`).
+    Shell,
 }
 
 /// An action a row offers the panel (Enter or `x` on the row). The producer
@@ -52,7 +55,7 @@ pub enum TaskSource {
 pub enum RowAction {
     /// Log in to an MCP server that needs a login (`/mcp login <server>`).
     Login,
-    /// Cancel an in-flight MCP call.
+    /// Cancel an in-flight MCP call, or stop a running shell job.
     Abort,
 }
 
@@ -60,7 +63,8 @@ pub enum RowAction {
 pub type ActionNotifier = Arc<dyn Fn(String) + Send + Sync>;
 
 /// Performs the [`RowAction`]s of the rows a producer owns. `key` is the row's
-/// stable key ([`Task::key`]). Called off the store's lock.
+/// stable key ([`Task::key`]). Called off the store's lock, and on the UI
+/// thread for a panel key, so it must not block.
 pub trait RowActions: Send + Sync {
     fn perform(&self, key: &str, action: RowAction, notify: ActionNotifier) -> Result<(), String>;
 }
@@ -159,6 +163,9 @@ pub struct Task {
     pub next_at: Option<u64>,
     /// The action the panel can offer on this row, if any.
     pub action: Option<RowAction>,
+    /// The file a row's output is written to (a shell job's log), so a view
+    /// can read it without asking the producer.
+    pub log_path: Option<PathBuf>,
 }
 
 /// `CreateTaskOptions`.
@@ -171,6 +178,8 @@ pub struct CreateTaskOptions {
     pub linked_task_id: Option<u64>,
     /// The row's stable key (see [`Task::key`]).
     pub key: Option<String>,
+    /// The row's output file (see [`Task::log_path`]).
+    pub log_path: Option<PathBuf>,
 }
 
 /// `TaskPatch`: `None` leaves a field alone, except `note`, where
@@ -220,7 +229,7 @@ pub fn task_owner_id(agent: Option<&str>, source: Option<TaskSource>) -> String 
     }
 }
 
-/// What a task row stands for in the task panel. Shell rows come with T5.
+/// What a task row stands for in the task panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskKind {
     /// The main agent's own TodoWrite plan item.
@@ -231,6 +240,8 @@ pub enum TaskKind {
     Mcp,
     /// A scheduled job: its fire, run and finish, and its next run.
     Schedule,
+    /// A background shell job: running, exited or killed.
+    Shell,
 }
 
 impl Task {
@@ -251,6 +262,7 @@ impl Task {
             Some(TaskSource::Subagent) => TaskKind::Subagent,
             Some(TaskSource::Mcp) => TaskKind::Mcp,
             Some(TaskSource::Schedule) => TaskKind::Schedule,
+            Some(TaskSource::Shell) => TaskKind::Shell,
             None => TaskKind::Plan,
         }
     }
@@ -266,7 +278,8 @@ struct State {
     mutation_count: u64,
     listeners: Vec<(u64, Listener)>,
     next_listener: u64,
-    row_actions: Option<Arc<dyn RowActions>>,
+    /// The handler of each key prefix, in registration order.
+    row_actions: Vec<(String, Arc<dyn RowActions>)>,
 }
 
 /// `TaskStore`.
@@ -360,7 +373,7 @@ impl TaskStore {
                 mutation_count: 0,
                 listeners: Vec::new(),
                 next_listener: 0,
-                row_actions: None,
+                row_actions: Vec::new(),
             }),
         }
     }
@@ -431,6 +444,7 @@ impl TaskStore {
             key: options.key,
             next_at: None,
             action: None,
+            log_path: options.log_path,
         };
         state.next_id += 1;
         state.tasks.push(task.clone());
@@ -522,6 +536,7 @@ impl TaskStore {
                     key: Some(key.to_owned()),
                     next_at: None,
                     action: None,
+                    log_path: options.log_path,
                 });
                 state.tasks.len() - 1
             }
@@ -580,14 +595,20 @@ impl TaskStore {
             .cloned()
     }
 
-    /// Registers who performs the rows' [`RowAction`]s, replacing any earlier
-    /// one; `None` removes it.
-    pub fn set_row_actions(&self, handler: Option<Arc<dyn RowActions>>) {
-        self.lock().row_actions = handler;
+    /// Registers who performs the [`RowAction`]s of the rows whose key starts
+    /// with `prefix`, replacing the handler of that prefix; `None` removes it.
+    /// Each producer owns its own prefix (`mcp-`, `shell:`).
+    pub fn set_row_actions(&self, prefix: &str, handler: Option<Arc<dyn RowActions>>) {
+        let mut state = self.lock();
+        state.row_actions.retain(|(p, _)| p != prefix);
+        if let Some(handler) = handler {
+            state.row_actions.push((prefix.to_owned(), handler));
+        }
     }
 
     /// Performs `action` on row `id`. Errors when the row is gone, does not offer
-    /// `action`, or no handler is registered. The handler runs off the store's lock.
+    /// `action`, or no handler is registered for its key. The handler runs off
+    /// the store's lock.
     pub fn perform(
         &self,
         id: u64,
@@ -610,7 +631,9 @@ impl TaskStore {
                 .ok_or_else(|| "That row has no key.".to_owned())?;
             let handler = state
                 .row_actions
-                .clone()
+                .iter()
+                .find(|(prefix, _)| key.starts_with(prefix.as_str()))
+                .map(|(_, handler)| handler.clone())
                 .ok_or_else(|| "Nothing performs that action.".to_owned())?;
             (key, handler)
         };
@@ -824,6 +847,74 @@ mod tests {
     }
 
     #[test]
+    fn a_shell_row_is_a_shell_kind_and_keeps_its_log_path() {
+        let store = TaskStore::new();
+        let row = store.upsert_keyed(
+            "shell:job-1",
+            "sleep 9",
+            CreateTaskOptions {
+                source: Some(TaskSource::Shell),
+                key: Some("shell:job-1".into()),
+                log_path: Some(PathBuf::from("/s/jobs/job-1.log")),
+                ..Default::default()
+            },
+            TaskPatch {
+                status: Some(TaskStatus::InProgress),
+                ..Default::default()
+            },
+        );
+        assert_eq!(row.kind(), TaskKind::Shell);
+        assert!(!row.is_plan_item());
+        let found = store.find_keyed("shell:job-1").expect("row");
+        assert_eq!(found.log_path, Some(PathBuf::from("/s/jobs/job-1.log")));
+        assert_eq!(found.status, TaskStatus::InProgress);
+    }
+
+    #[test]
+    fn a_row_action_goes_to_the_handler_that_owns_the_key_prefix() {
+        struct Named(&'static str, Mutex<Vec<String>>);
+        impl RowActions for Named {
+            fn perform(
+                &self,
+                key: &str,
+                _action: RowAction,
+                _notify: ActionNotifier,
+            ) -> Result<(), String> {
+                self.1.lock().unwrap().push(format!("{}:{key}", self.0));
+                Ok(())
+            }
+        }
+        let store = TaskStore::new();
+        let mcp = Arc::new(Named("mcp", Mutex::new(Vec::new())));
+        let shell = Arc::new(Named("shell", Mutex::new(Vec::new())));
+        store.set_row_actions("mcp-", Some(mcp.clone()));
+        store.set_row_actions("shell:", Some(shell.clone()));
+        let notify: ActionNotifier = Arc::new(|_| {});
+        for key in ["mcp-call:1", "shell:job-2"] {
+            store.upsert_keyed(
+                key,
+                "row",
+                CreateTaskOptions::default(),
+                TaskPatch {
+                    action: Some(Some(RowAction::Abort)),
+                    ..Default::default()
+                },
+            );
+            let id = store.find_keyed(key).unwrap().id;
+            store.perform(id, RowAction::Abort, notify.clone()).unwrap();
+        }
+        assert_eq!(*mcp.1.lock().unwrap(), vec!["mcp:mcp-call:1".to_owned()]);
+        assert_eq!(
+            *shell.1.lock().unwrap(),
+            vec!["shell:shell:job-2".to_owned()]
+        );
+        // Removing one prefix leaves the other.
+        store.set_row_actions("shell:", None);
+        let id = store.find_keyed("shell:job-2").unwrap().id;
+        assert!(store.perform(id, RowAction::Abort, notify).is_err());
+    }
+
+    #[test]
     fn kind_follows_the_source_and_defaults_to_plan() {
         assert_eq!(task(CreateTaskOptions::default()).kind(), TaskKind::Plan);
         let run = task(CreateTaskOptions {
@@ -974,7 +1065,7 @@ mod tests {
             calls: Mutex::new(Vec::new()),
             result: Ok(()),
         });
-        store.set_row_actions(Some(recorder.clone()));
+        store.set_row_actions("mcp-", Some(recorder.clone()));
         store.upsert_keyed(
             "mcp-call:7",
             "echo",
@@ -1004,7 +1095,7 @@ mod tests {
         // A removed row is gone; with no handler, nothing performs the action.
         store.remove_keyed("mcp-call:7");
         assert!(store.perform(id, RowAction::Abort, notify.clone()).is_err());
-        store.set_row_actions(None);
+        store.set_row_actions("mcp-", None);
         store.upsert_keyed(
             "mcp-call:8",
             "echo",

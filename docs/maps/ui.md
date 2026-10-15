@@ -24,7 +24,7 @@ update this page in the same commit.
 | Transcript scroll-back view | scroll view | `hoocode-code-tui-app/src/scroll_view.rs` |
 | Startup banner | wordmark | `hoocode-code-tui-app/src/wordmark.rs` |
 | Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
-| Task panel: tabs Plan · Agents · MCP (a tab shows while it has rows), a count per tab; focused (Ctrl+G) it takes the keys in [Task panel](#task-panel) | task panel | `code-tui-widgets/src/task_panel.rs` (tabs, rows, keys); focus and events in `hoocode-code-tui-app/src/mode/task_panel.rs` |
+| Task panel: tabs Plan · Agents · Shell · Schedule · MCP (a tab shows while it has rows), a count per tab; focused (Ctrl+G) it takes the keys in [Task panel](#task-panel) | task panel | `code-tui-widgets/src/task_panel.rs` (tabs, rows, keys); focus and events in `hoocode-code-tui-app/src/mode/task_panel.rs` |
 | Notification band | notification panel, tips, startup update notice | `hoocode-code-tui-app/src/notification_panel.rs`, `tips.rs`; the update notice is polled by `poll_update_notice` in `mode/events.rs` from `hoocode-code-update` |
 | Completion bell (`chimeOnTurnComplete`): one `\x07` when a turn over 10 s ends (not after an abort) or when `AskUserQuestion` opens (not MCP elicitation forms); repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` (pure timing, `TurnTimer` set at prompt submit); rung by `ring_chime` and `finish_turn_chime` in `mode/events.rs`, and at the `AskOptions` dialog in `mode/mod.rs` when its request has `chime` set (`dialog_bridge.rs`) |
 | Progress bar | progress bar, startup progress | `hoocode-code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
@@ -58,7 +58,7 @@ update this page in the same commit.
 | Tool | File |
 |---|---|
 | `Shell` | `bash.rs` |
-| `ShellOutput`, `ShellKill` (opt-in) | none: the default block (no renderer yet; T5.3 adds the Shell tab) |
+| `ShellOutput`, `ShellKill` (opt-in) | none: the default block. Their jobs show in the Shell tab (T5.3) |
 | `Read` (and skills) | `read.rs` |
 | `Edit` | `edit.rs` |
 | `Write` | `write.rs` |
@@ -164,7 +164,7 @@ A key that is not a scroll key un-pins at the prompt, then does its usual job.
 
 ## Task panel
 
-One tab per kind of task: **Plan** (TodoWrite items, each linked run nested under its item), **Agents** (the subagent forest), **Schedule** (scheduled jobs, one row each, with `next in …`), **MCP** (MCP servers and calls). A tab shows only while it has rows. Unfocused, the panel shows the current tab's rows and one count per tab on the strip (`Plan 1/3  Agents 1/1`). Adding a kind means a `TaskPanelView` variant, its label, and a rule in `lens_rows`. Shell goes in with T5.
+One tab per kind of task: **Plan** (TodoWrite items, each linked run nested under its item), **Agents** (the subagent forest), **Schedule** (scheduled jobs, one row each, with `next in …`), **Shell** (background shell jobs, one row each: running with Abort, then done, failed with its exit status, or killed; the rows are `shell:<id>`, published by `hoocode-code-tool-bash` `jobs.rs`), **MCP** (MCP servers and calls). A tab shows only while it has rows. Unfocused, the panel shows the current tab's rows and one count per tab on the strip (`Plan 1/3  Agents 1/1`). Adding a kind means a `TaskPanelView` variant, its label, and a rule in `lens_rows`.
 
 | Concern | Where |
 |---|---|
@@ -179,15 +179,23 @@ One tab per kind of task: **Plan** (TodoWrite items, each linked run nested unde
 | `app.panel.focus` (Ctrl+G) | Back to the prompt (a toggle) |
 | `app.panel.nextTab` (Tab) / `app.panel.prevTab` (Shift+Tab) | Next / previous tab with rows (wraps) |
 | `app.panel.up` / `app.panel.down` (arrows) | Pick the row above / below (ends clamp). The pick is kept by row id across rebuilds |
-| `app.panel.open` (Enter) | A row with an action (MCP server `Login`) queues `Perform`, which `TaskStore::perform` runs (`/mcp login` path). A subagent row queues `Open`, which attaches to its run (`attach_run`, T3.3). Other rows do nothing on Enter |
-| `app.panel.cancel` (`x`) | First press arms the row (the right column says `press x again to cancel`). Second: an Abort row (MCP call) queues `Perform(Abort)`; a running subagent run queues `Cancel`, through `SubagentPool::cancel`. Other rows ignore it. Any other key disarms |
+| `app.panel.open` (Enter) | A row with an action (MCP server `Login`) queues `Perform`, which `TaskStore::perform` runs (`/mcp login` path). A subagent row queues `Open`, which attaches to its run (`attach_run`, T3.3). A shell row queues `Open`, which attaches to the job's output (`attach_job`, T5.3). Other rows do nothing on Enter |
+| `app.panel.cancel` (`x`) | First press arms the row (the right column says `press x again to cancel`). Second: an Abort row (MCP call, running shell job) queues `Perform(Abort)`; a running subagent run queues `Cancel`, through `SubagentPool::cancel`. Other rows ignore it. Any other key disarms |
 | `app.panel.exit` (Esc) | Disarms a pending cancel, else back to the prompt |
 
 **Scroll and density.** Focus shows the strip even with one tab, the pick marker `›`, and a hint line, and shows full rows even in the summary density.
 
-## Attached view (subagent transcript)
+## Attached view (subagent transcript or shell output)
 
-Attach shows one subagent run's transcript on the chat area, read-only, with the header row above it and the prompt's place taken by a hint. Esc goes back, and the session's transcript and scroll come back as they were. Ctrl+C and Ctrl+D go back too (the view takes the keyboard). A session switch (`/new`, `/resume`, `/fork`, `/import`, `/cd`) detaches first (`take_session_runtime`).
+Attach shows one subagent run's transcript, or one shell job's output (T5.3), on the chat area, read-only, with the header row above it and the prompt's place taken by a hint. Esc goes back, and the session's transcript and scroll come back as they were. Ctrl+C and Ctrl+D go back too (the view takes the keyboard). A session switch (`/new`, `/resume`, `/fork`, `/import`, `/cd`) detaches first (`take_session_runtime`).
+
+**Shell output (T5.3).** Enter on a Shell row shows the job's log (`<session>/jobs/<id>.log`): the last 32 KiB at first, as plain text (escape sequences and carriage returns dropped), then followed once a second on the tools pool while the job runs. Once the job has ended and its log is read to the end, the view stops polling. The header reads `◂ shell · <command> · running | done | exit N | killed · Esc back`; the hint says it is a shell job's output. A read that started from an earlier position is dropped, so no text shows twice. Each tick's read (`jobs.rs` `follow_log`) catches up to the end of the log in bounded chunks (up to 256 KiB a tick); a follower more than 64 KiB behind skips to the tail, and the view marks the gap (`… output skipped`). Files: `mode/job_tail.rs` (`JobTail`, the view's text and `accepts`, `state_word`), `mode/attach.rs` (`attach_job`, `poll_shell_tail`, `shell_tail_read`), `hoocode-code-tool-bash` `jobs.rs` (`follow_log`, `read_log`). Off the UI thread: the read runs on the tools pool and returns as `AppEvent::ShellTail`; if the pool cannot run it, the view gets the error and stops following instead of freezing.
+
+**Where the output goes.** A job's stdout and stderr are the log file itself (no pipe), so the job keeps writing after hoocode exits (Leave running). The log is created new (`create_new`), so a job never appends to an older job's log of the same number.
+
+## Quit with shell jobs running (T5.3)
+
+A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs running asks once: "N background shell job(s) still running. Quit?" with **Kill all** (the default) and **Leave running**. Kill all signals each job's process group (`jobs::kill_all_jobs`) before the app exits. Esc keeps the app open, and the next quit asks again. A quit asked again while the prompt is up does nothing. Files: `mode/task_panel.rs` (`QuitJobs`, `ready_to_quit`, `quit_jobs_answered`); the event loop in `mode/mod.rs` `run` asks `ready_to_quit` where it used to break on `exit_requested`.
 
 | Concern | Where |
 |---|---|
