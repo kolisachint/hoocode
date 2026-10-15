@@ -11,6 +11,10 @@ This is the **TUI plan**. It runs side by side with the core plan in
 [README.md](README.md); neither is ahead of the other. Before implementing any step, ask the
 user which plan and which step to take next.
 
+## Session 2026-10-15 (done)
+
+Leftover 6 (panic hook, [concurrency.md](concurrency.md) section 4, Panics) is built. **2026-10-15:** the hook is installed on the UI thread in `code-tui-app` `mode/mod.rs` before the terminal starts. A UI-thread panic restores the terminal once (the emergency restore sequence, safe to repeat), flushes the session (bounded, 1 s) and logs to the debug log with a backtrace; a panic on another thread is logged with its thread name and does not touch the terminal; every panic then chains to the previous hook. Code: `tui-terminal` `panic_hook.rs`; tests: unit test of the thread rule and restore-once, and `tests/it/panic_hook.rs` with real panics (restore once, chain, log content). Panic strategy is unchanged. Done bar: fmt, clippy `-D warnings` and nextest on `hoocode-tui-terminal` and `hoocode-code-tui-app` (401 tests) pass.
+
 ## Session 2026-10-14 (done)
 
 What comes next: see [Next session (from 2026-10-15)](README.md#next-session-from-2026-10-15) in the core plan README.
