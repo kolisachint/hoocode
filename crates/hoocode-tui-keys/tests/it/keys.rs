@@ -1,7 +1,8 @@
-//! Case-for-case port of the pin's `packages/tui/test/keys.test.ts`.
+//! Key matching and parsing: `matches_key`, `parse_key` and the printable
+//! decoders, with the Kitty protocol and the Windows Terminal env vars.
 //!
 //! The Kitty protocol flag and the Windows Terminal env vars are process
-//! globals, so every test holds `GLOBALS` (the TS tests run serially).
+//! globals, so every test holds `GLOBALS`.
 
 use hoocode_tui_keys::{
     decode_kitty_printable, decode_printable_key, matches_key, parse_key, set_kitty_protocol_active,

@@ -491,7 +491,9 @@ impl Mode {
             return;
         }
         let row = task_store().find_keyed(&key);
-        let finished = row
+        // The row ends when the shell exits; the view stops only when the output is
+        // closed too (a background child can still write, T5.3).
+        let ended = row
             .as_ref()
             .is_none_or(|task| task.status != TaskStatus::InProgress);
         if let (Some(attached), Some(task)) = (self.attached.as_ref(), row.as_ref()) {
@@ -504,7 +506,10 @@ impl Mode {
             if tail.accepts(since) {
                 tail.reading = false;
                 match result {
-                    Ok(read) => tail.apply(read, finished),
+                    Ok(read) => {
+                        let finished = ended && !read.open;
+                        tail.apply(read, finished);
+                    }
                     Err(message) => tail.fail(&message),
                 }
             }

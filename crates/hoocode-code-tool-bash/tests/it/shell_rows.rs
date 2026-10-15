@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use hoocode_code_task_store::{
     ActionNotifier, RowAction, Task, TaskKind, TaskSource, TaskStatus, TaskStore,
 };
-use hoocode_code_tool_bash::jobs::{follow_log, read_log, JobState};
+use hoocode_code_tool_bash::jobs::{follow_log, output_open, read_log, JobState};
 use hoocode_code_tool_bash::{get_shell_env, JobRegistry, LocalBashOperations};
 
 const WAIT: Duration = Duration::from_secs(15);
@@ -263,4 +263,48 @@ fn a_follower_catches_up_within_one_call_and_skips_ahead_when_far_behind() {
     let read = follow_log(&path, JobState::Running, Some(0)).expect("follow");
     assert!(read.from > 0, "skipped to the tail: {}", read.from);
     assert_eq!(read.next, read.size, "caught up to the end");
+}
+
+/// T5.3 (review, low): the shell exits, but a background child still writes to
+/// the job's output. The output stays open (and is followed) until that child
+/// is gone, not until the shell exits.
+#[test]
+fn output_written_after_the_shell_exits_is_still_followed() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (jobs, _store) = setup(dir.path());
+    let go = dir.path().join("go");
+    // The shell prints one line and exits. Its child waits for `go`, then prints one more.
+    let command = format!(
+        "echo early; (while [ ! -f '{}' ]; do sleep 0.01; done; echo late) &",
+        go.display()
+    );
+    let info = jobs
+        .spawn(&command, dir.path(), get_shell_env())
+        .expect("spawn");
+    assert!(wait_until(|| jobs
+        .info(&info.id)
+        .is_some_and(|i| !i.state.is_running())));
+
+    // The shell is gone, but the output is still open: the child holds the log.
+    assert_eq!(output_open(&info.log_path), Some(true));
+    let read = follow_log(&info.log_path, JobState::Exited(Some(0)), None).expect("follow");
+    assert!(read.open, "a read after the shell exit still reports open");
+
+    std::fs::write(&go, "").expect("release the child");
+    // Follow until the output reports closed and is read to its end.
+    let mut text = String::new();
+    let mut since = None;
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let read = follow_log(&info.log_path, JobState::Exited(Some(0)), since).expect("follow");
+        text.push_str(&read.text);
+        since = Some(read.next);
+        if !read.open && read.next >= read.size {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the output never closed");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(text, "early\nlate\n", "the late line was followed");
+    assert_eq!(output_open(&info.log_path), Some(false));
 }

@@ -109,6 +109,30 @@ As implemented, `SessionStart` in `.claude/settings.json` runs two commands. The
 warning and exits 0. The second runs `scripts/dev/prune_target.sh --apply --if-over 15 --quiet`
 (see `CLAUDE.md`). The warm-up step in the `SessionStart` row above is not wired yet.
 
+**2026-10-15: warm-up wired.** `SessionStart` now has a third command,
+`bash "$CLAUDE_PROJECT_DIR/scripts/dev/warm_up.sh" || true` (timeout 60). It runs after the prune.
+`scripts/dev/warm_up.sh` does what the row above says:
+- It returns in about 0.1 s. The build runs detached (`setsid nohup`, `nice -n 10`) as
+  `cargo nextest run --workspace --locked --no-run` (or `cargo test --workspace --locked --no-run`
+  when nextest is missing). Output goes to `<target>/warmup.log`, with `<target>` taken from
+  `CARGO_TARGET_DIR` or `<repo>/target`.
+- It is idempotent. A stamp `<target>/.warmup-stamp` holds the `cksum` of `Cargo.lock` plus
+  `rustc -V`. A matching stamp younger than `HOOCODE_WARMUP_MAX_AGE_DAYS` (default 3, the prune's
+  `--days`) means no work. After that, a re-run is cheap because cargo finds the build warm, and it
+  rebuilds whatever the prune removed.
+- It does nothing when cargo is missing, when free space under the target is below
+  `HOOCODE_WARMUP_MIN_FREE_GB` (default 8), when another warm-up holds `<target>/.warmup.lock`, or
+  when `HOOCODE_WARMUP=0`. It always exits 0.
+- Unlike the install step, it is not limited to cloud sessions (`CLAUDE_CODE_REMOTE`). It runs
+  wherever the hook runs and is skipped when the target is already warm. While the background build
+  runs it holds cargo's build lock, so a cargo command in the session waits ("Blocking waiting for
+  file lock") until it finishes. Set `HOOCODE_WARMUP=0` to opt out locally.
+- Checked on 2026-10-15 in the worktree: `bash -n` passes, the hook JSON parses, and the
+  background build started with the foreground call returning in 0.09 s (then killed). The skip
+  paths (warm stamp, low disk, opt-out, cargo missing, lock held) were each confirmed. The
+  nextest branch is not yet exercised, because nextest was not installed in the test container.
+  `shellcheck` was not available, so only `bash -n` was run.
+
 ### 4.2 CI (`.github/workflows/ci.yml`)
 
 - Toolchain read from `rust-toolchain.toml` (today `dtolnay/rust-toolchain@stable` installs

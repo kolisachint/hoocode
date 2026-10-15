@@ -28,6 +28,31 @@ const TICK: Duration = Duration::from_millis(100);
 /// RSS is sampled every this many ticks (once a second).
 const SAMPLE_EVERY_TICKS: u32 = 10;
 
+/// The watchdog's timings as one value, so a test can run the real thread
+/// with short thresholds. [`Thresholds::default`] is the production set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Thresholds {
+    /// See [`UI_LOG_STALL`].
+    pub ui_log_stall: Duration,
+    /// See [`UI_FOOTER_STALL`].
+    pub ui_footer_stall: Duration,
+    /// See [`PROBE_PERIOD`].
+    pub probe_period: Duration,
+    /// See [`PROBE_LATE`].
+    pub probe_late: Duration,
+}
+
+impl Default for Thresholds {
+    fn default() -> Self {
+        Self {
+            ui_log_stall: UI_LOG_STALL,
+            ui_footer_stall: UI_FOOTER_STALL,
+            probe_period: PROBE_PERIOD,
+            probe_late: PROBE_LATE,
+        }
+    }
+}
+
 /// Receives the watchdog's report lines.
 pub type LogSink = Box<dyn Fn(&str) + Send + Sync>;
 
@@ -95,19 +120,40 @@ pub enum StallEvent {
 }
 
 /// Turns heartbeats into stall events. Pure: the caller supplies the clock.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct StallDetector {
     last: Option<(Instant, &'static str)>,
     slow_logged: bool,
     stalled: bool,
+    log_after: Duration,
+    footer_after: Duration,
 }
 
 impl StallDetector {
-    /// A detector that has seen no beat yet.
+    /// A detector with the production thresholds and no beat yet.
     pub fn new() -> Self {
-        Self::default()
+        Self::with_limits(UI_LOG_STALL, UI_FOOTER_STALL)
     }
 
+    /// A detector that logs after `log_after` of silence and flags after `footer_after`.
+    pub fn with_limits(log_after: Duration, footer_after: Duration) -> Self {
+        Self {
+            last: None,
+            slow_logged: false,
+            stalled: false,
+            log_after,
+            footer_after,
+        }
+    }
+}
+
+impl Default for StallDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StallDetector {
     /// Checks the latest beat (`None` when the UI has stopped) at time `now`.
     pub fn check(
         &mut self,
@@ -142,11 +188,11 @@ impl StallDetector {
             return events;
         }
         let silent = now.saturating_duration_since(at);
-        if silent >= UI_LOG_STALL && !self.slow_logged {
+        if silent >= self.log_after && !self.slow_logged {
             self.slow_logged = true;
             events.push(StallEvent::Slow { phase, silent });
         }
-        if silent >= UI_FOOTER_STALL && !self.stalled {
+        if silent >= self.footer_after && !self.stalled {
             self.stalled = true;
             events.push(StallEvent::Stalled { phase, silent });
         }
@@ -183,22 +229,29 @@ pub async fn run_starvation_probe(
     }
 }
 
-/// Starts the watchdog thread and the io starvation probe. Idempotent: later
-/// calls do nothing. Memory limits are read from [`memory::configured_memory_limits`]
-/// on every sample, so settings applied later take effect.
+/// Starts the watchdog thread and the io starvation probe with the production
+/// [`Thresholds`]. Idempotent: later calls do nothing. Memory limits are read
+/// from [`memory::configured_memory_limits`] on every sample, so settings
+/// applied later take effect.
 pub fn start() -> io::Result<()> {
+    start_with(Thresholds::default())
+}
+
+/// [`start`] with explicit thresholds. Idempotent: only the first call starts
+/// anything, so its thresholds are the ones in force for the process.
+pub fn start_with(thresholds: Thresholds) -> io::Result<()> {
     if STARTED.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
     let guard = MemoryGuard::new(Box::new(memory::process_rss_bytes));
-    let spawned = spawn_named_thread(WATCHDOG_THREAD, move || run(guard));
+    let spawned = spawn_named_thread(WATCHDOG_THREAD, move || run(guard, thresholds));
     if let Err(error) = spawned {
         STARTED.store(false, Ordering::SeqCst);
         return Err(error);
     }
     io_handle().spawn(run_starvation_probe(
-        PROBE_PERIOD,
-        PROBE_LATE,
+        thresholds.probe_period,
+        thresholds.probe_late,
         None,
         |late| {
             report(&format!(
@@ -210,8 +263,9 @@ pub fn start() -> io::Result<()> {
     Ok(())
 }
 
-fn run(mut memory: MemoryGuard) {
-    let mut detector = StallDetector::new();
+fn run(mut memory: MemoryGuard, thresholds: Thresholds) {
+    let mut detector =
+        StallDetector::with_limits(thresholds.ui_log_stall, thresholds.ui_footer_stall);
     let mut ticks: u32 = 0;
     loop {
         std::thread::sleep(TICK);

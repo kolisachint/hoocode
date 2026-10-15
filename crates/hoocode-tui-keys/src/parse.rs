@@ -54,45 +54,29 @@ fn format_parsed_key(
         base_layout_key.unwrap_or(identity_codepoint)
     };
 
-    let key_name = if effective_codepoint == codepoints::ESCAPE {
-        "escape".to_string()
-    } else if effective_codepoint == codepoints::TAB {
-        "tab".to_string()
-    } else if effective_codepoint == codepoints::ENTER
-        || effective_codepoint == codepoints::KP_ENTER
-    {
-        "enter".to_string()
-    } else if effective_codepoint == codepoints::SPACE {
-        "space".to_string()
-    } else if effective_codepoint == codepoints::BACKSPACE {
-        "backspace".to_string()
-    } else if effective_codepoint == functional_codepoints::DELETE {
-        "delete".to_string()
-    } else if effective_codepoint == functional_codepoints::INSERT {
-        "insert".to_string()
-    } else if effective_codepoint == functional_codepoints::HOME {
-        "home".to_string()
-    } else if effective_codepoint == functional_codepoints::END {
-        "end".to_string()
-    } else if effective_codepoint == functional_codepoints::PAGE_UP {
-        "pageUp".to_string()
-    } else if effective_codepoint == functional_codepoints::PAGE_DOWN {
-        "pageDown".to_string()
-    } else if effective_codepoint == arrow_codepoints::UP {
-        "up".to_string()
-    } else if effective_codepoint == arrow_codepoints::DOWN {
-        "down".to_string()
-    } else if effective_codepoint == arrow_codepoints::LEFT {
-        "left".to_string()
-    } else if effective_codepoint == arrow_codepoints::RIGHT {
-        "right".to_string()
-    } else if (48..=57).contains(&effective_codepoint)
-        || (97..=122).contains(&effective_codepoint)
-        || char::from_u32(effective_codepoint as u32).is_some_and(is_symbol_key)
-    {
-        char::from_u32(effective_codepoint as u32)?.to_string()
-    } else {
-        return None;
+    let key_name: String = match effective_codepoint {
+        codepoints::ESCAPE => "escape".to_string(),
+        codepoints::TAB => "tab".to_string(),
+        codepoints::ENTER | codepoints::KP_ENTER => "enter".to_string(),
+        codepoints::SPACE => "space".to_string(),
+        codepoints::BACKSPACE => "backspace".to_string(),
+        functional_codepoints::DELETE => "delete".to_string(),
+        functional_codepoints::INSERT => "insert".to_string(),
+        functional_codepoints::HOME => "home".to_string(),
+        functional_codepoints::END => "end".to_string(),
+        functional_codepoints::PAGE_UP => "pageUp".to_string(),
+        functional_codepoints::PAGE_DOWN => "pageDown".to_string(),
+        arrow_codepoints::UP => "up".to_string(),
+        arrow_codepoints::DOWN => "down".to_string(),
+        arrow_codepoints::LEFT => "left".to_string(),
+        arrow_codepoints::RIGHT => "right".to_string(),
+        c if (48..=57).contains(&c)
+            || (97..=122).contains(&c)
+            || char::from_u32(c as u32).is_some_and(is_symbol_key) =>
+        {
+            char::from_u32(c as u32)?.to_string()
+        }
+        _ => return None,
     };
 
     format_key_name_with_modifiers(&key_name, modifier)

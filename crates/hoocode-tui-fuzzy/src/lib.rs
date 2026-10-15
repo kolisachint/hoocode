@@ -217,19 +217,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_fuzzy_match_empty_query_matches_everything() {
+    fn empty_query_matches_everything_with_score_zero() {
         let m = fuzzy_match("", "anything");
         assert!(m.matches);
         assert_eq!(m.score, 0.0);
     }
 
     #[test]
-    fn test_fuzzy_match_query_longer_than_text_fails() {
+    fn query_longer_than_text_does_not_match() {
         assert!(!fuzzy_match("abcdef", "abc").matches);
+        assert!(!fuzzy_match("longquery", "short").matches);
     }
 
     #[test]
-    fn test_fuzzy_match_exact_match_is_best() {
+    fn exact_match_scores_best() {
         let exact = fuzzy_match("hello", "hello");
         let partial = fuzzy_match("hello", "hello world");
         assert!(exact.matches);
@@ -238,116 +239,31 @@ mod tests {
             exact.score < partial.score,
             "exact match should score lower (better)"
         );
-    }
-
-    #[test]
-    fn test_fuzzy_match_out_of_order_fails() {
-        assert!(!fuzzy_match("ba", "ab").matches);
-    }
-
-    #[test]
-    fn test_fuzzy_match_non_consecutive_still_matches() {
-        let m = fuzzy_match("fb", "foobar");
-        assert!(m.matches);
-    }
-
-    #[test]
-    fn test_fuzzy_match_word_boundary_scores_better() {
-        // "gs" matches at word-boundary in "get_stuff" (g at start, s after _)
-        // vs a case with no boundary alignment.
-        let boundary = fuzzy_match("gs", "get_stuff");
-        let no_boundary = fuzzy_match("gs", "xgxsx");
-        assert!(boundary.matches && no_boundary.matches);
-        assert!(boundary.score < no_boundary.score);
-    }
-
-    #[test]
-    fn test_fuzzy_match_case_insensitive() {
-        assert!(fuzzy_match("HELLO", "hello world").matches);
-    }
-
-    #[test]
-    fn test_fuzzy_match_swapped_alpha_digit() {
-        // "2v" should still match text ordered "v2" via the swap fallback.
-        let m = fuzzy_match("2v", "v2-model");
-        assert!(m.matches);
-    }
-
-    #[test]
-    fn test_fuzzy_filter_empty_query_returns_all() {
-        let items = vec!["a", "b", "c"];
-        let result = fuzzy_filter(&items, "", |s| s.to_string());
-        assert_eq!(result, items);
-    }
-
-    #[test]
-    fn test_fuzzy_filter_sorts_best_matches_first() {
-        let items = vec!["xylophone", "hello", "help"];
-        let result = fuzzy_filter(&items, "hel", |s| s.to_string());
-        assert_eq!(result, vec!["hello", "help"]);
-    }
-
-    #[test]
-    fn test_fuzzy_filter_multi_token_requires_all_match() {
-        let items = vec!["foo bar", "foo baz", "qux"];
-        let result = fuzzy_filter(&items, "foo bar", |s| s.to_string());
-        assert_eq!(result, vec!["foo bar"]);
-    }
-
-    #[test]
-    fn test_fuzzy_filter_excludes_non_matches() {
-        let items = vec!["apple", "banana"];
-        let result = fuzzy_filter(&items, "xyz", |s| s.to_string());
-        assert!(result.is_empty());
-    }
-}
-
-/// Case-for-case port of `packages/tui/test/fuzzy.test.ts`.
-#[cfg(test)]
-mod fuzzy_test_ts {
-    use super::*;
-
-    #[test]
-    fn empty_query_matches_everything_with_score_0() {
-        let r = fuzzy_match("", "anything");
-        assert!(r.matches);
-        assert_eq!(r.score, 0.0);
-    }
-
-    #[test]
-    fn query_longer_than_text_does_not_match() {
-        assert!(!fuzzy_match("longquery", "short").matches);
-    }
-
-    #[test]
-    fn exact_match_has_good_score() {
-        let r = fuzzy_match("test", "test");
-        assert!(r.matches);
-        assert!(r.score < 0.0);
+        let test = fuzzy_match("test", "test");
+        assert!(test.matches);
+        assert!(test.score < 0.0);
     }
 
     #[test]
     fn characters_must_appear_in_order() {
-        assert!(fuzzy_match("abc", "aXbXc").matches);
+        assert!(!fuzzy_match("ba", "ab").matches);
         assert!(!fuzzy_match("abc", "cba").matches);
+        assert!(fuzzy_match("abc", "aXbXc").matches);
     }
 
     #[test]
-    fn case_insensitive_matching() {
-        assert!(fuzzy_match("ABC", "abc").matches);
-        assert!(fuzzy_match("abc", "ABC").matches);
-    }
-
-    #[test]
-    fn consecutive_matches_score_better_than_scattered_matches() {
-        let consecutive = fuzzy_match("foo", "foobar");
-        let scattered = fuzzy_match("foo", "f_o_o_bar");
-        assert!(consecutive.matches && scattered.matches);
-        assert!(consecutive.score < scattered.score);
+    fn non_consecutive_characters_still_match() {
+        assert!(fuzzy_match("fb", "foobar").matches);
     }
 
     #[test]
     fn word_boundary_matches_score_better() {
+        // "gs" starts two words in "get_stuff" (g, then s after _).
+        let boundary = fuzzy_match("gs", "get_stuff");
+        let no_boundary = fuzzy_match("gs", "xgxsx");
+        assert!(boundary.matches && no_boundary.matches);
+        assert!(boundary.score < no_boundary.score);
+
         let at = fuzzy_match("fb", "foo-bar");
         let not_at = fuzzy_match("fb", "afbx");
         assert!(at.matches && not_at.matches);
@@ -355,37 +271,71 @@ mod fuzzy_test_ts {
     }
 
     #[test]
-    fn matches_swapped_alpha_numeric_tokens() {
+    fn consecutive_matches_score_better_than_scattered() {
+        let consecutive = fuzzy_match("foo", "foobar");
+        let scattered = fuzzy_match("foo", "f_o_o_bar");
+        assert!(consecutive.matches && scattered.matches);
+        assert!(consecutive.score < scattered.score);
+    }
+
+    #[test]
+    fn matching_is_case_insensitive() {
+        assert!(fuzzy_match("HELLO", "hello world").matches);
+        assert!(fuzzy_match("ABC", "abc").matches);
+        assert!(fuzzy_match("abc", "ABC").matches);
+    }
+
+    #[test]
+    fn swapped_alpha_and_digit_tokens_match() {
+        // "2v" matches "v2" via the swap fallback.
+        assert!(fuzzy_match("2v", "v2-model").matches);
         assert!(fuzzy_match("codex52", "gpt-5.2-codex").matches);
     }
 
     #[test]
-    fn filter_empty_query_returns_all_items_unchanged() {
-        let items = vec!["apple", "banana", "cherry"];
+    fn filter_with_empty_query_returns_all_items_unchanged() {
+        let items = vec!["a", "b", "c"];
         assert_eq!(fuzzy_filter(&items, "", |s| s.to_string()), items);
     }
 
     #[test]
-    fn filter_filters_out_non_matching_items() {
+    fn filter_keeps_only_matching_items() {
         let items = vec!["apple", "banana", "cherry"];
         let r = fuzzy_filter(&items, "an", |s| s.to_string());
         assert!(r.contains(&"banana"));
         assert!(!r.contains(&"apple"));
         assert!(!r.contains(&"cherry"));
+
+        let items = vec!["apple", "banana"];
+        assert!(fuzzy_filter(&items, "xyz", |s| s.to_string()).is_empty());
     }
 
     #[test]
-    fn filter_sorts_results_by_match_quality() {
+    fn filter_sorts_best_matches_first() {
+        let items = vec!["xylophone", "hello", "help"];
+        assert_eq!(
+            fuzzy_filter(&items, "hel", |s| s.to_string()),
+            vec!["hello", "help"]
+        );
         let items = vec!["a_p_p", "app", "application"];
         assert_eq!(fuzzy_filter(&items, "app", |s| s.to_string())[0], "app");
     }
 
     #[test]
-    fn filter_prioritizes_exact_matches_over_longer_prefix_matches() {
+    fn filter_prioritizes_exact_match_over_longer_prefix_match() {
         let items = vec!["clone", "cl"];
         assert_eq!(
             fuzzy_filter(&items, "cl", |s| s.to_string()),
             vec!["cl", "clone"]
+        );
+    }
+
+    #[test]
+    fn filter_multi_token_requires_all_tokens() {
+        let items = vec!["foo bar", "foo baz", "qux"];
+        assert_eq!(
+            fuzzy_filter(&items, "foo bar", |s| s.to_string()),
+            vec!["foo bar"]
         );
     }
 
@@ -399,7 +349,7 @@ mod fuzzy_test_ts {
     }
 
     #[test]
-    fn test_fuzzy_query_scores_like_fuzzy_match() {
+    fn fuzzy_query_scores_like_fuzzy_match() {
         for (query, text) in [
             ("hello", "hello world"),
             ("2V", "v2-model"),

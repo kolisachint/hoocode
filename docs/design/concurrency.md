@@ -54,6 +54,7 @@ The parts already run in parallel, but nothing bounds or orders them.
 | **Memory limits are on by default.** | Off by default leaves the freeze this card exists to stop. |
 | **Four settings, everything else fixed** (§3). | Fewer ways to misconfigure. |
 | **Numbers are visible**: `/perf` and `--perf-log <file>`. | For the load test and for bug reports. |
+| **The `hoocode-io` blocking pool stays uncapped** (tokio's default, 512 threads). Decided 2026-10-15. | A cap can deadlock. An Agent tool body holds a slot while it waits for a child whose `wait()` is queued behind it, and the MCP tool body shares the pool. The load run peaked at 11 threads from this pool, so the thread ceiling does not need a cap. Revisit only after the child `wait()` and the Agent body are async. |
 
 ## What we build
 
@@ -69,11 +70,15 @@ The parts already run in parallel, but nothing bounds or orders them.
 | `hoocode-tools` pool | up to 16 threads | Medium | Sync tool bodies (read, edit, write, grep, find, compaction token counting). |
 | `hoocode-bg` | 1 thread, own `current_thread` runtime | Low | Housekeeping: prune old dispatch dirs and temp files, session list index, version check, file watchers, future search indexing. |
 | `hoocode-watchdog` | 1, mostly asleep | High | Heartbeats, stall reports, RSS sampling, limit enforcement. |
+| `hoocode-perf` | 1, always in the interactive TUI | None: normal priority | Once a second reads `/proc` (RSS, threads) and takes the UI's latest counters, and appends a JSON line to `--perf-log` when set. Started by `Perf::new`, so it runs without `/perf` or the log. Stops when the UI drops it. (`code-tui-app` `perf.rs`) |
+| `hoocode-resize` | 1: a SIGWINCH listener on Unix; a size poll every 100 ms on Windows, or if the listener fails to start | None: normal priority | Calls the resize handler when the terminal size changes. Started and stopped with the terminal: the listener ends when its watch is dropped, the poll on the stop flag. (`tui-terminal` `lib.rs`; the listener is `hoocode-runtime` `watch_sigwinch`) |
+| `autocomplete-files` | 1 per `@`-completion provider, made at mode start and again on session switch and settings change | None: normal priority | Runs the in-process `@file` walk for the newest query; older queued queries are skipped. Idle between queries. Exits when its provider is replaced or dropped, after any walk in progress. (`tui-components` `autocomplete/file_search.rs`) |
 | Subagents | child processes, 5 (2 nested), as today | Low | Unchanged pool; children start with 2 workers and lowered priority. |
 | `Shell` commands | child processes | Medium | Pipes read by async tasks on `hoocode-io`, not by 3 threads each. |
 
-Steady state is about 10 threads per process; the ceiling under load is about 26.
-Today it is unbounded.
+Steady state is about 13 threads per process: the 10 steady threads above, plus
+`hoocode-perf`, `hoocode-resize` and `autocomplete-files`, which the rows above list.
+The ceiling under load is about 26. Today it is unbounded.
 
 ### 2. Lanes and OS priority
 
@@ -119,6 +124,7 @@ Start values; Phase 0's load test tunes them. Only these four are settings:
 | Process memory, soft | lower of 2 GiB and 25% of RAM | Shed load (below) | `performance.memorySoftLimitMb` |
 | Process memory, hard | lower of 4 GiB and 50% of RAM | Abort the turn, flush session, show a notice | `performance.memoryHardLimitMb` |
 | Subagent child memory | 2 GiB each | Lifeguard reap: SIGUSR1 (stall), SIGTERM (deadline), grace, SIGKILL | — |
+| `hoocode-io` blocking pool (`spawn_blocking`: child `wait()`, Agent and MCP tool bodies) | Uncapped (tokio default, 512). **Decided 2026-10-15: stays uncapped**, see Decisions | — | — |
 
 Shedding at the soft limit: no new subagent dispatches, parallel tools drop to 1,
 render caches are cleared, and the footer shows a warning. It lifts once memory is
@@ -145,7 +151,7 @@ one call at a time.
 | UI stall detection | The UI loop bumps a heartbeat and records its current phase. No beat for 500 ms: the watchdog logs the phase; for 2 s: the footer says so. |
 | Runtime starvation detection | The watchdog schedules a probe task every second. Late by >250 ms: log which lane is starved. |
 | Emergency exit | Ctrl+C twice within 1 s while the UI is stalled: the input thread restores the terminal, flushes the session (with a 1 s deadline) and exits 130. |
-| Panics | A panic on any hoocode thread is logged with the thread name. On the UI thread the panic hook restores the terminal and flushes the session. Tool panics stay errors (today). **Status 2026-10-15: the hook is not built** (no `panic::set_hook` exists). A panic in a shutdown step is caught and reported as `Failed`, and the terminal restore still runs. |
+| Panics | A panic on any hoocode thread is logged with the thread name. On the UI thread the panic hook restores the terminal and flushes the session. Tool panics stay errors (today). **Status 2026-10-15: built** (`code-tui-app` `mode/mod.rs` `install_panic_hook`, before the terminal starts; the hook is `tui-terminal` `panic_hook.rs`). A UI-thread panic restores the terminal once (`interrupt::restore_terminal`), flushes the session on a helper thread with a 1 s bound (the hook can run while the panicking thread holds the session writer's lock), and logs the thread, location, message and a forced backtrace to the debug log (always written, not only under `DEBUG_AGENT_LOG`). A panic on any other thread is logged with its thread name and leaves the terminal alone. Every panic then runs the previously installed hook, so the default message still prints. Panic strategy is unchanged (unwind). A panic in a shutdown step is caught and reported as `Failed`, and the terminal restore still runs. **Open:** the default hook still prints a non-UI panic to stderr while the TUI runs, which can draw over a frame; the restore and flush have no test on a real tty. **Open (2026-10-15):** a panic on the input thread (`hoocode-input`, `tui-terminal` `stdin_hub.rs`) only logs. The reader is started once (`READER.call_once`), so it is not restarted, and keys stop reaching the UI. Not fixed; no code changed for this item. |
 | Ordered shutdown, 3 s total | Abort agent → kill tool process groups → flush session → close MCP → release session → restore terminal. Each step has its own deadline. **Status 2026-10-15: built** (`runtime` `shutdown.rs`, `run_ordered`; the exit path in `code-tui-app` `mode/shutdown.rs`). Deadlines: abort 0.8 s, kill tool groups 0.1 s, flush 1.0 s, close MCP 0.7 s, release 0.2 s; the terminal restore runs last on the calling thread, in the 0.2 s left of the 3 s. A step past its deadline is logged (`agent_log`) and the next still runs; a panicking step is logged as failed. Tool groups are killed from their own set (`code-tool-bash` `shell.rs`), so background jobs the user chose to leave running survive. The exit-time `block_on` is gone (TUI N14). **Open:** the restore is not timed; MCP close is now 0.7 s, down from 5 s; the Panics row above has no hook. |
 
 ### 5. Measurement
@@ -165,11 +171,11 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 | Phase | Builds | Done when |
 |---|---|---|
 | 0 | `/perf`, load scenario, baseline numbers in this card | Numbers recorded for Linux and macOS. **Linux recorded 2026-10-15** (see the 2026-10-15 run below). **Open:** macOS is not measured. |
-| 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites (the UI-thread `block_on` removal is done under TUI N14 in [tui-activity.md](tui-activity.md), not here) | No runtime built outside the crate; thread ceiling holds in the load test. **Status 2026-10-15: open.** The load run peaked at 34 threads (ceiling 26) for 3 s during the 8-bash and 5-subagent burst, was 24 for the next 9 s, and was 14 to 13 from second 15. **Follow-up 2026-10-15:** the extra threads were the subagent pipe readers (10) and the `hoocode-io` blocking pool (11). The pipe readers are removed (commit b8862c2); the peak is now 24, so the ceiling holds in the load test. Phase stays open: the io blocking pool is still uncapped (see the follow-up section). |
+| 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites (the UI-thread `block_on` removal is done under TUI N14 in [tui-activity.md](tui-activity.md), not here) | No runtime built outside the crate; thread ceiling holds in the load test. **Status 2026-10-15: open.** The load run peaked at 34 threads (ceiling 26) for 3 s during the 8-bash and 5-subagent burst, was 24 for the next 9 s, and was 14 to 13 from second 15. **Follow-up 2026-10-15:** the extra threads were the subagent pipe readers (10) and the `hoocode-io` blocking pool (11). The pipe readers are removed (commit b8862c2); the peak is now 24, so the ceiling holds in the load test. The io blocking pool stays uncapped by decision (Decisions table), so it no longer holds the phase open. Phase stays open: `block_on` still has about 12 non-test call sites (grep, not all checked for inline test code). Runtime builders outside `hoocode-runtime` are gone (grep, non-test code). |
 | 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal. **Status:** parts 1 and 2 landed 2026-10-08; the 2026-10-15 load run is in Baseline (Ctrl+C 30 ms: pass). **Open:** the keystroke p99 passed in the final run but failed in one earlier run of the same bash scenario (70.6 ms, cause not found). **Follow-up 2026-10-15:** five bash runs gave one miss (27.3 ms, started at load average 3.4); the two runs that started under load were repeated and passed. The burst's frame-build cost is the tail (see the follow-up section). |
 | 3 | `hoocode-session-io` with flush barriers | No session file I/O on the UI thread or on `hoocode-io`; kill -9 mid-turn loses at most the unflushed entries of that turn. **Status: writes landed** (`runtime` `session_io.rs`; 4096 entries or 64 MiB, producers wait; barrier at turn end, 1 s flush at dispose; torn last line skipped on read and not glued to the next entry). **Open:** session reads still run on the caller (they first wait for queued writes, up to 1 s), and `create_dir_all` and the `open`/`resume` paths are not yet moved to a lane. |
 | 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test. **Status:** landed; load run 2026-10-15 in Baseline. **Open:** the burst's frame-build cost (rolling p99 about 102 ms for 5 s) is separated in the follow-up: frame build dominates, lanes add little (see the follow-up section); Windows `Shell` priority (process-wrap's JobObject overwrites creation flags); macOS QoS untested. |
-| 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase. **Status:** memory check passes (2026-10-15, Baseline). **Open:** the thread ceiling (34 against 26 before b8862c2; 24 after, the phase 1 item); the key p99 in the burst (see the follow-up); the stall-phase check is not run, and the watchdog probes did not fire under load; the footer cannot show a UI stall while the loop is stuck; macOS child RSS and `sysctl` unverified. |
+| 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase. **Status:** memory check passes (2026-10-15, Baseline). **Open:** the thread ceiling (34 against 26 before b8862c2; 24 after, the phase 1 item); the key p99 in the burst (see the follow-up); the real-TUI stall check is not run (the probes now have a forced control run, 2026-10-15, both fire: see §4); the footer cannot show a UI stall while the loop is stuck; macOS child RSS and `sysctl` unverified. |
 | 6 | Only if Phase 0 shows it: move syntax highlighting and big markdown parses to `hoocode-tools` | Frame build p99 under 8 ms on a 10k-line transcript. **Follow-up 2026-10-15:** the trigger is met. The bash burst's frame build p99 was 98 to 136 ms, against p50 under 1 ms. The cost is the bash block's render. Not started. |
 
 #### Baseline (Phase 0)
@@ -335,12 +341,14 @@ during the load run (`scripts/perf/load_scenario.py --scenario load`, before the
 | Source at the 34-thread peak | Threads | Where it comes from | After the fix |
 |---|---|---|---|
 | Steady threads (main, input, term-out, session-io, bg, watchdog, 4 io workers) | 10 | §1 map | 10 |
-| `perf` sampler, resize poll, `autocomplete-files` | 3 | Not in the §1 map | 3 |
+| `perf` sampler, resize thread, `autocomplete-files` | 3 | Not in the §1 map (now listed there) | 3 |
 | `hoocode-subagent` pipe readers | 10 | `ProcessHandle` in `code-subagents` `runner.rs`: 2 threads per child, 5 children | **0** |
 | `hoocode-io-*` blocking pool, above the 4 workers | 11 | `spawn_blocking` on the io runtime: 5 child `wait()` calls (`runner.rs`), 5 Agent tool bodies and 1 MCP tool body (`agent-loop` `run_tool`) | 11 |
 | **Total** | **34** | | **24** |
 
 - The 11 blocking threads are counted from the code, not sampled one by one. The total matches exactly.
+- The "resize" thread is `hoocode-resize`. On Linux it is the SIGWINCH listener, not a poll, unless the
+  listener failed to start (SIGWINCH replaced the poll on Unix in part 2 of phase 2).
 - No `hoocode-tools` thread was alive in the load run. The 16-thread cap was never reached.
 - The bash-only run peaked at 13 threads and had no blocking-pool threads. Its bash calls return
   quickly and run as background jobs on `hoocode-io`.
@@ -348,10 +356,10 @@ during the load run (`scripts/perf/load_scenario.py --scenario load`, before the
   pipes already are. On Unix no thread is started for them (on Windows tokio reads child pipes on its
   blocking pool, so the saving is Unix-only). A test checks that no pipe thread appears while a child
   runs, and that 4 MiB of output arrives whole. The test fails on the old code (2 threads) and passes now.
-- **Left open (design question, not changed):** tool bodies and child `wait()` calls share the io blocking
-  pool, which has no cap (tokio's default is 512). Capping it now would risk a deadlock: an Agent body holds
-  a slot while it waits for a child whose `wait()` is queued behind it. Moving the waits to async (or to
-  `run_blocking`) comes first.
+- **Decided 2026-10-15: the io blocking pool stays uncapped.** Tool bodies and child `wait()` calls share the
+  pool, which has no cap (tokio's default is 512). A cap would risk a deadlock: an Agent body holds a slot
+  while it waits for a child whose `wait()` is queued behind it. The peak was 11 threads, so the ceiling holds
+  without a cap. See the Decisions table and the §3 caps table.
 
 **2. Keystroke p99, bash scenario, five runs (after the fix).** Whole-run keystroke-to-frame p99, 300 keys
 over 15 s.
@@ -399,10 +407,30 @@ the log on and kept it in a directory that outlives the scenario.
 | io starvation (probe 1 s, late over 250 ms) | `[WATCHDOG] io runtime starved` | No line | No line |
 
 - Both probes stayed silent under these loads. Only `DISPATCH` lines reached the debug log, so the sink works.
-- **No control run:** no forced stall or starvation was built to show that the probes fire. The "silent" result
-  is therefore not proof they work. Test the probes with a forced stall before relying on them.
 - Ctrl+C in the paused run: 36 ms, PASS (target 500 ms).
 - **Points to phase 6?** Yes, for the frame build. The probes do not show lane starvation under these loads.
+
+**Control run (2026-10-15): both probes fire when forced.** The silence above was not proof either way until this
+run. It drives the production wiring (the `hoocode-watchdog` thread and the io probe that `start` spawns, through
+`watchdog::start_with`) with short thresholds: UI log 50 ms, footer 150 ms, probe period 20 ms, probe late 50 ms
+(production: 500 ms, 2 s, 1 s, 250 ms). File: `crates/hoocode-runtime/tests/it/watchdog_forced.rs`.
+
+| Probe | Forced fault | Test | Result |
+|---|---|---|---|
+| UI stall | A thread beats `ui-loop:wait`, then blocks without beating | `a_forced_ui_stall_fires_the_slow_log_the_footer_flag_and_the_recovery` | Logs `UI loop silent` once and `UI stalled` once, both with the phase; footer flag up; `UI loop resumed` and flag down on resume. PASS |
+| io starvation | Every io worker is held for 400 ms | `a_forced_io_starvation_fires_the_starvation_probe` | Logs `io runtime starved`. PASS |
+
+- **No probe bug found, so no fix was needed.** The earlier silence is therefore a real absence: no loop stall
+  of 500 ms (perf `stalls` 0) and no io worker starvation under those loads.
+- **The control is not vacuous.** Disabling the footer threshold fails the stall test, and disabling the probe's
+  late threshold fails the starvation test (both time out at 5 s).
+- **Stable:** 25 of 25 runs pass, about 0.4 s per run. The whole `hoocode-runtime` suite passes (58 integration tests).
+- **Limit found (not fixed, not measured):** the io probe can only see total starvation. Tokio services timers on
+  the other workers, so one busy worker out of `min(4, cores)` should not trip it. Lane starvation short of all
+  workers blocked is therefore invisible to this probe. This follows from Tokio's scheduler and was not tested here.
+- **Not covered:** the TUI path. In the TUI the lines go through `agent_log` and show only with
+  `HOOCODE_DEBUG_AGENT_LOG=1`. The footer flag is the user-visible signal. A real-TUI check with the UI loop paused
+  is still open.
 
 **Summary**
 
@@ -411,10 +439,10 @@ the log on and kept it in a directory that outlives the scenario.
 | Thread ceiling (26) | Met after the fix: 24. Cause: subagent pipe readers (10) and the uncapped io blocking pool (11) |
 | Keystroke p99 under 16 ms | Usually met (6 of 7 runs). One run missed, cause unknown |
 | What dominates the burst tail | Frame build of the bash block. Lanes add little or nothing that shows |
-| Probes under load | Silent. No control run, so not proven to work |
+| Probes under load | Silent. Control run 2026-10-15: both probes fire when forced, so the silence means no stall or starvation occurred |
 | Phase 6 | Trigger met. Not started |
 
-Not done: macOS; the io blocking pool cap (a design question); the watchdog control run.
+Not done: macOS; a real-TUI stall check with the UI loop paused. The io blocking pool stays uncapped (decided 2026-10-15).
 
 ## Not doing
 

@@ -551,6 +551,28 @@ impl ToolExecutionComponent {
         )
     }
 
+    /// Runs `render` with this block's render context: its flags, args, call
+    /// id, cwd and renderer state.
+    fn render_with_context<R>(
+        &mut self,
+        last: Option<ComponentHandle>,
+        render: impl FnOnce(&Value, &mut ToolRenderContext<'_>) -> R,
+    ) -> R {
+        let (flags, last) = self.context(last);
+        let args = self.args.clone();
+        let id = self.tool_call_id.clone();
+        let cwd = self.cwd.clone();
+        let mut ctx = flags.borrow(
+            &args,
+            &id,
+            last,
+            &mut self.renderer_state,
+            &mut self.renderer_objects,
+            &cwd,
+        );
+        render(&args, &mut ctx)
+    }
+
     fn update_display(&mut self) {
         // A frozen block's lines are captured; nothing it shows changes now.
         if self.frozen {
@@ -604,19 +626,8 @@ impl ToolExecutionComponent {
                     }
                     Some(render_call) => {
                         let last = self.call_component.clone();
-                        let (flags, last) = self.context(last);
-                        let args = self.args.clone();
-                        let cwd = self.cwd.clone();
-                        let id = self.tool_call_id.clone();
-                        let mut ctx = flags.borrow(
-                            &args,
-                            &id,
-                            last,
-                            &mut self.renderer_state,
-                            &mut self.renderer_objects,
-                            &cwd,
-                        );
-                        let rendered = render_call(&args, &mut ctx);
+                        let rendered =
+                            self.render_with_context(last, |args, ctx| render_call(args, ctx));
                         let component = match rendered {
                             Ok(component) => {
                                 self.call_component = Some(component.clone());
@@ -645,10 +656,6 @@ impl ToolExecutionComponent {
                     Some(render_result) => {
                         let result = self.result.clone().unwrap();
                         let last = self.result_component.clone();
-                        let (flags, last) = self.context(last);
-                        let args = self.args.clone();
-                        let cwd = self.cwd.clone();
-                        let id = self.tool_call_id.clone();
                         // The dial has no stop that opens a result: renderers trim it.
                         let options = ToolRenderResultOptions {
                             expanded: false,
@@ -659,15 +666,9 @@ impl ToolExecutionComponent {
                             details: &result.details,
                             text: &result.memo,
                         };
-                        let mut ctx = flags.borrow(
-                            &args,
-                            &id,
-                            last,
-                            &mut self.renderer_state,
-                            &mut self.renderer_objects,
-                            &cwd,
-                        );
-                        match render_result(&view, options, &mut ctx) {
+                        let rendered = self
+                            .render_with_context(last, |_, ctx| render_result(&view, options, ctx));
+                        match rendered {
                             Ok(component) => {
                                 self.result_component = Some(component.clone());
                                 let component = self.indent_under_signal_row(component);

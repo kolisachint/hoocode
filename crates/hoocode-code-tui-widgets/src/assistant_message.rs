@@ -170,8 +170,6 @@ pub fn segment_streaming_markdown(text: &str) -> Vec<String> {
     }
 }
 
-type ThemeFactory = Rc<dyn Fn() -> MarkdownTheme>;
-
 /// Which Markdown child a block is, across streaming updates: a content block
 /// (text or thinking, by its index), or one chunk of such a block once it is
 /// segmented.
@@ -192,7 +190,7 @@ struct CachedMarkdown {
 pub struct AssistantMessageComponent {
     content: Container,
     thinking_display: ThinkingDisplay,
-    markdown_theme: ThemeFactory,
+    markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
     hidden_thinking_label: String,
     /// Shared with the caller's streaming message, so a delta does not copy it.
     last_message: Option<Rc<AssistantMessage>>,

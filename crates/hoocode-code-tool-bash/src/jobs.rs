@@ -27,6 +27,7 @@ use hoocode_code_task_store::{
 };
 use hoocode_code_tool_api::{node_fs_error, ToolError};
 use hoocode_runtime::io_handle;
+use process_wrap::tokio::ChildWrapper;
 
 use crate::operations::{build_command_with_output, LocalBashOperations};
 use crate::shell::{
@@ -102,6 +103,13 @@ pub struct JobRead {
     /// The log's size when it was read.
     pub size: u64,
     pub state: JobState,
+    /// Whether the job may still write to the log: it runs, or a process of its
+    /// group is alive (see [`output_open`]). Only [`follow_log`] fills in the group
+    /// part; [`read_log`] sets this from the job's state alone. The group is the
+    /// only signal, so a descendant that leaves it (setsid, double fork) is not
+    /// seen, and following can stop while it still writes. A follower stops only
+    /// when this is false and the text is read to its end.
+    pub open: bool,
 }
 
 struct Entry {
@@ -381,6 +389,21 @@ pub fn read_log(path: &Path, state: JobState, since: Option<u64>) -> Result<JobR
         next: from + whole as u64,
         size,
         state,
+        open: state.is_running(),
+    })
+}
+
+/// Whether a job of this process may still write to `log_path`: the job runs,
+/// or a process of its group is still alive. A background descendant can outlive
+/// the shell, so the output stays open after the shell exits (T5.3). `None` when
+/// no job of this process has that log.
+pub fn output_open(log_path: &Path) -> Option<bool> {
+    live_registries().iter().find_map(|shared| {
+        lock(&shared.state)
+            .jobs
+            .iter()
+            .find(|e| e.info.log_path == log_path)
+            .map(|e| e.info.state.is_running() || e.group.is_some())
     })
 }
 
@@ -537,11 +560,18 @@ pub const FOLLOW_LAG_MAX: u64 = 2 * OUTPUT_READ_MAX as u64;
 /// [`FOLLOW_LAG_MAX`] behind starts at the tail instead; the text it skipped is
 /// not returned, and `from` says where the returned text starts.
 pub fn follow_log(path: &Path, state: JobState, since: Option<u64>) -> Result<JobRead, ToolError> {
+    // Asked before the log is read: output that comes after this point is left for
+    // the next read. A job that reports closed has written everything already, as
+    // far as its process group shows: a descendant that left the group is not seen,
+    // so output can still follow after it reports closed.
+    let open = output_open(path).unwrap_or(state.is_running());
+    let state = if open { JobState::Running } else { state };
     let size = std::fs::metadata(path)
         .map(|m| m.len())
         .map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
     let start = since.filter(|offset| size.saturating_sub(*offset) <= FOLLOW_LAG_MAX);
     let mut read = read_log(path, state, start)?;
+    read.open = open;
     for _ in 1..FOLLOW_CHUNKS {
         if read.next >= read.size {
             break;
@@ -632,7 +662,7 @@ async fn run_job(
     // Without a process id there is no group to signal, and killpg(0) would signal
     // this process, so the job is not started.
     let Some(pid) = child.id() else {
-        let _ = child.start_kill();
+        stop_and_reap(&mut *child).await;
         let _ = started.send(Err("spawn: the shell has no process id".into()));
         return;
     };
@@ -688,6 +718,13 @@ async fn run_job(
     }
 }
 
+/// Kills a child that is not going to be used and waits for its exit, so the
+/// process is reaped and no zombie is left behind.
+async fn stop_and_reap(child: &mut dyn ChildWrapper) {
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+}
+
 fn set_group(shared: &Shared, id: &str, group: Option<u32>) {
     if let Some(entry) = lock(&shared.state)
         .jobs
@@ -709,15 +746,56 @@ fn kill_group(pgid: u32) {
     }
 }
 
-/// Whether any process is still in the group `pgid`.
-#[cfg(unix)]
+/// Whether the group `pgid` has a process that is not a zombie. `killpg(pgid, 0)`
+/// also succeeds while only zombies remain (a grandchild reparented to an init
+/// that does not reap), so on Linux the members are read from /proc instead.
+#[cfg(target_os = "linux")]
 fn group_alive(pgid: u32) -> bool {
     let Ok(pgid) = libc::pid_t::try_from(pgid) else {
         return false;
     };
+    proc_group_alive(pgid).unwrap_or_else(|| killpg_alive(pgid))
+}
+
+/// Whether any process is still in the group `pgid`.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn group_alive(pgid: u32) -> bool {
+    libc::pid_t::try_from(pgid).is_ok_and(killpg_alive)
+}
+
+/// `killpg(pgid, 0)`: whether the group exists, zombies included.
+#[cfg(unix)]
+fn killpg_alive(pgid: libc::pid_t) -> bool {
     // SAFETY: signal 0 only checks that the group exists.
     let rc = unsafe { libc::killpg(pgid, 0) };
     rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// Whether a process of group `pgid` that is not a zombie is listed in /proc.
+/// `None` when /proc cannot be read.
+#[cfg(target_os = "linux")]
+fn proc_group_alive(pgid: libc::pid_t) -> Option<bool> {
+    let entries = std::fs::read_dir("/proc").ok()?;
+    let alive = entries.flatten().any(|entry| {
+        std::fs::read_to_string(entry.path().join("stat"))
+            .is_ok_and(|stat| stat_in_live_group(&stat, pgid))
+    });
+    Some(alive)
+}
+
+/// Reads a /proc/<pid>/stat line: whether the process is in group `pgid` and is
+/// not a zombie. The command name (field 2) sits in parentheses and may hold
+/// spaces or `)`, so the fields are read after its last `)`: state is field 3,
+/// pgrp is field 5.
+#[cfg(target_os = "linux")]
+fn stat_in_live_group(stat: &str, pgid: libc::pid_t) -> bool {
+    let Some((_, rest)) = stat.rsplit_once(')') else {
+        return false;
+    };
+    let mut fields = rest.split_whitespace();
+    let state = fields.next();
+    let pgrp = fields.nth(1).and_then(|f| f.parse::<libc::pid_t>().ok());
+    state != Some("Z") && pgrp == Some(pgid)
 }
 
 // Job groups are a unix notion; a Windows job object ends with its shell.
@@ -732,7 +810,7 @@ fn group_alive(_pgid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shell::get_shell_env;
+    use crate::shell::{get_shell_config, get_shell_env};
 
     /// Lives here, not in `tests/it`: [`kill_all_jobs`] reaches every registry of the
     /// process, and the integration tests run jobs of their own in parallel.
@@ -758,5 +836,92 @@ mod tests {
         }
         assert_eq!(jobs.info(&a.id).map(|i| i.state), Some(JobState::Killed));
         assert_eq!(jobs.info(&b.id).map(|i| i.state), Some(JobState::Killed));
+    }
+
+    /// The no-pid branch of `run_job` cannot be reached with a real process, so
+    /// this checks the step it runs: the child is killed and reaped. A zombie
+    /// still answers `kill(pid, 0)`, so the pid being gone shows it was waited on.
+    #[cfg(unix)]
+    #[test]
+    fn a_child_that_is_stopped_before_use_is_reaped() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let config = get_shell_config(None).expect("a shell");
+        // Spawned and stopped on the runtime, as `run_job` does (tokio needs its context).
+        let pid = io_handle().block_on(async {
+            let mut wrap = build_command_with_output(
+                &config.shell,
+                &config.args,
+                "sleep 30",
+                dir.path(),
+                &get_shell_env(),
+                0,
+                (std::process::Stdio::null(), std::process::Stdio::null()),
+            );
+            let mut child = wrap.spawn().expect("spawn");
+            let pid = child.id().expect("a started child has a pid");
+            assert_eq!(unsafe { libc::kill(pid as libc::pid_t, 0) }, 0, "alive");
+            stop_and_reap(&mut *child).await;
+            pid
+        });
+
+        let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        let errno = std::io::Error::last_os_error().raw_os_error();
+        assert_eq!(
+            (rc, errno),
+            (-1, Some(libc::ESRCH)),
+            "the child is reaped, not a zombie"
+        );
+    }
+
+    /// A group whose leader exited but is not waited on has only a zombie left.
+    /// `killpg` still succeeds for it, so [`group_alive`] must read /proc instead.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_group_with_only_a_zombie_is_not_alive() {
+        use std::os::unix::process::CommandExt;
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "exit 0"])
+            .process_group(0)
+            .spawn()
+            .expect("spawn");
+        let pgid = libc::pid_t::try_from(child.id()).expect("pid");
+        let is_zombie = || {
+            std::fs::read_to_string(format!("/proc/{pgid}/stat")).is_ok_and(|stat| {
+                stat.rsplit_once(')')
+                    .and_then(|(_, rest)| rest.split_whitespace().next())
+                    == Some("Z")
+            })
+        };
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !is_zombie() {
+            assert!(Instant::now() < deadline, "the child never became a zombie");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(killpg_alive(pgid), "killpg still sees the zombie");
+        assert!(
+            !group_alive(pgid as u32),
+            "a zombie-only group is not alive"
+        );
+        child.wait().expect("reap");
+    }
+
+    /// A group with a running member is alive until that member exits.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_group_with_a_running_member_is_alive() {
+        use std::os::unix::process::CommandExt;
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "sleep 30"])
+            .process_group(0)
+            .spawn()
+            .expect("spawn");
+        let pgid = child.id();
+        assert!(group_alive(pgid), "the running member is seen");
+        // SAFETY: killpg(2) with a group id and a signal number has no memory effects.
+        unsafe {
+            libc::killpg(libc::pid_t::try_from(pgid).expect("pid"), libc::SIGKILL);
+        }
+        child.wait().expect("reap");
+        assert!(!group_alive(pgid), "the reaped group is gone");
     }
 }
