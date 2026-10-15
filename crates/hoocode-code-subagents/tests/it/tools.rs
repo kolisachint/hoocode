@@ -1536,6 +1536,86 @@ async fn a_partial_run_says_how_to_resume_it() {
     subagent_inbox().clear();
 }
 
+/// A partial run keeps its session, so `resume_task_id` continues it. Checked
+/// with and without a parent session (its transcript sits under `subagents/`).
+async fn a_partial_run_resumes_its_session(parent: Option<PathBuf>) {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    let pool = install_pool(&cwd, session_child(&cwd, "Read half the files", "partial"));
+    let parent_ctx = || ToolContext {
+        session_file: parent.clone(),
+        ..ctx(&cwd)
+    };
+
+    let first = execute(
+        tool.clone(),
+        json!({"description": "Survey", "prompt": "Survey", "subagent_type": "general-purpose", "background": false}),
+        parent_ctx(),
+    )
+    .await
+    .unwrap();
+    let label = resume_label_in(&text(&first)).expect("a partial run names its label");
+    let original = first.details["poolTaskId"].as_str().unwrap().to_string();
+    let session = match &parent {
+        Some(parent) => {
+            hoocode_code_session::subagents_dir(parent).join(format!("{original}.jsonl"))
+        }
+        None => hoocode_code_paths::dispatch_task_dir(&cwd, &original).join("session.jsonl"),
+    };
+    assert!(session.exists(), "a partial run keeps its session");
+
+    let resumed = execute(
+        tool.clone(),
+        json!({"description": "Go on", "prompt": "Finish it", "subagent_type": "general-purpose", "resume_task_id": label, "background": false}),
+        parent_ctx(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !text(&resumed).contains("No resumable session"),
+        "{}",
+        text(&resumed)
+    );
+    let argv = argv_of(&cwd);
+    assert_eq!(
+        argv.iter()
+            .position(|a| a == "--session")
+            .map(|i| PathBuf::from(&argv[i + 1])),
+        Some(session),
+        "the resumed run must append to the partial run's session"
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_partial_run_resumes_its_session_in_the_dispatch_dir() {
+    a_partial_run_resumes_its_session(None).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_partial_run_resumes_its_session_under_the_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    // A real parent session: a header line, so the run can record itself in it.
+    let parent = dir.path().join("parent.jsonl");
+    let header = json!({
+        "type": "session",
+        "version": 3,
+        "id": "parent-partial",
+        "timestamp": "2026-10-15T00:00:00.000Z",
+        "cwd": dir.path().to_string_lossy(),
+    });
+    std::fs::write(&parent, format!("{header}\n")).unwrap();
+    a_partial_run_resumes_its_session(Some(parent)).await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_string_background_false_runs_in_the_foreground() {
     let _serial = SERIAL.lock().await;

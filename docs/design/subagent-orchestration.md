@@ -198,9 +198,11 @@ trial on a real session.
 
 | # | Item | Fix | Fixes | Tag |
 |---|---|---|---|---|
-| 6a | Resume | Keep the dispatch dir when a result is partial. Add a test that `resume_task_id` finds the session. Confirm the bug with a run first | P11 | rust, small |
+| 6a | **Done 2026-10-15, bug not reproduced.** Resume | Keep the dispatch dir when a result is partial. Add a test that `resume_task_id` finds the session. Confirm the bug with a run first | P11 | rust, small |
+
+6a as built: the failing-first test was written, and it passed. A partial run keeps its dispatch dir and its session, with and without a parent session, and `resume_task_id` finds it (`a_partial_run_resumes_its_session_*` in `tests/it/tools.rs`). The settle code does not delete a partial's dir, and no code deletes a clean success's dir either. So no behaviour changed. Not in P11: dispatch dirs older than 24 h, beyond the newest 50, are pruned (`DISPATCH_KEEP`, `DISPATCH_MAX_AGE` in `pool.rs`). That applies to every run, complete or partial, so a resume of an old run can fail. Not changed here.
 | 6b | Eval doc | Re-run `parent_stall_reaped`. Then change `subagent-evals.md:89` and §5 from KNOWN to the measured result. Do not mark a pass without a run | P14 | text, after a run |
-| 6c | Tool wording | "Isolated" fix in §1. Remove the template split in §1 | P12 | text |
+| 6c | **Done 2026-10-15.** Tool wording | "Isolated" fix in §1. Remove the template split in §1 | P12 | text |
 
 ## Not doing
 
