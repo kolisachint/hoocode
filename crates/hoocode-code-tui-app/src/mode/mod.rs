@@ -1359,9 +1359,11 @@ impl Mode {
         }
         self.task_panel.borrow_mut().dispose();
         hoocode_tui_terminal::interrupt::set_hook(None);
-        set_terminal_owned_by_tui(false);
         // Abort, kill tool groups, flush, close MCP, release, then restore the terminal.
-        let reports = shutdown::run(&self.session, || self.tui.stop());
+        let reports = shutdown::run(&self.session, || {
+            set_terminal_owned_by_tui(false);
+            self.tui.stop();
+        });
         for report in reports
             .iter()
             .filter(|r| r.outcome != hoocode_runtime::StepOutcome::Done)

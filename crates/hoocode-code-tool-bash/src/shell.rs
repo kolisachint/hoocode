@@ -161,7 +161,11 @@ pub fn kill_tracked_detached_children() {
 }
 
 /// Remember the process group of a foreground `Shell` call while it runs.
+/// Pid 0 is ignored: `kill(-0)` would signal hoocode's own process group.
 pub fn track_tool_child_pid(pid: u32) {
+    if pid == 0 {
+        return;
+    }
     tracked_in(&TRACKED_TOOL_CHILDREN).insert(pid);
 }
 
@@ -225,6 +229,12 @@ mod tests {
             sanitize_binary_output("a\u{0}b\tc\r\n\u{1f}d\u{fffa}e\u{7f}"),
             "ab\tc\r\nde\u{7f}"
         );
+    }
+
+    #[test]
+    fn tracking_pid_zero_is_a_no_op() {
+        track_tool_child_pid(0);
+        assert!(!tracked_in(&TRACKED_TOOL_CHILDREN).contains(&0));
     }
 
     #[test]
