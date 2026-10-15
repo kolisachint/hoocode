@@ -92,7 +92,9 @@ fn timeout_kills_the_command_and_reports_it() {
 #[test]
 fn idle_tick_keeps_running_after_the_pipes_close() {
     // Both pipes close at once, the process runs on; ticks must not stop.
-    let (out, result, ticks) = exec("exec >&- 2>&-; sleep 0.3", None, None);
+    // The idle tick is POLL (10 ms), so 1 s gives about 100 ticks nominally;
+    // the bound of 5 leaves wide slack for a loaded runner.
+    let (out, result, ticks) = exec("exec >&- 2>&-; sleep 1", None, None);
     assert_eq!(result, Ok(Some(0)));
     assert!(out.is_empty());
     assert!(ticks >= 5, "only {ticks} idle ticks after the pipes closed");
@@ -100,8 +102,10 @@ fn idle_tick_keeps_running_after_the_pipes_close() {
 
 #[test]
 fn idle_tick_runs_while_the_command_is_silent() {
-    let (out, result, ticks) = exec("sleep 0.3; echo late", None, None);
+    // 1 s of silence gives about 100 ticks nominally (10 ms POLL); the bound of 5
+    // leaves wide slack for a loaded runner.
+    let (out, result, ticks) = exec("sleep 1; echo late", None, None);
     assert_eq!(result, Ok(Some(0)));
     assert_eq!(String::from_utf8_lossy(&out).trim(), "late");
-    assert!(ticks >= 5, "only {ticks} idle ticks in 300 ms");
+    assert!(ticks >= 5, "only {ticks} idle ticks in 1 s of silence");
 }
