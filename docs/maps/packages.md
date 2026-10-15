@@ -69,7 +69,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | Permissions and modes | `code-permissions`, `code-modes` |
 | Themes | `code-tui-theme` |
 | Key bindings | `code-tui-keybindings` (app), `tui-keys` (parsing) |
-| Threads, the io runtime, `run_blocking`, channel caps, parallel-tool cap | `runtime` (`runtime.rs`, `threads.rs`, `limits.rs`); the only crate that builds runtimes, threads or channels ([concurrency.md](../design/concurrency.md)) |
+| Threads, the io runtime, `run_blocking`, channel caps, parallel-tool cap, the ordered shutdown (`run_ordered`, timed steps) | `runtime` (`runtime.rs`, `threads.rs`, `limits.rs`, `shutdown.rs`; the exit path's steps are in `code-tui-app` `mode/shutdown.rs`); the only crate that builds runtimes, threads or channels ([concurrency.md](../design/concurrency.md)) |
 | `performance.*` settings | `code-settings` (`manager.rs` getters), caps in `runtime` (`limits.rs`) |
 
 ## All crates

@@ -195,7 +195,7 @@ Attach shows one subagent run's transcript, or one shell job's output (T5.3), on
 
 ## Quit with shell jobs running (T5.3)
 
-A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs running asks once: "N background shell job(s) still running. Quit?" with **Kill all** (the default) and **Leave running**. Kill all signals each job's process group (`jobs::kill_all_jobs`) before the app exits. Esc keeps the app open, and the next quit asks again. A quit asked again while the prompt is up does nothing. Files: `mode/task_panel.rs` (`QuitJobs`, `ready_to_quit`, `quit_jobs_answered`); the event loop in `mode/mod.rs` `run` asks `ready_to_quit` where it used to break on `exit_requested`.
+A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs running asks once: "N background shell job(s) still running. Quit?" with **Kill all** (the default) and **Leave running**. Kill all signals each job's process group (`jobs::kill_all_jobs`) before the app exits. Esc keeps the app open, and the next quit asks again. A quit asked again while the prompt is up does nothing. Files: `mode/task_panel.rs` (`QuitJobs`, `ready_to_quit`, `quit_jobs_answered`); the event loop in `mode/mod.rs` `run` asks `ready_to_quit` where it used to break on `exit_requested`. After the loop, `mode/mod.rs` `run` calls `mode/shutdown.rs` (abort the agent, kill the tool process groups, flush the session, close MCP, release, then restore the terminal; each step has a deadline, concurrency.md §4).
 
 | Concern | Where |
 |---|---|

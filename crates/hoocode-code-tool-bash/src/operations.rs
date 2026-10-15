@@ -18,7 +18,7 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::task::JoinHandle;
 
 use crate::shell::{
-    get_shell_config, get_shell_env, track_detached_child_pid, untrack_detached_child_pid, ShellEnv,
+    get_shell_config, get_shell_env, track_tool_child_pid, untrack_tool_child_pid, ShellEnv,
 };
 
 /// Options for [`BashOperations::exec`].
@@ -239,7 +239,7 @@ async fn run_child(launch: Launch, chunks: mpsc::SyncSender<Vec<u8>>) -> Outcome
         format!("spawn {shell} {code}")
     })?;
     let pid = child.id().unwrap_or_default();
-    track_detached_child_pid(pid);
+    track_tool_child_pid(pid);
 
     let mut readers: Vec<JoinHandle<()>> = Vec::with_capacity(2);
     if let Some(stdout) = child.stdout().take() {
@@ -269,7 +269,7 @@ async fn run_child(launch: Launch, chunks: mpsc::SyncSender<Vec<u8>>) -> Outcome
             Ok(Some(status)) => break status,
             Ok(None) => {}
             Err(e) => {
-                untrack_detached_child_pid(pid);
+                untrack_tool_child_pid(pid);
                 readers.iter().for_each(JoinHandle::abort);
                 return Err(e.into());
             }
@@ -286,7 +286,7 @@ async fn run_child(launch: Launch, chunks: mpsc::SyncSender<Vec<u8>>) -> Outcome
     })
     .await;
     readers.iter().for_each(JoinHandle::abort);
-    untrack_detached_child_pid(pid);
+    untrack_tool_child_pid(pid);
 
     if signal.as_ref().is_some_and(AbortSignal::aborted) {
         return Err("aborted".into());

@@ -87,6 +87,7 @@ mod prompt_queue;
 mod session_op;
 mod session_ops;
 mod settings;
+mod shutdown;
 mod subagents;
 mod task_panel;
 mod transcript;
@@ -1357,18 +1358,19 @@ impl Mode {
             subscription.unsubscribe();
         }
         self.task_panel.borrow_mut().dispose();
-        self.tui.stop();
         hoocode_tui_terminal::interrupt::set_hook(None);
         set_terminal_owned_by_tui(false);
-        let session = self.session.clone();
-        if session.is_streaming() {
-            // TODO(N14): still a UI-thread wait. It runs after the loop, once the
-            // terminal is restored, and must finish before `dispose` flushes the
-            // session. Moving it needs the ordered shutdown in concurrency.md §4
-            // (abort, then flush, each with a deadline).
-            self.runtime.block_on(async move { session.abort().await });
+        // Abort, kill tool groups, flush, close MCP, release, then restore the terminal.
+        let reports = shutdown::run(&self.session, || self.tui.stop());
+        for report in reports
+            .iter()
+            .filter(|r| r.outcome != hoocode_runtime::StepOutcome::Done)
+        {
+            agent_log(&format!(
+                "shutdown: {} {:?} after {:?}",
+                report.name, report.outcome, report.elapsed
+            ));
         }
-        self.session.dispose();
         Ok(())
     }
 }

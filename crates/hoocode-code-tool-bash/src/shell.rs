@@ -130,27 +130,49 @@ pub fn strip_ansi(text: &str) -> String {
     ANSI.replace_all(text, "").into_owned()
 }
 
+/// Process groups of background jobs (`jobs.rs`). The quit prompt decides these.
 static TRACKED_DETACHED_CHILDREN: LazyLock<Mutex<HashSet<u32>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
+/// Process groups of foreground `Shell` calls (`operations.rs`), in flight now.
+static TRACKED_TOOL_CHILDREN: LazyLock<Mutex<HashSet<u32>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
-fn tracked() -> std::sync::MutexGuard<'static, HashSet<u32>> {
-    TRACKED_DETACHED_CHILDREN
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+fn tracked_in(
+    set: &'static LazyLock<Mutex<HashSet<u32>>>,
+) -> std::sync::MutexGuard<'static, HashSet<u32>> {
+    set.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Remember a detached child so shutdown can kill it.
 pub fn track_detached_child_pid(pid: u32) {
-    tracked().insert(pid);
+    tracked_in(&TRACKED_DETACHED_CHILDREN).insert(pid);
 }
 
 pub fn untrack_detached_child_pid(pid: u32) {
-    tracked().remove(&pid);
+    tracked_in(&TRACKED_DETACHED_CHILDREN).remove(&pid);
 }
 
 /// Kill every tracked detached child tree (on SIGHUP/SIGTERM).
 pub fn kill_tracked_detached_children() {
-    let pids: Vec<u32> = tracked().drain().collect();
+    let pids: Vec<u32> = tracked_in(&TRACKED_DETACHED_CHILDREN).drain().collect();
+    for pid in pids {
+        kill_process_tree(pid);
+    }
+}
+
+/// Remember the process group of a foreground `Shell` call while it runs.
+pub fn track_tool_child_pid(pid: u32) {
+    tracked_in(&TRACKED_TOOL_CHILDREN).insert(pid);
+}
+
+pub fn untrack_tool_child_pid(pid: u32) {
+    tracked_in(&TRACKED_TOOL_CHILDREN).remove(&pid);
+}
+
+/// Kill the process group of every `Shell` call still in flight. Background
+/// jobs are not touched: their exit is the quit prompt's choice.
+pub fn kill_tracked_tool_children() {
+    let pids: Vec<u32> = tracked_in(&TRACKED_TOOL_CHILDREN).drain().collect();
     for pid in pids {
         kill_process_tree(pid);
     }
@@ -217,5 +239,40 @@ mod tests {
         if Path::new("/bin/bash").exists() {
             assert_eq!(config.shell, "/bin/bash");
         }
+    }
+
+    /// The shutdown's tool step kills the groups of `Shell` calls in flight and
+    /// leaves background jobs alone (the quit prompt decides those).
+    #[cfg(unix)]
+    #[test]
+    fn kill_tracked_tool_children_leaves_background_jobs_running() {
+        use std::os::unix::process::CommandExt;
+        use std::process::Command;
+
+        let sleeper = || {
+            Command::new("sleep")
+                .arg("30")
+                .process_group(0)
+                .spawn()
+                .expect("sleep starts")
+        };
+        let mut tool = sleeper();
+        let mut job = sleeper();
+        track_tool_child_pid(tool.id());
+        track_detached_child_pid(job.id());
+
+        kill_tracked_tool_children();
+
+        assert!(
+            !tool.wait().expect("tool exits").success(),
+            "tool group killed"
+        );
+        assert!(
+            job.try_wait().expect("job status").is_none(),
+            "a background job is not a tool child"
+        );
+        untrack_detached_child_pid(job.id());
+        kill_process_tree(job.id());
+        let _ = job.wait();
     }
 }

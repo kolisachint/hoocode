@@ -41,7 +41,7 @@ pub use hoocode_agent_mcp::{ElicitationAnswer, ElicitationHandler, ElicitationRe
 pub use hoocode_code_mcp::TrustPrompt;
 
 /// How long [`McpHub::shutdown`] waits for the servers to close.
-const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
+pub const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 /// How long a login waits for the browser to reach the redirect URI.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 /// How long print and rpc wait, before their first prompt, for the trusted servers to finish
@@ -426,6 +426,11 @@ impl McpHub {
 
     /// Stops every connected server. Waits at most a few seconds. Safe to call twice.
     pub fn shutdown(&self) {
+        self.shutdown_within(SHUTDOWN_WAIT);
+    }
+
+    /// [`shutdown`](Self::shutdown) with the wait given by the caller.
+    pub fn shutdown_within(&self, timeout: Duration) {
         let clients: Vec<McpClient> = {
             let mut state = lock(&self.state);
             state.shut_down = true;
@@ -448,7 +453,7 @@ impl McpHub {
             while set.join_next().await.is_some() {}
             let _ = done.send(());
         });
-        let _ = wait.recv_timeout(SHUTDOWN_WAIT);
+        let _ = wait.recv_timeout(timeout);
     }
 
     /// Blocks until no trusted server is still connecting, or `timeout` passes, and returns the

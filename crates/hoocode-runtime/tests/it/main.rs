@@ -5,6 +5,7 @@
 mod lanes;
 mod memory;
 mod session_io;
+mod shutdown;
 mod watchdog;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
