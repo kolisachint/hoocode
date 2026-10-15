@@ -131,7 +131,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1204 / 0 | keep |
 | `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 7103 / 6170 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 865 / 822 | keep |
-| `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 572 / 0 | keep |
+| `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 573 / 0 | keep |
 | `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5760 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1378 | the `hoocode` binary |
 | `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 2 | 2059 / 0 | keep |
@@ -141,15 +141,15 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-modes` | Modes for the hoocode coding agent: ask/plan/build/debug prompts, hoo-config.json, /mode /plan /grill /goal /approve | 3 | 1057 / 1099 | keep |
 | `code-paths` | App identity, config directories and path helpers for the hoocode coding agent | 19 | 1114 / 475 | keep |
 | `code-permissions` | Permission gate for the hoocode coding agent: per-mode tool policy from hoo-config.json and approval prompts | 4 | 354 / 346 | keep |
-| `code-plugins` | Plugins for the hoocode coding agent: loading Agent Plugins 1.0 and Claude plugin layouts (discovery, precedence, folder trust, and the skills, subagents and MCP servers they contribute), and installing them from git marketplaces | 4 | 3821 / 1888 | keep |
+| `code-plugins` | Plugins for the hoocode coding agent: loading Agent Plugins 1.0 and Claude plugin layouts (discovery, precedence, folder trust, and the skills, subagents and MCP servers they contribute), and installing them from git marketplaces | 4 | 3968 / 1962 | keep |
 | `code-print` | Output formatting for the hoocode coding agent | 1 | 298 / 280 | keep |
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 801 / 0 | keep |
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 7 | 4483 / 3055 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1565 / 1046 | keep |
 | `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 1683 / 0 | keep |
-| `code-session` | Session handling for the hoocode coding agent | 6 | 2071 / 647 | keep |
+| `code-session` | Session handling for the hoocode coding agent | 6 | 2119 / 746 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2322 / 1744 | keep |
-| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 9110 / 8742 | keep |
+| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 9152 / 8810 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 5 | 658 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1074 / 125 | keep |
 | `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1792 / 665 | keep |
@@ -163,9 +163,9 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 15163 / 5260 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 15381 / 5260 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 734 / 868 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8070 / 3724 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8143 / 3724 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 5 | 2384 / 2547 | keep |
 | `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 7963 / 5373 | keep |
 
