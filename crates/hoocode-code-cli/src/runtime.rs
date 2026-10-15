@@ -507,7 +507,7 @@ fn subagent_tools(
         );
     }
     let enabled = args.subagent.unwrap_or_else(|| settings.enable_subagent());
-    if light || !depth::can_spawn_subagent(None, &ProcessEnv) || !enabled {
+    if !subagents_allowed(light, enabled, depth::can_spawn_subagent(None, &ProcessEnv)) {
         return Vec::new();
     }
     if !is_subagent_child
@@ -527,6 +527,14 @@ fn subagent_tools(
         hoocode_code_subagents::tools::create_task_tool_definition(cwd),
         hoocode_code_subagents::tools::create_task_output_tool_definition(),
     ]
+}
+
+/// Whether this process gets the Agent and AgentOutput tools, and so the
+/// delegation block in its system prompt. One rule for both (card 9, 4e): off
+/// in light mode, when subagents are disabled, and at the depth cap, where a
+/// child has no Agent tool to delegate with.
+fn subagents_allowed(light: bool, enabled: bool, can_spawn: bool) -> bool {
+    !light && enabled && can_spawn
 }
 
 /// An env flag that is set to exactly `1`.
@@ -772,7 +780,14 @@ fn assemble_session(
         None
     };
     // main.ts: the main-session subagent instructions when subagents are on.
-    let subagents_on = !light && args.subagent.unwrap_or_else(|| settings.enable_subagent());
+    let subagents_on = subagents_allowed(
+        light,
+        args.subagent.unwrap_or_else(|| settings.enable_subagent()),
+        hoocode_code_subagents::depth::can_spawn_subagent(
+            None,
+            &hoocode_code_subagents::depth::ProcessEnv,
+        ),
+    );
     let settings = Arc::new(Mutex::new(settings));
     let resources = resource_loader(args, light, &cwd, &agent_dir, &settings, plugins);
     if subagents_on {
@@ -1899,6 +1914,15 @@ pub fn run_interactive_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_delegation_block_follows_the_agent_tool_gate() {
+        // Light mode, a disabled setting or the depth cap: no Agent tool, so no block.
+        assert!(subagents_allowed(false, true, true));
+        assert!(!subagents_allowed(true, true, true));
+        assert!(!subagents_allowed(false, false, true));
+        assert!(!subagents_allowed(false, true, false));
+    }
 
     #[test]
     fn approval_note_names_only_the_approval_tools_that_ran() {
