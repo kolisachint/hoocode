@@ -69,6 +69,7 @@ use crate::tips::{
 };
 use crate::wordmark::{build_compact_wordmark, CompactWordmarkOptions, CursorBlink};
 
+mod attach;
 mod auth;
 mod bash;
 mod chrome;
@@ -173,6 +174,12 @@ enum AppEvent {
     /// A live event of a subagent run (`hoocode_code_subagents::live`): its pool
     /// task id, then the child's event (or `{"type": "task_*"}` for a lifecycle step).
     Subagent(String, serde_json::Value),
+    /// The attached run's transcript was read (or failed), with its run id.
+    AttachLoaded(String, Result<attach::LoadedRun, String>),
+    /// `/agents`'s runs were listed (or failed).
+    AgentRunsListed(Result<Vec<attach::RunRow>, String>),
+    /// The `/agents` picker answered: the run to attach to, if one was chosen.
+    AttachPicked(Option<attach::RunRow>),
     /// A session operation run off the UI thread ended (`session_op.rs`).
     SessionOp(Box<session_op::SessionOpDone>),
     /// Queued messages sent after a compaction failed; they go back.
@@ -374,6 +381,10 @@ fn expanded_instructions() -> String {
 struct Mode {
     /// The chat transcript and the components that track it (`transcript.rs`).
     transcript: Transcript,
+    /// The attached subagent view, while one is shown (`attach.rs`).
+    attached: Option<attach::Attached>,
+    /// The attached view's header row, above the chat (empty when not attached).
+    attach_slot: Rc<RefCell<Container>>,
     session: AgentSession,
     runtime: tokio::runtime::Handle,
     tui: Tui,
@@ -713,6 +724,8 @@ impl Mode {
         tui.add_child(as_component(&header_container));
         tui.add_child(as_component(&screen_fill));
         tui.set_flex_spacer(Some(screen_fill.clone()));
+        let attach_slot = handle(Container::new());
+        tui.add_child(as_component(&attach_slot));
         tui.add_child(as_component(&chat));
         let pending_messages = handle(Container::new());
         tui.add_child(as_component(&pending_messages));
@@ -756,6 +769,8 @@ impl Mode {
             header,
             cursor_blink,
             transcript: Transcript::new(chat),
+            attached: None,
+            attach_slot,
             status,
             loader: None,
             stream_render_at: None,
@@ -836,7 +851,10 @@ impl Mode {
             let terminal = &self.tui.terminal;
             self.size.set((terminal.columns(), terminal.rows()));
         }
+        // Keys reach the screen's components with the view they show on screen.
+        self.show_attached();
         self.tui.accept_event(event);
+        self.show_main();
     }
 
     /// Acts on the watchdog once per loop turn. A hard-limit trip aborts the turn
@@ -1068,6 +1086,7 @@ impl Mode {
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
             }
+            self.poll_attached_prompt();
             self.drain_task_panel_events();
             loop {
                 let pending: Vec<Action> = self.actions.borrow_mut().drain(..).collect();
@@ -1093,7 +1112,13 @@ impl Mode {
                         if self.turn_cost_anchor.is_none() {
                             self.turn_cost_anchor = anchor;
                         }
-                        self.handle_session_event(*event)
+                        // While an attached view is on screen, the session's
+                        // changes are drawn on the next tick, not now.
+                        let dirty = self.dirty.get();
+                        self.handle_session_event(*event);
+                        if self.attached.is_some() {
+                            self.dirty.set(dirty);
+                        }
                     }
                     AppEvent::PromptDone(result) => {
                         // The request has ended (retries and continuations
@@ -1168,6 +1193,13 @@ impl Mode {
                     AppEvent::Subagent(task_id, event) => {
                         self.apply_subagent_event(&task_id, event)
                     }
+                    AppEvent::AttachLoaded(run_id, result) => self.attach_loaded(run_id, result),
+                    AppEvent::AgentRunsListed(result) => self.agent_runs_listed(result),
+                    AppEvent::AttachPicked(row) => {
+                        if let Some(row) = row {
+                            self.attach_run(row.run_id, Some((row.agent_type, row.description)));
+                        }
+                    }
                     AppEvent::SessionOp(done) => self.finish_session_op(*done),
                     AppEvent::CompactionQueueFailed(queued, error) => {
                         self.session.clear_queue();
@@ -1221,6 +1253,10 @@ impl Mode {
             }
             if self.last_tool_tick.elapsed() >= Duration::from_secs(1) {
                 self.last_tool_tick = Instant::now();
+                // The attached view is drawn once a second; the session's changes wait for it.
+                if self.attached.is_some() {
+                    self.dirty.set(true);
+                }
                 if self.task_panel.borrow().ticking() {
                     self.dirty.set(true);
                 }
@@ -1267,10 +1303,12 @@ impl Mode {
                 break;
             }
             // Input and resizes this pass, and anything else that changed, render once here.
+            self.show_attached();
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
             }
             self.tui.flush_scheduled_render();
+            self.show_main();
             self.perf.end_iteration(iteration_started);
         }
 

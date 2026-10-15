@@ -9,6 +9,7 @@ use regex::Regex;
 /// Live while the prompt editor has focus — the main editor plus every global
 /// action.
 const GLOBAL_SCOPE: &[&str] = &[
+    "app.subagent.attach",
     "tui.editor.cursorUp",
     "tui.editor.cursorDown",
     "tui.editor.cursorLeft",
@@ -137,6 +138,9 @@ const PANEL_SCOPE: &[&str] = &[
     "app.panel.exit",
 ];
 
+/// The attached subagent view (T3.3): Esc goes back, nothing else is live.
+const ATTACHED_SCOPE: &[&str] = &["app.subagent.detach"];
+
 const OPTIONS_SCOPE: &[&str] = &[
     "tui.select.up",
     "tui.select.down",
@@ -168,6 +172,7 @@ const SCOPES: &[(&str, &[&str])] = &[
     ("models picker", MODELS_PICKER_SCOPE),
     ("session tree", TREE_SCOPE),
     ("task panel", PANEL_SCOPE),
+    ("attached view", ATTACHED_SCOPE),
     ("options pane", OPTIONS_SCOPE),
     ("pinned scroll view", SCROLL_SCOPE),
 ];
@@ -562,7 +567,7 @@ fn families() -> Vec<(&'static str, Regex)> {
         ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)"),
         (
             "Overlays",
-            r"^app\.(options\.|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)",
+            r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)",
         ),
     ]
     .into_iter()

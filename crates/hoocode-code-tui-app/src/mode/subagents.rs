@@ -25,7 +25,7 @@ impl Mode {
     }
 
     /// The session file subagents dispatched from here are recorded under.
-    fn parent_session_file(&self) -> Option<std::path::PathBuf> {
+    pub(super) fn parent_session_file(&self) -> Option<std::path::PathBuf> {
         self.session
             .session_manager()
             .session_file()
@@ -129,7 +129,13 @@ impl Mode {
                 block.invalidate();
             }
         }
-        self.dirty.set(true);
+        // The attached view shows the run's own events; the session's blocks
+        // above are not on screen, so they need no render of their own.
+        if self.attached_to(task_id) {
+            self.apply_attached_event(event);
+        } else if self.attached.is_none() {
+            self.dirty.set(true);
+        }
     }
 
     /// Resume an interrupted subagent run from the session picker: the same

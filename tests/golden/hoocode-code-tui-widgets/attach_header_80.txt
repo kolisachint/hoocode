@@ -1,0 +1,3 @@
+◂ explore · Find the footer code · running · Esc back
+--- styles ---
+r0 c0-52 bold

@@ -642,6 +642,22 @@ fn a_press_on_the_thumb_does_nothing() {
 }
 
 #[test]
+fn a_saved_pin_comes_back_after_the_view_followed_the_tail() {
+    // The attached subagent view swaps the transcript: the session's pin is saved, the view
+    // follows its own tail, then the pin is put back where it was.
+    let (mut tui, ..) = setup();
+    tui.scroll_by_lines(-20);
+    let saved = tui.get_scroll_position().map(|(at, _, _)| at);
+    assert!(saved.is_some());
+    tui.scroll_to_live();
+    assert!(!tui.scroll_pinned());
+    tui.restore_scroll_top(saved);
+    assert_eq!(tui.get_scroll_position().map(|(at, _, _)| at), saved);
+    tui.restore_scroll_top(None);
+    assert!(!tui.scroll_pinned());
+}
+
+#[test]
 fn a_press_elsewhere_or_while_live_does_nothing() {
     let (mut tui, _, _) = setup();
     tui.scroll_by_lines(-20);

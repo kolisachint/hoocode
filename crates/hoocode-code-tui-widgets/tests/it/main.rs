@@ -2,6 +2,7 @@
 #![allow(clippy::string_slice)]
 
 mod assistant_message;
+mod attach_view;
 mod background_notice;
 mod bash_execution_width;
 mod custom_message_radar;

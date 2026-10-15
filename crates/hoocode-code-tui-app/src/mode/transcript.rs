@@ -428,7 +428,10 @@ impl Mode {
             &self.transcript.streaming_message,
         ) {
             component.borrow_mut().update_shared(message.clone(), true);
-            self.dirty.set(true);
+            // While an attached view is on screen, the session's text is not drawn.
+            if self.attached.is_none() {
+                self.dirty.set(true);
+            }
         }
     }
 
