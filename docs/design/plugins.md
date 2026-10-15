@@ -37,13 +37,22 @@ Part 3 choices (2026-10-15):
   project proposal waits for `/plugin trust`, as every project plugin does. Agent Plugins 1.0 has
   no subagents, and the loader reads no `agents/` folder in that layout, so a proposal cannot add
   a subagent; the "subagent with write or shell tools" rule has nothing to apply to.
-- **Not done, found while building.** A tool result does not reload the TUI, so skills and MCP
-  servers of a change go live on `/reload` (or the next session). A proposed plugin's record
-  names `ProposePlugin`, which is not a marketplace, so `/plugin update` reports it as no longer
-  listed. The `plugin-authoring` skill still names `UpdatePlugin` and hooks: its tests pin that
-  text (the content hash and the "second hook" guidance), so it is left as it is until someone
-  decides to change it. The `--platform` help text still describes Claude and Copilot layouts for
-  ProposePlugin.
+- **Review 2026-10-15 (step 6 part 3).** Checked against the `--trust` change (6fe94ac):
+  InstallPlugin installs without asking from any marketplace whose record is trusted (the official
+  one, or one added with `--trust`), and refuses the rest; a test now covers a `--trust` install.
+  ProposePlugin rejects traversal in the plugin and skill names, and refuses a folder already
+  there with no record. Subagents: the deny list is in both spawn paths, and a warm worker (no
+  task id) also skips registration because it runs under a subagent depth. Fixed: the permission
+  gate's plugin list named `SuggestPluginInstall` (no such tool) and left out `UninstallPlugin`,
+  so fail-closed rpc mode did not gate uninstall; `/plugin update` now reports a proposed plugin
+  as `Skipped` with the reason, not as no longer listed; the `--platform` help text describes the
+  Agent Plugins layout and says the flag is not implemented yet.
+- **Open, not done.** A tool result does not reload the TUI, so skills and MCP servers of a change
+  go live on `/reload` (or the next session). The `plugin-authoring` skill still names
+  `UpdatePlugin` and hooks: its tests pin that text (the content hash and the "second hook"
+  guidance), so it is left as it is until someone decides to change it. The TUI widget list for
+  plugin tools (`hoocode-code-tui-widgets` `tools/plugins.rs`) still names `SuggestPluginInstall`
+  and does not list `UninstallPlugin`; it is display-only and was not changed in this review.
 
 Part 2 choices (2026-10-14):
 

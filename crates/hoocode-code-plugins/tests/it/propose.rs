@@ -221,6 +221,16 @@ fn names_and_shapes_are_checked_before_anything_is_written() {
         proposal("fine", vec![skill("twin"), skill("twin")], None),
         "listed twice",
     );
+    refuse(
+        proposal("../escape", vec![skill("ok")], None),
+        "plugin name",
+    );
+    refuse(proposal("a/b", vec![skill("ok")], None), "plugin name");
+    refuse(
+        proposal("fine", vec![skill("../escape")], None),
+        "skill name",
+    );
+    refuse(proposal("fine", vec![skill("a/b")], None), "skill name");
     refuse(proposal("fine", Vec::new(), None), "nothing to propose");
     let mut blank = proposal("fine", Vec::new(), Some(Map::new()));
     blank.description = String::new();
@@ -237,6 +247,47 @@ fn a_name_already_installed_in_the_scope_is_refused() {
     propose::propose(&env.paths, &p, Scope::User).unwrap();
     let error = propose::propose(&env.paths, &p, Scope::User).unwrap_err();
     assert!(error.contains("already installed"), "{error}");
+}
+
+#[test]
+fn a_folder_already_there_without_a_record_is_not_overwritten() {
+    let env = Env::new();
+    let hand_placed = env.paths.user_plugins.join("handmade");
+    std::fs::create_dir_all(&hand_placed).unwrap();
+    std::fs::write(hand_placed.join("keep.txt"), "mine").unwrap();
+    let error = propose::propose(
+        &env.paths,
+        &proposal("handmade", vec![skill("help")], None),
+        Scope::User,
+    )
+    .unwrap_err();
+    assert!(error.contains("already installed"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(hand_placed.join("keep.txt")).unwrap(),
+        "mine"
+    );
+    assert!(install::records(&env.paths).unwrap().is_empty());
+}
+
+#[test]
+fn update_skips_a_proposed_plugin_with_a_reason_and_leaves_it_alone() {
+    let env = Env::new();
+    propose::propose(
+        &env.paths,
+        &proposal("written", vec![skill("help")], None),
+        Scope::User,
+    )
+    .unwrap();
+    let outcomes = install::update(&env.paths, None).unwrap();
+    assert_eq!(outcomes.len(), 1, "{outcomes:?}");
+    match &outcomes[0] {
+        install::UpdateOutcome::Skipped { name, reason } => {
+            assert_eq!(name, "written");
+            assert!(reason.contains("ProposePlugin"), "{reason}");
+        }
+        other => panic!("wanted Skipped, got {other:?}"),
+    }
+    assert!(env.paths.user_plugins.join("written/plugin.json").is_file());
 }
 
 #[test]
