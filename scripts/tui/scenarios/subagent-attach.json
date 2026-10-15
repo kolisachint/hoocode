@@ -1,0 +1,164 @@
+{
+  "description": "Interactive: the model delegates to a general-purpose subagent in the foreground, and its answer comes from the mock LLM after a delay. Ctrl+N attaches to the run of the newest Agent block while it runs: the header row names the run and its state, the prompt is replaced by a read-only hint, and the run's answer streams in as it settles. Esc goes back to the session, whose Agent block now holds the answer. Ctrl+N again shows the finished run from its transcript.",
+  "phase": "TUI T3.3/T3.4",
+  "terminal": {
+    "cols": 100,
+    "rows": 30
+  },
+  "settings": {
+    "enableSemanticIndex": false
+  },
+  "args": [
+    "--offline",
+    "--provider",
+    "mock",
+    "--model",
+    "mock-model"
+  ],
+  "llm": [
+    {
+      "text": "",
+      "tool_calls": [
+        {
+          "id": "call_task_1",
+          "name": "Agent",
+          "arguments": {
+            "description": "Compute a product",
+            "prompt": "What is 6 times 7? Reply with the number only.",
+            "subagent_type": "general-purpose",
+            "background": false
+          }
+        }
+      ]
+    },
+    {
+      "text": "42",
+      "delay_s": 6
+    },
+    {
+      "text": "The subagent says 6 times 7 is 42."
+    }
+  ],
+  "steps": [
+    {
+      "wait_for": "❯",
+      "timeout": 30
+    },
+    {
+      "wait_stable": 1.0,
+      "timeout": 20
+    },
+    {
+      "type": "Ask a subagent what 6 times 7 is."
+    },
+    {
+      "keys": ["Enter"]
+    },
+    {
+      "wait_for": "Compute a product",
+      "timeout": 30
+    },
+    {
+      "sleep": 1.0
+    },
+    {
+      "keys": ["C-n"]
+    },
+    {
+      "wait_for": "◂ general-purpose · Compute a product · running",
+      "timeout": 15
+    },
+    {
+      "wait_stable": 1.0,
+      "timeout": 10
+    },
+    {
+      "snapshot": "attached-running",
+      "contains": [
+        "◂ general-purpose · Compute a product · running · Esc back",
+        "Read-only"
+      ],
+      "not_contains": [
+        "The subagent says",
+        "42"
+      ]
+    },
+    {
+      "wait_for": "· complete · Esc back",
+      "timeout": 60
+    },
+    {
+      "wait_stable": 1.0,
+      "timeout": 10
+    },
+    {
+      "snapshot": "attached-done",
+      "contains": [
+        "◂ general-purpose · Compute a product · complete · Esc back",
+        "42",
+        "Read-only"
+      ],
+      "not_contains": [
+        "The subagent says"
+      ]
+    },
+    {
+      "keys": ["Escape"]
+    },
+    {
+      "wait_gone": "◂ general-purpose",
+      "timeout": 10
+    },
+    {
+      "wait_stable": 1.0,
+      "timeout": 10
+    },
+    {
+      "snapshot": "back",
+      "contains": [
+        "The subagent says 6 times 7 is 42."
+      ],
+      "not_contains": [
+        "Read-only"
+      ]
+    },
+    {
+      "type": "/agents"
+    },
+    {
+      "keys": ["Enter"]
+    },
+    {
+      "wait_for": "Subagent runs",
+      "timeout": 10
+    },
+    {
+      "wait_stable": 1.0,
+      "timeout": 10
+    },
+    {
+      "snapshot": "agents-list",
+      "contains": [
+        "general-purpose · complete · What is 6 times 7?"
+      ]
+    },
+    {
+      "keys": ["Enter"]
+    },
+    {
+      "wait_for": "◂ general-purpose · What is 6 times 7\\? Reply with the number only\\. · complete",
+      "timeout": 10
+    },
+    {
+      "wait_stable": 1.0,
+      "timeout": 10
+    },
+    {
+      "snapshot": "reattached",
+      "contains": [
+        "◂ general-purpose · What is 6 times 7? Reply with the number only. · complete · Esc back",
+        "42"
+      ]
+    }
+  ]
+}

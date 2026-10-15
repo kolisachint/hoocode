@@ -260,6 +260,16 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             "Task panel: back to the prompt",
         ),
         entry(
+            "app.subagent.attach",
+            &["ctrl+n"],
+            "Attach to the subagent run of the last Agent block (read-only)",
+        ),
+        entry(
+            "app.subagent.detach",
+            &["escape"],
+            "Back from an attached subagent run to the session",
+        ),
+        entry(
             "app.options.next",
             &["right"],
             "Confirm and advance to the next question",

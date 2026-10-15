@@ -4,7 +4,7 @@
 
 use hoocode_code_permissions::PermissionUi as _;
 use hoocode_code_subagents::instance::get_subagent_pool;
-use hoocode_code_task_store::{task_store, ActionNotifier, RowAction};
+use hoocode_code_task_store::{task_store, ActionNotifier, RowAction, TaskKind};
 use hoocode_code_tui_widgets::task_panel::{PanelEvent, TaskPanelView};
 
 use super::*;
@@ -23,7 +23,7 @@ impl Mode {
 
     /// Back to the prompt. `set_focus` also clears the panel's focus state.
     fn leave_task_panel(&mut self) {
-        self.tui.set_focus(Some(as_component(&self.editor)));
+        self.tui.set_focus(Some(self.prompt_component()));
         self.dirty.set(true);
     }
 
@@ -43,9 +43,27 @@ impl Mode {
         }
     }
 
-    /// Enter on a row. The attach view (T3.3) fills this in; until then the
-    /// panel only moves the pick.
-    fn open_task_panel_row(&mut self, _view: TaskPanelView, _task_id: u64) {}
+    /// Enter on a row. A subagent row attaches to its run (T3.3); other rows
+    /// have nothing to open yet, so Enter does nothing there.
+    fn open_task_panel_row(&mut self, _view: TaskPanelView, task_id: u64) {
+        let run = task_store()
+            .list()
+            .into_iter()
+            .find(|task| task.id == task_id)
+            .filter(|task| task.kind() == TaskKind::Subagent)
+            .and_then(|task| {
+                let shown = (
+                    task.subagent_mode
+                        .clone()
+                        .unwrap_or_else(|| "subagent".into()),
+                    task.title.clone(),
+                );
+                Some((task.agent?, shown))
+            });
+        if let Some((run_id, shown)) = run {
+            self.attach_run(run_id, Some(shown));
+        }
+    }
 
     /// Enter on a row with an action (Login), or `x` twice on an Abort row:
     /// the store hands it to the row's producer. Its text goes to the user as

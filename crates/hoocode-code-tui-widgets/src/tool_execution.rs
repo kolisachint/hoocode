@@ -354,6 +354,11 @@ impl ToolExecutionComponent {
         &self.tool_call_id
     }
 
+    /// The call's arguments as the block shows them.
+    pub fn args(&self) -> &Value {
+        &self.args
+    }
+
     pub fn update_args(&mut self, args: Value) {
         self.args = args;
         self.update_display();

@@ -261,7 +261,7 @@ impl Mode {
         }
     }
 
-    fn handle_agent_event(&mut self, event: AgentEvent) {
+    pub(super) fn handle_agent_event(&mut self, event: AgentEvent) {
         match event {
             AgentEvent::AgentStart => {
                 self.scheduled_runs.run_started(task_store());

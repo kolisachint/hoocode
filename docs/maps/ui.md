@@ -30,6 +30,7 @@ update this page in the same commit.
 | Progress bar | progress bar, startup progress | `hoocode-code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
 | Prompt editor | `CustomEditor` around `Editor` | `mode/input.rs` (`CustomEditor`); `tui-components/src/editor/` |
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
+| Attached subagent view (T3.3): a header row above the chat (`◂ <type> · <description> · <state> · Esc back`), and the prompt's place with a read-only hint; Esc goes back. The chat shows the run's transcript while attached; the session's is parked and kept up to date | attached view | `code-tui-widgets/src/attach_view.rs` (header, hint). The swap, the routing and the run's events: `hoocode-code-tui-app/src/mode/attach.rs`; the header's slot is `Mode::attach_slot` (above the chat) |
 | Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `mode/input.rs` `setup_autocomplete_provider`. `@file` uses the in-process finder `hoocode-code-tools::file_finder`, injected by `mode/input.rs` `at_file_finder` (no `fd`) and run on a worker thread (`autocomplete/file_search.rs`): typing never waits, and the editor re-asks when a walk finishes (`take_ready`). |
 | Footer | footer, footer data. Always two rows: row 1 folder, branch, session, path, then mode chip and view dial; row 2 model, context gauge, tokens, cost. Compact keeps both rows. Transient messages show above the prompt, not in the footer: a warning line (memory shedding, UI stall), extension statuses and startup progress, read with `FooterComponent::transient_lines`. The warning is set by `mode/mod.rs` `sync_runtime_health` | `hoocode-code-tui-app/src/footer.rs`, `footer_data.rs` |
 | Session chip | session chip | `code-tui-widgets/src/session_chip.rs` |
@@ -62,7 +63,7 @@ update this page in the same commit.
 | `Edit` | `edit.rs` |
 | `Write` | `write.rs` |
 | `CodeSearch` | `search.rs` |
-| `Agent`, `AgentOutput` (subagents) | `subagent.rs`. An Agent block's result slot shows its run's live tail (the newest 5 rows, peek) while the run goes, else its result. The tail and the run lookup are `hoocode-code-subagents` `live.rs` (`tail`, `is_running`, `run_for_tool_call`); the block is fed by `mode/subagents.rs` `apply_subagent_event` |
+| `Agent`, `AgentOutput` (subagents) | `subagent.rs`. An Agent block's result slot shows its run's live tail (the newest 5 rows, peek) while the run goes, else its result. The tail and the run lookup are `hoocode-code-subagents` `live.rs` (`tail`, `is_running`, `run_for_tool_call`); the block is fed by `mode/subagents.rs` `apply_subagent_event`. `app.subagent.attach` (Ctrl+N, at the prompt) attaches to the newest Agent block's run (`mode/attach.rs` `attach_newest_agent_block`) |
 | Plugin tools | `plugins.rs` |
 | `WebFetch`, `WebSearch` | `web.rs` (web tools are deferred) |
 | Registry: tool name → renderer | `mod.rs` |
@@ -80,6 +81,7 @@ Every picker moves its cursor with `PickerCursor` (`tui-components/src/picker_cu
 | `/model` | model picker | `model_selector.rs`. A model whose provider's stored OAuth token has expired shows an `expired` marker (`set_expired_providers`, read by `mode/models.rs` `show_model_selector` via `AuthStorage::readiness`; no refresh). |
 | `/scoped-models` | scoped models | `scoped_models_selector.rs`. Loads `scopedModels` (`hoocode-code-tui-app/src/mode/models.rs`, `concrete_scoped_entries`), one row per model with an effort column and a category column, a header line above the rows. Keys: enter toggles, alt+a/alt+x all/clear, alt+g provider, alt+up/alt+down reorder (order is priority), **tab** cycles the row's effort through the model's supported levels then unset, **alt+j** cycles its category none, cheap, fast, standard, capable then none, alt+s saves full entries (`Persist(Vec<ScopedModel>)`, validated first). Alias is kept, not edited. Typing filters the list. |
 | thinking level, theme, `/color` | one-list pickers | `small_selectors.rs`, `framed_list.rs` |
+| `/agents` | subagent runs of this session (running, done, interrupted), one row each; Enter attaches to the chosen run | `show_selector` (`ExtensionSelectorComponent`); the rows are read on the tools pool by `mode/attach.rs` `list_runs`, then `agent_runs_listed` opens the picker and `AppEvent::AttachPicked` attaches |
 | `/resume` | session picker | `session_selector.rs`, `session_selector_search.rs`. Subagent runs (`<session>/subagents/`) are rows under their parent in the threaded view, added by the loaders in `hoocode-code-tui-app/src/session_picker.rs` (`with_subagent_runs`, from `list_subagent_sessions` in `code-session`). A row reads `<type> · <complete\|failed\|…>`, `running` or `interrupted`. A search, or a non-threaded sort, lists the parent rows only. Enter on an `interrupted` run opens a choice: `v` views its transcript, `r` resumes it (`SubagentRunRef` to `pool.resume` in `hoocode-code-tui-app/src/mode/subagents.rs`; in-session picker only), esc backs out. Deleting a session deletes its `subagents/` dir. |
 | `--resume` on the command line | session picker on its own TUI | `hoocode-code-tui-app/src/session_picker.rs` |
 | `/tree` | session tree | `tree_selector.rs` |
@@ -107,6 +109,7 @@ Every picker moves its cursor with `PickerCursor` (`tui-components/src/picker_cu
 | `/chrome`: `/chrome` names the stop; `/chrome full` or `/chrome compact` sets it and saves `chromeDensity`. `bare` is refused with an error that names the two stops. A saved `bare` loads as compact | `handle_chrome_command` in `mode/chrome.rs`; the dial is `hoocode-code-tui-app/src/chrome_layout.rs` |
 | Mode commands (`/mode`, `/plan`, `/grill`, `/goal`, `/approve`) | `code-modes` |
 | `/plugin`: `list`, `marketplace add <src> [--trust]|list|refresh`, `install <name[@marketplace]> [--scope user|project]`, `remove <name> [--scope ...]`, `update [name]`, `trust`. Text blocks, not a picker. A change makes the plugins live (MCP servers restart with the new set, then the `/reload` path), or waits for the turn to end. Its notice shows after that reload | `handle_plugin_command` in `mode/plugin.rs` (`run_plugin_command` is the parser and the work; `reload_plugins`); the work in `code-plugins` `install.rs`, `marketplace.rs` |
+| `/agents`: the subagent runs of this session as a picker (see Pickers); Enter attaches to the run's transcript, read-only (T3.4). Listed on the tools pool (`mode/attach.rs` `open_agent_runs`) | `mode/attach.rs`; the entry is `BuiltinCommand::Agents` in `mode/commands.rs` |
 | `/loop`: scheduled prompts (`/loop "<cron>"` or `<N>m\|h\|d` with a prompt, `once`, `list`, `delete <id>`, `stop`) and `/loop auto [--max-turns N] <task>`. Forms parsed in `code-scheduler` `loop_command.rs`; the handler and the auto-loop turn flow are in `mode/loop_command.rs` (`PromptDone` and `MessageEnd` call into it; `tick_scheduler` reports late and skipped prompts). The auto-loop flag and halt, read by the `AskUserQuestion` host, are `auto_loop.rs` | `code-tui-app` `mode/loop_command.rs`, `auto_loop.rs`; `code-scheduler` `loop_command.rs` |
 | MCP tools in the transcript | `mcp_<server>_<tool>` tools use the generic tool block (no renderer); progress reports arrive as partial results and show there |
 | Skill and prompt-template commands | `code-resources` |
@@ -176,20 +179,33 @@ One tab per kind of task: **Plan** (TodoWrite items, each linked run nested unde
 | `app.panel.focus` (Ctrl+G) | Back to the prompt (a toggle) |
 | `app.panel.nextTab` (Tab) / `app.panel.prevTab` (Shift+Tab) | Next / previous tab with rows (wraps) |
 | `app.panel.up` / `app.panel.down` (arrows) | Pick the row above / below (ends clamp). The pick is kept by row id across rebuilds |
-| `app.panel.open` (Enter) | A row with an action (MCP server `Login`) queues `Perform`, which `TaskStore::perform` runs (`/mcp login` path). Other rows queue `Open`, a no-op until the attach view (T3.3) |
+| `app.panel.open` (Enter) | A row with an action (MCP server `Login`) queues `Perform`, which `TaskStore::perform` runs (`/mcp login` path). A subagent row queues `Open`, which attaches to its run (`attach_run`, T3.3). Other rows do nothing on Enter |
 | `app.panel.cancel` (`x`) | First press arms the row (the right column says `press x again to cancel`). Second: an Abort row (MCP call) queues `Perform(Abort)`; a running subagent run queues `Cancel`, through `SubagentPool::cancel`. Other rows ignore it. Any other key disarms |
 | `app.panel.exit` (Esc) | Disarms a pending cancel, else back to the prompt |
 
 **Scroll and density.** Focus shows the strip even with one tab, the pick marker `›`, and a hint line, and shows full rows even in the summary density.
+
+## Attached view (subagent transcript)
+
+Attach shows one subagent run's transcript on the chat area, read-only, with the header row above it and the prompt's place taken by a hint. Esc goes back, and the session's transcript and scroll come back as they were.
+
+| Concern | Where |
+|---|---|
+| Header row and hint (pure components, goldens) | `code-tui-widgets/src/attach_view.rs` (`AttachHeader`, `AttachPrompt`) |
+| Attach, detach, the run's history (read on the tools pool), the run's live events, `/agents` rows | `hoocode-code-tui-app/src/mode/attach.rs` |
+| Keys: `app.subagent.attach` (Ctrl+N, at the prompt: newest Agent block) and `app.subagent.detach` (Esc, in the attached view) | `hoocode-code-tui-keybindings/src/keybindings.rs`; listed on `/hotkeys` |
+| Screen check | `scripts/tui/scenarios/subagent-attach.json` (tmux, the mock LLM; the attach, live and finished, and the way back) |
+
+**How it works.** The chat container is shared by the session and the attached run. Two halves exist, and `Attached::main_in` says which one is on screen; `flip_view` swaps them. The session is on screen by default. The run's half is shown only in three windows: the run's own events (`apply_attached_event`), a key to the screen (`accept_terminal_event`), and the render at the end of the loop. A session handler therefore runs against the transcript it always wrote, and the run's view is never changed by it. While attached, a session event does not set the dirty flag (its change is drawn on the next one-second tick).
 
 ## Events and the loop
 
 | What | Where |
 |---|---|
 | Main loop (input, app events, ticks, render). Up to 64 keys per pass, then app events, then one render (`accept_terminal_event`, `flush_scheduled_render`) | `mode/mod.rs` `run` |
-| Events from other threads | `enum AppEvent` (session events, prompt done, bash chunks, dialogs, login…) |
+| Events from other threads | `enum AppEvent` (session events, prompt done, bash chunks, dialogs, login…; the attach ones: `AttachLoaded`, `AgentRunsListed`, `AttachPicked`) |
 | Agent session events → screen | `handle_session_event` |
-| Live events of subagent runs (`AppEvent::Subagent`) → the Agent blocks that dispatched them | `apply_subagent_event` in `mode/subagents.rs` (sink set in `mode/mod.rs`; forwarding in `hoocode-code-subagents` `instance.rs` `wire_live_events`) |
+| Live events of subagent runs (`AppEvent::Subagent`) → the Agent blocks that dispatched them, and the attached view if it shows that run | `apply_subagent_event` in `mode/subagents.rs` (sink set in `mode/mod.rs`; forwarding in `hoocode-code-subagents` `instance.rs` `wire_live_events`); the attached view's part is `mode/attach.rs` `apply_attached_event` |
 | Key and UI actions | `enum Action`, `handle_action` |
 | Submitting a prompt | `submit`, `prompt`, `prompt_with_images` |
 | Streaming render throttle | `schedule_streaming_render`, `run_streaming_render` |
@@ -224,3 +240,6 @@ One tab per kind of task: **Plan** (TodoWrite items, each linked run nested unde
   are hoocode's own (there is no TS reference).
 - Concurrency ([concurrency.md](../design/concurrency.md)): the UI thread never does
   file or network I/O. Work off the UI thread reports back through `AppEvent`.
+- Attached view: code that writes to the transcript (`self.transcript`, `add_to_chat`) runs
+  with the session on screen, which is the loop's default. Only the attached run's events and
+  the render go through `show_attached`; a new window needs the same care.

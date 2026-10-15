@@ -2,6 +2,7 @@
 //! `modes/interactive/components/`.
 
 mod assistant_message;
+pub mod attach_view;
 pub mod background_notice;
 pub mod bash_execution;
 pub mod brand;

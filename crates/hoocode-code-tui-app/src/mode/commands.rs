@@ -57,6 +57,7 @@ pub(super) enum BuiltinCommand {
     SubagentCancel,
     SubagentRetry,
     SubagentStats,
+    Agents,
     Loop,
     /// A built-in whose handler lands with a later task.
     Pending(&'static str),
@@ -97,6 +98,7 @@ impl BuiltinCommand {
             "subagent-cancel" => Self::SubagentCancel,
             "subagent-retry" => Self::SubagentRetry,
             "subagent-stats" => Self::SubagentStats,
+            "agents" => Self::Agents,
             "loop" => Self::Loop,
             _ => {
                 let builtin = BUILTIN_SLASH_COMMANDS.iter().find(|c| c.name == name)?;
@@ -186,6 +188,7 @@ impl Mode {
             BuiltinCommand::SubagentCancel => self.cancel_newest_subagent(text),
             BuiltinCommand::SubagentRetry => self.retry_newest_subagent(text),
             BuiltinCommand::SubagentStats => self.handle_subagent_stats_command(text),
+            BuiltinCommand::Agents => self.open_agent_runs(),
             BuiltinCommand::Loop => {
                 let args = text.strip_prefix("/loop").unwrap_or_default();
                 self.handle_loop_command(args);

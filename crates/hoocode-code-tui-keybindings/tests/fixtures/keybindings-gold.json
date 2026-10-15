@@ -612,6 +612,20 @@
    "Task panel: back to the prompt"
   ],
   [
+   "app.subagent.attach",
+   [
+    "ctrl+n"
+   ],
+   "Attach to the subagent run of the last Agent block (read-only)"
+  ],
+  [
+   "app.subagent.detach",
+   [
+    "escape"
+   ],
+   "Back from an attached subagent run to the session"
+  ],
+  [
    "app.options.next",
    [
     "right"

@@ -133,9 +133,9 @@ impl Mode {
         {
             let mut container = self.editor_container.borrow_mut();
             container.clear();
-            container.add_child(as_component(&self.editor));
+            container.add_child(self.prompt_component());
         }
-        self.tui.set_focus(Some(as_component(&self.editor)));
+        self.tui.set_focus(Some(self.prompt_component()));
         self.dirty.set(true);
     }
 
@@ -182,9 +182,9 @@ impl Mode {
         {
             let mut container = self.editor_container.borrow_mut();
             container.clear();
-            container.add_child(as_component(&self.editor));
+            container.add_child(self.prompt_component());
         }
-        self.tui.set_focus(Some(as_component(&self.editor)));
+        self.tui.set_focus(Some(self.prompt_component()));
         self.dirty.set(true);
     }
 
@@ -193,9 +193,9 @@ impl Mode {
         {
             let mut container = self.editor_container.borrow_mut();
             container.clear();
-            container.add_child(as_component(&self.editor));
+            container.add_child(self.prompt_component());
         }
-        self.tui.set_focus(Some(as_component(&self.editor)));
+        self.tui.set_focus(Some(self.prompt_component()));
         self.dirty.set(true);
     }
 

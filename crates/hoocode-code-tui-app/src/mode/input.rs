@@ -95,13 +95,16 @@ pub(super) enum Action {
     TasksBackward,
     /// `app.panel.focus`: give the task panel the keyboard.
     PanelFocus,
+    /// `app.subagent.attach`: attach to the newest Agent block's run.
+    SubagentAttach,
 }
 
 /// Bindings the prompt answers to, and their action (`CustomEditor.onAction`).
-const EDITOR_ACTIONS: [(&str, Action); 30] = [
+const EDITOR_ACTIONS: [(&str, Action); 31] = [
     ("app.tasks.cycleForward", Action::TasksForward),
     ("app.tasks.cycleBackward", Action::TasksBackward),
     ("app.panel.focus", Action::PanelFocus),
+    ("app.subagent.attach", Action::SubagentAttach),
     ("app.message.followUp", Action::FollowUp),
     ("app.message.dequeue", Action::Dequeue),
     (
@@ -846,6 +849,7 @@ impl Mode {
                 );
             }
             Action::PanelFocus => self.focus_task_panel(),
+            Action::SubagentAttach => self.attach_newest_agent_block(),
             Action::AskOptionsDone(answers) => self.hide_ask_options(answers),
             Action::EditorDialogDone(outcome) => self.close_editor_dialog(outcome),
             Action::SessionSelectorDone(path) => {
