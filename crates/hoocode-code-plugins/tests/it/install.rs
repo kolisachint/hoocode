@@ -126,7 +126,7 @@ fn add_lists_the_marketplace_and_refuses_a_duplicate() {
     let env = Env::new();
     let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
 
-    let name = install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    let name = install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
     assert_eq!(name, "local-mk");
 
     let listed = install::marketplace_list(&env.paths).unwrap();
@@ -136,7 +136,7 @@ fn add_lists_the_marketplace_and_refuses_a_duplicate() {
         .iter()
         .any(|m| m.name == "claude-plugins-official" && m.trusted));
 
-    let again = install::marketplace_add(&env.paths, &repo.display().to_string());
+    let again = install::marketplace_add(&env.paths, &repo.display().to_string(), false);
     assert!(again.unwrap_err().contains("already listed"));
 }
 
@@ -151,7 +151,8 @@ fn a_bad_marketplace_is_refused_and_leaves_nothing_behind() {
     git(&not_a_marketplace, &["commit", "-q", "-m", "x"]);
 
     let error =
-        install::marketplace_add(&env.paths, &not_a_marketplace.display().to_string()).unwrap_err();
+        install::marketplace_add(&env.paths, &not_a_marketplace.display().to_string(), false)
+            .unwrap_err();
     assert!(error.contains("cannot add"), "{error}");
     assert!(install::marketplace_list(&env.paths)
         .unwrap()
@@ -167,7 +168,7 @@ fn a_bad_marketplace_is_refused_and_leaves_nothing_behind() {
     git(&bad_name, &["init", "-q"]);
     git(&bad_name, &["add", "-A"]);
     git(&bad_name, &["commit", "-q", "-m", "x"]);
-    assert!(install::marketplace_add(&env.paths, &bad_name.display().to_string()).is_err());
+    assert!(install::marketplace_add(&env.paths, &bad_name.display().to_string(), false).is_err());
     assert!(!env
         .paths
         .state
@@ -183,7 +184,7 @@ fn installs_into_user_and_project_scopes() {
         "local-mk",
         &[("tool", "1.0.0", false), ("other", "2.0.0", false)],
     );
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
 
     let user = install::install(&env.paths, "tool@local-mk", Scope::User).unwrap();
     assert_eq!(user.version, "1.0.0");
@@ -224,7 +225,7 @@ fn installs_into_user_and_project_scopes() {
 fn an_install_from_an_untrusted_marketplace_needs_a_grant_for_its_mcp_servers() {
     let env = Env::new();
     let repo = marketplace_repo(&env.origin, "local-mk", &[("mcpy", "1.0.0", true)]);
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
     install::install(&env.paths, "mcpy@local-mk", Scope::User).unwrap();
 
     let set = env.load();
@@ -268,7 +269,7 @@ fn a_hand_placed_plugin_keeps_its_trust() {
 fn a_missing_plugin_and_a_missing_marketplace_are_errors() {
     let env = Env::new();
     let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
 
     let missing = install::install(&env.paths, "nope@local-mk", Scope::User).unwrap_err();
     assert!(
@@ -293,7 +294,7 @@ fn a_missing_plugin_and_a_missing_marketplace_are_errors() {
 fn installing_twice_in_one_scope_is_refused() {
     let env = Env::new();
     let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
     install::install(&env.paths, "tool@local-mk", Scope::User).unwrap();
     let again = install::install(&env.paths, "tool@local-mk", Scope::User).unwrap_err();
     assert!(again.contains("already installed"), "{again}");
@@ -303,7 +304,7 @@ fn installing_twice_in_one_scope_is_refused() {
 fn remove_deletes_the_folder_and_keeps_the_data() {
     let env = Env::new();
     let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
     install::install(&env.paths, "tool@local-mk", Scope::User).unwrap();
     write(&env.paths.data_root.join("tool/state.txt"), "kept\n");
 
@@ -321,7 +322,7 @@ fn remove_deletes_the_folder_and_keeps_the_data() {
 fn remove_asks_for_a_scope_when_both_scopes_have_it() {
     let env = Env::new();
     let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
     install::install(&env.paths, "tool@local-mk", Scope::User).unwrap();
     install::install(&env.paths, "tool@local-mk", Scope::Project).unwrap();
 
@@ -337,7 +338,7 @@ fn remove_asks_for_a_scope_when_both_scopes_have_it() {
 fn update_replaces_a_changed_plugin_and_leaves_an_unchanged_one() {
     let env = Env::new();
     let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
     install::install(&env.paths, "tool@local-mk", Scope::User).unwrap();
 
     let before = install::update(&env.paths, Some("tool")).unwrap();
@@ -387,7 +388,7 @@ fn a_plugin_missing_from_its_marketplace_now_fails_its_update_only() {
         "local-mk",
         &[("tool", "1.0.0", false), ("keep", "1.0.0", false)],
     );
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
     install::install(&env.paths, "tool@local-mk", Scope::User).unwrap();
     install::install(&env.paths, "keep@local-mk", Scope::User).unwrap();
 
@@ -430,7 +431,7 @@ fn a_marketplace_with_an_unsupported_entry_skips_it_with_a_warning() {
     );
     git(&repo, &["add", "-A"]);
     git(&repo, &["commit", "-q", "-m", "add npm entry"]);
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
 
     let error = install::install(&env.paths, "npmy@local-mk", Scope::User).unwrap_err();
     assert!(
@@ -444,9 +445,9 @@ fn a_marketplace_with_an_unsupported_entry_skips_it_with_a_warning() {
 fn refresh_reports_each_marketplace() {
     let env = Env::new();
     let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
     let lines = install::marketplace_refresh(&env.paths, Some("local-mk")).unwrap();
-    assert_eq!(lines, vec!["local-mk: 1 plugins".to_owned()]);
+    assert_eq!(lines, vec!["local-mk: 1 plugin".to_owned()]);
     let missing = install::marketplace_refresh(&env.paths, Some("ghost")).unwrap_err();
     assert!(missing.contains("no marketplace named"));
 }
@@ -455,7 +456,7 @@ fn refresh_reports_each_marketplace() {
 fn the_listing_shows_installs_and_what_was_skipped() {
     let env = Env::new();
     let repo = marketplace_repo(&env.origin, "local-mk", &[("tool", "1.0.0", false)]);
-    install::marketplace_add(&env.paths, &repo.display().to_string()).unwrap();
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
     install::install(&env.paths, "tool@local-mk", Scope::User).unwrap();
     // A hook folder is not supported and is skipped with a warning.
     write(
@@ -495,4 +496,77 @@ fn an_unreadable_record_file_trusts_no_marketplace_install() {
     // The registry is read on its own: it did not change.
     let registry = Registry::load(&env.paths.state.join(REGISTRY_FILE)).unwrap();
     assert!(registry.added.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_in_a_plugin_that_leaves_the_marketplace_refuses_the_install() {
+    let env = Env::new();
+    let repo = marketplace_repo(&env.origin, "sym-mk", &[("leaky", "1.0.0", false)]);
+    let secret = env.origin.join("secret.txt");
+    write(&secret, "private\n");
+    std::os::unix::fs::symlink(&secret, repo.join("plugins/leaky/leak.md")).unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "link"]);
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
+
+    let error = install::install(&env.paths, "leaky@sym-mk", Scope::User).unwrap_err();
+    assert!(error.contains("leaves the marketplace"), "{error}");
+    assert!(!env.paths.user_plugins.join("leaky").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_subdir_path_that_leaves_the_repository_is_refused() {
+    let env = Env::new();
+    let repo = marketplace_repo(&env.origin, "sub-mk", &[]);
+    write(&env.origin.join("secret/SKILL.md"), "private\n");
+    write(
+        &repo.join(".claude-plugin/marketplace.json"),
+        &format!(
+            r#"{{"name": "sub-mk", "plugins": [{{"name": "esc", "source":
+              {{"source": "git-subdir", "url": "{}", "path": "../../secret"}}}}]}}"#,
+            repo.display()
+        ),
+    );
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "esc"]);
+    install::marketplace_add(&env.paths, &repo.display().to_string(), false).unwrap();
+
+    let error = install::install(&env.paths, "esc@sub-mk", Scope::User).unwrap_err();
+    assert!(error.contains("leaves the repository"), "{error}");
+    assert!(!env.paths.user_plugins.join("esc").exists());
+}
+
+#[test]
+fn remove_refuses_a_record_that_names_a_folder_outside_the_plugin_folders() {
+    let env = Env::new();
+    let outside = env.origin.join("keep");
+    write(&outside.join("important.txt"), "keep me\n");
+    write(
+        &env.paths.state.join(install::INSTALLS_FILE),
+        &format!(
+            r#"{{"installs": [{{"name": "tool", "root": "{}", "scope": "user"}}]}}"#,
+            outside.display()
+        ),
+    );
+
+    let error = install::remove(&env.paths, "tool", None).unwrap_err();
+    assert!(error.contains("left alone"), "{error}");
+    assert!(outside.join("important.txt").is_file());
+}
+
+#[test]
+fn add_with_trust_marks_the_marketplace_and_its_installs_trusted() {
+    let env = Env::new();
+    let repo = marketplace_repo(&env.origin, "mine-mk", &[("mcpy", "1.0.0", true)]);
+    let name = install::marketplace_add(&env.paths, &repo.display().to_string(), true).unwrap();
+    assert_eq!(name, "mine-mk");
+    let registry = Registry::load(&env.paths.state.join(REGISTRY_FILE)).unwrap();
+    assert!(registry.find("mine-mk").unwrap().trusted);
+
+    let installed = install::install(&env.paths, "mcpy@mine-mk", Scope::User).unwrap();
+    assert!(installed.trusted);
+    let set = env.load();
+    assert!(set.plugins[0].marketplace_trusted);
 }

@@ -11,7 +11,8 @@ use hoocode_tui_components::{Spacer, Text};
 
 use super::*;
 
-const USAGE: &str = "Usage: /plugin list | marketplace add <source> | marketplace list | \
+const USAGE: &str =
+    "Usage: /plugin list | marketplace add <source> [--trust] | marketplace list | \
 marketplace refresh [name] | install <name[@marketplace]> [--scope user|project] | \
 remove <name> [--scope user|project] | update [name] | trust";
 
@@ -101,10 +102,16 @@ fn run_plugin_command(paths: &Paths, words: &[&str]) -> Result<Reply, String> {
             let set = hoocode_code_plugins::current();
             Ok(Reply::text(install::listing(paths, &set, &records)))
         }
-        ["marketplace", "add", source] => {
-            let name = install::marketplace_add(paths, source)?;
+        ["marketplace", "add", rest @ ..] => {
+            let (source, trust) = marketplace_add_args(rest)?;
+            let name = install::marketplace_add(paths, &source, trust)?;
+            let grant = if trust {
+                "It is trusted, so its plugins' MCP servers need no grant."
+            } else {
+                "It is not trusted, so its plugins' MCP servers need a grant in /mcp."
+            };
             Ok(Reply::text(format!(
-                "Added marketplace {name}. It is not trusted, so its plugins' MCP servers need a grant in /mcp. Install with /plugin install <plugin>@{name}."
+                "Added marketplace {name}. {grant} Install with /plugin install <plugin>@{name}."
             )))
         }
         ["marketplace", "list"] => Ok(Reply::text(marketplace_text(paths)?)),
@@ -180,6 +187,23 @@ fn spec_and_scope(words: &[&str]) -> Result<(String, Option<Scope>), String> {
         [one] => Ok(((*one).to_owned(), scope)),
         _ => Err(USAGE.to_owned()),
     }
+}
+
+/// The source of `marketplace add <source> [--trust]`, and whether `--trust` was given.
+fn marketplace_add_args(words: &[&str]) -> Result<(String, bool), String> {
+    let mut source = None;
+    let mut trust = false;
+    for word in words {
+        match *word {
+            "--trust" => trust = true,
+            flag if flag.starts_with("--") => {
+                return Err(format!("unknown option {flag}. {USAGE}"))
+            }
+            value if source.is_none() => source = Some(value.to_owned()),
+            _ => return Err(USAGE.to_owned()),
+        }
+    }
+    source.map(|s| (s, trust)).ok_or_else(|| USAGE.to_owned())
 }
 
 fn marketplace_text(paths: &Paths) -> Result<String, String> {
@@ -268,5 +292,155 @@ mod tests {
         let paths = Paths::for_cwd(std::path::Path::new("/nonexistent-hoocode-test"));
         let error = run_plugin_command(&paths, &["frobnicate"]).err().unwrap();
         assert!(error.starts_with("Usage"), "{error}");
+    }
+
+    #[test]
+    fn marketplace_add_takes_the_trust_flag_in_either_place() {
+        assert_eq!(
+            marketplace_add_args(&["owner/repo"]).unwrap(),
+            ("owner/repo".to_owned(), false)
+        );
+        assert_eq!(
+            marketplace_add_args(&["--trust", "owner/repo"]).unwrap(),
+            ("owner/repo".to_owned(), true)
+        );
+        assert!(marketplace_add_args(&[]).unwrap_err().starts_with("Usage"));
+        assert!(marketplace_add_args(&["a", "b"])
+            .unwrap_err()
+            .starts_with("Usage"));
+        assert!(marketplace_add_args(&["a", "--yes"])
+            .unwrap_err()
+            .contains("unknown option"));
+    }
+
+    /// A paths sandbox in a temporary folder.
+    struct Sandbox {
+        _dir: tempfile::TempDir,
+        paths: Paths,
+    }
+
+    fn sandbox() -> Sandbox {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().canonicalize().unwrap();
+        let paths = Paths {
+            cwd: base.join("repo"),
+            user_plugins: base.join("home/.agents/plugins"),
+            data_root: base.join("home/.agents/plugin-data"),
+            state: base.join("home/.hoocode"),
+        };
+        std::fs::create_dir_all(&paths.cwd).unwrap();
+        Sandbox { _dir: dir, paths }
+    }
+
+    /// A local git marketplace named `name` with one plugin, `tool`, at `dir/name`.
+    fn local_marketplace(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+        let root = dir.join(name);
+        let put = |path: &str, text: &str| {
+            let file = root.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        };
+        put(
+            ".claude-plugin/marketplace.json",
+            &format!(
+                r#"{{"name": "{name}", "plugins": [{{"name": "tool", "source": "./plugins/tool", "version": "1.0.0", "description": "A tool"}}]}}"#
+            ),
+        );
+        put(
+            "plugins/tool/plugin.json",
+            r#"{"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", "name": "tool", "version": "1.0.0", "description": "A tool"}"#,
+        );
+        put(
+            "plugins/tool/skills/hello/SKILL.md",
+            "---\nname: hello\ndescription: say hello\n---\nHi.\n",
+        );
+        for args in [
+            vec!["init", "-q"],
+            vec!["add", "-A"],
+            vec!["commit", "-q", "-m", "initial"],
+        ] {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
+                .args(&args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?}");
+        }
+        root
+    }
+
+    #[test]
+    fn list_of_an_empty_sandbox_shows_no_plugins() {
+        let sandbox = sandbox();
+        let reply = run_plugin_command(&sandbox.paths, &["list"]).unwrap();
+        assert!(!reply.changed);
+        assert!(reply.text.contains("Marketplaces"), "{}", reply.text);
+        assert!(reply.text.contains("none installed"), "{}", reply.text);
+    }
+
+    #[test]
+    fn add_then_install_from_a_local_marketplace_drives_the_handler() {
+        let sandbox = sandbox();
+        let source_dir = sandbox._dir.path().join("origin");
+        let repo = local_marketplace(&source_dir, "local-mk");
+        let paths = &sandbox.paths;
+
+        // Added without --trust: not trusted, and the notice says its MCP servers need a grant.
+        let added = run_plugin_command(
+            &sandbox.paths,
+            &["marketplace", "add", &repo.display().to_string()],
+        )
+        .unwrap();
+        assert!(
+            added.text.contains("Added marketplace local-mk"),
+            "{}",
+            added.text
+        );
+        assert!(added.text.contains("not trusted"), "{}", added.text);
+        assert!(added.text.contains("/mcp"), "{}", added.text);
+
+        let listed = run_plugin_command(paths, &["marketplace", "list"]).unwrap();
+        assert!(
+            listed.text.contains("local-mk (not trusted)"),
+            "{}",
+            listed.text
+        );
+
+        // The install is a change, and says what it did.
+        let installed = run_plugin_command(paths, &["install", "tool@local-mk"]).unwrap();
+        assert!(installed.changed);
+        assert!(
+            installed
+                .text
+                .contains("Installed tool 1.0.0 from local-mk"),
+            "{}",
+            installed.text
+        );
+        assert!(installed.text.contains("/mcp"), "{}", installed.text);
+        assert!(paths.user_plugins.join("tool/plugin.json").is_file());
+
+        let listing = run_plugin_command(paths, &["list"]).unwrap();
+        assert!(listing.text.contains("tool ("), "{}", listing.text);
+        assert!(listing.text.contains("installed"), "{}", listing.text);
+    }
+
+    #[test]
+    fn add_with_trust_says_the_marketplace_is_trusted() {
+        let sandbox = sandbox();
+        let source_dir = sandbox._dir.path().join("origin");
+        let repo = local_marketplace(&source_dir, "mine-mk");
+        let added = run_plugin_command(
+            &sandbox.paths,
+            &["marketplace", "add", &repo.display().to_string(), "--trust"],
+        )
+        .unwrap();
+        assert!(added.text.contains("It is trusted"), "{}", added.text);
+        assert!(!added.text.contains("not trusted"), "{}", added.text);
+        let listed = run_plugin_command(&sandbox.paths, &["marketplace", "list"]).unwrap();
+        assert!(listed.text.contains("mine-mk (trusted)"), "{}", listed.text);
     }
 }

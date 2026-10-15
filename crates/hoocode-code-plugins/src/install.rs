@@ -278,7 +278,8 @@ fn stage_entry(
     match &entry.source {
         EntrySource::Path(relative) => {
             let source = entry_path(&cache, relative)?;
-            copy_tree(&source, stage)
+            let root = fs::canonicalize(&cache).map_err(|e| e.to_string())?;
+            copy_tree(&root, &source, stage)
         }
         EntrySource::Git {
             url,
@@ -294,6 +295,7 @@ fn stage_entry(
                 if let Some(revision) = sha.as_ref().or(git_ref.as_ref()) {
                     marketplace::checkout(&clone, revision)?;
                 }
+                let root = fs::canonicalize(&clone).map_err(|e| e.to_string())?;
                 let source = match path {
                     Some(sub) => {
                         let rel = sub.strip_prefix("./").unwrap_or(sub);
@@ -305,7 +307,7 @@ fn stage_entry(
                     }
                     None => clone.clone(),
                 };
-                copy_tree(&source, stage)
+                copy_tree(&root, &source, stage)
             })();
             let _ = fs::remove_dir_all(&clone);
             result
@@ -339,8 +341,11 @@ fn read(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))
 }
 
-/// Copy a folder tree, without `.git`. Symbolic links are copied as links on Unix.
-fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
+/// Copy a folder tree, without `.git`. `root` is the canonical marketplace checkout (or cache)
+/// that `from` lies in. A symbolic link is copied as a link only when it resolves inside `root`;
+/// one that leaves it, or does not resolve, refuses the install, so an installed plugin never
+/// reads a file outside the marketplace.
+fn copy_tree(root: &Path, from: &Path, to: &Path) -> Result<(), String> {
     fs::create_dir_all(to).map_err(|e| e.to_string())?;
     let read_dir =
         fs::read_dir(from).map_err(|e| format!("cannot read {}: {e}", from.display()))?;
@@ -354,10 +359,18 @@ fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
         let target = to.join(&name);
         let kind = entry.file_type().map_err(|e| e.to_string())?;
         if kind.is_dir() {
-            copy_tree(&source, &target)?;
+            copy_tree(root, &source, &target)?;
         } else if kind.is_symlink() {
             #[cfg(unix)]
             {
+                let real = fs::canonicalize(&source)
+                    .map_err(|_| format!("{} is a link that does not resolve", source.display()))?;
+                if !real.starts_with(root) {
+                    return Err(format!(
+                        "{} is a link that leaves the marketplace",
+                        source.display()
+                    ));
+                }
                 let link = fs::read_link(&source).map_err(|e| e.to_string())?;
                 std::os::unix::fs::symlink(link, &target).map_err(|e| e.to_string())?;
             }
@@ -477,6 +490,24 @@ fn source_text(source: &EntrySource) -> String {
     }
 }
 
+/// A record's folder must be the plugin's own folder in its scope. A record file that names any
+/// other folder (damaged, or edited by hand) is not acted on, so a remove or update never
+/// deletes or replaces a folder outside the plugin folders.
+fn check_owned_root(paths: &Paths, record: &Record) -> Result<(), String> {
+    let expected =
+        hoocode_code_paths::canonicalize_path(&paths.scope_dir(record.scope)).join(&record.name);
+    if record.root == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "the install record of {} names {}, not its plugin folder {}; it is left alone",
+            record.name,
+            record.root.display(),
+            expected.display()
+        ))
+    }
+}
+
 /// What a remove did.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Removed {
@@ -504,6 +535,7 @@ pub fn remove(paths: &Paths, name: &str, scope: Option<Scope>) -> Result<Removed
             ))
         }
     };
+    check_owned_root(paths, &record)?;
     if record.root.exists() {
         fs::remove_dir_all(&record.root)
             .map_err(|e| format!("cannot remove {}: {e}", record.root.display()))?;
@@ -562,6 +594,7 @@ pub fn update(paths: &Paths, name: Option<&str>) -> Result<Vec<UpdateOutcome>, S
 }
 
 fn update_one(paths: &Paths, record: &Record) -> Result<UpdateOutcome, String> {
+    check_owned_root(paths, record)?;
     let mut registry = Registry::load(&paths.registry_path())?;
     let marketplace = registry
         .find(&record.marketplace)
@@ -621,9 +654,10 @@ fn update_one(paths: &Paths, record: &Record) -> Result<UpdateOutcome, String> {
     })
 }
 
-/// Add a marketplace by git URL, `owner/repo`, or local path. It is not trusted (only the
-/// official directory is). Returns its name, read from the repository's index.
-pub fn marketplace_add(paths: &Paths, source: &str) -> Result<String, String> {
+/// Add a marketplace by git URL, `owner/repo`, or local path. It is trusted only when `trust` is
+/// set (`--trust`); the official directory is always trusted. Returns its name, read from the
+/// repository's index.
+pub fn marketplace_add(paths: &Paths, source: &str, trust: bool) -> Result<String, String> {
     let url = marketplace::normalize_source(source);
     let mut registry = Registry::load(&paths.registry_path())?;
     if let Some(existing) = registry.all().into_iter().find(|m| m.url == url) {
@@ -653,7 +687,7 @@ pub fn marketplace_add(paths: &Paths, source: &str) -> Result<String, String> {
     registry.added.push(Marketplace {
         name: name.clone(),
         url,
-        trusted: false,
+        trusted: trust,
         fetched_at: marketplace::now_secs(),
     });
     registry.save(&paths.registry_path())?;
@@ -663,6 +697,15 @@ pub fn marketplace_add(paths: &Paths, source: &str) -> Result<String, String> {
 /// The marketplaces listed: the official one and the ones added.
 pub fn marketplace_list(paths: &Paths) -> Result<Vec<Marketplace>, String> {
     Ok(Registry::load(&paths.registry_path())?.all())
+}
+
+/// `1 plugin`, `3 plugins`.
+pub fn plural(count: usize, word: &str) -> String {
+    if count == 1 {
+        format!("{count} {word}")
+    } else {
+        format!("{count} {word}s")
+    }
 }
 
 /// Fetch marketplaces now (all, or `name`). One line per marketplace, for the report.
@@ -683,9 +726,9 @@ pub fn marketplace_refresh(paths: &Paths, name: Option<&str>) -> Result<Vec<Stri
     for marketplace in targets {
         match refresh(paths, &mut registry, &marketplace, true) {
             Ok((index, _)) => lines.push(format!(
-                "{}: {} plugins",
+                "{}: {}",
                 marketplace.name,
-                index.entries.len()
+                plural(index.entries.len(), "plugin")
             )),
             Err(error) => lines.push(format!("{}: {error}", marketplace.name)),
         }

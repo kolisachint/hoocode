@@ -17,11 +17,19 @@ Part 2 choices (2026-10-14):
   A failed refresh uses the old cache with a note; `/plugin marketplace refresh` fails instead.
   `owner/repo` means GitHub. The official directory's URL is **assumed** to be
   `https://github.com/anthropics/claude-plugins-official`, not stated in the design docs.
-- **Trust.** Only the official directory is trusted. A marketplace the user adds is not, and nothing
-  in hoocode marks it trusted yet (no command does; a registry edit can). An install from an
-  untrusted marketplace still succeeds, because the user typed the command, but the plugin's MCP
+- **Trust.** Only the official directory is pre-trusted. `/plugin marketplace add <src> --trust`
+  marks the marketplace the user adds as trusted; without `--trust` it is untrusted. The listing
+  shows `trusted` or `not trusted` for each marketplace. An install from an untrusted marketplace
+  still succeeds, because the user typed the command, and its success notice says the plugin's MCP
   servers need a grant in `/mcp` (its record says `trusted: false`, and the loader sets
   `marketplace_trusted` from it). Skills and subagents load without a grant, as before.
+- **Git input.** Marketplace values (URLs, refs, subfolders, names) never reach git as options:
+  a value that starts with `-` is refused, `name::` transport helpers (`ext::`, `fd::`) are
+  refused, and clones use `--`. A plugin folder never gets a file from outside its marketplace:
+  a symbolic link in the checkout that resolves outside it, or does not resolve, refuses the
+  install, and a `git-subdir` path that leaves the repository is refused. `/plugin remove` and
+  `update` act only on the plugin's own folder; a record that names another folder is left alone.
+  Records and the registry are written through a temporary file with a per-write name, then renamed.
 - **Records.** Each install's source, marketplace and trust go in `plugin-installs.json` in the
   hoocode data directory, not in the plugin folder: a folder change would re-ask for project trust.
   A plugin with no record is hand-placed and keeps the old trust. If the record file cannot be read,
