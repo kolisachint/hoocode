@@ -2,7 +2,9 @@
 //! asks for. The panel itself is `hoocode_code_tui_widgets::task_panel`, and
 //! its keys are the `app.panel.*` bindings.
 
+use hoocode_code_permissions::PermissionUi as _;
 use hoocode_code_subagents::instance::get_subagent_pool;
+use hoocode_code_task_store::{task_store, ActionNotifier, RowAction};
 use hoocode_code_tui_widgets::task_panel::{PanelEvent, TaskPanelView};
 
 use super::*;
@@ -32,6 +34,9 @@ impl Mode {
         for event in events {
             match event {
                 PanelEvent::Open { view, task_id } => self.open_task_panel_row(view, task_id),
+                PanelEvent::Perform { task_id, action } => {
+                    self.perform_task_panel_row(task_id, action)
+                }
                 PanelEvent::Cancel { run_id } => self.cancel_subagent_run(&run_id),
                 PanelEvent::Exit => self.leave_task_panel(),
             }
@@ -41,6 +46,18 @@ impl Mode {
     /// Enter on a row. The attach view (T3.3) fills this in; until then the
     /// panel only moves the pick.
     fn open_task_panel_row(&mut self, _view: TaskPanelView, _task_id: u64) {}
+
+    /// Enter on a row with an action (Login), or `x` twice on an Abort row:
+    /// the store hands it to the row's producer. Its text goes to the user as
+    /// a notice; an error shows in the status line.
+    fn perform_task_panel_row(&mut self, task_id: u64, action: RowAction) {
+        let notify: ActionNotifier = Arc::new(|message: String| {
+            crate::dialog_bridge::TuiPermissionUi.notify(&message);
+        });
+        if let Err(message) = task_store().perform(task_id, action, notify) {
+            self.show_status(&message);
+        }
+    }
 
     /// `x` twice on a running subagent row: stop that run through the pool,
     /// as `/subagent-cancel` does.

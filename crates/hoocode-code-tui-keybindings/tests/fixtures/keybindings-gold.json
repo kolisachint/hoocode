@@ -384,7 +384,7 @@
    [
     "alt+l"
    ],
-   "Cycle task panel tab (Plan → Agents → MCP, skips empty tabs)"
+   "Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty tabs)"
   ],
   [
    "app.tasks.cycleBackward",

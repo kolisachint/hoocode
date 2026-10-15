@@ -1166,6 +1166,131 @@ fn focus_shows_full_rows_even_at_the_summary_density() {
     assert!(plain(&mut panel, 120).len() > 1);
 }
 
+// ---- Schedule tab, row actions, next_at ----
+
+use hoocode_code_task_store::RowAction;
+
+fn with_action(title: &str, source: TaskSource, action: RowAction) -> u64 {
+    let id = create_with(
+        title,
+        CreateTaskOptions {
+            source: Some(source),
+            ..Default::default()
+        },
+    );
+    task_store().update(
+        id,
+        TaskPatch {
+            action: Some(Some(action)),
+            ..Default::default()
+        },
+    );
+    id
+}
+
+#[test]
+fn a_schedule_row_gets_its_own_tab_and_shows_when_it_next_fires() {
+    let _g = lock();
+    let job = create_with(
+        "nightly sweep",
+        CreateTaskOptions {
+            source: Some(TaskSource::Schedule),
+            ..Default::default()
+        },
+    );
+    task_store().update(
+        job,
+        TaskPatch {
+            next_at: Some(Some(hoocode_code_task_store::now_ms() + 5 * 60 * 1000)),
+            ..Default::default()
+        },
+    );
+    let mut panel = TaskPanelComponent::new();
+    let lines = plain(&mut panel, 120);
+    assert_eq!(lines.len(), 1, "a single tab shows no strip");
+    assert!(
+        lines[0].contains("nightly sweep") && lines[0].contains("next in"),
+        "{lines:#?}"
+    );
+    panel.set_view(TaskPanelView::Schedule);
+    assert!(plain(&mut panel, 120).join("\n").contains("nightly sweep"));
+    create_with("a call", mcp(Some("web")));
+    panel.set_view(TaskPanelView::Mcp);
+    assert!(!plain(&mut panel, 120).join("\n").contains("nightly sweep"));
+}
+
+#[test]
+fn schedule_tab_sits_between_agents_and_mcp() {
+    let _g = lock();
+    create_with(
+        "a job",
+        CreateTaskOptions {
+            source: Some(TaskSource::Schedule),
+            ..Default::default()
+        },
+    );
+    create_with("a call", mcp(Some("web")));
+    create_with("a run", sub("explore"));
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, TAB);
+    assert_eq!(panel.get_view(), TaskPanelView::Subagents);
+    press(&mut panel, TAB);
+    assert_eq!(panel.get_view(), TaskPanelView::Schedule);
+    press(&mut panel, TAB);
+    assert_eq!(panel.get_view(), TaskPanelView::Mcp);
+}
+
+#[test]
+fn enter_on_a_login_row_performs_the_login_instead_of_opening_it() {
+    let _g = lock();
+    let server = with_action("web", TaskSource::Mcp, RowAction::Login);
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, ENTER);
+    assert_eq!(
+        panel.take_events(),
+        vec![PanelEvent::Perform {
+            task_id: server,
+            action: RowAction::Login,
+        }]
+    );
+}
+
+#[test]
+fn x_arms_then_performs_abort_on_a_call_row() {
+    let _g = lock();
+    let call = with_action("fetch the spec", TaskSource::Mcp, RowAction::Abort);
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    assert!(panel.take_events().is_empty(), "the first x only arms");
+    press(&mut panel, "x");
+    assert_eq!(
+        panel.take_events(),
+        vec![PanelEvent::Perform {
+            task_id: call,
+            action: RowAction::Abort,
+        }]
+    );
+}
+
+#[test]
+fn enter_on_an_abort_row_opens_it_and_leaves_the_abort_to_x() {
+    let _g = lock();
+    let call = with_action("fetch the spec", TaskSource::Mcp, RowAction::Abort);
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, ENTER);
+    assert_eq!(
+        panel.take_events(),
+        vec![PanelEvent::Open {
+            view: TaskPanelView::Mcp,
+            task_id: call,
+        }]
+    );
+}
+
 #[test]
 fn the_tick_runs_while_any_row_in_any_tab_is_running() {
     let _g = lock();

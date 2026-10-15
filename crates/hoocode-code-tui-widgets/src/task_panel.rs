@@ -24,7 +24,7 @@ use std::collections::{HashMap, HashSet};
 
 use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_task_store::{
-    task_store, Task, TaskAgent, TaskAgentKind, TaskKind, TaskStatus, TaskStore,
+    task_store, RowAction, Task, TaskAgent, TaskAgentKind, TaskKind, TaskStatus, TaskStore,
 };
 use hoocode_code_tui_keybindings::{app_key_label, format_key_text, key_text, raw_key_hint};
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
@@ -59,19 +59,22 @@ pub enum TaskPanelView {
     Plan,
     /// Dispatched subagent runs: the delegation forest.
     Subagents,
-    /// MCP calls.
+    /// Scheduled jobs (`/loop`, the Cron tools), one row each.
+    Schedule,
+    /// MCP calls and servers.
     Mcp,
 }
 
 impl TaskPanelView {
-    /// Every tab, in tab order.
-    pub const ALL: [TaskPanelView; 3] = [Self::Plan, Self::Subagents, Self::Mcp];
+    /// Every tab, in tab order. Shell goes between Schedule and MCP when T5 lands.
+    pub const ALL: [TaskPanelView; 4] = [Self::Plan, Self::Subagents, Self::Schedule, Self::Mcp];
 
     /// The kind of task this tab lists.
     pub fn kind(self) -> TaskKind {
         match self {
             Self::Plan => TaskKind::Plan,
             Self::Subagents => TaskKind::Subagent,
+            Self::Schedule => TaskKind::Schedule,
             Self::Mcp => TaskKind::Mcp,
         }
     }
@@ -81,6 +84,7 @@ impl TaskPanelView {
         match self {
             Self::Plan => "Plan",
             Self::Subagents => "Agents",
+            Self::Schedule => "Schedule",
             Self::Mcp => "MCP",
         }
     }
@@ -93,6 +97,9 @@ pub enum PanelEvent {
     /// Enter on a row. The attach view (T3.3) takes it; until then the app
     /// does nothing.
     Open { view: TaskPanelView, task_id: u64 },
+    /// Enter on a row that offers an action (Login), or `x` twice on a row
+    /// that offers Abort. The store performs it.
+    Perform { task_id: u64, action: RowAction },
     /// `x` pressed twice on a running subagent. `run_id` is the pool's id for
     /// the run (the store task's `agent`).
     Cancel { run_id: String },
@@ -316,7 +323,7 @@ fn lens_rows(view: TaskPanelView, tasks: &[Task]) -> Vec<PanelRow> {
     match view {
         TaskPanelView::Plan => plan_lens_rows(tasks),
         TaskPanelView::Subagents => subagent_lens_rows(tasks),
-        TaskPanelView::Mcp => flat_lens_rows(tasks, view.kind()),
+        TaskPanelView::Schedule | TaskPanelView::Mcp => flat_lens_rows(tasks, view.kind()),
     }
 }
 
@@ -544,6 +551,16 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
                     right_styled = styled;
                 }
                 (true, true) => {}
+            }
+        }
+        TaskStatus::Pending if task.kind() == TaskKind::Schedule => {
+            // A waiting job shows when it next fires (the store's `next_at`).
+            if let Some(next) = task.next_at.filter(|next| *next > now) {
+                right_plain = format!(
+                    "next in {}",
+                    format_duration_secs(((next - now) / 1000) as f64)
+                );
+                right_styled = t.fg("dim", &right_plain);
             }
         }
         _ => {}
@@ -866,24 +883,41 @@ impl TaskPanelComponent {
         let Some(task) = self.model.task(id) else {
             return;
         };
-        let cancellable = task.kind() == TaskKind::Subagent && task.status.is_active();
-        let run_id = task.agent.clone();
-        if !cancellable {
+        // The event the second `x` queues: an Abort row performs its action;
+        // a running subagent run goes through the pool. Anything else has no cancel.
+        let confirmed = if task.action == Some(RowAction::Abort) {
+            Some(PanelEvent::Perform {
+                task_id: id,
+                action: RowAction::Abort,
+            })
+        } else if task.kind() == TaskKind::Subagent && task.status.is_active() {
+            task.agent
+                .clone()
+                .map(|run_id| PanelEvent::Cancel { run_id })
+        } else {
+            None
+        };
+        let Some(event) = confirmed else {
             return;
-        }
-        match (armed == Some(id), run_id) {
-            (true, Some(run_id)) => self.events.push(PanelEvent::Cancel { run_id }),
-            (false, _) => self.confirming = Some(id),
-            // Armed, but the run has no id the pool knows: nothing to cancel.
-            (true, None) => {}
+        };
+        if armed == Some(id) {
+            self.events.push(event);
+        } else {
+            self.confirming = Some(id);
         }
     }
 
-    /// Enter: open the picked row, the attach view's entry point.
+    /// Enter: perform the picked row's action (Login), or open the row (the
+    /// attach view's entry point). An Abort row is cancelled with `x`, not Enter.
     fn open_pick(&mut self) {
-        if let Some((view, task_id)) = self.picked() {
-            self.events.push(PanelEvent::Open { view, task_id });
-        }
+        let Some((view, task_id)) = self.picked() else {
+            return;
+        };
+        let event = match self.model.task(task_id).and_then(|t| t.action) {
+            None | Some(RowAction::Abort) => PanelEvent::Open { view, task_id },
+            Some(action) => PanelEvent::Perform { task_id, action },
+        };
+        self.events.push(event);
     }
 
     /// Key handling while the panel has the keyboard.

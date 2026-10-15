@@ -161,7 +161,7 @@ A key that is not a scroll key un-pins at the prompt, then does its usual job.
 
 ## Task panel
 
-One tab per kind of task: **Plan** (TodoWrite items, each linked run nested under its item), **Agents** (the subagent forest), **MCP** (MCP calls). A tab shows only while it has rows. Unfocused, the panel shows the current tab's rows and one count per tab on the strip (`Plan 1/3  Agents 1/1`). Adding a kind means a `TaskPanelView` variant, its label, and a rule in `lens_rows`.
+One tab per kind of task: **Plan** (TodoWrite items, each linked run nested under its item), **Agents** (the subagent forest), **Schedule** (scheduled jobs, one row each, with `next in …`), **MCP** (MCP servers and calls). A tab shows only while it has rows. Unfocused, the panel shows the current tab's rows and one count per tab on the strip (`Plan 1/3  Agents 1/1`). Adding a kind means a `TaskPanelView` variant, its label, and a rule in `lens_rows`. Shell goes in with T5.
 
 | Concern | Where |
 |---|---|
@@ -176,8 +176,8 @@ One tab per kind of task: **Plan** (TodoWrite items, each linked run nested unde
 | `app.panel.focus` (Ctrl+G) | Back to the prompt (a toggle) |
 | `app.panel.nextTab` (Tab) / `app.panel.prevTab` (Shift+Tab) | Next / previous tab with rows (wraps) |
 | `app.panel.up` / `app.panel.down` (arrows) | Pick the row above / below (ends clamp). The pick is kept by row id across rebuilds |
-| `app.panel.open` (Enter) | Queues `Open`; no-op until the attach view (T3.3) |
-| `app.panel.cancel` (`x`) | First press arms the row (the right column says `press x again to cancel`); second cancels a running subagent run through `SubagentPool::cancel`. Other rows ignore it. Any other key disarms |
+| `app.panel.open` (Enter) | A row with an action (MCP server `Login`) queues `Perform`, which `TaskStore::perform` runs (`/mcp login` path). Other rows queue `Open`, a no-op until the attach view (T3.3) |
+| `app.panel.cancel` (`x`) | First press arms the row (the right column says `press x again to cancel`). Second: an Abort row (MCP call) queues `Perform(Abort)`; a running subagent run queues `Cancel`, through `SubagentPool::cancel`. Other rows ignore it. Any other key disarms |
 | `app.panel.exit` (Esc) | Disarms a pending cancel, else back to the prompt |
 
 **Scroll and density.** Focus shows the strip even with one tab, the pick marker `›`, and a hint line, and shows full rows even in the summary density.

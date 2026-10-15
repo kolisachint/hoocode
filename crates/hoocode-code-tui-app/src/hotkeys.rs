@@ -119,7 +119,7 @@ onto it. Press again or add `Shift` and you are back where you were.
 | Key | Action |
 |-----|--------|
 | `{view_forward}` / `{view_backward}` | Step tool output: radar ↔ peek |
-| `{cycle_task_view}` / `{cycle_task_view_back}` | Step the task panel's tab: Plan → Agents → MCP |
+| `{cycle_task_view}` / `{cycle_task_view_back}` | Step the task panel's tab: Plan → Agents → Schedule → MCP |
 | `{panel_focus}` | Focus the task panel (again returns to the prompt). `{panel_tab}` / `{panel_back_tab}` switch tabs, the arrows pick a row, `{panel_open}` opens it, `x` twice cancels a subagent run, `{panel_exit}` back to the prompt |
 | `{expand_tools}` | Toggle tool output between radar and peek |
 | `{toggle_thinking}` | Show or hide thinking blocks |
