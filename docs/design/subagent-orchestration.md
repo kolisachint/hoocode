@@ -165,7 +165,7 @@ Who does what:
 |---|---|---|---|---|
 | 4a | Add `background: true` to the frontmatter. It stays true if the default changes | `general-purpose.md:15-17` | P1 | text |
 | 4b | **Done 2026-10-15.** Keep `background: false` as a value. Stop dropping it to None. As built: the frontmatter flag reads `Some(*b)` (the flag helper is shared, so `fork: false` is now `Some(false)` too; every consumer tests `== Some(true)`, so nothing changes for fork) | `agent_frontmatter.rs` flag helper, was `b.then_some(true)` | P2 | rust, small |
-| 4c | Background by default for every agent. Tool param still overrides | `tools.rs:73-80`, `:810-813` | D1 | rust, small |
+| 4c | **Done 2026-10-15.** Background by default for every agent. Tool param still overrides. As built: `collect_foreground_agent_names` lists the agents with `background: false`; `runs_in_background` gives the call's argument, else background unless the agent is in that list (Q1). Same rule in the Agent tool's `background_when` and in `execute_task` (resume and new dispatch) | `tools.rs` (`collect_background_agent_names` was `:73-80`; the dispatch sites were `:810-813`) | D1 | rust, small |
 | 4d | Final-answer rule in every body (text below) | `explore.md`, `code-review.md`, `security-review.md`; `general-purpose.md:35` and `plan.md:36` already say a version | P9 | text |
 | 4e | Gate the delegation block on the same depth check as the tool. Children at the cap get no block | `runtime.rs:620`, `:626`; compare `:347` | P5 | rust, small |
 | 4f | Keep base guidelines for custom bodies. Append a short base block, do not replace | `pool.rs:1152-1154` passes the body as `--system-prompt`; `system_prompt.rs:351-369` returns before the base guidelines | P6 | rust, small |

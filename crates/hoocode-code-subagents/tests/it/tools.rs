@@ -432,9 +432,9 @@ fn the_task_tool_runs_in_the_background_per_agent_or_argument() {
         name: "Agent".into(),
         arguments: args,
     };
-    // Built-in explore is a background agent; general-purpose is not.
+    // Every agent is a background agent by default, general-purpose included (card 9, D1).
     assert!(predicate(&call(json!({"subagent_type": "explore"}))));
-    assert!(!predicate(&call(
+    assert!(predicate(&call(
         json!({"subagent_type": "general-purpose"})
     )));
     // A per-call argument overrides either way.
@@ -443,6 +443,38 @@ fn the_task_tool_runs_in_the_background_per_agent_or_argument() {
     )));
     assert!(predicate(&call(
         json!({"subagent_type": "general-purpose", "background": true})
+    )));
+}
+
+#[test]
+fn an_agent_is_background_unless_its_definition_says_background_false() {
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let agents = dir.path().join(DIR).join("agents");
+    std::fs::create_dir_all(&agents).unwrap();
+    std::fs::write(
+        agents.join("fg-only.md"),
+        "---\nname: fg-only\ndescription: Waits for its answer.\nbackground: false\n---\nBody.",
+    )
+    .unwrap();
+    let tool = create_task_tool_definition(dir.path());
+    let predicate = tool.background_when.clone().unwrap();
+    let call = |args: Value| AgentToolCall {
+        id: "c".into(),
+        name: "Agent".into(),
+        arguments: args,
+    };
+    assert!(predicate(&call(
+        json!({"subagent_type": "general-purpose"})
+    )));
+    // The definition's opt-out makes foreground the agent's default.
+    assert!(!predicate(&call(json!({"subagent_type": "fg-only"}))));
+    // The call's argument wins over the definition in both directions.
+    assert!(predicate(&call(
+        json!({"subagent_type": "fg-only", "background": true})
+    )));
+    assert!(!predicate(&call(
+        json!({"subagent_type": "general-purpose", "background": "false"})
     )));
 }
 
@@ -520,7 +552,7 @@ async fn task_tool_execute_paths() {
     let pool = install_pool(&cwd, mock_child(&cwd, "Found it in main.rs", "complete", 0));
     let r = execute(
         tool.clone(),
-        json!({"description": "Find the bug", "prompt": "Find the bug", "subagent_type": "general-purpose"}),
+        json!({"description": "Find the bug", "prompt": "Find the bug", "subagent_type": "general-purpose", "background": false}),
         ctx(&cwd),
     )
     .await
@@ -579,7 +611,7 @@ async fn task_tool_execute_paths() {
     let pool = install_pool(&cwd, mock_child(&cwd, "Task failed: quota", "failed", 1));
     let err = execute(
         tool.clone(),
-        json!({"description": "Do it", "prompt": "Do it", "subagent_type": "general-purpose"}),
+        json!({"description": "Do it", "prompt": "Do it", "subagent_type": "general-purpose", "background": false}),
         ctx(&cwd),
     )
     .await
@@ -970,8 +1002,7 @@ fn a_project_agent_opting_into_background_runs_detached() {
     };
     assert!(predicate(&call("watcher")));
     assert!(predicate(&call("explore")));
-    assert!(!predicate(&call("general-purpose")));
-    assert!(!predicate(&call("does-not-exist")));
+    assert!(predicate(&call("general-purpose")));
 }
 
 fn active_tool_names(with_task: bool) -> Vec<String> {
@@ -1130,7 +1161,7 @@ async fn a_scoped_category_runs_on_its_model_and_the_result_names_it() {
     };
     let result = execute(
         tool.clone(),
-        json!({"description": "quick read", "prompt": "read one file", "subagent_type": "general-purpose", "model": "fast"}),
+        json!({"description": "quick read", "prompt": "read one file", "subagent_type": "general-purpose", "model": "fast", "background": false}),
         with_models(),
     )
     .await
@@ -1486,7 +1517,7 @@ async fn a_partial_run_says_how_to_resume_it() {
 
     let r = execute(
         tool.clone(),
-        json!({"description": "Survey", "prompt": "Survey", "subagent_type": "general-purpose"}),
+        json!({"description": "Survey", "prompt": "Survey", "subagent_type": "general-purpose", "background": false}),
         ctx(&cwd),
     )
     .await
@@ -1533,6 +1564,36 @@ async fn a_string_background_false_runs_in_the_foreground() {
         text(&r)
     );
     assert!(r.details.get("background").is_none(), "{}", r.details);
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn general_purpose_runs_in_the_background_when_the_call_says_nothing() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    let pool = install_pool(&cwd, mock_child(&cwd, "Read the module", "complete", 0));
+    let r = execute(
+        tool.clone(),
+        json!({"description": "Read it", "prompt": "Read the module", "subagent_type": "general-purpose"}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    // A notification, not the answer: the body waits in the inbox for AgentOutput.
+    assert!(
+        text(&r).starts_with("general-purpose#1 finished ✓"),
+        "{}",
+        text(&r)
+    );
+    assert_subset(&r.details, json!({"ok": true, "background": true}));
     pool.dispose();
     set_subagent_pool_for_testing(None);
     task_store().clear();

@@ -312,6 +312,18 @@ longer needs. (2026-10-15: there is one template now; see the note in
   and the tool's declared timeout plus 60 s. A tool with timeout 0 has no bound.
 - **Read on a directory.** `Read` on a directory returns a listing, not an error.
 
+## 5f. Background by default (2026-10-15)
+
+- **Every agent runs in the background unless it says otherwise.** A call's
+  `background` argument wins. Else the agent's definition decides: `background: false`
+  in its frontmatter makes foreground its default (the frontmatter value is kept as
+  `Some(false)`, so it is no longer dropped). Agents with no field, general-purpose
+  included, run in the background. Decided 2026-10-09 (D1, Q1); see
+  [subagent-orchestration.md](subagent-orchestration.md) §4.
+- A foreground answer still comes back inline; a background run returns a
+  notification and its body waits for `AgentOutput`.
+- Tests that mean "foreground" now pass `background: false` explicitly.
+
 ## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 
 §6 of this file used to be an open question. It is now an answer, and the
