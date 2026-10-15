@@ -335,6 +335,22 @@ fn context_files_section(context_files: &[ContextFile]) -> String {
     out
 }
 
+/// The guidelines every prompt keeps, whether the body is the default or custom.
+const BASE_GUIDELINES: [&str; 6] = [
+    "Put independent tool calls in one message — they execute in parallel; only split them across turns when a call needs an earlier call's result",
+    "Be concise: no preamble or postamble, no restating the task or summarizing what you just did, no closers like \"Let me know\"",
+    "Do not narrate routine tool calls or results — the permission gate already shows them; speak when you have the answer or need a decision",
+    "Match the surrounding code's conventions for comments, docstrings, and types — do not add or strip them by default",
+    "Cite path:line when referring to code",
+    "If a command failed, a test is still red, or you did not verify something, say so plainly",
+];
+
+/// The base guidelines as a `Guidelines:` block, for a custom body.
+fn base_guidelines_section() -> String {
+    let bullets: Vec<String> = BASE_GUIDELINES.iter().map(|g| format!("- {g}")).collect();
+    format!("\n\nGuidelines:\n{}", bullets.join("\n"))
+}
+
 /// `buildSystemPrompt`: the system prompt with tools, guidelines, and context.
 pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
     let prompt_cwd = options.cwd.replace('\\', "/");
@@ -351,7 +367,10 @@ pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
     if let Some(custom) = custom_prompt {
         let selected = options.selected_tools.as_ref();
         let has = |name: &str| selected.is_none_or(|tools| tools.iter().any(|t| t == name));
+        // A custom body replaces the default's intro and tool list, not its
+        // base guidelines: children and `--system-prompt` runs keep them (4f).
         let mut prompt = custom.to_string();
+        prompt.push_str(&base_guidelines_section());
         prompt.push_str(&append_section);
         prompt.push_str(&context_files_section(&options.context_files));
         let has_read = has("Read");
@@ -418,14 +437,9 @@ pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
             add(normalized);
         }
     }
-    add("Put independent tool calls in one message — they execute in parallel; only split them across turns when a call needs an earlier call's result");
-    add("Be concise: no preamble or postamble, no restating the task or summarizing what you just did, no closers like \"Let me know\"");
-    add("Do not narrate routine tool calls or results — the permission gate already shows them; speak when you have the answer or need a decision");
-    add("Match the surrounding code's conventions for comments, docstrings, and types — do not add or strip them by default");
-    add("Cite path:line when referring to code");
-    add(
-        "If a command failed, a test is still red, or you did not verify something, say so plainly",
-    );
+    for guideline in BASE_GUIDELINES {
+        add(guideline);
+    }
 
     let guidelines = guidelines
         .iter()
@@ -632,8 +646,29 @@ Current date: 2026-01-02\nCurrent working directory: C:/w/p"
         }];
         assert_eq!(
             build_system_prompt(&o),
-            "Be terse.\n\nExtra.\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n## /w/AGENTS.md\n\nrules\n\n\n\nCurrent date: 2026-01-02\nCurrent working directory: /w"
+            format!(
+                "Be terse.{}\n\nExtra.\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n## /w/AGENTS.md\n\nrules\n\n\n\nCurrent date: 2026-01-02\nCurrent working directory: /w",
+                base_guidelines_section()
+            )
         );
+    }
+
+    #[test]
+    fn custom_prompt_keeps_the_base_guidelines_and_the_default_keeps_each_one_once() {
+        let mut o = opts(Some(&["Read"]));
+        o.custom_prompt = Some("Be terse.".into());
+        o.date = Some("2026-01-02".into());
+        o.cwd = "/w".into();
+        let custom = build_system_prompt(&o);
+        assert!(custom.starts_with("Be terse.\n\nGuidelines:\n- Put independent tool calls"));
+        assert!(custom.contains("- Cite path:line when referring to code"));
+        assert!(!custom.contains("Available tools:"));
+        // The default prompt lists each base guideline exactly once.
+        o.custom_prompt = None;
+        let default = build_system_prompt(&o);
+        for guideline in BASE_GUIDELINES {
+            assert_eq!(default.matches(guideline).count(), 1, "{guideline}");
+        }
     }
 
     #[test]
