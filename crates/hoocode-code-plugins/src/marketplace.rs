@@ -7,6 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -414,13 +415,42 @@ pub fn entry_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
 
 /// Clone `url` into a new folder `dest` (a full clone, so a commit can be checked out).
 pub fn clone_url(url: &str, dest: &Path) -> Result<(), String> {
+    check_git_value(url, "repository")?;
     let dest_text = dest.to_string_lossy().into_owned();
     git(&["clone", "--quiet", "--", url, &dest_text], None)
 }
 
 /// Check out `revision` (a branch, tag or commit) in `dir`.
 pub fn checkout(dir: &Path, revision: &str) -> Result<(), String> {
+    check_git_value(revision, "revision")?;
     git(&["checkout", "--quiet", revision], Some(dir))
+}
+
+/// Refuse a value from a marketplace that git would read as something other than a plain
+/// repository or revision: an option (`--upload-pack=...`), or a transport helper that runs a
+/// program (`ext::`, `fd::`, any `name::`). Plain paths and `scheme://` URLs pass.
+pub fn check_git_value(text: &str, what: &str) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Err(format!("the {what} is empty"));
+    }
+    if text.starts_with('-') {
+        return Err(format!(
+            "the {what} \"{text}\" starts with '-', so git would read it as an option"
+        ));
+    }
+    if let Some(at) = text.find("::") {
+        let helper = &text[..at];
+        if !helper.is_empty()
+            && helper
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        {
+            return Err(format!(
+                "the {what} \"{text}\" names a git transport helper, which is refused"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Run `git` with the given arguments. Credential prompts are off: a prompt would hang the
@@ -455,12 +485,86 @@ pub fn now_secs() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-/// Write `bytes` to `path` through a temporary file in the same folder.
+/// Write `bytes` to `path` through a temporary file in the same folder. The temporary name is
+/// unique to this process and call, so two writers never share one file.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
-    fs::rename(&tmp, path).map_err(|e| e.to_string())
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp = path.with_extension(format!("{}-{n}.tmp", std::process::id()));
+    let result = fs::write(&tmp, bytes).and_then(|()| fs::rename(&tmp, path));
+    result.map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_values_that_are_options_or_helpers_are_refused() {
+        assert!(check_git_value("--upload-pack=touch x", "repository").is_err());
+        assert!(check_git_value("-b", "revision").is_err());
+        assert!(check_git_value("ext::sh -c touch% x", "repository").is_err());
+        assert!(check_git_value("fd::3", "repository").is_err());
+        assert!(check_git_value("", "revision").is_err());
+        assert!(check_git_value("https://example.com/a::b.git", "repository").is_ok());
+        assert!(check_git_value("file:///tmp/repo", "repository").is_ok());
+        assert!(check_git_value("/tmp/repo", "repository").is_ok());
+        assert!(check_git_value("v1.2.3", "revision").is_ok());
+    }
+
+    #[test]
+    fn clone_and_checkout_refuse_option_values_before_running_git() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("dest");
+        let error = clone_url("--upload-pack=touch pwned", &dest).unwrap_err();
+        assert!(error.contains("option"), "{error}");
+        assert!(clone_url("ext::sh -c touch pwned", &dest).is_err());
+        let error = checkout(dir.path(), "--orphan=x").unwrap_err();
+        assert!(error.contains("option"), "{error}");
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn a_bad_entry_name_is_skipped_not_joined_into_a_path() {
+        let text = r#"{"name": "mk", "plugins": [
+            {"name": "../escape", "source": "./plugins/x"},
+            {"name": "good", "source": "./plugins/good"}]}"#;
+        let index = parse_index(text).unwrap();
+        assert_eq!(index.entries.len(), 1);
+        assert_eq!(index.entries[0].name, "good");
+        assert_eq!(index.warnings.len(), 1);
+    }
+
+    // A test-only race: plain threads, since no runtime is involved here.
+    #[allow(clippy::disallowed_methods)]
+    #[test]
+    fn concurrent_writers_never_leave_a_torn_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("records.json");
+        let writers: Vec<_> = (0..8u8)
+            .map(|id| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..100 {
+                        let payload = vec![b'a' + id; 4096];
+                        write_atomic(&path, &payload).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        let text = fs::read(&path).unwrap();
+        assert_eq!(text.len(), 4096);
+        assert!(text.iter().all(|b| *b == text[0]), "a torn write");
+        let leftovers = fs::read_dir(dir.path()).unwrap().count();
+        assert_eq!(leftovers, 1, "a temporary file was left behind");
+    }
 }
