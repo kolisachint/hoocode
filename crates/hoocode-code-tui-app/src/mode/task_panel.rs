@@ -80,13 +80,21 @@ impl Mode {
     /// `x` twice on a running subagent row: stop that run through the pool,
     /// as `/subagent-cancel` does.
     fn cancel_subagent_run(&mut self, run_id: &str) {
+        // Reading the models and making the pool may do I/O: both happen on
+        // the tools pool, and the outcome comes back as a status line.
         let cwd = self.session.cwd().to_path_buf();
-        let models = self.session.get_available_models();
-        let pool = get_subagent_pool(&cwd, &models);
-        if pool.cancel(run_id) {
-            self.show_status(&format!("Cancelling subagent {run_id}…"));
-        } else {
-            self.show_status("That subagent has already ended.");
-        }
+        let session = self.session.clone();
+        let tx = self.tx.clone();
+        let run_id = run_id.to_string();
+        self.runtime.spawn(async move {
+            let models = session.get_available_models();
+            let pool = get_subagent_pool(&cwd, &models);
+            let message = if pool.cancel(&run_id) {
+                format!("Cancelling subagent {run_id}…")
+            } else {
+                "That subagent has already ended.".to_string()
+            };
+            let _ = tx.send(AppEvent::Status(message));
+        });
     }
 }

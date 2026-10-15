@@ -186,6 +186,8 @@ enum AppEvent {
     CompactionQueueFailed(Vec<(String, StreamingBehavior)>, String),
     /// A message typed while streaming could not be queued.
     QueueError(String),
+    /// A status line from off the UI thread (a subagent cancel's outcome).
+    Status(String),
     /// The `/import` confirm, or the confirm for a stored cwd that is gone, answered.
     ImportAnswer {
         input: String,
@@ -1208,6 +1210,7 @@ impl Mode {
                         self.show_error(&error);
                     }
                     AppEvent::QueueError(error) => self.show_error(&error),
+                    AppEvent::Status(message) => self.show_status(&message),
                     AppEvent::ImportAnswer {
                         input,
                         cwd_fallback,

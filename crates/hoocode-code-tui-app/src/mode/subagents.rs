@@ -185,27 +185,30 @@ impl Mode {
             .strip_prefix("/subagent-cancel")
             .map_or("", str::trim)
             .to_string();
+        // The pool is made, and its statuses read, on the tools pool (see
+        // `cancel_subagent_run`); the outcome comes back as a status line.
         let cwd = self.session.cwd().to_path_buf();
-        let models = self.session.get_available_models();
-        let pool = get_subagent_pool(&cwd, &models);
-        let status = pool.statuses();
-        let candidate = status
-            .iter()
-            .filter(|(_, state)| state.is_running())
-            .filter(|(id, _)| wanted.is_empty() || id.contains(&wanted))
-            .max_by_key(|(_, state)| state.since());
-        let Some((task_id, _)) = candidate else {
-            let message = if wanted.is_empty() {
-                "No subagent is running.".to_string()
-            } else {
-                format!("No running subagent matches \"{wanted}\".")
+        let session = self.session.clone();
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let models = session.get_available_models();
+            let pool = get_subagent_pool(&cwd, &models);
+            let status = pool.statuses();
+            let candidate = status
+                .iter()
+                .filter(|(_, state)| state.is_running())
+                .filter(|(id, _)| wanted.is_empty() || id.contains(&wanted))
+                .max_by_key(|(_, state)| state.since());
+            let message = match candidate {
+                None if wanted.is_empty() => "No subagent is running.".to_string(),
+                None => format!("No running subagent matches \"{wanted}\"."),
+                Some((task_id, _)) if pool.cancel(task_id) => {
+                    format!("Cancelling subagent {task_id}…")
+                }
+                Some(_) => "That subagent has already ended.".to_string(),
             };
-            self.show_status(&message);
-            return;
-        };
-        if pool.cancel(task_id) {
-            self.show_status(&format!("Cancelling subagent {task_id}…"));
-        }
+            let _ = tx.send(AppEvent::Status(message));
+        });
     }
 
     /// `/subagent-retry [agent] [task]`: dispatch again, on the same inputs.
