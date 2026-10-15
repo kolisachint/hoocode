@@ -83,8 +83,12 @@ impl Env {
         git(&repo, &["init", "-q"]);
         git(&repo, &["add", "-A"]);
         git(&repo, &["commit", "-q", "-m", "initial"]);
-        hoocode_code_plugins::install::marketplace_add(self.paths(), &repo.display().to_string())
-            .unwrap();
+        hoocode_code_plugins::install::marketplace_add(
+            self.paths(),
+            &repo.display().to_string(),
+            false,
+        )
+        .unwrap();
     }
 }
 

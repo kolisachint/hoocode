@@ -56,7 +56,7 @@ impl Env {
         git(&repo, &["init", "-q"]);
         git(&repo, &["add", "-A"]);
         git(&repo, &["commit", "-q", "-m", "initial"]);
-        install::marketplace_add(&self.paths, &repo.display().to_string()).unwrap();
+        install::marketplace_add(&self.paths, &repo.display().to_string(), false).unwrap();
     }
 }
 
