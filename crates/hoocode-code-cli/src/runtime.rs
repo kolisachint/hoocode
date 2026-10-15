@@ -343,9 +343,13 @@ fn resource_loader(
         ));
     }
     // main.ts: `systemPrompt: parsed.systemPrompt ?? (lightMode ? LIGHT_SYSTEM_PROMPT : undefined)`
+    let in_subagent = hoocode_code_subagents::depth::current_subagent_depth(
+        &hoocode_code_subagents::depth::ProcessEnv,
+    ) > 0;
     let system_prompt = args
         .system_prompt
         .clone()
+        .map(|body| child_system_prompt(body, in_subagent))
         .or_else(|| light.then(|| hoocode_code_prompts::LIGHT_SYSTEM_PROMPT.to_string()));
     DefaultResources::loaded(DefaultResourceLoaderOptions {
         cwd: cwd.to_string_lossy().into_owned(),
@@ -527,6 +531,21 @@ fn subagent_tools(
         hoocode_code_subagents::tools::create_task_tool_definition(cwd),
         hoocode_code_subagents::tools::create_task_output_tool_definition(),
     ]
+}
+
+/// The system prompt a subagent child runs with: its agent body, then the base
+/// guidelines (card 9, 4f). A custom body replaces the default prompt, so without
+/// this block a child would lose the base rules. A user's `--system-prompt` (and
+/// light mode) is not a subagent body and is returned unchanged.
+fn child_system_prompt(body: String, in_subagent: bool) -> String {
+    if in_subagent {
+        format!(
+            "{body}\n\n{}",
+            hoocode_code_prompts::base_guidelines_block()
+        )
+    } else {
+        body
+    }
 }
 
 /// Whether this process gets the Agent and AgentOutput tools, and so the
@@ -1914,6 +1933,18 @@ pub fn run_interactive_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_subagent_child_keeps_the_base_guidelines_and_a_user_body_is_unchanged() {
+        assert_eq!(
+            child_system_prompt("Be a reviewer.".into(), true),
+            format!(
+                "Be a reviewer.\n\n{}",
+                hoocode_code_prompts::base_guidelines_block()
+            )
+        );
+        assert_eq!(child_system_prompt("Be terse.".into(), false), "Be terse.");
+    }
 
     #[test]
     fn the_delegation_block_follows_the_agent_tool_gate() {

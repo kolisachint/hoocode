@@ -323,10 +323,11 @@ longer needs. (2026-10-15: there is one template now; see the note in
 - A foreground answer still comes back inline; a background run returns a
   notification and its body waits for `AgentOutput`.
 - Tests that mean "foreground" now pass `background: false` explicitly.
-- **A custom body keeps the base guidelines** (2026-10-15, card 9 4f). The six
-  generic guidelines (parallel tool calls, concise, no narration, match conventions,
-  cite path:line, say what was not verified) are appended as a `Guidelines:` block
-  after the body. A user's `--system-prompt` body gets the same block.
+- **A subagent's custom body keeps the base guidelines** (2026-10-15, card 9 4f). The
+  six generic guidelines (parallel tool calls, concise, no narration, match conventions,
+  cite path:line, say what was not verified) are appended as a `Guidelines:` block after
+  the agent body, only in a subagent child (depth > 0). A user's `--system-prompt` and
+  light mode still replace the default prompt.
 
 ## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 

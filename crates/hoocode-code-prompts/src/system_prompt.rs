@@ -345,10 +345,12 @@ const BASE_GUIDELINES: [&str; 6] = [
     "If a command failed, a test is still red, or you did not verify something, say so plainly",
 ];
 
-/// The base guidelines as a `Guidelines:` block, for a custom body.
-fn base_guidelines_section() -> String {
+/// The base guidelines as a `Guidelines:` block. A custom body replaces the
+/// default prompt, so a caller that keeps the base rules (a subagent child, see
+/// card 9 4f) appends this block to the body.
+pub fn base_guidelines_block() -> String {
     let bullets: Vec<String> = BASE_GUIDELINES.iter().map(|g| format!("- {g}")).collect();
-    format!("\n\nGuidelines:\n{}", bullets.join("\n"))
+    format!("Guidelines:\n{}", bullets.join("\n"))
 }
 
 /// `buildSystemPrompt`: the system prompt with tools, guidelines, and context.
@@ -367,10 +369,7 @@ pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
     if let Some(custom) = custom_prompt {
         let selected = options.selected_tools.as_ref();
         let has = |name: &str| selected.is_none_or(|tools| tools.iter().any(|t| t == name));
-        // A custom body replaces the default's intro and tool list, not its
-        // base guidelines: children and `--system-prompt` runs keep them (4f).
         let mut prompt = custom.to_string();
-        prompt.push_str(&base_guidelines_section());
         prompt.push_str(&append_section);
         prompt.push_str(&context_files_section(&options.context_files));
         let has_read = has("Read");
@@ -646,26 +645,19 @@ Current date: 2026-01-02\nCurrent working directory: C:/w/p"
         }];
         assert_eq!(
             build_system_prompt(&o),
-            format!(
-                "Be terse.{}\n\nExtra.\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n## /w/AGENTS.md\n\nrules\n\n\n\nCurrent date: 2026-01-02\nCurrent working directory: /w",
-                base_guidelines_section()
-            )
+            "Be terse.\n\nExtra.\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n## /w/AGENTS.md\n\nrules\n\n\n\nCurrent date: 2026-01-02\nCurrent working directory: /w"
         );
     }
 
     #[test]
-    fn custom_prompt_keeps_the_base_guidelines_and_the_default_keeps_each_one_once() {
-        let mut o = opts(Some(&["Read"]));
-        o.custom_prompt = Some("Be terse.".into());
-        o.date = Some("2026-01-02".into());
-        o.cwd = "/w".into();
-        let custom = build_system_prompt(&o);
-        assert!(custom.starts_with("Be terse.\n\nGuidelines:\n- Put independent tool calls"));
-        assert!(custom.contains("- Cite path:line when referring to code"));
-        assert!(!custom.contains("Available tools:"));
+    fn the_base_guidelines_block_lists_each_base_rule_and_the_default_lists_each_once() {
+        let block = base_guidelines_block();
+        assert!(block.starts_with("Guidelines:\n- Put independent tool calls"));
+        for guideline in BASE_GUIDELINES {
+            assert_eq!(block.matches(guideline).count(), 1, "{guideline}");
+        }
         // The default prompt lists each base guideline exactly once.
-        o.custom_prompt = None;
-        let default = build_system_prompt(&o);
+        let default = build_system_prompt(&opts(Some(&["Read"])));
         for guideline in BASE_GUIDELINES {
             assert_eq!(default.matches(guideline).count(), 1, "{guideline}");
         }
