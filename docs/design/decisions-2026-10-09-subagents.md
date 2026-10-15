@@ -12,7 +12,7 @@ with this page, this page wins. The 2026-10-07 and 2026-10-08 pages still stand.
 | D2 | The parent does not idle on a barrier while it has independent work. It keeps dispatching and thinking. `AgentOutput(wait: true)` only when blocked on that one result. |
 | D3 | Worktree isolation is done by instructions the parent passes to the subagent. No Rust worktree feature, no new tool parameter. |
 | D4 | Only agents that can write get a worktree (`general-purpose`; custom agents with Edit, Write or Shell). `explore` and `plan` work in the parent tree. |
-| D5 | Worktrees live in the repo at `.hoocode/worktrees/<label>`, already ignored by `.hoocode/` in `.gitignore`. Branch `agent/<label>`. |
+| D5 | Worktrees live at `~/.hoocode/worktrees/<repo>/<label>`, outside the repo (changed 2026-10-15, see [decisions-2026-10-14.md](decisions-2026-10-14.md) #22). First version, superseded: in the repo at `.hoocode/worktrees/<label>`, ignored by `.hoocode/` in `.gitignore`. Branch `agent/<label>`. |
 | D6 | The subagent commits on its own branch and never pushes. The parent reports the branches. The user merges. |
 | D7 | After a successful merge the parent removes the worktree and branch. On failure or conflict it keeps them and reports. |
 | D8 | This round is design only. No code changes. |
