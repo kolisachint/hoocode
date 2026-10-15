@@ -24,6 +24,11 @@ pub fn hotkeys_markdown() -> String {
     let view_backward = key_display_label("app.view.cycleBackward");
     let cycle_task_view = key_display_label("app.tasks.cycleForward");
     let cycle_task_view_back = key_display_label("app.tasks.cycleBackward");
+    let panel_focus = key_display_text("app.panel.focus");
+    let panel_tab = key_display_text("app.panel.nextTab");
+    let panel_back_tab = key_display_text("app.panel.prevTab");
+    let panel_open = key_display_text("app.panel.open");
+    let panel_exit = key_display_text("app.panel.exit");
     let expand_tools = key_display_text("app.tools.expand");
     let toggle_thinking = key_display_text("app.thinking.toggle");
     let interrupt = key_display_text("app.interrupt");
@@ -114,7 +119,8 @@ onto it. Press again or add `Shift` and you are back where you were.
 | Key | Action |
 |-----|--------|
 | `{view_forward}` / `{view_backward}` | Step tool output: radar ↔ peek |
-| `{cycle_task_view}` / `{cycle_task_view_back}` | Step the task panel: tasks → subagents |
+| `{cycle_task_view}` / `{cycle_task_view_back}` | Step the task panel's tab: Plan → Agents → Schedule → MCP |
+| `{panel_focus}` | Focus the task panel (again returns to the prompt). `{panel_tab}` / `{panel_back_tab}` switch tabs, the arrows pick a row, `{panel_open}` opens it, `x` twice cancels a subagent run, `{panel_exit}` back to the prompt |
 | `{expand_tools}` | Toggle tool output between radar and peek |
 | `{toggle_thinking}` | Show or hide thinking blocks |
 

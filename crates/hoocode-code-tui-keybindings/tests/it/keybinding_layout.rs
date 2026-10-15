@@ -55,6 +55,7 @@ const GLOBAL_SCOPE: &[&str] = &[
     "app.scroll.search",
     "app.tasks.cycleForward",
     "app.tasks.cycleBackward",
+    "app.panel.focus",
     "app.editor.external",
     "app.input.voiceTranscribe",
     "app.message.followUp",
@@ -123,6 +124,19 @@ const TREE_SCOPE: &[&str] = &[
     "tui.editor.deleteCharBackward",
 ];
 
+/// Live while the task panel has focus. It takes the keyboard then, so keys it
+/// shares with the prompt (`tab`, `up`, `enter`) are fine here.
+const PANEL_SCOPE: &[&str] = &[
+    "app.panel.focus",
+    "app.panel.nextTab",
+    "app.panel.prevTab",
+    "app.panel.up",
+    "app.panel.down",
+    "app.panel.open",
+    "app.panel.cancel",
+    "app.panel.exit",
+];
+
 const OPTIONS_SCOPE: &[&str] = &[
     "tui.select.up",
     "tui.select.down",
@@ -153,6 +167,7 @@ const SCOPES: &[(&str, &[&str])] = &[
     ("session picker", SESSION_PICKER_SCOPE),
     ("models picker", MODELS_PICKER_SCOPE),
     ("session tree", TREE_SCOPE),
+    ("task panel", PANEL_SCOPE),
     ("options pane", OPTIONS_SCOPE),
     ("pinned scroll view", SCROLL_SCOPE),
 ];
@@ -541,13 +556,13 @@ fn families() -> Vec<(&'static str, Regex)> {
         ("Flow", r"^app\.(interrupt|clear|exit|suspend)$"),
         ("Compose", r"^app\.(editor\.external|input\.voiceTranscribe|clipboard\.|message\.)"),
         ("Steer", r"^app\.(mode|model)\.|^app\.thinking\.cycle"),
-        ("Read", r"^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.)"),
+        ("Read", r"^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|panel\.focus$)"),
         ("Screen", r"^app\.chrome\."),
         ("Scroll", r"^app\.scroll\.(pageUp|pageDown|top|bottom|previousMessage|nextMessage|search)$"),
         ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)"),
         (
             "Overlays",
-            r"^app\.(options\.|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)",
+            r"^app\.(options\.|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)",
         ),
     ]
     .into_iter()

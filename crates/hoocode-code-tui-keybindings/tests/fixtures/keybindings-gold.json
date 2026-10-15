@@ -384,7 +384,7 @@
    [
     "alt+l"
    ],
-   "Cycle task panel view (tasks → subagents, skips empty lenses)"
+   "Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty tabs)"
   ],
   [
    "app.tasks.cycleBackward",
@@ -392,6 +392,13 @@
     "shift+alt+l"
    ],
    "Cycle task panel view backward"
+  ],
+  [
+   "app.panel.focus",
+   [
+    "ctrl+g"
+   ],
+   "Focus the task panel (again returns to the prompt)"
   ],
   [
    "app.chrome.cycleForward",
@@ -554,6 +561,55 @@
     "p"
    ],
    "Previous search match (pinned view)"
+  ],
+  [
+   "app.panel.nextTab",
+   [
+    "tab"
+   ],
+   "Task panel: next tab"
+  ],
+  [
+   "app.panel.prevTab",
+   [
+    "shift+tab"
+   ],
+   "Task panel: previous tab"
+  ],
+  [
+   "app.panel.up",
+   [
+    "up"
+   ],
+   "Task panel: pick the row above"
+  ],
+  [
+   "app.panel.down",
+   [
+    "down"
+   ],
+   "Task panel: pick the row below"
+  ],
+  [
+   "app.panel.open",
+   [
+    "enter"
+   ],
+   "Task panel: open the picked row"
+  ],
+  [
+   "app.panel.cancel",
+   [
+    "x"
+   ],
+   "Task panel: cancel the picked run (press twice)"
+  ],
+  [
+   "app.panel.exit",
+   [
+    "escape"
+   ],
+   "Task panel: back to the prompt"
   ],
   [
    "app.options.next",
