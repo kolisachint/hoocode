@@ -162,13 +162,16 @@ impl Mode {
                 .await
                 .map_err(|e| e.to_string())
         });
-        self.tree_navigation = Some(entry_id.clone());
+        self.tree_navigation_seq += 1;
+        let navigation = self.tree_navigation_seq;
+        self.tree_navigation = Some(navigation);
         self.runtime.spawn(async move {
             // A panicked summary reads as a failed one.
             let outcome = task
                 .await
                 .unwrap_or_else(|_| Err("Branch summarization failed".into()));
             let _ = tx.send(AppEvent::TreeNavigated {
+                navigation,
                 entry_id,
                 outcome: Box::new(outcome),
             });
@@ -176,13 +179,15 @@ impl Mode {
         self.dirty.set(true);
     }
 
-    /// A summarizing tree navigation ended.
+    /// A summarizing tree navigation ended. Only the navigation in flight
+    /// settles: an aborted one that ends late must not take over a newer one.
     pub(super) fn tree_navigated(
         &mut self,
+        navigation: u64,
         entry_id: String,
         outcome: Result<NavigateTreeResult, String>,
     ) {
-        if self.tree_navigation.take().is_none() {
+        if !settle_tree_navigation(&mut self.tree_navigation, navigation) {
             return;
         }
         self.stop_working_loader();
@@ -215,5 +220,34 @@ impl Mode {
             Err(error) => self.show_error(&error),
         }
         self.dirty.set(true);
+    }
+}
+
+/// Clears the in-flight navigation when `navigation` is that one, and says
+/// whether it was. Any other end (a navigation already settled, or one
+/// superseded by a newer one) leaves the slot as it is.
+fn settle_tree_navigation(in_flight: &mut Option<u64>, navigation: u64) -> bool {
+    if *in_flight == Some(navigation) {
+        *in_flight = None;
+        true
+    } else {
+        false
+    }
+}
+
+#[cfg(test)]
+mod tree_navigation_tests {
+    use super::settle_tree_navigation;
+
+    #[test]
+    fn only_the_navigation_in_flight_settles() {
+        let mut in_flight = Some(2);
+        // An aborted navigation that ends late does not settle the newer one.
+        assert!(!settle_tree_navigation(&mut in_flight, 1));
+        assert_eq!(in_flight, Some(2));
+        assert!(settle_tree_navigation(&mut in_flight, 2));
+        assert_eq!(in_flight, None);
+        // Once settled, a repeated end is ignored.
+        assert!(!settle_tree_navigation(&mut in_flight, 2));
     }
 }

@@ -254,6 +254,23 @@ async fn duplicate_task_id_is_an_error() {
     p.dispose();
 }
 
+/// A queued run has no pid yet, but the pool holds it: it is live, so the
+/// picker does not call it interrupted and offer its resume.
+#[tokio::test]
+async fn a_queued_or_running_task_is_live_until_the_pool_drops_it() {
+    let dir = setup();
+    let p = pool(mock(dir.path(), 0, 5000), 1, dir.path());
+    p.spawn(task("t1", "explore", "hello")).unwrap();
+    p.spawn(task("t2", "explore", "hello")).unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(p.queued_count(), 1, "t2 waits for the one slot");
+    assert!(p.is_live("t1"), "running");
+    assert!(p.is_live("t2"), "queued");
+    assert!(!p.is_live("nope"));
+    p.dispose();
+    assert!(!p.is_live("t1"), "disposed");
+}
+
 #[tokio::test]
 async fn dispose_kills_running_processes_and_rejects_waiters() {
     let dir = setup();
@@ -1715,4 +1732,55 @@ fn a_run_is_live_only_while_its_recorded_pid_is_alive() {
     // Far above any pid this machine hands out: no such process.
     std::fs::write(dispatch.join("pid"), "4194303").unwrap();
     assert!(!run_is_live(cwd, "pid-run"), "a dead pid is not live");
+}
+
+/// A task id comes from a session file's record, so it must not reach outside
+/// the parent's `subagents/` dir: a `..` id resolves to no transcript, even
+/// when the file it names exists.
+#[test]
+fn a_task_id_that_is_not_a_plain_name_resolves_to_no_transcript() {
+    let dir = setup();
+    let cwd = dir.path();
+    let parent = cwd.join("p.jsonl");
+    // The parent's subagents dir: cwd/p/subagents (see subagents_dir).
+    let transcripts = cwd.join("p").join("subagents");
+    std::fs::create_dir_all(&transcripts).unwrap();
+    std::fs::write(transcripts.join("run.jsonl"), "{}\n").unwrap();
+    // From cwd/p/subagents, "../../outside" is cwd/outside.jsonl.
+    std::fs::write(cwd.join("outside.jsonl"), "{}\n").unwrap();
+
+    assert!(run_transcript(cwd, "run", Some(&parent)).is_some());
+    for id in ["../../outside", "..", ".", "", "a/b", "a\\b"] {
+        assert!(
+            run_transcript(cwd, id, Some(&parent)).is_none(),
+            "{id:?} must not name a transcript"
+        );
+    }
+}
+
+/// A run resumed once has a newer task id than its transcript's file name, so
+/// a resume of it again continues the transcript the caller named, not the
+/// file the new id would name.
+#[test]
+fn a_resumed_run_continues_the_transcript_its_row_names() {
+    let dir = setup();
+    let cwd = dir.path();
+    let parent = cwd.join("p.jsonl");
+    let transcripts = cwd.join("p").join("subagents");
+    std::fs::create_dir_all(&transcripts).unwrap();
+    let named = transcripts.join("run-1.jsonl");
+    std::fs::write(&named, "{}\n").unwrap();
+
+    // The second task id names no file: its transcript is run-1.jsonl.
+    assert!(run_transcript(cwd, "run-2", Some(&parent)).is_none());
+    assert_eq!(
+        resume_transcript(cwd, "run-2", Some(&parent), Some(&named)),
+        Some(named.clone())
+    );
+    // Without a named transcript, the task id decides as before.
+    assert_eq!(
+        resume_transcript(cwd, "run-1", Some(&parent), None),
+        Some(named)
+    );
+    assert!(resume_transcript(cwd, "run-2", Some(&parent), None).is_none());
 }

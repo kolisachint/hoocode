@@ -197,6 +197,8 @@ enum AppEvent {
     },
     /// A summarizing tree navigation ended. A panicked one is an `Err`.
     TreeNavigated {
+        /// Which navigation this is (`Mode::tree_navigation`).
+        navigation: u64,
         entry_id: String,
         outcome: Box<Result<NavigateTreeResult, String>>,
     },
@@ -427,8 +429,10 @@ struct Mode {
     anthropic_warning_shown: bool,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
     last_escape: Option<Instant>,
-    /// The target of a summarizing tree navigation in flight (Escape cancels it).
-    tree_navigation: Option<String>,
+    /// The summarizing tree navigation in flight, by its number (Escape cancels it).
+    tree_navigation: Option<u64>,
+    /// The number the last summarizing tree navigation was started with.
+    tree_navigation_seq: u64,
     editor_dialog: Option<OpenEditorDialog>,
     pending_messages: Rc<RefCell<Container>>,
     is_bash_mode: bool,
@@ -786,6 +790,7 @@ impl Mode {
             settings_changes: Rc::default(),
             last_escape: None,
             tree_navigation: None,
+            tree_navigation_seq: 0,
             editor_dialog: None,
             pending_messages,
             is_bash_mode: false,
@@ -1146,9 +1151,11 @@ impl Mode {
                     AppEvent::TreeInstructionsAnswer { entry_id, text } => {
                         self.tree_instructions_answered(entry_id, text)
                     }
-                    AppEvent::TreeNavigated { entry_id, outcome } => {
-                        self.tree_navigated(entry_id, *outcome)
-                    }
+                    AppEvent::TreeNavigated {
+                        navigation,
+                        entry_id,
+                        outcome,
+                    } => self.tree_navigated(navigation, entry_id, *outcome),
                     AppEvent::ThemeChanged => {
                         self.tui.invalidate();
                         self.update_editor_border_color();

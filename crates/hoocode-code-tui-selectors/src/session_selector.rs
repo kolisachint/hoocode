@@ -316,6 +316,87 @@ fn flatten_session_tree(roots: &[TreeNode]) -> Vec<FlatNode> {
     out
 }
 
+/// The sessions the name filter keeps. A subagent run is kept only with its
+/// parent: under the named filter a run whose parent is unnamed would
+/// otherwise show as a top-level session.
+fn name_filtered_sessions(all: &[SessionInfo], name_filter: NameFilter) -> Vec<SessionInfo> {
+    match name_filter {
+        NameFilter::All => all.to_vec(),
+        NameFilter::Named => {
+            let kept_parents: Vec<PathBuf> = all
+                .iter()
+                .filter(|s| s.subagent.is_none() && has_session_name(s))
+                .map(|s| canonical(&s.path))
+                .collect();
+            all.iter()
+                .filter(|s| match &s.subagent {
+                    None => has_session_name(s),
+                    Some(_) => s
+                        .parent_session_path
+                        .as_deref()
+                        .is_some_and(|p| kept_parents.contains(&canonical(Path::new(p)))),
+                })
+                .cloned()
+                .collect()
+        }
+    }
+}
+
+#[cfg(test)]
+mod name_filter_tests {
+    use super::*;
+
+    fn session(path: &str, name: Option<&str>, parent: Option<&str>, run: bool) -> SessionInfo {
+        SessionInfo {
+            path: PathBuf::from(path),
+            id: path.to_string(),
+            cwd: String::new(),
+            name: name.map(str::to_string),
+            color: None,
+            branch: None,
+            parent_session_path: parent.map(str::to_string),
+            created: DateTime::<Utc>::UNIX_EPOCH,
+            modified: DateTime::<Utc>::UNIX_EPOCH,
+            message_count: 1,
+            all_messages_text: String::new(),
+            first_message: String::new(),
+            subagent: run.then(|| SubagentRun {
+                task_id: "run".into(),
+                agent_type: "explore".into(),
+                state: SubagentState::Interrupted,
+            }),
+        }
+    }
+
+    /// Under the named filter, a run whose parent is unnamed goes with it: it
+    /// does not surface as a top-level row. A run of a named parent stays.
+    #[test]
+    fn a_run_is_kept_under_the_named_filter_only_with_its_named_parent() {
+        let all = vec![
+            session("/s/unnamed.jsonl", None, None, false),
+            session(
+                "/s/unnamed/subagents/a.jsonl",
+                None,
+                Some("/s/unnamed.jsonl"),
+                true,
+            ),
+            session("/s/named.jsonl", Some("Work"), None, false),
+            session(
+                "/s/named/subagents/b.jsonl",
+                Some("renamed run"),
+                Some("/s/named.jsonl"),
+                true,
+            ),
+        ];
+        let named: Vec<String> = name_filtered_sessions(&all, NameFilter::Named)
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        assert_eq!(named, ["/s/named.jsonl", "/s/named/subagents/b.jsonl"]);
+        assert_eq!(name_filtered_sessions(&all, NameFilter::All).len(), 4);
+    }
+}
+
 /// A subagent run's row label: its type, and where the run stands.
 fn subagent_label(run: &SubagentRun) -> String {
     let state = match &run.state {
@@ -455,15 +536,7 @@ impl SessionList {
     }
 
     fn filter_sessions(&mut self, query: &str) {
-        let name_filtered: Vec<SessionInfo> = match self.name_filter {
-            NameFilter::All => self.all_sessions.clone(),
-            NameFilter::Named => self
-                .all_sessions
-                .iter()
-                .filter(|s| has_session_name(s))
-                .cloned()
-                .collect(),
-        };
+        let name_filtered = name_filtered_sessions(&self.all_sessions, self.name_filter);
         if self.sort_mode == SortMode::Threaded && js_trim(query).is_empty() {
             self.filtered = flatten_session_tree(&build_session_tree(&name_filtered));
         } else {
