@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
 
-use hoocode_agent_types::{AgentToolCall, AgentToolResult};
+use hoocode_agent_types::{AgentToolCall, AgentToolResult, AgentToolUpdateCallback};
 use hoocode_ai_types::Content;
 use hoocode_code_resources::agent_registry::EMBEDDED_AGENT_PROMPTS;
 use hoocode_code_resources::{parse_agent_definition, AgentSource};
@@ -19,6 +19,7 @@ use hoocode_code_subagents::instance::{
     dispose_subagent_pool, get_subagent_pool, set_scoped_models_override,
     set_subagent_pool_for_testing,
 };
+use hoocode_code_subagents::live::run_for_tool_call;
 use hoocode_code_subagents::pool::{
     DispatchOptions, ResultStatus, SubagentPool, SubagentPoolOptions, SubagentResult, TaskResult,
 };
@@ -927,6 +928,68 @@ async fn the_models_override_is_passed_to_nested_children() {
     set_subagent_pool_for_testing(None);
     set_scoped_models_override(None);
     task_store().clear();
+}
+
+/// T3.2: an Agent call announces its pool run at dispatch, as a partial whose
+/// details carry `poolTaskId`, and the run is findable by the call id after.
+#[tokio::test]
+async fn the_agent_call_announces_its_run_at_dispatch() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let agents = cwd.join(DIR).join("agents");
+    std::fs::create_dir_all(&agents).unwrap();
+    std::fs::write(
+        agents.join("helper.md"),
+        "---\nname: helper\ndescription: Inherits the model.\ntools: read\nmodel: inherit\n---\nHelp.",
+    )
+    .unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    let pool = SubagentPool::new(SubagentPoolOptions {
+        executable: argv_child(&cwd),
+        cwd: Some(cwd.clone()),
+        ..Default::default()
+    });
+    set_subagent_pool_for_testing(Some(pool.clone()));
+    let partials = Arc::new(std::sync::Mutex::new(Vec::<AgentToolResult>::new()));
+    let sink = partials.clone();
+    let on_update: AgentToolUpdateCallback =
+        Box::new(move |partial| sink.lock().unwrap().push(partial));
+    let args = json!({
+        "description": "quick read",
+        "prompt": "read one file",
+        "subagent_type": "helper",
+        "background": false,
+    });
+    let tool_ctx = ctx(&cwd);
+    let execute = tool.execute.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        execute(
+            "call-announce".into(),
+            args,
+            None,
+            Some(on_update),
+            Some(&tool_ctx),
+        )
+    })
+    .await
+    .unwrap();
+    let partials = partials.lock().unwrap();
+    let first = partials.first().expect("a partial at dispatch");
+    let run = first.details["poolTaskId"].as_str().expect("the run's id");
+    assert!(!run.is_empty());
+    assert_eq!(first.details["status"], "running");
+    assert_eq!(
+        run_for_tool_call("call-announce").as_deref(),
+        Some(run),
+        "the call finds its run by id"
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
 }
 
 #[tokio::test]

@@ -20,6 +20,7 @@ use hoocode_code_media::rich_clipboard::CopyFlavour;
 use hoocode_code_paths::{APP_NAME, VERSION};
 use hoocode_code_settings::{ChromeDensity, EditorBorder, ToolOutputView};
 use hoocode_code_subagents::agent_log::{agent_log, set_terminal_owned_by_tui};
+use hoocode_code_subagents::live::LiveSink;
 use hoocode_code_task_store::task_store;
 use hoocode_code_tool_bash::BashResult;
 use hoocode_code_tui_keybindings::{
@@ -168,6 +169,9 @@ enum AppEvent {
     PastedImage(Option<ClipboardImage>),
     /// A `/subagent` run ended: its mode, and its summary or error.
     SubagentDone(String, Result<Option<String>, String>),
+    /// A live event of a subagent run (`hoocode_code_subagents::live`): its pool
+    /// task id, then the child's event (or `{"type": "task_*"}` for a lifecycle step).
+    Subagent(String, serde_json::Value),
     /// A session operation run off the UI thread ended (`session_op.rs`).
     SessionOp(Box<session_op::SessionOpDone>),
     /// Queued messages sent after a compaction failed; they go back.
@@ -971,6 +975,17 @@ impl Mode {
                 .send(AppEvent::Dialog(request))
                 .is_ok()
         })));
+        // Live events of subagent runs (T3.1), throttled to the streaming rate.
+        let tx = Mutex::new(self.tx.clone());
+        hoocode_code_subagents::instance::set_live_sink(Some(LiveSink {
+            throttle: STREAM_RENDER_THROTTLE,
+            send: Arc::new(move |task_id, event| {
+                let _ = tx
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .send(AppEvent::Subagent(task_id, event));
+            }),
+        }));
         self.ask_mcp_trust();
         let tx = self.tx.clone();
         on_theme_change(move || {
@@ -1138,6 +1153,9 @@ impl Mode {
                     AppEvent::CopyDone(subject, result) => self.finish_copy(&subject, result),
                     AppEvent::PastedImage(image) => self.insert_pasted_image(image),
                     AppEvent::SubagentDone(mode, result) => self.finish_subagent(&mode, result),
+                    AppEvent::Subagent(task_id, event) => {
+                        self.apply_subagent_event(&task_id, event)
+                    }
                     AppEvent::SessionOp(done) => self.finish_session_op(*done),
                     AppEvent::CompactionQueueFailed(queued, error) => {
                         self.session.clear_queue();
@@ -1246,6 +1264,7 @@ impl Mode {
 
         hoocode_runtime::watchdog::ui_stopped();
         set_dialog_sink(None);
+        hoocode_code_subagents::instance::set_live_sink(None);
         if let Some(picker) = self.picker.take() {
             picker.dispose();
         }

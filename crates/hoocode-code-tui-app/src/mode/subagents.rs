@@ -6,6 +6,7 @@ use hoocode_code_agent_session::format::group_digits;
 use hoocode_code_resources::agent_registry::{load_agent_registry, LoadAgentRegistryOptions};
 use hoocode_code_subagents::instance::get_subagent_pool;
 use hoocode_code_subagents::ledger;
+use hoocode_code_subagents::live::{self as live, run_for_tool_call};
 use hoocode_code_subagents::pool::DispatchOptions;
 use hoocode_code_tui_selectors::session_selector::SubagentRunRef;
 use hoocode_code_tui_theme::theme;
@@ -104,6 +105,31 @@ impl Mode {
             };
             let _ = tx.send(AppEvent::SubagentDone(mode, outcome));
         });
+    }
+
+    /// A live event of a subagent run (T3.1). The run's activity tail moves, and
+    /// the Agent tool block that dispatched the run redraws: its live tail
+    /// while the run is going, its result once it settles. A run's start and
+    /// end re-render the block in full, since they switch between the two.
+    pub(super) fn apply_subagent_event(&mut self, task_id: &str, event: serde_json::Value) {
+        let lifecycle = event
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|kind| kind.starts_with("task_"));
+        live::apply(task_id, &event);
+        for block in self.tool_blocks() {
+            let call = block.borrow().tool_call_id().to_string();
+            if run_for_tool_call(&call).as_deref() != Some(task_id) {
+                continue;
+            }
+            let mut block = block.borrow_mut();
+            if lifecycle {
+                block.refresh();
+            } else {
+                block.invalidate();
+            }
+        }
+        self.dirty.set(true);
     }
 
     /// Resume an interrupted subagent run from the session picker: the same

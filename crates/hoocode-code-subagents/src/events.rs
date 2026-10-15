@@ -2,28 +2,33 @@
 //! `core/subagent-pool.ts`: which child stdout events cross the pipe and what
 //! the parent does with each line.
 //!
-//! A subagent child writes only the progress events (forwarded to the UI as
+//! A subagent child writes its session events (forwarded to the UI as
 //! `task_progress`) and `message_end` (token usage for the parent's
-//! [`TokenBudget`](crate::token_budget::TokenBudget)); the per-delta firehose
-//! is dropped at the source. The result travels via `result.json` and
-//! liveness via periodic `{"ping":true}` lines.
+//! [`TokenBudget`](crate::token_budget::TokenBudget)). Assistant text arrives
+//! as `message_update` text deltas, coalesced at the source to
+//! [`DELTA_THROTTLE`](crate::live::DELTA_THROTTLE); every other per-delta event
+//! is dropped there. The result travels via `result.json` and liveness via
+//! periodic `{"ping":true}` lines.
 
 use serde_json::{Map, Value};
 
-/// `SUBAGENT_PROGRESS_EVENTS` (and the pool's `FORWARDED_SUBAGENT_EVENTS`).
+/// The coarse progress events (the task panel's activity is built from these).
 pub const SUBAGENT_PROGRESS_EVENTS: &[&str] =
     &["turn_end", "tool_execution_start", "tool_execution_end"];
 
-/// `SUBAGENT_STDOUT_EVENT_TYPES`: what the child writes.
+/// `SUBAGENT_STDOUT_EVENT_TYPES`: what the child writes. `message_update` is
+/// the coalesced text delta (see the module doc), not the per-delta event.
 pub const SUBAGENT_STDOUT_EVENT_TYPES: &[&str] = &[
     "turn_end",
     "tool_execution_start",
     "tool_execution_end",
+    "message_update",
     "message_end",
 ];
 
-/// `FORWARDED_SUBAGENT_EVENTS`: the pool forwards exactly the progress set.
-pub const FORWARDED_SUBAGENT_EVENTS: &[&str] = SUBAGENT_PROGRESS_EVENTS;
+/// `FORWARDED_SUBAGENT_EVENTS`: the pool forwards every event the child writes,
+/// so the UI can show a run's live activity (T3.1).
+pub const FORWARDED_SUBAGENT_EVENTS: &[&str] = SUBAGENT_STDOUT_EVENT_TYPES;
 
 /// `SubagentStdoutLine`: the action for one child stdout line.
 #[derive(Debug, Clone, PartialEq)]
