@@ -164,12 +164,12 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 
 | Phase | Builds | Done when |
 |---|---|---|
-| 0 | `/perf`, load scenario, baseline numbers in this card | Numbers recorded for Linux and macOS |
-| 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites (the UI-thread `block_on` removal is done under TUI N14 in [tui-activity.md](tui-activity.md), not here) | No runtime built outside the crate; thread ceiling holds in the load test |
-| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal. **Part 1 landed 2026-10-08** (writer thread, input batching, SIGWINCH; see "Phase 2, part 1" below). **Part 2 landed 2026-10-08** (Ctrl+C on the input thread, emergency exit, ESC timer without a thread on Unix, async `Shell` pipes, `std::thread::spawn` disallowed; see "Phase 2, part 2"). **Open:** the paused-pty run and the done-when numbers. |
+| 0 | `/perf`, load scenario, baseline numbers in this card | Numbers recorded for Linux and macOS. **Linux recorded 2026-10-15** (see the 2026-10-15 run below). **Open:** macOS is not measured. |
+| 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites (the UI-thread `block_on` removal is done under TUI N14 in [tui-activity.md](tui-activity.md), not here) | No runtime built outside the crate; thread ceiling holds in the load test. **Status 2026-10-15: open.** The load run peaked at 34 threads (ceiling 26) for 3 s during the 8-bash and 5-subagent burst, was 24 for the next 9 s, and was 14 to 13 from second 15. Not yet profiled to find which pool adds the threads. |
+| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal. **Status:** parts 1 and 2 landed 2026-10-08; the 2026-10-15 load run is in Baseline (Ctrl+C 30 ms: pass). **Open:** the keystroke p99 passed in the final run but failed in one earlier run of the same bash scenario (70.6 ms, cause not found); the burst's frame-build cost. |
 | 3 | `hoocode-session-io` with flush barriers | No session file I/O on the UI thread or on `hoocode-io`; kill -9 mid-turn loses at most the unflushed entries of that turn. **Status: writes landed** (`runtime` `session_io.rs`; 4096 entries or 64 MiB, producers wait; barrier at turn end, 1 s flush at dispose; torn last line skipped on read and not glued to the next entry). **Open:** session reads still run on the caller (they first wait for queued writes, up to 1 s), and `create_dir_all` and the `open`/`resume` paths are not yet moved to a lane. |
-| 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test. **Status: landed, load test not run.** `runtime` `lanes.rs` (`Lane`, per-thread priority via `thread-priority`; `io` workers High, tools pool and session writer Medium); `bg.rs` (`spawn_bg`, one Low thread): the footer's git watcher, the dispatch-dir sweep at subagent start and the dispatch-dir removal on success run there. `child.rs` (`lower_child_priority`): subagent children at nice +5, `Shell` children at `performance.bashNice`, which was not applied before. Subagents already started with 2 workers. **Open:** the frame-delay check needs the load scenario with subagents and MCP stalls, which has not been run. Windows: `Shell` priority is not effective yet, because process-wrap's `JobObject` overwrites creation flags set on the `Command`; it needs process-wrap's `CreationFlags` wrapper. macOS QoS compiles but is untested. Not in the tree: a version check and file watchers other than the footer. The session picker's list still runs on a plain thread (Phase 3 open item). |
-| 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase. **Status: landed in code, not yet load-tested.** `hoocode-runtime` `watchdog.rs` (the `hoocode-watchdog` thread: `ui_beat` from the TUI loop, 500 ms phase log, 2 s footer flag, 1 s io starvation probe) and `memory.rs` (RSS via `memory-stats`, soft/hard state machine with 10% hysteresis, child RSS for the lifeguard). Wired: shedding stops new subagent dispatches (`pool.rs`), parallel tool calls drop to 1 (`ParallelToolLimit` gate), render caches clear on a shed change, the footer shows a warning, a hard trip aborts the turn and flushes the session, and the lifeguard reaps children over 2 GiB through the stall path. **Open:** the 3 GiB live test; the footer cannot show a UI stall while the loop is stuck (it shows on the next loop turn; needs the Phase 2 output thread); memory limits are only sampled in the interactive mode; `ui_beat` phases are coarse; macOS child RSS and `sysctl` are unverified (no Mac here). |
+| 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test. **Status:** landed; load run 2026-10-15 in Baseline. **Open:** the burst's frame-build cost (rolling p99 about 102 ms for 5 s) is not separated from lane effects; Windows `Shell` priority (process-wrap's JobObject overwrites creation flags); macOS QoS untested. |
+| 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase. **Status:** memory check passes (2026-10-15, Baseline). **Open:** the thread ceiling (34 against 26, the phase 1 item); the key p99 in the burst; the stall-phase check is not run; the footer cannot show a UI stall while the loop is stuck; macOS child RSS and `sysctl` unverified. |
 | 6 | Only if Phase 0 shows it: move syntax highlighting and big markdown parses to `hoocode-tools` | Frame build p99 under 8 ms on a 10k-line transcript |
 
 #### Baseline (Phase 0)
@@ -281,6 +281,47 @@ server that never answers, and the paused-pty run.
   stops reading), the keystroke-to-frame numbers, a thread-count test, and the
   Kitty fallback timer thread. Ctrl+C is not detected when a paste marker is split
   across two reads.
+
+#### Load run, 2026-10-15 (phases 1 to 5)
+
+Linux, 4 vCPU, release build, mock model in tmux, through `scripts/perf/load_scenario.py --scenario all`.
+Raw artifacts: `target/perf/load-20261015-095300/`. Targets as stated in §6; not tuned.
+
+Keystroke numbers come from the ring of the last 1,024 keys (`perf.rs`). The load run types 975 keys,
+so its figures cover the whole run. The bash run types 300, so it does too.
+
+| Run | Keys typed | Keystroke→frame p50 / p99 ms | Frame build p99 ms | Loop p99 ms | Stalls >500 ms | Threads max | RSS max MiB | Worst rolling key p99 ms (any sample) |
+|---|---|---|---|---|---|---|---|---|
+| bash: 8 `Shell` × 5,000 lines, 15 s of typing | 300 | 0.66 / **5.22** | 2.50 | 2.88 | 0 | 13 | 34.0 | 116.1 |
+| load: bash + 5 subagents + MCP stall, 75 s of typing | 975 | 1.06 / **3.84** | 2.65 | 3.11 | 0 | **34** for 3 s, 13 at end | 41.6 | 102.2 |
+| paused-pty: pty not read 5 s, then Ctrl+C | 0 | n/a | 117.1 | 118.2 | n/a | n/a | n/a | n/a |
+
+- **Keystroke to frame, p99 under 16 ms over the whole run:** load 3.8 ms, bash 5.2 ms, in this run.
+  The same bash scenario gave 4.2, 1.9 and 70.6 ms in earlier runs on this code. The 70.6 ms run is kept
+  in this record; its cause is not identified. Phase 2 is left open for that reason.
+- **Thread ceiling, 26: MISS** in the load run. Threads were 34 for 3 s (the burst), 24 for the next 9 s,
+  14 from second 15, and 13 at the end. The bash run stays at 13. These are the parent process's threads;
+  subagent children are separate processes and are not counted.
+- **Lanes never delay a frame: not shown for the burst.** The rolling key p99 was about 102 ms for 5 s and
+  28 ms for 7 more, then under 3 ms. The likely cause is the frame build of the bash block (`visual_truncate`,
+  the Phase 6 cost), but this run does not separate that from lane contention, so no lane claim is made.
+- **MCP stall: PASS.** The stall server accepted one `tools/call` and never replied. The turn ended at
+  60.3 s, the 60 s request deadline, with 0 loop stalls (`scripts/perf/mcp_stall_server.py`).
+- **Subagents: PASS.** 5 of 5 children answered, 5 child requests. An earlier attempt with a 3-turn
+  child route ran out of script and two children failed (`500 mock: script exhausted`). That was the
+  harness; the route now has 40 turns. The gate counts successful answers, not requests.
+- **Paused terminal: PASS.** The pty was not read for 5 s. Bytes queued were 0 at the start of the pause
+  and 4,095 at its end (sampled twice; about one pty buffer, so the app was probably blocked on output,
+  not proven). Ctrl+C reached the HTTP client 30.1 ms after the press (target 500 ms). The prompt came back
+  after the backlog drained. The paused run's frame p99 comes from the bash block drawn during the run; it
+  types no keys.
+- **Memory: PASS.** A forced 3 GiB allocation with the soft limit at its 256 MB floor and the hard limit at
+  its default. The shedding notice appeared after the shim reported every page resident, and lifted after
+  release. RSS peaked at 3,095 MiB; the hard limit (4,096 MiB) was not reached. The allocation comes from an
+  `LD_PRELOAD` shim (`scripts/perf/alloc_shim.c`, test only). It acts only in a process named `hoocode` with
+  `HOOCODE_PERF_ALLOC_MB` set and `HOOCODE_SUBAGENT_DEPTH` unset or `0`, because the product has no
+  allocation hook.
+- **Not measured:** macOS; the watchdog's stall and starvation probes under this load; Windows priority.
 
 ## Not doing
 

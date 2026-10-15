@@ -262,6 +262,70 @@ fn task_panel_tabs_focused_mcp_80() {
     );
 }
 
+// ---- task panel: Shell tab (T5.3) ----
+
+/// Three background jobs with no timed state: one Done, one Failed with its
+/// exit status, one killed.
+fn shell_jobs() {
+    let shell = |key: &str| CreateTaskOptions {
+        source: Some(TaskSource::Shell),
+        key: Some(key.into()),
+        ..Default::default()
+    };
+    let done = task_store()
+        .create("cargo build --release", shell("shell:job-1"))
+        .id;
+    set_done(done);
+    let failed = task_store()
+        .create("cargo test -p nope", shell("shell:job-2"))
+        .id;
+    task_store().update(
+        failed,
+        TaskPatch {
+            status: Some(TaskStatus::Failed),
+            note: Some(Some("exit 101".into())),
+            ..Default::default()
+        },
+    );
+    let killed = task_store().create("sleep 600", shell("shell:job-3")).id;
+    task_store().update(
+        killed,
+        TaskPatch {
+            status: Some(TaskStatus::Cancelled),
+            ..Default::default()
+        },
+    );
+}
+
+#[test]
+fn task_panel_shell_tab_focused_80() {
+    let _g = lock();
+    AppKeybindingsManager::default().install();
+    task_store().clear();
+    shell_jobs();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Shell);
+    panel.set_focused(true);
+    assert_golden!(
+        "task_panel_shell_tab_focused_80",
+        render_golden(&mut panel, 80)
+    );
+}
+
+#[test]
+fn task_panel_tabs_with_shell_unfocused_80() {
+    let _g = lock();
+    AppKeybindingsManager::default().install();
+    task_store().clear();
+    three_tabs();
+    shell_jobs();
+    let mut panel = TaskPanelComponent::new();
+    assert_golden!(
+        "task_panel_tabs_with_shell_unfocused_80",
+        render_golden(&mut panel, 80)
+    );
+}
+
 #[test]
 fn task_panel_empty_tabs_hidden_80() {
     let _g = lock();

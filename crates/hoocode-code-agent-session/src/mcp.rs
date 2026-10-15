@@ -36,7 +36,7 @@ use hoocode_runtime::io_handle;
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
-use crate::mcp_rows::{CallTracker, CALL_KEY_PREFIX, SERVER_KEY_PREFIX};
+use crate::mcp_rows::{CallTracker, CALL_KEY_PREFIX, ROW_PREFIX, SERVER_KEY_PREFIX};
 pub use hoocode_agent_mcp::{ElicitationAnswer, ElicitationHandler, ElicitationRequest};
 pub use hoocode_code_mcp::TrustPrompt;
 
@@ -216,7 +216,7 @@ impl McpHub {
     /// hub: rows are published under the hub's lock.
     pub fn set_task_rows(&self, store: &'static TaskStore) {
         self.tracker.set_store(Some(store));
-        store.set_row_actions(Some(Arc::new(self.clone())));
+        store.set_row_actions(ROW_PREFIX, Some(Arc::new(self.clone())));
         self.publish_rows();
     }
 
