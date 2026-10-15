@@ -147,7 +147,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 829 / 0 | keep |
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 7 | 4489 / 3063 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1565 / 1046 | keep |
-| `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2161 / 0 | keep |
+| `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2291 / 0 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 2119 / 746 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2329 / 1744 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 9589 / 9417 | keep |
@@ -164,11 +164,11 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 16418 / 5260 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 16633 / 5260 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 776 / 888 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8143 / 3724 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 5 | 2390 / 2557 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 8478 / 6165 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 8485 / 6177 | keep |
 
 ### TUI library (`tui-*`)
 
