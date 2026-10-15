@@ -22,6 +22,8 @@
 //!   io starvation probe and memory sampling.
 //! - [`memory`] (re-exported here): soft and hard process memory limits, and
 //!   shedding while the soft limit is exceeded.
+//! - [`run_ordered`]: the ordered process shutdown, each step with its own
+//!   deadline, the terminal restore last (`docs/design/concurrency.md` section 4).
 
 mod bg;
 mod child;
@@ -30,6 +32,7 @@ mod limits;
 mod memory;
 mod runtime;
 mod session_io;
+mod shutdown;
 #[cfg(unix)]
 mod signals;
 mod threads;
@@ -55,6 +58,10 @@ pub use runtime::{
 pub use session_io::{
     session_io, FileWriter, FlushError, FlushTicket, SESSION_IO_THREAD, SESSION_QUEUE_MAX_BYTES,
     SESSION_QUEUE_MAX_ENTRIES,
+};
+pub use shutdown::{
+    fits_budget, run_ordered, ShutdownStep, StepOutcome, StepReport, RESTORE_RESERVE,
+    SHUTDOWN_BUDGET, SHUTDOWN_THREAD,
 };
 #[cfg(unix)]
 pub use signals::{watch_sigwinch, SignalWatch};

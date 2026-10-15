@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::time::Duration;
 
 use hoocode_agent_core::{Agent, QueueMode as AgentQueueMode, Subscription};
 use hoocode_agent_types::{
@@ -41,7 +42,7 @@ use crate::hooks::{
     ExtensionError, ExtensionHooks, NoExtensions, ResourceLoader, SessionEvent, SessionStartEvent,
     TemplateKind,
 };
-use crate::mcp::McpHub;
+use crate::mcp::{McpHub, SHUTDOWN_WAIT};
 use crate::retry::RetryState;
 use crate::stats::{self, ContextUsage, ForkableMessage, SessionStats, TranscriptSelection};
 use hoocode_agent_compaction::CompactionResult;
@@ -863,15 +864,31 @@ impl AgentSession {
         }
     }
 
-    /// `dispose()`: drop listeners, disconnect from the agent and release the
-    /// session's provider resources.
+    /// `dispose()`: flush, close MCP, then release. Each part has its own
+    /// deadline here so the ordered shutdown can time them one by one.
     pub fn dispose(&self) {
-        // Shutdown: write out queued session entries, waiting at most the flush deadline.
+        self.flush_for_shutdown(SESSION_FLUSH_DEADLINE);
+        self.close_mcp(SHUTDOWN_WAIT);
+        self.release();
+    }
+
+    /// Shutdown step: write out queued session entries, waiting at most `deadline`.
+    pub fn flush_for_shutdown(&self, deadline: Duration) {
         let ticket = lock(&self.inner.session_manager).flush_ticket();
-        let _ = ticket.wait_blocking(SESSION_FLUSH_DEADLINE);
+        let _ = ticket.wait_blocking(deadline);
+    }
+
+    /// Shutdown step: stop the MCP servers, waiting at most `deadline`. The
+    /// hub is taken, so a second call does nothing.
+    pub fn close_mcp(&self, deadline: Duration) {
         if let Some(hub) = lock(&self.inner.mcp).take() {
-            hub.shutdown();
+            hub.shutdown_within(deadline);
         }
+    }
+
+    /// Shutdown step: drop listeners, disconnect from the agent and release the
+    /// session's provider resources.
+    pub fn release(&self) {
         self.disconnect_from_agent();
         lock(&self.inner.listeners).clear();
         let _ = hoocode_ai_registry::session_resources::cleanup_session_resources(Some(
