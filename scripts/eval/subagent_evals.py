@@ -37,6 +37,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,7 +46,7 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from mock_provider import CHILD_MARKER, MockProvider, Route  # noqa: E402
+from mock_provider import CHILD_MARKER, MockProvider, Route, last_user_text  # noqa: E402
 
 REPO = HERE.parent.parent
 DEFAULT_BIN = REPO / "target/debug/hoocode"
@@ -86,6 +87,19 @@ def parent_route(turns: list[dict[str, Any]]) -> Route:
     return Route("parent", turns)
 
 
+# A user agent that may dispatch one level deeper (`delegate: true`). Nested
+# scenarios chain it: whether a process at depth d gets the Agent tool is what
+# `maxSubagentDepth` decides, and this agent is the only way to get one.
+RELAY_AGENT = (
+    "---\n"
+    "name: relay\n"
+    "description: Passes a task on to one deeper subagent and reports what comes back.\n"
+    "delegate: true\n"
+    "---\n"
+    "Pass the task on to a subagent with the Agent tool, wait for its result, then report it.\n"
+)
+
+
 @dataclass
 class Expect:
     """What a scenario declares should happen. Absent means "do not check"."""
@@ -110,6 +124,19 @@ class Expect:
     branch_commits: int | None = None
     parent_status_unchanged: bool | None = None
     nothing_pushed: bool | None = None
+    # Per-route checks (route name -> value). `route_requests` is the exact
+    # request count; `route_tools_have` / `route_tools_lack` are the tool names
+    # the provider offered in that route's requests.
+    route_requests: dict[str, int] | None = None
+    route_tools_have: dict[str, list[str]] | None = None
+    route_tools_lack: dict[str, list[str]] | None = None
+    # Routes that must have received a child's result in some request.
+    results_flow: list[str] | None = None
+    # Most requests in flight at once on a route, measured at the provider: a
+    # subagent holds its pool slot for its whole run, so this is a lower bound
+    # on how many subagents ran together.
+    peak_inflight_max: dict[str, int] | None = None
+    peak_inflight_min: dict[str, int] | None = None
 
 
 @dataclass
@@ -131,6 +158,9 @@ class Scenario:
     # Set up a temp git repo the parent works in, with a bare origin. The routes
     # use the placeholders <REPO>, <WT> and <ORIGIN> (see `writer_paths`).
     worktree: bool = False
+    # Files written under the run's ~/.hoocode (path relative to it), e.g. user
+    # agent definitions in `agents/`.
+    home_files: dict[str, str] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------
@@ -537,11 +567,14 @@ SCENARIOS: list[Scenario] = [
         name="parent_queue_saturation",
         kind="parent",
         doc=(
-            "More dispatches than pool slots: every one must settle and every one must be "
-            "recorded. Nothing may be left stuck in running."
+            "More dispatches than the root pool has slots (twelve against the default eight, "
+            "subagentConcurrency is not pinned so this tests the shipped cap): every one must "
+            "settle and be recorded, and never more than eight may run at once. Nothing may be "
+            "left stuck in running."
         ),
         routes={
-            "child": child_route([{"text": CHILD_SUMMARY} for _ in range(8)]),
+            # Each child holds its slot for five seconds, so the first wave of eight overlaps.
+            "child": child_route([{"text": CHILD_SUMMARY, "delay_s": 5} for _ in range(12)]),
             "parent": parent_route(
                 [
                     {
@@ -553,17 +586,152 @@ SCENARIOS: list[Scenario] = [
                                 "prompt": f"List the top-level directories ({i}).",
                                 "background": True,
                             }}
-                            for i in range(8)
+                            for i in range(12)
                         ],
                     },
                     {"text": "All dispatched."},
-                    {"text": "All eight subagents reported the same layout: crates/, scripts/, docs/."},
+                    {"text": "All twelve subagents reported the same layout: crates/, scripts/, docs/."},
                 ]
             ),
         },
-        prompt="Dispatch eight subagents in parallel and report when they are done.",
-        timeout_s=180,
-        expect=Expect(ledger_count=8, attempts_usable_min=1.0),
+        prompt="Dispatch twelve subagents in parallel and report when they are done.",
+        timeout_s=240,
+        expect=Expect(
+            ledger_count=12,
+            ledger_statuses=["complete"] * 12,
+            attempts_usable_min=1.0,
+            peak_inflight_max={"child": 8},
+            peak_inflight_min={"child": 8},
+        ),
+    ),
+    Scenario(
+        name="nested_depth_chain",
+        kind="parent",
+        doc=(
+            "The default cap of three: a process at depth d may spawn while d < 3. The root's "
+            "child (depth 1) and grandchild (depth 2) get the Agent tool and the great-grandchild "
+            "(depth 3) does not. The chain is three blocking dispatches of a delegate:true agent. "
+            "Checks: the depth-3 process is offered no Agent tool, each level's result reaches the "
+            "level above it, and all three dispatches are recorded complete."
+        ),
+        routes={
+            "level3": Route("level3", [{"text": CHILD_SUMMARY}], marker="LEVEL-3-MARK"),
+            "level2": Route(
+                "level2",
+                [
+                    task_call(
+                        background=False,
+                        subagent_type="relay",
+                        description="relay to level 3",
+                        prompt="LEVEL-3-MARK: answer the question directly.",
+                    ),
+                    {"text": f"Level 3 answered: {CHILD_SUMMARY}"},
+                ],
+                marker="LEVEL-2-MARK",
+            ),
+            "level1": Route(
+                "level1",
+                [
+                    task_call(
+                        background=False,
+                        subagent_type="relay",
+                        description="relay to level 2",
+                        prompt="LEVEL-2-MARK: relay the task to one subagent.",
+                    ),
+                    {"text": f"Level 2 answered: {CHILD_SUMMARY}"},
+                ],
+                marker="LEVEL-1-MARK",
+            ),
+            "parent": parent_route(
+                [
+                    task_call(
+                        background=False,
+                        subagent_type="relay",
+                        description="relay to level 1",
+                        prompt="LEVEL-1-MARK: relay the task to one subagent.",
+                    ),
+                    {"text": PARENT_SUMMARY},
+                ]
+            ),
+        },
+        prompt="Pass a task down a chain of relay subagents and report what comes back.",
+        settings={"maxSubagentDepth": 3},
+        home_files={"agents/relay.md": RELAY_AGENT},
+        expect=Expect(
+            ledger_count=3,
+            ledger_statuses=["complete"] * 3,
+            ledger_ok=[True] * 3,
+            ledger_agent="relay",
+            ledger_mode="blocking",
+            route_requests={"level1": 2, "level2": 2, "level3": 1, "parent": 2},
+            route_tools_have={"level1": ["Agent"], "level2": ["Agent"]},
+            route_tools_lack={"level3": ["Agent"]},
+            results_flow=["level2", "level1", "parent"],
+            parent_output_contains=PARENT_SUMMARY,
+        ),
+    ),
+    Scenario(
+        name="nested_fanout_saturation",
+        kind="parent",
+        doc=(
+            "Depth 2 is enough: the root's child (depth 1) fans out five background grandchildren "
+            "and its pool runs nestedSubagentConcurrency (3) at once. The grandchildren are slowed "
+            "so they overlap. Checks: no more than three are in flight at once, they do overlap, "
+            "and all five settle. The grandchildren are at the cap, so they get no Agent tool."
+        ),
+        routes={
+            "grandchild": Route(
+                "grandchild",
+                [{"text": CHILD_SUMMARY, "delay_s": 5} for _ in range(5)],
+                marker="GRANDCHILD-MARK",
+            ),
+            "fanout": Route(
+                "fanout",
+                [
+                    {
+                        "text": "",
+                        "tool_calls": [
+                            {"name": "Agent", "arguments": {
+                                "subagent_type": "relay",
+                                "description": f"fanout area {i}",
+                                "prompt": f"GRANDCHILD-MARK {i}: list the top-level directories.",
+                                "background": True,
+                            }}
+                            for i in range(5)
+                        ],
+                    },
+                    {"text": "Five subagents dispatched; I will report when they finish."},
+                    # Each completed child wakes the relay with its own notification,
+                    # so it needs a turn per wake; an exhausted script is a 500.
+                    *[{"text": f"All five reported: {CHILD_SUMMARY}"} for _ in range(12)],
+                ],
+                marker="FANOUT-MARK",
+            ),
+            "parent": parent_route(
+                [
+                    task_call(
+                        background=False,
+                        subagent_type="relay",
+                        description="fan out",
+                        prompt="FANOUT-MARK: dispatch five subagents, one per area, and report back.",
+                    ),
+                    {"text": PARENT_SUMMARY},
+                ]
+            ),
+        },
+        prompt="Fan a mapping task out to relay subagents and report when they are done.",
+        settings={"maxSubagentDepth": 2, "nestedSubagentConcurrency": 3},
+        home_files={"agents/relay.md": RELAY_AGENT},
+        expect=Expect(
+            ledger_count=6,
+            ledger_statuses=["complete"] * 6,
+            ledger_ok=[True] * 6,
+            route_requests={"grandchild": 5, "parent": 2},
+            route_tools_lack={"grandchild": ["Agent"]},
+            peak_inflight_max={"grandchild": 3},
+            peak_inflight_min={"grandchild": 2},
+            parent_output_contains=PARENT_SUMMARY,
+        ),
     ),
 ]
 
@@ -586,6 +754,47 @@ class Outcome:
     parent_requests: int
     exit_code: int | None
     run_dir: str
+    peak_inflight: dict[str, int] = field(default_factory=dict)
+
+
+class ProbedProvider(MockProvider):
+    """A MockProvider that counts, per route, how many requests were in flight at once.
+
+    The route is chosen in `pick_route` and the request is served on the same
+    handler thread, so a thread-local carries the name from one to the other.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self._local = threading.local()
+        self._probe_lock = threading.Lock()
+        self._inflight: dict[str, int] = {}
+        self.peak_inflight: dict[str, int] = {}
+
+    def pick_route(self, body: dict[str, Any]) -> str:
+        # Route on the first user message before the last one. A background
+        # subagent is woken by its children's notifications, which are user
+        # messages without the task's marker; routing on the last message alone
+        # would send that child's later requests to someone else's script.
+        first = last_user_text({"messages": [m for m in body.get("messages") or [] if m.get("role") == "user"][:1]})
+        name = next(
+            (r.name for r in self.routes.values() if r.marker and r.marker in first),
+            None,
+        ) or super().pick_route(body)
+        self._local.route = name
+        return name
+
+    def serve(self, handler: Any, turn: dict[str, Any]) -> None:
+        route = getattr(self._local, "route", "?")
+        with self._probe_lock:
+            now = self._inflight.get(route, 0) + 1
+            self._inflight[route] = now
+            self.peak_inflight[route] = max(self.peak_inflight.get(route, 0), now)
+        try:
+            super().serve(handler, turn)
+        finally:
+            with self._probe_lock:
+                self._inflight[route] -= 1
 
 
 def models_json(port: int, models: list[dict[str, Any]]) -> dict[str, Any]:
@@ -631,6 +840,10 @@ def write_project(root: Path, port: int, scenario: Scenario) -> tuple[Path, Path
     }
     settings.update(scenario.settings)
     (home / CONFIG_DIR / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
+    for rel, text in scenario.home_files.items():
+        path = home / CONFIG_DIR / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
     return home, work
 
 
@@ -698,6 +911,7 @@ def with_fault(scenario: Scenario, fault: dict[str, Any]) -> Scenario:
         known_issue=scenario.known_issue,
         env=dict(scenario.env),
         worktree=scenario.worktree,
+        home_files=dict(scenario.home_files),
     )
 
 
@@ -802,7 +1016,7 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
     root = Path(tempfile.mkdtemp(prefix=f"subagent-eval-{scenario.name}-", dir=run_dir))
     log_path = root / "requests.jsonl"
     routes = bind_routes(scenario.routes, writer_paths(root)) if scenario.worktree else scenario.routes
-    provider = MockProvider(
+    provider = ProbedProvider(
         routes, log_path=str(log_path), needles={"child_result": CHILD_RESULT_NEEDLE}
     )
     port = provider.start()
@@ -855,6 +1069,8 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
         parent_requests = len(provider.requests("parent"))
         if scenario.worktree:
             facts = inspect_writer_repo(work, origin, before)
+        facts["peak_inflight"] = dict(provider.peak_inflight)
+        facts["route_entries"] = {name: provider.requests(name) for name in routes}
         failures += check(
             scenario.expect,
             ledger,
@@ -882,6 +1098,7 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
         parent_requests=parent_requests,
         exit_code=exit_code,
         run_dir=str(root),
+        peak_inflight=dict(facts.get("peak_inflight", {})),
     )
 
 
@@ -1017,6 +1234,29 @@ def check(
             facts.get("nothing_pushed") is expect.nothing_pushed,
             "a ref appeared in the origin during the run",
         )
+    route_entries: dict[str, list[dict[str, Any]]] = facts.get("route_entries", {})
+    peaks: dict[str, int] = facts.get("peak_inflight", {})
+    if expect.route_requests is not None:
+        for route, count in expect.route_requests.items():
+            got = len(route_entries.get(route, []))
+            want(got == count, f"{route} made {got} request(s), expected {count}")
+    for route, names in (expect.route_tools_have or {}).items():
+        offered = {t for e in route_entries.get(route, []) for t in e.get("tools", [])}
+        missing = [n for n in names if n not in offered]
+        want(not missing, f"{route} was not offered {missing}")
+    for route, names in (expect.route_tools_lack or {}).items():
+        offered = {t for e in route_entries.get(route, []) for t in e.get("tools", [])}
+        present = [n for n in names if n in offered]
+        want(not present, f"{route} was offered {present}, expected none")
+    for route in expect.results_flow or []:
+        received = any("child_result" in e.get("sees", []) for e in route_entries.get(route, []))
+        want(received, f"{route} never received a child's result")
+    for route, cap in (expect.peak_inflight_max or {}).items():
+        got = peaks.get(route, 0)
+        want(got <= cap, f"{route} had {got} requests in flight at once, cap {cap}")
+    for route, floor in (expect.peak_inflight_min or {}).items():
+        got = peaks.get(route, 0)
+        want(got >= floor, f"{route} peaked at {got} in flight, expected at least {floor}")
     return failures
 
 
@@ -1257,6 +1497,7 @@ def main() -> int:
                         "parent_requests": o.parent_requests,
                         "exit_code": o.exit_code,
                         "run_dir": o.run_dir,
+                        "peak_inflight": o.peak_inflight,
                     }
                     for o in outcomes
                 ],

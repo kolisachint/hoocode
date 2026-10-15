@@ -91,8 +91,8 @@ impl DispatchEvaluator {
             let max_depth = resolve_max_subagent_depth(None, env);
             return TaskAnalysis {
                 should_delegate: false,
-                // The original message at the default cap; the depth reached
-                // when nesting has been opted into.
+                // The message for a cap of 1 (no nesting at all); the depth
+                // reached otherwise.
                 reason: if max_depth <= 1 {
                     "Subagents cannot spawn subagents".into()
                 } else {

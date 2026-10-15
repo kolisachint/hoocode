@@ -852,3 +852,25 @@ fn writes_the_same_bytes_as_json_stringify_with_two_spaces() {
         "{\n  \"disabledTools\": [],\n  \"compaction\": {\n    \"enabled\": false\n  }\n}"
     );
 }
+
+#[test]
+fn subagent_concurrency_defaults_and_clamps_to_one_through_sixteen() {
+    let defaults = SettingsManager::in_memory(serde_json::Map::new());
+    assert_eq!(defaults.subagent_concurrency(), 8);
+    assert_eq!(defaults.nested_subagent_concurrency(), 3);
+    assert_eq!(defaults.max_subagent_depth(), 3);
+
+    let concurrency = |value: serde_json::Value| {
+        SettingsManager::in_memory(
+            json!({ "subagentConcurrency": value })
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+        .subagent_concurrency()
+    };
+    assert_eq!(concurrency(json!(0)), 1);
+    assert_eq!(concurrency(json!(99)), 16);
+    assert_eq!(concurrency(json!(5.7)), 5);
+    assert_eq!(concurrency(json!("many")), 8);
+}

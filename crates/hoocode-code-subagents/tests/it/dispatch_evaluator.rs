@@ -51,13 +51,32 @@ fn estimates_medium_complexity_from_file_and_line_mentions() {
 }
 
 #[test]
-fn prevents_subagents_from_spawning_subagents_at_the_default_cap() {
+fn a_cap_of_one_prevents_subagents_from_spawning_subagents() {
     let analysis = DispatchEvaluator.evaluate_with_env(
         "Implement login endpoint, write tests, do security review",
-        &env(&[("HOOCODE_SUBAGENT_DEPTH", "1")]),
+        &env(&[
+            ("HOOCODE_SUBAGENT_MAX_DEPTH", "1"),
+            ("HOOCODE_SUBAGENT_DEPTH", "1"),
+        ]),
     );
     assert!(!analysis.should_delegate);
     assert_eq!(analysis.reason, "Subagents cannot spawn subagents");
+}
+
+#[test]
+fn the_default_cap_of_three_allows_two_levels_of_nesting() {
+    let task = "Implement login endpoint, write tests, do security review";
+    // Depth 1 and 2 may still delegate under the default cap of 3.
+    for depth in ["1", "2"] {
+        let analysis =
+            DispatchEvaluator.evaluate_with_env(task, &env(&[("HOOCODE_SUBAGENT_DEPTH", depth)]));
+        assert!(analysis.should_delegate, "depth {depth} should delegate");
+    }
+    // Depth 3 is the last level and may not spawn.
+    let blocked =
+        DispatchEvaluator.evaluate_with_env(task, &env(&[("HOOCODE_SUBAGENT_DEPTH", "3")]));
+    assert!(!blocked.should_delegate);
+    assert_eq!(blocked.reason, "Maximum subagent depth (3) reached");
 }
 
 #[test]

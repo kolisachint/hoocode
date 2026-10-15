@@ -26,7 +26,7 @@ Problems this card fixes (verified against the code on 2026-10-09):
 | P9 | Only general-purpose and plan say the final message must stand alone | `general-purpose.md:35`, `plan.md:36` |
 | P10 | code-review and security-review have Shell. "Read-only" is only the prompt | `code-review.md:16`, `security-review.md:17` |
 | P11 | A partial result deletes its dispatch dir, so `resume_task_id` likely fails (not run) | `pool.rs:1594-1601`, `:842-856`, `tools.rs:488-491` |
-| P12 | "Isolated" means a separate process and context only. All writers share one tree, up to 5 at once, with no locks | `tools.rs:6`, `:599`; `pool.rs:381` |
+| P12 | "Isolated" means a separate process and context only. All writers share one tree, up to 8 at once by default (`subagentConcurrency`), with no locks | `tools.rs:6`, `:599`; `pool.rs:550` |
 | P13 | No git worktree create or remove exists anywhere. Only reading worktrees | `hoocode-code-paths/src/git_branch.rs` |
 | P14 | subagent-evals.md §5 says stall-reap is KNOWN. It was fixed 2026-10-05 | `subagent-evals.md:89` |
 
@@ -278,6 +278,6 @@ Recorded in [decisions-2026-10-14.md](decisions-2026-10-14.md) #25.
 | With background work in flight and nothing to do, the loop waits and runs again. Ending a message is a wait with no tool call | `agent-loop/src/lib.rs:181-187` |
 | Agent schema has no cwd or workspace field | `tools.rs:570-589` |
 | Child cwd is the parent's cwd | `tools.rs:622-624` |
-| Concurrency cap is 5; nested cap is 2 | `pool.rs:381`; `depth.rs:36` |
+| Concurrency cap is 8 at the root (`subagentConcurrency`, 1 to 16) and 3 nested (`nestedSubagentConcurrency`); max depth is 3 (`maxSubagentDepth`) | `pool.rs:426`, `:550`; `depth.rs:49`, `:171` |
 | A clean success deletes the dispatch dir | `pool.rs:1594-1601` |
 | The wait default is 120 s | `tools.rs:58` |

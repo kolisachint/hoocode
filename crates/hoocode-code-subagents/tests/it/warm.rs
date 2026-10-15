@@ -297,3 +297,128 @@ async fn a_waiting_dispatch_is_admitted_while_a_slot_is_free_later() {
     assert_eq!(pool.load(), (0, 0));
     pool.dispose().await;
 }
+
+/// The warm pool sizes itself by depth like the cold pool: a nested process
+/// gets the nested cap, not the root's, and its queue is QUEUE_PER_SLOT times
+/// that cap.
+#[test]
+fn a_nested_warm_pool_gets_the_nested_cap_not_the_root_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let env = |pairs: &[(&str, &str)]| -> std::collections::HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    };
+    let root = WarmSubagentPoolOptions::for_depth(dir.path(), None, None, &env(&[]));
+    assert_eq!((root.max_in_flight, root.max_waiting), (8, 32));
+
+    for depth in ["1", "2"] {
+        let nested = WarmSubagentPoolOptions::for_depth(
+            dir.path(),
+            None,
+            None,
+            &env(&[("HOOCODE_SUBAGENT_DEPTH", depth)]),
+        );
+        assert_eq!(
+            (nested.max_in_flight, nested.max_waiting),
+            (3, 12),
+            "depth {depth} must get the nested cap"
+        );
+    }
+
+    let configured = WarmSubagentPoolOptions::for_depth(
+        dir.path(),
+        Some(12.0),
+        Some(2.0),
+        &env(&[("HOOCODE_SUBAGENT_DEPTH", "1")]),
+    );
+    assert_eq!((configured.max_in_flight, configured.max_waiting), (2, 8));
+}
+
+/// A fake RPC child that logs `start` and `end` around each prompt, so the
+/// number of prompts running at once can be read back from the log.
+const TRACED_CHILD: &str = r#"trace=; prev=
+for a in "$@"; do [ "$prev" = "--trace" ] && trace=$a; prev=$a; done
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+  type=$(printf '%s' "$line" | sed -n 's/.*"type":"\([^"]*\)".*/\1/p')
+  case "$type" in
+    prompt)
+      [ -n "$trace" ] && echo start >> "$trace"
+      sleep 0.3
+      [ -n "$trace" ] && echo end >> "$trace"
+      printf '{"id":"%s","type":"response","command":"prompt","success":true}\n' "$id"
+      echo '{"type":"agent_start"}'
+      echo '{"type":"turn_end","message":{"usage":{"input":1,"output":1},"stopReason":"stop"}}'
+      echo '{"type":"agent_end","messages":[]}'
+      ;;
+    get_last_assistant_text)
+      printf '{"id":"%s","type":"response","command":"get_last_assistant_text","success":true,"data":{"text":"ok"}}\n' "$id" ;;
+    get_session_stats)
+      printf '{"id":"%s","type":"response","command":"get_session_stats","success":true,"data":{"tokens":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0},"cost":0}}\n' "$id" ;;
+    *) [ -n "$id" ] && printf '{"id":"%s","type":"response","command":"%s","success":true}\n' "$id" "$type" ;;
+  esac
+done"#;
+
+/// Dispatches that arrive together must not all boot and run at once: the
+/// slot is taken at admission, not after the worker has booted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_burst_of_dispatches_never_runs_more_than_max_in_flight() {
+    let dir = tempfile::tempdir().unwrap();
+    let trace = dir.path().join("prompts.log");
+    let script = dir.path().join("traced-rpc-child.sh");
+    std::fs::write(&script, TRACED_CHILD).unwrap();
+    let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
+        spawn: Some(SpawnCommand {
+            executable: PathBuf::from("sh"),
+            prefix_args: vec![
+                script.to_string_lossy().into_owned(),
+                "--trace".into(),
+                trace.to_string_lossy().into_owned(),
+            ],
+        }),
+        max_in_flight: 2,
+        max_waiting: 16,
+        ..WarmSubagentPoolOptions::new(dir.path())
+    });
+    let options = WarmDispatchOptions {
+        agent_type: "explore".into(),
+        cwd: dir.path().to_path_buf(),
+        model: None,
+        provider: None,
+        inherited_model: None,
+        effort: None,
+    };
+
+    let runs: Vec<_> = (0..6)
+        .map(|n| {
+            let pool = pool.clone();
+            let options = options.clone();
+            tokio::spawn(async move { pool.dispatch(&format!("run {n}"), &options, None).await })
+        })
+        .collect();
+    for run in runs {
+        let result = run.await.unwrap();
+        assert!(result.is_ok(), "every run should be admitted: {result:?}");
+    }
+
+    let log = std::fs::read_to_string(&trace).unwrap();
+    let (mut running, mut peak) = (0i32, 0i32);
+    for line in log.lines() {
+        match line {
+            "start" => running += 1,
+            "end" => running -= 1,
+            _ => {}
+        }
+        peak = peak.max(running);
+    }
+    assert_eq!(log.lines().filter(|l| *l == "start").count(), 6);
+    assert!(
+        peak <= 2,
+        "peak concurrent prompts was {peak}, above max_in_flight 2"
+    );
+    assert_eq!(pool.load(), (0, 0), "every slot must be released");
+    pool.dispose().await;
+}

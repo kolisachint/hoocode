@@ -258,7 +258,8 @@ pub struct SubagentPoolOptions {
     /// The hoocode executable (or a runtime when `prefix_args` names a script).
     pub executable: PathBuf,
     pub prefix_args: Vec<String>,
-    /// Default 5.
+    /// Default [`DEFAULT_MAX_CONCURRENCY`]. The root pool passes its per-depth
+    /// value (see `depth::pool_concurrency_for_depth`).
     pub max_concurrency: Option<usize>,
     /// Default: the process cwd.
     pub cwd: Option<PathBuf>,
@@ -266,7 +267,7 @@ pub struct SubagentPoolOptions {
     pub env: Option<HashMap<String, String>>,
     /// Replace how dispatches run. Default: a child process per dispatch.
     pub runner: Option<Arc<dyn Runner>>,
-    /// Default: four times `max_concurrency`. A dispatch beyond it is refused
+    /// Default: [`QUEUE_PER_SLOT`] times `max_concurrency`. A dispatch beyond it is refused
     /// with a message the caller can act on, rather than queued into a session
     /// that will never finish them.
     pub max_queued: Option<usize>,
@@ -375,6 +376,11 @@ pub struct SubagentSlot {
 #[derive(Default)]
 struct PoolState {
     slots: HashMap<String, SubagentSlot>,
+    /// Tasks taken off the queue whose child is being spawned. They count
+    /// against `max_concurrency` from the moment they are taken, under the same
+    /// lock as the check: a spawn takes time, and a pull that ran in that window
+    /// used to see the slot as free and start a second child.
+    starting: HashSet<String>,
     queue: VecDeque<SubagentPoolTask>,
     completed: HashMap<String, SubagentResult>,
     /// Insertion order of `completed`, so the oldest can be dropped: a finished
@@ -419,9 +425,10 @@ pub struct SubagentPool {
     inner: Arc<PoolInner>,
 }
 
-/// The cold pool's default concurrency. The warm pool shares it: one ceiling
-/// for the process, not one per execution path.
-pub const DEFAULT_MAX_CONCURRENCY: usize = 5;
+/// The cold pool's default concurrency. The warm pool has its own counter
+/// with the same default: the cold and warm pools do not share a ceiling, so a
+/// process can run up to this many cold and this many warm subagents at once.
+pub const DEFAULT_MAX_CONCURRENCY: usize = 8;
 
 /// Finished results held in memory. Beyond this the oldest is dropped; its
 /// dispatch dir and ledger line are the durable record.
@@ -641,6 +648,7 @@ impl SubagentPool {
                 return Err(PoolError("SubagentPool has been disposed".into()));
             }
             if state.slots.contains_key(&task.task_id)
+                || state.starting.contains(&task.task_id)
                 || state.queue.iter().any(|t| t.task_id == task.task_id)
                 || state.completed.contains_key(&task.task_id)
             {
@@ -653,7 +661,7 @@ impl SubagentPool {
                 return Err(PoolError(format!(
                     "Dispatch queue is full ({} waiting, {} running). Try again once one finishes.",
                     state.queue.len(),
-                    state.slots.len()
+                    state.slots.len() + state.starting.len()
                 )));
             }
             let mut task = task;
@@ -686,6 +694,13 @@ impl SubagentPool {
             .values()
             .map(|slot| (slot.task_id.clone(), RunningSince::Running(slot.spawned_at)))
             .collect();
+        let now = now_ms();
+        out.extend(
+            state
+                .starting
+                .iter()
+                .map(|task_id| (task_id.clone(), RunningSince::Running(now))),
+        );
         out.extend(
             state
                 .queue
@@ -698,7 +713,7 @@ impl SubagentPool {
     /// Current status of a task.
     pub fn get_status(&self, task_id: &str) -> TaskStatus {
         let state = self.inner.state();
-        if state.slots.contains_key(task_id) {
+        if state.slots.contains_key(task_id) || state.starting.contains(task_id) {
             return TaskStatus::Running;
         }
         if state.queue.iter().any(|t| t.task_id == task_id) {
@@ -779,7 +794,8 @@ impl SubagentPool {
     }
 
     pub fn running_count(&self) -> usize {
-        self.inner.state().slots.len()
+        let state = self.inner.state();
+        state.slots.len() + state.starting.len()
     }
 
     /// Whether this pool is running or has queued the task. A task it holds is
@@ -990,6 +1006,7 @@ impl SubagentPool {
             state.disposed = true;
             let pids: Vec<u32> = state.slots.values().map(|s| s.pid).collect();
             state.slots.clear();
+            state.starting.clear();
             state.queue.clear();
             let waiters: Vec<Waiter> = state.waiters.drain().map(|(_, w)| w).collect();
             state.completed.clear();
@@ -1121,7 +1138,9 @@ impl PoolInner {
     /// Whether the pool is running or has queued this task.
     fn is_live_task(&self, task_id: &str) -> bool {
         let state = self.state();
-        state.slots.contains_key(task_id) || state.queue.iter().any(|t| t.task_id == task_id)
+        state.slots.contains_key(task_id)
+            || state.starting.contains(task_id)
+            || state.queue.iter().any(|t| t.task_id == task_id)
     }
 
     fn read_dispatch_agent_type(&self, task_id: &str) -> Option<String> {
@@ -1212,11 +1231,16 @@ impl PoolInner {
         loop {
             let task = {
                 let mut state = self.state();
-                if state.disposed || state.slots.len() >= self.max_concurrency {
+                if state.disposed
+                    || state.slots.len() + state.starting.len() >= self.max_concurrency
+                {
                     return;
                 }
                 match state.queue.pop_front() {
-                    Some(task) => task,
+                    Some(task) => {
+                        state.starting.insert(task.task_id.clone());
+                        task
+                    }
                     None => return,
                 }
             };
@@ -1458,7 +1482,11 @@ impl PoolInner {
                     json!({"task_id": task.task_id, "error": "Spawn failed synchronously"}),
                 );
                 self.resolve_waiter(&task.task_id, result);
-                self.state().budgets.remove(&task.task_id);
+                {
+                    let mut state = self.state();
+                    state.starting.remove(&task.task_id);
+                    state.budgets.remove(&task.task_id);
+                }
                 self.pull();
                 return;
             }
@@ -1470,16 +1498,22 @@ impl PoolInner {
         // genuinely orphaned child was never detected by liveness.
         let task_cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
         write_pid_file(&task_cwd, &task.task_id, pid);
-        self.state().slots.insert(
-            task.task_id.clone(),
-            SubagentSlot {
-                pid,
-                agent_type: task.agent_type.clone(),
-                task_id: task.task_id.clone(),
-                spawned_at,
-                token_budget: task.token_budget.unwrap_or(self.default_token_budget),
-            },
-        );
+        {
+            // Starting becomes running in one critical section, so the task is
+            // never uncounted between the two.
+            let mut state = self.state();
+            state.starting.remove(&task.task_id);
+            state.slots.insert(
+                task.task_id.clone(),
+                SubagentSlot {
+                    pid,
+                    agent_type: task.agent_type.clone(),
+                    task_id: task.task_id.clone(),
+                    spawned_at,
+                    token_budget: task.token_budget.unwrap_or(self.default_token_budget),
+                },
+            );
+        }
         self.lifeguard.monitor(&task.task_id, &task.agent_type, pid);
         // What a live row needs and nothing else could tell it: which attempt
         // this is, the model the child *actually* resolved to (the caller asked
@@ -1862,7 +1896,16 @@ impl PoolInner {
         stdout: String,
         stderr: String,
     ) -> bool {
-        self.state().slots.remove(&task.task_id);
+        {
+            // A retry takes the slot over without a new admission check: the
+            // move to `starting` happens in the same critical section as the
+            // removal, so the task is never uncounted while it is retried.
+            let mut state = self.state();
+            state.slots.remove(&task.task_id);
+            if !is_retry {
+                state.starting.insert(task.task_id.clone());
+            }
+        }
         let (tokens_generated, peak_context) = {
             let mut budget = budget.lock().unwrap_or_else(|e| e.into_inner());
             budget.flush();
@@ -2179,7 +2222,7 @@ fn prune_dispatch_dirs_checked(
         .filter(|e| e.path().is_dir())
         .filter_map(|e| Some((last_activity(&e.path())?, e.path())))
         .collect();
-    dirs.sort_by(|a, b| b.0.cmp(&a.0));
+    dirs.sort_by_key(|b| std::cmp::Reverse(b.0));
     let is_old = |modified: SystemTime| {
         SystemTime::now()
             .duration_since(modified)

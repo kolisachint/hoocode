@@ -137,8 +137,12 @@ fn create_pool(
         executable: spawn_command(),
         cwd: Some(cwd.to_path_buf()),
         skill_paths: instance.skill_paths.clone(),
-        // Nested pools (depth >= 1) run with the reduced cap.
-        max_concurrency: pool_concurrency_for_depth(&ProcessEnv).map(|n| n as usize),
+        // The root pool's concurrency at depth 0, the nested one below it.
+        max_concurrency: Some(pool_concurrency_for_depth(
+            Some(manager.subagent_concurrency() as f64),
+            Some(manager.nested_subagent_concurrency() as f64),
+            &ProcessEnv,
+        ) as usize),
         settings: Some(CategorySettings::from_settings(&settings)),
         available_models: available_models.to_vec(),
         scope,
