@@ -199,6 +199,24 @@ fn the_child_holds_fast_deltas_and_releases_them_before_message_end() {
 }
 
 #[test]
+fn a_new_message_starts_a_fresh_throttle_window() {
+    let mut coalescer = DeltaCoalescer::default();
+    let t0 = Instant::now();
+    let end = json!({"type": "message_end", "message": {"role": "assistant"}});
+    assert_eq!(
+        child_stdout_events(delta_event("a"), &mut coalescer, t0).len(),
+        1
+    );
+    child_stdout_events(end, &mut coalescer, t0 + ms(10));
+    // The next message starts 5 ms later, inside the old window: still released at once.
+    let out = child_stdout_events(delta_event("b"), &mut coalescer, t0 + ms(15));
+    assert_eq!(
+        kinds(out.into_iter().map(|v| (String::new(), v)).collect()),
+        ["text:b"]
+    );
+}
+
+#[test]
 fn a_run_tail_keeps_its_last_five_rows_and_closes_on_settle() {
     let run = "tail-run-five";
     apply(run, &json!({"type": "task_started"}));

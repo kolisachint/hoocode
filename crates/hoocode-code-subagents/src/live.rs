@@ -63,6 +63,14 @@ impl DeltaCoalescer {
     pub fn flush(&mut self) -> Option<String> {
         (!self.pending.is_empty()).then(|| std::mem::take(&mut self.pending))
     }
+
+    /// The held text of a message that ended, and a fresh window for the next
+    /// message: its first delta is released at once. Without the reset, how a
+    /// message splits would depend on how long the work between messages took.
+    pub fn end_message(&mut self) -> Option<String> {
+        self.last = None;
+        self.flush()
+    }
 }
 
 /// The UI's side of the live events: where they go, and the throttle.
@@ -172,7 +180,7 @@ pub fn child_stdout_events(
         }
         "message_end" => {
             let mut out = Vec::new();
-            if let Some(text) = coalescer.flush() {
+            if let Some(text) = coalescer.end_message() {
                 out.push(text_delta_event(&text));
             }
             out.push(event);
