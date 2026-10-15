@@ -164,7 +164,7 @@ Who does what:
 | # | Change | Where | Fixes | Tag |
 |---|---|---|---|---|
 | 4a | Add `background: true` to the frontmatter. It stays true if the default changes | `general-purpose.md:15-17` | P1 | text |
-| 4b | Keep `background: false` as a value. Stop dropping it to None | `agent_frontmatter.rs:272-286`, `b.then_some(true)` | P2 | rust, small |
+| 4b | **Done 2026-10-15.** Keep `background: false` as a value. Stop dropping it to None. As built: the frontmatter flag reads `Some(*b)` (the flag helper is shared, so `fork: false` is now `Some(false)` too; every consumer tests `== Some(true)`, so nothing changes for fork) | `agent_frontmatter.rs` flag helper, was `b.then_some(true)` | P2 | rust, small |
 | 4c | Background by default for every agent. Tool param still overrides | `tools.rs:73-80`, `:810-813` | D1 | rust, small |
 | 4d | Final-answer rule in every body (text below) | `explore.md`, `code-review.md`, `security-review.md`; `general-purpose.md:35` and `plan.md:36` already say a version | P9 | text |
 | 4e | Gate the delegation block on the same depth check as the tool. Children at the cap get no block | `runtime.rs:620`, `:626`; compare `:347` | P5 | rust, small |

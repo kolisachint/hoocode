@@ -273,7 +273,9 @@ pub fn parse_agent_definition(
 
     let flag = |key: &str, diagnostics: &mut Vec<ResourceDiagnostic>| match frontmatter.get(key) {
         None => None,
-        Some(Value::Bool(b)) => b.then_some(true),
+        // `false` is a value, not an absence: `background: false` must
+        // survive so the agent can opt out of its default (card 9, 4b).
+        Some(Value::Bool(b)) => Some(*b),
         Some(other) => {
             diagnostics.push(ResourceDiagnostic::warning(
                 format!(
