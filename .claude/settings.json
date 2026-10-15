@@ -12,6 +12,11 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/dev/prune_target.sh\" --apply --if-over 15 --quiet || true",
             "timeout": 120
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/dev/warm_up.sh\" || true",
+            "timeout": 60
           }
         ]
       }
