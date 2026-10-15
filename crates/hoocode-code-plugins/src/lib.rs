@@ -16,14 +16,18 @@
 //! skipped with a warning.
 //!
 //! [`install`] copies plugins from [`marketplace`]s (Claude's `marketplace.json`, read only) into the
-//! user or project plugin folder and records where each came from. The model tools are a later step.
+//! user or project plugin folder and records where each came from. [`model`] and [`propose`] back
+//! the model's plugin tools: a trusted-only install and search, and writing a plugin the model
+//! authored (an Agent Plugins package, untrusted until the user grants its MCP servers).
 
 pub mod agent_mcp;
 pub mod install;
 mod load;
 pub mod manifest;
 pub mod marketplace;
+pub mod model;
 pub mod paths;
+pub mod propose;
 pub mod skills;
 mod trust;
 

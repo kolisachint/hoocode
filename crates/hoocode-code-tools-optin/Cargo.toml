@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Opt-in tools for the hoocode coding agent: TodoWrite and AskUserQuestion"
+description = "Opt-in tools for the hoocode coding agent: TodoWrite, AskUserQuestion and the plugin tools"
 readme = "README.md"
 
 [package.metadata.hoocode]
@@ -19,6 +19,7 @@ doctest = false
 [dependencies]
 hoocode-agent-types = { workspace = true }
 hoocode-ai-types = { workspace = true }
+hoocode-code-plugins = { workspace = true }
 hoocode-code-task-store = { workspace = true }
 hoocode-code-tool-api = { workspace = true }
 serde_json = { version = "1", features = ["preserve_order"] }
@@ -26,3 +27,6 @@ serde_json = { version = "1", features = ["preserve_order"] }
 # Byte-index slices of text are a panic risk on multi-byte input (see docs/design/reliability.md, 1.5).
 [lints.clippy]
 string_slice = "warn"
+
+[dev-dependencies]
+tempfile = "3"

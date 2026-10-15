@@ -80,6 +80,28 @@ static INHERITED_MODEL_FALLBACK_ERROR: LazyLock<Regex> = LazyLock::new(|| {
 /// token budget only warns, so this is the guaranteed stop).
 pub const DEFAULT_SUBAGENT_MAX_TURNS: u64 = 50;
 
+/// The plugin tools (`hoocode-code-tools-optin`). A subagent is never given them: every child is
+/// started with them in `--disallowed-tools`, and a child does not register them at all.
+pub const PLUGIN_TOOL_NAMES: [&str; 5] = [
+    "SearchPlugins",
+    "InstallPlugin",
+    "UninstallPlugin",
+    "ListPlugins",
+    "ProposePlugin",
+];
+
+/// The `--disallowed-tools` list of a child: the agent definition's own list, then the plugin
+/// tools (every child, whatever the definition says).
+pub fn subagent_disallowed_tools(own: Option<&[String]>) -> Vec<String> {
+    let mut out: Vec<String> = own.unwrap_or_default().to_vec();
+    for name in PLUGIN_TOOL_NAMES {
+        if !out.iter().any(|t| t == name) {
+            out.push(name.to_owned());
+        }
+    }
+    out
+}
+
 /// Tail cap on the captured stdout/stderr per task.
 const MAX_CAPTURED_STREAM_CHARS: usize = 256 * 1024;
 /// How much of a failed run's stderr goes into `output.json`. A provider error
@@ -1287,13 +1309,9 @@ impl PoolInner {
             if let Some(tools) = tools.filter(|t| !t.is_empty()) {
                 args.extend(["--tools".into(), tools.join(",")]);
             }
-            if let Some(disallowed) = def
-                .as_ref()
-                .and_then(|d| d.disallowed_tools.as_ref())
-                .filter(|t| !t.is_empty())
-            {
-                args.extend(["--disallowed-tools".into(), disallowed.join(",")]);
-            }
+            let disallowed =
+                subagent_disallowed_tools(def.as_ref().and_then(|d| d.disallowed_tools.as_deref()));
+            args.extend(["--disallowed-tools".into(), disallowed.join(",")]);
             if can_child_delegate {
                 args.push("--enable-subagents".into());
                 if let Some(to) = def

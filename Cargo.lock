@@ -1738,9 +1738,11 @@ version = "0.1.17"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
+ "hoocode-code-plugins",
  "hoocode-code-task-store",
  "hoocode-code-tool-api",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

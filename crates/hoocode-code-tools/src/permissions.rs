@@ -18,7 +18,10 @@ pub enum PermissionPolicy {
 
 /// Whether a tool name is considered dangerous.
 pub fn is_dangerous(tool_name: &str) -> bool {
-    matches!(tool_name, "Shell" | "Write" | "Edit")
+    matches!(
+        tool_name,
+        "Shell" | "Write" | "Edit" | "UninstallPlugin" | "ProposePlugin"
+    )
 }
 
 /// Whether a tool name is read-only.
@@ -31,6 +34,8 @@ pub fn is_read_only(tool_name: &str) -> bool {
             | "TodoWrite"
             | "AskUserQuestion"
             | "CronList"
+            | "SearchPlugins"
+            | "ListPlugins"
             | "grep"
             | "find"
             | "ls"
@@ -43,6 +48,12 @@ pub fn is_read_only(tool_name: &str) -> bool {
 /// policy denies everything.
 pub fn is_schedule_tool(tool_name: &str) -> bool {
     matches!(tool_name, "CronCreate" | "CronDelete")
+}
+
+/// Whether a tool name installs a plugin (`InstallPlugin`). It is granted without a prompt, as
+/// the install itself refuses any marketplace the user has not trusted. Denied by a deny policy.
+pub fn is_plugin_install_tool(tool_name: &str) -> bool {
+    tool_name == "InstallPlugin"
 }
 
 /// Gate that always grants every tool call.
@@ -146,6 +157,13 @@ impl PermissionGate for PolicyPermissionGate {
             match self.policy {
                 PermissionPolicy::Deny => PermissionDecision::Deny {
                     reason: format!("Scheduling tool '{}' is denied by policy", tool_call.name),
+                },
+                PermissionPolicy::Auto | PermissionPolicy::Ask => PermissionDecision::Grant,
+            }
+        } else if is_plugin_install_tool(&tool_call.name) {
+            match self.policy {
+                PermissionPolicy::Deny => PermissionDecision::Deny {
+                    reason: format!("Plugin tool '{}' is denied by policy", tool_call.name),
                 },
                 PermissionPolicy::Auto | PermissionPolicy::Ask => PermissionDecision::Grant,
             }
@@ -278,6 +296,50 @@ mod tests {
         assert_eq!(gate.request(&bash), PermissionDecision::GrantAlways);
         // Second call should be a plain Grant from the cache.
         assert_eq!(gate.request(&bash), PermissionDecision::Grant);
+    }
+
+    #[test]
+    fn plugin_tools_listing_and_install_need_no_prompt_but_removal_and_proposals_ask() {
+        struct Yes;
+        impl PermissionGate for Yes {
+            fn request(&self, _: &AgentToolCall) -> PermissionDecision {
+                PermissionDecision::Grant
+            }
+        }
+        let call = |name: &str| AgentToolCall {
+            id: "1".into(),
+            name: name.into(),
+            arguments: serde_json::json!({}),
+        };
+        let ask = PolicyPermissionGate::new(PermissionPolicy::Ask, true, None);
+        for name in ["SearchPlugins", "ListPlugins", "InstallPlugin"] {
+            assert_eq!(
+                ask.request(&call(name)),
+                PermissionDecision::Grant,
+                "{name}"
+            );
+        }
+        // Removal and proposals are dangerous: with no prompt available they are refused, and
+        // an inner prompt that grants them lets them through.
+        for name in ["UninstallPlugin", "ProposePlugin"] {
+            assert!(
+                matches!(ask.request(&call(name)), PermissionDecision::Deny { .. }),
+                "{name}"
+            );
+            let prompted = PolicyPermissionGate::ask(std::sync::Arc::new(Yes));
+            assert_eq!(
+                prompted.request(&call(name)),
+                PermissionDecision::Grant,
+                "{name}"
+            );
+        }
+        let deny = PolicyPermissionGate::deny();
+        for name in ["InstallPlugin", "UninstallPlugin", "ProposePlugin"] {
+            assert!(
+                matches!(deny.request(&call(name)), PermissionDecision::Deny { .. }),
+                "{name}"
+            );
+        }
     }
 
     #[test]
