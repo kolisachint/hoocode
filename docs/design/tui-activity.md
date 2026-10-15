@@ -26,7 +26,7 @@ Haiku subagents implement. The main session orchestrates, briefs and merges.
 | 6 | X18 | Task panel key hint (#5). **Won't build by default** (#20): the default config binds one key, so it changes nothing. |
 | 7 | T0.3 | `scroll-view` waits for its final text (#9) and picks its match explicitly (#21). **Done 2026-10-14.** The startup wait is `wait_for` the footer `mock-model`. The search types the unique query `beta item 25` in one step, so the match is `beta item 25` at 1/1 whatever the view position (user, 2026-10-14). Golden accepted; three checks pass. |
 
-**Open questions** (the user has not decided; each row has a proposed default):
+**Questions** (all answered 2026-10-14; each row shows the proposed default and the answer):
 
 | # | Question | Proposed default |
 |---|---|---|
@@ -91,7 +91,7 @@ Needs: nothing. Start here.
   - Follow-up: add an injectable clock when T1 or T3 touches those widgets.
 - **T0.3:** `scripts/tui/goldens.py` ran 67 scenarios (165 screens). Cut on 2026-10-10 to about 10 key interactive screens, run once before a release. Print, json, rpc and changelog scenarios are dropped.
   - Flaky fix, **answered 2026-10-14** (decisions-2026-10-14.md #9; open decision 7), size S: `scripts/tui/scenarios/scroll-view.json:22` waits for its final text, not `wait_stable: 1.0`. Drop `mode-cycle` (no scenario exists) and `print-tool-bash` (only a replay fixture) from the flaky list. Quarantine nothing.
-  - **Outcome (2026-10-14):** line 22 now waits for `mock-model`. Not verified as a fix. `goldens.py check scroll-view` run 7 times on the real binary: the three search snapshots (`search-typing`, `search-kept`, `search-dropped`) differ in every run since, and the original scenario differs the same way (3 of 3). The difference is the selected match: the golden has `beta item 25` at `2/2`, the binary shows `alpha item 25` at `1/2`. Not a startup race, so it is not fixed here. Open: accept the new screen (`goldens.py update scroll-view`) or fix the search order. Needs the user's call.
+  - **Outcome (2026-10-14):** line 22 now waits for `mock-model`. Not verified as a fix. `goldens.py check scroll-view` run 7 times on the real binary: the three search snapshots (`search-typing`, `search-kept`, `search-dropped`) differ in every run since, and the original scenario differs the same way (3 of 3). The difference is the selected match: the golden has `beta item 25` at `2/2`, the binary shows `alpha item 25` at `1/2`. Not a startup race, so it is not fixed here. Decided 2026-10-14 (decisions-2026-10-14.md #21): the scenario types the unique query `beta item 25` in one step, so the match is `beta item 25` at 1/1. The new screens are accepted.
 - **T0.4 and T0.5:** retired 2026-10-10. `review_bundle.py` and the `tui-review` skill are removed. Screen goldens are a pre-release check of about 10 key screens, not per change.
 - **T0.6:** parity is retired. The done bar is L1 plus `goldens.py check all`. `ledger.py` is read-only. Open items:
   - The TUI parity workflow (`tui-parity.yml`) and the guards CI job (naming check and `packages.py --check`) are staged in `archive/migration/ci/step1-workflows.patch`, not in `.github/workflows/`. The user applies it with `git apply archive/migration/ci/step1-workflows.patch` and pushes, because the session token lacks workflow scope.
@@ -277,7 +277,7 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
    - Fixed 2026-10-14 (`244ab05`): races `hoocode-code-rpc` `fork_branches` and `a_closed_agent`.
    - Fixed 2026-10-14 (`50efc28`): `hoocode-ai-oauth-anthropic` tests use an ephemeral port (production stays 53692).
    - Pruned 2026-10-14: `mode-cycle` (no scenario exists) and `print-tool-bash` (only a replay fixture) are off the list.
-   - Still open: `scroll-view` (search snapshots, see T0.3 outcome).
+   - `scroll-view`: **decided 2026-10-14** (#21). The scenario picks its match explicitly; the golden is accepted. See T0.3 outcome.
 8. **ANSWERED 2026-10-14** (#10: one shared const, no period). **OpenAI abort text (X12).** `ABORTED_MESSAGE` is one const now. The OpenAI path says "Request was
    aborted." Decide whether every provider uses that text. It changes visible text.
 9. **ANSWERED 2026-10-14** (#11: both follow the switch). **Colour when colour is off (X15).** `theme.fg/bg` still emit colour when colour is off; only bold,

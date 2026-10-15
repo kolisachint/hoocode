@@ -27,6 +27,15 @@ reference, pin, shim or parity checks remain; don't ask about TS parity.
   commands). Read them to find code; update them in the same commit as any crate, screen
   or command change.
 
+- **Agent loop rules** (from `docs/design/build-speed.md` §4.3):
+  - After an edit: `cargo check -p <crate> --message-format=short`. Build only to run tests.
+  - Lints: run `cargo clippy --fix --allow-dirty -p <crate>` first, then fix the rest by hand.
+  - New integration tests go in `crates/<crate>/tests/it/<name>.rs`, registered in `tests/it/main.rs`.
+  - Prefer owned types, `Arc` and `.clone()` over lifetimes in structs. Plain `async fn`
+    (including in traits); avoid hand-written futures and deep combinator chains.
+  - Errors: follow the existing hand-written error enums; don't add `anyhow`/`thiserror`.
+  - New dependency: check the resolved version in `Cargo.lock`, and read the API from
+    `cargo doc` / the source for that exact version, not from memory.
 - Naming (2026-10-08, `archive/docs/naming-and-paths.md`): everything is named hoocode
   (crates `hoocode-*`, binary `hoocode`, data in `~/.hoocode`, `HOOCODE_` env only). Don't
   add new `cortex` names (`scripts/ci/no_cortex.sh`).

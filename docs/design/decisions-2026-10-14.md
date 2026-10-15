@@ -41,3 +41,14 @@ Made while closing [reliability.md](reliability.md) (step 1). The answers are in
 | 15 | macOS job on pull requests (1.3) | **Decided: the `test-macos` job runs on pull requests too.** Its `pull_request` exclusion is removed in `archive/migration/ci/step1-workflows.patch`. The session token cannot push workflows, so the user applies and pushes it. Reason: macOS failures are bugs, so a PR must show them. |
 | 16 | Staged CI: guards and TUI parity (0d, T0.6) | **Staged, not applied.** The `guards` job (`no_cortex.sh`, `packages.py --check`) and the `tui-parity` workflow (manual and nightly goldens) are in `archive/migration/ci/step1-workflows.patch`. The session token lacks workflow scope, so the user runs `git apply archive/migration/ci/step1-workflows.patch` and pushes. |
 | 17 | `.agents` scope (1.2) | **Kept, and documented as a cross-vendor scope.** `~/.agents` and `<project>/.agents` are read for skills, commands, agents, AGENTS.md and MCP config, the layout other tools share. hoocode writes there only the scheduled-task store (`<project>/.agents/scheduled_tasks.json`), so "read-only" has that one exception. |
+
+### Subagent orchestration (answered 2026-10-15)
+
+Made with the user on 2026-10-15 for [subagent-orchestration.md](subagent-orchestration.md) Q5 to Q7 and the target-dir risk.
+
+| # | Question | Answer |
+|---|---|---|
+| 22 | Where subagent worktrees live (subagent-orchestration Q5; D5, §3) | **Outside the repo**, at `~/.hoocode/worktrees/<repo>/<label>`, where `<repo>` is the repo's folder name (one folder per repo). Branch stays `agent/<label>`. Reason: search and build never see a worktree twice. Replaces the earlier `.hoocode/worktrees/<label>` inside the repo. |
+| 23 | Should the harness enforce the worktree (subagent-orchestration Q6; D3) | **Never.** Worktree isolation stays instructions-only. No later code card. Reason: the user's call. |
+| 24 | Uncommitted parent changes (subagent-orchestration Q7; §3) | **Warn only.** The parent warns in its report when the tree is dirty. It commits only if the user asks. Reason: the user's call. |
+| 25 | Build output per worktree ("New risk from Q2" in subagent-orchestration) | **Build output is per project, not per protocol.** The worktree protocol is language-neutral and does not touch build output. Each worktree uses its language's default build/cache location (e.g. its own `target/`, `node_modules/`, `.venv/`), and that output goes away when the worktree is removed. Sharing a build cache across worktrees is a per-project choice, written in that project's own rules (AGENTS.md / CLAUDE.md), not in hoocode's protocol. Example: a Rust project may set `CARGO_TARGET_DIR` to share one target dir. Watch disk use and build times; no harness code for this. Corrected 2026-10-15: the first version of this answer was cargo-specific. |

@@ -36,9 +36,9 @@ Problems this card fixes (verified against the code on 2026-10-09):
 |---|---|---|
 | D1 | All subagents run in background by default (including general-purpose and custom agents). Foreground only when the parent passes `background:false`. Frontmatter `background: false` is honoured as the agent's default (Q1). |
 | D2 | The parent never idles on a barrier when it has independent work. It keeps dispatching and working. `AgentOutput(wait:true)` only when blocked on that one result. | Results still arrive at turn boundaries. See Details. |
-| D3 | Worktree isolation is done by instructions, not code. The parent passes an instruction set to the subagent. No new Rust worktree feature and no new tool parameter. | A harness check is a later card. See Q6. |
+| D3 | Worktree isolation is done by instructions, not code. The parent passes an instruction set to the subagent. No new Rust worktree feature and no new tool parameter. | No harness check, ever (Q6, decided 2026-10-15). |
 | D4 | Only agents that can write get a worktree: general-purpose, and custom agents with Edit, Write or Shell. Read-only agents (explore, plan) run in the parent tree. | |
-| D5 | Worktree at `.hoocode/worktrees/<label>` inside the repo. Branch `agent/<label>`. | `.hoocode/` is gitignored (`.gitignore:10`). Branch name agreed (Q3). |
+| D5 | Worktree at `~/.hoocode/worktrees/<repo>/<label>`, outside the repo. `<repo>` is the repo's folder name (for hoocode: `hoocode`), so each repo has one folder and cleanup is easy. Branch `agent/<label>`. **Changed 2026-10-15** (Q5 answer, [decisions-2026-10-14.md](decisions-2026-10-14.md) #22): the first version put it at `.hoocode/worktrees/<label>` inside the repo. The `<repo>` folder was added the same day. | Outside the repo, search and build never see a worktree twice. Branch name agreed (Q3). |
 | D6 | The subagent commits on its own branch. It never pushes. The parent reports branches. The user merges. | |
 | D7 | After a successful merge, the parent removes the worktree and branch. On failure or conflict it keeps both and reports. | Timing agreed in Q4: at session end, merged branches only. |
 | D8 | Design only this round. No code changes. | User decision |
@@ -102,7 +102,7 @@ Rules:
   The child runs in the parent's cwd (`tools.rs:622-624`). Read, Edit and Write take paths.
 - **Use `git -C <path>`.** Whether a Shell `cd` carries between calls is not verified.
 - **Same Report rule in every body** (§4d), so the final message stands alone.
-- Later [rust]: the harness fills Workspace itself (Q6).
+- The parent fills Workspace. The harness never does (Q6, decided 2026-10-15).
 
 ### 3. Worktree protocol for writing agents [text] — fixes P12, P13
 
@@ -123,9 +123,10 @@ Who does what:
 1. Check the task needs a writer (general-purpose, or a custom agent with Edit,
    Write or Shell). Read-only agents skip this section.
 2. Note the base commit: `git rev-parse HEAD`. Worktrees start from HEAD, so
-   uncommitted parent changes are not in them (Q7).
+   uncommitted parent changes are not in them. If the tree is dirty, warn in the
+   report. Commit only if the user asks (Q7).
 3. Pick a unique `<label>`. Check `git branch --list agent/<label>` is empty.
-4. Create it: `git worktree add -b agent/<label> .hoocode/worktrees/<label> <base>`.
+4. Create it: `git worktree add -b agent/<label> ~/.hoocode/worktrees/<repo>/<label> <base>` (Q5, 2026-10-15; `<repo>` as in D5).
 5. One writer per worktree. Never give two writers files that overlap, and check
    the parent's own files too.
 6. Put the Workspace path, branch and base in the brief.
@@ -135,8 +136,8 @@ Who does what:
 1. Work only under the worktree path. Use absolute paths for Read, Edit and Write.
    Use `git -C <path>` for git.
 2. Run the project's checks there (CLAUDE.md commands), for the crates touched.
-   Rust builds use the main checkout's target dir:
-   `CARGO_TARGET_DIR=<repo>/target` (Q2). The parent puts it in the brief.
+   Build output is not part of this protocol. Use the project's own build setup
+   (its AGENTS.md / CLAUDE.md). Do not add build settings to the brief unless those rules say to.
 3. Commit on the branch with a clear message. Never push. Never switch branches.
    Never write to the parent tree.
 4. Report: branch, commit list, `git diff --stat <base>..HEAD`, and checks run
@@ -151,7 +152,7 @@ Who does what:
 3. Report to the user: branch, summary, verification, risks, and the merge command
    (`git merge agent/<label>`). The user merges.
 4. At session end, for each `agent/*` branch that `git branch --merged <base>`
-   lists: `git worktree remove .hoocode/worktrees/<label>`, then
+   lists: `git worktree remove ~/.hoocode/worktrees/<repo>/<label>`, then
    `git branch -d agent/<label>` (Q4). `-d` refuses unmerged branches, which is
    the safety net. Report what was removed.
 5. Unmerged, failed, conflicting or red: keep the worktree and branch. Report both paths.
@@ -215,28 +216,35 @@ Answered 2026-10-09 (recorded in [decisions-2026-10-09-subagents.md](decisions-2
 | Q | Answer |
 |---|---|
 | Q1 frontmatter `background: false` | Honoured: the agent defaults to foreground. The parent's argument still wins. |
-| Q2 Rust builds per worktree | Shared `CARGO_TARGET_DIR` with the main checkout. Writers take turns on cargo's lock. |
+| Q2 Build output per worktree | Superseded 2026-10-15 (see the "New risk from Q2" item below). The protocol does not touch build output. |
 | Q3 branch names | `agent/<label>`. |
 | Q4 cleanup timing | Parent checks `git branch --merged <base>` at session end and removes merged worktrees and branches itself. Unmerged ones stay and are reported. |
 | Q8 AGENTS.md for read-only agents | Every agent keeps it. 4g dropped. |
 
-Still open (recommendation first):
+Answered 2026-10-15 (all four are decided):
 
-**Q5. Is a worktree inside the repo safe for search and build?**
-- `.hoocode/` is gitignored (`.gitignore:10`), so git status and rg skip it. CodeSearch is not verified.
-- Check before first real use: `cargo metadata` in the parent ignores the worktrees.
-- Risk: a tool that ignores `.gitignore` sees duplicate code.
+**Q5. Is a worktree inside the repo safe for search and build? DECIDED 2026-10-15.**
+Subagent git worktrees go outside the repo, under `~/.hoocode/worktrees/<repo>/<label>`, so search
+and build never see them twice. Recorded in [decisions-2026-10-14.md](decisions-2026-10-14.md) #22.
 
-**Q6. Should the harness enforce the worktree later?**
-- Recommend: after a few weeks of the text version, a code card where the harness fills Workspace and checks the child's cwd.
+**Q6. Should the harness enforce the worktree later? DECIDED 2026-10-15: never.**
+Worktree isolation stays instructions-only for good. No later code card. Recorded in
+[decisions-2026-10-14.md](decisions-2026-10-14.md) #23.
 
-**Q7. What about uncommitted parent changes?**
-- Worktrees start from HEAD, so children do not see them.
-- Recommend: the parent warns in its report if the tree is dirty. It commits only if the user asks.
+**Q7. What about uncommitted parent changes? DECIDED 2026-10-15: warn only.**
+Worktrees start from HEAD, so children do not see uncommitted parent changes. The parent warns
+in its report if the tree is dirty. It commits only if the user asks. Recorded in
+[decisions-2026-10-14.md](decisions-2026-10-14.md) #24.
 
-**New risk from Q2:** branches with different dependencies share one target dir,
-so builds can thrash the cache. Watch build times; switch to per-worktree target
-dirs if it hurts.
+**New risk from Q2. DECIDED 2026-10-15: build output is per project, not per protocol.**
+The worktree protocol is language-neutral. It does not touch build output. Each worktree uses
+its language's default build/cache location (e.g. its own `target/`, `node_modules/`, `.venv/`),
+and that output goes away when the worktree is removed. Sharing a build cache across worktrees
+is a per-project choice, written in that project's own rules (AGENTS.md / CLAUDE.md), not in
+hoocode's protocol. Example: a Rust project may set `CARGO_TARGET_DIR` to share one target dir.
+Watch disk use and build times; no harness code for this.
+Corrected 2026-10-15: the first version of this answer was cargo-specific.
+Recorded in [decisions-2026-10-14.md](decisions-2026-10-14.md) #25.
 
 ## Details
 
