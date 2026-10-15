@@ -165,12 +165,12 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 | Phase | Builds | Done when |
 |---|---|---|
 | 0 | `/perf`, load scenario, baseline numbers in this card | Numbers recorded for Linux and macOS. **Linux recorded 2026-10-15** (see the 2026-10-15 run below). **Open:** macOS is not measured. |
-| 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites (the UI-thread `block_on` removal is done under TUI N14 in [tui-activity.md](tui-activity.md), not here) | No runtime built outside the crate; thread ceiling holds in the load test. **Status 2026-10-15: open.** The load run peaked at 34 threads (ceiling 26) for 3 s during the 8-bash and 5-subagent burst, was 24 for the next 9 s, and was 14 to 13 from second 15. Not yet profiled to find which pool adds the threads. |
-| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal. **Status:** parts 1 and 2 landed 2026-10-08; the 2026-10-15 load run is in Baseline (Ctrl+C 30 ms: pass). **Open:** the keystroke p99 passed in the final run but failed in one earlier run of the same bash scenario (70.6 ms, cause not found); the burst's frame-build cost. |
+| 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites (the UI-thread `block_on` removal is done under TUI N14 in [tui-activity.md](tui-activity.md), not here) | No runtime built outside the crate; thread ceiling holds in the load test. **Status 2026-10-15: open.** The load run peaked at 34 threads (ceiling 26) for 3 s during the 8-bash and 5-subagent burst, was 24 for the next 9 s, and was 14 to 13 from second 15. **Follow-up 2026-10-15:** the extra threads were the subagent pipe readers (10) and the `hoocode-io` blocking pool (11). The pipe readers are removed (commit b8862c2); the peak is now 24, so the ceiling holds in the load test. Phase stays open: the io blocking pool is still uncapped (see the follow-up section). |
+| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal. **Status:** parts 1 and 2 landed 2026-10-08; the 2026-10-15 load run is in Baseline (Ctrl+C 30 ms: pass). **Open:** the keystroke p99 passed in the final run but failed in one earlier run of the same bash scenario (70.6 ms, cause not found). **Follow-up 2026-10-15:** five bash runs gave one miss (27.3 ms, started at load average 3.4); the two runs that started under load were repeated and passed. The burst's frame-build cost is the tail (see the follow-up section). |
 | 3 | `hoocode-session-io` with flush barriers | No session file I/O on the UI thread or on `hoocode-io`; kill -9 mid-turn loses at most the unflushed entries of that turn. **Status: writes landed** (`runtime` `session_io.rs`; 4096 entries or 64 MiB, producers wait; barrier at turn end, 1 s flush at dispose; torn last line skipped on read and not glued to the next entry). **Open:** session reads still run on the caller (they first wait for queued writes, up to 1 s), and `create_dir_all` and the `open`/`resume` paths are not yet moved to a lane. |
-| 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test. **Status:** landed; load run 2026-10-15 in Baseline. **Open:** the burst's frame-build cost (rolling p99 about 102 ms for 5 s) is not separated from lane effects; Windows `Shell` priority (process-wrap's JobObject overwrites creation flags); macOS QoS untested. |
-| 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase. **Status:** memory check passes (2026-10-15, Baseline). **Open:** the thread ceiling (34 against 26, the phase 1 item); the key p99 in the burst; the stall-phase check is not run; the footer cannot show a UI stall while the loop is stuck; macOS child RSS and `sysctl` unverified. |
-| 6 | Only if Phase 0 shows it: move syntax highlighting and big markdown parses to `hoocode-tools` | Frame build p99 under 8 ms on a 10k-line transcript |
+| 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test. **Status:** landed; load run 2026-10-15 in Baseline. **Open:** the burst's frame-build cost (rolling p99 about 102 ms for 5 s) is separated in the follow-up: frame build dominates, lanes add little (see the follow-up section); Windows `Shell` priority (process-wrap's JobObject overwrites creation flags); macOS QoS untested. |
+| 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase. **Status:** memory check passes (2026-10-15, Baseline). **Open:** the thread ceiling (34 against 26 before b8862c2; 24 after, the phase 1 item); the key p99 in the burst (see the follow-up); the stall-phase check is not run, and the watchdog probes did not fire under load; the footer cannot show a UI stall while the loop is stuck; macOS child RSS and `sysctl` unverified. |
+| 6 | Only if Phase 0 shows it: move syntax highlighting and big markdown parses to `hoocode-tools` | Frame build p99 under 8 ms on a 10k-line transcript. **Follow-up 2026-10-15:** the trigger is met. The bash burst's frame build p99 was 98 to 136 ms, against p50 under 1 ms. The cost is the bash block's render. Not started. |
 
 #### Baseline (Phase 0)
 
@@ -322,6 +322,98 @@ so its figures cover the whole run. The bash run types 300, so it does too.
   `HOOCODE_PERF_ALLOC_MB` set and `HOOCODE_SUBAGENT_DEPTH` unset or `0`, because the product has no
   allocation hook.
 - **Not measured:** macOS; the watchdog's stall and starvation probes under this load; Windows priority.
+
+#### 2026-10-15 load run, follow-up
+
+Linux, 4 vCPU, release build, same scripts as above. Raw artifacts under `target/perf/` (`attr-load`,
+`attr-bash`, `fix-load`, `bash-run-*`, `bash-rerun-*`, `probe-*`). Load average is the 1-minute value from
+`/proc/loadavg` when the run starts. A reviewer's `nextest` run shared the box for part of this.
+
+**1. Thread ceiling: who spawns the extra threads.** A sampler read `/proc/<pid>/task/*/comm` every 0.1 s
+during the load run (`scripts/perf/load_scenario.py --scenario load`, before the fix).
+
+| Source at the 34-thread peak | Threads | Where it comes from | After the fix |
+|---|---|---|---|
+| Steady threads (main, input, term-out, session-io, bg, watchdog, 4 io workers) | 10 | §1 map | 10 |
+| `perf` sampler, resize poll, `autocomplete-files` | 3 | Not in the §1 map | 3 |
+| `hoocode-subagent` pipe readers | 10 | `ProcessHandle` in `code-subagents` `runner.rs`: 2 threads per child, 5 children | **0** |
+| `hoocode-io-*` blocking pool, above the 4 workers | 11 | `spawn_blocking` on the io runtime: 5 child `wait()` calls (`runner.rs`), 5 Agent tool bodies and 1 MCP tool body (`agent-loop` `run_tool`) | 11 |
+| **Total** | **34** | | **24** |
+
+- The 11 blocking threads are counted from the code, not sampled one by one. The total matches exactly.
+- No `hoocode-tools` thread was alive in the load run. The 16-thread cap was never reached.
+- The bash-only run peaked at 13 threads and had no blocking-pool threads. Its bash calls return
+  quickly and run as background jobs on `hoocode-io`.
+- **Fix (commit b8862c2, `code-subagents`):** the pipes are read by tasks on `hoocode-io`, as `Shell`
+  pipes already are. No thread is started for them. A test checks that no pipe thread appears while a child
+  runs, and that 4 MiB of output arrives whole. The test fails on the old code (2 threads) and passes now.
+- **Left open (design question, not changed):** tool bodies and child `wait()` calls share the io blocking
+  pool, which has no cap (tokio's default is 512). Capping it now would risk a deadlock: an Agent body holds
+  a slot while it waits for a child whose `wait()` is queued behind it. Moving the waits to async (or to
+  `run_blocking`) comes first.
+
+**2. Keystroke p99, bash scenario, five runs (after the fix).** Whole-run keystroke-to-frame p99, 300 keys
+over 15 s.
+
+| Run | Load avg (1 min) at start | Keystroke p99 ms | Threads max | 16 ms |
+|---|---|---|---|---|
+| 1 | 3.39 | **27.27** | 13 | MISS |
+| 2 | 2.76 | 5.54 | 13 | pass |
+| 3 | 2.05 | 1.04 | 13 | pass |
+| 4 | 1.47 | 4.51 | 13 | pass |
+| 5 | 1.05 | 2.24 | 13 | pass |
+| 1, repeat (run under load first) | 0.75 | 4.59 | 13 | pass |
+| 2, repeat (run under load first) | 0.62 | 4.62 | 13 | pass |
+
+- Six of seven runs pass. The one miss started at a load average of 3.4. Its cause is not known. The
+  earlier 70.6 ms run is still unexplained too.
+- **Does 16 ms hold?** Usually yes, with a 1-in-7 miss on this box. Not yet stable enough to call it met.
+
+**3. Burst frame build against lane effects.** Per-second values from the perf log of the load run (after the fix).
+
+| Window | Frame build p50 / p99 ms | Keystroke p50 / p99 ms | Loop p99 ms |
+|---|---|---|---|
+| 3 to 7 s: 8 bash jobs printing, 5 subagents, MCP call open | 0.7 / 136 | 0.5 to 0.8 / 136 | 136 |
+| 9 to 14 s: children done, MCP still open | 0.7 / 5 | 0.8 / 63 (window lag) | 6 |
+| 16 to 30 s: bash output done | 0.7 / 2 to 3 | 0.8 / 5 to 6 | 4 to 6 |
+| Whole run | n/a | n/a / **4.4** | n/a |
+
+- Frame build p50 stays at 0.7 ms. The p99 comes from a few frames of 100 ms or more. The bash block is
+  the cause: each slow frame is the one that draws it.
+- The keystroke tail follows the frame tail. The keystroke p50 stays under 1 ms.
+- Bash only, no subagents (`attr-bash`): burst frame build p99 112 ms, keystroke p99 114 ms, p50 0.4 to 0.6 ms.
+- **Which dominates:** frame build. Lanes do not show as a separate signal. The load run peaked at 136 ms,
+  the bash-only run at 112 ms. That gap is one run each, so it could be lanes or noise. It is not
+  separated more finely.
+- **Points to phase 6** (move big renders off the UI thread, or cut the bash block's render cost). The
+  phase 6 trigger is met. Phase 6 itself is not started.
+
+**4. Watchdog probes under load.** The probes log only when the debug log is on. In the TUI, watchdog lines go
+through `agent_log`, which withholds them unless `HOOCODE_DEBUG_AGENT_LOG=1`. For these runs a wrapper turned
+the log on and kept it in a directory that outlives the scenario.
+
+| Probe | Trigger | Load run (8 bash, 5 subagents, MCP stall, 975 keys) | Paused pty (5 s not read, then Ctrl+C) |
+|---|---|---|---|
+| UI stall (loop silent 500 ms, footer at 2 s) | `[WATCHDOG] UI loop silent` / `UI stalled` | No line. Perf `stalls` 0 | No line. Perf `stalls` 0. Loop p99 79 ms |
+| io starvation (probe 1 s, late over 250 ms) | `[WATCHDOG] io runtime starved` | No line | No line |
+
+- Both probes stayed silent under these loads. Only `DISPATCH` lines reached the debug log, so the sink works.
+- **No control run:** no forced stall or starvation was built to show that the probes fire. The "silent" result
+  is therefore not proof they work. Test the probes with a forced stall before relying on them.
+- Ctrl+C in the paused run: 36 ms, PASS (target 500 ms).
+- **Points to phase 6?** Yes, for the frame build. The probes do not show lane starvation under these loads.
+
+**Summary**
+
+| Question | Answer |
+|---|---|
+| Thread ceiling (26) | Met after the fix: 24. Cause: subagent pipe readers (10) and the uncapped io blocking pool (11) |
+| Keystroke p99 under 16 ms | Usually met (6 of 7 runs). One run missed, cause unknown |
+| What dominates the burst tail | Frame build of the bash block. Lanes add little or nothing that shows |
+| Probes under load | Silent. No control run, so not proven to work |
+| Phase 6 | Trigger met. Not started |
+
+Not done: macOS; the io blocking pool cap (a design question); the watchdog control run.
 
 ## Not doing
 
