@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/dev/ensure_nextest.sh\"",
+            "timeout": 600
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/dev/prune_target.sh\" --apply --if-over 15 --quiet || true",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}
