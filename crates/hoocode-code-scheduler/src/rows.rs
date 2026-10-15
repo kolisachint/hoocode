@@ -117,33 +117,67 @@ impl Runs {
         });
     }
 
-    /// The turn that carries the fired prompts has begun: their rows show `running`.
-    pub fn run_started(&mut self, store: &TaskStore) {
+    /// A user message with `prompt` as its text has begun a turn: the first
+    /// waiting job with that prompt is running, and its row shows `running`.
+    /// Other waiting jobs stay `queued` until their own prompt begins. A prompt
+    /// that matches no waiting job changes nothing.
+    pub fn run_started(&mut self, store: &TaskStore, prompt: &str) {
+        let Some(index) = self.waiting.iter().position(|job| job.prompt == prompt) else {
+            return;
+        };
+        let job = self.waiting.remove(index);
+        let key = row_key(&job.id);
+        store.batch(|s| {
+            s.upsert_keyed(
+                &key,
+                &job.prompt,
+                options(&key),
+                TaskPatch {
+                    status: Some(TaskStatus::InProgress),
+                    note: Some(Some("running".to_owned())),
+                    ..Default::default()
+                },
+            );
+        });
+        self.running.push(job);
+    }
+
+    /// Queued prompts that will not run (the prompt queue was cleared, the
+    /// session was switched, or the turn ended with them still waiting): their
+    /// rows stop saying `queued`. A recurring job is pending for its next run;
+    /// a one-shot job's row is removed.
+    pub fn drop_waiting(&mut self, store: &TaskStore, now: &DateTime<Local>) {
         if self.waiting.is_empty() {
             return;
         }
-        let started: Vec<ScheduledTask> = self.waiting.drain(..).collect();
+        let dropped: Vec<ScheduledTask> = self.waiting.drain(..).collect();
         store.batch(|s| {
-            for job in &started {
+            for job in &dropped {
                 let key = row_key(&job.id);
+                if !job.recurring {
+                    s.remove_keyed(&key);
+                    continue;
+                }
                 s.upsert_keyed(
                     &key,
                     &job.prompt,
                     options(&key),
                     TaskPatch {
-                        status: Some(TaskStatus::InProgress),
-                        note: Some(Some("running".to_owned())),
+                        status: Some(TaskStatus::Pending),
+                        note: Some(None),
+                        next_at: Some(next_run_ms(&job.cron, now)),
                         ..Default::default()
                     },
                 );
             }
         });
-        self.running.extend(started);
     }
 
     /// The turn ended: each started job's row shows `Done` or `Failed` and its
-    /// next run. A one-shot job's row is removed.
+    /// next run. A one-shot job's row is removed. A job still waiting then
+    /// never ran (see [`Runs::drop_waiting`]).
     pub fn run_finished(&mut self, store: &TaskStore, ok: bool, now: &DateTime<Local>) {
+        self.drop_waiting(store, now);
         if self.running.is_empty() {
             return;
         }
@@ -318,7 +352,7 @@ mod tests {
         assert_eq!(fired.next_at, Some(tomorrow));
 
         // Run: the turn that carries the prompt starts.
-        runs.run_started(&store);
+        runs.run_started(&store, "check");
         let running = row(&store, "task_a").unwrap();
         assert_eq!(running.note.as_deref(), Some("running"));
         assert_eq!(running.status, TaskStatus::InProgress);
@@ -338,7 +372,7 @@ mod tests {
             std::slice::from_ref(&recurring),
             &at(9, 40, 0),
         );
-        runs.run_started(&store);
+        runs.run_started(&store, "check");
         runs.run_finished(&store, false, &at(9, 41, 0));
         let failed = row(&store, "task_a").unwrap();
         assert_eq!(failed.status, TaskStatus::Failed);
@@ -360,7 +394,7 @@ mod tests {
         let queued = row(&store, "task_once").unwrap();
         assert_eq!(queued.status, TaskStatus::InProgress);
         assert_eq!(queued.next_at, None, "a fired one-shot has no next run");
-        runs.run_started(&store);
+        runs.run_started(&store, "once");
         // Still there while it runs, although the store no longer lists it.
         runs.publish_tick(&store, Some(&[]), &[], &at(9, 31, 0));
         assert!(row(&store, "task_once").is_some());
@@ -385,7 +419,7 @@ mod tests {
         // A job deleted while it runs keeps its row until the run ends.
         runs.publish_tick(&store, Some(&[]), std::slice::from_ref(&a), &at(9, 2, 0));
         assert!(row(&store, "task_a").is_some());
-        runs.run_started(&store);
+        runs.run_started(&store, "a");
         runs.run_finished(&store, true, &at(9, 2, 30));
         // Its run is over and it is not listed: the next tick removes the row.
         runs.publish_tick(&store, Some(&[]), &[], &at(9, 3, 0));
@@ -395,6 +429,102 @@ mod tests {
         runs.publish_tick(&store, Some(std::slice::from_ref(&a)), &[], &at(9, 4, 0));
         runs.publish_tick(&store, None, &[], &at(9, 5, 0));
         assert!(row(&store, "task_a").is_some());
+    }
+
+    #[test]
+    fn a_queued_prompt_runs_only_when_its_own_turn_begins() {
+        let store = TaskStore::new();
+        let mut runs = Runs::default();
+        let a = job("task_a", "* * * * *", "a", true);
+        let b = job("task_b", "* * * * *", "b", true);
+        let jobs = [a.clone(), b.clone()];
+        runs.publish_tick(&store, Some(&jobs), &[a.clone(), b.clone()], &at(9, 0, 10));
+        assert_eq!(
+            row(&store, "task_b").unwrap().note.as_deref(),
+            Some("queued")
+        );
+
+        // The first prompt's turn begins: b waits behind it, still queued.
+        runs.run_started(&store, "a");
+        assert_eq!(
+            row(&store, "task_a").unwrap().note.as_deref(),
+            Some("running")
+        );
+        assert_eq!(
+            row(&store, "task_b").unwrap().note.as_deref(),
+            Some("queued")
+        );
+
+        // b's own message begins its turn later.
+        runs.run_started(&store, "b");
+        assert_eq!(
+            row(&store, "task_b").unwrap().note.as_deref(),
+            Some("running")
+        );
+        runs.run_finished(&store, true, &at(9, 1, 0));
+        assert_eq!(row(&store, "task_b").unwrap().status, TaskStatus::Done);
+    }
+
+    #[test]
+    fn a_dropped_queued_prompt_is_pending_again_not_queued_forever() {
+        let store = TaskStore::new();
+        let mut runs = Runs::default();
+        let a = job("task_a", "30 9 * * *", "a", true);
+        let once = job("task_once", "30 9 * * *", "once", false);
+        runs.publish_tick(
+            &store,
+            Some(std::slice::from_ref(&a)),
+            &[a.clone(), once.clone()],
+            &at(9, 30, 5),
+        );
+        runs.run_started(&store, "a");
+        // The queue was cleared before "once" ran: its row stops saying queued.
+        runs.drop_waiting(&store, &at(9, 30, 40));
+        let pending = row(&store, "task_once");
+        assert!(
+            pending.is_none(),
+            "a one-shot job that never ran has no row left"
+        );
+        let recurring = row(&store, "task_a").unwrap();
+        assert_eq!(
+            recurring.note.as_deref(),
+            Some("running"),
+            "the started one is not touched"
+        );
+
+        // A recurring job that never ran is pending for its next run.
+        let b = job("task_b", "30 9 * * *", "b", true);
+        runs.publish_tick(
+            &store,
+            Some(&[a.clone(), b.clone()]),
+            std::slice::from_ref(&b),
+            &at(9, 31, 0),
+        );
+        assert_eq!(
+            row(&store, "task_b").unwrap().note.as_deref(),
+            Some("queued")
+        );
+        runs.drop_waiting(&store, &at(9, 31, 5));
+        let dropped = row(&store, "task_b").unwrap();
+        assert_eq!(dropped.status, TaskStatus::Pending);
+        assert_eq!(dropped.note, None);
+        assert_eq!(dropped.next_at, Some(millis(&at(9, 30, 0)) + 86_400_000));
+    }
+
+    #[test]
+    fn a_turn_that_ends_with_jobs_still_waiting_settles_them() {
+        let store = TaskStore::new();
+        let mut runs = Runs::default();
+        let b = job("task_b", "30 9 * * *", "b", true);
+        runs.publish_tick(
+            &store,
+            Some(std::slice::from_ref(&b)),
+            std::slice::from_ref(&b),
+            &at(9, 30, 5),
+        );
+        // No turn ever began with "b": the run ends and the row must not say queued.
+        runs.run_finished(&store, true, &at(9, 31, 0));
+        assert_eq!(row(&store, "task_b").unwrap().status, TaskStatus::Pending);
     }
 
     #[test]

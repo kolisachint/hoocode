@@ -264,7 +264,6 @@ impl Mode {
     pub(super) fn handle_agent_event(&mut self, event: AgentEvent) {
         match event {
             AgentEvent::AgentStart => {
-                self.scheduled_runs.run_started(task_store());
                 self.tips.on_turn_start();
                 self.stop_working_loader();
                 let loader = self.create_working_loader();
@@ -272,7 +271,11 @@ impl Mode {
                 self.loader = Some(loader);
             }
             AgentEvent::MessageStart { message } => match &message {
-                AgentMessage::User(_) => {
+                AgentMessage::User(user) => {
+                    // A scheduled prompt's row says running once its own message begins.
+                    if let Some(text) = user.content.as_str() {
+                        self.scheduled_runs.run_started(task_store(), text);
+                    }
                     // A new turn drops the finished tasks of the last one.
                     task_store().reset();
                     startup_progress::clear();
