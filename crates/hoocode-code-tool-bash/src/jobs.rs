@@ -27,6 +27,7 @@ use hoocode_code_task_store::{
 };
 use hoocode_code_tool_api::{node_fs_error, ToolError};
 use hoocode_runtime::io_handle;
+use process_wrap::tokio::ChildWrapper;
 
 use crate::operations::{build_command_with_output, LocalBashOperations};
 use crate::shell::{
@@ -102,6 +103,10 @@ pub struct JobRead {
     /// The log's size when it was read.
     pub size: u64,
     pub state: JobState,
+    /// Whether the job may still write to the log: it runs, or a process of its
+    /// group is alive (see [`output_open`]). A follower stops only when this is
+    /// false and the text is read to its end.
+    pub open: bool,
 }
 
 struct Entry {
@@ -381,6 +386,21 @@ pub fn read_log(path: &Path, state: JobState, since: Option<u64>) -> Result<JobR
         next: from + whole as u64,
         size,
         state,
+        open: state.is_running(),
+    })
+}
+
+/// Whether a job of this process may still write to `log_path`: the job runs,
+/// or a process of its group is still alive. A background descendant can outlive
+/// the shell, so the output stays open after the shell exits (T5.3). `None` when
+/// no job of this process has that log.
+pub fn output_open(log_path: &Path) -> Option<bool> {
+    live_registries().iter().find_map(|shared| {
+        lock(&shared.state)
+            .jobs
+            .iter()
+            .find(|e| e.info.log_path == log_path)
+            .map(|e| e.info.state.is_running() || e.group.is_some())
     })
 }
 
@@ -537,11 +557,16 @@ pub const FOLLOW_LAG_MAX: u64 = 2 * OUTPUT_READ_MAX as u64;
 /// [`FOLLOW_LAG_MAX`] behind starts at the tail instead; the text it skipped is
 /// not returned, and `from` says where the returned text starts.
 pub fn follow_log(path: &Path, state: JobState, since: Option<u64>) -> Result<JobRead, ToolError> {
+    // Asked before the log is read: output that comes after this point is left for
+    // the next read, and a job that reports closed has written everything already.
+    let open = output_open(path).unwrap_or(state.is_running());
+    let state = if open { JobState::Running } else { state };
     let size = std::fs::metadata(path)
         .map(|m| m.len())
         .map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
     let start = since.filter(|offset| size.saturating_sub(*offset) <= FOLLOW_LAG_MAX);
     let mut read = read_log(path, state, start)?;
+    read.open = open;
     for _ in 1..FOLLOW_CHUNKS {
         if read.next >= read.size {
             break;
@@ -632,7 +657,7 @@ async fn run_job(
     // Without a process id there is no group to signal, and killpg(0) would signal
     // this process, so the job is not started.
     let Some(pid) = child.id() else {
-        let _ = child.start_kill();
+        stop_and_reap(&mut *child).await;
         let _ = started.send(Err("spawn: the shell has no process id".into()));
         return;
     };
@@ -688,6 +713,13 @@ async fn run_job(
     }
 }
 
+/// Kills a child that is not going to be used and waits for its exit, so the
+/// process is reaped and no zombie is left behind.
+async fn stop_and_reap(child: &mut dyn ChildWrapper) {
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+}
+
 fn set_group(shared: &Shared, id: &str, group: Option<u32>) {
     if let Some(entry) = lock(&shared.state)
         .jobs
@@ -732,7 +764,7 @@ fn group_alive(_pgid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shell::get_shell_env;
+    use crate::shell::{get_shell_config, get_shell_env};
 
     /// Lives here, not in `tests/it`: [`kill_all_jobs`] reaches every registry of the
     /// process, and the integration tests run jobs of their own in parallel.
@@ -758,5 +790,40 @@ mod tests {
         }
         assert_eq!(jobs.info(&a.id).map(|i| i.state), Some(JobState::Killed));
         assert_eq!(jobs.info(&b.id).map(|i| i.state), Some(JobState::Killed));
+    }
+
+    /// The no-pid branch of `run_job` cannot be reached with a real process, so
+    /// this checks the step it runs: the child is killed and reaped. A zombie
+    /// still answers `kill(pid, 0)`, so the pid being gone shows it was waited on.
+    #[cfg(unix)]
+    #[test]
+    fn a_child_that_is_stopped_before_use_is_reaped() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let config = get_shell_config(None).expect("a shell");
+        // Spawned and stopped on the runtime, as `run_job` does (tokio needs its context).
+        let pid = io_handle().block_on(async {
+            let mut wrap = build_command_with_output(
+                &config.shell,
+                &config.args,
+                "sleep 30",
+                dir.path(),
+                &get_shell_env(),
+                0,
+                (std::process::Stdio::null(), std::process::Stdio::null()),
+            );
+            let mut child = wrap.spawn().expect("spawn");
+            let pid = child.id().expect("a started child has a pid");
+            assert_eq!(unsafe { libc::kill(pid as libc::pid_t, 0) }, 0, "alive");
+            stop_and_reap(&mut *child).await;
+            pid
+        });
+
+        let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        let errno = std::io::Error::last_os_error().raw_os_error();
+        assert_eq!(
+            (rc, errno),
+            (-1, Some(libc::ESRCH)),
+            "the child is reaped, not a zombie"
+        );
     }
 }

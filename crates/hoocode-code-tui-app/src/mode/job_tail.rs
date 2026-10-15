@@ -149,6 +149,7 @@ mod tests {
             next: from + text.len() as u64,
             size,
             state: hoocode_code_tool_bash::jobs::JobState::Running,
+            open: true,
         }
     }
 
