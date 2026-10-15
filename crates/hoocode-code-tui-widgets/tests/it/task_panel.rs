@@ -14,7 +14,7 @@ use hoocode_code_task_store::{
 };
 use hoocode_code_tui_keybindings::app_key_label;
 use hoocode_code_tui_theme::{init_theme, theme};
-use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelView};
+use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity, TaskPanelView};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::visible_width;
 
@@ -173,10 +173,16 @@ fn each_lens_carries_the_owner_glyph_and_tag_for_its_own_rows() {
     panel.set_view(TaskPanelView::Subagents);
     let sa = render(&mut panel, 120);
     let sub_row = find(&sa, "find the bug");
-    let mcp_row = find(&sa, "fetch");
     assert!(sub_row.contains('◇') && sub_row.contains("[explore]"));
+    assert!(
+        !sa.iter().any(|l| l.contains("fetch")),
+        "MCP calls have their own tab"
+    );
+    panel.set_view(TaskPanelView::Mcp);
+    let mc = render(&mut panel, 120);
+    let mcp_row = find(&mc, "fetch");
     assert!(mcp_row.contains('⧉') && mcp_row.contains("[web]"));
-    for row in &sa {
+    for row in sa.iter().chain(&mc) {
         assert_eq!(visible_width(row), 120);
     }
 }
@@ -187,13 +193,13 @@ fn an_mcp_row_without_a_recorded_server_falls_back_to_the_mcp_tag() {
     let m = create_with("legacy call", mcp(None));
     set(m, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Subagents);
+    panel.set_view(TaskPanelView::Mcp);
     let text = render(&mut panel, 120).join("\n");
     assert!(text.contains('⧉') && text.contains("[MCP]"));
 }
 
 #[test]
-fn subagents_tree_keeps_each_rows_mode_and_server_tag() {
+fn the_agents_and_mcp_tabs_keep_each_rows_mode_and_server_tag() {
     let _g = lock();
     let s = create_with("find the bug", sub("explore"));
     let m = create_with("fetch", mcp(Some("web")));
@@ -203,6 +209,8 @@ fn subagents_tree_keeps_each_rows_mode_and_server_tag() {
     panel.set_view(TaskPanelView::Subagents);
     let lines = plain(&mut panel, 120);
     assert!(find(&lines, "find the bug").contains("[explore]"));
+    panel.set_view(TaskPanelView::Mcp);
+    let lines = plain(&mut panel, 120);
     assert!(find(&lines, "fetch").contains("[web]"));
 }
 
@@ -397,8 +405,8 @@ fn each_tab_carries_its_own_lens_count() {
     let _g = lock();
     plan_and_done_run();
     let header = strip(&render(&mut TaskPanelComponent::new(), 120)[0]);
-    assert!(header.contains("tasks 0/1"), "{header}");
-    assert!(header.contains("subagents 1/1"), "{header}");
+    assert!(header.contains("Plan 0/1"), "{header}");
+    assert!(header.contains("Agents 1/1"), "{header}");
 }
 
 #[test]
@@ -422,7 +430,7 @@ fn header_keeps_the_tab_strip_and_drops_the_cycle_hint_when_narrow() {
     let header = render(&mut TaskPanelComponent::new(), 20)[0].clone();
     assert!(visible_width(&header) <= 20);
     assert!(!strip(&header).contains("cycle"));
-    assert!(strip(&header).contains("tasks"));
+    assert!(strip(&header).contains("Plan"));
 }
 
 #[test]
@@ -482,18 +490,15 @@ fn the_header_exists_only_when_there_is_more_than_one_lens() {
     create_with("find the bug", sub("explore"));
     let two = strip(&render(&mut panel, 120)[0]);
     assert!(
-        two.contains("tasks 0/1") && two.contains("subagents 0/1"),
+        two.contains("Plan 0/1") && two.contains("Agents 0/1"),
         "{two}"
     );
     assert!(!two.contains("teams"));
     assert!(
         two.contains(&format!(
-            "{} cycle",
+            "{} focus",
             // Display text: "option+l" on macOS.
-            hoocode_code_tui_keybindings::format_key_text(
-                &app_key_label("app.tasks.cycleForward"),
-                false
-            )
+            hoocode_code_tui_keybindings::format_key_text(&app_key_label("app.panel.focus"), false)
         )),
         "{two}"
     );
@@ -612,7 +617,7 @@ fn plan_sub_mcp(sub_status: TaskStatus, mcp_status: TaskStatus) {
 }
 
 #[test]
-fn the_tasks_and_subagents_lenses_split_work_by_ownership() {
+fn the_plan_agents_and_mcp_tabs_split_work_by_kind() {
     let _g = lock();
     plan_sub_mcp(TaskStatus::InProgress, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
@@ -623,20 +628,23 @@ fn the_tasks_and_subagents_lenses_split_work_by_ownership() {
     panel.set_view(TaskPanelView::Subagents);
     let sa = plain(&mut panel, 120).join("\n");
     assert!(!sa.contains("Write the plan"));
-    assert!(sa.contains("Explore the API") && sa.contains("Fetch the spec"));
+    assert!(sa.contains("Explore the API") && !sa.contains("Fetch the spec"));
+    panel.set_view(TaskPanelView::Mcp);
+    let mc = plain(&mut panel, 120).join("\n");
+    assert!(!mc.contains("Explore the API") && mc.contains("Fetch the spec"));
 }
 
 #[test]
-fn each_tabs_count_is_scoped_to_its_own_lens() {
+fn each_tabs_count_is_scoped_to_its_own_kind() {
     let _g = lock();
-    plan_sub_mcp(TaskStatus::Done, TaskStatus::Done);
+    plan_sub_mcp(TaskStatus::InProgress, TaskStatus::Done);
     let mut panel = TaskPanelComponent::new();
-    for view in [TaskPanelView::Plan, TaskPanelView::Subagents] {
+    for view in TaskPanelView::ALL {
         panel.set_view(view);
         let header = strip(&render(&mut panel, 120)[0]);
-        assert!(header.contains("tasks 0/1"), "{header}");
-        assert!(header.contains("subagents 2/2"), "{header}");
-        assert!(!header.contains("0/3"));
+        assert!(header.contains("Plan 0/1"), "{header}");
+        assert!(header.contains("Agents 0/1"), "{header}");
+        assert!(header.contains("MCP 1/1"), "{header}");
     }
 }
 
@@ -881,4 +889,299 @@ fn a_finished_row_shows_the_outcome_and_its_cause() {
     assert!(row.contains("partial"), "{row:?}");
     assert!(row.contains("0.6"), "the child's confidence: {row:?}");
     assert!(row.contains("Ran out of time"), "{row:?}");
+}
+
+// ---- focus, tabs, the pick, and the keys ----
+
+use hoocode_code_tui_keybindings::AppKeybindingsManager;
+use hoocode_code_tui_widgets::task_panel::PanelEvent;
+
+const TAB: &str = "\t";
+const SHIFT_TAB: &str = "\x1b[Z";
+const UP: &str = "\x1b[A";
+const DOWN: &str = "\x1b[B";
+const ENTER: &str = "\r";
+const ESC: &str = "\x1b";
+const CTRL_G: &str = "\x07";
+
+/// Installs the app's bindings for this thread, then focuses a panel.
+fn focused() -> TaskPanelComponent {
+    AppKeybindingsManager::default().install();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_focused(true);
+    panel
+}
+
+fn press(panel: &mut TaskPanelComponent, data: &str) {
+    panel.handle_input(data);
+}
+
+/// A running subagent run whose pool id is `run_id`.
+fn run_with_id(title: &str, run_id: &str) -> u64 {
+    let id = create_with(
+        title,
+        CreateTaskOptions {
+            agent: Some(run_id.into()),
+            ..sub("explore")
+        },
+    );
+    set(id, TaskStatus::InProgress);
+    id
+}
+
+#[test]
+fn the_panel_is_focusable_only_when_it_has_rows() {
+    let _g = lock();
+    AppKeybindingsManager::default().install();
+    let mut panel = TaskPanelComponent::new();
+    assert!(panel.is_focusable());
+    assert!(!panel.can_focus());
+    create("one row");
+    assert!(panel.can_focus());
+}
+
+#[test]
+fn tab_and_shift_tab_cycle_the_tabs_that_have_rows() {
+    let _g = lock();
+    plan_sub_mcp(TaskStatus::InProgress, TaskStatus::InProgress);
+    let mut panel = focused();
+    render(&mut panel, 120);
+    assert_eq!(panel.get_view(), TaskPanelView::Plan);
+    press(&mut panel, TAB);
+    assert_eq!(panel.get_view(), TaskPanelView::Subagents);
+    press(&mut panel, TAB);
+    assert_eq!(panel.get_view(), TaskPanelView::Mcp);
+    press(&mut panel, TAB);
+    assert_eq!(panel.get_view(), TaskPanelView::Plan, "wraps");
+    press(&mut panel, SHIFT_TAB);
+    assert_eq!(panel.get_view(), TaskPanelView::Mcp);
+    assert!(panel.take_events().is_empty());
+}
+
+#[test]
+fn tabs_without_rows_are_skipped_by_tab() {
+    let _g = lock();
+    create("plan item");
+    create_with("a call", mcp(Some("web")));
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, TAB);
+    assert_eq!(panel.get_view(), TaskPanelView::Mcp);
+    press(&mut panel, TAB);
+    assert_eq!(panel.get_view(), TaskPanelView::Plan);
+}
+
+#[test]
+fn up_and_down_pick_rows_and_clamp_at_the_ends() {
+    let _g = lock();
+    let a = create("row a");
+    let b = create("row b");
+    let c = create("row c");
+    let mut panel = focused();
+    render(&mut panel, 120);
+    assert_eq!(panel.picked(), Some((TaskPanelView::Plan, a)));
+    press(&mut panel, DOWN);
+    assert_eq!(panel.picked(), Some((TaskPanelView::Plan, b)));
+    press(&mut panel, DOWN);
+    press(&mut panel, DOWN);
+    assert_eq!(
+        panel.picked(),
+        Some((TaskPanelView::Plan, c)),
+        "clamps at the end"
+    );
+    press(&mut panel, UP);
+    assert_eq!(panel.picked(), Some((TaskPanelView::Plan, b)));
+    press(&mut panel, UP);
+    press(&mut panel, UP);
+    assert_eq!(
+        panel.picked(),
+        Some((TaskPanelView::Plan, a)),
+        "clamps at the top"
+    );
+}
+
+#[test]
+fn the_pick_follows_its_row_across_a_rebuild() {
+    let _g = lock();
+    let a = create("row a");
+    let b = create("row b");
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, DOWN);
+    set(a, TaskStatus::Done);
+    render(&mut panel, 120);
+    assert_eq!(panel.picked(), Some((TaskPanelView::Plan, b)));
+}
+
+#[test]
+fn enter_queues_an_open_for_the_picked_row() {
+    let _g = lock();
+    create("row a");
+    let b = create("row b");
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, DOWN);
+    press(&mut panel, ENTER);
+    assert_eq!(
+        panel.take_events(),
+        vec![PanelEvent::Open {
+            view: TaskPanelView::Plan,
+            task_id: b,
+        }]
+    );
+}
+
+#[test]
+fn x_arms_then_a_second_x_cancels_a_running_subagent() {
+    let _g = lock();
+    run_with_id("trace the auth flow", "run-1");
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    assert!(panel.take_events().is_empty(), "the first x only arms");
+    let armed = plain(&mut panel, 120).join("\n");
+    assert!(armed.contains("press x again to cancel"), "{armed}");
+    press(&mut panel, "x");
+    assert_eq!(
+        panel.take_events(),
+        vec![PanelEvent::Cancel {
+            run_id: "run-1".into()
+        }]
+    );
+}
+
+#[test]
+fn any_other_key_disarms_a_pending_cancel() {
+    let _g = lock();
+    run_with_id("first run", "run-1");
+    run_with_id("second run", "run-2");
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    press(&mut panel, DOWN);
+    assert!(!plain(&mut panel, 120).join("\n").contains("press x again"));
+    press(&mut panel, "x");
+    assert!(
+        panel.take_events().is_empty(),
+        "the x on the new row only arms it"
+    );
+    press(&mut panel, "x");
+    assert_eq!(
+        panel.take_events(),
+        vec![PanelEvent::Cancel {
+            run_id: "run-2".into()
+        }]
+    );
+}
+
+#[test]
+fn x_does_nothing_on_a_plan_item_or_a_finished_run() {
+    let _g = lock();
+    let plan = create("a plan item");
+    set(plan, TaskStatus::InProgress);
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    press(&mut panel, "x");
+    assert!(panel.take_events().is_empty());
+    assert!(!plain(&mut panel, 120).join("\n").contains("press x again"));
+
+    let finished = run_with_id("done run", "run-9");
+    set(finished, TaskStatus::Done);
+    let mut panel = focused();
+    press(&mut panel, TAB);
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    press(&mut panel, "x");
+    assert!(
+        panel.take_events().is_empty(),
+        "a finished run has nothing to cancel"
+    );
+}
+
+#[test]
+fn escape_first_disarms_a_pending_cancel_and_then_leaves() {
+    let _g = lock();
+    run_with_id("trace the auth flow", "run-1");
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    press(&mut panel, ESC);
+    assert!(panel.take_events().is_empty(), "escape only disarms");
+    press(&mut panel, ESC);
+    assert_eq!(panel.take_events(), vec![PanelEvent::Exit]);
+}
+
+#[test]
+fn the_focus_key_also_returns_to_the_prompt() {
+    let _g = lock();
+    create("row a");
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, CTRL_G);
+    assert_eq!(panel.take_events(), vec![PanelEvent::Exit]);
+}
+
+#[test]
+fn losing_focus_clears_a_pending_cancel() {
+    let _g = lock();
+    run_with_id("trace the auth flow", "run-1");
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    panel.set_focused(false);
+    panel.set_focused(true);
+    render(&mut panel, 120);
+    assert!(!plain(&mut panel, 120).join("\n").contains("press x again"));
+}
+
+#[test]
+fn focus_shows_the_strip_the_pick_marker_and_the_key_hint() {
+    let _g = lock();
+    create("row a");
+    let mut panel = focused();
+    let lines = plain(&mut panel, 120);
+    assert!(lines[0].contains("Plan 0/1"), "{lines:#?}");
+    assert!(lines[1].contains("› ○ row a"), "{lines:#?}");
+    assert!(lines.last().unwrap().contains("back"), "{lines:#?}");
+
+    let mut unfocused = TaskPanelComponent::new();
+    let plain_lines = plain(&mut unfocused, 120);
+    assert_eq!(
+        plain_lines.len(),
+        1,
+        "one tab, unfocused: no strip, no hint"
+    );
+    assert!(!plain_lines[0].contains('›'));
+}
+
+#[test]
+fn focus_shows_full_rows_even_at_the_summary_density() {
+    let _g = lock();
+    create("row a");
+    let mut panel = TaskPanelComponent::new();
+    panel.set_density(TaskPanelDensity::Summary);
+    assert_eq!(plain(&mut panel, 120).len(), 1);
+    panel.set_focused(true);
+    assert!(plain(&mut panel, 120).len() > 1);
+}
+
+#[test]
+fn the_tick_runs_while_any_row_in_any_tab_is_running() {
+    let _g = lock();
+    let plan = create("a plan item");
+    let call = create_with("a call", mcp(Some("web")));
+    let mut panel = TaskPanelComponent::new();
+    render(&mut panel, 120);
+    assert!(!panel.ticking());
+    set(call, TaskStatus::InProgress);
+    render(&mut panel, 120);
+    assert!(panel.ticking(), "a running MCP call on another tab ticks");
+    set(call, TaskStatus::Done);
+    set(plan, TaskStatus::InProgress);
+    render(&mut panel, 120);
+    assert!(panel.ticking());
+    set(plan, TaskStatus::Done);
+    render(&mut panel, 120);
+    assert!(!panel.ticking());
 }

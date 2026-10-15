@@ -5,17 +5,18 @@
 //! task panel shows only plan items, never delegated runs.
 
 use hoocode_ai_types::{AssistantMessage, Content, ThinkingContent};
-use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskStatus};
+use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
+use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_widgets::session_chip::render_session_chip;
-use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity};
+use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity, TaskPanelView};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
 use hoocode_tui_components::Text;
-use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
+use hoocode_tui_render::{assert_golden, Component};
 use serde_json::{json, Value};
 
 use crate::support::lock;
@@ -160,6 +161,129 @@ fn task_panel_summary_80() {
     let mut panel = TaskPanelComponent::new();
     panel.set_density(TaskPanelDensity::Summary);
     assert_golden!("task_panel_summary_80", render_golden(&mut panel, 80));
+}
+
+// ---- task panel tabs (T4.1) ----
+
+/// One row of each kind, with no timed rows: a plan item in progress, a Done
+/// subagent run and a Done MCP call (a running one would show its clock).
+fn three_tabs() {
+    add_task("Read the migration plan", TaskStatus::Done);
+    add_task("Port the task panel renderer", TaskStatus::InProgress);
+    add_task("Add golden snapshots", TaskStatus::Pending);
+    let run = task_store()
+        .create(
+            "Trace the auth flow",
+            CreateTaskOptions {
+                source: Some(TaskSource::Subagent),
+                subagent_mode: Some("explore".into()),
+                agent: Some("run-1".into()),
+                ..Default::default()
+            },
+        )
+        .id;
+    set_done(run);
+    let call = task_store()
+        .create(
+            "Fetch the spec",
+            CreateTaskOptions {
+                source: Some(TaskSource::Mcp),
+                subagent_mode: Some("web".into()),
+                ..Default::default()
+            },
+        )
+        .id;
+    set_done(call);
+}
+
+fn set_done(id: u64) {
+    task_store().update(
+        id,
+        TaskPatch {
+            status: Some(TaskStatus::Done),
+            ..Default::default()
+        },
+    );
+}
+
+#[test]
+fn task_panel_tabs_unfocused_80() {
+    let _g = lock();
+    task_store().clear();
+    three_tabs();
+    let mut panel = TaskPanelComponent::new();
+    assert_golden!(
+        "task_panel_tabs_unfocused_80",
+        render_golden(&mut panel, 80)
+    );
+}
+
+#[test]
+fn task_panel_tabs_focused_plan_80() {
+    let _g = lock();
+    AppKeybindingsManager::default().install();
+    task_store().clear();
+    three_tabs();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_focused(true);
+    assert_golden!(
+        "task_panel_tabs_focused_plan_80",
+        render_golden(&mut panel, 80)
+    );
+}
+
+#[test]
+fn task_panel_tabs_focused_agents_80() {
+    let _g = lock();
+    AppKeybindingsManager::default().install();
+    task_store().clear();
+    three_tabs();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Subagents);
+    panel.set_focused(true);
+    assert_golden!(
+        "task_panel_tabs_focused_agents_80",
+        render_golden(&mut panel, 80)
+    );
+}
+
+#[test]
+fn task_panel_tabs_focused_mcp_80() {
+    let _g = lock();
+    AppKeybindingsManager::default().install();
+    task_store().clear();
+    three_tabs();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Mcp);
+    panel.set_focused(true);
+    assert_golden!(
+        "task_panel_tabs_focused_mcp_80",
+        render_golden(&mut panel, 80)
+    );
+}
+
+#[test]
+fn task_panel_empty_tabs_hidden_80() {
+    let _g = lock();
+    task_store().clear();
+    add_task("Read the migration plan", TaskStatus::Done);
+    let call = task_store()
+        .create(
+            "Fetch the spec",
+            CreateTaskOptions {
+                source: Some(TaskSource::Mcp),
+                subagent_mode: Some("web".into()),
+                ..Default::default()
+            },
+        )
+        .id;
+    set_done(call);
+    // No subagent run: the Agents tab is not in the strip.
+    let mut panel = TaskPanelComponent::new();
+    assert_golden!(
+        "task_panel_empty_tabs_hidden_80",
+        render_golden(&mut panel, 80)
+    );
 }
 
 // ---- Shell (bash) tool block ----

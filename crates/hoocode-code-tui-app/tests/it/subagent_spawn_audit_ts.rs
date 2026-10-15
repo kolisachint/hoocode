@@ -301,7 +301,7 @@ fn renders_orphaned_children_as_roots_so_the_tab_count_matches_the_rows() {
         lines.iter().any(|l| l.contains("orphaned child")),
         "{lines:#?}"
     );
-    assert!(lines[0].contains("subagents 1/1"), "{}", lines[0]);
+    assert!(lines[0].contains("Agents 1/1"), "{}", lines[0]);
     panel.dispose();
 }
 

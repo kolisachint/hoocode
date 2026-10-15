@@ -85,6 +85,7 @@ mod session_op;
 mod session_ops;
 mod settings;
 mod subagents;
+mod task_panel;
 mod transcript;
 mod tree;
 
@@ -1052,6 +1053,7 @@ impl Mode {
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => break,
             }
+            self.drain_task_panel_events();
             loop {
                 let pending: Vec<Action> = self.actions.borrow_mut().drain(..).collect();
                 if pending.is_empty() {

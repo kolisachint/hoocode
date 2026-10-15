@@ -1,10 +1,19 @@
 //! `components/task-panel.ts`: the task ledger above the prompt.
 //!
-//! A state-coloured left rail (working / reviewed / stopped), a lens tab strip
-//! when more than one lens has content, and the rows of the chosen lens:
-//! - plan ("tasks"): the main agent's TodoWrite plan, each dispatched run
-//!   nested under the plan item it works on;
-//! - subagents: the delegated forest (`parentTaskId`), drawn with connectors.
+//! A state-coloured left rail (working / reviewed / stopped), a tab strip
+//! when more than one tab has rows, and the rows of the current tab. One tab
+//! per kind of task, in tab order (see [`TaskPanelView`]); a tab with no rows
+//! is hidden.
+//! - Plan: the main agent's TodoWrite plan, each dispatched run nested under
+//!   the plan item it works on;
+//! - Agents: the subagent forest (`parentTaskId`), drawn with connectors;
+//! - MCP: the MCP calls, flat.
+//!
+//! Unfocused, the panel shows the current tab and a count per tab. Focused
+//! (Ctrl+G, `app.panel.focus`), it takes the keyboard: tabs switch, a row is
+//! picked, Enter opens it and `x` (twice) cancels a subagent run. What the app
+//! must do about those is queued as [`PanelEvent`]s, read with
+//! [`TaskPanelComponent::take_events`].
 //!
 //! The rows come from a [`RowModel`], rebuilt only when the store's
 //! `version()` moves, so a frame copies nothing from the store. Its 1s run
@@ -17,9 +26,10 @@ use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_task_store::{
     task_store, Task, TaskAgent, TaskAgentKind, TaskKind, TaskStatus, TaskStore,
 };
-use hoocode_code_tui_keybindings::{app_key_label, format_key_text, raw_key_hint};
+use hoocode_code_tui_keybindings::{app_key_label, format_key_text, key_text, raw_key_hint};
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_code_tui_theme::{agent_color_for, theme};
+use hoocode_tui_keys::{get_keybindings, is_key_release};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
@@ -39,23 +49,55 @@ const MCP_SOURCE_GLYPH: &str = "⧉";
 /// The thin left rail that groups the pane.
 const RAIL: &str = "▎";
 
-/// `TaskPanelView`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One tab of the panel: the rows of one [`TaskKind`]. Declared in tab order
+/// (the derived `Ord`), and [`TaskPanelView::ALL`] lists them, so [`RowModel`]
+/// derives the tabs from the rows present. A new kind gets a variant here, a
+/// label, and a rule in [`lens_rows`]; the compiler points at each of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TaskPanelView {
+    /// The main agent's TodoWrite plan, with each linked run nested under its item.
     Plan,
+    /// Dispatched subagent runs: the delegation forest.
     Subagents,
+    /// MCP calls.
+    Mcp,
 }
 
 impl TaskPanelView {
-    fn label(self) -> &'static str {
+    /// Every tab, in tab order.
+    pub const ALL: [TaskPanelView; 3] = [Self::Plan, Self::Subagents, Self::Mcp];
+
+    /// The kind of task this tab lists.
+    pub fn kind(self) -> TaskKind {
         match self {
-            // The plan lens is the task ledger (TodoWrite items plus dispatched
-            // runs); `Subagents` below is the delegation forest. Renaming the
-            // plan lens to "subagents" collided with the other one.
-            Self::Plan => "tasks",
-            Self::Subagents => "subagents",
+            Self::Plan => TaskKind::Plan,
+            Self::Subagents => TaskKind::Subagent,
+            Self::Mcp => TaskKind::Mcp,
         }
     }
+
+    /// The tab's name in the strip.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Plan => "Plan",
+            Self::Subagents => "Agents",
+            Self::Mcp => "MCP",
+        }
+    }
+}
+
+/// What the panel asks the app to do. Queued by key handling and read with
+/// [`TaskPanelComponent::take_events`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PanelEvent {
+    /// Enter on a row. The attach view (T3.3) takes it; until then the app
+    /// does nothing.
+    Open { view: TaskPanelView, task_id: u64 },
+    /// `x` pressed twice on a running subagent. `run_id` is the pool's id for
+    /// the run (the store task's `agent`).
+    Cancel { run_id: String },
+    /// Back to the prompt: Esc, or the focus key again.
+    Exit,
 }
 
 /// `TaskPanelDensity`: every row, or the counts alone on one row.
@@ -68,20 +110,6 @@ pub enum TaskPanelDensity {
 /// A dispatched subagent run or an MCP call.
 fn is_delegated(task: &Task) -> bool {
     task.kind() != TaskKind::Plan
-}
-
-/// The lenses with content, in cycle order.
-fn available_views(tasks: &[Task], agents: &[TaskAgent]) -> Vec<TaskPanelView> {
-    let mut views = Vec::new();
-    if tasks.iter().any(Task::is_plan_item) {
-        views.push(TaskPanelView::Plan);
-    }
-    let has_subagent_work =
-        agents.iter().any(|a| a.kind == TaskAgentKind::Subagent) || tasks.iter().any(is_delegated);
-    if has_subagent_work {
-        views.push(TaskPanelView::Subagents);
-    }
-    views
 }
 
 fn agent_glyph(kind: TaskAgentKind) -> &'static str {
@@ -153,8 +181,8 @@ struct LensStats {
 }
 
 /// The panel's rows for one store version: the store's tasks and agents, the
-/// lenses with content, and each lens's rows. Rebuilt in [`RowModel::sync`]
-/// only when the store's `version()` has moved.
+/// tabs with rows, and each tab's rows. Rebuilt in [`RowModel::sync`] only
+/// when the store's `version()` has moved.
 #[derive(Debug, Default)]
 pub struct RowModel {
     version: Option<u64>,
@@ -162,9 +190,12 @@ pub struct RowModel {
     agents: Vec<TaskAgent>,
     task_index: HashMap<u64, usize>,
     agent_index: HashMap<String, usize>,
+    /// The tabs that have rows, in tab order.
     views: Vec<TaskPanelView>,
-    plan: Vec<PanelRow>,
-    subagents: Vec<PanelRow>,
+    /// Each tab's rows, for the tabs in `views`.
+    lenses: Vec<(TaskPanelView, Vec<PanelRow>)>,
+    /// Some row in any tab is running (drives the tick).
+    running: bool,
     builds: u64,
 }
 
@@ -184,15 +215,26 @@ impl RowModel {
     }
 
     fn build(version: u64, tasks: Vec<Task>, agents: Vec<TaskAgent>, builds: u64) -> Self {
-        let task_index = tasks.iter().enumerate().map(|(i, t)| (t.id, i)).collect();
+        let task_index: HashMap<u64, usize> =
+            tasks.iter().enumerate().map(|(i, t)| (t.id, i)).collect();
         let agent_index = agents
             .iter()
             .enumerate()
             .map(|(i, a)| (a.id.clone(), i))
             .collect();
-        let views = available_views(&tasks, &agents);
-        let plan = plan_lens_rows(&tasks);
-        let subagents = subagent_lens_rows(&tasks);
+        let lenses: Vec<(TaskPanelView, Vec<PanelRow>)> = TaskPanelView::ALL
+            .into_iter()
+            .map(|view| (view, lens_rows(view, &tasks)))
+            .filter(|(_, rows)| !rows.is_empty())
+            .collect();
+        let views = lenses.iter().map(|(view, _)| *view).collect();
+        let running = lenses.iter().any(|(_, rows)| {
+            rows.iter().any(|row| {
+                task_index
+                    .get(&row.id)
+                    .is_some_and(|&i| tasks[i].status == TaskStatus::InProgress)
+            })
+        });
         Self {
             version: Some(version),
             tasks,
@@ -200,8 +242,8 @@ impl RowModel {
             task_index,
             agent_index,
             views,
-            plan,
-            subagents,
+            lenses,
+            running,
             builds,
         }
     }
@@ -211,7 +253,7 @@ impl RowModel {
         self.builds
     }
 
-    /// The lenses with content, in cycle order.
+    /// The tabs with rows, in tab order. A tab with no rows is not listed.
     pub fn views(&self) -> &[TaskPanelView] {
         &self.views
     }
@@ -219,6 +261,11 @@ impl RowModel {
     /// The store had no tasks at the last sync.
     pub fn is_empty(&self) -> bool {
         self.tasks.is_empty()
+    }
+
+    /// Some row in any tab is running at the last sync.
+    pub fn any_running(&self) -> bool {
+        self.running
     }
 
     /// The task behind a row id, if the model has it.
@@ -233,13 +280,23 @@ impl RowModel {
             .map(|&i| &self.agents[i])
     }
 
-    /// The rows of a lens, each with its task, in display order.
+    /// The row ids of a tab, in display order (empty for a tab with no rows).
+    pub fn row_ids(&self, view: TaskPanelView) -> Vec<u64> {
+        self.rows_of(view).iter().map(|row| row.id).collect()
+    }
+
+    fn rows_of(&self, view: TaskPanelView) -> &[PanelRow] {
+        self.lenses
+            .iter()
+            .find(|(v, _)| *v == view)
+            .map(|(_, rows)| rows.as_slice())
+            .unwrap_or_default()
+    }
+
+    /// The rows of a tab, each with its task, in display order.
     pub fn lens(&self, view: TaskPanelView) -> impl Iterator<Item = (&PanelRow, &Task)> + '_ {
-        let rows = match view {
-            TaskPanelView::Plan => &self.plan,
-            TaskPanelView::Subagents => &self.subagents,
-        };
-        rows.iter()
+        self.rows_of(view)
+            .iter()
             .filter_map(move |row| self.task(row.id).map(|task| (row, task)))
     }
 
@@ -252,6 +309,27 @@ impl RowModel {
                 stats
             })
     }
+}
+
+/// The rows of one tab for a set of tasks.
+fn lens_rows(view: TaskPanelView, tasks: &[Task]) -> Vec<PanelRow> {
+    match view {
+        TaskPanelView::Plan => plan_lens_rows(tasks),
+        TaskPanelView::Subagents => subagent_lens_rows(tasks),
+        TaskPanelView::Mcp => flat_lens_rows(tasks, view.kind()),
+    }
+}
+
+/// Every task of one kind, in store order, with no tree.
+fn flat_lens_rows(tasks: &[Task], kind: TaskKind) -> Vec<PanelRow> {
+    tasks
+        .iter()
+        .filter(|task| task.kind() == kind)
+        .map(|task| PanelRow {
+            id: task.id,
+            tree_prefix: String::new(),
+        })
+        .collect()
 }
 
 /// `formatLensTabs`: one tab per lens with its done/total, plus key hints
@@ -301,10 +379,10 @@ fn format_lens_tabs(
 
     let mut parts: Vec<(String, String)> = Vec::new();
     if show_cycle_hint {
-        let key = app_key_label("app.tasks.cycleForward");
+        let key = app_key_label("app.panel.focus");
         parts.push((
-            format!("{} cycle", format_key_text(&key, false)),
-            raw_key_hint(&key, "cycle"),
+            format!("{} focus", format_key_text(&key, false)),
+            raw_key_hint(&key, "focus"),
         ));
     }
     let sep = "  ";
@@ -342,6 +420,8 @@ fn format_lens_tabs(
 struct LineOptions<'a> {
     owner: Option<&'a TaskAgent>,
     tree_prefix: &'a str,
+    /// The row's cancel is armed: the right column asks for the second `x`.
+    confirm: bool,
 }
 
 /// `formatTaskLine`: status icon, owner glyph where it disambiguates, origin
@@ -472,6 +552,10 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
         right_plain = format!("{WARNING_GLYPH} {note}");
         right_styled = t.fg("warning", &right_plain);
     }
+    if options.confirm {
+        right_plain = "press x again to cancel".to_string();
+        right_styled = t.fg("warning", &right_plain);
+    }
 
     let right_width = if right_plain.is_empty() {
         0
@@ -531,18 +615,22 @@ fn plan_lens_rows(tasks: &[Task]) -> Vec<PanelRow> {
     rows
 }
 
-/// `subagentLensRows`: a depth-first walk of the delegated forest (orphans
-/// become roots; a visited set guards against cycles).
+/// `subagentLensRows`: a depth-first walk of the subagent runs (orphans become
+/// roots; a visited set guards against cycles). MCP calls are not in it.
 fn subagent_lens_rows(tasks: &[Task]) -> Vec<PanelRow> {
-    let ids: HashSet<u64> = tasks.iter().map(|t| t.id).collect();
+    let runs: Vec<&Task> = tasks
+        .iter()
+        .filter(|t| t.kind() == TaskKind::Subagent)
+        .collect();
+    let ids: HashSet<u64> = runs.iter().map(|t| t.id).collect();
     let mut children: HashMap<u64, Vec<&Task>> = HashMap::new();
-    for task in tasks {
+    for task in &runs {
         if let Some(parent) = task.parent_task_id {
             children.entry(parent).or_default().push(task);
         }
     }
-    let roots = tasks.iter().filter(|t| match t.parent_task_id {
-        None => is_delegated(t),
+    let roots = runs.iter().copied().filter(|t| match t.parent_task_id {
+        None => true,
         Some(parent) => !ids.contains(&parent),
     });
     let mut rows = Vec::new();
@@ -602,12 +690,61 @@ pub struct TaskPanelComponent {
     disposed: bool,
     ticking: bool,
     model: RowModel,
+    /// The panel has the keyboard (Ctrl+G).
+    focused: bool,
+    /// The picked row's id. Kept by id, so a rebuild keeps the pick.
+    selected: Option<u64>,
+    /// The row whose cancel is armed (one `x` pressed).
+    confirming: Option<u64>,
+    /// Queued for the app; see [`PanelEvent`].
+    events: Vec<PanelEvent>,
 }
 
 impl Default for TaskPanelComponent {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The id of the row to pick: the stored one while it is in `view`, else the
+/// view's first row.
+fn resolve_selection(model: &RowModel, view: TaskPanelView, selected: Option<u64>) -> Option<u64> {
+    let ids = model.row_ids(view);
+    match selected {
+        Some(id) if ids.contains(&id) => Some(id),
+        _ => ids.first().copied(),
+    }
+}
+
+/// The keys the panel answers to, in the order they are tried.
+const PANEL_KEYS: [&str; 8] = [
+    "app.panel.focus",
+    "app.panel.nextTab",
+    "app.panel.prevTab",
+    "app.panel.up",
+    "app.panel.down",
+    "app.panel.open",
+    "app.panel.cancel",
+    "app.panel.exit",
+];
+
+/// The focused panel's key hint line.
+fn focus_hint(width: usize) -> String {
+    let t = theme();
+    let up_down = format!(
+        "{}/{}",
+        key_text("app.panel.up"),
+        key_text("app.panel.down")
+    );
+    let parts = [
+        raw_key_hint(&key_text("app.panel.nextTab"), "switch"),
+        raw_key_hint(&up_down, "pick"),
+        raw_key_hint(&key_text("app.panel.open"), "open"),
+        raw_key_hint(&key_text("app.panel.cancel"), "cancel"),
+        raw_key_hint(&key_text("app.panel.exit"), "back"),
+    ];
+    let line = parts.join(&t.fg("muted", "  "));
+    truncate_to_width(&line, width, "…", false)
 }
 
 impl TaskPanelComponent {
@@ -618,6 +755,10 @@ impl TaskPanelComponent {
             disposed: false,
             ticking: false,
             model: RowModel::default(),
+            focused: false,
+            selected: None,
+            confirming: None,
+            events: Vec::new(),
         }
     }
 
@@ -627,6 +768,7 @@ impl TaskPanelComponent {
 
     pub fn set_view(&mut self, view: TaskPanelView) {
         self.view = view;
+        self.selected = None;
     }
 
     /// `setDensity`: driven by the chrome, not by the pane.
@@ -634,8 +776,8 @@ impl TaskPanelComponent {
         self.density = density;
     }
 
-    /// `cycleView`: the next lens with content, wrapping; an emptied view
-    /// snaps back to the plan.
+    /// `cycleView`: the next tab with rows, wrapping; an emptied view snaps
+    /// back to the plan. The pick goes to the new tab's first row.
     pub fn cycle_view(&mut self, forward: bool) -> TaskPanelView {
         self.model.sync(task_store());
         let available = self.model.views();
@@ -650,10 +792,46 @@ impl TaskPanelComponent {
             let step = if forward { 1 } else { -1 };
             available[((idx + step + len) % len) as usize]
         };
+        self.selected = None;
         self.view
     }
 
-    /// A delegated row is live: re-render every second for its run clock.
+    /// Whether the panel has any rows to focus. Syncs the model first.
+    pub fn can_focus(&mut self) -> bool {
+        self.model.sync(task_store());
+        !self.model.views().is_empty()
+    }
+
+    /// Whether the panel has the keyboard.
+    pub fn is_focused(&self) -> bool {
+        self.focused
+    }
+
+    /// The row the pick is on, if any: its tab and task id.
+    pub fn picked(&mut self) -> Option<(TaskPanelView, u64)> {
+        self.model.sync(task_store());
+        let view = self.shown_view();
+        let id = resolve_selection(&self.model, view, self.selected)?;
+        Some((view, id))
+    }
+
+    /// The events queued by key handling since the last call, in order.
+    pub fn take_events(&mut self) -> Vec<PanelEvent> {
+        std::mem::take(&mut self.events)
+    }
+
+    /// The tab a render shows: the stored one while it has rows, else the
+    /// first tab that does (the model must be synced).
+    fn shown_view(&self) -> TaskPanelView {
+        let available = self.model.views();
+        if available.contains(&self.view) {
+            self.view
+        } else {
+            available.first().copied().unwrap_or(TaskPanelView::Plan)
+        }
+    }
+
+    /// A running row is live: re-render every second for its run clock.
     pub fn ticking(&self) -> bool {
         self.ticking
     }
@@ -663,6 +841,76 @@ impl TaskPanelComponent {
         self.disposed = true;
         self.ticking = false;
     }
+
+    /// Move the pick by `delta` rows within the shown tab. Ends clamp; nothing wraps.
+    fn move_pick(&mut self, delta: isize) {
+        let view = self.shown_view();
+        let ids = self.model.row_ids(view);
+        if ids.is_empty() {
+            return;
+        }
+        // The pick as shown: a pick that is not set shows the first row.
+        let current = resolve_selection(&self.model, view, self.selected)
+            .and_then(|id| ids.iter().position(|row| *row == id))
+            .unwrap_or(0) as isize;
+        let next = (current + delta).clamp(0, ids.len() as isize - 1) as usize;
+        self.selected = Some(ids[next]);
+    }
+
+    /// `x`: the first press arms the cancel of a running subagent row, the
+    /// second cancels it. Other rows have no cancel yet and ignore `x`.
+    fn cancel_pick(&mut self, armed: Option<u64>) {
+        let Some((_, id)) = self.picked() else {
+            return;
+        };
+        let Some(task) = self.model.task(id) else {
+            return;
+        };
+        let cancellable = task.kind() == TaskKind::Subagent && task.status.is_active();
+        let run_id = task.agent.clone();
+        if !cancellable {
+            return;
+        }
+        match (armed == Some(id), run_id) {
+            (true, Some(run_id)) => self.events.push(PanelEvent::Cancel { run_id }),
+            (false, _) => self.confirming = Some(id),
+            // Armed, but the run has no id the pool knows: nothing to cancel.
+            (true, None) => {}
+        }
+    }
+
+    /// Enter: open the picked row, the attach view's entry point.
+    fn open_pick(&mut self) {
+        if let Some((view, task_id)) = self.picked() {
+            self.events.push(PanelEvent::Open { view, task_id });
+        }
+    }
+
+    /// Key handling while the panel has the keyboard.
+    fn handle_key(&mut self, data: &str) {
+        self.model.sync(task_store());
+        let kb = get_keybindings();
+        let Some(id) = PANEL_KEYS.iter().copied().find(|id| kb.matches(data, id)) else {
+            return;
+        };
+        // Any key but `x` disarms a pending cancel. Esc only disarms when one is pending.
+        let armed = self.confirming.take();
+        match id {
+            "app.panel.exit" if armed.is_some() => {}
+            "app.panel.focus" | "app.panel.exit" => self.events.push(PanelEvent::Exit),
+            "app.panel.nextTab" => {
+                self.cycle_view(true);
+            }
+            "app.panel.prevTab" => {
+                self.cycle_view(false);
+            }
+            "app.panel.up" => self.move_pick(-1),
+            "app.panel.down" => self.move_pick(1),
+            "app.panel.open" => self.open_pick(),
+            "app.panel.cancel" => self.cancel_pick(armed),
+            _ => {}
+        }
+    }
 }
 
 impl Component for TaskPanelComponent {
@@ -671,27 +919,21 @@ impl Component for TaskPanelComponent {
             return Vec::new();
         }
         self.model.sync(task_store());
-        let model = &self.model;
         let width = width as usize;
         let now = now_ms();
-
-        // Keep the stored view while it has content, else the first lens that
-        // does.
-        let available = model.views();
-        let view = if available.contains(&self.view) {
-            self.view
-        } else {
-            available.first().copied().unwrap_or(TaskPanelView::Plan)
-        };
-        if model.is_empty() {
+        if self.model.is_empty() {
             self.ticking = false;
             return Vec::new();
         }
 
-        self.ticking = model
-            .lens(view)
-            .any(|(_, task)| task.status == TaskStatus::InProgress && is_delegated(task));
+        // Keep the stored view while it has rows, else the first tab that does.
+        let view = self.shown_view();
+        let selected = resolve_selection(&self.model, view, self.selected);
+        self.selected = selected;
+        self.ticking = self.model.any_running();
 
+        let model = &self.model;
+        let available = model.views();
         let t = theme();
         let gutter = format!(
             "{} ",
@@ -700,7 +942,11 @@ impl Component for TaskPanelComponent {
                 RAIL
             )
         );
-        let inner = width.saturating_sub(visible_width(RAIL) + 1);
+        // Focus shows the strip even with one tab, the pick marker, and a hint
+        // line. Focus also shows the rows in full, whatever the density.
+        let focused = self.focused;
+        let marker_width = if focused { 2 } else { 0 };
+        let inner = width.saturating_sub(visible_width(RAIL) + 1 + marker_width);
         let tab_views: Vec<TaskPanelView> = if available.contains(&view) {
             available.to_vec()
         } else {
@@ -711,22 +957,50 @@ impl Component for TaskPanelComponent {
                 .collect()
         };
 
-        if self.density == TaskPanelDensity::Summary {
+        if self.density == TaskPanelDensity::Summary && !focused {
             return vec![gutter.clone() + &format_lens_tabs(model, inner, view, &tab_views, false)];
         }
 
         let mut lines = Vec::new();
-        if available.len() >= 2 {
-            lines.push(gutter.clone() + &format_lens_tabs(model, inner, view, &tab_views, true));
+        if available.len() >= 2 || focused {
+            let hint = !focused;
+            lines.push(gutter.clone() + &format_lens_tabs(model, inner, view, &tab_views, hint));
         }
         for (row, task) in model.lens(view) {
             let options = LineOptions {
                 owner: model.owner_of(task),
                 tree_prefix: &row.tree_prefix,
+                confirm: self.confirming == Some(row.id),
             };
-            lines.push(gutter.clone() + &format_task_line(task, inner, options, now));
+            let marker = match (focused, selected == Some(row.id)) {
+                (false, _) => String::new(),
+                (true, true) => t.fg("accent", "› "),
+                (true, false) => "  ".to_string(),
+            };
+            lines.push(gutter.clone() + &marker + &format_task_line(task, inner, options, now));
+        }
+        if focused {
+            lines.push(gutter.clone() + &focus_hint(inner));
         }
         lines
+    }
+
+    fn handle_input(&mut self, data: &str) {
+        if is_key_release(data) {
+            return;
+        }
+        self.handle_key(data);
+    }
+
+    fn is_focusable(&self) -> bool {
+        true
+    }
+
+    fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+        if !focused {
+            self.confirming = None;
+        }
     }
 }
 
@@ -958,7 +1232,7 @@ mod row_model_tests {
     }
 
     #[test]
-    fn a_subagent_agent_without_tasks_still_opens_the_subagents_lens() {
+    fn an_agent_without_rows_opens_no_tab() {
         let store = TaskStore::new();
         store.upsert_agent(
             "explore",
@@ -968,7 +1242,24 @@ mod row_model_tests {
         );
         let mut model = RowModel::default();
         model.sync(&store);
-        assert_eq!(model.views(), [TaskPanelView::Subagents]);
+        assert!(model.views().is_empty(), "empty tabs are hidden");
+    }
+
+    #[test]
+    fn an_mcp_call_opens_only_the_mcp_tab() {
+        let store = TaskStore::new();
+        store.create("fetch", mcp_options(Some("web")));
+        let mut model = RowModel::default();
+        model.sync(&store);
+        assert_eq!(model.views(), [TaskPanelView::Mcp]);
+    }
+
+    fn mcp_options(server: Option<&str>) -> CreateTaskOptions {
+        CreateTaskOptions {
+            source: Some(TaskSource::Mcp),
+            subagent_mode: server.map(String::from),
+            ..Default::default()
+        }
     }
 
     #[test]
