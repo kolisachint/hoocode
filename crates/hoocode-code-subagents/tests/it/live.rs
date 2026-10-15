@@ -97,6 +97,20 @@ fn the_end_of_a_message_releases_held_text_before_the_event() {
 }
 
 #[test]
+fn a_new_message_starts_a_fresh_window_after_the_end_of_the_last() {
+    let mut forwarder = LiveForwarder::default();
+    let t0 = Instant::now();
+    let w = DELTA_THROTTLE;
+    forwarder.forward(&progress("t1", delta_event("a")), t0, w);
+    forwarder.forward(&progress("t1", delta_event("b")), t0 + ms(10), w);
+    let end = json!({"type": "message_end", "message": {"role": "assistant"}});
+    forwarder.forward(&progress("t1", end), t0 + ms(20), w);
+    // The next message's first delta goes out at once, not held behind the last one's window.
+    let out = forwarder.forward(&progress("t1", delta_event("c")), t0 + ms(21), w);
+    assert_eq!(kinds(out), ["text:c"]);
+}
+
+#[test]
 fn a_settle_releases_held_text_then_names_the_lifecycle_step() {
     let mut forwarder = LiveForwarder::default();
     let t0 = Instant::now();
@@ -302,6 +316,57 @@ fn the_run_lookup_forgets_the_oldest_calls() {
         run_for_tool_call("call-old-fill-299").as_deref(),
         Some("run-fill-299")
     );
+}
+
+#[test]
+fn held_text_goes_out_before_a_later_event_of_another_kind() {
+    let mut coalescer = DeltaCoalescer::default();
+    let t0 = Instant::now();
+    let first = child_stdout_events(delta_event("a"), &mut coalescer, t0);
+    assert_eq!(first.len(), 1);
+    assert!(child_stdout_events(delta_event("b"), &mut coalescer, t0 + ms(10)).is_empty());
+    let start = json!({"type": "tool_execution_start", "toolName": "Read", "args": {}});
+    let out = child_stdout_events(start, &mut coalescer, t0 + ms(20));
+    assert_eq!(
+        kinds(out.into_iter().map(|v| (String::new(), v)).collect()),
+        ["text:b", "tool_execution_start"],
+        "the text the child held comes before the event that follows it"
+    );
+}
+
+#[test]
+fn a_non_text_update_releases_held_text() {
+    let mut coalescer = DeltaCoalescer::default();
+    let t0 = Instant::now();
+    child_stdout_events(delta_event("a"), &mut coalescer, t0);
+    assert!(child_stdout_events(delta_event("c"), &mut coalescer, t0 + ms(10)).is_empty());
+    let thinking = json!({"type": "message_update", "assistantMessageEvent": {"type": "thinking_delta", "delta": "x"}});
+    let out = child_stdout_events(thinking, &mut coalescer, t0 + ms(20));
+    assert_eq!(
+        kinds(out.into_iter().map(|v| (String::new(), v)).collect()),
+        ["text:c"]
+    );
+}
+
+#[test]
+fn control_characters_never_reach_a_tail_row() {
+    let run = "tail-run-escapes";
+    apply(run, &json!({"type": "task_started"}));
+    apply(
+        run,
+        &json!({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": "ok\u{1b}]52;c;Zm9v\u{7}\tdone\n"}}),
+    );
+    apply(
+        run,
+        &json!({"type": "tool_execution_start", "toolName": "Bash", "args": {"command": "echo \u{1b}[2J"}}),
+    );
+    let rows = tail(run);
+    assert!(
+        rows.iter().all(|row| !row.chars().any(char::is_control)),
+        "{rows:?}"
+    );
+    assert_eq!(rows[0], "ok]52;c;Zm9v done");
+    apply(run, &json!({"type": "task_done"}));
 }
 
 /// The pool's listener delivers a run's events to the sink the UI set.

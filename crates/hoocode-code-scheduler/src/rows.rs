@@ -181,12 +181,16 @@ impl Runs {
 
 /// A live job's row: created as `Pending` when new, with its next run kept up
 /// to date. The status of an existing row is left alone (it is the last run's).
+/// A row whose next run is still ahead is not written, so a tick leaves it alone.
 fn upsert_job(store: &TaskStore, job: &ScheduledTask, now: &DateTime<Local>) {
     let key = row_key(&job.id);
     let now_ms = u64::try_from(now.timestamp_millis()).unwrap_or(0);
     let stale = store
         .find_keyed(&key)
         .is_none_or(|row: Task| row.next_at.is_none_or(|at| at <= now_ms));
+    if !stale {
+        return;
+    }
     store.upsert_keyed(
         &key,
         &job.prompt,
@@ -242,6 +246,23 @@ mod tests {
 
     fn row(store: &TaskStore, id: &str) -> Option<Task> {
         store.find_keyed(&row_key(id))
+    }
+
+    #[test]
+    fn a_tick_leaves_a_row_whose_next_run_is_ahead_alone() {
+        let store = TaskStore::new();
+        let jobs = [job("keep", "30 9 * * *", "daily", true)];
+        let mut runs = Runs::default();
+        runs.publish_tick(&store, Some(&jobs), &[], &at(9, 0, 0));
+        let first = row(&store, "keep").unwrap();
+        hoocode_code_task_store::advance_clock_for_tests(60_000);
+        runs.publish_tick(&store, Some(&jobs), &[], &at(9, 0, 30));
+        let second = row(&store, "keep").unwrap();
+        assert_eq!(second.next_at, first.next_at);
+        assert_eq!(
+            second.updated_at, first.updated_at,
+            "no write on a quiet tick"
+        );
     }
 
     #[test]

@@ -115,8 +115,13 @@ impl LiveForwarder {
                     None => Vec::new(),
                 };
             }
-            // Anything else ends the held text first, so the order holds.
-            let mut out = self.flush_task(&task_id);
+            // Anything else ends the held text first, so the order holds. A
+            // message's end also opens a fresh window for the next message.
+            let mut out = if inner.get("type").and_then(Value::as_str) == Some("message_end") {
+                self.end_task_message(&task_id)
+            } else {
+                self.flush_task(&task_id)
+            };
             out.push((task_id, inner.clone()));
             return out;
         }
@@ -130,6 +135,17 @@ impl LiveForwarder {
             return out;
         }
         Vec::new()
+    }
+
+    fn end_task_message(&mut self, task_id: &str) -> Vec<(String, Value)> {
+        match self
+            .coalescers
+            .get_mut(task_id)
+            .and_then(DeltaCoalescer::end_message)
+        {
+            Some(text) => vec![(task_id.to_string(), text_delta_event(&text))],
+            None => Vec::new(),
+        }
     }
 
     fn flush_task(&mut self, task_id: &str) -> Vec<(String, Value)> {
@@ -155,8 +171,9 @@ pub fn text_delta_event(delta: &str) -> Value {
 /// What a subagent child writes to its stdout for one session event. Only the
 /// types in [`SUBAGENT_STDOUT_EVENT_TYPES`] pass. A `message_update` is kept
 /// only as a text delta, coalesced; the rest of its payload (the partial
-/// message, repeated on every delta) is dropped. `message_end` releases the
-/// held text first.
+/// message, repeated on every delta) is dropped. Held text is released before
+/// any other event that passes: a non-text update, `message_end` or any other
+/// type, so the child's stream keeps its order.
 pub fn child_stdout_events(
     event: Value,
     coalescer: &mut DeltaCoalescer,
@@ -166,28 +183,40 @@ pub fn child_stdout_events(
     if !SUBAGENT_STDOUT_EVENT_TYPES.contains(&kind) {
         return Vec::new();
     }
-    match kind {
-        "message_update" => {
-            let delta = event
-                .get("assistantMessageEvent")
-                .filter(|e| e.get("type").and_then(Value::as_str) == Some("text_delta"))
-                .and_then(|e| e.get("delta"))
-                .and_then(Value::as_str);
-            delta
-                .and_then(|d| coalescer.push(d, now, DELTA_THROTTLE))
+    if kind == "message_update" {
+        let delta = event
+            .get("assistantMessageEvent")
+            .filter(|e| e.get("type").and_then(Value::as_str) == Some("text_delta"))
+            .and_then(|e| e.get("delta"))
+            .and_then(Value::as_str);
+        if let Some(delta) = delta {
+            return coalescer
+                .push(delta, now, DELTA_THROTTLE)
                 .map(|text| vec![text_delta_event(&text)])
-                .unwrap_or_default()
+                .unwrap_or_default();
         }
-        "message_end" => {
-            let mut out = Vec::new();
-            if let Some(text) = coalescer.end_message() {
-                out.push(text_delta_event(&text));
-            }
-            out.push(event);
-            out
-        }
-        _ => vec![event],
+        // A non-text update (thinking, tool-call arguments) ends the held text.
+        return flushed(coalescer);
     }
+    // A message's end also starts a fresh throttle window for the next message.
+    let mut out = if kind == "message_end" {
+        coalescer
+            .end_message()
+            .map(|text| vec![text_delta_event(&text)])
+            .unwrap_or_default()
+    } else {
+        flushed(coalescer)
+    };
+    out.push(event);
+    out
+}
+
+/// The held text as one event, if any.
+fn flushed(coalescer: &mut DeltaCoalescer) -> Vec<Value> {
+    coalescer
+        .flush()
+        .map(|text| vec![text_delta_event(&text)])
+        .unwrap_or_default()
 }
 
 /// One run's activity: its last rows, and the line being streamed.
@@ -199,7 +228,16 @@ struct RunTail {
 
 static TAILS: LazyLock<Mutex<HashMap<String, RunTail>>> = LazyLock::new(Mutex::default);
 
-static CALL_RUNS: LazyLock<Mutex<VecDeque<(String, String)>>> = LazyLock::new(Mutex::default);
+/// The Agent tool calls remembered for [`run_for_tool_call`]: a map for the
+/// lookup (the UI makes one per tool block on every event), and the call ids
+/// oldest first for eviction.
+#[derive(Default)]
+struct CallRuns {
+    by_call: HashMap<String, String>,
+    order: VecDeque<String>,
+}
+
+static CALL_RUNS: LazyLock<Mutex<CallRuns>> = LazyLock::new(Mutex::default);
 
 fn tails() -> MutexGuard<'static, HashMap<String, RunTail>> {
     TAILS.lock().unwrap_or_else(|e| e.into_inner())
@@ -237,6 +275,7 @@ pub fn apply(task_id: &str, event: &Value) {
                 .and_then(|e| e.get("delta"))
                 .and_then(Value::as_str)
                 .unwrap_or("");
+            let delta = printable(delta);
             for (i, part) in delta.split('\n').enumerate() {
                 if i > 0 {
                     flush_partial(run);
@@ -271,7 +310,7 @@ pub fn is_running(task_id: &str) -> bool {
 }
 
 fn push_row(run: &mut RunTail, row: &str) {
-    run.rows.push_back(clip_line(row));
+    run.rows.push_back(clip_line(&printable(row)));
     while run.rows.len() > TAIL_LINES {
         run.rows.pop_front();
     }
@@ -290,6 +329,19 @@ fn clip_partial(partial: &mut String) {
     if count > LINE_CHARS {
         *partial = partial.chars().skip(count - LINE_CHARS).collect();
     }
+}
+
+/// The text with its control characters removed (a tab becomes a space), so a
+/// child's escape sequences reach the screen as plain text. Newlines are kept.
+fn printable(text: &str) -> String {
+    text.chars()
+        .filter_map(|c| match c {
+            '\t' => Some(' '),
+            '\n' => Some('\n'),
+            c if c.is_control() => None,
+            c => Some(c),
+        })
+        .collect()
 }
 
 fn clip_line(row: &str) -> String {
@@ -312,17 +364,22 @@ fn tool_subject(args: Option<&Value>) -> String {
 /// Remembers that the Agent tool call `tool_call_id` dispatched pool run `task_id`.
 pub fn remember_run(tool_call_id: &str, task_id: &str) {
     let mut runs = CALL_RUNS.lock().unwrap_or_else(|e| e.into_inner());
-    runs.push_back((tool_call_id.to_string(), task_id.to_string()));
-    while runs.len() > CALL_RUNS_KEPT {
-        runs.pop_front();
+    let CallRuns { by_call, order } = &mut *runs;
+    if by_call
+        .insert(tool_call_id.to_string(), task_id.to_string())
+        .is_none()
+    {
+        order.push_back(tool_call_id.to_string());
+    }
+    while order.len() > CALL_RUNS_KEPT {
+        if let Some(old) = order.pop_front() {
+            by_call.remove(&old);
+        }
     }
 }
 
 /// The pool run an Agent tool call dispatched, if it still remembers it.
 pub fn run_for_tool_call(tool_call_id: &str) -> Option<String> {
     let runs = CALL_RUNS.lock().unwrap_or_else(|e| e.into_inner());
-    runs.iter()
-        .rev()
-        .find(|(call, _)| call == tool_call_id)
-        .map(|(_, task)| task.clone())
+    runs.by_call.get(tool_call_id).cloned()
 }
