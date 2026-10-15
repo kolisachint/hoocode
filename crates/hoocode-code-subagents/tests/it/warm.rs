@@ -89,7 +89,8 @@ async fn runs_a_task_and_returns_its_answer_and_usage() {
     assert!(result.ok);
     assert_eq!(result.status, "complete");
     assert!(
-        result.summary.contains("for=trace the bug"),
+        // The worker gets the same child prompt as a cold run (card 9, 4i).
+        result.summary.contains("for=Task: trace the bug"),
         "{}",
         result.summary
     );

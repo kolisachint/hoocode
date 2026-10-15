@@ -288,8 +288,10 @@ checked only against the Rust build's own tests (`tests/it/shipped_prose.rs`).
 
 **Decision 2026-10-10 (user): 2-hour runs and cancel.** Every subagent type may
 run for up to 2 hours, and the parent can stop a run with
-`AgentOutput(task_id, cancel: true)`. The background-agents template tells the
-model to poll a long run and to cancel one it no longer needs.
+`AgentOutput(task_id, cancel: true)`. The parent guidance template
+(`task-main.md`) tells the model to poll a long run and to cancel one it no
+longer needs. (2026-10-15: there is one template now; see the note in
+[subagent-orchestration.md](subagent-orchestration.md) §1.)
 
 ## 5e. Reliability pass (2026-10-11)
 
@@ -309,6 +311,23 @@ model to poll a long run and to cancel one it no longer needs.
 - **Lifeguard tool bound.** A tool in flight is reaped at the larger of 15 min × load
   and the tool's declared timeout plus 60 s. A tool with timeout 0 has no bound.
 - **Read on a directory.** `Read` on a directory returns a listing, not an error.
+
+## 5f. Background by default (2026-10-15)
+
+- **Every agent runs in the background unless it says otherwise.** A call's
+  `background` argument wins. Else the agent's definition decides: `background: false`
+  in its frontmatter makes foreground its default (the frontmatter value is kept as
+  `Some(false)`, so it is no longer dropped). Agents with no field, general-purpose
+  included, run in the background. Decided 2026-10-09 (D1, Q1); see
+  [subagent-orchestration.md](subagent-orchestration.md) §4.
+- A foreground answer still comes back inline; a background run returns a
+  notification and its body waits for `AgentOutput`.
+- Tests that mean "foreground" now pass `background: false` explicitly.
+- **A subagent's custom body keeps the base guidelines** (2026-10-15, card 9 4f). The
+  six generic guidelines (parallel tool calls, concise, no narration, match conventions,
+  cite path:line, say what was not verified) are appended as a `Guidelines:` block after
+  the agent body, only in a subagent child (depth > 0). A user's `--system-prompt` and
+  light mode still replace the default prompt.
 
 ## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 

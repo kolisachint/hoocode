@@ -335,6 +335,24 @@ fn context_files_section(context_files: &[ContextFile]) -> String {
     out
 }
 
+/// The guidelines every prompt keeps, whether the body is the default or custom.
+const BASE_GUIDELINES: [&str; 6] = [
+    "Put independent tool calls in one message — they execute in parallel; only split them across turns when a call needs an earlier call's result",
+    "Be concise: no preamble or postamble, no restating the task or summarizing what you just did, no closers like \"Let me know\"",
+    "Do not narrate routine tool calls or results — the permission gate already shows them; speak when you have the answer or need a decision",
+    "Match the surrounding code's conventions for comments, docstrings, and types — do not add or strip them by default",
+    "Cite path:line when referring to code",
+    "If a command failed, a test is still red, or you did not verify something, say so plainly",
+];
+
+/// The base guidelines as a `Guidelines:` block. A custom body replaces the
+/// default prompt, so a caller that keeps the base rules (a subagent child, see
+/// card 9 4f) appends this block to the body.
+pub fn base_guidelines_block() -> String {
+    let bullets: Vec<String> = BASE_GUIDELINES.iter().map(|g| format!("- {g}")).collect();
+    format!("Guidelines:\n{}", bullets.join("\n"))
+}
+
 /// `buildSystemPrompt`: the system prompt with tools, guidelines, and context.
 pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
     let prompt_cwd = options.cwd.replace('\\', "/");
@@ -418,14 +436,9 @@ pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
             add(normalized);
         }
     }
-    add("Put independent tool calls in one message — they execute in parallel; only split them across turns when a call needs an earlier call's result");
-    add("Be concise: no preamble or postamble, no restating the task or summarizing what you just did, no closers like \"Let me know\"");
-    add("Do not narrate routine tool calls or results — the permission gate already shows them; speak when you have the answer or need a decision");
-    add("Match the surrounding code's conventions for comments, docstrings, and types — do not add or strip them by default");
-    add("Cite path:line when referring to code");
-    add(
-        "If a command failed, a test is still red, or you did not verify something, say so plainly",
-    );
+    for guideline in BASE_GUIDELINES {
+        add(guideline);
+    }
 
     let guidelines = guidelines
         .iter()
@@ -634,6 +647,20 @@ Current date: 2026-01-02\nCurrent working directory: C:/w/p"
             build_system_prompt(&o),
             "Be terse.\n\nExtra.\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n## /w/AGENTS.md\n\nrules\n\n\n\nCurrent date: 2026-01-02\nCurrent working directory: /w"
         );
+    }
+
+    #[test]
+    fn the_base_guidelines_block_lists_each_base_rule_and_the_default_lists_each_once() {
+        let block = base_guidelines_block();
+        assert!(block.starts_with("Guidelines:\n- Put independent tool calls"));
+        for guideline in BASE_GUIDELINES {
+            assert_eq!(block.matches(guideline).count(), 1, "{guideline}");
+        }
+        // The default prompt lists each base guideline exactly once.
+        let default = build_system_prompt(&opts(Some(&["Read"])));
+        for guideline in BASE_GUIDELINES {
+            assert_eq!(default.matches(guideline).count(), 1, "{guideline}");
+        }
     }
 
     #[test]

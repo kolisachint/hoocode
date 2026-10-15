@@ -3,7 +3,7 @@
 //! background subagents).
 //!
 //! The parent agent decides when to delegate and picks the agent with
-//! `subagent_type`; the chosen agent runs in an isolated child process (the
+//! `subagent_type`; the chosen agent runs as a separate child process with its own context (the
 //! cold pool, or a warm RPC worker when enabled) and only its final answer
 //! comes back. Background dispatches leave their body in the inbox and return
 //! a compact notification; `AgentOutput` pulls it. Interactive rendering
@@ -46,10 +46,6 @@ use crate::warm::{
 pub use hoocode_code_resources::summarize_agent_description;
 
 const TASK_MAIN_PROMPT: &str = include_str!("../templates/prompts/task-main.md");
-const TASK_BACKGROUND_AGENTS_PROMPT: &str =
-    include_str!("../templates/prompts/task-background-agents.md");
-const TASK_BACKGROUND_NONE_PROMPT: &str =
-    include_str!("../templates/prompts/task-background-none.md");
 
 /// How long a `running` record may sit with the pool saying nothing about it
 /// before `AgentOutput` stops believing it. Past the largest budget a run can
@@ -73,29 +69,28 @@ fn text_result(text: impl Into<String>, details: Value) -> AgentToolResult {
     }
 }
 
-/// Names of agents configured to run in the background.
-fn collect_background_agent_names(cwd: &Path) -> HashSet<String> {
+/// Names of agents whose definition opts out of the background default
+/// (`background: false`). Every other agent runs in the background (card 9, D1).
+fn collect_foreground_agent_names(cwd: &Path) -> HashSet<String> {
     load_agent_registry(&LoadAgentRegistryOptions::new(cwd.to_string_lossy()))
         .list()
         .iter()
-        .filter(|a| a.background == Some(true))
+        .filter(|a| a.background == Some(false))
         .map(|a| a.name.clone())
         .collect()
 }
 
+/// Whether a dispatch runs in the background. The call's `background` wins;
+/// else background, unless the agent's definition says `background: false`.
+fn runs_in_background(params: &Value, subagent_type: &str, foreground: &HashSet<String>) -> bool {
+    lenient_bool(params.get("background")).unwrap_or_else(|| !foreground.contains(subagent_type))
+}
+
 /// `buildTaskMainPrompt`: the main-session delegation instructions appended
-/// to the system prompt. The heavier background/barrier guidance is only
-/// included when the project has background-capable agents.
-pub fn build_task_main_prompt(cwd: &Path) -> String {
-    let guidance = if collect_background_agent_names(cwd).is_empty() {
-        TASK_BACKGROUND_NONE_PROMPT
-    } else {
-        TASK_BACKGROUND_AGENTS_PROMPT
-    };
-    TASK_MAIN_PROMPT
-        .replacen("{{BACKGROUND_GUIDANCE}}", guidance.trim(), 1)
-        .trim()
-        .to_string()
+/// to the system prompt. One template for every project: every agent runs in
+/// the background unless its definition or the call says otherwise.
+pub fn build_task_main_prompt() -> String {
+    TASK_MAIN_PROMPT.trim().to_string()
 }
 
 /// JS `.length` (UTF-16 units) and `slice(0, n)`.
@@ -646,7 +641,7 @@ fn task_parameters() -> Value {
             "subagent_type": {"type": "string", "description": "The name of the specialized agent to delegate to. Must be one of the available agents."},
             "model": {"type": "string", "description": "Which model the subagent runs on: a category (cheap, fast, standard, capable), or the alias or id of a scoped model (listed in the system prompt when scoped models are set). Omit to use the agent's default model. An explicit model overrides the agent's own `model:`. When scoped models are set, a subagent can only use one of them."},
             "effort": {"type": "string", "enum": ["off", "minimal", "low", "medium", "high", "xhigh"], "description": "Thinking level for the subagent. Overrides the effort of the chosen scoped model; omit to use that model's effort."},
-            "background": {"type": "boolean", "description": "Set true to run non-blocking: you get a short notification when it finishes and pull the full result with AgentOutput; set false to wait and get the answer inline. Defaults to the agent's own background setting."},
+            "background": {"type": "boolean", "description": "Set true to run non-blocking: you get a short notification when it finishes and pull the full result with AgentOutput; set false to wait and get the answer inline. Defaults to background, unless the agent's definition sets background: false."},
             "resume_task_id": {"type": "string", "description": "Optional. To continue a previous subagent run, pass the label from its result's `resume_task_id:` line (e.g. \"explore#1\"). A raw task_id from an earlier Agent or AgentOutput call also works. The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction."}
         }
     })
@@ -654,13 +649,13 @@ fn task_parameters() -> Value {
 
 /// `createTaskToolDefinition`.
 pub fn create_task_tool_definition(cwd: &Path) -> ToolDefinition {
-    let background_agents = Arc::new(collect_background_agent_names(cwd));
-    let predicate_agents = background_agents.clone();
+    let foreground_agents = Arc::new(collect_foreground_agent_names(cwd));
+    let predicate_agents = foreground_agents.clone();
     let default_cwd = cwd.to_path_buf();
     ToolDefinition { ordered_start: false,
         name: TASK_TOOL_NAME.into(),
         label: TASK_TOOL_NAME.into(),
-        description: "Delegate a focused task to a specialized subagent that runs in a fresh, isolated context (it cannot see this conversation). Choose one of the available agents (listed in the system prompt) via `subagent_type` and pass everything it needs via `prompt`; the subagent returns only its final answer.".into(),
+        description: "Delegate a focused task to a specialized subagent that runs as a separate process with its own, fresh context (it cannot see this conversation). Choose one of the available agents (listed in the system prompt) via `subagent_type` and pass everything it needs via `prompt`; the subagent returns only its final answer.".into(),
         prompt_snippet: Some(
             "delegate a self-contained task to a specialized subagent (choose via subagent_type)"
                 .into(),
@@ -670,17 +665,14 @@ pub fn create_task_tool_definition(cwd: &Path) -> ToolDefinition {
         prepare_arguments: None,
         execution_mode: None,
         background: false,
-        // A per-call `background` wins; else the agent's own default.
+        // A per-call `background` wins; else background, unless the agent opts out.
         background_when: Some(Arc::new(move |call: &AgentToolCall| {
-            match lenient_bool(call.arguments.get("background")) {
-                Some(value) => value,
-                None => predicate_agents.contains(
-                    call.arguments
-                        .get("subagent_type")
-                        .and_then(Value::as_str)
-                        .unwrap_or(""),
-                ),
-            }
+            let subagent_type = call
+                .arguments
+                .get("subagent_type")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            runs_in_background(&call.arguments, subagent_type, &predicate_agents)
         })),
         execute: Arc::new(move |_id, params, signal, _on_update, ctx| {
             let cwd = ctx
@@ -691,7 +683,7 @@ pub fn create_task_tool_definition(cwd: &Path) -> ToolDefinition {
                 signal,
                 ctx.cloned(),
                 cwd,
-                background_agents.clone(),
+                foreground_agents.clone(),
             ))
         }),
     }
@@ -702,7 +694,7 @@ async fn execute_task(
     signal: Option<AbortSignal>,
     ctx: Option<ToolContext>,
     cwd: PathBuf,
-    background_agents: Arc<HashSet<String>>,
+    foreground_agents: Arc<HashSet<String>>,
 ) -> Result<AgentToolResult, ToolError> {
     let subagent_type = str_param(&params, "subagent_type")
         .unwrap_or("")
@@ -821,8 +813,7 @@ async fn execute_task(
         register_subagent_dispatch(&run_id, &label);
         set_status(task_id, TaskStatus::InProgress);
         // A background resume is pulled with AgentOutput, so it needs an inbox record.
-        let is_background = lenient_bool(params.get("background"))
-            .unwrap_or_else(|| background_agents.contains(&subagent_type));
+        let is_background = runs_in_background(&params, &subagent_type, &foreground_agents);
         if is_background {
             subagent_inbox().observe(&pool);
             subagent_inbox().start(&run_id, &label, &subagent_type);
@@ -905,8 +896,7 @@ async fn execute_task(
     } else {
         None
     };
-    let is_background = lenient_bool(params.get("background"))
-        .unwrap_or_else(|| background_agents.contains(&subagent_type));
+    let is_background = runs_in_background(&params, &subagent_type, &foreground_agents);
     let warm_options = WarmDispatchOptions {
         agent_type: subagent_type.clone(),
         cwd: cwd.clone(),
@@ -929,7 +919,6 @@ async fn execute_task(
     };
     let dispatch_options = DispatchOptions {
         force_agent: Some(subagent_type.clone()),
-        context: Some(String::new()),
         model: ask.clone(),
         // The parent's own model: the default when nothing is asked, and where
         // the inherited-model fallback runs.
