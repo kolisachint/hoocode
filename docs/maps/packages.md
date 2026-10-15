@@ -147,10 +147,10 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 829 / 0 | keep |
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 7 | 4485 / 3063 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1565 / 1046 | keep |
-| `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2140 / 0 | keep |
+| `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2161 / 0 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 2119 / 746 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2329 / 1744 | keep |
-| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 9524 / 9334 | keep |
+| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 9589 / 9417 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 7 | 1021 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1074 / 125 | keep |
 | `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 2519 / 1152 | keep |
