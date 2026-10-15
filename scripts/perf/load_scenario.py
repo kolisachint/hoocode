@@ -47,6 +47,7 @@ import os
 import pty
 import select
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -87,6 +88,10 @@ TYPED = "abcdefghijklmnopqrstuvwxyz"
 THREAD_CEILING = 26
 KEY_P99_TARGET_MS = 16.0
 ABORT_TARGET_MS = 500.0
+# perf.rs keeps the last 1024 keystroke latencies. A run that types more than that
+# only reports its tail, so the load run types 75 s x 13 keys/s = 975 keys.
+KEY_WINDOW = 1024
+LOAD_KEYS_PER_SECOND = 13.0
 
 
 # --------------------------------------------------------------------------
@@ -368,7 +373,7 @@ def run_memory(socket: str, args: argparse.Namespace, out: Path, binary: Path, r
     # The notice can appear while the pages are still being touched, so hold only
     # once the shim reports the whole allocation resident.
     deadline = time.monotonic() + args.memory_timeout
-    while time.monotonic() < deadline and not (done.exists() and done.read_text(encoding="utf-8") == "allocated"):
+    while time.monotonic() < deadline and not (done.exists() and done.read_text(encoding="utf-8") in ("allocated", "failed")):
         time.sleep(0.2)
     time.sleep(args.memory_hold)  # the notice stays up while the memory is resident
     shed_pane = pane(socket)
@@ -388,7 +393,7 @@ def run_memory(socket: str, args: argparse.Namespace, out: Path, binary: Path, r
         "shedding_notice_before_alloc": SHED_NOTICE in before,
         "shed_seen": shed_seen,
         "allocation_state_at_shed": allocated,
-        "shed_notice_lifted": lifted,
+        "shed_notice_lifted": bool(shed_seen and lifted),
         "allocation_state_final": done.read_text(encoding="utf-8") if done.exists() else None,
     }
 
@@ -396,6 +401,15 @@ def run_memory(socket: str, args: argparse.Namespace, out: Path, binary: Path, r
 # --------------------------------------------------------------------------
 # Paused terminal (pty, not tmux): the pty is not read for N seconds
 # --------------------------------------------------------------------------
+
+def kill_group(proc: subprocess.Popen) -> None:
+    """Kill the app and anything it started (the run used start_new_session)."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    proc.wait(timeout=5)
+
 
 def fionread(fd: int) -> int:
     return struct.unpack("i", fcntl.ioctl(fd, termios.FIONREAD, b"\0\0\0\0"))[0]
@@ -476,8 +490,7 @@ def run_paused(args: argparse.Namespace, binary: Path, root: Path, provider: Wat
         try:
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=5)
+            kill_group(proc)
         return {
             "pause_s": args.pause_seconds,
             "pty_bytes_queued_at_pause_start": queued_start,
@@ -490,8 +503,7 @@ def run_paused(args: argparse.Namespace, binary: Path, root: Path, provider: Wat
         }
     finally:
         if proc.poll() is None:
-            proc.kill()
-            proc.wait(timeout=5)
+            kill_group(proc)
         os.close(master)
 
 
@@ -521,7 +533,7 @@ def summarize(lines: list[dict[str, Any]]) -> dict[str, Any]:
         "threads_last": threads[-1] if threads else None,
         "rss_mib_max": round(max(rss) / 1024, 1) if rss else None,
         "rss_mib_last": round(rss[-1] / 1024, 1) if rss else None,
-        "p99_peak_per_second_ms": p99_peak,
+        "worst_rolling_p99_ms": p99_peak,
         "final_window": {key: last.get(key) for key in ("frame_build_ms", "frame_write_ms", "key_latency_ms", "loop_iteration_ms")},
     }
 
@@ -541,27 +553,34 @@ def verdict(ok: bool | None) -> str:
 
 
 def print_turn_summary(name: str, summary: dict[str, Any], out: Path) -> None:
+    whole = summary["keys_typed"] <= KEY_WINDOW
     print()
     print(f"[{name}] perf log: {out / 'perf.jsonl'} ({summary['samples_seconds']} lines, one a second)")
     print(f"keys typed: {summary['keys_typed']} over {summary['typing_window_s']} s; turn done at {summary['turn_done_after_s']} s")
+    print(
+        f"key window: the last {KEY_WINDOW} keys. This run typed {summary['keys_typed']}, "
+        + ("so the figures cover the whole run." if whole else "so the figures cover only the last 1,024 keys.")
+    )
     print(f"frames: {summary['frames']}   stalls (loop > 500 ms): {summary['stalls_over_500ms']}")
     print(f"threads: max {summary['threads_max']} (ceiling {THREAD_CEILING}), last {summary['threads_last']}")
     print(f"rss: max {summary['rss_mib_max']} MiB, last {summary['rss_mib_last']} MiB")
     final = summary["final_window"]
-    print("final window (last 1024 samples):")
+    print("rolling window (the last 1024 samples at the end of the run):")
     print(dist_row("frame build", final["frame_build_ms"]))
     print(dist_row("frame write", final["frame_write_ms"]))
     print(dist_row("keystroke to frame", final["key_latency_ms"]))
     print(dist_row("loop iteration", final["loop_iteration_ms"]))
-    peaks = summary["p99_peak_per_second_ms"]
-    print("worst p99 seen in any one second (ms): " + ", ".join(f"{k.removesuffix('_ms')} {v:.2f}" for k, v in peaks.items() if v is not None))
+    peaks = summary["worst_rolling_p99_ms"]
+    print("worst rolling-window p99 at any sample (ms): " + ", ".join(f"{k.removesuffix('_ms')} {v:.2f}" for k, v in peaks.items() if v is not None))
     key_p99 = (final["key_latency_ms"] or {}).get("p99")
-    key_ok = None if key_p99 is None else key_p99 < KEY_P99_TARGET_MS
-    print(f"  target keystroke-to-frame p99 < {KEY_P99_TARGET_MS:.0f} ms: {key_p99} ms -> {verdict(key_ok)}")
+    key_ok = (key_p99 < KEY_P99_TARGET_MS) if (whole and key_p99 is not None) else None
+    print(f"  target keystroke-to-frame p99 < {KEY_P99_TARGET_MS:.0f} ms, whole run: {key_p99} ms -> {verdict(key_ok)}")
     threads = summary["threads_max"]
     thread_ok = None if threads is None else threads <= THREAD_CEILING
     print(f"  target thread ceiling <= {THREAD_CEILING}: {threads} -> {verdict(thread_ok)}")
     summary["targets"] = {
+        "keys_typed": summary["keys_typed"],
+        "keystroke_window": "whole run" if whole else f"last {KEY_WINDOW}",
         "keystroke_p99_ms": key_p99,
         "keystroke_p99_pass": key_ok,
         "threads_max": threads,
@@ -578,24 +597,33 @@ def run_turn_scenario(name: str, args: argparse.Namespace, routes: dict[str, Rou
     try:
         home, work = write_project(root, port, mcp=mcp)
         drive_info = drive_tmux(socket, args, out, typing_seconds, extra_args, binary, home, work)
+        summary = summarize(read_log(out / "perf.jsonl"))
+        summary.update(drive_info)
+        summary["parent_requests"] = len(provider.requests("parent"))
+        child_records = provider.requests("child")
+        summary["child_requests"] = len(child_records)
+        # A child that ran out of script answers 500, and its record says so ("error").
+        summary["child_answers_ok"] = sum(1 for r in child_records if "error" not in r.get("served", []))
+        if mcp:
+            accepted = root / "mcp-accepted.jsonl"
+            summary["mcp_calls_accepted"] = len(accepted.read_text(encoding="utf-8").splitlines()) if accepted.exists() else 0
     finally:
         if not args.keep:
             tmux(socket, "kill-server", check=False)
         provider.stop()
-    lines = read_log(out / "perf.jsonl")
-    summary = summarize(lines)
-    summary.update(drive_info)
-    summary["parent_requests"] = len(provider.requests("parent"))
-    summary["child_requests"] = len(provider.requests("child"))
-    if mcp:
-        accepted = root / "mcp-accepted.jsonl"
-        summary["mcp_calls_accepted"] = len(accepted.read_text(encoding="utf-8").splitlines()) if accepted.exists() else 0
-    shutil.rmtree(root, ignore_errors=True)
+        shutil.rmtree(root, ignore_errors=True)
     print_turn_summary(name, summary, out)
-    if mcp:
-        print(f"  mcp calls accepted by the stall server: {summary['mcp_calls_accepted']}")
-    if "child_requests" in summary and name == "load":
-        print(f"  subagent (child) requests served: {summary['child_requests']}")
+    if name == "load":
+        accepted = summary["mcp_calls_accepted"]
+        turn_s = summary["turn_done_after_s"]
+        mcp_pass = accepted == 1 and turn_s >= 60.0
+        children_pass = summary["child_answers_ok"] == SUBAGENTS
+        summary["gates"] = {
+            "mcp_stall": {"calls_accepted": accepted, "turn_done_after_s": turn_s, "pass": mcp_pass},
+            "subagents": {"successful_answers": summary["child_answers_ok"], "required": SUBAGENTS, "pass": children_pass},
+        }
+        print(f"  MCP stall: {accepted} call(s) accepted, turn ended at {turn_s} s (gate: 1 call and >= 60 s) -> {verdict(mcp_pass)}")
+        print(f"  subagents: {summary['child_answers_ok']} of {SUBAGENTS} answered, {summary['child_requests']} child requests (gate: {SUBAGENTS} of {SUBAGENTS}) -> {verdict(children_pass)}")
     return summary
 
 
@@ -617,10 +645,16 @@ def run_paused_scenario(args: argparse.Namespace, binary: Path, out: Path) -> di
         shutil.rmtree(root, ignore_errors=True)
     lines = read_log(out / "perf.jsonl")
     summary = summarize(lines)
+    final = summary["final_window"]
+    fb = (final["frame_build_ms"] or {}).get("p99")
+    lp = (final["loop_iteration_ms"] or {}).get("p99")
+    result["frame_build_p99_ms"] = fb
+    result["loop_iteration_p99_ms"] = lp
     summary["paused"] = result
     print()
     print(f"[paused-pty] perf log: {out / 'perf.jsonl'} ({len(lines)} lines)")
-    print(f"  pty bytes queued: {result['pty_bytes_queued_at_pause_start']} at pause start, {result['pty_bytes_queued_at_pause_end']} at pause end (unchanged = the app was blocked on output)")
+    print(f"  pty bytes queued: {result['pty_bytes_queued_at_pause_start']} at pause start, {result['pty_bytes_queued_at_pause_end']} at pause end (sampled twice; about one pty buffer means the app was probably blocked on output)")
+    print(f"  frame build p99 {fb} ms, loop iteration p99 {lp} ms (rolling window at the end of the paused run)")
     print(f"  Ctrl+C to client disconnect: {result['ctrl_c_to_client_disconnect_ms']} ms (abort seen: {result['abort_seen']})")
     print(f"  target Ctrl+C aborts within {ABORT_TARGET_MS:.0f} ms: {verdict(result['abort_within_500ms'])}")
     print(f"  prompt back after the backlog drained: {result['prompt_back_after_drain']}; exit code {result['exit_code']}")
@@ -643,7 +677,12 @@ def run_memory_scenario(args: argparse.Namespace, binary: Path, out: Path) -> di
     lines = read_log(out / "perf.jsonl")
     summary = summarize(lines)
     summary["memory"] = result
-    shed_ok = bool(result["shed_seen"] and result["shed_notice_lifted"] and not result["shedding_notice_before_alloc"])
+    shed_ok = bool(
+        result["shed_seen"]
+        and result["shed_notice_lifted"]
+        and not result["shedding_notice_before_alloc"]
+        and result["allocation_state_at_shed"] == "allocated"
+    )
     summary["targets"] = {"shed_then_recover_pass": shed_ok}
     print()
     print(f"[memory] perf log: {out / 'perf.jsonl'} ({len(lines)} lines), rss max {summary['rss_mib_max']} MiB")
@@ -664,7 +703,7 @@ def main() -> int:
     parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY, help="hoocode binary (default: $CARGO_TARGET_DIR/release/hoocode)")
     parser.add_argument("--calls", type=int, default=8, help="parallel bash calls in the turn (default 8)")
     parser.add_argument("--lines", type=int, default=5000, help="lines each bash call prints (default 5000)")
-    parser.add_argument("--keys-per-second", type=float, default=20.0, help="typing rate during the turn (default 20)")
+    parser.add_argument("--keys-per-second", type=float, default=None, help="typing rate (default 20; load 13, so the whole run fits the 1,024-key window)")
     parser.add_argument("--typing-seconds", type=float, default=None,
                         help="minimum time keys are typed (default 15 for bash; 75 for load, past the MCP 60 s deadline)")
     parser.add_argument("--turn-timeout", type=float, default=150.0, help="seconds to wait for the turn to finish")
@@ -688,12 +727,15 @@ def main() -> int:
     out_root.mkdir(parents=True, exist_ok=True)
 
     wanted = ["bash", "load", "paused-pty", "memory"] if args.scenario == "all" else [args.scenario]
+    # Each scenario starts from the user's rate (or its own default), not the last one's.
+    user_keys_per_second = args.keys_per_second
     results: dict[str, Any] = {"binary": str(binary), "started": stamp}
     for name in wanted:
         out = out_root / name
         out.mkdir(parents=True, exist_ok=True)
         if name == "bash":
             routes = {"parent": Route("parent", [first_turn(bash_calls(args.calls, args.lines)), done_turn(), done_turn(), done_turn()])}
+            args.keys_per_second = user_keys_per_second or 20.0
             typing = args.typing_seconds or 15.0
             results[name] = run_turn_scenario(name, args, routes, typing, [], False, out, binary)
         elif name == "load":
@@ -704,6 +746,7 @@ def main() -> int:
                 # retries. A route that runs out answers 500 and the child fails.
                 "child": Route("child", [child_turn() for _ in range(40)], marker=CHILD_MARKER),
             }
+            args.keys_per_second = user_keys_per_second or LOAD_KEYS_PER_SECOND
             typing = args.typing_seconds or 75.0
             results[name] = run_turn_scenario(name, args, routes, typing, ["--enable-subagents"], True, out, binary)
         elif name == "paused-pty":

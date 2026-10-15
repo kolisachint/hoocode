@@ -82,6 +82,11 @@ __attribute__((constructor)) static void shim_start(void) {
     if (strcmp(base, "hoocode") != 0 || !getenv("HOOCODE_PERF_ALLOC_MB")) {
         return;
     }
+    /* Subagent children inherit the environment: only the top-level process allocates. */
+    const char *depth = getenv("HOOCODE_SUBAGENT_DEPTH");
+    if (depth && strcmp(depth, "0") != 0) {
+        return;
+    }
     pthread_t thread;
     if (pthread_create(&thread, NULL, worker, NULL) == 0) {
         pthread_detach(thread);
