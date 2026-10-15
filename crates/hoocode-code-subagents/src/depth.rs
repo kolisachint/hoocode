@@ -8,10 +8,16 @@
 //!   from its `maxSubagentDepth` setting and inherited by every descendant.
 //!
 //! `<prefix>` is any of [`hoocode_code_paths::ENV_PREFIXES`] (hoocode's
-//! `HOOCODE_` included), most specific first. The default cap is 1: a subagent
-//! may not spawn further subagents. Pools at depth >= 1 run with the nested
-//! concurrency cap, so the worst-case live process count is a fixed function of
-//! depth and the per-level caps.
+//! `HOOCODE_` included), most specific first. The default cap is 3: a process
+//! at depth d may spawn while d < cap, so depth 2 spawns depth 3 and depth 3
+//! cannot spawn. That is two levels of nesting below the root's children.
+//!
+//! Pool width is per depth: the root pool (depth 0) runs
+//! `SUBAGENT_CONCURRENCY` tasks (default 8, see [`pool_concurrency_for_depth`]),
+//! and every pool at depth >= 1 runs `NESTED_SUBAGENT_CONCURRENCY` (default 3).
+//! With the defaults, the worst-case live subagent process count is
+//! 8 * (1 + 3 + 9) = 104: 8 children of the root, 3 per child at depth 2, and
+//! 3 per depth-2 process at depth 3.
 
 use std::collections::HashMap;
 
@@ -19,6 +25,8 @@ use std::collections::HashMap;
 pub const SUBAGENT_DEPTH_ENV: &str = "SUBAGENT_DEPTH";
 /// Tree-wide max depth (suffix of `HOOCODE_SUBAGENT_MAX_DEPTH`).
 pub const SUBAGENT_MAX_DEPTH_ENV: &str = "SUBAGENT_MAX_DEPTH";
+/// Root pool concurrency (suffix of `HOOCODE_SUBAGENT_CONCURRENCY`).
+pub const ROOT_CONCURRENCY_ENV: &str = "SUBAGENT_CONCURRENCY";
 /// Nested pool concurrency (suffix of `HOOCODE_NESTED_SUBAGENT_CONCURRENCY`).
 pub const NESTED_CONCURRENCY_ENV: &str = "NESTED_SUBAGENT_CONCURRENCY";
 /// Comma-separated subagent types this process may delegate to.
@@ -30,12 +38,17 @@ pub const SUBAGENT_SKIP_MCP_ENV: &str = "SKIP_MCP";
 /// Set on the top-level agent, cleared for subagent children.
 pub const DEFER_MCP_SCHEMAS_ENV: &str = "DEFER_MCP_SCHEMAS";
 
-/// Default tree-wide cap: subagents cannot spawn subagents.
-pub const DEFAULT_MAX_SUBAGENT_DEPTH: u32 = 1;
-/// Concurrency cap for pools running at depth >= 1.
-pub const NESTED_SUBAGENT_CONCURRENCY: u32 = 2;
-/// Hard ceiling on the configurable depth (worst case 5 * (2^3 - 1) = 35
-/// processes).
+/// Default tree-wide cap: two levels of nesting below the root's children.
+pub const DEFAULT_MAX_SUBAGENT_DEPTH: u32 = 3;
+/// Default concurrency for the root pool (depth 0): the cold pool's default.
+pub const DEFAULT_ROOT_CONCURRENCY: u32 = 8;
+/// Lowest and highest configurable root concurrency.
+pub const MIN_ROOT_CONCURRENCY: u32 = 1;
+pub const MAX_ROOT_CONCURRENCY: u32 = 16;
+/// Concurrency cap for pools running at depth >= 1 when unset.
+pub const NESTED_SUBAGENT_CONCURRENCY: u32 = 3;
+/// Hard ceiling on the configurable depth. Its worst case is the same tree as
+/// the default, one level deeper per cap step.
 pub const ABSOLUTE_MAX_SUBAGENT_DEPTH: u32 = 3;
 
 /// Where the env-driven helpers read variables from.
@@ -132,10 +145,39 @@ pub fn resolve_nested_concurrency(setting: Option<f64>, env: &impl SubagentEnv) 
     }
 }
 
-/// Concurrency for a pool created in this process: reduced when nested,
-/// `None` (the pool default) at the root.
-pub fn pool_concurrency_for_depth(env: &impl SubagentEnv) -> Option<u32> {
-    (current_subagent_depth(env) >= 1).then(|| resolve_nested_concurrency(None, env))
+/// Root pool concurrency: the inherited env value, else the setting, else
+/// [`DEFAULT_ROOT_CONCURRENCY`]. Both the env value and the setting are clamped
+/// into `[MIN_ROOT_CONCURRENCY, MAX_ROOT_CONCURRENCY]`.
+pub fn resolve_root_concurrency(setting: Option<f64>, env: &impl SubagentEnv) -> u32 {
+    if let Some(n) = env.var(ROOT_CONCURRENCY_ENV).and_then(|v| parse_int(&v)) {
+        return clamp_root_concurrency(n as f64);
+    }
+    match setting {
+        Some(n) if n.is_finite() => clamp_root_concurrency(n),
+        _ => DEFAULT_ROOT_CONCURRENCY,
+    }
+}
+
+/// Clamp a root concurrency into `[MIN_ROOT_CONCURRENCY, MAX_ROOT_CONCURRENCY]`,
+/// flooring fractions.
+pub fn clamp_root_concurrency(n: f64) -> u32 {
+    n.floor()
+        .clamp(MIN_ROOT_CONCURRENCY as f64, MAX_ROOT_CONCURRENCY as f64) as u32
+}
+
+/// Concurrency for a pool created in this process, from its depth: the root
+/// concurrency at depth 0, the nested concurrency at depth >= 1. Both settings
+/// are the values read from the settings files; the env wins when set.
+pub fn pool_concurrency_for_depth(
+    root_setting: Option<f64>,
+    nested_setting: Option<f64>,
+    env: &impl SubagentEnv,
+) -> u32 {
+    if current_subagent_depth(env) >= 1 {
+        resolve_nested_concurrency(nested_setting, env)
+    } else {
+        resolve_root_concurrency(root_setting, env)
+    }
 }
 
 /// Subagent types this process may delegate to; `None` when unrestricted.

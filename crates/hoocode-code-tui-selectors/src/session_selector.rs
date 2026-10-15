@@ -275,7 +275,7 @@ fn build_session_tree(sessions: &[SessionInfo]) -> Vec<TreeNode> {
         .collect();
 
     fn sort_nodes(nodes: &mut [TreeNode]) {
-        nodes.sort_by(|a, b| b.session.modified.cmp(&a.session.modified));
+        nodes.sort_by_key(|b| std::cmp::Reverse(b.session.modified));
         for node in nodes {
             sort_nodes(&mut node.children);
         }

@@ -297,3 +297,41 @@ async fn a_waiting_dispatch_is_admitted_while_a_slot_is_free_later() {
     assert_eq!(pool.load(), (0, 0));
     pool.dispose().await;
 }
+
+/// The warm pool sizes itself by depth like the cold pool: a nested process
+/// gets the nested cap, not the root's, and its queue is QUEUE_PER_SLOT times
+/// that cap.
+#[test]
+fn a_nested_warm_pool_gets_the_nested_cap_not_the_root_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let env = |pairs: &[(&str, &str)]| -> std::collections::HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    };
+    let root = WarmSubagentPoolOptions::for_depth(dir.path(), None, None, &env(&[]));
+    assert_eq!((root.max_in_flight, root.max_waiting), (8, 32));
+
+    for depth in ["1", "2"] {
+        let nested = WarmSubagentPoolOptions::for_depth(
+            dir.path(),
+            None,
+            None,
+            &env(&[("HOOCODE_SUBAGENT_DEPTH", depth)]),
+        );
+        assert_eq!(
+            (nested.max_in_flight, nested.max_waiting),
+            (3, 12),
+            "depth {depth} must get the nested cap"
+        );
+    }
+
+    let configured = WarmSubagentPoolOptions::for_depth(
+        dir.path(),
+        Some(12.0),
+        Some(2.0),
+        &env(&[("HOOCODE_SUBAGENT_DEPTH", "1")]),
+    );
+    assert_eq!((configured.max_in_flight, configured.max_waiting), (2, 8));
+}

@@ -27,12 +27,12 @@ use serde_json::Value;
 use tokio::task::JoinHandle;
 
 use crate::depth::{
-    current_subagent_depth, resolve_max_subagent_depth, tool_allowlist_needs_mcp, ProcessEnv,
-    SubagentEnv, SUBAGENT_DEPTH_ENV, SUBAGENT_SKIP_MCP_ENV,
+    current_subagent_depth, pool_concurrency_for_depth, resolve_max_subagent_depth,
+    tool_allowlist_needs_mcp, ProcessEnv, SubagentEnv, SUBAGENT_DEPTH_ENV, SUBAGENT_SKIP_MCP_ENV,
 };
 use crate::lifeguard;
 use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
-use crate::pool::{subagent_disallowed_tools, DEFAULT_SUBAGENT_MAX_TURNS};
+use crate::pool::{subagent_disallowed_tools, DEFAULT_SUBAGENT_MAX_TURNS, QUEUE_PER_SLOT};
 use hoocode_code_models::ResolvedScoped;
 
 /// Usage totals pulled from a worker after a task.
@@ -399,9 +399,12 @@ pub struct WarmSubagentPoolOptions {
     pub scope: Vec<ResolvedScoped>,
     /// Idle workers kept per configuration (default 2).
     pub max_per_key: usize,
-    /// Workers running at once across every key (default 5, the cold pool's).
+    /// Workers running at once across every key. Per depth, as the cold pool's:
+    /// the root concurrency at depth 0, the nested concurrency below it. This
+    /// counter is separate from the cold pool's.
     pub max_in_flight: usize,
-    /// Dispatches allowed to wait for a free worker (default 20).
+    /// Dispatches allowed to wait for a free worker: [`QUEUE_PER_SLOT`] times
+    /// `max_in_flight`.
     pub max_waiting: usize,
     /// An idle worker is reclaimed after this long (default 30s).
     pub idle_ttl: Duration,
@@ -410,7 +413,21 @@ pub struct WarmSubagentPoolOptions {
 }
 
 impl WarmSubagentPoolOptions {
+    /// Options for a pool in this process, sized for this process's depth.
     pub fn new(cwd: impl Into<PathBuf>) -> Self {
+        Self::for_depth(cwd, None, None, &ProcessEnv)
+    }
+
+    /// Options sized for the depth in `env`: `max_in_flight` is the per-depth
+    /// concurrency (the same rule as the cold pool), and `max_waiting` is
+    /// [`QUEUE_PER_SLOT`] times that.
+    pub fn for_depth(
+        cwd: impl Into<PathBuf>,
+        root_setting: Option<f64>,
+        nested_setting: Option<f64>,
+        env: &impl SubagentEnv,
+    ) -> Self {
+        let max_in_flight = pool_concurrency_for_depth(root_setting, nested_setting, env) as usize;
         Self {
             cwd: cwd.into(),
             settings: None,
@@ -418,8 +435,8 @@ impl WarmSubagentPoolOptions {
             available_models: Vec::new(),
             scope: Vec::new(),
             max_per_key: 2,
-            max_in_flight: crate::pool::DEFAULT_MAX_CONCURRENCY,
-            max_waiting: crate::pool::DEFAULT_MAX_CONCURRENCY * crate::pool::QUEUE_PER_SLOT,
+            max_in_flight,
+            max_waiting: max_in_flight * QUEUE_PER_SLOT,
             idle_ttl: Duration::from_millis(30_000),
             spawn: None,
         }
@@ -775,12 +792,19 @@ pub fn get_warm_subagent_pool(cwd: &Path, available_models: &[Model]) -> WarmSub
             // The same one-level deep merge as the cold pool.
             let settings =
                 deep_merge_settings(&manager.global_settings(), &manager.project_settings());
+            // The same per-depth concurrency as the cold pool at this depth.
+            let concurrency = WarmSubagentPoolOptions::for_depth(
+                cwd,
+                Some(manager.subagent_concurrency() as f64),
+                Some(manager.nested_subagent_concurrency() as f64),
+                &ProcessEnv,
+            );
             let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
                 settings: Some(CategorySettings::from_settings(&settings)),
                 skill_paths: instance.skill_paths.clone(),
                 available_models: available_models.to_vec(),
                 scope: scope.clone(),
-                ..WarmSubagentPoolOptions::new(cwd)
+                ..concurrency
             });
             instance.pool = Some(pool.clone());
             pool

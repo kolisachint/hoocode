@@ -499,7 +499,7 @@ fn plugin_tools_enabled(args: &Args, settings: &SettingsManager) -> bool {
 }
 
 /// main.ts's subagent block of `buildSessionOptions`: seed the tree-wide depth
-/// cap and nested concurrency into the environment (a root only; descendants
+/// cap, root and nested concurrency into the environment (a root only; descendants
 /// inherit them), set or clear `--delegate-allow`, and decide whether this
 /// process gets the Agent/AgentOutput tools (and warm workers, root only).
 fn subagent_tools(
@@ -521,6 +521,16 @@ fn subagent_tools(
         std::env::set_var(
             format!("HOOCODE_{}", depth::SUBAGENT_MAX_DEPTH_ENV),
             cap.to_string(),
+        );
+    }
+    if ProcessEnv.var(depth::ROOT_CONCURRENCY_ENV).is_none() {
+        let n = depth::resolve_root_concurrency(
+            Some(settings.subagent_concurrency() as f64),
+            &std::collections::HashMap::<String, String>::new(),
+        );
+        std::env::set_var(
+            format!("HOOCODE_{}", depth::ROOT_CONCURRENCY_ENV),
+            n.to_string(),
         );
     }
     if ProcessEnv.var(depth::NESTED_CONCURRENCY_ENV).is_none() {

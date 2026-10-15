@@ -258,7 +258,8 @@ pub struct SubagentPoolOptions {
     /// The hoocode executable (or a runtime when `prefix_args` names a script).
     pub executable: PathBuf,
     pub prefix_args: Vec<String>,
-    /// Default 5.
+    /// Default [`DEFAULT_MAX_CONCURRENCY`]. The root pool passes its per-depth
+    /// value (see `depth::pool_concurrency_for_depth`).
     pub max_concurrency: Option<usize>,
     /// Default: the process cwd.
     pub cwd: Option<PathBuf>,
@@ -266,7 +267,7 @@ pub struct SubagentPoolOptions {
     pub env: Option<HashMap<String, String>>,
     /// Replace how dispatches run. Default: a child process per dispatch.
     pub runner: Option<Arc<dyn Runner>>,
-    /// Default: four times `max_concurrency`. A dispatch beyond it is refused
+    /// Default: [`QUEUE_PER_SLOT`] times `max_concurrency`. A dispatch beyond it is refused
     /// with a message the caller can act on, rather than queued into a session
     /// that will never finish them.
     pub max_queued: Option<usize>,
@@ -419,9 +420,10 @@ pub struct SubagentPool {
     inner: Arc<PoolInner>,
 }
 
-/// The cold pool's default concurrency. The warm pool shares it: one ceiling
-/// for the process, not one per execution path.
-pub const DEFAULT_MAX_CONCURRENCY: usize = 5;
+/// The cold pool's default concurrency. The warm pool has its own counter
+/// with the same default: the cold and warm pools do not share a ceiling, so a
+/// process can run up to this many cold and this many warm subagents at once.
+pub const DEFAULT_MAX_CONCURRENCY: usize = 8;
 
 /// Finished results held in memory. Beyond this the oldest is dropped; its
 /// dispatch dir and ledger line are the durable record.
@@ -2179,7 +2181,7 @@ fn prune_dispatch_dirs_checked(
         .filter(|e| e.path().is_dir())
         .filter_map(|e| Some((last_activity(&e.path())?, e.path())))
         .collect();
-    dirs.sort_by(|a, b| b.0.cmp(&a.0));
+    dirs.sort_by_key(|b| std::cmp::Reverse(b.0));
     let is_old = |modified: SystemTime| {
         SystemTime::now()
             .duration_since(modified)

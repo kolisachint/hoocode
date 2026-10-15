@@ -298,8 +298,9 @@ mod defaults {
     pub const RETRY_MAX_RETRIES: u64 = 3;
     pub const RETRY_BASE_DELAY_MS: u64 = 2000;
     pub const PROVIDER_MAX_RETRY_DELAY_MS: u64 = 60000;
-    pub const MAX_SUBAGENT_DEPTH: u64 = 2;
-    pub const NESTED_SUBAGENT_CONCURRENCY: u64 = 2;
+    pub const MAX_SUBAGENT_DEPTH: u64 = 3;
+    pub const SUBAGENT_CONCURRENCY: u64 = 8;
+    pub const NESTED_SUBAGENT_CONCURRENCY: u64 = 3;
     pub const IMAGE_WIDTH_CELLS: u64 = 60;
     pub const EDITOR_PADDING_X: u64 = 1;
     pub const AUTOCOMPLETE_MAX_VISIBLE: u64 = 5;
@@ -1135,6 +1136,13 @@ impl SettingsManager {
                 .map(|v| v.floor() as u64)
                 .unwrap_or(1),
         }
+    }
+
+    /// Concurrent subagents in the root pool (depth 0); 1 to 16.
+    pub fn subagent_concurrency(&self) -> u64 {
+        finite(self.get("subagentConcurrency"))
+            .map(|v| v.floor().clamp(1.0, 16.0) as u64)
+            .unwrap_or(defaults::SUBAGENT_CONCURRENCY)
     }
 
     /// Concurrent subagents per pool at nesting depth >= 1; at least 1.
