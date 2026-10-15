@@ -169,7 +169,7 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 | 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal. **Status:** parts 1 and 2 landed 2026-10-08; the 2026-10-15 load run is in Baseline (Ctrl+C 30 ms: pass). **Open:** the keystroke p99 passed in the final run but failed in one earlier run of the same bash scenario (70.6 ms, cause not found). **Follow-up 2026-10-15:** five bash runs gave one miss (27.3 ms, started at load average 3.4); the two runs that started under load were repeated and passed. The burst's frame-build cost is the tail (see the follow-up section). |
 | 3 | `hoocode-session-io` with flush barriers | No session file I/O on the UI thread or on `hoocode-io`; kill -9 mid-turn loses at most the unflushed entries of that turn. **Status: writes landed** (`runtime` `session_io.rs`; 4096 entries or 64 MiB, producers wait; barrier at turn end, 1 s flush at dispose; torn last line skipped on read and not glued to the next entry). **Open:** session reads still run on the caller (they first wait for queued writes, up to 1 s), and `create_dir_all` and the `open`/`resume` paths are not yet moved to a lane. |
 | 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test. **Status:** landed; load run 2026-10-15 in Baseline. **Open:** the burst's frame-build cost (rolling p99 about 102 ms for 5 s) is separated in the follow-up: frame build dominates, lanes add little (see the follow-up section); Windows `Shell` priority (process-wrap's JobObject overwrites creation flags); macOS QoS untested. |
-| 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase. **Status:** memory check passes (2026-10-15, Baseline). **Open:** the thread ceiling (34 against 26 before b8862c2; 24 after, the phase 1 item); the key p99 in the burst (see the follow-up); the stall-phase check is not run, and the watchdog probes did not fire under load; the footer cannot show a UI stall while the loop is stuck; macOS child RSS and `sysctl` unverified. |
+| 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase. **Status:** memory check passes (2026-10-15, Baseline). **Open:** the thread ceiling (34 against 26 before b8862c2; 24 after, the phase 1 item); the key p99 in the burst (see the follow-up); the real-TUI stall check is not run (the probes now have a forced control run, 2026-10-15, both fire: see §4); the footer cannot show a UI stall while the loop is stuck; macOS child RSS and `sysctl` unverified. |
 | 6 | Only if Phase 0 shows it: move syntax highlighting and big markdown parses to `hoocode-tools` | Frame build p99 under 8 ms on a 10k-line transcript. **Follow-up 2026-10-15:** the trigger is met. The bash burst's frame build p99 was 98 to 136 ms, against p50 under 1 ms. The cost is the bash block's render. Not started. |
 
 #### Baseline (Phase 0)
@@ -399,10 +399,30 @@ the log on and kept it in a directory that outlives the scenario.
 | io starvation (probe 1 s, late over 250 ms) | `[WATCHDOG] io runtime starved` | No line | No line |
 
 - Both probes stayed silent under these loads. Only `DISPATCH` lines reached the debug log, so the sink works.
-- **No control run:** no forced stall or starvation was built to show that the probes fire. The "silent" result
-  is therefore not proof they work. Test the probes with a forced stall before relying on them.
 - Ctrl+C in the paused run: 36 ms, PASS (target 500 ms).
 - **Points to phase 6?** Yes, for the frame build. The probes do not show lane starvation under these loads.
+
+**Control run (2026-10-15): both probes fire when forced.** The silence above was not proof either way until this
+run. It drives the production wiring (the `hoocode-watchdog` thread and the io probe that `start` spawns, through
+`watchdog::start_with`) with short thresholds: UI log 50 ms, footer 150 ms, probe period 20 ms, probe late 50 ms
+(production: 500 ms, 2 s, 1 s, 250 ms). File: `crates/hoocode-runtime/tests/it/watchdog_forced.rs`.
+
+| Probe | Forced fault | Test | Result |
+|---|---|---|---|
+| UI stall | A thread beats `ui-loop:wait`, then blocks without beating | `a_forced_ui_stall_fires_the_slow_log_the_footer_flag_and_the_recovery` | Logs `UI loop silent` once and `UI stalled` once, both with the phase; footer flag up; `UI loop resumed` and flag down on resume. PASS |
+| io starvation | Every io worker is held for 400 ms | `a_forced_io_starvation_fires_the_starvation_probe` | Logs `io runtime starved`. PASS |
+
+- **No probe bug found, so no fix was needed.** The earlier silence is therefore a real absence: no loop stall
+  of 500 ms (perf `stalls` 0) and no io worker starvation under those loads.
+- **The control is not vacuous.** Disabling the footer threshold fails the stall test, and disabling the probe's
+  late threshold fails the starvation test (both time out at 5 s).
+- **Stable:** 25 of 25 runs pass, about 0.4 s per run. The whole `hoocode-runtime` suite passes (58 integration tests).
+- **Limit found (not fixed, not measured):** the io probe can only see total starvation. Tokio services timers on
+  the other workers, so one busy worker out of `min(4, cores)` should not trip it. Lane starvation short of all
+  workers blocked is therefore invisible to this probe. This follows from Tokio's scheduler and was not tested here.
+- **Not covered:** the TUI path. In the TUI the lines go through `agent_log` and show only with
+  `HOOCODE_DEBUG_AGENT_LOG=1`. The footer flag is the user-visible signal. A real-TUI check with the UI loop paused
+  is still open.
 
 **Summary**
 
@@ -411,10 +431,10 @@ the log on and kept it in a directory that outlives the scenario.
 | Thread ceiling (26) | Met after the fix: 24. Cause: subagent pipe readers (10) and the uncapped io blocking pool (11) |
 | Keystroke p99 under 16 ms | Usually met (6 of 7 runs). One run missed, cause unknown |
 | What dominates the burst tail | Frame build of the bash block. Lanes add little or nothing that shows |
-| Probes under load | Silent. No control run, so not proven to work |
+| Probes under load | Silent. Control run 2026-10-15: both probes fire when forced, so the silence means no stall or starvation occurred |
 | Phase 6 | Trigger met. Not started |
 
-Not done: macOS; the io blocking pool cap (a design question); the watchdog control run.
+Not done: macOS; the io blocking pool cap (a design question); a real-TUI stall check with the UI loop paused.
 
 ## Not doing
 
