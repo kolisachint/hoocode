@@ -97,7 +97,9 @@ v0.1.7 plus the ledger. **11 as declared, 1 known issue, 12 attempts recorded,
 | `parent_dispatch_background` | notification then result | complete, `mode=background` | 0.6 |
 | `parent_region_error_falls_back` | region rejection retries on the parent's model | failed → complete | 0.7 |
 | `parent_unknown_complexity_tier` | a bad tier never reaches a child | rejected by the parent, no dispatch | 0.6 |
-| `parent_queue_saturation` | 8 dispatches, 5 slots | 8 attempts, 8 usable, none stuck | 20 |
+| `parent_queue_saturation` | 12 dispatches, 8 slots (default `subagentConcurrency`); peak in flight must be exactly 8 | 12 complete, peak 8 (2026-10-15) | 26 |
+| `nested_depth_chain` | root → depth 1 → 2 → 3 at `maxSubagentDepth` 3; depth 3 gets no Agent tool, results flow back | 3 complete | 0.9 |
+| `nested_fanout_saturation` | a depth-1 child fans out 5 background grandchildren, nested cap 3 | 6 complete, peak 3 | 6 |
 | `parent_stall_reaped` | a hung child is reaped in ~1 min | ~~KNOWN: it is not~~ **reaped at 25s, partial (2026-10-15)** | 26 |
 
 ### Re-run, 2026-10-15
@@ -166,3 +168,15 @@ The ledger is bounded: past 20 000 lines it is rewritten to keep the newest
 10 000. `docs/design/subagents.md` §7 warned that the raw October evidence is
 swept after 24h and mostly already gone. These lines are the replacement, and
 unlike the dispatch dirs they record the successes.
+### Admission race, 2026-10-15
+
+The new per-depth saturation scenarios caught a long-standing bug: both pools
+admitted more than their cap. The cold pool checked `slots.len()` under its lock
+but inserted the slot only after `spawn` returned, so parallel dispatches all saw
+the same free count (12 running against a cap of 8; 4–5 against a nested cap of
+3). The warm pool counted a dispatch only after its worker booted. Fix: the cold
+pool reserves a `starting` entry in the same critical section as the check; the
+warm pool takes a semaphore permit before booting. Regression tests:
+`tests/it/pool_admission.rs` and `warm.rs`
+`a_burst_of_dispatches_never_runs_more_than_max_in_flight`. Full
+`--include-slow` suite: 20/20 as declared.

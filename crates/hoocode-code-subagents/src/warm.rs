@@ -362,11 +362,11 @@ struct WarmState {
     idle: HashMap<String, Vec<WarmSubagentWorker>>,
     reclaim_timers: HashMap<u64, JoinHandle<()>>,
     live_count: HashMap<String, usize>,
-    /// Workers handed out and not yet released: the cap the warm pool was
-    /// missing. It used to boot one worker per dispatch with no ceiling, so a
-    /// burst of background runs started a burst of processes with nothing
-    /// counting them and nothing telling the lifeguard.
-    in_flight: usize,
+    /// Dispatches waiting for a slot. The slots themselves are the semaphore
+    /// on `WarmInner`: the cap the warm pool was missing. It used to boot one
+    /// worker per dispatch with no ceiling, so a burst of background runs
+    /// started a burst of processes with nothing counting them and nothing
+    /// telling the lifeguard.
     waiting: usize,
     skill_paths: Vec<String>,
     registry: Option<Arc<AgentRegistry>>,
@@ -383,6 +383,10 @@ struct WarmInner {
     max_in_flight: usize,
     /// Dispatches allowed to wait for one (default: four per slot).
     max_waiting: usize,
+    /// One permit per running dispatch, taken at admission and held until the
+    /// dispatch returns. Taken before the worker boots, so a burst cannot all
+    /// boot at once.
+    slots: Arc<tokio::sync::Semaphore>,
     idle_ttl: Duration,
     spawn: Option<SpawnCommand>,
     state: Mutex<WarmState>,
@@ -460,6 +464,7 @@ impl WarmSubagentPool {
                 max_per_key: options.max_per_key,
                 max_in_flight: options.max_in_flight,
                 max_waiting: options.max_waiting,
+                slots: Arc::new(tokio::sync::Semaphore::new(options.max_in_flight)),
                 idle_ttl: options.idle_ttl,
                 spawn: options.spawn,
                 state: Mutex::new(WarmState {
@@ -571,38 +576,52 @@ impl WarmSubagentPool {
         options: &WarmDispatchOptions,
         on_activity: Option<WarmProgressCallback>,
     ) -> Result<WarmRunResult, WarmWorkerError> {
-        if self.state().disposed {
-            return Err(WarmWorkerError("warm pool disposed".into()));
-        }
         // The same admission control the cold pool has: a burst of background
-        // runs is refused, not turned into a burst of processes.
-        {
+        // runs is queued up to `max_waiting`, then refused, never turned into a
+        // burst of processes. The slot is taken under the same lock as the
+        // check, so two dispatches cannot both see the last one free.
+        let slot = {
             let mut state = self.state();
-            if state.in_flight >= self.inner.max_in_flight {
-                if state.waiting >= self.inner.max_waiting {
-                    return Err(WarmWorkerError(format!(
-                        "Warm subagent pool is saturated ({} running, {} waiting). Try again once one finishes.",
-                        state.in_flight, state.waiting
-                    )));
-                }
-                state.waiting += 1;
+            if state.disposed {
+                return Err(WarmWorkerError("warm pool disposed".into()));
             }
-        }
-        let worker = self.acquire(options).await;
-        {
-            let mut state = self.state();
-            state.waiting = state.waiting.saturating_sub(1);
-        }
-        let mut worker = worker?;
+            match Arc::clone(&self.inner.slots).try_acquire_owned() {
+                Ok(permit) => Some(permit),
+                Err(_) => {
+                    if state.waiting >= self.inner.max_waiting {
+                        // Read the permits directly: `load` takes the state lock.
+                        let running = self
+                            .inner
+                            .max_in_flight
+                            .saturating_sub(self.inner.slots.available_permits());
+                        return Err(WarmWorkerError(format!(
+                            "Warm subagent pool is saturated ({} running, {} waiting). Try again once one finishes.",
+                            running, state.waiting
+                        )));
+                    }
+                    state.waiting += 1;
+                    None
+                }
+            }
+        };
+        let slot = match slot {
+            Some(permit) => permit,
+            None => {
+                let admitted = Arc::clone(&self.inner.slots).acquire_owned().await;
+                {
+                    let mut state = self.state();
+                    state.waiting = state.waiting.saturating_sub(1);
+                }
+                admitted.map_err(|_| WarmWorkerError("warm pool disposed".into()))?
+            }
+        };
+        // Held to the end of the dispatch, on every return path below.
+        let _slot = slot;
+        let mut worker = self.acquire(options).await?;
         let timeout = warm_run_timeout(&options.agent_type);
-        self.state().in_flight += 1;
         // The same child prompt the cold paths build (card 9, 4i).
         let task = crate::pool::child_prompt(prompt);
         let outcome = worker.run(&task, on_activity, timeout).await;
-        {
-            let mut state = self.state();
-            state.in_flight = state.in_flight.saturating_sub(1);
-        }
         match outcome {
             Ok(result) => {
                 self.release(worker).await;
@@ -725,8 +744,11 @@ impl WarmSubagentPool {
 
     /// Workers currently running a dispatch, and dispatches waiting for one.
     pub fn load(&self) -> (usize, usize) {
-        let state = self.state();
-        (state.in_flight, state.waiting)
+        let running = self
+            .inner
+            .max_in_flight
+            .saturating_sub(self.inner.slots.available_permits());
+        (running, self.state().waiting)
     }
 
     /// Currently parked workers.
@@ -741,6 +763,8 @@ impl WarmSubagentPool {
                 return;
             }
             state.disposed = true;
+            // Dispatches waiting for a slot fail instead of waiting forever.
+            self.inner.slots.close();
             for (_, timer) in state.reclaim_timers.drain() {
                 timer.abort();
             }
