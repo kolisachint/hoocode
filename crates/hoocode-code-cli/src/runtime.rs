@@ -1161,19 +1161,20 @@ fn run_print_body(
             &serde_json::to_value(&header).unwrap_or_default(),
         ));
         let tx = tx.clone();
+        // A subagent's text deltas are coalesced at the source (T3.1): the parent
+        // only consumes the event types `child_stdout_events` lets through.
+        let deltas = std::sync::Mutex::new(hoocode_code_subagents::live::DeltaCoalescer::default());
         session.subscribe(move |event| {
             let value = event.to_json();
-            // The parent only consumes progress events and message_end usage;
-            // the per-delta firehose is dropped at the source.
-            if is_subagent {
-                let kind = value.get("type").and_then(serde_json::Value::as_str);
-                if !kind.is_some_and(|k| {
-                    hoocode_code_subagents::events::SUBAGENT_STDOUT_EVENT_TYPES.contains(&k)
-                }) {
-                    return;
-                }
+            if !is_subagent {
+                let _ = tx.send(json_line(&value));
+                return;
             }
-            let _ = tx.send(json_line(&value));
+            let mut deltas = deltas.lock().unwrap_or_else(|e| e.into_inner());
+            let now = std::time::Instant::now();
+            for out in hoocode_code_subagents::live::child_stdout_events(value, &mut deltas, now) {
+                let _ = tx.send(json_line(&out));
+            }
         })
     });
     drop(tx);

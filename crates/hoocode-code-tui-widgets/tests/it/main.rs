@@ -13,6 +13,7 @@ mod message_block_sheets;
 mod selected_row_list;
 mod streaming_segmentation;
 mod subagent_folding;
+mod subagent_live_tail;
 mod support;
 mod task_panel;
 mod theme_block_rendering;

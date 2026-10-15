@@ -62,7 +62,7 @@ update this page in the same commit.
 | `Edit` | `edit.rs` |
 | `Write` | `write.rs` |
 | `CodeSearch` | `search.rs` |
-| `Agent`, `AgentOutput` (subagents) | `subagent.rs` |
+| `Agent`, `AgentOutput` (subagents) | `subagent.rs`. An Agent block's result slot shows its run's live tail (the newest 5 rows, peek) while the run goes, else its result. The tail and the run lookup are `hoocode-code-subagents` `live.rs` (`tail`, `is_running`, `run_for_tool_call`); the block is fed by `mode/subagents.rs` `apply_subagent_event` |
 | Plugin tools | `plugins.rs` |
 | `WebFetch`, `WebSearch` | `web.rs` (web tools are deferred) |
 | Registry: tool name → renderer | `mod.rs` |
@@ -166,6 +166,7 @@ A key that is not a scroll key un-pins at the prompt, then does its usual job.
 | Main loop (input, app events, ticks, render). Up to 64 keys per pass, then app events, then one render (`accept_terminal_event`, `flush_scheduled_render`) | `mode/mod.rs` `run` |
 | Events from other threads | `enum AppEvent` (session events, prompt done, bash chunks, dialogs, login…) |
 | Agent session events → screen | `handle_session_event` |
+| Live events of subagent runs (`AppEvent::Subagent`) → the Agent blocks that dispatched them | `apply_subagent_event` in `mode/subagents.rs` (sink set in `mode/mod.rs`; forwarding in `hoocode-code-subagents` `instance.rs` `wire_live_events`) |
 | Key and UI actions | `enum Action`, `handle_action` |
 | Submitting a prompt | `submit`, `prompt`, `prompt_with_images` |
 | Streaming render throttle | `schedule_streaming_render`, `run_streaming_render` |

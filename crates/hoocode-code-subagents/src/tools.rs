@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use hoocode_agent_types::{AgentToolCall, AgentToolResult};
+use hoocode_agent_types::{AgentToolCall, AgentToolResult, AgentToolUpdateCallback};
 use hoocode_ai_types::{AbortSignal, Content, Model};
 use hoocode_code_agent_session::provider_health::get_provider_exhaustion;
 use hoocode_code_resources::{
@@ -395,6 +395,30 @@ fn model_line(selection: &ModelSelection) -> String {
     line
 }
 
+/// The partial update an Agent call emits at dispatch: its pool run's id, so
+/// the tool block knows which run is its own (T3.2). A background call has no
+/// update channel (its placeholder is its result), so the run is also kept by
+/// call id (`live::remember_run`), which the block reads too.
+fn announce_run(
+    call_id: &str,
+    pool_task_id: &str,
+    subagent_type: &str,
+    on_update: &Option<AgentToolUpdateCallback>,
+) {
+    crate::live::remember_run(call_id, pool_task_id);
+    if let Some(update) = on_update {
+        update(AgentToolResult {
+            content: Vec::new(),
+            details: json!({
+                "poolTaskId": pool_task_id,
+                "subagent_type": subagent_type,
+                "status": "running",
+            }),
+            terminate: false,
+        });
+    }
+}
+
 /// Update the task panel from a finished dispatch and shape the tool result.
 /// A foreground failure is an error; a background one is a notification.
 fn finalize_dispatch_result(
@@ -674,7 +698,7 @@ pub fn create_task_tool_definition(cwd: &Path) -> ToolDefinition {
                 .unwrap_or("");
             runs_in_background(&call.arguments, subagent_type, &predicate_agents)
         })),
-        execute: Arc::new(move |_id, params, signal, _on_update, ctx| {
+        execute: Arc::new(move |call_id, params, signal, on_update, ctx| {
             let cwd = ctx
                 .and_then(|c| c.cwd.clone())
                 .unwrap_or_else(|| default_cwd.clone());
@@ -684,6 +708,8 @@ pub fn create_task_tool_definition(cwd: &Path) -> ToolDefinition {
                 ctx.cloned(),
                 cwd,
                 foreground_agents.clone(),
+                call_id,
+                on_update,
             ))
         }),
     }
@@ -695,6 +721,8 @@ async fn execute_task(
     ctx: Option<ToolContext>,
     cwd: PathBuf,
     foreground_agents: Arc<HashSet<String>>,
+    call_id: String,
+    on_update: Option<AgentToolUpdateCallback>,
 ) -> Result<AgentToolResult, ToolError> {
     let subagent_type = str_param(&params, "subagent_type")
         .unwrap_or("")
@@ -812,6 +840,7 @@ async fn execute_task(
         let task_id = create_dispatch_task(&summary, &subagent_type, &run_id);
         register_subagent_dispatch(&run_id, &label);
         set_status(task_id, TaskStatus::InProgress);
+        announce_run(&call_id, &run_id, &subagent_type, &on_update);
         // A background resume is pulled with AgentOutput, so it needs an inbox record.
         let is_background = runs_in_background(&params, &subagent_type, &foreground_agents);
         if is_background {
@@ -886,6 +915,7 @@ async fn execute_task(
     let task_id = create_dispatch_task(&summary, &subagent_type, &pool_task_id);
     register_subagent_dispatch(&pool_task_id, &label);
     set_status(task_id, TaskStatus::InProgress);
+    announce_run(&call_id, &pool_task_id, &subagent_type, &on_update);
     // Fork agents inherit the parent's conversation via a forked session.
     let fork_session_file = if def.fork == Some(true) {
         resolve_fork_session_file(

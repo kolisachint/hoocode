@@ -1,0 +1,22 @@
+
+  ● Agent explore · Find the footer code
+      │ → Grep fn render
+      │ → Read crates/hoocode-code-tui-widgets/src/status.rs
+      │ The footer is built in footer.rs.
+      │ It draws the model
+      │ → Read crates/hoocode-code-tui-widgets/src/chip.rs
+--- styles ---
+r1 c2-3 fg=#ffff00
+r1 c4-9 bold
+r1 c10-16 fg=#56b6c2
+r1 c18-39 fg=#989898
+r2 c6 fg=#757575
+r2 c8-23 fg=#a8a8a8
+r3 c6 fg=#757575
+r3 c8-59 fg=#a8a8a8
+r4 c6 fg=#757575
+r4 c8-40 fg=#a8a8a8
+r5 c6 fg=#757575
+r5 c8-25 fg=#a8a8a8
+r6 c6 fg=#757575
+r6 c8-57 fg=#a8a8a8

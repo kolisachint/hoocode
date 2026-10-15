@@ -489,9 +489,22 @@ impl ToolExecutionComponent {
             .contains_key(crate::tools::bash::TICKING_KEY)
     }
 
-    /// A finished, visible result still holding its payloads.
+    /// A finished, visible result still holding its payloads. A block whose
+    /// renderer shows a live run stays unfrozen until the run settles.
     pub fn is_freezable(&self) -> bool {
-        !self.frozen && !self.is_partial && !self.hide_component && self.result.is_some()
+        !self.frozen
+            && !self.is_partial
+            && !self.hide_component
+            && self.result.is_some()
+            && !self
+                .renderer_state
+                .contains_key(crate::tools::subagent::LIVE_KEY)
+    }
+
+    /// Rebuilds the display: the renderers run again (a live run's block
+    /// switches between its tail and its result when the run starts or settles).
+    pub fn refresh(&mut self) {
+        self.update_display();
     }
 
     /// Freeze on the next render: capture the lines, release the payloads.

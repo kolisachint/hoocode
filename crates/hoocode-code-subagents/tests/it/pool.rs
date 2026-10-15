@@ -1093,15 +1093,19 @@ async fn dispatch_surfaces_the_child_summary_and_usage() {
     p.dispose();
 }
 
+/// T3.1: the parent forwards every event the child writes (the child keeps
+/// only the types in the shared set, so an unknown type is dropped there, and
+/// here `message_update` is forwarded as the coalesced text delta it is).
 #[tokio::test]
-async fn forwards_progress_events_and_drops_the_firehose() {
+async fn forwards_every_child_event_as_progress() {
     let dir = setup();
     let exe = script(
         dir.path(),
         "mock-progress.sh",
         r#"echo '{"type":"turn_end"}'
 echo '{"type":"message_update"}'
-echo '{"type":"tool_execution_start","toolName":"Read"}'"#,
+echo '{"type":"tool_execution_start","toolName":"Read"}'
+echo '{"type":"tool_execution_update"}'"#,
     );
     let p = pool(exe, 1, dir.path());
     let progress = record(&p, "task_progress");
@@ -1114,7 +1118,11 @@ echo '{"type":"tool_execution_start","toolName":"Read"}'"#,
             .iter()
             .map(|e| e["event"]["type"].clone())
             .collect::<Vec<_>>(),
-        vec![json!("turn_end"), json!("tool_execution_start")]
+        vec![
+            json!("turn_end"),
+            json!("message_update"),
+            json!("tool_execution_start")
+        ]
     );
     assert_eq!(progress[0]["agent_type"], "explore");
     p.dispose();
