@@ -79,6 +79,7 @@ mod input;
 mod loop_command;
 mod mcp;
 mod models;
+mod plugin;
 mod prompt_queue;
 mod session_op;
 mod session_ops;
@@ -388,6 +389,10 @@ struct Mode {
     loop_tasks: Vec<loop_command::LoopTask>,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
+    /// A `/plugin` change made while a turn ran: applied when the turn ends (`PromptDone`).
+    plugin_reload_pending: bool,
+    /// Notices of `/plugin` changes, shown after the reload that makes them live.
+    plugin_notices: Vec<String>,
     /// When the current prompt was submitted (set at submit, taken at `PromptDone`).
     turn_timer: TurnTimer,
     chime: ChimeDebounce,
@@ -749,6 +754,8 @@ impl Mode {
             loop_tasks: Vec::new(),
             turn_cost_anchor: None,
             turn_stop_reason: None,
+            plugin_reload_pending: false,
+            plugin_notices: Vec::new(),
             turn_timer: TurnTimer::default(),
             chime: ChimeDebounce::default(),
             update_notice: options.update_notice,
@@ -1080,6 +1087,10 @@ impl Mode {
                         let failed = result.is_err();
                         if let Err(error) = result {
                             self.show_error(&error);
+                        }
+                        // A `/plugin` change waited for the turn to end: the next turn sees it.
+                        if std::mem::take(&mut self.plugin_reload_pending) {
+                            self.reload_plugins();
                         }
                         if let Some(next) = queued.pop() {
                             self.prompt(next);

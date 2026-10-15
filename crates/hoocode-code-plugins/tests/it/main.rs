@@ -2,6 +2,7 @@
 //! the skill loader and the MCP config.
 
 mod common;
+mod install;
 mod layouts;
 mod manifests;
 mod mcp_fixtures;

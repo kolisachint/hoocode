@@ -44,6 +44,7 @@ pub(super) enum BuiltinCommand {
     Debug,
     Perf,
     Mcp,
+    Plugin,
     Color,
     Chrome,
     Fork,
@@ -83,6 +84,7 @@ impl BuiltinCommand {
             "debug" => Self::Debug,
             "perf" => Self::Perf,
             "mcp" => Self::Mcp,
+            "plugin" => Self::Plugin,
             "color" => Self::Color,
             "chrome" => Self::Chrome,
             "fork" => Self::Fork,
@@ -114,6 +116,7 @@ impl BuiltinCommand {
             | Self::Chrome
             | Self::Cd
             | Self::Mcp
+            | Self::Plugin
             | Self::Export
             | Self::Import
             | Self::Subagent
@@ -164,6 +167,7 @@ impl Mode {
             BuiltinCommand::Debug => self.handle_debug_command(),
             BuiltinCommand::Perf => self.handle_perf_command(),
             BuiltinCommand::Mcp => self.handle_mcp_command(text),
+            BuiltinCommand::Plugin => self.handle_plugin_command(text),
             BuiltinCommand::Color => {
                 // An argument sets the slot outright; bare `/color` opens the
                 // swatches.

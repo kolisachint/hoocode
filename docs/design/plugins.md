@@ -3,10 +3,38 @@
 Status: **agreed 2026-10-07**, scope cut 2026-10-08 ([decisions-2026-10-08.md](../../archive/docs/decisions-2026-10-08.md)).
 Replaces ledger 12.1 and 12.2.
 
-**Built so far (2026-10-14): part 1, Load.** Crate `hoocode-code-plugins`: Agent Plugins and
-Claude layouts, discovery and precedence, project folder trust, `<plugin>:<skill>` skills, subagent
-files, and MCP servers in the MCP config. The loader also runs at session start (`hoocode-code-cli`
-`runtime.rs`). Not built: part 2 (install, `/plugin`), part 3 (model tools). Review 2026-10-14 of part 1: user
+**Built so far (2026-10-14): parts 1 and 2, Load and Install.** Crate `hoocode-code-plugins`: Agent
+Plugins and Claude layouts, discovery and precedence, project folder trust, `<plugin>:<skill>`
+skills, subagent files, and MCP servers in the MCP config. The loader also runs at session start
+(`hoocode-code-cli` `runtime.rs`). Part 2 adds `install.rs` and `marketplace.rs` and the `/plugin`
+command (`hoocode-code-tui-app` `mode/plugin.rs`). Not built: part 3 (model tools).
+
+Part 2 choices (2026-10-14):
+
+- **Marketplaces** are git repositories, fetched with the `git` command (`GIT_TERMINAL_PROMPT=0`, so
+  a credential prompt cannot hang the TUI; the user's credential helper still answers). The cache is
+  `plugin-marketplace-cache/<name>` in the hoocode data directory, refreshed when older than a day.
+  A failed refresh uses the old cache with a note; `/plugin marketplace refresh` fails instead.
+  `owner/repo` means GitHub. The official directory's URL is **assumed** to be
+  `https://github.com/anthropics/claude-plugins-official`, not stated in the design docs.
+- **Trust.** Only the official directory is trusted. A marketplace the user adds is not, and nothing
+  in hoocode marks it trusted yet (no command does; a registry edit can). An install from an
+  untrusted marketplace still succeeds, because the user typed the command, but the plugin's MCP
+  servers need a grant in `/mcp` (its record says `trusted: false`, and the loader sets
+  `marketplace_trusted` from it). Skills and subagents load without a grant, as before.
+- **Records.** Each install's source, marketplace and trust go in `plugin-installs.json` in the
+  hoocode data directory, not in the plugin folder: a folder change would re-ask for project trust.
+  A plugin with no record is hand-placed and keeps the old trust. If the record file cannot be read,
+  no plugin's marketplace is trusted (fail closed), and `/plugin list` says why.
+- **Installs** check the manifest (it must parse and name the plugin the marketplace lists) before
+  they move into the plugin folder; staging is outside the plugin folders so a half copy never loads.
+  `npm` and other sources are refused. Project installs need `/plugin trust` after the folder changes.
+- **Update** compares the folder fingerprint, so an unchanged plugin is left alone. A plugin that the
+  marketplace dropped fails its own update and is kept.
+- **Remove** keeps `PLUGIN_DATA` and says where it is.
+- **Live.** A change reloads the plugin set (`hoocode_code_plugins::set_current`), the MCP servers of
+  the new set start (only when the session runs MCP at all), and then the `/reload` path runs. During
+  a turn the change waits for the turn to end. Review 2026-10-14 of part 1: user
 plugins now win names over project plugins; Claude `.mcp.json` stdio paths are held to the plugin
 root; retargeting a symlink in a project plugin asks again; capabilities lists loaded plugins.
 Choices made while building part 1:
@@ -43,7 +71,9 @@ Choices made while building part 1:
   specification, and the only `$schema` values accepted are the 1.0.0 identifiers.
 - **Capabilities:** `hoocode-code-capabilities` lists each loaded plugin as a `kind: plugin` entry
   (its manifest description, its folder as the source). Untrusted project plugins are not listed.
-- **Not yet:** a plugin's warnings appear as startup lines only (no `/plugin list`).
+- **`/plugin list`** shows the marketplaces, the loaded plugins (scope, where each came from, whether
+  its MCP servers need trust), records that did not load, the project plugins waiting for trust, and
+  every skipped or rejected part with its reason.
 
 ## Goal
 

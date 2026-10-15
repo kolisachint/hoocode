@@ -50,6 +50,10 @@ pub struct ResourceExtensionPaths {
 
 type Override<T> = Box<dyn Fn(T) -> T + Send + Sync>;
 
+/// The plugin skill folders and agent files, as [`DefaultResourceLoaderOptions::plugin_source`]
+/// gives them.
+pub type PluginSource = Arc<dyn Fn() -> (Vec<PathEntry>, Vec<String>) + Send + Sync>;
+
 /// `DefaultResourceLoaderOptions`.
 #[derive(Default)]
 pub struct DefaultResourceLoaderOptions {
@@ -64,6 +68,9 @@ pub struct DefaultResourceLoaderOptions {
     pub plugin_skill_paths: Vec<PathEntry>,
     /// Agent definition files contributed by plugins; applied on every `reload()`.
     pub plugin_agent_paths: Vec<String>,
+    /// Asked on every `reload()` for the plugin skill folders and agent files, when set, so a
+    /// change to the installed plugins applies at the next reload. Overrides the two fields above.
+    pub plugin_source: Option<PluginSource>,
     pub additional_prompt_template_paths: Vec<String>,
     pub additional_slash_command_paths: Vec<String>,
     pub no_skills: bool,
@@ -288,6 +295,11 @@ impl DefaultResourceLoader {
 
     /// `reload()`: settings, resolved resource paths, then every resource kind.
     pub fn reload(&mut self) {
+        if let Some(source) = self.options.plugin_source.clone() {
+            let (skills, agents) = source();
+            self.options.plugin_skill_paths = skills;
+            self.options.plugin_agent_paths = agents;
+        }
         let (global, project, settings_slash_paths) = {
             let mut settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
             settings.reload();

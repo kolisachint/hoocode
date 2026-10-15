@@ -1,6 +1,6 @@
 //! The loader: which plugin folders are found, which one wins a name, and what each contributes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,8 +19,6 @@ use crate::{
 
 /// The folder under `.agents` (project and user) that holds plugins.
 const PLUGINS_DIR: &str = "plugins";
-/// The user folder that holds each plugin's `PLUGIN_DATA`.
-const PLUGIN_DATA_DIR: &str = "plugin-data";
 /// Component folders hoocode does not run. A plugin that has one still loads, with a warning.
 const UNSUPPORTED_DIRS: [&str; 4] = ["hooks", "commands", "themes", "providers"];
 
@@ -33,18 +31,19 @@ pub struct LoadOptions<'a> {
     /// Where each plugin's `PLUGIN_DATA` goes (default `~/.agents/plugin-data`).
     pub data_root: PathBuf,
     pub trust: &'a TrustStore,
+    /// Installed plugins (by canonical folder) whose marketplace is not trusted. Their MCP
+    /// servers need a grant like any other untrusted server. Empty when nothing is installed.
+    pub untrusted_installs: BTreeSet<PathBuf>,
+    /// Set when the install records cannot be read. Then no plugin's marketplace is trusted
+    /// (fail closed), and the loader says why.
+    pub installs_unreadable: Option<String>,
 }
 
 impl<'a> LoadOptions<'a> {
-    /// The defaults for `project_folder` and the given trust store.
+    /// The defaults for `project_folder` and the given trust store: the user and project
+    /// folders, and the install records of the hoocode data directory.
     pub fn new(project_folder: PathBuf, trust: &'a TrustStore) -> Self {
-        let agents = hoocode_code_paths::user_agents_dir();
-        Self {
-            project_folder,
-            user_plugins_dir: agents.join(PLUGINS_DIR),
-            data_root: agents.join(PLUGIN_DATA_DIR),
-            trust,
-        }
+        crate::install::Paths::for_cwd(&project_folder).load_options(trust)
     }
 }
 
@@ -53,6 +52,14 @@ impl<'a> LoadOptions<'a> {
 /// one folder the first name in sorted order wins. Nothing here starts a process.
 pub fn load_plugins(options: &LoadOptions<'_>) -> PluginSet {
     let mut set = PluginSet::default();
+    if let Some(error) = &options.installs_unreadable {
+        set.diagnostics.push(warn(
+            None,
+            &options.data_root,
+            None,
+            format!("plugin install records cannot be read, so no plugin is trusted as a marketplace install: {error}"),
+        ));
+    }
     let project_dir = options
         .project_folder
         .join(hoocode_code_mcp::AGENTS_DIR_NAME)
@@ -225,6 +232,10 @@ fn load_one(
         diags.push(warn(Some(&name), &manifest_path, None, message));
     }
 
+    // A hand-placed plugin (no install record) is trusted, as before. An install from an
+    // untrusted marketplace is not, and nothing is trusted when the records cannot be read.
+    let marketplace_trusted =
+        options.installs_unreadable.is_none() && !options.untrusted_installs.contains(&root);
     let mut plugin = LoadedPlugin {
         data_dir: options.data_root.join(&name),
         name,
@@ -232,6 +243,7 @@ fn load_one(
         format,
         scope,
         root: root.clone(),
+        marketplace_trusted,
         skill_dirs: Vec::new(),
         agent_files: Vec::new(),
         mcp_path: None,
@@ -374,6 +386,7 @@ fn load_agent_plugins_mcp(
         root: &plugin.root,
         data_dir: &plugin.data_dir,
         mcp_path: &path,
+        marketplace_trusted: plugin.marketplace_trusted,
     };
     let parsed = parse_mcp(&text, schema, &ctx);
     plugin.mcp_servers = parsed.servers;
@@ -450,7 +463,7 @@ fn load_claude_mcp(
     let source = Source::Plugin {
         id: plugin.name.clone(),
         path: source_path.clone(),
-        marketplace_trusted: true,
+        marketplace_trusted: plugin.marketplace_trusted,
     };
     let mut raw = Vec::new();
     let parsed = parse_document(&text, &source, &mut raw);

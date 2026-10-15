@@ -24,6 +24,7 @@ fn parse_fixture(group: &str, file: &str) -> (McpParse, PathBuf) {
         root: &root,
         data_dir: &data,
         mcp_path: &mcp,
+        marketplace_trusted: true,
     };
     let out = parse_mcp(&text, AGENT_PLUGIN_SCHEMA, &ctx);
     // The tempdir lives until here; the paths in the result are only compared as text.

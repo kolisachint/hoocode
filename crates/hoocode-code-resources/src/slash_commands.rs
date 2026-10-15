@@ -73,6 +73,10 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
         description: "Show session info and stats",
     },
     BuiltinSlashCommand {
+        name: "plugin",
+        description: "Manage plugins: /plugin list, install, remove, update, trust, marketplace",
+    },
+    BuiltinSlashCommand {
         name: "changelog",
         description: "Show changelog entries",
     },

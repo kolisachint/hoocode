@@ -15,16 +15,20 @@
 //! [`PluginSet::mcp_servers`] for the MCP config. Hooks, commands, themes and providers are
 //! skipped with a warning.
 //!
-//! Installing plugins and the model tools are later steps; this crate only loads.
+//! [`install`] copies plugins from [`marketplace`]s (Claude's `marketplace.json`, read only) into the
+//! user or project plugin folder and records where each came from. The model tools are a later step.
 
 pub mod agent_mcp;
+pub mod install;
 mod load;
 pub mod manifest;
+pub mod marketplace;
 pub mod paths;
 pub mod skills;
 mod trust;
 
 use std::path::PathBuf;
+use std::sync::RwLock;
 
 use hoocode_code_mcp::{PluginServers, ServerDef};
 use hoocode_code_resources::package_resolve::PathMetadata;
@@ -33,6 +37,24 @@ use hoocode_code_resources::PathEntry;
 
 pub use load::{load_plugins, LoadOptions};
 pub use trust::{approve_skill_tools, load_default_trust, trust_project_plugins};
+
+/// The plugins the running session uses. Set at session start and after an install, remove,
+/// update or trust (`/plugin`), so the resource loader and the skill gate read the same set.
+static CURRENT: RwLock<Option<PluginSet>> = RwLock::new(None);
+
+/// Make `set` the current plugins (see [`current`]).
+pub fn set_current(set: PluginSet) {
+    *CURRENT.write().unwrap_or_else(|e| e.into_inner()) = Some(set);
+}
+
+/// The current plugins: what was last set, or none.
+pub fn current() -> PluginSet {
+    CURRENT
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .unwrap_or_default()
+}
 
 /// Which layout a plugin uses.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,6 +102,9 @@ pub struct LoadedPlugin {
     pub scope: PluginScope,
     /// The canonical plugin folder.
     pub root: PathBuf,
+    /// False only for an install from an untrusted marketplace (see `install`). Its MCP servers
+    /// then need a grant like any other untrusted server. Hand-placed plugins are trusted.
+    pub marketplace_trusted: bool,
     /// `PLUGIN_DATA` for this plugin (`~/.agents/plugin-data/<name>`). Created when the plugin
     /// has an Agent Plugins `mcp.json`.
     pub data_dir: PathBuf,
@@ -155,9 +180,9 @@ impl PluginSet {
                 Some(PluginServers {
                     id: plugin.name.clone(),
                     path: plugin.mcp_path.clone()?,
-                    // Both scopes are trusted by the time a plugin loads: user plugins are the
-                    // user's own, and project plugins passed folder trust.
-                    marketplace_trusted: true,
+                    // A project plugin has passed folder trust by the time it loads. Whether
+                    // the plugin's MCP servers need their own grant depends on its marketplace.
+                    marketplace_trusted: plugin.marketplace_trusted,
                     servers: plugin.mcp_servers.clone(),
                 })
             })

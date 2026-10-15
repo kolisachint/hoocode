@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Plugin loading for the hoocode coding agent: Agent Plugins 1.0 and Claude plugin layouts, plugin discovery and precedence, folder trust for project plugins, and the skills, subagents and MCP servers they contribute"
+description = "Plugins for the hoocode coding agent: loading Agent Plugins 1.0 and Claude plugin layouts (discovery, precedence, folder trust, and the skills, subagents and MCP servers they contribute), and installing them from git marketplaces"
 
 [package.metadata.hoocode]
 publish = false

@@ -67,6 +67,8 @@ impl Sandbox {
             user_plugins_dir: self.user_plugins.clone(),
             data_root: self.data_root.clone(),
             trust,
+            untrusted_installs: std::collections::BTreeSet::new(),
+            installs_unreadable: None,
         }
     }
 

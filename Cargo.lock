@@ -1760,6 +1760,7 @@ dependencies = [
  "hoocode-code-models",
  "hoocode-code-paths",
  "hoocode-code-permissions",
+ "hoocode-code-plugins",
  "hoocode-code-resources",
  "hoocode-code-scheduler",
  "hoocode-code-session",

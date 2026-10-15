@@ -303,19 +303,30 @@ fn resource_loader(
     } else {
         (plugins.skill_entries(), plugins.agent_files())
     };
+    // A `/plugin` change reaches the next reload through this: the current plugins, read each
+    // time (see `load_session_plugins` and `hoocode_code_plugins::set_current`).
+    let plugin_source: hoocode_code_resources::resource_loader::PluginSource =
+        Arc::new(move || {
+            if no_skills {
+                return (Vec::new(), Vec::new());
+            }
+            let current = hoocode_code_plugins::current();
+            (current.skill_entries(), current.agent_files())
+        });
     // Plugin skills' allowed-tools take effect only after the user approved them. The gate
-    // needs the plugin skill folders to tell a plugin skill from any other.
-    let trust = hoocode_code_plugins::load_default_trust();
-    let plugin_skill_dirs: Vec<std::path::PathBuf> = plugins
-        .plugins
-        .iter()
-        .flat_map(|plugin| plugin.skill_dirs.iter().cloned())
-        .collect();
+    // needs the plugin skill folders to tell a plugin skill from any other; both are read when
+    // a skill is loaded, so a newly installed plugin is gated too.
     let gate_allowed_tools: Box<
         dyn Fn(hoocode_code_resources::LoadSkillsResult) -> hoocode_code_resources::LoadSkillsResult
             + Send
             + Sync,
     > = Box::new(move |result| {
+        let trust = hoocode_code_plugins::load_default_trust();
+        let plugin_skill_dirs: Vec<std::path::PathBuf> = hoocode_code_plugins::current()
+            .plugins
+            .iter()
+            .flat_map(|plugin| plugin.skill_dirs.iter().cloned())
+            .collect();
         hoocode_code_plugins::skills::gate_allowed_tools(result, &trust, &plugin_skill_dirs)
     });
     let mut skill_paths = resolve_cli_paths(cwd, &args.skills);
@@ -345,6 +356,7 @@ fn resource_loader(
         additional_slash_command_paths: resolve_cli_paths(cwd, &args.slash_commands),
         plugin_skill_paths,
         plugin_agent_paths,
+        plugin_source: Some(plugin_source),
         skills_override: Some(gate_allowed_tools),
         no_skills,
         no_prompt_templates: args.no_prompt_templates == Some(true),
@@ -377,6 +389,7 @@ fn load_session_plugins(
         };
         diagnostics.push((kind, format!("{label}: {}", d.message)));
     }
+    hoocode_code_plugins::set_current(set.clone());
     set
 }
 

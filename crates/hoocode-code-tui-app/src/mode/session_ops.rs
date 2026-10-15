@@ -300,6 +300,7 @@ impl Mode {
         // Below the replayed transcript: /reload is asked for to see what
         // just loaded.
         self.render_resources();
+        self.show_plugin_notices();
         self.update_available_provider_count();
         if let Some(error) = self.session.model_registry().error() {
             self.show_error(&format!("models.json error: {error}"));

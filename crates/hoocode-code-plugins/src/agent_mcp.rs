@@ -21,6 +21,8 @@ pub struct McpContext<'a> {
     pub data_dir: &'a Path,
     /// The `mcp.json` file, as the trust store and `/mcp` name it.
     pub mcp_path: &'a Path,
+    /// Whether the plugin's marketplace is trusted (see `LoadedPlugin::marketplace_trusted`).
+    pub marketplace_trusted: bool,
 }
 
 /// What reading one `mcp.json` produced.
@@ -95,7 +97,7 @@ pub fn parse_mcp(text: &str, manifest_schema: &str, ctx: &McpContext<'_>) -> Mcp
                 source: Source::Plugin {
                     id: ctx.plugin.to_owned(),
                     path: ctx.mcp_path.to_path_buf(),
-                    marketplace_trusted: true,
+                    marketplace_trusted: ctx.marketplace_trusted,
                 },
                 transport,
                 disabled: false,
@@ -382,6 +384,7 @@ mod tests {
             root: &f.root,
             data_dir: &f.data,
             mcp_path: &f.mcp,
+            marketplace_trusted: true,
         };
         parse_mcp(text, AGENT_PLUGIN_SCHEMA, &ctx)
     }
