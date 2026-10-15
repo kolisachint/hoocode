@@ -140,6 +140,7 @@ mod tests {
             format: PluginFormat::AgentPlugins,
             scope: PluginScope::User,
             root: "/x/lint-pack".into(),
+            marketplace_trusted: true,
             data_dir: "/x/data/lint-pack".into(),
             skill_dirs: Vec::new(),
             agent_files: Vec::new(),
