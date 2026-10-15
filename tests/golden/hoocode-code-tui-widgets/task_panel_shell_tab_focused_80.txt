@@ -1,0 +1,31 @@
+▎  Shell 1/3
+▎ › ✓ cargo build --release
+▎   ✗ cargo test -p nope                                              ⚠︎ exit 101
+▎   ⊘ sleep 600
+▎ tab switch  up/down pick  enter open  x cancel  escape back
+--- styles ---
+r0 c0 fg=#d58181
+r0 c3-7 fg=#5cc8bb bold
+r0 c9-11 fg=#a8a8a8
+r1 c0 fg=#d58181
+r1 c2-3 fg=#5cc8bb
+r1 c4 fg=#b5bd68
+r1 c6-26 fg=#a8a8a8
+r2 c0 fg=#d58181
+r2 c4 fg=#d58181
+r2 c6-23 fg=#d58181
+r2 c70-79 fg=#ffff00
+r3 c0 fg=#d58181
+r3 c4 fg=#989898
+r3 c6-14 fg=#989898
+r4 c0 fg=#d58181
+r4 c2-4 fg=#989898
+r4 c5-13 fg=#a8a8a8
+r4 c14-20 fg=#989898
+r4 c21-27 fg=#a8a8a8
+r4 c28-32 fg=#989898
+r4 c33-39 fg=#a8a8a8
+r4 c40 fg=#989898
+r4 c41-49 fg=#a8a8a8
+r4 c50-55 fg=#989898
+r4 c56-60 fg=#a8a8a8

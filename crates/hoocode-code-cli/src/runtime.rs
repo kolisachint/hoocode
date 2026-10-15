@@ -481,11 +481,14 @@ fn background_job_registry(
             .join("hoocode-jobs")
             .join(std::process::id().to_string()),
     };
-    hoocode_code_tool_bash::JobRegistry::new(
+    let jobs = hoocode_code_tool_bash::JobRegistry::new(
         dir,
         hoocode_code_tool_bash::LocalBashOperations::new(settings.shell_path())
             .with_nice(settings.performance_bash_nice()),
-    )
+    );
+    // The panel's Shell tab reads the jobs from the process-wide task store.
+    jobs.set_task_rows(hoocode_code_task_store::task_store());
+    jobs
 }
 
 /// Whether the plugin tools are on: `--enable-plugintools`, else the `enablePluginTools` setting

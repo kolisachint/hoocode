@@ -1,5 +1,5 @@
 //! Background shell jobs: the registry behind `Shell` with `run_in_background`,
-//! `ShellOutput` and `ShellKill` (docs/design/tui-activity.md, T5.1).
+//! `ShellOutput` and `ShellKill` (docs/design/tui-activity.md, T5.1 and T5.3).
 //!
 //! A job is a shell command that runs detached from the turn. Its stdout and
 //! stderr go to `<dir>/<id>.log`, where `dir` is the session's `jobs/` folder
@@ -7,14 +7,24 @@
 //! per job, and the jobs that finished but were not yet announced to the model
 //! ([`JobRegistry::take_completions`]). Jobs run on the `hoocode-io` runtime, so
 //! a job outlives the tool call that started it.
+//!
+//! With [`JobRegistry::set_task_rows`], each job is a row of the task store
+//! (`shell:<id>`, [`ROW_KEY_PREFIX`]): running while it runs, `Done` or `Failed`
+//! when it exits, `Cancelled` when it is killed, and the row's action is `Abort`
+//! while it runs. The panel's Abort stops the job without waiting. Job ids are
+//! unique within the process, so rows of two sessions never share a key.
 
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
 
+use hoocode_code_task_store::{
+    ActionNotifier, CreateTaskOptions, RowAction, RowActions, TaskPatch, TaskSource, TaskStatus,
+    TaskStore,
+};
 use hoocode_code_tool_api::{node_fs_error, ToolError};
 use hoocode_runtime::io_handle;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -37,6 +47,19 @@ const KILL_WAIT: Duration = Duration::from_secs(2);
 const GROUP_POLL: Duration = Duration::from_millis(250);
 /// The most bytes one [`JobRegistry::read`] returns.
 pub const OUTPUT_READ_MAX: usize = 32 * 1024;
+/// The prefix of a job's task-store row key: `shell:<job id>`.
+pub const ROW_KEY_PREFIX: &str = "shell:";
+
+/// The task-store key of a job's row.
+pub fn row_key(job_id: &str) -> String {
+    format!("{ROW_KEY_PREFIX}{job_id}")
+}
+
+/// Every registry of this process, for the calls that reach all jobs (the
+/// quit prompt, the panel's Abort). Dead entries are dropped as they are seen.
+static REGISTRIES: Mutex<Vec<Weak<Shared>>> = Mutex::new(Vec::new());
+/// The last job number handed out in this process.
+static LAST_JOB: AtomicU64 = AtomicU64::new(0);
 
 /// Where a job stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,7 +120,6 @@ struct Entry {
 
 #[derive(Default)]
 struct State {
-    next: u64,
     jobs: Vec<Entry>,
     /// Ids of jobs that finished and are not announced yet, in finish order.
     announce: Vec<String>,
@@ -107,6 +129,8 @@ struct Shared {
     dir: PathBuf,
     ops: LocalBashOperations,
     state: Mutex<State>,
+    /// Where the jobs' rows go, once [`JobRegistry::set_task_rows`] has been called.
+    rows: Mutex<Option<&'static TaskStore>>,
 }
 
 /// The background jobs of one session. Clones share the same jobs.
@@ -141,13 +165,25 @@ impl JobRegistry {
     /// A registry whose logs go to `dir` (created on the first spawn). `ops`
     /// gives the shell and the niceness, as for the foreground Shell.
     pub fn new(dir: impl Into<PathBuf>, ops: LocalBashOperations) -> Self {
-        Self {
-            shared: Arc::new(Shared {
-                dir: dir.into(),
-                ops,
-                state: Mutex::new(State::default()),
-            }),
-        }
+        let shared = Arc::new(Shared {
+            dir: dir.into(),
+            ops,
+            state: Mutex::new(State::default()),
+            rows: Mutex::new(None),
+        });
+        let mut registries = lock_list();
+        registries.retain(|weak| weak.strong_count() > 0);
+        registries.push(Arc::downgrade(&shared));
+        drop(registries);
+        Self { shared }
+    }
+
+    /// Publishes this registry's jobs as rows of `store` (see the module docs),
+    /// and lets the store's Abort reach them. Call it once, when the session
+    /// attaches to the store; jobs started before that have no rows.
+    pub fn set_task_rows(&self, store: &'static TaskStore) {
+        *lock_option(&self.shared.rows) = Some(store);
+        store.set_row_actions(ROW_KEY_PREFIX, Some(Arc::new(ShellRows)));
     }
 
     /// The folder the logs are written to.
@@ -174,11 +210,7 @@ impl JobRegistry {
             )
         })?;
 
-        let id = {
-            let mut st = lock(&self.shared.state);
-            st.next += 1;
-            format!("job-{}", st.next)
-        };
+        let id = format!("job-{}", LAST_JOB.fetch_add(1, Ordering::SeqCst) + 1);
         let log_path = self.shared.dir.join(format!("{id}.log"));
         let open_log = || {
             OpenOptions::new()
@@ -203,6 +235,8 @@ impl JobRegistry {
             kill: kill.clone(),
             group: None,
         });
+        // The row exists before the job can exit, so its exit is never published first.
+        publish_start(&self.shared, &info);
 
         let launch = Launch {
             shell: config.shell,
@@ -228,6 +262,7 @@ impl JobRegistry {
             Err(_) => "background job task ended before it started".into(),
         };
         lock(&self.shared.state).jobs.retain(|e| e.info.id != id);
+        remove_row(&self.shared, &id);
         Err(failure)
     }
 
@@ -258,7 +293,7 @@ impl JobRegistry {
         let mut asked = 0;
         for entry in &st.jobs {
             if entry.info.state.is_running() {
-                entry.kill.store(true, Ordering::SeqCst);
+                ask_stop(entry);
                 asked += 1;
             } else if let Some(group) = entry.group {
                 kill_group(group);
@@ -279,7 +314,7 @@ impl JobRegistry {
                 .find(|e| e.info.id == id)
                 .ok_or_else(|| format!("No background job with id {id}."))?;
             if entry.info.state.is_running() {
-                entry.kill.store(true, Ordering::SeqCst);
+                ask_stop(entry);
             } else if let Some(group) = entry.group {
                 kill_group(group);
             }
@@ -304,43 +339,7 @@ impl JobRegistry {
         let info = self
             .info(id)
             .ok_or_else(|| format!("No background job with id {id}."))?;
-        let unreadable =
-            |e: std::io::Error| format!("Cannot read {}: {e}", info.log_path.display());
-        let mut file = std::fs::File::open(&info.log_path).map_err(unreadable)?;
-        let size = file.metadata().map(|m| m.len()).unwrap_or(0);
-        let mut from = match since {
-            Some(offset) => offset.min(size),
-            None => size.saturating_sub(OUTPUT_READ_MAX as u64),
-        };
-        file.seek(SeekFrom::Start(from)).map_err(unreadable)?;
-        let mut buf = Vec::new();
-        file.take(OUTPUT_READ_MAX as u64)
-            .read_to_end(&mut buf)
-            .map_err(unreadable)?;
-        // A tail that starts inside a character starts after its continuation bytes.
-        if since.is_none() && from > 0 {
-            let skip = buf
-                .iter()
-                .take(3)
-                .take_while(|b| **b & 0xC0 == 0x80)
-                .count();
-            buf.drain(..skip);
-            from += skip as u64;
-        }
-        let whole = match std::str::from_utf8(&buf) {
-            Ok(_) => buf.len(),
-            // Cut inside a character at the end: leave it for the next read, unless
-            // the job has finished (nothing more will complete it).
-            Err(e) if e.error_len().is_none() && info.state.is_running() => e.valid_up_to(),
-            Err(_) => buf.len(),
-        };
-        Ok(JobRead {
-            text: String::from_utf8_lossy(&buf[..whole]).into_owned(),
-            from,
-            next: from + whole as u64,
-            size,
-            state: info.state,
-        })
+        read_log(&info.log_path, info.state, since)
     }
 
     /// The jobs that finished since the last call, in finish order. Each job
@@ -352,6 +351,185 @@ impl JobRegistry {
             .filter_map(|id| st.jobs.iter().find(|e| &e.info.id == id))
             .map(|e| e.info.clone())
             .collect()
+    }
+}
+
+/// Reads a job's log at `path`, which a job of state `state` writes (see
+/// [`JobRegistry::read`] for `since`). It needs no registry, so a view can
+/// follow a log off the UI thread.
+pub fn read_log(path: &Path, state: JobState, since: Option<u64>) -> Result<JobRead, ToolError> {
+    let unreadable = |e: std::io::Error| format!("Cannot read {}: {e}", path.display());
+    let mut file = std::fs::File::open(path).map_err(unreadable)?;
+    let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut from = match since {
+        Some(offset) => offset.min(size),
+        None => size.saturating_sub(OUTPUT_READ_MAX as u64),
+    };
+    file.seek(SeekFrom::Start(from)).map_err(unreadable)?;
+    let mut buf = Vec::new();
+    file.take(OUTPUT_READ_MAX as u64)
+        .read_to_end(&mut buf)
+        .map_err(unreadable)?;
+    // A tail that starts inside a character starts after its continuation bytes.
+    if since.is_none() && from > 0 {
+        let skip = buf
+            .iter()
+            .take(3)
+            .take_while(|b| **b & 0xC0 == 0x80)
+            .count();
+        buf.drain(..skip);
+        from += skip as u64;
+    }
+    let whole = match std::str::from_utf8(&buf) {
+        Ok(_) => buf.len(),
+        // Cut inside a character at the end: leave it for the next read, unless
+        // the job has finished (nothing more will complete it).
+        Err(e) if e.error_len().is_none() && state.is_running() => e.valid_up_to(),
+        Err(_) => buf.len(),
+    };
+    Ok(JobRead {
+        text: String::from_utf8_lossy(&buf[..whole]).into_owned(),
+        from,
+        next: from + whole as u64,
+        size,
+        state,
+    })
+}
+
+/// How many jobs are running in this process, in every registry.
+pub fn running_job_count() -> usize {
+    live_registries()
+        .iter()
+        .map(|shared| {
+            lock(&shared.state)
+                .jobs
+                .iter()
+                .filter(|e| e.info.state.is_running())
+                .count()
+        })
+        .sum()
+}
+
+/// Asks every running job in this process to stop now, and signals their
+/// process groups, so the kills land even when the process exits next. Returns
+/// how many were asked. The exits are not waited for.
+pub fn kill_all_jobs() -> usize {
+    live_registries()
+        .iter()
+        .map(|shared| {
+            let st = lock(&shared.state);
+            let mut asked = 0;
+            for entry in st.jobs.iter().filter(|e| e.info.state.is_running()) {
+                ask_stop(entry);
+                asked += 1;
+            }
+            asked
+        })
+        .sum()
+}
+
+/// The registries that are still alive, after dropping the dead ones.
+fn live_registries() -> Vec<Arc<Shared>> {
+    let mut registries = lock_list();
+    registries.retain(|weak| weak.strong_count() > 0);
+    registries.iter().filter_map(Weak::upgrade).collect()
+}
+
+fn lock_list() -> MutexGuard<'static, Vec<Weak<Shared>>> {
+    REGISTRIES.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn lock_option<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Asks a running job to stop, without waiting: its shell is killed by its own
+/// task, and its process group is signalled now.
+fn ask_stop(entry: &Entry) {
+    entry.kill.store(true, Ordering::SeqCst);
+    if let Some(group) = entry.group {
+        kill_group(group);
+    }
+}
+
+/// The panel's Abort on a job row: stops the job, and fails when it has ended.
+struct ShellRows;
+
+impl RowActions for ShellRows {
+    fn perform(&self, key: &str, action: RowAction, _notify: ActionNotifier) -> Result<(), String> {
+        let id = key
+            .strip_prefix(ROW_KEY_PREFIX)
+            .filter(|_| action == RowAction::Abort)
+            .ok_or_else(|| "Only a shell job row can be stopped.".to_owned())?;
+        for shared in live_registries() {
+            let st = lock(&shared.state);
+            if let Some(entry) = st.jobs.iter().find(|e| e.info.id == id) {
+                if !entry.info.state.is_running() {
+                    return Err("That job already finished.".into());
+                }
+                ask_stop(entry);
+                return Ok(());
+            }
+        }
+        Err("That job is gone.".into())
+    }
+}
+
+/// The task-store row of a job that has just started: running, with Abort.
+fn publish_start(shared: &Shared, info: &JobInfo) {
+    let Some(store) = *lock_option(&shared.rows) else {
+        return;
+    };
+    let key = row_key(&info.id);
+    store.upsert_keyed(
+        &key,
+        &info.command,
+        CreateTaskOptions {
+            source: Some(TaskSource::Shell),
+            key: Some(key.clone()),
+            log_path: Some(info.log_path.clone()),
+            ..Default::default()
+        },
+        TaskPatch {
+            status: Some(TaskStatus::InProgress),
+            note: Some(None),
+            action: Some(Some(RowAction::Abort)),
+            ..Default::default()
+        },
+    );
+}
+
+/// The job's row once it has ended: `Done`, `Failed` (with the exit status as
+/// the note), or `Cancelled` when it was killed. The row stays, so its log can
+/// still be opened from the panel.
+fn publish_end(shared: &Shared, id: &str, state: JobState) {
+    let Some(store) = *lock_option(&shared.rows) else {
+        return;
+    };
+    let (status, note) = match state {
+        JobState::Running => return,
+        JobState::Exited(Some(0)) => (TaskStatus::Done, None),
+        JobState::Exited(Some(code)) => (TaskStatus::Failed, Some(format!("exit {code}"))),
+        JobState::Exited(None) => (TaskStatus::Failed, Some("ended by a signal".to_owned())),
+        JobState::Killed => (TaskStatus::Cancelled, None),
+    };
+    if let Some(task) = store.find_keyed(&row_key(id)) {
+        store.update(
+            task.id,
+            TaskPatch {
+                status: Some(status),
+                note: Some(note),
+                action: Some(None),
+                ..Default::default()
+            },
+        );
+    }
+}
+
+/// Removes a job's row (its job did not start).
+fn remove_row(shared: &Shared, id: &str) {
+    if let Some(store) = *lock_option(&shared.rows) {
+        store.remove_keyed(&row_key(id));
     }
 }
 
@@ -452,6 +630,7 @@ async fn run_job(
         }
         st.announce.push(id.clone());
     }
+    publish_end(&shared, &id, state);
 
     // The shell is gone, but a background descendant may still run in its group.
     // Keep the group id until the group is empty, so ShellKill can still reach it.
@@ -519,4 +698,36 @@ where
         }
     }
     let _ = log.flush().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shell::get_shell_env;
+
+    /// Lives here, not in `tests/it`: [`kill_all_jobs`] reaches every registry of the
+    /// process, and the integration tests run jobs of their own in parallel.
+    #[test]
+    fn kill_all_jobs_stops_every_running_job_of_the_process() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let jobs = JobRegistry::new(dir.path().join("jobs"), LocalBashOperations::new(None));
+        let a = jobs
+            .spawn("sleep 30", dir.path(), get_shell_env())
+            .expect("spawn");
+        let b = jobs
+            .spawn("sleep 30", dir.path(), get_shell_env())
+            .expect("spawn");
+        assert!(running_job_count() >= 2);
+        assert!(kill_all_jobs() >= 2);
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline
+            && [&a.id, &b.id]
+                .iter()
+                .any(|id| jobs.info(id).is_some_and(|i| i.state.is_running()))
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(jobs.info(&a.id).map(|i| i.state), Some(JobState::Killed));
+        assert_eq!(jobs.info(&b.id).map(|i| i.state), Some(JobState::Killed));
+    }
 }

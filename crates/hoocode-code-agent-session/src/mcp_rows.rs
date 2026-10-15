@@ -24,6 +24,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::mcp::{McpServerInfo, McpStatus};
 
+/// The prefix of every MCP row's key (the task store routes row actions by it).
+pub const ROW_PREFIX: &str = "mcp-";
 /// The key prefix of server rows.
 pub const SERVER_KEY_PREFIX: &str = "mcp-server:";
 /// The key prefix of in-flight call rows.

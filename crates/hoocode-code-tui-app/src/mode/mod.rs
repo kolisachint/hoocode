@@ -78,6 +78,7 @@ mod commands;
 mod dialogs;
 mod events;
 mod input;
+mod job_tail;
 mod loop_command;
 mod mcp;
 mod models;
@@ -91,6 +92,7 @@ mod task_panel;
 mod transcript;
 mod tree;
 
+use self::task_panel::QuitJobs;
 use self::{auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, transcript::*};
 
 pub use self::events::plan_settle_outcome;
@@ -217,6 +219,15 @@ enum AppEvent {
         entry_id: String,
         outcome: Box<Result<NavigateTreeResult, String>>,
     },
+    /// A read of the attached shell job's output (T5.3): its row key, the byte
+    /// offset the read started from (`None`: the tail), and the result.
+    ShellTail(
+        String,
+        Option<u64>,
+        Result<hoocode_code_tool_bash::jobs::JobRead, String>,
+    ),
+    /// The quit prompt for running shell jobs was answered (`None`: Esc).
+    QuitJobsAnswer(Option<String>),
 }
 
 /// `new Date().toISOString()`.
@@ -444,6 +455,8 @@ struct Mode {
     tx: Sender<AppEvent>,
     rx: Receiver<AppEvent>,
     exit_requested: bool,
+    /// Where the quit prompt for running shell jobs stands (T5.3).
+    quit_jobs: QuitJobs,
     listing: Box<dyn Fn(&AgentSession) -> ResourceListing>,
     session_runtime: Option<AgentSessionRuntime>,
     subscription: Option<hoocode_code_agent_session::SessionSubscription>,
@@ -810,6 +823,7 @@ impl Mode {
             tx,
             rx,
             exit_requested: false,
+            quit_jobs: QuitJobs::Unasked,
             listing: options.listing,
             session_runtime: options.session_runtime,
             subscription: None,
@@ -1196,6 +1210,10 @@ impl Mode {
                         self.apply_subagent_event(&task_id, event)
                     }
                     AppEvent::AttachLoaded(run_id, result) => self.attach_loaded(run_id, result),
+                    AppEvent::ShellTail(key, since, result) => {
+                        self.shell_tail_read(key, since, result)
+                    }
+                    AppEvent::QuitJobsAnswer(choice) => self.quit_jobs_answered(choice),
                     AppEvent::AgentRunsListed(result) => self.agent_runs_listed(result),
                     AppEvent::AttachPicked(row) => {
                         if let Some(row) = row {
@@ -1263,6 +1281,8 @@ impl Mode {
                 if self.task_panel.borrow().ticking() {
                     self.dirty.set(true);
                 }
+                // The attached job's output is followed once a second, off the UI thread.
+                self.poll_shell_tail();
                 for block in self.transcript.pending_tools.values() {
                     if block.borrow().is_ticking() {
                         block.borrow_mut().invalidate();
@@ -1302,7 +1322,7 @@ impl Mode {
             if self.editor.borrow_mut().editor.poll_autocomplete() {
                 self.dirty.set(true);
             }
-            if self.exit_requested {
+            if self.ready_to_quit() {
                 break;
             }
             // Input and resizes this pass, and anything else that changed, render once here.

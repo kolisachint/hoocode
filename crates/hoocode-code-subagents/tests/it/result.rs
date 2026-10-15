@@ -294,6 +294,7 @@ fn task(id: u64, source: Option<TaskSource>, mode: Option<&str>, parent: Option<
         key: None,
         next_at: None,
         action: None,
+        log_path: None,
     }
 }
 

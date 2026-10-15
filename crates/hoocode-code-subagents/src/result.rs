@@ -89,6 +89,7 @@ fn source_str(source: TaskSource) -> &'static str {
         TaskSource::Subagent => "subagent",
         TaskSource::Mcp => "mcp",
         TaskSource::Schedule => "schedule",
+        TaskSource::Shell => "shell",
     }
 }
 

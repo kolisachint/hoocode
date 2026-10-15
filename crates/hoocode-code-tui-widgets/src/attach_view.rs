@@ -58,11 +58,22 @@ impl Component for AttachHeader {
 #[derive(Debug, Default)]
 pub struct AttachPrompt {
     detach: bool,
+    /// The view shows a shell job's output, not a subagent's transcript.
+    output: bool,
 }
 
 impl AttachPrompt {
+    /// The hint for a subagent run's transcript.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The hint for a shell job's output (T5.3).
+    pub fn for_output() -> Self {
+        Self {
+            detach: false,
+            output: true,
+        }
     }
 
     /// True once when Esc was pressed (the app goes back to the session).
@@ -71,9 +82,14 @@ impl AttachPrompt {
     }
 
     /// The hint's text. The key is the binding's label, so a rebound key shows.
-    pub fn hint() -> String {
+    pub fn hint(&self) -> String {
+        let what = if self.output {
+            "a shell job's output"
+        } else {
+            "a subagent's transcript"
+        };
         format!(
-            "Read-only: a subagent's transcript, so the prompt is off. {} goes back.",
+            "Read-only: {what}, so the prompt is off. {} goes back.",
             key_display_label("app.subagent.detach")
         )
     }
@@ -81,7 +97,7 @@ impl AttachPrompt {
 
 impl Component for AttachPrompt {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let line = truncate_to_width(&Self::hint(), width as usize, "…", false);
+        let line = truncate_to_width(&self.hint(), width as usize, "…", false);
         vec![theme().fg("dim", &line)]
     }
 

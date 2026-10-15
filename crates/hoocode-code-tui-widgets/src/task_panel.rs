@@ -59,6 +59,8 @@ pub enum TaskPanelView {
     Plan,
     /// Dispatched subagent runs: the delegation forest.
     Subagents,
+    /// Background shell jobs, one row each.
+    Shell,
     /// Scheduled jobs (`/loop`, the Cron tools), one row each.
     Schedule,
     /// MCP calls and servers.
@@ -66,14 +68,21 @@ pub enum TaskPanelView {
 }
 
 impl TaskPanelView {
-    /// Every tab, in tab order. Shell goes between Schedule and MCP when T5 lands.
-    pub const ALL: [TaskPanelView; 4] = [Self::Plan, Self::Subagents, Self::Schedule, Self::Mcp];
+    /// Every tab, in tab order (Plan · Agents · Shell · Schedule · MCP).
+    pub const ALL: [TaskPanelView; 5] = [
+        Self::Plan,
+        Self::Subagents,
+        Self::Shell,
+        Self::Schedule,
+        Self::Mcp,
+    ];
 
     /// The kind of task this tab lists.
     pub fn kind(self) -> TaskKind {
         match self {
             Self::Plan => TaskKind::Plan,
             Self::Subagents => TaskKind::Subagent,
+            Self::Shell => TaskKind::Shell,
             Self::Schedule => TaskKind::Schedule,
             Self::Mcp => TaskKind::Mcp,
         }
@@ -84,6 +93,7 @@ impl TaskPanelView {
         match self {
             Self::Plan => "Plan",
             Self::Subagents => "Agents",
+            Self::Shell => "Shell",
             Self::Schedule => "Schedule",
             Self::Mcp => "MCP",
         }
@@ -323,7 +333,9 @@ fn lens_rows(view: TaskPanelView, tasks: &[Task]) -> Vec<PanelRow> {
     match view {
         TaskPanelView::Plan => plan_lens_rows(tasks),
         TaskPanelView::Subagents => subagent_lens_rows(tasks),
-        TaskPanelView::Schedule | TaskPanelView::Mcp => flat_lens_rows(tasks, view.kind()),
+        TaskPanelView::Shell | TaskPanelView::Schedule | TaskPanelView::Mcp => {
+            flat_lens_rows(tasks, view.kind())
+        }
     }
 }
 
@@ -1277,6 +1289,34 @@ mod row_model_tests {
         let mut model = RowModel::default();
         model.sync(&store);
         assert!(model.views().is_empty(), "empty tabs are hidden");
+    }
+
+    #[test]
+    fn a_shell_job_opens_only_the_shell_tab_between_agents_and_schedule() {
+        let store = TaskStore::new();
+        store.create(
+            "sleep 9",
+            CreateTaskOptions {
+                source: Some(TaskSource::Shell),
+                key: Some("shell:job-1".into()),
+                ..Default::default()
+            },
+        );
+        let mut model = RowModel::default();
+        model.sync(&store);
+        assert_eq!(model.views(), [TaskPanelView::Shell]);
+        assert_eq!(
+            TaskPanelView::ALL,
+            [
+                TaskPanelView::Plan,
+                TaskPanelView::Subagents,
+                TaskPanelView::Shell,
+                TaskPanelView::Schedule,
+                TaskPanelView::Mcp,
+            ]
+        );
+        assert_eq!(TaskPanelView::Shell.label(), "Shell");
+        assert_eq!(TaskPanelView::Shell.kind(), TaskKind::Shell);
     }
 
     #[test]
