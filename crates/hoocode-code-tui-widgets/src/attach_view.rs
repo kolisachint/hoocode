@@ -85,11 +85,18 @@ impl Component for AttachPrompt {
         vec![theme().fg("dim", &line)]
     }
 
+    /// Esc goes back (`app.subagent.detach`). The session's clear and exit keys
+    /// (Ctrl+C, Ctrl+D) go back too: this view takes the keyboard, so they would
+    /// otherwise do nothing. Back in the session, they act as they always do.
     fn handle_input(&mut self, data: &str) {
         if is_key_release(data) {
             return;
         }
-        if get_keybindings().matches(data, "app.subagent.detach") {
+        let kb = get_keybindings();
+        if ["app.subagent.detach", "app.clear", "app.exit"]
+            .iter()
+            .any(|id| kb.matches(data, id))
+        {
             self.detach = true;
         }
     }

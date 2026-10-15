@@ -77,3 +77,15 @@ fn escape_takes_the_view_back_once_and_typing_does_not() {
     assert!(prompt.take_detach());
     assert!(!prompt.take_detach(), "one press, one answer");
 }
+
+#[test]
+fn ctrl_c_and_ctrl_d_go_back_too_instead_of_doing_nothing() {
+    let _g = lock();
+    // Ctrl+C is the session's clear key and Ctrl+D its exit key. This view takes
+    // the keyboard, so each one goes back to the session.
+    for key in ["\x03", "\x04"] {
+        let mut prompt = AttachPrompt::new();
+        prompt.handle_input(key);
+        assert!(prompt.take_detach(), "{key:?} takes the view back");
+    }
+}
