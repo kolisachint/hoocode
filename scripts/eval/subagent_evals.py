@@ -57,6 +57,10 @@ CONFIG_DIR = ".hoocode"
 
 PARENT_SUMMARY = "The repo has crates/, scripts/ and docs/."
 CHILD_SUMMARY = "crates/ holds one directory per Rust crate; scripts/ holds tooling; docs/ holds design notes."
+# The background notification shows the child's result cut to about 80 characters
+# (`explore#1 finished ✓ — crates/ holds one directory per Rust crate; scripts/….`),
+# so the request that delivers it is recognised by the part that survives the cut.
+CHILD_RESULT_NEEDLE = CHILD_SUMMARY[:30]
 
 
 def task_call(tool: str = "Agent", **arguments: Any) -> dict[str, Any]:
@@ -99,6 +103,13 @@ class Expect:
     child_requests: int | None = None
     parent_requests: int | None = None
     attempts_usable_min: float | None = None
+    # Minimum number of parent tool calls issued after the Agent dispatch and
+    # before the request that delivers the child's result.
+    parent_tool_calls_before_result: int | None = None
+    # Writer scenarios (see `Scenario.worktree`).
+    branch_commits: int | None = None
+    parent_status_unchanged: bool | None = None
+    nothing_pushed: bool | None = None
 
 
 @dataclass
@@ -117,6 +128,9 @@ class Scenario:
     known_issue: str | None = None
     # Extra environment for the parent process (the lifeguard runs there).
     env: dict[str, str] = field(default_factory=dict)
+    # Set up a temp git repo the parent works in, with a bare origin. The routes
+    # use the placeholders <REPO>, <WT> and <ORIGIN> (see `writer_paths`).
+    worktree: bool = False
 
 
 # --------------------------------------------------------------------------
@@ -303,6 +317,102 @@ SCENARIOS: list[Scenario] = [
             ledger_ok=[True],
             ledger_mode="background",
             parent_output_contains="crates/",
+        ),
+    ),
+    Scenario(
+        name="parent_works_while_background_runs",
+        kind="parent",
+        doc=(
+            "A background dispatch with the parent doing its own work meanwhile. The child is "
+            "slowed by three seconds so the parent's Read lands while it runs. The check: at "
+            "least one parent tool call sits between the dispatch and the child's result. A "
+            "barrier-waiting parent (orchestration P3, P4) would have none."
+        ),
+        routes={
+            "child": child_route([{"text": CHILD_SUMMARY, "delay_s": 3}]),
+            "parent": parent_route(
+                [
+                    task_call(background=True),
+                    {"tool_calls": [{"name": "Read", "arguments": {"path": "marker.txt"}}]},
+                    {"text": "Subagent dispatched and marker.txt read; I will report when it finishes."},
+                    {"text": PARENT_SUMMARY},
+                ]
+            ),
+        },
+        prompt="Describe the repository layout using a background subagent, and read marker.txt while it runs.",
+        expect=Expect(
+            ledger_statuses=["complete"],
+            ledger_ok=[True],
+            ledger_mode="background",
+            parent_output_contains="crates/",
+            parent_tool_calls_before_result=1,
+            parent_requests=4,
+        ),
+    ),
+    Scenario(
+        name="worktree_writer_commits_on_branch",
+        kind="parent",
+        doc=(
+            "The writing protocol (orchestration §3) on a temp repo. The parent creates the "
+            "worktree and branch under the HOME it was given (the D5 layout), then dispatches a "
+            "general-purpose child in blocking mode. The child commits on agent/eval-writer from "
+            "inside the worktree. Checks: the branch holds one commit, the parent's tree status "
+            "is unchanged, and the origin has no new refs. Nothing outside the temp dir is touched."
+        ),
+        routes={
+            "child": child_route(
+                [
+                    {
+                        "tool_calls": [
+                            {
+                                "name": "Shell",
+                                "arguments": {
+                                    "command": (
+                                        "echo 'eval note' > <WT>/eval-note.txt && "
+                                        "git -C <WT> add eval-note.txt && "
+                                        "git -C <WT> -c user.name=eval -c user.email=eval@example.invalid "
+                                        "commit -q -m 'eval: writer commit'"
+                                    )
+                                },
+                            }
+                        ]
+                    },
+                    {"text": CHILD_SUMMARY},
+                ]
+            ),
+            "parent": parent_route(
+                [
+                    {
+                        "text": "",
+                        "tool_calls": [
+                            {
+                                "name": "Shell",
+                                "arguments": {"command": "git -C <REPO> worktree add -q -b agent/eval-writer <WT> HEAD"},
+                            }
+                        ],
+                    },
+                    task_call(
+                        background=False,
+                        subagent_type="general-purpose",
+                        description="write eval note",
+                        prompt="Workspace: <WT> · branch agent/eval-writer · base main. Write eval-note.txt and commit it.",
+                    ),
+                    {"text": PARENT_SUMMARY},
+                ]
+            ),
+        },
+        prompt="Write an eval note in a worktree using a writing subagent.",
+        worktree=True,
+        expect=Expect(
+            ledger_statuses=["complete"],
+            ledger_ok=[True],
+            ledger_agent="general-purpose",
+            ledger_mode="blocking",
+            child_requests=2,
+            parent_requests=3,
+            branch_commits=1,
+            parent_status_unchanged=True,
+            nothing_pushed=True,
         ),
     ),
     Scenario(
@@ -587,19 +697,124 @@ def with_fault(scenario: Scenario, fault: dict[str, Any]) -> Scenario:
         slow=scenario.slow,
         known_issue=scenario.known_issue,
         env=dict(scenario.env),
+        worktree=scenario.worktree,
     )
+
+
+WRITER_LABEL = "eval-writer"
+GIT_ID = ["-c", "user.name=eval", "-c", "user.email=eval@example.invalid"]
+
+
+def writer_paths(root: Path) -> dict[str, str]:
+    """The placeholders a writer scenario's scripts use. All of them are under `root`.
+
+    The worktree sits where orchestration D5 puts it (`<HOME>/.hoocode/worktrees/
+    <repo>/<label>`), and HOME is the run's temp home, so it is removed with the run.
+    """
+    return {
+        "<REPO>": str(root / "work"),
+        "<WT>": str(root / "home" / CONFIG_DIR / "worktrees" / "work" / WRITER_LABEL),
+        "<ORIGIN>": str(root / "origin.git"),
+    }
+
+
+def bind_paths(value: Any, paths: dict[str, str]) -> Any:
+    """A copy of a route script with every placeholder replaced by its path."""
+    if isinstance(value, str):
+        for key, path in paths.items():
+            value = value.replace(key, path)
+        return value
+    if isinstance(value, list):
+        return [bind_paths(item, paths) for item in value]
+    if isinstance(value, dict):
+        return {key: bind_paths(item, paths) for key, item in value.items()}
+    return value
+
+
+def bind_routes(routes: dict[str, Route], paths: dict[str, str]) -> dict[str, Route]:
+    return {
+        name: Route(name, bind_paths(route.turns, paths), marker=route.marker)
+        for name, route in routes.items()
+    }
+
+
+def git(repo: Path, *args: str) -> str:
+    """git in `repo`, stdout back. A fixture that fails to build is a harness bug, so it raises."""
+    completed = subprocess.run(
+        ["git", "-C", str(repo), *GIT_ID, *args], capture_output=True, text=True
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed: {completed.stderr.strip()}")
+    return completed.stdout
+
+
+def origin_refs(origin: Path) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(origin), "for-each-ref"], capture_output=True, text=True
+    )
+    return completed.stdout
+
+
+def setup_writer_repo(work: Path, origin: Path) -> dict[str, str]:
+    """The parent's repo: one commit on main, and a bare origin so a push would be visible.
+
+    `.hoocode/` is excluded because the binary writes its ledger there. Without the
+    exclude, every run would change `git status` for reasons that have nothing to do
+    with the child under test.
+    """
+    git(work, "init", "-q", "-b", "main")
+    with open(work / ".git" / "info" / "exclude", "a", encoding="utf-8") as handle:
+        handle.write(f"{CONFIG_DIR}/\n")
+    git(work, "add", "marker.txt")
+    git(work, "commit", "-q", "-m", "base")
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True, capture_output=True)
+    git(work, "remote", "add", "origin", str(origin))
+    git(work, "push", "-q", "origin", "main")
+    return {"status_before": git(work, "status", "--porcelain"), "origin_before": origin_refs(origin)}
+
+
+def inspect_writer_repo(work: Path, origin: Path, before: dict[str, str]) -> dict[str, Any]:
+    """What the writer left behind, measured against the state before the run."""
+    completed = subprocess.run(
+        ["git", "-C", str(work), "rev-list", "--count", f"main..agent/{WRITER_LABEL}"],
+        capture_output=True,
+        text=True,
+    )
+    return {
+        "branch_commits": int(completed.stdout) if completed.returncode == 0 else -1,
+        "parent_status_unchanged": git(work, "status", "--porcelain") == before["status_before"],
+        "nothing_pushed": origin_refs(origin) == before["origin_before"],
+    }
+
+
+def tool_calls_before_result(entries: list[dict[str, Any]]) -> int:
+    """Parent tool calls issued after the first Agent dispatch and before the first
+    request that carries the child's result. Zero when either point is missing."""
+    dispatch = next((i for i, e in enumerate(entries) if "Agent" in e.get("tool_calls", [])), None)
+    result = next((i for i, e in enumerate(entries) if "child_result" in e.get("sees", [])), None)
+    if dispatch is None or result is None or result <= dispatch:
+        return 0
+    return sum(len(e.get("tool_calls", [])) for e in entries[dispatch + 1 : result])
 
 
 def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
     started = time.time()
     root = Path(tempfile.mkdtemp(prefix=f"subagent-eval-{scenario.name}-", dir=run_dir))
     log_path = root / "requests.jsonl"
-    provider = MockProvider(scenario.routes, log_path=str(log_path))
+    routes = bind_routes(scenario.routes, writer_paths(root)) if scenario.worktree else scenario.routes
+    provider = MockProvider(
+        routes, log_path=str(log_path), needles={"child_result": CHILD_RESULT_NEEDLE}
+    )
     port = provider.start()
     failures: list[str] = []
     exit_code: int | None = None
+    before: dict[str, str] = {}
+    facts: dict[str, Any] = {}
+    origin = root / "origin.git"
     try:
         home, work = write_project(root, port, scenario)
+        if scenario.worktree:
+            before = setup_writer_repo(work, origin)
         argv = build_argv(binary, scenario)
         # Drop HOOCODE_* from the developer's shell first, then set what the
         # run needs, so the depth below is not stripped with the rest.
@@ -638,7 +853,18 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
         result = read_result(work)
         child_requests = len(provider.requests("child"))
         parent_requests = len(provider.requests("parent"))
-        failures += check(scenario.expect, ledger, result, stdout, child_requests, parent_requests)
+        if scenario.worktree:
+            facts = inspect_writer_repo(work, origin, before)
+        failures += check(
+            scenario.expect,
+            ledger,
+            result,
+            stdout,
+            child_requests,
+            parent_requests,
+            facts=facts,
+            parent_entries=provider.requests("parent"),
+        )
     finally:
         provider.stop()
 
@@ -695,8 +921,11 @@ def check(
     stdout: str,
     child_requests: int,
     parent_requests: int,
+    facts: dict[str, Any] | None = None,
+    parent_entries: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     failures: list[str] = []
+    facts = facts or {}
 
     def want(condition: bool, message: str) -> None:
         if not condition:
@@ -764,6 +993,29 @@ def check(
         want(
             parent_requests == expect.parent_requests,
             f"parent made {parent_requests} request(s), expected {expect.parent_requests}",
+        )
+    if expect.parent_tool_calls_before_result is not None:
+        between = tool_calls_before_result(parent_entries or [])
+        want(
+            between >= expect.parent_tool_calls_before_result,
+            f"parent made {between} tool call(s) between the dispatch and the child's result, "
+            f"expected at least {expect.parent_tool_calls_before_result}",
+        )
+    if expect.branch_commits is not None:
+        want(
+            facts.get("branch_commits") == expect.branch_commits,
+            f"agent/{WRITER_LABEL} has {facts.get('branch_commits')} commit(s) past main, "
+            f"expected {expect.branch_commits}",
+        )
+    if expect.parent_status_unchanged is not None:
+        want(
+            facts.get("parent_status_unchanged") is expect.parent_status_unchanged,
+            "the parent's git status changed during the run",
+        )
+    if expect.nothing_pushed is not None:
+        want(
+            facts.get("nothing_pushed") is expect.nothing_pushed,
+            "a ref appeared in the origin during the run",
         )
     return failures
 

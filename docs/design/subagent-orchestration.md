@@ -181,6 +181,12 @@ from the brief. Do not say "see above".
 
 ### 5. Evals — fixes P4, and checks §3 [eval]
 
+**Done 2026-10-15.** Both scenarios were added to `scripts/eval/subagent_evals.py`,
+with the `parent_tool_calls_before_result` Expect field and the writer checks
+(`branch_commits`, `parent_status_unchanged`, `nothing_pushed`). Run against the
+worktree build: both pass, and the full `--include-slow` suite is 18/18 as declared
+(details in [subagent-evals.md](subagent-evals.md) §4).
+
 Two new scenarios in `scripts/eval/subagent_evals.py`:
 
 | Scenario | Route | Checks |
@@ -197,7 +203,7 @@ trial on a real session.
 | # | Item | Fix | Fixes | Tag |
 |---|---|---|---|---|
 | 6a | Resume | Keep the dispatch dir when a result is partial. Add a test that `resume_task_id` finds the session. Confirm the bug with a run first | P11 | rust, small |
-| 6b | Eval doc | Re-run `parent_stall_reaped`. Then change `subagent-evals.md:89` and §5 from KNOWN to the measured result. Do not mark a pass without a run | P14 | text, after a run |
+| 6b | Eval doc | Re-run `parent_stall_reaped`. Then change `subagent-evals.md:89` and §5 from KNOWN to the measured result. Do not mark a pass without a run | P14 | text, after a run. **Done 2026-10-15:** `--include-slow` run, 18/18 as declared; `parent_stall_reaped` passes (reaped at 25.6s, partial). `subagent-evals.md` :89 and §5 updated |
 | 6c | Tool wording | "Isolated" fix in §1. Remove the template split in §1 | P12 | text |
 
 ## Not doing
