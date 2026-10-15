@@ -1,4 +1,5 @@
 mod anthropic_subscription_auth_ts;
+mod background_notices;
 mod bash_persistence;
 mod common;
 mod compaction;

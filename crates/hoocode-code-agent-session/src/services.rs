@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use hoocode_agent_core::{Agent, AgentOptions, ConvertToLlmFn, SharedStreamFn, TransformContextFn};
 use hoocode_agent_types::{AgentMessage, AgentState, AgentTools, PermissionGate};
-use hoocode_ai_types::{Content, Message, Model, ThinkingDisplay, ThinkingLevel};
+use hoocode_ai_types::{Content, Message, Model, StopReason, ThinkingDisplay, ThinkingLevel};
 use hoocode_code_models::{
     find_initial_model, AuthLookup, InitialModelOptions, ModelRegistry, RegistryWithAuth,
     ResolvedScoped,
@@ -18,7 +18,7 @@ use hoocode_code_models::{
 use hoocode_code_session::{FileEntry, SessionManager};
 use hoocode_code_settings::SettingsManager;
 use hoocode_code_tool_api::ToolDefinition;
-use hoocode_code_tool_bash::{completion_notice, BashToolOptions, JobRegistry};
+use hoocode_code_tool_bash::{completion_notice, BashToolOptions, JobInfo, JobRegistry};
 use hoocode_code_tools_fs::ReadToolOptions;
 
 use crate::auth_guidance::{format_auth_failed_message, format_no_models_available_message};
@@ -408,16 +408,17 @@ pub fn create_agent_session(
         };
         Ok(hoocode_code_tools_fs::evict_superseded_reads(&messages, &options).unwrap_or(messages))
     });
-    // A background shell job that finished since the last model call is told
-    // to the model once, at the end of that call's messages (not kept in the transcript).
+    // A background shell job that finished is told to the model at the end of the
+    // next model call's messages (not kept in the transcript). See `JobNotices`.
     let background_jobs = options.background_jobs.clone();
     let transform_context: TransformContextFn = match background_jobs.clone() {
         None => transform_context,
         Some(jobs) => {
             let base = transform_context;
+            let notices = JobNotices::new(jobs);
             Arc::new(move |messages, signal| {
                 let mut messages = base(messages, signal)?;
-                for info in jobs.take_completions() {
+                for info in notices.for_call(&messages) {
                     messages.push(AgentMessage::User(hoocode_ai_types::UserMessage {
                         content: vec![Content::text(completion_notice(&info))].into(),
                         timestamp: hoocode_ai_types::now_ms(),
@@ -562,6 +563,62 @@ pub fn create_agent_session(
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The completion notices of background shell jobs. Each is handed to the model
+/// once, on the model call after the job finishes. A notice counts as delivered
+/// when a reply that did not fail comes after that call; until then it is queued
+/// again, so a failed or aborted request (or one that got no reply) does not lose it.
+pub struct JobNotices {
+    jobs: JobRegistry,
+    state: Mutex<NoticeState>,
+}
+
+#[derive(Default)]
+struct NoticeState {
+    /// Finished jobs not yet handed to a model call, in finish order.
+    queued: Vec<JobInfo>,
+    /// The last call's notices, and the transcript length that call was made from.
+    in_flight: Option<(usize, Vec<JobInfo>)>,
+}
+
+impl JobNotices {
+    pub fn new(jobs: JobRegistry) -> Self {
+        Self {
+            jobs,
+            state: Mutex::new(NoticeState::default()),
+        }
+    }
+
+    /// The notices for the model call about to run on `messages`.
+    pub fn for_call(&self, messages: &[AgentMessage]) -> Vec<JobInfo> {
+        let mut st = lock(&self.state);
+        if let Some((from, notices)) = st.in_flight.take() {
+            if !replied_since(messages, from) {
+                st.queued.splice(0..0, notices);
+            }
+        }
+        st.queued.extend(self.jobs.take_completions());
+        let notices = std::mem::take(&mut st.queued);
+        if !notices.is_empty() {
+            st.in_flight = Some((messages.len(), notices.clone()));
+        }
+        notices
+    }
+}
+
+/// Whether the transcript has a reply after index `from` that did not fail. A
+/// transcript shorter than `from` was rewritten (compaction) after the call, so
+/// the call went through.
+fn replied_since(messages: &[AgentMessage], from: usize) -> bool {
+    messages.len() < from
+        || messages[from..].iter().any(|m| {
+            matches!(
+                m,
+                AgentMessage::Assistant(reply)
+                    if !matches!(reply.stop_reason, StopReason::Error | StopReason::Aborted)
+            )
+        })
 }
 
 #[cfg(test)]

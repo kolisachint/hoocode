@@ -2737,6 +2737,31 @@ mod plugin_tool_gate_tests {
     }
 
     #[test]
+    fn background_job_tools_are_registered_only_with_a_job_registry() {
+        use hoocode_code_tool_bash::{
+            JobRegistry, LocalBashOperations, SHELL_KILL_TOOL_NAME, SHELL_OUTPUT_TOOL_NAME,
+        };
+        let settings = SettingsManager::in_memory(Default::default());
+        assert!(!settings.enable_background_shell());
+        let args = crate::args::parse_args(&[]);
+        let cwd = std::path::Path::new("/w");
+        let off: Vec<String> = custom_tools(&args, &settings, cwd, false, None)
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert!(!off.iter().any(|n| n == SHELL_OUTPUT_TOOL_NAME), "{off:?}");
+        assert!(!off.iter().any(|n| n == SHELL_KILL_TOOL_NAME), "{off:?}");
+
+        let jobs = JobRegistry::new("/unused/jobs", LocalBashOperations::new(None));
+        let on: Vec<String> = custom_tools(&args, &settings, cwd, false, Some(&jobs))
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert!(on.iter().any(|n| n == SHELL_OUTPUT_TOOL_NAME), "{on:?}");
+        assert!(on.iter().any(|n| n == SHELL_KILL_TOOL_NAME), "{on:?}");
+    }
+
+    #[test]
     fn plugin_tools_are_absent_by_default() {
         let names = names_for(&[], &SettingsManager::in_memory(Default::default()));
         assert!(plugin_tools_in(&names).is_empty(), "{names:?}");

@@ -33,6 +33,8 @@ const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
 const READ_BUF: usize = 16 * 1024;
 /// How long [`JobRegistry::kill`] waits for the exit to be recorded.
 const KILL_WAIT: Duration = Duration::from_secs(2);
+/// How often a finished job's group is checked for processes that are still running.
+const GROUP_POLL: Duration = Duration::from_millis(250);
 /// The most bytes one [`JobRegistry::read`] returns.
 pub const OUTPUT_READ_MAX: usize = 32 * 1024;
 
@@ -88,6 +90,9 @@ pub struct JobRead {
 struct Entry {
     info: JobInfo,
     kill: Arc<AtomicBool>,
+    /// The job's process group (its shell's pid) while any process of the group
+    /// may still run: a background descendant can outlive the shell.
+    group: Option<u32>,
 }
 
 #[derive(Default)]
@@ -196,6 +201,7 @@ impl JobRegistry {
         lock(&self.shared.state).jobs.push(Entry {
             info: info.clone(),
             kill: kill.clone(),
+            group: None,
         });
 
         let launch = Launch {
@@ -244,20 +250,26 @@ impl JobRegistry {
             .collect()
     }
 
-    /// Asks every running job to stop and returns how many were asked. The
-    /// exits are recorded shortly after; this does not wait for them.
+    /// Asks every running job to stop and returns how many were asked. A
+    /// finished job's leftover processes are signalled too. The exits are
+    /// recorded shortly after; this does not wait for them.
     pub fn kill_all(&self) -> usize {
         let st = lock(&self.shared.state);
         let mut asked = 0;
-        for entry in st.jobs.iter().filter(|e| e.info.state.is_running()) {
-            entry.kill.store(true, Ordering::SeqCst);
-            asked += 1;
+        for entry in &st.jobs {
+            if entry.info.state.is_running() {
+                entry.kill.store(true, Ordering::SeqCst);
+                asked += 1;
+            } else if let Some(group) = entry.group {
+                kill_group(group);
+            }
         }
         asked
     }
 
     /// Stops one job. Returns its state after a short wait for the exit to be
-    /// recorded (a job that already finished is returned as it is).
+    /// recorded. A job whose shell already exited is returned as it is, but
+    /// the processes it left running in its group are signalled.
     pub fn kill(&self, id: &str) -> Result<JobInfo, ToolError> {
         {
             let st = lock(&self.shared.state);
@@ -268,6 +280,8 @@ impl JobRegistry {
                 .ok_or_else(|| format!("No background job with id {id}."))?;
             if entry.info.state.is_running() {
                 entry.kill.store(true, Ordering::SeqCst);
+            } else if let Some(group) = entry.group {
+                kill_group(group);
             }
         }
         let deadline = Instant::now() + KILL_WAIT;
@@ -294,7 +308,7 @@ impl JobRegistry {
             |e: std::io::Error| format!("Cannot read {}: {e}", info.log_path.display());
         let mut file = std::fs::File::open(&info.log_path).map_err(unreadable)?;
         let size = file.metadata().map(|m| m.len()).unwrap_or(0);
-        let from = match since {
+        let mut from = match since {
             Some(offset) => offset.min(size),
             None => size.saturating_sub(OUTPUT_READ_MAX as u64),
         };
@@ -303,10 +317,21 @@ impl JobRegistry {
         file.take(OUTPUT_READ_MAX as u64)
             .read_to_end(&mut buf)
             .map_err(unreadable)?;
+        // A tail that starts inside a character starts after its continuation bytes.
+        if since.is_none() && from > 0 {
+            let skip = buf
+                .iter()
+                .take(3)
+                .take_while(|b| **b & 0xC0 == 0x80)
+                .count();
+            buf.drain(..skip);
+            from += skip as u64;
+        }
         let whole = match std::str::from_utf8(&buf) {
             Ok(_) => buf.len(),
-            // Cut inside a character at the end: leave it for the next read.
-            Err(e) if e.error_len().is_none() => e.valid_up_to(),
+            // Cut inside a character at the end: leave it for the next read, unless
+            // the job has finished (nothing more will complete it).
+            Err(e) if e.error_len().is_none() && info.state.is_running() => e.valid_up_to(),
             Err(_) => buf.len(),
         };
         Ok(JobRead {
@@ -374,9 +399,9 @@ async fn run_job(
             return;
         }
     };
-    let _ = started.send(Ok(()));
-
     let pid = child.id().unwrap_or_default();
+    set_group(&shared, &id, Some(pid));
+    let _ = started.send(Ok(()));
     track_detached_child_pid(pid);
     let mut readers: Vec<JoinHandle<()>> = Vec::with_capacity(2);
     if let Some(stdout) = child.stdout().take() {
@@ -420,11 +445,61 @@ async fn run_job(
     } else {
         JobState::Exited(code)
     };
-    let mut st = lock(&shared.state);
-    if let Some(entry) = st.jobs.iter_mut().find(|e| e.info.id == id) {
-        entry.info.state = state;
+    {
+        let mut st = lock(&shared.state);
+        if let Some(entry) = st.jobs.iter_mut().find(|e| e.info.id == id) {
+            entry.info.state = state;
+        }
+        st.announce.push(id.clone());
     }
-    st.announce.push(id);
+
+    // The shell is gone, but a background descendant may still run in its group.
+    // Keep the group id until the group is empty, so ShellKill can still reach it.
+    while group_alive(pid) {
+        tokio::time::sleep(GROUP_POLL).await;
+    }
+    set_group(&shared, &id, None);
+}
+
+fn set_group(shared: &Shared, id: &str, group: Option<u32>) {
+    if let Some(entry) = lock(&shared.state)
+        .jobs
+        .iter_mut()
+        .find(|e| e.info.id == id)
+    {
+        entry.group = group;
+    }
+}
+
+/// Sends SIGKILL to the process group `pgid` (a job's shell and its descendants).
+#[cfg(unix)]
+fn kill_group(pgid: u32) {
+    if let Ok(pgid) = libc::pid_t::try_from(pgid) {
+        // SAFETY: killpg(2) with a group id and a signal number has no memory effects.
+        unsafe {
+            libc::killpg(pgid, libc::SIGKILL);
+        }
+    }
+}
+
+/// Whether any process is still in the group `pgid`.
+#[cfg(unix)]
+fn group_alive(pgid: u32) -> bool {
+    let Ok(pgid) = libc::pid_t::try_from(pgid) else {
+        return false;
+    };
+    // SAFETY: signal 0 only checks that the group exists.
+    let rc = unsafe { libc::killpg(pgid, 0) };
+    rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+// Job groups are a unix notion; a Windows job object ends with its shell.
+#[cfg(not(unix))]
+fn kill_group(_pgid: u32) {}
+
+#[cfg(not(unix))]
+fn group_alive(_pgid: u32) -> bool {
+    false
 }
 
 /// Copies one pipe into the log until the pipe closes.

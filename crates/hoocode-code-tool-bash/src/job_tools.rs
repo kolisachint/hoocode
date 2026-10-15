@@ -112,7 +112,7 @@ pub fn create_shell_kill_tool_definition(jobs: JobRegistry) -> ToolDefinition {
     });
     definition(
         SHELL_KILL_TOOL_NAME,
-        "Stop a background shell job started with Shell and run_in_background. Kills the job's whole process group. A job that already finished is reported as it is.",
+        "Stop a background shell job started with Shell and run_in_background. Kills the job's whole process group. A job that already finished is reported as it is, and the processes it left running are stopped.",
         parameters,
         Arc::new(move |_id, args, _signal, _on_update, _ctx| {
             let id = job_id(&args)?;
@@ -120,7 +120,10 @@ pub fn create_shell_kill_tool_definition(jobs: JobRegistry) -> ToolDefinition {
             let text = if info.state.is_running() {
                 format!("Kill sent to {id}; it has not exited yet.")
             } else {
-                format!("{id} is {}.", info.state.describe())
+                format!(
+                    "{id} is {}. Any processes it left running were stopped too.",
+                    info.state.describe()
+                )
             };
             Ok(text_result(text))
         }),

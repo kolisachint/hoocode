@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use hoocode_agent_types::AgentToolResult;
 use hoocode_ai_types::Content;
 use hoocode_code_tool_api::ToolDefinition;
+use hoocode_code_tool_bash::jobs::OUTPUT_READ_MAX;
 use hoocode_code_tool_bash::{
     completion_notice, create_bash_tool_definition, create_shell_kill_tool_definition,
     create_shell_output_tool_definition, get_shell_env, BashToolOptions, JobRegistry, JobState,
@@ -410,4 +411,72 @@ fn the_opt_in_tools_are_named_as_the_model_sees_them() {
         "ShellOutput"
     );
     assert_eq!(create_shell_kill_tool_definition(jobs).name, "ShellKill");
+}
+
+/// Whether a process is running (a zombie or a missing pid is not).
+#[cfg(unix)]
+fn process_alive(pid: &str) -> bool {
+    std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", pid])
+        .output()
+        .map(|out| {
+            let stat = String::from_utf8_lossy(&out.stdout);
+            let stat = stat.trim();
+            !stat.is_empty() && !stat.starts_with('Z')
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
+#[test]
+fn kill_stops_processes_the_shell_left_running() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    // The shell exits at once; its background child keeps running in the job's group.
+    let id = spawn(&jobs, tmp.path(), "sleep 60 & echo $!; exit 0");
+    assert_eq!(wait_for_exit(&jobs, &id), JobState::Exited(Some(0)));
+    let log_path = jobs.info(&id).unwrap().log_path;
+    assert!(wait_until(
+        || std::fs::read_to_string(&log_path).is_ok_and(|s| !s.trim().is_empty())
+    ));
+    let pid = std::fs::read_to_string(&log_path)
+        .unwrap()
+        .trim()
+        .to_owned();
+    assert!(process_alive(&pid), "the child should outlive its shell");
+
+    let info = jobs.kill(&id).expect("kill the finished job");
+    assert_eq!(info.state, JobState::Exited(Some(0)));
+    assert!(
+        wait_until(|| !process_alive(&pid)),
+        "ShellKill should stop the child the shell left running"
+    );
+}
+
+#[test]
+fn a_finished_job_ending_inside_a_character_is_read_to_the_end() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    // The job ends with the first byte of "é"; nothing more will complete it.
+    let id = spawn(&jobs, tmp.path(), "printf '\\303'");
+    wait_for_exit(&jobs, &id);
+    let read = jobs.read(&id, Some(0)).unwrap();
+    assert_eq!(read.size, 1);
+    assert_eq!(read.next, 1, "the read must not stall before the last byte");
+    assert!(!read.text.is_empty());
+}
+
+#[test]
+fn a_tail_read_starts_on_a_character_boundary() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    // 40002 bytes of "é\n" (three bytes a line). The last 32 KiB starts on the
+    // second byte of an "é", so the read has to skip that continuation byte.
+    let id = spawn(&jobs, tmp.path(), "yes é | head -c 40002");
+    wait_for_exit(&jobs, &id);
+    let read = jobs.read(&id, None).unwrap();
+    assert_eq!(read.size, 40002);
+    assert_eq!(read.from, 40002 - OUTPUT_READ_MAX as u64 + 1);
+    assert!(!read.text.contains('\u{FFFD}'), "{:?}", read.text);
+    assert_eq!(read.next, read.size);
 }
