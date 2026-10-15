@@ -54,6 +54,7 @@ The parts already run in parallel, but nothing bounds or orders them.
 | **Memory limits are on by default.** | Off by default leaves the freeze this card exists to stop. |
 | **Four settings, everything else fixed** (§3). | Fewer ways to misconfigure. |
 | **Numbers are visible**: `/perf` and `--perf-log <file>`. | For the load test and for bug reports. |
+| **The `hoocode-io` blocking pool stays uncapped** (tokio's default, 512 threads). Decided 2026-10-15. | A cap can deadlock. An Agent tool body holds a slot while it waits for a child whose `wait()` is queued behind it, and the MCP tool body shares the pool. The load run peaked at 11 threads from this pool, so the thread ceiling does not need a cap. Revisit only after the child `wait()` and the Agent body are async. |
 
 ## What we build
 
@@ -69,11 +70,15 @@ The parts already run in parallel, but nothing bounds or orders them.
 | `hoocode-tools` pool | up to 16 threads | Medium | Sync tool bodies (read, edit, write, grep, find, compaction token counting). |
 | `hoocode-bg` | 1 thread, own `current_thread` runtime | Low | Housekeeping: prune old dispatch dirs and temp files, session list index, version check, file watchers, future search indexing. |
 | `hoocode-watchdog` | 1, mostly asleep | High | Heartbeats, stall reports, RSS sampling, limit enforcement. |
+| `hoocode-perf` | 1, always in the interactive TUI | None: normal priority | Once a second reads `/proc` (RSS, threads) and takes the UI's latest counters, and appends a JSON line to `--perf-log` when set. Started by `Perf::new`, so it runs without `/perf` or the log. Stops when the UI drops it. (`code-tui-app` `perf.rs`) |
+| `hoocode-resize` | 1: a SIGWINCH listener on Unix; a size poll every 100 ms on Windows, or if the listener fails to start | None: normal priority | Calls the resize handler when the terminal size changes. Started and stopped with the terminal: the listener ends when its watch is dropped, the poll on the stop flag. (`tui-terminal` `lib.rs`; the listener is `hoocode-runtime` `watch_sigwinch`) |
+| `autocomplete-files` | 1 per `@`-completion provider, made at mode start and again on session switch and settings change | None: normal priority | Runs the in-process `@file` walk for the newest query; older queued queries are skipped. Idle between queries. Exits when its provider is replaced or dropped, after any walk in progress. (`tui-components` `autocomplete/file_search.rs`) |
 | Subagents | child processes, 5 (2 nested), as today | Low | Unchanged pool; children start with 2 workers and lowered priority. |
 | `Shell` commands | child processes | Medium | Pipes read by async tasks on `hoocode-io`, not by 3 threads each. |
 
-Steady state is about 10 threads per process; the ceiling under load is about 26.
-Today it is unbounded.
+Steady state is about 13 threads per process: the 10 steady threads above, plus
+`hoocode-perf`, `hoocode-resize` and `autocomplete-files`, which the rows above list.
+The ceiling under load is about 26. Today it is unbounded.
 
 ### 2. Lanes and OS priority
 
@@ -119,6 +124,7 @@ Start values; Phase 0's load test tunes them. Only these four are settings:
 | Process memory, soft | lower of 2 GiB and 25% of RAM | Shed load (below) | `performance.memorySoftLimitMb` |
 | Process memory, hard | lower of 4 GiB and 50% of RAM | Abort the turn, flush session, show a notice | `performance.memoryHardLimitMb` |
 | Subagent child memory | 2 GiB each | Lifeguard reap: SIGUSR1 (stall), SIGTERM (deadline), grace, SIGKILL | — |
+| `hoocode-io` blocking pool (`spawn_blocking`: child `wait()`, Agent and MCP tool bodies) | Uncapped (tokio default, 512). **Decided 2026-10-15: stays uncapped**, see Decisions | — | — |
 
 Shedding at the soft limit: no new subagent dispatches, parallel tools drop to 1,
 render caches are cleared, and the footer shows a warning. It lifts once memory is
@@ -165,7 +171,7 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 | Phase | Builds | Done when |
 |---|---|---|
 | 0 | `/perf`, load scenario, baseline numbers in this card | Numbers recorded for Linux and macOS. **Linux recorded 2026-10-15** (see the 2026-10-15 run below). **Open:** macOS is not measured. |
-| 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites (the UI-thread `block_on` removal is done under TUI N14 in [tui-activity.md](tui-activity.md), not here) | No runtime built outside the crate; thread ceiling holds in the load test. **Status 2026-10-15: open.** The load run peaked at 34 threads (ceiling 26) for 3 s during the 8-bash and 5-subagent burst, was 24 for the next 9 s, and was 14 to 13 from second 15. **Follow-up 2026-10-15:** the extra threads were the subagent pipe readers (10) and the `hoocode-io` blocking pool (11). The pipe readers are removed (commit b8862c2); the peak is now 24, so the ceiling holds in the load test. Phase stays open: the io blocking pool is still uncapped (see the follow-up section). |
+| 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites (the UI-thread `block_on` removal is done under TUI N14 in [tui-activity.md](tui-activity.md), not here) | No runtime built outside the crate; thread ceiling holds in the load test. **Status 2026-10-15: open.** The load run peaked at 34 threads (ceiling 26) for 3 s during the 8-bash and 5-subagent burst, was 24 for the next 9 s, and was 14 to 13 from second 15. **Follow-up 2026-10-15:** the extra threads were the subagent pipe readers (10) and the `hoocode-io` blocking pool (11). The pipe readers are removed (commit b8862c2); the peak is now 24, so the ceiling holds in the load test. The io blocking pool stays uncapped by decision (Decisions table), so it no longer holds the phase open. Phase stays open: `block_on` still has about 12 non-test call sites (grep, not all checked for inline test code). Runtime builders outside `hoocode-runtime` are gone (grep, non-test code). |
 | 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal. **Status:** parts 1 and 2 landed 2026-10-08; the 2026-10-15 load run is in Baseline (Ctrl+C 30 ms: pass). **Open:** the keystroke p99 passed in the final run but failed in one earlier run of the same bash scenario (70.6 ms, cause not found). **Follow-up 2026-10-15:** five bash runs gave one miss (27.3 ms, started at load average 3.4); the two runs that started under load were repeated and passed. The burst's frame-build cost is the tail (see the follow-up section). |
 | 3 | `hoocode-session-io` with flush barriers | No session file I/O on the UI thread or on `hoocode-io`; kill -9 mid-turn loses at most the unflushed entries of that turn. **Status: writes landed** (`runtime` `session_io.rs`; 4096 entries or 64 MiB, producers wait; barrier at turn end, 1 s flush at dispose; torn last line skipped on read and not glued to the next entry). **Open:** session reads still run on the caller (they first wait for queued writes, up to 1 s), and `create_dir_all` and the `open`/`resume` paths are not yet moved to a lane. |
 | 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test. **Status:** landed; load run 2026-10-15 in Baseline. **Open:** the burst's frame-build cost (rolling p99 about 102 ms for 5 s) is separated in the follow-up: frame build dominates, lanes add little (see the follow-up section); Windows `Shell` priority (process-wrap's JobObject overwrites creation flags); macOS QoS untested. |
@@ -335,12 +341,14 @@ during the load run (`scripts/perf/load_scenario.py --scenario load`, before the
 | Source at the 34-thread peak | Threads | Where it comes from | After the fix |
 |---|---|---|---|
 | Steady threads (main, input, term-out, session-io, bg, watchdog, 4 io workers) | 10 | §1 map | 10 |
-| `perf` sampler, resize poll, `autocomplete-files` | 3 | Not in the §1 map | 3 |
+| `perf` sampler, resize thread, `autocomplete-files` | 3 | Not in the §1 map (now listed there) | 3 |
 | `hoocode-subagent` pipe readers | 10 | `ProcessHandle` in `code-subagents` `runner.rs`: 2 threads per child, 5 children | **0** |
 | `hoocode-io-*` blocking pool, above the 4 workers | 11 | `spawn_blocking` on the io runtime: 5 child `wait()` calls (`runner.rs`), 5 Agent tool bodies and 1 MCP tool body (`agent-loop` `run_tool`) | 11 |
 | **Total** | **34** | | **24** |
 
 - The 11 blocking threads are counted from the code, not sampled one by one. The total matches exactly.
+- The "resize" thread is `hoocode-resize`. On Linux it is the SIGWINCH listener, not a poll, unless the
+  listener failed to start (SIGWINCH replaced the poll on Unix in part 2 of phase 2).
 - No `hoocode-tools` thread was alive in the load run. The 16-thread cap was never reached.
 - The bash-only run peaked at 13 threads and had no blocking-pool threads. Its bash calls return
   quickly and run as background jobs on `hoocode-io`.
@@ -348,10 +356,10 @@ during the load run (`scripts/perf/load_scenario.py --scenario load`, before the
   pipes already are. On Unix no thread is started for them (on Windows tokio reads child pipes on its
   blocking pool, so the saving is Unix-only). A test checks that no pipe thread appears while a child
   runs, and that 4 MiB of output arrives whole. The test fails on the old code (2 threads) and passes now.
-- **Left open (design question, not changed):** tool bodies and child `wait()` calls share the io blocking
-  pool, which has no cap (tokio's default is 512). Capping it now would risk a deadlock: an Agent body holds
-  a slot while it waits for a child whose `wait()` is queued behind it. Moving the waits to async (or to
-  `run_blocking`) comes first.
+- **Decided 2026-10-15: the io blocking pool stays uncapped.** Tool bodies and child `wait()` calls share the
+  pool, which has no cap (tokio's default is 512). A cap would risk a deadlock: an Agent body holds a slot
+  while it waits for a child whose `wait()` is queued behind it. The peak was 11 threads, so the ceiling holds
+  without a cap. See the Decisions table and the §3 caps table.
 
 **2. Keystroke p99, bash scenario, five runs (after the fix).** Whole-run keystroke-to-frame p99, 300 keys
 over 15 s.
@@ -414,7 +422,7 @@ the log on and kept it in a directory that outlives the scenario.
 | Probes under load | Silent. No control run, so not proven to work |
 | Phase 6 | Trigger met. Not started |
 
-Not done: macOS; the io blocking pool cap (a design question); the watchdog control run.
+Not done: macOS; the watchdog control run. The io blocking pool stays uncapped (decided 2026-10-15).
 
 ## Not doing
 
