@@ -1,0 +1,9 @@
+{
+  "name": "claude-inline",
+  "mcpServers": {
+    "inline-docs": {
+      "command": "inline-docs",
+      "args": []
+    }
+  }
+}

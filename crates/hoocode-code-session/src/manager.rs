@@ -160,6 +160,8 @@ pub struct SessionInfo {
     pub first_message: String,
     /// All user/assistant message text concatenated.
     pub all_messages_text: String,
+    /// Set for a subagent run's transcript (see [`list_subagent_sessions`]).
+    pub subagent: Option<SubagentRun>,
 }
 
 /// Progress callback for session listing: `(loaded, total)`.
@@ -376,6 +378,15 @@ impl SessionManager {
         }
     }
 
+    /// Record the parent session of a fresh session: a subagent's transcript
+    /// names the session that dispatched it. Only before the first entry, so a
+    /// session with history keeps the header it was written with.
+    pub fn set_parent_session(&mut self, parent: impl Into<String>) {
+        if self.entries.is_empty() {
+            self.header.parent_session = Some(parent.into());
+        }
+    }
+
     /// Start a new empty session.
     pub fn new_session(&mut self, options: NewSessionOptions) -> Option<PathBuf> {
         self.header = Header {
@@ -416,7 +427,11 @@ impl SessionManager {
         for entry in &self.entries {
             if let Some(id) = entry.id().map(String::from) {
                 self.by_id.insert(id.clone(), entry.clone());
-                self.leaf_id = Some(id);
+                // A run record is written beside the conversation, so it never
+                // becomes the leaf the next message continues from.
+                if !is_run_record(entry) {
+                    self.leaf_id = Some(id);
+                }
             }
             if let FileEntry::Label {
                 target_id,
@@ -774,18 +789,28 @@ impl SessionManager {
             }));
         }
 
+        // A run record is not a node. A child that names one as its parent (a
+        // file written before records were kept beside the conversation) hangs
+        // from the nearest conversation entry above it instead.
         let mut root_indices: Vec<usize> = Vec::new();
         for (idx, entry) in self.entries.iter().enumerate() {
+            if is_run_record(entry) {
+                builders[idx] = None;
+                continue;
+            }
             let id = entry.id().unwrap_or_default();
             let parent_id = entry.parent_id();
             let is_root = parent_id.is_none() || parent_id == Some(id);
             if is_root {
                 root_indices.push(idx);
             } else if let Some(parent_id) = parent_id {
-                if let Some(&parent_idx) = index_by_id.get(parent_id) {
-                    builders[parent_idx].as_mut().unwrap().children.push(idx);
-                } else {
-                    root_indices.push(idx);
+                match visible_entry(&self.entries, &index_by_id, parent_id) {
+                    Some(parent_idx) => builders[parent_idx]
+                        .as_mut()
+                        .expect("a conversation entry has a builder")
+                        .children
+                        .push(idx),
+                    None => root_indices.push(idx),
                 }
             }
         }
@@ -1353,6 +1378,7 @@ pub fn build_session_info(path: impl AsRef<Path>) -> Option<SessionInfo> {
             first_message
         },
         all_messages_text: all_messages.join(" "),
+        subagent: None,
     })
 }
 
@@ -1383,6 +1409,226 @@ pub fn list_sessions(
     }
     infos.sort_by_key(|b| std::cmp::Reverse(b.modified));
     Ok(infos)
+}
+
+/// Where a session's subagent transcripts live: `<session>/subagents/`, the
+/// session file's name without `.jsonl`. It is a sibling of the session file,
+/// and the session listing reads `*.jsonl` only, so these are not sessions.
+pub fn subagents_dir(session_file: &Path) -> PathBuf {
+    session_file.with_extension("").join("subagents")
+}
+
+/// The `customType` of a subagent run's record in its parent session. The
+/// record is written twice: at dispatch (no `outcome`) and at settle (with
+/// it). The last one for a transcript wins.
+pub const SUBAGENT_RUN_ENTRY: &str = "subagent_run";
+
+/// Whether an entry is a subagent run record. Records sit beside the
+/// conversation: the tree does not show them, and they are never the leaf.
+fn is_run_record(entry: &FileEntry) -> bool {
+    matches!(entry, FileEntry::Custom { custom_type, .. } if custom_type == SUBAGENT_RUN_ENTRY)
+}
+
+/// The index of the conversation entry `start` names: a run record is passed
+/// through to its parent, so a child of a record hangs from the record's
+/// nearest conversation ancestor. `None` for an unknown id. The walk is
+/// bounded, so a cyclic file cannot loop.
+fn visible_entry(
+    entries: &[FileEntry],
+    index_by_id: &HashMap<String, usize>,
+    start: &str,
+) -> Option<usize> {
+    let mut idx = *index_by_id.get(start)?;
+    for _ in 0..=entries.len() {
+        if !is_run_record(&entries[idx]) {
+            return Some(idx);
+        }
+        let parent = entries[idx].parent_id()?;
+        idx = *index_by_id.get(parent)?;
+    }
+    None
+}
+
+/// Append a custom entry to a session file, for a writer that does not hold
+/// the session's manager (the subagent pool runs in the parent process, and
+/// the parent's own manager may be elsewhere). The entry chains onto the
+/// file's last conversation entry (not onto an earlier record), and the tree
+/// and the leaf skip records, so they never fork the conversation. It goes through the same write
+/// queue as the manager, so the two stay in order. A manager that is already
+/// open does not see the entry until it is reopened.
+pub fn append_custom_entry_to_file(
+    path: &Path,
+    custom_type: &str,
+    data: serde_json::Value,
+) -> Result<String, SessionError> {
+    settle_session_writes();
+    let entries = load_entries_from_file(path);
+    if !entries.iter().any(|e| matches!(e, FileEntry::Session(_))) {
+        return Err(SessionError::InvalidSession(format!(
+            "no session header in {}",
+            path.display()
+        )));
+    }
+    let existing: std::collections::HashSet<String> = entries
+        .iter()
+        .filter_map(|e| e.id().map(String::from))
+        .collect();
+    // Chain onto the conversation's last entry, not onto an earlier record, so
+    // records never become the parent of a message the open manager writes.
+    let parent_id = entries
+        .iter()
+        .rev()
+        .filter(|e| !is_run_record(e))
+        .find_map(|e| e.id().map(String::from));
+    let id = generate_id(&existing);
+    let entry = FileEntry::Custom {
+        id: id.clone(),
+        parent_id,
+        timestamp: iso_timestamp(),
+        custom_type: custom_type.to_string(),
+        data: Some(data),
+    };
+    session_io().append_line(path.to_path_buf(), serde_json::to_string(&entry)?);
+    Ok(id)
+}
+
+/// The `id` in a session file's header, read from the file.
+pub fn session_id_of_file(path: &Path) -> Option<String> {
+    settle_session_writes();
+    let file = fs::File::open(path).ok()?;
+    let mut first = String::new();
+    std::io::BufRead::read_line(&mut std::io::BufReader::new(file), &mut first).ok()?;
+    match serde_json::from_str::<FileEntry>(&first).ok()? {
+        FileEntry::Session(header) => Some(header.id),
+        _ => None,
+    }
+}
+
+/// A subagent run as its parent's listing shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubagentRun {
+    /// The run's task id: the transcript's file stem.
+    pub task_id: String,
+    pub agent_type: String,
+    pub state: SubagentState,
+}
+
+/// Where a subagent run stands, from its parent's records and the caller's
+/// liveness check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubagentState {
+    /// The parent has a settle record for this transcript (the status it
+    /// settled with, e.g. `complete`).
+    Finished(String),
+    /// Still running in a live process.
+    Running,
+    /// Dispatched, and no settle record, and no live process: the run stopped
+    /// before it settled (the app quit, or the process died).
+    Interrupted,
+}
+
+/// One run's record as its parent wrote it.
+#[derive(Clone, Default)]
+struct RunRecord {
+    task_id: String,
+    agent_type: String,
+    outcome: Option<String>,
+}
+
+/// The newest record per transcript file name in a parent session.
+fn subagent_records(parent: &Path) -> HashMap<String, RunRecord> {
+    let mut records = HashMap::new();
+    for entry in load_entries_from_file(parent) {
+        let FileEntry::Custom {
+            custom_type,
+            data: Some(data),
+            ..
+        } = entry
+        else {
+            continue;
+        };
+        if custom_type != SUBAGENT_RUN_ENTRY {
+            continue;
+        }
+        let Some(child) = data.get("childFile").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let text = |key: &str| {
+            data.get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        let outcome = data
+            .get("outcome")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        records.insert(
+            child.to_string(),
+            RunRecord {
+                task_id: text("taskId"),
+                agent_type: text("agentType"),
+                outcome,
+            },
+        );
+    }
+    records
+}
+
+/// The subagent runs of each parent session in `parents`, as session rows.
+/// Each run's transcript is read like any session (so its header carries
+/// `parent_session_path`, and the picker nests it under its parent). `is_live`
+/// answers whether a run with no settle record is still running, given its
+/// task id and cwd; the caller knows the pool, this crate does not.
+pub fn list_subagent_sessions(
+    parents: &[SessionInfo],
+    is_live: &dyn Fn(&str, &str) -> bool,
+) -> Vec<SessionInfo> {
+    settle_session_writes();
+    let mut out = Vec::new();
+    for parent in parents {
+        let Ok(files) = fs::read_dir(subagents_dir(&parent.path)) else {
+            continue;
+        };
+        let mut records: Option<HashMap<String, RunRecord>> = None;
+        for file in files.flatten() {
+            let path = file.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let Some(mut info) = build_session_info(&path) else {
+                continue;
+            };
+            let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let records = records.get_or_insert_with(|| subagent_records(&parent.path));
+            let record = records.get(file_name).cloned().unwrap_or_default();
+            let task_id = if record.task_id.is_empty() {
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default()
+                    .to_string()
+            } else {
+                record.task_id
+            };
+            let state = match record.outcome {
+                Some(outcome) => SubagentState::Finished(outcome),
+                None if is_live(&task_id, &info.cwd) => SubagentState::Running,
+                None => SubagentState::Interrupted,
+            };
+            // The directory the run was found in names its parent. A header
+            // written before the session dir moved names a path that is gone.
+            info.parent_session_path = Some(parent.path.to_string_lossy().into_owned());
+            info.subagent = Some(SubagentRun {
+                task_id,
+                agent_type: record.agent_type,
+                state,
+            });
+            out.push(info);
+        }
+    }
+    out
 }
 
 /// List all sessions across all project directories.

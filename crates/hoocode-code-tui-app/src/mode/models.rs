@@ -242,14 +242,10 @@ impl Mode {
         );
         selector.set_expired_providers(expired);
         let selector = handle(selector);
-        {
-            let mut container = self.editor_container.borrow_mut();
-            container.clear();
-            container.add_child(as_component(&selector));
-        }
-        self.tui.set_focus(Some(as_component(&selector)));
-        self.model_selector = Some(selector);
-        self.dirty.set(true);
+        self.set_picker(
+            ActivePicker::Model(selector.clone()),
+            as_component(&selector),
+        );
     }
 
     /// `showModelsSelector`: the scoped models model cycling steps through,
@@ -263,14 +259,10 @@ impl Mode {
         let saved = self.session.settings().scoped_models();
         let scoped = saved.map(|entries| concrete_scoped_entries(&entries, &all));
         let selector = handle(ScopedModelsSelectorComponent::new(all, scoped));
-        {
-            let mut container = self.editor_container.borrow_mut();
-            container.clear();
-            container.add_child(as_component(&selector));
-        }
-        self.tui.set_focus(Some(as_component(&selector)));
-        self.scoped_models_selector = Some(selector);
-        self.dirty.set(true);
+        self.set_picker(
+            ActivePicker::ScopedModels(selector.clone()),
+            as_component(&selector),
+        );
     }
 
     /// The picker's save (`Persist`): writes `scopedModels` (the project's when
@@ -302,32 +294,34 @@ impl Mode {
 
     /// The model pickers' answers.
     pub(super) fn poll_model_selectors(&mut self) {
-        let event = self
-            .model_selector
-            .as_ref()
-            .and_then(|s| s.borrow_mut().take_events().into_iter().next());
-        if let Some(event) = event {
-            self.model_selector = None;
-            self.restore_editor();
-            if let ModelSelectorEvent::Select(model) = event {
-                self.switch_model(*model);
-            }
-        }
-        if let Some(selector) = self.scoped_models_selector.clone() {
-            let events = selector.borrow_mut().take_events();
-            for event in events {
-                match event {
-                    // A change is only the picker's own state. The session scope
-                    // moves on a save, never on a change, so Cancel leaves it as it was.
-                    ScopedModelsEvent::Change(_) => {}
-                    ScopedModelsEvent::Persist(entries) => self.persist_scoped_models(entries),
-                    ScopedModelsEvent::Cancel => {
-                        self.scoped_models_selector = None;
-                        self.restore_editor();
-                        return;
+        match &self.picker {
+            Some(ActivePicker::Model(selector)) => {
+                let event = selector.borrow_mut().take_events().into_iter().next();
+                if let Some(event) = event {
+                    self.picker = None;
+                    self.restore_editor();
+                    if let ModelSelectorEvent::Select(model) = event {
+                        self.switch_model(*model);
                     }
                 }
             }
+            Some(ActivePicker::ScopedModels(selector)) => {
+                let events = selector.borrow_mut().take_events();
+                for event in events {
+                    match event {
+                        // A change is only the picker's own state. The session scope
+                        // moves on a save, never on a change, so Cancel leaves it as it was.
+                        ScopedModelsEvent::Change(_) => {}
+                        ScopedModelsEvent::Persist(entries) => self.persist_scoped_models(entries),
+                        ScopedModelsEvent::Cancel => {
+                            self.picker = None;
+                            self.restore_editor();
+                            return;
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }

@@ -15,12 +15,14 @@ use hoocode_code_tui_keybindings::key_hint;
 use hoocode_code_tui_theme::{select_gutter, style_input, theme, SELECT_CURSOR};
 use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
 use hoocode_code_tui_widgets::selected_row_list::{SelectableRow, SelectedRowList};
-use hoocode_tui_components::{Input, Spacer, Text};
+use hoocode_tui_components::{Input, PickerCursor, Spacer, Text};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::{Component, ComponentHandle};
 
 use crate::config_selector::locale_compare;
+
+const MAX_VISIBLE: usize = 10;
 
 /// Which list the picker shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +44,7 @@ struct State {
     scoped: Vec<Model>,
     scope: ModelScope,
     filtered: Vec<Model>,
-    selected: usize,
+    cursor: PickerCursor,
     error: Option<String>,
     /// Providers whose stored OAuth token has expired (see `set_expired_providers`).
     expired: HashSet<String>,
@@ -66,7 +68,7 @@ impl State {
                 format!("{id} {provider} {provider}/{id} {provider} {id}")
             })
         };
-        self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
+        self.cursor.set_query(self.filtered.len());
     }
 
     fn scope_text(&self) -> String {
@@ -102,16 +104,13 @@ impl Component for ModelList {
     fn render(&mut self, width: u16) -> Vec<String> {
         let t = theme();
         let state = self.0.borrow();
-        const MAX_VISIBLE: usize = 10;
         let len = state.filtered.len();
-        let start = (state.selected as isize - (MAX_VISIBLE / 2) as isize)
-            .min(len as isize - MAX_VISIBLE as isize)
-            .max(0) as usize;
-        let end = (start + MAX_VISIBLE).min(len);
-        let rows = (start..end)
+        let rows = state
+            .cursor
+            .window()
             .map(|i| {
                 let model = &state.filtered[i];
-                let selected = i == state.selected;
+                let selected = i == state.cursor.selected();
                 let prefix = if selected {
                     t.fg("accent", SELECT_CURSOR)
                 } else {
@@ -141,8 +140,8 @@ impl Component for ModelList {
             .collect();
         let mut lines = SelectedRowList::new(rows, 0).render(width);
         let mut add = |text: String| lines.extend(Text::new(text, 0, 0).render(width));
-        if start > 0 || end < len {
-            add(t.fg("muted", &format!("  ({}/{len})", state.selected + 1)));
+        if let Some(footer) = state.cursor.footer() {
+            add(t.fg("muted", &format!("  {footer}")));
         }
         if let Some(error) = &state.error {
             for line in error.split('\n') {
@@ -151,7 +150,7 @@ impl Component for ModelList {
         } else if len == 0 {
             add(t.fg("muted", "  No matching models"));
         } else {
-            let name = &state.filtered[state.selected].name;
+            let name = &state.filtered[state.cursor.selected()].name;
             lines.extend(Spacer::new(1).render(width));
             lines.extend(
                 Text::new(t.fg("muted", &format!("  Model Name: {name}")), 0, 0).render(width),
@@ -209,16 +208,18 @@ impl ModelSelectorComponent {
             scoped,
             scope,
             filtered: Vec::new(),
-            selected: 0,
+            cursor: PickerCursor::new(0, MAX_VISIBLE),
             error,
             expired: HashSet::new(),
         };
         state.filtered = state.active().to_vec();
-        state.selected = state
+        state.cursor.reset(state.filtered.len());
+        let current_row = state
             .filtered
             .iter()
             .position(|m| models_are_equal(state.current.as_ref(), Some(m)))
             .unwrap_or(0);
+        state.cursor.select(current_row);
 
         let mut frame = InputFrame::new(InputFrameOptions {
             title: Some("model".to_string()),
@@ -281,7 +282,7 @@ impl ModelSelectorComponent {
 
     fn select_current(&mut self) {
         let state = self.state.borrow();
-        if let Some(model) = state.filtered.get(state.selected) {
+        if let Some(model) = state.filtered.get(state.cursor.selected()) {
             self.events
                 .push(ModelSelectorEvent::Select(Box::new(model.clone())));
         }
@@ -295,12 +296,13 @@ impl ModelSelectorComponent {
             return;
         }
         state.scope = scope;
-        state.selected = state
+        let current_row = state
             .active()
             .iter()
             .position(|m| models_are_equal(state.current.as_ref(), Some(m)))
             .unwrap_or(0);
         state.filter(&query);
+        state.cursor.select(current_row);
         if let Some(text) = &self.scope_text {
             text.borrow_mut().set_text(state.scope_text());
         }
@@ -327,27 +329,11 @@ impl Component for ModelSelectorComponent {
             }
             return;
         }
-        if kb.matches(data, "tui.select.up") {
-            let mut state = self.state.borrow_mut();
-            let len = state.filtered.len();
-            if len > 0 {
-                state.selected = if state.selected == 0 {
-                    len - 1
-                } else {
-                    state.selected - 1
-                };
-            }
-        } else if kb.matches(data, "tui.select.down") {
-            let mut state = self.state.borrow_mut();
-            let len = state.filtered.len();
-            if len > 0 {
-                state.selected = if state.selected + 1 == len {
-                    0
-                } else {
-                    state.selected + 1
-                };
-            }
-        } else if kb.matches(data, "tui.select.confirm") {
+        let navigated = self.state.borrow_mut().cursor.handle_query_key(data, &kb);
+        if navigated {
+            return;
+        }
+        if kb.matches(data, "tui.select.confirm") {
             self.select_current();
         } else if kb.matches(data, "tui.select.cancel") {
             self.events.push(ModelSelectorEvent::Cancel);

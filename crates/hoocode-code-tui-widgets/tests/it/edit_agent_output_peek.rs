@@ -50,6 +50,7 @@ mod agent_output {
         let view = ToolResultView {
             content: &content,
             details: &details,
+            text: &hoocode_code_tui_widgets::tool_signal::ResultText::default(),
         };
         let peek = strip(&format_task_output_result(&view));
         assert!(peek.contains("- explore#4  running  3s"), "{peek}");
@@ -88,6 +89,7 @@ mod edit {
         let result = ToolResultView {
             content: &content,
             details: &details,
+            text: &hoocode_code_tui_widgets::tool_signal::ResultText::default(),
         };
         let options = ToolRenderResultOptions {
             expanded,

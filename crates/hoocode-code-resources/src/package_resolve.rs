@@ -149,22 +149,16 @@ fn precedence_rank(m: &PathMetadata) -> u8 {
 pub struct ResolveOptions<'a> {
     pub cwd: &'a str,
     pub agent_dir: &'a str,
-    /// `getHomeDir()`: `$HOME`, else the OS home.
-    pub home: String,
+    /// `getHomeDir()`: `hoocode-home`. `None` when there is no home; the user
+    /// scope (`~/.agents`, `~/.claude`) is then skipped, never rooted at `/`.
+    pub home: Option<String>,
     pub global_settings: &'a Map<String, Value>,
     pub project_settings: &'a Map<String, Value>,
 }
 
-/// `getHomeDir`.
-pub fn home_dir() -> String {
-    std::env::var("HOME")
-        .ok()
-        .filter(|h| !h.is_empty())
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .map(|h| h.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "/".into())
-        })
+/// `getHomeDir` as a string, for callers that build paths from it.
+pub fn home_dir() -> Option<String> {
+    hoocode_home::home_dir().map(|h| h.to_string_lossy().into_owned())
 }
 
 fn string_list(settings: &Map<String, Value>, key: &str) -> Vec<String> {
@@ -182,16 +176,18 @@ fn string_list(settings: &Map<String, Value>, key: &str) -> Vec<String> {
 }
 
 /// `resolvePathFromBase`: `~` against home, else relative to `base_dir`.
-fn resolve_from_base(input: &str, base_dir: &str, home: &str) -> String {
+fn resolve_from_base(input: &str, base_dir: &str, home: Option<&str>) -> String {
     let trimmed = input.trim();
-    if trimmed == "~" {
-        return home.to_string();
-    }
-    if let Some(rest) = trimmed.strip_prefix("~/") {
-        return node_path::join(&[home, rest]);
-    }
-    if let Some(rest) = trimmed.strip_prefix('~') {
-        return node_path::join(&[home, rest]);
+    if let Some(home) = home {
+        if trimmed == "~" {
+            return home.to_string();
+        }
+        if let Some(rest) = trimmed.strip_prefix("~/") {
+            return node_path::join(&[home, rest]);
+        }
+        if let Some(rest) = trimmed.strip_prefix('~') {
+            return node_path::join(&[home, rest]);
+        }
     }
     node_path::resolve(base_dir, trimmed)
 }
@@ -217,7 +213,7 @@ fn resolve_local_entries(
     target: &mut Target,
     metadata: &PathMetadata,
     base_dir: &str,
-    home: &str,
+    home: Option<&str>,
 ) {
     if entries.is_empty() {
         return;
@@ -238,7 +234,7 @@ fn resolve_local_entries(
 /// `DefaultPackageManager.resolve()` without package sources.
 pub fn resolve_local_resources(options: &ResolveOptions<'_>) -> ResolvedPaths {
     let mut acc = Accumulator::default();
-    let home = options.home.as_str();
+    let home = options.home.as_deref();
     let global_base = options.agent_dir.to_string();
     let project_base = node_path::join(&[options.cwd, hoocode_code_paths::CONFIG_DIR_NAME]);
 
@@ -275,7 +271,7 @@ fn add_auto_discovered(
     global_base: &str,
     project_base: &str,
 ) {
-    let home = options.home.as_str();
+    let home = options.home.as_deref();
     let user_meta = PathMetadata::new(
         "auto",
         SourceScope::User,
@@ -289,10 +285,14 @@ fn add_auto_discovered(
         Some(project_base),
     );
     let overrides = |settings: &Map<String, Value>, t: ResourceType| string_list(settings, t.key());
-    let user_agents_skills = node_path::join(&[home, ".agents", "skills"]);
+    let user_agents_skills = home.map(|h| node_path::join(&[h, ".agents", "skills"]));
     let project_agents_skill_dirs: Vec<String> = collect_ancestor_agents_skill_dirs(options.cwd)
         .into_iter()
-        .filter(|d| node_path::resolve("/", d) != node_path::resolve("/", &user_agents_skills))
+        .filter(|d| {
+            user_agents_skills
+                .as_deref()
+                .is_none_or(|u| node_path::resolve("/", d) != node_path::resolve("/", u))
+        })
         .collect();
 
     let add = |acc: &mut Accumulator,
@@ -393,37 +393,42 @@ fn add_auto_discovered(
         &overrides(global, ResourceType::Skills),
         global_base,
     );
-    let claude_user_base = node_path::join(&[home, ".claude"]);
-    let claude_user_meta = PathMetadata::new(
-        "auto",
-        SourceScope::User,
-        SourceOrigin::ClaudeCode,
-        Some(&claude_user_base),
-    );
-    add(
-        acc,
-        ResourceType::Skills,
-        collect_auto_skill_entries(
-            &dir(&claude_user_base, "skills"),
-            SkillDiscoveryMode::Hoocode,
-        ),
-        &claude_user_meta,
-        &overrides(global, ResourceType::Skills),
-        &claude_user_base,
-    );
-    let user_agents_base = node_path::dirname(&user_agents_skills);
-    let user_agents_meta = PathMetadata {
-        base_dir: Some(user_agents_base.clone()),
-        ..user_meta.clone()
-    };
-    add(
-        acc,
-        ResourceType::Skills,
-        collect_auto_skill_entries(&user_agents_skills, SkillDiscoveryMode::Agents),
-        &user_agents_meta,
-        &overrides(global, ResourceType::Skills),
-        &user_agents_base,
-    );
+    // The user scope exists only when there is a home (see `ResolveOptions::home`).
+    if let Some(home) = home {
+        let claude_user_base = node_path::join(&[home, ".claude"]);
+        let claude_user_meta = PathMetadata::new(
+            "auto",
+            SourceScope::User,
+            SourceOrigin::ClaudeCode,
+            Some(&claude_user_base),
+        );
+        add(
+            acc,
+            ResourceType::Skills,
+            collect_auto_skill_entries(
+                &dir(&claude_user_base, "skills"),
+                SkillDiscoveryMode::Hoocode,
+            ),
+            &claude_user_meta,
+            &overrides(global, ResourceType::Skills),
+            &claude_user_base,
+        );
+    }
+    if let Some(user_agents_skills) = user_agents_skills.as_deref() {
+        let user_agents_base = node_path::dirname(user_agents_skills);
+        let user_agents_meta = PathMetadata {
+            base_dir: Some(user_agents_base.clone()),
+            ..user_meta.clone()
+        };
+        add(
+            acc,
+            ResourceType::Skills,
+            collect_auto_skill_entries(user_agents_skills, SkillDiscoveryMode::Agents),
+            &user_agents_meta,
+            &overrides(global, ResourceType::Skills),
+            &user_agents_base,
+        );
+    }
     add(
         acc,
         ResourceType::Prompts,

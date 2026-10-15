@@ -56,7 +56,9 @@ impl Component for Text {
             return Vec::new();
         }
 
-        let normalized_text = self.text.replace('\t', "   ");
+        let normalized_text = self
+            .text
+            .replace('\t', &" ".repeat(hoocode_tui_util::RENDER_TAB_WIDTH));
         let content_width = (width.saturating_sub(self.padding_x * 2)).max(1);
         let wrapped_lines = wrap_text_with_ansi(&normalized_text, content_width);
 

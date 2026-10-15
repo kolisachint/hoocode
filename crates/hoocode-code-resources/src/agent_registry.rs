@@ -250,9 +250,7 @@ pub fn load_agent_registry(options: &LoadAgentRegistryOptions) -> AgentRegistry 
             .to_string_lossy()
             .into_owned()
     });
-    let home = dirs::home_dir()
-        .map(|h| h.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "/".into());
+    let home = hoocode_home::home_dir().map(|h| h.to_string_lossy().into_owned());
     let mut registry = AgentRegistry::new();
 
     if options.include_builtins {
@@ -263,9 +261,9 @@ pub fn load_agent_registry(options: &LoadAgentRegistryOptions) -> AgentRegistry 
     for path in get_agent_manifest_paths() {
         registry.register_file(&path, AgentSource::User);
     }
-    if options.include_claude {
+    if let (true, Some(home)) = (options.include_claude, &home) {
         registry.register_dir(
-            &node_path::join(&[&home, ".claude", "agents"]),
+            &node_path::join(&[home, ".claude", "agents"]),
             AgentSource::ClaudeUser,
         );
     }

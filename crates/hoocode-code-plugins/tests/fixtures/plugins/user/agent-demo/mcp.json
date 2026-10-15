@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "validator": {
+      "type": "stdio",
+      "command": "./bin/validator",
+      "args": ["--data", "${PLUGIN_DATA}/validator"],
+      "env": {"CONFIG": "${PLUGIN_ROOT}/config.json"}
+    },
+    "remote": {
+      "type": "streamable-http",
+      "url": "https://remote.example.com/mcp"
+    }
+  }
+}

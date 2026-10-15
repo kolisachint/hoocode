@@ -61,6 +61,7 @@ fn make_session(id: &str, first_message: &str) -> SessionInfo {
         message_count: 1,
         first_message: first_message.into(),
         all_messages_text: first_message.into(),
+        subagent: None,
     }
 }
 

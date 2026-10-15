@@ -4,6 +4,7 @@ members = [
 
     # AI namespace
     "crates/hoocode-ai-env",
+    "crates/hoocode-home",
     "crates/hoocode-ai-models",
     "crates/hoocode-ai-models-catalog",
     "crates/hoocode-models-sync",
@@ -38,6 +39,7 @@ members = [
     "crates/hoocode-code-capabilities",
     "crates/hoocode-code-cli",
     "crates/hoocode-code-paths",
+    "crates/hoocode-code-update",
     "crates/hoocode-code-settings",
     "crates/hoocode-code-tool-bash",
     "crates/hoocode-code-tool-search",
@@ -52,6 +54,7 @@ members = [
     "crates/hoocode-code-migrate",
     "crates/hoocode-code-modes",
     "crates/hoocode-code-permissions",
+    "crates/hoocode-code-plugins",
     "crates/hoocode-code-print",
     "crates/hoocode-code-prompts",
     "crates/hoocode-code-resources",
@@ -99,6 +102,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 
 hoocode-ai-env = { path = "crates/hoocode-ai-env" }
+hoocode-home = { path = "crates/hoocode-home" }
 hoocode-ai-models = { path = "crates/hoocode-ai-models" }
 hoocode-ai-models-catalog = { path = "crates/hoocode-ai-models-catalog" }
 hoocode-ai-oauth = { path = "crates/hoocode-ai-oauth" }
@@ -129,6 +133,7 @@ hoocode-agent-types = { path = "crates/hoocode-agent-types" }
 hoocode-code-capabilities = { path = "crates/hoocode-code-capabilities" }
 hoocode-code-cli = { path = "crates/hoocode-code-cli" }
 hoocode-code-paths = { path = "crates/hoocode-code-paths" }
+hoocode-code-update = { path = "crates/hoocode-code-update" }
 hoocode-code-settings = { path = "crates/hoocode-code-settings" }
 hoocode-code-tool-bash = { path = "crates/hoocode-code-tool-bash" }
 hoocode-code-tool-search = { path = "crates/hoocode-code-tool-search" }
@@ -144,6 +149,7 @@ hoocode-code-mcp = { path = "crates/hoocode-code-mcp" }
 hoocode-code-migrate = { path = "crates/hoocode-code-migrate" }
 hoocode-code-modes = { path = "crates/hoocode-code-modes" }
 hoocode-code-permissions = { path = "crates/hoocode-code-permissions" }
+hoocode-code-plugins = { path = "crates/hoocode-code-plugins" }
 hoocode-ai-registry = { path = "crates/hoocode-ai-registry" }
 hoocode-code-prompts = { path = "crates/hoocode-code-prompts" }
 hoocode-code-resources = { path = "crates/hoocode-code-resources" }

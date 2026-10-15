@@ -691,7 +691,11 @@ pub fn default_models_json_path() -> Option<PathBuf> {
             return Some(PathBuf::from(dir).join("models.json"));
         }
     }
-    Some(dirs::home_dir()?.join(".hoocode").join("models.json"))
+    Some(
+        hoocode_home::home_dir()?
+            .join(".hoocode")
+            .join("models.json"),
+    )
 }
 
 #[cfg(test)]

@@ -30,6 +30,7 @@ hoocode-code-tools-optin = { workspace = true }
 hoocode-code-tui-keybindings = { workspace = true }
 hoocode-code-tui-theme = { workspace = true }
 hoocode-code-tui-widgets = { workspace = true }
+hoocode-home = { workspace = true }
 hoocode-tui-components = { workspace = true }
 hoocode-tui-fuzzy = { workspace = true }
 hoocode-tui-keys = { workspace = true }

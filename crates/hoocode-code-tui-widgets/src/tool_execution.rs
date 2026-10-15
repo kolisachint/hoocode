@@ -21,10 +21,11 @@ use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::{truncate_to_width, visible_width};
 use serde_json::Value;
 
-use crate::render_utils::get_text_output;
 use crate::tool_chain_summary::ChainEntry;
 use crate::tool_output_view::{ToolOutputView, DEFAULT_TOOL_OUTPUT_VIEW, PEEK_LINES};
-use crate::tool_signal::{tool_subject, ToolResult, ToolSignalComponent, ToolSignalInput};
+use crate::tool_signal::{
+    tool_subject, ResultHolder, ResultText, ToolResult, ToolSignalComponent, ToolSignalInput,
+};
 use crate::tools::builtin_tool_definition;
 
 /// `ToolRenderContext`: what a renderer is told about the call.
@@ -59,6 +60,15 @@ pub struct ToolRenderResultOptions {
 pub struct ToolResultView<'a> {
     pub content: &'a [Content],
     pub details: &'a Value,
+    /// The memo for `content`: the result's own, so every rebuild shares it.
+    pub text: &'a ResultText,
+}
+
+impl ToolResultView<'_> {
+    /// The result's text, as [`ToolResult::text`] gives it.
+    pub fn text(&self, show_images: bool) -> &str {
+        self.text.get(self.content, show_images)
+    }
 }
 
 pub type RenderCallFn =
@@ -216,7 +226,7 @@ pub struct ToolExecutionComponent {
     cwd: String,
     execution_started: bool,
     args_complete: bool,
-    result: Option<Rc<ToolResult>>,
+    result: Option<Rc<ResultHolder>>,
     hide_component: bool,
     is_latest: bool,
     frozen: bool,
@@ -360,7 +370,7 @@ impl ToolExecutionComponent {
     }
 
     pub fn update_result(&mut self, result: ToolResult, is_partial: bool) {
-        self.result = Some(Rc::new(result));
+        self.result = Some(Rc::new(ResultHolder::new(result)));
         self.is_partial = is_partial;
         self.update_display();
     }
@@ -393,7 +403,7 @@ impl ToolExecutionComponent {
             outcome: crate::tools::subagent::task_outcome(
                 &self.tool_name,
                 &self.args,
-                self.result.as_deref(),
+                self.result.as_deref().map(ResultHolder::result),
             ),
         }
     }
@@ -629,6 +639,7 @@ impl ToolExecutionComponent {
                         let view = ToolResultView {
                             content: &result.content,
                             details: &result.details,
+                            text: &result.memo,
                         };
                         let mut ctx = flags.borrow(
                             &args,
@@ -714,10 +725,9 @@ impl ToolExecutionComponent {
     }
 
     fn text_output(&self) -> String {
-        get_text_output(
-            self.result.as_ref().map(|r| r.content.as_slice()),
-            self.show_images,
-        )
+        self.result
+            .as_ref()
+            .map_or_else(String::new, |r| r.text(self.show_images).to_string())
     }
 
     /// The whole block as text, for a tool with no definition at all.

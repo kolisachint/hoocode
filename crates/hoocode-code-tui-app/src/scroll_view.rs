@@ -183,6 +183,44 @@ fn matches(data: &str, id: &str) -> bool {
     get_keybindings().matches(data, id)
 }
 
+/// The scroll keys every surface shares, in the order they are tried.
+const SCROLL_STEPS: [(&str, ScrollStep); 4] = [
+    ("app.scroll.top", ScrollStep::Top),
+    ("app.scroll.bottom", ScrollStep::Bottom),
+    ("app.scroll.pageUp", ScrollStep::PageUp),
+    ("app.scroll.pageDown", ScrollStep::PageDown),
+];
+
+#[derive(Clone, Copy)]
+enum ScrollStep {
+    Top,
+    Bottom,
+    PageUp,
+    PageDown,
+}
+
+/// Runs the shared scroll key `data` matches; `false` when it matches none.
+fn scroll_step(ui: &mut Tui, data: &str) -> bool {
+    let Some((_, step)) = SCROLL_STEPS.iter().find(|(id, _)| matches(data, id)) else {
+        return false;
+    };
+    match step {
+        ScrollStep::Top => {
+            ui.scroll_to_top();
+        }
+        ScrollStep::Bottom => {
+            ui.scroll_to_live();
+        }
+        ScrollStep::PageUp => {
+            ui.scroll_by_pages(-1);
+        }
+        ScrollStep::PageDown => {
+            ui.scroll_by_pages(1);
+        }
+    }
+    true
+}
+
 impl ScrollView {
     fn editor_focused(&self, ui: &Tui) -> bool {
         ui.focused().is_some_and(|f| Rc::ptr_eq(&f, &self.editor))
@@ -204,15 +242,7 @@ impl ScrollView {
         if is_key_release(data) {
             return false;
         }
-        if matches(data, "app.scroll.pageUp") {
-            ui.scroll_by_pages(-1);
-        } else if matches(data, "app.scroll.pageDown") {
-            ui.scroll_by_pages(1);
-        } else if matches(data, "app.scroll.top") {
-            ui.scroll_to_top();
-        } else if matches(data, "app.scroll.bottom") {
-            ui.scroll_to_live();
-        } else {
+        if !scroll_step(ui, data) {
             return false;
         }
         // The query line belongs to the prompt; it goes with the focus.
@@ -229,15 +259,10 @@ impl ScrollView {
         if is_typed_text(data) {
             return false;
         }
-        if matches(data, "app.scroll.pageUp") {
-            ui.scroll_by_pages(-1);
-        } else if matches(data, "app.scroll.pageDown") {
-            ui.scroll_by_pages(1);
-        } else if matches(data, "app.scroll.top") {
-            ui.scroll_to_top();
-        } else if matches(data, "app.scroll.bottom") {
-            ui.scroll_to_live();
-        } else if matches(data, "app.scroll.previousMessage") {
+        if scroll_step(ui, data) {
+            return true;
+        }
+        if matches(data, "app.scroll.previousMessage") {
             self.jump(ui, TurnDirection::Previous);
         } else if matches(data, "app.scroll.nextMessage") {
             self.jump(ui, TurnDirection::Next);
@@ -326,15 +351,12 @@ impl ScrollView {
         // Exit before the ends, so bindings sharing a key still get out.
         if matches(data, "app.scroll.exit") {
             ui.scroll_to_live();
-        } else if matches(data, "app.scroll.top") {
-            ui.scroll_to_top();
-        } else if matches(data, "app.scroll.bottom") {
-            ui.scroll_to_live();
-        } else if matches(data, "app.scroll.pageUp") {
-            ui.scroll_by_pages(-1);
-        } else if matches(data, "app.scroll.pageDown") {
-            ui.scroll_by_pages(1);
-        } else if matches(data, "app.scroll.lineUp") {
+            return true;
+        }
+        if scroll_step(ui, data) {
+            return true;
+        }
+        if matches(data, "app.scroll.lineUp") {
             ui.scroll_by_lines(-1);
         } else if matches(data, "app.scroll.lineDown") {
             ui.scroll_by_lines(1);

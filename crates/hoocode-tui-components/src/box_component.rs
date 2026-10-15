@@ -10,6 +10,7 @@ use hoocode_tui_util::{apply_background_to_line, visible_width};
 use std::rc::Rc;
 
 use crate::color::ColorFn;
+use crate::frame::padded_columns;
 
 /// The paper treatment a box asks its owner for on every frame (`PaperSheet`):
 /// the ink of its shadow and the gutter it holds back from the right margin.
@@ -116,9 +117,7 @@ impl Component for BoxComponent {
         let inset = if wide { paper_inset } else { 0 };
 
         let band_width = width.saturating_sub(inset).max(1);
-        // Padding gives way rather than pushing content off the end of the band.
-        let padding_x = self.padding_x.min((band_width - 1) / 2);
-        let content_width = band_width.saturating_sub(padding_x * 2).max(1);
+        let (padding_x, content_width) = padded_columns(band_width, self.padding_x);
         let left_pad = " ".repeat(padding_x);
 
         let mut child_lines = Vec::new();

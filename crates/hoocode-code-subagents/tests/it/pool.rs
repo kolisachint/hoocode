@@ -254,6 +254,23 @@ async fn duplicate_task_id_is_an_error() {
     p.dispose();
 }
 
+/// A queued run has no pid yet, but the pool holds it: it is live, so the
+/// picker does not call it interrupted and offer its resume.
+#[tokio::test]
+async fn a_queued_or_running_task_is_live_until_the_pool_drops_it() {
+    let dir = setup();
+    let p = pool(mock(dir.path(), 0, 5000), 1, dir.path());
+    p.spawn(task("t1", "explore", "hello")).unwrap();
+    p.spawn(task("t2", "explore", "hello")).unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(p.queued_count(), 1, "t2 waits for the one slot");
+    assert!(p.is_live("t1"), "running");
+    assert!(p.is_live("t2"), "queued");
+    assert!(!p.is_live("nope"));
+    p.dispose();
+    assert!(!p.is_live("t1"), "disposed");
+}
+
 #[tokio::test]
 async fn dispose_kills_running_processes_and_rejects_waiters() {
     let dir = setup();
@@ -836,10 +853,13 @@ async fn forwards_an_agents_disallowed_tools() {
         "---\nname: limited\ndescription: restricted agent.\ntools: Read, CodeSearch, Shell\ndisallowedTools: Shell\n---\nbody",
     );
     let argv = run_with_cap(dir.path(), "limited", "1").await;
-    assert_eq!(
-        arg_after(&argv, "--disallowed-tools").as_deref(),
-        Some("Shell")
-    );
+    let denied = arg_after(&argv, "--disallowed-tools").unwrap_or_default();
+    let denied: Vec<&str> = denied.split(',').collect();
+    assert!(denied.contains(&"Shell"), "{denied:?}");
+    // Every child is denied the plugin tools, whatever its definition says.
+    for name in hoocode_code_subagents::pool::PLUGIN_TOOL_NAMES {
+        assert!(denied.contains(&name), "{name} missing: {denied:?}");
+    }
 }
 
 #[tokio::test]
@@ -1462,4 +1482,308 @@ async fn should_retry_with_inherited_model_rules() {
         agent(AgentSource::Project, "claude-haiku-4-5"),
         &with_parent
     ));
+}
+
+/// A parent session file named like a real one (`<ts>_<id>.jsonl`), with its
+/// header, so `session_id_of_file` can read the id back.
+fn parent_session(cwd: &Path, id: &str) -> PathBuf {
+    let sessions = cwd.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let file = sessions.join(format!("2026-10-14T00-00-00-000Z_{id}.jsonl"));
+    let header = json!({
+        "type": "session",
+        "version": 3,
+        "id": id,
+        "timestamp": "2026-10-14T00:00:00.000Z",
+        "cwd": cwd.to_string_lossy(),
+    });
+    std::fs::write(&file, format!("{header}\n")).unwrap();
+    file
+}
+
+/// A child dispatched from a session writes its transcript under that
+/// session's `subagents/`, and is told the session is its parent.
+#[tokio::test]
+async fn a_child_writes_its_transcript_under_the_parents_subagents_dir() {
+    let dir = setup();
+    let parent = parent_session(dir.path(), "parent-abc");
+    let p = pool(argv_recorder(dir.path()), 1, dir.path());
+    write_valid_result(dir.path(), "child-1");
+    let mut t = task("child-1", "explore", "scan");
+    t.parent_session_file = Some(parent.clone());
+    p.spawn(t).unwrap();
+    p.wait_for("child-1").await.unwrap();
+    let argv = read_argv(dir.path());
+    let expected = hoocode_code_session::subagents_dir(&parent).join("child-1.jsonl");
+    assert_eq!(
+        arg_after(&argv, "--session").map(PathBuf::from),
+        Some(expected)
+    );
+    assert_eq!(
+        arg_after(&argv, "--parent-session").map(PathBuf::from),
+        Some(parent)
+    );
+    // The dispatch dir keeps the result, not the transcript.
+    assert!(
+        !hoocode_code_paths::dispatch_task_dir(dir.path(), "child-1")
+            .join("session.jsonl")
+            .exists()
+    );
+    p.dispose();
+}
+
+/// The dispatch log and the ledger both name the dispatching session by id.
+#[tokio::test]
+async fn the_dispatch_log_and_the_ledger_name_the_parent_session() {
+    let dir = setup();
+    let parent = parent_session(dir.path(), "parent-log");
+    let p = pool(argv_and_result_recorder(dir.path()), 1, dir.path());
+    let dispatched = p
+        .dispatch(
+            "audit the module",
+            DispatchOptions {
+                force_agent: Some("explore".into()),
+                task_id: Some("logged-1".into()),
+                parent_session_file: Some(parent),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(dispatched.result.is_some_and(|r| r.ok));
+    let log: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            hoocode_code_paths::dispatch_task_dir(dir.path(), "logged-1").join("dispatch-log.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(log["parent_session"], "parent-log");
+    let attempts = hoocode_code_subagents::ledger::read_all(dir.path());
+    let attempt = attempts
+        .iter()
+        .find(|a| a.task_id == "logged-1")
+        .expect("the attempt is in the ledger");
+    assert_eq!(attempt.parent_session.as_deref(), Some("parent-log"));
+    p.dispose();
+}
+
+/// A resume finds the transcript under the parent, not in the dispatch dir.
+#[tokio::test]
+async fn resume_continues_a_transcript_under_the_parent_session() {
+    let dir = setup();
+    let parent = parent_session(dir.path(), "parent-res");
+    let transcript = hoocode_code_session::subagents_dir(&parent).join("old-run.jsonl");
+    std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+    std::fs::write(&transcript, "{\"type\":\"session\"}\n").unwrap();
+    let p = pool(argv_and_result_recorder(dir.path()), 1, dir.path());
+    p.resume(
+        "old-run",
+        "follow-up",
+        DispatchOptions {
+            parent_session_file: Some(parent),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let argv = read_argv(dir.path());
+    assert_eq!(
+        arg_after(&argv, "--session").map(PathBuf::from),
+        Some(transcript)
+    );
+    p.dispose();
+}
+
+/// Without a parent, a resume still finds a run's transcript in its dispatch
+/// dir (runs from before transcripts moved under the parent).
+#[tokio::test]
+async fn resume_without_a_parent_still_finds_a_dispatch_dir_transcript() {
+    let dir = setup();
+    let p = pool(argv_and_result_recorder(dir.path()), 1, dir.path());
+    let original = hoocode_code_paths::dispatch_task_dir(dir.path(), "legacy-run");
+    std::fs::create_dir_all(&original).unwrap();
+    std::fs::write(original.join("session.jsonl"), "{\"type\":\"session\"}\n").unwrap();
+    p.resume("legacy-run", "follow-up", DispatchOptions::default())
+        .await
+        .unwrap();
+    let argv = read_argv(dir.path());
+    assert_eq!(
+        arg_after(&argv, "--session").map(PathBuf::from),
+        Some(original.join("session.jsonl"))
+    );
+    p.dispose();
+}
+
+/// The `subagent_run` records in a parent session, oldest first.
+fn run_records(parent: &Path) -> Vec<Value> {
+    hoocode_code_session::load_entries_from_file(parent)
+        .into_iter()
+        .filter_map(|entry| match entry {
+            hoocode_code_session::FileEntry::Custom {
+                custom_type, data, ..
+            } if custom_type == "subagent_run" => data,
+            _ => None,
+        })
+        .collect()
+}
+
+/// A run records its dispatch (no outcome) and its settle (the outcome) in
+/// the parent session, and the description is the task's first line.
+#[tokio::test]
+async fn a_run_records_its_dispatch_and_its_settle_in_the_parent() {
+    let dir = setup();
+    let parent = parent_session(dir.path(), "parent-rec");
+    let p = pool(argv_and_result_recorder(dir.path()), 1, dir.path());
+    p.dispatch(
+        "audit the module\nsecond line of the task",
+        DispatchOptions {
+            force_agent: Some("explore".into()),
+            task_id: Some("rec-1".into()),
+            parent_session_file: Some(parent.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let records = run_records(&parent);
+    assert_eq!(records.len(), 2, "{records:?}");
+    assert_eq!(records[0]["taskId"], "rec-1");
+    assert_eq!(records[0]["agentType"], "explore");
+    assert_eq!(records[0]["description"], "audit the module");
+    assert_eq!(records[0]["childFile"], "rec-1.jsonl");
+    assert!(records[0]["outcome"].is_null());
+    assert_eq!(records[1]["taskId"], "rec-1");
+    assert_eq!(records[1]["outcome"], "complete");
+    p.dispose();
+}
+
+/// A failed run settles with its failure, so the parent does not show it as
+/// interrupted.
+#[tokio::test]
+async fn a_failed_run_records_the_failure_in_the_parent() {
+    let dir = setup();
+    let parent = parent_session(dir.path(), "parent-fail");
+    let p = pool(mock(dir.path(), 1, 0), 1, dir.path());
+    let mut t = task("fail-1", "explore", "try");
+    t.parent_session_file = Some(parent.clone());
+    p.spawn(t).unwrap();
+    let result = p.wait_for("fail-1").await.unwrap();
+    assert!(!result.ok);
+    let records = run_records(&parent);
+    assert_eq!(records.len(), 2, "{records:?}");
+    assert!(records[1]["outcome"].is_string(), "{records:?}");
+    p.dispose();
+}
+
+/// A finished run keeps its transcript. Success used to delete the dispatch
+/// dir's session; the transcript now lives as long as the parent session.
+#[tokio::test]
+async fn a_successful_run_keeps_its_transcript() {
+    let dir = setup();
+    let parent = parent_session(dir.path(), "parent-keep");
+    let transcripts = hoocode_code_session::subagents_dir(&parent);
+    let transcript = transcripts.join("keep-1.jsonl");
+    let exe = script(
+        dir.path(),
+        "mock-keep.sh",
+        &format!(
+            "{TASK_ID}\nmkdir -p '{}'\necho '{{}}' > '{}'\nmkdir -p {DIR}/dispatch/$tid\nprintf '%s' '{}' > {DIR}/dispatch/$tid/result.json\necho '{DONE_LINE}'\nexit 0",
+            transcripts.display(),
+            transcript.display(),
+            result_json("kept", "complete", 0.9)
+        ),
+    );
+    let p = pool(exe, 1, dir.path());
+    let mut t = task("keep-1", "explore", "work");
+    t.parent_session_file = Some(parent.clone());
+    p.spawn(t).unwrap();
+    let result = p.wait_for("keep-1").await.unwrap();
+    assert!(result.ok);
+    assert!(transcript.exists(), "a finished run keeps its transcript");
+    p.dispose();
+}
+
+/// The dispatch-time sweep works on dispatch dirs only: a session's
+/// `subagents/` is outside it, however old.
+#[test]
+fn the_dispatch_sweep_spares_a_sessions_subagents_dir() {
+    let dir = setup();
+    let cwd = dir.path();
+    let parent = parent_session(cwd, "parent-sweep");
+    let subdir = hoocode_code_session::subagents_dir(&parent);
+    let transcript = subdir.join("old.jsonl");
+    std::fs::create_dir_all(&subdir).unwrap();
+    std::fs::write(&transcript, "{}\n").unwrap();
+    set_age(&transcript, 3 * DAY);
+    set_age(&subdir, 3 * DAY);
+    prune_dispatch_dirs(cwd, 0, DAY);
+    assert!(transcript.exists(), "the sweep must not touch subagents/");
+}
+
+/// A run is live while the pid its dispatch dir records is a live process. A
+/// run whose child is gone (or never started) is not.
+#[test]
+fn a_run_is_live_only_while_its_recorded_pid_is_alive() {
+    let dir = setup();
+    let cwd = dir.path();
+    let dispatch = hoocode_code_paths::dispatch_task_dir(cwd, "pid-run");
+    std::fs::create_dir_all(&dispatch).unwrap();
+    assert!(!run_is_live(cwd, "pid-run"), "no pid file, not live");
+    std::fs::write(dispatch.join("pid"), std::process::id().to_string()).unwrap();
+    assert!(run_is_live(cwd, "pid-run"), "our own pid is alive");
+    // Far above any pid this machine hands out: no such process.
+    std::fs::write(dispatch.join("pid"), "4194303").unwrap();
+    assert!(!run_is_live(cwd, "pid-run"), "a dead pid is not live");
+}
+
+/// A task id comes from a session file's record, so it must not reach outside
+/// the parent's `subagents/` dir: a `..` id resolves to no transcript, even
+/// when the file it names exists.
+#[test]
+fn a_task_id_that_is_not_a_plain_name_resolves_to_no_transcript() {
+    let dir = setup();
+    let cwd = dir.path();
+    let parent = cwd.join("p.jsonl");
+    // The parent's subagents dir: cwd/p/subagents (see subagents_dir).
+    let transcripts = cwd.join("p").join("subagents");
+    std::fs::create_dir_all(&transcripts).unwrap();
+    std::fs::write(transcripts.join("run.jsonl"), "{}\n").unwrap();
+    // From cwd/p/subagents, "../../outside" is cwd/outside.jsonl.
+    std::fs::write(cwd.join("outside.jsonl"), "{}\n").unwrap();
+
+    assert!(run_transcript(cwd, "run", Some(&parent)).is_some());
+    for id in ["../../outside", "..", ".", "", "a/b", "a\\b"] {
+        assert!(
+            run_transcript(cwd, id, Some(&parent)).is_none(),
+            "{id:?} must not name a transcript"
+        );
+    }
+}
+
+/// A run resumed once has a newer task id than its transcript's file name, so
+/// a resume of it again continues the transcript the caller named, not the
+/// file the new id would name.
+#[test]
+fn a_resumed_run_continues_the_transcript_its_row_names() {
+    let dir = setup();
+    let cwd = dir.path();
+    let parent = cwd.join("p.jsonl");
+    let transcripts = cwd.join("p").join("subagents");
+    std::fs::create_dir_all(&transcripts).unwrap();
+    let named = transcripts.join("run-1.jsonl");
+    std::fs::write(&named, "{}\n").unwrap();
+
+    // The second task id names no file: its transcript is run-1.jsonl.
+    assert!(run_transcript(cwd, "run-2", Some(&parent)).is_none());
+    assert_eq!(
+        resume_transcript(cwd, "run-2", Some(&parent), Some(&named)),
+        Some(named.clone())
+    );
+    // Without a named transcript, the task id decides as before.
+    assert_eq!(
+        resume_transcript(cwd, "run-1", Some(&parent), None),
+        Some(named)
+    );
+    assert!(resume_transcript(cwd, "run-2", Some(&parent), None).is_none());
 }

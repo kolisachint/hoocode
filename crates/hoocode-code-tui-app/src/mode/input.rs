@@ -20,6 +20,8 @@ use hoocode_tui_components::{
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::Component;
 
+use hoocode_code_tui_selectors::session_selector::SubagentRunRef;
+
 use crate::extension_editor::EditorOutcome;
 use crate::extension_selector::SelectorOutcome;
 use crate::startup_progress;
@@ -60,12 +62,14 @@ pub(super) enum Action {
     ResumeSession,
     /// The session selector closed, with the chosen file.
     SessionSelectorDone(Option<PathBuf>),
+    /// An interrupted subagent run was chosen to resume from the session selector.
+    SubagentResume(SubagentRunRef),
     /// The options pane closed: the answers, or `None` when skipped.
     AskOptionsDone(Option<Vec<String>>),
     /// The multi-line editor dialog closed.
     EditorDialogDone(EditorOutcome),
-    /// The prompt text changed (`onChange`).
-    EditorChanged(String),
+    /// The prompt turned into or out of bash mode (`!`); sent only on that flip.
+    EditorChanged(bool),
     /// `app.clipboard.copyMessage`: `/copy` with no argument.
     CopyMessage,
     /// `app.clipboard.pasteImage`.
@@ -259,14 +263,6 @@ pub fn command_path_argument(text: &str, command: &str) -> Option<String> {
     )
 }
 
-/// `os.homedir()`.
-pub(super) fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
-}
-
 /// `path.resolve(base, path)`: absolute and normalized, without touching
 /// the filesystem.
 pub(super) fn resolve_path(base: &Path, path: &Path) -> PathBuf {
@@ -289,12 +285,12 @@ pub(super) fn resolve_path(base: &Path, path: &Path) -> PathBuf {
 fn change_directory_completions(
     cwd: &Path,
     previous_cwd: Option<&Path>,
-    home: &Path,
+    home: Option<&Path>,
     prefix: &str,
 ) -> Vec<AutocompleteItem> {
-    let expanded = match prefix.strip_prefix("~/") {
-        Some(rest) => format!("{}/{rest}", home.to_string_lossy()),
-        None => prefix.to_string(),
+    let expanded = match (prefix.strip_prefix("~/"), home) {
+        (Some(rest), Some(home)) => format!("{}/{rest}", home.to_string_lossy()),
+        _ => prefix.to_string(),
     };
     let ends_with_sep = expanded.ends_with('/') || expanded.ends_with(std::path::MAIN_SEPARATOR);
     let (base, partial) = if ends_with_sep {
@@ -327,11 +323,13 @@ fn change_directory_completions(
                 description: None,
             });
         }
-        completions.push(AutocompleteItem {
-            value: "~".into(),
-            label: format!("~ ({})", home.display()),
-            description: None,
-        });
+        if let Some(home) = home {
+            completions.push(AutocompleteItem {
+                value: "~".into(),
+                label: format!("~ ({})", home.display()),
+                description: None,
+            });
+        }
     }
     let Ok(entries) = std::fs::read_dir(&search_dir) else {
         return completions;
@@ -426,10 +424,9 @@ fn prefix_autocomplete_description(
 
 impl Mode {
     /// The editor's `onChange`: entering or leaving bash mode.
-    fn on_editor_change(&mut self, text: &str) {
-        let was_bash_mode = self.is_bash_mode;
-        self.is_bash_mode = text.trim_start().starts_with('!');
-        if was_bash_mode != self.is_bash_mode {
+    fn on_editor_change(&mut self, bash_mode: bool) {
+        if self.is_bash_mode != bash_mode {
+            self.is_bash_mode = bash_mode;
             self.update_editor_border_color();
             self.update_editor_prompt_prefix();
         }
@@ -441,6 +438,7 @@ impl Mode {
 
     pub(super) fn prompt_with_images(&mut self, text: String, images: Vec<ImageContent>) {
         startup_progress::clear();
+        self.turn_timer.begin(Instant::now());
         let session = self.session.clone();
         let tx = self.tx.clone();
         self.runtime.spawn(async move {
@@ -624,7 +622,7 @@ impl Mode {
                                 let completions = change_directory_completions(
                                     session.cwd(),
                                     previous.borrow().as_deref(),
-                                    &home_dir(),
+                                    hoocode_home::home_dir().as_deref(),
                                     prefix,
                                 );
                                 (!completions.is_empty()).then_some(completions)
@@ -815,7 +813,7 @@ impl Mode {
             Action::SessionTree => self.show_tree_selector(None),
             Action::ModeForward => self.cycle_agent_mode(true),
             Action::ModeBackward => self.cycle_agent_mode(false),
-            Action::EditorChanged(text) => self.on_editor_change(&text),
+            Action::EditorChanged(bash_mode) => self.on_editor_change(bash_mode),
             Action::CopyMessage => self.handle_copy_command(""),
             Action::PasteImage => self.handle_clipboard_image_paste(),
             Action::HotkeysOpen => self.handle_hotkeys_command(),
@@ -856,6 +854,10 @@ impl Mode {
                 if let Some(path) = path {
                     self.handle_resume_session(path, None);
                 }
+            }
+            Action::SubagentResume(run) => {
+                self.close_session_selector();
+                self.resume_subagent(run);
             }
             Action::AutocompleteVisibility(visible) => {
                 if self.chrome.set_autocomplete_open(visible) {

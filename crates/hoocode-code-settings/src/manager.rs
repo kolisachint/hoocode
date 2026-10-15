@@ -1208,6 +1208,11 @@ impl SettingsManager {
         self.bool_or("enableSemanticIndex", true)
     }
 
+    /// `checkForUpdates`: the startup version check (`hoocode-code-update`).
+    pub fn check_for_updates(&self) -> bool {
+        self.bool_or("checkForUpdates", true)
+    }
+
     pub fn set_enable_semantic_index(&mut self, enabled: bool) {
         self.set("enableSemanticIndex", Some(enabled.into()));
     }

@@ -215,21 +215,6 @@ fn render_startup_line(entry: &StartupProgress) -> String {
     }
 }
 
-/// `$HOME` (or `USERPROFILE`) replaced by `~`.
-fn tilde(path: &str) -> String {
-    let home = std::env::var("HOME")
-        .ok()
-        .filter(|h| !h.is_empty())
-        .or_else(|| std::env::var("USERPROFILE").ok().filter(|h| !h.is_empty()));
-    match home {
-        Some(home) if path.starts_with(&home) => format!(
-            "~{}",
-            hoocode_tui_util::text_slice::suffix_from(path, home.len())
-        ),
-        _ => path.to_string(),
-    }
-}
-
 /// Shorter forms of `path`, cut from the left at a `/`, longest first:
 /// `~/github/hoocode` gives `…/hoocode`. Only forms narrower than `path`.
 fn shortened_paths(path: &str) -> Vec<String> {
@@ -845,7 +830,7 @@ impl FooterComponent {
                 // ── Row 1 — identity & location
                 let d1 = Line1Data {
                     name: name.clone(),
-                    path: tilde(&cwd),
+                    path: hoocode_home::shorten_path(&cwd),
                     branch,
                     session: session_name,
                     subagents: has_subagents.then(|| subagent_piece(n_sub, n_queued)),

@@ -1,0 +1,3 @@
+{
+  "mcpServers": {"a": {"type": "stdio", "command": "x"}}
+}

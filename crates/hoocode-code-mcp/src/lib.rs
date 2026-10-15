@@ -23,14 +23,15 @@ pub mod expand;
 pub mod trust;
 
 pub use config::{
-    load, parse_document, ConfigSources, Diagnostic, LoadedSource, McpConfig, PluginMcpFile,
-    ServerDef, Severity, Source, Transport, AGENTS_DIR_NAME, MCP_FILE_NAME,
+    load, load_with_plugin_servers, parse_document, ConfigSources, Diagnostic, LoadedSource,
+    McpConfig, PluginMcpFile, PluginServers, ServerDef, Severity, Source, Transport,
+    AGENTS_DIR_NAME, MCP_FILE_NAME,
 };
 pub use discover::{discover, DiscoveredServer, Discovery, ServerState, TrustPrompt};
 pub use expand::{expand_value, ExpandError};
 pub use trust::{
-    diff, fingerprint, ApprovedServer, ServerDiff, TrustError, TrustStatus, TrustStore,
-    TRUST_FILE_NAME,
+    diff, fingerprint, tools_fingerprint, ApprovedServer, ServerDiff, TrustError, TrustStatus,
+    TrustStore, TRUST_FILE_NAME,
 };
 
 #[cfg(test)]
@@ -202,5 +203,50 @@ mod tests {
         let trust = TrustStore::load(&f.trust_path).unwrap();
         let d = discover(&config, &trust);
         assert!(d.prompts.is_empty());
+    }
+
+    #[test]
+    fn pre_parsed_plugin_servers_follow_the_trust_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("plugins/p/plugin-root-mcp.json");
+        let plugin = |id: &str, trusted: bool, command: &str| PluginServers {
+            id: id.into(),
+            path: path.clone(),
+            marketplace_trusted: trusted,
+            servers: vec![ServerDef {
+                name: format!("{id}-server"),
+                source: Source::Plugin {
+                    id: id.into(),
+                    path: path.clone(),
+                    marketplace_trusted: trusted,
+                },
+                transport: Transport::Stdio {
+                    command: command.into(),
+                    args: Vec::new(),
+                    env: Default::default(),
+                    cwd: None,
+                },
+                disabled: false,
+            }],
+        };
+        let sources = ConfigSources {
+            user: dir.path().join("none/mcp.json"),
+            project_folder: dir.path().join("repo"),
+            plugins: Vec::new(),
+        };
+        let plugins = [
+            plugin("trusted", true, "/bin/a"),
+            plugin("gated", false, "/bin/b"),
+        ];
+        let config = load_with_plugin_servers(&sources, &plugins);
+        assert_eq!(config.servers.len(), 2);
+        let trust = TrustStore::empty(dir.path().join("trust.json"));
+        let d = discover(&config, &trust);
+        assert_eq!(state_of(&d, "trusted-server"), None);
+        assert_eq!(state_of(&d, "gated-server"), Some(&ServerState::NotTrusted));
+        assert_eq!(d.prompts.len(), 1);
+        assert_eq!(d.prompts[0].key, "plugin:gated");
+        // Plain `load` still reads no plugin servers.
+        assert!(load(&sources).servers.is_empty());
     }
 }

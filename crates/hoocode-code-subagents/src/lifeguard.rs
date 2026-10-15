@@ -927,7 +927,7 @@ fn sweep_old_agents(cwd: &Path) {
     }
 }
 
-fn has_running_pid(dir: &Path) -> bool {
+pub(crate) fn has_running_pid(dir: &Path) -> bool {
     let Ok(text) = std::fs::read_to_string(dir.join("pid")) else {
         return false;
     };

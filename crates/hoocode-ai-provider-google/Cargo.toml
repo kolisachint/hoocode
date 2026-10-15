@@ -18,6 +18,7 @@ doctest = false
 
 [dependencies]
 hoocode-ai-env = { workspace = true }
+hoocode-home = { workspace = true }
 hoocode-ai-models = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-ai-util = { workspace = true }

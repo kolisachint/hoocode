@@ -175,7 +175,30 @@ fn typing_narrows_and_enter_selects_the_highlighted_model() {
 }
 
 #[test]
-fn up_and_down_wrap_and_tab_switches_scope() {
+fn home_and_end_stay_in_the_query_but_page_keys_move_the_list() {
+    let _g = lock();
+    let models = faux();
+    let mut selector =
+        ModelSelectorComponent::new(Some(models[0].clone()), Ok(models), None, vec![], None);
+    // The query line keeps Home and End: the list cursor does not move.
+    selector.handle_input("\x1b[F");
+    selector.handle_input("\x1b[H");
+    selector.handle_input("\r");
+    match selector.take_events().as_slice() {
+        [ModelSelectorEvent::Select(m)] => assert_eq!(m.id, "faux-1"),
+        other => panic!("unexpected {other:?}"),
+    }
+    // PgDn jumps the list by a page, clamped to the last row.
+    selector.handle_input("\x1b[6~");
+    selector.handle_input("\r");
+    match selector.take_events().as_slice() {
+        [ModelSelectorEvent::Select(m)] => assert_eq!(m.id, "faux-3"),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn up_and_down_clamp_and_tab_switches_scope() {
     let _g = lock();
     let models = faux();
     let mut selector = ModelSelectorComponent::new(
@@ -193,10 +216,11 @@ fn up_and_down_wrap_and_tab_switches_scope() {
     selector.handle_input("\t");
     let rendered = strip(&selector.render(100));
     assert_eq!(listed_ids(&rendered, "faux").len(), 3);
+    // The current model (One) is first; up at the top stays put.
     selector.handle_input("\x1b[A");
-    assert!(strip(&selector.render(100)).contains("Model Name: Three"));
-    selector.handle_input("\x1b[B");
     assert!(strip(&selector.render(100)).contains("Model Name: One"));
+    selector.handle_input("\x1b[B");
+    assert!(strip(&selector.render(100)).contains("Model Name: Two"));
 }
 
 #[test]

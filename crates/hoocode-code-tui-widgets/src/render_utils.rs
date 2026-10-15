@@ -6,16 +6,6 @@ use hoocode_code_tui_theme::theme;
 use hoocode_tui_images::{get_capabilities, get_image_dimensions, image_fallback};
 use serde_json::Value;
 
-/// `shortenPath`: the home directory as `~`.
-pub fn shorten_path(path: &str) -> String {
-    let home = hoocode_code_tool_api::path_utils::home_dir();
-    let home = home.to_string_lossy();
-    match path.strip_prefix(home.as_ref()) {
-        Some(rest) if !home.is_empty() => format!("~{rest}"),
-        _ => path.to_string(),
-    }
-}
-
 /// `str(value)`: a string as itself, `null`/missing as `""`, anything else
 /// as `None` (an invalid argument).
 pub fn str_arg(value: Option<&Value>) -> Option<String> {
@@ -34,9 +24,10 @@ pub fn arg_or<'a>(args: &'a Value, first: &str, second: &str) -> Option<&'a Valu
     }
 }
 
-/// `replaceTabs`.
+/// `replaceTabs`: tabs become the render tab width, as the other render
+/// surfaces expand them.
 pub fn replace_tabs(text: &str) -> String {
-    text.replace('\t', "   ")
+    text.replace('\t', &" ".repeat(hoocode_tui_util::RENDER_TAB_WIDTH))
 }
 
 /// `normalizeDisplayText`.
@@ -95,4 +86,18 @@ pub fn get_text_output(content: Option<&[Content]>, show_images: bool) -> String
 /// `invalidArgText`.
 pub fn invalid_arg_text() -> String {
     theme().fg("error", "[invalid arg]")
+}
+
+#[cfg(test)]
+mod tests {
+    use hoocode_tui_util::{visible_width, RENDER_TAB_WIDTH};
+
+    use super::replace_tabs;
+
+    #[test]
+    fn replace_tabs_expands_to_the_render_tab_width() {
+        let spaces = " ".repeat(RENDER_TAB_WIDTH);
+        assert_eq!(replace_tabs("a\tb"), format!("a{spaces}b"));
+        assert_eq!(visible_width(&replace_tabs("\t")), RENDER_TAB_WIDTH);
+    }
 }

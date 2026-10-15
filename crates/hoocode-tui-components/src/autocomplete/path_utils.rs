@@ -3,7 +3,7 @@
 
 use once_cell::sync::Lazy;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 static PATH_DELIMITERS: Lazy<HashSet<char>> =
     Lazy::new(|| [' ', '\t', '"', '\'', '='].into_iter().collect());
@@ -174,13 +174,9 @@ fn normalize_path(path: &str) -> String {
     }
 }
 
-pub fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
-}
-
 pub fn expand_home_path(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
-        let Some(home) = home_dir() else {
+        let Some(home) = hoocode_home::home_dir() else {
             return path.to_string();
         };
         let expanded = home.join(rest);
@@ -191,7 +187,7 @@ pub fn expand_home_path(path: &str) -> String {
             expanded_str
         }
     } else if path == "~" {
-        home_dir()
+        hoocode_home::home_dir()
             .map(|p| to_display_path(&p.to_string_lossy()))
             .unwrap_or_else(|| path.to_string())
     } else {

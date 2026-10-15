@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "docs": {
+      "command": "docs-server",
+      "args": ["--stdio"]
+    },
+    "issues": {
+      "type": "http",
+      "url": "https://issues.example.com/mcp"
+    }
+  }
+}

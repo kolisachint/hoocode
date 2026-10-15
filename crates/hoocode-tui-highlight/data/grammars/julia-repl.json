@@ -1,0 +1,1 @@
+{"root":1670,"nodes":{"1670":{"frozen":false,"props":{"name":"Julia REPL","contains":{"$arr":[{"$ref":1671}]}}},"1671":{"frozen":false,"props":{"className":"meta","begin":{"$re":"^julia>","flags":""},"relevance":10,"starts":{"$ref":1672},"aliases":{"$arr":["jldoctest"]}}},"1672":{"frozen":false,"props":{"end":{"$re":"^(?![ ]{6})","flags":""},"subLanguage":"julia"}}}}

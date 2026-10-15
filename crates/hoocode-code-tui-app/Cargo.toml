@@ -22,6 +22,7 @@ libc = "0.2"
 hoocode-agent-types = { workspace = true }
 hoocode-agent-compaction = { workspace = true }
 hoocode-code-agent-session = { workspace = true }
+hoocode-code-plugins = { workspace = true }
 hoocode-code-auth = { workspace = true }
 hoocode-ai-oauth = { workspace = true }
 hoocode-code-models = { workspace = true }
@@ -32,6 +33,7 @@ hoocode-ai-util = { workspace = true }
 hoocode-code-tool-bash = { workspace = true }
 hoocode-tui-images = { workspace = true }
 hoocode-code-paths = { workspace = true }
+hoocode-code-update = { workspace = true }
 hoocode-code-permissions = { workspace = true }
 hoocode-code-resources = { workspace = true }
 hoocode-code-subagents = { workspace = true }
@@ -44,6 +46,7 @@ hoocode-code-tools-optin = { workspace = true }
 hoocode-code-tui-selectors = { workspace = true }
 hoocode-code-tui-theme = { workspace = true }
 hoocode-code-tui-widgets = { workspace = true }
+hoocode-home = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-tui-components = { workspace = true }
 hoocode-tui-fuzzy = { workspace = true }

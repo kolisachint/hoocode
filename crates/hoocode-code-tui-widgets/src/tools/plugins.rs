@@ -7,7 +7,6 @@ use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::markdown::js_trim;
 
 use super::text;
-use crate::render_utils::get_text_output;
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
 use crate::tool_output_view::peek_block;
 
@@ -21,8 +20,7 @@ pub const RENDERED_PLUGIN_TOOLS: [&str; 4] = [
 
 pub fn format_plugin_tool_result(result: &ToolResultView<'_>) -> String {
     let t = theme();
-    let output = get_text_output(Some(result.content), false);
-    let output = js_trim(&output);
+    let output = js_trim(result.text(false));
     if output.is_empty() {
         return String::new();
     }

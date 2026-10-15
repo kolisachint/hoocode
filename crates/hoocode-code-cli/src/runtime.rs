@@ -292,16 +292,50 @@ fn resource_loader(
     cwd: &std::path::Path,
     agent_dir: &std::path::Path,
     settings: &Arc<Mutex<SettingsManager>>,
+    plugins: &hoocode_code_plugins::PluginSet,
 ) -> DefaultResources {
     let no_skills = args.no_skills == Some(true) || light;
     let agent_dir_str = agent_dir.to_string_lossy().into_owned();
+    // A plugin's skills and subagents are skills and agents: none in light mode or with
+    // --no-skills. Its MCP servers are separate (see attach_mcp).
+    let (plugin_skill_paths, plugin_agent_paths) = if no_skills {
+        (Vec::new(), Vec::new())
+    } else {
+        (plugins.skill_entries(), plugins.agent_files())
+    };
+    // A `/plugin` change reaches the next reload through this: the current plugins, read each
+    // time (see `load_session_plugins` and `hoocode_code_plugins::set_current`).
+    let plugin_source: hoocode_code_resources::resource_loader::PluginSource =
+        Arc::new(move || {
+            if no_skills {
+                return (Vec::new(), Vec::new());
+            }
+            let current = hoocode_code_plugins::current();
+            (current.skill_entries(), current.agent_files())
+        });
+    // Plugin skills' allowed-tools take effect only after the user approved them. The gate
+    // needs the plugin skill folders to tell a plugin skill from any other; both are read when
+    // a skill is loaded, so a newly installed plugin is gated too.
+    let gate_allowed_tools: Box<
+        dyn Fn(hoocode_code_resources::LoadSkillsResult) -> hoocode_code_resources::LoadSkillsResult
+            + Send
+            + Sync,
+    > = Box::new(move |result| {
+        let trust = hoocode_code_plugins::load_default_trust();
+        let plugin_skill_dirs: Vec<std::path::PathBuf> = hoocode_code_plugins::current()
+            .plugins
+            .iter()
+            .flat_map(|plugin| plugin.skill_dirs.iter().cloned())
+            .collect();
+        hoocode_code_plugins::skills::gate_allowed_tools(result, &trust, &plugin_skill_dirs)
+    });
     let mut skill_paths = resolve_cli_paths(cwd, &args.skills);
     if !no_skills {
         let gate = hoocode_code_resources::builtin_skills::BuiltinSkillGate {
-            enable_plugin_tools: settings
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .enable_plugin_tools(),
+            enable_plugin_tools: plugin_tools_enabled(
+                args,
+                &settings.lock().unwrap_or_else(|e| e.into_inner()),
+            ),
         };
         skill_paths.extend(hoocode_code_resources::builtin_skills::builtin_skill_paths(
             gate,
@@ -320,6 +354,10 @@ fn resource_loader(
         additional_skill_paths: skill_paths,
         additional_prompt_template_paths: resolve_cli_paths(cwd, &args.prompt_templates),
         additional_slash_command_paths: resolve_cli_paths(cwd, &args.slash_commands),
+        plugin_skill_paths,
+        plugin_agent_paths,
+        plugin_source: Some(plugin_source),
+        skills_override: Some(gate_allowed_tools),
         no_skills,
         no_prompt_templates: args.no_prompt_templates == Some(true),
         no_slash_commands: args.no_slash_commands == Some(true),
@@ -327,6 +365,32 @@ fn resource_loader(
         system_prompt,
         ..Default::default()
     })
+}
+
+/// The plugins for this session (`docs/design/plugins.md`). Their problems join `diagnostics`,
+/// one line each, like the other resource diagnostics.
+fn load_session_plugins(
+    cwd: &std::path::Path,
+    diagnostics: &mut Diagnostics,
+) -> hoocode_code_plugins::PluginSet {
+    let trust = hoocode_code_plugins::load_default_trust();
+    let set = hoocode_code_plugins::load_plugins(&hoocode_code_plugins::LoadOptions::new(
+        cwd.to_path_buf(),
+        &trust,
+    ));
+    for d in &set.diagnostics {
+        let kind = match d.severity {
+            hoocode_code_plugins::Severity::Error => DiagnosticKind::Error,
+            hoocode_code_plugins::Severity::Warning => DiagnosticKind::Warning,
+        };
+        let label = match &d.plugin {
+            Some(name) => format!("plugin {name}"),
+            None => d.path.display().to_string(),
+        };
+        diagnostics.push((kind, format!("{label}: {}", d.message)));
+    }
+    hoocode_code_plugins::set_current(set.clone());
+    set
 }
 
 /// Extension-registered tools in hoocode, SDK tools here: AskUserQuestion always
@@ -364,7 +428,36 @@ fn custom_tools(
             hoocode_code_tools_optin::StoreRef::Global,
         ));
     }
+    // Plugin tools (`docs/design/plugins.md`, part 3): off by default, and never in a subagent.
+    // A one-shot child has a task id; a warm worker has none but runs under a subagent depth
+    // (its env is set by the pool). Its `--disallowed-tools` denies them too (pool.rs, warm.rs).
+    let in_subagent = hoocode_code_subagents::depth::current_subagent_depth(
+        &hoocode_code_subagents::depth::ProcessEnv,
+    ) > 0;
+    if args.task_id.is_none() && !in_subagent && plugin_tools_enabled(args, settings) {
+        let default_scope = match settings.plugin_install_scope() {
+            hoocode_code_settings::PluginInstallScope::Project => {
+                hoocode_code_plugins::install::Scope::Project
+            }
+            _ => hoocode_code_plugins::install::Scope::User,
+        };
+        let host = hoocode_code_tools_optin::PluginToolHost {
+            paths: hoocode_code_plugins::install::Paths::for_cwd(cwd),
+            trust_path: hoocode_code_plugins::install::default_trust_path(),
+            default_scope,
+        };
+        tools.extend(hoocode_code_tools_optin::create_plugin_tool_definitions(
+            Arc::new(host),
+        ));
+    }
     tools
+}
+
+/// Whether the plugin tools are on: `--enable-plugintools`, else the `enablePluginTools` setting
+/// (off by default).
+fn plugin_tools_enabled(args: &Args, settings: &SettingsManager) -> bool {
+    args.enable_plugin_tools
+        .unwrap_or_else(|| settings.enable_plugin_tools())
 }
 
 /// main.ts's subagent block of `buildSessionOptions`: seed the tree-wide depth
@@ -599,6 +692,7 @@ fn create_runtime(
         }
     }
 
+    let plugins = load_session_plugins(&cwd, &mut diagnostics);
     let (session, services) = assemble_session(
         args,
         cwd,
@@ -611,6 +705,7 @@ fn create_runtime(
         session_start_event,
         interactive,
         gate,
+        &plugins,
     );
     (session, services, diagnostics)
 }
@@ -643,6 +738,7 @@ fn assemble_session(
     session_start_event: Option<SessionStartEvent>,
     interactive: bool,
     gate: Option<Arc<dyn PermissionGate>>,
+    plugins: &hoocode_code_plugins::PluginSet,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
     // main.ts: the light preset is an allowlist of the four short-schema tools
@@ -678,7 +774,7 @@ fn assemble_session(
     // main.ts: the main-session subagent instructions when subagents are on.
     let subagents_on = !light && args.subagent.unwrap_or_else(|| settings.enable_subagent());
     let settings = Arc::new(Mutex::new(settings));
-    let resources = resource_loader(args, light, &cwd, &agent_dir, &settings);
+    let resources = resource_loader(args, light, &cwd, &agent_dir, &settings, plugins);
     if subagents_on {
         resources
             .loader()
@@ -755,7 +851,13 @@ fn assemble_session(
         session.set_active_tools_by_name(&tools);
     }
     if mcp_wanted(args, light) {
-        attach_mcp(&session, &services.cwd, interactive, mode_restricted);
+        attach_mcp(
+            &session,
+            &services.cwd,
+            interactive,
+            mode_restricted,
+            plugins,
+        );
     }
     (session, services)
 }
@@ -783,8 +885,14 @@ fn attach_mcp(
     cwd: &std::path::Path,
     interactive: bool,
     mode_restricted: bool,
+    plugins: &hoocode_code_plugins::PluginSet,
 ) {
-    let hub = std::sync::Arc::new(hoocode_code_agent_session::mcp::McpHub::for_folder(cwd));
+    let hub = std::sync::Arc::new(
+        hoocode_code_agent_session::mcp::McpHub::for_folder_with_plugins(
+            cwd,
+            &plugins.mcp_servers(),
+        ),
+    );
     if interactive {
         hub.set_elicitation(std::sync::Arc::new(
             hoocode_code_tui_app::mcp_elicitation::TuiElicitation,
@@ -893,9 +1001,7 @@ fn run_print_body(
     ran: &Arc<Mutex<std::collections::BTreeSet<String>>>,
 ) -> std::io::Result<i32> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let home = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_default();
+    let home = hoocode_home::home_dir();
     let (session, diagnostics) = build_session(args, false);
     let ran_tools = Arc::clone(ran);
     let _ran_subscription = session.subscribe(move |event| {
@@ -912,7 +1018,7 @@ fn run_print_body(
         stdin_content.as_deref(),
         session.settings().image_auto_resize(),
         &cwd,
-        &home,
+        home.as_deref(),
     ) {
         Ok(prepared) => prepared,
         Err(message) => {
@@ -1729,9 +1835,7 @@ pub fn run_interactive_mode(
     let session = session_runtime.session().clone();
     let color = crate::Env::detect().color;
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let home = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_default();
+    let home = hoocode_home::home_dir();
     let mut messages = args.messages.clone();
     let (initial_message, initial_images) = match crate::initial_message::prepare_initial_message(
         &args.file_args,
@@ -1739,7 +1843,7 @@ pub fn run_interactive_mode(
         None,
         session.settings().image_auto_resize(),
         &cwd,
-        &home,
+        home.as_deref(),
     ) {
         Ok(prepared) => prepared,
         Err(message) => {
@@ -1755,6 +1859,16 @@ pub fn run_interactive_mode(
         return Err(RuntimeError::Setup("invalid model options".into()));
     }
     start_semantic_index(args, &session);
+    // The version check runs on the IO runtime; the TUI polls its result.
+    let update_notice = hoocode_code_update::start_startup_check(
+        &async_runtime(),
+        hoocode_code_paths::VERSION,
+        hoocode_code_update::check_enabled(
+            true,
+            hoocode_code_paths::is_offline_mode(),
+            session.settings().check_for_updates(),
+        ),
+    );
 
     hoocode_code_tui_app::mode::run_interactive(hoocode_code_tui_app::mode::InteractiveOptions {
         session,
@@ -1776,6 +1890,7 @@ pub fn run_interactive_mode(
         model_fallback_message: None,
         terminal: None,
         perf_log: args.perf_log.as_ref().map(std::path::PathBuf::from),
+        update_notice,
     })
     .map(|()| 0)
     .map_err(RuntimeError::Setup)
@@ -1817,6 +1932,7 @@ mod tests {
             None,
             false,
             None,
+            &hoocode_code_plugins::PluginSet::default(),
         );
         (session.system_prompt(), session.get_active_tool_names())
     }
@@ -1884,6 +2000,7 @@ mod tests {
             None,
             true,
             None,
+            &hoocode_code_plugins::PluginSet::default(),
         );
         let output = Arc::new(Mutex::new(String::new()));
         let title = Arc::new(Mutex::new(String::new()));
@@ -1909,6 +2026,7 @@ mod tests {
                 model_fallback_message: None,
                 terminal: Some(Box::new(terminal)),
                 perf_log: None,
+                update_notice: None,
             },
         );
         assert!(result.is_ok());
@@ -2247,6 +2365,7 @@ mod tests {
                 None,
                 true,
                 None,
+                &hoocode_code_plugins::PluginSet::default(),
             );
             let output = Arc::new(Mutex::new(String::new()));
             let terminal = ScriptedTerminal {
@@ -2270,6 +2389,7 @@ mod tests {
                     model_fallback_message: None,
                     terminal: Some(Box::new(terminal)),
                     perf_log: None,
+                    update_notice: None,
                 },
             )
             .unwrap();
@@ -2382,6 +2502,7 @@ mod tests {
                 None,
                 true,
                 None,
+                &hoocode_code_plugins::PluginSet::default(),
             );
             let output = Arc::new(Mutex::new(String::new()));
             let mut script: Vec<(u64, &'static str)> = vec![(300, "")];
@@ -2408,6 +2529,7 @@ mod tests {
                     model_fallback_message: None,
                     terminal: Some(Box::new(terminal)),
                     perf_log: None,
+                    update_notice: None,
                 },
             )
             .unwrap();
@@ -2491,6 +2613,72 @@ mod mcp_wanted_tests {
         assert!(!mcp_wanted(&args(&["--tools", "Read"]), false));
         assert!(!mcp_wanted(&args(&["--no-tools"]), false));
         assert!(!mcp_wanted(&args(&[]), true));
+    }
+}
+
+#[cfg(test)]
+mod plugin_tool_gate_tests {
+    use super::*;
+
+    fn names_for(argv: &[&str], settings: &SettingsManager) -> Vec<String> {
+        let args = crate::args::parse_args(&argv.iter().map(|a| a.to_string()).collect::<Vec<_>>());
+        custom_tools(&args, settings, std::path::Path::new("/w"), false)
+            .into_iter()
+            .map(|t| t.name)
+            .collect()
+    }
+
+    fn plugin_tools_in(names: &[String]) -> Vec<String> {
+        names
+            .iter()
+            .filter(|n| hoocode_code_tools_optin::PLUGIN_TOOL_NAMES.contains(&n.as_str()))
+            .cloned()
+            .collect()
+    }
+
+    fn with_setting(enabled: bool) -> SettingsManager {
+        let mut settings = SettingsManager::in_memory(Default::default());
+        settings.set_enable_plugin_tools(enabled);
+        settings
+    }
+
+    #[test]
+    fn plugin_tools_are_absent_by_default() {
+        let names = names_for(&[], &SettingsManager::in_memory(Default::default()));
+        assert!(plugin_tools_in(&names).is_empty(), "{names:?}");
+    }
+
+    #[test]
+    fn plugin_tools_are_present_with_the_flag_or_the_setting() {
+        let all: Vec<String> = hoocode_code_tools_optin::PLUGIN_TOOL_NAMES
+            .iter()
+            .map(|n| n.to_string())
+            .collect();
+        let by_flag = names_for(
+            &["--enable-plugintools"],
+            &SettingsManager::in_memory(Default::default()),
+        );
+        assert_eq!(plugin_tools_in(&by_flag), all);
+        let by_setting = names_for(&[], &with_setting(true));
+        assert_eq!(plugin_tools_in(&by_setting), all);
+        assert!(plugin_tools_in(&names_for(&[], &with_setting(false))).is_empty());
+    }
+
+    #[test]
+    fn a_subagent_child_never_gets_the_plugin_tools() {
+        let names = names_for(
+            &["--enable-plugintools", "--task-id", "t1"],
+            &with_setting(true),
+        );
+        assert!(plugin_tools_in(&names).is_empty(), "{names:?}");
+    }
+
+    #[test]
+    fn the_subagent_deny_list_names_the_same_tools() {
+        assert_eq!(
+            hoocode_code_subagents::pool::PLUGIN_TOOL_NAMES.to_vec(),
+            hoocode_code_tools_optin::PLUGIN_TOOL_NAMES.to_vec()
+        );
     }
 }
 

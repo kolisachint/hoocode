@@ -41,9 +41,10 @@ pub fn env_override(suffix: &str) -> Option<String> {
     })
 }
 
-/// `os.homedir()`.
+/// `os.homedir()`: the shared policy in `hoocode-home`. Path-returning callers
+/// here need a value, so with no home at all they fall back to the working directory.
 pub fn home_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
+    hoocode_home::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 
 /// `expandTildePath`: a leading `~` or `~/` becomes the home directory.

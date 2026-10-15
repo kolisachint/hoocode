@@ -50,6 +50,10 @@ pub struct ResourceExtensionPaths {
 
 type Override<T> = Box<dyn Fn(T) -> T + Send + Sync>;
 
+/// The plugin skill folders and agent files, as [`DefaultResourceLoaderOptions::plugin_source`]
+/// gives them.
+pub type PluginSource = Arc<dyn Fn() -> (Vec<PathEntry>, Vec<String>) + Send + Sync>;
+
 /// `DefaultResourceLoaderOptions`.
 #[derive(Default)]
 pub struct DefaultResourceLoaderOptions {
@@ -58,6 +62,15 @@ pub struct DefaultResourceLoaderOptions {
     /// Shared with the session services; created for `cwd` when absent.
     pub settings: Option<Arc<Mutex<SettingsManager>>>,
     pub additional_skill_paths: Vec<String>,
+    /// Skill directories contributed by plugins. Each `metadata.namespace` is the plugin id,
+    /// so the skills are named `<plugin>:<skill>`. Kept here (not only in `extend_resources`)
+    /// so that every `reload()` applies them again.
+    pub plugin_skill_paths: Vec<PathEntry>,
+    /// Agent definition files contributed by plugins; applied on every `reload()`.
+    pub plugin_agent_paths: Vec<String>,
+    /// Asked on every `reload()` for the plugin skill folders and agent files, when set, so a
+    /// change to the installed plugins applies at the next reload. Overrides the two fields above.
+    pub plugin_source: Option<PluginSource>,
     pub additional_prompt_template_paths: Vec<String>,
     pub additional_slash_command_paths: Vec<String>,
     pub no_skills: bool,
@@ -187,22 +200,20 @@ impl DefaultResourceLoader {
         self.append_system_prompt.push(text.into());
     }
 
-    fn home(&self) -> String {
-        self.options.home.clone().unwrap_or_else(home_dir)
+    fn home(&self) -> Option<String> {
+        self.options.home.clone().or_else(home_dir)
     }
 
     /// `resolveResourcePath`: `~` expansion, then against the cwd.
     fn resolve_resource_path(&self, p: &str) -> String {
         let trimmed = p.trim();
         let home = self.home();
-        let expanded = if trimmed == "~" {
-            home
-        } else if let Some(rest) = trimmed.strip_prefix("~/") {
-            node_path::join(&[&home, rest])
-        } else if let Some(rest) = trimmed.strip_prefix('~') {
-            node_path::join(&[&home, rest])
-        } else {
-            trimmed.to_string()
+        let expanded = match (home.as_deref(), trimmed.strip_prefix('~')) {
+            (Some(home), Some("")) => home.to_string(),
+            (Some(home), Some(rest)) => {
+                node_path::join(&[home, rest.strip_prefix('/').unwrap_or(rest)])
+            }
+            _ => trimmed.to_string(),
         };
         node_path::resolve(&self.options.cwd, &expanded)
     }
@@ -284,6 +295,11 @@ impl DefaultResourceLoader {
 
     /// `reload()`: settings, resolved resource paths, then every resource kind.
     pub fn reload(&mut self) {
+        if let Some(source) = self.options.plugin_source.clone() {
+            let (skills, agents) = source();
+            self.options.plugin_skill_paths = skills;
+            self.options.plugin_agent_paths = agents;
+        }
         let (global, project, settings_slash_paths) = {
             let mut settings = self.settings.lock().unwrap_or_else(|e| e.into_inner());
             settings.reload();
@@ -306,6 +322,23 @@ impl DefaultResourceLoader {
         self.extension_prompt_source_infos.clear();
         self.skill_namespaces.clear();
 
+        // Plugin skills: a plugin's skill directory is named `<plugin>:<skill>` by the skill
+        // loader, through the namespace registered here (keyed by the resolved path).
+        let plugin_skills: Vec<String> = if self.options.no_skills {
+            Vec::new()
+        } else {
+            self.options
+                .plugin_skill_paths
+                .iter()
+                .map(|e| self.resolve_resource_path(&e.path))
+                .collect()
+        };
+        for (entry, path) in self.options.plugin_skill_paths.iter().zip(&plugin_skills) {
+            if let Some(ns) = &entry.metadata.namespace {
+                self.skill_namespaces.insert(path.clone(), ns.clone());
+            }
+        }
+
         let mut metadata_by_path: MetadataByPath = Vec::new();
         let enabled = |list: &[crate::package_resolve::ResolvedResource],
                        metadata_by_path: &mut MetadataByPath| {
@@ -326,10 +359,16 @@ impl DefaultResourceLoader {
             .collect();
         let _enabled_themes = enabled(&resolved.themes, &mut metadata_by_path);
         let _enabled_extensions = enabled(&resolved.extensions, &mut metadata_by_path);
-        let enabled_agents: Vec<String> = enabled(&resolved.agents, &mut metadata_by_path)
+        let mut enabled_agents: Vec<String> = enabled(&resolved.agents, &mut metadata_by_path)
             .into_iter()
             .map(|r| r.path)
             .collect();
+        enabled_agents.extend(
+            self.options
+                .plugin_agent_paths
+                .iter()
+                .map(|p| self.resolve_resource_path(p)),
+        );
 
         // `mapSkillPath`: an auto/package skill directory holding SKILL.md is its file.
         let enabled_skills: Vec<String> = enabled_skill_resources
@@ -352,7 +391,8 @@ impl DefaultResourceLoader {
             })
             .collect();
 
-        let additional_skills = self.options.additional_skill_paths.clone();
+        let mut additional_skills = self.options.additional_skill_paths.clone();
+        additional_skills.extend(plugin_skills);
         let skill_paths = if self.options.no_skills {
             self.merge_paths(&[], &additional_skills)
         } else {
@@ -402,8 +442,10 @@ impl DefaultResourceLoader {
             .map(|p| p.to_string_lossy().into_owned()),
         );
         default_slash_dirs.push(node_path::join(&[&self.options.agent_dir, "commands"]));
-        default_slash_dirs.push(node_path::join(&[&home, ".agents", "commands"]));
-        default_slash_dirs.push(node_path::join(&[&home, ".claude", "commands"]));
+        if let Some(home) = &home {
+            default_slash_dirs.push(node_path::join(&[home, ".agents", "commands"]));
+            default_slash_dirs.push(node_path::join(&[home, ".claude", "commands"]));
+        }
         default_slash_dirs.retain(|d| exists(d));
         let additional_slash = self.options.additional_slash_command_paths.clone();
         let slash_paths = if feature_disabled {

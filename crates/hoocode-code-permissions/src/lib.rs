@@ -15,8 +15,8 @@ pub const GATED_TOOLS: [&str; 5] = ["Shell", "Write", "Edit", "WebFetch", "WebSe
 pub const PLUGIN_TOOLS: [&str; 5] = [
     "SearchPlugins",
     "ListPlugins",
-    "SuggestPluginInstall",
     "InstallPlugin",
+    "UninstallPlugin",
     "ProposePlugin",
 ];
 

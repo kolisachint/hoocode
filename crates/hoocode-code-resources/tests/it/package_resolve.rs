@@ -51,7 +51,7 @@ impl Env {
         resolve_local_resources(&ResolveOptions {
             cwd: &self.cwd,
             agent_dir: &self.agent_dir,
-            home: self.home.clone(),
+            home: Some(self.home.clone()),
             global_settings: &self.global,
             project_settings: &self.project,
         })

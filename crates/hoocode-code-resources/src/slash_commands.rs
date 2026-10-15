@@ -73,6 +73,10 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
         description: "Show session info and stats",
     },
     BuiltinSlashCommand {
+        name: "plugin",
+        description: "Manage plugins: /plugin list, install, remove, update, trust, marketplace",
+    },
+    BuiltinSlashCommand {
         name: "changelog",
         description: "Show changelog entries",
     },
@@ -144,5 +148,9 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
     BuiltinSlashCommand {
         name: "subagent-stats",
         description: "Subagent reliability from the dispatch ledger: /subagent-stats [24h|7d|all]",
+    },
+    BuiltinSlashCommand {
+        name: "loop",
+        description: "Schedule a prompt (/loop 5m <prompt>) or run until done (/loop auto <task>)",
     },
 ];

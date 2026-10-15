@@ -23,6 +23,7 @@ use hoocode_code_resources::{
     MODEL_INHERIT,
 };
 use hoocode_code_rpc::JsonlLineReader;
+use hoocode_code_session::{append_custom_entry_to_file, subagents_dir, SUBAGENT_RUN_ENTRY};
 use regex::Regex;
 use serde_json::{json, Map, Value};
 use tokio::sync::oneshot;
@@ -79,6 +80,28 @@ static INHERITED_MODEL_FALLBACK_ERROR: LazyLock<Regex> = LazyLock::new(|| {
 /// token budget only warns, so this is the guaranteed stop).
 pub const DEFAULT_SUBAGENT_MAX_TURNS: u64 = 50;
 
+/// The plugin tools (`hoocode-code-tools-optin`). A subagent is never given them: every child is
+/// started with them in `--disallowed-tools`, and a child does not register them at all.
+pub const PLUGIN_TOOL_NAMES: [&str; 5] = [
+    "SearchPlugins",
+    "InstallPlugin",
+    "UninstallPlugin",
+    "ListPlugins",
+    "ProposePlugin",
+];
+
+/// The `--disallowed-tools` list of a child: the agent definition's own list, then the plugin
+/// tools (every child, whatever the definition says).
+pub fn subagent_disallowed_tools(own: Option<&[String]>) -> Vec<String> {
+    let mut out: Vec<String> = own.unwrap_or_default().to_vec();
+    for name in PLUGIN_TOOL_NAMES {
+        if !out.iter().any(|t| t == name) {
+            out.push(name.to_owned());
+        }
+    }
+    out
+}
+
 /// Tail cap on the captured stdout/stderr per task.
 const MAX_CAPTURED_STREAM_CHARS: usize = 256 * 1024;
 /// How much of a failed run's stderr goes into `output.json`. A provider error
@@ -133,8 +156,12 @@ pub struct SubagentPoolTask {
     pub inherited_model: Option<String>,
     /// The explicit `effort` (a thinking level name), if the caller set one.
     pub effort: Option<String>,
-    /// Session file to persist/continue (default: the task's dispatch dir).
+    /// Session file to persist/continue. Default: `<parent>/subagents/<task>.jsonl`
+    /// when there is a parent session, else the task's dispatch dir.
     pub session_file: Option<PathBuf>,
+    /// The session file of the session that dispatched this task. Its transcript
+    /// goes under `<parent>/subagents/`.
+    pub parent_session_file: Option<PathBuf>,
     /// Internal: retry with the caller's model after the preferred one failed.
     pub use_inherited_model_fallback: bool,
     /// The caller asked for a notification instead of an inline answer. Only
@@ -216,6 +243,9 @@ pub struct DispatchOptions {
     pub effort: Option<String>,
     /// Session file to persist/continue (resume).
     pub session_file: Option<PathBuf>,
+    /// The session file of the dispatching session. Its subagent transcripts
+    /// are under `<parent>/subagents/`, and a resume looks there first.
+    pub parent_session_file: Option<PathBuf>,
     /// Caller-supplied task id (default: a generated `dispatch-…` id).
     pub task_id: Option<String>,
     /// Whether the caller wanted a background run (telemetry only).
@@ -619,6 +649,12 @@ impl SubagentPool {
                 )));
             }
             let mut task = task;
+            // Written under the lock and before the task is queued, so no pull
+            // can start the run (and write its settle record) ahead of this one.
+            if let Some(parent) = &task.parent_session_file {
+                let child = self.inner.child_session_file(&task);
+                write_run_record(parent, &task, &child, None);
+            }
             let now = now_ms();
             task.queued_at.get_or_insert(now);
             let p = effective_priority(&task.agent_type, task.queued_at.unwrap_or(now), now);
@@ -738,6 +774,12 @@ impl SubagentPool {
         self.inner.state().slots.len()
     }
 
+    /// Whether this pool is running or has queued the task. A task it holds is
+    /// live before its child has written a pid (a queued one has none yet).
+    pub fn is_live(&self, task_id: &str) -> bool {
+        self.inner.is_live_task(task_id)
+    }
+
     pub fn queued_count(&self) -> usize {
         self.inner.state().queue.len()
     }
@@ -841,6 +883,10 @@ impl SubagentPool {
                 inner.is_live_task(name)
             });
         });
+        let parent_session = options
+            .parent_session_file
+            .as_deref()
+            .and_then(hoocode_code_session::session_id_of_file);
         self.inner.write_dispatch_log(
             &task_id,
             &agent_type,
@@ -848,6 +894,7 @@ impl SubagentPool {
             complexity,
             task,
             child_depth,
+            parent_session.as_deref(),
         );
         let start = now_ms();
         self.spawn(SubagentPoolTask {
@@ -860,6 +907,7 @@ impl SubagentPool {
             inherited_model: options.inherited_model,
             effort: options.effort,
             session_file: options.session_file,
+            parent_session_file: options.parent_session_file,
             cwd: Some(self.inner.cwd.clone()),
             background: options.background,
             ..Default::default()
@@ -891,19 +939,25 @@ impl SubagentPool {
         if self.inner.state().disposed {
             return Err(PoolError("SubagentPool has been disposed".into()));
         }
-        let session_file = self.get_session_file(task_id, None);
-        if !session_file.exists() {
+        let parent = options.parent_session_file.as_deref();
+        let named = options.session_file.as_deref();
+        let Some(session_file) = resume_transcript(&self.inner.cwd, task_id, parent, named) else {
+            let expected = match parent {
+                Some(parent) => subagents_dir(parent).join(format!("{task_id}.jsonl")),
+                None => self.get_session_file(task_id, None),
+            };
             return Err(PoolError(format!(
                 "No resumable session for task \"{task_id}\" (expected {}).",
-                session_file.display()
+                expected.display()
             )));
-        }
+        };
         // Resuming makes the session the newest thing on disk, so the prune
         // (which ages a dir by its newest activity) cannot delete it between
         // now and the child's first write.
-        if let Some(dir) = session_file.parent() {
-            touch_dispatch_dir(dir);
-        }
+        touch_dispatch_dir(&hoocode_code_paths::dispatch_task_dir(
+            &self.inner.cwd,
+            task_id,
+        ));
         let agent_type = self
             .inner
             .read_dispatch_agent_type(task_id)
@@ -1041,6 +1095,20 @@ impl PoolInner {
             .join("session.jsonl")
     }
 
+    /// The transcript a task writes. An explicit session file (a resume or a
+    /// fork) wins. Otherwise a run with a parent session writes
+    /// `<parent>/subagents/<task>.jsonl`, and a run without one keeps its
+    /// scratch session in its dispatch dir.
+    fn child_session_file(&self, task: &SubagentPoolTask) -> PathBuf {
+        if let Some(file) = &task.session_file {
+            return file.clone();
+        }
+        match &task.parent_session_file {
+            Some(parent) => subagents_dir(parent).join(format!("{}.jsonl", task.task_id)),
+            None => self.session_file(&task.task_id, task.cwd.as_deref()),
+        }
+    }
+
     /// Task ids this pool is running or has queued: their dispatch dirs are
     /// never pruned.
     /// Whether the pool is running or has queued this task.
@@ -1059,6 +1127,7 @@ impl PoolInner {
             .map(String::from)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn write_dispatch_log(
         &self,
         task_id: &str,
@@ -1067,6 +1136,7 @@ impl PoolInner {
         complexity: &str,
         task: &str,
         depth: u32,
+        parent_session: Option<&str>,
     ) {
         let log = json!({
             "timestamp": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
@@ -1076,6 +1146,7 @@ impl PoolInner {
             "reason": reason,
             "complexity": complexity,
             "task": task,
+            "parent_session": parent_session,
         });
         let path =
             hoocode_code_paths::dispatch_task_dir(&self.cwd, task_id).join("dispatch-log.json");
@@ -1203,11 +1274,7 @@ impl PoolInner {
 
     /// The child's command line.
     fn build_args(&self, task: &SubagentPoolTask) -> Vec<String> {
-        let cwd = task.cwd.as_deref().unwrap_or(&self.cwd);
-        let session_file = task
-            .session_file
-            .clone()
-            .unwrap_or_else(|| self.session_file(&task.task_id, Some(cwd)));
+        let session_file = self.child_session_file(task);
         // `prefix_args` belongs to the runner now: it prepends them, so a
         // runner that never builds a command line does not carry them.
         let mut args: Vec<String> = Vec::new();
@@ -1219,6 +1286,12 @@ impl PoolInner {
             "--task-id".into(),
             task.task_id.clone(),
         ]);
+        if let Some(parent) = &task.parent_session_file {
+            args.extend([
+                "--parent-session".into(),
+                parent.to_string_lossy().into_owned(),
+            ]);
+        }
 
         let def = self.definition(&task.agent_type);
         if !task.agent_type.is_empty() {
@@ -1243,13 +1316,9 @@ impl PoolInner {
             if let Some(tools) = tools.filter(|t| !t.is_empty()) {
                 args.extend(["--tools".into(), tools.join(",")]);
             }
-            if let Some(disallowed) = def
-                .as_ref()
-                .and_then(|d| d.disallowed_tools.as_ref())
-                .filter(|t| !t.is_empty())
-            {
-                args.extend(["--disallowed-tools".into(), disallowed.join(",")]);
-            }
+            let disallowed =
+                subagent_disallowed_tools(def.as_ref().and_then(|d| d.disallowed_tools.as_deref()));
+            args.extend(["--disallowed-tools".into(), disallowed.join(",")]);
             if can_child_delegate {
                 args.push("--enable-subagents".into());
                 if let Some(to) = def
@@ -1700,7 +1769,7 @@ impl PoolInner {
             }
             result.result_data = self.read_result_json(task_id, &cwd);
             // A partial result is still a success, but the model may resume it:
-            // the dispatch dir (and its session.jsonl) is kept. Dirs are pruned
+            // the transcript and the dispatch dir are kept. Dirs are pruned
             // at dispatch time, see `prune_dispatch_dirs`.
             if result
                 .result_data
@@ -1868,11 +1937,7 @@ impl PoolInner {
     fn cleanup_retry_artifacts(&self, task: &SubagentPoolTask) {
         let cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
         let dir = hoocode_code_paths::dispatch_task_dir(&cwd, &task.task_id);
-        let session = task
-            .session_file
-            .clone()
-            .unwrap_or_else(|| self.session_file(&task.task_id, Some(&cwd)));
-        let _ = std::fs::remove_file(session);
+        let _ = std::fs::remove_file(self.child_session_file(task));
         let _ = std::fs::remove_file(dir.join("result.json"));
         let _ = std::fs::remove_file(dir.join("output.json"));
     }
@@ -1928,6 +1993,8 @@ impl PoolInner {
             .and_then(|data| data.get("status"))
             .and_then(Value::as_str)
             .filter(|status| !status.is_empty());
+        let status =
+            reported.unwrap_or_else(|| result.status.map(|s| s.as_str()).unwrap_or("failed"));
         let attempt = ledger::attempt_from_result(
             &task.task_id,
             &task.agent_type,
@@ -1938,7 +2005,7 @@ impl PoolInner {
             resolved.as_deref(),
             task.provider.as_deref(),
             task.use_inherited_model_fallback,
-            reported.unwrap_or_else(|| result.status.map(|s| s.as_str()).unwrap_or("failed")),
+            status,
             result.ok,
             verified,
             duration_ms,
@@ -1952,10 +2019,16 @@ impl PoolInner {
             .result_data
             .as_ref()
             .map(|m| Value::Object(m.clone()));
-        ledger::append(
-            &cwd,
-            &ledger::with_confidence(attempt, confidence_source.as_ref()),
-        );
+        let mut attempt = ledger::with_confidence(attempt, confidence_source.as_ref());
+        attempt.parent_session = task
+            .parent_session_file
+            .as_deref()
+            .and_then(hoocode_code_session::session_id_of_file);
+        ledger::append(&cwd, &attempt);
+        if let Some(parent) = &task.parent_session_file {
+            let child = self.child_session_file(task);
+            write_run_record(parent, task, &child, Some(status));
+        }
     }
 
     fn resolve_waiter(&self, task_id: &str, result: SubagentResult) {
@@ -2133,6 +2206,86 @@ fn prune_dispatch_dirs_checked(
         if fresh && !is_live(name) {
             let _ = std::fs::remove_dir_all(path);
         }
+    }
+}
+
+/// Whether a run is still going: this process's pool holds it (running or
+/// queued), or its child process is alive, by the pid its dispatch dir records.
+/// A run with no settle record and neither is was cut short: the app quit, or
+/// the process died before it settled.
+pub fn run_is_live(cwd: &Path, task_id: &str) -> bool {
+    crate::instance::pool_has_live_task(task_id)
+        || crate::lifeguard::has_running_pid(&hoocode_code_paths::dispatch_task_dir(cwd, task_id))
+}
+
+/// One line of a run's description: its first line, cut short.
+fn describe_task(task: &str) -> String {
+    task.lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .chars()
+        .take(120)
+        .collect()
+}
+
+/// Append a `subagent_run` record for a run to its parent session. Written
+/// twice: at dispatch with no `outcome`, and at settle with the status it
+/// settled with. The newest record for a transcript is the run's state. A
+/// failure to write is logged and does not fail the run: the record is the
+/// parent's view of it, not the run's result.
+fn write_run_record(parent: &Path, task: &SubagentPoolTask, child: &Path, outcome: Option<&str>) {
+    let data = json!({
+        "taskId": task.task_id,
+        "agentType": task.agent_type,
+        "description": describe_task(&task.task),
+        "childFile": child.file_name().map(|n| n.to_string_lossy().into_owned()),
+        "outcome": outcome,
+    });
+    if let Err(err) = append_custom_entry_to_file(parent, SUBAGENT_RUN_ENTRY, data) {
+        agent_log(&format!(
+            "[SUBAGENT] could not record run {} in its parent session: {err}",
+            task.task_id
+        ));
+    }
+}
+
+/// Where a run's transcript is, if it still exists: its copy under the parent
+/// session's `subagents/`, else the dispatch dir's (runs from before transcripts
+/// moved there). `None` when neither exists.
+pub fn run_transcript(cwd: &Path, task_id: &str, parent_session: Option<&Path>) -> Option<PathBuf> {
+    // A task id names a file under a directory. One read from a session file
+    // must not reach outside it, so only a plain name is a task id.
+    let plain = !task_id.is_empty()
+        && task_id != "."
+        && task_id != ".."
+        && !task_id.contains(['/', '\\', '\0']);
+    if !plain {
+        return None;
+    }
+    if let Some(parent) = parent_session {
+        let file = subagents_dir(parent).join(format!("{task_id}.jsonl"));
+        if file.exists() {
+            return Some(file);
+        }
+    }
+    let file = hoocode_code_paths::dispatch_task_dir(cwd, task_id).join("session.jsonl");
+    file.exists().then_some(file)
+}
+
+/// The transcript a resume continues. A transcript the caller named (the
+/// picker's row) wins: a resumed run has a new task id, and its record keeps
+/// the old transcript's file name, so the id no longer names the file. Else
+/// the run's own transcript, by task id.
+pub fn resume_transcript(
+    cwd: &Path,
+    task_id: &str,
+    parent_session: Option<&Path>,
+    named: Option<&Path>,
+) -> Option<PathBuf> {
+    match named {
+        Some(file) if file.is_file() => Some(file.to_path_buf()),
+        _ => run_transcript(cwd, task_id, parent_session),
     }
 }
 

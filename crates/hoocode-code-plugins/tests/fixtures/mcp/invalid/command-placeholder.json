@@ -1,0 +1,7 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "bad": {"type": "stdio", "command": "${PLUGIN_ROOT}/bin/tool"},
+    "good": {"type": "stdio", "command": "tool"}
+  }
+}

@@ -6,6 +6,7 @@
 //! ● edit            src/core/keybindings.ts                         ok
 //! ```
 
+use std::cell::OnceCell;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -105,12 +106,83 @@ pub fn tool_subject(args: &Value, cwd: &str) -> String {
     js_trim(&out).to_string()
 }
 
+/// The text a result's renderers show, computed on first use and kept with
+/// the result: one cell per image mode, since the image placeholders depend
+/// on it. The memo is derived from the content it sits beside, so it is not
+/// part of a result's equality, and a copy starts empty.
+#[derive(Debug, Default)]
+pub struct ResultText {
+    with_images: OnceCell<String>,
+    without_images: OnceCell<String>,
+}
+
+impl ResultText {
+    /// `get_text_output` of `content`, computed by the first call for this mode.
+    pub fn get(&self, content: &[Content], show_images: bool) -> &str {
+        let cell = if show_images {
+            &self.with_images
+        } else {
+            &self.without_images
+        };
+        cell.get_or_init(|| get_text_output(Some(content), show_images))
+    }
+}
+
+impl Clone for ResultText {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl PartialEq for ResultText {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
 /// A finished (or partial) tool result, as the tool blocks see it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ToolResult {
     pub content: Vec<Content>,
     pub details: Value,
     pub is_error: bool,
+}
+
+/// A tool result as a block holds it: shared through an `Rc` by the block and
+/// its renderers, with the text they show memoized beside it. Reads go to the
+/// result itself (`Deref`). The result is private, so the memo cannot go
+/// stale: a changed result is a new holder (`ToolExecutionComponent::update_result`).
+#[derive(Debug, Default)]
+pub struct ResultHolder {
+    result: ToolResult,
+    pub(crate) memo: ResultText,
+}
+
+impl ResultHolder {
+    pub fn new(result: ToolResult) -> Self {
+        Self {
+            result,
+            memo: ResultText::default(),
+        }
+    }
+
+    pub fn result(&self) -> &ToolResult {
+        &self.result
+    }
+
+    /// The result's text (ANSI stripped, sanitized), computed once per image
+    /// mode. Renderers rebuild on every frame, so they read this, not the content.
+    pub fn text(&self, show_images: bool) -> &str {
+        self.memo.get(&self.result.content, show_images)
+    }
+}
+
+impl std::ops::Deref for ResultHolder {
+    type Target = ToolResult;
+
+    fn deref(&self) -> &ToolResult {
+        &self.result
+    }
 }
 
 /// `ToolSignalInput`.
@@ -120,7 +192,7 @@ pub struct ToolSignalInput {
     pub args: Value,
     pub cwd: String,
     /// Shared with the tool block, so each rebuild hands it over without a copy.
-    pub result: Option<Rc<ToolResult>>,
+    pub result: Option<Rc<ResultHolder>>,
     pub is_partial: bool,
     pub show_images: bool,
     /// The newest call in the transcript. Themes that set `activeToolBg` mark it.
@@ -142,8 +214,8 @@ pub fn tool_signal(input: &ToolSignalInput) -> (String, &'static str) {
     if result.is_error {
         return ("error".into(), "error");
     }
-    let output = get_text_output(Some(&result.content), input.show_images);
-    if js_trim(&output).is_empty() {
+    let output = result.text(input.show_images);
+    if js_trim(output).is_empty() {
         return ("ok".into(), "success");
     }
     let lines = output.split('\n').count();
@@ -212,5 +284,98 @@ impl ToolSignalComponent {
 impl Component for ToolSignalComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
         vec![render_tool_signal_line(&self.input, width as usize)]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn holder(text: &str) -> Rc<ResultHolder> {
+        Rc::new(ResultHolder::new(ToolResult {
+            content: vec![Content::text(text)],
+            ..Default::default()
+        }))
+    }
+
+    #[test]
+    fn the_text_is_computed_once_and_shared_by_every_reader() {
+        let shared = holder(
+            "line one
+line two
+",
+        );
+        let first = shared.text(false).as_ptr();
+        let again = Rc::clone(&shared).text(false).as_ptr();
+        assert_eq!(first, again, "a second read hands back the memoized text");
+        assert_eq!(
+            shared.text(false),
+            "line one
+line two
+"
+        );
+    }
+
+    #[test]
+    fn each_image_mode_has_its_own_memo() {
+        let shared = holder("plain");
+        let with = shared.text(true).as_ptr();
+        let without = shared.text(false).as_ptr();
+        assert_ne!(with, without, "the two modes are memoized apart");
+        assert_eq!(shared.text(true).as_ptr(), with);
+        assert_eq!(shared.text(false).as_ptr(), without);
+    }
+
+    #[test]
+    fn the_image_mode_memoizes_its_own_text() {
+        use hoocode_ai_types::ImageContent;
+        use hoocode_tui_images::{
+            reset_capabilities_cache, set_capabilities, ImageProtocol, TerminalCapabilities,
+        };
+        set_capabilities(TerminalCapabilities {
+            images: Some(ImageProtocol::Kitty),
+            true_color: true,
+            hyperlinks: true,
+        });
+        let shared = Rc::new(ResultHolder::new(ToolResult {
+            content: vec![
+                Content::text("before"),
+                Content::Image(ImageContent {
+                    data: "AAAA".into(),
+                    media_type: "image/png".into(),
+                }),
+            ],
+            ..Default::default()
+        }));
+        // The image is drawn in one mode and a placeholder in the other, so
+        // a shared memo would hand one mode's text to the other.
+        let drawn = shared.text(true).to_string();
+        let placeholder = shared.text(false).to_string();
+        reset_capabilities_cache();
+        assert!(!drawn.contains("[image/png]"), "{drawn:?}");
+        assert!(placeholder.contains("[image/png]"), "{placeholder:?}");
+        assert_eq!(shared.text(true), drawn);
+        assert_eq!(shared.text(false), placeholder);
+    }
+
+    #[test]
+    fn an_update_is_a_new_holder_with_its_own_text() {
+        assert_eq!(holder("old").text(false), "old");
+        assert_eq!(holder("new").text(false), "new");
+    }
+
+    #[test]
+    fn a_radar_signal_counts_the_memoized_lines() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let input = ToolSignalInput {
+            tool_name: "Bash".into(),
+            result: Some(holder(
+                "a
+b
+c",
+            )),
+            ..Default::default()
+        };
+        assert_eq!(tool_signal(&input).0, "3 lines");
     }
 }

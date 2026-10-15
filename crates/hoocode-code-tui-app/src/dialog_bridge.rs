@@ -23,9 +23,12 @@ pub enum DialogRequest {
     /// An info notification (`showStatus`).
     Notify(String),
     /// Show the options pane; one answer per question, or `None` when skipped.
+    /// `chime` is set for the `ask_options` tool only (the completion chime rings
+    /// when the agent asks a question), not for MCP elicitation forms.
     AskOptions {
         questions: Vec<AskQuestion>,
         reply: mpsc::Sender<Option<Vec<String>>>,
+        chime: bool,
     },
     /// The asker's signal fired: take the options pane down unanswered.
     HideAskOptions,
@@ -78,9 +81,26 @@ impl PermissionUi for TuiPermissionUi {
 /// blocks the tool until the pane answers, and an abort takes the pane down.
 pub struct TuiAskOptionsHost;
 
+impl TuiAskOptionsHost {
+    /// The MCP elicitation form: the same pane, without the AskUserQuestion chime.
+    pub fn ask_form(&self, questions: &[AskQuestion]) -> Option<Vec<Option<String>>> {
+        ask_pane(questions, None, false, &send)
+    }
+}
+
 impl AskOptionsHost for TuiAskOptionsHost {
     fn has_ui(&self) -> bool {
         true
+    }
+
+    /// During `/loop auto` the tool answers from recommended options (or halts)
+    /// without a pane.
+    fn auto_loop_active(&self) -> bool {
+        crate::auto_loop::is_active()
+    }
+
+    fn halt_loop(&self, reason: &str) {
+        crate::auto_loop::halt(reason);
     }
 
     fn ask_options(
@@ -88,29 +108,79 @@ impl AskOptionsHost for TuiAskOptionsHost {
         questions: &[AskQuestion],
         signal: Option<AbortSignal>,
     ) -> Option<Vec<Option<String>>> {
-        let aborted = || signal.as_ref().is_some_and(AbortSignal::aborted);
-        if questions.is_empty() || aborted() {
-            return None;
-        }
-        let (reply, answer) = mpsc::channel();
-        let sent = send(DialogRequest::AskOptions {
-            questions: questions.to_vec(),
-            reply,
-        });
-        if !sent {
-            return None;
-        }
-        loop {
-            match answer.recv_timeout(Duration::from_millis(50)) {
-                Ok(answers) => return answers.map(|a| a.into_iter().map(Some).collect()),
-                Err(mpsc::RecvTimeoutError::Disconnected) => return None,
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    if aborted() {
-                        send(DialogRequest::HideAskOptions);
-                        return None;
-                    }
+        ask_pane(questions, signal, true, &send)
+    }
+}
+
+/// Shows the options pane through `send` and waits for the answer.
+fn ask_pane(
+    questions: &[AskQuestion],
+    signal: Option<AbortSignal>,
+    chime: bool,
+    send: &dyn Fn(DialogRequest) -> bool,
+) -> Option<Vec<Option<String>>> {
+    let aborted = || signal.as_ref().is_some_and(AbortSignal::aborted);
+    if questions.is_empty() || aborted() {
+        return None;
+    }
+    let (reply, answer) = mpsc::channel();
+    let sent = send(DialogRequest::AskOptions {
+        questions: questions.to_vec(),
+        reply,
+        chime,
+    });
+    if !sent {
+        return None;
+    }
+    loop {
+        match answer.recv_timeout(Duration::from_millis(50)) {
+            Ok(answers) => return answers.map(|a| a.into_iter().map(Some).collect()),
+            Err(mpsc::RecvTimeoutError::Disconnected) => return None,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if aborted() {
+                    send(DialogRequest::HideAskOptions);
+                    return None;
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn question() -> AskQuestion {
+        AskQuestion {
+            question: "Which?".into(),
+            short: None,
+            detail: None,
+            options: Vec::new(),
+            allow_custom: true,
+        }
+    }
+
+    #[test]
+    fn only_the_ask_options_tool_chimes() {
+        // The tool path passes `chime: true`; the elicitation path must not.
+        let questions = [question()];
+        let tool = Cell::new(None);
+        let _ = ask_pane(&questions, None, true, &|r| {
+            if let DialogRequest::AskOptions { chime, .. } = r {
+                tool.set(Some(chime));
+            }
+            false
+        });
+        assert_eq!(tool.get(), Some(true));
+
+        let form = Cell::new(None);
+        let _ = ask_pane(&questions, None, false, &|r| {
+            if let DialogRequest::AskOptions { chime, .. } = r {
+                form.set(Some(chime));
+            }
+            false
+        });
+        assert_eq!(form.get(), Some(false));
     }
 }

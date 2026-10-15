@@ -44,6 +44,7 @@ pub(super) enum BuiltinCommand {
     Debug,
     Perf,
     Mcp,
+    Plugin,
     Color,
     Chrome,
     Fork,
@@ -56,6 +57,7 @@ pub(super) enum BuiltinCommand {
     SubagentCancel,
     SubagentRetry,
     SubagentStats,
+    Loop,
     /// A built-in whose handler lands with a later task.
     Pending(&'static str),
 }
@@ -82,6 +84,7 @@ impl BuiltinCommand {
             "debug" => Self::Debug,
             "perf" => Self::Perf,
             "mcp" => Self::Mcp,
+            "plugin" => Self::Plugin,
             "color" => Self::Color,
             "chrome" => Self::Chrome,
             "fork" => Self::Fork,
@@ -94,6 +97,7 @@ impl BuiltinCommand {
             "subagent-cancel" => Self::SubagentCancel,
             "subagent-retry" => Self::SubagentRetry,
             "subagent-stats" => Self::SubagentStats,
+            "loop" => Self::Loop,
             _ => {
                 let builtin = BUILTIN_SLASH_COMMANDS.iter().find(|c| c.name == name)?;
                 Self::Pending(builtin.name)
@@ -112,12 +116,14 @@ impl BuiltinCommand {
             | Self::Chrome
             | Self::Cd
             | Self::Mcp
+            | Self::Plugin
             | Self::Export
             | Self::Import
             | Self::Subagent
             | Self::SubagentCancel
             | Self::SubagentRetry
-            | Self::SubagentStats => true,
+            | Self::SubagentStats
+            | Self::Loop => true,
             Self::Pending(_) => false,
             _ => false,
         }
@@ -161,6 +167,7 @@ impl Mode {
             BuiltinCommand::Debug => self.handle_debug_command(),
             BuiltinCommand::Perf => self.handle_perf_command(),
             BuiltinCommand::Mcp => self.handle_mcp_command(text),
+            BuiltinCommand::Plugin => self.handle_plugin_command(text),
             BuiltinCommand::Color => {
                 // An argument sets the slot outright; bare `/color` opens the
                 // swatches.
@@ -179,6 +186,10 @@ impl Mode {
             BuiltinCommand::SubagentCancel => self.cancel_newest_subagent(text),
             BuiltinCommand::SubagentRetry => self.retry_newest_subagent(text),
             BuiltinCommand::SubagentStats => self.handle_subagent_stats_command(text),
+            BuiltinCommand::Loop => {
+                let args = text.strip_prefix("/loop").unwrap_or_default();
+                self.handle_loop_command(args);
+            }
             BuiltinCommand::Pending(name) => {
                 // Wired by its own ledger task (see 11.4e).
                 self.show_status(&format!("/{name} is not available yet"));

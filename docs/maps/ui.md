@@ -25,7 +25,8 @@ update this page in the same commit.
 | Startup banner | wordmark | `hoocode-code-tui-app/src/wordmark.rs` |
 | Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
 | Task panel | task panel | `code-tui-widgets/src/task_panel.rs` |
-| Notification band | notification panel, tips | `hoocode-code-tui-app/src/notification_panel.rs`, `tips.rs` |
+| Notification band | notification panel, tips, startup update notice | `hoocode-code-tui-app/src/notification_panel.rs`, `tips.rs`; the update notice is polled by `poll_update_notice` in `mode/events.rs` from `hoocode-code-update` |
+| Completion bell (`chimeOnTurnComplete`): one `\x07` when a turn over 10 s ends (not after an abort) or when `AskUserQuestion` opens (not MCP elicitation forms); repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` (pure timing, `TurnTimer` set at prompt submit); rung by `ring_chime` and `finish_turn_chime` in `mode/events.rs`, and at the `AskOptions` dialog in `mode/mod.rs` when its request has `chime` set (`dialog_bridge.rs`) |
 | Progress bar | progress bar, startup progress | `hoocode-code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
 | Prompt editor | `CustomEditor` around `Editor` | `mode/input.rs` (`CustomEditor`); `tui-components/src/editor/` |
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
@@ -70,13 +71,15 @@ update this page in the same commit.
 
 They replace the prompt frame while open. All in `code-tui-selectors/src/` unless noted.
 
+Every picker moves its cursor with `PickerCursor` (`tui-components/src/picker_cursor.rs`): up and down, PgUp and PgDn by a window, Home and End to the ends. The ends clamp; nothing wraps (decision 29). The visible window and the `(n/len)` footer come from the same type. The `hoocode config` list skips its group headers and counts resources in its footer. In a picker with a query line (`/model`, scoped models, `/login`, `/resume`, `hoocode config`), Home and End stay with the query's text cursor, and only PgUp and PgDn jump the list (`handle_query_key`). The `/tree` query has no text cursor, so there Home and End jump the list. Ask options: Home and End edit the custom answer while it has focus.
+
 | Opened by | Picker | File |
 |---|---|---|
 | `/settings` | settings pane | `settings_selector.rs` (uses `tui-components/src/settings_list.rs`). No External tools category: the external-tools layer went with `fd`/`rg` (reliability 1.4), so the top level is the tool rows, then the categories. Tool rows are sorted by tool name (`tool_row_sort_key`: Shell, Edit, Read, Write). The top-level **Models** row shows `all models` or `N models` (from `scopedModels`); Enter closes the pane and opens `/scoped-models` (`SettingsChange::OpenScopedModels`, handled in `hoocode-code-tui-app/src/mode/settings.rs`). |
 | `/model` | model picker | `model_selector.rs`. A model whose provider's stored OAuth token has expired shows an `expired` marker (`set_expired_providers`, read by `mode/models.rs` `show_model_selector` via `AuthStorage::readiness`; no refresh). |
 | `/scoped-models` | scoped models | `scoped_models_selector.rs`. Loads `scopedModels` (`hoocode-code-tui-app/src/mode/models.rs`, `concrete_scoped_entries`), one row per model with an effort column and a category column, a header line above the rows. Keys: enter toggles, alt+a/alt+x all/clear, alt+g provider, alt+up/alt+down reorder (order is priority), **tab** cycles the row's effort through the model's supported levels then unset, **alt+j** cycles its category none, cheap, fast, standard, capable then none, alt+s saves full entries (`Persist(Vec<ScopedModel>)`, validated first). Alias is kept, not edited. Typing filters the list. |
 | thinking level, theme, `/color` | one-list pickers | `small_selectors.rs`, `framed_list.rs` |
-| `/resume` | session picker | `session_selector.rs`, `session_selector_search.rs` |
+| `/resume` | session picker | `session_selector.rs`, `session_selector_search.rs`. Subagent runs (`<session>/subagents/`) are rows under their parent in the threaded view, added by the loaders in `hoocode-code-tui-app/src/session_picker.rs` (`with_subagent_runs`, from `list_subagent_sessions` in `code-session`). A row reads `<type> · <complete\|failed\|…>`, `running` or `interrupted`. A search, or a non-threaded sort, lists the parent rows only. Enter on an `interrupted` run opens a choice: `v` views its transcript, `r` resumes it (`SubagentRunRef` to `pool.resume` in `hoocode-code-tui-app/src/mode/subagents.rs`; in-session picker only), esc backs out. Deleting a session deletes its `subagents/` dir. |
 | `--resume` on the command line | session picker on its own TUI | `hoocode-code-tui-app/src/session_picker.rs` |
 | `/tree` | session tree | `tree_selector.rs` |
 | `/fork` | pick a user message | `user_message_selector.rs` |
@@ -84,6 +87,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | `/login`, `/logout` | provider pickers, login dialog | `oauth_selector.rs`, `login_dialog.rs`; flow in `hoocode-code-tui-app/src/login_controller.rs` |
 | `AskUserQuestion` tool | options pane | `ask_options.rs` |
 | `hoocode config` | resource list | `config_selector.rs` |
+| `hoocode update` (CLI, no TUI): prints the update command for the install method; never replaces the binary | `hoocode-code-update/src/lib.rs` (`run_update_command`); dispatched in `hoocode-code-cli/src/lib.rs` |
 | `/hotkeys` | shortcuts page | `hoocode-code-tui-app/src/hotkeys.rs` |
 | `/changelog` | changelog | `hoocode-code-tui-app/src/changelog.rs` |
 | Questions from code off the UI thread | select / editor dialogs | `hoocode-code-tui-app/src/dialog_bridge.rs`, `extension_selector.rs`, `extension_editor.rs` |
@@ -101,6 +105,8 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | `/perf`: threads, RSS, frame and keystroke timing, stalls (Phase 0 counters) | `handle_perf_command` in `mode/commands.rs`; collector and report in `hoocode-code-tui-app/src/perf.rs` (`format_report`) |
 | `/chrome`: `/chrome` names the stop; `/chrome full` or `/chrome compact` sets it and saves `chromeDensity`. `bare` is refused with an error that names the two stops. A saved `bare` loads as compact | `handle_chrome_command` in `mode/chrome.rs`; the dial is `hoocode-code-tui-app/src/chrome_layout.rs` |
 | Mode commands (`/mode`, `/plan`, `/grill`, `/goal`, `/approve`) | `code-modes` |
+| `/plugin`: `list`, `marketplace add <src> [--trust]|list|refresh`, `install <name[@marketplace]> [--scope user|project]`, `remove <name> [--scope ...]`, `update [name]`, `trust`. Text blocks, not a picker. A change makes the plugins live (MCP servers restart with the new set, then the `/reload` path), or waits for the turn to end. Its notice shows after that reload | `handle_plugin_command` in `mode/plugin.rs` (`run_plugin_command` is the parser and the work; `reload_plugins`); the work in `code-plugins` `install.rs`, `marketplace.rs` |
+| `/loop`: scheduled prompts (`/loop "<cron>"` or `<N>m\|h\|d` with a prompt, `once`, `list`, `delete <id>`, `stop`) and `/loop auto [--max-turns N] <task>`. Forms parsed in `code-scheduler` `loop_command.rs`; the handler and the auto-loop turn flow are in `mode/loop_command.rs` (`PromptDone` and `MessageEnd` call into it; `tick_scheduler` reports late and skipped prompts). The auto-loop flag and halt, read by the `AskUserQuestion` host, are `auto_loop.rs` | `code-tui-app` `mode/loop_command.rs`, `auto_loop.rs`; `code-scheduler` `loop_command.rs` |
 | MCP tools in the transcript | `mcp_<server>_<tool>` tools use the generic tool block (no renderer); progress reports arrive as partial results and show there |
 | Skill and prompt-template commands | `code-resources` |
 
@@ -174,7 +180,7 @@ A key that is not a scroll key un-pins at the prompt, then does its usual job.
 | Terminal output: every write, in order; one pending frame | `tui-terminal/src/output.rs` (`hoocode-term-out`) |
 | Key parsing (Kitty, modifyOtherKeys), matching | `tui-keys` |
 | App key map, `keybindings.json`, hint text | `code-tui-keybindings` |
-| Components: text, input, select list, loader, box, image | `tui-components/src/` |
+| Components: text, input, select list, picker cursor, loader, box, image | `tui-components/src/` |
 | Markdown (port of `marked` v15) | `tui-components/src/markdown/` |
 | Syntax highlighting (port of highlight.js 10.7.3) | `tui-highlight` |
 | Images (Kitty, iTerm2) | `tui-images` |

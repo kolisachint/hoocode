@@ -296,7 +296,10 @@ fn should_warn_when_skill_path_does_not_exist() {
 
 #[test]
 fn should_expand_tilde_in_skill_paths() {
-    let home = dirs::home_dir().unwrap().to_string_lossy().into_owned();
+    let home = hoocode_home::home_dir()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
     let with_tilde = load_skills(&options(vec!["~/.hoocode/agent/skills".into()], true));
     let without = load_skills(&options(
         vec![format!("{home}/.hoocode/agent/skills")],

@@ -2,19 +2,51 @@
 
 Status: **agreed 2026-10-07**. Replaces ledger 12.5.
 
-Built so far (2026-10-08, crate `hoocode-code-scheduler`):
+Built so far (crate `hoocode-code-scheduler`; 2026-10-08, and 2026-10-14 for items 3, 4 and
+the late-fire rule):
 
-- Done: the cron matcher (ported from `core/scheduler.ts`), the store at
+- Done 2026-10-08: the cron matcher (ported from `core/scheduler.ts`), the store at
   `<cwd>/.agents/scheduled_tasks.json` (same shape, legacy `.hoocode/` read until the new
   file exists, write-temp-and-rename, lock file so a fire is claimed once), the three
   tools with hoocode-ts's names, labels, descriptions and schemas, in the default bundle
   after AskUserQuestion (13 tools in the print-basic request, as in TS), and firing in
   the interactive loop: a 30-second tick, idle only, the due prompts sent as follow-ups.
-- Not done: item 3 (the `/loop` command, its `list`, `delete`, `stop`, `once` forms) and
-  item 4 (`/loop auto`).
-- Not done: the 10-minute late-fire rule in the table above. As in hoocode-ts, a task due
-  while the agent is busy fires only on an idle tick in that same minute; otherwise it is
-  skipped.
+- Done 2026-10-14, item 3: `/loop` (`mode/loop_command.rs` in `hoocode-code-tui-app`; the
+  arguments are parsed in `hoocode-code-scheduler/src/loop_command.rs`). Forms:
+  `/loop "<cron>" <prompt>`, `/loop <N>m|<N>h|<N>d <prompt>` (an interval becomes
+  `*/N * * * *`, `0 */N * * *` or `0 0 */N * *`; minutes and hours must divide evenly),
+  `/loop once <schedule> <prompt>`, `/loop list`, `/loop delete <id>`, `/loop stop`.
+  `stop` ends `/loop auto` and removes the scheduled prompts this session's `/loop`
+  created (kept in memory per session, with their store). Prompts from an earlier
+  session, from the model's Cron tools, or from another session stay; `/loop delete <id>`
+  removes any of them. The store has no origin field, so the session list is the record.
+  A quoted cron is checked field by field (`validate`) and refused with a usage message
+  when it cannot match.
+- Done 2026-10-14, item 4: `/loop auto [--max-turns N] <task>` (default 10). The first
+  prompt is turn 1; after each turn that did not end the loop, the continuation is sent.
+  The loop ends when a reply contains `LOOP_DONE`, at the cap, or when a turn is aborted
+  or fails. It yields while the agent works, while messages are queued, and while the
+  editor has text: the continuation goes out on the first idle tick after that. While it
+  runs, `AskUserQuestion` takes the recommended option of each question (`auto_loop.rs`),
+  or halts the loop when a question has none. Not wired: `/grill` does not yet skip its
+  questions during the loop, and `/goal` (`StartAutoLoop`) still has no listener.
+- Done 2026-10-14, late fires: a task whose due minute is up to 10 minutes past (the
+  busy turn is over, the next idle tick is within the window) fires once on that tick.
+  A later tick skips it and shows a warning. A one-shot task is removed either way. The
+  store records the due minute, so the same due minute never fires twice. Limits: a tick
+  looks back a day for a due minute, so a schedule whose last due minute is older than a
+  day (weekly, monthly) is not reported as skipped. A task is never due for a minute
+  before its creation.
+- Done 2026-10-14, review fixes: a fire claim fires nothing when it cannot take the lock
+  file within 3 seconds (the next tick claims it, still inside the late window); the
+  cron matcher reads `1-7` as Monday to Sunday (it used to become the empty `1-0`) and
+  no longer overflows on huge steps; a request that returns an error ends `/loop auto`
+  as an interruption. Known, not fixed: two processes can both take over one stale lock
+  file at the same instant (a lock held by a process that died), which needs `flock`
+  (`File::try_lock`, Rust 1.89; the workspace MSRV is 1.88); a scheduled prompt claimed on
+  the same tick as an auto-loop continuation can collide with it, and the session then
+  refuses the second prompt, which ends `/loop auto` with an error notice.
+- Not done: the Schedule tab in the activity panel (T4.2 in [tui-activity.md](tui-activity.md)).
 - Differences from hoocode-ts: `CronCreate` returns a tool error when the store cannot be
   written (TS ignores the write error); the store is re-read on every operation, so a
   task another process created is not lost.

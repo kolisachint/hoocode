@@ -483,9 +483,7 @@ pub fn load_skills(options: &LoadSkillsOptions) -> LoadSkillsResult {
         }
     };
 
-    let home = dirs::home_dir()
-        .map(|h| h.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "/".into());
+    let home = hoocode_home::home_dir().map(|h| h.to_string_lossy().into_owned());
     let user_skills_dir = node_path::join(&[agent_dir, "skills"]);
     let project_skills_dir = node_path::resolve(
         cwd,
@@ -494,17 +492,19 @@ pub fn load_skills(options: &LoadSkillsOptions) -> LoadSkillsResult {
 
     if options.include_defaults {
         if options.include_claude {
-            add_skills(
-                load_skills_from_dir_internal(
-                    &node_path::join(&[&home, ".claude", "skills"]),
-                    "claude-user",
-                    true,
-                    None,
-                    None,
-                ),
-                &mut skill_map,
-                &mut all_diagnostics,
-            );
+            if let Some(home) = &home {
+                add_skills(
+                    load_skills_from_dir_internal(
+                        &node_path::join(&[home, ".claude", "skills"]),
+                        "claude-user",
+                        true,
+                        None,
+                        None,
+                    ),
+                    &mut skill_map,
+                    &mut all_diagnostics,
+                );
+            }
             add_skills(
                 load_skills_from_dir_internal(
                     &node_path::resolve(cwd, ".claude/skills"),

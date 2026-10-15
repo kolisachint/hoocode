@@ -244,6 +244,7 @@ fn colors_task_output_call_target_and_roster_lines_by_agent_type() {
     let rendered = format_task_output_result(&ToolResultView {
         content: &content,
         details: &details,
+        text: &hoocode_code_tui_widgets::tool_signal::ResultText::default(),
     });
     assert!(rendered.contains(&explore));
     assert!(rendered.contains(&fg_ansi(agent_color_for("plan"))));

@@ -31,8 +31,8 @@ use super::word_wrap::{
 use crate::autocomplete::{AutocompleteItem, AutocompleteProvider, AutocompleteSuggestions};
 use crate::color::ColorFn;
 use crate::frame::{
-    render_frame_edge, FrameBorderChars, FrameBorderCharsOverride, FrameBorderStyle, FrameEdge,
-    FrameEdgeOptions, FrameLabel,
+    padded_columns, render_frame_edge, FrameBorderChars, FrameBorderCharsOverride,
+    FrameBorderStyle, FrameEdge, FrameEdgeOptions, FrameLabel,
 };
 use crate::select_list::{SelectItem, SelectList, SelectListLayoutOptions, SelectListTheme};
 
@@ -567,7 +567,7 @@ impl Editor {
     fn normalize_text(text: &str) -> String {
         text.replace("\r\n", "\n")
             .replace('\r', "\n")
-            .replace('\t', "    ")
+            .replace('\t', &" ".repeat(hoocode_tui_util::EDITOR_TAB_WIDTH))
     }
 
     fn insert_text_at_cursor_internal(&mut self, text: &str) {
@@ -951,6 +951,12 @@ impl Editor {
         self.set_cursor_col(len);
     }
 
+    /// Whether the last edit was a kill: the next kill then accumulates into the same
+    /// kill-ring entry.
+    fn last_was_kill(&self) -> bool {
+        self.last_action == Some(LastAction::Kill)
+    }
+
     fn kill_push(&mut self, text: &str, prepend: bool, accumulate: bool) {
         self.kill_ring.push(
             text,
@@ -980,7 +986,7 @@ impl Editor {
     fn delete_to_start_of_line(&mut self) {
         self.history_index = -1;
         let line = self.current_line().to_string();
-        let was_kill = self.last_action == Some(LastAction::Kill);
+        let was_kill = self.last_was_kill();
         if self.state.cursor_col > 0 {
             self.push_undo_snapshot();
             let deleted = slice16(&line, 0, self.state.cursor_col).to_string();
@@ -999,7 +1005,7 @@ impl Editor {
     fn delete_to_end_of_line(&mut self) {
         self.history_index = -1;
         let line = self.current_line().to_string();
-        let was_kill = self.last_action == Some(LastAction::Kill);
+        let was_kill = self.last_was_kill();
         if self.state.cursor_col < len16(&line) {
             self.push_undo_snapshot();
             let deleted = slice16_from(&line, self.state.cursor_col).to_string();
@@ -1020,13 +1026,13 @@ impl Editor {
         if self.state.cursor_col == 0 {
             if self.state.cursor_line > 0 {
                 self.push_undo_snapshot();
-                let was_kill = self.last_action == Some(LastAction::Kill);
+                let was_kill = self.last_was_kill();
                 self.kill_push("\n", true, was_kill);
                 self.merge_with_previous_line();
             }
         } else {
             self.push_undo_snapshot();
-            let was_kill = self.last_action == Some(LastAction::Kill);
+            let was_kill = self.last_was_kill();
             let old_col = self.state.cursor_col;
             self.move_word_backwards();
             let delete_from = self.state.cursor_col;
@@ -1050,13 +1056,13 @@ impl Editor {
         if self.state.cursor_col >= len16(&line) {
             if self.state.cursor_line + 1 < self.state.lines.len() {
                 self.push_undo_snapshot();
-                let was_kill = self.last_action == Some(LastAction::Kill);
+                let was_kill = self.last_was_kill();
                 self.kill_push("\n", false, was_kill);
                 self.merge_with_next_line();
             }
         } else {
             self.push_undo_snapshot();
-            let was_kill = self.last_action == Some(LastAction::Kill);
+            let was_kill = self.last_was_kill();
             let old_col = self.state.cursor_col;
             self.move_word_forwards();
             let delete_to = self.state.cursor_col;
@@ -1591,8 +1597,6 @@ impl Editor {
         };
         if force && explicit_tab && suggestions.items.len() == 1 {
             let item = suggestions.items[0].clone();
-            self.push_undo_snapshot();
-            self.last_action = None;
             self.apply_completion(&item, &suggestions.prefix);
             self.emit_change();
             self.request_render();
@@ -1609,8 +1613,13 @@ impl Editor {
         self.request_render();
     }
 
-    /// Run the provider's `applyCompletion` and adopt its result.
+    /// Run the provider's `applyCompletion` and adopt its result, as one undo step.
     fn apply_completion(&mut self, item: &AutocompleteItem, prefix: &str) {
+        if self.autocomplete_provider.is_none() {
+            return;
+        }
+        self.push_undo_snapshot();
+        self.last_action = None;
         let Some(provider) = &self.autocomplete_provider else {
             return;
         };
@@ -1780,8 +1789,6 @@ impl Editor {
             if kb.matches(&data, "tui.input.tab") {
                 if let Some(selected) = self.selected_autocomplete_item() {
                     if self.autocomplete_provider.is_some() {
-                        self.push_undo_snapshot();
-                        self.last_action = None;
                         let prefix = self.autocomplete_prefix.clone();
                         self.apply_completion(&selected, &prefix);
                         self.cancel_autocomplete();
@@ -1793,8 +1800,6 @@ impl Editor {
             if kb.matches(&data, "tui.select.confirm") {
                 if let Some(selected) = self.selected_autocomplete_item() {
                     if self.autocomplete_provider.is_some() {
-                        self.push_undo_snapshot();
-                        self.last_action = None;
                         let prefix = self.autocomplete_prefix.clone();
                         self.apply_completion(&selected, &prefix);
                         if prefix.starts_with('/') {
@@ -1968,9 +1973,7 @@ impl Component for Editor {
         let bare = self.border == FrameBorderStyle::None;
         let border_width = usize::from(is_box);
         let inner_width = width.saturating_sub(border_width * 2).max(1);
-        let max_padding = (inner_width - 1) / 2;
-        let padding_x = self.padding_x.min(max_padding);
-        let content_width = inner_width.saturating_sub(padding_x * 2).max(1);
+        let (padding_x, content_width) = padded_columns(inner_width, self.padding_x);
 
         let prompt_prefix_width = if self.prompt_prefix.is_empty() {
             0

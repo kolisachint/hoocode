@@ -12,7 +12,7 @@ use hoocode_code_auth::{AuthCredential, AuthSource, AuthStatus, AuthStorage};
 use hoocode_code_tui_theme::{select_gutter, style_input, theme, SELECT_CURSOR};
 use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
 use hoocode_code_tui_widgets::selected_row_list::{SelectableRow, SelectedRowList};
-use hoocode_tui_components::{Input, Spacer, TruncatedText};
+use hoocode_tui_components::{Input, PickerCursor, Spacer, TruncatedText};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::{Component, ComponentHandle};
@@ -70,10 +70,12 @@ pub enum OAuthSelectorEvent {
 /// A provider's auth status (`getAuthStatus`).
 pub type AuthStatusFn = Box<dyn Fn(&str) -> AuthStatus>;
 
+const MAX_VISIBLE: usize = 8;
+
 struct State {
     all: Vec<AuthSelectorProvider>,
     filtered: Vec<AuthSelectorProvider>,
-    selected: usize,
+    cursor: PickerCursor,
     mode: LoginMode,
     auth: Arc<AuthStorage>,
     status: AuthStatusFn,
@@ -126,7 +128,7 @@ impl State {
                 format!("{} {} {kind}", p.name, p.id)
             })
         };
-        self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
+        self.cursor.set_query(self.filtered.len());
     }
 }
 
@@ -137,16 +139,12 @@ impl Component for ProviderList {
     fn render(&mut self, width: u16) -> Vec<String> {
         let t = theme();
         let state = self.0.borrow();
-        const MAX_VISIBLE: usize = 8;
-        let len = state.filtered.len();
-        let start = (state.selected as isize - (MAX_VISIBLE / 2) as isize)
-            .min(len as isize - MAX_VISIBLE as isize)
-            .max(0) as usize;
-        let end = (start + MAX_VISIBLE).min(len);
-        let rows = (start..end)
+        let rows = state
+            .cursor
+            .window()
             .map(|i| {
                 let provider = &state.filtered[i];
-                let selected = i == state.selected;
+                let selected = i == state.cursor.selected();
                 let prefix = if selected {
                     t.fg("accent", SELECT_CURSOR)
                 } else {
@@ -160,11 +158,11 @@ impl Component for ProviderList {
             })
             .collect();
         let mut lines = SelectedRowList::new(rows, 1).render(width);
-        if start > 0 || end < len {
-            let info = t.fg("muted", &format!("  ({}/{len})", state.selected + 1));
+        if let Some(footer) = state.cursor.footer() {
+            let info = t.fg("muted", &format!("  {footer}"));
             lines.extend(TruncatedText::new(info, 0, 0).render(width));
         }
-        if len == 0 {
+        if state.filtered.is_empty() {
             let message = if !state.all.is_empty() {
                 "No matching providers"
             } else if state.mode == LoginMode::Login {
@@ -204,8 +202,8 @@ impl OAuthSelectorComponent {
         });
         let state = Rc::new(RefCell::new(State {
             filtered: providers.clone(),
+            cursor: PickerCursor::new(providers.len(), MAX_VISIBLE),
             all: providers,
-            selected: 0,
             mode,
             auth,
             status,
@@ -240,7 +238,7 @@ impl OAuthSelectorComponent {
 
     fn select_current(&mut self) {
         let state = self.state.borrow();
-        if let Some(provider) = state.filtered.get(state.selected) {
+        if let Some(provider) = state.filtered.get(state.cursor.selected()) {
             self.events
                 .push(OAuthSelectorEvent::Select(provider.id.clone()));
         }
@@ -259,17 +257,11 @@ impl Component for OAuthSelectorComponent {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
-        if kb.matches(data, "tui.select.up") {
-            let mut state = self.state.borrow_mut();
-            if !state.filtered.is_empty() {
-                state.selected = state.selected.saturating_sub(1);
-            }
-        } else if kb.matches(data, "tui.select.down") {
-            let mut state = self.state.borrow_mut();
-            if !state.filtered.is_empty() {
-                state.selected = (state.selected + 1).min(state.filtered.len() - 1);
-            }
-        } else if kb.matches(data, "tui.select.confirm") {
+        let navigated = self.state.borrow_mut().cursor.handle_query_key(data, &kb);
+        if navigated {
+            return;
+        }
+        if kb.matches(data, "tui.select.confirm") {
             self.select_current();
         } else if kb.matches(data, "tui.select.cancel") {
             self.events.push(OAuthSelectorEvent::Cancel);

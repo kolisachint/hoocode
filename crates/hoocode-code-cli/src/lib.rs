@@ -31,15 +31,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Package-manager subcommands that hoocode handles before `parseArgs`
 /// (`handlePackageCommand`, `handleResourcesCommand`). Not ported yet;
-/// `config` (`handleConfigCommand`) is.
-const SUBCOMMANDS: [&str; 6] = [
-    "install",
-    "remove",
-    "uninstall",
-    "update",
-    "list",
-    "resources",
-];
+/// `config` (`handleConfigCommand`) and `update` (see `hoocode-code-update`) are.
+const SUBCOMMANDS: [&str; 5] = ["install", "remove", "uninstall", "list", "resources"];
 
 /// `resolveAppMode` in `main.ts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,10 +121,9 @@ fn yellow(env: Env, text: &str) -> String {
 /// Flags from the pinned set that parse but are not implemented yet, in
 /// `Args` field order.
 pub fn unsupported_flags(a: &Args) -> Vec<&'static str> {
-    let checks: [(bool, &'static str); 12] = [
+    let checks: [(bool, &'static str); 11] = [
         (a.todo_write.is_some(), "--enable-todowrite"),
         (a.enable_web_tools.is_some(), "--enable-webtools"),
-        (a.enable_plugin_tools.is_some(), "--enable-plugintools"),
         (a.enable_semantic_index.is_some(), "--enable-semantic-index"),
         (a.print_token_surface.is_some(), "--print-token-surface"),
         (a.platform.is_some(), "--platform"),
@@ -186,6 +178,9 @@ pub fn main(argv: &[String]) -> i32 {
     }
     if argv.first().is_some_and(|a| a == "config") {
         return config_command::run_config_command(env.color, &mut stderr);
+    }
+    if argv.first().is_some_and(|a| a == "update") {
+        return hoocode_code_update::run_update_command(&mut stdout);
     }
     if let Some(cmd) = argv.first().filter(|a| SUBCOMMANDS.contains(&a.as_str())) {
         let _ = writeln!(
@@ -519,6 +514,13 @@ mod tests {
         );
         assert!(unsupported_flags(&parsed).is_empty());
         assert!(parsed.unknown_flags.is_empty());
+    }
+
+    #[test]
+    fn plugintools_flag_is_supported() {
+        let parsed = parse_args(&["--enable-plugintools".to_owned()]);
+        assert!(unsupported_flags(&parsed).is_empty());
+        assert_eq!(parsed.enable_plugin_tools, Some(true));
     }
 
     #[test]

@@ -131,6 +131,19 @@ pub struct PluginMcpFile {
     pub marketplace_trusted: bool,
 }
 
+/// The servers of one plugin, already read and checked by the plugin loader (`hoocode-code-plugins`,
+/// which applies each format's own rules, such as Agent Plugins' `${PLUGIN_ROOT}` expansion).
+/// Each entry's `source` is [`Source::Plugin`] with this `id` and `path`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PluginServers {
+    pub id: String,
+    pub path: PathBuf,
+    /// Set for a plugin that needs no grant of its own: one from a trusted marketplace, or a
+    /// project plugin whose folder the user trusted.
+    pub marketplace_trusted: bool,
+    pub servers: Vec<ServerDef>,
+}
+
 /// Where to look. [`ConfigSources::new`] fills in the default user and project paths.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConfigSources {
@@ -176,6 +189,15 @@ impl McpConfig {
 
 /// Load every source in `sources` and apply name precedence.
 pub fn load(sources: &ConfigSources) -> McpConfig {
+    load_with_plugin_servers(sources, &[])
+}
+
+/// [`load`], plus the servers of plugins the plugin loader already read. They come after the
+/// plugin files in `sources`, in the order given.
+pub fn load_with_plugin_servers(
+    sources: &ConfigSources,
+    plugin_servers: &[PluginServers],
+) -> McpConfig {
     let mut diagnostics = Vec::new();
     let mut loaded = Vec::new();
 
@@ -206,6 +228,17 @@ pub fn load(sources: &ConfigSources) -> McpConfig {
             marketplace_trusted: plugin.marketplace_trusted,
         };
         loaded.extend(load_file(source, &mut diagnostics));
+    }
+
+    for plugin in plugin_servers {
+        loaded.push(LoadedSource {
+            source: Source::Plugin {
+                id: plugin.id.clone(),
+                path: plugin.path.clone(),
+                marketplace_trusted: plugin.marketplace_trusted,
+            },
+            declared: plugin.servers.clone(),
+        });
     }
 
     let mut servers = Vec::new();

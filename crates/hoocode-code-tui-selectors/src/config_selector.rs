@@ -16,7 +16,7 @@ use hoocode_code_tui_keybindings::raw_key_hint;
 use hoocode_code_tui_theme::{
     paint_selected_row, select_gutter, style_input, theme, SELECT_CURSOR,
 };
-use hoocode_tui_components::{Input, Spacer};
+use hoocode_tui_components::{Input, PickerCursor, Spacer};
 use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use hoocode_tui_util::{truncate_to_width, visible_width};
@@ -120,20 +120,9 @@ fn js_sort<T>(items: &mut [T], mut compare: impl FnMut(&T, &T) -> Ordering) {
     }
 }
 
-fn home_dir() -> String {
-    hoocode_code_resources::package_resolve::home_dir()
-}
-
 /// `formatBaseDir`: `~` for home, `/` separators, a trailing `/`.
 fn format_base_dir(base_dir: &str) -> String {
-    let home = home_dir();
-    let display = if base_dir == home {
-        "~".to_string()
-    } else if let Some(rest) = base_dir.strip_prefix(&home) {
-        format!("~{}", rest.replace('\\', "/"))
-    } else {
-        base_dir.replace('\\', "/")
-    };
+    let display = hoocode_home::shorten_path(base_dir).replace('\\', "/");
     if display.ends_with('/') {
         display
     } else {
@@ -327,9 +316,8 @@ pub struct ResourceList {
     groups: Vec<ResourceGroup>,
     flat: Vec<Entry>,
     filtered: Vec<Entry>,
-    selected: usize,
+    cursor: PickerCursor,
     search: Input,
-    max_visible: usize,
     settings: Rc<RefCell<SettingsManager>>,
     cwd: String,
     agent_dir: String,
@@ -357,11 +345,10 @@ impl ResourceList {
         }
         let mut list = Self {
             groups,
+            cursor: PickerCursor::new(flat.len(), 15),
             filtered: flat.clone(),
             flat,
-            selected: 0,
             search,
-            max_visible: 15,
             settings,
             cwd: cwd.to_string(),
             agent_dir: agent_dir.to_string(),
@@ -404,7 +391,9 @@ impl ResourceList {
     }
 
     fn select_first_item(&mut self) {
-        self.selected = self.filtered.iter().position(Self::is_item).unwrap_or(0);
+        self.cursor.reset(self.filtered.len());
+        let first = self.filtered.iter().position(Self::is_item).unwrap_or(0);
+        self.cursor.select(first);
     }
 
     /// `filterItems`: resources whose name, type or path contains the query,
@@ -567,7 +556,7 @@ impl ResourceList {
     }
 
     fn toggle_selected(&mut self) {
-        let Some(&entry) = self.filtered.get(self.selected) else {
+        let Some(&entry) = self.filtered.get(self.cursor.selected()) else {
             return;
         };
         let Entry::Item(g, s, i) = entry else {
@@ -593,13 +582,8 @@ impl Component for ResourceList {
             lines.push(t.fg("muted", "  No resources found"));
             return lines;
         }
-        let len = self.filtered.len();
-        let start = (self.selected as isize - (self.max_visible / 2) as isize)
-            .min(len as isize - self.max_visible as isize)
-            .max(0) as usize;
-        let end = (start + self.max_visible).min(len);
-        for i in start..end {
-            let selected = i == self.selected;
+        for i in self.cursor.window() {
+            let selected = i == self.cursor.selected();
             match self.filtered[i] {
                 Entry::Group(g) => {
                     let label = t.fg("accent", &t.bold(&self.groups[g].label));
@@ -640,9 +624,9 @@ impl Component for ResourceList {
                 }
             }
         }
-        if start > 0 || end < len {
+        if self.cursor.is_scrolled() {
             let count = self.filtered.iter().filter(|e| Self::is_item(e)).count();
-            let current = self.filtered[..self.selected]
+            let current = self.filtered[..self.cursor.selected()]
                 .iter()
                 .filter(|e| Self::is_item(e))
                 .count()
@@ -654,28 +638,34 @@ impl Component for ResourceList {
 
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
+        // Resources only: the headers are skipped, and the ends clamp.
         if kb.matches(data, "tui.select.up") {
-            self.selected = self.find_next_item(self.selected, false);
+            let next = self.find_next_item(self.cursor.selected(), false);
+            self.cursor.select(next);
         } else if kb.matches(data, "tui.select.down") {
-            self.selected = self.find_next_item(self.selected, true);
+            let next = self.find_next_item(self.cursor.selected(), true);
+            self.cursor.select(next);
         } else if kb.matches(data, "tui.select.pageUp") {
             // Up a page, then the nearest resource at or below it.
-            let mut target = self.selected.saturating_sub(self.max_visible);
+            let mut target = self
+                .cursor
+                .selected()
+                .saturating_sub(self.cursor.max_visible());
             while target < self.filtered.len() && !Self::is_item(&self.filtered[target]) {
                 target += 1;
             }
             if target < self.filtered.len() {
-                self.selected = target;
+                self.cursor.select(target);
             }
         } else if kb.matches(data, "tui.select.pageDown") {
             // Down a page, then the nearest resource at or above it.
-            let mut target = (self.selected + self.max_visible)
+            let mut target = (self.cursor.selected() + self.cursor.max_visible())
                 .min(self.filtered.len().saturating_sub(1)) as isize;
             while target >= 0 && !Self::is_item(&self.filtered[target as usize]) {
                 target -= 1;
             }
             if target >= 0 {
-                self.selected = target as usize;
+                self.cursor.select(target as usize);
             }
         } else if kb.matches(data, "tui.select.cancel") {
             if let Some(cb) = &mut self.on_cancel {

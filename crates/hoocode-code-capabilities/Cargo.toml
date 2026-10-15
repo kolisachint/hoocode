@@ -18,6 +18,7 @@ doctest = false
 
 [dependencies]
 hoocode-code-paths = { workspace = true }
+hoocode-code-plugins = { workspace = true }
 hoocode-code-resources = { workspace = true }
 
 # Byte-index slices of text are a panic risk on multi-byte input (see docs/design/reliability.md, 1.5).

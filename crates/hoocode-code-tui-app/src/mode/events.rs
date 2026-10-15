@@ -72,6 +72,48 @@ impl Mode {
         }
     }
 
+    /// The startup update notice, once, when the version check reports a newer release.
+    pub(super) fn poll_update_notice(&mut self) {
+        let Some(receiver) = &self.update_notice else {
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(update) => {
+                self.update_notice = None;
+                let (title, body) = hoocode_code_update::notice_text(&update);
+                let body: Vec<&str> = body.iter().map(String::as_str).collect();
+                self.notifications.borrow_mut().notify(
+                    NotificationKind::Info,
+                    &title,
+                    &body,
+                    None,
+                    Some(Duration::from_secs(15)),
+                    Some("update"),
+                );
+                self.dirty.set(true);
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.update_notice = None,
+        }
+    }
+
+    /// Rings the bell when the setting allows and the debounce lets it through.
+    pub(super) fn ring_chime(&mut self) {
+        if !self.session.settings().chime_on_turn_complete() {
+            return;
+        }
+        if self.chime.allow(Instant::now()) {
+            self.tui.terminal.write(BELL);
+        }
+    }
+
+    /// The turn that just ended (`PromptDone`): chime when it ran long enough.
+    pub(super) fn finish_turn_chime(&mut self) {
+        if self.turn_timer.end(Instant::now(), self.turn_stop_reason) {
+            self.ring_chime();
+        }
+    }
+
     /// `TaskScheduler.tick`: every [`hoocode_code_scheduler::TICK_INTERVAL`],
     /// while the agent is idle, submit the prompts of the tasks due this minute
     /// as follow-up messages (`fire` in `extensions/core/loop.ts`).
@@ -84,10 +126,11 @@ impl Mode {
         if self.session.is_streaming() || self.session.is_compacting() {
             return;
         }
-        let due = hoocode_code_scheduler::claim_due_now(self.session.cwd());
+        let claimed = hoocode_code_scheduler::claim_due_now(self.session.cwd());
+        self.report_scheduled_prompts(&claimed);
         // The first prompt starts a turn; the rest queue behind it, as the
         // follow-up they would be in TS once the first has begun.
-        for (index, prompt) in due.into_iter().enumerate() {
+        for (index, prompt) in claimed.fired.into_iter().enumerate() {
             if index == 0 {
                 self.send_user_follow_up(prompt);
             } else {
@@ -284,6 +327,7 @@ impl Mode {
                     return;
                 };
                 self.turn_stop_reason = Some(assistant.stop_reason);
+                self.observe_auto_loop_reply(&assistant.content);
                 if let Some(component) = self.transcript.streaming.take() {
                     if assistant.stop_reason == StopReason::Aborted {
                         let attempt = self.session.retry_attempt();

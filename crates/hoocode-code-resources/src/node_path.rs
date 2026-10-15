@@ -1,8 +1,6 @@
 //! Node's `path` functions over string paths (POSIX): `join`, `resolve`,
 //! `dirname`, `basename`, `relative`, plus hoocode's `~` expansion.
 
-use std::path::PathBuf;
-
 /// `path.normalize` (lexical: `.`, `..` and repeated separators).
 pub fn normalize(path: &str) -> String {
     if path.is_empty() {
@@ -104,23 +102,20 @@ pub fn relative(from: &str, to: &str) -> String {
 }
 
 /// hoocode's `normalizePath` for configured paths: `~`, `~/x` and `~x` expand
-/// against the home directory.
+/// against the home directory (left as written when there is no home).
 pub fn expand_home(input: &str) -> String {
     let trimmed = input.trim();
-    let home = || {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("/"))
-            .to_string_lossy()
-            .into_owned()
+    let Some(home) = hoocode_home::home_dir().map(|h| h.to_string_lossy().into_owned()) else {
+        return trimmed.to_string();
     };
     if trimmed == "~" {
-        return home();
+        return home;
     }
     if let Some(rest) = trimmed.strip_prefix("~/") {
-        return join(&[&home(), rest]);
+        return join(&[&home, rest]);
     }
     if let Some(rest) = trimmed.strip_prefix('~') {
-        return join(&[&home(), rest]);
+        return join(&[&home, rest]);
     }
     trimmed.to_string()
 }
