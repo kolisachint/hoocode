@@ -27,20 +27,14 @@ use hoocode_code_task_store::{
 };
 use hoocode_code_tool_api::{node_fs_error, ToolError};
 use hoocode_runtime::io_handle;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio::task::JoinHandle;
 
-use crate::operations::{build_command, LocalBashOperations};
+use crate::operations::{build_command_with_output, LocalBashOperations};
 use crate::shell::{
     get_shell_config, track_detached_child_pid, untrack_detached_child_pid, ShellEnv,
 };
 
 /// Poll interval for exit and kill.
 const POLL: Duration = Duration::from_millis(10);
-/// How long a job's pipes may stay open after its shell exits (a detached
-/// descendant can hold them forever).
-const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
-const READ_BUF: usize = 16 * 1024;
 /// How long [`JobRegistry::kill`] waits for the exit to be recorded.
 const KILL_WAIT: Duration = Duration::from_secs(2);
 /// How often a finished job's group is checked for processes that are still running.
@@ -90,7 +84,7 @@ impl JobState {
 /// A job as the registry reports it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobInfo {
-    /// `job-<n>`, unique within the registry.
+    /// `job-<n>`, unique within the process.
     pub id: String,
     pub command: String,
     pub log_path: PathBuf,
@@ -210,18 +204,12 @@ impl JobRegistry {
             )
         })?;
 
-        let id = format!("job-{}", LAST_JOB.fetch_add(1, Ordering::SeqCst) + 1);
-        let log_path = self.shared.dir.join(format!("{id}.log"));
-        let open_log = || {
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log_path)
-                .map_err(|e| format!("Cannot open {}: {e}", log_path.display()))
-        };
-        // Both pipes append to the same file; O_APPEND keeps each write whole.
-        let stdout_log = open_log()?;
-        let stderr_log = open_log()?;
+        let (id, log_path, stdout_log) = create_job_log(&self.shared.dir)?;
+        // Both streams write to the one log file: the second is a duplicate of the
+        // first, so they share an open file and O_APPEND keeps each write whole.
+        let stderr_log = stdout_log
+            .try_clone()
+            .map_err(|e| format!("Cannot open {}: {e}", log_path.display()))?;
 
         let info = JobInfo {
             id: id.clone(),
@@ -419,9 +407,14 @@ pub fn kill_all_jobs() -> usize {
         .map(|shared| {
             let st = lock(&shared.state);
             let mut asked = 0;
-            for entry in st.jobs.iter().filter(|e| e.info.state.is_running()) {
-                ask_stop(entry);
-                asked += 1;
+            for entry in &st.jobs {
+                if entry.info.state.is_running() {
+                    ask_stop(entry);
+                    asked += 1;
+                } else if let Some(group) = entry.group {
+                    // A finished job's leftover processes are signalled too.
+                    kill_group(group);
+                }
             }
             asked
         })
@@ -533,6 +526,54 @@ fn remove_row(shared: &Shared, id: &str) {
     }
 }
 
+/// The most reads one [`follow_log`] call makes, so it returns at most
+/// `FOLLOW_CHUNKS * OUTPUT_READ_MAX` bytes and the view keeps up with a fast job.
+const FOLLOW_CHUNKS: usize = 8;
+/// How far behind a follower may be before it skips to the tail of the log.
+pub const FOLLOW_LAG_MAX: u64 = 2 * OUTPUT_READ_MAX as u64;
+
+/// Reads a log for a view that follows it: from `since` (or the tail when `None`),
+/// then on in bounded chunks until the end is reached. A follower more than
+/// [`FOLLOW_LAG_MAX`] behind starts at the tail instead; the text it skipped is
+/// not returned, and `from` says where the returned text starts.
+pub fn follow_log(path: &Path, state: JobState, since: Option<u64>) -> Result<JobRead, ToolError> {
+    let size = std::fs::metadata(path)
+        .map(|m| m.len())
+        .map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
+    let start = since.filter(|offset| size.saturating_sub(*offset) <= FOLLOW_LAG_MAX);
+    let mut read = read_log(path, state, start)?;
+    for _ in 1..FOLLOW_CHUNKS {
+        if read.next >= read.size {
+            break;
+        }
+        let more = read_log(path, state, Some(read.next))?;
+        if more.next == read.next {
+            break;
+        }
+        read.text.push_str(&more.text);
+        read.next = more.next;
+        read.size = more.size;
+    }
+    Ok(read)
+}
+
+/// Takes the next job id and creates its log file, which must be new. A log that
+/// already exists (a job of the same number from an earlier process that wrote to
+/// this folder) is skipped, so no job ever appends to another's log.
+fn create_job_log(dir: &Path) -> Result<(String, PathBuf, std::fs::File), ToolError> {
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("Cannot create the jobs folder {}: {e}", dir.display()))?;
+    loop {
+        let id = format!("job-{}", LAST_JOB.fetch_add(1, Ordering::SeqCst) + 1);
+        let path = dir.join(format!("{id}.log"));
+        match OpenOptions::new().create_new(true).append(true).open(&path) {
+            Ok(file) => return Ok((id, path, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("Cannot open {}: {e}", path.display()).into()),
+        }
+    }
+}
+
 /// The notice the model gets when a job finishes.
 pub fn completion_notice(info: &JobInfo) -> String {
     let outcome = match info.state {
@@ -550,7 +591,7 @@ pub fn completion_notice(info: &JobInfo) -> String {
     )
 }
 
-/// Starts the job's shell, copies its output to the log, and records its exit.
+/// Starts the job's shell, with its output going straight to the log, and records its exit.
 async fn run_job(
     shared: Arc<Shared>,
     id: String,
@@ -568,7 +609,18 @@ async fn run_job(
         env,
         nice,
     } = launch;
-    let mut wrap = build_command(&shell, &args, &command, &cwd, &env, nice);
+    let mut wrap = build_command_with_output(
+        &shell,
+        &args,
+        &command,
+        &cwd,
+        &env,
+        nice,
+        (
+            std::process::Stdio::from(stdout_log),
+            std::process::Stdio::from(stderr_log),
+        ),
+    );
     let mut child = match wrap.spawn() {
         Ok(child) => child,
         Err(e) => {
@@ -577,23 +629,16 @@ async fn run_job(
             return;
         }
     };
-    let pid = child.id().unwrap_or_default();
+    // Without a process id there is no group to signal, and killpg(0) would signal
+    // this process, so the job is not started.
+    let Some(pid) = child.id() else {
+        let _ = child.start_kill();
+        let _ = started.send(Err("spawn: the shell has no process id".into()));
+        return;
+    };
     set_group(&shared, &id, Some(pid));
     let _ = started.send(Ok(()));
     track_detached_child_pid(pid);
-    let mut readers: Vec<JoinHandle<()>> = Vec::with_capacity(2);
-    if let Some(stdout) = child.stdout().take() {
-        readers.push(tokio::spawn(copy_to_log(
-            stdout,
-            tokio::fs::File::from_std(stdout_log),
-        )));
-    }
-    if let Some(stderr) = child.stderr().take() {
-        readers.push(tokio::spawn(copy_to_log(
-            stderr,
-            tokio::fs::File::from_std(stderr_log),
-        )));
-    }
 
     let mut killed = false;
     let code = loop {
@@ -609,13 +654,6 @@ async fn run_job(
         tokio::time::sleep(POLL).await;
     };
 
-    let _ = tokio::time::timeout(EXIT_STDIO_GRACE, async {
-        for reader in &mut readers {
-            let _ = reader.await;
-        }
-    })
-    .await;
-    readers.iter().for_each(JoinHandle::abort);
     untrack_detached_child_pid(pid);
 
     let state = if killed {
@@ -634,10 +672,20 @@ async fn run_job(
 
     // The shell is gone, but a background descendant may still run in its group.
     // Keep the group id until the group is empty, so ShellKill can still reach it.
-    while group_alive(pid) {
+    // The check and the clearing happen under the state lock, where every kill
+    // reads the group id, so no kill signals a group id that is already free.
+    loop {
+        {
+            let mut st = lock(&shared.state);
+            if !group_alive(pid) {
+                if let Some(entry) = st.jobs.iter_mut().find(|e| e.info.id == id) {
+                    entry.group = None;
+                }
+                break;
+            }
+        }
         tokio::time::sleep(GROUP_POLL).await;
     }
-    set_group(&shared, &id, None);
 }
 
 fn set_group(shared: &Shared, id: &str, group: Option<u32>) {
@@ -679,25 +727,6 @@ fn kill_group(_pgid: u32) {}
 #[cfg(not(unix))]
 fn group_alive(_pgid: u32) -> bool {
     false
-}
-
-/// Copies one pipe into the log until the pipe closes.
-async fn copy_to_log<R>(mut pipe: R, mut log: tokio::fs::File)
-where
-    R: AsyncRead + Unpin,
-{
-    let mut buf = vec![0u8; READ_BUF];
-    loop {
-        match pipe.read(&mut buf).await {
-            Ok(0) | Err(_) => break,
-            Ok(n) => {
-                if log.write_all(&buf[..n]).await.is_err() {
-                    break;
-                }
-            }
-        }
-    }
-    let _ = log.flush().await;
 }
 
 #[cfg(test)]

@@ -124,7 +124,8 @@ pub enum TaskPanelDensity {
     Summary,
 }
 
-/// A dispatched subagent run or an MCP call.
+/// A row with a run clock: every row that is not a plan item (a subagent run, an
+/// MCP call, a shell job or a scheduled job). A running one shows how long it has run.
 fn is_delegated(task: &Task) -> bool {
     task.kind() != TaskKind::Plan
 }

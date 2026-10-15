@@ -52,7 +52,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | Terminal writes (the `hoocode-term-out` thread, one frame in flight), input batching, SIGWINCH | `tui-terminal` (`output.rs`), `tui-render` (`tui.rs`), `runtime` (`signals.rs`); [concurrency.md](../design/concurrency.md) Phase 2 |
 | Ctrl+C fast path and emergency exit, the ESC timer (no thread on Unix), the UI heartbeat | `tui-terminal` (`interrupt.rs`, `stdin_hub.rs`); the UI beats and sets the hook in `code-tui-app` `run`; [concurrency.md](../design/concurrency.md) Phase 2 |
 | Shell pipes read by async tasks on `hoocode-io` (no thread per pipe) | `code-tool-bash` (`operations.rs`) |
-| Background shell jobs: `Shell` with `run_in_background`, the job registry and its logs, `ShellOutput`, `ShellKill` (opt-in, `enableBackgroundShell`) | `code-tool-bash` (`jobs.rs`, `job_tools.rs`; each job is a Shell-tab row, `set_task_rows`, T5.3); the session's registry is built in `code-cli` `runtime.rs` (`background_job_registry`); completion notices reach the model in `code-agent-session` `services.rs` (`transform_context`) |
+| Background shell jobs: `Shell` with `run_in_background`, the job registry and its logs, `ShellOutput`, `ShellKill` (opt-in, `enableBackgroundShell`) | `code-tool-bash` (`jobs.rs`, `job_tools.rs`; each job is a Shell-tab row, `set_task_rows`, T5.3; a job's stdout and stderr are its log file, with no pipe); the session's registry is built in `code-cli` `runtime.rs` (`background_job_registry`); completion notices reach the model in `code-agent-session` `services.rs` (`transform_context`) |
 | Turn logic, parallel tool calls | `agent-loop` |
 | Session file format | `agent-session` (entries, storage), `code-session` (manager) |
 | Session file writes (queue caps, flush barriers, the `hoocode-session-io` thread) | `runtime` (`session_io.rs`); `code-session` `manager.rs` `persist` and `rewrite_file` queue the writes ([concurrency.md](../design/concurrency.md) Phase 3) |
@@ -153,7 +153,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 9590 / 9418 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1112 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1074 / 125 | keep |
-| `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 2730 / 1343 | keep |
+| `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 2782 / 1419 | keep |
 | `code-tool-search` | CodeSearch for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking | 1 | 1957 / 1185 | keep |
 | `code-tools` | Coding tools for the hoocode coding agent | 4 | 1703 / 0 | keep |
 | `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3353 / 2478 | keep |
@@ -164,11 +164,11 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 17106 / 5260 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 17146 / 5260 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 776 / 888 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8143 / 3724 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 5 | 2390 / 2557 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 8541 / 6241 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 8542 / 6241 | keep |
 
 ### TUI library (`tui-*`)
 

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use hoocode_code_task_store::{
     ActionNotifier, RowAction, Task, TaskKind, TaskSource, TaskStatus, TaskStore,
 };
-use hoocode_code_tool_bash::jobs::{read_log, JobState};
+use hoocode_code_tool_bash::jobs::{follow_log, read_log, JobState};
 use hoocode_code_tool_bash::{get_shell_env, JobRegistry, LocalBashOperations};
 
 const WAIT: Duration = Duration::from_secs(15);
@@ -187,4 +187,80 @@ fn job_ids_are_unique_across_registries_so_their_rows_never_collide() {
         .spawn("true", dir.path(), get_shell_env())
         .expect("spawn");
     assert_ne!(a.id, b.id);
+}
+
+#[test]
+fn a_job_writes_straight_to_its_log_and_finishes_after_the_registry_is_dropped() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let jobs = JobRegistry::new(dir.path().join("jobs"), LocalBashOperations::new(None));
+    let info = jobs
+        .spawn(
+            "if [ -p /dev/stdout ]; then echo pipe; else echo file; fi; \
+             for i in $(seq 1 20); do echo tick $i; sleep 0.05; done; echo done",
+            dir.path(),
+            get_shell_env(),
+        )
+        .expect("spawn");
+    // Nothing of hoocode reads the output once the registry is gone. A job whose
+    // output was a pipe would die of SIGPIPE here (the Leave-running quit case).
+    drop(jobs);
+    assert!(
+        wait_until(|| std::fs::read_to_string(&info.log_path).is_ok_and(|t| t.contains("done"))),
+        "the job finished writing"
+    );
+    let log = std::fs::read_to_string(&info.log_path).expect("log");
+    assert!(log.starts_with("file\n"), "stdout is the log file: {log:?}");
+    assert!(log.contains("tick 20"), "{log:?}");
+}
+
+#[test]
+fn a_new_job_never_appends_to_an_older_log_of_the_same_number() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let folder = dir.path().join("jobs");
+    std::fs::create_dir_all(&folder).expect("folder");
+    // Logs of job numbers 1 to 300, as an earlier process would have left them.
+    for n in 1..=300 {
+        std::fs::write(folder.join(format!("job-{n}.log")), "old\n").expect("old log");
+    }
+    let jobs = JobRegistry::new(&folder, LocalBashOperations::new(None));
+    let info = jobs
+        .spawn("echo new", dir.path(), get_shell_env())
+        .expect("spawn");
+    let number: u64 = info
+        .id
+        .strip_prefix("job-")
+        .and_then(|n| n.parse().ok())
+        .expect("a job number");
+    assert!(
+        number > 300,
+        "the id skips the logs that exist: {}",
+        info.id
+    );
+    assert!(wait_until(|| jobs
+        .info(&info.id)
+        .is_some_and(|i| !i.state.is_running())));
+    for n in 1..=300 {
+        let old = std::fs::read_to_string(folder.join(format!("job-{n}.log"))).expect("old");
+        assert_eq!(old, "old\n", "job-{n}.log was not appended to");
+    }
+    let new = std::fs::read_to_string(&info.log_path).expect("new log");
+    assert_eq!(new, "new\n");
+}
+
+#[test]
+fn a_follower_catches_up_within_one_call_and_skips_ahead_when_far_behind() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("job-9.log");
+    // 60 KiB is more than one read returns, so one call reads it all.
+    std::fs::write(&path, "x".repeat(60 * 1024)).expect("write");
+    let read = follow_log(&path, JobState::Exited(Some(0)), Some(0)).expect("follow");
+    assert_eq!(read.from, 0);
+    assert_eq!(read.text.len(), 60 * 1024, "both chunks in one call");
+    assert_eq!(read.next, read.size);
+
+    // 1 MiB behind: the follower starts at the tail, and the text it skipped is not returned.
+    std::fs::write(&path, "a".repeat(1024 * 1024)).expect("write");
+    let read = follow_log(&path, JobState::Running, Some(0)).expect("follow");
+    assert!(read.from > 0, "skipped to the tail: {}", read.from);
+    assert_eq!(read.next, read.size, "caught up to the end");
 }

@@ -30,7 +30,7 @@ use hoocode_code_session::{
 use hoocode_code_subagents::live::run_for_tool_call;
 use hoocode_code_subagents::pool::run_is_live;
 use hoocode_code_task_store::{task_store, TaskStatus};
-use hoocode_code_tool_bash::jobs::{read_log, JobRead, JobState};
+use hoocode_code_tool_bash::jobs::{follow_log, JobRead, JobState};
 use hoocode_code_tui_widgets::attach_view::{AttachHeader, AttachPrompt};
 use hoocode_code_tui_widgets::AssistantMessageComponent;
 use hoocode_runtime::run_blocking;
@@ -459,10 +459,20 @@ impl Mode {
         } else {
             JobState::Exited(None)
         };
-        self.off_ui_thread(
-            move || read_log(&path, state, since).map_err(|e| e.to_string()),
-            move |result| AppEvent::ShellTail(key, since, result),
-        );
+        // The read runs on the tools pool. If the pool cannot run it, the view is
+        // told, so `reading` is cleared and the view does not freeze.
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let result = match run_blocking(move || {
+                follow_log(&path, state, since).map_err(|e| e.to_string())
+            })
+            .await
+            {
+                Ok(result) => result,
+                Err(error) => Err(format!("The job's output could not be read: {error}")),
+            };
+            let _ = tx.send(AppEvent::ShellTail(key, since, result));
+        });
     }
 
     /// A read of the attached job's output came back: its text is added, and the

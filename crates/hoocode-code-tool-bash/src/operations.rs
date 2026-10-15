@@ -181,15 +181,38 @@ pub(crate) fn build_command(
     env: &ShellEnv,
     nice: u64,
 ) -> CommandWrap {
-    let mut wrap = CommandWrap::with_new(shell, |cmd| {
+    build_command_with_output(
+        shell,
+        args,
+        command,
+        cwd,
+        env,
+        nice,
+        (std::process::Stdio::piped(), std::process::Stdio::piped()),
+    )
+}
+
+/// [`build_command`] with the shell's stdout and stderr given. A background job
+/// passes its log file here, so nothing reads a pipe that could close.
+pub(crate) fn build_command_with_output(
+    shell: &str,
+    args: &[String],
+    command: &str,
+    cwd: &Path,
+    env: &ShellEnv,
+    nice: u64,
+    output: (std::process::Stdio, std::process::Stdio),
+) -> CommandWrap {
+    let (stdout, stderr) = output;
+    let mut wrap = CommandWrap::with_new(shell, move |cmd| {
         cmd.args(args)
             .arg(command)
             .current_dir(cwd)
             .env_clear()
             .envs(env)
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+            .stdout(stdout)
+            .stderr(stderr);
         hoocode_runtime::lower_child_priority(cmd.as_std_mut(), nice);
     });
     #[cfg(unix)]

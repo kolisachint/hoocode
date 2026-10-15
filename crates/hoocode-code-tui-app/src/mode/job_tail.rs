@@ -19,8 +19,9 @@ use super::{as_component, handle};
 const KEEP_BYTES: usize = 64 * 1024;
 /// Shown until the first output arrives.
 const EMPTY: &str = "No output yet.";
-/// Put above the output when the view starts partway into the log.
-const EARLIER: &str = "… earlier output not shown\n";
+/// Put where output the view did not get is skipped: above the tail of a long
+/// log, or where a follower fell too far behind.
+const GAP: &str = "… output skipped\n";
 
 /// The state of one attached job's output.
 pub(super) struct JobTail {
@@ -70,8 +71,15 @@ impl JobTail {
 
     /// Adds what a read returned. `finished` is whether the job has ended.
     pub(super) fn apply(&mut self, read: JobRead, finished: bool) {
-        if !self.started && read.from > 0 {
-            self.push(EARLIER);
+        // Text the view did not get: the start of the log (a tail), or a stretch
+        // a follower skipped.
+        let gap = if self.started {
+            read.from > self.offset
+        } else {
+            read.from > 0
+        };
+        if gap {
+            self.push(GAP);
         }
         self.started = true;
         self.offset = read.next;
@@ -180,7 +188,23 @@ mod tests {
     fn a_tail_that_starts_partway_says_so() {
         let mut view = tail();
         view.apply(read("late\n", 100, 105), false);
-        assert!(view.shown().starts_with(EARLIER), "{:?}", view.shown());
+        assert!(view.shown().starts_with(GAP), "{:?}", view.shown());
+    }
+
+    #[test]
+    fn a_skipped_stretch_in_the_middle_is_marked_and_a_contiguous_read_is_not() {
+        let mut view = tail();
+        view.apply(read("one\n", 0, 4), false);
+        view.apply(read("far\n", 500, 504), false);
+        assert_eq!(view.shown(), format!("one\n{GAP}far\n"));
+        let mut contiguous = tail();
+        contiguous.apply(read("one\n", 0, 4), false);
+        contiguous.apply(read("two\n", 4, 8), false);
+        assert_eq!(
+            contiguous.shown(),
+            "one\ntwo\n",
+            "no marker when nothing was skipped"
+        );
     }
 
     #[test]
