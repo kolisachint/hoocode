@@ -285,6 +285,12 @@ pub fn create_theme(
             }
         }
     }
+    // The MCP tag color is optional too (the task panel reads it on every MCP row).
+    if let Some(accent) = &accent {
+        if !fg.iter().any(|(k, _)| k == "mcp") {
+            fg.push(("mcp".to_string(), accent.clone()));
+        }
+    }
     // Custom themes predate the warning surface: fall back to customMessageBg.
     if !bg.iter().any(|(k, _)| k == "warningBg") {
         if let Some((_, v)) = bg.iter().find(|(k, _)| k == "customMessageBg").cloned() {

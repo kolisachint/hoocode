@@ -134,6 +134,16 @@ fn orders_mixed_errors_like_the_validator() {
 }
 
 #[test]
+fn a_theme_without_an_mcp_color_takes_the_accent() {
+    // The task panel reads `mcp` on every MCP row: a custom theme that omits it must not panic.
+    let mut json = dark();
+    json["colors"].as_object_mut().unwrap().remove("mcp");
+    let parsed = parse_theme_json("t.json", &json).unwrap();
+    let theme = create_theme(&parsed, Some(ColorMode::Truecolor), None).unwrap();
+    assert_eq!(theme.fg("mcp", "x"), theme.fg("accent", "x"));
+}
+
+#[test]
 fn reports_resolution_errors_when_the_theme_is_built() {
     let build = |edit: &dyn Fn(&mut Value)| {
         let mut json = dark();
