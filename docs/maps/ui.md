@@ -187,7 +187,7 @@ One tab per kind of task: **Plan** (TodoWrite items, each linked run nested unde
 
 ## Attached view (subagent transcript)
 
-Attach shows one subagent run's transcript on the chat area, read-only, with the header row above it and the prompt's place taken by a hint. Esc goes back, and the session's transcript and scroll come back as they were.
+Attach shows one subagent run's transcript on the chat area, read-only, with the header row above it and the prompt's place taken by a hint. Esc goes back, and the session's transcript and scroll come back as they were. Ctrl+C and Ctrl+D go back too (the view takes the keyboard). A session switch (`/new`, `/resume`, `/fork`, `/import`, `/cd`) detaches first (`take_session_runtime`).
 
 | Concern | Where |
 |---|---|
