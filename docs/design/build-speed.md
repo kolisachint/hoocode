@@ -102,6 +102,13 @@ Reproduce with the commands in §7.
 | `PostToolUse` (`Edit\|Write` on `*.rs`) | `rustfmt --edition 2021 <file>` on the edited file only | Milliseconds. Removes fmt failures from the loop. No `cargo check` here: it would run once per file in a multi-file change. |
 | `Stop` | Map `git diff --name-only HEAD` (plus untracked files) to `crates/<name>/` → `cargo clippy -p <each> --all-targets -- -D warnings`. On failure, exit 2 with the short errors so the agent keeps working instead of handing off red code. | Skipped when no `.rs` changed. Bounded timeout. |
 
+As implemented, `SessionStart` in `.claude/settings.json` runs two commands. The first,
+`scripts/dev/ensure_nextest.sh`, installs `cargo-nextest` when it is missing. It tries
+`cargo-binstall` if present, then the prebuilt tarball from get.nexte.st, then
+`cargo install --locked`. It does nothing when nextest already works, and on failure it prints one
+warning and exits 0. The second runs `scripts/dev/prune_target.sh --apply --if-over 15 --quiet`
+(see `CLAUDE.md`). The warm-up step in the `SessionStart` row above is not wired yet.
+
 ### 4.2 CI (`.github/workflows/ci.yml`)
 
 - Toolchain read from `rust-toolchain.toml` (today `dtolnay/rust-toolchain@stable` installs

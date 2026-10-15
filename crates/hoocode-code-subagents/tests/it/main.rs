@@ -11,6 +11,7 @@ mod model_categories;
 mod model_selection;
 mod output_verifier;
 mod pool;
+mod process_pipes;
 mod result;
 mod runner;
 mod shipped_prose;

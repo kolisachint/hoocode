@@ -226,7 +226,7 @@ mod tests {
                 );
             }
         }
-        // The one exception left is the exit-time abort in mod.rs.
-        assert_eq!(checked, 1, "unexpected block_on count in mode/");
+        // The exit-time abort runs in the ordered shutdown (mode/shutdown.rs), not here.
+        assert_eq!(checked, 0, "unexpected block_on count in mode/");
     }
 }

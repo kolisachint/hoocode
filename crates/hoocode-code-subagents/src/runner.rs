@@ -131,13 +131,15 @@ impl Runner for ProcessRunner {
         // work come first (concurrency.md section 2).
         hoocode_runtime::lower_child_priority(&mut command, hoocode_runtime::SUBAGENT_CHILD_NICE);
         let child = command.spawn()?;
-        Ok(Box::new(ProcessHandle::new(child)) as Box<dyn RunnerHandle>)
+        Ok(Box::new(ProcessHandle::new(child)?) as Box<dyn RunnerHandle>)
     }
 }
 
-/// A child process behind [`RunnerHandle`]. The pipes are read on blocking
-/// tasks — one short-lived thread per stream — because the seam is sync and a
-/// blocking read is exactly what a pipe is.
+/// A child process behind [`RunnerHandle`]. On Unix its two pipes are read by
+/// tasks on the `hoocode-io` runtime, not by threads of their own: a subagent
+/// costs no thread for its pipes (concurrency.md §1, the thread ceiling). On
+/// Windows tokio reads child pipes on its blocking pool, so that saving does
+/// not apply there.
 struct ProcessHandle {
     pid: u32,
     stdout: Option<mpsc::Receiver<Vec<u8>>>,
@@ -145,42 +147,85 @@ struct ProcessHandle {
     child: Option<std::process::Child>,
 }
 
-/// Pump a pipe into a channel. `None` (no pipe) closes immediately.
-fn pump<R: std::io::Read + Send + 'static>(
-    pipe: Option<R>,
-    tx: mpsc::Sender<Vec<u8>>,
-) -> Option<std::thread::JoinHandle<()>> {
-    let mut pipe = pipe?;
-    Some(hoocode_runtime::spawn_thread(
-        "hoocode-subagent",
-        move || {
-            let mut buf = vec![0u8; 16 * 1024];
-            loop {
-                let n = match pipe.read(&mut buf) {
+/// Pump a pipe into a channel on the `hoocode-io` runtime (on Unix; see
+/// [`ProcessHandle`]). `None` (no pipe) closes immediately. The channel's
+/// capacity is the backpressure: a full channel pauses the read, and the child
+/// blocks on its own full pipe. Once the receiver is dropped the task stops,
+/// even if a silent grandchild keeps the pipe open and no read would return.
+fn pump<R>(pipe: Option<R>, tx: mpsc::Sender<Vec<u8>>)
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    let Some(mut pipe) = pipe else {
+        return;
+    };
+    use tokio::io::AsyncReadExt;
+    // The task is detached: it ends at the pipe's EOF or when the receiver goes.
+    drop(hoocode_runtime::io_handle().spawn(async move {
+        let mut buf = vec![0u8; 16 * 1024];
+        loop {
+            let n = tokio::select! {
+                () = tx.closed() => break,
+                read = pipe.read(&mut buf) => match read {
                     Ok(0) | Err(_) => break,
                     Ok(n) => n,
-                };
-                if tx.blocking_send(buf[..n].to_vec()).is_err() {
-                    break;
-                }
+                },
+            };
+            if tx.send(buf[..n].to_vec()).await.is_err() {
+                break;
             }
-        },
-    ))
+        }
+    }));
+}
+
+/// Take the child's stdout and stderr and wrap them for the io runtime.
+fn take_pipes(
+    child: &mut std::process::Child,
+) -> std::io::Result<(
+    Option<tokio::process::ChildStdout>,
+    Option<tokio::process::ChildStderr>,
+)> {
+    let stdout = child
+        .stdout
+        .take()
+        .map(tokio::process::ChildStdout::from_std)
+        .transpose()?;
+    let stderr = child
+        .stderr
+        .take()
+        .map(tokio::process::ChildStderr::from_std)
+        .transpose()?;
+    Ok((stdout, stderr))
 }
 
 impl ProcessHandle {
-    fn new(mut child: std::process::Child) -> Self {
+    fn new(mut child: std::process::Child) -> std::io::Result<Self> {
         let pid = child.id();
         let (stdout_tx, stdout_rx) = mpsc::channel(64);
         let (stderr_tx, stderr_rx) = mpsc::channel(64);
-        pump(child.stdout.take(), stdout_tx);
-        pump(child.stderr.take(), stderr_tx);
-        Self {
+        // Registering a pipe with a runtime needs its context on this thread.
+        // The spawn is called from a runtime thread or a plain one; either way
+        // the pipes belong to the io runtime.
+        let io = hoocode_runtime::io_handle();
+        let _io = io.enter();
+        let (stdout, stderr) = match take_pipes(&mut child) {
+            Ok(pipes) => pipes,
+            Err(error) => {
+                // The child is already running, and a dropped `Child` is never
+                // reaped: the caller may retry the spawn, which would orphan it.
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
+        pump(stdout, stdout_tx);
+        pump(stderr, stderr_tx);
+        Ok(Self {
             pid,
             stdout: Some(stdout_rx),
             stderr: Some(stderr_rx),
             child: Some(child),
-        }
+        })
     }
 }
 

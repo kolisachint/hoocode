@@ -20,7 +20,7 @@ update this page in the same commit.
 
 | Region | Component | File |
 |---|---|---|
-| Whole screen, event loop | `InteractiveMode` (`Mode`) | `hoocode-code-tui-app/src/mode/mod.rs` (struct, setup, loop); the rest is split by concern into `mode/*.rs`: `input` (editor and keys), `transcript` (`Transcript`: the chat container and the components that track it; reset replaces it), `events` (agent and session events), `prompt_queue`, `session_ops`, `session_op` (the session operations that run off the UI thread: `SessionOpDone`, `SessionOutcome`, `finish_session_op`), `tree`, `models`, `auth`, `settings`, `dialogs`, `subagents`, `bash`, `clipboard`, `mcp`, `chrome` (footer, title, colour), `commands` (slash commands) |
+| Whole screen, event loop | `InteractiveMode` (`Mode`) | `hoocode-code-tui-app/src/mode/mod.rs` (struct, setup, loop); the rest is split by concern into `mode/*.rs`: `input` (editor and keys), `transcript` (`Transcript`: the chat container and the components that track it; reset replaces it), `events` (agent and session events), `prompt_queue`, `session_ops`, `session_op` (the session operations that run off the UI thread: `SessionOpDone`, `SessionOutcome`, `finish_session_op`), `tree`, `models`, `auth`, `settings`, `dialogs`, `subagents`, `bash`, `clipboard`, `mcp`, `chrome` (footer, title, colour), `commands` (slash commands), `shutdown` (the exit steps after the loop, each with a deadline; concurrency.md §4) |
 | Transcript scroll-back view | scroll view | `hoocode-code-tui-app/src/scroll_view.rs` |
 | Startup banner | wordmark | `hoocode-code-tui-app/src/wordmark.rs` |
 | Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
@@ -195,7 +195,7 @@ Attach shows one subagent run's transcript, or one shell job's output (T5.3), on
 
 ## Quit with shell jobs running (T5.3)
 
-A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs running asks once: "N background shell job(s) still running. Quit?" with **Kill all** (the default) and **Leave running**. Kill all signals each job's process group (`jobs::kill_all_jobs`) before the app exits. Esc keeps the app open, and the next quit asks again. A quit asked again while the prompt is up does nothing. Files: `mode/task_panel.rs` (`QuitJobs`, `ready_to_quit`, `quit_jobs_answered`); the event loop in `mode/mod.rs` `run` asks `ready_to_quit` where it used to break on `exit_requested`.
+A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs running asks once: "N background shell job(s) still running. Quit?" with **Kill all** (the default) and **Leave running**. Kill all signals each job's process group (`jobs::kill_all_jobs`) before the app exits. Esc keeps the app open, and the next quit asks again. A quit asked again while the prompt is up does nothing. Files: `mode/task_panel.rs` (`QuitJobs`, `ready_to_quit`, `quit_jobs_answered`); the event loop in `mode/mod.rs` `run` asks `ready_to_quit` where it used to break on `exit_requested`. After the loop, `mode/mod.rs` `run` calls `mode/shutdown.rs` (abort the agent, kill the tool process groups, flush the session, close MCP, release, then restore the terminal; each step has a deadline, concurrency.md §4).
 
 | Concern | Where |
 |---|---|
