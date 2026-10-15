@@ -247,6 +247,7 @@ fn update_line(outcome: &UpdateOutcome) -> String {
         UpdateOutcome::Updated { name, from, to } => format!("Updated {name}: {from} to {to}."),
         UpdateOutcome::UpToDate { name } => format!("{name} is up to date."),
         UpdateOutcome::Failed { name, reason } => format!("Could not update {name}: {reason}"),
+        UpdateOutcome::Skipped { name, reason } => format!("Skipped {name}: {reason}."),
     }
 }
 

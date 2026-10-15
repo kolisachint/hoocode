@@ -19,6 +19,7 @@ use crate::marketplace::{
     Marketplace, Registry, REGISTRY_FILE,
 };
 use crate::paths::{normalize, within};
+use crate::propose::PROPOSED_MARKETPLACE;
 use crate::trust::{fingerprint, load_default_trust};
 use crate::PluginSet;
 
@@ -573,6 +574,12 @@ pub enum UpdateOutcome {
         name: String,
         reason: String,
     },
+    /// Not updated, and not a failure: the plugin was written locally (`ProposePlugin`), so no
+    /// marketplace has it to update from.
+    Skipped {
+        name: String,
+        reason: String,
+    },
 }
 
 /// Update installed plugins (all, or `name`) from their marketplaces. The marketplace is fetched
@@ -590,12 +597,19 @@ pub fn update(paths: &Paths, name: Option<&str>) -> Result<Vec<UpdateOutcome>, S
     }
     let mut outcomes = Vec::new();
     for record in targets {
-        let outcome = match update_one(paths, &record) {
-            Ok(outcome) => outcome,
-            Err(reason) => UpdateOutcome::Failed {
+        let outcome = if record.marketplace == PROPOSED_MARKETPLACE {
+            UpdateOutcome::Skipped {
                 name: record.name.clone(),
-                reason,
-            },
+                reason: "written by ProposePlugin, not from a marketplace, so there is nothing to update it from; edit its files or remove it and propose it again".to_owned(),
+            }
+        } else {
+            match update_one(paths, &record) {
+                Ok(outcome) => outcome,
+                Err(reason) => UpdateOutcome::Failed {
+                    name: record.name.clone(),
+                    reason,
+                },
+            }
         };
         outcomes.push(outcome);
     }

@@ -428,9 +428,13 @@ fn custom_tools(
             hoocode_code_tools_optin::StoreRef::Global,
         ));
     }
-    // Plugin tools (`docs/design/plugins.md`, part 3): off by default, and never in a subagent
-    // child (a child has a task id). Its `--disallowed-tools` denies them too (pool.rs).
-    if args.task_id.is_none() && plugin_tools_enabled(args, settings) {
+    // Plugin tools (`docs/design/plugins.md`, part 3): off by default, and never in a subagent.
+    // A one-shot child has a task id; a warm worker has none but runs under a subagent depth
+    // (its env is set by the pool). Its `--disallowed-tools` denies them too (pool.rs, warm.rs).
+    let in_subagent = hoocode_code_subagents::depth::current_subagent_depth(
+        &hoocode_code_subagents::depth::ProcessEnv,
+    ) > 0;
+    if args.task_id.is_none() && !in_subagent && plugin_tools_enabled(args, settings) {
         let default_scope = match settings.plugin_install_scope() {
             hoocode_code_settings::PluginInstallScope::Project => {
                 hoocode_code_plugins::install::Scope::Project

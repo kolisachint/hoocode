@@ -51,12 +51,21 @@ impl Env {
 
     /// A user-added marketplace: a git repository, listed (so, not trusted).
     fn add_user_marketplace(&self, name: &str, plugins: &[(&str, &str)]) {
+        self.add_marketplace(name, plugins, false);
+    }
+
+    /// A marketplace the user added with `--trust`.
+    fn add_trusted_marketplace(&self, name: &str, plugins: &[(&str, &str)]) {
+        self.add_marketplace(name, plugins, true);
+    }
+
+    fn add_marketplace(&self, name: &str, plugins: &[(&str, &str)], trust: bool) {
         let repo = self.origin.join(name);
         marketplace_files(&repo, name, plugins);
         git(&repo, &["init", "-q"]);
         git(&repo, &["add", "-A"]);
         git(&repo, &["commit", "-q", "-m", "initial"]);
-        install::marketplace_add(&self.paths, &repo.display().to_string(), false).unwrap();
+        install::marketplace_add(&self.paths, &repo.display().to_string(), trust).unwrap();
     }
 }
 
@@ -151,6 +160,18 @@ fn an_install_from_a_trusted_marketplace_goes_through_without_a_grant() {
         .find(|r| r.name == "alpha")
         .unwrap();
     assert!(record.trusted);
+}
+
+#[test]
+fn an_install_from_a_marketplace_the_user_trusted_goes_through_without_a_grant() {
+    let env = Env::new();
+    env.seed_official(&[]);
+    env.add_trusted_marketplace("my-mk", &[("gamma", "a plugin from a trusted marketplace")]);
+
+    let installed = model::install_trusted(&env.paths, "gamma", Scope::User).unwrap();
+    assert_eq!(installed.marketplace, "my-mk");
+    assert!(installed.trusted);
+    assert!(env.paths.user_plugins.join("gamma/plugin.json").is_file());
 }
 
 #[test]
