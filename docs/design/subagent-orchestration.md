@@ -76,11 +76,11 @@ Fix "isolated" wording. It means separate process and context, never files.
 | `task-main.md` | 1 | "run in their own isolated context" → "run as separate processes with their own context" |
 | `task-main.md` | 3 | "fix one isolated bug" → "fix one bug" |
 | `tools.rs` | 6, 599 | Same wording change in the doc comment and the tool description |
-| `explore.md` | 22 | Same |
-| `general-purpose.md` | 19 | Same |
-| `plan.md` | 23 | Same |
-| `code-review.md` | 21-22 | Same |
-| `security-review.md` | 22 | Same |
+| `explore.md` | 22 | Same. **Done 2026-10-15** |
+| `general-purpose.md` | 19 | Same. **Done 2026-10-15** |
+| `plan.md` | 23 | Same. **Done 2026-10-15** |
+| `code-review.md` | 21-22 | Same. **Done 2026-10-15** |
+| `security-review.md` | 22 | Same. **Done 2026-10-15** |
 
 ### 2. The subagent brief [text] — fixes P8, P9
 
@@ -161,14 +161,14 @@ Who does what:
 
 | # | Change | Where | Fixes | Tag |
 |---|---|---|---|---|
-| 4a | Add `background: true` to the frontmatter. It stays true if the default changes | `general-purpose.md:15-17` | P1 | text |
+| 4a | Add `background: true` to the frontmatter. It stays true if the default changes | `general-purpose.md:15-17` | P1 | text. **Done 2026-10-15** |
 | 4b | Keep `background: false` as a value. Stop dropping it to None | `agent_frontmatter.rs:272-286`, `b.then_some(true)` | P2 | rust, small |
 | 4c | Background by default for every agent. Tool param still overrides | `tools.rs:73-80`, `:810-813` | D1 | rust, small |
-| 4d | Final-answer rule in every body (text below) | `explore.md`, `code-review.md`, `security-review.md`; `general-purpose.md:35` and `plan.md:36` already say a version | P9 | text |
+| 4d | Final-answer rule in every body (text below) | `explore.md`, `code-review.md`, `security-review.md`; `general-purpose.md:35` and `plan.md:36` already say a version | P9 | text. **Done 2026-10-15** (all five bodies carry the same rule) |
 | 4e | Gate the delegation block on the same depth check as the tool. Children at the cap get no block | `runtime.rs:620`, `:626`; compare `:347` | P5 | rust, small |
 | 4f | Keep base guidelines for custom bodies. Append a short base block, do not replace | `pool.rs:1152-1154` passes the body as `--system-prompt`; `system_prompt.rs:351-369` returns before the base guidelines | P6 | rust, small |
 | 4g | Dropped (Q8): every agent keeps AGENTS.md and CLAUDE.md | — | P7 | — |
-| 4h | Review agents: the brief lists the only git commands allowed (`git diff`, `git log`, `git show`) and says "no other Shell" | `code-review.md:16`, `security-review.md:17` | P10 | text now; rust later (a Shell filter) |
+| 4h | Review agents: the brief lists the only git commands allowed (`git diff`, `git log`, `git show`) and says "no other Shell" | `code-review.md:16`, `security-review.md:17` | P10 | text now (**Done 2026-10-15**); rust later (a Shell filter) |
 | 4i | One prompt wrapper for all three paths. Give `context` a real value or remove it | `pool.rs:1111`, `:1225-1234`; `tools.rs:834` | P8 | rust, small |
 
 Final-answer rule for 4d (same text in every body):
