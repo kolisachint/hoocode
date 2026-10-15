@@ -119,6 +119,9 @@ impl Mode {
             let pool = get_subagent_pool(&cwd, &models);
             let options = DispatchOptions {
                 parent_session_file: Some(run.parent.clone()),
+                // The row's own transcript: a run resumed before has a newer
+                // task id than the file it continues.
+                session_file: Some(run.child.clone()),
                 ..Default::default()
             };
             let outcome = match pool.resume(&run.task_id, FOLLOW_UP, options).await {

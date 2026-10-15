@@ -752,6 +752,12 @@ impl SubagentPool {
         self.inner.state().slots.len()
     }
 
+    /// Whether this pool is running or has queued the task. A task it holds is
+    /// live before its child has written a pid (a queued one has none yet).
+    pub fn is_live(&self, task_id: &str) -> bool {
+        self.inner.is_live_task(task_id)
+    }
+
     pub fn queued_count(&self) -> usize {
         self.inner.state().queue.len()
     }
@@ -912,7 +918,8 @@ impl SubagentPool {
             return Err(PoolError("SubagentPool has been disposed".into()));
         }
         let parent = options.parent_session_file.as_deref();
-        let Some(session_file) = run_transcript(&self.inner.cwd, task_id, parent) else {
+        let named = options.session_file.as_deref();
+        let Some(session_file) = resume_transcript(&self.inner.cwd, task_id, parent, named) else {
             let expected = match parent {
                 Some(parent) => subagents_dir(parent).join(format!("{task_id}.jsonl")),
                 None => self.get_session_file(task_id, None),
@@ -2184,11 +2191,13 @@ fn prune_dispatch_dirs_checked(
     }
 }
 
-/// Whether a run's child process is still alive, from the pid its dispatch dir
-/// records. A run with no settle record and no live child was cut short: the
-/// app quit, or the process died before it settled.
+/// Whether a run is still going: this process's pool holds it (running or
+/// queued), or its child process is alive, by the pid its dispatch dir records.
+/// A run with no settle record and neither is was cut short: the app quit, or
+/// the process died before it settled.
 pub fn run_is_live(cwd: &Path, task_id: &str) -> bool {
-    crate::lifeguard::has_running_pid(&hoocode_code_paths::dispatch_task_dir(cwd, task_id))
+    crate::instance::pool_has_live_task(task_id)
+        || crate::lifeguard::has_running_pid(&hoocode_code_paths::dispatch_task_dir(cwd, task_id))
 }
 
 /// One line of a run's description: its first line, cut short.
@@ -2227,6 +2236,15 @@ fn write_run_record(parent: &Path, task: &SubagentPoolTask, child: &Path, outcom
 /// session's `subagents/`, else the dispatch dir's (runs from before transcripts
 /// moved there). `None` when neither exists.
 pub fn run_transcript(cwd: &Path, task_id: &str, parent_session: Option<&Path>) -> Option<PathBuf> {
+    // A task id names a file under a directory. One read from a session file
+    // must not reach outside it, so only a plain name is a task id.
+    let plain = !task_id.is_empty()
+        && task_id != "."
+        && task_id != ".."
+        && !task_id.contains(['/', '\\', '\0']);
+    if !plain {
+        return None;
+    }
     if let Some(parent) = parent_session {
         let file = subagents_dir(parent).join(format!("{task_id}.jsonl"));
         if file.exists() {
@@ -2235,6 +2253,22 @@ pub fn run_transcript(cwd: &Path, task_id: &str, parent_session: Option<&Path>) 
     }
     let file = hoocode_code_paths::dispatch_task_dir(cwd, task_id).join("session.jsonl");
     file.exists().then_some(file)
+}
+
+/// The transcript a resume continues. A transcript the caller named (the
+/// picker's row) wins: a resumed run has a new task id, and its record keeps
+/// the old transcript's file name, so the id no longer names the file. Else
+/// the run's own transcript, by task id.
+pub fn resume_transcript(
+    cwd: &Path,
+    task_id: &str,
+    parent_session: Option<&Path>,
+    named: Option<&Path>,
+) -> Option<PathBuf> {
+    match named {
+        Some(file) if file.is_file() => Some(file.to_path_buf()),
+        _ => run_transcript(cwd, task_id, parent_session),
+    }
 }
 
 /// Mark a dispatch dir (and its `session.jsonl`, if any) as just used, so the

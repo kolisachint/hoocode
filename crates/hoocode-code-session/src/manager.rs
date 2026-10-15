@@ -427,7 +427,11 @@ impl SessionManager {
         for entry in &self.entries {
             if let Some(id) = entry.id().map(String::from) {
                 self.by_id.insert(id.clone(), entry.clone());
-                self.leaf_id = Some(id);
+                // A run record is written beside the conversation, so it never
+                // becomes the leaf the next message continues from.
+                if !is_run_record(entry) {
+                    self.leaf_id = Some(id);
+                }
             }
             if let FileEntry::Label {
                 target_id,
@@ -785,18 +789,28 @@ impl SessionManager {
             }));
         }
 
+        // A run record is not a node. A child that names one as its parent (a
+        // file written before records were kept beside the conversation) hangs
+        // from the nearest conversation entry above it instead.
         let mut root_indices: Vec<usize> = Vec::new();
         for (idx, entry) in self.entries.iter().enumerate() {
+            if is_run_record(entry) {
+                builders[idx] = None;
+                continue;
+            }
             let id = entry.id().unwrap_or_default();
             let parent_id = entry.parent_id();
             let is_root = parent_id.is_none() || parent_id == Some(id);
             if is_root {
                 root_indices.push(idx);
             } else if let Some(parent_id) = parent_id {
-                if let Some(&parent_idx) = index_by_id.get(parent_id) {
-                    builders[parent_idx].as_mut().unwrap().children.push(idx);
-                } else {
-                    root_indices.push(idx);
+                match visible_entry(&self.entries, &index_by_id, parent_id) {
+                    Some(parent_idx) => builders[parent_idx]
+                        .as_mut()
+                        .expect("a conversation entry has a builder")
+                        .children
+                        .push(idx),
+                    None => root_indices.push(idx),
                 }
             }
         }
@@ -1409,10 +1423,37 @@ pub fn subagents_dir(session_file: &Path) -> PathBuf {
 /// it). The last one for a transcript wins.
 pub const SUBAGENT_RUN_ENTRY: &str = "subagent_run";
 
+/// Whether an entry is a subagent run record. Records sit beside the
+/// conversation: the tree does not show them, and they are never the leaf.
+fn is_run_record(entry: &FileEntry) -> bool {
+    matches!(entry, FileEntry::Custom { custom_type, .. } if custom_type == SUBAGENT_RUN_ENTRY)
+}
+
+/// The index of the conversation entry `start` names: a run record is passed
+/// through to its parent, so a child of a record hangs from the record's
+/// nearest conversation ancestor. `None` for an unknown id. The walk is
+/// bounded, so a cyclic file cannot loop.
+fn visible_entry(
+    entries: &[FileEntry],
+    index_by_id: &HashMap<String, usize>,
+    start: &str,
+) -> Option<usize> {
+    let mut idx = *index_by_id.get(start)?;
+    for _ in 0..=entries.len() {
+        if !is_run_record(&entries[idx]) {
+            return Some(idx);
+        }
+        let parent = entries[idx].parent_id()?;
+        idx = *index_by_id.get(parent)?;
+    }
+    None
+}
+
 /// Append a custom entry to a session file, for a writer that does not hold
 /// the session's manager (the subagent pool runs in the parent process, and
 /// the parent's own manager may be elsewhere). The entry chains onto the
-/// file's last entry, so the tree stays linear. It goes through the same write
+/// file's last conversation entry (not onto an earlier record), and the tree
+/// and the leaf skip records, so they never fork the conversation. It goes through the same write
 /// queue as the manager, so the two stay in order. A manager that is already
 /// open does not see the entry until it is reopened.
 pub fn append_custom_entry_to_file(
@@ -1432,7 +1473,13 @@ pub fn append_custom_entry_to_file(
         .iter()
         .filter_map(|e| e.id().map(String::from))
         .collect();
-    let parent_id = entries.iter().rev().find_map(|e| e.id().map(String::from));
+    // Chain onto the conversation's last entry, not onto an earlier record, so
+    // records never become the parent of a message the open manager writes.
+    let parent_id = entries
+        .iter()
+        .rev()
+        .filter(|e| !is_run_record(e))
+        .find_map(|e| e.id().map(String::from));
     let id = generate_id(&existing);
     let entry = FileEntry::Custom {
         id: id.clone(),
@@ -1570,8 +1617,9 @@ pub fn list_subagent_sessions(
                 None if is_live(&task_id, &info.cwd) => SubagentState::Running,
                 None => SubagentState::Interrupted,
             };
-            info.parent_session_path
-                .get_or_insert_with(|| parent.path.to_string_lossy().into_owned());
+            // The directory the run was found in names its parent. A header
+            // written before the session dir moved names a path that is gone.
+            info.parent_session_path = Some(parent.path.to_string_lossy().into_owned());
             info.subagent = Some(SubagentRun {
                 task_id,
                 agent_type: record.agent_type,

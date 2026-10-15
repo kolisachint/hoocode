@@ -39,6 +39,14 @@ fn spawn_command() -> std::path::PathBuf {
     std::env::current_exe().unwrap_or_else(|_| "hoocode".into())
 }
 
+/// Whether the process-wide pool is running or has queued this task.
+pub fn pool_has_live_task(task_id: &str) -> bool {
+    instance()
+        .pool
+        .as_ref()
+        .is_some_and(|pool| pool.is_live(task_id))
+}
+
 /// Sets the scoped models for this process (the `--models` flag): they replace
 /// `scopedModels` from the settings. `None` goes back to the settings.
 pub fn set_scoped_models_override(models: Option<Vec<ScopedModel>>) {
