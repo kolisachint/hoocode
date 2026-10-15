@@ -448,30 +448,24 @@ pub fn chain_phrase(entries: &[ChainEntry]) -> String {
     }
     let long = entries.len() >= LONG_CHAIN_CALLS;
 
-    let mut chosen: Option<usize> = None;
-    let mut matched: Vec<&ChainEntry> = Vec::new();
-    for (i, family) in FAMILIES.iter().enumerate() {
-        let m = family_matches(entries, family);
-        if m.is_empty() {
-            continue;
-        }
-        if long && (m.len() as f64 / entries.len() as f64) < INCIDENTAL_SHARE {
-            continue;
-        }
-        chosen = Some(i);
-        matched = m;
-        break;
-    }
-    // Every family was incidental: the largest describes it best.
-    if chosen.is_none() {
-        for (i, family) in FAMILIES.iter().enumerate() {
-            let m = family_matches(entries, family);
-            if m.len() > matched.len() {
-                chosen = Some(i);
-                matched = m;
+    // One pass over the families: each family's matches, computed once.
+    let mut per_family: Vec<Vec<&ChainEntry>> = FAMILIES
+        .iter()
+        .map(|family| family_matches(entries, family))
+        .collect();
+    let qualifies = |m: &Vec<&ChainEntry>| {
+        !(m.is_empty() || long && (m.len() as f64 / entries.len() as f64) < INCIDENTAL_SHARE)
+    };
+    // The first family that qualifies; if every family was incidental, the largest.
+    let chosen = per_family.iter().position(qualifies).or_else(|| {
+        let mut best: Option<usize> = None;
+        for (i, m) in per_family.iter().enumerate() {
+            if !m.is_empty() && best.is_none_or(|b| m.len() > per_family[b].len()) {
+                best = Some(i);
             }
         }
-    }
+        best
+    });
     let Some(chosen) = chosen else {
         let mut names: Vec<&str> = Vec::new();
         for e in entries {
@@ -486,6 +480,7 @@ pub fn chain_phrase(entries: &[ChainEntry]) -> String {
         };
     };
 
+    let matched = per_family.swap_remove(chosen);
     let head = family_phrase(&FAMILIES[chosen], &matched, long);
     if !long || matched.len() as f64 / entries.len() as f64 >= 0.5 {
         return head;
