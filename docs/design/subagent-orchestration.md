@@ -133,7 +133,7 @@ Who does what:
    the parent's own files too.
 6. Put the Workspace path, branch and base in the brief.
 
-**Subagent, inside the worktree**
+**Subagent, inside the worktree** (review 2026-10-15: no child body carries these rules, so the parent's writer bullet in `task-main.md` puts them in the brief's Constraints; the child gets them that way)
 
 1. Work only under the worktree path. Use absolute paths for Read, Edit and Write.
    Use `git -C <path>` for git.

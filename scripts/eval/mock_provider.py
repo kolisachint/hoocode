@@ -7,8 +7,8 @@ a subagent dispatch interleaves the parent's and the child's requests, and the
 order in which two processes happen to make calls is not something a test
 should depend on.
 
-So this mock routes on the request instead. Every turn the pool builds carries
-`Context from the calling agent:` and then `Task: …`, so a body containing
+So this mock routes on the request instead. Every child's prompt ends in
+`Task: …` (`pool::child_prompt`, on every dispatch path), so a body containing
 `Task: ` is a child and everything else is a dispatching session. Each route
 has its own script and its own cursor.
 
@@ -43,8 +43,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-# The pool builds every child's prompt ending in `Task: <task>` (pool.rs
-# `build_args`), and the dispatching session's last user message is the user's
+# Every child's prompt ends in `Task: <task>` (pool.rs `child_prompt`), and the
+# dispatching session's last user message is the user's
 # own prompt. Routing on the *last user message only* is what keeps a child's
 # request from matching a Task tool description in the parent's body.
 CHILD_MARKER = "Task: "

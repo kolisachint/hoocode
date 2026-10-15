@@ -46,7 +46,7 @@ first.** Don't pick one yourself.
 | Plan | Card | Phases | First step |
 |---|---|---|---|
 | Core | this page, "The core plan" | milestones 0a–8 | per the status line below |
-| TUI | [tui-activity.md](tui-activity.md) | T0 goldens · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell. All work by Haiku subagents | T0 done 2026-10-09; next Phase S Now (N1) |
+| TUI | [tui-activity.md](tui-activity.md) | T0 goldens · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell. All work by Haiku subagents | T0 done 2026-10-09; T5.1 and T5.2 done 2026-10-15; next T3, then T4 and T5.3 |
 
 ## The core plan, in priority order
 
@@ -68,14 +68,14 @@ pass the done bar (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 6 | **Done 2026-10-15.** Plugins: load and install (`hoocode-code-plugins`, `/plugin`), then the opt-in model tools (`enablePluginTools`: SearchPlugins, InstallPlugin, UninstallPlugin, ListPlugins, ProposePlugin). Reviewed 2026-10-15: the `--trust` install path, the permission gate's plugin list, subagent registration and `/plugin update` for proposed plugins are fixed, and the `--platform` help text is corrected. Open: a model install or proposal reloads the plugin set, but the skills and MCP servers go live on `/reload` (no TUI reload from a tool result yet); the plugin-authoring skill still names UpdatePlugin (left alone) | [plugins.md](plugins.md) | L | 4 | Delivers skills, MCP servers and subagents |
 | 7 | **Done 2026-10-14.** Scheduler and `/loop`: the `/loop` forms, `/loop auto`, the 10-minute late-fire rule | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
 | 8 | **Done 2026-10-14.** Version check (`hoocode-code-update`, `hoocode update`) and completion chime (`chime.rs`). Open: the live registry request is not in tests (no network there) | [extras.md](extras.md) | S | 0c | Small polish |
-| 9 | Subagent orchestration: background by default, subagent brief, worktree protocol by instruction, child prompt fixes, evals | [subagent-orchestration.md](subagent-orchestration.md) | M | — | Parent stops waiting on subagents; writers stop sharing one tree |
+| 9 | **Done 2026-10-15.** Subagent orchestration: background by default, subagent brief, worktree protocol by instruction, child prompt fixes, evals | [subagent-orchestration.md](subagent-orchestration.md) | M | — | Parent stops waiting on subagents; writers stop sharing one tree |
 
 **Status (2026-10-08):** milestone 2 (concurrency phases 0-1) is done. Milestone 3 (DocSearch;
 the 8 `l1_done` tasks) is done. Milestones 4 (MCP client) and 5 (concurrency phases 2-5) are
 built, not yet load-tested. Open items are listed in the 2026-10-08 (second session) entry in
 [../../archive/migration/PROGRESS.md](../../archive/migration/PROGRESS.md).
 
-**Status (2026-10-15):** steps 0a–0d are done. The 0d CI wiring (guards job, TUI parity workflow) is staged, not applied: the session token lacks workflow scope. The user applies `git apply archive/migration/ci/step1-workflows.patch` and pushes it ([tui-activity.md](tui-activity.md) T0.6). `agent-mcp` is kept as the home of the 9.1 MCP client ([decisions-2026-10-14.md](decisions-2026-10-14.md)). **Step 1 (reliability 1.1–1.6) is done in code** ([reliability.md](reliability.md)); the macOS job on PRs is staged in `step1-workflows.patch` and is not live until the user pushes it. **Step 6 (plugins) is done 2026-10-15**, parts 1 to 3 ([plugins.md](plugins.md)). **Step 9 (subagent orchestration) is next.** Steps 7 and 8 are done 2026-10-14. 4 and 5 still need their load test.
+**Status (2026-10-15):** steps 0a–0d are done. The 0d CI wiring (guards job, TUI parity workflow) is staged, not applied: the session token lacks workflow scope. The user applies `git apply archive/migration/ci/step1-workflows.patch` and pushes it ([tui-activity.md](tui-activity.md) T0.6). `agent-mcp` is kept as the home of the 9.1 MCP client ([decisions-2026-10-14.md](decisions-2026-10-14.md)). **Step 1 (reliability 1.1–1.6) is done in code** ([reliability.md](reliability.md)); the macOS job on PRs is staged in `step1-workflows.patch` and is not live until the user pushes it. **Step 6 (plugins) is done 2026-10-15**, parts 1 to 3 ([plugins.md](plugins.md)). **Step 9 (subagent orchestration) is done 2026-10-15** ([subagent-orchestration.md](subagent-orchestration.md)). Steps 7 and 8 are done 2026-10-14. Next per the plan: only steps 4 and 5 are open in core, and both need their load test.
 
 **Only if the numbers or a need say so:** concurrency phase 6 (highlighting off the UI
 thread), MCP Apps ([canvas-and-mcp-apps.md](canvas-and-mcp-apps.md)), the MCP Tasks

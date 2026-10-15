@@ -432,7 +432,6 @@ pub const QUEUE_PER_SLOT: usize = 4;
 /// stream of `explore` runs (the finding from Q9 in the design review).
 const AGEING_STEP_MS: u64 = 60_000;
 
-/// `"Read,Shell"` → `["Read", "Shell"]`.
 /// The prompt every child gets, on every dispatch path (cold command line,
 /// in-process runner, warm worker): one wrapper, so the three cannot drift
 /// (card 9, 4i). The brief (goal, context, workspace, done criteria) is in the
@@ -441,6 +440,7 @@ pub fn child_prompt(task: &str) -> String {
     format!("Task: {}", task.trim())
 }
 
+/// `"Read,Shell"` → `["Read", "Shell"]`.
 fn split_csv(value: String) -> Vec<String> {
     value
         .split(',')
