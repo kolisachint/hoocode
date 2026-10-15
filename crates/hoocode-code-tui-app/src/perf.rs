@@ -33,15 +33,10 @@ const PENDING_KEY_CAP: usize = 1024;
 const TICK: Duration = Duration::from_secs(1);
 
 /// A fixed-size ring of durations. The newest `WINDOW` samples are kept.
+#[derive(Default)]
 pub struct Ring {
     samples: Vec<Duration>,
     next: usize,
-}
-
-impl Default for Ring {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl Ring {
@@ -121,6 +116,7 @@ pub struct Snapshot {
 
 /// The UI thread's recorder. Single-threaded: it lives on the UI thread and is
 /// shared with the frame observer through an `Rc`.
+#[derive(Default)]
 pub struct Recorder {
     frame_build: Ring,
     frame_write: Ring,
@@ -128,12 +124,6 @@ pub struct Recorder {
     loop_iteration: Ring,
     frames: u64,
     stalls: u64,
-}
-
-impl Default for Recorder {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl Recorder {

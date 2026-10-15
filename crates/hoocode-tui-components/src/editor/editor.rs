@@ -261,14 +261,13 @@ fn clamp_max_visible(v: usize) -> usize {
 }
 
 impl Editor {
-    pub fn new(host: EditorHost, theme: EditorTheme, options: EditorOptions) -> Self {
+    pub fn new(host: EditorHost, mut theme: EditorTheme, options: EditorOptions) -> Self {
         let border_chars = FrameBorderChars::with_overrides(theme.border_chars.as_ref());
-        let border_color: ColorFn = {
-            // `this.borderColor = theme.borderColor`: the theme's function is
-            // moved into the public field; the theme keeps an identity.
-            Box::new(|s: &str| s.to_string())
-        };
-        let mut editor = Self {
+        // `this.borderColor = theme.borderColor`: the theme's function is
+        // moved into the public field; the theme keeps an identity.
+        let border_color: ColorFn =
+            std::mem::replace(&mut theme.border_color, Box::new(|s: &str| s.to_string()));
+        Self {
             state: EditorState {
                 lines: vec![String::new()],
                 cursor_line: 0,
@@ -311,9 +310,7 @@ impl Editor {
             on_change: None,
             on_autocomplete_visibility_change: None,
             disable_submit: false,
-        };
-        std::mem::swap(&mut editor.border_color, &mut editor.theme.border_color);
-        editor
+        }
     }
 
     fn valid_paste_ids(&self) -> HashSet<u64> {
