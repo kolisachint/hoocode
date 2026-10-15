@@ -919,7 +919,6 @@ async fn execute_task(
     };
     let dispatch_options = DispatchOptions {
         force_agent: Some(subagent_type.clone()),
-        context: Some(String::new()),
         model: ask.clone(),
         // The parent's own model: the default when nothing is asked, and where
         // the inherited-model fallback runs.

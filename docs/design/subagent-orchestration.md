@@ -171,7 +171,7 @@ Who does what:
 | 4f | **Done 2026-10-15.** Keep base guidelines for custom bodies. Append a short base block, do not replace. As built: the six generic guidelines are one `BASE_GUIDELINES` const in `code-prompts` `system_prompt.rs`; the default prompt and a custom body both use it. Note: a user's `--system-prompt` body gets the same block, since the pool and the flag share one path | `pool.rs:1152-1154` passes the body as `--system-prompt`; `system_prompt.rs:351-369` returned before the base guidelines | P6 | rust, small |
 | 4g | Dropped (Q8): every agent keeps AGENTS.md and CLAUDE.md | — | P7 | — |
 | 4h | Review agents: the brief lists the only git commands allowed (`git diff`, `git log`, `git show`) and says "no other Shell" | `code-review.md:16`, `security-review.md:17` | P10 | text now; rust later (a Shell filter) |
-| 4i | One prompt wrapper for all three paths. Give `context` a real value or remove it | `pool.rs:1111`, `:1225-1234`; `tools.rs:834` | P8 | rust, small |
+| 4i | **Done 2026-10-15.** One prompt wrapper for all three paths. Give `context` a real value or remove it. As built: `context` is removed (the brief in the task text is the context). `pool::child_prompt` is the one wrapper (`Task: <prompt>`), used by the command line, the in-process run spec and the warm worker. The brief itself is the parent's job (§2) | `pool.rs` (was `:1111`, `:1225-1234`); `tools.rs` (was `:834`) | P8 | rust, small |
 
 Final-answer rule for 4d (same text in every body):
 

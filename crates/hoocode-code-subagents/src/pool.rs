@@ -143,7 +143,6 @@ pub struct SubagentPoolTask {
     pub task_id: String,
     pub agent_type: String,
     pub task: String,
-    pub context: Option<String>,
     pub token_budget: Option<u64>,
     pub cwd: Option<PathBuf>,
     pub model: Option<String>,
@@ -232,8 +231,6 @@ pub struct TaskResult {
 pub struct DispatchOptions {
     /// Skip evaluation and use this agent type.
     pub force_agent: Option<String>,
-    /// Context distilled from the calling agent.
-    pub context: Option<String>,
     pub model: Option<String>,
     pub provider: Option<String>,
     /// The dispatching session's own model: the default, and the model the
@@ -436,6 +433,14 @@ pub const QUEUE_PER_SLOT: usize = 4;
 const AGEING_STEP_MS: u64 = 60_000;
 
 /// `"Read,Shell"` → `["Read", "Shell"]`.
+/// The prompt every child gets, on every dispatch path (cold command line,
+/// in-process runner, warm worker): one wrapper, so the three cannot drift
+/// (card 9, 4i). The brief (goal, context, workspace, done criteria) is in the
+/// task text the parent wrote, so the wrapper adds nothing but the marker.
+pub fn child_prompt(task: &str) -> String {
+    format!("Task: {}", task.trim())
+}
+
 fn split_csv(value: String) -> Vec<String> {
     value
         .split(',')
@@ -901,7 +906,6 @@ impl SubagentPool {
             task_id: task_id.clone(),
             agent_type: agent_type.clone(),
             task: task.to_string(),
-            context: options.context,
             model: options.model,
             provider: options.provider,
             inherited_model: options.inherited_model,
@@ -1227,7 +1231,6 @@ impl PoolInner {
         let mut disallowed_tools = None;
         let mut model = None;
         let mut provider = task.provider.clone();
-        let mut prompt = task.task.clone();
         let mut max_turns = DEFAULT_SUBAGENT_MAX_TURNS;
         let mut deadline_ms = None;
         let mut rest = argv.iter();
@@ -1251,9 +1254,7 @@ impl PoolInner {
         }
         // The prompt is the trailing positional argument the pool appends; a
         // runner that builds a session gets the same text the child would.
-        if let Some(context) = task.context.as_deref() {
-            prompt = format!("Context from the calling agent:\n\n{context}\n\nTask: {prompt}");
-        }
+        let prompt = child_prompt(&task.task);
         RunSpec {
             task_id: task.task_id.clone(),
             agent_type: task.agent_type.clone(),
@@ -1373,15 +1374,7 @@ impl PoolInner {
             args.extend(["--skill".into(), path]);
         }
 
-        let context = task.context.as_deref().map(str::trim).unwrap_or("");
-        args.push(if context.is_empty() {
-            format!("Task: {}", task.task.trim())
-        } else {
-            format!(
-                "Context from the calling agent:\n\n{context}\n\nTask: {}",
-                task.task.trim()
-            )
-        });
+        args.push(child_prompt(&task.task));
         args
     }
 
