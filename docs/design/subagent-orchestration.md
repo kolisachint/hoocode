@@ -52,6 +52,8 @@ or harness change.
 
 ### 1. Parent guidance [text] — fixes P3, P12
 
+**Done 2026-10-15.** One template, `task-main.md`, carries the guidance, the brief (§2) and the worktree summary (§3). The two `task-background-*.md` files are gone. The agent-file rows below are the other worker's and are not done here.
+
 Files: `templates/prompts/task-main.md` and the two `task-background-*.md` files.
 
 With D1 every agent is background, so the "agents or none" split in
@@ -73,9 +75,9 @@ Fix "isolated" wording. It means separate process and context, never files.
 
 | File | Line | Change |
 |---|---|---|
-| `task-main.md` | 1 | "run in their own isolated context" → "run as separate processes with their own context" |
-| `task-main.md` | 3 | "fix one isolated bug" → "fix one bug" |
-| `tools.rs` | 6, 599 | Same wording change in the doc comment and the tool description |
+| `task-main.md` | 1 | **Done 2026-10-15.** "run in their own isolated context" → "run as separate processes with their own context" |
+| `task-main.md` | 3 | **Done 2026-10-15.** "fix one isolated bug" → "fix one bug" |
+| `tools.rs` | 6, 599 | **Done 2026-10-15.** Same wording change in the doc comment and the tool description ("runs as a separate process with its own, fresh context") |
 | `explore.md` | 22 | Same |
 | `general-purpose.md` | 19 | Same |
 | `plan.md` | 23 | Same |

@@ -3,7 +3,7 @@
 //! background subagents).
 //!
 //! The parent agent decides when to delegate and picks the agent with
-//! `subagent_type`; the chosen agent runs in an isolated child process (the
+//! `subagent_type`; the chosen agent runs as a separate child process with its own context (the
 //! cold pool, or a warm RPC worker when enabled) and only its final answer
 //! comes back. Background dispatches leave their body in the inbox and return
 //! a compact notification; `AgentOutput` pulls it. Interactive rendering
@@ -648,7 +648,7 @@ pub fn create_task_tool_definition(cwd: &Path) -> ToolDefinition {
     ToolDefinition { ordered_start: false,
         name: TASK_TOOL_NAME.into(),
         label: TASK_TOOL_NAME.into(),
-        description: "Delegate a focused task to a specialized subagent that runs in a fresh, isolated context (it cannot see this conversation). Choose one of the available agents (listed in the system prompt) via `subagent_type` and pass everything it needs via `prompt`; the subagent returns only its final answer.".into(),
+        description: "Delegate a focused task to a specialized subagent that runs as a separate process with its own, fresh context (it cannot see this conversation). Choose one of the available agents (listed in the system prompt) via `subagent_type` and pass everything it needs via `prompt`; the subagent returns only its final answer.".into(),
         prompt_snippet: Some(
             "delegate a self-contained task to a specialized subagent (choose via subagent_type)"
                 .into(),
