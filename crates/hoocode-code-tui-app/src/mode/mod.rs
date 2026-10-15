@@ -489,6 +489,38 @@ struct Mode {
     mode_dial_after: Option<(&'static str, String)>,
 }
 
+/// Installs the panic hook on the UI thread (`docs/design/concurrency.md` section 4,
+/// Panics): a UI-thread panic restores the terminal and flushes the session.
+fn install_panic_hook() {
+    hoocode_tui_terminal::panic_hook::install(
+        std::thread::current().id(),
+        hoocode_tui_terminal::panic_hook::Effects {
+            restore: Box::new(hoocode_tui_terminal::interrupt::restore_terminal),
+            flush: Box::new(|| {
+                hoocode_tui_terminal::panic_hook::flush_session(
+                    hoocode_tui_terminal::panic_hook::PANIC_FLUSH_DEADLINE,
+                )
+            }),
+            log: Box::new(|report: &str| append_panic_log(report)),
+        },
+    );
+}
+
+/// Appends a panic report to the debug log. Unlike agent log lines, it is written
+/// whether or not `DEBUG_AGENT_LOG` is set: a crash should always leave a record.
+fn append_panic_log(report: &str) {
+    use std::io::Write;
+    let path = hoocode_code_paths::debug_log_path();
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "[{now}] {report}");
+    }
+}
+
 /// `InteractiveMode.run`: until the user exits.
 pub fn run_interactive(options: InteractiveOptions) -> Result<(), String> {
     let initial = (
@@ -969,6 +1001,8 @@ impl Mode {
     ) -> Result<(), String> {
         self.tui
             .set_frame_observer(Some(self.perf.frame_observer()));
+        // Before the terminal starts, so a panic from here on restores it.
+        install_panic_hook();
         let mut input = self.tui.start();
         // Ctrl+C aborts the turn from the input thread, without waiting for this loop.
         let interrupt_agent = self.session.agent().clone();

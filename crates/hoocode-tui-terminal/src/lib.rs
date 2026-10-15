@@ -9,6 +9,7 @@
 pub mod interrupt;
 pub mod mouse;
 mod output;
+pub mod panic_hook;
 mod stdin_buffer;
 mod stdin_hub;
 

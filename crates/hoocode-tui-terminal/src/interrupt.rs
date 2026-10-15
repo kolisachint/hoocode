@@ -142,8 +142,10 @@ fn emergency_exit() -> ! {
     std::process::exit(EMERGENCY_EXIT_CODE);
 }
 
+/// Restores the terminal: the escapes in [`RESTORE_SEQUENCE`], then raw mode off.
+/// Bypasses the output thread, so it is safe from a panic hook. Idempotent.
 #[cfg(unix)]
-fn restore_terminal() {
+pub fn restore_terminal() {
     // Straight to the fd: the output thread may be stuck holding std's stdout lock.
     // SAFETY: the buffer is valid for its length; a failed write is ignored.
     unsafe {
@@ -157,7 +159,7 @@ fn restore_terminal() {
 }
 
 #[cfg(not(unix))]
-fn restore_terminal() {
+pub fn restore_terminal() {
     let _ = crossterm::terminal::disable_raw_mode();
 }
 
