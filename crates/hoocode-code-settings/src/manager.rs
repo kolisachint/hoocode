@@ -1153,6 +1153,34 @@ impl SettingsManager {
             .unwrap_or(defaults::NESTED_SUBAGENT_CONCURRENCY)
     }
 
+    /// `subagentMaxTurns`: the turn cap for a subagent without its own
+    /// `maxTurns`. Unvalidated here; the subagents crate clamps and defaults it.
+    pub fn subagent_max_turns(&self) -> Option<f64> {
+        finite(self.get("subagentMaxTurns"))
+    }
+
+    /// `subagentTokenBudget`: the advisory token budget for every subagent
+    /// type. Unset, each type keeps its own default.
+    pub fn subagent_token_budget(&self) -> Option<f64> {
+        finite(self.get("subagentTokenBudget"))
+    }
+
+    /// `subagentDeadlineMinutes`: the wall-clock deadline for a subagent.
+    pub fn subagent_deadline_minutes(&self) -> Option<f64> {
+        finite(self.get("subagentDeadlineMinutes"))
+    }
+
+    /// `subagentStallSeconds`: how long a subagent may go without forward
+    /// progress before it is reaped as stalled.
+    pub fn subagent_stall_seconds(&self) -> Option<f64> {
+        finite(self.get("subagentStallSeconds"))
+    }
+
+    /// `subagentMaxRssMb`: the resident memory cap for one subagent process.
+    pub fn subagent_max_rss_mb(&self) -> Option<f64> {
+        finite(self.get("subagentMaxRssMb"))
+    }
+
     pub fn enable_todo_write(&self) -> bool {
         self.bool_or("enableTodoWrite", true)
     }

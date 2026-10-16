@@ -16,6 +16,7 @@ fn def(name: &str, description: &str, prompt: &str, source: AgentSource) -> Agen
         source,
         file_path: None,
         max_turns: None,
+        token_budget: None,
         background: None,
         delegate: None,
         delegate_to: None,

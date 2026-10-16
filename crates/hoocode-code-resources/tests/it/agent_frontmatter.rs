@@ -167,6 +167,20 @@ fn captures_the_max_turns_extension() {
 }
 
 #[test]
+fn captures_the_token_budget_extension() {
+    let raw = "---\nname: budgeted\ndescription: An agent with a token budget.\ntokenBudget: 90000\n---\nbody";
+    assert_eq!(
+        parse(raw, AgentSource::Project).0.unwrap().token_budget,
+        Some(90_000)
+    );
+    let absent = "---\nname: plain\ndescription: No budget.\n---\nbody";
+    assert_eq!(
+        parse(absent, AgentSource::Project).0.unwrap().token_budget,
+        None
+    );
+}
+
+#[test]
 fn captures_the_background_flag_and_leaves_it_undefined_when_absent() {
     let bg = "---\nname: watcher\ndescription: A non-blocking background agent.\nbackground: true\n---\nbody";
     assert_eq!(

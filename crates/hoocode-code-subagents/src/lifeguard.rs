@@ -30,8 +30,10 @@
 //! from its own signal handling, since a library must not take over signals.
 //!
 //! **Hard deadline: one value for every agent type (2026-10-10, user decision).**
-//! [`base_timeout_ms`] returns [`SUBAGENT_DEADLINE_MS`] (2 hours) for every
-//! type. This replaces the per-type 5-20 minute table. That table was itself
+//! The base is [`SUBAGENT_DEADLINE_MS`] (4 hours) unless the pool sets another
+//! through [`SubagentLimits`](crate::limits::SubagentLimits) (the
+//! `subagentDeadlineMinutes` setting or `HOOCODE_SUBAGENT_DEADLINE_MS`), and it
+//! is the same for every type. This replaces the per-type 5-20 minute table. That table was itself
 //! the fix for the recorded runs (`hoobot/.hoocode/dispatch`): `TIMEOUTS_MS`
 //! was keyed on names we never shipped, so every agent got the 5-minute
 //! default, and four of ten runs died `timeout` at exactly 300s, three of them
@@ -50,30 +52,27 @@ use tokio::task::JoinHandle;
 
 use crate::agent_log::agent_log;
 
-/// Hard deadline for every subagent, whatever its type.
+/// Default hard deadline for every subagent, whatever its type.
 ///
-/// Decision of 2026-10-10 (user): every type may run for up to 2 hours. The
-/// parent polls with `AgentOutput` and stops a run it no longer needs with
-/// `AgentOutput(cancel: true)`.
-pub const SUBAGENT_DEADLINE_MS: u64 = 2 * 60 * 60 * 1000;
+/// Decision of 2026-10-10 (user): every type may run for up to 2 hours. 2026-10-16:
+/// 4 hours. The parent polls with `AgentOutput` and stops a run it no longer
+/// needs with `AgentOutput(cancel: true)`. The pool uses the configured value,
+/// which defaults to this one.
+pub const SUBAGENT_DEADLINE_MS: u64 = 4 * 60 * 60 * 1000;
 
 /// Most the load multiplier may add to a deadline: 30 minutes.
 const LOAD_HEADROOM_MS: u64 = 30 * 60 * 1000;
 
-/// The longest any run's budget can get under load: the base plus
-/// [`LOAD_HEADROOM_MS`], so 2h30m. `AgentOutput` derives its reconcile age
-/// from this.
+/// The longest the default run budget can get under load: the default base
+/// plus [`LOAD_HEADROOM_MS`], so 4h30m. A pool with a different base uses
+/// [`max_run_budget_ms`].
 pub const MAX_SCALED_DEADLINE_MS: u64 = SUBAGENT_DEADLINE_MS + LOAD_HEADROOM_MS;
 
-/// Base hard deadline for an agent type: [`SUBAGENT_DEADLINE_MS`] for all of
-/// them (2026-10-10). The argument is kept so callers and plugin agents need no
-/// change.
-///
-/// Wall-clock, before the load multiplier ([`SubagentLifeguard::set_external_load`]
-/// and the pool's own concurrency both widen it). Under load the budget never
-/// passes [`MAX_SCALED_DEADLINE_MS`]; see [`load_ceiling_ms`].
-pub fn base_timeout_ms(_agent_type: &str) -> u64 {
-    SUBAGENT_DEADLINE_MS
+/// The longest a run's budget can get under load for a base deadline: the
+/// base widened by the load multiplier, capped at the base plus
+/// [`LOAD_HEADROOM_MS`]. `AgentOutput` derives its reconcile age from this.
+pub fn max_run_budget_ms(base: u64) -> u64 {
+    load_ceiling_ms(base)
 }
 
 const HEARTBEAT_MISS_THRESHOLD_MS: u64 = 60_000;
@@ -82,20 +81,14 @@ const HEARTBEAT_MISS_THRESHOLD_MS: u64 = 60_000;
 /// provider can legitimately take minutes, and at 150s (the old value) those
 /// runs were reaped mid-turn. It still catches a child parked inside a
 /// provider call, which no heartbeat ever will.
-pub const PROGRESS_STALL_THRESHOLD_MS: u64 = 600_000;
-/// Environment override for [`PROGRESS_STALL_THRESHOLD_MS`], read by the
-/// parent from its pool environment (the lifeguard runs in the parent). The
-/// evals use it to make a stall reap take seconds instead of ten minutes.
+///
+/// 2026-10-16: 20 minutes (was 10). The `subagentStallSeconds` setting and
+/// `HOOCODE_SUBAGENT_STALL_MS` override it; see [`crate::limits`].
+pub const PROGRESS_STALL_THRESHOLD_MS: u64 = 1_200_000;
+/// Environment override for the progress stall threshold, in milliseconds.
+/// The evals use it to make a stall reap take seconds instead of minutes.
+/// Read by [`crate::limits::SubagentLimits::resolve`].
 pub const STALL_THRESHOLD_ENV: &str = "HOOCODE_SUBAGENT_STALL_MS";
-
-/// The progress stall threshold for a pool: [`STALL_THRESHOLD_ENV`] when it is
-/// a positive integer, else [`PROGRESS_STALL_THRESHOLD_MS`].
-pub fn progress_stall_ms_from_env(env: &HashMap<String, String>) -> u64 {
-    env.get(STALL_THRESHOLD_ENV)
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .filter(|ms| *ms > 0)
-        .unwrap_or(PROGRESS_STALL_THRESHOLD_MS)
-}
 /// A tool in flight counts as busy work only this long without any progress
 /// event (before the load multiplier). A tool that declares its own timeout
 /// (the Shell tool) gets `max(this, declared + TOOL_TIMEOUT_MARGIN_MS)`
@@ -345,6 +338,10 @@ struct State {
     reaped: HashMap<String, u32>,
     /// The no-progress threshold (before the load multiplier).
     progress_stall_ms: u64,
+    /// The base hard deadline for every run (before the load multiplier).
+    base_deadline_ms: u64,
+    /// Resident memory above which a child is reaped.
+    max_rss_bytes: u64,
     disposed: bool,
 }
 
@@ -394,6 +391,8 @@ impl SubagentLifeguard {
             state: Mutex::new(State {
                 last_check_at: now_ms(),
                 progress_stall_ms: PROGRESS_STALL_THRESHOLD_MS,
+                base_deadline_ms: SUBAGENT_DEADLINE_MS,
+                max_rss_bytes: hoocode_runtime::CHILD_RSS_LIMIT_BYTES,
                 ..Default::default()
             }),
             term_grace_ms: std::sync::atomic::AtomicU64::new(STALL_TERM_GRACE_MS),
@@ -439,9 +438,21 @@ impl SubagentLifeguard {
     }
 
     /// Set the no-progress stall threshold (before the load multiplier). The
-    /// pool sets it from [`STALL_THRESHOLD_ENV`].
+    /// pool sets it from its resolved limits.
     pub fn set_progress_stall_ms(&self, ms: u64) {
         self.state().progress_stall_ms = ms.max(1);
+    }
+
+    /// Set the base hard deadline for every run (before the load multiplier).
+    /// The pool sets it from its resolved limits.
+    pub fn set_base_deadline_ms(&self, ms: u64) {
+        self.state().base_deadline_ms = ms.max(1);
+    }
+
+    /// Set the child resident-memory cap in bytes. The pool sets it from its
+    /// resolved limits.
+    pub fn set_max_rss_bytes(&self, bytes: u64) {
+        self.state().max_rss_bytes = bytes.max(1);
     }
 
     /// Count of external in-process tasks (background MCP tools) sharing the
@@ -467,7 +478,7 @@ impl SubagentLifeguard {
         );
         state.last_heartbeat.insert(task_id.to_string(), now);
         state.last_progress.insert(task_id.to_string(), now);
-        let base = base_timeout_ms(agent_type);
+        let base = state.base_deadline_ms;
         state.started_at.insert(task_id.to_string(), now);
         state.base_timeout_ms.insert(task_id.to_string(), base);
         let delay =
@@ -640,17 +651,18 @@ impl SubagentLifeguard {
         }
     }
 
-    /// Children whose resident memory is above
-    /// [`hoocode_runtime::CHILD_RSS_LIMIT_BYTES`] (2 GiB each).
+    /// Children whose resident memory is above the child RSS cap (4 GiB each
+    /// by default, see [`set_max_rss_bytes`](Self::set_max_rss_bytes)).
     fn children_over_memory_limit(&self) -> Vec<String> {
-        let candidates: Vec<(String, u32)> = {
+        let (candidates, limit): (Vec<(String, u32)>, u64) = {
             let state = self.state();
-            state
+            let candidates = state
                 .processes
                 .iter()
                 .filter(|(id, _)| !state.reaping.contains(*id))
                 .map(|(id, monitored)| (id.clone(), monitored.pid))
-                .collect()
+                .collect();
+            (candidates, state.max_rss_bytes)
         };
         candidates
             .into_iter()
@@ -658,13 +670,13 @@ impl SubagentLifeguard {
                 let Some(rss) = hoocode_runtime::child_rss_bytes(*pid) else {
                     return false;
                 };
-                if rss <= hoocode_runtime::CHILD_RSS_LIMIT_BYTES {
+                if rss <= limit {
                     return false;
                 }
                 agent_log(&format!(
                     "[LIFEGUARD] task_id={task_id} rss_mb={} above the {} MiB child limit; reaping",
                     rss / hoocode_runtime::MIB,
-                    hoocode_runtime::CHILD_RSS_LIMIT_BYTES / hoocode_runtime::MIB,
+                    limit / hoocode_runtime::MIB,
                 ));
                 true
             })
@@ -765,7 +777,7 @@ impl SubagentLifeguard {
                 .base_timeout_ms
                 .get(task_id)
                 .copied()
-                .unwrap_or_else(|| base_timeout_ms(&monitored.agent_type));
+                .unwrap_or(state.base_deadline_ms);
             let elapsed = now.saturating_sub(started);
             let ceiling = load_ceiling_ms(base);
             let mult = state.load_multiplier();

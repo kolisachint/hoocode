@@ -126,7 +126,7 @@ fn default_limits_follow_ram() {
 
 #[test]
 fn child_rss_limit_is_two_gib() {
-    assert_eq!(CHILD_RSS_LIMIT_BYTES, 2048 * MIB);
+    assert_eq!(CHILD_RSS_LIMIT_BYTES, 4096 * MIB);
 }
 
 #[test]

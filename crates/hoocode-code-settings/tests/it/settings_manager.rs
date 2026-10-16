@@ -854,6 +854,42 @@ fn writes_the_same_bytes_as_json_stringify_with_two_spaces() {
 }
 
 #[test]
+fn subagent_limit_settings_read_as_numbers_and_are_unset_by_default() {
+    let empty = SettingsManager::in_memory(serde_json::Map::new());
+    assert_eq!(empty.subagent_max_turns(), None);
+    assert_eq!(empty.subagent_token_budget(), None);
+    assert_eq!(empty.subagent_deadline_minutes(), None);
+    assert_eq!(empty.subagent_stall_seconds(), None);
+    assert_eq!(empty.subagent_max_rss_mb(), None);
+
+    let set = SettingsManager::in_memory(
+        json!({
+            "subagentMaxTurns": 75,
+            "subagentTokenBudget": 90000,
+            "subagentDeadlineMinutes": 90,
+            "subagentStallSeconds": 45,
+            "subagentMaxRssMb": 1024,
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    );
+    assert_eq!(set.subagent_max_turns(), Some(75.0));
+    assert_eq!(set.subagent_token_budget(), Some(90_000.0));
+    assert_eq!(set.subagent_deadline_minutes(), Some(90.0));
+    assert_eq!(set.subagent_stall_seconds(), Some(45.0));
+    assert_eq!(set.subagent_max_rss_mb(), Some(1024.0));
+
+    let text = SettingsManager::in_memory(
+        json!({ "subagentMaxTurns": "many" })
+            .as_object()
+            .unwrap()
+            .clone(),
+    );
+    assert_eq!(text.subagent_max_turns(), None);
+}
+
+#[test]
 fn subagent_concurrency_defaults_and_clamps_to_one_through_sixteen() {
     let defaults = SettingsManager::in_memory(serde_json::Map::new());
     assert_eq!(defaults.subagent_concurrency(), 8);

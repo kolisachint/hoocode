@@ -32,7 +32,6 @@ use crate::agent_log::agent_log;
 use crate::depth::{delegate_allow_list, is_delegate_allowed, ProcessEnv};
 use crate::inbox::{subagent_inbox, InboxRecord, TaskLifecycle};
 use crate::instance::get_subagent_pool;
-use crate::lifeguard;
 use crate::model_categories::{ModelRequest, ModelSelection};
 use crate::pool::TaskStatus as PoolTaskStatus;
 use crate::pool::{
@@ -47,12 +46,10 @@ pub use hoocode_code_resources::summarize_agent_description;
 
 const TASK_MAIN_PROMPT: &str = include_str!("../templates/prompts/task-main.md");
 
-/// How long a `running` record may sit with the pool saying nothing about it
-/// before `AgentOutput` stops believing it. Past the largest budget a run can
-/// reach (the 2-hour deadline plus the lifeguard's load headroom, see
-/// `MAX_SCALED_DEADLINE_MS`), plus a minute of slack. 2026-10-10: was 81 min,
-/// when the longest deadline was 20 min.
-const RECONCILE_AGE_MS: u64 = lifeguard::MAX_SCALED_DEADLINE_MS + 60 * 1000;
+/// Slack added to the pool's longest run budget (its resolved deadline plus the
+/// load headroom, `SubagentPool::max_run_budget_ms`) before `AgentOutput` stops
+/// believing a `running` record that the pool says nothing about.
+const RECONCILE_SLACK_MS: u64 = 60 * 1000;
 
 /// Default wait for `AgentOutput(wait: true)`.
 const TASK_OUTPUT_DEFAULT_TIMEOUT_MS: u64 = 120_000;
@@ -1201,7 +1198,7 @@ pub fn create_task_output_tool_definition() -> ToolDefinition {
             "Pass a task_id/label (e.g. \"explore#1\") to read a finished subagent's full result, or to see its status while it runs.",
             "Set list:true (or omit task_id) to list every background subagent with its status and current activity.",
             "Set wait:true to block until that task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier).",
-            "A long run can take up to 2 hours: poll it by task_id, and set cancel:true with a task_id to stop one whose result you no longer need.",
+            "A long run can take up to the subagent deadline (4 hours by default): poll it by task_id, and set cancel:true with a task_id to stop one whose result you no longer need.",
             "It never errors on a valid handle: a running task reports status, a finished one returns its result, an already-read one says so.",
         ]
         .join("\n"),
@@ -1323,7 +1320,7 @@ async fn read_background_task(
                     PoolTaskStatus::Running | PoolTaskStatus::Queued
                 )
             },
-            RECONCILE_AGE_MS,
+            pool.max_run_budget_ms() + RECONCILE_SLACK_MS,
         );
     }
     if params.get("wait").and_then(Value::as_bool) == Some(true) {

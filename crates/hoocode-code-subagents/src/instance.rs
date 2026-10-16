@@ -15,6 +15,7 @@ use hoocode_code_task_store::{task_store, TaskAgentPatch};
 use serde_json::Value;
 
 use crate::depth::{pool_concurrency_for_depth, ProcessEnv};
+use crate::limits::SubagentLimitSettings;
 use crate::live::{LiveForwarder, LiveSink};
 use crate::model_categories::CategorySettings;
 use crate::pool::{SubagentPool, SubagentPoolOptions};
@@ -134,6 +135,7 @@ fn create_pool(
     // One-level deep merge, the same rule the rest of the codebase uses.
     let settings = deep_merge_settings(&manager.global_settings(), &manager.project_settings());
     let pool = SubagentPool::new(SubagentPoolOptions {
+        limits: SubagentLimitSettings::from_manager(&manager),
         executable: spawn_command(),
         cwd: Some(cwd.to_path_buf()),
         skill_paths: instance.skill_paths.clone(),

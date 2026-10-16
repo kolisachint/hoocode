@@ -30,9 +30,9 @@ use crate::depth::{
     current_subagent_depth, pool_concurrency_for_depth, resolve_max_subagent_depth,
     tool_allowlist_needs_mcp, ProcessEnv, SubagentEnv, SUBAGENT_DEPTH_ENV, SUBAGENT_SKIP_MCP_ENV,
 };
-use crate::lifeguard;
+use crate::limits::{SubagentLimitSettings, SubagentLimits};
 use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
-use crate::pool::{subagent_disallowed_tools, DEFAULT_SUBAGENT_MAX_TURNS, QUEUE_PER_SLOT};
+use crate::pool::{subagent_disallowed_tools, QUEUE_PER_SLOT};
 use hoocode_code_models::ResolvedScoped;
 
 /// Usage totals pulled from a worker after a task.
@@ -86,15 +86,6 @@ impl std::error::Error for WarmWorkerError {}
 /// Reports the tool a worker is running (`""` between tools).
 pub type WarmProgressCallback = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// Deviation: how long a warm run may take before it is treated as stalled.
-/// hoocode's `WARM_RUN_TIMEOUT_MS` is a flat 180s for every agent; we use the
-/// same deadline the cold pool's lifeguard uses (2026-10-10: one 2-hour
-/// deadline for every agent type). A flat 3 minutes killed `code-review` runs
-/// that the cold pool would have allowed much longer.
-fn warm_run_timeout(agent_type: &str) -> Duration {
-    Duration::from_millis(lifeguard::base_timeout_ms(agent_type))
-}
-
 /// The spawn command: executable and prefix args.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpawnCommand {
@@ -121,6 +112,7 @@ impl WarmSubagentWorker {
         registry: &AgentRegistry,
         skill_paths: &[String],
         selection: &ModelSelection,
+        limits: SubagentLimits,
         spawn: Option<&SpawnCommand>,
     ) -> Self {
         let (executable, prefix_args) = match spawn {
@@ -132,7 +124,7 @@ impl WarmSubagentWorker {
             prefix_args,
             cwd: Some(options.cwd.clone()),
             env,
-            args: build_worker_args(options, registry, skill_paths, selection),
+            args: build_worker_args(options, registry, skill_paths, selection, limits),
             ..Default::default()
         });
         Self {
@@ -297,6 +289,7 @@ fn build_worker_args(
     registry: &AgentRegistry,
     skill_paths: &[String],
     selection: &ModelSelection,
+    limits: SubagentLimits,
 ) -> Vec<String> {
     let mut args = Vec::new();
     let def = registry.get(&options.agent_type);
@@ -346,10 +339,7 @@ fn build_worker_args(
             args.extend(["--provider".into(), provider.clone()]);
         }
     }
-    let max_turns = def
-        .and_then(|d| d.max_turns)
-        .filter(|n| *n > 0)
-        .unwrap_or(DEFAULT_SUBAGENT_MAX_TURNS);
+    let max_turns = limits.turns_for(def.and_then(|d| d.max_turns));
     args.extend(["--max-turns".into(), max_turns.to_string()]);
     for path in skill_paths {
         args.extend(["--skill".into(), path.clone()]);
@@ -389,6 +379,8 @@ struct WarmInner {
     slots: Arc<tokio::sync::Semaphore>,
     idle_ttl: Duration,
     spawn: Option<SpawnCommand>,
+    /// The resolved limits: turn cap and the run deadline.
+    limits: SubagentLimits,
     state: Mutex<WarmState>,
 }
 
@@ -414,6 +406,9 @@ pub struct WarmSubagentPoolOptions {
     pub idle_ttl: Duration,
     /// Spawn command override (tests); default: this executable.
     pub spawn: Option<SpawnCommand>,
+    /// The `subagent*` limit settings. Resolved against the process
+    /// environment when the pool is built.
+    pub limits: SubagentLimitSettings,
 }
 
 impl WarmSubagentPoolOptions {
@@ -438,6 +433,7 @@ impl WarmSubagentPoolOptions {
             skill_paths: Vec::new(),
             available_models: Vec::new(),
             scope: Vec::new(),
+            limits: SubagentLimitSettings::default(),
             max_per_key: 2,
             max_in_flight,
             max_waiting: max_in_flight * QUEUE_PER_SLOT,
@@ -456,6 +452,8 @@ pub struct WarmSubagentPool {
 
 impl WarmSubagentPool {
     pub fn new(options: WarmSubagentPoolOptions) -> Self {
+        let env: HashMap<String, String> = std::env::vars().collect();
+        let limits = SubagentLimits::resolve(&options.limits, &env);
         Self {
             inner: Arc::new(WarmInner {
                 cwd: options.cwd,
@@ -467,6 +465,7 @@ impl WarmSubagentPool {
                 slots: Arc::new(tokio::sync::Semaphore::new(options.max_in_flight)),
                 idle_ttl: options.idle_ttl,
                 spawn: options.spawn,
+                limits,
                 state: Mutex::new(WarmState {
                     skill_paths: options.skill_paths,
                     ..Default::default()
@@ -618,7 +617,9 @@ impl WarmSubagentPool {
         // Held to the end of the dispatch, on every return path below.
         let _slot = slot;
         let mut worker = self.acquire(options).await?;
-        let timeout = warm_run_timeout(&options.agent_type);
+        // The same base deadline the cold pool's lifeguard uses, for every type.
+        // A flat 3 minutes killed `code-review` runs the cold pool allowed to run longer.
+        let timeout = Duration::from_millis(self.inner.limits.deadline_ms);
         // The same child prompt the cold paths build (card 9, 4i).
         let task = crate::pool::child_prompt(prompt);
         let outcome = worker.run(&task, on_activity, timeout).await;
@@ -667,6 +668,7 @@ impl WarmSubagentPool {
             &self.registry(),
             &skill_paths,
             &selection,
+            self.inner.limits,
             self.inner.spawn.as_ref(),
         );
         *self.state().live_count.entry(key.clone()).or_insert(0) += 1;
@@ -825,6 +827,7 @@ pub fn get_warm_subagent_pool(cwd: &Path, available_models: &[Model]) -> WarmSub
             );
             let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
                 settings: Some(CategorySettings::from_settings(&settings)),
+                limits: SubagentLimitSettings::from_manager(&manager),
                 skill_paths: instance.skill_paths.clone(),
                 available_models: available_models.to_vec(),
                 scope: scope.clone(),

@@ -74,6 +74,9 @@ pub struct AgentDefinition {
     pub source: AgentSource,
     pub file_path: Option<String>,
     pub max_turns: Option<u64>,
+    /// Advisory token budget (`tokenBudget`), overriding the settings and the
+    /// per-type default. Never stops the run.
+    pub token_budget: Option<u64>,
     pub background: Option<bool>,
     pub delegate: Option<bool>,
     pub delegate_to: Option<Vec<String>>,
@@ -271,6 +274,12 @@ pub fn parse_agent_definition(
         .filter(|n| n.fract() == 0.0 && *n > 0.0)
         .map(|n| n as u64);
 
+    let token_budget = frontmatter
+        .get("tokenBudget")
+        .and_then(Value::as_f64)
+        .filter(|n| n.fract() == 0.0 && *n > 0.0)
+        .map(|n| n as u64);
+
     let flag = |key: &str, diagnostics: &mut Vec<ResourceDiagnostic>| match frontmatter.get(key) {
         None => None,
         // `false` is a value, not an absence: `background: false` must
@@ -334,6 +343,7 @@ pub fn parse_agent_definition(
         source,
         file_path: file_path.map(str::to_string),
         max_turns,
+        token_budget,
         background,
         delegate,
         delegate_to,

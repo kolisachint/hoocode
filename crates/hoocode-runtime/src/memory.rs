@@ -11,8 +11,10 @@ use std::sync::Mutex;
 
 /// One mebibyte in bytes.
 pub const MIB: u64 = 1024 * 1024;
-/// A subagent child that goes above this is reaped by the lifeguard.
-pub const CHILD_RSS_LIMIT_BYTES: u64 = 2048 * MIB;
+/// Default resident-memory cap for one subagent child, in bytes. A child above
+/// it is reaped by the lifeguard. 2026-10-16: 4 GiB (was 2 GiB). The subagents
+/// crate reads `subagentMaxRssMb` / `HOOCODE_SUBAGENT_MAX_RSS_MB` over it.
+pub const CHILD_RSS_LIMIT_BYTES: u64 = 4096 * MIB;
 /// Shedding and the hard trip both lift once RSS is this many percent under the limit.
 pub const RECOVER_MARGIN_PERCENT: u64 = 10;
 /// Events kept for the UI between two of its loop turns. Transitions are rare,

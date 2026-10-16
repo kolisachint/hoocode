@@ -8,63 +8,48 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hoocode_code_subagents::lifeguard::{
-    base_timeout_ms, progress_stall_ms_from_env, tool_limit_from_start, LifeguardEvent,
-    SubagentLifeguard, ToolLimit, MAX_SCALED_DEADLINE_MS, PROGRESS_STALL_THRESHOLD_MS,
-    STALL_THRESHOLD_ENV, SUBAGENT_DEADLINE_MS, TOOL_IN_FLIGHT_STALL_MS, TOOL_TIMEOUT_MARGIN_MS,
+    tool_limit_from_start, LifeguardEvent, SubagentLifeguard, ToolLimit, MAX_SCALED_DEADLINE_MS,
+    PROGRESS_STALL_THRESHOLD_MS, SUBAGENT_DEADLINE_MS, TOOL_IN_FLIGHT_STALL_MS,
+    TOOL_TIMEOUT_MARGIN_MS,
 };
 
-/// 2026-10-10 (user decision): every agent type, shipped or plugin, gets the
-/// same 2-hour hard deadline. The per-type 5-20 minute table is gone.
+/// 2026-10-16: the default hard deadline is 4 hours (was 2), for every agent
+/// type. A pool with another base (the `subagentDeadlineMinutes` setting or
+/// `HOOCODE_SUBAGENT_DEADLINE_MS`) uses that base instead; see `limits`.
 #[test]
-fn every_agent_type_gets_the_two_hour_deadline() {
-    const HOURS_2: u64 = 2 * 60 * 60 * 1000;
-    assert_eq!(SUBAGENT_DEADLINE_MS, HOURS_2);
-    for agent in [
-        "code-review",
-        "security-review",
-        "general-purpose",
-        "explore",
-        "plan",
-    ] {
-        assert_eq!(base_timeout_ms(agent), HOURS_2, "{agent}");
-    }
-}
-
-/// hoocode's `edit`/`test`/`review` names are not special any more either.
-#[test]
-fn hoocodes_own_arm_names_get_the_same_deadline() {
-    for agent in ["edit", "test", "review"] {
-        assert_eq!(base_timeout_ms(agent), SUBAGENT_DEADLINE_MS, "{agent}");
-    }
-}
-
-/// An unknown agent type gets the same deadline as the rest.
-#[test]
-fn an_unknown_agent_type_gets_the_same_deadline() {
-    assert_eq!(base_timeout_ms("some-plugin-agent"), SUBAGENT_DEADLINE_MS);
+fn the_default_deadline_is_four_hours_for_every_type() {
+    const HOURS_4: u64 = 4 * 60 * 60 * 1000;
+    assert_eq!(SUBAGENT_DEADLINE_MS, HOURS_4);
 }
 
 /// The load multiplier cannot stretch a run past base + 30 minutes: 4x of a
-/// 2-hour base would be 8 hours. `AgentOutput` derives its reconcile age from
+/// 4-hour base would be 16 hours. `AgentOutput` derives its reconcile age from
 /// this same ceiling.
 #[test]
 fn the_load_scaled_deadline_is_capped_at_base_plus_thirty_minutes() {
     const MINUTE: u64 = 60 * 1000;
     assert_eq!(MAX_SCALED_DEADLINE_MS, SUBAGENT_DEADLINE_MS + 30 * MINUTE);
+    assert_eq!(
+        hoocode_code_subagents::lifeguard::max_run_budget_ms(SUBAGENT_DEADLINE_MS),
+        MAX_SCALED_DEADLINE_MS
+    );
     // Checked at compile time: uncapped, 4x the base would exceed the ceiling.
     const _: () = assert!(SUBAGENT_DEADLINE_MS * 4 > MAX_SCALED_DEADLINE_MS);
 }
 
-/// The warm pool's run timeout tracks the same deadline, so a warm
-/// `code-review` is not killed at 180s while the cold pool would have allowed
-/// it two hours.
+/// A short base scales by the multiplier (4x) below the headroom cap, and a
+/// long base is capped at base + 30 minutes.
 #[test]
-fn the_warm_run_timeout_tracks_the_agent_type() {
-    // Asserted through the cold table because `warm_run_timeout` is private to
-    // the warm module; the two must not drift apart.
-    assert!(base_timeout_ms("code-review") > 180_000);
-    assert!(base_timeout_ms("general-purpose") > 180_000);
-    assert!(base_timeout_ms("explore") > 180_000);
+fn the_load_ceiling_follows_the_configured_base() {
+    use hoocode_code_subagents::lifeguard::max_run_budget_ms;
+    const MINUTE: u64 = 60 * 1000;
+    assert_eq!(max_run_budget_ms(10 * MINUTE), 40 * MINUTE);
+    assert_eq!(max_run_budget_ms(120 * MINUTE), 150 * MINUTE);
+}
+
+#[test]
+fn the_default_stall_threshold_is_twenty_minutes() {
+    assert_eq!(PROGRESS_STALL_THRESHOLD_MS, 20 * 60 * 1000);
 }
 
 fn now_ms() -> u64 {
@@ -304,19 +289,24 @@ async fn progress_keeps_a_slow_child_alive() {
 async fn a_running_tool_is_not_a_progress_stall() {
     let dir = tempfile::tempdir().unwrap();
     let guard = SubagentLifeguard::new(dir.path());
+    // A threshold below the tool bound (15 min), so the window "past the
+    // progress threshold but inside the tool bound" exists. The default
+    // threshold (20 min) is above that bound, so the test sets its own.
+    let threshold = 5 * 60 * 1000;
+    guard.set_progress_stall_ms(threshold);
     let stalled = stalled_ids(&guard);
     let mut child = sleeper();
     guard.monitor("t1", "explore", child.id());
     guard.record_tool_start("t1", "c1", ToolLimit::Undeclared);
     guard.record_heartbeat("t1");
     // Well past the progress threshold, but inside the tool bound (15 min).
-    guard.set_last_progress_for_testing("t1", now_ms() - (PROGRESS_STALL_THRESHOLD_MS + 60_000));
+    guard.set_last_progress_for_testing("t1", now_ms() - (threshold + 60_000));
     guard.check_heartbeats();
     assert!(stalled.lock().unwrap().is_empty());
     // The tool ends and the child goes quiet: now the progress check applies.
     guard.record_tool_end("t1", "c1");
     guard.record_heartbeat("t1");
-    guard.set_last_progress_for_testing("t1", now_ms() - (PROGRESS_STALL_THRESHOLD_MS + 60_000));
+    guard.set_last_progress_for_testing("t1", now_ms() - (threshold + 60_000));
     guard.check_heartbeats();
     assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
     assert!(child.wait().unwrap().code().is_none());
@@ -522,27 +512,6 @@ async fn a_child_that_exits_within_the_grace_is_not_escalated() {
         "a child that exits on the stall signal should not be escalated, got {status:?}"
     );
     guard.dispose();
-}
-
-/// The no-progress threshold can be lowered for a pool through its environment
-/// (the evals use this to make a stall reap take seconds). A value that is not
-/// a positive integer keeps the 10-minute default.
-#[test]
-fn the_progress_stall_threshold_reads_the_env_override() {
-    let with = |value: &str| HashMap::from([(STALL_THRESHOLD_ENV.to_string(), value.to_string())]);
-    assert_eq!(
-        progress_stall_ms_from_env(&HashMap::new()),
-        PROGRESS_STALL_THRESHOLD_MS
-    );
-    assert_eq!(progress_stall_ms_from_env(&with("20000")), 20_000);
-    assert_eq!(progress_stall_ms_from_env(&with(" 5000 ")), 5_000);
-    for bad in ["0", "-1", "soon", ""] {
-        assert_eq!(
-            progress_stall_ms_from_env(&with(bad)),
-            PROGRESS_STALL_THRESHOLD_MS,
-            "{bad:?}"
-        );
-    }
 }
 
 /// The configured threshold is what the progress check uses.
