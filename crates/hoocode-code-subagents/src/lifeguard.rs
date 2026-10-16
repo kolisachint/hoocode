@@ -161,7 +161,7 @@ const MAX_LOAD_MULTIPLIER: f64 = 4.0;
 /// the base plus [`LOAD_HEADROOM_MS`]. Uncapped, 4x a 2-hour base is 8 hours,
 /// which is why the multiplier is capped here and not on the stall budgets.
 fn load_ceiling_ms(base: u64) -> u64 {
-    ((base as f64 * MAX_LOAD_MULTIPLIER) as u64).min(base + LOAD_HEADROOM_MS)
+    ((base as f64 * MAX_LOAD_MULTIPLIER) as u64).min(base.saturating_add(LOAD_HEADROOM_MS))
 }
 
 fn now_ms() -> u64 {

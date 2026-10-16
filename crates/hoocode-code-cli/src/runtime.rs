@@ -503,7 +503,13 @@ fn plugin_tools_enabled(args: &Args, settings: &SettingsManager) -> bool {
 /// `hoocode-ai-provider-anthropic`), and this crate does not depend on it. An
 /// env value already set wins; children inherit the seeded value.
 fn seed_output_token_env(settings: &SettingsManager) {
-    if std::env::var("HOOCODE_MAX_OUTPUT_TOKENS").is_ok() {
+    // An env value that parses as a positive number wins. An empty or invalid
+    // value is not a setting, so it must not shadow the `maxOutputTokens` setting.
+    let env_is_valid = std::env::var("HOOCODE_MAX_OUTPUT_TOKENS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .is_some_and(|n| n > 0);
+    if env_is_valid {
         return;
     }
     if let Some(n) = settings.max_output_tokens().filter(|n| *n >= 1.0) {

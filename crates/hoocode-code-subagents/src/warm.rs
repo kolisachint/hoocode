@@ -839,7 +839,7 @@ pub fn get_warm_subagent_pool(cwd: &Path, available_models: &[Model]) -> WarmSub
             let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
                 settings: Some(CategorySettings::from_settings(&settings)),
                 limits,
-                max_waiting: concurrency.max_in_flight * queue_per_slot,
+                max_waiting: concurrency.max_in_flight.saturating_mul(queue_per_slot),
                 skill_paths: instance.skill_paths.clone(),
                 available_models: available_models.to_vec(),
                 scope: scope.clone(),

@@ -369,3 +369,24 @@ async fn the_resolved_shell_timeout_reaches_every_child_env() {
         "the setting reaches the child"
     );
 }
+
+#[test]
+fn huge_settings_saturate_instead_of_overflowing() {
+    // A deadline setting this large saturates to u64::MAX; the load ceiling
+    // and the reconcile age derived from it must not overflow.
+    let settings = SubagentLimitSettings {
+        deadline_minutes: Some(1e300),
+        queue_per_slot: Some(1e300),
+        shell_timeout_seconds: Some(1e300),
+        ..Default::default()
+    };
+    let limits = SubagentLimits::resolve(&settings, &env(&[]));
+    assert_eq!(limits.deadline_ms, u64::MAX);
+    assert_eq!(limits.max_run_budget_ms(), u64::MAX);
+    assert_eq!(
+        limits.shell_timeout_secs,
+        hoocode_code_subagents::limits::MAX_SHELL_TIMEOUT_SECS,
+        "the Shell timeout is clamped so the child's Duration conversion cannot panic"
+    );
+    assert!(limits.shell_timeout_secs.is_finite());
+}

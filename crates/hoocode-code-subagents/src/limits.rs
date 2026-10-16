@@ -57,6 +57,10 @@ pub const WAIT_TIMEOUT_ENV: &str = "HOOCODE_SUBAGENT_WAIT_TIMEOUT_MS";
 
 /// Queue slots per running slot before a dispatch is refused outright.
 pub const DEFAULT_QUEUE_PER_SLOT: usize = 8;
+/// Ceiling on the Shell default timeout, in seconds (about 31 years). The child
+/// turns it into a `Duration`, which panics on a value that large, so a huge
+/// setting or env value is clamped here instead.
+pub const MAX_SHELL_TIMEOUT_SECS: f64 = 1.0e9;
 /// Default `AgentOutput` wait timeout (`wait: true` with no `timeout_ms`).
 pub const DEFAULT_WAIT_TIMEOUT_MS: u64 = 300_000;
 
@@ -197,7 +201,9 @@ impl SubagentLimits {
                 SHELL_DEFAULT_TIMEOUT_ENV,
                 settings.shell_timeout_seconds,
             )
-            .unwrap_or(defaults.shell_timeout_secs),
+            .map_or(defaults.shell_timeout_secs, |secs| {
+                secs.min(MAX_SHELL_TIMEOUT_SECS)
+            }),
             wait_timeout_ms: pick(
                 env,
                 WAIT_TIMEOUT_ENV,

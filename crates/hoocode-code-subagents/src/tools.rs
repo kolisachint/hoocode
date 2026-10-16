@@ -1318,7 +1318,7 @@ async fn read_background_task(
                     PoolTaskStatus::Running | PoolTaskStatus::Queued
                 )
             },
-            pool.max_run_budget_ms() + RECONCILE_SLACK_MS,
+            pool.max_run_budget_ms().saturating_add(RECONCILE_SLACK_MS),
         );
     }
     if params.get("wait").and_then(Value::as_bool) == Some(true) {

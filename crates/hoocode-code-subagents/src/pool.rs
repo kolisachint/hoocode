@@ -563,7 +563,10 @@ impl SubagentPool {
             }),
             max_concurrency: options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY),
             max_queued: options.max_queued.unwrap_or_else(|| {
-                options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY) * limits.queue_per_slot
+                options
+                    .max_concurrency
+                    .unwrap_or(DEFAULT_MAX_CONCURRENCY)
+                    .saturating_mul(limits.queue_per_slot)
             }),
             max_completed: options.max_completed.unwrap_or(MAX_COMPLETED),
             env,
@@ -1563,7 +1566,7 @@ impl PoolInner {
                 "model": self.resolve_task_model(&task),
                 "provider": task.provider,
                 "attempt": if task.use_inherited_model_fallback { 2 } else { 1 },
-                "deadline_at": now_ms() + self.limits.deadline_ms,
+                "deadline_at": now_ms().saturating_add(self.limits.deadline_ms),
                 "spawned_at": spawned_at,
             }),
         );
