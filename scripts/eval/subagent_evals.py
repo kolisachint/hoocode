@@ -263,10 +263,10 @@ SCENARIOS: list[Scenario] = [
             ),
         },
         prompt="Describe the repository layout using a subagent.",
-        # The no-progress threshold is 600s in production. The parent gets
+        # The no-progress threshold is 20 minutes in production. The parent gets
         # HOOCODE_SUBAGENT_STALL_MS=20000 so the reap lands in about 25s (the
         # 5s lifeguard tick), then the child has its 30s SIGUSR1 grace. The
-        # production value is 10 minutes: this scenario proves the path, not the
+        # production value is 20 minutes: this scenario proves the path, not the
         # threshold.
         env={"HOOCODE_SUBAGENT_STALL_MS": "20000"},
         timeout_s=120,
@@ -567,14 +567,14 @@ SCENARIOS: list[Scenario] = [
         name="parent_queue_saturation",
         kind="parent",
         doc=(
-            "More dispatches than the root pool has slots (twelve against the default eight, "
+            "More dispatches than the root pool has slots (fourteen against the default twelve, "
             "subagentConcurrency is not pinned so this tests the shipped cap): every one must "
-            "settle and be recorded, and never more than eight may run at once. Nothing may be "
+            "settle and be recorded, and never more than twelve may run at once. Nothing may be "
             "left stuck in running."
         ),
         routes={
-            # Each child holds its slot for five seconds, so the first wave of eight overlaps.
-            "child": child_route([{"text": CHILD_SUMMARY, "delay_s": 5} for _ in range(12)]),
+            # Each child holds its slot for five seconds, so the first wave of twelve overlaps.
+            "child": child_route([{"text": CHILD_SUMMARY, "delay_s": 5} for _ in range(14)]),
             "parent": parent_route(
                 [
                     {
@@ -586,31 +586,32 @@ SCENARIOS: list[Scenario] = [
                                 "prompt": f"List the top-level directories ({i}).",
                                 "background": True,
                             }}
-                            for i in range(12)
+                            for i in range(14)
                         ],
                     },
                     {"text": "All dispatched."},
-                    {"text": "All twelve subagents reported the same layout: crates/, scripts/, docs/."},
+                    {"text": "All fourteen subagents reported the same layout: crates/, scripts/, docs/."},
                 ]
             ),
         },
-        prompt="Dispatch twelve subagents in parallel and report when they are done.",
+        prompt="Dispatch fourteen subagents in parallel and report when they are done.",
         timeout_s=240,
         expect=Expect(
-            ledger_count=12,
-            ledger_statuses=["complete"] * 12,
+            ledger_count=14,
+            ledger_statuses=["complete"] * 14,
             attempts_usable_min=1.0,
-            peak_inflight_max={"child": 8},
-            peak_inflight_min={"child": 8},
+            peak_inflight_max={"child": 12},
+            peak_inflight_min={"child": 12},
         ),
     ),
     Scenario(
         name="nested_depth_chain",
         kind="parent",
         doc=(
-            "The default cap of three: a process at depth d may spawn while d < 3. The root's "
-            "child (depth 1) and grandchild (depth 2) get the Agent tool and the great-grandchild "
-            "(depth 3) does not. The chain is three blocking dispatches of a delegate:true agent. "
+            "A cap of three, set explicitly (the shipped default is four): a process at depth d "
+            "may spawn while d < 3. The root's child (depth 1) and grandchild (depth 2) get the "
+            "Agent tool and the great-grandchild (depth 3) does not. The chain is three blocking "
+            "dispatches of a delegate:true agent. "
             "Checks: the depth-3 process is offered no Agent tool, each level's result reaches the "
             "level above it, and all three dispatches are recorded complete."
         ),

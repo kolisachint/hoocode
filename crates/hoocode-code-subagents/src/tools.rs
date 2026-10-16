@@ -32,7 +32,7 @@ use crate::agent_log::agent_log;
 use crate::depth::{delegate_allow_list, is_delegate_allowed, ProcessEnv};
 use crate::inbox::{subagent_inbox, InboxRecord, TaskLifecycle};
 use crate::instance::get_subagent_pool;
-use crate::lifeguard;
+use crate::limits::DEFAULT_WAIT_TIMEOUT_MS;
 use crate::model_categories::{ModelRequest, ModelSelection};
 use crate::pool::TaskStatus as PoolTaskStatus;
 use crate::pool::{
@@ -47,15 +47,10 @@ pub use hoocode_code_resources::summarize_agent_description;
 
 const TASK_MAIN_PROMPT: &str = include_str!("../templates/prompts/task-main.md");
 
-/// How long a `running` record may sit with the pool saying nothing about it
-/// before `AgentOutput` stops believing it. Past the largest budget a run can
-/// reach (the 2-hour deadline plus the lifeguard's load headroom, see
-/// `MAX_SCALED_DEADLINE_MS`), plus a minute of slack. 2026-10-10: was 81 min,
-/// when the longest deadline was 20 min.
-const RECONCILE_AGE_MS: u64 = lifeguard::MAX_SCALED_DEADLINE_MS + 60 * 1000;
-
-/// Default wait for `AgentOutput(wait: true)`.
-const TASK_OUTPUT_DEFAULT_TIMEOUT_MS: u64 = 120_000;
+/// Slack added to the pool's longest run budget (its resolved deadline plus the
+/// load headroom, `SubagentPool::max_run_budget_ms`) before `AgentOutput` stops
+/// believing a `running` record that the pool says nothing about.
+const RECONCILE_SLACK_MS: u64 = 60 * 1000;
 
 fn now_ms() -> u64 {
     hoocode_code_task_store::now_ms()
@@ -1185,7 +1180,7 @@ fn task_output_parameters() -> Value {
             "task_id": {"type": "string", "description": "Handle of a background subagent — its task_id or friendly label (e.g. \"explore#1\") from an Agent notification. Omit (or set list:true) to see every background task."},
             "list": {"type": "boolean", "description": "List all background subagents with their status (running/done/failed/cancelled) and current activity. No result bodies are returned."},
             "wait": {"type": "boolean", "description": "Block until the named task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier) — before returning. Bounded by timeout_ms."},
-            "timeout_ms": {"type": "number", "description": "Maximum time to block in wait mode, in milliseconds (default 120000)."},
+            "timeout_ms": {"type": "number", "description": "Maximum time to block in wait mode, in milliseconds (default 300000, or the subagentWaitTimeoutSeconds setting / HOOCODE_SUBAGENT_WAIT_TIMEOUT_MS)."},
             "cancel": {"type": "boolean", "description": "Stop the named running subagent (kills its process); requires task_id. Use when its result is no longer needed."}
         }
     })
@@ -1201,7 +1196,7 @@ pub fn create_task_output_tool_definition() -> ToolDefinition {
             "Pass a task_id/label (e.g. \"explore#1\") to read a finished subagent's full result, or to see its status while it runs.",
             "Set list:true (or omit task_id) to list every background subagent with its status and current activity.",
             "Set wait:true to block until that task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier).",
-            "A long run can take up to 2 hours: poll it by task_id, and set cancel:true with a task_id to stop one whose result you no longer need.",
+            "A long run can take up to the subagent deadline (4 hours by default): poll it by task_id, and set cancel:true with a task_id to stop one whose result you no longer need.",
             "It never errors on a valid handle: a running task reports status, a finished one returns its result, an already-read one says so.",
         ]
         .join("\n"),
@@ -1323,16 +1318,29 @@ async fn read_background_task(
                     PoolTaskStatus::Running | PoolTaskStatus::Queued
                 )
             },
-            RECONCILE_AGE_MS,
+            pool.max_run_budget_ms().saturating_add(RECONCILE_SLACK_MS),
         );
     }
     if params.get("wait").and_then(Value::as_bool) == Some(true) {
+        // The pool's resolved wait default (`subagentWaitTimeoutSeconds` or
+        // its env), else the crate default when there is no working directory.
+        let default_wait_ms = ctx
+            .as_ref()
+            .and_then(|c| c.cwd.clone())
+            .map(|cwd| {
+                let models = ctx
+                    .as_ref()
+                    .map(|c| c.available_models.clone())
+                    .unwrap_or_default();
+                get_subagent_pool(&cwd, &models).wait_timeout_ms()
+            })
+            .unwrap_or(DEFAULT_WAIT_TIMEOUT_MS);
         let timeout = Duration::from_millis(
             params
                 .get("timeout_ms")
                 .and_then(Value::as_f64)
                 .map(|n| n.max(0.0) as u64)
-                .unwrap_or(TASK_OUTPUT_DEFAULT_TIMEOUT_MS),
+                .unwrap_or(default_wait_ms),
         );
         match &handle {
             Some(handle) => {

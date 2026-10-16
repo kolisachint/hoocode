@@ -20,6 +20,7 @@ pub mod inbox;
 pub mod instance;
 pub mod ledger;
 pub mod lifeguard;
+pub mod limits;
 pub mod live;
 pub mod model_categories;
 pub mod output_verifier;

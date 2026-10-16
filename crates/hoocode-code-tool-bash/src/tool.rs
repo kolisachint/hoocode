@@ -64,7 +64,7 @@ const BASH_UPDATE_THROTTLE: Duration = Duration::from_millis(100);
 /// deadline has its whole process group killed, and its partial output is
 /// returned. The main session has no default limit. An explicit positive
 /// `timeout` is honored in both contexts; an explicit `0` means no limit.
-pub const DEFAULT_BASH_TIMEOUT_SECS: f64 = 600.0;
+pub const DEFAULT_BASH_TIMEOUT_SECS: f64 = 1200.0;
 
 /// Env var that overrides [`DEFAULT_BASH_TIMEOUT_SECS`] in a subagent (a positive number of seconds).
 pub const DEFAULT_BASH_TIMEOUT_ENV: &str = "HOOCODE_BASH_DEFAULT_TIMEOUT_SECS";

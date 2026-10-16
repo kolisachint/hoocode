@@ -60,10 +60,10 @@ fn budget(limit: Option<u64>) -> (TokenBudget, tempfile::TempDir) {
 
 #[test]
 fn returns_default_budgets_per_agent_type() {
-    assert_eq!(get_default_budget("explore"), 35000);
-    assert_eq!(get_default_budget("plan"), 35000);
-    assert_eq!(get_default_budget("general-purpose"), 60000);
-    assert_eq!(get_default_budget("unknown"), 35000);
+    assert_eq!(get_default_budget("explore"), 150_000);
+    assert_eq!(get_default_budget("plan"), 150_000);
+    assert_eq!(get_default_budget("general-purpose"), 300_000);
+    assert_eq!(get_default_budget("unknown"), 150_000);
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn persists_budget_state_to_disk() {
     let state = read_state(dir.path(), "persist-task");
     assert_eq!(state["task_id"], "persist-task");
     assert_eq!(state["agent_type"], "general-purpose");
-    assert_eq!(state["budget"], 60000);
+    assert_eq!(state["budget"], 300_000);
     assert_eq!(state["used"], 2500);
     assert_eq!(state["warned"], false);
     assert_eq!(state["exceeded"], false);

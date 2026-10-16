@@ -8,16 +8,17 @@
 //!   from its `maxSubagentDepth` setting and inherited by every descendant.
 //!
 //! `<prefix>` is any of [`hoocode_code_paths::ENV_PREFIXES`] (hoocode's
-//! `HOOCODE_` included), most specific first. The default cap is 3: a process
-//! at depth d may spawn while d < cap, so depth 2 spawns depth 3 and depth 3
-//! cannot spawn. That is two levels of nesting below the root's children.
+//! `HOOCODE_` included), most specific first. The default cap is 4: a process
+//! at depth d may spawn while d < cap, so depth 3 spawns depth 4 and depth 4
+//! cannot spawn. That is three levels of nesting below the root's children.
 //!
 //! Pool width is per depth: the root pool (depth 0) runs
-//! `SUBAGENT_CONCURRENCY` tasks (default 8, see [`pool_concurrency_for_depth`]),
-//! and every pool at depth >= 1 runs `NESTED_SUBAGENT_CONCURRENCY` (default 3).
+//! `SUBAGENT_CONCURRENCY` tasks (default 12, see [`pool_concurrency_for_depth`]),
+//! and every pool at depth >= 1 runs `NESTED_SUBAGENT_CONCURRENCY` (default 6).
 //! With the defaults, the worst-case live subagent process count is
-//! 8 * (1 + 3 + 9) = 104: 8 children of the root, 3 per child at depth 2, and
-//! 3 per depth-2 process at depth 3.
+//! 12 + 12*6 + 12*6^2 + 12*6^3 = 3108: 12 children of the root, 6 per child at
+//! depth 2, 6 per depth-2 process at depth 3, and 6 per depth-3 process at
+//! depth 4.
 
 use std::collections::HashMap;
 
@@ -38,18 +39,18 @@ pub const SUBAGENT_SKIP_MCP_ENV: &str = "SKIP_MCP";
 /// Set on the top-level agent, cleared for subagent children.
 pub const DEFER_MCP_SCHEMAS_ENV: &str = "DEFER_MCP_SCHEMAS";
 
-/// Default tree-wide cap: two levels of nesting below the root's children.
-pub const DEFAULT_MAX_SUBAGENT_DEPTH: u32 = 3;
+/// Default tree-wide cap: three levels of nesting below the root's children.
+pub const DEFAULT_MAX_SUBAGENT_DEPTH: u32 = 4;
 /// Default concurrency for the root pool (depth 0): the cold pool's default.
-pub const DEFAULT_ROOT_CONCURRENCY: u32 = 8;
+pub const DEFAULT_ROOT_CONCURRENCY: u32 = 12;
 /// Lowest and highest configurable root concurrency.
 pub const MIN_ROOT_CONCURRENCY: u32 = 1;
-pub const MAX_ROOT_CONCURRENCY: u32 = 16;
+pub const MAX_ROOT_CONCURRENCY: u32 = 32;
 /// Concurrency cap for pools running at depth >= 1 when unset.
-pub const NESTED_SUBAGENT_CONCURRENCY: u32 = 3;
-/// Hard ceiling on the configurable depth. Its worst case is the same tree as
-/// the default, one level deeper per cap step.
-pub const ABSOLUTE_MAX_SUBAGENT_DEPTH: u32 = 3;
+pub const NESTED_SUBAGENT_CONCURRENCY: u32 = 6;
+/// Hard ceiling on the configurable depth. Each step above the default
+/// multiplies the worst-case process count by the nested concurrency.
+pub const ABSOLUTE_MAX_SUBAGENT_DEPTH: u32 = 8;
 
 /// Where the env-driven helpers read variables from.
 pub trait SubagentEnv {

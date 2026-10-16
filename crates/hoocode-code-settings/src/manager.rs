@@ -295,12 +295,12 @@ mod defaults {
     pub const MEMORY_FLOOR_MB: u64 = 256;
     pub const WEBTOOLS_TIMEOUT_SECS: u64 = 15;
     pub const BRANCH_SUMMARY_RESERVE_TOKENS: u64 = 16384;
-    pub const RETRY_MAX_RETRIES: u64 = 3;
+    pub const RETRY_MAX_RETRIES: u64 = 5;
     pub const RETRY_BASE_DELAY_MS: u64 = 2000;
     pub const PROVIDER_MAX_RETRY_DELAY_MS: u64 = 60000;
-    pub const MAX_SUBAGENT_DEPTH: u64 = 3;
-    pub const SUBAGENT_CONCURRENCY: u64 = 8;
-    pub const NESTED_SUBAGENT_CONCURRENCY: u64 = 3;
+    pub const MAX_SUBAGENT_DEPTH: u64 = 4;
+    pub const SUBAGENT_CONCURRENCY: u64 = 12;
+    pub const NESTED_SUBAGENT_CONCURRENCY: u64 = 6;
     pub const IMAGE_WIDTH_CELLS: u64 = 60;
     pub const EDITOR_PADDING_X: u64 = 1;
     pub const AUTOCOMPLETE_MAX_VISIBLE: u64 = 5;
@@ -1138,10 +1138,10 @@ impl SettingsManager {
         }
     }
 
-    /// Concurrent subagents in the root pool (depth 0); 1 to 16.
+    /// Concurrent subagents in the root pool (depth 0); 1 to 32.
     pub fn subagent_concurrency(&self) -> u64 {
         finite(self.get("subagentConcurrency"))
-            .map(|v| v.floor().clamp(1.0, 16.0) as u64)
+            .map(|v| v.floor().clamp(1.0, 32.0) as u64)
             .unwrap_or(defaults::SUBAGENT_CONCURRENCY)
     }
 
@@ -1151,6 +1151,64 @@ impl SettingsManager {
             .filter(|v| *v >= 1.0)
             .map(|v| v.floor() as u64)
             .unwrap_or(defaults::NESTED_SUBAGENT_CONCURRENCY)
+    }
+
+    /// `subagentMaxTurns`: the turn cap for a subagent without its own
+    /// `maxTurns`. Unvalidated here; the subagents crate clamps and defaults it.
+    pub fn subagent_max_turns(&self) -> Option<f64> {
+        finite(self.get("subagentMaxTurns"))
+    }
+
+    /// `subagentTokenBudget`: the advisory token budget for every subagent
+    /// type. Unset, each type keeps its own default.
+    pub fn subagent_token_budget(&self) -> Option<f64> {
+        finite(self.get("subagentTokenBudget"))
+    }
+
+    /// `subagentDeadlineMinutes`: the wall-clock deadline for a subagent.
+    pub fn subagent_deadline_minutes(&self) -> Option<f64> {
+        finite(self.get("subagentDeadlineMinutes"))
+    }
+
+    /// `subagentStallSeconds`: how long a subagent may go without forward
+    /// progress before it is reaped as stalled.
+    pub fn subagent_stall_seconds(&self) -> Option<f64> {
+        finite(self.get("subagentStallSeconds"))
+    }
+
+    /// `subagentMaxRssMb`: the resident memory cap for one subagent process.
+    pub fn subagent_max_rss_mb(&self) -> Option<f64> {
+        finite(self.get("subagentMaxRssMb"))
+    }
+
+    /// `subagentToolStallSeconds`: the no-progress bound while a subagent tool
+    /// runs that declares no limit of its own.
+    pub fn subagent_tool_stall_seconds(&self) -> Option<f64> {
+        finite(self.get("subagentToolStallSeconds"))
+    }
+
+    /// `subagentQueuePerSlot`: dispatch queue slots per running slot.
+    pub fn subagent_queue_per_slot(&self) -> Option<f64> {
+        finite(self.get("subagentQueuePerSlot"))
+    }
+
+    /// `subagentShellTimeoutSeconds`: the Shell tool's default timeout inside a
+    /// subagent (a command with no `timeout` argument).
+    pub fn subagent_shell_timeout_seconds(&self) -> Option<f64> {
+        finite(self.get("subagentShellTimeoutSeconds"))
+    }
+
+    /// `subagentWaitTimeoutSeconds`: how long `AgentOutput` blocks with
+    /// `wait: true` when the call names no `timeout_ms`.
+    pub fn subagent_wait_timeout_seconds(&self) -> Option<f64> {
+        finite(self.get("subagentWaitTimeoutSeconds"))
+    }
+
+    /// `maxOutputTokens`: the per-request output token cap a provider uses when
+    /// the request names none (still limited by the model's own maximum). The
+    /// CLI passes it to the providers through `HOOCODE_MAX_OUTPUT_TOKENS`.
+    pub fn max_output_tokens(&self) -> Option<f64> {
+        finite(self.get("maxOutputTokens"))
     }
 
     pub fn enable_todo_write(&self) -> bool {

@@ -24,12 +24,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
-/// Default budget for an agent type (custom agents get 35 000).
+/// Default budget for an agent type (custom agents get 150 000). 2026-10-16:
+/// raised from 35 000 / 60 000. The budget is advisory, so a run past it is
+/// reported, not stopped. `subagentTokenBudget` and `HOOCODE_SUBAGENT_TOKEN_BUDGET`
+/// override every type, and an agent's `tokenBudget` frontmatter overrides both.
 pub fn get_default_budget(agent_type: &str) -> u64 {
     match agent_type {
-        "explore" | "plan" => 35_000,
-        "general-purpose" => 60_000,
-        _ => 35_000,
+        "explore" | "plan" => 150_000,
+        "general-purpose" => 300_000,
+        _ => 150_000,
     }
 }
 

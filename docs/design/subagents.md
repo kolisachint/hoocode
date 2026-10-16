@@ -8,6 +8,39 @@ is still open; see §6.
 
 Not a migration-ledger task: the migration is paused and this was taken out of it.
 
+## 0. Current limits (2026-10-16)
+
+Every subagent limit below resolves in the same order: frontmatter (where it has a key), then the
+`HOOCODE_` env var, then the settings value, then the default. A missing, non-numeric, zero or
+out-of-range value falls through to the next source. Env values are inherited by children, so the
+root's setting reaches the whole tree. Source: `limits.rs` (the per-run limits), `depth.rs` (depth and
+concurrency), `pool.rs` and `warm.rs` (queue).
+
+| Limit | Default | Settings key | Env var (wins over setting) | Frontmatter | On hit |
+|---|---|---|---|---|---|
+| Turns per run | 200 | `subagentMaxTurns` | `HOOCODE_SUBAGENT_MAX_TURNS` | `maxTurns` | Child gets `--max-turns`; it is asked to wrap up near the cap and stopped at it |
+| Token budget (advisory) | 150k per type; general-purpose 300k | `subagentTokenBudget` | `HOOCODE_SUBAGENT_TOKEN_BUDGET` | `tokenBudget` | Never stops the run. `budget_warning` at 80%, `budget_exceeded` at 100% (the result carries `budget_exceeded`) |
+| Wall-clock deadline | 4 h base, load-scaled | `subagentDeadlineMinutes` | `HOOCODE_SUBAGENT_DEADLINE_MS` (ms) | none | Child is given the base deadline and asked to wrap up; at the kill, SIGTERM to its process group. A partial result is still accepted |
+| Progress stall | 20 min, load-scaled | `subagentStallSeconds` | `HOOCODE_SUBAGENT_STALL_MS` (ms) | none | No turn or tool event for the window: SIGUSR1 to the child, 30 s grace, then SIGKILL. A partial result is still accepted |
+| Tool-in-flight stall | 30 min, load-scaled. A Shell call with a declared timeout gets the larger of that and its timeout + 60 s | `subagentToolStallSeconds` | `HOOCODE_SUBAGENT_TOOL_STALL_MS` (ms) | none | Same as the progress stall. A tool with `timeout: 0` has no bound |
+| Child resident memory | 4096 MiB | `subagentMaxRssMb` | `HOOCODE_SUBAGENT_MAX_RSS_MB` | none | Child is reaped by the lifeguard |
+| Shell default timeout (subagents only) | 1200 s | `subagentShellTimeoutSeconds` | `HOOCODE_BASH_DEFAULT_TIMEOUT_SECS` | none (the Shell `timeout` argument wins) | The command's process group is killed; partial output is returned. The main session has no default |
+| Root concurrency (depth 0) | 12 (1 to 32) | `subagentConcurrency` | `HOOCODE_SUBAGENT_CONCURRENCY` | none | Extra dispatches wait in the queue |
+| Nested concurrency (depth 1 and below) | 6 | `nestedSubagentConcurrency` | `HOOCODE_NESTED_SUBAGENT_CONCURRENCY` | none | Same, per pool |
+| Dispatch queue | 8 slots per running slot | `subagentQueuePerSlot` | `HOOCODE_SUBAGENT_QUEUE_PER_SLOT` | none | A dispatch beyond running + queued is refused with a message |
+| Nesting depth | 4 (absolute max 8) | `maxSubagentDepth` | `HOOCODE_SUBAGENT_MAX_DEPTH`; `--max-subagent-depth` | none | At the cap the Agent tool is not offered; a dispatch is refused with "Maximum subagent depth (N) reached" |
+| `AgentOutput` wait | 300 s | `subagentWaitTimeoutSeconds` | `HOOCODE_SUBAGENT_WAIT_TIMEOUT_MS` (ms) | none (the `timeout_ms` argument wins) | The wait returns; the task keeps running |
+| Provider retries | `retry.maxRetries` 5 | `retry.maxRetries` | none | none | The retry loop stops and reports the error |
+| Provider output per request | 64000, never above the model's own maximum | `maxOutputTokens` | `HOOCODE_MAX_OUTPUT_TOKENS` | none | The request is sent with this cap. Only the Anthropic provider reads it. OpenAI, OpenAI Responses, Google and Gemini CLI still cap the default at `min(model max, 32000)` (not changed) |
+
+Worst case at the defaults: a depth-4 tree is 12 + 12·6 + 12·6² + 12·6³ = 3108 live children
+(it was 104 at depth 3 with 8 and 3). The queue, the budgets and the load scaling keep real runs far
+below that, but the number is the bound a runaway delegation can reach.
+
+Warm workers (`warmSubagents`) use the same concurrency, queue and Shell timeout values.
+
+---
+
 ## 1. The problem, and what the evidence actually said
 
 Subagents were failing on every recorded run. In `hoobot/.hoocode/dispatch/`, a clean
@@ -104,8 +137,8 @@ Seven fixes to the child-process model. The pool's public API is unchanged; ever
 ### T3 in detail — the only structural change
 
 `--deadline-ms` is an internal flag (not in `--help`, like `--task-id`). The pool sends the
-**base** deadline (2 hours), not the load-scaled budget: under load the parent widens its
-kill by at most 30 minutes (`MAX_SCALED_DEADLINE_MS`, 2h30m), so the wrap-up always lands first. Ninety seconds of lead covers the one or two turns a
+**base** deadline (2 hours then; 4 hours since 2026-10-16, §0), not the load-scaled budget: under load the parent widens its
+kill by at most 30 minutes (`MAX_SCALED_DEADLINE_MS`, 4h30m since 2026-10-16), so the wrap-up always lands first. Ninety seconds of lead covers the one or two turns a
 model needs to turn findings into a summary — recorded subagent turns took 5-65s.
 
 The pool side needed no change. `settle` already treats a valid `result.json` as success even
@@ -189,14 +222,14 @@ or `tests/it/lifeguard.rs`, plus one end-to-end scenario each.
 
 | | Fix | Where |
 |---|---|---|
-| H1 | **Liveness is two-tier.** Silence past 60s reaps; so does no *forward progress* (a `turn_end` or a tool event) past 600s (10 min; 150s reaped long thinking turns), load-scaled. A tool in flight is bounded by the larger of 15 min × load and the tool's declared timeout plus 60 s; a tool with timeout 0 has no bound. `HOOCODE_SUBAGENT_STALL_MS` overrides the 600s in the parent (the lifeguard runs there; the evals set 20s). A child parked in a provider call keeps pinging and used to be invisible until its hard deadline — ten minutes for `explore` at the time (the deadline is now 2 hours), measured alive at 95s | `lifeguard.rs` |
+| H1 | **Liveness is two-tier.** Silence past 60s reaps; so does no *forward progress* (a `turn_end` or a tool event) past 600s (10 min; 150s reaped long thinking turns), load-scaled. A tool in flight is bounded by the larger of 15 min × load (30 min since 2026-10-16) and the tool's declared timeout plus 60 s; a tool with timeout 0 has no bound. `HOOCODE_SUBAGENT_STALL_MS` overrides the 600s (20 min since 2026-10-16; §0) in the parent (the lifeguard runs there; the evals set 20s). A child parked in a provider call keeps pinging and used to be invisible until its hard deadline — ten minutes for `explore` at the time (the deadline was 2 hours then, 4 hours since 2026-10-16; §0), measured alive at 95s | `lifeguard.rs` |
 | H2 | **A reap is a signal, grace, SIGKILL.** A stall (silence, no progress, memory) sends SIGUSR1 to the **child pid only**; the hard deadline sends SIGTERM to the process group. The child writes its partial `result.json` and exits (the grace is 30s), and the pool already accepts a valid result from a reaped task. The grace escalates to SIGKILL for a child too wedged to catch a signal. **After a reaped child exits**, its process group is swept: SIGTERM, then SIGKILL after the grace if anything remains. A stall signal does not reach the grandchildren (node workers ignore SIGUSR1), so without the sweep they would be orphaned. **Limit:** the sweep covers the child's own process group only. A nested subagent (a child that dispatches a subagent of its own) runs in its own process group, so the sweep does not reach it | `lifeguard.rs`, `runtime.rs` |
 | H3 | **`pid` is written.** `sweep_old_agents` has always read `dispatch/<task>/pid` to ask whether a run is alive; nothing ever wrote it, so reaping was age-only and a real orphan was never detected | `pool.rs` |
-| H4 | **Admission control.** The queue was unbounded: a confused parent could enqueue hundreds of runs that never finish. It is refused at four per slot, with a message that says so | `pool.rs` |
+| H4 | **Admission control.** The queue was unbounded: a confused parent could enqueue hundreds of runs that never finish. It is refused at four per slot (eight per slot since 2026-10-16), with a message that says so | `pool.rs` |
 | H5 | **Ageing instead of starvation.** Priority gained a step per minute waited, so a `code-review` cannot sit behind a stream of `explore` runs forever | `pool.rs` |
 | H6 | **Finished results are bounded** (64, oldest dropped). Each carries its captured stdout and stderr and nothing released them: unbounded growth over a long session | `pool.rs` |
 | H7 | **Inbox reconciliation.** A `running` record the pool has forgotten (a lost settle event) used to report `running` forever, in the roster and the panel. `TaskOutput` now settles them, with an age guard so a dispatch that has not started yet is never mistaken for a lost one | `inbox.rs`, `tools.rs` |
-| H8 | **The warm pool shares the caps.** It booted one worker per dispatch with no ceiling and told the lifeguard nothing. It now has the cold pool's in-flight and admission limits, per depth (the root cap at depth 0, the nested cap below it, queue at 4 per slot; opt-in, `warmSubagents`). Warm and cold keep separate counters | `warm.rs` |
+| H8 | **The warm pool shares the caps.** It booted one worker per dispatch with no ceiling and told the lifeguard nothing. It now has the cold pool's in-flight and admission limits, per depth (the root cap at depth 0, the nested cap below it, queue at 4 per slot then, 8 since 2026-10-16; opt-in, `warmSubagents`). Warm and cold keep separate counters | `warm.rs` |
 | H9 | **Writes are not swallowed.** `write_file_atomic(result.json)` was `let _ =`: a full disk gave a clean child exit with no result and a parent told only that it failed. It returns, logs, and exits non-zero | `result.rs`, `runtime.rs` |
 | H10 | **Settings deep-merge.** `instance.rs` used `global.extend(project)`, which replaced the whole `modelCategories` object — a project setting one tier silently lost the other two | `instance.rs` |
 | H11 | **`complexity` is validated at the tool.** An unrecognised tier used to pass through as a model id and kill the child at startup; it now falls back to the parent's model with one log line | `tools.rs` |
@@ -305,11 +338,13 @@ longer needs. (2026-10-15: there is one template now; see the note in
   after that text has a tool call. Only then does the summary start with
   `(from an earlier turn) `. An empty aborted wrap-up after the text does not make it
   stale, so the text stays the answer.
-- **Shell default timeout.** A bash call with no `timeout` gets 600 s, but only inside a
-  subagent; the main session has no default limit. `HOOCODE_BASH_DEFAULT_TIMEOUT_SECS`
-  overrides the 600 s. `timeout: 0` means no limit.
+- **Shell default timeout.** A bash call with no `timeout` gets 600 s then, 1200 s since
+  2026-10-16 (`subagentShellTimeoutSeconds`), but only inside a subagent; the main session
+  has no default limit. `HOOCODE_BASH_DEFAULT_TIMEOUT_SECS` overrides it. `timeout: 0`
+  means no limit.
 - **Lifeguard tool bound.** A tool in flight is reaped at the larger of 15 min × load
-  and the tool's declared timeout plus 60 s. A tool with timeout 0 has no bound.
+  (30 min × load since 2026-10-16) and the tool's declared timeout plus 60 s. A tool with
+  timeout 0 has no bound.
 - **Read on a directory.** `Read` on a directory returns a listing, not an error.
 
 ## 5f. Background by default (2026-10-15)

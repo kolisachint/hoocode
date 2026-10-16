@@ -14,6 +14,7 @@ use std::time::{Duration, SystemTime};
 use hoocode_code_models::ResolvedScoped;
 use hoocode_code_resources::{AgentDefinition, AgentRegistry, AgentSource};
 use hoocode_code_settings::ModelCategoryName;
+use hoocode_code_subagents::limits::SubagentLimitSettings;
 use hoocode_code_subagents::pool::*;
 use serde_json::{json, Value};
 
@@ -182,19 +183,19 @@ async fn spawns_a_subagent_and_waits_for_the_result() {
 /// With the default options the root pool runs eight tasks at once and queues
 /// the ninth: the cold pool's default is the root's default.
 #[tokio::test]
-async fn eight_tasks_run_concurrently_with_default_options() {
+async fn twelve_tasks_run_concurrently_with_default_options() {
     let dir = setup();
     let p = SubagentPool::new(SubagentPoolOptions {
         executable: mock(dir.path(), 0, 200),
         cwd: Some(dir.path().to_path_buf()),
         ..Default::default()
     });
-    let ids: Vec<String> = (1..=9).map(|n| format!("c{n}")).collect();
+    let ids: Vec<String> = (1..=13).map(|n| format!("c{n}")).collect();
     for id in &ids {
         write_valid_result(dir.path(), id);
         p.spawn(task(id, "explore", id)).unwrap();
     }
-    assert_eq!(p.running_count(), 8);
+    assert_eq!(p.running_count(), 12);
     assert_eq!(p.queued_count(), 1);
     for id in &ids {
         p.wait_for(id).await.unwrap();
@@ -322,7 +323,6 @@ async fn tracks_slot_metadata() {
     let p = SubagentPool::new(SubagentPoolOptions {
         executable: mock(dir.path(), 0, 200),
         max_concurrency: Some(1),
-        default_token_budget: Some(1000),
         cwd: Some(dir.path().to_path_buf()),
         ..Default::default()
     });
@@ -710,18 +710,18 @@ async fn passes_a_default_max_turns_cap_and_a_persisted_session() {
 
 /// The child is told the same deadline the lifeguard enforces, so it can ask to
 /// wrap up and write a result before the parent kills it. 2026-10-10: every
-/// agent type gets the 2-hour deadline.
+/// agent type gets the same deadline (4 hours by default since 2026-10-16).
 ///
 /// Without this the parent SIGKILLs at the deadline and `result.json` — only
 /// written after `prompt()` returns — never appears, so every finished turn is
 /// lost. Four of the ten recorded runs died that way holding 4-11 turns each.
 #[tokio::test]
 async fn passes_the_deadline_so_the_child_can_wrap_up() {
-    let two_hours_ms = 2 * 60 * 60 * 1000;
+    let four_hours_ms = 4 * 60 * 60 * 1000;
     for (agent, expected_ms) in [
-        ("code-review", two_hours_ms),
-        ("general-purpose", two_hours_ms),
-        ("explore", two_hours_ms),
+        ("code-review", four_hours_ms),
+        ("general-purpose", four_hours_ms),
+        ("explore", four_hours_ms),
     ] {
         let dir = setup();
         let p = pool(argv_recorder(dir.path()), 1, dir.path());
@@ -1453,6 +1453,7 @@ fn agent(source: AgentSource, model: &str) -> AgentDefinition {
         source,
         file_path: None,
         max_turns: None,
+        token_budget: None,
         background: None,
         delegate: None,
         delegate_to: None,
@@ -1818,4 +1819,93 @@ fn a_resumed_run_continues_the_transcript_its_row_names() {
         Some(named)
     );
     assert!(resume_transcript(cwd, "run-2", Some(&parent), None).is_none());
+}
+
+/// The process environment minus any subagent limit override, so a developer's
+/// `HOOCODE_SUBAGENT_*` value cannot change what these tests resolve.
+fn env_without_limit_overrides() -> HashMap<String, String> {
+    crate::root_pool_env()
+        .into_iter()
+        .filter(|(key, _)| !key.starts_with("HOOCODE_SUBAGENT_"))
+        .collect()
+}
+
+/// The child's turn cap and deadline come from the resolved limits, which the
+/// `subagentMaxTurns` and `subagentDeadlineMinutes` settings set here.
+#[tokio::test]
+async fn the_child_argv_uses_the_resolved_turn_cap_and_deadline() {
+    let dir = setup();
+    let p = SubagentPool::new(SubagentPoolOptions {
+        executable: argv_recorder(dir.path()),
+        max_concurrency: Some(1),
+        cwd: Some(dir.path().to_path_buf()),
+        env: Some(env_without_limit_overrides()),
+        limits: SubagentLimitSettings {
+            max_turns: Some(77.0),
+            deadline_minutes: Some(10.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    write_valid_result(dir.path(), "lim-task");
+    p.spawn(task("lim-task", "explore", "scan")).unwrap();
+    p.wait_for("lim-task").await.unwrap();
+    let argv = read_argv(dir.path());
+    assert_eq!(arg_after(&argv, "--max-turns"), Some("77".to_string()));
+    assert_eq!(
+        arg_after(&argv, "--deadline-ms"),
+        Some((10 * 60 * 1000).to_string())
+    );
+    p.dispose();
+}
+
+/// An env override beats the setting for the same limit.
+#[tokio::test]
+async fn the_env_turn_cap_beats_the_setting_in_the_child_argv() {
+    let dir = setup();
+    let mut env = env_without_limit_overrides();
+    env.insert("HOOCODE_SUBAGENT_MAX_TURNS".into(), "31".into());
+    let p = SubagentPool::new(SubagentPoolOptions {
+        executable: argv_recorder(dir.path()),
+        max_concurrency: Some(1),
+        cwd: Some(dir.path().to_path_buf()),
+        env: Some(env),
+        limits: SubagentLimitSettings {
+            max_turns: Some(77.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    write_valid_result(dir.path(), "env-task");
+    p.spawn(task("env-task", "explore", "scan")).unwrap();
+    p.wait_for("env-task").await.unwrap();
+    assert_eq!(
+        arg_after(&read_argv(dir.path()), "--max-turns"),
+        Some("31".to_string())
+    );
+    p.dispose();
+}
+
+/// A task that sets no budget is filled with the resolved one, so the slot and
+/// the budget tracker both see it.
+#[tokio::test]
+async fn an_unset_task_budget_takes_the_resolved_limit() {
+    let dir = setup();
+    let p = SubagentPool::new(SubagentPoolOptions {
+        executable: mock(dir.path(), 0, 200),
+        max_concurrency: Some(1),
+        cwd: Some(dir.path().to_path_buf()),
+        env: Some(env_without_limit_overrides()),
+        limits: SubagentLimitSettings {
+            token_budget: Some(90_000.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    write_valid_result(dir.path(), "budget-task");
+    p.spawn(task("budget-task", "explore", "hello")).unwrap();
+    let slot = p.slot("budget-task").unwrap();
+    assert_eq!(slot.token_budget, 90_000);
+    assert!(p.wait_for("budget-task").await.unwrap().ok);
+    p.dispose();
 }

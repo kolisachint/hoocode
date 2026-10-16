@@ -159,6 +159,7 @@ fn registry_with_pinned_model(id: &str, model: &str) -> AgentRegistry {
         source: AgentSource::Builtin,
         file_path: None,
         max_turns: None,
+        token_budget: None,
         background: None,
         delegate: None,
         delegate_to: None,

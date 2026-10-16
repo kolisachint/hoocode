@@ -31,7 +31,7 @@ The parts already run in parallel, but nothing bounds or orders them.
 | `@file` autocomplete spawns `fd` and waits for it | `tui-components` `autocomplete` | Runs on the UI thread; typing stalls on a big tree (fixed by reliability item 6) |
 | UI loop writes frames to stdout itself | `tui-render` `do_render` | A slow terminal (ssh, paused pane) blocks input handling |
 | Session entries are appended by opening the file per entry | `code-session` `manager.rs` `persist` | Blocking file I/O on whichever thread emits the event; a slow disk stalls it |
-| Subagents are child processes, 8 at once (`subagentConcurrency`, 1 to 16), 3 when nested (`nestedSubagentConcurrency`), max depth 3 (`maxSubagentDepth`) | `code-subagents` `pool.rs`, `depth.rs` | Good. But each child starts its own core-sized runtime |
+| Subagents are child processes, 12 at once (`subagentConcurrency`, 1 to 32), 6 when nested (`nestedSubagentConcurrency`), max depth 4 (`maxSubagentDepth`; 8 at once, 3 nested, depth 3 before 2026-10-16) | `code-subagents` `pool.rs`, `depth.rs` | Good. But each child starts its own core-sized runtime |
 | No thread priorities, no `nice`, no memory watch | — | Background work competes with the UI on equal terms |
 
 ## Decisions
@@ -73,7 +73,7 @@ The parts already run in parallel, but nothing bounds or orders them.
 | `hoocode-perf` | 1, always in the interactive TUI | None: normal priority | Once a second reads `/proc` (RSS, threads) and takes the UI's latest counters, and appends a JSON line to `--perf-log` when set. Started by `Perf::new`, so it runs without `/perf` or the log. Stops when the UI drops it. (`code-tui-app` `perf.rs`) |
 | `hoocode-resize` | 1: a SIGWINCH listener on Unix; a size poll every 100 ms on Windows, or if the listener fails to start | None: normal priority | Calls the resize handler when the terminal size changes. Started and stopped with the terminal: the listener ends when its watch is dropped, the poll on the stop flag. (`tui-terminal` `lib.rs`; the listener is `hoocode-runtime` `watch_sigwinch`) |
 | `autocomplete-files` | 1 per `@`-completion provider, made at mode start and again on session switch and settings change | None: normal priority | Runs the in-process `@file` walk for the newest query; older queued queries are skipped. Idle between queries. Exits when its provider is replaced or dropped, after any walk in progress. (`tui-components` `autocomplete/file_search.rs`) |
-| Subagents | child processes, 8 (3 nested) by default, set by `subagentConcurrency` and `nestedSubagentConcurrency` | Low | Unchanged pool; children start with 2 workers and lowered priority. |
+| Subagents | child processes, 12 (6 nested) by default, set by `subagentConcurrency` and `nestedSubagentConcurrency` | Low | Unchanged pool; children start with 2 workers and lowered priority. |
 | `Shell` commands | child processes | Medium | Pipes read by async tasks on `hoocode-io`, not by 3 threads each. |
 
 Steady state is about 13 threads per process: the 10 steady threads above, plus
@@ -112,7 +112,7 @@ Start values; Phase 0's load test tunes them. Only these four are settings:
 | `hoocode-io` workers | `min(4, cores)`; children 2 | — | — |
 | `hoocode-tools` threads | 16 | Calls queue | — |
 | Parallel tool calls per turn | 8 | Rest wait, in call order | `performance.maxParallelTools` |
-| Subagents | 8 root (`subagentConcurrency`, 1 to 16), 3 nested (`nestedSubagentConcurrency`), max depth 3 (`maxSubagentDepth`) | Queue at 4 per slot, then refuse | existing settings |
+| Subagents | 12 root (`subagentConcurrency`, 1 to 32), 6 nested (`nestedSubagentConcurrency`), max depth 4 (`maxSubagentDepth`) | Queue at 8 per slot (`subagentQueuePerSlot`), then refuse | existing settings |
 | In-flight requests per MCP server | 8 | Wait | — |
 | LLM events → UI | 1024 events | Stream reading pauses | — |
 | Tool progress → UI | 1 per tool | Keep latest | — |
@@ -123,7 +123,7 @@ Start values; Phase 0's load test tunes them. Only these four are settings:
 | SSE line or event | 16 MiB | Stream error | — |
 | Process memory, soft | lower of 2 GiB and 25% of RAM | Shed load (below) | `performance.memorySoftLimitMb` |
 | Process memory, hard | lower of 4 GiB and 50% of RAM | Abort the turn, flush session, show a notice | `performance.memoryHardLimitMb` |
-| Subagent child memory | 2 GiB each | Lifeguard reap: SIGUSR1 (stall), SIGTERM (deadline), grace, SIGKILL | — |
+| Subagent child memory | 4 GiB each (`subagentMaxRssMb`; 2 GiB before 2026-10-16) | Lifeguard reap: SIGUSR1 (stall), SIGTERM (deadline), grace, SIGKILL | — |
 | `hoocode-io` blocking pool (`spawn_blocking`: child `wait()`, Agent and MCP tool bodies) | Uncapped (tokio default, 512). **Decided 2026-10-15: stays uncapped**, see Decisions | — | — |
 
 Shedding at the soft limit: no new subagent dispatches, parallel tools drop to 1,

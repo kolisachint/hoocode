@@ -97,8 +97,8 @@ v0.1.7 plus the ledger. **11 as declared, 1 known issue, 12 attempts recorded,
 | `parent_dispatch_background` | notification then result | complete, `mode=background` | 0.6 |
 | `parent_region_error_falls_back` | region rejection retries on the parent's model | failed → complete | 0.7 |
 | `parent_unknown_complexity_tier` | a bad tier never reaches a child | rejected by the parent, no dispatch | 0.6 |
-| `parent_queue_saturation` | 12 dispatches, 8 slots (default `subagentConcurrency`); peak in flight must be exactly 8 | 12 complete, peak 8 (2026-10-15) | 26 |
-| `nested_depth_chain` | root → depth 1 → 2 → 3 at `maxSubagentDepth` 3; depth 3 gets no Agent tool, results flow back | 3 complete | 0.9 |
+| `parent_queue_saturation` | 14 dispatches, 12 slots (default `subagentConcurrency`, 2026-10-16); peak in flight must be exactly 12 | 12 complete, peak 8 (2026-10-15, under the old 8 slots). **Not re-run since the default moved to 12** | 26 |
+| `nested_depth_chain` | root → depth 1 → 2 → 3 at `maxSubagentDepth` 3 (set explicitly; the shipped default is 4); depth 3 gets no Agent tool, results flow back | 3 complete | 0.9 |
 | `nested_fanout_saturation` | a depth-1 child fans out 5 background grandchildren, nested cap 3 | 6 complete, peak 3 | 6 |
 | `parent_stall_reaped` | a hung child is reaped in ~1 min | ~~KNOWN: it is not~~ **reaped at 25s, partial (2026-10-15)** | 26 |
 
@@ -128,7 +128,7 @@ the child was still running and the ledger was still empty. The child writes its
 heartbeat on a timer, and the pool treats *any* stdout byte as liveness, so a
 child blocked inside a provider call looks busy forever. Only the hard
 deadline ends it — ten minutes for `explore` and twenty for
-`general-purpose` at the time. Since 2026-10-10 every type has a 2-hour deadline, so the stall
+`general-purpose` at the time. Since 2026-10-10 every type has had one deadline (2 hours, 4 hours since 2026-10-16), so the stall
 checks (H1 in `subagents.md` §5b) are what reap a hang early. This is the same class of failure as the October incident
 (deadline table keyed on agents nobody ships), wearing a different hat: a
 liveness signal that a hung process can keep sending. Owner: closed. Re-measured

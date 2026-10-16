@@ -34,13 +34,13 @@ fn current_depth_reads_positive_depths() {
 }
 
 #[test]
-fn max_depth_defaults_to_three_levels_of_nesting() {
+fn max_depth_defaults_to_four_levels_of_nesting() {
     assert_eq!(
         resolve_max_subagent_depth(None, &env(&[])),
         DEFAULT_MAX_SUBAGENT_DEPTH
     );
-    assert_eq!(DEFAULT_MAX_SUBAGENT_DEPTH, 3);
-    assert_eq!(DEFAULT_MAX_SUBAGENT_DEPTH, ABSOLUTE_MAX_SUBAGENT_DEPTH);
+    assert_eq!(DEFAULT_MAX_SUBAGENT_DEPTH, 4);
+    assert_eq!(ABSOLUTE_MAX_SUBAGENT_DEPTH, 8);
 }
 
 #[test]
@@ -92,14 +92,14 @@ fn clamp_keeps_values_in_range_and_floors() {
 #[test]
 fn can_spawn_blocks_at_or_beyond_the_cap() {
     assert!(can_spawn_subagent(None, &env(&[])));
-    // Under the default cap of 3: depth 2 spawns depth 3, depth 3 cannot spawn.
+    // Under the default cap of 4: depth 3 spawns depth 4, depth 4 cannot spawn.
     assert!(can_spawn_subagent(
         None,
-        &env(&[("HOOCODE_SUBAGENT_DEPTH", "2")])
+        &env(&[("HOOCODE_SUBAGENT_DEPTH", "3")])
     ));
     assert!(!can_spawn_subagent(
         None,
-        &env(&[("HOOCODE_SUBAGENT_DEPTH", "3")])
+        &env(&[("HOOCODE_SUBAGENT_DEPTH", "4")])
     ));
     let lowered = ("HOOCODE_SUBAGENT_MAX_DEPTH", "2");
     assert!(can_spawn_subagent(
@@ -118,12 +118,12 @@ fn pool_concurrency_is_the_root_default_at_root_and_the_nested_default_below() {
         pool_concurrency_for_depth(None, None, &env(&[])),
         DEFAULT_ROOT_CONCURRENCY
     );
-    assert_eq!(DEFAULT_ROOT_CONCURRENCY, 8);
+    assert_eq!(DEFAULT_ROOT_CONCURRENCY, 12);
     assert_eq!(
         pool_concurrency_for_depth(None, None, &env(&[("HOOCODE_SUBAGENT_DEPTH", "1")])),
         NESTED_SUBAGENT_CONCURRENCY
     );
-    assert_eq!(NESTED_SUBAGENT_CONCURRENCY, 3);
+    assert_eq!(NESTED_SUBAGENT_CONCURRENCY, 6);
     assert_eq!(
         pool_concurrency_for_depth(None, None, &env(&[("HOOCODE_SUBAGENT_DEPTH", "2")])),
         NESTED_SUBAGENT_CONCURRENCY
@@ -170,7 +170,7 @@ fn root_concurrency_defaults_to_the_cold_pool_default() {
         DEFAULT_ROOT_CONCURRENCY as usize,
         hoocode_code_subagents::pool::DEFAULT_MAX_CONCURRENCY
     );
-    assert_eq!(resolve_root_concurrency(None, &env(&[])), 8);
+    assert_eq!(resolve_root_concurrency(None, &env(&[])), 12);
 }
 
 #[test]
@@ -192,10 +192,12 @@ fn root_concurrency_prefers_env_then_setting_then_default() {
 }
 
 #[test]
-fn root_concurrency_is_clamped_to_one_through_sixteen() {
+fn root_concurrency_is_clamped_to_one_through_thirty_two() {
     assert_eq!(resolve_root_concurrency(Some(0.0), &env(&[])), 1);
     assert_eq!(resolve_root_concurrency(Some(-3.0), &env(&[])), 1);
-    assert_eq!(resolve_root_concurrency(Some(99.0), &env(&[])), 16);
+    assert_eq!(resolve_root_concurrency(Some(99.0), &env(&[])), 32);
+    assert_eq!(resolve_root_concurrency(Some(33.0), &env(&[])), 32);
+    assert_eq!(resolve_root_concurrency(Some(32.0), &env(&[])), 32);
     assert_eq!(resolve_root_concurrency(Some(2.9), &env(&[])), 2);
     assert_eq!(
         resolve_root_concurrency(None, &env(&[("HOOCODE_SUBAGENT_CONCURRENCY", "0")])),
@@ -203,7 +205,7 @@ fn root_concurrency_is_clamped_to_one_through_sixteen() {
     );
     assert_eq!(
         resolve_root_concurrency(None, &env(&[("HOOCODE_SUBAGENT_CONCURRENCY", "99")])),
-        16
+        32
     );
     assert_eq!(
         resolve_root_concurrency(Some(f64::NAN), &env(&[])),

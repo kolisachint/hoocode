@@ -498,6 +498,25 @@ fn plugin_tools_enabled(args: &Args, settings: &SettingsManager) -> bool {
         .unwrap_or_else(|| settings.enable_plugin_tools())
 }
 
+/// The `maxOutputTokens` setting, as the provider's env override. The Anthropic
+/// provider reads `HOOCODE_MAX_OUTPUT_TOKENS` (`MAX_OUTPUT_TOKENS_ENV` in
+/// `hoocode-ai-provider-anthropic`), and this crate does not depend on it. An
+/// env value already set wins; children inherit the seeded value.
+fn seed_output_token_env(settings: &SettingsManager) {
+    // An env value that parses as a positive number wins. An empty or invalid
+    // value is not a setting, so it must not shadow the `maxOutputTokens` setting.
+    let env_is_valid = std::env::var("HOOCODE_MAX_OUTPUT_TOKENS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .is_some_and(|n| n > 0);
+    if env_is_valid {
+        return;
+    }
+    if let Some(n) = settings.max_output_tokens().filter(|n| *n >= 1.0) {
+        std::env::set_var("HOOCODE_MAX_OUTPUT_TOKENS", (n.floor() as u64).to_string());
+    }
+}
+
 /// main.ts's subagent block of `buildSessionOptions`: seed the tree-wide depth
 /// cap, root and nested concurrency into the environment (a root only; descendants
 /// inherit them), set or clear `--delegate-allow`, and decide whether this
@@ -509,6 +528,7 @@ fn subagent_tools(
     cwd: &std::path::Path,
 ) -> Vec<ToolDefinition> {
     use hoocode_code_subagents::depth::{self, ProcessEnv, SubagentEnv};
+    seed_output_token_env(settings);
     let is_subagent_child = args.task_id.is_some();
     if ProcessEnv.var(depth::SUBAGENT_MAX_DEPTH_ENV).is_none() {
         let cap = depth::resolve_max_subagent_depth(

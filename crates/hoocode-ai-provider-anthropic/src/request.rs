@@ -80,6 +80,28 @@ pub struct AnthropicOptions {
     pub session_id: Option<String>,
 }
 
+/// Per-request output cap when the caller names none, before the model's own
+/// maximum applies.
+pub const DEFAULT_MAX_OUTPUT_TOKENS: u64 = 64_000;
+/// Environment override for [`DEFAULT_MAX_OUTPUT_TOKENS`]. The CLI seeds it
+/// from the `maxOutputTokens` setting when the variable is unset.
+pub const MAX_OUTPUT_TOKENS_ENV: &str = "HOOCODE_MAX_OUTPUT_TOKENS";
+
+/// The output cap for a raw `HOOCODE_MAX_OUTPUT_TOKENS` value: a positive whole
+/// number, else [`DEFAULT_MAX_OUTPUT_TOKENS`] (missing, zero, negative or
+/// non-numeric values fall through).
+pub fn output_token_cap_from(raw: Option<&str>) -> u64 {
+    raw.and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS)
+}
+
+/// The per-request output cap in this process: `HOOCODE_MAX_OUTPUT_TOKENS`,
+/// else [`DEFAULT_MAX_OUTPUT_TOKENS`].
+pub fn default_output_token_cap() -> u64 {
+    output_token_cap_from(std::env::var(MAX_OUTPUT_TOKENS_ENV).ok().as_deref())
+}
+
 /// `streamSimpleAnthropic`'s option mapping (`buildBaseOptions` plus the
 /// thinking mode for the model).
 pub fn simple_options(
@@ -87,11 +109,12 @@ pub fn simple_options(
     options: &SimpleStreamOptions,
     api_key: String,
 ) -> AnthropicOptions {
+    let cap = default_output_token_cap();
     let base = AnthropicOptions {
         temperature: options.temperature,
         max_tokens: options
             .max_tokens
-            .or((model.max_tokens > 0).then(|| model.max_tokens.min(32_000))),
+            .or((model.max_tokens > 0).then(|| model.max_tokens.min(cap))),
         signal: options.signal.clone(),
         api_key: Some(api_key),
         cache_retention: options.cache_retention,

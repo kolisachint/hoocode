@@ -37,9 +37,10 @@ use crate::dispatch::DispatchEvaluator;
 use crate::events::{classify_subagent_line, SubagentStdoutLine};
 use crate::ledger;
 use crate::lifeguard::{
-    kill_process_tree, progress_stall_ms_from_env, tool_limit_from_start, LifeguardEvent,
-    SubagentLifeguard,
+    kill_process_tree, tool_limit_from_start, LifeguardEvent, SubagentLifeguard,
+    SHELL_DEFAULT_TIMEOUT_ENV,
 };
+use crate::limits::{SubagentLimitSettings, SubagentLimits};
 use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
 use crate::output_verifier::OutputVerifier;
 use crate::result::write_file_atomic;
@@ -76,9 +77,11 @@ static INHERITED_MODEL_FALLBACK_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     .expect("valid regex")
 });
 
-/// Hard cap on assistant turns when an agent does not set `maxTurns` (the
-/// token budget only warns, so this is the guaranteed stop).
-pub const DEFAULT_SUBAGENT_MAX_TURNS: u64 = 50;
+/// Default hard cap on assistant turns when an agent does not set `maxTurns` (the
+/// token budget only warns, so this is the guaranteed stop). 2026-10-16: 200
+/// (was 50). The `subagentMaxTurns` setting and `HOOCODE_SUBAGENT_MAX_TURNS`
+/// override it; see [`crate::limits`].
+pub const DEFAULT_SUBAGENT_MAX_TURNS: u64 = 200;
 
 /// The plugin tools (`hoocode-code-tools-optin`). A subagent is never given them: every child is
 /// started with them in `--disallowed-tools`, and a child does not register them at all.
@@ -267,13 +270,17 @@ pub struct SubagentPoolOptions {
     pub env: Option<HashMap<String, String>>,
     /// Replace how dispatches run. Default: a child process per dispatch.
     pub runner: Option<Arc<dyn Runner>>,
-    /// Default: [`QUEUE_PER_SLOT`] times `max_concurrency`. A dispatch beyond it is refused
+    /// Default: `subagentQueuePerSlot` (8) times `max_concurrency`. A dispatch beyond it is refused
     /// with a message the caller can act on, rather than queued into a session
     /// that will never finish them.
     pub max_queued: Option<usize>,
     /// Finished results kept in memory for late pulls. Default [`MAX_COMPLETED`].
     pub max_completed: Option<usize>,
-    pub default_token_budget: Option<u64>,
+    /// The `subagent*` limit settings (turns, token budget, deadline, stall,
+    /// tool stall, child RSS, queue depth, Shell timeout, wait timeout). The
+    /// pool resolves them against its environment: the `HOOCODE_` variable,
+    /// then the setting, then the default.
+    pub limits: SubagentLimitSettings,
     /// Non-default skill paths forwarded to every child via `--skill`.
     pub skill_paths: Vec<String>,
     pub settings: Option<CategorySettings>,
@@ -410,7 +417,8 @@ struct PoolInner {
     max_completed: usize,
     cwd: PathBuf,
     env: HashMap<String, String>,
-    default_token_budget: u64,
+    /// The resolved limits (env, then setting, then default).
+    limits: SubagentLimits,
     settings: Option<CategorySettings>,
     available_models: Vec<Model>,
     verifier: OutputVerifier,
@@ -428,14 +436,11 @@ pub struct SubagentPool {
 /// The cold pool's default concurrency. The warm pool has its own counter
 /// with the same default: the cold and warm pools do not share a ceiling, so a
 /// process can run up to this many cold and this many warm subagents at once.
-pub const DEFAULT_MAX_CONCURRENCY: usize = 8;
+pub const DEFAULT_MAX_CONCURRENCY: usize = 12;
 
 /// Finished results held in memory. Beyond this the oldest is dropped; its
 /// dispatch dir and ledger line are the durable record.
 const MAX_COMPLETED: usize = 64;
-
-/// Queue slots per running slot before a dispatch is refused outright.
-pub const QUEUE_PER_SLOT: usize = 4;
 
 /// A queued task's effective priority improves by one step per this long spent
 /// waiting, so the two-tier priority cannot starve `code-review` behind a
@@ -541,7 +546,11 @@ impl SubagentPool {
         // The lifeguard runs in this process, so the stall override is read
         // from the parent's environment (the child env is cleared and rebuilt).
         let env = options.env.unwrap_or_else(|| std::env::vars().collect());
-        lifeguard.set_progress_stall_ms(progress_stall_ms_from_env(&env));
+        let limits = SubagentLimits::resolve(&options.limits, &env);
+        lifeguard.set_progress_stall_ms(limits.stall_ms);
+        lifeguard.set_tool_stall_ms(limits.tool_stall_ms);
+        lifeguard.set_base_deadline_ms(limits.deadline_ms);
+        lifeguard.set_max_rss_bytes(limits.max_rss_bytes);
         static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let skill_paths = options.skill_paths.clone();
         let inner = Arc::new(PoolInner {
@@ -554,11 +563,14 @@ impl SubagentPool {
             }),
             max_concurrency: options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY),
             max_queued: options.max_queued.unwrap_or_else(|| {
-                options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY) * QUEUE_PER_SLOT
+                options
+                    .max_concurrency
+                    .unwrap_or(DEFAULT_MAX_CONCURRENCY)
+                    .saturating_mul(limits.queue_per_slot)
             }),
             max_completed: options.max_completed.unwrap_or(MAX_COMPLETED),
             env,
-            default_token_budget: options.default_token_budget.unwrap_or(0),
+            limits,
             settings: options.settings,
             available_models: options.available_models,
             verifier: OutputVerifier::new(cwd.clone()),
@@ -641,7 +653,33 @@ impl SubagentPool {
     }
 
     /// Queue a task; it runs when a slot is free.
-    pub fn spawn(&self, task: SubagentPoolTask) -> Result<(), PoolError> {
+    /// The longest a run's budget can get under load (the resolved deadline
+    /// plus the load headroom). `AgentOutput` derives its reconcile age from it.
+    pub fn max_run_budget_ms(&self) -> u64 {
+        self.inner.limits.max_run_budget_ms()
+    }
+
+    /// The `AgentOutput` wait timeout when a `wait: true` call names no
+    /// `timeout_ms`: `subagentWaitTimeoutSeconds` / `HOOCODE_SUBAGENT_WAIT_TIMEOUT_MS`.
+    pub fn wait_timeout_ms(&self) -> u64 {
+        self.inner.limits.wait_timeout_ms
+    }
+
+    pub fn spawn(&self, mut task: SubagentPoolTask) -> Result<(), PoolError> {
+        // Resolved once, before the task is queued: an explicit per-task value,
+        // else the agent's `tokenBudget`, else the env or setting override, else
+        // the type's default.
+        if task.token_budget.is_none() {
+            let frontmatter = self
+                .inner
+                .definition(&task.agent_type)
+                .and_then(|d| d.token_budget);
+            task.token_budget = Some(
+                self.inner
+                    .limits
+                    .token_budget_for(&task.agent_type, frontmatter),
+            );
+        }
         {
             let mut state = self.inner.state();
             if state.disposed {
@@ -1382,20 +1420,15 @@ impl PoolInner {
             }
         }
 
-        let max_turns = def
-            .as_ref()
-            .and_then(|d| d.max_turns)
-            .filter(|n| *n > 0)
-            .unwrap_or(DEFAULT_SUBAGENT_MAX_TURNS);
+        let max_turns = self
+            .limits
+            .turns_for(def.as_ref().and_then(|d| d.max_turns));
         args.extend(["--max-turns".into(), max_turns.to_string()]);
-        // The same deadline `SubagentLifeguard` enforces (2 hours for every
-        // agent type, 2026-10-10), so the child can ask to wrap up and write a
+        // The same deadline `SubagentLifeguard` enforces (the resolved base,
+        // 4 hours by default), so the child can ask to wrap up and write a
         // result before we kill it. The base is sent, not the load-scaled
         // budget: under load we widen the kill, so the wrap-up still lands first.
-        args.extend([
-            "--deadline-ms".into(),
-            crate::lifeguard::base_timeout_ms(&task.agent_type).to_string(),
-        ]);
+        args.extend(["--deadline-ms".into(), self.limits.deadline_ms.to_string()]);
 
         for path in self.state().skill_paths.clone() {
             args.extend(["--skill".into(), path]);
@@ -1416,6 +1449,13 @@ impl PoolInner {
         env.insert(
             format!("{CHILD_ENV_PREFIX}{SUBAGENT_DEPTH_ENV}"),
             depth.to_string(),
+        );
+        // The resolved Shell default (env, then `subagentShellTimeoutSeconds`,
+        // then 1200 s), so the child's Shell tool and this process's stall
+        // bound agree. The child reads it from its environment.
+        env.insert(
+            SHELL_DEFAULT_TIMEOUT_ENV.to_string(),
+            self.limits.shell_timeout_secs.to_string(),
         );
         let def = self.definition(&task.agent_type);
         if !tool_allowlist_needs_mcp(def.as_ref().and_then(|d| d.tools.as_deref())) {
@@ -1510,7 +1550,7 @@ impl PoolInner {
                     agent_type: task.agent_type.clone(),
                     task_id: task.task_id.clone(),
                     spawned_at,
-                    token_budget: task.token_budget.unwrap_or(self.default_token_budget),
+                    token_budget: task.token_budget.unwrap_or_default(),
                 },
             );
         }
@@ -1526,7 +1566,7 @@ impl PoolInner {
                 "model": self.resolve_task_model(&task),
                 "provider": task.provider,
                 "attempt": if task.use_inherited_model_fallback { 2 } else { 1 },
-                "deadline_at": now_ms() + crate::lifeguard::base_timeout_ms(&task.agent_type),
+                "deadline_at": now_ms().saturating_add(self.limits.deadline_ms),
                 "spawned_at": spawned_at,
             }),
         );
@@ -1627,7 +1667,11 @@ impl PoolInner {
                             .get("toolName")
                             .and_then(Value::as_str)
                             .unwrap_or_default();
-                        let limit = tool_limit_from_start(tool, event.get("args"), &self.env);
+                        let limit = tool_limit_from_start(
+                            tool,
+                            event.get("args"),
+                            self.limits.shell_timeout_secs,
+                        );
                         self.lifeguard.record_tool_start(task_id, call_id, limit);
                     }
                     Some("tool_execution_end") => self.lifeguard.record_tool_end(task_id, call_id),

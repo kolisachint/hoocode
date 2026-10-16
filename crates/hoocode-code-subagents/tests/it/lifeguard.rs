@@ -8,63 +8,49 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hoocode_code_subagents::lifeguard::{
-    base_timeout_ms, progress_stall_ms_from_env, tool_limit_from_start, LifeguardEvent,
-    SubagentLifeguard, ToolLimit, MAX_SCALED_DEADLINE_MS, PROGRESS_STALL_THRESHOLD_MS,
-    STALL_THRESHOLD_ENV, SUBAGENT_DEADLINE_MS, TOOL_IN_FLIGHT_STALL_MS, TOOL_TIMEOUT_MARGIN_MS,
+    tool_limit_from_start, LifeguardEvent, SubagentLifeguard, ToolLimit, MAX_SCALED_DEADLINE_MS,
+    PROGRESS_STALL_THRESHOLD_MS, SUBAGENT_DEADLINE_MS, SUBAGENT_SHELL_DEFAULT_TIMEOUT_SECS,
+    TOOL_IN_FLIGHT_STALL_MS, TOOL_TIMEOUT_MARGIN_MS,
 };
+use hoocode_code_subagents::limits::{SubagentLimitSettings, SubagentLimits};
 
-/// 2026-10-10 (user decision): every agent type, shipped or plugin, gets the
-/// same 2-hour hard deadline. The per-type 5-20 minute table is gone.
+/// 2026-10-16: the default hard deadline is 4 hours (was 2), for every agent
+/// type. A pool with another base (the `subagentDeadlineMinutes` setting or
+/// `HOOCODE_SUBAGENT_DEADLINE_MS`) uses that base instead; see `limits`.
 #[test]
-fn every_agent_type_gets_the_two_hour_deadline() {
-    const HOURS_2: u64 = 2 * 60 * 60 * 1000;
-    assert_eq!(SUBAGENT_DEADLINE_MS, HOURS_2);
-    for agent in [
-        "code-review",
-        "security-review",
-        "general-purpose",
-        "explore",
-        "plan",
-    ] {
-        assert_eq!(base_timeout_ms(agent), HOURS_2, "{agent}");
-    }
-}
-
-/// hoocode's `edit`/`test`/`review` names are not special any more either.
-#[test]
-fn hoocodes_own_arm_names_get_the_same_deadline() {
-    for agent in ["edit", "test", "review"] {
-        assert_eq!(base_timeout_ms(agent), SUBAGENT_DEADLINE_MS, "{agent}");
-    }
-}
-
-/// An unknown agent type gets the same deadline as the rest.
-#[test]
-fn an_unknown_agent_type_gets_the_same_deadline() {
-    assert_eq!(base_timeout_ms("some-plugin-agent"), SUBAGENT_DEADLINE_MS);
+fn the_default_deadline_is_four_hours_for_every_type() {
+    const HOURS_4: u64 = 4 * 60 * 60 * 1000;
+    assert_eq!(SUBAGENT_DEADLINE_MS, HOURS_4);
 }
 
 /// The load multiplier cannot stretch a run past base + 30 minutes: 4x of a
-/// 2-hour base would be 8 hours. `AgentOutput` derives its reconcile age from
+/// 4-hour base would be 16 hours. `AgentOutput` derives its reconcile age from
 /// this same ceiling.
 #[test]
 fn the_load_scaled_deadline_is_capped_at_base_plus_thirty_minutes() {
     const MINUTE: u64 = 60 * 1000;
     assert_eq!(MAX_SCALED_DEADLINE_MS, SUBAGENT_DEADLINE_MS + 30 * MINUTE);
+    assert_eq!(
+        hoocode_code_subagents::lifeguard::max_run_budget_ms(SUBAGENT_DEADLINE_MS),
+        MAX_SCALED_DEADLINE_MS
+    );
     // Checked at compile time: uncapped, 4x the base would exceed the ceiling.
     const _: () = assert!(SUBAGENT_DEADLINE_MS * 4 > MAX_SCALED_DEADLINE_MS);
 }
 
-/// The warm pool's run timeout tracks the same deadline, so a warm
-/// `code-review` is not killed at 180s while the cold pool would have allowed
-/// it two hours.
+/// A short base scales by the multiplier (4x) below the headroom cap, and a
+/// long base is capped at base + 30 minutes.
 #[test]
-fn the_warm_run_timeout_tracks_the_agent_type() {
-    // Asserted through the cold table because `warm_run_timeout` is private to
-    // the warm module; the two must not drift apart.
-    assert!(base_timeout_ms("code-review") > 180_000);
-    assert!(base_timeout_ms("general-purpose") > 180_000);
-    assert!(base_timeout_ms("explore") > 180_000);
+fn the_load_ceiling_follows_the_configured_base() {
+    use hoocode_code_subagents::lifeguard::max_run_budget_ms;
+    const MINUTE: u64 = 60 * 1000;
+    assert_eq!(max_run_budget_ms(10 * MINUTE), 40 * MINUTE);
+    assert_eq!(max_run_budget_ms(120 * MINUTE), 150 * MINUTE);
+}
+
+#[test]
+fn the_default_stall_threshold_is_twenty_minutes() {
+    assert_eq!(PROGRESS_STALL_THRESHOLD_MS, 20 * 60 * 1000);
 }
 
 fn now_ms() -> u64 {
@@ -304,19 +290,24 @@ async fn progress_keeps_a_slow_child_alive() {
 async fn a_running_tool_is_not_a_progress_stall() {
     let dir = tempfile::tempdir().unwrap();
     let guard = SubagentLifeguard::new(dir.path());
+    // A threshold below the tool bound (30 min), so the window "past the
+    // progress threshold but inside the tool bound" exists. The test sets its
+    // own, lower threshold so it need not wait out the 20-minute default.
+    let threshold = 5 * 60 * 1000;
+    guard.set_progress_stall_ms(threshold);
     let stalled = stalled_ids(&guard);
     let mut child = sleeper();
     guard.monitor("t1", "explore", child.id());
     guard.record_tool_start("t1", "c1", ToolLimit::Undeclared);
     guard.record_heartbeat("t1");
-    // Well past the progress threshold, but inside the tool bound (15 min).
-    guard.set_last_progress_for_testing("t1", now_ms() - (PROGRESS_STALL_THRESHOLD_MS + 60_000));
+    // Well past the progress threshold, but inside the tool bound (30 min).
+    guard.set_last_progress_for_testing("t1", now_ms() - (threshold + 60_000));
     guard.check_heartbeats();
     assert!(stalled.lock().unwrap().is_empty());
     // The tool ends and the child goes quiet: now the progress check applies.
     guard.record_tool_end("t1", "c1");
     guard.record_heartbeat("t1");
-    guard.set_last_progress_for_testing("t1", now_ms() - (PROGRESS_STALL_THRESHOLD_MS + 60_000));
+    guard.set_last_progress_for_testing("t1", now_ms() - (threshold + 60_000));
     guard.check_heartbeats();
     assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
     assert!(child.wait().unwrap().code().is_none());
@@ -524,27 +515,6 @@ async fn a_child_that_exits_within_the_grace_is_not_escalated() {
     guard.dispose();
 }
 
-/// The no-progress threshold can be lowered for a pool through its environment
-/// (the evals use this to make a stall reap take seconds). A value that is not
-/// a positive integer keeps the 10-minute default.
-#[test]
-fn the_progress_stall_threshold_reads_the_env_override() {
-    let with = |value: &str| HashMap::from([(STALL_THRESHOLD_ENV.to_string(), value.to_string())]);
-    assert_eq!(
-        progress_stall_ms_from_env(&HashMap::new()),
-        PROGRESS_STALL_THRESHOLD_MS
-    );
-    assert_eq!(progress_stall_ms_from_env(&with("20000")), 20_000);
-    assert_eq!(progress_stall_ms_from_env(&with(" 5000 ")), 5_000);
-    for bad in ["0", "-1", "soon", ""] {
-        assert_eq!(
-            progress_stall_ms_from_env(&with(bad)),
-            PROGRESS_STALL_THRESHOLD_MS,
-            "{bad:?}"
-        );
-    }
-}
-
 /// The configured threshold is what the progress check uses.
 #[tokio::test]
 async fn the_progress_check_uses_the_configured_threshold() {
@@ -700,7 +670,7 @@ async fn the_tool_in_flight_bound_widens_under_load() {
     guard.set_external_load(4);
     guard.record_tool_start("t1", "c1", ToolLimit::Undeclared);
     guard.record_heartbeat("t1");
-    // Past the unloaded bound, inside the loaded one (3 x 15 minutes).
+    // Past the unloaded bound, inside the loaded one (3 x 30 minutes).
     guard.set_last_progress_for_testing("t1", now_ms() - (TOOL_IN_FLIGHT_STALL_MS + 60_000));
     guard.check_heartbeats();
     assert!(stalled.lock().unwrap().is_empty());
@@ -714,61 +684,80 @@ async fn the_tool_in_flight_bound_widens_under_load() {
 }
 
 /// What a Shell start event declares: `0` is unlimited, a positive timeout is
-/// the limit, and an omitted timeout is the subagent default (600s, or the env
-/// override). Other tools declare nothing.
+/// the limit, and an omitted timeout is the resolved subagent default (1200 s
+/// unless the env or setting says otherwise). Other tools declare nothing.
 #[test]
 fn a_shell_start_declares_its_timeout() {
-    let none = HashMap::new();
-    let shell = |args: serde_json::Value| tool_limit_from_start("Shell", Some(&args), &none);
+    let default = SUBAGENT_SHELL_DEFAULT_TIMEOUT_SECS;
+    let shell = |args: serde_json::Value| tool_limit_from_start("Shell", Some(&args), default);
+    assert_eq!(default, 1200.0);
     assert_eq!(
         shell(serde_json::json!({"command": "x"})),
-        ToolLimit::Declared(600_000)
+        ToolLimit::Declared(1_200_000)
     );
     assert_eq!(
         shell(serde_json::json!({"command": "x", "timeout": 0})),
         ToolLimit::Unlimited
     );
     assert_eq!(
-        shell(serde_json::json!({"command": "x", "timeout": 1200})),
-        ToolLimit::Declared(1_200_000)
-    );
-    // Negative and non-finite-like values fall back to the default, as the tool does.
-    assert_eq!(
-        shell(serde_json::json!({"command": "x", "timeout": -5})),
+        shell(serde_json::json!({"command": "x", "timeout": 600})),
         ToolLimit::Declared(600_000)
     );
+    // Negative values fall back to the default, as the tool does.
     assert_eq!(
-        tool_limit_from_start("Read", Some(&serde_json::json!({"path": "a"})), &none),
+        shell(serde_json::json!({"command": "x", "timeout": -5})),
+        ToolLimit::Declared(1_200_000)
+    );
+    assert_eq!(
+        tool_limit_from_start("Read", Some(&serde_json::json!({"path": "a"})), default),
         ToolLimit::Undeclared
     );
     assert_eq!(
-        tool_limit_from_start("Shell", None, &none),
-        ToolLimit::Declared(600_000)
+        tool_limit_from_start("Shell", None, default),
+        ToolLimit::Declared(1_200_000)
     );
 }
 
-/// The subagent default follows the same env override as the Shell tool.
+/// The subagent default is the resolved shell timeout: the env override wins,
+/// then `subagentShellTimeoutSeconds`, then 1200 s. Junk falls through.
 #[test]
-fn a_shell_default_timeout_honors_the_env_override() {
-    let env = HashMap::from([(
-        "HOOCODE_BASH_DEFAULT_TIMEOUT_SECS".to_string(),
-        "45".to_string(),
-    )]);
+fn a_shell_default_timeout_is_resolved_from_env_then_setting() {
+    let args = serde_json::json!({"command": "x"});
+    let resolve = |settings: &SubagentLimitSettings, pairs: &[(&str, &str)]| {
+        let env: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let secs = SubagentLimits::resolve(settings, &env).shell_timeout_secs;
+        tool_limit_from_start("Shell", Some(&args), secs)
+    };
+    let none = SubagentLimitSettings::default();
+    let with_setting = SubagentLimitSettings {
+        shell_timeout_seconds: Some(900.0),
+        ..Default::default()
+    };
+    assert_eq!(resolve(&none, &[]), ToolLimit::Declared(1_200_000));
     assert_eq!(
-        tool_limit_from_start("Shell", Some(&serde_json::json!({"command": "x"})), &env),
-        ToolLimit::Declared(45_000)
+        resolve(&with_setting, &[]),
+        ToolLimit::Declared(900_000),
+        "the setting replaces the default"
     );
-    let junk = HashMap::from([(
-        "HOOCODE_BASH_DEFAULT_TIMEOUT_SECS".to_string(),
-        "nope".to_string(),
-    )]);
     assert_eq!(
-        tool_limit_from_start("Shell", Some(&serde_json::json!({"command": "x"})), &junk),
-        ToolLimit::Declared(600_000)
+        resolve(
+            &with_setting,
+            &[("HOOCODE_BASH_DEFAULT_TIMEOUT_SECS", "45")]
+        ),
+        ToolLimit::Declared(45_000),
+        "the env override beats the setting"
+    );
+    assert_eq!(
+        resolve(&none, &[("HOOCODE_BASH_DEFAULT_TIMEOUT_SECS", "nope")]),
+        ToolLimit::Declared(1_200_000),
+        "junk env falls through to the default"
     );
 }
 
-/// A Shell with a declared 20-minute timeout is busy past the 15-minute
+/// A Shell with a declared 20-minute timeout is busy past the 30-minute
 /// default bound, and is reaped only after its timeout plus the margin.
 #[cfg(unix)]
 #[tokio::test]
@@ -778,9 +767,11 @@ async fn a_declared_tool_timeout_raises_the_bound() {
     let stalled = stalled_ids(&guard);
     let mut child = sleeper();
     guard.monitor("t1", "general-purpose", child.id());
-    guard.record_tool_start("t1", "c1", ToolLimit::Declared(1_200_000));
+    // A 40-minute declared timeout is longer than the 30-minute default bound.
+    const DECLARED_MS: u64 = 2_400_000;
+    guard.record_tool_start("t1", "c1", ToolLimit::Declared(DECLARED_MS));
     guard.record_heartbeat("t1");
-    // Past the 15-minute default, inside 20 minutes + margin: still running.
+    // Past the 30-minute default, inside 40 minutes + margin: still running.
     guard.set_last_progress_for_testing("t1", now_ms() - (TOOL_IN_FLIGHT_STALL_MS + 60_000));
     guard.check_heartbeats();
     assert!(stalled.lock().unwrap().is_empty());
@@ -788,7 +779,7 @@ async fn a_declared_tool_timeout_raises_the_bound() {
     guard.record_heartbeat("t1");
     guard.set_last_progress_for_testing(
         "t1",
-        now_ms() - (1_200_000 + TOOL_TIMEOUT_MARGIN_MS + 60_000),
+        now_ms() - (DECLARED_MS + TOOL_TIMEOUT_MARGIN_MS + 60_000),
     );
     guard.check_heartbeats();
     assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
@@ -816,7 +807,7 @@ async fn an_unlimited_tool_is_not_a_progress_stall() {
 }
 
 /// Tools are matched by call id: ending one unlimited tool leaves the other
-/// (undeclared) one in flight, so the 15-minute bound applies again.
+/// (undeclared) one in flight, so the 30-minute bound applies again.
 #[cfg(unix)]
 #[tokio::test]
 async fn tools_are_tracked_by_call_id() {
