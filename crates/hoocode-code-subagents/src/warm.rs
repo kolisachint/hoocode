@@ -30,9 +30,10 @@ use crate::depth::{
     current_subagent_depth, pool_concurrency_for_depth, resolve_max_subagent_depth,
     tool_allowlist_needs_mcp, ProcessEnv, SubagentEnv, SUBAGENT_DEPTH_ENV, SUBAGENT_SKIP_MCP_ENV,
 };
+use crate::limits::DEFAULT_QUEUE_PER_SLOT;
 use crate::limits::{SubagentLimitSettings, SubagentLimits};
 use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
-use crate::pool::{subagent_disallowed_tools, QUEUE_PER_SLOT};
+use crate::pool::subagent_disallowed_tools;
 use hoocode_code_models::ResolvedScoped;
 
 /// Usage totals pulled from a worker after a task.
@@ -369,9 +370,9 @@ struct WarmInner {
     settings: Option<CategorySettings>,
     available_models: Vec<Model>,
     max_per_key: usize,
-    /// Workers running at once, across every key (default: the cold pool's 5).
+    /// Workers running at once, across every key (default: the root concurrency).
     max_in_flight: usize,
-    /// Dispatches allowed to wait for one (default: four per slot).
+    /// Dispatches allowed to wait for one (default: `subagentQueuePerSlot` per slot).
     max_waiting: usize,
     /// One permit per running dispatch, taken at admission and held until the
     /// dispatch returns. Taken before the worker boots, so a burst cannot all
@@ -399,8 +400,8 @@ pub struct WarmSubagentPoolOptions {
     /// the root concurrency at depth 0, the nested concurrency below it. This
     /// counter is separate from the cold pool's.
     pub max_in_flight: usize,
-    /// Dispatches allowed to wait for a free worker: [`QUEUE_PER_SLOT`] times
-    /// `max_in_flight`.
+    /// Dispatches allowed to wait for a free worker: [`DEFAULT_QUEUE_PER_SLOT`]
+    /// times `max_in_flight` from [`Self::for_depth`].
     pub max_waiting: usize,
     /// An idle worker is reclaimed after this long (default 30s).
     pub idle_ttl: Duration,
@@ -419,7 +420,8 @@ impl WarmSubagentPoolOptions {
 
     /// Options sized for the depth in `env`: `max_in_flight` is the per-depth
     /// concurrency (the same rule as the cold pool), and `max_waiting` is
-    /// [`QUEUE_PER_SLOT`] times that.
+    /// [`DEFAULT_QUEUE_PER_SLOT`] times that. A caller that reads the settings
+    /// sets `max_waiting` from `subagentQueuePerSlot` instead.
     pub fn for_depth(
         cwd: impl Into<PathBuf>,
         root_setting: Option<f64>,
@@ -436,7 +438,7 @@ impl WarmSubagentPoolOptions {
             limits: SubagentLimitSettings::default(),
             max_per_key: 2,
             max_in_flight,
-            max_waiting: max_in_flight * QUEUE_PER_SLOT,
+            max_waiting: max_in_flight * DEFAULT_QUEUE_PER_SLOT,
             idle_ttl: Duration::from_millis(30_000),
             spawn: None,
         }
@@ -555,6 +557,11 @@ impl WarmSubagentPool {
             (
                 format!("HOOCODE_{SUBAGENT_DEPTH_ENV}"),
                 (current_subagent_depth(&ProcessEnv) + 1).to_string(),
+            ),
+            // The resolved Shell default, as the cold pool passes it.
+            (
+                crate::lifeguard::SHELL_DEFAULT_TIMEOUT_ENV.into(),
+                self.inner.limits.shell_timeout_secs.to_string(),
             ),
             // Internal: this rpc worker has no client to answer approvals, so
             // its own gate stays open. Its children inherit the parent policy.
@@ -825,9 +832,14 @@ pub fn get_warm_subagent_pool(cwd: &Path, available_models: &[Model]) -> WarmSub
                 Some(manager.nested_subagent_concurrency() as f64),
                 &ProcessEnv,
             );
+            // The waiting queue: `subagentQueuePerSlot` (or its env) per slot.
+            let limits = SubagentLimitSettings::from_manager(&manager);
+            let env: HashMap<String, String> = std::env::vars().collect();
+            let queue_per_slot = SubagentLimits::resolve(&limits, &env).queue_per_slot;
             let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
                 settings: Some(CategorySettings::from_settings(&settings)),
-                limits: SubagentLimitSettings::from_manager(&manager),
+                limits,
+                max_waiting: concurrency.max_in_flight * queue_per_slot,
                 skill_paths: instance.skill_paths.clone(),
                 available_models: available_models.to_vec(),
                 scope: scope.clone(),

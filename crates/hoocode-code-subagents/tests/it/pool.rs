@@ -183,19 +183,19 @@ async fn spawns_a_subagent_and_waits_for_the_result() {
 /// With the default options the root pool runs eight tasks at once and queues
 /// the ninth: the cold pool's default is the root's default.
 #[tokio::test]
-async fn eight_tasks_run_concurrently_with_default_options() {
+async fn twelve_tasks_run_concurrently_with_default_options() {
     let dir = setup();
     let p = SubagentPool::new(SubagentPoolOptions {
         executable: mock(dir.path(), 0, 200),
         cwd: Some(dir.path().to_path_buf()),
         ..Default::default()
     });
-    let ids: Vec<String> = (1..=9).map(|n| format!("c{n}")).collect();
+    let ids: Vec<String> = (1..=13).map(|n| format!("c{n}")).collect();
     for id in &ids {
         write_valid_result(dir.path(), id);
         p.spawn(task(id, "explore", id)).unwrap();
     }
-    assert_eq!(p.running_count(), 8);
+    assert_eq!(p.running_count(), 12);
     assert_eq!(p.queued_count(), 1);
     for id in &ids {
         p.wait_for(id).await.unwrap();

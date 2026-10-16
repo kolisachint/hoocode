@@ -861,6 +861,11 @@ fn subagent_limit_settings_read_as_numbers_and_are_unset_by_default() {
     assert_eq!(empty.subagent_deadline_minutes(), None);
     assert_eq!(empty.subagent_stall_seconds(), None);
     assert_eq!(empty.subagent_max_rss_mb(), None);
+    assert_eq!(empty.subagent_tool_stall_seconds(), None);
+    assert_eq!(empty.subagent_queue_per_slot(), None);
+    assert_eq!(empty.subagent_shell_timeout_seconds(), None);
+    assert_eq!(empty.subagent_wait_timeout_seconds(), None);
+    assert_eq!(empty.max_output_tokens(), None);
 
     let set = SettingsManager::in_memory(
         json!({
@@ -869,6 +874,11 @@ fn subagent_limit_settings_read_as_numbers_and_are_unset_by_default() {
             "subagentDeadlineMinutes": 90,
             "subagentStallSeconds": 45,
             "subagentMaxRssMb": 1024,
+            "subagentToolStallSeconds": 600,
+            "subagentQueuePerSlot": 5,
+            "subagentShellTimeoutSeconds": 900.5,
+            "subagentWaitTimeoutSeconds": 60,
+            "maxOutputTokens": 16000,
         })
         .as_object()
         .unwrap()
@@ -879,6 +889,11 @@ fn subagent_limit_settings_read_as_numbers_and_are_unset_by_default() {
     assert_eq!(set.subagent_deadline_minutes(), Some(90.0));
     assert_eq!(set.subagent_stall_seconds(), Some(45.0));
     assert_eq!(set.subagent_max_rss_mb(), Some(1024.0));
+    assert_eq!(set.subagent_tool_stall_seconds(), Some(600.0));
+    assert_eq!(set.subagent_queue_per_slot(), Some(5.0));
+    assert_eq!(set.subagent_shell_timeout_seconds(), Some(900.5));
+    assert_eq!(set.subagent_wait_timeout_seconds(), Some(60.0));
+    assert_eq!(set.max_output_tokens(), Some(16_000.0));
 
     let text = SettingsManager::in_memory(
         json!({ "subagentMaxTurns": "many" })
@@ -890,11 +905,11 @@ fn subagent_limit_settings_read_as_numbers_and_are_unset_by_default() {
 }
 
 #[test]
-fn subagent_concurrency_defaults_and_clamps_to_one_through_sixteen() {
+fn subagent_concurrency_defaults_and_clamps_to_one_through_thirty_two() {
     let defaults = SettingsManager::in_memory(serde_json::Map::new());
-    assert_eq!(defaults.subagent_concurrency(), 8);
-    assert_eq!(defaults.nested_subagent_concurrency(), 3);
-    assert_eq!(defaults.max_subagent_depth(), 3);
+    assert_eq!(defaults.subagent_concurrency(), 12);
+    assert_eq!(defaults.nested_subagent_concurrency(), 6);
+    assert_eq!(defaults.max_subagent_depth(), 4);
 
     let concurrency = |value: serde_json::Value| {
         SettingsManager::in_memory(
@@ -906,7 +921,13 @@ fn subagent_concurrency_defaults_and_clamps_to_one_through_sixteen() {
         .subagent_concurrency()
     };
     assert_eq!(concurrency(json!(0)), 1);
-    assert_eq!(concurrency(json!(99)), 16);
+    assert_eq!(concurrency(json!(99)), 32);
     assert_eq!(concurrency(json!(5.7)), 5);
-    assert_eq!(concurrency(json!("many")), 8);
+    assert_eq!(concurrency(json!("many")), 12);
+}
+
+#[test]
+fn retry_max_retries_defaults_to_five() {
+    let defaults = SettingsManager::in_memory(serde_json::Map::new());
+    assert_eq!(defaults.retry_settings().max_retries, 5);
 }

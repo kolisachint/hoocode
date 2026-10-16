@@ -38,6 +38,7 @@ use crate::events::{classify_subagent_line, SubagentStdoutLine};
 use crate::ledger;
 use crate::lifeguard::{
     kill_process_tree, tool_limit_from_start, LifeguardEvent, SubagentLifeguard,
+    SHELL_DEFAULT_TIMEOUT_ENV,
 };
 use crate::limits::{SubagentLimitSettings, SubagentLimits};
 use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
@@ -269,15 +270,16 @@ pub struct SubagentPoolOptions {
     pub env: Option<HashMap<String, String>>,
     /// Replace how dispatches run. Default: a child process per dispatch.
     pub runner: Option<Arc<dyn Runner>>,
-    /// Default: [`QUEUE_PER_SLOT`] times `max_concurrency`. A dispatch beyond it is refused
+    /// Default: `subagentQueuePerSlot` (8) times `max_concurrency`. A dispatch beyond it is refused
     /// with a message the caller can act on, rather than queued into a session
     /// that will never finish them.
     pub max_queued: Option<usize>,
     /// Finished results kept in memory for late pulls. Default [`MAX_COMPLETED`].
     pub max_completed: Option<usize>,
     /// The `subagent*` limit settings (turns, token budget, deadline, stall,
-    /// child RSS). The pool resolves them against its environment: the
-    /// `HOOCODE_` variable, then the setting, then the default.
+    /// tool stall, child RSS, queue depth, Shell timeout, wait timeout). The
+    /// pool resolves them against its environment: the `HOOCODE_` variable,
+    /// then the setting, then the default.
     pub limits: SubagentLimitSettings,
     /// Non-default skill paths forwarded to every child via `--skill`.
     pub skill_paths: Vec<String>,
@@ -434,14 +436,11 @@ pub struct SubagentPool {
 /// The cold pool's default concurrency. The warm pool has its own counter
 /// with the same default: the cold and warm pools do not share a ceiling, so a
 /// process can run up to this many cold and this many warm subagents at once.
-pub const DEFAULT_MAX_CONCURRENCY: usize = 8;
+pub const DEFAULT_MAX_CONCURRENCY: usize = 12;
 
 /// Finished results held in memory. Beyond this the oldest is dropped; its
 /// dispatch dir and ledger line are the durable record.
 const MAX_COMPLETED: usize = 64;
-
-/// Queue slots per running slot before a dispatch is refused outright.
-pub const QUEUE_PER_SLOT: usize = 4;
 
 /// A queued task's effective priority improves by one step per this long spent
 /// waiting, so the two-tier priority cannot starve `code-review` behind a
@@ -549,6 +548,7 @@ impl SubagentPool {
         let env = options.env.unwrap_or_else(|| std::env::vars().collect());
         let limits = SubagentLimits::resolve(&options.limits, &env);
         lifeguard.set_progress_stall_ms(limits.stall_ms);
+        lifeguard.set_tool_stall_ms(limits.tool_stall_ms);
         lifeguard.set_base_deadline_ms(limits.deadline_ms);
         lifeguard.set_max_rss_bytes(limits.max_rss_bytes);
         static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -563,7 +563,7 @@ impl SubagentPool {
             }),
             max_concurrency: options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY),
             max_queued: options.max_queued.unwrap_or_else(|| {
-                options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY) * QUEUE_PER_SLOT
+                options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY) * limits.queue_per_slot
             }),
             max_completed: options.max_completed.unwrap_or(MAX_COMPLETED),
             env,
@@ -654,6 +654,12 @@ impl SubagentPool {
     /// plus the load headroom). `AgentOutput` derives its reconcile age from it.
     pub fn max_run_budget_ms(&self) -> u64 {
         self.inner.limits.max_run_budget_ms()
+    }
+
+    /// The `AgentOutput` wait timeout when a `wait: true` call names no
+    /// `timeout_ms`: `subagentWaitTimeoutSeconds` / `HOOCODE_SUBAGENT_WAIT_TIMEOUT_MS`.
+    pub fn wait_timeout_ms(&self) -> u64 {
+        self.inner.limits.wait_timeout_ms
     }
 
     pub fn spawn(&self, mut task: SubagentPoolTask) -> Result<(), PoolError> {
@@ -1441,6 +1447,13 @@ impl PoolInner {
             format!("{CHILD_ENV_PREFIX}{SUBAGENT_DEPTH_ENV}"),
             depth.to_string(),
         );
+        // The resolved Shell default (env, then `subagentShellTimeoutSeconds`,
+        // then 1200 s), so the child's Shell tool and this process's stall
+        // bound agree. The child reads it from its environment.
+        env.insert(
+            SHELL_DEFAULT_TIMEOUT_ENV.to_string(),
+            self.limits.shell_timeout_secs.to_string(),
+        );
         let def = self.definition(&task.agent_type);
         if !tool_allowlist_needs_mcp(def.as_ref().and_then(|d| d.tools.as_deref())) {
             env.insert(
@@ -1651,7 +1664,11 @@ impl PoolInner {
                             .get("toolName")
                             .and_then(Value::as_str)
                             .unwrap_or_default();
-                        let limit = tool_limit_from_start(tool, event.get("args"), &self.env);
+                        let limit = tool_limit_from_start(
+                            tool,
+                            event.get("args"),
+                            self.limits.shell_timeout_secs,
+                        );
                         self.lifeguard.record_tool_start(task_id, call_id, limit);
                     }
                     Some("tool_execution_end") => self.lifeguard.record_tool_end(task_id, call_id),

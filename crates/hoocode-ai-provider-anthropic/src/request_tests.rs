@@ -250,7 +250,8 @@ fn explicit_thinking_display_overrides_the_default() {
 
 #[test]
 fn budget_models_get_enabled_thinking_and_adjusted_max_tokens() {
-    // claude-sonnet-4-5: maxTokens 64000 -> base 32000; high budget 16384.
+    // claude-sonnet-4-5: maxTokens 64000 -> base 64000 (the default output cap);
+    // high budget 16384, so the sum is capped at the model's 64000.
     let payload = thinking_payload(
         "anthropic",
         "claude-sonnet-4-5",
@@ -260,7 +261,7 @@ fn budget_models_get_enabled_thinking_and_adjusted_max_tokens() {
         payload["thinking"],
         json!({"type": "enabled", "budget_tokens": 16384, "display": "summarized"})
     );
-    assert_eq!(payload["max_tokens"], 32000 + 16384);
+    assert_eq!(payload["max_tokens"], 64000);
     // xhigh uses the high budget (clampReasoning).
     let payload = thinking_payload(
         "anthropic",
@@ -648,4 +649,20 @@ fn string_user_content_stays_a_string_until_it_takes_the_cache_marker() {
     // No marker after an assistant turn.
     let converted = convert_messages(&messages[..2], &model, false, Some(&cc));
     assert!(converted[1]["content"][0].get("cache_control").is_none());
+}
+
+#[test]
+fn output_cap_is_64k_unless_the_env_names_a_positive_number() {
+    use crate::request::{output_token_cap_from, DEFAULT_MAX_OUTPUT_TOKENS};
+    assert_eq!(DEFAULT_MAX_OUTPUT_TOKENS, 64_000);
+    assert_eq!(output_token_cap_from(None), 64_000);
+    assert_eq!(output_token_cap_from(Some("16000")), 16_000);
+    assert_eq!(output_token_cap_from(Some(" 32000 ")), 32_000);
+    for bad in ["0", "-5", "lots", "", "12.5"] {
+        assert_eq!(
+            output_token_cap_from(Some(bad)),
+            64_000,
+            "{bad:?} falls through to the default"
+        );
+    }
 }

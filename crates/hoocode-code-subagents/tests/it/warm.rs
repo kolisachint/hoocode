@@ -311,7 +311,7 @@ fn a_nested_warm_pool_gets_the_nested_cap_not_the_root_cap() {
             .collect()
     };
     let root = WarmSubagentPoolOptions::for_depth(dir.path(), None, None, &env(&[]));
-    assert_eq!((root.max_in_flight, root.max_waiting), (8, 32));
+    assert_eq!((root.max_in_flight, root.max_waiting), (12, 96));
 
     for depth in ["1", "2"] {
         let nested = WarmSubagentPoolOptions::for_depth(
@@ -322,7 +322,7 @@ fn a_nested_warm_pool_gets_the_nested_cap_not_the_root_cap() {
         );
         assert_eq!(
             (nested.max_in_flight, nested.max_waiting),
-            (3, 12),
+            (6, 48),
             "depth {depth} must get the nested cap"
         );
     }
@@ -333,7 +333,7 @@ fn a_nested_warm_pool_gets_the_nested_cap_not_the_root_cap() {
         Some(2.0),
         &env(&[("HOOCODE_SUBAGENT_DEPTH", "1")]),
     );
-    assert_eq!((configured.max_in_flight, configured.max_waiting), (2, 8));
+    assert_eq!((configured.max_in_flight, configured.max_waiting), (2, 16));
 }
 
 /// A fake RPC child that logs `start` and `end` around each prompt, so the

@@ -93,7 +93,10 @@ pub const STALL_THRESHOLD_ENV: &str = "HOOCODE_SUBAGENT_STALL_MS";
 /// event (before the load multiplier). A tool that declares its own timeout
 /// (the Shell tool) gets `max(this, declared + TOOL_TIMEOUT_MARGIN_MS)`
 /// instead; see [`ToolLimit`]. This is the bound for a tool that declares none.
-pub const TOOL_IN_FLIGHT_STALL_MS: u64 = 15 * 60 * 1000;
+/// 30 minutes, so it sits above the 20 minute progress stall. The
+/// `subagentToolStallSeconds` setting and `HOOCODE_SUBAGENT_TOOL_STALL_MS`
+/// override it; see [`crate::limits`].
+pub const TOOL_IN_FLIGHT_STALL_MS: u64 = 30 * 60 * 1000;
 /// Slack added to a tool's declared timeout before it counts as wedged: the
 /// tool kills itself at the declared time, and its end event follows.
 pub const TOOL_TIMEOUT_MARGIN_MS: u64 = 60_000;
@@ -112,21 +115,22 @@ pub enum ToolLimit {
 
 /// The Shell tool's default timeout in a subagent. Mirrors
 /// `DEFAULT_BASH_TIMEOUT_SECS` in `hoocode-code-tool-bash`, which this crate
-/// does not depend on.
-pub const SUBAGENT_SHELL_DEFAULT_TIMEOUT_SECS: f64 = 600.0;
-/// The env override for that default. Mirrors `DEFAULT_BASH_TIMEOUT_ENV` in
-/// `hoocode-code-tool-bash`. Children inherit the parent's environment.
+/// does not depend on. The resolved value (env, then setting, then this) is
+/// passed to children in [`SHELL_DEFAULT_TIMEOUT_ENV`]; see [`crate::limits`].
+pub const SUBAGENT_SHELL_DEFAULT_TIMEOUT_SECS: f64 = 1200.0;
+/// The env name the Shell tool reads for that default. Mirrors
+/// `DEFAULT_BASH_TIMEOUT_ENV` in `hoocode-code-tool-bash`.
 pub const SHELL_DEFAULT_TIMEOUT_ENV: &str = "HOOCODE_BASH_DEFAULT_TIMEOUT_SECS";
 
 /// What a tool declares about its run time, from its `tool_execution_start`
 /// event (`toolName`, `args`). Only the Shell tool declares one; its `timeout`
 /// follows the tool's own rules, as a subagent: `0` is unlimited, a positive
 /// value is the limit, and an omitted, negative or non-finite value is the
-/// subagent default (the env override when positive, else 600s).
+/// subagent default `default_shell_secs` (the resolved shell timeout).
 pub fn tool_limit_from_start(
     tool_name: &str,
     args: Option<&Value>,
-    env: &HashMap<String, String>,
+    default_shell_secs: f64,
 ) -> ToolLimit {
     if !matches!(tool_name, "Shell" | "Bash") {
         return ToolLimit::Undeclared;
@@ -135,15 +139,8 @@ pub fn tool_limit_from_start(
     match requested {
         Some(0.0) => ToolLimit::Unlimited,
         Some(t) if t.is_finite() && t > 0.0 => ToolLimit::Declared(secs_to_ms(t)),
-        _ => ToolLimit::Declared(secs_to_ms(shell_default_timeout_secs(env))),
+        _ => ToolLimit::Declared(secs_to_ms(default_shell_secs)),
     }
-}
-
-fn shell_default_timeout_secs(env: &HashMap<String, String>) -> f64 {
-    env.get(SHELL_DEFAULT_TIMEOUT_ENV)
-        .and_then(|v| v.trim().parse::<f64>().ok())
-        .filter(|t| t.is_finite() && *t > 0.0)
-        .unwrap_or(SUBAGENT_SHELL_DEFAULT_TIMEOUT_SECS)
 }
 
 /// Seconds to whole milliseconds; the float-to-int cast saturates.
@@ -338,6 +335,9 @@ struct State {
     reaped: HashMap<String, u32>,
     /// The no-progress threshold (before the load multiplier).
     progress_stall_ms: u64,
+    /// The no-progress bound while a tool is in flight and declares no limit
+    /// (before the load multiplier). See [`TOOL_IN_FLIGHT_STALL_MS`].
+    tool_stall_ms: u64,
     /// The base hard deadline for every run (before the load multiplier).
     base_deadline_ms: u64,
     /// Resident memory above which a child is reaped.
@@ -358,7 +358,7 @@ impl State {
     /// running tool is unlimited, so the progress check cannot fire.
     fn tool_in_flight_bound_ms(&self, task_id: &str) -> Option<f64> {
         let tools = self.tools_in_flight.get(task_id)?;
-        let mut bound = TOOL_IN_FLIGHT_STALL_MS as f64 * self.load_multiplier();
+        let mut bound = self.tool_stall_ms as f64 * self.load_multiplier();
         for limit in tools.values() {
             match limit {
                 ToolLimit::Unlimited => return None,
@@ -391,6 +391,7 @@ impl SubagentLifeguard {
             state: Mutex::new(State {
                 last_check_at: now_ms(),
                 progress_stall_ms: PROGRESS_STALL_THRESHOLD_MS,
+                tool_stall_ms: TOOL_IN_FLIGHT_STALL_MS,
                 base_deadline_ms: SUBAGENT_DEADLINE_MS,
                 max_rss_bytes: hoocode_runtime::CHILD_RSS_LIMIT_BYTES,
                 ..Default::default()
@@ -441,6 +442,12 @@ impl SubagentLifeguard {
     /// pool sets it from its resolved limits.
     pub fn set_progress_stall_ms(&self, ms: u64) {
         self.state().progress_stall_ms = ms.max(1);
+    }
+
+    /// Set the no-progress bound for a tool in flight that declares no limit
+    /// (before the load multiplier). The pool sets it from its resolved limits.
+    pub fn set_tool_stall_ms(&self, ms: u64) {
+        self.state().tool_stall_ms = ms.max(1);
     }
 
     /// Set the base hard deadline for every run (before the load multiplier).
