@@ -5,7 +5,7 @@
 use hoocode_code_tui_theme::get_available_themes;
 use hoocode_tui_components::SelectItem;
 
-use crate::framed_list::{layout, FramedSelectList};
+use crate::framed_list::FramedSelectList;
 
 fn item(value: &str, label: &str, description: Option<String>) -> SelectItem {
     SelectItem {
@@ -43,7 +43,7 @@ pub fn thinking_selector(current_level: &str, available_levels: &[&str]) -> Fram
         .collect();
     let selected = items.iter().position(|i| i.value == current_level);
     let count = items.len();
-    FramedSelectList::new("thinking", items, count, layout(12, 32), selected)
+    FramedSelectList::new("thinking", items, count, selected)
 }
 
 /// `ThemeSelectorComponent`: every available theme, the current one marked
@@ -61,7 +61,7 @@ pub fn theme_selector(current_theme: &str) -> FramedSelectList {
         })
         .collect();
     let selected = themes.iter().position(|t| t == current_theme);
-    FramedSelectList::new("theme", items, 10, layout(12, 32), selected)
+    FramedSelectList::new("theme", items, 10, selected)
 }
 
 /// `ShowImagesSelectorComponent`: values `yes` / `no`.
@@ -78,11 +78,5 @@ pub fn show_images_selector(current_value: bool) -> FramedSelectList {
             Some("Show text placeholder instead".to_string()),
         ),
     ];
-    FramedSelectList::new(
-        "images",
-        items,
-        5,
-        layout(12, 32),
-        Some(if current_value { 0 } else { 1 }),
-    )
+    FramedSelectList::new("images", items, 5, Some(if current_value { 0 } else { 1 }))
 }
