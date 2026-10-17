@@ -82,6 +82,7 @@ fn blocks() -> Vec<(&'static str, Box<dyn Component>)> {
                     tokens_before: 100,
                     tokens_after: Some(10),
                     timestamp: 0,
+                    mission_range: None,
                 },
                 md(),
             )),
@@ -194,6 +195,9 @@ fn every_shipped_theme_loads_and_renders_every_message_block() {
         for &width in WIDTHS {
             for (label, mut block) in blocks() {
                 let lines = block.render(width);
+                // The folded compaction summary is Mission Control chrome
+                // (the JETTISONED row, M8e6), never a paper sheet.
+                let sheet = sheet && label != "compaction summary";
                 found.extend(faults(
                     &format!("{name}: {label} @{width}"),
                     &lines,
@@ -219,6 +223,9 @@ fn follows_a_theme_switch_under_blocks_already_on_screen_both_ways() {
     ] {
         init_theme(Some(theme_name), false);
         for (label, block) in built.iter_mut() {
+            // The folded compaction summary is Mission Control chrome
+            // (the JETTISONED row, M8e6), never a paper sheet.
+            let sheet = sheet && *label != "compaction summary";
             found.extend(faults(
                 &format!("{label} {stage}"),
                 &block.render(46),

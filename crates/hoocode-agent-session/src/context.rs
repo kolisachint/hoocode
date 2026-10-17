@@ -89,6 +89,7 @@ pub fn build_session_context(entries: &[FileEntry]) -> SessionContext {
                 tokens_before: *tokens_before,
                 tokens_after: *tokens_after,
                 timestamp: parse_timestamp(timestamp),
+                mission_range: None,
             }));
             let compaction_idx = entries
                 .iter()

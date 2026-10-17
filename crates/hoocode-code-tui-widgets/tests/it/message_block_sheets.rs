@@ -63,9 +63,10 @@ fn blocks() -> Vec<(&'static str, Box<dyn Component>)> {
             Box::new(CompactionSummaryMessageComponent::new(
                 CompactionSummaryMessage {
                     summary: "s".into(),
-                    tokens_before: 100,
-                    tokens_after: Some(10),
+                    tokens_before: 120,
+                    tokens_after: Some(144),
                     timestamp: 0,
+                    mission_range: Some((1, 3)),
                 },
                 md(),
             )),
@@ -97,7 +98,13 @@ fn every_message_block_is_a_sheet_under_a_cut_out_theme() {
     let _g = lock();
     init_theme(Some("vox-cutout-dark"), false);
     let band = WIDTH as usize - PAPER_INSET;
-    for (label, mut block) in blocks() {
+    // The folded compaction summary is Mission Control chrome (the
+    // JETTISONED row, M8e6), not a sheet; `jettison_row.rs` covers it.
+    let blocks = blocks()
+        .into_iter()
+        .filter(|(label, _)| *label != "compaction summary")
+        .collect::<Vec<_>>();
+    for (label, mut block) in blocks {
         let lines = rendered(&mut block);
         // It holds back from the right margin, so it has an edge to cut.
         for line in &lines[..lines.len() - 1] {

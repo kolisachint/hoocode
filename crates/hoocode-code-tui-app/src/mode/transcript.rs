@@ -131,6 +131,14 @@ impl Transcript {
         *self = Transcript::new(self.chat.clone());
         self.retry_streak = streak;
     }
+
+    /// The missions a compaction folds, first to last (`M1–M3`), for the
+    /// JETTISONED row (M8e6). `None` when the transcript holds no missions.
+    pub(super) fn jettisoned_range(&self) -> Option<(usize, usize)> {
+        let first = self.missions.first()?.seq;
+        let last = self.missions.last()?.seq;
+        Some((first, last))
+    }
 }
 
 /// One turn of a rebuilt session: what its assistant messages spent, and when

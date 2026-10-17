@@ -61,6 +61,7 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | User message | `user_message.rs` |
 | Assistant message (markdown, thinking) | `assistant_message.rs` → `tui-components/src/markdown/` |
 | Custom and branch-summary messages | `custom_message.rs` |
+| Compaction summary (M8 e6): folded is the JETTISONED row (`≋≋≋ JETTISONED M1–M3 into one summary stage · A → B tokens`, vio, ratatui`; range from `Transcript::jettisoned_range`, `earlier missions` fallback), expanded is the summary sheet | `custom_message.rs` (`jettison_text`, `jettison_row`), range plumbed as `mission_range` on `CompactionSummaryMessage` (serde default: old files load) |
 | One tool call's block | `tool_execution.rs` |
 | A run of tool calls on one line; radar view (the live radar line, its failure rows, the chain's labels and stats) | `tool_chain.rs`, `tool_chain_summary.rs` |
 | Mission Control trajectory (M4, peek): mission headers, numbered steps on the `┊` rail, Think rows, landing lines | `trajectory.rs` (`MissionHeader`, step/rail/fold/chip/landing helpers); peek numbering in `tool_chain.rs`, Think row + prose rail in `assistant_message.rs` |

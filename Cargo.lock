@@ -1962,6 +1962,7 @@ dependencies = [
  "hoocode-tui-components",
  "hoocode-tui-images",
  "hoocode-tui-keys",
+ "hoocode-tui-ratatui",
  "hoocode-tui-render",
  "hoocode-tui-util",
  "once_cell",

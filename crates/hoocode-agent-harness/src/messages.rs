@@ -74,6 +74,7 @@ pub fn create_compaction_summary_message(
         tokens_before,
         tokens_after,
         timestamp: iso_to_ms(timestamp),
+        mission_range: None,
     }
 }
 
@@ -472,6 +473,7 @@ mod tests {
                 tokens_before: 10,
                 tokens_after: None,
                 timestamp: 8,
+                mission_range: None,
             }),
         ];
         let text_of = |m: &Message| match m {

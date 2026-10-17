@@ -272,6 +272,9 @@ impl Mode {
                 self.show_status("Auto-compaction cancelled");
             }
         } else if let Some(result) = result {
+            // The missions this compaction folds, for the JETTISONED row
+            // (M8e6): read before the reset drops the transcript's ranges.
+            let mission_range = self.transcript.jettisoned_range();
             self.reset_transcript_view();
             let messages = self.session.session_manager().build_context().messages;
             self.render_session_context(&messages, false);
@@ -280,6 +283,7 @@ impl Mode {
                 tokens_before: result.tokens_before,
                 tokens_after: result.tokens_after,
                 timestamp: hoocode_ai_types::now_ms(),
+                mission_range,
             });
             self.add_message_to_chat(&summary, false);
             self.footer.borrow_mut().invalidate();
