@@ -8,6 +8,7 @@ pub mod bash_execution;
 pub mod brand;
 pub mod card_frame;
 pub mod console;
+pub mod controls;
 pub mod custom_message;
 pub mod diff;
 pub mod dynamic_border;

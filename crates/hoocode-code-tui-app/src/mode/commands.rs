@@ -7,13 +7,13 @@ use hoocode_code_paths::VERSION;
 use hoocode_code_resources::BUILTIN_SLASH_COMMANDS;
 use hoocode_code_tui_selectors::oauth_selector::LoginMode;
 use hoocode_code_tui_theme::theme;
+use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
 use hoocode_tui_components::{Markdown, Spacer, Text};
 use hoocode_tui_render::{Tui, TuiEvent};
 use hoocode_tui_util::visible_width;
 
 use crate::changelog::{changelog_path, parse_changelog};
-use crate::hotkeys::hotkeys_markdown;
 use crate::suspend::{suspend_to_background, SuspendOps, SuspendOutcome};
 
 use super::*;
@@ -201,9 +201,11 @@ impl Mode {
         self.dirty.set(true);
     }
 
-    /// `handleHotkeys`.
+    /// `handleHotkeys`: the CONTROLS console (M7, spec d9), with the drawn
+    /// keyboard from the real keybindings at the spec width and the key
+    /// list below it.
     pub(super) fn handle_hotkeys_command(&mut self) {
-        self.show_bordered_markdown("Keyboard Shortcuts", &hotkeys_markdown());
+        self.add_to_chat(as_component(&handle(ControlsComponent::new())));
     }
 
     /// `handleChangelog`: every entry, oldest first.

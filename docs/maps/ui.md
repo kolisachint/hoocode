@@ -115,7 +115,7 @@ Every picker moves its cursor with `PickerCursor` (`tui-components/src/picker_cu
 | `/quit`, ctrl+c twice, ctrl+d | end-of-shift card (M6): amber card with the shift's debrief (missions, steps, tokens, spend), `enter` ends, `esc` stays; with satellites up, `◉ END SHIFT WITH N SATELLITE(S) UP?` lists them (`k` brings them down, `l` leaves them, `enter` is bring-down, `esc` stays). User quits go through `request_user_quit`; fatal session errors exit without asking | `hoocode-code-tui-app/src/end_shift.rs` (`EndShiftCard`, `EndShiftJobsCard`); flow in `mode/task_panel.rs` (`EndShift`, `ready_to_quit`) |
 | `hoocode config` | resource list | `config_selector.rs` |
 | `hoocode update` (CLI, no TUI): prints the update command for the install method; never replaces the binary | `hoocode-code-update/src/lib.rs` (`run_update_command`); dispatched in `hoocode-code-cli/src/lib.rs` |
-| `/hotkeys` | shortcuts page | `hoocode-code-tui-app/src/hotkeys.rs` |
+| `/hotkeys` | CONTROLS console (M7, ratatui): drawn keyboard with the ctrl-layer keys lit at 100+ columns, key list below; both from the real keybindings | `code-tui-widgets/src/controls.rs`; shown by `handle_hotkeys_command` in `hoocode-code-tui-app/src/mode/commands.rs` |
 | `/changelog` | changelog | `hoocode-code-tui-app/src/changelog.rs` |
 | Questions from code off the UI thread | select / editor dialogs | `hoocode-code-tui-app/src/dialog_bridge.rs`, `extension_selector.rs`, `extension_editor.rs` |
 
@@ -210,7 +210,7 @@ One tab per kind of task: **Plan** (TodoWrite items, each linked run nested unde
 |---|---|
 | Tabs, rows, pick, strip, hint line, cancel arming, the tick (`ticking`, while any row in any tab is running) | `code-tui-widgets/src/task_panel.rs` (`TaskPanelComponent`, `RowModel`, `PanelEvent`) |
 | Focus (Ctrl+G), what the app does with events (`Open`, `Cancel`, `Exit`), the pool cancel | `hoocode-code-tui-app/src/mode/task_panel.rs`; events drained in `mode/mod.rs` `run` |
-| Keys (`app.panel.*`) | `hoocode-code-tui-keybindings/src/keybindings.rs`; listed on `/hotkeys` (`hotkeys.rs`) |
+| Keys (`app.panel.*`) | `hoocode-code-tui-keybindings/src/keybindings.rs`; listed on `/hotkeys` (`code-tui-widgets/src/controls.rs`) |
 
 **Keys.** Ctrl+G at the prompt focuses the panel (with no rows it does nothing and says so). Once focused, the panel takes the keyboard (`Tui::set_focus`).
 

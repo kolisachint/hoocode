@@ -16,7 +16,6 @@ pub mod extension_editor;
 pub mod extension_selector;
 pub mod footer;
 pub mod footer_data;
-pub mod hotkeys;
 pub mod hud;
 pub use hoocode_code_tui_widgets::input_frame;
 pub mod login_controller;
