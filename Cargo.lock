@@ -1962,6 +1962,7 @@ dependencies = [
  "hoocode-tui-components",
  "hoocode-tui-images",
  "hoocode-tui-keys",
+ "hoocode-tui-ratatui",
  "hoocode-tui-render",
  "hoocode-tui-util",
  "once_cell",
@@ -2070,6 +2071,7 @@ version = "0.1.26"
 dependencies = [
  "hoocode-code-tui-theme",
  "hoocode-tui-render",
+ "hoocode-tui-util",
  "ratatui-core",
  "ratatui-widgets",
 ]

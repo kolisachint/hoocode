@@ -4,13 +4,61 @@
 //! header, numbered steps on a `┊` rail (an agent's sub-steps keep their
 //! violet `┃` rail), and one `● LANDED` line closing the mission.
 //!
-//! Colours go through the legacy theme tokens; the Mission Control palette
-//! (`hoocode-tui-ratatui`) maps its chrome tokens onto these (`you` and
-//! `vio` onto `agent2`, `gold` onto `warning`), so both stay in step.
+//! Every row is drawn through a ratatui buffer (`hoocode-tui-ratatui`):
+//! fresh chrome goes through the Mission Control palette, block bodies
+//! still arrive as chalk-styled strings and are parsed back into spans, so
+//! the goldens stay identical. Colours keep the legacy theme tokens M4
+//! styled with (via the palette's `from_token`); the palette's newer MC
+//! tokens (`you`, `vio`, `gold`) are a later recolor.
 
-use hoocode_code_tui_theme::theme;
+use hoocode_tui_ratatui::core::buffer::Buffer;
+use hoocode_tui_ratatui::core::layout::Rect;
+use hoocode_tui_ratatui::core::style::Style;
+use hoocode_tui_ratatui::core::text::{Line, Span};
+use hoocode_tui_ratatui::{
+    ansi_spans, bold, paint, spans_width, truncate_spans, Palette, RatatuiComponent,
+};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width, visible_width};
+#[cfg(test)]
+use hoocode_tui_util::visible_width;
+use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width};
+
+/// Draws one row of `spans` through a ratatui buffer `width` wide. Spans
+/// are cut with `…` first when they do not fit; the buffer only clips.
+fn row_line(spans: Vec<Span<'static>>, width: usize) -> String {
+    let width = u16::try_from(width).unwrap_or(u16::MAX).max(1);
+    RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
+        // The closure may draw again after an invalidate: rebuild the row
+        // from the captured spans every time.
+        let spans = truncate_spans(spans.clone(), usize::from(area.width), "…");
+        buf.set_line(area.x, area.y, &Line::from(spans), area.width);
+    })
+    .render(width)
+    .pop()
+    .unwrap_or_default()
+}
+
+/// Draws `left` flush left and `right` flush right through a ratatui
+/// buffer. The gap between them stays blank cells.
+fn two_part_row(left: Vec<Span<'static>>, right: Vec<Span<'static>>, width: usize) -> String {
+    let width = u16::try_from(width).unwrap_or(u16::MAX).max(1);
+    RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
+        let room = usize::from(area.width);
+        let right_width = spans_width(&right).min(room);
+        let x = (room - right_width) as u16;
+        let left = truncate_spans(left.clone(), usize::from(x), "…");
+        buf.set_line(area.x, area.y, &Line::from(left), area.width);
+        buf.set_line(
+            area.x + x,
+            area.y,
+            &Line::from(right.clone()),
+            area.width.saturating_sub(x),
+        );
+    })
+    .render(width)
+    .pop()
+    .unwrap_or_default()
+}
 
 /// How many output lines of a step the rail shows before the fold.
 pub const TRAJECTORY_BODY_LINES: usize = 3;
@@ -24,18 +72,30 @@ pub const AGENT_RAIL: &str = "┃";
 /// The slot thinking takes: it is not a tool call, so it takes no step number.
 pub const THINK_SLOT: &str = "··";
 
-/// A step number, 1-based and gold: `01`.
+/// A step number, 1-based and gold: `01`. The port keeps the legacy
+/// `warning` token M4 styled with (not the palette's newer `gold`), so the
+/// goldens stay byte-identical.
 pub fn step_number(index: usize) -> String {
-    let t = theme();
-    t.fg("warning", &t.bold(&format!("{index:02}")))
+    let palette = Palette::current();
+    paint(bold(palette.warn()), &format!("{index:02}"))
 }
 
-/// The rail prefix a body line sits on: `   ┊  ` (or the agent `┃`).
-fn rail_prefix(agent: bool) -> String {
-    let t = theme();
-    let rail = if agent { AGENT_RAIL } else { RAIL };
-    let token = if agent { "agent2" } else { "muted" };
-    format!("   {}  ", t.fg(token, rail))
+/// The rail prefix a body line sits on: `   ┊  ` (or the agent `┃`), as
+/// spans. The port keeps the legacy `agent2` token M4 styled the agent
+/// rail with (not the palette's newer `vio`), so the goldens stay
+/// byte-identical.
+fn rail_prefix_spans(agent: bool) -> Vec<Span<'static>> {
+    let palette = Palette::current();
+    let (rail, style) = if agent {
+        (AGENT_RAIL, hoocode_tui_ratatui::from_token("agent2"))
+    } else {
+        (RAIL, palette.faint())
+    };
+    vec![
+        Span::styled("   ".to_string(), Style::default()),
+        Span::styled(rail.to_string(), style),
+        Span::styled("  ".to_string(), Style::default()),
+    ]
 }
 
 /// The container padding (two cells) past leading styling: block lines are
@@ -107,17 +167,16 @@ pub fn split_padding(line: &str) -> (String, String) {
 /// line keeps its own styling, only the rail is added. A blank line keeps
 /// the rail bare, so the rail reads unbroken.
 pub fn rail_line(line: &str, width: usize, agent: bool) -> String {
-    let t = theme();
     if strip_vt_control_characters(line).trim().is_empty() {
-        return truncate_to_width(&format!("   {}", t.fg("muted", RAIL)), width, "", false);
+        let spans = rail_prefix_spans(agent);
+        return row_line(truncate_spans(spans, width, ""), width);
     }
+    // The openers the split kept belong to the content that follows: one
+    // parse keeps them on it.
     let (prefix, content) = split_padding(line);
-    truncate_to_width(
-        &format!("{}{}{}", rail_prefix(agent), prefix, content),
-        width,
-        "…",
-        false,
-    )
+    let mut spans = rail_prefix_spans(agent);
+    spans.extend(ansi_spans(&format!("{prefix}{content}")));
+    row_line(truncate_spans(spans, width, "…"), width)
 }
 
 /// Whether a rendered line is a thinking-slot header (`·· …`): the prose
@@ -130,40 +189,35 @@ pub fn is_think_header(line: &str) -> bool {
 
 /// The fold under a step with more output: `   ┊  +N more`.
 pub fn fold_line(hidden: usize, width: usize, agent: bool) -> String {
-    let t = theme();
     let noun = if hidden == 1 { "line" } else { "lines" };
-    truncate_to_width(
-        &format!(
-            "{}{}",
-            rail_prefix(agent),
-            t.fg("muted", &format!("+{hidden} more {noun}"))
-        ),
-        width,
-        "…",
-        false,
-    )
+    let mut spans = rail_prefix_spans(agent);
+    spans.push(Span::styled(
+        format!("+{hidden} more {noun}"),
+        Palette::current().faint(),
+    ));
+    row_line(truncate_spans(spans, width, "…"), width)
 }
 
 /// The chip replacing a failed step's success stats: ` HIT`, in red.
 pub fn hit_chip() -> String {
-    let t = theme();
-    format!(" {}", t.fg("error", &t.bold("HIT")))
+    let palette = Palette::current();
+    format!(" {}", paint(bold(palette.err()), "HIT"))
 }
 
 /// The chip on a step that wrote a new file: ` NEW`, in green.
 pub fn new_chip() -> String {
-    let t = theme();
-    format!(" {}", t.fg("success", &t.bold("NEW")))
+    let palette = Palette::current();
+    format!(" {}", paint(bold(palette.ok()), "NEW"))
 }
 
 /// A background job's row, in place of its stats: `⌁ sat job-1 · in orbit`.
 pub fn satellite_text(job: &str) -> String {
-    let t = theme();
+    let palette = Palette::current();
     format!(
         "{} sat {} {} in orbit",
-        t.fg("accent", "⌁"),
-        t.fg("accent", job),
-        t.fg("dim", "·"),
+        paint(palette.acc(), "⌁"),
+        paint(palette.acc(), job),
+        paint(palette.dim(), "·"),
     )
 }
 
@@ -193,50 +247,57 @@ impl ThinkHeader {
 
 impl Component for ThinkHeader {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
+        let palette = Palette::current();
         let width = width as usize;
         if width == 0 {
             return Vec::new();
         }
-        let slot = t.fg("muted", THINK_SLOT);
+        let slot = Span::styled(THINK_SLOT.to_string(), palette.faint());
         if self.running {
-            let left = format!(
-                "{slot} {} {}",
-                t.fg("warning", "◐"),
-                t.fg("toolTitle", "Think")
-            );
-            let right = self
-                .secs
-                .map(|s| t.fg("thinkingText", &format!("✻ {}", short_dur(s))))
-                .unwrap_or_default();
-            if right.is_empty() {
-                return vec![truncate_to_width(&left, width, "…", false)];
-            }
-            let pad = width.saturating_sub(visible_width(&left) + visible_width(&right) + 2);
-            return vec![truncate_to_width(
-                &format!("{left}  {}{right}", " ".repeat(pad)),
-                width,
-                "…",
-                false,
+            let left = vec![
+                slot,
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled("◐".to_string(), palette.style("warning")),
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled(
+                    "Think".to_string(),
+                    hoocode_tui_ratatui::from_token("toolTitle"),
+                ),
+            ];
+            let Some(secs) = self.secs else {
+                return vec![row_line(truncate_spans(left, width, "…"), width)];
+            };
+            let right = vec![Span::styled(
+                format!("✻ {}", short_dur(secs)),
+                hoocode_tui_ratatui::from_token("thinkingText"),
             )];
+            let gap = width.saturating_sub(spans_width(&left) + spans_width(&right) + 2);
+            let mut spans = left;
+            spans.push(Span::styled(" ".repeat(gap + 2), Style::default()));
+            spans.extend(right);
+            return vec![row_line(truncate_spans(spans, width, "…"), width)];
         }
         let thought = match self.secs {
             Some(s) => format!("✻ thought {}", short_dur(s)),
             None => "✻ thought".to_string(),
         };
-        vec![truncate_to_width(
-            &format!(
-                "{slot} {} {}  {} {} {}",
-                t.fg("success", "●"),
-                t.fg("toolTitle", "Think"),
-                t.fg("thinkingText", &thought),
-                t.fg("dim", "·"),
-                t.fg("text", "ctrl+t"),
+        let spans = vec![
+            slot,
+            Span::styled(" ".to_string(), Style::default()),
+            Span::styled("●".to_string(), palette.ok()),
+            Span::styled(" ".to_string(), Style::default()),
+            Span::styled(
+                "Think".to_string(),
+                hoocode_tui_ratatui::from_token("toolTitle"),
             ),
-            width,
-            "…",
-            false,
-        )]
+            Span::styled("  ".to_string(), Style::default()),
+            Span::styled(thought, hoocode_tui_ratatui::from_token("thinkingText")),
+            Span::styled(" ".to_string(), Style::default()),
+            Span::styled("·".to_string(), palette.dim()),
+            Span::styled(" ".to_string(), Style::default()),
+            Span::styled("ctrl+t".to_string(), palette.ink()),
+        ];
+        vec![row_line(truncate_spans(spans, width, "…"), width)]
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
@@ -268,6 +329,38 @@ pub fn files_text(total: usize) -> String {
     }
 }
 
+/// A header row split into its flush-left and flush-right runs:
+/// ` {number} {prefix}{left}` left, `right` (the stats) right. The label is
+/// cut with `…` first and the stats stay whole; the stats are cut only when
+/// they fit nowhere. The openers in `prefix` belong to `left`, so they
+/// parse as one run.
+pub fn header_parts(
+    number: &str,
+    left_prefix: &str,
+    left: &str,
+    right: &str,
+    width: usize,
+) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
+    let mut stem = vec![Span::styled(" ".to_string(), Style::default())];
+    stem.extend(ansi_spans(number));
+    stem.push(Span::styled(" ".to_string(), Style::default()));
+    stem.extend(ansi_spans(&format!("{left_prefix}{left}")));
+    let right = ansi_spans(right);
+    if right.is_empty() {
+        return (truncate_spans(stem, width, "…"), Vec::new());
+    }
+    let gap = 2;
+    let pad = width.saturating_sub(spans_width(&stem) + spans_width(&right));
+    if pad >= gap {
+        return (stem, right);
+    }
+    let budget = width.saturating_sub(spans_width(&right) + gap);
+    if budget == 0 {
+        return (Vec::new(), truncate_spans(right, width, "…"));
+    }
+    (truncate_spans(stem, budget, "…"), right)
+}
+
 /// A step header row at exactly the row width: ` NN {left}` flush left,
 /// `right` (the stats) flush right. The label is cut with `…` first and the
 /// stats stay whole; the stats are cut only when they fit nowhere.
@@ -281,22 +374,8 @@ pub fn step_header(
     if width == 0 {
         return String::new();
     }
-    let stem = format!(" {number} {left_prefix}{left}");
-    if right.is_empty() {
-        return truncate_to_width(&stem, width, "…", false);
-    }
-    let gap = 2;
-    let pad = width.saturating_sub(visible_width(&stem) + visible_width(right));
-    if pad >= gap {
-        return format!("{stem}{}{right}", " ".repeat(pad));
-    }
-    let budget = width.saturating_sub(visible_width(right) + gap);
-    if budget == 0 {
-        return truncate_to_width(right, width, "…", false);
-    }
-    let cut = truncate_to_width(&stem, budget, "…", false);
-    let pad = width.saturating_sub(visible_width(&cut) + visible_width(right));
-    format!("{cut}{}{right}", " ".repeat(pad))
+    let (left, right) = header_parts(number, left_prefix, left, right, width);
+    two_part_row(left, right, width)
 }
 
 /// `1 step`, `N steps`.
@@ -319,19 +398,19 @@ pub fn hits_text(hits: usize) -> String {
 
 /// The landing line ending every mission: steps, hits, time, tokens, cost.
 pub fn landing_line(steps: usize, hits: usize, secs: &str, tokens: &str, cost: &str) -> String {
-    let t = theme();
-    let sep = t.fg("dim", " · ");
+    let palette = Palette::current();
+    let sep = paint(palette.dim(), " · ");
     [
         format!(
             "{} {}",
-            t.fg("success", "●"),
-            t.fg("success", &t.bold("LANDED"))
+            paint(palette.ok(), "●"),
+            paint(bold(palette.ok()), "LANDED")
         ),
-        t.fg("muted", &steps_text(steps)),
-        t.fg("muted", &hits_text(hits)),
-        t.fg("muted", secs),
-        t.fg("muted", tokens),
-        t.fg("muted", cost),
+        paint(palette.faint(), &steps_text(steps)),
+        paint(palette.faint(), &hits_text(hits)),
+        paint(palette.faint(), secs),
+        paint(palette.faint(), tokens),
+        paint(palette.faint(), cost),
     ]
     .join(&sep)
 }
@@ -388,34 +467,48 @@ impl MissionHeader {
 
 impl Component for MissionHeader {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
+        let palette = Palette::current();
         let width = width as usize;
         if width == 0 {
             return Vec::new();
         }
-        let mark = format!(
-            "{} {}",
-            t.fg("agent2", "▲"),
-            t.fg("agent2", &t.bold(&format!("M{}", self.seq))),
-        );
-        let chip = self
+        // The port keeps the legacy `agent2` token M4 styled the mark
+        // with (not the palette's newer `you`), so the goldens stay
+        // byte-identical.
+        let mark_style = hoocode_tui_ratatui::from_token("agent2");
+        let mut spans = vec![
+            Span::styled("▲".to_string(), mark_style),
+            Span::styled(" ".to_string(), Style::default()),
+            Span::styled(format!("M{}", self.seq), bold(mark_style)),
+            Span::styled("  ".to_string(), Style::default()),
+        ];
+        let chip: Vec<Span<'static>> = self
             .skill
             .as_deref()
-            .map(|name| format!("{} {}", t.fg("accent", "✦"), t.fg("accent", name)))
+            .map(|name| {
+                vec![
+                    Span::styled("✦".to_string(), palette.acc()),
+                    Span::styled(" ".to_string(), Style::default()),
+                    Span::styled(name.to_string(), palette.acc()),
+                ]
+            })
             .unwrap_or_default();
-        let chip_width = visible_width(&chip);
-        let prompt_budget = width
-            .saturating_sub(visible_width(&mark) + 2 + chip_width + usize::from(!chip.is_empty()));
-        let prompt = truncate_to_width(&self.prompt, prompt_budget, "…", false);
-        let mut line = format!("{mark}  {prompt}");
+        let prompt_budget = width.saturating_sub(
+            spans_width(&spans) + spans_width(&chip) + usize::from(!chip.is_empty()),
+        );
+        // The prompt is plain text, so the string cut and the span cut are
+        // the same cells; the resets a cut adds are stripped.
+        let prompt =
+            truncate_to_width(&self.prompt, prompt_budget, "…", false).replace("\x1b[0m", "");
+        spans.push(Span::styled(prompt, Style::default()));
         if !chip.is_empty() {
             let pad = width
-                .saturating_sub(visible_width(&line) + chip_width)
+                .saturating_sub(spans_width(&spans) + spans_width(&chip))
                 .max(1);
-            line.push_str(&" ".repeat(pad));
-            line.push_str(&chip);
+            spans.push(Span::styled(" ".repeat(pad), Style::default()));
+            spans.extend(chip);
         }
-        vec![truncate_to_width(&line, width, "…", false)]
+        vec![row_line(truncate_spans(spans, width, "…"), width)]
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

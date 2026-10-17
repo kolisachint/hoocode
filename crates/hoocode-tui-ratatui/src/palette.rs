@@ -120,6 +120,10 @@ impl Palette {
     }
 
     /// The foreground colour for `name`, following the fallback chain.
+    /// A token the live theme leaves at its default opener (`""` in the
+    /// theme file) carries no colour: chalk emits the default opener for
+    /// it, so resolving the snapshot's default-text substitution instead
+    /// would paint a colour chalk never does.
     fn color_for(&self, name: &str) -> Option<Color> {
         let mut chain = vec![name];
         if let Some(legacy) = fallback_for(name) {
@@ -127,7 +131,13 @@ impl Palette {
                 chain.push(legacy);
             }
         }
+        let theme = hoocode_code_tui_theme::try_theme();
         for token in &chain {
+            if let Some(theme) = &theme {
+                if theme.has(token) && !theme.get_fg_ansi(token).contains("38") {
+                    return None;
+                }
+            }
             if let Some(css) = self.colors.get(*token) {
                 if let Some(color) = css_to_color(css) {
                     return Some(color);
