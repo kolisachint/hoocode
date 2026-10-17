@@ -1,12 +1,13 @@
-┏━ FLIGHT PLAN  1/3 ━━━━━━━━━━━━━━━━━━━━━━━ agents 1 · sats 0 /tasks · ctrl+g ━┓
+┏━ FLIGHT PLAN · ctrl+g  1/3 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
 ┃ Plan 1/3   Agents 1/1   MCP 1/1                                              ┃
 ┃› ✓ ◇ [explore] Trace the auth flow                                           ┃
-┗━ ↑↓ move · enter jump to its steps · x drop · esc back ━━━━━━━━━━━━━━━━━━━  ━┛
+┃                                                                              ┃
+┃◈ agents in flight 1    ⌁ satellites 0                                        ┃
+┗━ ↑↓ move · enter jump to its steps · x drop · esc close ━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
-r0 c3-18 fg=#9b8cff bold
-r0 c20-42 fg=#9b8cff
-r0 c44-76 fg=#a8a8a8
+r0 c3-27 fg=#9b8cff bold
+r0 c29-75 fg=#9b8cff
 r0 c78-79 fg=#9b8cff
 r1 c0 fg=#9b8cff
 r1 c1-6 fg=#989898
@@ -27,14 +28,23 @@ r2 c16 bg=#2a2a36
 r2 c17-35 fg=#a8a8a8 bg=#2a2a36
 r2 c36-78 bg=#2a2a36
 r2 c79 fg=#9b8cff
-r3 c0-1 fg=#9b8cff
-r3 c3-4 fg=#989898
-r3 c5-12 fg=#a8a8a8
-r3 c13-17 fg=#989898
-r3 c18-38 fg=#a8a8a8
-r3 c39 fg=#989898
-r3 c40-47 fg=#a8a8a8
-r3 c48-50 fg=#989898
-r3 c51-55 fg=#a8a8a8
-r3 c57-75 fg=#9b8cff
-r3 c78-79 fg=#9b8cff
+r3 c0 fg=#9b8cff
+r3 c79 fg=#9b8cff
+r4 c0-1 fg=#9b8cff
+r4 c3-18 fg=#989898
+r4 c20 fg=#e5e5e7
+r4 c25 fg=#5cc8bb
+r4 c27-36 fg=#989898
+r4 c38 fg=#e5e5e7
+r4 c79 fg=#9b8cff
+r5 c0-1 fg=#9b8cff
+r5 c3-4 fg=#989898
+r5 c5-12 fg=#a8a8a8
+r5 c13-17 fg=#989898
+r5 c18-38 fg=#a8a8a8
+r5 c39 fg=#989898
+r5 c40-47 fg=#a8a8a8
+r5 c48-50 fg=#989898
+r5 c51-56 fg=#a8a8a8
+r5 c58-75 fg=#9b8cff
+r5 c78-79 fg=#9b8cff

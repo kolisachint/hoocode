@@ -249,7 +249,6 @@ fn ship_price(model: &Model) -> String {
     }
     format!("${:.2} / ${:.2}", model.cost.input, model.cost.output)
 }
-}
 
 /// `1 ship`, `N ships`.
 fn ships(count: usize) -> String {

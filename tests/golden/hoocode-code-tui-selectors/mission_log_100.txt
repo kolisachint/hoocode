@@ -2,8 +2,8 @@
 ┃◉ Current Folder | ○ All  Name: All  Sort: Threaded                                               ┃
 ┃tab scope · re:<pattern> regex · "phrase" exact                                                   ┃
 ┃▸                                                                                                 ┃
-┃›   wrap width                                                                                 5 …┃
-┃    add a width check to wrap_text in src/wrap.rs                                  coral-basin 5 …┃
+┃›   wrap width                                                                             — 5 0 …┃
+┃    add a width check to wrap_text in src/wrap.rs                              coral-basin — 5 0 …┃
 ┗━ ↑↓ move · tab scope · alt+o sort · alt+x delete · enter jump there · esc close ━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
@@ -28,12 +28,22 @@ r4 c0 fg=#9b8cff
 r4 c1-2 fg=#5cc8bb bg=#2a2a36
 r4 c3-4 bg=#2a2a36
 r4 c5-14 fg=#ffff00 bg=#2a2a36 bold
-r4 c15-95 bg=#2a2a36
-r4 c96-98 fg=#989898 bg=#2a2a36
+r4 c15-91 bg=#2a2a36
+r4 c92 fg=#989898 bg=#2a2a36
+r4 c93 bg=#2a2a36
+r4 c94 fg=#989898 bg=#2a2a36
+r4 c95 bg=#2a2a36
+r4 c96 fg=#989898 bg=#2a2a36
+r4 c97 bg=#2a2a36
+r4 c98 fg=#989898 bg=#2a2a36
 r4 c99 fg=#9b8cff
 r5 c0 fg=#9b8cff
 r5 c3 bg=#7aa2f7
-r5 c84-98 fg=#989898
+r5 c80-90 fg=#989898
+r5 c92 fg=#989898
+r5 c94 fg=#989898
+r5 c96 fg=#989898
+r5 c98 fg=#989898
 r5 c99 fg=#9b8cff
 r6 c0-1 fg=#9b8cff
 r6 c3-4 fg=#989898

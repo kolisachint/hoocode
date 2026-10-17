@@ -1,4 +1,4 @@
-┏━ HANGAR · /model  2 ships ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
+┏━ HANGAR · /model  2 ships signed in ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
 ┃Scope: all | scoped                                                           ┃
 ┃tab scope (all/scoped)                                                        ┃
 ┃  ship         provider    context   price in / out per 1M                    ┃
@@ -7,11 +7,12 @@
 ┃  mock-fast     mock        128k      free                                    ┃
 ┃                                                                              ┃
 ┃  Model Name: Mock Large                                                      ┃
+┃  128k context · free per 1M · thinking supported                             ┃
 ┗━ ↑↓ ship · enter fly it · tab scope · esc close ━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
-r0 c3-26 fg=#9b8cff bold
-r0 c28-75 fg=#9b8cff
+r0 c3-36 fg=#9b8cff bold
+r0 c38-75 fg=#9b8cff
 r0 c78-79 fg=#9b8cff
 r1 c0 fg=#9b8cff
 r1 c1-13 fg=#a8a8a8
@@ -48,14 +49,17 @@ r7 c79 fg=#9b8cff
 r8 c0 fg=#9b8cff
 r8 c1-24 fg=#a8a8a8
 r8 c79 fg=#9b8cff
-r9 c0-1 fg=#9b8cff
-r9 c3-4 fg=#989898
-r9 c5-12 fg=#a8a8a8
-r9 c13-17 fg=#989898
-r9 c18-27 fg=#a8a8a8
-r9 c28-30 fg=#989898
-r9 c31-39 fg=#a8a8a8
-r9 c40-42 fg=#989898
-r9 c43-48 fg=#a8a8a8
-r9 c50-75 fg=#9b8cff
-r9 c78-79 fg=#9b8cff
+r9 c0 fg=#9b8cff
+r9 c1-49 fg=#a8a8a8
+r9 c79 fg=#9b8cff
+r10 c0-1 fg=#9b8cff
+r10 c3-4 fg=#989898
+r10 c5-12 fg=#a8a8a8
+r10 c13-17 fg=#989898
+r10 c18-27 fg=#a8a8a8
+r10 c28-30 fg=#989898
+r10 c31-39 fg=#a8a8a8
+r10 c40-42 fg=#989898
+r10 c43-48 fg=#a8a8a8
+r10 c50-75 fg=#9b8cff
+r10 c78-79 fg=#9b8cff

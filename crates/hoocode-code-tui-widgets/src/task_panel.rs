@@ -1030,7 +1030,6 @@ fn render_flight_plan(
     let mut console = Console::new("FLIGHT PLAN · ctrl+g", format!("{done}/{total}"));
     let agents = model.row_ids(TaskPanelView::Subagents).len();
     let sats = model.row_ids(TaskPanelView::Shell).len();
-    let sats = model.row_ids(TaskPanelView::Shell).len();
     if view == TaskPanelView::Plan {
         console.top.push(flight_track(model));
     }
