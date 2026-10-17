@@ -13,7 +13,6 @@ use hoocode_code_tool_api::{format_size, resolve_read_path, DEFAULT_MAX_BYTES, D
 use hoocode_code_tui_theme::{get_language_from_path, highlight_code, message_label, theme, Theme};
 use serde_json::Value;
 
-use super::search::js_number;
 use super::text;
 use crate::read_output::render_read_output;
 use crate::render_utils::{arg_or, invalid_arg_text, replace_tabs, str_arg};
@@ -34,35 +33,9 @@ fn raw_path(args: &Value) -> Option<String> {
     str_arg(arg_or(args, "file_path", "path"))
 }
 
-fn format_line_range(args: &Value) -> String {
-    // `undefined` checks: an explicit `null` counts as given, as in the pin.
-    let (offset, limit) = (args.get("offset"), args.get("limit"));
-    if offset.is_none() && limit.is_none() {
-        return String::new();
-    }
-    let start = match offset {
-        Some(Value::Null) | None => serde_json::json!(1),
-        Some(v) => v.clone(),
-    };
-    let end = limit.map(|l| {
-        let n = start.as_f64().unwrap_or(f64::NAN) + l.as_f64().unwrap_or(0.0) - 1.0;
-        if n == 0.0 || n.is_nan() {
-            String::new()
-        } else {
-            js_number(&serde_json::json!(n))
-        }
-    });
-    let end = end.filter(|e| !e.is_empty());
-    theme().fg(
-        "warning",
-        &format!(
-            ":{}{}",
-            js_number(&start),
-            end.map(|e| format!("-{e}")).unwrap_or_default()
-        ),
-    )
-}
-
+/// The call line names the file only (`Read <path>`): the `:start-end`
+/// range the pin appended here moved to the step header's right side
+/// (`ToolExecutionComponent::peek_right`), next to the other per-tool stats.
 fn format_read_call(args: &Value) -> String {
     let t = theme();
     let path = raw_path(args).map(|p| shorten_path(&p));
@@ -71,11 +44,7 @@ fn format_read_call(args: &Value) -> String {
         Some(p) if !p.is_empty() => t.fg("accent", &p),
         Some(_) => t.fg("toolOutput", "..."),
     };
-    format!(
-        "{} {display}{}",
-        t.fg("toolTitle", &t.bold("Read")),
-        format_line_range(args)
-    )
+    format!("{} {display}", t.fg("toolTitle", &t.bold("Read")))
 }
 
 /// `path.relative` for two absolute, normalized paths.
@@ -145,14 +114,13 @@ fn compact_classification(args: &Value, cwd: &str) -> Option<(CompactKind, Strin
     None
 }
 
-fn format_compact_read_call(kind: &CompactKind, label: &str, args: &Value) -> String {
+fn format_compact_read_call(kind: &CompactKind, label: &str) -> String {
     let t = theme();
     if *kind == CompactKind::Skill {
         return format!(
-            "{} {}{}",
+            "{} {}",
             message_label("skill"),
             t.fg("customMessageText", label),
-            format_line_range(args)
         );
     }
     let kind = match kind {
@@ -160,10 +128,9 @@ fn format_compact_read_call(kind: &CompactKind, label: &str, args: &Value) -> St
         _ => "resource",
     };
     format!(
-        "{} {}{}",
+        "{} {}",
         t.fg("toolTitle", &t.bold(&format!("Read {kind}"))),
         t.fg("accent", label),
-        format_line_range(args)
     )
 }
 
@@ -328,7 +295,7 @@ pub fn definition() -> ToolRenderDefinition {
         render_call: Some(Rc::new(|args, ctx| {
             let compact = compact_classification(args, ctx.cwd);
             Ok(text(match compact {
-                Some((kind, label)) => format_compact_read_call(&kind, &label, args),
+                Some((kind, label)) => format_compact_read_call(&kind, &label),
                 None => format_read_call(args),
             }))
         })),
