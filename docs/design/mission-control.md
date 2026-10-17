@@ -1,6 +1,6 @@
 # TUI: Mission Control (the cockpit) on ratatui
 
-Status: **design agreed 2026-10-17 (user answers recorded below); M0 done.** The rest is not built. Next: Phase U0 (the bugs), then M1 (the full-screen shell).
+Status: **design agreed 2026-10-17 (user answers recorded below); M0 and U0 done (2026-10-17).** The rest is not built. Next: M1 (the full-screen shell), detailed in [M1 in detail](#m1-in-detail).
 
 Sources (read only, kept as the reference):
 
@@ -141,7 +141,7 @@ Right, in order: `◈ N agent` (violet, while agents run), `⌁ N sat` (accent, 
 - A hit gets its own line under the mission: `⊗ 04 Shell  echo boom; exit 3  → boom  HIT`.
 - A mission in flight shows `◐` and its live step.
 - Thinking shows as `✻ thought 3s` under its mission. No gist line (Q4).
-- Stats are never dropped. The label is cut with `…` first.
+- Stats stay whole. The label is dropped when it does not fit beside them. Stats are cut only when they fit nowhere.
 
 ### Clearance card (spec §4 c1, r5)
 
@@ -229,8 +229,7 @@ Spec §6.1 and §6.2 are the reference. Letter keys work with ctrl or alt. Today
 
 ### Full-screen shell (M1)
 
-- The app enters the alternate screen. The frame is a ratatui `Terminal` with `Viewport::Fullscreen`.
-- A custom `Backend` writes through `hoocode-tui-terminal`'s `Terminal::write_frame`, on the output thread `hoocode-term-out`.
+- The app enters the alternate screen. `Tui` draws the frame itself in a full-screen mode. It is not a ratatui `Terminal`. Each frame is one string through `Terminal::write_frame`, on the output thread `hoocode-term-out`. The reasons and the files are in [M1 in detail](#m1-in-detail), section (1). This replaces the earlier `Viewport::Fullscreen` plan.
 - Layout: HUD on row 1 (placeholder content is fine at M1), a blank row, the transcript area (today's component lines drawn into a scrollable region, with app-owned scroll that replaces the pinned scroll view), and the bottom area (today's prompt frame lines).
 - Replaces the custom pinned scroll view and the `\x1b[3J` full redraw.
 - Trade-off: the transcript is not left in the terminal on exit (see Layout).
@@ -254,8 +253,8 @@ Spec §6.1 and §6.2 are the reference. Letter keys work with ctrl or alt. Today
 | Step | Work | Surfaces (spec) | Size |
 |---|---|---|---|
 | M0 Foundation | `hoocode-tui-ratatui` crate. Buffer-to-lines adapter (`RatatuiComponent`). Golden test of the adapter. No visible change. **Done 2026-10-17** (ratatui-core 0.1.2, ratatui-widgets 0.3.2, no second crossterm). The palette moves to M2 | none | S/M |
-| U0 Bug fixes | tui-surfaces Phase U0, steps U0.1 to U0.10, on today's renderer. Haiku subagents. Runs before M1 (Q3) | none (bugs) | S to M |
-| M1 Full-screen shell | Alternate screen. `Viewport::Fullscreen` ratatui `Terminal`. Backend through `Terminal::write_frame` (`hoocode-term-out`). Layout: HUD row 1, transcript area with app-owned scroll, bottom area. REWIND and SCAN are app-owned. Folds in the former MR step | none (frame) | L |
+| U0 Bug fixes | tui-surfaces Phase U0, steps U0.1 to U0.10, on today's renderer. Haiku subagents. Runs before M1 (Q3). **Done 2026-10-17** (commits 8a4c231 to d9954f5; as built in [tui-surfaces.md](tui-surfaces.md)) | none (bugs) | S to M |
+| M1 Full-screen shell | Alternate screen. Full-screen mode in `Tui`, one frame string through `Terminal::write_frame` (`hoocode-term-out`). Layout: HUD row 1, transcript area with app-owned scroll, bottom area. REWIND and SCAN are app-owned. Folds in the former MR step. Detail: [M1 in detail](#m1-in-detail) | none (frame) | L |
 | M2 Comms frame | Heavy frame, state titles, right label, foot (view and tokens), `▸` input row, queued notes inside. Replaces the prompt frame and its border state. Palette from the theme tokens | a1 to a4, c4 | M |
 | M3 HUD | One row replacing the two-row footer. Fields and truncation. Hull paint tint | a1, r10, e5 | M |
 | M4 Trajectory (peek) | Mission header `▲ M1`, numbered steps with gold numbers, `┊` rail, up to 3 output lines, HIT chip, NEW chip, landing line, Think row, agent `┃` sub-steps `1.1`, skill chip, satellite row | b1 to b7, a2, a3 | L |
@@ -275,6 +274,247 @@ Spec §6.1 and §6.2 are the reference. Letter keys work with ctrl or alt. Today
 - Component goldens: `UPDATE_GOLDENS=1` accepts a deliberate change. Screen goldens (`python3 scripts/tui/goldens.py`) are a pre-release check, not per step.
 - Done bar: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run -p <touched crates>`.
 - Errors: the hand-written error enums. No `anyhow` or `thiserror`.
+
+### M1 in detail
+
+Read on 2026-10-17 at commit 9638ed8. File names are the anchor. Line numbers are as read and may drift. M1 is the full-screen shell only. The real HUD fields, the comms frame, the trajectory and the rest come in M2 to M8.
+
+#### Today's render path
+
+The alternate screen and a full-screen painter already exist. They run only while the view is pinned. `set_scroll_offset` enters the alternate screen (`tui.rs:609`), and `scroll_to_live` leaves it (`tui.rs:574`). M1 makes that the normal state for the whole session.
+
+| Piece | Where | What it does today |
+|---|---|---|
+| `Tui` fields | `hoocode-tui-render/src/tui.rs:285` | `root` container, `previous_lines` (last inline frame), `scroll_offset` (`Some` = pinned), `scroll_total_lines`, `scroll_prompt`, `flex_spacer` |
+| `Tui::new` | `tui.rs:360` | Inline. No alternate screen |
+| `start`, `stop` | `tui.rs:854`, `tui.rs:939` | `stop` leaves the alternate screen only if pinned (`:945`). Then it moves the cursor below the content and writes `\r\n` (`:951-958`) |
+| `request_render`, `do_render` | `tui.rs:965`, `tui.rs:1292` | Renders now, or defers inside input. Waits while the terminal still holds the last frame (`frame_pending`) |
+| `paint` | `tui.rs:1323` | Pinned: `render_scroll_view`. Otherwise `paint_live` |
+| `paint_live` | `tui.rs:1342` | Full redraw on a size change (`full_redraw_clear`, `:1434`). Else `paint_differential` (`:1600`) or `full_render` (`:1687`, which clears with `ESC[2J ESC[H ESC[3J`) |
+| `render_scroll_view` | `tui.rs:1761` | The pinned painter. Sync output `?2026` (`:1782`). One `ESC[r;1H ESC[2K` per row. Scrollbar in the last column. Picker bottom-aligned. Status row last |
+| Scroll moves | `tui.rs:527-600` | `scroll_by_lines` (`:527`), `scroll_by_pages` (`:549`, step = view height − 2), `scroll_to_live` (`:567`), `scroll_to_row` (`:584`) |
+| Row split | `tui.rs:497` `pinned_split` | Rows = screen − 1, shared by transcript and picker. Transcript keeps at least 1 row |
+| Transcript width | `tui.rs:421` | One column less while pinned, for the scrollbar |
+| Mouse input | `tui.rs:1040-1131` | `consume_mouse_reports` (`:1040`). Wheel = `WHEEL_LINES` 3 (`:141`). Scrollbar press pages (`:1102`). Link click through `hyperlink_at_screen_cell` (`:1134`) |
+| `Terminal` trait | `hoocode-tui-terminal/src/lib.rs:44-92` | `write_frame` (`:53`), `frame_pending` (`:58`), `mouse_reporting` (`:84`), `set_alternate_screen` (default no-op, `:90`) |
+| `ProcessTerminal` | `lib.rs` | Mouse on in `start` unless `HOOCODE_MOUSE=0` or `TERM=dumb` (`:411-418`). `set_alternate_screen` (`:628`). `restore_screen_modes` leaves the alternate screen and turns mouse off (`:346`) |
+| Output thread | `hoocode-tui-terminal/src/output.rs` | One pending frame. `write_frame` (`:67`). `notify_when_drained` wakes the loop |
+| Crash restore | `hoocode-tui-terminal/src/interrupt.rs:31` | `RESTORE_SEQUENCE` already contains `\x1b[?1049l`. `restore_terminal` at `:148` |
+| Panic hook | `hoocode-code-tui-app/src/mode/mod.rs:495` | Calls `restore_terminal` |
+| App tree | `mode/mod.rs:762-792` | In `add_child` order: header container, `screen_fill` (a `FlexSpacer`, set as the flex child at `:775`), attach slot, chat, pending messages, status, widget-above, tasks, notifications, footer transient lines, editor container, widgets-below, footer slot |
+| Scroll keys | `hoocode-code-tui-app/src/scroll_view.rs:255` (`handle_live`), `:283` (`handle_input`), `:379` (`install_scroll_view`) | Key routing, search, status text |
+| Status row | `scroll_view.rs:100` `format_scroll_status` | Position and keys |
+| Jump to user message | `scroll_view.rs:43-70` | Finds the chat among the root's children (`ui.children()`) |
+| Run loop | `mode/mod.rs:1004`; `tui.start()` at `:1017` | |
+| Suspend and external editor | `mode/commands.rs:333-336`, `mode/input.rs:722-736` | Call `Tui::stop`, then `Tui::start`. M1 must keep both working |
+| Shutdown | `mode/shutdown.rs:69` | `run_ordered`. The terminal restore is the last step |
+
+#### (1) Where full-screen lives
+
+**Recommendation: a full-screen mode inside `Tui` (option A).** Not a ratatui `Terminal` with a custom `Backend` (option B).
+
+| | A: `Tui` full-screen mode | B: ratatui `Terminal` and custom `Backend` |
+|---|---|---|
+| The frame | `H` rows of ANSI strings, from the same `Component::render` calls as today | A `Buffer` of cells |
+| The transcript | Written as it is today | Each line parsed back from SGR into cells, every frame. Or the transcript is ported to ratatui first |
+| What can break | Nothing new | OSC 8 links, Kitty image placements, `CURSOR_MARKER` and wide-character handling all need redoing |
+| Diff | Our own, per row (the pattern of `render_scroll_view`) | ratatui's cell diff. Our backend then turns it into a string |
+| Output | One string through `write_frame` | `Backend::draw` writes a string, then `write_frame`. The same pipe, one layer more |
+| Frame gating, cursor | Existing `Tui` code | Duplicated. ratatui's `Terminal` also tracks the cursor and the viewport |
+| Cost | An estimate: about 300 lines in `tui.rs`, plus one module | A backend (ratatui-core 0.1.2 `backend.rs:160-331`), plus the transcript port or an SGR parser |
+| Later | Ratatui widgets come in as `RatatuiComponent` lines (M0) | Cleaner once every surface is a `Buffer`, after M5 and M8 |
+
+Why A:
+
+- Every transcript component returns ANSI strings (`Component::render`, `component.rs:14`). A cell buffer does not hold them.
+- The output thread takes one frame string. Option A produces exactly that.
+- The pinned painter already does a full-screen job row by row. Option A reuses its method.
+
+Revisit B when the transcript and the cards are ratatui widgets. Nothing in M2 to M8 depends on the choice, because they draw through `RatatuiComponent`.
+
+Files for A:
+
+- `crates/hoocode-tui-render/src/tui.rs`: the full-screen flag, `compose_fullscreen`, the paint branch, `start` and `stop`, resize.
+- `crates/hoocode-tui-render/src/fullscreen.rs` (new): row arithmetic and scroll anchor, as pure functions.
+- `crates/hoocode-tui-render/src/lib.rs`: export.
+- `crates/hoocode-tui-terminal`: no new API. `set_alternate_screen` and `restore_screen_modes` exist.
+- `crates/hoocode-tui-ratatui`: no change. The HUD uses `RatatuiComponent`.
+
+#### (2) Layout and heights
+
+Rows, top to bottom. `H` = screen rows, `W` = columns.
+
+| Region | Rows | Content |
+|---|---|---|
+| HUD | 1 | `hud.rs` (new). Placeholder content |
+| Gap | 1 | A blank row |
+| Attach header | `A`: 0, or 1 in the attached view | `attach_slot` (`mode/mod.rs:776`) |
+| Body | `T` | Header container and chat: the transcript |
+| Bar | 0 or 1 | The scroll status row. Pinned only |
+| Bottom | `B_shown` | Today's bottom children, in tree order: pending messages through footer slot |
+
+Rules:
+
+- `B` is the natural height of the bottom children at width `W`.
+- `fixed = 2 + A`. That is the HUD and the gap.
+- `B_shown = min(B, H − fixed − bar − 1)`. The bottom always keeps one row.
+- `T = H − fixed − bar − B_shown`. The body always keeps one row.
+- If `B_shown < B`, drop rows from the top of the bottom. The task panel and notices go first. If that would cut the cursor row, drop from the bottom instead, so the footer goes first.
+- Short screens. `H` 6 or more: all rows above. `H` 4 or 5: no gap row. `H` 2 or 3: no HUD, no gap, no body. Only the bottom shows, with the cursor row. (Chrome already starts compact below 25 rows: `SMALL_TERMINAL_ROWS` in `chrome_layout.rs`.)
+
+Worked numbers. Bottom natural height `B` = 7, unless noted. `bar` is 1 when pinned.
+
+| Screen | State | Fixed | Bar | `B_shown` | Body `T` | Body width | Check (sums to `H`) |
+|---|---|---|---|---|---|---|---|
+| 100×30 | live | 2 | 0 | 7 | 21 | 100 | 2 + 21 + 7 = 30 |
+| 100×30 | pinned | 2 | 1 | 7 | 20 | 99 | 2 + 20 + 1 + 7 = 30 |
+| 80×24 | live | 2 | 0 | 7 | 15 | 80 | 2 + 15 + 7 = 24 |
+| 80×24 | live, attach view | 3 | 0 | 7 | 14 | 80 | 3 + 14 + 7 = 24 |
+| 80×24 | live, autocomplete open (`B` = 30) | 2 | 0 | 21 | 1 | 80 | 2 + 1 + 21 = 24 |
+| 80×12 | live | 2 | 0 | 7 | 3 | 80 | 2 + 3 + 7 = 12 |
+| 80×6 | live | 2 | 0 | 3 | 1 | 80 | 2 + 1 + 3 = 6 |
+
+A bottom taller than the screen: the bottom is trimmed first, from its top. The body is squeezed to one row. Only when the screen is under 6 rows does the HUD go. The prompt is cut only when even the prompt alone does not fit.
+
+Width: the body is `W` wide live and `W − 1` pinned. Decision: always reserve the last column in full-screen. It is blank while live. That keeps the text width the same when a user pins, so the transcript does not reflow on every wheel notch.
+
+Cursor: its row is `fixed + T + bar` plus its row inside the bottom, minus the rows dropped from the top. Escape rows are 1-based. Show the cursor only when the view is live and the editor has focus. Hide it while pinned, as today (`tui.rs:609`).
+
+Composing one frame, `compose_fullscreen(width, height)`:
+
+1. Lines of the HUD, the gap and the attach slot.
+2. Lines of the body (header container and chat), laid out at the body width. Live: the last `T` lines. Pinned: from `scroll_offset`, clamped to `0 … total − T` (the same clamp as `render_scroll_view`). A short transcript starts at the top, and blank rows follow it. No flex spacer. The body is top-aligned.
+3. The bar: pinned only. `format_scroll_status` (`scroll_view.rs:100`).
+4. The bottom lines, windowed to `B_shown`.
+5. Exactly `H` rows. Each row is cut to `W` (over-width guard: test `over_width_line_on_diff_path_is_truncated_not_panicked`, `tui.rs:2274`).
+
+#### (3) App-owned history
+
+- The body holds the whole transcript. Nothing goes to native scrollback. The alternate screen has no scrollback of its own.
+- Live: the body shows the newest lines and follows output.
+- Pinned: the window holds still while output grows below it.
+
+Today's keys. Keep all of them, with their steps (`keybindings.rs:148-231`, `scroll_view.rs`):
+
+| Key | Today | Where |
+|---|---|---|
+| PgUp, PgDn | Page up or down, pinning at the prompt. Step = view height − 2 | `keybindings.rs:148-155`; `tui.rs:549` |
+| Ctrl+Home, Ctrl+End | Top, and live | `keybindings.rs:158-165` |
+| Ctrl+R | Search: pins at the bottom and opens the query | `keybindings.rs:167` |
+| Ctrl+Up, Ctrl+Down | Previous and next user message | `keybindings.rs:169-177`; `scroll_view.rs:43` |
+| ↑, ↓ | Pinned: one line. At the live prompt: input history | `keybindings.rs:206-213`; `scroll_view.rs:283` |
+| Esc | Leave the pinned view. Clears the search first | `keybindings.rs:216` |
+| `/`, `n`, `p` | Search in the pinned view. Next and previous match | `keybindings.rs:221-231` |
+| Mouse wheel | 3 rows per notch. Wheel up pins. Reaching the bottom returns to live | `tui.rs:141`, `:1068`, `:527` |
+| Scrollbar click | Above the thumb: page up. Below: page down | `tui.rs:1102` |
+| Any other key while pinned | Back to live, then the key does its usual job | `scroll_view.rs`, end of `handle_input` |
+
+Changes for M1:
+
+- Add `shift+↑` and `shift+↓` as aliases of PgUp and PgDn. Nothing binds `shift+up` in the app today. `tui-keys/src/constants.rs:180` only maps the sequence. Spec §6.1 uses the same keys.
+- Keep the step at view height − 2. Spec §6.1 says view height − 12, at least 3. That is open (see Decisions).
+- New-output indicator: store `seen_total`, the body's line count when the user last pinned or scrolled. New lines = `total − seen_total`. The bar shows `↓ N new` while pinned and N > 0. Going live clears it. Keep this state in `Tui`, beside `scroll_offset`.
+- The bar keeps today's text (position and keys) and adds `↓ N new`. The MC rewind bar layout comes in M8.
+- Jump to user message: `scroll_view.rs:43-70` looks for the chat among the root's children. With the body as a container of header and chat, the lookup must go through the body. Fix it in M1d, with a test.
+- Search (`tui.rs:620-760`) works on the body lines, as now.
+- Link clicks: `hyperlink_at_screen_cell` (`tui.rs:1134`) maps screen rows through the last painted lines. In full-screen, keep that map for body rows only.
+
+#### (4) Resize, sync output, cursor, mouse
+
+- Resize: the terminal's callback sends `TuiEvent::Resize`, which schedules a render (`tui.rs:885`). In full-screen, a width or height change clears once (`ESC[2J ESC[H`) and repaints every row. It does not diff against the old size.
+- Pinned on resize: keep the same fraction of the transcript. `top' = round(top × total' ÷ total)`, clamped. Live stays at the tail.
+- Sync output: each frame is wrapped in `?2026h` and `?2026l`, as `render_scroll_view` does (`tui.rs:1782`). Autowrap off (`?7l`) around the frame. Terminals without `?2026` ignore it.
+- Diff: keep `previous_screen`, a `Vec<String>` of `H` rows, separate from `previous_lines`. Write only the rows that changed: `ESC[r;1H`, `ESC[2K`, the line, `ESC[0m`. Typing changes one row, so a keystroke writes little.
+- Cursor: the marker (`CURSOR_MARKER`, `tui.rs:53`) is found by `extract_cursor_position` (`tui.rs:1258`), run on the composed frame.
+- Kitty images in the body: clear the old placements before a repaint, as the pinned path does (`clear_scroll_images`, `tui.rs:1840`; `emit_scroll_image`, `tui.rs:1871`). Test with images on.
+- Mouse: keep reporting on. See Decisions.
+- Trade-off: with reporting on, a plain drag does not select text in most terminals. Users use shift+drag. `/copy` copies the last reply with no selection (`code-resources/src/slash_commands.rs:56`).
+
+#### (5) Exit
+
+- Print nothing. In full-screen, `Tui::stop` skips the cursor move and `\r\n` (`tui.rs:951-958`). It shows the cursor. `ProcessTerminal::stop` then runs `restore_screen_modes`, which writes `?1049l` and turns mouse off (`lib.rs:346`). The normal screen returns as it was before launch.
+- Crash: `RESTORE_SEQUENCE` already leaves the alternate screen (`interrupt.rs:31`). The panic hook (`mode/mod.rs:495`) keeps working. Shutdown restores last (`mode/shutdown.rs:69`).
+- Suspend (Ctrl+Z, `mode/commands.rs:333-336`) and the external editor (`mode/input.rs:722-736`): `stop` leaves the alternate screen. `start` enters it again and repaints every row. This round trip is a test in M1b.
+- Follow-up, not decided: print a summary on exit.
+
+#### (6) Opt-in and default
+
+- A setting `fullscreen` (boolean, default `true`) beside `chromeDensity` in `hoocode-code-settings`. The env var `HOOCODE_FULLSCREEN=0` turns it off for one run. The env var wins over the setting.
+- Read in `InteractiveMode::new` (`mode/mod.rs:538`). Set on the `Tui` before `tui.start()` (`mode/mod.rs:1017`).
+- Off: today's inline path stays. That is `paint_live`, `screen_fill`, and the tree without the HUD. Delete it one release later.
+
+#### (7) Goldens and screen checks
+
+| What | Effect |
+|---|---|
+| Component goldens (`tests/golden/<crate>/`, `render_golden` in `tui-render/src/golden.rs`) | Unaffected. They render components, not `Tui` |
+| `Tui` unit tests (`tui.rs` test module) | Existing tests run with full-screen off, so they do not change. New tests run with it on |
+| Screen goldens (`scripts/tui/scenarios/*.json`, 11 scenarios) | All change, because the HUD and gap rows move everything down. Expected. Accept at pre-release with `goldens.py update <scenario>`. Not per step ([CLAUDE.md](../../CLAUDE.md)) |
+| Two checks that read tmux scrollback: `message-queue.json:202`, `subagent-task.json:56` (`history: true`) | They change. The alternate screen has no scrollback. Make them visible-screen checks, or add PgUp steps first |
+| Last-screen capture (`goldens.py:554`, `capture(history=True)`) | After exit it shows the pre-launch screen. Do not read it as the transcript |
+| Sizes | 10 scenarios at 100 columns, one at 140. Heights from 12 to 40. The 12-row scenario tests the short-screen rules |
+
+Check before updating screen goldens: in tmux, `capture-pane -p` should return the alternate screen while it is active. M1e checks that once by hand. This design step did not run tmux.
+
+#### (8) Sub-steps
+
+Each step is one commit. Each updates its map (`docs/maps/ui.md`, and `docs/maps/packages.md` when a crate changes). Each is testable on its own.
+
+| Step | Work | Files | Size | Done when |
+|---|---|---|---|---|
+| M1a | Pure arithmetic: row split, body window, bottom window, anchor on resize, new-line count. No visible change | `hoocode-tui-render/src/fullscreen.rs` (new), `lib.rs` | S | Unit tests below pass |
+| M1b | `Tui` full-screen mode: compose, paint per row, sync output, cursor, alternate screen on `start` and off on `stop`, resize clear. Off path untouched | `hoocode-tui-render/src/tui.rs` (and `MockTerminal` at `:1939`) | M to L | Frame and lifecycle tests below. Old tests unchanged |
+| M1c | App tree and HUD: HUD placeholder row, gap, attach slot on top, body = header container + chat, no `screen_fill` in full-screen, bar slot. Setting and env var | `hoocode-code-tui-app/src/mode/mod.rs` (tree at `:762-796`, `new` at `:538`, `start` at `:1017`), `hud.rs` (new), `hoocode-code-settings`, `docs/maps/ui.md`, `docs/maps/packages.md` | M | HUD and tree tests below |
+| M1d | Scroll on the body: live follows, pinned holds, `↓ N new`, `shift+↑`/`shift+↓`, jump to user message through the body, reserved scrollbar column | `hoocode-tui-render/src/tui.rs`, `hoocode-code-tui-app/src/scroll_view.rs`, `hoocode-code-tui-keybindings/src/keybindings.rs`, `ui.md` (scroll section) | M | Scroll tests below |
+| M1e | Lifecycle and checks: crash restore test, suspend round trip, the two scrollback checks changed, a manual tmux capture, `/perf` on a long session | `hoocode-tui-terminal` tests, `scripts/tui/scenarios/message-queue.json`, `subagent-task.json`, `docs/maps/ui.md` | S | Manual capture works. Frame timing noted |
+
+Tests, by step:
+
+- M1a (unit, in `fullscreen.rs`):
+  - `layout_100x30_live`: body 21, bottom 7.
+  - `layout_100x30_pinned`: body 20, bar 1.
+  - `layout_80x24_attached`: body 14.
+  - `layout_bottom_taller_than_screen`: at 24 rows with `B` = 30, bottom 21 and body 1.
+  - `layout_short_heights`: `H` 6 gives body 1 and bottom 3. `H` 4 and 5 drop the gap. `H` 2 and 3 show the bottom only.
+  - `body_window_is_tail_when_live`: total 50, `T` 20 gives offset 30.
+  - `body_window_holds_when_pinned`: top 10 stays 10 when total grows to 60.
+  - `anchor_keeps_fraction_on_resize`: top 10 of 100 becomes 20 of 200.
+  - `new_lines_since_seen`: seen 50, total 58 gives 8.
+- M1b (in `tui.rs` tests, with `MockTerminal` recording `set_alternate_screen`):
+  - `fullscreen_start_enters_alternate_screen_stop_leaves_it`.
+  - `fullscreen_stop_writes_no_newline_below_content`.
+  - `fullscreen_frame_100x30` and `fullscreen_frame_80x24`: composed frame text against a golden (`UPDATE_GOLDENS=1`). Use a stub HUD line, a 40-line body and a bottom with `CURSOR_MARKER`. Check row 0 is the HUD, row 1 is blank, the body tail follows, the bottom is last, and the cursor position is right.
+  - `fullscreen_repaints_only_changed_rows`: one bottom row changes, so the write holds one row move.
+  - `fullscreen_resize_clears_then_repaints_all_rows`.
+  - `fullscreen_restart_repaints_everything` (the suspend and editor round trip).
+  - `fullscreen_never_writes_more_rows_than_screen`.
+  - The `MockTerminal` is private to `tui.rs`. These are in-crate unit tests, not `tests/it` files. The rule for `tests/it` applies only to integration tests.
+- M1c (`crates/hoocode-code-tui-app/tests/it/hud.rs`, registered in `tests/it/main.rs`):
+  - `hud_100_cols_shows_mode_folder_ship`.
+  - `hud_80_cols_drops_folder_first`.
+  - `tree_order_hud_gap_body_bottom` (a test accessor on the root's order).
+  - `off_switch_keeps_inline_tree`.
+- M1d (scroll tests, with the existing scroll test style):
+  - `pinned_view_holds_while_output_grows`.
+  - `live_view_follows_output`.
+  - `new_count_resets_on_scroll`.
+  - `page_down_past_end_returns_live`.
+  - `shift_arrows_page_like_pageup_pagedown`.
+  - `jump_to_user_message_finds_chat_inside_body`.
+  - `wheel_up_pins_and_wheel_to_bottom_returns_live`.
+- M1e:
+  - `restore_sequence_leaves_alternate_screen` (in `hoocode-tui-terminal`).
+  - By hand: a tmux `capture-pane -p` of the alternate screen. `/perf` frame timing on a 2,000-line session. Flattening the whole transcript each frame is today's cost too, so a cache is a follow-up if `/perf` shows it.
+
+Decisions I made. Say if you want any changed:
+
+1. Full-screen is on by default. The env var turns it off for one release.
+2. Mouse reporting stays on. The wheel is the only mouse scroll. Selection is shift+drag. Keys only would drop the wheel that users have today. With mouse off, many terminals in alternate-scroll mode turn the wheel into ↑ and ↓. At the prompt, ↑ recalls input history.
+3. Keep today's scroll step (view height − 2). The spec §6.1 step (view height − 12) is open.
+4. Always reserve the scrollbar column in full-screen, so pinning does not reflow.
+5. Option A for the architecture. This replaces the earlier `Viewport::Fullscreen` plan in the "Full-screen shell (M1)" bullet above.
+
+Not in M1: the comms frame and queued notes (M2), the palette (M2), the real HUD fields and narrow rules (M3), the trajectory (M4), toasts, the rewind bar and the scan bar (M8), a summary on exit, and any animation.
 
 ## Not doing
 
