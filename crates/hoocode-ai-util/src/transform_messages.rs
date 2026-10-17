@@ -161,6 +161,7 @@ pub fn transform_messages(
         for tc in pending.iter() {
             if !existing.contains(&tc.id) {
                 result.push(Message::ToolResult(ToolResultMessage {
+                    duration_ms: None,
                     tool_call_id: tc.id.clone(),
                     tool_name: tc.name.clone(),
                     content: vec![Content::Text(TextContent::new("No result provided"))],
@@ -309,6 +310,7 @@ mod tests {
                 StopReason::ToolUse,
             ),
             Message::ToolResult(ToolResultMessage {
+                duration_ms: None,
                 tool_call_id: "a|b".into(),
                 tool_name: "Read".into(),
                 content: vec![],

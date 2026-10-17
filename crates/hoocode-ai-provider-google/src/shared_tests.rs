@@ -144,6 +144,7 @@ fn test_convert_messages_tool_result_merges_into_single_user_turn() {
     let m = model("gemini-2.0-flash", &["text"]);
     let messages = vec![
         Message::ToolResult(ToolResultMessage {
+            duration_ms: None,
             details: None,
             content: vec![Content::Text(TextContent {
                 text_signature: None,
@@ -155,6 +156,7 @@ fn test_convert_messages_tool_result_merges_into_single_user_turn() {
             timestamp: 0,
         }),
         Message::ToolResult(ToolResultMessage {
+            duration_ms: None,
             details: None,
             content: vec![Content::Text(TextContent {
                 text_signature: None,
@@ -176,6 +178,7 @@ fn test_convert_messages_tool_result_merges_into_single_user_turn() {
 fn test_convert_messages_tool_result_error() {
     let m = model("gemini-2.0-flash", &["text"]);
     let messages = vec![Message::ToolResult(ToolResultMessage {
+        duration_ms: None,
         details: None,
         content: vec![Content::Text(TextContent {
             text_signature: None,
@@ -198,6 +201,7 @@ fn test_convert_messages_tool_result_error() {
 fn test_convert_messages_tool_result_with_image_gemini3_inline() {
     let m = model("gemini-3-pro", &["text", "image"]);
     let messages = vec![Message::ToolResult(ToolResultMessage {
+        duration_ms: None,
         details: None,
         content: vec![Content::Image(ImageContent {
             data: "abc".into(),
@@ -222,6 +226,7 @@ fn test_convert_messages_tool_result_with_image_gemini3_inline() {
 fn test_convert_messages_tool_result_with_image_gemini2_separate_turn() {
     let m = model("gemini-2.0-flash", &["text", "image"]);
     let messages = vec![Message::ToolResult(ToolResultMessage {
+        duration_ms: None,
         details: None,
         content: vec![Content::Image(ImageContent {
             data: "abc".into(),
@@ -520,6 +525,7 @@ fn image_routing_context(model_id: &str) -> Context {
     };
     let result = |id: &str, content: Content| {
         Message::ToolResult(ToolResultMessage {
+            duration_ms: None,
             tool_call_id: id.into(),
             tool_name: "Read".into(),
             content: vec![content],

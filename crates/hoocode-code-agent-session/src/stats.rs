@@ -77,14 +77,19 @@ pub fn sum_assistant_usage<'a>(
             ..
         } = entry
         {
-            totals.input += message.usage.input;
-            totals.output += message.usage.output;
-            totals.cache_read += message.usage.cache_read;
-            totals.cache_write += message.usage.cache_write;
-            totals.cost += message.usage.cost.total;
+            add_assistant_usage(&mut totals, &message.usage);
         }
     }
     totals
+}
+
+/// Adds one assistant message's usage to running totals.
+pub fn add_assistant_usage(totals: &mut AssistantUsageTotals, usage: &hoocode_ai_types::Usage) {
+    totals.input += usage.input;
+    totals.output += usage.output;
+    totals.cache_read += usage.cache_read;
+    totals.cache_write += usage.cache_write;
+    totals.cost += usage.cost.total;
 }
 
 /// `extractUserMessageText`: the text blocks, concatenated.

@@ -54,6 +54,7 @@ fn tool_call_assistant(
 
 fn tool_result(id: &str, content: Vec<Content>) -> Message {
     Message::ToolResult(ToolResultMessage {
+        duration_ms: None,
         tool_call_id: id.into(),
         tool_name: "Edit".into(),
         content,

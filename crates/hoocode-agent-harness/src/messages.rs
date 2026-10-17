@@ -380,6 +380,7 @@ pub fn append_tool_result(
 ) {
     messages.push(AgentMessage::from_message(Message::ToolResult(
         hoocode_ai_types::ToolResultMessage {
+            duration_ms: None,
             details: None,
             content: vec![Content::text(content)],
             tool_call_id: tool_call_id.into(),

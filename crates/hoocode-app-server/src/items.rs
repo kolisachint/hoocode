@@ -412,6 +412,7 @@ mod tests {
                 ..Default::default()
             }),
             AgentMessage::ToolResult(ToolResultMessage {
+                duration_ms: None,
                 tool_call_id: "t1".into(),
                 tool_name: "Shell".into(),
                 content: vec![Content::text("out")],

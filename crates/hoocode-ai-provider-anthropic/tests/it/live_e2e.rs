@@ -320,6 +320,7 @@ async fn assert_second_tool_call_with_interleaved_thinking(llm: Model, api_key: 
     context
         .messages
         .push(Message::ToolResult(ToolResultMessage {
+            duration_ms: None,
             tool_call_id: call.id,
             tool_name: call.name,
             content: vec![Content::text(format!(

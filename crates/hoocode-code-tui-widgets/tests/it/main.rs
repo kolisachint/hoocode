@@ -5,6 +5,7 @@ mod assistant_message;
 mod attach_view;
 mod background_notice;
 mod bash_execution_width;
+mod bash_rebuild_took;
 mod custom_message_radar;
 mod diff_gold;
 mod edit_agent_output_peek;

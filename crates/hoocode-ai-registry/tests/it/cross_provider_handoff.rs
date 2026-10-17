@@ -203,6 +203,7 @@ fn generate_context(model: &Model, api_key: &str) -> Option<Vec<Message>> {
         return Some(vec![prompt, Message::Assistant(first)]);
     };
     let result = Message::ToolResult(ToolResultMessage {
+        duration_ms: None,
         tool_call_id: call.id.clone(),
         tool_name: call.name.clone(),
         content: vec![Content::Text(TextContent::new("42"))],

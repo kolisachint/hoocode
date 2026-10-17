@@ -34,6 +34,7 @@ fn todo_call(id: &str, todos: Value, stop: StopReason) -> AgentMessage {
 
 fn result(id: &str, is_error: bool) -> AgentMessage {
     AgentMessage::ToolResult(ToolResultMessage {
+        duration_ms: None,
         tool_call_id: id.into(),
         tool_name: "TodoWrite".into(),
         content: vec![Content::text("done")],

@@ -53,6 +53,7 @@ fn result_text(message: &ToolResultMessage) -> String {
 
 fn stub(message: &ToolResultMessage, text: String) -> AgentMessage {
     AgentMessage::ToolResult(ToolResultMessage {
+        duration_ms: None,
         content: vec![Content::Text(TextContent {
             text_signature: None,
             text,

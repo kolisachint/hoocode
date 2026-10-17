@@ -211,6 +211,7 @@ fn still_emits_empty_tools_when_conversation_has_tool_history() {
             ..Default::default()
         }),
         Message::ToolResult(ToolResultMessage {
+            duration_ms: None,
             tool_call_id: "t1".into(),
             tool_name: "noop".into(),
             content: vec![Content::Text(TextContent::new("done"))],
@@ -567,6 +568,7 @@ fn serializes_same_model_thinking_only_as_text_parts() {
 
 fn image_tool_result(id: &str) -> Message {
     Message::ToolResult(ToolResultMessage {
+        duration_ms: None,
         tool_call_id: id.into(),
         tool_name: "Read".into(),
         content: vec![
@@ -888,6 +890,7 @@ fn assistant_replay_uses_signature_field_and_bridges_tool_results() {
                 ..Default::default()
             }),
             Message::ToolResult(ToolResultMessage {
+                duration_ms: None,
                 tool_call_id: "c1".into(),
                 tool_name: "Read".into(),
                 content: vec![Content::Text(TextContent::new("data"))],
@@ -941,6 +944,7 @@ fn pipe_separated_tool_call_ids_are_normalized_for_other_models() {
                 ..Default::default()
             }),
             Message::ToolResult(ToolResultMessage {
+                duration_ms: None,
                 tool_call_id: long_id,
                 tool_name: "Read".into(),
                 content: vec![Content::Text(TextContent::new("ok"))],

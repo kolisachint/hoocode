@@ -9,7 +9,9 @@ use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{AssistantMessage, Content, StopReason};
 use hoocode_ai_util::is_long_retry_delay_error;
 use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
-use hoocode_code_agent_session::stats::sum_assistant_usage;
+use hoocode_code_agent_session::stats::{
+    add_assistant_usage, sum_assistant_usage, AssistantUsageTotals,
+};
 use hoocode_code_resources::skill_blocks::parse_skill_block;
 use hoocode_code_settings::ToolOutputView;
 use hoocode_code_tool_api::{truncate_tail, TruncationOptions, TruncationResult};
@@ -110,6 +112,34 @@ impl Transcript {
     }
 }
 
+/// One turn of a rebuilt session: what its assistant messages spent, and when
+/// it started and last settled. The live path reads the same figures from its
+/// request anchor and clock.
+#[derive(Default)]
+struct RebuiltTurn {
+    started_ms: i64,
+    ended_ms: i64,
+    usage: AssistantUsageTotals,
+    stop: Option<StopReason>,
+}
+
+/// The details a rebuilt result shows its renderer: the tool's own, with the
+/// duration the loop recorded on the message (`durationMs`) added, since a
+/// rebuild has no clock of its own.
+fn rebuilt_details(result: &hoocode_ai_types::ToolResultMessage) -> serde_json::Value {
+    let details = result.details.clone().unwrap_or(serde_json::Value::Null);
+    let Some(ms) = result.duration_ms else {
+        return details;
+    };
+    let mut map = match details {
+        serde_json::Value::Object(map) => map,
+        serde_json::Value::Null => serde_json::Map::new(),
+        other => return other,
+    };
+    map.insert("durationMs".into(), ms.into());
+    serde_json::Value::Object(map)
+}
+
 /// A `{ truncated: true }` result for a `!` row: the row only reads the flag.
 pub(super) fn truncated_marker(content: &str) -> TruncationResult {
     TruncationResult {
@@ -207,13 +237,8 @@ impl Mode {
                 }
                 match parse_skill_block(&text) {
                     Some(skill) => {
-                        let component =
-                            handle(SkillBlockComponent::new(&skill.name, &skill.content));
-                        component
-                            .borrow_mut()
-                            .set_expanded(self.tool_output_view == ToolOutputView::Peek);
-                        self.transcript.skill_blocks.push(component.clone());
-                        self.add_to_chat(as_component(&component));
+                        // The message the user typed comes first; the skill it
+                        // invoked is drawn under it.
                         if let Some(message) = skill.user_message {
                             let component = UserMessageComponent::with_theme(
                                 &message,
@@ -221,6 +246,13 @@ impl Mode {
                             );
                             self.add_to_chat(as_component(&handle(component)));
                         }
+                        let component =
+                            handle(SkillBlockComponent::new(&skill.name, &skill.content));
+                        component
+                            .borrow_mut()
+                            .set_expanded(self.tool_output_view == ToolOutputView::Peek);
+                        self.transcript.skill_blocks.push(component.clone());
+                        self.add_to_chat(as_component(&component));
                     }
                     None => match parse_background_notice(&text) {
                         Some(notice) => {
@@ -318,9 +350,28 @@ impl Mode {
         self.transcript.pending_tools.clear();
         let mut rendered_pending: Vec<(String, Rc<RefCell<ToolExecutionComponent>>)> = Vec::new();
         let mut last_stop_reason = None;
+        let mut turn: Option<RebuiltTurn> = None;
         for (i, message) in messages.iter().enumerate() {
             match message {
+                AgentMessage::User(user) => {
+                    // A new turn: the one before it has ended, and its
+                    // per-turn token row goes where the live path drew it.
+                    if let Some(ended) = turn.take() {
+                        self.show_rebuilt_turn_cost(ended);
+                    }
+                    turn = Some(RebuiltTurn {
+                        started_ms: user.timestamp,
+                        ended_ms: user.timestamp,
+                        ..RebuiltTurn::default()
+                    });
+                    self.add_message_to_chat(message, populate_history);
+                }
                 AgentMessage::Assistant(assistant) => {
+                    if let Some(turn) = turn.as_mut() {
+                        add_assistant_usage(&mut turn.usage, &assistant.usage);
+                        turn.ended_ms = assistant.timestamp;
+                        turn.stop = Some(assistant.stop_reason);
+                    }
                     // The live path's chain boundary, so a rebuilt history shows
                     // the chains it lived through.
                     if self.opens_new_chain(assistant) {
@@ -396,6 +447,9 @@ impl Mode {
                     }
                 }
                 AgentMessage::ToolResult(result) => {
+                    if let Some(turn) = turn.as_mut() {
+                        turn.ended_ms = result.timestamp;
+                    }
                     if let Some(i) = rendered_pending
                         .iter()
                         .position(|(id, _)| *id == result.tool_call_id)
@@ -404,7 +458,7 @@ impl Mode {
                         block.borrow_mut().update_result(
                             ToolResult {
                                 content: result.content.clone(),
-                                details: result.details.clone().unwrap_or(serde_json::Value::Null),
+                                details: rebuilt_details(result),
                                 is_error: result.is_error,
                             },
                             false,
@@ -415,8 +469,12 @@ impl Mode {
             }
         }
         // History has no live state: a chain still open is finished, unless
-        // calls still wait for results (a resumed run in flight).
+        // calls still wait for results (a resumed run in flight). A turn that
+        // has settled gets its token row; one still in flight waits for it.
         if rendered_pending.is_empty() {
+            if let Some(ended) = turn.take() {
+                self.show_rebuilt_turn_cost(ended);
+            }
             self.close_open_chain(if last_stop_reason == Some(StopReason::Stop) {
                 ChainState::Done
             } else {
@@ -658,17 +716,24 @@ impl Mode {
             self.transcript.streaming = Some(component);
             self.transcript.streaming_message = Some(message);
         }
-        // Radar overrides the setting: say so rather than claim a change the
-        // screen does not show.
-        let status = if !self.hide_thinking_block && self.tool_output_view == ToolOutputView::Radar
-        {
-            "Thinking blocks: visible (radar hides them)"
+        // Radar hides thinking whatever the setting, so the toggle has no
+        // visible effect there: the notice says what was saved and why the
+        // screen did not change.
+        let status = if self.tool_output_view == ToolOutputView::Radar {
+            format!(
+                "Thinking blocks: {}. Radar hides them; ctrl+o shows peek.",
+                if self.hide_thinking_block {
+                    "hidden"
+                } else {
+                    "visible"
+                }
+            )
         } else if self.hide_thinking_block {
-            "Thinking blocks: hidden"
+            "Thinking blocks: hidden".to_string()
         } else {
-            "Thinking blocks: visible"
+            "Thinking blocks: visible".to_string()
         };
-        self.show_status(status);
+        self.show_status(&status);
     }
 
     /// `resetTranscriptView`: drop every view reference into the transcript.
@@ -817,9 +882,34 @@ impl Mode {
             return;
         };
         let now = sum_assistant_usage(self.session.session_manager().entries());
-        let input = now.input as i64 - anchor.input as i64;
-        let output = now.output as i64 - anchor.output as i64;
-        let cost = now.cost - anchor.cost;
+        self.show_turn_cost_row(
+            now.input as i64 - anchor.input as i64,
+            now.output as i64 - anchor.output as i64,
+            now.cost - anchor.cost,
+            at.elapsed().as_secs_f64(),
+        );
+    }
+
+    /// The per-turn row of a settled turn in a rebuilt transcript: the same
+    /// row `show_turn_cost` draws after a live turn.
+    fn show_rebuilt_turn_cost(&mut self, turn: RebuiltTurn) {
+        let outcome = if turn.stop == Some(StopReason::Stop) {
+            ChainState::Done
+        } else {
+            ChainState::Interrupted
+        };
+        self.close_open_chain(outcome);
+        let secs = (turn.ended_ms - turn.started_ms).max(0) as f64 / 1000.0;
+        self.show_turn_cost_row(
+            turn.usage.input as i64,
+            turn.usage.output as i64,
+            turn.usage.cost,
+            secs,
+        );
+    }
+
+    /// The row itself: tokens in and out, the turn's time, and its cost.
+    fn show_turn_cost_row(&mut self, input: i64, output: i64, cost: f64, secs: f64) {
         // Nothing was accounted: stay silent rather than print zeroes.
         if input <= 0 && output <= 0 {
             return;
@@ -833,7 +923,7 @@ impl Mode {
                 t.fg("dim", " ↓"),
                 t.fg("muted", &format_tokens(output.max(0) as u64)),
             ),
-            t.fg("muted", &format_duration_secs(at.elapsed().as_secs_f64())),
+            t.fg("muted", &format_duration_secs(secs)),
         ];
         if cost > 0.0 {
             segs.push(t.fg(
@@ -851,5 +941,48 @@ impl Mode {
             1,
             0,
         ))));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hoocode_ai_types::{Content, ToolResultMessage};
+    use serde_json::{json, Value};
+
+    fn result(details: Option<Value>, duration_ms: Option<u64>) -> ToolResultMessage {
+        ToolResultMessage {
+            tool_call_id: "call-1".into(),
+            tool_name: "Shell".into(),
+            content: vec![Content::text("ok")],
+            details,
+            is_error: false,
+            timestamp: 0,
+            duration_ms,
+        }
+    }
+
+    #[test]
+    fn rebuilt_details_carry_the_stored_duration_into_the_tool_details() {
+        let details = rebuilt_details(&result(Some(json!({"truncation": null})), Some(42)));
+        assert_eq!(details, json!({"truncation": null, "durationMs": 42}));
+        assert_eq!(
+            rebuilt_details(&result(None, Some(7))),
+            json!({"durationMs": 7})
+        );
+    }
+
+    #[test]
+    fn rebuilt_details_without_a_duration_are_the_tools_own() {
+        assert_eq!(rebuilt_details(&result(None, None)), Value::Null);
+        assert_eq!(
+            rebuilt_details(&result(Some(json!({"k": 1})), None)),
+            json!({"k": 1})
+        );
+        // Non-object details cannot carry a duration and are kept as they are.
+        assert_eq!(
+            rebuilt_details(&result(Some(json!("text")), Some(7))),
+            json!("text")
+        );
     }
 }

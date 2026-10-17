@@ -360,6 +360,7 @@ async fn estimates_prompt_and_output_tokens_from_serialized_context() {
             }),
             Message::Assistant(faux_assistant_message("prior", Default::default())),
             Message::ToolResult(ToolResultMessage {
+                duration_ms: None,
                 tool_call_id: "tool-1".into(),
                 tool_name: "echo".into(),
                 content: vec![faux_text("tool out")],

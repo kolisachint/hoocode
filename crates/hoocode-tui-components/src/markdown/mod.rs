@@ -230,10 +230,11 @@ mod tests {
     }
 
     #[test]
-    fn h3_heading_keeps_hash_prefix() {
+    fn h3_heading_prints_no_hash_marks() {
         let mut md = Markdown::new("### Sub", 0, 0, theme(), None);
         let lines = md.render(40);
-        assert!(lines[0].starts_with("### "));
+        assert!(lines[0].contains("Sub"));
+        assert!(!lines[0].contains('#'));
     }
 
     #[test]
@@ -245,10 +246,10 @@ mod tests {
     }
 
     #[test]
-    fn renders_code_block_with_fences() {
+    fn code_block_prints_no_fence_rows() {
         let mut md = Markdown::new("```rust\nfn x() {}\n```", 0, 0, theme(), None);
         let lines = md.render(40);
-        assert!(lines.iter().any(|l| l.contains("```rust")));
+        assert!(!lines.iter().any(|l| l.contains("```")));
         assert!(lines.iter().any(|l| l.contains("fn x()")));
     }
 
