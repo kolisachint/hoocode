@@ -30,13 +30,15 @@ fn stats(args: &Value) -> String {
 
 pub fn definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
-        render_call: Some(Rc::new(|args, _ctx| {
+        render_call: Some(Rc::new(|args, ctx| {
             let t = theme();
-            Ok(text(format!(
-                "{}  {}",
-                t.fg("toolTitle", &t.bold("TodoWrite")),
-                t.fg("muted", &stats(args))
-            )))
+            let title = t.fg("toolTitle", &t.bold("TodoWrite"));
+            // A failed call did not change the plan: its counts would describe
+            // a list that never landed, so only the header shows.
+            if ctx.is_error {
+                return Ok(text(title));
+            }
+            Ok(text(format!("{title}  {}", t.fg("muted", &stats(args)))))
         })),
         render_result: Some(Rc::new(|result, _options, ctx| {
             if ctx.is_error {

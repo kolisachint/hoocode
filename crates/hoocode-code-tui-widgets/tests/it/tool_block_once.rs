@@ -69,17 +69,32 @@ fn write_prints_its_content_once_after_the_result() {
 }
 
 #[test]
-fn write_is_a_header_alone_once_its_args_are_complete() {
+fn write_keeps_its_body_while_no_result_replaces_it() {
+    // A call cut short (quit or crash mid-tool, a replayed session) has no
+    // result: its content is the only copy there is.
     let _g = lock();
     let mut b = block(
         "Write",
         json!({"path": "notes.txt", "content": "alpha\nbeta\n"}),
     );
     b.set_args_complete();
-    let lines = rows(&mut b);
-    assert_eq!(lines.len(), 1, "{lines:?}");
-    assert!(lines[0].contains("Write"), "{lines:?}");
-    assert!(!lines[0].contains("alpha"), "{lines:?}");
+    let text = rows(&mut b).join("\n");
+    assert_eq!(text.matches("alpha").count(), 1, "{text}");
+    assert_eq!(text.matches("beta").count(), 1, "{text}");
+}
+
+#[test]
+fn write_with_an_error_result_shows_the_error_not_the_body() {
+    // Live abort or error: the error is the single copy once it exists.
+    let _g = lock();
+    let mut b = block(
+        "Write",
+        json!({"path": "notes.txt", "content": "alpha\nbeta\n"}),
+    );
+    b.update_result(result("Operation aborted", true), false);
+    let text = rows(&mut b).join("\n");
+    assert_eq!(text.matches("Operation aborted").count(), 1, "{text}");
+    assert!(!text.contains("alpha"), "{text}");
 }
 
 #[test]
@@ -121,4 +136,21 @@ fn todo_write_failure_shows_its_reason() {
             .any(|l| l.contains("todo status must be pending")),
         "{lines:?}"
     );
+}
+
+#[test]
+fn todo_write_failure_shows_no_counts_from_its_args() {
+    let _g = lock();
+    let mut b = block(
+        "TodoWrite",
+        json!({"todos": [
+            {"content": "Read the parser", "status": "completed"},
+            {"content": "Add tests", "status": "pending"},
+        ]}),
+    );
+    b.set_args_complete();
+    b.update_result(result("todo status must be pending", true), false);
+    let lines = rows(&mut b);
+    assert!(lines[0].contains("TodoWrite"), "{lines:?}");
+    assert!(!lines.iter().any(|l| l.contains("items")), "{lines:?}");
 }

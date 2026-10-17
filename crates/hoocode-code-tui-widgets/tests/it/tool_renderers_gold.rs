@@ -213,6 +213,7 @@ fn renderers_match_the_pin() {
             expanded,
             show_images: false,
             is_error,
+            has_result: !case["result"].is_null(),
         };
         let call_component = def.render_call.as_ref().map(|f| f(args, &mut ctx).unwrap());
         let result = &case["result"];

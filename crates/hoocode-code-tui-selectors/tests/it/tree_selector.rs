@@ -547,3 +547,22 @@ fn key_hints_drop_whole_items_when_the_width_is_short() {
         "{wide:?}"
     );
 }
+
+/// A narrow row whose first hint is styled is cut at its word: the escapes
+/// take no columns, so the hint row (six columns inside the frame) reads
+/// `↑/↓…` and never a run of SGR bytes.
+#[test]
+fn a_styled_first_hint_cut_to_six_columns_keeps_its_word() {
+    let _g = lock();
+    let tree = branching_pair();
+    let mut s = selector(&tree, "asst-2");
+    let lines = s.render(10);
+    let row = lines
+        .iter()
+        .find(|l| hoocode_tui_util::strip_vt_control_characters(l).contains("↑/↓"))
+        .unwrap_or_else(|| panic!("no hint row in {lines:?}"));
+    let plain = hoocode_tui_util::strip_vt_control_characters(row);
+    assert!(plain.contains("↑/↓…"), "{plain:?}");
+    assert!(!plain.contains("move"), "{plain:?}");
+    assert_eq!(visible_width(row), 10, "{plain:?}");
+}

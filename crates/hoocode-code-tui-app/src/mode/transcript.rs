@@ -431,6 +431,9 @@ impl Mode {
     /// it was compacted.
     pub(super) fn render_initial_messages(&mut self) {
         let messages = self.session.messages();
+        // The plan is the session's own: rebuilt from its last TodoWrite, so a
+        // resumed or reloaded session shows the plan it ended with.
+        hoocode_code_tools_optin::restore_plan(hoocode_code_task_store::task_store(), &messages);
         self.update_editor_border_color();
         self.render_session_context(&messages, true);
         let compactions = self

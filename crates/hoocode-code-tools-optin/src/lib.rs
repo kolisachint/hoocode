@@ -15,6 +15,6 @@ pub use plugins::{
     UNINSTALL_PLUGIN_TOOL_NAME,
 };
 pub use todo::{
-    create_todo_write_tool_definition, settle_dangling_main_tasks, todo_write_parameters_schema,
-    StoreRef, TodoItem, TodoStatus, TODO_WRITE_TOOL_NAME,
+    create_todo_write_tool_definition, restore_plan, settle_dangling_main_tasks,
+    todo_write_parameters_schema, StoreRef, TodoItem, TodoStatus, TODO_WRITE_TOOL_NAME,
 };

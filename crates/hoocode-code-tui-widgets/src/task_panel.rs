@@ -31,7 +31,7 @@ use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_code_tui_theme::{agent_color_for, theme};
 use hoocode_tui_keys::{get_keybindings, is_key_release};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{truncate_to_width, visible_width};
+use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
 
 fn task_status_icon(status: TaskStatus) -> &'static str {
     // Hollow = not started; ● stays the chat's tool status dot.
@@ -351,6 +351,61 @@ fn flat_lens_rows(tasks: &[Task], kind: TaskKind) -> Vec<PanelRow> {
 
 /// `formatLensTabs`: one tab per lens with its done/total, plus key hints
 /// when they fit.
+/// The compact row (C10): the plan on the left, `Plan 3/5  ◐ <running item>`,
+/// and the other tabs' counts on the right. With no plan rows it is the tab
+/// strip alone.
+fn format_summary_line(
+    model: &RowModel,
+    width: usize,
+    view: TaskPanelView,
+    tab_views: &[TaskPanelView],
+) -> String {
+    let t = theme();
+    let plan = model.lens_stats(TaskPanelView::Plan);
+    let head = format!(
+        "{} {}/{}",
+        TaskPanelView::Plan.label(),
+        plan.done,
+        plan.total
+    );
+    if plan.total == 0 {
+        return format_lens_tabs(model, width, view, tab_views, false);
+    }
+    let running = model
+        .lens(TaskPanelView::Plan)
+        .find(|(_, task)| task.status == TaskStatus::InProgress)
+        .map(|(_, task)| task.title.as_str());
+    let (left_plain, left_styled) = match running {
+        Some(title) => {
+            let icon = task_status_icon(TaskStatus::InProgress);
+            let prefix_width = visible_width(&head) + 2 + visible_width(icon) + 1;
+            let budget = (width * 2 / 3).saturating_sub(prefix_width);
+            let title = truncate_at_word(title, budget);
+            if title.is_empty() {
+                (head.clone(), head.clone())
+            } else {
+                (
+                    format!("{head}  {icon} {title}"),
+                    format!("{head}  {} {title}", t.fg("accent", icon)),
+                )
+            }
+        }
+        None => (head.clone(), head.clone()),
+    };
+    let left_width = visible_width(&left_plain);
+    if left_width + 2 > width {
+        return format_lens_tabs(model, width, view, tab_views, false);
+    }
+    let others: Vec<TaskPanelView> = tab_views
+        .iter()
+        .copied()
+        .filter(|v| *v != TaskPanelView::Plan)
+        .collect();
+    let right_width = width - left_width - 2;
+    let right = format_lens_tabs(model, right_width, view, &others, false);
+    format!("{left_styled}  {right}")
+}
+
 fn format_lens_tabs(
     model: &RowModel,
     width: usize,
@@ -1003,7 +1058,7 @@ impl Component for TaskPanelComponent {
         };
 
         if self.density == TaskPanelDensity::Summary && !focused {
-            return vec![gutter.clone() + &format_lens_tabs(model, inner, view, &tab_views, false)];
+            return vec![gutter.clone() + &format_summary_line(model, inner, view, &tab_views)];
         }
 
         let mut lines = Vec::new();

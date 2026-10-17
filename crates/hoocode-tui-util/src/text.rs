@@ -7,7 +7,9 @@
 
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::ansi::{ansi_runs, update_tracker_from_text, AnsiCodeTracker, AnsiRun};
+use crate::ansi::{
+    ansi_runs, extract_ansi_code, update_tracker_from_text, AnsiCodeTracker, AnsiRun,
+};
 use crate::width::{grapheme_width, visible_width};
 
 // ---------------------------------------------------------------------------
@@ -542,9 +544,10 @@ pub fn truncate_to_width(text: &str, max_width: usize, ellipsis: &str, pad: bool
     )
 }
 
-/// Truncate plain `text` to at most `max_width` columns, ending with `…` when
-/// it is cut. The cut falls between words when one fits; only a first word
-/// longer than the width is cut inside.
+/// Truncate `text` to at most `max_width` columns, ending with `…` when it is
+/// cut. The cut falls between words when one fits; only a first word longer
+/// than the width is cut inside. ANSI escapes take no columns and are never
+/// split; a cut inside styled text closes the style with a reset.
 pub fn truncate_at_word(text: &str, max_width: usize) -> String {
     if max_width == 0 {
         return String::new();
@@ -552,30 +555,56 @@ pub fn truncate_at_word(text: &str, max_width: usize) -> String {
     if visible_width(text) <= max_width {
         return text.to_string();
     }
-    // Plain prefix of `text` that fits in one column less than the width.
-    let mut head = String::new();
+    // Walk the visible characters that fit in one column less than the width.
+    let budget = max_width - 1;
     let mut used = 0usize;
-    for ch in text.chars() {
+    // Byte offsets: just past the last visible character that fits, and the
+    // last space that fits (a word break).
+    let mut head_end = 0usize;
+    let mut last_space: Option<usize> = None;
+    let mut next_is_space = false;
+    let mut i = 0usize;
+    while i < text.len() {
+        if let Some((_, len)) = extract_ansi_code(text, i) {
+            i += len;
+            continue;
+        }
+        let Some(ch) = crate::text_slice::suffix_from(text, i).chars().next() else {
+            break;
+        };
         let w = visible_width(ch.encode_utf8(&mut [0; 4]));
-        if used + w > max_width - 1 {
+        if used + w > budget {
+            next_is_space = ch == ' ';
             break;
         }
-        head.push(ch);
         used += w;
+        if ch == ' ' {
+            last_space = Some(i);
+        }
+        i += ch.len_utf8();
+        head_end = i;
     }
-    // The head is whole words when the next character of `text` is a space.
-    let whole_words = text
-        .strip_prefix(head.as_str())
-        .is_some_and(|rest| rest.starts_with(' '));
-    let kept = if whole_words {
-        head.as_str()
+    // The head is whole words when the next visible character is a space.
+    let kept = if next_is_space {
+        crate::text_slice::prefix(text, head_end)
     } else {
-        match head.rsplit_once(' ') {
-            Some((before, _)) if !before.trim().is_empty() => before,
-            _ => head.as_str(),
+        match last_space {
+            Some(space)
+                if !strip_vt_control_characters(crate::text_slice::prefix(text, space))
+                    .trim()
+                    .is_empty() =>
+            {
+                crate::text_slice::prefix(text, space)
+            }
+            _ => crate::text_slice::prefix(text, head_end),
         }
     };
-    format!("{}…", kept.trim_end())
+    let mut out = kept.trim_end().to_string();
+    if out.contains('\x1b') {
+        out.push_str("\x1b[0m");
+    }
+    out.push('…');
+    out
 }
 
 // ---------------------------------------------------------------------------

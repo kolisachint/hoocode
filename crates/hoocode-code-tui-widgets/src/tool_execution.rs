@@ -47,6 +47,9 @@ pub struct ToolRenderContext<'a> {
     pub expanded: bool,
     pub show_images: bool,
     pub is_error: bool,
+    /// A result (final, or a partial one) is in: the result renderer shows
+    /// it, so a call renderer keeps to its header.
+    pub has_result: bool,
 }
 
 /// `ToolRenderResultOptions`.
@@ -547,6 +550,7 @@ impl ToolExecutionComponent {
                 expanded: false,
                 show_images: self.show_images,
                 is_error: self.result.as_ref().is_some_and(|r| r.is_error),
+                has_result: self.result.is_some(),
             },
             last,
         )
@@ -802,6 +806,7 @@ struct ToolRenderContextOwned {
     expanded: bool,
     show_images: bool,
     is_error: bool,
+    has_result: bool,
 }
 
 impl ToolRenderContextOwned {
@@ -827,6 +832,7 @@ impl ToolRenderContextOwned {
             expanded: self.expanded,
             show_images: self.show_images,
             is_error: self.is_error,
+            has_result: self.has_result,
         }
     }
 }

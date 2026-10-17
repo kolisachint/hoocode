@@ -62,7 +62,7 @@ update this page in the same commit.
 | `ShellOutput`, `ShellKill` (opt-in) | none: the default block. Their jobs show in the Shell tab (T5.3) |
 | `Read` (and skills) | `read.rs` |
 | `Edit` | `edit.rs` |
-| `Write` | `write.rs` |
+| `Write` | `write.rs`: the content previews under the header while there is no result; the result (numbered content, or the error) is then the one copy |
 | `TodoWrite` (opt-in) | `todo.rs`: one header row (`TodoWrite  3 items · 1 done`). The plan shows in the task panel |
 | `CodeSearch` | `search.rs` |
 | `Agent`, `AgentOutput` (subagents) | `subagent.rs`. An Agent block's result slot shows its run's live tail (the newest 5 rows, peek) while the run goes, else its result. The tail and the run lookup are `hoocode-code-subagents` `live.rs` (`tail`, `is_running`, `run_for_tool_call`); the block is fed by `mode/subagents.rs` `apply_subagent_event`. `app.subagent.attach` (Ctrl+N, at the prompt) attaches to the newest Agent block's run (`mode/attach.rs` `attach_newest_agent_block`) |
@@ -166,7 +166,7 @@ A key that is not a scroll key un-pins at the prompt, then does its usual job.
 
 ## Task panel
 
-One tab per kind of task: **Plan** (TodoWrite items, each linked run nested under its item), **Agents** (the subagent forest), **Schedule** (scheduled jobs, one row each, with `next in …`), **Shell** (background shell jobs, one row each: running with Abort, then done, failed with its exit status, or killed; the rows are `shell:<id>`, published by `hoocode-code-tool-bash` `jobs.rs`), **MCP** (MCP servers and calls). A tab shows only while it has rows. Unfocused, the panel shows the current tab's rows and one count per tab on the strip (`Plan 1/3  Agents 1/1`). Adding a kind means a `TaskPanelView` variant, its label, and a rule in `lens_rows`.
+One tab per kind of task: **Plan** (TodoWrite items, each linked run nested under its item), **Agents** (the subagent forest), **Schedule** (scheduled jobs, one row each, with `next in …`), **Shell** (background shell jobs, one row each: running with Abort, then done, failed with its exit status, or killed; the rows are `shell:<id>`, published by `hoocode-code-tool-bash` `jobs.rs`), **MCP** (MCP servers and calls). A tab shows only while it has rows. Unfocused, the panel shows the current tab's rows and one count per tab on the strip (`Plan 1/3  Agents 1/1`). In the compact density (`Summary`, one row) it shows the plan line on the left (`Plan 3/5  ◐ <running item>`, cut with `…`) and the other tabs' counts on the right; the plan is rebuilt from the session's last successful TodoWrite on resume, reload and tree navigation (`restore_plan` in `hoocode-code-tools-optin`, called from `render_initial_messages`). Adding a kind means a `TaskPanelView` variant, its label, and a rule in `lens_rows`.
 
 | Concern | Where |
 |---|---|
