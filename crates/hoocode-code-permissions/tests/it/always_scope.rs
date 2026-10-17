@@ -8,8 +8,8 @@ use std::collections::VecDeque;
 use std::sync::{Mutex, MutexGuard};
 
 use hoocode_code_permissions::{
-    always_allows, evaluate, is_always_wrapper, session_allow_program, shell_program,
-    ApprovalChannel, ClearanceChoice, ClearanceInfo, HooPermissionGate, PermissionUi, Verdict,
+    always_allows, evaluate, is_always_wrapper, shell_program, ApprovalChannel, ClearanceChoice,
+    ClearanceInfo, HooPermissionGate, PermissionUi, Verdict,
 };
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -120,13 +120,6 @@ fn fresh_cwd() -> tempfile::TempDir {
     tempfile::tempdir().unwrap()
 }
 
-fn build_config() -> serde_json::Map<String, Value> {
-    json!({"active_mode": "build", "modes": {"build": {}}})
-        .as_object()
-        .unwrap()
-        .clone()
-}
-
 #[test]
 fn program_is_the_first_word() {
     assert_eq!(shell_program("printf x | sort").as_deref(), Some("printf"));
@@ -219,58 +212,6 @@ fn allow_table() {
     // Overlong commands never auto-allow.
     assert!(!printf(&format!("printf {}", "y".repeat(40 * 1024))));
     assert!(printf(&format!("printf {}", "y".repeat(1024))));
-}
-
-#[test]
-fn gate_defers_to_the_session_rule() {
-    let dir = fresh_cwd();
-    session_allow_program(dir.path(), "build", "printf");
-    let config = build_config();
-    let allow = |command: &str| {
-        evaluate(
-            &config,
-            dir.path(),
-            "Shell",
-            &shell(command),
-            ApprovalChannel::Ui,
-        )
-    };
-    assert_eq!(allow("printf y"), Verdict::Allow);
-    assert_eq!(allow("printf y | sort"), Verdict::Prompt);
-    assert_eq!(allow("printf y; rm"), Verdict::Prompt);
-    assert_eq!(allow("rm -rf target"), Verdict::Prompt);
-    // Another cwd shares nothing.
-    let elsewhere = fresh_cwd();
-    assert_eq!(
-        evaluate(
-            &config,
-            elsewhere.path(),
-            "Shell",
-            &shell("printf y"),
-            ApprovalChannel::Ui,
-        ),
-        Verdict::Prompt
-    );
-}
-
-#[test]
-fn plan_mode_always_prompts() {
-    let dir = fresh_cwd();
-    session_allow_program(dir.path(), "plan", "printf");
-    let config = json!({"active_mode": "plan", "modes": {"plan": {}}})
-        .as_object()
-        .unwrap()
-        .clone();
-    assert_eq!(
-        evaluate(
-            &config,
-            dir.path(),
-            "Shell",
-            &shell("printf y"),
-            ApprovalChannel::Ui,
-        ),
-        Verdict::Prompt
-    );
 }
 
 #[test]

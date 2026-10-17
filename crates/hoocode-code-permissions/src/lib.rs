@@ -687,7 +687,7 @@ pub fn evaluate(
     // approval. Never consulted in PLAN mode. Anything else falls
     // through to a prompt.
     if tool_name == "Shell"
-        && !mode.eq_ignore_ascii_case("plan")
+        && !mode.trim().eq_ignore_ascii_case("plan")
         && always_allows(
             input.get("command").and_then(Value::as_str).unwrap_or(""),
             &session_programs(cwd, &mode),
@@ -743,8 +743,9 @@ fn session_store() -> std::sync::MutexGuard<'static, SessionApprovals> {
 }
 
 /// Remembers `program` for the session: later commands it covers run
-/// without asking (same cwd and mode only).
-pub fn session_allow_program(cwd: &Path, mode: &str, program: &str) {
+/// without asking (same cwd and mode only). Crate-visible only for the
+/// gate's own tests; the UI reaches it through `ClearanceChoice::Always`.
+pub(crate) fn session_allow_program(cwd: &Path, mode: &str, program: &str) {
     session_store()
         .entry((cwd.to_path_buf(), mode.to_string()))
         .or_default()
@@ -809,12 +810,12 @@ impl HooPermissionGate {
                         // "Always" goes to the global config only.
                         let mut latest = config::read_config();
                         let mode = config::active_mode(&merged).unwrap_or_else(|| "build".into());
-                        if tool_name == "Shell" && !mode.eq_ignore_ascii_case("plan") {
+                        if tool_name == "Shell" && !mode.trim().eq_ignore_ascii_case("plan") {
                             let command =
                                 input.get("command").and_then(Value::as_str).unwrap_or("");
-                            match shell_program(command)
-                                .filter(|p| !p.contains('/') && !is_always_wrapper(p))
-                            {
+                            match shell_program(command).filter(|p| {
+                                !p.contains('/') && !is_always_wrapper(p) && !is_assignment(p)
+                            }) {
                                 Some(program) => {
                                     session_allow_program(&self.cwd, &mode, &program);
                                     ui.notify(&format!(
@@ -853,5 +854,78 @@ impl PermissionGate for HooPermissionGate {
             None => PermissionDecision::Grant,
             Some(reason) => PermissionDecision::Deny { reason },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn shell(command: &str) -> Value {
+        json!({"command": command})
+    }
+
+    fn fresh_cwd() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
+    }
+
+    fn build_config() -> HooConfig {
+        json!({"active_mode": "build", "modes": {"build": {}}})
+            .as_object()
+            .unwrap()
+            .clone()
+    }
+
+    #[test]
+    fn gate_defers_to_the_session_rule() {
+        let dir = fresh_cwd();
+        session_allow_program(dir.path(), "build", "printf");
+        let config = build_config();
+        let allow = |command: &str| {
+            evaluate(
+                &config,
+                dir.path(),
+                "Shell",
+                &shell(command),
+                ApprovalChannel::Ui,
+            )
+        };
+        assert_eq!(allow("printf y"), Verdict::Allow);
+        assert_eq!(allow("printf y | sort"), Verdict::Prompt);
+        assert_eq!(allow("printf y; rm"), Verdict::Prompt);
+        assert_eq!(allow("rm -rf target"), Verdict::Prompt);
+        // Another cwd shares nothing.
+        let elsewhere = fresh_cwd();
+        assert_eq!(
+            evaluate(
+                &config,
+                elsewhere.path(),
+                "Shell",
+                &shell("printf y"),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Prompt
+        );
+    }
+
+    #[test]
+    fn plan_mode_always_prompts() {
+        let dir = fresh_cwd();
+        session_allow_program(dir.path(), "plan", "printf");
+        let config = json!({"active_mode": "plan", "modes": {"plan": {}}})
+            .as_object()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            evaluate(
+                &config,
+                dir.path(),
+                "Shell",
+                &shell("printf y"),
+                ApprovalChannel::Ui,
+            ),
+            Verdict::Prompt
+        );
     }
 }
