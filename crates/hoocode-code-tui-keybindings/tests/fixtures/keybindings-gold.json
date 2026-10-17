@@ -464,6 +464,20 @@
    "Jump to your next message"
   ],
   [
+   "app.scroll.shiftLineUp",
+   [
+    "shift+up"
+   ],
+   "Scroll up a line; from the prompt, pins the view"
+  ],
+  [
+   "app.scroll.shiftLineDown",
+   [
+    "shift+down"
+   ],
+   "Scroll down a line (pinned view)"
+  ],
+  [
    "app.session.resume",
    [
     "alt+h"

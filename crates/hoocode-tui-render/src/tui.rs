@@ -1264,7 +1264,15 @@ impl Tui {
             return;
         }
         let view_height = self.scroll_view_height();
-        let index = row - 1;
+        // The view starts on screen row 1, or below the full-screen top chrome.
+        let first = if self.fullscreen {
+            self.fullscreen_body_window
+                .as_ref()
+                .map_or(0, |window| window.0)
+        } else {
+            0
+        };
+        let index = row - 1 - first;
         if index < 0 || index >= view_height {
             return;
         }
@@ -2302,6 +2310,7 @@ fn render_children(children: &[ComponentHandle], width: u16) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scrollbar::SCROLLBAR_TRACK;
     use std::cell::RefCell as StdRefCell;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -3076,5 +3085,152 @@ mod tests {
             Some((14, 40)),
             "19 is the live top, less 5"
         );
+    }
+
+    #[test]
+    fn fullscreen_live_view_follows_output() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.handles.writes.clear();
+        f.body
+            .borrow_mut()
+            .lines
+            .extend(["n0", "n1", "n2"].map(String::from));
+        f.tui.request_render(false);
+        let writes = f.handles.writes.joined();
+        assert_eq!(
+            written_row(&writes, 22).as_deref(),
+            Some("n2"),
+            "the tail follows"
+        );
+        assert_eq!(
+            written_row(&writes, 2).as_deref(),
+            Some("b22"),
+            "the window moved down by three"
+        );
+    }
+
+    #[test]
+    fn fullscreen_pinned_view_holds_while_output_grows_and_counts_new_lines() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        f.tui
+            .set_scroll_status_formatter(Box::new(|status| format!("NEW{}", status.new_lines)));
+        let _events = f.tui.start();
+        assert!(f.tui.scroll_by_lines(-5));
+        f.handles.writes.clear();
+        f.body
+            .borrow_mut()
+            .lines
+            .extend((0..8).map(|i| format!("n{i}")));
+        // A forced frame writes every row, so the held rows are visible.
+        f.tui.request_render(true);
+        let writes = f.handles.writes.joined();
+        assert_eq!(
+            written_row(&writes, 2)
+                .map(|row| row.trim_end().to_string())
+                .as_deref(),
+            Some("b14"),
+            "the pinned window holds its top row"
+        );
+        assert_eq!(
+            written_row(&writes, 22).as_deref(),
+            Some("NEW8"),
+            "the bar counts the new lines"
+        );
+
+        // Moving the view starts the count again from here: the move itself paints it.
+        f.handles.writes.clear();
+        assert!(f.tui.scroll_by_lines(-1));
+        assert_eq!(
+            written_row(&f.handles.writes.joined(), 22).as_deref(),
+            Some("NEW0")
+        );
+
+        // A shorter transcript (a clear) starts the count over: a frame that sees it resets it.
+        f.body.borrow_mut().lines.truncate(10);
+        f.handles.writes.clear();
+        f.tui.request_render(true);
+        assert_eq!(
+            written_row(&f.handles.writes.joined(), 22).as_deref(),
+            Some("NEW0")
+        );
+        f.body
+            .borrow_mut()
+            .lines
+            .extend((0..3).map(|i| format!("m{i}")));
+        f.handles.writes.clear();
+        f.tui.request_render(false);
+        assert_eq!(
+            written_row(&f.handles.writes.joined(), 22).as_deref(),
+            Some("NEW3")
+        );
+    }
+
+    #[test]
+    fn fullscreen_pinned_scrollbar_draws_a_glyph_per_body_row() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.handles.writes.clear();
+        f.tui.request_render(false);
+        let live = f.handles.writes.joined();
+        assert!(
+            !live.contains(SCROLLBAR_THUMB) && !live.contains(SCROLLBAR_TRACK),
+            "blank while live"
+        );
+        assert!(f.tui.scroll_by_lines(-5));
+        let writes = f.handles.writes.joined();
+        // 40 lines over 20 rows: a thumb of 10 and a track of 10, each after the row's text.
+        let glyphs = writes.matches(SEGMENT_RESET).count();
+        assert!(glyphs >= 20, "one reset per body row: {glyphs}");
+        let thumbs = writes
+            .matches(&format!("{SEGMENT_RESET}{SCROLLBAR_THUMB}"))
+            .count();
+        let tracks = writes
+            .matches(&format!("{SEGMENT_RESET}{SCROLLBAR_TRACK}"))
+            .count();
+        assert_eq!((thumbs, tracks), (10, 10));
+        let row = written_row(&writes, 2).expect("body row 0");
+        assert!(row.starts_with("b14"), "{row}");
+    }
+
+    #[test]
+    fn fullscreen_pinned_picker_takes_the_bottom_rows() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let picker = TestComponent::new();
+        picker.borrow_mut().lines = vec!["PICK A".to_string(), "PICK B".to_string()];
+        picker.borrow_mut().focusable = true;
+        f.tui.add_child(picker.clone());
+        let prompt: ComponentHandle = f.bottom.clone();
+        f.tui.scroll_prompt = Some(prompt);
+        let _events = f.tui.start();
+        f.tui.set_focus(Some(picker.clone()));
+        f.handles.writes.clear();
+        assert!(f.tui.scroll_by_lines(-5));
+        // The picker's rows were on screen already (it is a bottom child too), so a forced frame shows them.
+        f.handles.writes.clear();
+        f.tui.request_render(true);
+        let writes = f.handles.writes.joined();
+        // Pinned with a picker: the body keeps 25 rows, the status row is 27, the picker is last.
+        assert_eq!(written_row(&writes, 28).as_deref(), Some("PICK A"));
+        assert_eq!(written_row(&writes, 29).as_deref(), Some("PICK B"));
+        assert!(
+            !writes.contains("p0"),
+            "the prompt rows are not drawn while the picker is up"
+        );
+    }
+
+    #[test]
+    fn fullscreen_search_highlights_body_rows() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        assert!(f.tui.scroll_by_lines(-5));
+        f.handles.writes.clear();
+        assert_eq!(f.tui.set_scroll_search("b20", false), 1);
+        let writes = f.handles.writes.joined();
+        assert!(
+            writes.contains("\x1b[7mb20\x1b[27m"),
+            "the match is marked in its row"
+        );
+        assert!(!writes.contains("\x1b[7mb21"), "other rows are not marked");
     }
 }

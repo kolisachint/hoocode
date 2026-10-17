@@ -139,6 +139,7 @@ fn setup() -> Harness {
         &mut ui,
         editor.clone(),
         Rc::new(RefCell::new(Container::new())),
+        None,
         Rc::new(|_: &ComponentHandle| false),
     );
     ui.set_focus(Some(editor.clone()));
@@ -412,6 +413,7 @@ fn lands_on_the_most_recent_message_first_coming_from_live() {
     assert!(jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Previous,
         &is_user
     ));
@@ -422,10 +424,11 @@ fn lands_on_the_most_recent_message_first_coming_from_live() {
 #[test]
 fn keeps_stepping_back_through_earlier_messages() {
     let (mut ui, chat) = transcript();
-    jump_to_user_message(&mut ui, &chat, TurnDirection::Previous, &is_user);
+    jump_to_user_message(&mut ui, &chat, None, TurnDirection::Previous, &is_user);
     assert!(jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Previous,
         &is_user
     ));
@@ -435,11 +438,12 @@ fn keeps_stepping_back_through_earlier_messages() {
 #[test]
 fn stops_rather_than_wrapping_at_the_first_message() {
     let (mut ui, chat) = transcript();
-    jump_to_user_message(&mut ui, &chat, TurnDirection::Previous, &is_user);
-    jump_to_user_message(&mut ui, &chat, TurnDirection::Previous, &is_user);
+    jump_to_user_message(&mut ui, &chat, None, TurnDirection::Previous, &is_user);
+    jump_to_user_message(&mut ui, &chat, None, TurnDirection::Previous, &is_user);
     assert!(!jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Previous,
         &is_user
     ));
@@ -448,11 +452,12 @@ fn stops_rather_than_wrapping_at_the_first_message() {
 #[test]
 fn comes_forward_again() {
     let (mut ui, chat) = transcript();
-    jump_to_user_message(&mut ui, &chat, TurnDirection::Previous, &is_user);
-    jump_to_user_message(&mut ui, &chat, TurnDirection::Previous, &is_user);
+    jump_to_user_message(&mut ui, &chat, None, TurnDirection::Previous, &is_user);
+    jump_to_user_message(&mut ui, &chat, None, TurnDirection::Previous, &is_user);
     assert!(jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Next,
         &is_user
     ));
@@ -469,6 +474,7 @@ fn does_nothing_when_nothing_in_the_transcript_is_yours() {
     assert!(!jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Previous,
         &is_user
     ));
@@ -483,6 +489,7 @@ fn declines_before_anything_has_been_rendered() {
     assert!(!jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Previous,
         &is_user
     ));

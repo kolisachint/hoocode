@@ -7,6 +7,7 @@ mod chrome_layout;
 mod extension_selector;
 mod footer;
 mod footer_data_provider;
+mod fullscreen_scroll;
 mod golden;
 mod hud;
 mod import_command_ts;

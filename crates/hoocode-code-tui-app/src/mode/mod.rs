@@ -848,6 +848,7 @@ impl Mode {
             &mut tui,
             as_component(&editor),
             chat.clone(),
+            fullscreen.then(|| body.clone()),
             Rc::new(|child: &ComponentHandle| {
                 child.borrow().as_any().is_some_and(|any| {
                     any.is::<UserMessageComponent>()

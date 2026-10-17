@@ -38,31 +38,55 @@ pub type IsUserMessage = Rc<dyn Fn(&ComponentHandle) -> bool>;
 
 /// `jumpToUserMessage`: pin the view to the previous or next user message.
 /// Rows come from the last frame's offsets: a message's offset inside the
-/// chat plus the chat's offset at the root. False when there is nowhere to go
-/// (nothing rendered yet, no user message, or already at the end).
+/// chat plus the chat's offset in the scrolled container. That container is
+/// the full-screen `body` (the header and chat) when there is one, else the
+/// root. False when there is nowhere to go (nothing rendered yet, no user
+/// message, or already at the end).
 pub fn jump_to_user_message(
     ui: &mut Tui,
     chat: &Rc<RefCell<Container>>,
+    body: Option<&Rc<RefCell<Container>>>,
     direction: TurnDirection,
     is_user_message: &dyn Fn(&ComponentHandle) -> bool,
 ) -> bool {
     // The offsets are kept at the width the transcript was last laid out at.
     let width = ui.transcript_width();
-    let (Some(root_offsets), Some(chat_offsets)) = (
-        ui.child_row_offsets(width),
-        chat.borrow().child_row_offsets(width),
-    ) else {
-        return false;
-    };
     let chat_handle: ComponentHandle = chat.clone();
-    let Some(chat_index) = ui
-        .children()
-        .iter()
-        .position(|c| Rc::ptr_eq(c, &chat_handle))
-    else {
-        return false;
+    let (base, chat_offsets) = match body {
+        Some(body) => {
+            let body = body.borrow();
+            let Some(index) = body
+                .children
+                .iter()
+                .position(|c| Rc::ptr_eq(c, &chat_handle))
+            else {
+                return false;
+            };
+            let Some(body_offsets) = body.child_row_offsets(width) else {
+                return false;
+            };
+            let Some(chat_offsets) = chat.borrow().child_row_offsets(width) else {
+                return false;
+            };
+            (body_offsets[index] as i64, chat_offsets)
+        }
+        None => {
+            let (Some(root_offsets), Some(chat_offsets)) = (
+                ui.child_row_offsets(width),
+                chat.borrow().child_row_offsets(width),
+            ) else {
+                return false;
+            };
+            let Some(index) = ui
+                .children()
+                .iter()
+                .position(|c| Rc::ptr_eq(c, &chat_handle))
+            else {
+                return false;
+            };
+            (root_offsets[index] as i64, chat_offsets)
+        }
     };
-    let base = root_offsets[chat_index] as i64;
     let rows: Vec<i64> = chat
         .borrow()
         .children
@@ -143,7 +167,13 @@ pub fn format_scroll_status(status: &ScrollStatus) -> String {
         let percent = (status.top as f64 / status.total.max(1) as f64 * 100.0 + 0.5).floor();
         format!("{percent}%")
     };
-    let left = format!("{position}  {place}");
+    // Output that arrived while the view was pinned, to be read when back at the tail.
+    let new = if status.new_lines > 0 {
+        format!("  \u{2193} {} new", status.new_lines)
+    } else {
+        String::new()
+    };
+    let left = format!("{position}  {place}{new}");
     // With a picker focused the arrows and escape are its keys: only paging
     // is the transcript's to advertise.
     let keys = if status.picker {
@@ -175,6 +205,8 @@ pub fn format_scroll_status(status: &ScrollStatus) -> String {
 pub struct ScrollView {
     editor: ComponentHandle,
     chat: Rc<RefCell<Container>>,
+    /// The full-screen body that holds the chat, when the screen has one.
+    body: Option<Rc<RefCell<Container>>>,
     is_user_message: IsUserMessage,
     typing: Option<String>,
 }
@@ -232,7 +264,13 @@ impl ScrollView {
     }
 
     fn jump(&self, ui: &mut Tui, direction: TurnDirection) {
-        jump_to_user_message(ui, &self.chat, direction, &*self.is_user_message);
+        jump_to_user_message(
+            ui,
+            &self.chat,
+            self.body.as_ref(),
+            direction,
+            &*self.is_user_message,
+        );
     }
 
     /// A picker has focus: it keeps every key it answers, and only the paging
@@ -266,6 +304,11 @@ impl ScrollView {
             self.jump(ui, TurnDirection::Previous);
         } else if matches(data, "app.scroll.nextMessage") {
             self.jump(ui, TurnDirection::Next);
+        } else if matches(data, "app.scroll.shiftLineUp") {
+            // From the tail, one line up pins the view just above the newest row.
+            ui.scroll_by_lines(-1);
+        } else if matches(data, "app.scroll.shiftLineDown") {
+            ui.scroll_by_lines(1);
         } else if matches(data, "app.scroll.search") {
             // Pin first, at the bottom, so the search works back from the
             // newest thing.
@@ -356,9 +399,10 @@ impl ScrollView {
         if scroll_step(ui, data) {
             return true;
         }
-        if matches(data, "app.scroll.lineUp") {
+        if matches(data, "app.scroll.lineUp") || matches(data, "app.scroll.shiftLineUp") {
             ui.scroll_by_lines(-1);
-        } else if matches(data, "app.scroll.lineDown") {
+        } else if matches(data, "app.scroll.lineDown") || matches(data, "app.scroll.shiftLineDown")
+        {
             ui.scroll_by_lines(1);
         } else if matches(data, "app.scroll.previousMessage") {
             self.jump(ui, TurnDirection::Previous);
@@ -380,6 +424,7 @@ pub fn install_scroll_view(
     ui: &mut Tui,
     editor: ComponentHandle,
     chat: Rc<RefCell<Container>>,
+    body: Option<Rc<RefCell<Container>>>,
     is_user_message: IsUserMessage,
 ) {
     ui.set_scroll_status_formatter(Box::new(format_scroll_status));
@@ -387,6 +432,7 @@ pub fn install_scroll_view(
     let mut view = ScrollView {
         editor,
         chat,
+        body,
         is_user_message,
         typing: None,
     };
