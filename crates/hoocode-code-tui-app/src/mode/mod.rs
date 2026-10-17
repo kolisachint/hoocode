@@ -937,6 +937,15 @@ impl Mode {
             Rc::new(move || busy_session.is_streaming() || busy_session.is_retrying()),
         );
 
+        // Mission Control transmissions (M8e4): in fullscreen the newest
+        // notice floats top-right over the transcript and the band stays
+        // empty; inline keeps the band.
+        notifications.borrow_mut().set_overlay(fullscreen);
+        let toast_panel = notifications.clone();
+        tui.set_toast_provider(Box::new(move |width| {
+            toast_panel.borrow().toast_lines(width)
+        }));
+
         let (tx, rx) = mpsc::channel();
         Self {
             session,

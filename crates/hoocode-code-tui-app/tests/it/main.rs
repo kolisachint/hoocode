@@ -31,4 +31,5 @@ mod subagent_visual_tie_ts;
 mod support;
 mod suspend_ts;
 mod tips;
+mod transmission;
 mod wordmark;

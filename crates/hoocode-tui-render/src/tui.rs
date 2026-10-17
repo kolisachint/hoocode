@@ -181,6 +181,10 @@ pub struct ScrollSearchStatus {
 }
 
 pub type ScrollStatusFormatter = Box<dyn Fn(&ScrollStatus) -> String>;
+/// Mission Control transmission toast lines (M8e4): the app draws the toast
+/// with ratatui and the frame only floats its pre-rendered lines top-right
+/// over the body. The provider gets the body width; empty means no toast.
+pub type ToastProvider = Box<dyn Fn(usize) -> Vec<String>>;
 
 /// Opens a clicked URL (`onHyperlink`).
 pub type HyperlinkHandler = Box<dyn FnMut(&str)>;
@@ -343,6 +347,7 @@ pub struct Tui {
     /// Transcript length measured by the last pinned paint.
     scroll_total_lines: i64,
     scroll_status_formatter: ScrollStatusFormatter,
+    toast_provider: Option<ToastProvider>,
     scroll_search: Option<ScrollSearch>,
     /// Whether the view may pin right now (unset means always). Given the
     /// TUI so it can ask what holds focus.
@@ -424,6 +429,7 @@ impl Tui {
             scroll_offset: None,
             scroll_total_lines: 0,
             scroll_status_formatter: Box::new(default_scroll_status),
+            toast_provider: None,
             scroll_search: None,
             can_pin_scroll: None,
             scroll_prompt: None,
@@ -500,6 +506,13 @@ impl Tui {
     /// Let the app paint the indicator in its own theme.
     pub fn set_scroll_status_formatter(&mut self, formatter: ScrollStatusFormatter) {
         self.scroll_status_formatter = formatter;
+    }
+
+    /// Float the app's transmission toast lines top-right over the body.
+    /// Only the fullscreen frame floats them; the pinned painter leaves the
+    /// band to the app.
+    pub fn set_toast_provider(&mut self, provider: ToastProvider) {
+        self.toast_provider = Some(provider);
     }
 
     /// Nominate the child that absorbs the leftover rows. It must already be
@@ -2193,6 +2206,14 @@ impl Tui {
         for (row, text) in top_lines.iter().take(rows.top).enumerate() {
             out.push(self.region_row(text, width, row));
         }
+        // Mission Control transmissions (M8e4): the newest toast floats
+        // top-right over the body, starting on its first row. The lines are
+        // drawn by the app; the frame only splices them over the body rows.
+        let toast = self
+            .toast_provider
+            .as_ref()
+            .map(|provide| provide(fullscreen::body_width(width)))
+            .unwrap_or_default();
         for row in 0..rows.body {
             let text = window_lines.get(row).map_or("", String::as_str);
             let marked = if query.is_empty() || hoocode_tui_images::is_image_line(text) {
@@ -2200,7 +2221,11 @@ impl Tui {
             } else {
                 Self::highlight_scroll_matches(text, &query)
             };
-            out.push(self.body_row(&marked, width, row, glyphs.get(row).copied()));
+            let mut line = self.body_row(&marked, width, row, glyphs.get(row).copied());
+            if let Some(floated) = toast.get(row) {
+                line = Self::float_toast_line(&line, floated, fullscreen::body_width(width));
+            }
+            out.push(line);
         }
         if rows.bar == 1 {
             let status = ScrollStatus {
@@ -2244,6 +2269,20 @@ impl Tui {
             return self.emit_line(IMAGE_PLACEHOLDER, width as i64);
         }
         self.emit_line(text, width as i64)
+    }
+
+    /// One body row with the toast's line spliced over its right end: the
+    /// body keeps its left cells, the toast its own width, and the row ends
+    /// reset so no style leaks into the next row.
+    fn float_toast_line(line: &str, toast: &str, body_width: usize) -> String {
+        let toast_width = visible_width(toast);
+        if toast_width == 0 || toast_width > body_width {
+            return line.to_string();
+        }
+        let keep = body_width - toast_width;
+        let kept = slice_by_column(line, 0, keep, true);
+        let pad = keep.saturating_sub(visible_width(&kept));
+        format!("{kept}{}{toast}{SEGMENT_RESET}", " ".repeat(pad))
     }
 
     /// One body row. With a scrollbar glyph, the row is padded to the body

@@ -34,4 +34,5 @@ pub mod session_picker;
 pub mod startup_progress;
 pub mod suspend;
 pub mod tips;
+pub mod transmission;
 pub mod wordmark;
