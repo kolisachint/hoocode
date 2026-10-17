@@ -3,6 +3,7 @@
 
 mod ask_options;
 mod config_selector;
+mod fork_console;
 mod hangar;
 mod learn_settings_pane;
 mod model_selector;
