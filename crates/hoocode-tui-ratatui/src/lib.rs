@@ -12,7 +12,7 @@ mod lines;
 mod palette;
 
 pub use component::RatatuiComponent;
-pub use lines::buffer_to_lines;
+pub use lines::{buffer_to_lines, paint};
 pub use palette::{
     acc, bold, dim, err, faint, from_token, gold, ink, italic, ok, reversed, vio, warn, you,
     Palette, PALETTE_TOKENS,

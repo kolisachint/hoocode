@@ -4504,3 +4504,32 @@ mod editor_component {
         }
     }
 }
+
+mod placeholder {
+    use super::*;
+
+    fn bare_editor() -> Editor {
+        let mut editor = ed_with(80, 24, 1, Some(FrameBorderStyle::None));
+        editor.prompt_prefix = "▸".into();
+        editor.placeholder = "name your mission".into();
+        editor.placeholder_color = Box::new(|text: &str| dim(text));
+        editor
+    }
+
+    #[test]
+    fn empty_editor_shows_the_placeholder() {
+        let mut editor = bare_editor();
+        let lines = render(&mut editor, 40);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(strip(&lines[0]).trim_end(), " ▸ name your mission");
+        assert!(lines[0].contains("\x1b[2mname your mission\x1b[22m"));
+    }
+
+    #[test]
+    fn typing_replaces_the_placeholder() {
+        let mut editor = bare_editor();
+        type_str(&mut editor, "hi");
+        let lines = render(&mut editor, 40);
+        assert_eq!(strip(&lines[0]).trim_end(), " ▸ hi");
+    }
+}

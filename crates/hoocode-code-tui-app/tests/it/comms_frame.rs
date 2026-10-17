@@ -1,0 +1,240 @@
+//! The comms frame (M2) as a component: the 3-row heavy frame in READY and
+//! IN FLIGHT, with a real borderless editor for the input row so the
+//! placeholder shows. The theme lock pins the palette; the data provider
+//! points at a scratch dir so no machine paths reach the goldens.
+
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
+
+use hoocode_code_tui_app::comms_frame::{
+    CommsFrame, CommsState, GlyphStyle, InputStyle, IN_FLIGHT_PLACEHOLDER, READY_PLACEHOLDER,
+};
+use hoocode_code_tui_app::footer::{FooterModel, FooterSource, ToolOutputView};
+use hoocode_code_tui_app::footer_data::FooterDataProvider;
+use hoocode_code_tui_theme::get_editor_theme;
+use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle};
+use hoocode_tui_render::assert_golden;
+use hoocode_tui_render::golden::render_golden;
+use hoocode_tui_render::ComponentHandle;
+
+use crate::support::{lock, plain};
+
+/// A fixed session: model, usage and context (the HUD golden's stub).
+struct Stub;
+
+impl FooterSource for Stub {
+    fn usage_totals(&self) -> (u64, u64, u64, u64, f64) {
+        (48_200, 9_750, 120_000, 3_400, 1.23)
+    }
+    fn context_usage(&self) -> Option<(u64, Option<f64>)> {
+        Some((200_000, Some(42.0)))
+    }
+    fn model(&self) -> Option<FooterModel> {
+        Some(FooterModel {
+            id: "claude-haiku-5-5".into(),
+            provider: "anthropic".into(),
+            context_window: 200_000,
+            reasoning: true,
+        })
+    }
+    fn thinking_level(&self) -> String {
+        "medium".into()
+    }
+    fn cwd(&self) -> String {
+        "/work/hoocode".into()
+    }
+    fn display_name(&self) -> String {
+        "amber-harbor".into()
+    }
+    fn reserve_tokens(&self) -> u64 {
+        16_384
+    }
+    fn is_using_oauth(&self) -> bool {
+        false
+    }
+}
+
+/// The prompt editor as the app builds it: no border, `▸` prefix, the
+/// palette's faint placeholder. The `set_input` closure styles it per state.
+fn prompt_editor() -> Rc<RefCell<Editor>> {
+    let mut editor = Editor::new(
+        EditorHost::default(),
+        get_editor_theme(),
+        EditorOptions {
+            border: Some(FrameBorderStyle::None),
+            padding_x: Some(1),
+            autocomplete_max_visible: None,
+        },
+    );
+    editor.prompt_prefix = "▸".into();
+    editor.placeholder_color = Box::new(|text: &str| {
+        hoocode_tui_ratatui::paint(hoocode_tui_ratatui::Palette::current().faint(), text)
+    });
+    Rc::new(RefCell::new(editor))
+}
+
+fn frame(state: CommsState, view: ToolOutputView, mode: &str) -> CommsFrame {
+    let editor = prompt_editor();
+    let input = editor.clone();
+    let handle: ComponentHandle = editor.clone();
+    // A fixed path: no machine paths reach the goldens.
+    let data = FooterDataProvider::new("/work/hoocode");
+    data.set_active_mode(mode);
+    CommsFrame::new(
+        handle,
+        move || state.clone(),
+        move |style: InputStyle| {
+            let mut editor = input.borrow_mut();
+            editor.placeholder = style.placeholder;
+            let glyph = style.glyph;
+            editor.prompt_color =
+                Box::new(move |text: &str| hoocode_tui_ratatui::paint(glyph.style(), text));
+        },
+        Box::new(Stub),
+        data,
+        view,
+    )
+}
+
+fn ready() -> CommsFrame {
+    frame(CommsState::Ready, ToolOutputView::Peek, "build")
+}
+
+fn in_flight() -> CommsFrame {
+    frame(
+        CommsState::InFlight {
+            elapsed: Some(Duration::from_secs(4)),
+        },
+        ToolOutputView::Peek,
+        "build",
+    )
+}
+
+/// The frame's plain rows (styles stripped) at `width` columns.
+fn rows(frame: &mut CommsFrame, width: u16) -> Vec<String> {
+    plain(&render_golden(frame, width))
+        .lines()
+        .take_while(|line| *line != "--- styles ---")
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn ready_frame_golden() {
+    let _g = lock(Some("dark"));
+    assert_golden!("comms_ready_100x3", render_golden(&mut ready(), 100));
+}
+
+#[test]
+fn in_flight_frame_golden() {
+    let _g = lock(Some("dark"));
+    assert_golden!(
+        "comms_in_flight_100x3",
+        render_golden(&mut in_flight(), 100)
+    );
+}
+
+#[test]
+fn ready_shows_the_title_placeholder_and_foot() {
+    let _g = lock(Some("dark"));
+    let rows = rows(&mut ready(), 100);
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    assert!(rows[0].starts_with("┏━ READY "), "row 0: {:?}", rows[0]);
+    assert!(rows[0].ends_with(" app-edit ━┓"), "row 0: {:?}", rows[0]);
+    assert!(rows[1].contains(READY_PLACEHOLDER), "row 1: {:?}", rows[1]);
+    assert!(rows[2].contains("peek"), "row 2: {:?}", rows[2]);
+    assert!(rows[2].contains("↑48k ↓9.8k"), "row 2: {:?}", rows[2]);
+}
+
+#[test]
+fn in_flight_shows_the_elapsed_time_and_queue_placeholder() {
+    let _g = lock(Some("dark"));
+    let rows = rows(&mut in_flight(), 100);
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    assert!(
+        rows[0].contains("◐ IN FLIGHT · 4s · esc abort"),
+        "row 0: {:?}",
+        rows[0]
+    );
+    assert!(
+        rows[1].contains(IN_FLIGHT_PLACEHOLDER),
+        "row 1: {:?}",
+        rows[1]
+    );
+}
+
+#[test]
+fn in_flight_without_elapsed_omits_the_time() {
+    let _g = lock(Some("dark"));
+    let mut frame = frame(
+        CommsState::InFlight { elapsed: None },
+        ToolOutputView::Peek,
+        "build",
+    );
+    let rows = rows(&mut frame, 100);
+    assert!(
+        rows[0].contains("◐ IN FLIGHT · esc abort"),
+        "row 0: {:?}",
+        rows[0]
+    );
+}
+
+#[test]
+fn foot_shows_the_radar_dial_and_plan_note() {
+    let _g = lock(Some("dark"));
+    let mut frame = frame(CommsState::Ready, ToolOutputView::Radar, "plan");
+    let rows = rows(&mut frame, 100);
+    assert!(
+        rows[2].contains("radar · flight log · PLAN · nothing gets changed"),
+        "row 2: {:?}",
+        rows[2]
+    );
+}
+
+#[test]
+fn stubbed_states_render_a_plausible_title() {
+    let _g = lock(Some("dark"));
+    for (state, title) in [
+        (CommsState::CommsLost, "⊗ COMMS LOST"),
+        (
+            CommsState::Landed {
+                elapsed: None,
+                steps: None,
+            },
+            "● LANDED",
+        ),
+        (
+            CommsState::DidNotLand {
+                elapsed: None,
+                steps: None,
+            },
+            "⊗ DID NOT LAND",
+        ),
+        (CommsState::Aborted, "⊘ ABORTED · READY"),
+    ] {
+        let mut frame = frame(state, ToolOutputView::Peek, "build");
+        let rows = rows(&mut frame, 100);
+        assert_eq!(rows.len(), 3, "{title}: {rows:?}");
+        assert!(rows[0].contains(title), "{title}: {:?}", rows[0]);
+    }
+}
+
+#[test]
+fn input_styles_follow_the_state() {
+    assert_eq!(
+        CommsState::Ready.input_style(),
+        InputStyle {
+            placeholder: READY_PLACEHOLDER.to_string(),
+            glyph: GlyphStyle::Ink,
+        }
+    );
+    assert_eq!(
+        CommsState::InFlight { elapsed: None }.input_style(),
+        InputStyle {
+            placeholder: IN_FLIGHT_PLACEHOLDER.to_string(),
+            glyph: GlyphStyle::Acc,
+        }
+    );
+    assert_eq!(CommsState::CommsLost.input_style().glyph, GlyphStyle::Err);
+}

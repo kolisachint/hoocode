@@ -224,11 +224,11 @@ impl Mode {
     }
 
     /// The component in the prompt's place: the attached view's hint while
-    /// attached, else the prompt.
+    /// attached, else the comms frame around the prompt.
     pub(super) fn prompt_component(&self) -> ComponentHandle {
         match &self.attached {
             Some(attached) => as_component(&attached.prompt),
-            None => as_component(&self.editor),
+            None => as_component(&self.comms),
         }
     }
 

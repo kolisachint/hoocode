@@ -2,7 +2,27 @@
 //! `Component` model.
 
 use ratatui_core::buffer::{Buffer, CellWidth};
-use ratatui_core::style::{Color, Modifier};
+use ratatui_core::layout::Rect;
+use ratatui_core::style::{Color, Modifier, Style};
+
+/// Paints one row of `text` in `style`: a 1-row buffer drawn with the
+/// style, converted with [`buffer_to_lines`]. For joining styled runs into
+/// a longer line without a full widget. `text` is one row with no trailing
+/// spaces (trailing styled blanks are kept) and no newlines.
+pub fn paint(style: Style, text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    // Characters always cover at least as many columns as cells: wide
+    // symbols still fit, and trailing blanks of a too-wide buffer are
+    // trimmed by `buffer_to_lines` when they carry no style.
+    let width = u16::try_from(text.chars().count())
+        .unwrap_or(u16::MAX)
+        .max(1);
+    let mut buf = Buffer::empty(Rect::new(0, 0, width, 1));
+    buf.set_string(0, 0, text, style);
+    buffer_to_lines(&buf).pop().unwrap_or_default()
+}
 
 /// The look of one cell, reduced to what SGR can express.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -153,6 +173,13 @@ mod tests {
 
     fn buffer(width: u16, height: u16) -> Buffer {
         Buffer::empty(Rect::new(0, 0, width, height))
+    }
+
+    #[test]
+    fn paint_wraps_one_row_in_its_style() {
+        let line = paint(Style::default().fg(Color::Rgb(255, 92, 122)), "┃");
+        assert_eq!(line, "\x1b[0;38;2;255;92;122m┃\x1b[0m");
+        assert_eq!(paint(Style::default(), ""), "");
     }
 
     #[test]

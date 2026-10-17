@@ -94,7 +94,8 @@ impl Mode {
             editor.editor.prompt_prefix = "!".into();
             editor.editor.prompt_color = Box::new(|s: &str| theme().bash_mode_border(s));
         } else {
-            editor.editor.prompt_prefix = "❯".into();
+            // The comms frame colours the glyph per state on each render.
+            editor.editor.prompt_prefix = "▸".into();
             editor.editor.prompt_color = Box::new(|s: &str| s.to_string());
         }
         self.dirty.set(true);

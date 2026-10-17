@@ -22,8 +22,8 @@ HUD ─ row 1: ◭ HOOCODE  BUILD  folder │ SHIP model  FUEL ctx%  CR $cost   
   pending messages, status, widgets above
   task panel ─ TodoWrite plan items, subagent runs
   notification band ─ tips, transient notices, progress bar
-  ┌ prompt frame ─ editor, autocomplete; pickers and dialogs replace it ───────────┐
-  └────────────────────────────────────────────────────────────────────────────────┘
+  ┏ comms frame (3 rows at rest) ─ state title + app-edit │ ▸ input row │ foot: view dial, PLAN note, ↑in ↓out ┓
+  ┗ grows with input; cards and consoles replace it ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
   footer ─ 2 rows: folder, branch, path │ model, context, cost (kept in full-screen for now; M3 removes the duplicates)
 ```
 
@@ -45,8 +45,9 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | Notification band | notification panel, tips, startup update notice | `hoocode-code-tui-app/src/notification_panel.rs`, `tips.rs`; the update notice is polled by `poll_update_notice` in `mode/events.rs` from `hoocode-code-update` |
 | Completion bell (`chimeOnTurnComplete`): one `\x07` when a turn over 10 s ends (not after an abort) or when `AskUserQuestion` opens (not MCP elicitation forms); repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` (pure timing, `TurnTimer` set at prompt submit); rung by `ring_chime` and `finish_turn_chime` in `mode/events.rs`, and at the `AskOptions` dialog in `mode/mod.rs` when its request has `chime` set (`dialog_bridge.rs`) |
 | Progress bar | progress bar, startup progress | `hoocode-code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
-| Prompt editor | `CustomEditor` around `Editor` | `mode/input.rs` (`CustomEditor`); `tui-components/src/editor/` |
-| Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
+| Prompt editor | `CustomEditor` around a borderless `Editor` (`▸` prefix, per-state placeholder) | `mode/input.rs` (`CustomEditor`); `tui-components/src/editor/` (`placeholder`, `placeholder_color`) |
+| Comms frame (M2) | `CommsFrame` around the prompt: heavy `┏┓┗┛` edges, state titles (READY dim, `◐ IN FLIGHT · time · esc abort` acc, `⊗ COMMS LOST` err, `● LANDED` ok, `⊗ DID NOT LAND` err, `⊘ ABORTED · READY` dim), foot with the view dial, the PLAN note and `↑in ↓out` token totals | `hoocode-code-tui-app/src/comms_frame.rs` (`CommsState`, `InputStyle`, `GlyphStyle`); read from the session (`is_streaming`/`is_retrying` for READY vs IN FLIGHT, `TurnTimer::elapsed` for the time) and `FooterSource::usage_totals` |
+| Prompt frame | frame, input frame (dialogs; the main prompt uses the comms frame now) | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
 | Attached subagent view (T3.3): a header row above the chat (`◂ <type> · <description> · <state> · Esc back`), and the prompt's place with a read-only hint; Esc goes back. The chat shows the run's transcript while attached; the session's is parked and kept up to date | attached view | `code-tui-widgets/src/attach_view.rs` (header, hint). The swap, the routing and the run's events: `hoocode-code-tui-app/src/mode/attach.rs`; the header's slot is `Mode::attach_slot` (above the chat) |
 | Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `mode/input.rs` `setup_autocomplete_provider`. `@file` uses the in-process finder `hoocode-code-tools::file_finder`, injected by `mode/input.rs` `at_file_finder` (no `fd`) and run on a worker thread (`autocomplete/file_search.rs`): typing never waits, and the editor re-asks when a walk finishes (`take_ready`). |
 | Footer | footer, footer data. Always two rows: row 1 folder, branch, session, path, then mode chip and view dial; row 2 model, context gauge, tokens, cost. Compact keeps both rows. Transient messages show above the prompt, not in the footer: a warning line (memory shedding, UI stall), the auto-retry notice (`retrying · attempt 2 of 6 · …`, set from `AutoRetryStart` and cleared by `AutoRetryEnd` in `mode/events.rs` through `set_retry_notice`), extension statuses and startup progress, read with `FooterComponent::transient_lines`. The warning is set by `mode/mod.rs` `sync_runtime_health` | `hoocode-code-tui-app/src/footer.rs`, `footer_data.rs` |

@@ -52,6 +52,7 @@ use crate::chime::{ChimeDebounce, TurnTimer, BELL};
 use crate::chrome_layout::{
     ChromeLayoutController, ChromeSurfaces, FooterLayout, TasksLayout, SMALL_TERMINAL_ROWS,
 };
+use crate::comms_frame::{CommsFrame, CommsState, InputStyle};
 use crate::dialog_bridge::{set_dialog_sink, DialogRequest};
 use crate::expandable_text::ExpandableText;
 use crate::footer::{FooterComponent, FooterDensity};
@@ -433,7 +434,7 @@ struct Mode {
     /// Notices of `/plugin` changes, shown after the reload that makes them live.
     plugin_notices: Vec<String>,
     /// When the current prompt was submitted (set at submit, taken at `PromptDone`).
-    turn_timer: TurnTimer,
+    turn_timer: Rc<RefCell<TurnTimer>>,
     chime: ChimeDebounce,
     update_notice: Option<std::sync::mpsc::Receiver<hoocode_code_update::UpdateAvailable>>,
     tool_output_view: ToolOutputView,
@@ -445,6 +446,9 @@ struct Mode {
     image_width_cells: u32,
     code_block_indent: String,
     editor: Rc<RefCell<CustomEditor>>,
+    /// The comms frame around the prompt (M2). Dialogs and the attached
+    /// view replace it in the editor's slot; the prompt itself stays focused.
+    comms: Rc<RefCell<CommsFrame>>,
     editor_container: Rc<RefCell<Container>>,
     /// The picker in the editor's slot (`dialogs.rs`).
     picker: Option<ActivePicker>,
@@ -621,10 +625,15 @@ impl Mode {
             EditorOptions {
                 padding_x: Some(editor_padding_x),
                 autocomplete_max_visible: Some(autocomplete_max_visible),
-                border: Some(border),
+                // The comms frame rules the prompt: the editor renders
+                // only its text content, with no border of its own.
+                border: None,
             },
         );
-        editor.prompt_prefix = "❯".into();
+        editor.prompt_prefix = "▸".into();
+        editor.placeholder_color = Box::new(|text: &str| {
+            hoocode_tui_ratatui::paint(hoocode_tui_ratatui::Palette::current().faint(), text)
+        });
         let sink = actions.clone();
         editor.on_submit = Some(Box::new(move |text: &str| {
             sink.borrow_mut().push(Action::Submit(text.to_string()))
@@ -660,6 +669,42 @@ impl Mode {
         footer.set_auto_compact_enabled(compaction_enabled);
         footer.set_tool_output_view(tool_output_view);
         let footer = handle(footer);
+        // The comms frame around the prompt: the state title, the input row
+        // and the foot replace the prompt's own border. The turn clock is
+        // shared so the IN FLIGHT title can read the elapsed time.
+        let turn_timer = Rc::new(RefCell::new(TurnTimer::default()));
+        let comms_session = session.clone();
+        let comms_turn = turn_timer.clone();
+        let comms_editor = editor.clone();
+        let comms = handle(CommsFrame::new(
+            as_component(&editor),
+            move || {
+                if comms_session.is_streaming() || comms_session.is_retrying() {
+                    CommsState::InFlight {
+                        elapsed: comms_turn.borrow().elapsed(Instant::now()),
+                    }
+                } else {
+                    CommsState::Ready
+                }
+            },
+            move |style: InputStyle| {
+                let mut editor = comms_editor.borrow_mut();
+                editor.editor.placeholder = style.placeholder;
+                // Bash mode keeps its own `!` colour; otherwise the glyph
+                // follows the comms state.
+                if editor.editor.prompt_prefix != "!" {
+                    let glyph = style.glyph;
+                    editor.editor.prompt_color =
+                        Box::new(move |text: &str| hoocode_tui_ratatui::paint(glyph.style(), text));
+                }
+            },
+            Box::new(SessionFooter {
+                session: session.clone(),
+                is_oauth: is_oauth.clone(),
+            }),
+            footer_data.clone(),
+            tool_output_view,
+        ));
         let footer_slot = handle(Slot::new(as_component(&footer)));
         let task_panel = handle(TaskPanelComponent::new());
         let tasks_slot = handle(Slot::new(as_component(&task_panel)));
@@ -789,7 +834,7 @@ impl Mode {
         let editor_container = handle(Container::new());
         editor_container
             .borrow_mut()
-            .add_child(as_component(&editor));
+            .add_child(as_component(&comms));
 
         // The app tree, in the order `tree_plan` gives (hud.rs). Inline: today's
         // tree. Full-screen: the HUD row, a gap, the attach slot, then the body
@@ -844,14 +889,14 @@ impl Mode {
                 TreePart::Footer => tui.add_child(footer_slot.clone()),
             }
         }
-        tui.set_focus(Some(as_component(&editor)));
+        tui.set_focus(Some(as_component(&comms)));
         // Scrolling the transcript: the prompt's pager keys, and the keys of
         // the pinned view (`scroll_view.rs`).
         let prompt_text = editor.clone();
         let busy_session = session.clone();
         install_scroll_view(
             &mut tui,
-            as_component(&editor),
+            as_component(&comms),
             chat.clone(),
             fullscreen.then(|| body.clone()),
             Rc::new(|child: &ComponentHandle| {
@@ -896,7 +941,7 @@ impl Mode {
             turn_stop_reason: None,
             plugin_reload_pending: false,
             plugin_notices: Vec::new(),
-            turn_timer: TurnTimer::default(),
+            turn_timer,
             chime: ChimeDebounce::default(),
             update_notice: options.update_notice,
             tool_output_view,
@@ -908,6 +953,7 @@ impl Mode {
             image_width_cells,
             code_block_indent,
             editor,
+            comms,
             editor_container,
             actions,
             notifications,
