@@ -1,0 +1,36 @@
+┏━ DOCKING · /login  3 providers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
+┃▸ ▏                                                                                               ┃
+┃› Anthropic  ✓ configured                                                                         ┃
+┃  OpenAI  ✓ env: OPENAI_API_KEY                                                                   ┃
+┃  Ollama  • unconfigured                                                                          ┃
+┗━ ↑↓ move · enter choose · esc cancel ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+--- styles ---
+r0 c0-1 fg=#9b8cff
+r0 c3-31 fg=#9b8cff bold
+r0 c33-95 fg=#9b8cff
+r0 c98-99 fg=#9b8cff
+r1 c0 fg=#9b8cff
+r1 c1 fg=#5cc8bb
+r1 c3 fg=#ffff00
+r1 c99 fg=#9b8cff
+r2 c0 fg=#9b8cff
+r2 c1-11 fg=#5cc8bb bg=#2a2a36
+r2 c12 bg=#2a2a36
+r2 c13-25 fg=#b5bd68 bg=#2a2a36
+r2 c26-98 bg=#2a2a36
+r2 c99 fg=#9b8cff
+r3 c0 fg=#9b8cff
+r3 c10-31 fg=#b5bd68
+r3 c99 fg=#9b8cff
+r4 c0 fg=#9b8cff
+r4 c10-24 fg=#a8a8a8
+r4 c99 fg=#9b8cff
+r5 c0-1 fg=#9b8cff
+r5 c3-4 fg=#989898
+r5 c5-12 fg=#a8a8a8
+r5 c13-17 fg=#989898
+r5 c18-27 fg=#a8a8a8
+r5 c28-30 fg=#989898
+r5 c31-37 fg=#a8a8a8
+r5 c39-95 fg=#9b8cff
+r5 c98-99 fg=#9b8cff

@@ -224,21 +224,29 @@ fn task_panel_tabs_unfocused_80() {
 }
 
 #[test]
-fn task_panel_tabs_focused_plan_80() {
+fn flight_plan_80() {
     let _g = lock();
     AppKeybindingsManager::default().install();
     task_store().clear();
     three_tabs();
     let mut panel = TaskPanelComponent::new();
     panel.set_focused(true);
-    assert_golden!(
-        "task_panel_tabs_focused_plan_80",
-        render_golden(&mut panel, 80)
-    );
+    assert_golden!("flight_plan_80", render_golden(&mut panel, 80));
 }
 
 #[test]
-fn task_panel_tabs_focused_agents_80() {
+fn flight_plan_100() {
+    let _g = lock();
+    AppKeybindingsManager::default().install();
+    task_store().clear();
+    three_tabs();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_focused(true);
+    assert_golden!("flight_plan_100", render_golden(&mut panel, 100));
+}
+
+#[test]
+fn flight_plan_agents_80() {
     let _g = lock();
     AppKeybindingsManager::default().install();
     task_store().clear();
@@ -246,25 +254,7 @@ fn task_panel_tabs_focused_agents_80() {
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Subagents);
     panel.set_focused(true);
-    assert_golden!(
-        "task_panel_tabs_focused_agents_80",
-        render_golden(&mut panel, 80)
-    );
-}
-
-#[test]
-fn task_panel_tabs_focused_mcp_80() {
-    let _g = lock();
-    AppKeybindingsManager::default().install();
-    task_store().clear();
-    three_tabs();
-    let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Mcp);
-    panel.set_focused(true);
-    assert_golden!(
-        "task_panel_tabs_focused_mcp_80",
-        render_golden(&mut panel, 80)
-    );
+    assert_golden!("flight_plan_agents_80", render_golden(&mut panel, 80));
 }
 
 // ---- task panel: Shell tab (T5.3) ----
@@ -303,7 +293,7 @@ fn shell_jobs() {
 }
 
 #[test]
-fn task_panel_shell_tab_focused_80() {
+fn flight_plan_shell_80() {
     let _g = lock();
     AppKeybindingsManager::default().install();
     task_store().clear();
@@ -311,10 +301,7 @@ fn task_panel_shell_tab_focused_80() {
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Shell);
     panel.set_focused(true);
-    assert_golden!(
-        "task_panel_shell_tab_focused_80",
-        render_golden(&mut panel, 80)
-    );
+    assert_golden!("flight_plan_shell_80", render_golden(&mut panel, 80));
 }
 
 #[test]

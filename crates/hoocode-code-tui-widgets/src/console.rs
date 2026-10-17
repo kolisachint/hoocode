@@ -48,6 +48,8 @@ pub struct Console {
     pub bottom: Vec<Line<'static>>,
     /// The hint row, drawn in the foot edge.
     pub hint: Line<'static>,
+    /// The right label on the top edge (`/tasks · ctrl+g`); empty draws nothing.
+    pub right: Line<'static>,
     /// The frame colour; the `you` token when `None`.
     pub frame: Option<Style>,
 }
@@ -65,6 +67,7 @@ impl Console {
             max_visible: None,
             bottom: Vec::new(),
             hint: Line::raw(""),
+            right: Line::raw(""),
             frame: None,
         }
     }
@@ -94,7 +97,7 @@ impl Console {
             &Chrome {
                 frame,
                 title: Line::from(vec![Span::styled(title, bold(frame))]),
-                right: Line::raw(""),
+                right: self.right.clone(),
                 foot: self.hint.clone(),
             },
             &body,

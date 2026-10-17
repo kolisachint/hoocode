@@ -1153,14 +1153,21 @@ fn losing_focus_clears_a_pending_cancel() {
 }
 
 #[test]
-fn focus_shows_the_strip_the_pick_marker_and_the_key_hint() {
+fn focus_opens_the_flight_plan_console() {
     let _g = lock();
     create("row a");
     let mut panel = focused();
     let lines = plain(&mut panel, 120);
-    assert!(lines[0].contains("Plan 0/1"), "{lines:#?}");
-    assert!(lines[1].contains("› ○ row a"), "{lines:#?}");
-    assert!(lines.last().unwrap().contains("back"), "{lines:#?}");
+    assert!(
+        lines[0].contains("FLIGHT PLAN") && lines[0].contains("0/1"),
+        "{lines:#?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.contains('›') && l.contains("row a")),
+        "{lines:#?}"
+    );
+    assert!(lines.iter().any(|l| l.contains("○ 0/1")), "{lines:#?}");
+    assert!(lines.last().unwrap().contains("esc back"), "{lines:#?}");
 
     let mut unfocused = TaskPanelComponent::new();
     let plain_lines = plain(&mut unfocused, 120);

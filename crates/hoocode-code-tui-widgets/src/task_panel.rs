@@ -26,12 +26,15 @@ use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_task_store::{
     task_store, RowAction, Task, TaskAgent, TaskAgentKind, TaskKind, TaskStatus, TaskStore,
 };
-use hoocode_code_tui_keybindings::{app_key_label, format_key_text, key_text, raw_key_hint};
+use hoocode_code_tui_keybindings::{app_key_label, format_key_text, raw_key_hint};
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_code_tui_theme::{agent_color_for, theme};
 use hoocode_tui_keys::{get_keybindings, is_key_release};
+use hoocode_tui_ratatui::{bold, truncate_line, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
+
+use crate::console::{hints, Console};
 
 fn task_status_icon(status: TaskStatus) -> &'static str {
     // Hollow = not started; ● stays the chat's tool status dot.
@@ -766,6 +769,303 @@ fn subagent_lens_rows(tasks: &[Task]) -> Vec<PanelRow> {
     rows
 }
 
+/// The status circle's token style in the flight plan.
+fn flight_status_style(status: TaskStatus) -> Style {
+    let pal = Palette::current();
+    match status {
+        TaskStatus::InProgress => pal.warn(),
+        TaskStatus::Done => pal.ok(),
+        TaskStatus::Failed => pal.err(),
+        TaskStatus::Pending | TaskStatus::Cancelled => pal.dim(),
+    }
+}
+
+/// The waypoint track for the plan tab (spec §4 c6): one circle per plan
+/// item — `●` done, `◐` running, `○` the rest — and the done/total count.
+fn flight_track(model: &RowModel) -> Line<'static> {
+    let pal = Palette::current();
+    let mut spans = Vec::new();
+    let mut done = 0;
+    let mut total = 0;
+    for (_, task) in model
+        .lens(TaskPanelView::Plan)
+        .filter(|(_, task)| task.is_plan_item())
+    {
+        total += 1;
+        let (mark, style) = match task.status {
+            TaskStatus::Done => {
+                done += 1;
+                ("●", pal.ok())
+            }
+            TaskStatus::InProgress => ("◐", pal.warn()),
+            _ => ("○", pal.faint()),
+        };
+        spans.push(Span::styled(mark, style));
+    }
+    spans.push(Span::styled(format!(" {done}/{total}"), pal.faint()));
+    Line::from(spans)
+}
+
+/// The tab strip for the flight plan: one tab per tab with rows, with its
+/// done/total count; the shown tab in accent.
+fn flight_strip(
+    model: &RowModel,
+    view: TaskPanelView,
+    tab_views: &[TaskPanelView],
+) -> Line<'static> {
+    let pal = Palette::current();
+    let mut spans = Vec::new();
+    for (i, &tab) in tab_views.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled("  ", pal.faint()));
+        }
+        let stats = model.lens_stats(tab);
+        let style = if tab == view {
+            bold(pal.acc())
+        } else {
+            pal.dim()
+        };
+        spans.push(Span::styled(format!(" {} ", tab.label()), style));
+        spans.push(Span::styled(
+            format!("{}/{}", stats.done, stats.total),
+            pal.faint(),
+        ));
+    }
+    Line::from(spans)
+}
+
+/// The right detail of a flight-plan row: usage, live activity and run
+/// clock, the next firing, a warning note, or the armed-cancel ask.
+/// Plain text plus its style, like `format_task_line`'s right column.
+fn flight_detail(
+    task: &Task,
+    owner: Option<&TaskAgent>,
+    confirm: bool,
+    now: u64,
+) -> Option<(String, Style)> {
+    let pal = Palette::current();
+    if confirm {
+        return Some(("press x again to cancel".to_string(), pal.warn()));
+    }
+    if let Some(note) = &task.note {
+        return Some((format!("{WARNING_GLYPH} {note}"), pal.warn()));
+    }
+    match task.status {
+        TaskStatus::Done | TaskStatus::Failed => {
+            let total: f64 = task
+                .usage
+                .as_ref()
+                .map(|u| u.input + u.output)
+                .unwrap_or(0.0);
+            if total > 0.0 {
+                return Some((
+                    format!("{} tokens", format_tokens(total as u64)),
+                    pal.faint(),
+                ));
+            }
+        }
+        TaskStatus::InProgress => {
+            let activity = owner
+                .and_then(|o| o.activity.as_deref())
+                .filter(|a| !a.is_empty())
+                .map(|a| format!("⋯ {a}"))
+                .unwrap_or_default();
+            let run_detail = owner.map(|o| describe_run(o, now)).unwrap_or_default();
+            let run_for = if is_delegated(task) {
+                format_duration_secs(task_elapsed_secs(task, now))
+            } else {
+                String::new()
+            };
+            let mut plain = String::new();
+            if !activity.is_empty() {
+                plain.push_str(&activity);
+            }
+            if !run_for.is_empty() {
+                if !plain.is_empty() {
+                    plain.push_str(" · ");
+                }
+                plain.push_str(&run_for);
+            }
+            if !run_detail.is_empty() {
+                if !plain.is_empty() {
+                    plain.push_str(" · ");
+                }
+                plain.push_str(&run_detail);
+            }
+            if !plain.is_empty() {
+                let style = if activity.is_empty() {
+                    pal.faint()
+                } else {
+                    pal.warn()
+                };
+                return Some((plain, style));
+            }
+        }
+        TaskStatus::Pending if task.kind() == TaskKind::Schedule => {
+            if let Some(next) = task.next_at.filter(|next| *next > now) {
+                return Some((
+                    format!(
+                        "next in {}",
+                        format_duration_secs(((next - now) / 1000) as f64)
+                    ),
+                    pal.dim(),
+                ));
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+/// One flight-plan row (content only; the console adds the `›` marker or
+/// gutter and the selection band): the status circle, the owner glyph and
+/// tag where they disambiguate, the title, and the right detail.
+fn flight_row(
+    task: &Task,
+    owner: Option<&TaskAgent>,
+    tree_prefix: &str,
+    confirm: bool,
+    inner: usize,
+    now: u64,
+) -> Line<'static> {
+    let pal = Palette::current();
+    let mut spans = vec![
+        Span::styled(
+            task_status_icon(task.status),
+            flight_status_style(task.status),
+        ),
+        Span::raw(" "),
+    ];
+    if !tree_prefix.is_empty() {
+        spans.push(Span::styled(tree_prefix.to_string(), pal.faint()));
+    }
+    let is_mcp = task.kind() == TaskKind::Mcp;
+    let owner_kind = owner
+        .map(|o| o.kind)
+        .unwrap_or(if task.kind() == TaskKind::Subagent {
+            TaskAgentKind::Subagent
+        } else {
+            TaskAgentKind::Main
+        });
+    if is_mcp || owner_kind != TaskAgentKind::Main {
+        let glyph = if is_mcp {
+            MCP_SOURCE_GLYPH
+        } else {
+            SUBAGENT_GLYPH
+        };
+        let style = if is_mcp {
+            pal.style("mcp")
+        } else if let Some(name) = (!is_mcp && owner_kind == TaskAgentKind::Subagent)
+            .then(|| task.subagent_mode.as_deref().or(task.agent.as_deref()))
+            .flatten()
+        {
+            pal.style(agent_color_for(name))
+        } else {
+            pal.dim()
+        };
+        spans.push(Span::styled(glyph, style));
+        spans.push(Span::raw(" "));
+    }
+    let tag = if is_mcp {
+        Some((
+            format!("[{}]", task.subagent_mode.as_deref().unwrap_or("MCP")),
+            pal.style("mcp"),
+        ))
+    } else {
+        task.subagent_mode
+            .as_ref()
+            .map(|mode| (format!("[{mode}]"), pal.style(agent_color_for(mode))))
+    };
+    if let Some((tag, style)) = tag {
+        spans.push(Span::styled(tag, style));
+        spans.push(Span::raw(" "));
+    }
+    let title_style = match task.status {
+        TaskStatus::Done => pal.faint(),
+        TaskStatus::Failed => pal.err(),
+        TaskStatus::InProgress => bold(Style::default()),
+        TaskStatus::Pending | TaskStatus::Cancelled => pal.dim(),
+    };
+    spans.push(Span::styled(task.title.clone(), title_style));
+    let mut row = Line::from(spans);
+    let Some((detail, detail_style)) = flight_detail(task, owner, confirm, now) else {
+        return row;
+    };
+    let detail = truncate_to_width(&detail, inner, "…", false);
+    let detail_width = visible_width(&detail);
+    let max_left = inner.saturating_sub(detail_width + 1).max(1);
+    row = truncate_line(&row, max_left);
+    let used: usize = row.spans.iter().map(|s| s.width()).sum();
+    let gap = inner.saturating_sub(used + detail_width).max(1);
+    row.spans.push(Span::raw(" ".repeat(gap)));
+    row.spans.push(Span::styled(detail, detail_style));
+    row
+}
+
+/// The focused panel as the FLIGHT PLAN console (M7, spec §4 c6): the plan's
+/// done/total in the title, the agents/satellites counts on the right, the
+/// waypoint track over the plan rows, the tab strip while several tabs have
+/// rows, and the spec hint foot. Tabs, keys, filtering and events are
+/// unchanged; only the chrome and the rows move to the console.
+fn render_flight_plan(
+    model: &RowModel,
+    view: TaskPanelView,
+    tab_views: &[TaskPanelView],
+    selected: Option<u64>,
+    confirming: Option<u64>,
+    width: usize,
+    now: u64,
+) -> Vec<String> {
+    let pal = Palette::current();
+    let mut done = 0;
+    let mut total = 0;
+    for (_, task) in model
+        .lens(TaskPanelView::Plan)
+        .filter(|(_, task)| task.is_plan_item())
+    {
+        total += 1;
+        done += usize::from(task.status == TaskStatus::Done);
+    }
+    let mut console = Console::new("FLIGHT PLAN", format!("{done}/{total}"));
+    let agents = model.row_ids(TaskPanelView::Subagents).len();
+    let sats = model.row_ids(TaskPanelView::Shell).len();
+    console.right = Line::from(vec![Span::styled(
+        format!("agents {agents} · sats {sats}"),
+        pal.faint(),
+    )]);
+    if view == TaskPanelView::Plan {
+        console.top.push(flight_track(model));
+    }
+    if tab_views.len() >= 2 {
+        console.top.push(flight_strip(model, view, tab_views));
+    }
+    let ids = model.row_ids(view);
+    // Rows sit behind the console's `› ` marker or gutter, so they get two
+    // cells less than the frame's inner width.
+    let row_inner = width.saturating_sub(4);
+    console.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
+    console.rows = model
+        .lens(view)
+        .map(|(row, task)| {
+            flight_row(
+                task,
+                model.owner_of(task),
+                &row.tree_prefix,
+                confirming == Some(row.id),
+                row_inner,
+                now,
+            )
+        })
+        .collect();
+    console.hint = hints(&[
+        ("↑↓", "move"),
+        ("enter", "jump to its steps"),
+        ("x", "drop"),
+        ("esc", "back"),
+    ]);
+    console.render(width)
+}
+
 /// `TaskPanelComponent`.
 pub struct TaskPanelComponent {
     view: TaskPanelView,
@@ -810,25 +1110,6 @@ const PANEL_KEYS: [&str; 8] = [
     "app.panel.cancel",
     "app.panel.exit",
 ];
-
-/// The focused panel's key hint line.
-fn focus_hint(width: usize) -> String {
-    let t = theme();
-    let up_down = format!(
-        "{}/{}",
-        key_text("app.panel.up"),
-        key_text("app.panel.down")
-    );
-    let parts = [
-        raw_key_hint(&key_text("app.panel.nextTab"), "switch"),
-        raw_key_hint(&up_down, "pick"),
-        raw_key_hint(&key_text("app.panel.open"), "open"),
-        raw_key_hint(&key_text("app.panel.cancel"), "cancel"),
-        raw_key_hint(&key_text("app.panel.exit"), "back"),
-    ];
-    let line = parts.join(&t.fg("muted", "  "));
-    truncate_to_width(&line, width, "…", false)
-}
 
 impl TaskPanelComponent {
     pub fn new() -> Self {
@@ -1061,10 +1342,23 @@ impl Component for TaskPanelComponent {
             return vec![gutter.clone() + &format_summary_line(model, inner, view, &tab_views)];
         }
 
+        // Focused (Ctrl+G): the FLIGHT PLAN console. Unfocused keeps the
+        // rail rows, whatever the density.
+        if focused {
+            return render_flight_plan(
+                model,
+                view,
+                &tab_views,
+                selected,
+                self.confirming,
+                width,
+                now,
+            );
+        }
+
         let mut lines = Vec::new();
-        if available.len() >= 2 || focused {
-            let hint = !focused;
-            lines.push(gutter.clone() + &format_lens_tabs(model, inner, view, &tab_views, hint));
+        if available.len() >= 2 {
+            lines.push(gutter.clone() + &format_lens_tabs(model, inner, view, &tab_views, true));
         }
         for (row, task) in model.lens(view) {
             let options = LineOptions {
@@ -1072,15 +1366,7 @@ impl Component for TaskPanelComponent {
                 tree_prefix: &row.tree_prefix,
                 confirm: self.confirming == Some(row.id),
             };
-            let marker = match (focused, selected == Some(row.id)) {
-                (false, _) => String::new(),
-                (true, true) => t.fg("accent", "› "),
-                (true, false) => "  ".to_string(),
-            };
-            lines.push(gutter.clone() + &marker + &format_task_line(task, inner, options, now));
-        }
-        if focused {
-            lines.push(gutter.clone() + &focus_hint(inner));
+            lines.push(gutter.clone() + &format_task_line(task, inner, options, now));
         }
         lines
     }
