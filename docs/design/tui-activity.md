@@ -3,7 +3,7 @@
 Status: **design, agreed 2026-10-09** ([decisions-2026-10-09.md](decisions-2026-10-09.md)).
 Input: eight read-only reviews of the TUI, subagent and parity code (summarised in Details).
 
-**Next (2026-10-17):** Phase U, every surface in one system, is its own card: [tui-surfaces.md](tui-surfaces.md).
+**Next (2026-10-17):** Phase U, every surface in one system, is its own card: [tui-surfaces.md](tui-surfaces.md). Mission Control is the card after Phase U: [mission-control.md](mission-control.md).
 
 **T0 done 2026-10-09** (T0.1 to T0.6). The hoocode-ts parity gate is retired: the done bar is
 L1, and screen goldens as a pre-release check (`python3 scripts/tui/goldens.py check all`, about 10 scenarios). `ledger.py` is read-only. The phase
