@@ -101,6 +101,7 @@ pub(super) struct MissionRange {
     pub(super) landed: bool,
     pub(super) header: Rc<RefCell<MissionHeader>>,
     pub(super) flight: Rc<RefCell<FlightStats>>,
+    pub(super) landing: Option<Rc<RefCell<trajectory::LandingLine>>>,
 }
 
 impl Transcript {
@@ -288,6 +289,14 @@ impl Transcript {
             flight.steps = steps;
             flight.hits = hits;
             flight.mark = mark;
+            drop(flight);
+            // A landed mission whose tally moved (a retry took blocks
+            // out) rebuilds its landing row, so peek and radar agree.
+            if self.missions[i].landed {
+                if let Some(landing) = self.missions[i].landing.clone() {
+                    landing.borrow_mut().set_counts(steps, hits);
+                }
+            }
         }
         let first_start = self.missions.first().map(|m| m.start);
         for (i, chain) in self.chains.iter().enumerate() {
@@ -320,6 +329,7 @@ impl Transcript {
             landed: false,
             header: header.clone(),
             flight,
+            landing: None,
         });
         if !self.chat.borrow().children.is_empty() {
             self.chat
@@ -357,22 +367,23 @@ impl Transcript {
         self.chat
             .borrow_mut()
             .add_child(self.peek_child(as_component(&handle(Spacer::new(1)))));
+        // The landing row draws from spans (M5 review): the transcript
+        // refreshes its counts when a landed mission's tally moves.
+        let tokens = format!(
+            "{} tokens",
+            format_tokens((input.max(0) + output.max(0)) as u64)
+        );
+        let landing = handle(trajectory::LandingLine::new(
+            steps,
+            hits,
+            &landed_time,
+            &tokens,
+            &cost_text,
+        ));
+        self.missions[i].landing = Some(landing.clone());
         self.chat
             .borrow_mut()
-            .add_child(self.peek_child(as_component(&handle(Text::new(
-                trajectory::landing_line(
-                    steps,
-                    hits,
-                    &landed_time,
-                    &format!(
-                        "{} tokens",
-                        format_tokens((input.max(0) + output.max(0)) as u64)
-                    ),
-                    &cost_text,
-                ),
-                1,
-                0,
-            )))));
+            .add_child(self.peek_child(as_component(&landing)));
         // The chains are closed by now, so the mark reads the outcome: a
         // clean mission landed, an interrupted one keeps `⊗` or `⊘`.
         let start = self.missions[i].start;
@@ -1513,6 +1524,30 @@ mod tests {
         assert!(flight.landed_time.is_some());
         assert!(flight.cost.is_some());
         assert!(flight.started.is_none());
+    }
+
+    /// A landed mission whose tally moves rebuilds its landing row, so
+    /// peek and radar agree on the counts.
+    #[test]
+    fn landed_counts_rebuild_the_landing_row() {
+        let mut t = fresh_transcript();
+        t.begin_mission("do it", None, ToolOutputView::Peek);
+        let chain = chain_with(2);
+        t.chains.push(chain.clone());
+        chain.borrow_mut().close(ChainState::Done);
+        assert!(t.land_mission(1, 100, 200, 0.002, 0.5));
+        assert!(chat_text(&t.chat).contains("2 steps"));
+        // A retry takes a block out after landing: both rows follow.
+        let dropped = chain.borrow().tool_blocks()[0].clone();
+        t.remove_tool_block(&dropped);
+        t.rebase_steps();
+        let text = chat_text(&t.chat);
+        assert!(text.contains("1 step"), "{text}");
+        assert!(!text.contains("2 steps"), "{text}");
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!((flight.steps, flight.hits), (1, 0));
+        let landing = t.missions[0].landing.as_ref().unwrap().borrow();
+        assert_eq!(landing.counts(), (1, 0));
     }
 
     /// An interrupted mission keeps `⊗` when a step failed, `⊘` when none did.

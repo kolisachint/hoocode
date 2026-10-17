@@ -114,22 +114,27 @@ impl FlightStats {
 
 /// The mission row: `M1 ●  prompt  1 step · 0✕ · 0.8s · $0.003`. The stats
 /// stay whole; the prompt is cut with `…` first. `prompt` is one line.
-pub fn mission_row(seq: usize, prompt: &str, stats: &FlightStats, width: usize) -> String {
+pub fn mission_row(
+    seq: usize,
+    prompt: &str,
+    stats: &FlightStats,
+    palette: &Palette,
+    width: usize,
+) -> String {
     if width == 0 {
         return String::new();
     }
-    let palette = Palette::current();
     // The legacy `agent2` mission colour, as in the peek header.
     let number = vec![Span::styled(
         format!("M{seq}"),
-        bold(hoocode_tui_ratatui::from_token("agent2")),
+        bold(palette.style("agent2")),
     )];
     let prefix = vec![
-        Span::styled(stats.mark.glyph().to_string(), stats.mark.style(&palette)),
+        Span::styled(stats.mark.glyph().to_string(), stats.mark.style(palette)),
         Span::styled(" ".to_string(), Style::default()),
     ];
     let left = vec![Span::styled(first_line(prompt), Style::default())];
-    let (left, right) = header_parts(number, prefix, left, stats.spans(&palette), width);
+    let (left, right) = header_parts(number, prefix, left, stats.spans(palette), width);
     two_part_row(left, right, width)
 }
 
@@ -137,11 +142,17 @@ pub fn mission_row(seq: usize, prompt: &str, stats: &FlightStats, width: usize) 
 /// is the mission-relative step number. The `HIT` chip stays whole; the
 /// tool and subject are cut with `…` first. An empty snippet drops the
 /// `→` part.
-pub fn hit_row(step: usize, tool: &str, subject: &str, snippet: &str, width: usize) -> String {
+pub fn hit_row(
+    step: usize,
+    tool: &str,
+    subject: &str,
+    snippet: &str,
+    palette: &Palette,
+    width: usize,
+) -> String {
     if width == 0 {
         return String::new();
     }
-    let palette = Palette::current();
     let number = vec![Span::styled("⊗".to_string(), palette.err())];
     let prefix = vec![Span::styled(format!("{step:02} "), bold(palette.warn()))];
     // `toolTitle` is "" in the theme: chalk's default opener, as in the
@@ -164,11 +175,17 @@ pub fn hit_row(step: usize, tool: &str, subject: &str, snippet: &str, width: usi
 
 /// A live step's line: `◐ 01 Shell  sleep 6; echo done  3s`. Elapsed only,
 /// no progress bar (design Q6 item 7).
-pub fn live_row(step: usize, tool: &str, subject: &str, elapsed_secs: u64, width: usize) -> String {
+pub fn live_row(
+    step: usize,
+    tool: &str,
+    subject: &str,
+    elapsed_secs: u64,
+    palette: &Palette,
+    width: usize,
+) -> String {
     if width == 0 {
         return String::new();
     }
-    let palette = Palette::current();
     let number = vec![Span::styled("◐".to_string(), palette.warn())];
     let prefix = vec![Span::styled(format!("{step:02} "), bold(palette.warn()))];
     // `toolTitle` is "" in the theme: chalk's default opener, as in the
@@ -184,14 +201,14 @@ pub fn live_row(step: usize, tool: &str, subject: &str, elapsed_secs: u64, width
 }
 
 /// Thinking's line under its mission: `✻ thought 3s`, no gist (M5).
-pub fn think_row(secs: u64, width: usize) -> String {
+pub fn think_row(secs: u64, palette: &Palette, width: usize) -> String {
     if width == 0 {
         return String::new();
     }
     row_line(
         vec![Span::styled(
             format!("✻ thought {}", short_dur(secs)),
-            hoocode_tui_ratatui::from_token("thinkingText"),
+            palette.style("thinkingText"),
         )],
         width,
     )

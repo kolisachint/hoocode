@@ -9,6 +9,7 @@ use hoocode_ai_types::{AssistantMessage, Content, StopReason, ABORTED_MESSAGE};
 use hoocode_code_tui_theme::{get_markdown_theme, theme};
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::{DefaultTextStyle, Markdown, MarkdownTheme, Spacer, Text};
+use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use hoocode_tui_util::js_regex::is_js_space;
 
@@ -329,9 +330,9 @@ impl AssistantMessageComponent {
     ///
     /// The radar flight log reads the same clock for its `✻ thought Ns`
     /// line (M5).
-    pub(crate) fn radar_think_line(&self, width: usize) -> Option<String> {
+    pub(crate) fn radar_think_line(&self, width: usize, palette: &Palette) -> Option<String> {
         self.think_secs(self.streaming)
-            .map(|secs| crate::radar::think_row(secs, width))
+            .map(|secs| crate::radar::think_row(secs, palette, width))
     }
 
     fn think_secs(&self, streaming: bool) -> Option<u64> {
@@ -469,7 +470,7 @@ impl AssistantMessageComponent {
     /// The radar flight log (M5): the message's last prose line, then its
     /// `✻ thought Ns` line with no gist. A message with neither renders
     /// nothing.
-    fn render_radar(&mut self, width: u16) -> Vec<String> {
+    fn render_radar(&mut self, width: u16, palette: &Palette) -> Vec<String> {
         let lines = self.content.render(width);
         let prose = lines
             .iter()
@@ -484,7 +485,7 @@ impl AssistantMessageComponent {
         if let Some(line) = prose {
             out.push(line);
         }
-        if let Some(line) = self.radar_think_line(width as usize) {
+        if let Some(line) = self.radar_think_line(width as usize, palette) {
             out.push(line);
         }
         if out.is_empty() {
@@ -496,8 +497,10 @@ impl AssistantMessageComponent {
 
 impl Component for AssistantMessageComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
+        // One palette per render pass, passed down to every row.
+        let palette = Palette::current();
         if self.thinking_display == ThinkingDisplay::Omit {
-            return self.render_radar(width);
+            return self.render_radar(width, &palette);
         }
         if self.has_tool_calls {
             return self.content.render(width);
@@ -522,7 +525,7 @@ impl Component for AssistantMessageComponent {
                 if trajectory::is_think_header(&line) {
                     line
                 } else {
-                    trajectory::rail_line(&line, width, false)
+                    trajectory::rail_line(&line, width, false, &palette)
                 }
             })
             .collect();

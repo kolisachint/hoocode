@@ -8,11 +8,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use hoocode_ai_types::Content;
-use hoocode_code_tui_theme::theme;
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{
-    strip_vt_control_characters as strip_line, truncate_to_width, visible_width,
-};
+use hoocode_tui_util::strip_vt_control_characters as strip_line;
+
+use hoocode_tui_ratatui::core::style::Style;
+use hoocode_tui_ratatui::core::text::Span;
+use hoocode_tui_ratatui::{ansi_spans, spans_width, truncate_spans, with_base_style, Palette};
 
 use crate::assistant_message::AssistantMessageComponent;
 use crate::radar::{hit_row, live_row};
@@ -22,6 +23,7 @@ use crate::tool_chain_summary::{
 use crate::tool_execution::ToolExecutionComponent;
 use crate::tool_output_view::ToolOutputView;
 use crate::trajectory;
+use crate::trajectory::{row_line, two_part_row};
 
 pub type ToolBlock = Rc<RefCell<ToolExecutionComponent>>;
 
@@ -192,7 +194,7 @@ impl ToolChainComponent {
     /// fold. A failed step shows the `HIT` chip in place of its success
     /// stats; an Edit step shows its `+a −b` counts and a Write step the
     /// `NEW` chip; a live background job shows its satellite row.
-    fn peek_rows(&mut self, width: u16) -> Vec<String> {
+    fn peek_rows(&mut self, width: u16, palette: &Palette) -> Vec<String> {
         let width = width as usize;
         let mut out = Vec::new();
         for (i, block) in self.blocks.iter().enumerate() {
@@ -220,18 +222,23 @@ impl ToolChainComponent {
                 content
             };
             out.push(trajectory::step_header(
-                &trajectory::step_number(step),
+                &trajectory::step_number(step, palette),
                 &prefix,
                 &content,
-                &block.borrow().peek_right(),
+                &block.borrow().peek_right(palette),
                 width,
             ));
             let shown = rest.len().min(trajectory::TRAJECTORY_BODY_LINES);
             for line in &rest[..shown] {
-                out.push(trajectory::rail_line(line, width, agent));
+                out.push(trajectory::rail_line(line, width, agent, palette));
             }
             if rest.len() > shown {
-                out.push(trajectory::fold_line(rest.len() - shown, width, agent));
+                out.push(trajectory::fold_line(
+                    rest.len() - shown,
+                    width,
+                    agent,
+                    palette,
+                ));
             }
         }
         out
@@ -242,10 +249,14 @@ impl ToolChainComponent {
     /// mission step. Settled clean calls get no row: the mission row above
     /// already counts them. Lead-in traces keep their think line, so
     /// thinking that led to a call still reads under its mission.
-    fn flight_rows(&self, width: usize) -> Vec<String> {
+    fn flight_rows(&self, width: usize, palette: &Palette) -> Vec<String> {
         let mut out = Vec::new();
         for component in &self.lead_ins {
-            if let Some(line) = component.component.borrow().radar_think_line(width) {
+            if let Some(line) = component
+                .component
+                .borrow()
+                .radar_think_line(width, palette)
+            {
                 out.push(line);
             }
         }
@@ -261,23 +272,45 @@ impl ToolChainComponent {
                     .find(|line| !line.is_empty())
                     .unwrap_or_default()
                     .to_string();
-                out.push(hit_row(step, &entry.tool, &entry.subject, &snippet, width));
+                out.push(hit_row(
+                    step,
+                    &entry.tool,
+                    &entry.subject,
+                    &snippet,
+                    palette,
+                    width,
+                ));
             } else if entry.is_partial {
                 let secs = body.block_elapsed_secs().unwrap_or(0);
-                out.push(live_row(step, &entry.tool, &entry.subject, secs, width));
+                out.push(live_row(
+                    step,
+                    &entry.tool,
+                    &entry.subject,
+                    secs,
+                    palette,
+                    width,
+                ));
             }
         }
         out
     }
 
     fn rows(&mut self, width: u16) -> Vec<String> {
+        // One palette per render pass, passed down to every row.
+        let palette = Palette::current();
         if !self.is_collapsed() {
-            return self.peek_rows(width);
+            return self.peek_rows(width, &palette);
         }
         if !self.orphan {
-            return self.flight_rows(width as usize);
+            return self.flight_rows(width as usize, &palette);
         }
-        let width = width as usize;
+        self.orphan_rows(width as usize, &palette)
+    }
+
+    /// A chain outside every mission keeps the old summary line in radar:
+    /// the state glyph, the run's labels and its stats, then one folded
+    /// block per failed call. Drawn from spans like every other row.
+    fn orphan_rows(&self, width: usize, palette: &Palette) -> Vec<String> {
         let entries: Vec<_> = self
             .blocks
             .iter()
@@ -306,97 +339,89 @@ impl ToolChainComponent {
             ChainState::Interrupted if !failed => "⊘",
             ChainState::Interrupted | ChainState::Done => "●",
         };
-        let glyph_tone = if failed {
-            "error"
+        // The legacy tones, as the chalk rows styled them (`toolTitle` is
+        // "" in the theme: chalk's default opener).
+        let glyph_style = if failed {
+            palette.err()
         } else {
             match shown {
-                ChainState::Running => "warning",
-                ChainState::Interrupted => "muted",
-                ChainState::Done => "success",
+                ChainState::Running => palette.style("warning"),
+                ChainState::Interrupted => palette.faint(),
+                ChainState::Done => palette.ok(),
             }
         };
-
-        let t = theme();
-        let (left_plain, left_styled) = if shown == ChainState::Done {
-            let phrase = chain_phrase(&entries);
-            (phrase.clone(), t.fg("toolTitle", &phrase))
+        let segment_style = |tone: SegmentTone| match tone {
+            SegmentTone::Error => palette.err(),
+            SegmentTone::Running => palette.style("warning"),
+            SegmentTone::Ok => Style::default(),
+        };
+        let left: Vec<Span<'static>> = if shown == ChainState::Done {
+            ansi_spans(&chain_phrase(&entries))
         } else {
             let segments = chain_segments(&entries);
-            let sep = " › ";
-            let ellipsis = if running { "…" } else { "" };
-            let plain = format!(
-                "{}{ellipsis}",
-                segments
-                    .iter()
-                    .map(|s| s.label.as_str())
-                    .collect::<Vec<_>>()
-                    .join(sep)
-            );
-            let styled = segments
-                .iter()
-                .map(|s| {
-                    let tone = match s.tone {
-                        SegmentTone::Error => "error",
-                        SegmentTone::Running => "warning",
-                        SegmentTone::Ok => "toolTitle",
-                    };
-                    t.fg(tone, &s.label)
-                })
-                .collect::<Vec<_>>()
-                .join(&t.fg("dim", sep))
-                + &(if running {
-                    t.fg("dim", "…")
-                } else {
-                    String::new()
-                });
-            (plain, styled)
+            let mut spans = Vec::new();
+            for (i, segment) in segments.iter().enumerate() {
+                if i > 0 {
+                    spans.push(Span::styled(" › ".to_string(), palette.dim()));
+                }
+                spans.push(Span::styled(
+                    segment.label.clone(),
+                    segment_style(segment.tone),
+                ));
+            }
+            if running {
+                spans.push(Span::styled("…".to_string(), palette.dim()));
+            }
+            spans
         };
 
-        let stats = chain_stats(&entries, shown);
-        let stroke = self.latest && t.has_bg("activeToolBg");
-        let mark = |text: &str| {
-            if stroke {
-                t.bg("activeToolBg", text)
-            } else {
-                text.to_string()
-            }
+        let stats = Span::styled(chain_stats(&entries, shown), palette.faint());
+        // The latest-row stroke, merged into the label spans' background.
+        let bg = if self.latest {
+            palette.bg_color("activeToolBg")
+        } else {
+            None
         };
-        let prefix = format!("{glyph} ");
-        let budget = width.saturating_sub(1 + visible_width(&prefix));
-        let stats_width = visible_width(&stats);
+        let paint_bg = |mut span: Span<'static>| {
+            if let Some(bg) = bg {
+                span.style.bg = Some(bg);
+            }
+            span
+        };
+        let mut prefix = vec![
+            paint_bg(Span::styled(" ".to_string(), Style::default())),
+            paint_bg(Span::styled(glyph.to_string(), glyph_style)),
+            paint_bg(Span::styled(" ".to_string(), Style::default())),
+        ];
+        let mut left: Vec<Span<'static>> = left.into_iter().map(paint_bg).collect();
+        let right = vec![stats];
+        let budget = width.saturating_sub(spans_width(&prefix));
+        let stats_width = spans_width(&right);
         // Stats whole, flush right. When the label does not fit beside them it
         // is dropped; the stats are cut only when they do not fit alone.
-        let line = if visible_width(&left_plain) + 2 + stats_width <= budget {
-            let pad = " ".repeat(budget - visible_width(&left_plain) - stats_width);
-            format!(
-                " {}{}{pad}{}",
-                t.fg(glyph_tone, &prefix),
-                mark(&left_styled),
-                t.fg("muted", &stats)
-            )
+        let line = if spans_width(&left) + 2 + stats_width <= budget {
+            prefix.append(&mut left);
+            two_part_row(prefix, right, width)
         } else if stats_width <= budget {
-            let pad = " ".repeat(budget - stats_width);
-            format!(
-                " {}{pad}{}",
-                t.fg(glyph_tone, &prefix),
-                t.fg("muted", &stats)
-            )
+            two_part_row(prefix, right, width)
         } else {
-            format!(
-                " {}{}",
-                t.fg(glyph_tone, &prefix),
-                t.fg("muted", &truncate_to_width(&stats, budget, "…", false))
-            )
+            // Flush left like the old row: the cut stats sit right behind
+            // the glyph, not flush right.
+            prefix.extend(truncate_spans(right, budget, "…"));
+            row_line(prefix, width)
         };
         let mut out = vec![line];
-        out.extend(self.failure_lines(width));
+        out.extend(self.failure_lines(width, palette));
         out
     }
 
     /// Each failed call's header and the last lines of its reason, under the
     /// chain line. A longer reason folds to its tail, with the way to see it all.
-    fn failure_lines(&self, width: usize) -> Vec<String> {
-        let t = theme();
+    fn failure_lines(&self, width: usize, palette: &Palette) -> Vec<String> {
+        // The legacy tones, as the chalk rows styled them: the tool keeps
+        // chalk's default opener (`toolTitle` is ""), the subject and reason
+        // keep their styling rooted in `toolOutput`.
+        let output = palette.style("toolOutput");
         let mut lines = Vec::new();
         for block in &self.blocks {
             let block = block.borrow();
@@ -404,13 +429,15 @@ impl ToolChainComponent {
             if !entry.is_error {
                 continue;
             }
-            let header = format!(
-                "    {} {}  {}",
-                t.fg("error", "✗"),
-                t.fg("toolTitle", &entry.tool),
-                t.fg("toolOutput", &entry.subject)
-            );
-            lines.push(truncate_to_width(&header, width, "…", false));
+            let mut header = vec![
+                Span::styled("    ".to_string(), Style::default()),
+                Span::styled("✗".to_string(), palette.err()),
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled(entry.tool.clone(), Style::default()),
+                Span::styled("  ".to_string(), Style::default()),
+            ];
+            header.extend(with_base_style(ansi_spans(&entry.subject), output));
+            lines.push(row_line(truncate_spans(header, width, "…"), width));
             let text = block.error_text();
             let reason: Vec<&str> = text
                 .split('\n')
@@ -418,30 +445,23 @@ impl ToolChainComponent {
                 .collect();
             let hidden = reason.len().saturating_sub(FAILURE_TAIL_LINES);
             for raw in &reason[hidden..] {
-                lines.push(truncate_to_width(
-                    &format!("      {}", t.fg("toolOutput", raw)),
-                    width,
-                    "…",
-                    false,
-                ));
+                let mut line = vec![Span::styled("      ".to_string(), Style::default())];
+                line.extend(with_base_style(ansi_spans(raw), output));
+                lines.push(row_line(truncate_spans(line, width, "…"), width));
             }
             if hidden > 0 {
                 let noun = if hidden == 1 { "line" } else { "lines" };
-                lines.push(truncate_to_width(
-                    &format!(
-                        "      {}",
-                        t.fg(
-                            "muted",
-                            &format!(
-                                "… {hidden} more {noun} · {}",
-                                hoocode_code_tui_keybindings::key_text("app.tools.expand")
-                            )
-                        )
+                let line = vec![
+                    Span::styled("      ".to_string(), Style::default()),
+                    Span::styled(
+                        format!(
+                            "… {hidden} more {noun} · {}",
+                            hoocode_code_tui_keybindings::key_text("app.tools.expand")
+                        ),
+                        palette.faint(),
                     ),
-                    width,
-                    "…",
-                    false,
-                ));
+                ];
+                lines.push(row_line(truncate_spans(line, width, "…"), width));
             }
         }
         lines

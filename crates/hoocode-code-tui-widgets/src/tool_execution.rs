@@ -543,11 +543,11 @@ impl ToolExecutionComponent {
     /// chain. A failed step shows only the `HIT` chip (plus the exit code
     /// and duration when known): it replaces the success stats, never
     /// appends to them. Empty when the step carries no stats.
-    pub fn peek_right(&self) -> String {
+    pub fn peek_right(&self, palette: &hoocode_tui_ratatui::Palette) -> String {
         let t = theme();
         let dim = |s: &str| t.fg("muted", s);
         if self.is_error() {
-            let mut stats = crate::trajectory::hit_chip();
+            let mut stats = crate::trajectory::hit_chip(palette);
             if self.tool_name == "Shell" {
                 if let Some(code) = shell_exit_code(&self.text_output()) {
                     stats.push_str(&format!(" {}", dim(&format!("exit {code}"))));
@@ -559,7 +559,7 @@ impl ToolExecutionComponent {
             return stats;
         }
         if let Some(job) = self.background_job_id() {
-            return crate::trajectory::satellite_text(&job);
+            return crate::trajectory::satellite_text(&job, palette);
         }
         match self.tool_name.as_str() {
             "Shell" => {
@@ -632,7 +632,7 @@ impl ToolExecutionComponent {
                 let Some(_) = self.result.as_ref() else {
                     return String::new();
                 };
-                let mut stats = crate::trajectory::new_chip();
+                let mut stats = crate::trajectory::new_chip(palette);
                 let lines = self
                     .args
                     .get("content")

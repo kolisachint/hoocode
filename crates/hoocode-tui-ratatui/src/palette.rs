@@ -44,18 +44,49 @@ pub struct Palette {
     colors: BTreeMap<String, String>,
 }
 
+/// What a render cache keys on: the theme name plus the generation, so a
+/// reload under the same name still invalidates.
+pub type ThemeKey = (Option<String>, u64);
+
+/// The current theme key.
+pub fn theme_key() -> ThemeKey {
+    (
+        hoocode_code_tui_theme::current_theme_name(),
+        hoocode_code_tui_theme::theme_generation(),
+    )
+}
+
+/// One JSON parse per theme, not per row: the snapshot for the current
+/// theme key is shared until the theme changes.
+static SNAPSHOT: std::sync::Mutex<(Option<ThemeKey>, Option<Palette>)> =
+    std::sync::Mutex::new((None, None));
+
 impl Palette {
     /// The current process theme's resolved colours (CSS hex per token). An
     /// unknown or in-memory theme resolves to no colours here; [`Palette::style`]
-    /// still reads those through the live theme's ANSI.
+    /// still reads those through the live theme's ANSI. Snapshots are
+    /// shared per theme key: hold one [`Palette`] per render pass and pass
+    /// it down instead of calling this per row.
     pub fn current() -> Self {
+        let key = theme_key();
+        if let Ok(guard) = SNAPSHOT.lock() {
+            if guard.0.as_ref() == Some(&key) {
+                if let Some(palette) = guard.1.clone() {
+                    return palette;
+                }
+            }
+        }
         let mut colors = BTreeMap::new();
-        if let Some(name) = hoocode_code_tui_theme::current_theme_name() {
-            if let Ok(resolved) = hoocode_code_tui_theme::get_resolved_theme_colors(Some(&name)) {
+        if let Some(name) = &key.0 {
+            if let Ok(resolved) = hoocode_code_tui_theme::get_resolved_theme_colors(Some(name)) {
                 colors = resolved;
             }
         }
-        Self { colors }
+        let palette = Self { colors };
+        if let Ok(mut guard) = SNAPSHOT.lock() {
+            *guard = (Some(key), Some(palette.clone()));
+        }
+        palette
     }
 
     /// The ratatui style for `name`: the token's colour, or its legacy
@@ -117,6 +148,27 @@ impl Palette {
     /// Step numbers.
     pub fn gold(&self) -> Style {
         self.style("gold")
+    }
+
+    /// A background-token style (the `activeToolBg` latest-row stroke):
+    /// the token's background colour, or the default style when the theme
+    /// sets none. With colour off the style is always default.
+    pub fn bg(&self, name: &str) -> Style {
+        self.bg_color(name)
+            .map_or_else(Style::default, |color| Style::default().bg(color))
+    }
+
+    /// A background token's colour, if the theme sets one (and colour is
+    /// on). Row builders merge it into their spans' styles.
+    pub fn bg_color(&self, name: &str) -> Option<Color> {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return None;
+        }
+        let theme = hoocode_code_tui_theme::try_theme()?;
+        if !theme.has_bg(name) {
+            return None;
+        }
+        bg_color(theme.get_bg_ansi(name))
     }
 
     /// The foreground colour for `name`, following the fallback chain. A
@@ -235,6 +287,23 @@ fn css_to_color(css: &str) -> Option<Color> {
         g.clamp(0, 255) as u8,
         b.clamp(0, 255) as u8,
     ))
+}
+
+/// A background SGR opener as a colour: `\x1b[48;2;r;g;bm` or
+/// `\x1b[48;5;nm`. Anything else (including the default `\x1b[49m`) is
+/// `None`: no colour.
+fn bg_color(ansi: &str) -> Option<Color> {
+    let body = ansi.strip_prefix("\x1b[")?.strip_suffix('m')?;
+    let mut parts = body.split(';');
+    match (parts.next()?, parts.next()?) {
+        ("48", "2") => Some(Color::Rgb(
+            parts.next()?.parse::<u8>().ok()?,
+            parts.next()?.parse::<u8>().ok()?,
+            parts.next()?.parse::<u8>().ok()?,
+        )),
+        ("48", "5") => parts.next()?.parse::<u8>().ok().map(Color::Indexed),
+        _ => None,
+    }
 }
 
 /// A foreground SGR opener as CSS hex: `\x1b[38;2;r;g;bm` or

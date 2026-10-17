@@ -85,14 +85,18 @@ fn apply_sgr(state: &mut SgrState, params: &str) {
             continue;
         };
         if code == 38 || code == 48 {
-            let color = if parts.get(i + 1) == Some(&"5") {
-                indexed(&parts, i).map(|c| (c, 3))
-            } else if parts.get(i + 1) == Some(&"2") {
-                rgb(&parts, i).map(|c| (c, 5))
-            } else {
-                None
-            };
-            if let Some((color, used)) = color {
+            // An announced `;5` or `;2` colour with missing bytes aborts the
+            // whole sequence: the orphaned `2` must not fall through and
+            // read as DIM below.
+            if parts.get(i + 1) == Some(&"5") || parts.get(i + 1) == Some(&"2") {
+                let color = if parts.get(i + 1) == Some(&"5") {
+                    indexed(&parts, i).map(|c| (c, 3))
+                } else {
+                    rgb(&parts, i).map(|c| (c, 5))
+                };
+                let Some((color, used)) = color else {
+                    return;
+                };
                 if code == 38 {
                     state.fg = Some(color);
                 } else {
@@ -187,6 +191,23 @@ pub fn ansi_spans(text: &str) -> Vec<Span<'static>> {
         }
     }
     out
+}
+
+/// Reroots unstyled spans onto `style`, keeping explicitly styled runs as
+/// they are: what wrapping one chalk `fg` call around parsed text means.
+/// Chalk never re-opens the outer style after an inner close, so neither
+/// does this.
+pub fn with_base_style(spans: Vec<Span<'static>>, style: Style) -> Vec<Span<'static>> {
+    spans
+        .into_iter()
+        .map(|span| {
+            if span.style == Style::default() {
+                Span::styled(span.content.into_owned(), style)
+            } else {
+                span
+            }
+        })
+        .collect()
 }
 
 /// The visible cells `spans` take.
@@ -297,6 +318,18 @@ mod tests {
                 .add_modifier(Modifier::BOLD)
         );
         assert_eq!(spans[1].style, Style::default());
+    }
+
+    #[test]
+    fn incomplete_extended_colours_abort_the_sequence() {
+        // A truncated `38;2` must not leak its `2` as DIM, and a truncated
+        // `38;5` must not style anything either.
+        for seq in ["\x1b[38;2;255;92m", "\x1b[38;5m", "\x1b[48;2;1m"] {
+            let spans = ansi_spans(&format!("{seq}hi"));
+            assert_eq!(spans.len(), 1, "{seq:?}");
+            assert_eq!(spans[0].content.as_ref(), "hi");
+            assert_eq!(spans[0].style, Style::default(), "{seq:?}");
+        }
     }
 
     #[test]
