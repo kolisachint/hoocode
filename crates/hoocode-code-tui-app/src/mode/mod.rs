@@ -84,6 +84,7 @@ mod mcp;
 mod models;
 mod plugin;
 mod prompt_queue;
+mod retry;
 mod session_op;
 mod session_ops;
 mod settings;

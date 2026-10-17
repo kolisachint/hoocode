@@ -403,7 +403,8 @@ impl ToolExecutionComponent {
             output_lines: if crate::is_blank(&output) {
                 0
             } else {
-                output.split('\n').count()
+                // `lines` drops the trailing newline: "a\nb\n" is 2 lines.
+                output.lines().count()
             },
             outcome: crate::tools::subagent::task_outcome(
                 &self.tool_name,

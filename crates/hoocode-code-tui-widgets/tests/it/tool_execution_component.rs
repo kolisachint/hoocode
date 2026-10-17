@@ -727,3 +727,19 @@ mod freeze {
         assert_eq!(strip_all(&c.render(120)), snapshot);
     }
 }
+
+#[test]
+fn chain_entry_counts_output_lines_without_the_trailing_newline() {
+    let _g = lock();
+    let counted = |output: &str| {
+        let mut c = component("Shell", "c1", json!({}), Peek, None);
+        c.update_result(result(output, false), false);
+        c.chain_entry().output_lines
+    };
+    assert_eq!(counted("a\nb\n"), 2);
+    assert_eq!(counted("a\nb"), 2);
+    assert_eq!(counted("a\n\nb\n"), 3);
+    assert_eq!(counted("a"), 1);
+    assert_eq!(counted(""), 0);
+    assert_eq!(counted("\n"), 0);
+}

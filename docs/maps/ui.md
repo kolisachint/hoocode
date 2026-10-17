@@ -32,7 +32,7 @@ update this page in the same commit.
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
 | Attached subagent view (T3.3): a header row above the chat (`◂ <type> · <description> · <state> · Esc back`), and the prompt's place with a read-only hint; Esc goes back. The chat shows the run's transcript while attached; the session's is parked and kept up to date | attached view | `code-tui-widgets/src/attach_view.rs` (header, hint). The swap, the routing and the run's events: `hoocode-code-tui-app/src/mode/attach.rs`; the header's slot is `Mode::attach_slot` (above the chat) |
 | Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `mode/input.rs` `setup_autocomplete_provider`. `@file` uses the in-process finder `hoocode-code-tools::file_finder`, injected by `mode/input.rs` `at_file_finder` (no `fd`) and run on a worker thread (`autocomplete/file_search.rs`): typing never waits, and the editor re-asks when a walk finishes (`take_ready`). |
-| Footer | footer, footer data. Always two rows: row 1 folder, branch, session, path, then mode chip and view dial; row 2 model, context gauge, tokens, cost. Compact keeps both rows. Transient messages show above the prompt, not in the footer: a warning line (memory shedding, UI stall), extension statuses and startup progress, read with `FooterComponent::transient_lines`. The warning is set by `mode/mod.rs` `sync_runtime_health` | `hoocode-code-tui-app/src/footer.rs`, `footer_data.rs` |
+| Footer | footer, footer data. Always two rows: row 1 folder, branch, session, path, then mode chip and view dial; row 2 model, context gauge, tokens, cost. Compact keeps both rows. Transient messages show above the prompt, not in the footer: a warning line (memory shedding, UI stall), the auto-retry notice (`retrying · attempt 2 of 6 · …`, set from `AutoRetryStart` and cleared by `AutoRetryEnd` in `mode/events.rs` through `set_retry_notice`), extension statuses and startup progress, read with `FooterComponent::transient_lines`. The warning is set by `mode/mod.rs` `sync_runtime_health` | `hoocode-code-tui-app/src/footer.rs`, `footer_data.rs` |
 | Session chip | session chip | `code-tui-widgets/src/session_chip.rs` |
 | How much room chrome gets (two stops: full, compact; `/chrome <full\|compact>`, `Alt+Z` / `Shift+Alt+Z` toggle) | chrome layout | `hoocode-code-tui-app/src/chrome_layout.rs` |
 
@@ -52,6 +52,7 @@ update this page in the same commit.
 | Diffs | `diff.rs`, `jsdiff.rs` |
 | File content with line numbers | `read_output.rs` |
 | Notice rows (`showRecord`) | `hoocode-code-tui-app/src/record_row.rs` |
+| Failed Model block (`⊗ Model`, one per retry streak that gave up or was cancelled; the failed attempts' own rows are taken out of the chat) | `hoocode-code-tui-app/src/mode/retry.rs` (built on the chat from `AutoRetryStart` / `AutoRetryEnd` in `mode/events.rs`) |
 
 ### Tool renderers (`code-tui-widgets/src/tools/`)
 

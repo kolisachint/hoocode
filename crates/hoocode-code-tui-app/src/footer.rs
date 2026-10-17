@@ -156,7 +156,7 @@ fn subagent_piece(running: usize, queued: usize) -> Piece {
 }
 
 /// Newlines, tabs and carriage returns become spaces; runs of spaces collapse.
-fn sanitize_status_text(text: &str) -> String {
+pub(crate) fn sanitize_status_text(text: &str) -> String {
     let replaced: String = text
         .chars()
         .map(|c| {
@@ -614,6 +614,9 @@ pub struct FooterComponent {
     density: FooterDensity,
     /// A warning (memory shedding, UI stall). Not a row: see `transient_lines`.
     notice: Option<String>,
+    /// The auto-retry notice while the session retries a transient failure
+    /// (`retrying · attempt 2 of 6 · …`). Not a row: see `transient_lines`.
+    retry_notice: Option<String>,
 }
 
 impl FooterComponent {
@@ -626,12 +629,18 @@ impl FooterComponent {
             session_chip_shown: false,
             density: FooterDensity::Full,
             notice: None,
+            retry_notice: None,
         }
     }
 
     /// Sets or clears the warning. `None` removes it.
     pub fn set_notice(&mut self, notice: Option<String>) {
         self.notice = notice;
+    }
+
+    /// Sets or clears the auto-retry notice. `None` removes it.
+    pub fn set_retry_notice(&mut self, notice: Option<String>) {
+        self.retry_notice = notice;
     }
 
     pub fn set_source(&mut self, source: Box<dyn FooterSource>) {
@@ -659,13 +668,22 @@ impl FooterComponent {
     }
 
     /// The transient messages, not part of the footer's two rows: the
-    /// warning, then extension statuses, then startup progress. Each is at
-    /// most `width` cells. Show them in the notification area.
+    /// warning, then the retry notice, then extension statuses, then startup
+    /// progress. Each is at most `width` cells. Show them in the notification
+    /// area.
     pub fn transient_lines(&self, width: usize) -> Vec<String> {
         let mut lines = Vec::new();
         if let Some(notice) = &self.notice {
             lines.push(truncate_to_width(
                 &theme().fg("warning", notice),
+                width,
+                &theme().fg("dim", "..."),
+                false,
+            ));
+        }
+        if let Some(notice) = &self.retry_notice {
+            lines.push(truncate_to_width(
+                &theme().fg("warning", &sanitize_status_text(notice)),
                 width,
                 &theme().fg("dim", "..."),
                 false,

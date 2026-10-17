@@ -68,6 +68,10 @@ pub(super) struct Transcript {
     pub(super) branch_summaries: Vec<Rc<RefCell<BranchSummaryMessageComponent>>>,
     /// Every compaction summary in the transcript, for the expand sweep.
     pub(super) compaction_summaries: Vec<Rc<RefCell<CompactionSummaryMessageComponent>>>,
+    /// The row of the latest failed attempt, until a retry event takes it out (`retry.rs`).
+    pub(super) attempt_error: Option<Rc<RefCell<AssistantMessageComponent>>>,
+    /// The auto-retry streak in progress (`retry.rs`).
+    pub(super) retry_streak: Option<super::retry::RetryStreak>,
 }
 
 impl Transcript {
@@ -89,6 +93,8 @@ impl Transcript {
             background_notices: Vec::new(),
             branch_summaries: Vec::new(),
             compaction_summaries: Vec::new(),
+            attempt_error: None,
+            retry_streak: None,
         }
     }
 }

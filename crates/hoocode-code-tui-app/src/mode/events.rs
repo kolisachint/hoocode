@@ -21,6 +21,7 @@ use hoocode_tui_render::Component;
 
 use crate::startup_progress;
 
+use super::retry::retry_notice_text;
 use super::*;
 
 /// What dangling plan rows settle to when a request ends: done after a clean
@@ -167,7 +168,30 @@ impl Mode {
                 self.update_session_chip();
                 self.update_terminal_title();
             }
-            _ => {}
+            AgentSessionEvent::AutoRetryStart {
+                attempt,
+                max_attempts,
+                error_message,
+                ..
+            } => {
+                self.transcript.start_retry(&error_message);
+                self.footer
+                    .borrow_mut()
+                    .set_retry_notice(Some(retry_notice_text(
+                        attempt,
+                        max_attempts,
+                        &error_message,
+                    )));
+            }
+            AgentSessionEvent::AutoRetryEnd {
+                success,
+                attempt,
+                final_error,
+            } => {
+                self.transcript
+                    .end_retry(success, attempt, final_error.as_deref());
+                self.footer.borrow_mut().set_retry_notice(None);
+            }
         }
         self.dirty.set(true);
     }
@@ -353,6 +377,10 @@ impl Mode {
                         });
                     }
                     component.borrow_mut().update_content(&assistant, false);
+                    if assistant.stop_reason == StopReason::Error {
+                        // A retry may take this row out (`retry.rs`).
+                        self.transcript.keep_attempt_error(component.clone());
+                    }
                     if matches!(
                         assistant.stop_reason,
                         StopReason::Aborted | StopReason::Error

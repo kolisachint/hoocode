@@ -358,6 +358,19 @@ fn format_duration_secs_bands() {
 }
 
 #[test]
+fn format_duration_rounds_the_total_before_splitting() {
+    // 3h59.5m is 4h00m, never "3h60m".
+    assert_eq!(format_duration_secs(3.0 * 3600.0 + 59.5 * 60.0), "4h00m");
+    assert_eq!(format_duration_secs(3.0 * 3600.0 + 59.4 * 60.0), "3h59m");
+    // Seconds that round up to a minute carry into it.
+    assert_eq!(format_duration_secs(59.6), "1m00s");
+    assert_eq!(format_duration_secs(119.6), "2m00s");
+    // Just under an hour rounds up into the hour, not "59m60s".
+    assert_eq!(format_duration_secs(3599.6), "1h00m");
+    assert_eq!(format_duration_secs(3599.4), "59m59s");
+}
+
+#[test]
 fn gold_format_duration_rounding_matches_hoocode() {
     let inputs = [
         0.0, 0.05, 0.15, 0.25, 4.1, 9.94, 9.95, 9.99, 10.0, 10.5, 59.4, 59.5, 60.0, 90.0, 119.6,
@@ -365,7 +378,7 @@ fn gold_format_duration_rounding_matches_hoocode() {
     ];
     let expected = [
         "0.0s", "0.1s", "0.1s", "0.3s", "4.1s", "9.9s", "9.9s", "10.0s", "10s", "11s", "59s",
-        "60s", "1m00s", "1m30s", "1m60s", "59m59s", "1h00m", "1h00m", "1h01m", "1h30m", "2h01m",
+        "1m00s", "1m00s", "1m30s", "2m00s", "59m59s", "1h00m", "1h00m", "1h01m", "1h30m", "2h01m",
         "0.0s",
     ];
     let got: Vec<String> = inputs.iter().map(|s| format_duration_secs(*s)).collect();
