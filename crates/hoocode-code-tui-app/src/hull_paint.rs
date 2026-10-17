@@ -38,6 +38,30 @@ impl HullPaint {
         }
     }
 
+    /// The old session-chip colour name for the notice's `· <colour>` suffix
+    /// (design e5 shows `parity · yellow`): the primary old slot colour that
+    /// maps to this paint.
+    pub fn legacy_name(self) -> &'static str {
+        match self {
+            HullPaint::Parity => "yellow",
+            HullPaint::Cyan => "cyan",
+            HullPaint::Violet => "purple",
+            HullPaint::Lime => "green",
+            HullPaint::Red => "red",
+        }
+    }
+
+    /// The theme token painting the notice swatch: the paint's own colour.
+    pub fn swatch_token(self) -> &'static str {
+        match self {
+            HullPaint::Parity => "warning",
+            HullPaint::Cyan => "accent",
+            HullPaint::Violet => "agent2",
+            HullPaint::Lime => "success",
+            HullPaint::Red => "error",
+        }
+    }
+
     /// The palette token the chrome takes: gold, acc, vio, ok, err.
     pub fn token(self) -> &'static str {
         match self {
@@ -159,6 +183,15 @@ mod tests {
         assert_eq!(HullPaint::Violet.token(), "vio");
         assert_eq!(HullPaint::Lime.token(), "ok");
         assert_eq!(HullPaint::Red.token(), "err");
+    }
+
+    #[test]
+    fn notice_names_the_paint_and_its_old_colour() {
+        assert_eq!(HullPaint::Parity.legacy_name(), "yellow");
+        assert_eq!(HullPaint::Cyan.legacy_name(), "cyan");
+        assert_eq!(HullPaint::Violet.legacy_name(), "purple");
+        assert_eq!(HullPaint::Lime.legacy_name(), "green");
+        assert_eq!(HullPaint::Red.legacy_name(), "red");
     }
 
     #[test]
