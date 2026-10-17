@@ -120,6 +120,9 @@ impl Palette {
     }
 
     /// The foreground colour for `name`, following the fallback chain.
+    /// The resolved snapshot wins; in-memory themes fall back to the live
+    /// theme. Empty tokens resolve to the default text colour here (so
+    /// `ink` paints the glyph `#e5e5e7` on dark, as M2 goldens lock).
     fn color_for(&self, name: &str) -> Option<Color> {
         let mut chain = vec![name];
         if let Some(legacy) = fallback_for(name) {
@@ -147,6 +150,29 @@ impl Palette {
             }
         }
         None
+    }
+
+    /// A legacy theme token's style, exactly as `theme().fg` renders it:
+    /// the live theme's ANSI first (empty tokens like `"text"` stay the
+    /// default style), the resolved snapshot when no live theme is loaded.
+    /// Use this where the ported code called `theme().fg("text", …)`; MC
+    /// tokens keep [`Palette::style`].
+    pub fn legacy(&self, name: &str) -> Style {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return Style::default();
+        }
+        if let Some(theme) = hoocode_code_tui_theme::try_theme() {
+            if theme.has(name) {
+                let ansi = theme.get_fg_ansi(name);
+                if let Some(css) = ansi_to_hex(ansi) {
+                    if let Some(color) = css_to_color(&css) {
+                        return Style::new().fg(color);
+                    }
+                }
+                return Style::default();
+            }
+        }
+        self.style(name)
     }
 }
 
