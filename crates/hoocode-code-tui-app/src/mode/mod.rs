@@ -886,7 +886,13 @@ impl Mode {
                 TreePart::WidgetsBelow => {
                     tui.add_child(as_component(&handle(Container::new()))); // widgets below
                 }
-                TreePart::Footer => tui.add_child(footer_slot.clone()),
+                TreePart::Footer => {
+                    // Inline mode only: full-screen replaces the two-row
+                    // footer with the HUD (`TreePart::Hud`).
+                    if !fullscreen {
+                        tui.add_child(footer_slot.clone());
+                    }
+                }
             }
         }
         tui.set_focus(Some(as_component(&comms)));
