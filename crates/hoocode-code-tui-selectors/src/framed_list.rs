@@ -8,11 +8,14 @@
 //! hint sits in the foot edge. No `InputFrame`, no SGR theme painting.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use hoocode_code_tui_theme::get_select_list_theme;
+use hoocode_code_tui_theme::hex_to_rgb;
 use hoocode_code_tui_widgets::console::{hints, Console};
 use hoocode_tui_components::{SelectItem, SelectList, SelectListLayoutOptions};
+use hoocode_tui_ratatui::core::style::{Color, Style};
 use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
 
@@ -28,15 +31,29 @@ pub(crate) fn layout(min: usize, max: usize) -> SelectListLayoutOptions {
 }
 
 /// One picker row (content only; the console adds the `›` marker or gutter
-/// and the selection band): the primary label with its dim description.
-fn select_row(item: &SelectItem) -> Line<'static> {
+/// and the selection band): the swatch blocks, the primary label with its
+/// dim description.
+fn select_row(item: &SelectItem, swatches: &[String]) -> Line<'static> {
     let pal = Palette::current();
     let label = if item.label.is_empty() {
         item.value.clone()
     } else {
         item.label.clone()
     };
-    let mut spans = vec![Span::raw(label)];
+    let mut spans = Vec::new();
+    for hex in swatches {
+        let Ok((r, g, b)) = hex_to_rgb(hex) else {
+            continue;
+        };
+        spans.push(Span::styled(
+            "█".to_string(),
+            Style::default().fg(Color::Rgb(r as u8, g as u8, b as u8)),
+        ));
+    }
+    if !spans.is_empty() {
+        spans.push(Span::raw(" ".to_string()));
+    }
+    spans.push(Span::raw(label));
     if let Some(description) = item.description.as_deref() {
         let single = description
             .split(['\r', '\n'])
@@ -56,7 +73,11 @@ fn select_row(item: &SelectItem) -> Line<'static> {
 /// behaviour.
 pub struct FramedSelectList {
     name: String,
+    count: String,
     list: Rc<RefCell<SelectList>>,
+    /// Swatch colours (CSS hex) per item value, drawn ahead of the label.
+    /// Items without an entry render as before.
+    swatches: HashMap<String, Vec<String>>,
 }
 
 impl FramedSelectList {
@@ -77,8 +98,22 @@ impl FramedSelectList {
         }
         Self {
             name: title.to_string(),
+            count: String::new(),
             list: Rc::new(RefCell::new(list)),
+            swatches: HashMap::new(),
         }
+    }
+
+    /// The console count beside the title (`8 themes`), blank by default.
+    pub fn with_count(mut self, count: impl Into<String>) -> Self {
+        self.count = count.into();
+        self
+    }
+
+    /// Swatch colours per item value for [`select_row`].
+    pub fn with_swatches(mut self, swatches: HashMap<String, Vec<String>>) -> Self {
+        self.swatches = swatches;
+        self
     }
 
     /// `getSelectList()`.
@@ -93,8 +128,19 @@ impl Component for FramedSelectList {
     fn render(&mut self, width: u16) -> Vec<String> {
         let pal = Palette::current();
         let list = self.list.borrow();
-        let mut console = Console::new(self.name.clone(), "");
-        console.rows = list.shown_items().iter().map(select_row).collect();
+        let mut console = Console::new(self.name.clone(), self.count.clone());
+        console.rows = list
+            .shown_items()
+            .iter()
+            .map(|item| {
+                let swatches = self
+                    .swatches
+                    .get(&item.value)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                select_row(item, swatches)
+            })
+            .collect();
         console.selected =
             (!console.rows.is_empty()).then(|| list.selected_index().min(console.rows.len() - 1));
         console.max_visible = Some(list.max_visible());

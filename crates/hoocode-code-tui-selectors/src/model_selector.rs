@@ -96,9 +96,9 @@ impl State {
     fn count_text(&self, query: &str) -> String {
         let total = self.active().len();
         if query.is_empty() {
-            ships(total)
+            format!("{} signed in", ships(total))
         } else {
-            format!("{} of {}", ships(self.filtered.len()), total)
+            format!("{} of {total} signed in", ships(self.filtered.len()))
         }
     }
 
@@ -122,8 +122,9 @@ impl State {
         }
     }
 
-    /// Rows below the list: the scroll position, errors, and the selected
-    /// ship's display name.
+    /// Rows below the list: the scroll position, errors, the selected
+    /// ship's display name, and its context window, price and thinking
+    /// support (M8d3).
     fn bottom_rows(&self, pal: &Palette) -> Vec<Line<'static>> {
         let mut rows = Vec::new();
         if let Some(footer) = self.cursor.footer() {
@@ -146,10 +147,21 @@ impl State {
             )]));
         } else {
             rows.push(Line::raw(""));
+            let model = &self.filtered[self.cursor.selected()];
+            rows.push(Line::from(vec![Span::styled(
+                format!("  Model Name: {}", model.name),
+                pal.faint(),
+            )]));
             rows.push(Line::from(vec![Span::styled(
                 format!(
-                    "  Model Name: {}",
-                    self.filtered[self.cursor.selected()].name
+                    "  {} context · {} per 1M · thinking {}",
+                    format_context(model.context_window),
+                    format_price(&model.cost),
+                    if model.reasoning {
+                        "supported"
+                    } else {
+                        "fixed"
+                    },
                 ),
                 pal.faint(),
             )]));
@@ -175,7 +187,8 @@ impl State {
 
 /// One ship row (content only; the console adds the `›` marker or gutter
 /// and the selection band): the id (accent on the selected row), the
-/// provider badge, and the `expired` or current `✓` marker.
+/// provider badge, the context window and the in/out price per 1M tokens,
+/// and the `expired` marker or `● flying` in green on the current ship.
 fn ship_row(
     model: &Model,
     current: Option<&Model>,
@@ -192,18 +205,40 @@ fn ship_row(
                 Style::default()
             },
         ),
-        Span::raw(" "),
+        Span::raw(" ".to_string()),
         Span::styled(
             format!("[{provider}]", provider = model.provider),
             pal.faint(),
         ),
+        Span::styled(
+            format!(" {}", format_context(model.context_window)),
+            pal.dim(),
+        ),
+        Span::styled(format!(" {}", format_price(&model.cost)), pal.faint()),
     ];
     if expired.contains(&model.provider) {
-        spans.push(Span::styled(" expired", pal.warn()));
+        spans.push(Span::styled(" expired".to_string(), pal.warn()));
     } else if models_are_equal(current, Some(model)) {
-        spans.push(Span::styled(" ✓", pal.ok()));
+        spans.push(Span::styled(" ● flying".to_string(), pal.ok()));
     }
     Line::from(spans)
+}
+
+/// `200k` for a 200,000-token window, the raw count below a thousand.
+fn format_context(window: u64) -> String {
+    if window >= 1000 {
+        format!("{}k", window / 1000)
+    } else {
+        format!("{window}")
+    }
+}
+
+/// `$in / $out` per 1M tokens, or `free` where the catalog prices nothing.
+fn format_price(cost: &hoocode_ai_types::ModelCost) -> String {
+    if cost.input == 0.0 && cost.output == 0.0 {
+        return "free".to_string();
+    }
+    format!("${:.2} / ${:.2}", cost.input, cost.output)
 }
 
 /// `1 ship`, `N ships`.

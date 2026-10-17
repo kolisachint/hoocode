@@ -218,7 +218,7 @@ fn comms_lost_titles_the_hail_again_and_switch_ship() {
     );
     assert_eq!(rows.len(), 3, "{rows:?}");
     assert!(
-        rows[0].contains("⊗ COMMS LOST · enter hail again · /model switch ship"),
+        rows[0].contains("⊗ COMMS LOST · enter hail again · alt+m switch ship"),
         "row 0: {:?}",
         rows[0]
     );

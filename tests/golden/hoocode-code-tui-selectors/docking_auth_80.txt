@@ -1,6 +1,6 @@
 ┏━ DOCKING · /login  Anthropic ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
-┃https://example.test/oauth/authorize?code=WXYZ-1234                           ┃
-┃open the link in a browser to dock                                            ┃
+┃1 https://example.test/oauth/authorize?code=WXYZ-1234                         ┃
+┃scan, or enter to open the browser                                            ┃
 ┃No QR code in this terminal build — the link above docks the same provider.   ┃
 ┃                                                                              ┃
 ┃Approve the subscription in the browser.                                      ┃
@@ -11,7 +11,7 @@ r0 c3-29 fg=#9b8cff bold
 r0 c31-75 fg=#9b8cff
 r0 c78-79 fg=#9b8cff
 r1 c0 fg=#9b8cff
-r1 c1-51 fg=#5cc8bb
+r1 c1-53 fg=#5cc8bb
 r1 c79 fg=#9b8cff
 r2 c0 fg=#9b8cff
 r2 c1-34 fg=#a8a8a8

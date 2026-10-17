@@ -145,14 +145,16 @@ impl State {
 }
 
 /// One provider row (content only; the console adds the `›` marker or gutter
-/// and the selection band): the name (accent on the selected row) and the
-/// auth-state suffix.
+/// and the selection band): its number, the name (accent on the selected
+/// row) and the auth-state suffix.
 fn provider_row(
+    index: usize,
     provider: &AuthSelectorProvider,
     status: Vec<Span<'static>>,
     selected: bool,
 ) -> Line<'static> {
     let mut spans = vec![
+        Span::styled(format!("{} ", index + 1), Palette::current().dim()),
         Span::styled(
             provider.name.clone(),
             if selected {
@@ -161,7 +163,7 @@ fn provider_row(
                 Style::default()
             },
         ),
-        Span::raw(" "),
+        Span::raw(" ".to_string()),
     ];
     spans.extend(status);
     Line::from(spans)
@@ -261,7 +263,7 @@ impl Component for OAuthSelectorComponent {
             .iter()
             .enumerate()
             .map(|(i, provider)| {
-                provider_row(provider, state.status_spans(provider), i == selected)
+                provider_row(i, provider, state.status_spans(provider), i == selected)
             })
             .collect();
         console.selected = (!state.filtered.is_empty()).then_some(selected);

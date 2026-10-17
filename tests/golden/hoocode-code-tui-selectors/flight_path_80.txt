@@ -2,9 +2,9 @@
 ┃▸                                                                             ┃
 ┃  • user: what does the wrap crate do?                                        ┃
 ┃  • assistant: It wraps text greedily.                                        ┃
-┃› • user: add a width check to wrap_text                                      ┃
+┃› • YOU ARE HERE user: add a width check to wrap_text                         ┃
 ┃  (3/3)                                                                       ┃
-┗━ ↑↓ move · enter go here · alt+l label · alt+t timestamps · esc close ━━━━  ━┛
+┗━ ↑↓ move · enter go here · f fork · alt+l label · alt+t timestamps ━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
 r0 c3-30 fg=#9b8cff bold
@@ -21,10 +21,10 @@ r3 c3-4 fg=#5cc8bb
 r3 c5-15 fg=#b5bd68
 r3 c79 fg=#9b8cff
 r4 c0 fg=#9b8cff
-r4 c1-4 fg=#5cc8bb bg=#2a2a36
-r4 c5-10 fg=#5cc8bb bg=#2a2a36 bold
-r4 c11-40 bg=#2a2a36 bold
-r4 c41-78 bg=#2a2a36
+r4 c1-17 fg=#5cc8bb bg=#2a2a36
+r4 c18-23 fg=#5cc8bb bg=#2a2a36 bold
+r4 c24-53 bg=#2a2a36 bold
+r4 c54-78 bg=#2a2a36
 r4 c79 fg=#9b8cff
 r5 c0 fg=#9b8cff
 r5 c1-7 fg=#a8a8a8
@@ -34,11 +34,11 @@ r6 c3-4 fg=#989898
 r6 c5-12 fg=#a8a8a8
 r6 c13-17 fg=#989898
 r6 c18-28 fg=#a8a8a8
-r6 c29-33 fg=#989898
-r6 c34-42 fg=#a8a8a8
-r6 c43-47 fg=#989898
-r6 c48-61 fg=#a8a8a8
-r6 c62-64 fg=#989898
-r6 c65-70 fg=#a8a8a8
-r6 c72-75 fg=#9b8cff
+r6 c29 fg=#989898
+r6 c30-37 fg=#a8a8a8
+r6 c38-42 fg=#989898
+r6 c43-51 fg=#a8a8a8
+r6 c52-56 fg=#989898
+r6 c57-67 fg=#a8a8a8
+r6 c69-75 fg=#9b8cff
 r6 c78-79 fg=#9b8cff
