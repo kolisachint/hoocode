@@ -164,7 +164,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 17264 / 5260 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI, including the full-screen HUD row (M1c, `hud.rs`; uses `tui-ratatui`) | 1 | 17264 / 5260 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 776 / 888 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8143 / 3724 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 5 | 2390 / 2557 | keep |
@@ -180,7 +180,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 2328 / 291 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1050 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1959 / 583 | keep |
-| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: ratatui widgets drawn into a Buffer, then turned into lines for the Component model (Mission Control step M0) | 0 | 286 / 29 | keep |
+| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: ratatui widgets drawn into a Buffer, then turned into lines for the Component model (Mission Control step M0) | 1 | 286 / 29 | keep |
 | `tui-render` | Differential rendering for the hoocode TUI, and the full-screen mode (M1: `fullscreen.rs` row arithmetic; the frame in `tui.rs`) | 4 | 2754 / 1997 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3232 / 211 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 14 | 2258 / 611 | keep |

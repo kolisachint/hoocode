@@ -1873,6 +1873,7 @@ dependencies = [
  "hoocode-tui-fuzzy",
  "hoocode-tui-images",
  "hoocode-tui-keys",
+ "hoocode-tui-ratatui",
  "hoocode-tui-render",
  "hoocode-tui-terminal",
  "hoocode-tui-util",

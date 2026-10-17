@@ -2486,6 +2486,14 @@ mod tests {
 
         /// The transcript of a session as built by `manager`, one row per line.
         fn draw_session(manager: SessionManager, settings: serde_json::Value) -> Vec<String> {
+            // These tests read the inline layout, rows counted from the top of
+            // the screen. Full-screen (the HUD row, the body) is on by default,
+            // so the inline layout is asked for here unless a test says otherwise.
+            let mut settings = settings;
+            if let Some(map) = settings.as_object_mut() {
+                map.entry("fullscreen")
+                    .or_insert(serde_json::Value::Bool(false));
+            }
             let args = crate::args::parse_args(&[]);
             let agent_dir = tempfile::tempdir().unwrap();
             let (session, _) = assemble_session(

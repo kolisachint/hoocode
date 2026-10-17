@@ -1,6 +1,6 @@
 # UI map
 
-Where each part of the interactive screen lives. Snapshot of 2026-10-08. Crate names are `hoocode-*` since step 0c
+Where each part of the interactive screen lives. Snapshot of 2026-10-17 (full-screen, M1c). Crate names are `hoocode-*` since step 0c
 ([naming-and-paths.md](../../archive/docs/naming-and-paths.md)). Crates are
 described in [packages.md](packages.md). Names, not line numbers: line numbers drift.
 
@@ -9,19 +9,36 @@ update this page in the same commit.
 
 ## The screen, top to bottom
 
+Full-screen is the default (M1c, `hud.rs`, `mode/mod.rs`). The app runs on the alternate screen and `Tui` draws the frame. Rows top to bottom:
+
 ```
-┌ transcript (re-rendered component tree) ─ messages, tool blocks, notices ────┐
-│ task panel ─ TodoWrite plan items, subagent runs                             │
-│ notification band ─ tips, transient notices, progress bar                    │
-│ ┌ prompt frame ─ editor, autocomplete; pickers and dialogs replace it ─────┐ │
-│ └──────────────────────────────────────────────────────────────────────────┘ │
-└ footer ─ 2 rows: folder, branch, path │ model, context, cost ────────────────┘
+HUD ─ row 1: ◭ HOOCODE  BUILD  folder │ SHIP model  FUEL ctx%  CR $cost   (placeholder, M3 fills it)
+  (gap: one blank row)
+  attach slot ─ the attached subagent's header, when attached (top chrome)
+┌ body ─ header, then transcript (chat). Live: follows the tail. Pinned: holds still ─┐
+│ ...                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+  bar ─ pinned only: position, keys, search. Drawn by Tui between body and bottom
+  pending messages, status, widgets above
+  task panel ─ TodoWrite plan items, subagent runs
+  notification band ─ tips, transient notices, progress bar
+  ┌ prompt frame ─ editor, autocomplete; pickers and dialogs replace it ───────────┐
+  └────────────────────────────────────────────────────────────────────────────────┘
+  footer ─ 2 rows: folder, branch, path │ model, context, cost (kept in full-screen for now; M3 removes the duplicates)
 ```
+
+`HOOCODE_FULLSCREEN=0` turns full-screen off for one run (the env var wins over the `fullscreen` setting, default `true`). Off, the screen is the inline tree with no HUD and no gap: the rows of `mode/mod.rs` `tree_plan(false)` in `hud.rs`. The tree order for both modes is `hud.rs` `tree_plan`; the test that pins it is `tests/it/hud.rs`.
+
+The inline tree (off) from top to bottom: the header, a flex spacer (`screen_fill`), the attach slot, the chat, then the rest as above. The full-screen tree (on): the HUD, a gap, the attach slot (top chrome), the body (header and chat), then the rest as above. Root children before the body are the top chrome, those after it the bottom (`Tui::set_fullscreen_body`).
+
+Exit leaves the alternate screen and prints nothing (`Tui::stop`).
 
 | Region | Component | File |
 |---|---|---|
 | Whole screen, event loop | `InteractiveMode` (`Mode`) | `hoocode-code-tui-app/src/mode/mod.rs` (struct, setup, loop); the rest is split by concern into `mode/*.rs`: `input` (editor and keys), `transcript` (`Transcript`: the chat container and the components that track it; reset replaces it), `events` (agent and session events), `prompt_queue`, `session_ops`, `session_op` (the session operations that run off the UI thread: `SessionOpDone`, `SessionOutcome`, `finish_session_op`), `tree`, `models`, `auth`, `settings`, `dialogs`, `subagents`, `bash`, `clipboard`, `mcp`, `chrome` (footer, title, colour), `commands` (slash commands), `shutdown` (the exit steps after the loop, each with a deadline; concurrency.md §4) |
 | Transcript scroll-back view | scroll view | `hoocode-code-tui-app/src/scroll_view.rs` |
+| Full-screen frame: the alternate screen, the per-row diff, the body window, the bar | `Tui` full-screen mode | `hoocode-tui-render/src/tui.rs` (`paint_fullscreen`, `compose_fullscreen`), row arithmetic in `fullscreen.rs` |
+| HUD row (placeholder: mode, folder, model, context, cost), the setting read, the tree plan | HUD | `hoocode-code-tui-app/src/hud.rs` (`hud_text`, `hud_component`, `fullscreen_enabled`, `tree_plan`); drawn with `hoocode-tui-ratatui` |
 | Startup banner | wordmark | `hoocode-code-tui-app/src/wordmark.rs` |
 | Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
 | Task panel: tabs Plan · Agents · Shell · Schedule · MCP (a tab shows while it has rows), a count per tab; focused (Ctrl+G) it takes the keys in [Task panel](#task-panel) | task panel | `code-tui-widgets/src/task_panel.rs` (tabs, rows, keys); focus and events in `hoocode-code-tui-app/src/mode/task_panel.rs` |

@@ -888,6 +888,12 @@ impl SettingsManager {
         self.set("chromeDensity", Some(density.as_str().into()));
     }
 
+    /// `fullscreen`: the app runs on the alternate screen (M1). On by default;
+    /// `HOOCODE_FULLSCREEN=0` turns it off for one run.
+    pub fn fullscreen(&self) -> bool {
+        self.bool_or("fullscreen", true)
+    }
+
     /// Persisted extension flag overrides (name -> value).
     pub fn flag_overrides(&self) -> Vec<(String, FlagValue)> {
         let Some(flags) = self.get("flags").and_then(Value::as_object) else {

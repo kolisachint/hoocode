@@ -8,6 +8,7 @@ mod extension_selector;
 mod footer;
 mod footer_data_provider;
 mod golden;
+mod hud;
 mod import_command_ts;
 mod input_frame;
 mod interactive_mode_status_ts;
