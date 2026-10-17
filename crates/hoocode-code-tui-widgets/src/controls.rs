@@ -86,15 +86,18 @@ enum Layer {
 }
 
 /// The caps of one keyboard row that have a binding in `layer`.
-fn lit_caps(entries: &[(&KeybindingEntry, Vec<String>)], layer: Layer, letters: &[char]) -> Vec<char> {
+fn lit_caps(
+    entries: &[(&KeybindingEntry, Vec<String>)],
+    layer: Layer,
+    letters: &[char],
+) -> Vec<char> {
     letters
         .iter()
         .copied()
         .filter(|cap| {
-            entries.iter().any(|(_, keys)| {
-                keys.iter()
-                    .any(|k| layer_cap(k) == Some((layer, *cap)))
-            })
+            entries
+                .iter()
+                .any(|(_, keys)| keys.iter().any(|k| layer_cap(k) == Some((layer, *cap))))
         })
         .collect()
 }
@@ -121,10 +124,7 @@ fn ctrl_actions(entries: &[(&KeybindingEntry, Vec<String>)]) -> Vec<(char, Strin
 /// the rest faint.
 fn keyboard_row(label: &str, letters: &[char], lit: &[char]) -> Line<'static> {
     let pal = Palette::current();
-    let mut spans = vec![
-        Span::styled(label.to_string(), pal.dim()),
-        Span::raw("  "),
-    ];
+    let mut spans = vec![Span::styled(label.to_string(), pal.dim()), Span::raw("  ")];
     for letter in letters {
         let style = if lit.contains(letter) {
             Style::default()
@@ -149,7 +149,11 @@ fn keyboard(entries: &[(&KeybindingEntry, Vec<String>)]) -> Vec<Line<'static>> {
         let lit = entries
             .iter()
             .any(|(_, keys)| keys.iter().any(|k| k.eq_ignore_ascii_case("escape")));
-        if lit { Style::default() } else { pal.faint() }
+        if lit {
+            Style::default()
+        } else {
+            pal.faint()
+        }
     })];
     esc_row.push(Span::raw("  "));
     for digit in &digits {
@@ -165,9 +169,21 @@ fn keyboard(entries: &[(&KeybindingEntry, Vec<String>)]) -> Vec<Line<'static>> {
         ));
     }
     rows.push(Line::from(esc_row));
-    rows.push(keyboard_row("tab", &top, &lit_caps(entries, Layer::Plain, &top)));
-    rows.push(keyboard_row("ctrl", &home, &lit_caps(entries, Layer::Ctrl, &home)));
-    rows.push(keyboard_row("shift", &bottom, &lit_caps(entries, Layer::Plain, &bottom)));
+    rows.push(keyboard_row(
+        "tab",
+        &top,
+        &lit_caps(entries, Layer::Plain, &top),
+    ));
+    rows.push(keyboard_row(
+        "ctrl",
+        &home,
+        &lit_caps(entries, Layer::Ctrl, &home),
+    ));
+    rows.push(keyboard_row(
+        "shift",
+        &bottom,
+        &lit_caps(entries, Layer::Plain, &bottom),
+    ));
     rows
 }
 
@@ -221,10 +237,7 @@ impl Component for ControlsComponent {
             .map(|entry| (entry, effective_keys(entry)))
             .collect();
         let count = entries.len();
-        let mut console = Console::new(
-            "CONTROLS · /hotkeys",
-            format!("{} bindings", count),
-        );
+        let mut console = Console::new("CONTROLS · /hotkeys", format!("{} bindings", count));
         if width >= KEYBOARD_MIN_WIDTH {
             console.top = keyboard(&entries);
             console.right = Line::from(vec![Span::styled("ctrl layer", pal.faint())]);

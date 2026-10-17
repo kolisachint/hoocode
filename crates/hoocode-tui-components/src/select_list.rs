@@ -106,6 +106,26 @@ impl SelectList {
         self.filtered_items.get(self.cursor.selected())
     }
 
+    /// The shown items, in order.
+    pub fn shown_items(&self) -> &[SelectItem] {
+        &self.filtered_items
+    }
+
+    /// The selected row's index into [`items`](Self::items).
+    pub fn selected_index(&self) -> usize {
+        self.cursor.selected()
+    }
+
+    /// How many rows show at once.
+    pub fn max_visible(&self) -> usize {
+        self.cursor.max_visible()
+    }
+
+    /// The shown window's indices into [`items`](Self::items).
+    pub fn window(&self) -> std::ops::Range<usize> {
+        self.cursor.window()
+    }
+
     pub fn handle_input_with(&mut self, key_data: &str, kb: &KeybindingsManager) {
         let before = self.cursor.selected();
         if self.cursor.handle_key(key_data, kb) {

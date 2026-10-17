@@ -8,7 +8,6 @@
 use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
-use hoocode_tui_render::Component;
 
 use crate::support::lock;
 

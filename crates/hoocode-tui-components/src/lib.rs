@@ -22,8 +22,8 @@ mod truncated_text;
 
 pub use autocomplete::{
     ApplyCompletionResult, ArgumentCompletionsFn, AutocompleteItem, AutocompleteProvider,
-    AutocompleteSuggestions, CombinedAutocompleteProvider, CommandEntry, FileFinder, FileMatch,
-    SlashCommand,
+    AutocompleteSuggestions, CombinedAutocompleteProvider, CommandEntry, ConsoleKind, FileFinder,
+    FileMatch, SlashCommand,
 };
 pub use box_component::{BoxComponent, PaperFn, PaperSheet};
 pub use color::{identity_color, ColorFn};

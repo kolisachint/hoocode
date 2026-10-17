@@ -971,7 +971,11 @@ fn flight_row(
             format!("[{}]", task.subagent_mode.as_deref().unwrap_or("MCP")),
             pal.style("mcp"),
         ))
-    } else { task.subagent_mode.as_ref().map(|mode| (format!("[{mode}]"), pal.style(agent_color_for(mode)))) };
+    } else {
+        task.subagent_mode
+            .as_ref()
+            .map(|mode| (format!("[{mode}]"), pal.style(agent_color_for(mode))))
+    };
     if let Some((tag, style)) = tag {
         spans.push(Span::styled(tag, style));
         spans.push(Span::raw(" "));
