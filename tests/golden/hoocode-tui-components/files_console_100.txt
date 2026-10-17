@@ -5,7 +5,7 @@ look at @wr
 ┃› wrap.rs                                                                              src/wrap.rs┃
 ┃  wrap_tests.rs                                                                tests/wrap_tests.rs┃
 ┃▸ look at @wr                                                                                     ┃
-┗━ ↑↓ pick · tab load · / into folder ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+┗━ ↑↓ pick · tab load · esc close ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 --- styles ---
 r1 c11 inverse
 r3 c0-2 fg=4
@@ -20,4 +20,4 @@ r5 c99 fg=4
 r6 c0 fg=4
 r6 c99 fg=4
 r7 c0-2 fg=4
-r7 c38-99 fg=4
+r7 c34-99 fg=4

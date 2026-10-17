@@ -3,7 +3,7 @@
 ┃› 1 Anthropic  ✓ configured                                                                       ┃
 ┃  2 OpenAI  ✓ env: OPENAI_API_KEY                                                                 ┃
 ┃  3 Ollama  • unconfigured                                                                        ┃
-┗━ ↑↓ move · enter choose · esc cancel ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+┗━ ↑↓ move · enter dock · esc cancel ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
 r0 c3-31 fg=#9b8cff bold
@@ -33,8 +33,8 @@ r5 c0-1 fg=#9b8cff
 r5 c3-4 fg=#989898
 r5 c5-12 fg=#a8a8a8
 r5 c13-17 fg=#989898
-r5 c18-27 fg=#a8a8a8
-r5 c28-30 fg=#989898
-r5 c31-37 fg=#a8a8a8
-r5 c39-95 fg=#9b8cff
+r5 c18-25 fg=#a8a8a8
+r5 c26-28 fg=#989898
+r5 c29-35 fg=#a8a8a8
+r5 c37-95 fg=#9b8cff
 r5 c98-99 fg=#9b8cff

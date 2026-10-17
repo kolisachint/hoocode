@@ -4,7 +4,7 @@
 ┃▸                                                                             ┃
 ┃›   wrap width                                                         — 5 0 …┃
 ┃    add a width check to wrap_text in src/wrap.rs          coral-basin — 5 0 …┃
-┗━ tab scope · alt+o sort · alt+x delete · enter open · esc close ━━━━━━━━━━  ━┛
+┗━ ↑↓ move · tab scope · alt+o sort · alt+x delete · enter jump there · e… ━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
 r0 c3-35 fg=#9b8cff bold
@@ -46,15 +46,16 @@ r5 c76 fg=#989898
 r5 c78 fg=#989898
 r5 c79 fg=#9b8cff
 r6 c0-1 fg=#9b8cff
-r6 c3-5 fg=#989898
-r6 c6-14 fg=#a8a8a8
-r6 c15-19 fg=#989898
-r6 c20-27 fg=#a8a8a8
-r6 c28-32 fg=#989898
-r6 c33-42 fg=#a8a8a8
-r6 c43-47 fg=#989898
-r6 c48-55 fg=#a8a8a8
-r6 c56-58 fg=#989898
-r6 c59-64 fg=#a8a8a8
-r6 c66-75 fg=#9b8cff
+r6 c3-4 fg=#989898
+r6 c5-12 fg=#a8a8a8
+r6 c13-15 fg=#989898
+r6 c16-24 fg=#a8a8a8
+r6 c25-29 fg=#989898
+r6 c30-37 fg=#a8a8a8
+r6 c38-42 fg=#989898
+r6 c43-52 fg=#a8a8a8
+r6 c53-57 fg=#989898
+r6 c58-71 fg=#a8a8a8
+r6 c72-73 fg=#989898
+r6 c75 fg=#9b8cff
 r6 c78-79 fg=#9b8cff

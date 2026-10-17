@@ -21,7 +21,7 @@
 ┃  ctrl+w  Delete word backward                                                                    ┃
 ┃  ctrl+y  Yank                                                                                    ┃
 ┃  ctrl+z  Suspend to background                                                                   ┃
-┗━ tab layer · type search · esc close ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+┗━ tab layer · esc close ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
 r0 c3-35 fg=#9b8cff bold
@@ -109,9 +109,7 @@ r22 c99 fg=#9b8cff
 r23 c0-1 fg=#9b8cff
 r23 c3-5 fg=#989898
 r23 c6-14 fg=#a8a8a8
-r23 c15-18 fg=#989898
-r23 c19-28 fg=#a8a8a8
-r23 c29-31 fg=#989898
-r23 c32-37 fg=#a8a8a8
-r23 c39-95 fg=#9b8cff
+r23 c15-17 fg=#989898
+r23 c18-23 fg=#a8a8a8
+r23 c25-95 fg=#9b8cff
 r23 c98-99 fg=#9b8cff

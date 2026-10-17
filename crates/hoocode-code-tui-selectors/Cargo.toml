@@ -20,6 +20,7 @@ doctest = false
 chrono = "0.4"
 hoocode-ai-models = { workspace = true }
 hoocode-ai-types = { workspace = true }
+hoocode-code-agent-session = { workspace = true }
 hoocode-code-auth = { workspace = true }
 hoocode-code-paths = { workspace = true }
 hoocode-code-resources = { workspace = true }

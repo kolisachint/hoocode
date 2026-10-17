@@ -261,7 +261,8 @@ impl Component for ControlsComponent {
             let inner = width.saturating_sub(4);
             console.rows = key_list(&entries, inner);
         }
-        console.hint = hints(&[("tab", "layer"), ("type", "search"), ("esc", "close")]);
+        // The target's `keysRows` foot: the layer switch and the way out.
+        console.hint = hints(&[("tab", "layer"), ("esc", "close")]);
         console.render(width)
     }
 

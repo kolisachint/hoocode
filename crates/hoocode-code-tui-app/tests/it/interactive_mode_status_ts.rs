@@ -94,7 +94,7 @@ fn shows_the_detailed_listing_on_verbose_startup_even_when_collapsed() {
 }
 
 #[test]
-fn shows_context_paths_relative_to_cwd_while_preserving_full_external_paths() {
+fn shows_context_file_names_without_paths_on_the_summary_tail() {
     let _g = lock(Some("dark"));
     let home = std::env::var("HOME").unwrap();
     let cwd = format!("{home}/Development/hoocode");
@@ -107,12 +107,12 @@ fn shows_context_paths_relative_to_cwd_while_preserving_full_external_paths() {
             ],
             ..base(&cwd)
         });
-        assert!(out.contains("context"), "{out}");
-        assert!(
-            out.contains("~/.hoocode/agent/AGENTS.md, AGENTS.md"),
-            "{out}"
-        );
-        assert!(!out.contains(&format!("{cwd}/AGENTS.md")));
+        // The summary tail names the files, not their full paths.
+        assert!(out.contains("AGENTS.md, AGENTS.md"), "{out}");
+        assert!(!out.contains(&format!("{cwd}/AGENTS.md")), "{out}");
+        assert!(!out.contains(".hoocode/agent"), "{out}");
+        // No ship set: no bare SHIP label.
+        assert!(!out.contains("SHIP"), "{out}");
     }
 }
 
@@ -150,7 +150,7 @@ fn still_shows_diagnostics_on_quiet_startup_when_requested() {
 }
 
 #[test]
-fn annotates_an_oversized_context_file_on_the_context_row() {
+fn shows_an_oversized_context_file_on_the_summary_tail_without_a_trim_note() {
     let _g = lock(Some("dark"));
     let out = render(&ResourceListing {
         context_files: vec![ContextFile {
@@ -161,8 +161,8 @@ fn annotates_an_oversized_context_file_on_the_context_row() {
         }],
         ..base("/tmp/project")
     });
-    assert!(out.contains("~3.6k tokens"), "{out}");
-    assert!(out.contains("consider trimming"));
+    assert!(out.contains("AGENTS.md 3.6k tok/turn"), "{out}");
+    assert!(!out.contains("consider trimming"), "{out}");
 }
 
 #[test]

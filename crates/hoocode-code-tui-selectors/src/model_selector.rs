@@ -11,6 +11,7 @@ use std::rc::Rc;
 
 use hoocode_ai_models::models_are_equal;
 use hoocode_ai_types::Model;
+use hoocode_code_agent_session::format::format_tokens;
 use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{hints, query_row, Console};
@@ -186,9 +187,9 @@ impl State {
 }
 
 /// One ship row (content only; the console adds the `›` marker or gutter
-/// and the selection band): the id (accent on the selected row), the
-/// provider badge, the context window and the in/out price per 1M tokens,
-/// and the `expired` marker or `● flying` in green on the current ship.
+/// and the selection band): the id, the provider, the context window and
+/// the in/out price per 1M tokens (the target's `hangarRows` columns), plus
+/// the `expired` or current `✓` marker.
 fn ship_row(
     model: &Model,
     current: Option<&Model>,
@@ -198,28 +199,27 @@ fn ship_row(
     let pal = Palette::current();
     let mut spans = vec![
         Span::styled(
-            model.id.clone(),
+            format!("{:<12}", model.id),
             if selected {
                 pal.acc()
             } else {
                 Style::default()
             },
         ),
-        Span::raw(" ".to_string()),
+        Span::raw("  "),
+        Span::styled(format!("{:<10}", model.provider), pal.faint()),
+        Span::raw("  "),
         Span::styled(
-            format!("[{provider}]", provider = model.provider),
-            pal.faint(),
+            format!("{:<8}", format_tokens(model.context_window)),
+            pal.ink(),
         ),
-        Span::styled(
-            format!(" {}", format_context(model.context_window)),
-            pal.dim(),
-        ),
-        Span::styled(format!(" {}", format_price(&model.cost)), pal.faint()),
+        Span::raw("  "),
+        Span::styled(ship_price(model), pal.dim()),
     ];
     if expired.contains(&model.provider) {
         spans.push(Span::styled(" expired".to_string(), pal.warn()));
     } else if models_are_equal(current, Some(model)) {
-        spans.push(Span::styled(" ● flying".to_string(), pal.ok()));
+        spans.push(Span::styled(" ✓", pal.ok()));
     }
     Line::from(spans)
 }
@@ -239,6 +239,15 @@ fn format_price(cost: &hoocode_ai_types::ModelCost) -> String {
         return "free".to_string();
     }
     format!("${:.2} / ${:.2}", cost.input, cost.output)
+}
+
+/// The in/out price per 1M tokens (`$3.00 / $15.00`), or `free` when the
+/// ship costs nothing (the target's `hangarRows` price column).
+fn ship_price(model: &Model) -> String {
+    if model.cost.input == 0.0 && model.cost.output == 0.0 {
+        return "free".to_string();
+    }
+    format!("${:.2} / ${:.2}", model.cost.input, model.cost.output)
 }
 
 /// `1 ship`, `N ships`.
@@ -382,6 +391,14 @@ impl Component for ModelSelectorComponent {
         let query = search.get_value().to_string();
         let mut console = Console::new("HANGAR · /model", state.count_text(&query));
         console.top = state.top_rows(&pal);
+        if !state.filtered.is_empty() {
+            // The column header over the ships (the target's `hangarRows`
+            // header): ship, provider, context, and price per 1M tokens.
+            console.top.push(Line::from(vec![Span::styled(
+                "  ship         provider    context   price in / out per 1M".to_string(),
+                pal.faint(),
+            )]));
+        }
         console.query = Some(query_row(&query, state.focused));
         let current = state.current.clone();
         let expired = state.expired.clone();

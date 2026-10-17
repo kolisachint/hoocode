@@ -5,7 +5,7 @@
 ┃› /session                                              session info and stats┃
 ┃  /subagent-stats                                            agent reliability┃
 ┃▸ /sess                                                                       ┃
-┗━ ↑↓ pick · tab complete · enter run ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+┗━ ↑↓ pick · tab complete · enter run · esc clear ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 --- styles ---
 r1 c5 inverse
 r3 c0-2 fg=4
@@ -20,4 +20,4 @@ r5 c79 fg=4
 r6 c0 fg=4
 r6 c79 fg=4
 r7 c0-2 fg=4
-r7 c38-79 fg=4
+r7 c50-79 fg=4

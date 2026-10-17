@@ -10,13 +10,12 @@ use std::rc::Rc;
 
 use hoocode_code_agent_session::format::{format_tokens, render_compact_rows, CompactRowsOptions};
 use hoocode_code_resources::agent_registry::summarize_agent_description;
-use hoocode_code_resources::context_files::{ContextFile, ContextFileSize};
+use hoocode_code_resources::context_files::ContextFile;
 use hoocode_code_resources::diagnostics::{DiagnosticType, ResourceDiagnostic};
 use hoocode_code_resources::source_info::{SourceInfo, SourceScope};
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::{Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
-use hoocode_tui_util::visible_width;
 
 use crate::brand::{Category, SEGMENT_SEP};
 use crate::expandable_text::ExpandableText;
@@ -43,6 +42,8 @@ pub struct McpServerStatus {
 #[derive(Debug, Clone, Default)]
 pub struct ResourceListing {
     pub cwd: String,
+    /// The current ship (model id) for the `SHIP` cell, when known.
+    pub ship: Option<String>,
     pub skills: Vec<ListedItem>,
     pub skill_diagnostics: Vec<ResourceDiagnostic>,
     /// Prompt templates (`name` without the slash).
@@ -71,40 +72,6 @@ fn locale_cmp(a: &str, b: &str) -> Ordering {
 /// `formatDisplayPath`: the home directory as `~`.
 pub fn format_display_path(p: &str) -> String {
     hoocode_home::shorten_path(p)
-}
-
-fn format_context_path(p: &str, cwd: &str) -> String {
-    let path = Path::new(p);
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        Path::new(cwd).join(path)
-    };
-    match hoocode_code_paths::cwd_relative_path(&absolute, Path::new(cwd)) {
-        Some(relative) => relative.to_string_lossy().into_owned(),
-        None => format_display_path(&absolute.to_string_lossy()),
-    }
-}
-
-fn context_size_note(file: &ContextFile) -> String {
-    let Some(size) = file.size else {
-        return String::new();
-    };
-    let advice = if size == ContextFileSize::Truncated {
-        "truncated"
-    } else {
-        "consider trimming"
-    };
-    let tokens = file.tokens.map(|t| format!("~{} tokens", format_tokens(t)));
-    theme().fg(
-        "warning",
-        &format!(
-            " {}{advice}",
-            tokens
-                .map(|t| format!("{t} {SEGMENT_SEP} "))
-                .unwrap_or_default()
-        ),
-    )
 }
 
 fn is_package_source(info: Option<&SourceInfo>) -> bool {
@@ -427,10 +394,21 @@ pub fn show_loaded_resources(
                 many.map_or_else(|| format!("{s}s"), str::to_string)
             }
         };
+        // The Mission Control startup line: `SHIP <ship>   ✦ <n> skills  ◈
+        // <n> agents  ⌘ <n> commands   · <context> <tok> tok/turn`. One line
+        // in this order, with the target glyphs and colours (faint SHIP,
+        // ink counts, dim labels; accent ✦, violet ◈, accent ⌘, faint
+        // context tail). Cells with a zero count are skipped; with nothing
+        // loaded the line says so instead. Detail sections below still list
+        // every resource.
         let mut cells: Vec<(Category, usize, String)> = Vec::new();
         let skills = listing.skills.len();
         if skills > 0 {
             cells.push((Category::Skills, skills, plural(skills, "skill", None)));
+        }
+        let agents = listing.agents.len();
+        if agents > 0 {
+            cells.push((Category::Agents, agents, plural(agents, "agent", None)));
         }
         let templates = listing.templates.len();
         if templates > 0 {
@@ -440,10 +418,6 @@ pub fn show_loaded_resources(
                 plural(templates, "command", None),
             ));
         }
-        let agents = listing.agents.len();
-        if agents > 0 {
-            cells.push((Category::Agents, agents, plural(agents, "agent", None)));
-        }
         if !listing.mcp.is_empty() {
             cells.push((
                 Category::Mcp,
@@ -451,77 +425,65 @@ pub fn show_loaded_resources(
                 plural(listing.mcp.len(), "mcp server", None),
             ));
         }
+        let context_names: Vec<String> = listing
+            .context_files
+            .iter()
+            .map(|f| {
+                std::path::Path::new(&f.path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| f.path.clone())
+            })
+            .collect();
+        let context_tokens: u64 = listing
+            .context_files
+            .iter()
+            .map(|f| f.tokens.unwrap_or(0))
+            .sum();
 
-        if cells.is_empty() {
+        if cells.is_empty() && context_names.is_empty() {
             out.push(handle(Text::new(
                 t.fg("dim", "no project resources loaded"),
                 0,
                 0,
             )));
         } else {
-            let cell_plain = |(key, count, label): &(Category, usize, String)| {
-                format!("{} {count} {label}", key.glyph())
+            let glyph_color = |key: Category| match key {
+                Category::Agents => "vio",
+                Category::Skills | Category::Commands | Category::Mcp => "accent",
+                Category::Context => "faint",
             };
-            let cell_width = cells
-                .iter()
-                .map(|c| visible_width(&cell_plain(c)))
-                .max()
-                .unwrap_or(0)
-                + 3;
-            let styled_cell = |c: &(Category, usize, String)| {
-                let pad = " ".repeat(cell_width.saturating_sub(visible_width(&cell_plain(c))));
-                format!(
-                    "{} {} {}{pad}",
-                    t.fg("accent", c.0.glyph()),
-                    t.bold(&c.1.to_string()),
-                    t.fg("muted", &c.2)
-                )
-            };
-            let rows: Vec<String> = cells
-                .chunks(4)
-                .map(|row| {
-                    row.iter()
-                        .map(styled_cell)
-                        .collect::<String>()
-                        .trim_end()
-                        .to_string()
-                })
-                .collect();
-            out.push(handle(Text::new(rows.join("\n"), 0, 0)));
-        }
-
-        if !listing.context_files.is_empty() {
-            let names = listing
-                .context_files
-                .iter()
-                .map(|f| format_context_path(&f.path, &listing.cwd) + &context_size_note(f))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let total_tokens: u64 = listing
-                .context_files
-                .iter()
-                .map(|f| f.tokens.unwrap_or(0))
-                .sum();
-            let total = if total_tokens > 0 {
-                t.fg(
-                    "muted",
+            let mut line: Vec<String> = Vec::new();
+            if let Some(ship) = &listing.ship {
+                line.push(format!("{} {}", t.fg("faint", "SHIP"), t.fg("ink", ship)));
+            }
+            if !cells.is_empty() {
+                line.push(
+                    cells
+                        .iter()
+                        .map(|(key, count, label)| {
+                            format!(
+                                "{} {} {}",
+                                t.fg(glyph_color(*key), key.glyph()),
+                                t.fg("ink", &count.to_string()),
+                                t.fg("dim", label)
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("  "),
+                );
+            }
+            if !context_names.is_empty() {
+                line.push(t.fg(
+                    "faint",
                     &format!(
-                        " {SEGMENT_SEP} ~{} tokens/turn",
-                        format_tokens(total_tokens)
+                        "· {} {} tok/turn",
+                        context_names.join(", "),
+                        format_tokens(context_tokens)
                     ),
-                )
-            } else {
-                String::new()
-            };
-            out.push(handle(Text::new(
-                format!(
-                    "{} {} {names}{total}",
-                    t.fg("accent", Category::Context.glyph()),
-                    t.fg("muted", "context")
-                ),
-                0,
-                0,
-            )));
+                ));
+            }
+            out.push(handle(Text::new(format!(" {}", line.join("   ")), 0, 0)));
         }
 
         let mut detail_sections: Vec<String> = Vec::new();

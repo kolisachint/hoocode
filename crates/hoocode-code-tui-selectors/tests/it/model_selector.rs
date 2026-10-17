@@ -62,20 +62,38 @@ fn full_ids(models: &[Model]) -> Vec<String> {
         .collect()
 }
 
-/// The model id on each list row, in order.
+/// The model id on each list row, in order (the columnar `hangarRows`
+/// format: id, provider, context window and price columns, plus an
+/// `expired` or current-model `✓` marker — no `[provider]` brackets).
 fn listed_ids(rendered: &str, provider: &str) -> Vec<String> {
     rendered
         .lines()
-        .filter(|line| line.contains(&format!("[{provider}]")))
-        .map(|line| {
+        .filter_map(|line| {
             let trimmed = line.trim();
             // Thin (`│`) or console-thick (`┃`) frame edge.
             let trimmed = trimmed.strip_prefix(['│', '┃']).unwrap_or(trimmed);
             let trimmed = trimmed.strip_suffix(['│', '┃']).unwrap_or(trimmed).trim();
             let trimmed = trimmed.strip_prefix(SELECT_CURSOR).unwrap_or(trimmed);
-            trimmed.split(" [").next().unwrap().trim().to_string()
+            let mut cols = trimmed.split_whitespace();
+            let id = cols.next()?;
+            let row_provider = cols.next()?;
+            (row_provider == provider).then(|| id.to_string())
         })
         .collect()
+}
+
+/// The full text of the list row for one model id.
+fn row_for<'a>(rendered: &'a str, id: &str) -> &'a str {
+    rendered
+        .lines()
+        .find(|line| {
+            let trimmed = line.trim();
+            let trimmed = trimmed.strip_prefix(['│', '┃']).unwrap_or(trimmed);
+            let trimmed = trimmed.strip_suffix(['│', '┃']).unwrap_or(trimmed).trim();
+            let trimmed = trimmed.strip_prefix(SELECT_CURSOR).unwrap_or(trimmed);
+            trimmed.split_whitespace().next() == Some(id)
+        })
+        .unwrap_or_else(|| panic!("no row for {id} in:\n{rendered}"))
 }
 
 #[test]
@@ -126,7 +144,9 @@ fn lists_the_current_model_first_ticked_then_by_provider() {
     let mut selector = ModelSelectorComponent::new(Some(current), Ok(models), None, vec![], None);
     let rendered = strip(&selector.render(100));
     assert!(rendered.contains("Only showing models from configured providers"));
-    assert!(rendered.contains("m-1 [mid] 128k free ● flying"));
+    let current_row = row_for(&rendered, "m-1");
+    assert!(current_row.contains("mid"), "{rendered}");
+    assert!(current_row.contains('✓'), "{rendered}");
     assert!(rendered.contains("Model Name: M"));
     let order: Vec<_> = rendered
         .lines()
@@ -142,12 +162,12 @@ fn marks_only_the_models_of_expired_providers() {
     let mut selector = ModelSelectorComponent::new(None, Ok(models), None, vec![], None);
     selector.set_expired_providers(["beta".to_string()]);
     let rendered = strip(&selector.render(100));
-    assert!(
-        rendered.contains("b-1 [beta] 128k free expired"),
-        "{rendered}"
-    );
-    assert!(rendered.contains("a-1 [alpha]"), "{rendered}");
-    assert!(!rendered.contains("a-1 [alpha] expired"), "{rendered}");
+    let expired_row = row_for(&rendered, "b-1");
+    assert!(expired_row.contains("beta"), "{rendered}");
+    assert!(expired_row.contains("expired"), "{rendered}");
+    let fresh_row = row_for(&rendered, "a-1");
+    assert!(fresh_row.contains("alpha"), "{rendered}");
+    assert!(!fresh_row.contains("expired"), "{rendered}");
     assert_eq!(rendered.matches("expired").count(), 1, "{rendered}");
 }
 

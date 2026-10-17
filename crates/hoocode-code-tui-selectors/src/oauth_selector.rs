@@ -287,7 +287,7 @@ impl Component for OAuthSelectorComponent {
                 pal.faint(),
             )]));
         }
-        console.hint = hints(&[("↑↓", "move"), ("enter", "choose"), ("esc", "cancel")]);
+        console.hint = hints(&[("↑↓", "move"), ("enter", "dock"), ("esc", "cancel")]);
         console.render(width as usize)
     }
 

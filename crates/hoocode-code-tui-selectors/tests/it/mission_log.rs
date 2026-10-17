@@ -81,7 +81,7 @@ fn check(name: &str, width: u16) {
         "{name}: missing query row in\n{text}"
     );
     assert!(
-        text.contains("enter open"),
+        text.contains("enter jump there"),
         "{name}: missing hint foot in\n{text}"
     );
     assert_golden!(name, rendered);

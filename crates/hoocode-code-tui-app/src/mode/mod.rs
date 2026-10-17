@@ -139,8 +139,6 @@ pub struct InteractiveOptions {
 
 use session_op::{SessionOpDone, SessionOutcome};
 
-const DEFAULT_WORKING_MESSAGE: &str = "Working...";
-
 const DEFAULT_HIDDEN_THINKING_LABEL: &str = "Thinking...";
 
 /// Finished tool blocks kept live; older ones are frozen.

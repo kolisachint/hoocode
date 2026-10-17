@@ -208,16 +208,18 @@ impl SessionSelectorHeader {
     }
 
     /// The hint foot: confirm/cancel while a delete is pending, else the
-    /// console keys (spec d6 plus `enter`, which opens the session).
+    /// console keys (the target's `logRows` foot: move, jump there, close —
+    /// plus the picker's real scope, sort and delete keys).
     fn hint_line(&self) -> Line<'static> {
         if self.confirming_delete {
             hints(&[("enter", "confirm"), ("esc", "cancel")])
         } else {
             hints(&[
+                ("↑↓", "move"),
                 ("tab", "scope"),
                 ("alt+o", "sort"),
                 ("alt+x", "delete"),
-                ("enter", "open"),
+                ("enter", "jump there"),
                 ("esc", "close"),
             ])
         }

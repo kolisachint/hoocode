@@ -271,7 +271,7 @@ fn check_docking_provider(name: &str, width: u16) {
         "{name}: missing unconfigured suffix in\n{text}"
     );
     assert!(
-        text.contains("enter choose"),
+        text.contains("enter dock"),
         "{name}: missing hint foot in\n{text}"
     );
     assert_golden!(name, rendered);

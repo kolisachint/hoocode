@@ -553,12 +553,20 @@ impl Mode {
         }
     }
 
+    /// The working indicator: a no-op [`Loader`] with no message and no
+    /// frames. It keeps the loader mechanics (start/stop/tick, the status
+    /// slot, the deadline plumbing) while drawing nothing: the user said
+    /// the `Working...` line is not required.
     pub(super) fn create_working_loader(&self) -> Rc<RefCell<Loader>> {
+        use hoocode_tui_components::LoaderIndicatorOptions;
         let mut loader = Loader::new(
             Box::new(|s: &str| theme().fg("accent", s)),
             Box::new(|s: &str| theme().fg("muted", s)),
-            DEFAULT_WORKING_MESSAGE,
-            None,
+            String::new(),
+            Some(LoaderIndicatorOptions {
+                frames: Some(vec![]),
+                interval_ms: None,
+            }),
         );
         loader.start();
         handle(loader)
