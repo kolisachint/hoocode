@@ -163,12 +163,15 @@ fn screen() -> Screen {
     )));
     let editor_handle: ComponentHandle = editor.clone();
     ui.add_child(editor_handle.clone());
+    let prompt = editor.clone();
     install_scroll_view(
         &mut ui,
         editor_handle.clone(),
         chat.clone(),
         Some(body.clone()),
         Rc::new(is_user),
+        Rc::new(move || prompt.borrow().get_text().is_empty()),
+        Rc::new(|| false),
     );
     ui.set_focus(Some(editor_handle));
     let _events = ui.start();

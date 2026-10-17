@@ -1625,6 +1625,7 @@ dependencies = [
  "hoocode-code-paths",
  "hoocode-code-settings",
  "hoocode-home",
+ "hoocode-runtime",
  "ignore",
  "serde",
  "serde_json",

@@ -40,6 +40,7 @@ use hoocode_tui_render::ComponentHandle;
 
 use crate::notification_panel::NotificationKind;
 use crate::resource_display::show_loaded_resources;
+use crate::scroll_view;
 
 use super::*;
 
@@ -794,9 +795,13 @@ impl Mode {
     }
 
     /// `resetTranscriptView`: drop every view reference into the transcript.
+    /// The rows are gone, so a pinned view has nothing to hold: it follows the
+    /// tail again, and the `N new` count starts over.
     pub(super) fn reset_transcript_view(&mut self) {
         self.transcript.chat.borrow_mut().clear();
         self.transcript.reset_view();
+        self.tui.scroll_to_live();
+        self.tui.reset_new_lines_count();
     }
 
     /// `renderCurrentSessionState`: the transcript of the session just
@@ -864,6 +869,9 @@ impl Mode {
 
     /// `applyToolOutputView`: move every block and chain to `view`.
     pub(super) fn apply_tool_output_view(&mut self, view: ToolOutputView, persist: bool) {
+        // The change moves rows above the pinned top: the same message stays on top.
+        let anchor =
+            scroll_view::capture_top(&self.tui, &self.transcript.chat, self.scroll_body.as_ref());
         let previous_thinking = self.thinking_display();
         self.tool_output_view = view;
         if persist {
@@ -897,6 +905,12 @@ impl Mode {
         for component in &self.transcript.compaction_summaries {
             component.borrow_mut().set_expanded(peek);
         }
+        scroll_view::reanchor_top(
+            &mut self.tui,
+            &self.transcript.chat,
+            self.scroll_body.as_ref(),
+            anchor,
+        );
         self.dirty.set(true);
     }
 

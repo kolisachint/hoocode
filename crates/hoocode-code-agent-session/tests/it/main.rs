@@ -6,6 +6,7 @@ mod compaction;
 mod compaction_e2e;
 mod core_utils;
 mod disabled_tools_ts;
+mod event_bus_errors;
 mod format;
 mod json_events;
 mod mcp;

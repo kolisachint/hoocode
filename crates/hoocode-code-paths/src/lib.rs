@@ -32,6 +32,17 @@ pub const ENV_SESSION_DIR: &str = "CODING_AGENT_SESSION_DIR";
 /// `ENV_USER_AGENTS_DIR` (suffix).
 pub const ENV_USER_AGENTS_DIR: &str = "USER_AGENTS_DIR";
 
+/// A boolean env value: `1`, `true`, `yes` or `on` is true, `0`, `false`, `no`
+/// or `off` is false (trimmed, any case). Anything else is `None`, so the
+/// caller's own default applies.
+pub fn parse_env_bool(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
 /// The first non-empty `<prefix><suffix>` variable.
 pub fn env_override(suffix: &str) -> Option<String> {
     ENV_PREFIXES.iter().find_map(|prefix| {
@@ -255,4 +266,26 @@ pub fn collect_agents_ancestor_dirs(start: &Path, subdir: &str) -> Vec<PathBuf> 
         }
     }
     dirs
+}
+
+#[cfg(test)]
+mod env_bool_tests {
+    use super::parse_env_bool;
+
+    #[test]
+    fn reads_the_usual_spellings_in_any_case_and_padding() {
+        for v in ["1", "true", "YES", " On ", "tRuE"] {
+            assert_eq!(parse_env_bool(v), Some(true), "{v:?}");
+        }
+        for v in ["0", "false", "No", "\tOFF\n"] {
+            assert_eq!(parse_env_bool(v), Some(false), "{v:?}");
+        }
+    }
+
+    #[test]
+    fn anything_else_is_no_answer() {
+        for v in ["", "2", "maybe", "enabled", "- 1"] {
+            assert_eq!(parse_env_bool(v), None, "{v:?}");
+        }
+    }
 }

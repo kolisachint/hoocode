@@ -7,7 +7,11 @@
 //! At the prompt only the pager keys are live (page up/down, the two ends,
 //! jump by turn, search), none of which the prompt uses. Once the view is
 //! pinned it captures keys like a picker: line steps on the arrows, escape
-//! back to live. Anything that is not a scroll key un-pins the view and then
+//! back to live. The plain arrows belong to the prompt while it holds text
+//! (cursor and history), so they step the view only over an empty prompt; the
+//! shifted arrows always step it. Escape goes back to live, and also reaches
+//! the prompt when an agent run is going, so it aborts the run as it does
+//! from the tail. Anything that is not a scroll key un-pins the view and then
 //! does what it always did, so typing never echoes into a prompt scrolled off
 //! screen.
 //!
@@ -23,7 +27,7 @@ use std::rc::Rc;
 use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
-use hoocode_tui_render::{ComponentHandle, Container, ScrollStatus, Tui};
+use hoocode_tui_render::{Component, ComponentHandle, Container, ScrollStatus, Tui};
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
 /// Which way to jump.
@@ -35,6 +39,10 @@ pub enum TurnDirection {
 
 /// Whether a chat child stands for something the user said.
 pub type IsUserMessage = Rc<dyn Fn(&ComponentHandle) -> bool>;
+/// Whether the prompt holds no text.
+pub type EditorEmpty = Rc<dyn Fn() -> bool>;
+/// Whether an agent run is going (streaming or backing off a retry).
+pub type AgentBusy = Rc<dyn Fn() -> bool>;
 
 /// `jumpToUserMessage`: pin the view to the previous or next user message.
 /// Rows come from the last frame's offsets: a message's offset inside the
@@ -120,8 +128,10 @@ fn is_typed_text(data: &str) -> bool {
 }
 
 /// `formatStatus`: the bottom row of a pinned view, "where am I" first and
-/// "how do I get out" second; while searching, the query line.
-pub fn format_scroll_status(status: &ScrollStatus) -> String {
+/// "how do I get out" second; while searching, the query line. `editor_empty`
+/// says whether the plain arrows step the view (the prompt holds no text);
+/// otherwise the line keys are the shifted arrows.
+pub fn format_scroll_status(status: &ScrollStatus, editor_empty: bool) -> String {
     let width = status.width.max(0) as usize;
     if let Some(search) = &status.search {
         let hits = if search.query.is_empty() {
@@ -179,12 +189,13 @@ pub fn format_scroll_status(status: &ScrollStatus) -> String {
     let keys = if status.picker {
         "PgUp/PgDn page".to_string()
     } else {
+        let (up, down) = if editor_empty {
+            ("app.scroll.lineUp", "app.scroll.lineDown")
+        } else {
+            ("app.scroll.shiftLineUp", "app.scroll.shiftLineDown")
+        };
         [
-            format!(
-                "{}/{} line",
-                key_text("app.scroll.lineUp"),
-                key_text("app.scroll.lineDown")
-            ),
+            format!("{}/{} line", key_text(up), key_text(down)),
             "PgUp/PgDn page".to_string(),
             format!("{} top", key_text("app.scroll.top")),
             format!("{} live", key_text("app.scroll.exit")),
@@ -208,6 +219,10 @@ pub struct ScrollView {
     /// The full-screen body that holds the chat, when the screen has one.
     body: Option<Rc<RefCell<Container>>>,
     is_user_message: IsUserMessage,
+    /// The prompt holds no text: the plain arrows step the pinned view.
+    editor_empty: EditorEmpty,
+    /// An agent run is going: escape goes to the prompt as well, to abort it.
+    agent_busy: AgentBusy,
     typing: Option<String>,
 }
 
@@ -391,10 +406,17 @@ impl ScrollView {
             }
         }
 
+        // Plain arrows are the prompt's while it holds text: they keep the
+        // cursor and the history, and the pin stays where it is.
+        let plain_line = matches(data, "app.scroll.lineUp") || matches(data, "app.scroll.lineDown");
+        if plain_line && !(self.editor_empty)() {
+            return false;
+        }
         // Exit before the ends, so bindings sharing a key still get out.
         if matches(data, "app.scroll.exit") {
             ui.scroll_to_live();
-            return true;
+            // A running agent takes the escape as its abort, as it does from the tail.
+            return !(self.agent_busy)();
         }
         if scroll_step(ui, data) {
             return true;
@@ -417,6 +439,111 @@ impl ScrollView {
     }
 }
 
+/// Where the pinned top row sits in the transcript: the chat child that holds
+/// it, and how many rows into that child. Taken before a change that moves rows
+/// in place (the tool output view), and put back after it with
+/// [`reanchor_top`], so the same message stays on top. A row above the chat
+/// (the header) has no child and keeps its distance from the chat's start.
+#[derive(Clone)]
+pub struct TopAnchor {
+    child: Option<ComponentHandle>,
+    rows_in: i64,
+}
+
+/// The anchor of the pinned top row, from the last frame's layout. `None` when
+/// the view is live or the row cannot be placed in the chat.
+pub fn capture_top(
+    ui: &Tui,
+    chat: &Rc<RefCell<Container>>,
+    body: Option<&Rc<RefCell<Container>>>,
+) -> Option<TopAnchor> {
+    let (top, ..) = ui.get_scroll_position()?;
+    let body = body?;
+    let width = ui.transcript_width();
+    let chat_handle: ComponentHandle = chat.clone();
+    let body = body.borrow();
+    let index = body
+        .children
+        .iter()
+        .position(|c| Rc::ptr_eq(c, &chat_handle))?;
+    let chat_base = body.child_row_offsets(width)?[index] as i64;
+    let rel = top - chat_base;
+    let chat = chat.borrow();
+    if rel < 0 {
+        return Some(TopAnchor {
+            child: None,
+            rows_in: rel,
+        });
+    }
+    let offsets = chat.child_row_offsets(width)?;
+    let i = offsets.iter().rposition(|o| (*o as i64) <= rel)?;
+    Some(TopAnchor {
+        child: Some(chat.children[i].clone()),
+        rows_in: rel - offsets[i] as i64,
+    })
+}
+
+/// After the transcript's rows moved, puts the pinned top back on the same
+/// message: the body is laid out again so its offsets are current, then the
+/// view moves to the anchored child's new start (clamped inside that child).
+/// The view goes live when there is no anchor, no body (not full-screen), or
+/// the anchored child is gone. A live view stays live.
+pub fn reanchor_top(
+    ui: &mut Tui,
+    chat: &Rc<RefCell<Container>>,
+    body: Option<&Rc<RefCell<Container>>>,
+    anchor: Option<TopAnchor>,
+) {
+    if !ui.scroll_pinned() {
+        return;
+    }
+    ui.reset_new_lines_count();
+    let placed = match (anchor, body) {
+        (Some(anchor), Some(body)) => place_top(ui, chat, body, &anchor),
+        _ => None,
+    };
+    match placed {
+        Some(top) => ui.restore_scroll_top(Some(top)),
+        None => {
+            ui.scroll_to_live();
+        }
+    }
+}
+
+/// The new top row for `anchor`, from a fresh layout of the body.
+fn place_top(
+    ui: &Tui,
+    chat: &Rc<RefCell<Container>>,
+    body: &Rc<RefCell<Container>>,
+    anchor: &TopAnchor,
+) -> Option<i64> {
+    let width = ui.transcript_width();
+    body.borrow_mut().render(width);
+    let chat_handle: ComponentHandle = chat.clone();
+    let body = body.borrow();
+    let index = body
+        .children
+        .iter()
+        .position(|c| Rc::ptr_eq(c, &chat_handle))?;
+    let chat_base = body.child_row_offsets(width)?[index] as i64;
+    let chat = chat.borrow();
+    let rel = match &anchor.child {
+        None => anchor.rows_in,
+        Some(child) => {
+            let i = chat.children.iter().position(|c| Rc::ptr_eq(c, child))?;
+            let offsets = chat.child_row_offsets(width)?;
+            let start = offsets[i] as i64;
+            // Stay inside the message: a fold can make it shorter than it was.
+            let within = match offsets.get(i + 1) {
+                Some(next) => anchor.rows_in.min(*next as i64 - start - 1),
+                None => anchor.rows_in,
+            };
+            start + within.max(0)
+        }
+    };
+    Some((chat_base + rel).max(0))
+}
+
 /// `installScrollView`: the indicator, the picker's share of the pinned
 /// view, and the keys. `editor` is the prompt. Pinning works from any focus;
 /// with a picker focused, the picker keeps its own keys (see `handle_picker`).
@@ -426,14 +553,21 @@ pub fn install_scroll_view(
     chat: Rc<RefCell<Container>>,
     body: Option<Rc<RefCell<Container>>>,
     is_user_message: IsUserMessage,
+    editor_empty: EditorEmpty,
+    agent_busy: AgentBusy,
 ) {
-    ui.set_scroll_status_formatter(Box::new(format_scroll_status));
+    let bar_editor_empty = editor_empty.clone();
+    ui.set_scroll_status_formatter(Box::new(move |status: &ScrollStatus| {
+        format_scroll_status(status, bar_editor_empty())
+    }));
     ui.scroll_prompt = Some(editor.clone());
     let mut view = ScrollView {
         editor,
         chat,
         body,
         is_user_message,
+        editor_empty,
+        agent_busy,
         typing: None,
     };
     ui.set_input_interceptor(Some(Box::new(move |ui: &mut Tui, data: &str| {

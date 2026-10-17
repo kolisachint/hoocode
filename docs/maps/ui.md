@@ -153,6 +153,10 @@ The TUI owns the mechanism; the app owns which key does what.
 - Pinning works from any focus. Picker keys never un-pin.
 - PgDn past the bottom, or the wheel reaching the bottom, returns to live.
 - Status row (bottom): position, then the keys: line, `PgUp/PgDn page`, top, live. Search has its own text.
+  The line keys are `↑/↓` over an empty prompt and `shift+↑/shift+↓` while the prompt holds text.
+- Full-screen and mouse reporting on (the default): a plain drag does not select text. Selection is shift+drag.
+- The view pinned on a message keeps that message on top when the tool output view (ctrl+o) changes rows.
+  A rebuild of the transcript (`/new`, `/resume`, the thinking toggle, ctrl+t) goes live.
 - Full-screen (M1d, the default): the body is the transcript (header and chat). The bar row sits above the bottom,
   and carries `↓ N new` while pinned: lines that arrived since the view last pinned or moved. A shorter transcript
   (a clear) starts the count again. The scrollbar column is always reserved (blank while live, so pinning does not
@@ -168,10 +172,11 @@ The TUI owns the mechanism; the app owns which key does what.
 | Full-screen scroll (M1d): body window, bar with `N new`, scrollbar column, picker rows, search marks, image clip | `tui-render/src/tui.rs`: `compose_fullscreen`, `body_row`, `region_row`, `fullscreen_regions`, `fullscreen_measure` (before the first frame) |
 | Scrollbar glyphs (pure), `SCROLLBAR_THUMB`, `SCROLLBAR_TRACK` | `tui-render/src/scrollbar.rs` |
 | Full-screen mode (M1): alternate screen for the run, one frame composed from regions, per-row diff, no scrollback writes. Off by default (`Tui::set_fullscreen`); the app's default and `HOOCODE_FULLSCREEN` come in M1c | `tui-render/src/tui.rs`: `set_fullscreen`, `set_fullscreen_body`, `paint_fullscreen`, `compose_fullscreen`, `start`, `stop` |
-| Stray stderr text (a TLS warning, child output, a thread-priority note) while the TUI owns the terminal: it goes to the debug log, and the run loop repaints if anything reached the terminal | `hoocode-runtime/src/diagnostics.rs` (`write_stderr`); sink installed in `run` (`mode/mod.rs`) |
+| Stray stderr text (a TLS warning, child output, a reload warning, an extension handler error) while the TUI owns the terminal: it goes to the debug log. Every such write goes through `write_stderr` | `hoocode-runtime/src/diagnostics.rs` (`write_stderr`); sink installed in `run` (`mode/mod.rs`) |
 | Full-screen row arithmetic (pure): `split_rows`, `body_start`, `bottom_window`, `anchor_on_resize`, `body_width`, `new_lines_since` | `tui-render/src/fullscreen.rs` |
 | Prompt focus: `Tui.scroll_prompt`. Any other focus is a picker (`scroll_pane`) | `tui-render/src/tui.rs`; set in `install_scroll_view` |
 | Key routing, search, status text, keys at the prompt | `hoocode-code-tui-app/src/scroll_view.rs`: `handle_live`, `handle_picker`, `handle_input`, `format_scroll_status`, `install_scroll_view` |
+| Keeping the pinned top on its message across a change of rows | `scroll_view.rs`: `capture_top`, `reanchor_top` (called from `apply_tool_output_view` in `mode/transcript.rs`) |
 | Jump to user message (full-screen: offsets inside the body; inline: among the root's children) | `scroll_view.rs` `jump_to_user_message`, at `transcript_width()` |
 
 **Key routing**
@@ -182,13 +187,13 @@ The TUI owns the mechanism; the app owns which key does what.
 | Ctrl+Home / Ctrl+End | Top / live | Same |
 | Wheel | Scroll; wheel up pins | Same |
 | Scrollbar click | Pinned only: page toward the click | Same |
-| ↑ / ↓ | Pinned: one line. Live: the prompt | Picker |
+| ↑ / ↓ | Pinned: one line over an empty prompt; with text, the prompt. Live: the prompt | Picker |
 | Shift+↑ / Shift+↓ | Live: Shift+↑ pins one line up; Shift+↓ does nothing. Pinned: one line | Picker |
 | Ctrl+↑ / Ctrl+↓ | Previous / next user message | Picker |
 | Ctrl+R | Pin at bottom, open search | Picker |
 | `/` | Pinned: search in view. Live: types `/` | Picker |
 | `n` / `p` | Search open: next / previous match. Else the prompt | Picker |
-| Esc | Search open: clear it. Else live | Picker |
+| Esc | Search open: clear it. Else live; during an agent run, also aborts it | Picker |
 | Enter, typed text | Search open: the query (Enter commits). Else pinned: back to live, then the prompt | Picker, never un-pins |
 
 A key that is not a scroll key un-pins at the prompt, then does its usual job.

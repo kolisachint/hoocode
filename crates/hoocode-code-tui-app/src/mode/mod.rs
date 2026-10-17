@@ -397,6 +397,9 @@ fn expanded_instructions() -> String {
 struct Mode {
     /// The chat transcript and the components that track it (`transcript.rs`).
     transcript: Transcript,
+    /// The full-screen body holding the chat, when the screen has one: the
+    /// pinned view's anchor is laid out through it (`scroll_view.rs`).
+    scroll_body: Option<Rc<RefCell<Container>>>,
     /// The attached subagent view, while one is shown (`attach.rs`).
     attached: Option<attach::Attached>,
     /// The attached view's header row, above the chat (empty when not attached).
@@ -844,6 +847,8 @@ impl Mode {
         tui.set_focus(Some(as_component(&editor)));
         // Scrolling the transcript: the prompt's pager keys, and the keys of
         // the pinned view (`scroll_view.rs`).
+        let prompt_text = editor.clone();
+        let busy_session = session.clone();
         install_scroll_view(
             &mut tui,
             as_component(&editor),
@@ -856,6 +861,12 @@ impl Mode {
                         || any.is::<BackgroundNoticeComponent>()
                 })
             }),
+            Rc::new(move || {
+                prompt_text
+                    .try_borrow()
+                    .map_or(true, |e| e.editor.get_text().is_empty())
+            }),
+            Rc::new(move || busy_session.is_streaming() || busy_session.is_retrying()),
         );
 
         let (tx, rx) = mpsc::channel();
@@ -869,6 +880,7 @@ impl Mode {
             perf,
             header,
             cursor_blink,
+            scroll_body: fullscreen.then(|| body.clone()),
             transcript: Transcript::new(chat),
             attached: None,
             attach_slot,
@@ -1429,10 +1441,6 @@ impl Mode {
             self.show_attached();
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
-            }
-            // Text that reached the terminal out of band moved the screen: repaint all of it.
-            if hoocode_runtime::diagnostics::take_stderr_written() {
-                self.tui.request_render(true);
             }
             self.tui.flush_scheduled_render();
             self.show_main();

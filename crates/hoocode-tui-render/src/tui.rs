@@ -379,6 +379,9 @@ pub struct Tui {
     /// The body's line count when the view last pinned or scrolled; the `N new`
     /// count is what has grown since. A shorter transcript resets it.
     fullscreen_seen_total: i64,
+    /// Set by [`Self::reset_new_lines_count`]: the next full-screen frame starts
+    /// the `N new` count at the transcript as it is then.
+    fullscreen_seen_reset: bool,
 }
 
 /// One composed full-screen frame: the rows as they are written, and the
@@ -435,6 +438,7 @@ impl Tui {
             fullscreen_view: 0,
             started: false,
             fullscreen_seen_total: 0,
+            fullscreen_seen_reset: false,
         }
     }
 
@@ -484,6 +488,13 @@ impl Tui {
                 self.scroll_to_live();
             }
         }
+    }
+
+    /// The transcript was rebuilt or the screen resized: its line count is no
+    /// longer comparable with the last one, so the `N new` count starts again
+    /// from the next frame's transcript. Only growth after that is counted.
+    pub fn reset_new_lines_count(&mut self) {
+        self.fullscreen_seen_reset = true;
     }
 
     /// Let the app paint the indicator in its own theme.
@@ -2124,7 +2135,11 @@ impl Tui {
         }
         self.scroll_total_lines = total as i64;
         self.fullscreen_view = rows.body as i64;
-        // A transcript that shrank (a clear) starts the `N new` count again.
+        // A resize re-wraps the transcript and a rebuild replaces it: neither is
+        // output that arrived. A transcript that shrank (a clear) also starts over.
+        if resized || std::mem::take(&mut self.fullscreen_seen_reset) {
+            self.fullscreen_seen_total = total as i64;
+        }
         self.fullscreen_seen_total = self.fullscreen_seen_total.min(total as i64);
         // The search runs over the body lines, as the pinned painter's does.
         let query = if pinned {
@@ -3166,6 +3181,43 @@ mod tests {
         assert_eq!(
             written_row(&f.handles.writes.joined(), 22).as_deref(),
             Some("NEW3")
+        );
+    }
+
+    #[test]
+    fn fullscreen_new_count_ignores_a_rebuild_that_is_not_new_output() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        f.tui
+            .set_scroll_status_formatter(Box::new(|status| format!("NEW{}", status.new_lines)));
+        let _events = f.tui.start();
+        assert!(f.tui.scroll_by_lines(-5));
+        f.body
+            .borrow_mut()
+            .lines
+            .extend((0..8).map(|i| format!("n{i}")));
+        f.tui.request_render(true);
+
+        // A toggle rebuilds the rows: the transcript grows, but nothing new arrived.
+        f.body.borrow_mut().lines = (0..50).map(|i| format!("r{i}")).collect();
+        f.tui.reset_new_lines_count();
+        f.handles.writes.clear();
+        f.tui.request_render(true);
+        assert_eq!(
+            written_row(&f.handles.writes.joined(), 22).as_deref(),
+            Some("NEW0"),
+            "a rebuild is not output"
+        );
+
+        f.body
+            .borrow_mut()
+            .lines
+            .extend((0..2).map(|i| format!("m{i}")));
+        f.handles.writes.clear();
+        f.tui.request_render(false);
+        assert_eq!(
+            written_row(&f.handles.writes.joined(), 22).as_deref(),
+            Some("NEW2"),
+            "only growth after the rebuild counts"
         );
     }
 

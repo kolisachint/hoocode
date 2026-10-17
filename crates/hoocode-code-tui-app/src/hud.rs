@@ -31,15 +31,13 @@ pub struct HudData {
     pub cost: String,
 }
 
-/// Whether full-screen is on. `HOOCODE_FULLSCREEN=0` turns it off, `=1` on, for
-/// one run; any other value (or none) takes the `fullscreen` setting. The env
-/// var wins over the setting.
+/// Whether full-screen is on. `HOOCODE_FULLSCREEN` reads as a boolean
+/// (`0`/`false`/`no`/`off` or `1`/`true`/`yes`/`on`, see `parse_env_bool`) and
+/// wins over the `fullscreen` setting for one run. Any other value, or none,
+/// takes the setting.
 pub fn fullscreen_enabled(env: Option<&str>, setting: bool) -> bool {
-    match env {
-        Some("0") => false,
-        Some("1") => true,
-        _ => setting,
-    }
+    env.and_then(hoocode_code_paths::parse_env_bool)
+        .unwrap_or(setting)
 }
 
 /// The HUD row as text, exactly `width` columns when it fits. The left part is
@@ -192,6 +190,23 @@ mod tests {
         assert!(fullscreen_enabled(None, true));
         assert!(!fullscreen_enabled(None, false));
         assert!(fullscreen_enabled(Some("yes"), true));
+    }
+
+    #[test]
+    fn env_reads_booleans_trimmed_and_any_case() {
+        for off in ["0", "false", "No", " OFF "] {
+            assert!(!fullscreen_enabled(Some(off), true), "{off:?}");
+        }
+        for on in ["1", "TRUE", "yes", "On "] {
+            assert!(fullscreen_enabled(Some(on), false), "{on:?}");
+        }
+    }
+
+    #[test]
+    fn env_with_no_boolean_meaning_takes_the_setting() {
+        assert!(fullscreen_enabled(Some("maybe"), true));
+        assert!(!fullscreen_enabled(Some(""), false));
+        assert!(fullscreen_enabled(Some("2"), true));
     }
 
     #[test]
