@@ -7,15 +7,13 @@ use hoocode_code_agent_session::mcp::McpStatus;
 use hoocode_code_agent_session::AgentSession;
 use hoocode_code_paths::APP_TITLE;
 use hoocode_code_session::identity::{
-    cycle_session_color_slot, parse_session_color_slot, session_color_name,
-    session_color_name_list, CycleDirection as SessionCycleDirection, SESSION_COLOR_SLOTS,
+    cycle_session_color_slot, session_color_name, CycleDirection as SessionCycleDirection,
 };
 use hoocode_code_settings::ChromeDensity;
-use hoocode_code_tui_selectors::small_selectors::session_color_selector;
 use hoocode_code_tui_theme::theme;
-use hoocode_tui_components::{SelectItem, Spacer, Text};
 
 use crate::footer::{FooterModel, FooterSource};
+use crate::hull_paint::HullPaint;
 use crate::session_chip::render_session_chip;
 
 use super::*;
@@ -133,6 +131,11 @@ impl Mode {
             Some(name) => format!("{APP_TITLE} - {name} - {base}"),
             None => format!("{APP_TITLE} - {base}"),
         };
+        // The tab title takes the hull paint too (M8e5).
+        let title = match self.footer_data.get_hull_paint() {
+            Some(paint) => format!("{title} - {}", paint.name()),
+            None => title,
+        };
         self.tui.terminal.set_title(&title);
     }
 
@@ -146,32 +149,36 @@ impl Mode {
         .unwrap_or_else(|| self.session.display_name())
     }
 
-    /// `handleColor`: `/color <slot|name>`; false for a bare `/color`.
+    /// `handleColor`: bare `/color` cycles the hull paint (M8e5);
+    /// `/color <name>` sets it outright, with the old session-chip colour
+    /// names mapped to the nearest paint. A toast shows the name.
     pub(super) fn handle_color_command(&mut self, text: &str) -> bool {
         let arg = text.strip_prefix("/color").unwrap_or(text).trim();
         if arg.is_empty() {
-            return false;
-        }
-        let Some(slot) = parse_session_color_slot(arg) else {
-            self.show_warning(&format!(
-                "Usage: /color <1-{SESSION_COLOR_SLOTS}> or /color <{}> (first letter works too), or /color on its own to pick one",
-                session_color_name_list().join("|")
-            ));
+            let next = HullPaint::next(self.footer_data.get_hull_paint());
+            self.set_hull_paint(next);
             return true;
-        };
-        self.session.set_session_color(slot);
-        let t = theme();
-        let name = session_color_name(slot)
-            .map(|name| format!("  {}", t.fg("dim", name)))
-            .unwrap_or_default();
-        let line = format!(
-            "{} {}{name}",
-            t.fg("dim", "Session color set:"),
-            self.current_chip()
-        );
-        self.add_to_chat(as_component(&handle(Spacer::new(1))));
-        self.add_to_chat(as_component(&handle(Text::new(line, 1, 0))));
+        }
+        match HullPaint::parse(arg) {
+            Ok(paint) => {
+                self.set_hull_paint(paint);
+            }
+            Err(_) => {
+                self.show_warning(
+                    "Usage: /color [none|parity|cyan|violet|lime|red] (old chip names still work)",
+                );
+            }
+        }
         true
+    }
+
+    /// The hull paint, shown as a toast by name (M8e5).
+    fn set_hull_paint(&mut self, paint: Option<HullPaint>) {
+        self.footer_data.set_hull_paint(paint);
+        self.notify(
+            NotificationKind::Info,
+            paint.map_or("none", HullPaint::name),
+        );
     }
 
     /// `cycleSessionColor`: one step on the colour dial.
@@ -189,56 +196,6 @@ impl Mode {
             "app.session.color.cycleBackward",
             &format!("Session color: {name}"),
         );
-    }
-
-    /// `showSessionColorSelector`: swatches in the prompt's slot; moving
-    /// through them repaints the live chip.
-    pub(super) fn show_session_color_selector(&mut self) {
-        let original = self.session.session_color_slot();
-        let selector = session_color_selector(&self.session.display_name(), original);
-        {
-            let list = selector.select_list();
-            let mut list = list.borrow_mut();
-            let slot_of = |item: &SelectItem| item.value.parse::<u8>().ok();
-            let sink = self.actions.clone();
-            list.on_selection_change = Some(Box::new(move |item| {
-                if let Some(slot) = slot_of(item) {
-                    sink.borrow_mut().push(Action::SessionColorPreview(slot));
-                }
-            }));
-            let sink = self.actions.clone();
-            list.on_select = Some(Box::new(move |item| {
-                sink.borrow_mut()
-                    .push(Action::SessionColorDone(slot_of(item)));
-            }));
-            let sink = self.actions.clone();
-            list.on_cancel = Some(Box::new(move || {
-                sink.borrow_mut().push(Action::SessionColorDone(None));
-            }));
-        }
-        self.show_in_editor_slot(as_component(&handle(selector)));
-    }
-
-    /// Paint the prompt's chip in `slot` without saving it.
-    pub(super) fn preview_session_color(&mut self, slot: u8) {
-        let chip = render_session_chip(&self.session.display_name(), i64::from(slot));
-        self.editor.borrow_mut().editor.top_border_label = chip;
-        self.dirty.set(true);
-    }
-
-    /// The colour picker closed: save the choice, or put back the colour
-    /// the session actually has.
-    pub(super) fn close_session_color_selector(&mut self, slot: Option<u8>) {
-        self.restore_editor();
-        match slot {
-            Some(slot) => {
-                self.session.set_session_color(slot);
-                let name =
-                    session_color_name(slot).map_or_else(|| slot.to_string(), str::to_string);
-                self.show_status(&format!("Session color: {name}"));
-            }
-            None => self.update_session_chip(),
-        }
     }
 
     /// `handleChromeCommand`: `/chrome` names the stop, `/chrome <full|compact>`

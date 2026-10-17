@@ -83,10 +83,6 @@ pub(super) enum Action {
     /// `app.session.color.cycleForward` / `cycleBackward`.
     SessionColorForward,
     SessionColorBackward,
-    /// The colour picker moved to this slot (live preview).
-    SessionColorPreview(u8),
-    /// The colour picker closed: the chosen slot, or `None` when cancelled.
-    SessionColorDone(Option<u8>),
     /// `app.session.changeDirectory`: prefill `/cd `.
     ChangeDirectoryPrefill,
     /// `app.session.fork`: `/fork`.
@@ -843,8 +839,6 @@ impl Mode {
             Action::SessionColorForward | Action::SessionColorBackward => {
                 self.cycle_session_color(action == Action::SessionColorForward)
             }
-            Action::SessionColorPreview(slot) => self.preview_session_color(slot),
-            Action::SessionColorDone(slot) => self.close_session_color_selector(slot),
             Action::ChangeDirectoryPrefill => {
                 // Prefill rather than act: the editor's path completion is the
                 // way to name the target.

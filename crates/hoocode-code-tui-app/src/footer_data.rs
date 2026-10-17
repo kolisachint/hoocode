@@ -29,6 +29,8 @@ struct State {
     available_provider_count: usize,
     active_mode: String,
     subagent_enabled: bool,
+    /// The hull paint (`/color`, M8e5); `None` is unpainted.
+    hull_paint: Option<crate::hull_paint::HullPaint>,
 }
 
 struct Inner {
@@ -58,6 +60,7 @@ impl FooterDataProvider {
                     available_provider_count: 0,
                     active_mode: "build".into(),
                     subagent_enabled: false,
+                    hull_paint: None,
                 }),
                 generation: AtomicU64::new(0),
             }),
@@ -130,6 +133,15 @@ impl FooterDataProvider {
 
     pub fn set_active_mode(&self, mode: &str) {
         self.state().active_mode = mode.to_string();
+    }
+
+    /// The hull paint (`/color`, M8e5); `None` is unpainted.
+    pub fn get_hull_paint(&self) -> Option<crate::hull_paint::HullPaint> {
+        self.state().hull_paint
+    }
+
+    pub fn set_hull_paint(&self, paint: Option<crate::hull_paint::HullPaint>) {
+        self.state().hull_paint = paint;
     }
 
     pub fn get_subagent_enabled(&self) -> bool {

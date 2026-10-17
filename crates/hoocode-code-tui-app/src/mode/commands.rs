@@ -171,11 +171,7 @@ impl Mode {
             BuiltinCommand::Mcp => self.handle_mcp_command(text),
             BuiltinCommand::Plugin => self.handle_plugin_command(text),
             BuiltinCommand::Color => {
-                // An argument sets the slot outright; bare `/color` opens the
-                // swatches.
-                if !self.handle_color_command(text) {
-                    self.show_session_color_selector();
-                }
+                self.handle_color_command(text);
             }
             BuiltinCommand::Chrome => self.handle_chrome_command(text),
             BuiltinCommand::Fork => self.show_user_message_selector(),

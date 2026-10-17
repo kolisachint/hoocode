@@ -8,6 +8,8 @@ use hoocode_code_tui_app::hud::{fullscreen_enabled, hud_component, tree_plan, Tr
 use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
 
+use crate::support::lock;
+
 /// A fixed session: model, usage and context.
 struct Stub;
 
@@ -67,6 +69,34 @@ fn hud_row_100_cols_golden() {
     data.set_active_mode("build");
     let mut component = hud_component(Box::new(Stub), data);
     assert_golden!("hud_row_100x1", render_golden(&mut component, 100));
+}
+
+#[test]
+fn hud_row_painted_golden() {
+    use hoocode_code_tui_app::hull_paint::HullPaint;
+    let _g = lock(Some("dark"));
+    let dir = tempfile::tempdir().unwrap();
+    let data = FooterDataProvider::new(dir.path());
+    data.set_active_mode("build");
+    data.set_hull_paint(Some(HullPaint::Parity));
+    let mut component = hud_component(Box::new(Stub), data);
+    assert_golden!("hud_row_paint_100x1", render_golden(&mut component, 100));
+}
+
+#[test]
+fn hud_row_shows_the_paint_name_before_the_ship() {
+    use hoocode_code_tui_app::hull_paint::HullPaint;
+    let _g = lock(Some("dark"));
+    let dir = tempfile::tempdir().unwrap();
+    let data = FooterDataProvider::new(dir.path());
+    data.set_active_mode("build");
+    data.set_hull_paint(Some(HullPaint::Parity));
+    let mut component = hud_component(Box::new(Stub), data);
+    let rows = render_golden(&mut component, 100);
+    assert!(
+        rows.contains("hoocode") && rows.contains("parity  SHIP"),
+        "{rows}"
+    );
 }
 
 #[test]

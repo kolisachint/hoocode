@@ -18,6 +18,7 @@ pub mod footer;
 pub mod footer_data;
 pub mod hotkeys;
 pub mod hud;
+pub mod hull_paint;
 pub use hoocode_code_tui_widgets::input_frame;
 pub mod login_controller;
 pub mod mcp_elicitation;
