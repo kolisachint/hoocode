@@ -300,9 +300,12 @@ impl Transcript {
         }
         let first_start = self.missions.first().map(|m| m.start);
         for (i, chain) in self.chains.iter().enumerate() {
+            // No mission yet: every chain stands before the first one,
+            // so all keep the summary line (a restored or fed transcript
+            // with no user turn never opens a mission).
             chain
                 .borrow_mut()
-                .set_orphan(first_start.is_some_and(|start| i < start));
+                .set_orphan(first_start.is_none_or(|start| i < start));
         }
     }
 
