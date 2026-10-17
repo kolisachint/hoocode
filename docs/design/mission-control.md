@@ -246,7 +246,7 @@ Spec §6.1 and §6.2 are the reference. Letter keys work with ctrl or alt. Today
 
 | Step | Work | Surfaces (spec) | Size |
 |---|---|---|---|
-| M0 Foundation | `hoocode-tui-ratatui` crate. Buffer-to-lines adapter (`RatatuiComponent`). Palette from the theme tokens. Golden test of the adapter. No visible change | none | S/M |
+| M0 Foundation | `hoocode-tui-ratatui` crate. Buffer-to-lines adapter (`RatatuiComponent`). Palette from the theme tokens. Golden test of the adapter. No visible change. **Done 2026-10-17** (ratatui-core 0.1.2, ratatui-widgets 0.3.2, no second crossterm), except the palette, which moves to M1 | none | S/M |
 | M1 Comms frame | Heavy frame, state titles, right label, foot (view and tokens), `▸` input row, queued notes inside. Replaces the prompt frame and its border state | a1 to a4, c4 | M |
 | M2 HUD | One row replacing the two-row footer. Fields and truncation. Hull paint tint | a1, r10, e5 | M |
 | M3 Trajectory (peek) | Mission header `▲ M1`, numbered steps with gold numbers, `┊` rail, up to 3 output lines, HIT chip, NEW chip, landing line, Think row, agent `┃` sub-steps `1.1`, skill chip, satellite row | b1 to b7, a2, a3 | L |

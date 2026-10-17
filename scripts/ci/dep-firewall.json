@@ -87,6 +87,12 @@
     ],
     "thread-priority": [
       "hoocode-runtime"
+    ],
+    "ratatui-core": [
+      "hoocode-tui-ratatui"
+    ],
+    "ratatui-widgets": [
+      "hoocode-tui-ratatui"
     ]
   },
   "pending": {}
