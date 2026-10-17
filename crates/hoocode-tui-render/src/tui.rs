@@ -181,12 +181,50 @@ pub struct ScrollSearchStatus {
 }
 
 pub type ScrollStatusFormatter = Box<dyn Fn(&ScrollStatus) -> String>;
+/// Mission Control transmission toast lines (M8e4): the app draws the toast
+/// with ratatui and the frame only floats its pre-rendered lines top-right
+/// over the body. The provider gets the body width; empty means no toast.
+pub type ToastProvider = Box<dyn Fn(usize) -> Vec<String>>;
 
 /// Opens a clicked URL (`onHyperlink`).
 pub type HyperlinkHandler = Box<dyn FnMut(&str)>;
 
 /// The indicator drawn when the app has not supplied its own
 /// (`defaultScrollStatus`): reverse video, position first, keys if they fit.
+/// One shared case-insensitive matcher for the scan count and the
+/// highlight: byte ranges of `needle_folded` in the ORIGINAL line.
+/// Folding is per character, so a fold that changes byte length (the Turkish
+/// İ folds to `i` plus a combining dot) or a multi-byte query (emoji) still
+/// maps home, where whole-line lowercasing would not.
+fn fold_match_ranges(plain: &str, needle_folded: &str) -> Vec<(usize, usize)> {
+    // The folded chars with each char's origin byte range in the line.
+    let mut folded: Vec<char> = Vec::new();
+    let mut origins: Vec<(usize, usize)> = Vec::new();
+    for (at, c) in plain.char_indices() {
+        for folded_char in c.to_lowercase() {
+            folded.push(folded_char);
+            origins.push((at, at + c.len_utf8()));
+        }
+    }
+    let needle: Vec<char> = needle_folded.chars().collect();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    // Non-overlapping scan, like `str::find` in a loop; every index lands
+    // on a char, so no byte slicing can split one.
+    let mut ranges = Vec::new();
+    let mut i = 0;
+    while i + needle.len() <= folded.len() {
+        if folded[i..i + needle.len()] == needle[..] {
+            ranges.push((origins[i].0, origins[i + needle.len() - 1].1));
+            i += needle.len();
+        } else {
+            i += 1;
+        }
+    }
+    ranges
+}
+
 pub fn default_scroll_status(status: &ScrollStatus) -> String {
     let position = format!("{}\u{2013}{}/{}", status.top, status.bottom, status.total);
     let where_ = if status.at_top { " top" } else { "" };
@@ -343,6 +381,7 @@ pub struct Tui {
     /// Transcript length measured by the last pinned paint.
     scroll_total_lines: i64,
     scroll_status_formatter: ScrollStatusFormatter,
+    toast_provider: Option<ToastProvider>,
     scroll_search: Option<ScrollSearch>,
     /// Whether the view may pin right now (unset means always). Given the
     /// TUI so it can ask what holds focus.
@@ -424,6 +463,7 @@ impl Tui {
             scroll_offset: None,
             scroll_total_lines: 0,
             scroll_status_formatter: Box::new(default_scroll_status),
+            toast_provider: None,
             scroll_search: None,
             can_pin_scroll: None,
             scroll_prompt: None,
@@ -500,6 +540,13 @@ impl Tui {
     /// Let the app paint the indicator in its own theme.
     pub fn set_scroll_status_formatter(&mut self, formatter: ScrollStatusFormatter) {
         self.scroll_status_formatter = formatter;
+    }
+
+    /// Float the app's transmission toast lines top-right over the body.
+    /// Only the fullscreen frame floats them; the pinned painter leaves the
+    /// band to the app.
+    pub fn set_toast_provider(&mut self, provider: ToastProvider) {
+        self.toast_provider = Some(provider);
     }
 
     /// Nominate the child that absorbs the leftover rows. It must already be
@@ -844,25 +891,48 @@ impl Tui {
             .enumerate()
             .filter(|(_, line)| {
                 !line.is_empty()
-                    && strip_vt_control_characters(line)
-                        .to_lowercase()
-                        .contains(&needle)
+                    && !fold_match_ranges(&strip_vt_control_characters(line), &needle).is_empty()
             })
             .map(|(row, _)| row as i64)
             .collect()
     }
 
-    /// Re-run the search if the buffer grew under it.
-    fn refresh_scroll_search(&mut self, total: i64) {
-        let needs = self
-            .scroll_search
-            .as_ref()
-            .is_some_and(|s| !s.query.is_empty() && s.measured_at != Some(total));
-        if !needs {
+    /// Re-run the search if the buffer changed under it. `rescan_all`
+    /// (a resize re-wrapped the transcript, or a rebuild replaced it)
+    /// re-scans the whole buffer even at the same total. Otherwise only
+    /// plain streaming growth re-scans, and only its tail: earlier rows keep
+    /// their matches. Shrinks always re-scan whole.
+    fn refresh_scroll_search(&mut self, total: i64, rescan_all: bool) {
+        let query = match self.scroll_search.as_ref() {
+            Some(search) if !search.query.is_empty() => search.query.clone(),
+            _ => return,
+        };
+        let measured = self.scroll_search.as_ref().and_then(|s| s.measured_at);
+        if !rescan_all && measured == Some(total) {
             return;
         }
-        let query = self.scroll_search.as_ref().unwrap().query.clone();
-        let matches = self.find_scroll_matches(&query);
+        let needle = query.to_lowercase();
+        let buffer_len = self.search_buffer().len();
+        let tail = match measured {
+            Some(prev) if !rescan_all && total > prev && prev >= 0 => {
+                (prev as usize).min(buffer_len)
+            }
+            _ => 0,
+        };
+        // Rows below the tail are new: earlier matches stand, the tail is
+        // scanned with the shared matcher and its rows offset home.
+        let mut matches = if tail == 0 {
+            Vec::new()
+        } else {
+            self.scroll_search.as_ref().unwrap().matches.clone()
+        };
+        for (i, line) in self.search_buffer()[tail..].iter().enumerate() {
+            if !line.is_empty()
+                && !fold_match_ranges(&strip_vt_control_characters(line), &needle).is_empty()
+            {
+                matches.push((tail + i) as i64);
+            }
+        }
         let search = self.scroll_search.as_mut().unwrap();
         search.matches = matches;
         search.measured_at = Some(total);
@@ -872,47 +942,37 @@ impl Tui {
     }
 
     /// Mark the query where it appears in a row about to be painted, slicing
-    /// by display column so the row's own styling survives.
+    /// by display column so the row's own styling survives. A matched row
+    /// also carries the Mission Control contact marker (M8e3): `◂ contact`.
+    /// The marker is plain text (a shape, not a colour, per the NO_COLOR
+    /// rules); the frame cuts the row to the body width, so long rows keep
+    /// the highlight and drop the marker first.
     fn highlight_scroll_matches(line: &str, query: &str) -> String {
         let plain = strip_vt_control_characters(line);
         let needle = query.to_lowercase();
-        let haystack = plain.to_lowercase();
-        // Lowercasing can change byte lengths; only highlight when it did not.
-        if haystack.len() != plain.len() {
+        let ranges = fold_match_ranges(&plain, &needle);
+        if ranges.is_empty() {
             return line.to_string();
         }
-        let Some(mut at) = haystack.find(&needle) else {
-            return line.to_string();
-        };
         let mut out = String::new();
-        let mut cursor = 0;
-        loop {
-            let start_col = visible_width(hoocode_tui_util::text_slice::prefix(&plain, at));
-            let end_col = start_col
-                + visible_width(hoocode_tui_util::text_slice::range(
-                    &plain,
-                    at,
-                    at + needle.len(),
-                ));
-            let from_col = visible_width(hoocode_tui_util::text_slice::prefix(&plain, cursor));
+        let mut cursor_col = 0;
+        for (start, end) in ranges {
+            let start_col = visible_width(hoocode_tui_util::text_slice::prefix(&plain, start));
+            let end_col = visible_width(hoocode_tui_util::text_slice::prefix(&plain, end));
             out.push_str(&slice_by_column(
                 line,
-                from_col,
-                start_col - from_col,
+                cursor_col,
+                start_col - cursor_col,
                 false,
             ));
             out.push_str(&format!(
                 "\x1b[7m{}\x1b[27m",
                 slice_by_column(line, start_col, end_col - start_col, false)
             ));
-            cursor = at + needle.len();
-            match hoocode_tui_util::text_slice::suffix_from(&haystack, cursor).find(&needle) {
-                Some(rel) => at = cursor + rel,
-                None => break,
-            }
+            cursor_col = end_col;
         }
-        let tail_col = visible_width(hoocode_tui_util::text_slice::prefix(&plain, cursor));
-        out.push_str(&slice_by_column(line, tail_col, usize::MAX / 2, false));
+        out.push_str(&slice_by_column(line, cursor_col, usize::MAX / 2, false));
+        out.push_str(" \u{25c2} contact");
         out
     }
 
@@ -1973,7 +2033,7 @@ impl Tui {
         // Kitty placements are not text; last frame's come off first.
         buffer.push_str(&self.clear_scroll_images());
 
-        self.refresh_scroll_search(lines.len() as i64);
+        self.refresh_scroll_search(lines.len() as i64, false);
         let query = self
             .scroll_search
             .as_ref()
@@ -2137,7 +2197,10 @@ impl Tui {
         self.fullscreen_view = rows.body as i64;
         // A resize re-wraps the transcript and a rebuild replaces it: neither is
         // output that arrived. A transcript that shrank (a clear) also starts over.
-        if resized || std::mem::take(&mut self.fullscreen_seen_reset) {
+        // Otherwise the growth is streaming output, and the search only
+        // re-scans that tail.
+        let rebuilt = resized || std::mem::take(&mut self.fullscreen_seen_reset);
+        if rebuilt {
             self.fullscreen_seen_total = total as i64;
         }
         self.fullscreen_seen_total = self.fullscreen_seen_total.min(total as i64);
@@ -2147,7 +2210,7 @@ impl Tui {
                 *line = strip_cursor_marker(line);
             }
             self.flat_lines = body_lines.clone();
-            self.refresh_scroll_search(total as i64);
+            self.refresh_scroll_search(total as i64, rebuilt);
             self.scroll_search
                 .as_ref()
                 .map(|search| search.query.clone())
@@ -2188,6 +2251,14 @@ impl Tui {
         for (row, text) in top_lines.iter().take(rows.top).enumerate() {
             out.push(self.region_row(text, width, row));
         }
+        // Mission Control transmissions (M8e4): the newest toast floats
+        // top-right over the body, starting on its first row. The lines are
+        // drawn by the app; the frame only splices them over the body rows.
+        let toast = self
+            .toast_provider
+            .as_ref()
+            .map(|provide| provide(fullscreen::body_width(width)))
+            .unwrap_or_default();
         for row in 0..rows.body {
             let text = window_lines.get(row).map_or("", String::as_str);
             let marked = if query.is_empty() || hoocode_tui_images::is_image_line(text) {
@@ -2195,7 +2266,12 @@ impl Tui {
             } else {
                 Self::highlight_scroll_matches(text, &query)
             };
-            out.push(self.body_row(&marked, width, row, glyphs.get(row).copied()));
+            let glyph = glyphs.get(row).copied();
+            let mut line = self.body_row(&marked, width, row, glyph);
+            if let Some(floated) = toast.get(row) {
+                line = Self::float_toast_line(&line, floated, width, glyph);
+            }
+            out.push(line);
         }
         if rows.bar == 1 {
             let status = ScrollStatus {
@@ -2239,6 +2315,22 @@ impl Tui {
             return self.emit_line(IMAGE_PLACEHOLDER, width as i64);
         }
         self.emit_line(text, width as i64)
+    }
+
+    /// One body row with the toast's line spliced over its right end: the
+    /// body keeps its left cells, the toast its own width, and the reserved
+    /// scrollbar column keeps its glyph. `width` is the full row including
+    /// that column. The row ends reset so no style leaks into the next row.
+    fn float_toast_line(line: &str, toast: &str, width: usize, glyph: Option<char>) -> String {
+        let toast_width = visible_width(toast);
+        if toast_width == 0 || toast_width + 1 > width {
+            return line.to_string();
+        }
+        let keep = width - 1 - toast_width;
+        let kept = slice_by_column(line, 0, keep, true);
+        let pad = keep.saturating_sub(visible_width(&kept));
+        let suffix: String = glyph.map_or_else(|| " ".to_string(), |g| g.to_string());
+        format!("{kept}{}{toast}{SEGMENT_RESET}{suffix}", " ".repeat(pad))
     }
 
     /// One body row. With a scrollbar glyph, the row is padded to the body
@@ -3350,5 +3442,65 @@ mod tests {
                 bytes / FRAMES as usize
             );
         }
+    }
+    #[test]
+    fn fold_matcher_maps_folds_that_change_byte_length() {
+        // İ (U+0130, 2 bytes) folds to `i` plus a combining dot.
+        assert_eq!(fold_match_ranges("İSTANBUL", "i"), vec![(0, 2)]);
+        assert_eq!(fold_match_ranges("Hello", "ell"), vec![(1, 4)]);
+        // An emoji query is multi-byte on both sides.
+        assert_eq!(fold_match_ranges("launch 🚀 now", "🚀"), vec![(7, 11)]);
+        assert!(fold_match_ranges("plain", "z").is_empty());
+        assert!(fold_match_ranges("plain", "").is_empty());
+    }
+
+    #[test]
+    fn highlight_marks_folded_and_emoji_matches() {
+        // The old whole-line fold bailed here and dropped the marker while
+        // the count still found the row.
+        let marked = Tui::highlight_scroll_matches("İSTANBUL", "i");
+        assert!(marked.contains("\x1b[7m"), "{marked:?}");
+        assert!(marked.contains("◂ contact"), "{marked:?}");
+        let marked = Tui::highlight_scroll_matches("launch 🚀 now", "🚀");
+        assert!(marked.contains("\x1b[7m"), "{marked:?}");
+        assert!(marked.contains("◂ contact"), "{marked:?}");
+        let plain = Tui::highlight_scroll_matches("nothing here", "z");
+        assert!(!plain.contains("contact"), "{plain:?}");
+    }
+
+    #[test]
+    fn refresh_scans_only_the_grown_tail_while_streaming() {
+        let (mut tui, _handles) = new_tui(40, 10);
+        tui.flat_lines = vec![
+            "alpha one".to_string(),
+            "beta two".to_string(),
+            "zzz".to_string(),
+            "yyy".to_string(),
+        ];
+        // Measured at four rows, matching row 0 (set directly: going
+        // through set_scroll_search would paint and re-measure).
+        tui.scroll_search = Some(ScrollSearch {
+            query: "alp".to_string(),
+            matches: vec![0],
+            index: 0,
+            measured_at: Some(4),
+            typing: false,
+        });
+        // Streaming growth: two rows arrive, one matching.
+        tui.flat_lines.push("gamma".to_string());
+        tui.flat_lines.push("alpine summit".to_string());
+        tui.refresh_scroll_search(6, true);
+        assert_eq!(tui.scroll_search.as_ref().unwrap().matches, vec![0, 5]);
+        // A rebuild re-scans everything and drops stale rows.
+        tui.flat_lines = vec![
+            "zzz".to_string(),
+            "yyy".to_string(),
+            "xxx".to_string(),
+            "www".to_string(),
+            "vvv".to_string(),
+            "an alpine match".to_string(),
+        ];
+        tui.refresh_scroll_search(6, true);
+        assert_eq!(tui.scroll_search.as_ref().unwrap().matches, vec![5]);
     }
 }

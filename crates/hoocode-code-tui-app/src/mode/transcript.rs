@@ -6,7 +6,9 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use hoocode_agent_types::AgentMessage;
-use hoocode_ai_types::{AssistantMessage, Content, StopReason};
+use hoocode_ai_types::{
+    AssistantMessage, Content, ImageContent, StopReason, UserContent, UserMessage,
+};
 use hoocode_ai_util::is_long_retry_delay_error;
 use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_agent_session::stats::{
@@ -40,6 +42,7 @@ use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
 
+use crate::hull_paint::HullPaint;
 use crate::notification_panel::NotificationKind;
 use crate::resource_display::show_loaded_resources;
 use crate::scroll_view;
@@ -79,6 +82,9 @@ pub(super) struct Transcript {
     pub(super) retry_streak: Option<super::retry::RetryStreak>,
     /// The tool blocks of the latest failed attempt, dropped with its row.
     pub(super) attempt_tools: Vec<hoocode_code_tui_widgets::tool_chain::ToolBlock>,
+    /// The last prompt actually sent: empty enter hails it again after
+    /// COMMS LOST (M8e1).
+    pub(super) last_prompt: Option<LastPrompt>,
     /// Mission Control (M4): one range per `▲ M{n}` header. Steps number
     /// per mission and each mission gets its own landing line; ranges only
     /// grow, and step numbers rebase from them after a retry takes blocks
@@ -88,6 +94,33 @@ pub(super) struct Transcript {
     /// while set. Shared with the wrappers, so rows added in either view
     /// follow later flips.
     pub(super) radar_active: Rc<Cell<bool>>,
+}
+
+/// The last prompt actually sent, text plus images: empty enter hails it
+/// again after COMMS LOST.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(super) struct LastPrompt {
+    pub(super) text: String,
+    pub(super) images: Vec<ImageContent>,
+}
+
+/// The prompt a rebuilt user message stands for: its text plus the images
+/// recorded with it, so hailing it again resends the whole turn.
+pub(super) fn user_prompt(user: &UserMessage) -> LastPrompt {
+    let mut prompt = LastPrompt::default();
+    match &user.content {
+        UserContent::Text(text) => prompt.text = text.clone(),
+        UserContent::Blocks(blocks) => {
+            for block in blocks {
+                match block {
+                    Content::Text(text) => prompt.text.push_str(&text.text),
+                    Content::Image(image) => prompt.images.push(image.clone()),
+                    _ => {}
+                }
+            }
+        }
+    }
+    prompt
 }
 
 /// One M4 mission: its header number, the chain index it starts at, and
@@ -126,6 +159,7 @@ impl Transcript {
             attempt_error: None,
             retry_streak: None,
             attempt_tools: Vec::new(),
+            last_prompt: None,
             missions: Vec::new(),
             radar_active: Rc::new(Cell::new(false)),
         }
@@ -140,6 +174,14 @@ impl Transcript {
         *self = Transcript::new(self.chat.clone());
         self.retry_streak = streak;
         self.radar_active = radar_active;
+    }
+
+    /// The missions a compaction folds, first to last (`M1–M3`), for the
+    /// JETTISONED row (M8e6). `None` when the transcript holds no missions.
+    pub(super) fn jettisoned_range(&self) -> Option<(usize, usize)> {
+        let first = self.missions.first()?.seq;
+        let last = self.missions.last()?.seq;
+        Some((first, last))
     }
 }
 
@@ -759,6 +801,9 @@ impl Mode {
         for (i, message) in messages.iter().enumerate() {
             match message {
                 AgentMessage::User(user) => {
+                    // The hail behind empty enter after COMMS LOST (M8e1):
+                    // the last replayed user message stands for the prompt.
+                    self.transcript.last_prompt = Some(user_prompt(user));
                     // A new turn: the one before it has ended, and its
                     // per-turn token row goes where the live path drew it.
                     if let Some(ended) = turn.take() {
@@ -804,7 +849,15 @@ impl Mode {
                                     std::time::Duration::from_millis(elapsed as u64),
                                     false,
                                 ),
+                                // A rebuilt streak that gave up is COMMS LOST
+                                // too (M8e1): its hails are its attempts.
+                                failed.len() as u64 + 1,
                             );
+                            // Without a user message behind it there is
+                            // nothing to hail again: stay out of COMMS LOST.
+                            if self.transcript.last_prompt.is_some() {
+                                self.comms_lost.set(failed.len() as u64 + 1 >= 2);
+                            }
                             continue;
                         }
                     }
@@ -903,6 +956,13 @@ impl Mode {
     /// `renderInitialMessages`: the loaded session's transcript, and how often
     /// it was compacted.
     pub(super) fn render_initial_messages(&mut self) {
+        // The hull paint lives in the session file; the provider is only
+        // its render cache (M8e5).
+        let paint = self
+            .session
+            .hull_paint()
+            .and_then(|name| HullPaint::parse(&name).ok().flatten());
+        self.footer_data.set_hull_paint(paint);
         let messages = self.session.messages();
         // The plan is the session's own: rebuilt from its last TodoWrite, so a
         // resumed or reloaded session shows the plan it ended with. That call
@@ -1207,6 +1267,8 @@ impl Mode {
     pub(super) fn reset_transcript_view(&mut self) {
         self.transcript.chat.borrow_mut().clear();
         self.transcript.reset_view();
+        // A fresh transcript is not a lost mission.
+        self.comms_lost.set(false);
         self.tui.scroll_to_live();
         self.tui.reset_new_lines_count();
     }
@@ -1459,6 +1521,48 @@ mod tests {
     fn fresh_transcript() -> Transcript {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         Transcript::new(Rc::new(RefCell::new(Container::new())))
+    }
+
+    fn user_message(content: UserContent) -> UserMessage {
+        UserMessage {
+            content,
+            timestamp: 0,
+        }
+    }
+
+    #[test]
+    fn user_prompt_reads_plain_text() {
+        let prompt = user_prompt(&user_message(UserContent::Text("hail me".into())));
+        assert_eq!(prompt.text, "hail me");
+        assert!(prompt.images.is_empty());
+    }
+
+    #[test]
+    fn user_prompt_reads_blocks_with_images() {
+        let prompt = user_prompt(&user_message(UserContent::Blocks(vec![
+            Content::Text(hoocode_ai_types::TextContent {
+                text: "look ".into(),
+                text_signature: None,
+            }),
+            Content::Image(ImageContent {
+                data: "aGVsbG8=".into(),
+                media_type: "image/png".into(),
+            }),
+        ])));
+        assert_eq!(prompt.text, "look ");
+        assert_eq!(prompt.images.len(), 1);
+        assert_eq!(prompt.images[0].media_type, "image/png");
+    }
+
+    #[test]
+    fn reset_view_clears_the_last_prompt() {
+        let mut transcript = fresh_transcript();
+        transcript.last_prompt = Some(LastPrompt {
+            text: "hail me".into(),
+            images: Vec::new(),
+        });
+        transcript.reset_view();
+        assert_eq!(transcript.last_prompt, None);
     }
 
     /// The chat as plain text, 100 columns.

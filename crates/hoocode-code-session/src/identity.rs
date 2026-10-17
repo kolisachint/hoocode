@@ -54,39 +54,32 @@ pub fn is_session_color_slot(slot: f64) -> bool {
 struct ColorName {
     slot: u8,
     name: &'static str,
-    aliases: &'static [&'static str],
 }
 
 const SESSION_COLOR_NAMES: [ColorName; 6] = [
     ColorName {
         slot: 1,
         name: "cyan",
-        aliases: &["c", "teal", "aqua"],
     },
     ColorName {
         slot: 2,
         name: "purple",
-        aliases: &["p", "violet"],
     },
     ColorName {
         slot: 3,
         name: "yellow",
-        aliases: &["y", "amber", "gold", "orange", "o"],
     },
     ColorName {
         slot: 4,
         name: "magenta",
-        aliases: &["m", "pink", "rose", "red", "r"],
     },
     ColorName {
         slot: 5,
         name: "green",
-        aliases: &["g"],
     },
     ColorName {
         slot: 6,
         name: "blue",
-        aliases: &["b"],
     },
 ];
 
@@ -101,22 +94,6 @@ pub fn session_color_name(slot: u8) -> Option<&'static str> {
         .iter()
         .find(|entry| entry.slot == slot)
         .map(|entry| entry.name)
-}
-
-/// `parseSessionColorSlot`: a number, a name, or an alias (case-insensitive).
-pub fn parse_session_color_slot(input: &str) -> Option<u8> {
-    let normalized = input.trim().to_lowercase();
-    if normalized.is_empty() {
-        return None;
-    }
-    if normalized.bytes().all(|b| b.is_ascii_digit()) {
-        let slot: f64 = normalized.parse().ok()?;
-        return is_session_color_slot(slot).then_some(slot as u8);
-    }
-    SESSION_COLOR_NAMES
-        .iter()
-        .find(|entry| entry.name == normalized || entry.aliases.contains(&normalized.as_str()))
-        .map(|entry| entry.slot)
 }
 
 /// Cycle direction for [`cycle_session_color_slot`].
@@ -210,51 +187,10 @@ mod tests {
         assert_eq!(names.len(), 6);
         for slot in 1..=6u8 {
             assert_eq!(session_color_name(slot), Some(names[slot as usize - 1]));
-            assert_eq!(parse_session_color_slot(&slot.to_string()), Some(slot));
         }
         assert_eq!(session_color_name(0), None);
         assert_eq!(session_color_name(7), None);
         assert_eq!(names.iter().collect::<HashSet<_>>().len(), 6);
-        assert_eq!(parse_session_color_slot(" 3 "), Some(3));
-        for name in &names {
-            let slot = parse_session_color_slot(name).unwrap();
-            assert_eq!(session_color_name(slot), Some(*name));
-            assert_eq!(
-                parse_session_color_slot(&name[..1]),
-                parse_session_color_slot(name)
-            );
-        }
-        assert_eq!(
-            parse_session_color_slot("GREEN"),
-            parse_session_color_slot("green")
-        );
-        assert_eq!(
-            parse_session_color_slot("  Blue "),
-            parse_session_color_slot("blue")
-        );
-        for (a, b) in [
-            ("red", "magenta"),
-            ("r", "magenta"),
-            ("orange", "yellow"),
-            ("teal", "cyan"),
-            ("violet", "purple"),
-        ] {
-            assert_eq!(parse_session_color_slot(a), parse_session_color_slot(b));
-        }
-        for (initial, name) in [("g", "green"), ("b", "blue"), ("y", "yellow")] {
-            assert_eq!(
-                parse_session_color_slot(initial),
-                parse_session_color_slot(name)
-            );
-        }
-        let extra = ["red", "r", "g", "b", "y", "m", "orange", "pink", "1", "6"];
-        for spelling in names.iter().copied().chain(extra) {
-            let slot = parse_session_color_slot(spelling).unwrap_or_else(|| panic!("{spelling}"));
-            assert!(is_session_color_slot(f64::from(slot)), "{spelling}");
-        }
-        for junk in ["", "   ", "0", "7", "2.5", "-1", "chartreuse", "z"] {
-            assert_eq!(parse_session_color_slot(junk), None, "{junk}");
-        }
     }
 
     #[test]

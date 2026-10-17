@@ -524,7 +524,7 @@ impl RpcMode {
             "compact" => {
                 let instructions = command.opt_str("customInstructions");
                 let result = session
-                    .compact(instructions.as_deref())
+                    .compact(instructions.as_deref(), None)
                     .await
                     .map_err(|e| e.to_string())?;
                 ok(Some(compaction_result_json(&result)))

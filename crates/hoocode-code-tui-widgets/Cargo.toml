@@ -34,6 +34,7 @@ hoocode-tui-components = { workspace = true }
 hoocode-tui-ratatui = { workspace = true }
 hoocode-tui-images = { workspace = true }
 hoocode-tui-keys = { workspace = true }
+hoocode-tui-ratatui = { workspace = true }
 hoocode-tui-render = { workspace = true }
 hoocode-tui-util = { workspace = true }
 once_cell = "1"

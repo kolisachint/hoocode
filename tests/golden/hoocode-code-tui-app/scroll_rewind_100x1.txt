@@ -1,0 +1,5 @@
+  ◂◂ REWIND  43–61 of 78  55%  ↓ 3 new                                               PgUp/PgDn page
+--- styles ---
+r0 c0-1 inverse
+r0 c2-10 fg=#9b8cff inverse
+r0 c11-99 inverse

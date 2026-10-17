@@ -571,7 +571,11 @@ impl SessionManager {
         id
     }
 
-    /// Append a compaction boundary.
+    /// Append a compaction boundary. `mission_range` is the transcript
+    /// missions folded into the summary (`M1–M3`), for the JETTISONED row;
+    /// `None` when the caller does not know them (M8e6).
+    // The range pushed the storage append past seven arguments.
+    #[allow(clippy::too_many_arguments)]
     pub fn append_compaction(
         &mut self,
         summary: impl Into<String>,
@@ -580,6 +584,7 @@ impl SessionManager {
         tokens_after: Option<u64>,
         details: Option<serde_json::Value>,
         from_hook: Option<bool>,
+        mission_range: Option<(usize, usize)>,
     ) -> String {
         let id = generate_id(&self.id_set());
         let entry = FileEntry::Compaction {
@@ -592,6 +597,7 @@ impl SessionManager {
             tokens_after,
             details,
             from_hook,
+            mission_range,
         };
         self.append(entry);
         id
@@ -625,6 +631,23 @@ impl SessionManager {
             parent_id: self.leaf_id.clone(),
             timestamp: iso_timestamp(),
             name: name.map(|n| n.trim().to_string()),
+            hull: None,
+        };
+        self.append(entry);
+        id
+    }
+
+    /// Record the hull paint (`/color`, M8e5): `None` clears it back to
+    /// unpainted. Like the name and colour, the latest entry wins.
+    pub fn set_session_hull(&mut self, paint: Option<&str>) -> String {
+        let id = generate_id(&self.id_set());
+        let entry = FileEntry::SessionInfo {
+            color: None,
+            id: id.clone(),
+            parent_id: self.leaf_id.clone(),
+            timestamp: iso_timestamp(),
+            name: None,
+            hull: Some(paint.unwrap_or_default().trim().to_string()),
         };
         self.append(entry);
         id
@@ -1054,6 +1077,17 @@ impl SessionManager {
     /// `getDisplayName`: the chosen name, else the slug.
     pub fn display_name(&self) -> String {
         self.session_name().unwrap_or_else(|| self.session_slug())
+    }
+
+    /// The latest hull paint (`/color`, M8e5): `None` is unpainted, and
+    /// an empty record clears it, like an empty name.
+    pub fn session_hull(&self) -> Option<String> {
+        self.entries.iter().rev().find_map(|entry| match entry {
+            FileEntry::SessionInfo {
+                hull: Some(hull), ..
+            } => Some(Some(hull.trim().to_string()).filter(|h| !h.is_empty())),
+            _ => None,
+        })?
     }
 
     /// `getSessionColorSlot`: the latest valid `/color` choice, else the slot
@@ -1792,5 +1826,37 @@ mod tests {
         assert_eq!(mgr.session_name(), None);
         assert_eq!(mgr.display_name(), slug);
         assert_eq!(mgr.session_color_slot(), 4);
+    }
+
+    #[test]
+    fn hull_paint_roundtrips_and_clears() {
+        let mut mgr = SessionManager::in_memory("/tmp");
+        assert_eq!(mgr.session_hull(), None);
+        mgr.set_session_hull(Some("parity"));
+        assert_eq!(mgr.session_hull(), Some("parity".to_string()));
+        // A colour-only entry is silent on the paint.
+        mgr.append_session_info(None, Some(4));
+        assert_eq!(mgr.session_hull(), Some("parity".to_string()));
+        // Clearing reads back as unpainted, and a resume sees it too.
+        mgr.set_session_hull(None);
+        assert_eq!(mgr.session_hull(), None);
+        mgr.set_session_hull(Some("cyan"));
+        let json: Vec<String> = mgr
+            .entries()
+            .iter()
+            .map(|e| serde_json::to_string(e).unwrap())
+            .collect();
+        assert!(json.iter().any(|l| l.contains("\"hull\":\"cyan\"")));
+        let reloaded: Vec<hoocode_agent_session::FileEntry> = json
+            .iter()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert!(reloaded.iter().any(|e| matches!(
+            e,
+            hoocode_agent_session::FileEntry::SessionInfo {
+                hull: Some(hull),
+                ..
+            } if hull == "cyan"
+        )));
     }
 }

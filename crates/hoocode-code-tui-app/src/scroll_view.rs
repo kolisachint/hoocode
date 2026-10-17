@@ -25,8 +25,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use hoocode_code_tui_keybindings::key_text;
-use hoocode_code_tui_theme::theme;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
+use hoocode_tui_ratatui::core::buffer::Buffer;
+use hoocode_tui_ratatui::core::layout::Rect;
+use hoocode_tui_ratatui::core::style::Style;
+use hoocode_tui_ratatui::core::text::{Line, Span};
+use hoocode_tui_ratatui::{reversed, Palette, RatatuiComponent};
 use hoocode_tui_render::{Component, ComponentHandle, Container, ScrollStatus, Tui};
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
@@ -127,43 +131,161 @@ fn is_typed_text(data: &str) -> bool {
     !data.is_empty() && data.chars().all(|c| (c as u32) >= 32 && c as u32 != 127)
 }
 
-/// `formatStatus`: the bottom row of a pinned view, "where am I" first and
-/// "how do I get out" second; while searching, the query line. `editor_empty`
-/// says whether the plain arrows step the view (the prompt holds no text);
-/// otherwise the line keys are the shifted arrows.
+/// `1 contact`, `N contacts`.
+fn contacts(count: usize) -> String {
+    if count == 1 {
+        "1 contact".to_string()
+    } else {
+        format!("{count} contacts")
+    }
+}
+
+/// One run of the Mission Control bar: plain text plus the palette token
+/// styling it. `""` is the default style.
+struct BarRun {
+    text: String,
+    token: &'static str,
+}
+
+fn bar_run(text: String, token: &'static str) -> BarRun {
+    BarRun { text, token }
+}
+
+/// The bar's left part as runs: the leading space, the label in its
+/// token colour, and the rest default. `left` is the plain left part (one
+/// leading space, then the label).
+fn left_runs(left: String, label: &str, token: &'static str) -> Vec<BarRun> {
+    match left
+        .strip_prefix(' ')
+        .and_then(|rest| rest.strip_prefix(label))
+    {
+        Some(rest) => vec![
+            bar_run(" ".to_string(), ""),
+            bar_run(label.to_string(), token),
+            bar_run(rest.to_string(), ""),
+        ],
+        None => vec![bar_run(left, "")],
+    }
+}
+
+/// The bar's runs as ratatui spans: every run reversed (the bar is one
+/// inverse row), the label run also in its token colour. Runs are cut to
+/// `width` columns — the run holding the cut is truncated — and blanks pad
+/// the row to its full width.
+fn bar_spans(runs: &[BarRun], width: usize, pal: &Palette) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut used = 0;
+    for run in runs {
+        if used >= width {
+            break;
+        }
+        let room = width - used;
+        let run_width = visible_width(&run.text);
+        if run_width <= room {
+            spans.push(Span::styled(
+                run.text.clone(),
+                reversed(pal.style(run.token)),
+            ));
+            used += run_width;
+        } else {
+            let piece = truncate_to_width(&run.text, room, "", true);
+            used += visible_width(&piece);
+            spans.push(Span::styled(piece, reversed(pal.style(run.token))));
+        }
+    }
+    if used < width {
+        spans.push(Span::styled(
+            " ".repeat(width - used),
+            reversed(Style::default()),
+        ));
+    }
+    spans
+}
+
+/// One inverse bar row `width` columns wide, drawn with ratatui
+/// (`RatatuiComponent`): the label run in its token colour, the rest
+/// default, every run reversed. Exactly `width` columns when `width > 0`.
+fn paint_bar(runs: Vec<BarRun>, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let render_width = width.min(u16::MAX as usize) as u16;
+    let mut bar = RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
+        let pal = Palette::current();
+        let spans = bar_spans(&runs, usize::from(area.width), &pal);
+        buf.set_line(area.x, area.y, &Line::from(spans), area.width);
+    });
+    bar.render(render_width)
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
+/// The SCAN bar's keys from the bindings: `{confirm} lock|next` and
+/// `{exit} close`, plus the `n/p` step pair while locked when bound.
+/// Unbound names are left out; the bar never shows a bare verb.
+fn scan_keys(typing: bool) -> String {
+    let verb = if typing { "lock" } else { "next" };
+    let mut keys = Vec::new();
+    let confirm = key_text("tui.select.confirm");
+    keys.push(if confirm.is_empty() {
+        verb.to_string()
+    } else {
+        format!("{confirm} {verb}")
+    });
+    let exit = key_text("app.scroll.exit");
+    if !exit.is_empty() {
+        keys.push(format!("{exit} close"));
+    }
+    if !typing {
+        let mut step = Vec::new();
+        for id in ["app.scroll.searchNext", "app.scroll.searchPrevious"] {
+            let name = key_text(id);
+            if !name.is_empty() {
+                step.push(name);
+            }
+        }
+        if !step.is_empty() {
+            keys.push(step.join("/"));
+        }
+    }
+    keys.join(" · ")
+}
+
+/// `formatStatus`: the Mission Control bar above the comms frame while the
+/// view is pinned: the REWIND bar (`◂◂ REWIND  43–61 of 78 · 55%  ↓ 3 new`,
+/// label in vio), or the SCAN bar (`⌕ SCAN  query  N contact(s)`, label in
+/// warn) while searching. `editor_empty` says whether the plain arrows step
+/// the view (the prompt holds no text); otherwise the line keys are the
+/// shifted arrows.
 pub fn format_scroll_status(status: &ScrollStatus, editor_empty: bool) -> String {
     let width = status.width.max(0) as usize;
     if let Some(search) = &status.search {
-        let hits = if search.query.is_empty() {
+        // Mission Control SCAN bar (M8e3): the query, its contacts, and the
+        // scan keys. While typing, enter locks the query; once locked, enter
+        // steps to the next contact.
+        let caret = if search.typing { "\u{2588}" } else { "" };
+        let contacts = if search.query.is_empty() {
             String::new()
         } else if search.count == 0 {
-            "  no matches".to_string()
+            "  no contacts".to_string()
+        } else if search.typing || search.count == 1 {
+            format!("  {}", contacts(search.count))
         } else {
-            format!("  {}/{}", search.index, search.count)
+            format!("  {}/{} contacts", search.index, search.count)
         };
-        let caret = if search.typing { "\u{2588}" } else { "" };
-        let left = format!(" search: {}{caret}{hits}", search.query);
-        let keys = if search.typing {
-            format!(
-                "{} keep · {} cancel",
-                key_text("tui.select.confirm"),
-                key_text("app.scroll.exit")
-            )
-        } else {
-            format!(
-                "{}/{} step · {} done",
-                key_text("app.scroll.searchNext"),
-                key_text("app.scroll.searchPrevious"),
-                key_text("app.scroll.exit")
-            )
-        };
+        let left = format!(" ⌕ SCAN  {}{caret}{contacts}", search.query);
+        let keys = scan_keys(search.typing);
         let gap = status.width - visible_width(&left) as i64 - visible_width(&keys) as i64 - 2;
-        let body = if gap >= 0 {
-            format!("{left}{}{keys} ", " ".repeat(gap as usize + 1))
+        let mut runs = left_runs(left, "⌕ SCAN", "warn");
+        if gap >= 0 {
+            runs.push(bar_run(" ".repeat(gap as usize + 1), ""));
+            runs.push(bar_run(keys, ""));
+            runs.push(bar_run(" ".to_string(), ""));
         } else {
-            format!("{left} ")
-        };
-        return theme().inverse(&truncate_to_width(&body, width, "", true));
+            runs.push(bar_run(" ".to_string(), ""));
+        }
+        return paint_bar(runs, width);
     }
 
     let position = format!(
@@ -183,7 +305,7 @@ pub fn format_scroll_status(status: &ScrollStatus, editor_empty: bool) -> String
     } else {
         String::new()
     };
-    let left = format!("{position}  {place}{new}");
+    let left = format!(" ◂◂ REWIND  {position}  {place}{new}");
     // With a picker focused the arrows and escape are its keys: only paging
     // is the transcript's to advertise.
     let keys = if status.picker {
@@ -204,12 +326,16 @@ pub fn format_scroll_status(status: &ScrollStatus, editor_empty: bool) -> String
     };
     // The keys only when they fit whole: a truncated chord reads as another.
     let gap = status.width - visible_width(&left) as i64 - visible_width(&keys) as i64 - 3;
-    let body = if gap >= 0 {
-        format!(" {left}{}{keys} ", " ".repeat(gap as usize + 1))
+    let mut runs = vec![bar_run(" ".to_string(), "")];
+    runs.extend(left_runs(left, "◂◂ REWIND", "vio"));
+    if gap >= 0 {
+        runs.push(bar_run(" ".repeat(gap as usize + 1), ""));
+        runs.push(bar_run(keys, ""));
+        runs.push(bar_run(" ".to_string(), ""));
     } else {
-        format!(" {left} ")
-    };
-    theme().inverse(&truncate_to_width(&body, width, "", true))
+        runs.push(bar_run(" ".to_string(), ""));
+    }
+    paint_bar(runs, width)
 }
 
 /// The key state of the scroll view: the query being typed, if any.
@@ -391,7 +517,8 @@ impl ScrollView {
             return true;
         }
         if ui.scroll_search_active() {
-            if matches(data, "app.scroll.searchNext") {
+            // Locked: enter steps to the next contact (M8e3).
+            if matches(data, "tui.select.confirm") || matches(data, "app.scroll.searchNext") {
                 ui.scroll_search_step(-1);
                 return true;
             }

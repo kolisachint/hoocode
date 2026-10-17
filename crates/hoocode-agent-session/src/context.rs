@@ -81,6 +81,7 @@ pub fn build_session_context(entries: &[FileEntry]) -> SessionContext {
                 first_kept_entry_id,
                 tokens_before,
                 tokens_after,
+                mission_range,
                 ..
             },
         ) => {
@@ -89,6 +90,7 @@ pub fn build_session_context(entries: &[FileEntry]) -> SessionContext {
                 tokens_before: *tokens_before,
                 tokens_after: *tokens_after,
                 timestamp: parse_timestamp(timestamp),
+                mission_range: *mission_range,
             }));
             let compaction_idx = entries
                 .iter()
@@ -224,6 +226,7 @@ mod tests {
                 tokens_after: None,
                 details: None,
                 from_hook: None,
+                mission_range: Some((1, 2)),
             },
             FileEntry::Message {
                 id: "m3".into(),
@@ -239,6 +242,8 @@ mod tests {
                 assert_eq!(c.summary, "summary");
                 assert_eq!(c.tokens_before, 100);
                 assert_eq!(c.timestamp, 1767225602000);
+                // The folded mission range reaches the summary (M8e6).
+                assert_eq!(c.mission_range, Some((1, 2)));
             }
             other => panic!("expected compaction summary first, got {other:?}"),
         }

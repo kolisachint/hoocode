@@ -10,6 +10,7 @@ mod custom_message_radar;
 mod diff_gold;
 mod edit_agent_output_peek;
 mod golden;
+mod jettison_row;
 mod message_block_fill;
 mod message_block_sheets;
 mod selected_row_list;

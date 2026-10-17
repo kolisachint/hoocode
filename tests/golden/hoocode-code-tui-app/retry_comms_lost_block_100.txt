@@ -1,0 +1,4 @@
+
+ ⊗ Model  529 upstream overloaded
+   gave up after 6 attempts in 6.2s · send again to retry
+   ⊗·⊗··⊗·····⊗···········⊗·······················⊗  backoff doubles

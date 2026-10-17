@@ -130,6 +130,8 @@ impl<S: SessionStorage> Session<S> {
         })
     }
 
+    // The range pushed the storage append past seven arguments.
+    #[allow(clippy::too_many_arguments)]
     pub fn append_compaction(
         &mut self,
         summary: &str,
@@ -138,6 +140,7 @@ impl<S: SessionStorage> Session<S> {
         details: Option<serde_json::Value>,
         from_hook: Option<bool>,
         tokens_after: Option<u64>,
+        mission_range: Option<(usize, usize)>,
     ) -> Result<String, SessionError> {
         self.append_with(|id, parent_id, timestamp| FileEntry::Compaction {
             id,
@@ -149,6 +152,7 @@ impl<S: SessionStorage> Session<S> {
             tokens_after,
             details,
             from_hook,
+            mission_range,
         })
     }
 
@@ -211,6 +215,7 @@ impl<S: SessionStorage> Session<S> {
             timestamp,
             name: Some(name.trim().to_string()),
             color: None,
+            hull: None,
         })
     }
 
@@ -308,12 +313,17 @@ mod tests {
         let user2 = session.append_message(user_message("three")).unwrap();
         session.append_message(assistant_message("four")).unwrap();
         session
-            .append_compaction("summary", &user2, 1234, None, None, None)
+            .append_compaction("summary", &user2, 1234, None, None, None, Some((1, 3)))
             .unwrap();
         session.append_message(user_message("five")).unwrap();
         let context = session.build_context();
         assert_eq!(context.messages[0].role(), "compactionSummary");
         assert_eq!(context.messages.len(), 4);
+        // The folded mission range survives the write into context (M8e6).
+        assert!(matches!(
+            &context.messages[0],
+            AgentMessage::CompactionSummary(message) if message.mission_range == Some((1, 3))
+        ));
 
         // supports moving with branch summary entries in context
         let mut session = Session::new(create());

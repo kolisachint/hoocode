@@ -13,6 +13,10 @@ use hoocode_code_tui_theme::{apply_block_fill, message_label, theme, BlockFill};
 use hoocode_tui_components::{
     BoxComponent, DefaultTextStyle, Markdown, MarkdownTheme, Spacer, Text,
 };
+use hoocode_tui_ratatui::core::buffer::Buffer;
+use hoocode_tui_ratatui::core::layout::Rect;
+use hoocode_tui_ratatui::core::text::{Line, Span};
+use hoocode_tui_ratatui::{Palette, RatatuiComponent};
 use hoocode_tui_render::{Component, Container};
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
@@ -31,10 +35,12 @@ fn custom_text_markdown(text: &str, markdown_theme: MarkdownTheme) -> Markdown {
 
 /// The hint a folded message ends with: Ctrl+O opens it at peek.
 fn peek_hint() -> String {
-    theme().fg(
-        "dim",
-        &format!(" · {} for peek", key_text("app.tools.expand")),
-    )
+    theme().fg("dim", &peek_hint_text())
+}
+
+/// The folded hint as plain text, for rows drawn with ratatui.
+fn peek_hint_text() -> String {
+    format!(" · {} for peek", key_text("app.tools.expand"))
 }
 
 /// The folded (radar) line: label, plain summary and peek hint on one row.
@@ -226,8 +232,81 @@ impl Component for BranchSummaryMessageComponent {
     }
 }
 
+/// The JETTISONED row's text (M8e6): the missions folded into one summary
+/// stage, with the real token counts. `earlier missions` covers summaries
+/// from before compaction knew the transcript's missions.
+pub(crate) fn jettison_text(message: &CompactionSummaryMessage) -> String {
+    let range = match message.mission_range {
+        Some((first, last)) if first == last => format!("M{first}"),
+        Some((first, last)) => format!("M{first}–M{last}"),
+        None => "earlier missions".to_string(),
+    };
+    match (message.tokens_before, message.tokens_after) {
+        (before, Some(after)) if before > 0 => {
+            let change = if after >= before {
+                format!("grew {}", group_digits(after - before))
+            } else {
+                format!("saved {}", group_digits(before - after))
+            };
+            format!(
+                "≋≋≋ JETTISONED {range} into one summary stage · {} → {} tokens ({change})",
+                group_digits(before),
+                group_digits(after)
+            )
+        }
+        (before, _) => format!(
+            "≋≋≋ JETTISONED {range} into one summary stage · from {} tokens",
+            group_digits(before)
+        ),
+    }
+}
+
+/// The folded JETTISONED row as ratatui spans, exactly `width` cells: the
+/// row in vio with the dim peek hint. The hint shows only when whole;
+/// past that the row is cut short, and vio blanks pad to the full
+/// width so the row stays one band.
+fn jettison_spans(text: &str, hint: &str, width: usize, pal: &Palette) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let push_vio = |text: String, spans: &mut Vec<Span<'static>>| {
+        spans.push(Span::styled(text, pal.vio()));
+    };
+    let (text_width, hint_width) = (visible_width(text), visible_width(hint));
+    if text_width + hint_width <= width {
+        push_vio(text.to_string(), &mut spans);
+        spans.push(Span::styled(hint.to_string(), pal.dim()));
+    } else if text_width < width {
+        // The hint would not fit whole: the row keeps the line.
+        push_vio(text.to_string(), &mut spans);
+    } else {
+        push_vio(truncate_to_width(text, width, "…", false), &mut spans);
+        return spans;
+    }
+    let used: usize = spans
+        .iter()
+        .map(|s| visible_width(s.content.as_ref()))
+        .sum();
+    if used < width {
+        push_vio(" ".repeat(width - used), &mut spans);
+    }
+    spans
+}
+
+/// The folded JETTISONED row: one ratatui line, `width` cells wide.
+fn jettison_row(text: String, hint: String, width: usize) -> Vec<String> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let render_width = width.min(u16::MAX as usize) as u16;
+    let mut row = RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
+        let pal = Palette::current();
+        let spans = jettison_spans(&text, &hint, usize::from(area.width), &pal);
+        buf.set_line(area.x, area.y, &Line::from(spans), area.width);
+    });
+    row.render(render_width)
+}
+
 /// `CompactionSummaryMessageComponent`: what a compaction kept, folded to
-/// its token line until expanded.
+/// the JETTISONED row until expanded.
 pub struct CompactionSummaryMessageComponent {
     message: CompactionSummaryMessage,
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
@@ -256,19 +335,9 @@ impl CompactionSummaryMessageComponent {
     }
 
     fn update_display(&mut self) {
-        let before = self.message.tokens_before;
-        let summary_text = match self.message.tokens_after {
-            Some(after) if before > 0 => {
-                let saved = before.saturating_sub(after);
-                let pct = (saved as f64 / before as f64 * 100.0).round();
-                format!(
-                    "Compacted {} → {} tokens (saved {pct}%)",
-                    group_digits(before),
-                    group_digits(after)
-                )
-            }
-            _ => format!("Compacted from {} tokens", group_digits(before)),
-        };
+        // The sheet is the expanded view; folded, the message is the
+        // JETTISONED row drawn with ratatui.
+        let summary_text = jettison_text(&self.message);
         let body = format!("**{summary_text}**\n\n{}", self.message.summary);
         self.sheet = summary_sheet(
             message_label("compaction"),
@@ -282,7 +351,14 @@ impl CompactionSummaryMessageComponent {
 
 impl Component for CompactionSummaryMessageComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.sheet.render(width)
+        if self.expanded {
+            return self.sheet.render(width);
+        }
+        jettison_row(
+            jettison_text(&self.message),
+            peek_hint_text(),
+            width as usize,
+        )
     }
 
     fn invalidate(&mut self) {

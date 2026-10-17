@@ -25,6 +25,7 @@ use hoocode_tui_util::{truncate_to_width, visible_width};
 
 use crate::footer::{FooterSource, ToolOutputView};
 use crate::footer_data::FooterDataProvider;
+use crate::hull_paint::HullPaint;
 
 /// The READY placeholder: what the empty prompt invites.
 pub const READY_PLACEHOLDER: &str = "name your mission · / commands · @ files · ! shell";
@@ -86,8 +87,12 @@ pub struct InputStyle {
 }
 
 impl CommsState {
-    /// The frame colour: faint at rest, acc in flight, err when comms is lost.
-    fn frame_style(&self, palette: &Palette) -> Style {
+    /// The frame colour: faint at rest, acc in flight, err when comms is
+    /// lost. The hull paint (`/color`, M8e5) takes the frame when set.
+    fn frame_style(&self, palette: &Palette, paint: Option<Style>) -> Style {
+        if let Some(paint) = paint {
+            return paint;
+        }
         match self {
             CommsState::InFlight { .. } => palette.acc(),
             CommsState::CommsLost => palette.err(),
@@ -113,17 +118,20 @@ impl CommsState {
         }
     }
 
-    /// The title's styled runs, space-separated when drawn.
-    fn title_segs(&self, palette: &Palette) -> Vec<Seg> {
+    /// The title's styled runs, space-separated when drawn. The hull
+    /// paint takes the state colour (the mark and name) when set; the keys
+    /// stay ink on dim.
+    fn title_segs(&self, palette: &Palette, paint: Option<Style>) -> Vec<Seg> {
         let dim = palette.dim();
         let faint = palette.faint();
         let ink = palette.ink();
         match self {
-            CommsState::Ready => vec![Seg::new(dim, "READY")],
+            CommsState::Ready => vec![Seg::new(paint.unwrap_or(dim), "READY")],
             CommsState::InFlight { elapsed } => {
+                let state = paint.unwrap_or_else(|| palette.acc());
                 let mut segs = vec![
-                    Seg::new(palette.acc(), "◐"),
-                    Seg::new(bold(palette.acc()), "IN FLIGHT"),
+                    Seg::new(state, "◐"),
+                    Seg::new(bold(state), "IN FLIGHT"),
                     Seg::new(faint, "·"),
                 ];
                 if let Some(elapsed) = elapsed {
@@ -135,8 +143,8 @@ impl CommsState {
                 segs
             }
             CommsState::CommsLost => vec![
-                Seg::new(palette.err(), "⊗"),
-                Seg::new(bold(palette.err()), "COMMS LOST"),
+                Seg::new(paint.unwrap_or_else(|| palette.err()), "⊗"),
+                Seg::new(bold(paint.unwrap_or_else(|| palette.err())), "COMMS LOST"),
                 Seg::new(faint, "·"),
                 Seg::new(ink, "enter"),
                 Seg::new(dim, "hail again"),
@@ -144,18 +152,23 @@ impl CommsState {
                 Seg::new(ink, "/model"),
                 Seg::new(dim, "switch ship"),
             ],
-            CommsState::Landed { elapsed, steps } => {
-                landed_title(palette.ok(), palette, *elapsed, *steps, "LANDED", "●")
-            }
+            CommsState::Landed { elapsed, steps } => landed_title(
+                paint.unwrap_or_else(|| palette.ok()),
+                palette,
+                *elapsed,
+                *steps,
+                "LANDED",
+                "●",
+            ),
             CommsState::DidNotLand { elapsed, steps } => landed_title(
-                palette.err(),
+                paint.unwrap_or_else(|| palette.err()),
                 palette,
                 *elapsed,
                 *steps,
                 "DID NOT LAND",
                 "⊗",
             ),
-            CommsState::Aborted => vec![Seg::new(dim, "⊘ ABORTED · READY")],
+            CommsState::Aborted => vec![Seg::new(paint.unwrap_or(dim), "⊘ ABORTED · READY")],
         }
     }
 }
@@ -319,21 +332,31 @@ struct ChromeData {
 }
 
 impl ChromeData {
+    // The paint pushed the chrome config past seven arguments.
+    #[allow(clippy::too_many_arguments)]
     fn build(
         state: &CommsState,
         palette: &Palette,
+        hull: Option<HullPaint>,
         view: ToolOutputView,
         plan_mode: bool,
         input_total: u64,
         output_total: u64,
         width: usize,
     ) -> Self {
-        let frame = state.frame_style(palette);
+        // The hull paint (`/color`, M8e5) is the frame's right label, and
+        // the frame title and border take its colour.
+        let paint = hull.map(|hull| palette.style(hull.token()));
+        let frame = state.frame_style(palette, paint);
+        let label = match hull {
+            Some(hull) => Seg::new(paint.unwrap_or_else(|| palette.acc()), hull.name()),
+            None => Seg::new(palette.acc(), "app-edit"),
+        };
         let top = edge_runs(
             frame,
             ('┏', '┓'),
-            &spaced(state.title_segs(palette)),
-            &[Seg::new(palette.acc(), "app-edit")],
+            &spaced(state.title_segs(palette, paint)),
+            &[label],
             width,
         );
         let mut foot = match view {
@@ -438,10 +461,12 @@ impl Component for CommsFrame {
         let palette = Palette::current();
         let (input_total, output_total, _, _, _) = self.source.usage_totals();
         let plan_mode = self.data.get_active_mode() == "plan";
-        let frame = state.frame_style(&palette);
+        let hull = self.data.get_hull_paint();
+        let frame = state.frame_style(&palette, hull.map(|hull| palette.style(hull.token())));
         *self.chrome_data.borrow_mut() = ChromeData::build(
             &state,
             &palette,
+            hull,
             self.view,
             plan_mode,
             input_total,

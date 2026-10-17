@@ -170,7 +170,21 @@ impl Palette {
         }
         bg_color(theme.get_bg_ansi(name))
     }
-
+    /// The hull tint for a paint token (M8e5): the token's colour
+    /// darkened for a row background. `None` with colour off or when the
+    /// token does not resolve.
+    pub fn hull_tint(&self, name: &str) -> Option<Color> {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return None;
+        }
+        match self.color_for(name) {
+            Some(Color::Rgb(r, g, b)) => {
+                let dim = |c: u8| ((f32::from(c) * 0.22).round() as u8).max(1);
+                Some(Color::Rgb(dim(r), dim(g), dim(b)))
+            }
+            color => color,
+        }
+    }
     /// The foreground colour for `name`, following the fallback chain. A
     /// token the theme leaves at its default (`""`) resolves to the
     /// default-text colour: that substitution is load-bearing for chrome

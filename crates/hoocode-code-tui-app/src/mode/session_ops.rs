@@ -562,9 +562,14 @@ impl Mode {
     /// compaction events.
     pub(super) fn handle_compact_command(&mut self, instructions: Option<String>) {
         self.stop_working_loader();
+        // The missions this compaction folds, for the JETTISONED row's file
+        // record (M8e6): read before the reset drops the transcript's ranges.
+        let mission_range = self.transcript.jettisoned_range();
         let session = self.session.clone();
         self.runtime.spawn(async move {
-            let _ = session.compact(instructions.as_deref()).await;
+            let _ = session
+                .compact(instructions.as_deref(), mission_range)
+                .await;
         });
     }
 
