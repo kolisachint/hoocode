@@ -11,6 +11,9 @@
 //! styled with (via the palette's `from_token`); the palette's newer MC
 //! tokens (`you`, `vio`, `gold`) are a later recolor.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use hoocode_tui_ratatui::core::buffer::Buffer;
 use hoocode_tui_ratatui::core::layout::Rect;
 use hoocode_tui_ratatui::core::style::Style;
@@ -19,13 +22,15 @@ use hoocode_tui_ratatui::{
     ansi_spans, bold, paint, spans_width, truncate_spans, Palette, RatatuiComponent,
 };
 use hoocode_tui_render::Component;
+
+use crate::tool_output_view::ToolOutputView;
 #[cfg(test)]
 use hoocode_tui_util::visible_width;
 use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width};
 
 /// Draws one row of `spans` through a ratatui buffer `width` wide. Spans
 /// are cut with `…` first when they do not fit; the buffer only clips.
-fn row_line(spans: Vec<Span<'static>>, width: usize) -> String {
+pub(crate) fn row_line(spans: Vec<Span<'static>>, width: usize) -> String {
     let width = u16::try_from(width).unwrap_or(u16::MAX).max(1);
     RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
         // The closure may draw again after an invalidate: rebuild the row
@@ -40,7 +45,11 @@ fn row_line(spans: Vec<Span<'static>>, width: usize) -> String {
 
 /// Draws `left` flush left and `right` flush right through a ratatui
 /// buffer. The gap between them stays blank cells.
-fn two_part_row(left: Vec<Span<'static>>, right: Vec<Span<'static>>, width: usize) -> String {
+pub(crate) fn two_part_row(
+    left: Vec<Span<'static>>,
+    right: Vec<Span<'static>>,
+    width: usize,
+) -> String {
     let width = u16::try_from(width).unwrap_or(u16::MAX).max(1);
     RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
         let room = usize::from(area.width);
@@ -259,10 +268,8 @@ impl Component for ThinkHeader {
                 Span::styled(" ".to_string(), Style::default()),
                 Span::styled("◐".to_string(), palette.style("warning")),
                 Span::styled(" ".to_string(), Style::default()),
-                Span::styled(
-                    "Think".to_string(),
-                    hoocode_tui_ratatui::from_token("toolTitle"),
-                ),
+                // `toolTitle` is "" in the theme: chalk's default opener.
+                Span::styled("Think".to_string(), Style::default()),
             ];
             let Some(secs) = self.secs else {
                 return vec![row_line(truncate_spans(left, width, "…"), width)];
@@ -286,16 +293,15 @@ impl Component for ThinkHeader {
             Span::styled(" ".to_string(), Style::default()),
             Span::styled("●".to_string(), palette.ok()),
             Span::styled(" ".to_string(), Style::default()),
-            Span::styled(
-                "Think".to_string(),
-                hoocode_tui_ratatui::from_token("toolTitle"),
-            ),
+            // `toolTitle` is "" in the theme: chalk's default opener.
+            Span::styled("Think".to_string(), Style::default()),
             Span::styled("  ".to_string(), Style::default()),
             Span::styled(thought, hoocode_tui_ratatui::from_token("thinkingText")),
             Span::styled(" ".to_string(), Style::default()),
             Span::styled("·".to_string(), palette.dim()),
             Span::styled(" ".to_string(), Style::default()),
-            Span::styled("ctrl+t".to_string(), palette.ink()),
+            // `text` is "" in the theme: chalk's default opener.
+            Span::styled("ctrl+t".to_string(), Style::default()),
         ];
         vec![row_line(truncate_spans(spans, width, "…"), width)]
     }
@@ -329,23 +335,32 @@ pub fn files_text(total: usize) -> String {
     }
 }
 
+/// The prompt's first line, flattened: what a header row carries.
+pub(crate) fn first_line(text: &str) -> String {
+    text.lines()
+        .next()
+        .unwrap_or_default()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// A header row split into its flush-left and flush-right runs:
 /// ` {number} {prefix}{left}` left, `right` (the stats) right. The label is
 /// cut with `…` first and the stats stay whole; the stats are cut only when
-/// they fit nowhere. The openers in `prefix` belong to `left`, so they
-/// parse as one run.
+/// they fit nowhere.
 pub fn header_parts(
-    number: &str,
-    left_prefix: &str,
-    left: &str,
-    right: &str,
+    number: Vec<Span<'static>>,
+    left_prefix: Vec<Span<'static>>,
+    left: Vec<Span<'static>>,
+    right: Vec<Span<'static>>,
     width: usize,
 ) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
     let mut stem = vec![Span::styled(" ".to_string(), Style::default())];
-    stem.extend(ansi_spans(number));
+    stem.extend(number);
     stem.push(Span::styled(" ".to_string(), Style::default()));
-    stem.extend(ansi_spans(&format!("{left_prefix}{left}")));
-    let right = ansi_spans(right);
+    stem.extend(left_prefix);
+    stem.extend(left);
     if right.is_empty() {
         return (truncate_spans(stem, width, "…"), Vec::new());
     }
@@ -374,7 +389,15 @@ pub fn step_header(
     if width == 0 {
         return String::new();
     }
-    let (left, right) = header_parts(number, left_prefix, left, right, width);
+    // The openers the split kept belong to the label that follows: one
+    // parse keeps them on it.
+    let (left, right) = header_parts(
+        ansi_spans(number),
+        Vec::new(),
+        ansi_spans(&format!("{left_prefix}{left}")),
+        ansi_spans(right),
+        width,
+    );
     two_part_row(left, right, width)
 }
 
@@ -440,38 +463,60 @@ pub fn diff_counts_text(added: usize, removed: usize) -> String {
 
 /// The mission header: `▲ M1  prompt`, the `▲` and `M1` in the `you` colour.
 /// A skill chip (`✦ name`) sits right-aligned. The prompt is cut with `…`
-/// when it does not fit beside the chip.
+/// when it does not fit beside the chip. In radar view the header draws the
+/// mission's flight-log row instead (M5); see `radar`.
+#[derive(Debug)]
 pub struct MissionHeader {
     seq: usize,
     prompt: String,
     skill: Option<String>,
+    view: ToolOutputView,
+    flight: Option<Rc<RefCell<crate::radar::FlightStats>>>,
 }
 
 impl MissionHeader {
     pub fn new(seq: usize, prompt: &str, skill: Option<&str>) -> Self {
         // One line: the prompt's first line, flattened.
-        let prompt = prompt
-            .lines()
-            .next()
-            .unwrap_or_default()
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
         Self {
             seq,
-            prompt,
+            prompt: first_line(prompt),
             skill: skill.map(str::to_string),
+            view: ToolOutputView::Peek,
+            flight: None,
         }
+    }
+
+    /// The view dial's current stop: peek draws the `▲ M{n}` header, radar
+    /// the flight-log row.
+    pub fn set_view(&mut self, view: ToolOutputView) {
+        self.view = view;
+    }
+
+    /// The mission's flight-log data, refreshed by the transcript as the
+    /// mission runs and lands; the header reads it on every render.
+    pub fn set_flight(&mut self, flight: Rc<RefCell<crate::radar::FlightStats>>) {
+        self.flight = Some(flight);
     }
 }
 
 impl Component for MissionHeader {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let palette = Palette::current();
         let width = width as usize;
         if width == 0 {
             return Vec::new();
         }
+        if self.view == ToolOutputView::Radar {
+            if let Some(flight) = &self.flight {
+                let stats = flight.borrow();
+                return vec![crate::radar::mission_row(
+                    self.seq,
+                    &self.prompt,
+                    &stats,
+                    width,
+                )];
+            }
+        }
+        let palette = Palette::current();
         // The port keeps the legacy `agent2` token M4 styled the mark
         // with (not the palette's newer `you`), so the goldens stay
         // byte-identical.

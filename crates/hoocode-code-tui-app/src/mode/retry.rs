@@ -107,6 +107,7 @@ impl Transcript {
         // Renumber once for the whole drop: positional step numbers shift
         // when blocks leave (M4).
         self.rebase_steps();
+        self.refresh_flight_marks();
     }
 
     /// Takes one tool block out of its chain; a chain left empty leaves the chat.
@@ -132,6 +133,7 @@ impl Transcript {
         {
             self.latest_block = None;
         }
+        self.refresh_flight_marks();
     }
 
     /// The retry streak and its failed attempt are gone: the session they

@@ -671,7 +671,7 @@ impl ToolExecutionComponent {
 
     /// Seconds since the block opened (settled at `update_result`).
     /// Rebuilt history settles at once, so its span reads ~0.
-    fn block_elapsed_secs(&self) -> Option<u64> {
+    pub(crate) fn block_elapsed_secs(&self) -> Option<u64> {
         let end = self.settled_at.unwrap_or_else(Instant::now);
         end.duration_since(self.started).as_secs().into()
     }

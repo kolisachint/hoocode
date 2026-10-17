@@ -12,6 +12,7 @@ pub mod dynamic_border;
 pub mod input_frame;
 mod js_json;
 pub mod jsdiff;
+pub mod radar;
 pub mod read_output;
 pub mod render_utils;
 pub mod selected_row_list;

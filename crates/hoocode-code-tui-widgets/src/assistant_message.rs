@@ -17,9 +17,9 @@ use crate::wrap_zone;
 
 /// How a thinking block renders.
 ///
-/// `Omit` exists for radar: under a chain summary, a message whose only
-/// content is thinking plus tool calls has nothing left on screen once its
-/// calls collapse, so a stack of `Thinking...` lines would be pure noise.
+/// `Omit` exists for radar: the flight log shows the message's last prose
+/// line plus its `✻ thought Ns` line, so a stack of `Thinking...` lines
+/// would be pure noise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThinkingDisplay {
     #[default]
@@ -326,6 +326,14 @@ impl AssistantMessageComponent {
 
     /// The Think row's seconds: elapsed since the trace started while it
     /// runs, the settled span once done, `None` when never timed.
+    ///
+    /// The radar flight log reads the same clock for its `✻ thought Ns`
+    /// line (M5).
+    pub(crate) fn radar_think_line(&self, width: usize) -> Option<String> {
+        self.think_secs(self.streaming)
+            .map(|secs| crate::radar::think_row(secs, width))
+    }
+
     fn think_secs(&self, streaming: bool) -> Option<u64> {
         let start = self.think_start?;
         if streaming {
@@ -457,8 +465,40 @@ impl AssistantMessageComponent {
     }
 }
 
+impl AssistantMessageComponent {
+    /// The radar flight log (M5): the message's last prose line, then its
+    /// `✻ thought Ns` line with no gist. A message with neither renders
+    /// nothing.
+    fn render_radar(&mut self, width: u16) -> Vec<String> {
+        let lines = self.content.render(width);
+        let prose = lines
+            .iter()
+            .rev()
+            .find(|line| {
+                !hoocode_tui_util::strip_vt_control_characters(line)
+                    .trim()
+                    .is_empty()
+            })
+            .cloned();
+        let mut out = Vec::new();
+        if let Some(line) = prose {
+            out.push(line);
+        }
+        if let Some(line) = self.radar_think_line(width as usize) {
+            out.push(line);
+        }
+        if out.is_empty() {
+            return out;
+        }
+        wrap_zone(out)
+    }
+}
+
 impl Component for AssistantMessageComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
+        if self.thinking_display == ThinkingDisplay::Omit {
+            return self.render_radar(width);
+        }
         if self.has_tool_calls {
             return self.content.render(width);
         }

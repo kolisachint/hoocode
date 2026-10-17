@@ -15,6 +15,7 @@ use hoocode_tui_util::{
 };
 
 use crate::assistant_message::AssistantMessageComponent;
+use crate::radar::{hit_row, live_row};
 use crate::tool_chain_summary::{
     chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
 };
@@ -50,6 +51,10 @@ pub struct ToolChainComponent {
     state: ChainState,
     /// The newest run in the transcript; radar marks it.
     latest: bool,
+    /// A chain before the first mission has no flight-log row above it, so
+    /// radar keeps its old summary line (M5). Chains inside a mission drop
+    /// the summary: the mission row carries the stats.
+    orphan: bool,
     /// The mission step number this chain starts at (M4: steps are numbered
     /// per mission, so a chain opened after prose keeps counting). The
     /// transcript sets it when the chain opens.
@@ -64,8 +69,21 @@ impl ToolChainComponent {
             view,
             state: ChainState::Running,
             latest: false,
+            orphan: false,
             base_step: 0,
         }
+    }
+
+    /// Whether this chain stands outside every mission (M5): radar keeps
+    /// its summary line, since no flight-log row covers it.
+    pub fn set_orphan(&mut self, orphan: bool) {
+        self.orphan = orphan;
+    }
+
+    /// The chain's settle state (M5: the transcript reads it for the
+    /// mission's flight-log mark).
+    pub fn chain_state(&self) -> ChainState {
+        self.state
     }
 
     pub fn set_base_step(&mut self, base: usize) {
@@ -145,19 +163,23 @@ impl ToolChainComponent {
         self.latest = latest;
     }
 
-    /// Radar summarises every chain, a lone call included, so one call and a
-    /// run of calls read the same (`Ran npm run check   1 call · 412 lines`).
+    /// Radar summarises every orphan chain, a lone call included, so one
+    /// call and a run of calls read the same
+    /// (`Ran npm run check   1 call · 412 lines`). Chains inside a mission
+    /// collapse into the mission's flight-log rows instead.
     fn is_collapsed(&self) -> bool {
         self.view == ToolOutputView::Radar && !self.blocks.is_empty()
     }
 
-    /// The blank row that holds a radar run off whatever came before it.
+    /// The blank row that holds an orphan radar run off whatever came
+    /// before it. Chains inside a mission attach their flight-log rows
+    /// straight under the mission.
     fn needs_lead_in(&self) -> bool {
         if self.view != ToolOutputView::Radar {
             return false;
         }
         if self.is_collapsed() {
-            return true;
+            return self.orphan;
         }
         self.blocks
             .first()
@@ -215,9 +237,45 @@ impl ToolChainComponent {
         out
     }
 
+    /// The mission's flight-log rows for this chain (M5, radar): one line
+    /// per hit (`⊗ 04 … HIT`) and per live step (`◐ 01 … 3s`), numbered by
+    /// mission step. Settled clean calls get no row: the mission row above
+    /// already counts them. Lead-in traces keep their think line, so
+    /// thinking that led to a call still reads under its mission.
+    fn flight_rows(&self, width: usize) -> Vec<String> {
+        let mut out = Vec::new();
+        for component in &self.lead_ins {
+            if let Some(line) = component.component.borrow().radar_think_line(width) {
+                out.push(line);
+            }
+        }
+        for (i, block) in self.blocks.iter().enumerate() {
+            let step = self.base_step + i + 1;
+            let body = block.borrow();
+            let entry = body.chain_entry();
+            if entry.is_error {
+                let snippet = body
+                    .error_text()
+                    .lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                    .unwrap_or_default()
+                    .to_string();
+                out.push(hit_row(step, &entry.tool, &entry.subject, &snippet, width));
+            } else if entry.is_partial {
+                let secs = body.block_elapsed_secs().unwrap_or(0);
+                out.push(live_row(step, &entry.tool, &entry.subject, secs, width));
+            }
+        }
+        out
+    }
+
     fn rows(&mut self, width: u16) -> Vec<String> {
         if !self.is_collapsed() {
             return self.peek_rows(width);
+        }
+        if !self.orphan {
+            return self.flight_rows(width as usize);
         }
         let width = width as usize;
         let entries: Vec<_> = self

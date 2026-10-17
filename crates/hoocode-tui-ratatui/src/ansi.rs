@@ -7,7 +7,11 @@
 //! styled spans; every other escape (OSC hyperlinks, APC, non-SGR CSI) is
 //! skipped as zero-width, exactly the way
 //! [`hoocode_tui_util::strip_vt_control_characters`] treats it, so widths
-//! stay in step with [`hoocode_tui_util::visible_width`]. Scanning goes
+//! stay in step with [`hoocode_tui_util::visible_width`].
+//!
+//! Known gap (accepted): an OSC-8 hyperlink's text survives but its link
+//! does not, so links inside trajectory lines are no longer clickable.
+//! Scanning goes
 //! through [`hoocode_tui_util::extract_ansi_code`], the same splitter the
 //! width functions use, so a lone or unterminated ESC stays text here too.
 //!
