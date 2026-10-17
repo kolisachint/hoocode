@@ -83,7 +83,7 @@ fn commands_console_counts_the_match() {
             "› /session",
             "session info and stats",
             "▸ /sess",
-            "↑↓ pick · tab complete · enter run",
+            "↑↓ pick · tab complete · enter run · esc clear",
         ],
     );
 }
@@ -174,7 +174,7 @@ fn files_console_100() {
             "wrap.rs",
             "src/wrap.rs",
             "▸ look at @wr",
-            "↑↓ pick · tab load · / into folder",
+            "↑↓ pick · tab load · esc close",
         ],
     );
 }

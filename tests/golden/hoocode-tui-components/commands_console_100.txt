@@ -4,7 +4,7 @@
 ┏━ CONSOLE · commands  1 of 3 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃› /session                                                                  session info and stats┃
 ┃▸ /sessio                                                                                         ┃
-┗━ ↑↓ pick · tab complete · enter run ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+┗━ ↑↓ pick · tab complete · enter run · esc clear ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 --- styles ---
 r1 c7 inverse
 r3 c0-2 fg=4
@@ -17,4 +17,4 @@ r4 c99 fg=4
 r5 c0 fg=4
 r5 c99 fg=4
 r6 c0-2 fg=4
-r6 c38-99 fg=4
+r6 c50-99 fg=4
