@@ -94,6 +94,26 @@ fn jobs_answer(choice: EndShiftJobsChoice, user_quit: bool) -> (QuitJobs, bool, 
     }
 }
 
+/// The quit state a superseding dialog (a clearance taking the slot)
+/// leaves: no quit in flight, so quitting again re-asks, and a later
+/// fatal error leaves at once instead of finding a card that is gone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SupersededQuit {
+    pub(super) jobs: QuitJobs,
+    pub(super) shift: EndShift,
+    pub(super) exit: bool,
+    pub(super) user: bool,
+}
+
+pub(super) fn superseded_quit() -> SupersededQuit {
+    SupersededQuit {
+        jobs: QuitJobs::Unasked,
+        shift: EndShift::Unasked,
+        exit: false,
+        user: false,
+    }
+}
+
 impl Mode {
     /// `app.panel.focus` (Ctrl+G): the task panel takes the keyboard. With no
     /// rows there is nothing to pick, so the prompt keeps the keys.
@@ -332,6 +352,18 @@ mod tests {
             quit_next(QuitJobs::Unasked, EndShift::Asking, 0, true),
             QuitNext::Wait
         );
+    }
+
+    #[test]
+    fn superseded_quit_leaves_no_card_for_fatal_errors() {
+        // Quit card up → clearance arrives and is answered → fatal error:
+        // nothing waits, so the error exits at once.
+        let cleared = superseded_quit();
+        assert_eq!(
+            quit_next(cleared.jobs, cleared.shift, 2, cleared.user),
+            QuitNext::Exit
+        );
+        assert!(!cleared.exit);
     }
 
     #[test]

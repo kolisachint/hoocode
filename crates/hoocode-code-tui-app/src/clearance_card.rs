@@ -10,7 +10,9 @@
 //! text as the next message instead; the agent then runs the revised command
 //! (asking again when it still needs clearance).
 
-use hoocode_code_permissions::{shell_program, ClearanceChoice, ClearanceInfo, ReachCell};
+use hoocode_code_permissions::{
+    is_always_wrapper, shell_program, ClearanceChoice, ClearanceInfo, ReachCell,
+};
 use hoocode_code_tui_keybindings::raw_key_hint;
 use hoocode_code_tui_theme::theme;
 use hoocode_code_tui_widgets::card_frame::render_card;
@@ -66,17 +68,18 @@ impl ClearanceCard {
         )
     }
 
-    /// The `a` key's program: the Shell command's first word, else the tool.
+    /// The `a` key's program, when `a` is offered at all: the Shell
+    /// command's first word (never a wrapper like sudo), else the tool.
     /// The word comes from the gate's [`shell_program`], so the label and
     /// the stored rule always agree.
-    fn program(&self) -> String {
+    fn always_offer(&self) -> Option<String> {
         if self.info.tool == "Shell" {
             let command = self.info.detail.trim_start_matches("$ ").trim_start();
-            if let Some(program) = shell_program(command) {
-                return program;
-            }
+            let program = shell_program(command)?;
+            (!is_always_wrapper(&program)).then_some(program)
+        } else {
+            Some(self.info.tool.clone())
         }
-        self.info.tool.clone()
     }
 
     /// The editable command: the Shell command without its `$ `, else the detail.
@@ -106,20 +109,18 @@ impl ClearanceCard {
     fn keys_row(&self) -> String {
         let t = theme();
         let sep = t.fg("muted", " · ");
-        [
-            raw_key_hint("y", "go once"),
-            raw_key_hint(
+        let mut hints = vec![raw_key_hint("y", "go once")];
+        // Wrappers (sudo, …) are never approvable: no `a` hint, and the
+        // key answers once.
+        if let Some(program) = self.always_offer() {
+            hints.push(raw_key_hint(
                 "a",
-                &format!(
-                    "always {} in {}",
-                    self.program(),
-                    self.info.mode.to_uppercase()
-                ),
-            ),
-            raw_key_hint("n", "abort + say why"),
-            raw_key_hint("e", "edit first"),
-        ]
-        .join(&sep)
+                &format!("always {} in {}", program, self.info.mode.to_uppercase()),
+            ));
+        }
+        hints.push(raw_key_hint("n", "abort + say why"));
+        hints.push(raw_key_hint("e", "edit first"));
+        hints.join(&sep)
     }
 
     fn body(&self) -> Vec<String> {
@@ -231,7 +232,11 @@ impl Component for ClearanceCard {
         }
         match data {
             "y" => self.done(ClearanceChoice::Once),
-            "a" => self.done(ClearanceChoice::Always),
+            // Without an `a` offer (a wrapper), `a` answers once.
+            "a" => match self.always_offer() {
+                Some(_) => self.done(ClearanceChoice::Always),
+                None => self.done(ClearanceChoice::Once),
+            },
             "n" => self.done(ClearanceChoice::Deny { reason: None }),
             // Esc alone is no (spec §6.2).
             "\x1b" => self.done(ClearanceChoice::Deny { reason: None }),

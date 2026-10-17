@@ -211,11 +211,14 @@ impl Mode {
         reply: mpsc::Sender<ClearanceChoice>,
     ) {
         self.close_clearance(ClearanceChoice::Deny { reason: None });
-        // A quit card up already is superseded: the slot belongs to the
-        // clearance, and quitting again re-asks (otherwise the quit state
-        // would wait on a card that is gone).
-        self.quit_jobs = QuitJobs::Unasked;
-        self.end_shift = EndShift::Unasked;
+        // A quit in flight is superseded with it: the slot belongs to the
+        // clearance, quitting again re-asks, and a later fatal error
+        // leaves at once (see `superseded_quit`).
+        let cleared = superseded_quit();
+        self.quit_jobs = cleared.jobs;
+        self.end_shift = cleared.shift;
+        self.exit_requested = cleared.exit;
+        self.user_quit = cleared.user;
         self.end_shift_card = None;
         self.end_shift_jobs_card = None;
         let on_done = self.actions.clone();

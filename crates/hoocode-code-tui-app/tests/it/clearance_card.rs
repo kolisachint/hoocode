@@ -141,6 +141,20 @@ fn edit_card_names_the_real_path() {
 }
 
 #[test]
+fn wrapper_omits_always_and_a_runs_once() {
+    let _g = lock(Some("dark"));
+    let (mut card, answered) = card(shell_info("$ sudo rm -rf /tmp/x"));
+    let rows = rows(&mut card, 100);
+    assert!(
+        !rows[3].contains("a always"),
+        "row 3 must omit `a`: {:?}",
+        rows[3]
+    );
+    card.handle_input("a");
+    assert_eq!(*answered.borrow(), Some(ClearanceChoice::Once));
+}
+
+#[test]
 fn step_number_shows_when_the_host_knows_it() {
     let _g = lock(Some("dark"));
     let mut info = shell_info("$ wc -l src/wrap.rs");

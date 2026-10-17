@@ -67,7 +67,7 @@ fn union(a: Option<&Value>, b: Option<&Value>) -> Value {
 }
 
 /// `mergeConfigs`: project `active_mode` / `thinking_escalation` win; per
-/// mode, `auto_allow`, `always_bash_commands`, `allowed_write_paths`,
+/// mode, `auto_allow`, `always_bash_programs`, `allowed_write_paths`,
 /// `denied_tools` and `denied_bash_commands` are unioned, while
 /// `enabled_tools` and `allowed_bash_commands` fall back to the global
 /// value; project `mode_paths` come first.
@@ -94,7 +94,7 @@ pub fn merge_configs(global: &HooConfig, project: &HooConfig) -> HooConfig {
             }
             for key in [
                 "auto_allow",
-                "always_bash_commands",
+                "always_bash_programs",
                 "allowed_write_paths",
                 "denied_tools",
                 "denied_bash_commands",

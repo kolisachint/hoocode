@@ -152,8 +152,11 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
     let mut escaped = false;
     let mut chars = command.chars().peekable();
     // A `>`/`>>` waits for its target word; `piped` tracks single-`|` joins.
+    // `prev_sig` is the last non-space char outside quotes: an `&` right
+    // after `>` belongs to a descriptor dup (`2>&1`), not the background.
     let mut redirect_pending = false;
     let mut piped = false;
+    let mut prev_sig: Option<char> = None;
     while let Some(c) = chars.next() {
         if escaped {
             current.push(c);
@@ -184,8 +187,15 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
                 }
                 segments.push(Vec::new());
                 redirect_pending = false;
+                prev_sig = Some('|');
             }
             '&' | ';' | '<' | '(' | ')' => {
+                if c == '&' && prev_sig == Some('>') {
+                    // A descriptor dup (`2>&1`): the word continues.
+                    current.push(c);
+                    prev_sig = Some(c);
+                    continue;
+                }
                 if c == '&' && chars.peek() == Some(&'&') {
                     chars.next();
                 }
@@ -193,6 +203,7 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
                 push_word(segments.last_mut().expect("segment"), &mut current);
                 segments.push(Vec::new());
                 redirect_pending = false;
+                prev_sig = Some(c);
             }
             '>' => {
                 if chars.peek() == Some(&'>') {
@@ -201,12 +212,16 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
                 take_redirect(&mut redirects, &mut redirect_pending, &mut current);
                 push_word(segments.last_mut().expect("segment"), &mut current);
                 redirect_pending = true;
+                prev_sig = Some('>');
             }
             c if c.is_whitespace() => {
                 take_redirect(&mut redirects, &mut redirect_pending, &mut current);
                 push_word(segments.last_mut().expect("segment"), &mut current);
             }
-            _ => current.push(c),
+            _ => {
+                current.push(c);
+                prev_sig = Some(c);
+            }
         }
     }
     take_redirect(&mut redirects, &mut redirect_pending, &mut current);
@@ -425,11 +440,99 @@ pub fn shell_program(command: &str) -> Option<String> {
     (!word.is_empty()).then(|| word.to_string())
 }
 
-/// An anchored rule for one Shell program (`^\s*printf(?:\s|$)`): it
-/// matches `printf y` but neither `printfoo` nor `rm`. The program is
-/// regex-escaped, so `./run.sh` does not match `./runXsh`.
-pub fn always_bash_pattern(program: &str) -> String {
-    format!("^\\s*{}(?:\\s|$)", regex::escape(program))
+/// Wrapper programs are never approvable: `a` on them only runs once.
+/// (`find` runs whatever `-exec` names; the rest hand control to another
+/// program or shell.)
+pub const ALWAYS_WRAPPERS: [&str; 22] = [
+    "sudo", "doas", "su", "env", "sh", "bash", "zsh", "dash", "fish", "eval", "exec", "source",
+    ".", "xargs", "nohup", "time", "command", "builtin", "nice", "timeout", "watch", "find",
+];
+
+/// Whether `program` hands control elsewhere, so no always-rule may cover it.
+pub fn is_always_wrapper(program: &str) -> bool {
+    ALWAYS_WRAPPERS.contains(&program)
+}
+
+/// Whether `command` hides code the first-word check cannot see: command
+/// or process substitution, expansions, here-docs, or a line break. The
+/// scan skips single-quoted runs (nothing expands there); double quotes
+/// still expand, so they stay checked.
+fn has_code_expansion(command: &str) -> bool {
+    if command.contains('\n') || command.contains('\r') {
+        return true;
+    }
+    let mut single = false;
+    let mut escaped = false;
+    let mut prev: Option<char> = None;
+    for c in command.chars() {
+        if single {
+            if c == '\'' {
+                single = false;
+            }
+            continue;
+        }
+        if escaped {
+            escaped = false;
+            prev = None;
+            continue;
+        }
+        match c {
+            '\\' => {
+                escaped = true;
+                prev = None;
+            }
+            '\'' => {
+                single = true;
+                prev = None;
+            }
+            '`' => return true,
+            '(' if matches!(prev, Some('$') | Some('<') | Some('>')) => return true,
+            '{' if prev == Some('$') => return true,
+            '<' if prev == Some('<') => return true,
+            _ => prev = matches!(c, '$' | '<' | '>').then_some(c),
+        }
+    }
+    false
+}
+
+/// Whether `word` assigns (`NAME=value`): allowing what follows would allow
+/// whatever the assignment redefines, so it never auto-allows.
+fn is_assignment(word: &str) -> bool {
+    let Some((name, _)) = word.split_once('=') else {
+        return false;
+    };
+    !name.is_empty()
+        && name
+            .chars()
+            .enumerate()
+            .all(|(i, c)| c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))
+}
+
+/// Whether an always-rule for `approved` programs covers `command`: every
+/// pipe segment's program (first word) is approved, with no wrapper, no
+/// leading assignment, no code expansion, and no file redirect (descriptor
+/// dups like `2>&1` and `/dev/null` are fine). Anything else falls through
+/// to a prompt — never a block, never a silent allow.
+pub fn always_allows(command: &str, approved: &[String]) -> bool {
+    if has_code_expansion(command) {
+        return false;
+    }
+    let (segments, redirects, _) = split_segments(command);
+    if segments.is_empty() {
+        return false;
+    }
+    if redirects
+        .iter()
+        .any(|target| target != "/dev/null" && !target.starts_with('&'))
+    {
+        return false;
+    }
+    segments.iter().all(|words| {
+        let program = &words[0];
+        !is_always_wrapper(program)
+            && !is_assignment(program)
+            && approved.iter().any(|name| name == program)
+    })
 }
 
 /// `mutationPath`: `path`, else `file_path` (non-empty strings).
@@ -562,14 +665,13 @@ pub fn evaluate(
         return Verdict::Allow;
     }
     // A program the user always-approved (`a` on the clearance card) runs
-    // without asking. The rules are anchored to the command's first word,
-    // so `printf` never covers `printfoo` or `rm`.
+    // without asking, when the whole command stays inside the approval:
+    // every segment's program is approved, with no wrapper, assignment,
+    // expansion or file redirect. Anything else falls through to a prompt.
     if tool_name == "Shell"
-        && list("always_bash_commands").is_some_and(|patterns| {
+        && list("always_bash_programs").is_some_and(|programs| {
             let command = input.get("command").and_then(Value::as_str).unwrap_or("");
-            patterns
-                .iter()
-                .any(|pattern| matches_bash_pattern(pattern, command))
+            always_allows(command, &programs)
         })
     {
         return Verdict::Allow;
@@ -580,6 +682,32 @@ pub fn evaluate(
         ));
     }
     Verdict::Prompt
+}
+
+/// Appends `value` to the mode's string list `key`, without duplicates.
+/// "Always" goes to the global config only.
+fn insert_mode_list(latest: &mut HooConfig, mode: &str, key: &str, value: String) {
+    let modes = latest
+        .entry("modes")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if !modes.is_object() {
+        *modes = Value::Object(Default::default());
+    }
+    let entry = modes.as_object_mut().map(|m| {
+        m.entry(mode.to_string())
+            .or_insert_with(|| Value::Object(Default::default()))
+    });
+    if let Some(Value::Object(mode_cfg)) = entry {
+        let mut allow: Vec<Value> = mode_cfg
+            .get(key)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if !allow.iter().any(|v| v.as_str() == Some(&value)) {
+            allow.push(Value::String(value));
+        }
+        mode_cfg.insert(key.into(), Value::Array(allow));
+    }
 }
 
 /// hoocode's permission gate for one working directory.
@@ -624,54 +752,43 @@ impl HooPermissionGate {
                     // The revised text runs as a later message; this call stays denied.
                     ClearanceChoice::Revise(_) => Some("Denied by permission gate".into()),
                     // "Always" scopes to the Shell program (`a always printf`),
-                    // never the whole tool: an anchored rule for the first
-                    // word only. Other tools keep tool-name scope.
+                    // never the whole tool. Wrappers (sudo, …) are never
+                    // approvable: `a` only runs them once, and says so.
+                    // Other tools keep tool-name scope in `auto_allow`.
                     ClearanceChoice::Always => {
-                        let mode = config::active_mode(&merged).unwrap_or_else(|| "build".into());
-                        let program = (tool_name == "Shell").then(|| {
-                            shell_program(
-                                input.get("command").and_then(Value::as_str).unwrap_or(""),
-                            )
-                        });
-                        let (key, value, notice) = match program {
-                            Some(Some(program)) => (
-                                "always_bash_commands",
-                                always_bash_pattern(&program),
-                                format!("\"{program}\" added to always-allow for mode \"{mode}\""),
-                            ),
-                            _ => (
-                                "auto_allow",
-                                tool_name.to_string(),
-                                format!("\"{tool_name}\" added to auto-allow for mode \"{mode}\""),
-                            ),
-                        };
                         // "Always" goes to the global config only.
                         let mut latest = config::read_config();
                         let mode = config::active_mode(&latest).unwrap_or_else(|| "build".into());
-                        let modes = latest
-                            .entry("modes")
-                            .or_insert_with(|| Value::Object(Default::default()));
-                        if !modes.is_object() {
-                            *modes = Value::Object(Default::default());
-                        }
-                        let entry = modes.as_object_mut().map(|m| {
-                            m.entry(mode.clone())
-                                .or_insert_with(|| Value::Object(Default::default()))
-                        });
-                        if let Some(Value::Object(mode_cfg)) = entry {
-                            let mut allow: Vec<Value> = mode_cfg
-                                .get(key)
-                                .and_then(Value::as_array)
-                                .cloned()
-                                .unwrap_or_default();
-                            if !allow.iter().any(|v| v.as_str() == Some(&value)) {
-                                allow.push(Value::String(value));
+                        if tool_name == "Shell" {
+                            let command =
+                                input.get("command").and_then(Value::as_str).unwrap_or("");
+                            match shell_program(command).filter(|p| !is_always_wrapper(p)) {
+                                Some(program) => {
+                                    insert_mode_list(
+                                        &mut latest,
+                                        &mode,
+                                        "always_bash_programs",
+                                        program.clone(),
+                                    );
+                                    let _ = config::write_config(&latest);
+                                    ui.notify(&format!(
+                                        "\"{program}\" added to always-allow for mode \"{mode}\""
+                                    ));
+                                    None
+                                }
+                                None => {
+                                    ui.notify("\"always\" isn't offered here; ran once");
+                                    None
+                                }
                             }
-                            mode_cfg.insert(key.into(), Value::Array(allow));
+                        } else {
+                            insert_mode_list(&mut latest, &mode, "auto_allow", tool_name.into());
+                            let _ = config::write_config(&latest);
+                            ui.notify(&format!(
+                                "\"{tool_name}\" added to auto-allow for mode \"{mode}\""
+                            ));
+                            None
                         }
-                        let _ = config::write_config(&latest);
-                        ui.notify(&notice);
-                        None
                     }
                 }
             }

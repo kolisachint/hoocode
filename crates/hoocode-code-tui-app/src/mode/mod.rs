@@ -97,7 +97,7 @@ mod task_panel;
 mod transcript;
 mod tree;
 
-use self::task_panel::{EndShift, QuitJobs};
+use self::task_panel::{superseded_quit, EndShift, QuitJobs};
 use self::{auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, transcript::*};
 
 pub use self::events::plan_settle_outcome;
