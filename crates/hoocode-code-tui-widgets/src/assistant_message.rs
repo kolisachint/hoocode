@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::Instant;
 
 use hoocode_ai_types::{AssistantMessage, Content, StopReason, ABORTED_MESSAGE};
 use hoocode_code_tui_theme::{get_markdown_theme, theme};
@@ -205,6 +206,11 @@ pub struct AssistantMessageComponent {
     /// Whether the last `update_content` was a streaming update, so a
     /// `refresh` (e.g. a thinking toggle mid-stream) keeps the same form.
     streaming: bool,
+    /// The Think row's clock (M4): when the trace started streaming and
+    /// when it settled. Unknown for resumed sessions, which never timed
+    /// the trace; the header then omits the time.
+    think_start: Option<Instant>,
+    think_end: Option<Instant>,
 }
 
 fn handle<C: Component + 'static>(c: C) -> ComponentHandle {
@@ -239,6 +245,8 @@ impl AssistantMessageComponent {
             markdown_cache: HashMap::new(),
             has_segmented_blocks: false,
             streaming: false,
+            think_start: None,
+            think_end: None,
         };
         if let Some(message) = message {
             this.update_content(message, false);
@@ -316,6 +324,17 @@ impl AssistantMessageComponent {
         self.rail = rail;
     }
 
+    /// The Think row's seconds: elapsed since the trace started while it
+    /// runs, the settled span once done, `None` when never timed.
+    fn think_secs(&self, streaming: bool) -> Option<u64> {
+        let start = self.think_start?;
+        if streaming {
+            return Some(start.elapsed().as_secs());
+        }
+        self.think_end
+            .map(|end| end.duration_since(start).as_secs())
+    }
+
     fn refresh(&mut self) {
         if let Some(message) = self.last_message.clone() {
             let streaming = self.streaming;
@@ -343,6 +362,20 @@ impl AssistantMessageComponent {
     pub fn update_shared(&mut self, message: Rc<AssistantMessage>, streaming: bool) {
         self.last_message = Some(message.clone());
         self.streaming = streaming;
+        // The Think row's clock: the first streaming update carrying
+        // thinking starts it; the first settled update stops it.
+        let has_thinking = message
+            .content
+            .iter()
+            .any(|c| matches!(c, Content::Thinking(t) if !is_blank(&t.thinking)));
+        if has_thinking {
+            if streaming && self.think_start.is_none() {
+                self.think_start = Some(Instant::now());
+            }
+            if !streaming && self.think_start.is_some() && self.think_end.is_none() {
+                self.think_end = Some(Instant::now());
+            }
+        }
 
         // A final render replaces streaming segments with the single form.
         if !streaming && self.has_segmented_blocks {
@@ -372,10 +405,9 @@ impl AssistantMessageComponent {
                     let visible_after = message.content[i + 1..]
                         .iter()
                         .any(|c| self.is_visible_block(c));
-                    self.content.add_child(handle(Text::new(
-                        trajectory::think_header(streaming),
-                        0,
-                        0,
+                    self.content.add_child(handle(trajectory::ThinkHeader::new(
+                        streaming,
+                        self.think_secs(streaming),
                     )));
                     if self.thinking_display == ThinkingDisplay::Full {
                         let text = format!("✻ {}", js_trim(&t.thinking));

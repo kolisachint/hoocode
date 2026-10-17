@@ -190,21 +190,20 @@ impl ToolChainComponent {
             out.extend(lines[..first].iter().cloned());
             let rest = &lines[first + 1..];
             let (prefix, content) = trajectory::split_padding(&lines[first]);
-            let mut header = format!(" {} {}{}", trajectory::step_number(step), prefix, content);
-            if block.borrow().is_error() {
-                header.push_str(&trajectory::hit_chip());
-            } else if let Some((added, removed)) = block.borrow().edit_diff_stats() {
-                header.push_str(&format!(
-                    " {}",
-                    trajectory::diff_counts_text(added, removed)
-                ));
-            } else if block.borrow().chain_entry().tool == "Write" {
-                header.push_str(&trajectory::new_chip());
-            }
-            if let Some(job) = block.borrow().background_job_id() {
-                header.push_str(&format!(" {}", trajectory::satellite_text(&job)));
-            }
-            out.push(truncate_to_width(&header, width, "…", false));
+            // A failed step carries `⊗` in place of its dot, and the `HIT`
+            // chip replaces its success stats (never appends to them).
+            let content = if block.borrow().is_error() {
+                trajectory::failure_dot(&content)
+            } else {
+                content
+            };
+            out.push(trajectory::step_header(
+                &trajectory::step_number(step),
+                &prefix,
+                &content,
+                &block.borrow().peek_right(),
+                width,
+            ));
             let shown = rest.len().min(trajectory::TRAJECTORY_BODY_LINES);
             for line in &rest[..shown] {
                 out.push(trajectory::rail_line(line, width, agent));

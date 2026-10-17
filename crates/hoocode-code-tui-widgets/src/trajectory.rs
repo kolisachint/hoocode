@@ -46,10 +46,41 @@ fn rail_prefix(agent: bool) -> String {
 // The slices below cut at the ASCII `m` ending an SGR opener, which is
 // always a char boundary.
 #[allow(clippy::string_slice)]
+/// Trailing padding of a width-padded block line, ignoring the styling:
+/// spaces go, and the SGR resets around them are re-attached after, so the
+/// line still resets its colours. Byte-safe: the scan only walks ASCII
+/// (`m`, digits, `;`, `\x1b[`).
+fn trim_end_styled(line: &str) -> String {
+    use hoocode_tui_util::text_slice as ts;
+    let mut s = line.trim_end_matches(' ');
+    let mut tail = String::new();
+    loop {
+        let bytes = s.as_bytes();
+        if !bytes.ends_with(b"m") {
+            break;
+        }
+        let mut i = bytes.len() - 1;
+        while i > 0 && (bytes[i - 1].is_ascii_digit() || bytes[i - 1] == b';') {
+            i -= 1;
+        }
+        if !(i >= 2 && bytes[i - 1] == b'[' && bytes[i - 2] == 0x1b) {
+            break;
+        }
+        let esc = i - 2;
+        tail = format!("{}{tail}", ts::suffix_from(s, esc));
+        s = ts::range(s, 0, esc);
+        s = s.trim_end_matches(' ');
+    }
+    format!("{s}{tail}")
+}
+
+// The slices below cut at ASCII boundaries only: the `m` ending an SGR
+// opener, and one ASCII space of container padding.
+#[allow(clippy::string_slice)]
 pub fn split_padding(line: &str) -> (String, String) {
-    let line = line.trim_end();
+    let trimmed = trim_end_styled(line);
     let mut prefix = String::new();
-    let mut rest = line;
+    let mut rest = trimmed.as_str();
     let mut spaces = 0;
     loop {
         if let Some(after) = rest.strip_prefix("\x1b[") {
@@ -136,28 +167,136 @@ pub fn satellite_text(job: &str) -> String {
     )
 }
 
-/// A Think row header. Running reads `·· ◐ Think`; done reads
-/// `·· ● Think  ✻ thought · ctrl+t`. The row carries no gist (spec Q4) and
-/// no duration: no per-think clock reaches the transcript (see gaps).
-pub fn think_header(running: bool) -> String {
-    let t = theme();
-    let slot = t.fg("muted", THINK_SLOT);
-    if running {
-        format!(
-            "{slot} {} {}",
-            t.fg("warning", "◐"),
-            t.fg("toolTitle", "Think")
-        )
+/// A short duration: `4s`, `1m12s`.
+pub fn short_dur(secs: u64) -> String {
+    if secs < 60 {
+        format!("{secs}s")
     } else {
-        format!(
-            "{slot} {} {}  {} {} {}",
-            t.fg("success", "●"),
-            t.fg("toolTitle", "Think"),
-            t.fg("thinkingText", "✻ thought"),
-            t.fg("dim", "·"),
-            t.fg("text", "ctrl+t"),
-        )
+        format!("{}m{}s", secs / 60, secs % 60)
     }
+}
+
+/// A Think row (spec §4 a2): the `··` slot, header only, no gist (design
+/// Q4). Running reads `·· ◐ Think  ✻ Ns` with the time right-aligned; done
+/// reads `·· ● Think  ✻ thought Ns · ctrl+t`. Unknown time (a resumed
+/// session never timed the trace) is omitted.
+pub struct ThinkHeader {
+    running: bool,
+    secs: Option<u64>,
+}
+
+impl ThinkHeader {
+    pub fn new(running: bool, secs: Option<u64>) -> Self {
+        Self { running, secs }
+    }
+}
+
+impl Component for ThinkHeader {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        let t = theme();
+        let width = width as usize;
+        if width == 0 {
+            return Vec::new();
+        }
+        let slot = t.fg("muted", THINK_SLOT);
+        if self.running {
+            let left = format!(
+                "{slot} {} {}",
+                t.fg("warning", "◐"),
+                t.fg("toolTitle", "Think")
+            );
+            let right = self
+                .secs
+                .map(|s| t.fg("thinkingText", &format!("✻ {}", short_dur(s))))
+                .unwrap_or_default();
+            if right.is_empty() {
+                return vec![truncate_to_width(&left, width, "…", false)];
+            }
+            let pad = width.saturating_sub(visible_width(&left) + visible_width(&right) + 2);
+            return vec![truncate_to_width(
+                &format!("{left}  {}{right}", " ".repeat(pad)),
+                width,
+                "…",
+                false,
+            )];
+        }
+        let thought = match self.secs {
+            Some(s) => format!("✻ thought {}", short_dur(s)),
+            None => "✻ thought".to_string(),
+        };
+        vec![truncate_to_width(
+            &format!(
+                "{slot} {} {}  {} {} {}",
+                t.fg("success", "●"),
+                t.fg("toolTitle", "Think"),
+                t.fg("thinkingText", &thought),
+                t.fg("dim", "·"),
+                t.fg("text", "ctrl+t"),
+            ),
+            width,
+            "…",
+            false,
+        )]
+    }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+}
+
+/// The `⊗` a failed step carries in place of its status dot (spec §4 b2).
+/// Only the leading dot is swapped; its error styling stays.
+pub fn failure_dot(content: &str) -> String {
+    content.replacen('●', "⊗", 1)
+}
+
+/// `N lines`.
+pub fn lines_text(total: usize) -> String {
+    if total == 1 {
+        "1 line".to_string()
+    } else {
+        format!("{total} lines")
+    }
+}
+
+/// `N files`.
+pub fn files_text(total: usize) -> String {
+    if total == 1 {
+        "1 file".to_string()
+    } else {
+        format!("{total} files")
+    }
+}
+
+/// A step header row at exactly the row width: ` NN {left}` flush left,
+/// `right` (the stats) flush right. The label is cut with `…` first and the
+/// stats stay whole; the stats are cut only when they fit nowhere.
+pub fn step_header(
+    number: &str,
+    left_prefix: &str,
+    left: &str,
+    right: &str,
+    width: usize,
+) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let stem = format!(" {number} {left_prefix}{left}");
+    if right.is_empty() {
+        return truncate_to_width(&stem, width, "…", false);
+    }
+    let gap = 2;
+    let pad = width.saturating_sub(visible_width(&stem) + visible_width(right));
+    if pad >= gap {
+        return format!("{stem}{}{right}", " ".repeat(pad));
+    }
+    let budget = width.saturating_sub(visible_width(right) + gap);
+    if budget == 0 {
+        return truncate_to_width(right, width, "…", false);
+    }
+    let cut = truncate_to_width(&stem, budget, "…", false);
+    let pad = width.saturating_sub(visible_width(&cut) + visible_width(right));
+    format!("{cut}{}{right}", " ".repeat(pad))
 }
 
 /// `1 step`, `N steps`.
@@ -310,6 +449,56 @@ mod tests {
         assert!(bare.contains("2 steps"), "{bare}");
         assert!(bare.contains("1 hit"), "{bare}");
         assert!(bare.contains("0.5s"), "{bare}");
+    }
+
+    #[test]
+    fn step_header_right_aligns_stats_and_cuts_the_label_first() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        // Fits: stats flush right, label whole.
+        let line = step_header("01", "", "● Shell  npm test", "exit 0", 40);
+        let bare = strip_vt_control_characters(&line);
+        assert_eq!(
+            bare,
+            format!(" 01 ● Shell  npm test{}exit 0", " ".repeat(13))
+        );
+        assert_eq!(visible_width(&line), 40);
+        // Short: the label is cut with `…`, the stats stay whole.
+        let line = step_header("01", "", "● Shell  npm test", "exit 0", 24);
+        let bare = strip_vt_control_characters(&line);
+        assert!(bare.ends_with("exit 0"), "{bare}");
+        assert!(bare.contains('…'), "{bare}");
+        assert_eq!(visible_width(&line), 24);
+        // No room for stats either: the stats are cut last.
+        let line = step_header("01", "", "● Shell  npm test", "exit 0", 5);
+        assert_eq!(visible_width(&line), 5);
+    }
+
+    #[test]
+    fn failure_dot_swaps_only_the_status_dot() {
+        assert_eq!(failure_dot("● Shell  ok"), "⊗ Shell  ok");
+    }
+
+    #[test]
+    fn short_durations_read_like_the_spec() {
+        assert_eq!(short_dur(4), "4s");
+        assert_eq!(short_dur(72), "1m12s");
+    }
+
+    #[test]
+    fn think_header_carries_the_time_when_known() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let mut running = ThinkHeader::new(true, Some(4));
+        let bare = strip_vt_control_characters(&running.render(40).join("\n"));
+        assert!(bare.contains("◐ Think"), "{bare}");
+        assert!(bare.ends_with("✻ 4s"), "{bare}");
+        let mut done = ThinkHeader::new(false, Some(72));
+        let bare = strip_vt_control_characters(&done.render(40).join("\n"));
+        assert!(bare.contains("● Think"), "{bare}");
+        assert!(bare.contains("✻ thought 1m12s"), "{bare}");
+        assert!(bare.contains("ctrl+t"), "{bare}");
+        let mut unknown = ThinkHeader::new(false, None);
+        let bare = strip_vt_control_characters(&unknown.render(40).join("\n"));
+        assert!(bare.contains("✻ thought · ctrl+t"), "{bare}");
     }
 
     #[test]

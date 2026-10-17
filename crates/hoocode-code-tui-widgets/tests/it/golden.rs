@@ -677,7 +677,14 @@ fn trajectory_steps_hit_80() {
     read.update_result(result("line one\nline two", false, json!({})), false);
     chain.add(Rc::new(RefCell::new(read)));
     let mut shell = tool("Shell", shell_args(), ToolOutputView::Peek);
-    shell.update_result(result("boom\nexit code 3", true, json!({})), false);
+    shell.update_result(
+        result(
+            "boom\nCommand exited with code 3",
+            true,
+            json!({ "durationMs": 100.0 }),
+        ),
+        false,
+    );
     chain.add(Rc::new(RefCell::new(shell)));
     assert_golden!("trajectory_steps_hit_80", render_golden(&mut chain, 80));
 }
