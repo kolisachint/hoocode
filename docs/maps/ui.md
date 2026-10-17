@@ -143,6 +143,8 @@ The TUI owns the mechanism; the app owns which key does what.
 |---|---|
 | Pin, clamp, page, live, search, wheel, scrollbar click, picker split, paint | `tui-render/src/tui.rs`: `scroll_by_lines`, `scroll_by_pages`, `scroll_to_top`, `scroll_to_live`, `scroll_to_row`, `transcript_width`, `pinned_split`, `press_scrollbar`, `render_scroll_view`, `handle_mouse_event` |
 | Scrollbar glyphs (pure), `SCROLLBAR_THUMB`, `SCROLLBAR_TRACK` | `tui-render/src/scrollbar.rs` |
+| Full-screen mode (M1): alternate screen for the run, one frame composed from regions, per-row diff, no scrollback writes. Off by default (`Tui::set_fullscreen`); the app's default and `HOOCODE_FULLSCREEN` come in M1c | `tui-render/src/tui.rs`: `set_fullscreen`, `set_fullscreen_body`, `paint_fullscreen`, `compose_fullscreen`, `start`, `stop` |
+| Full-screen row arithmetic (pure): `split_rows`, `body_start`, `bottom_window`, `anchor_on_resize`, `body_width`, `new_lines_since` | `tui-render/src/fullscreen.rs` |
 | Prompt focus: `Tui.scroll_prompt`. Any other focus is a picker (`scroll_pane`) | `tui-render/src/tui.rs`; set in `install_scroll_view` |
 | Key routing, search, status text, keys at the prompt | `hoocode-code-tui-app/src/scroll_view.rs`: `handle_live`, `handle_picker`, `handle_input`, `format_scroll_status`, `install_scroll_view` |
 | Jump to user message | `scroll_view.rs` `jump_to_user_message`, at `transcript_width()` |

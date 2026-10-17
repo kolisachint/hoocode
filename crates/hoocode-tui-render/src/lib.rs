@@ -6,6 +6,7 @@
 //! simplifications made relative to the original.
 
 mod component;
+pub mod fullscreen;
 #[cfg(any(test, feature = "golden"))]
 pub mod golden;
 mod scrollbar;
