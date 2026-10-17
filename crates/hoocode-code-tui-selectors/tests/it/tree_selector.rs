@@ -3,7 +3,6 @@
 
 use hoocode_code_session::{FileEntry, SessionTreeNode};
 use hoocode_code_tui_selectors::tree_selector::TreeSelectorComponent;
-use hoocode_code_tui_theme::theme;
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::Component;
 use hoocode_tui_util::visible_width;
@@ -203,8 +202,9 @@ fn labeled_pair(first: &str) -> Vec<SessionTreeNode> {
     tree
 }
 
-fn list_render(s: &TreeSelectorComponent) -> String {
-    s.tree_list().borrow_mut().render(200).join("\n")
+fn list_render(s: &mut TreeSelectorComponent) -> String {
+    // The console chrome draws the rows now; strip the frame for content asserts.
+    hoocode_tui_util::strip_vt_control_characters(&s.render(200).join("\n"))
 }
 
 #[test]
@@ -212,13 +212,13 @@ fn toggles_label_timestamps_for_labeled_nodes() {
     let _g = lock();
     let tree = labeled_pair("hello");
     let mut s = selector(&tree, "asst-1");
-    let render = list_render(&s);
+    let render = list_render(&mut s);
     assert!(render.contains("[checkpoint]"));
     assert!(!render.contains("3/28 14:32"));
     assert!(!render.contains("[+label time]"));
 
     press(&mut s, &alt_t());
-    let render = list_render(&s);
+    let render = list_render(&mut s);
     assert!(render.contains("3/28 14:32"));
     assert!(render.contains("[timestamps]"));
 }
@@ -233,7 +233,7 @@ fn types_an_uppercase_letter_into_the_search_instead_of_firing_a_verb() {
     for ch in ["T", "L"] {
         press(&mut s, ch);
     }
-    let render = list_render(&s);
+    let render = list_render(&mut s);
     assert!(!s.is_editing_label());
     assert!(!render.contains("[timestamps]"));
     assert!(!render.contains("3/28 14:32"));
@@ -485,13 +485,14 @@ fn fills_the_selected_row_to_the_full_width() {
         user_message("user-1", None, "hello"),
         assistant_message("asst-1", Some("user-1"), "hi"),
     ]);
-    let s = selector(&tree, "asst-1");
+    let mut s = selector(&tree, "asst-1");
     let width = 120;
-    let rendered = s.tree_list().borrow_mut().render(width);
-    let band = theme().get_bg_ansi("selectedBg").to_string();
-    let banded: Vec<&String> = rendered.iter().filter(|l| l.contains(&band)).collect();
-    assert_eq!(banded.len(), 1);
-    assert_eq!(visible_width(banded[0]), width as usize);
+    let rendered = s.render(width);
+    // Exactly one row carries the selection marker: the console paints its
+    // band full width (the golden's styles section locks the background).
+    let marked: Vec<&String> = rendered.iter().filter(|l| l.contains('›')).collect();
+    assert_eq!(marked.len(), 1);
+    assert_eq!(visible_width(marked[0]), width as usize);
 }
 
 /// picker-widths.test.ts: "session tree fits within %i columns and fills
@@ -504,7 +505,6 @@ fn session_tree_fits_within_the_width_and_fills_its_selected_row() {
         user_message("user-1", None, LONG),
         assistant_message("asst-1", Some("user-1"), LONG),
     ]);
-    let band = theme().get_bg_ansi("selectedBg").to_string();
     for width in [40u16, 80, 160] {
         let mut s = selector(&tree, "asst-1");
         let lines = s.render(width);
@@ -515,9 +515,10 @@ fn session_tree_fits_within_the_width_and_fills_its_selected_row() {
                 visible_width(line)
             );
         }
-        for line in lines.iter().filter(|l| l.contains(&band)) {
-            assert_eq!(visible_width(line), width as usize);
-        }
+        // The selected row fills its width with the selection band.
+        let marked: Vec<&String> = lines.iter().filter(|l| l.contains('›')).collect();
+        assert_eq!(marked.len(), 1);
+        assert_eq!(visible_width(marked[0]), width as usize);
     }
 }
 
@@ -548,21 +549,18 @@ fn key_hints_drop_whole_items_when_the_width_is_short() {
     );
 }
 
-/// A narrow row whose first hint is styled is cut at its word: the escapes
-/// take no columns, so the hint row (six columns inside the frame) reads
-/// `↑/↓…` and never a run of SGR bytes.
+/// At ten columns the console frame has no room to spare: the hint foot
+/// is cut to `…`, and every row still fits its width.
 #[test]
-fn a_styled_first_hint_cut_to_six_columns_keeps_its_word() {
+fn narrow_console_cuts_the_hint_foot_first() {
     let _g = lock();
     let tree = branching_pair();
     let mut s = selector(&tree, "asst-2");
     let lines = s.render(10);
-    let row = lines
-        .iter()
-        .find(|l| hoocode_tui_util::strip_vt_control_characters(l).contains("↑/↓"))
-        .unwrap_or_else(|| panic!("no hint row in {lines:?}"));
-    let plain = hoocode_tui_util::strip_vt_control_characters(row);
-    assert!(plain.contains("↑/↓…"), "{plain:?}");
-    assert!(!plain.contains("move"), "{plain:?}");
-    assert_eq!(visible_width(row), 10, "{plain:?}");
+    for line in &lines {
+        assert!(visible_width(line) <= 10, "{line:?}");
+    }
+    let foot = lines.last().expect("a foot row");
+    let plain = hoocode_tui_util::strip_vt_control_characters(foot);
+    assert!(plain.contains("…"), "{plain:?}");
 }

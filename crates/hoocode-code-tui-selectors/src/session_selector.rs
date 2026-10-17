@@ -2,6 +2,11 @@
 //! current folder or of every folder, threaded by fork parent or searched,
 //! with rename and delete.
 //!
+//! The MISSION LOG console (M7, ratatui): `MISSION LOG · /resume`, scope
+//! tabs on top, the `▸` query row, one row per session with `›` on the
+//! selection band, and the hint foot. Shared `Console` chrome in
+//! `code-tui-widgets/src/console.rs`; keys, filtering and events unchanged.
+//!
 //! Loading is asynchronous in the pin. Here a loader receives a [`LoadSink`]
 //! (`Send`, so it can finish on another thread) and the picker applies what
 //! arrived in [`SessionSelectorComponent::poll`], which also expires the
@@ -18,16 +23,15 @@ use chrono::{DateTime, Utc};
 use hoocode_code_paths::canonicalize_path;
 use hoocode_code_session::identity::{session_color_slot_for, session_slug_for};
 use hoocode_code_session::{subagents_dir, SessionInfo, SubagentRun, SubagentState};
-use hoocode_code_tui_keybindings::{key_hint, key_text};
-use hoocode_code_tui_theme::{
-    paint_selected_row, select_gutter, session_color_token, style_input, theme, SELECT_CURSOR,
-};
+use hoocode_code_tui_keybindings::key_text;
+use hoocode_code_tui_theme::{session_color_token, style_input};
 use hoocode_code_tui_widgets::brand::GIT_BRANCH_GLYPH;
-use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
+use hoocode_code_tui_widgets::console::{hints, query_row, Console};
 use hoocode_home::shorten_path;
-use hoocode_tui_components::{Input, PickerCursor, Spacer, Text};
+use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, KeybindingsManager};
-use hoocode_tui_render::{Component, ComponentHandle, Container};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span};
+use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::js_trim;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
@@ -90,7 +94,6 @@ struct SessionSelectorHeader {
     confirming_delete: bool,
     status: Option<(StatusKind, String)>,
     status_deadline: Option<Instant>,
-    show_rename_hint: bool,
     /// An interrupted subagent run is highlighted: the hint offers view/resume.
     choosing_subagent: bool,
     can_resume: bool,
@@ -124,107 +127,100 @@ impl SessionSelectorHeader {
     }
 }
 
-impl Component for SessionSelectorHeader {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let width = width as usize;
-        let t = theme();
-        let title = match self.scope {
-            SessionScope::Current => "Resume Session (Current Folder)",
-            SessionScope::All => "Resume Session (All)",
-        };
-        let left_text = t.bold(title);
-
+impl SessionSelectorHeader {
+    /// The scope tabs with the name and sort flags: the console's first
+    /// top row, with the active scope in accent. Literal keys only, so the
+    /// goldens hold on macOS and Linux.
+    fn scope_line(&self) -> Line<'static> {
+        let pal = Palette::current();
         let sort_label = match self.sort_mode {
             SortMode::Threaded => "Threaded",
             SortMode::Recent => "Recent",
             SortMode::Relevance => "Fuzzy",
         };
-        let sort_text = t.fg("muted", "Sort: ") + &t.fg("accent", sort_label);
         let name_label = match self.name_filter {
             NameFilter::All => "All",
             NameFilter::Named => "Named",
         };
-        let name_text = t.fg("muted", "Name: ") + &t.fg("accent", name_label);
-
-        let scope_text = if self.loading {
+        let mut spans = if self.loading {
             let progress = match self.load_progress {
                 Some((loaded, total)) => format!("{loaded}/{total}"),
                 None => "...".to_string(),
             };
-            t.fg("muted", "○ Current Folder | ") + &t.fg("accent", &format!("Loading {progress}"))
+            vec![
+                Span::styled("○ Current Folder | ".to_string(), pal.faint()),
+                Span::styled(format!("Loading {progress}"), pal.acc()),
+            ]
         } else if self.scope == SessionScope::Current {
-            t.fg("accent", "◉ Current Folder") + &t.fg("muted", " | ○ All")
+            vec![
+                Span::styled("◉ Current Folder".to_string(), pal.acc()),
+                Span::styled(" | ○ All".to_string(), pal.faint()),
+            ]
         } else {
-            t.fg("muted", "○ Current Folder | ") + &t.fg("accent", "◉ All")
+            vec![
+                Span::styled("○ Current Folder | ".to_string(), pal.faint()),
+                Span::styled("◉ All".to_string(), pal.acc()),
+            ]
         };
+        spans.push(Span::styled("  Name: ".to_string(), pal.faint()));
+        spans.push(Span::styled(name_label.to_string(), pal.acc()));
+        spans.push(Span::styled("  Sort: ".to_string(), pal.faint()));
+        spans.push(Span::styled(sort_label.to_string(), pal.acc()));
+        Line::from(spans)
+    }
 
-        let right_text = truncate_to_width(
-            &format!("{scope_text}  {name_text}  {sort_text}"),
-            width,
-            "",
-            false,
-        );
-        let available_left = width.saturating_sub(visible_width(&right_text) + 1);
-        let left = truncate_to_width(&left_text, available_left, "", false);
-        let spacing = width.saturating_sub(visible_width(&left) + visible_width(&right_text));
-
-        let (hint1, hint2) = if self.confirming_delete {
-            let confirm = format!(
-                "Delete session? {} · {}",
-                key_hint("tui.select.confirm", "confirm"),
-                key_hint("tui.select.cancel", "cancel")
-            );
-            (
-                t.fg("error", &truncate_to_width(&confirm, width, "…", false)),
-                String::new(),
-            )
-        } else if self.choosing_subagent {
-            let hint = if self.can_resume {
+    /// The console's other top rows: the delete prompt, the interrupted-run
+    /// choice, the timed status, or the search legend in the steady state.
+    fn top_lines(&self) -> Vec<Line<'static>> {
+        let pal = Palette::current();
+        if self.confirming_delete {
+            return vec![Line::from(vec![Span::styled(
+                "Delete session? enter confirm · esc cancel".to_string(),
+                pal.err(),
+            )])];
+        }
+        if self.choosing_subagent {
+            let text = if self.can_resume {
                 "Interrupted run · v view · r resume · esc back"
             } else {
                 "Interrupted run · v view · esc back"
             };
-            (
-                t.fg("accent", &truncate_to_width(hint, width, "…", false)),
-                String::new(),
-            )
-        } else if let Some((kind, message)) = &self.status {
-            let color = if *kind == StatusKind::Error {
-                "error"
+            return vec![Line::from(vec![Span::styled(text.to_string(), pal.acc())])];
+        }
+        if let Some((kind, message)) = &self.status {
+            let style = if *kind == StatusKind::Error {
+                pal.err()
             } else {
-                "accent"
+                pal.acc()
             };
-            (
-                t.fg(color, &truncate_to_width(message, width, "…", false)),
-                String::new(),
-            )
-        } else {
-            let path_state = if self.show_path { "(on)" } else { "(off)" };
-            let sep = t.fg("muted", " · ");
-            let hint1 = key_hint("tui.input.tab", "scope")
-                + &sep
-                + &t.fg("muted", "re:<pattern> regex · \"phrase\" exact");
-            let mut parts = vec![
-                key_hint("app.session.toggleSort", "sort"),
-                key_hint("app.session.toggleNamedFilter", "named"),
-                key_hint("app.session.delete", "delete"),
-                key_hint("app.session.togglePath", &format!("path {path_state}")),
-            ];
-            if self.show_rename_hint {
-                parts.push(key_hint("app.session.rename", "rename"));
-            }
-            let hint2 = parts.join(&sep);
-            (
-                truncate_to_width(&hint1, width, "…", false),
-                truncate_to_width(&hint2, width, "…", false),
-            )
-        };
-
+            return vec![Line::from(vec![Span::styled(message.clone(), style)])];
+        }
         vec![
-            format!("{left}{}{right_text}", " ".repeat(spacing)),
-            hint1,
-            hint2,
+            self.scope_line(),
+            Line::from(vec![
+                Span::styled("tab".to_string(), pal.dim()),
+                Span::styled(
+                    " scope · re:<pattern> regex · \"phrase\" exact".to_string(),
+                    pal.faint(),
+                ),
+            ]),
         ]
+    }
+
+    /// The hint foot: confirm/cancel while a delete is pending, else the
+    /// console keys (spec d6 plus `enter`, which opens the session).
+    fn hint_line(&self) -> Line<'static> {
+        if self.confirming_delete {
+            hints(&[("enter", "confirm"), ("esc", "cancel")])
+        } else {
+            hints(&[
+                ("tab", "scope"),
+                ("alt+o", "sort"),
+                ("alt+x", "delete"),
+                ("enter", "open"),
+                ("esc", "close"),
+            ])
+        }
     }
 }
 
@@ -704,13 +700,132 @@ impl SessionList {
     }
 }
 
-impl Component for SessionList {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let w = width as usize;
-        let mut lines = self.search_input.render(width);
-        lines.push(String::new());
+impl SessionList {
+    /// The MISSION LOG count: the listed sessions, or the matches of the
+    /// total while searching.
+    fn count_text(&self) -> String {
+        let total = self.all_sessions.len();
+        if self.search_value().is_empty() {
+            sessions(self.filtered.len())
+        } else {
+            format!("{} of {}", sessions(self.filtered.len()), total)
+        }
+    }
 
+    /// One session row (content only; the console adds the `›` marker or
+    /// gutter and the selection band): the colour swatch, the tree prefix,
+    /// the branch, the name, and the stats right-aligned, laid out like
+    /// the old framed rows.
+    fn console_row(
+        &self,
+        i: usize,
+        selected: bool,
+        inner: usize,
+        now: DateTime<Utc>,
+    ) -> Line<'static> {
+        let pal = Palette::current();
+        let node = &self.filtered[i];
+        let session = &node.session;
+        let is_confirming_delete =
+            self.confirming_delete_path.as_deref() == Some(session.path.as_path());
+        let is_current = self.is_current_session_path(&session.path);
+        let prefix = Self::build_tree_prefix(node);
+        let has_name = session.name.is_some();
+        let display = session.name.as_deref().unwrap_or(&session.first_message);
+        let normalized: String = display
+            .chars()
+            .map(|c| {
+                if (c as u32) < 0x20 || c == '\x7f' {
+                    ' '
+                } else {
+                    c
+                }
+            })
+            .collect();
+        let normalized = js_trim(&normalized);
+        // A swatch in the session's own colour, as its chip resolves it.
+        let slot = session
+            .color
+            .map(i64::from)
+            .unwrap_or_else(|| i64::from(session_color_slot_for(&session.id)));
+        let branch = match &session.branch {
+            Some(b) if !has_name && !b.is_empty() && !DEFAULT_BRANCHES.contains(&b.as_str()) => {
+                b.as_str()
+            }
+            _ => "",
+        };
+        let mut spans = vec![
+            Span::styled(" ".to_string(), pal.fill(session_color_token(slot))),
+            Span::raw(" ".to_string()),
+            Span::styled(prefix.clone(), pal.dim()),
+        ];
+        if !branch.is_empty() {
+            spans.push(Span::styled(format!("{GIT_BRANCH_GLYPH} "), pal.dim()));
+            spans.push(Span::styled(branch.to_string(), pal.faint()));
+            spans.push(Span::raw("  ".to_string()));
+        }
+        let age = format_session_date(session.modified, now);
+        let mut right = match &session.subagent {
+            Some(run) => format!("{} {age}", subagent_label(run)),
+            None => {
+                let mut right = format!("{} {age}", session.message_count);
+                if !has_name {
+                    right = format!("{} {right}", session_slug_for(&session.id));
+                }
+                right
+            }
+        };
+        if self.show_cwd && !session.cwd.is_empty() {
+            right = format!("{} {right}", shorten_path(&session.cwd));
+        }
+        if self.show_path {
+            right = format!("{} {right}", shorten_path(&session.path.to_string_lossy()));
+        }
+        let prefix_width = visible_width(&prefix) as i64;
+        let branch_width = if branch.is_empty() {
+            0
+        } else {
+            visible_width(&format!("{GIT_BRANCH_GLYPH} {branch}  ")) as i64
+        };
+        let right_width = visible_width(&right) as i64;
+        let available = inner as i64 - 2 - prefix_width - branch_width - right_width - 2;
+        let truncated = truncate_to_width(normalized, available.max(10) as usize, "…", false);
+        let name_width = visible_width(&truncated) as i64;
+        let mut name_span = if is_confirming_delete {
+            Span::styled(truncated, pal.err())
+        } else if is_current {
+            Span::styled(truncated, pal.acc())
+        } else if has_name {
+            Span::styled(truncated, pal.warn())
+        } else {
+            Span::raw(truncated)
+        };
+        if selected {
+            name_span.style = bold(name_span.style);
+        }
+        spans.push(name_span);
+        let spacing =
+            (inner as i64 - 2 - prefix_width - branch_width - name_width - right_width).max(1);
+        spans.push(Span::raw(" ".repeat(spacing as usize)));
+        spans.push(Span::styled(
+            right,
+            if is_confirming_delete {
+                pal.err()
+            } else {
+                pal.dim()
+            },
+        ));
+        Line::from(spans)
+    }
+
+    /// The cursor's window as console rows, with the selection remapped
+    /// into it, plus the rows below the list (the empty-list message or
+    /// the scroll position).
+    fn console_rows(
+        &self,
+        inner: usize,
+    ) -> (Vec<Line<'static>>, Option<usize>, Vec<Line<'static>>) {
+        let pal = Palette::current();
         if self.filtered.is_empty() {
             let message = if self.name_filter == NameFilter::Named {
                 let toggle = key_text("app.session.toggleNamedFilter");
@@ -726,152 +841,40 @@ impl Component for SessionList {
             } else {
                 "  No sessions in current folder. Press tab to view all.".to_string()
             };
-            lines.push(t.fg("muted", &truncate_to_width(&message, w, "…", false)));
-            return lines;
+            return (
+                Vec::new(),
+                None,
+                vec![Line::from(vec![Span::styled(message, pal.faint())])],
+            );
         }
-
         let window = self.cursor.window();
+        let selected = self.cursor.selected();
         let now = self.now.unwrap_or_else(Utc::now);
-
-        for i in window {
-            let node = &self.filtered[i];
-            let session = &node.session;
-            let is_selected = i == self.cursor.selected();
-            let is_confirming_delete =
-                self.confirming_delete_path.as_deref() == Some(session.path.as_path());
-            let is_current = self.is_current_session_path(&session.path);
-
-            let prefix = Self::build_tree_prefix(node);
-
-            let has_name = session.name.is_some();
-            let display = session.name.as_deref().unwrap_or(&session.first_message);
-            let normalized: String = display
-                .chars()
-                .map(|c| {
-                    if (c as u32) < 0x20 || c == '\x7f' {
-                        ' '
-                    } else {
-                        c
-                    }
-                })
-                .collect();
-            let normalized = js_trim(&normalized);
-
-            // A swatch in the session's own colour, as its chip resolves it.
-            let slot = session
-                .color
-                .map(i64::from)
-                .unwrap_or_else(|| i64::from(session_color_slot_for(&session.id)));
-            let swatch = t.fill(session_color_token(slot), " ");
-
-            // The branch, only where it says something the row does not.
-            let branch = match &session.branch {
-                Some(b)
-                    if !has_name && !b.is_empty() && !DEFAULT_BRANCHES.contains(&b.as_str()) =>
-                {
-                    b.as_str()
-                }
-                _ => "",
-            };
-            let branch_part = if branch.is_empty() {
-                String::new()
-            } else {
-                format!("{GIT_BRANCH_GLYPH} {branch}  ")
-            };
-            let styled_branch = if branch.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    "{}{}  ",
-                    t.fg("dim", &format!("{GIT_BRANCH_GLYPH} ")),
-                    t.fg("muted", branch)
-                )
-            };
-
-            let age = format_session_date(session.modified, now);
-            let mut right = match &session.subagent {
-                Some(run) => format!("{} {age}", subagent_label(run)),
-                None => {
-                    let mut right = format!("{} {age}", session.message_count);
-                    if !has_name {
-                        right = format!("{} {right}", session_slug_for(&session.id));
-                    }
-                    right
-                }
-            };
-            if self.show_cwd && !session.cwd.is_empty() {
-                right = format!("{} {right}", shorten_path(&session.cwd));
-            }
-            if self.show_path {
-                right = format!("{} {right}", shorten_path(&session.path.to_string_lossy()));
-            }
-
-            let cursor = if is_selected {
-                t.fg("accent", SELECT_CURSOR)
-            } else {
-                select_gutter()
-            };
-
-            let prefix_width = visible_width(&prefix) as i64;
-            let right_width = visible_width(&right) as i64 + 2;
-            let available =
-                w as i64 - 4 - prefix_width - visible_width(&branch_part) as i64 - right_width;
-            let truncated = truncate_to_width(normalized, available.max(10) as usize, "…", false);
-
-            let color = if is_confirming_delete {
-                Some("error")
-            } else if is_current {
-                Some("accent")
-            } else if has_name {
-                Some("warning")
-            } else {
-                None
-            };
-            let mut styled = match color {
-                Some(c) => t.fg(c, &truncated),
-                None => truncated,
-            };
-            if is_selected {
-                styled = t.bold(&styled);
-            }
-
-            let left = format!(
-                "{cursor}{swatch} {}{styled_branch}{styled}",
-                t.fg("dim", &prefix)
-            );
-            let spacing =
-                (w as i64 - visible_width(&left) as i64 - visible_width(&right) as i64).max(1);
-            let styled_right = t.fg(if is_confirming_delete { "error" } else { "dim" }, &right);
-            let line = truncate_to_width(
-                &format!("{left}{}{styled_right}", " ".repeat(spacing as usize)),
-                w,
-                "...",
-                false,
-            );
-            lines.push(if is_selected {
-                paint_selected_row(&line, w)
-            } else {
-                line
-            });
-        }
-
+        let rows = window
+            .clone()
+            .map(|i| self.console_row(i, i == selected, inner, now))
+            .collect();
+        let mut bottom = Vec::new();
         if let Some(footer) = self.cursor.footer() {
-            let scroll = format!("  {footer}");
-            lines.push(t.fg("muted", &truncate_to_width(&scroll, w, "", false)));
+            bottom.push(Line::from(vec![Span::styled(
+                format!("  {footer}"),
+                pal.faint(),
+            )]));
         }
-        lines
-    }
-
-    fn handle_input(&mut self, data: &str) {
-        self.handle_key(data);
-    }
-
-    fn is_focusable(&self) -> bool {
-        true
+        (rows, window.clone().position(|i| i == selected), bottom)
     }
 
     fn set_focused(&mut self, focused: bool) {
         self.search_input.set_focused(focused);
+    }
+}
+
+/// `1 session`, `N sessions`.
+fn sessions(count: usize) -> String {
+    if count == 1 {
+        "1 session".to_string()
+    } else {
+        format!("{count} sessions")
     }
 }
 
@@ -1022,7 +1025,6 @@ enum Mode {
 
 /// `SessionSelectorComponent`.
 pub struct SessionSelectorComponent {
-    frame: InputFrame,
     header: Rc<RefCell<SessionSelectorHeader>>,
     session_list: Rc<RefCell<SessionList>>,
     scope: SessionScope,
@@ -1062,7 +1064,6 @@ impl SessionSelectorComponent {
                 hoocode_code_tui_keybindings::AppKeybindingsManager::create(None).into_manager(),
             )
         });
-        let can_rename = options.rename_session.is_some();
         let can_resume = options.resume_subagent.is_some();
         let header = Rc::new(RefCell::new(SessionSelectorHeader {
             scope: SessionScope::Current,
@@ -1074,7 +1075,6 @@ impl SessionSelectorComponent {
             confirming_delete: false,
             status: None,
             status_deadline: None,
-            show_rename_hint: options.show_rename_hint.unwrap_or(can_rename),
             choosing_subagent: false,
             can_resume,
         }));
@@ -1096,10 +1096,6 @@ impl SessionSelectorComponent {
         session_list.borrow_mut().can_resume = can_resume;
         let (tx, rx) = channel();
         let mut selector = Self {
-            frame: InputFrame::new(InputFrameOptions {
-                title: Some("sessions".to_string()),
-                ..Default::default()
-            }),
             header,
             session_list,
             scope: SessionScope::Current,
@@ -1124,8 +1120,6 @@ impl SessionSelectorComponent {
             rx,
             focused: false,
         };
-        let list: ComponentHandle = selector.session_list.clone();
-        selector.build_base_layout(list, true);
         selector.load_scope(SessionScope::Current, LoadReason::Initial);
         selector
     }
@@ -1133,15 +1127,6 @@ impl SessionSelectorComponent {
     /// The list (tests drive it directly, as the pin's do).
     pub fn session_list(&self) -> Rc<RefCell<SessionList>> {
         self.session_list.clone()
-    }
-
-    fn build_base_layout(&mut self, content: ComponentHandle, show_header: bool) {
-        self.frame.clear();
-        if show_header {
-            self.frame.add_child(self.header.clone());
-            self.frame.add_child(Rc::new(RefCell::new(Spacer::new(1))));
-        }
-        self.frame.add_child(content);
     }
 
     /// Apply loads that finished and expire the timed status. `true` when
@@ -1275,36 +1260,11 @@ impl SessionSelectorComponent {
             input.set_value(current_name.unwrap_or_default());
             input.set_focused(true);
         }
-        let t = theme();
-        let mut panel = Container::new();
-        panel.add_child(Rc::new(RefCell::new(Text::new(
-            t.bold("Rename Session"),
-            1,
-            0,
-        ))));
-        panel.add_child(Rc::new(RefCell::new(Spacer::new(1))));
-        panel.add_child(self.rename_input.clone());
-        panel.add_child(Rc::new(RefCell::new(Spacer::new(1))));
-        panel.add_child(Rc::new(RefCell::new(Text::new(
-            t.fg(
-                "muted",
-                &format!(
-                    "{} to save · {} to cancel",
-                    key_text("tui.select.confirm"),
-                    key_text("tui.select.cancel")
-                ),
-            ),
-            1,
-            0,
-        ))));
-        self.build_base_layout(Rc::new(RefCell::new(panel)), false);
     }
 
     fn exit_rename_mode(&mut self) {
         self.mode = Mode::List;
         self.rename_target = None;
-        let list: ComponentHandle = self.session_list.clone();
-        self.build_base_layout(list, true);
     }
 
     fn confirm_rename(&mut self, value: &str) {
@@ -1405,6 +1365,21 @@ impl SessionSelectorComponent {
         }
     }
 
+    /// Rename as a console: the title on top, the name in the query row
+    /// with a caret, and save/cancel in the foot.
+    fn render_rename(&self, width: usize) -> Vec<String> {
+        let pal = Palette::current();
+        let mut console = Console::new("MISSION LOG · /resume", String::new());
+        console.top = vec![Line::from(vec![Span::styled(
+            "Rename Session".to_string(),
+            bold(pal.acc()),
+        )])];
+        let value = self.rename_input.borrow().get_value().to_string();
+        console.query = Some(query_row(&value, self.focused));
+        console.hint = hints(&[("enter", "save"), ("esc", "cancel")]);
+        console.render(width)
+    }
+
     /// Act on what the list reported.
     pub fn apply_list_events(&mut self, events: Vec<ListEvent>) {
         for event in events {
@@ -1464,8 +1439,26 @@ impl SessionSelectorComponent {
 }
 
 impl Component for SessionSelectorComponent {
+    /// The MISSION LOG console: scope tabs on top, the `▸` query row, one
+    /// row per session with `›` on the selection band, and the hint foot.
+    /// Rename draws as a console too. Keys, filtering and events unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.frame.render(width)
+        let width = width as usize;
+        if self.mode == Mode::Rename {
+            return self.render_rename(width);
+        }
+        let header = self.header.borrow();
+        let list = self.session_list.borrow();
+        let mut console = Console::new("MISSION LOG · /resume", list.count_text());
+        console.top = header.top_lines();
+        console.query = Some(query_row(&list.search_value(), self.focused));
+        let inner = width.saturating_sub(2);
+        let (rows, selected, bottom) = list.console_rows(inner);
+        console.rows = rows;
+        console.selected = selected;
+        console.bottom = bottom;
+        console.hint = header.hint_line();
+        console.render(width)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -1486,7 +1479,8 @@ impl Component for SessionSelectorComponent {
     }
 
     fn invalidate(&mut self) {
-        self.frame.invalidate();
+        self.session_list.borrow_mut().search_input.invalidate();
+        self.rename_input.borrow_mut().invalidate();
     }
 
     fn is_focusable(&self) -> bool {

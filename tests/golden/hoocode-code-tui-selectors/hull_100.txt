@@ -1,0 +1,56 @@
+┏━ HULL · /theme  8 themes ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
+┃Select color theme                                                                                ┃
+┃› dark  Default dark theme  ● in use                                                              ┃
+┃  light  Default light theme                                                                      ┃
+┃  solarized-dark  Solarized: the sixteen canonical colors, dark ground, low selective contrast    ┃
+┃  solarized-light  Solarized: the same sixteen colors, light ground, low selective contrast       ┃
+┃  colorsafe-dark  Low vision + color blindness: Okabe-Ito hues on dark, no red/green pairs        ┃
+┃  colorsafe-light  Low vision + color blindness: blue/violet/magenta on white, no red/green pairs ┃
+┃  vox-cutout-dark  Paper cut-outs on newsprint black: dark colored stocks, cut edges, tape-yellow…┃
+┃  vox-cutout-light  Paper cut-outs on a cream page: bold flat stocks, scissor-cut rules, tape-yel…┃
+┗━ ↑↓ preview live · enter keep · esc back ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+--- styles ---
+r0 c0-1 fg=#9b8cff
+r0 c3-25 fg=#9b8cff bold
+r0 c27-95 fg=#9b8cff
+r0 c98-99 fg=#9b8cff
+r1 c0 fg=#9b8cff
+r1 c1-18 fg=#a8a8a8
+r1 c99 fg=#9b8cff
+r2 c0 fg=#9b8cff
+r2 c1-6 fg=#5cc8bb bg=#2a2a36
+r2 c7-8 bg=#2a2a36
+r2 c9-26 fg=#a8a8a8 bg=#2a2a36
+r2 c27-36 fg=#5cc8bb bg=#2a2a36
+r2 c37-98 bg=#2a2a36
+r2 c99 fg=#9b8cff
+r3 c0 fg=#9b8cff
+r3 c10-28 fg=#a8a8a8
+r3 c99 fg=#9b8cff
+r4 c0 fg=#9b8cff
+r4 c19-94 fg=#a8a8a8
+r4 c99 fg=#9b8cff
+r5 c0 fg=#9b8cff
+r5 c20-91 fg=#a8a8a8
+r5 c99 fg=#9b8cff
+r6 c0 fg=#9b8cff
+r6 c19-90 fg=#a8a8a8
+r6 c99 fg=#9b8cff
+r7 c0 fg=#9b8cff
+r7 c20-97 fg=#a8a8a8
+r7 c99 fg=#9b8cff
+r8 c0 fg=#9b8cff
+r8 c20-98 fg=#a8a8a8
+r8 c99 fg=#9b8cff
+r9 c0 fg=#9b8cff
+r9 c21-98 fg=#a8a8a8
+r9 c99 fg=#9b8cff
+r10 c0-1 fg=#9b8cff
+r10 c3-4 fg=#989898
+r10 c5-20 fg=#a8a8a8
+r10 c21-25 fg=#989898
+r10 c26-33 fg=#a8a8a8
+r10 c34-36 fg=#989898
+r10 c37-41 fg=#a8a8a8
+r10 c43-95 fg=#9b8cff
+r10 c98-99 fg=#9b8cff

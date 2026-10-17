@@ -5,9 +5,9 @@
 //! it lists them (`k` brings them down and ends, `l` leaves them in orbit,
 //! `enter` is the default: bring them down).
 
-use hoocode_code_tui_keybindings::raw_key_hint;
-use hoocode_code_tui_theme::theme;
-use hoocode_code_tui_widgets::card_frame::render_card;
+use hoocode_code_tui_keybindings::format_key_text;
+use hoocode_code_tui_widgets::card_frame::{card_foot, render_card};
+use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
 
 /// The plain end-of-shift card's answer.
@@ -55,31 +55,36 @@ impl EndShiftCard {
         }
     }
 
-    fn body(&self) -> Vec<String> {
-        let t = theme();
-        let sep = t.fg("muted", " · ");
+    fn body(&self) -> Vec<Line<'static>> {
+        let pal = Palette::current();
+        let sep = Span::styled(" · ", pal.faint());
         let debrief = [
-            t.fg("text", &format!("{} missions", self.debrief.missions)),
-            t.fg("text", &format!("{} steps", self.debrief.steps)),
-            t.fg(
-                "dim",
-                &format!(
+            Span::styled(
+                format!("{} missions", self.debrief.missions),
+                pal.legacy("text"),
+            ),
+            Span::styled(format!("{} steps", self.debrief.steps), pal.legacy("text")),
+            Span::styled(
+                format!(
                     "↑{} ↓{}",
                     format_tokens(self.debrief.input_tokens),
                     format_tokens(self.debrief.output_tokens)
                 ),
+                pal.dim(),
             ),
-            t.fg("dim", &format!("CR ${:.3}", self.debrief.cost)),
-        ]
-        .join(&sep);
+            Span::styled(format!("CR ${:.3}", self.debrief.cost), pal.dim()),
+        ];
+        let mut first = Line::from(vec![debrief[0].clone()]);
+        for span in &debrief[1..] {
+            let mut spans = first.spans.clone();
+            spans.push(sep.clone());
+            spans.push(span.clone());
+            first = Line::from(spans);
+        }
         vec![
-            debrief,
-            String::new(),
-            [
-                raw_key_hint("enter", "end the shift"),
-                raw_key_hint("esc", "stay"),
-            ]
-            .join(&sep),
+            first,
+            Line::raw(""),
+            hints_line(&[("enter", "end the shift"), ("esc", "stay")]),
         ]
     }
 }
@@ -90,7 +95,7 @@ impl Component for EndShiftCard {
             "◉ END OF SHIFT",
             "esc stay",
             &self.body(),
-            "",
+            &card_foot(""),
             width as usize,
         )
     }
@@ -156,42 +161,45 @@ impl EndShiftJobsCard {
         format!("◉ END SHIFT WITH {n} {noun} UP?")
     }
 
-    fn body(&self) -> Vec<String> {
-        let t = theme();
+    fn body(&self) -> Vec<Line<'static>> {
+        let pal = Palette::current();
         let mut rows = Vec::new();
         for job in &self.jobs {
-            let mark = if job.running {
-                t.fg("accent", "◐")
+            let (mark, mark_style) = if job.running {
+                ("◐", pal.acc())
             } else {
-                t.fg("dim", "●")
+                ("●", pal.dim())
             };
-            let state = if job.running {
-                t.fg("dim", "in orbit")
-            } else {
-                t.fg("dim", "done")
-            };
-            rows.push(format!(
-                "  {mark} {}  {}   {state}",
-                t.fg("text", &job.id),
-                t.fg("text", &job.command),
-            ));
+            let state = if job.running { "in orbit" } else { "done" };
+            rows.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(mark, mark_style),
+                Span::raw(" "),
+                Span::styled(job.id.clone(), pal.legacy("text")),
+                Span::raw("  "),
+                Span::styled(job.command.clone(), pal.legacy("text")),
+                Span::raw("   "),
+                Span::styled(state, pal.dim()),
+            ]));
         }
-        rows.push(String::new());
-        let sep = t.fg("muted", " · ");
-        rows.push(
-            [
-                raw_key_hint("k", "bring it down, then end shift"),
-                raw_key_hint("l", "leave it in orbit"),
-            ]
-            .join(&sep),
-        );
+        rows.push(Line::raw(""));
+        rows.push(hints_line(&[
+            ("k", "bring it down, then end shift"),
+            ("l", "leave it in orbit"),
+        ]));
         rows
     }
 }
 
 impl Component for EndShiftJobsCard {
     fn render(&mut self, width: u16) -> Vec<String> {
-        render_card(&self.title(), "esc stay", &self.body(), "", width as usize)
+        render_card(
+            &self.title(),
+            "esc stay",
+            &self.body(),
+            &card_foot(""),
+            width as usize,
+        )
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -207,6 +215,20 @@ impl Component for EndShiftJobsCard {
     fn is_focusable(&self) -> bool {
         true
     }
+}
+
+/// One hints row: dim keys plus muted descriptions, joined by `·`.
+fn hints_line(hints: &[(&str, &str)]) -> Line<'static> {
+    let pal = Palette::current();
+    let mut spans = Vec::new();
+    for (i, (key, description)) in hints.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" · ", pal.faint()));
+        }
+        spans.push(Span::styled(format_key_text(key, false), pal.dim()));
+        spans.push(Span::styled(format!(" {description}"), pal.faint()));
+    }
+    Line::from(spans)
 }
 
 /// Compact token counts (`48.2k`), like the comms foot's totals.

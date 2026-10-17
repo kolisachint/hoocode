@@ -1,14 +1,19 @@
 //! `components/user-message-selector.ts`: pick a user message to fork from.
+//!
+//! The STAGE SEPARATION console (M7, ratatui): `STAGE SEPARATION · /fork`,
+//! the explanation on top, one row per user message, and the hint foot
+//! `↑↓ move the line · enter fork · esc close`. Shared `Console` chrome in
+//! `code-tui-widgets/src/console.rs`; keys and events are unchanged.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use hoocode_code_tui_theme::{paint_selected_row, select_gutter, theme, SELECT_CURSOR};
-use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
-use hoocode_tui_components::{PickerCursor, Text};
+use hoocode_code_tui_widgets::console::{hints, Console};
+use hoocode_tui_components::PickerCursor;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_render::{Component, ComponentHandle};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span};
+use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::is_js_space;
 use hoocode_tui_util::truncate_to_width;
 
@@ -55,54 +60,22 @@ impl UserMessageList {
     }
 }
 
-impl Component for UserMessageList {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let width = width as usize;
-        let mut lines = Vec::new();
-        let len = self.messages.len();
-        if len == 0 {
-            lines.push(t.fg("muted", "  No user messages found"));
-            return lines;
-        }
-
-        let window = self.cursor.window();
-
-        for i in window.clone() {
-            let message = &self.messages[i];
-            let is_selected = i == self.cursor.selected();
-            // Blank between entries, none after the last.
-            if i > window.start {
-                lines.push(String::new());
-            }
-            let normalized = message.text.replace('\n', " ");
-            let normalized = normalized.trim_matches(is_js_space);
-
-            let cursor = if is_selected {
-                t.fg("accent", SELECT_CURSOR)
-            } else {
-                select_gutter()
-            };
-            let truncated = truncate_to_width(normalized, width.saturating_sub(2), "...", false);
-            let message_line = if is_selected {
-                cursor + &t.bold(&t.fg("accent", &truncated))
-            } else {
-                cursor + &truncated
-            };
-            lines.push(if is_selected {
-                paint_selected_row(&message_line, width)
-            } else {
-                message_line
-            });
-            lines.push(t.fg("muted", &format!("  Message {} of {len}", i + 1)));
-        }
-
-        if let Some(footer) = self.cursor.footer() {
-            lines.push(t.fg("muted", &format!("  {footer}")));
-        }
-        lines
+/// One message row (content only; the console adds the `›` marker or
+/// gutter and the selection band): the text with newlines flattened and
+/// JS-trimmed, cut to the inner width. The selected row reads bold accent.
+fn message_row(text: &str, selected: bool, width: usize) -> Line<'static> {
+    let pal = Palette::current();
+    let normalized = text.replace('\n', " ");
+    let normalized = normalized.trim_matches(is_js_space);
+    let truncated = truncate_to_width(normalized, width.saturating_sub(2), "...", false);
+    if selected {
+        Line::from(vec![Span::styled(truncated, bold(pal.acc()))])
+    } else {
+        Line::raw(truncated)
     }
+}
 
+impl UserMessageList {
     fn handle_input(&mut self, data: &str) {
         let kb = get_keybindings();
         if self.cursor.handle_key(data, &kb) {
@@ -118,28 +91,15 @@ impl Component for UserMessageList {
     }
 }
 
-/// `UserMessageSelectorComponent`: the list under a one-line explanation.
+/// `UserMessageSelectorComponent`: the STAGE SEPARATION console.
 /// With no messages it cancels itself after 100ms ([`Self::poll`]).
 pub struct UserMessageSelectorComponent {
-    frame: InputFrame,
     list: Rc<RefCell<UserMessageList>>,
     auto_cancel_at: Option<Instant>,
 }
 
 impl UserMessageSelectorComponent {
     pub fn new(messages: Vec<UserMessageItem>, initial_selected_id: Option<&str>) -> Self {
-        let mut frame = InputFrame::new(InputFrameOptions {
-            title: Some("fork from message".to_string()),
-            ..Default::default()
-        });
-        frame.add_child(Rc::new(RefCell::new(Text::new(
-            theme().fg(
-                "muted",
-                "Select a user message to copy the active path up to that point into a new session",
-            ),
-            0,
-            0,
-        ))));
         let auto_cancel_at = messages
             .is_empty()
             .then(|| Instant::now() + Duration::from_millis(100));
@@ -147,9 +107,7 @@ impl UserMessageSelectorComponent {
             messages,
             initial_selected_id,
         )));
-        frame.add_child(list.clone() as ComponentHandle);
         Self {
-            frame,
             list,
             auto_cancel_at,
         }
@@ -178,15 +136,49 @@ impl UserMessageSelectorComponent {
 }
 
 impl Component for UserMessageSelectorComponent {
+    /// The STAGE SEPARATION console: the explanation on top, one row per
+    /// user message with `›` on the selection band, the position and
+    /// scroll rows below, and the hint foot. Keys and events unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.frame.render(width)
+        let pal = Palette::current();
+        let list = self.list.borrow();
+        let width = width as usize;
+        let mut console = Console::new("STAGE SEPARATION · /fork", "");
+        console.top = vec![Line::from(vec![Span::styled(
+            "Select a user message to copy the active path up to that point into a new session",
+            pal.faint(),
+        )])];
+        let len = list.messages.len();
+        if len == 0 {
+            console.bottom = vec![Line::from(vec![Span::styled(
+                "  No user messages found",
+                pal.faint(),
+            )])];
+        } else {
+            let window = list.cursor.window();
+            let selected = list.cursor.selected();
+            console.rows = window
+                .clone()
+                .map(|i| message_row(&list.messages[i].text, i == selected, width))
+                .collect();
+            console.selected = window.clone().position(|i| i == selected);
+            let mut bottom = vec![Line::from(vec![Span::styled(
+                format!("  Message {} of {len}", selected + 1),
+                pal.faint(),
+            )])];
+            if let Some(footer) = list.cursor.footer() {
+                bottom.push(Line::from(vec![Span::styled(
+                    format!("  {footer}"),
+                    pal.faint(),
+                )]));
+            }
+            console.bottom = bottom;
+        }
+        console.hint = hints(&[("↑↓", "move the line"), ("enter", "fork"), ("esc", "close")]);
+        console.render(width)
     }
 
     fn handle_input(&mut self, data: &str) {
         self.list.borrow_mut().handle_input(data);
-    }
-
-    fn invalidate(&mut self) {
-        self.frame.invalidate();
     }
 }

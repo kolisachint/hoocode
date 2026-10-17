@@ -13,10 +13,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use hoocode_code_tools_optin::ask_options::AskQuestion;
-use hoocode_code_tui_theme::{select_gutter, theme, SELECT_CURSOR};
+use hoocode_code_tui_keybindings::format_key_text;
+use hoocode_code_tui_theme::{select_gutter, SELECT_CURSOR};
 use hoocode_code_tui_widgets::card_frame::render_card;
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, matches_key};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 
 /// `AskOptionsOptions`.
@@ -72,26 +74,33 @@ impl State {
         (self.custom_input.get_cursor() >= typed, typed == 0)
     }
 
-    fn render_hints(&self, last: bool) -> String {
-        let t = theme();
-        let sep = t.fg("muted", " · ");
-        let hint = |keys: &str, desc: &str| t.fg("dim", keys) + &t.fg("muted", &format!(" {desc}"));
-        let range = format!("1–{}", Self::row_count(self.current()));
-        let (next, back) = self.custom_arrows();
-        let mut parts = vec![
-            t.fg("dim", &range) + &t.fg("muted", " answer"),
-            hint("↑↓", "move"),
+    /// One hint: the dim key plus its muted description.
+    fn hint(&self, keys: &str, desc: &str) -> Vec<Span<'static>> {
+        let pal = Palette::current();
+        vec![
+            Span::styled(format_key_text(keys, false), pal.dim()),
+            Span::styled(format!(" {desc}"), pal.faint()),
+        ]
+    }
+
+    fn render_hints(&self, last: bool) -> Line<'static> {
+        let pal = Palette::current();
+        let mut spans = vec![
+            Span::styled(format!("1–{}", Self::row_count(self.current())), pal.dim()),
+            Span::styled(" answer", pal.faint()),
         ];
+        let (next, back) = self.custom_arrows();
+        let mut parts = vec![self.hint("↑↓", "move")];
         // Mid-answer the arrows are the text cursor's: enter commits.
-        parts.push(hint(
+        parts.push(self.hint(
             if next { "→" } else { "enter" },
             if last { "submit" } else { "next" },
         ));
         if self.step > 0 && back {
-            parts.push(hint("←", "back"));
+            parts.push(self.hint("←", "back"));
         }
         // Spec §6.2: esc picks option 1 on the card (elicitation skips).
-        parts.push(hint(
+        parts.push(self.hint(
             "esc",
             if self.esc_answers_first {
                 "pick 1"
@@ -99,116 +108,144 @@ impl State {
                 "skip"
             },
         ));
-        parts.join(&sep)
+        for part in parts {
+            spans.push(Span::styled(" · ", pal.faint()));
+            spans.extend(part);
+        }
+        Line::from(spans)
     }
 
-    fn render_rows(&self) -> Vec<String> {
-        let t = theme();
+    fn render_rows(&self) -> Vec<Line<'static>> {
+        let pal = Palette::current();
         let mut lines = Vec::new();
         let cur = self.current();
         let last = self.step == self.questions.len() - 1;
 
         for i in 0..self.step {
             let q = &self.questions[i];
-            let check = t.fg("success", "✓");
-            let label = t.fg("dim", q.short.as_deref().unwrap_or(&q.question));
-            let arrow = t.fg("dim", "→ ");
-            let answer = t.fg("accent", self.answers.get(i).map_or("", String::as_str));
-            lines.push(format!("{check} {label}   {arrow}{answer}"));
+            lines.push(Line::from(vec![
+                Span::styled("✓", pal.ok()),
+                Span::raw(" "),
+                Span::styled(
+                    q.short.as_deref().unwrap_or(&q.question).to_string(),
+                    pal.dim(),
+                ),
+                Span::raw("   "),
+                Span::styled("→ ", pal.dim()),
+                Span::styled(
+                    self.answers.get(i).map_or(String::new(), |s| s.clone()),
+                    pal.acc(),
+                ),
+            ]));
         }
         if self.step > 0 {
-            lines.push(String::new());
+            lines.push(Line::raw(""));
         }
 
-        let step_label = t.fg(
-            "dim",
-            &format!("{}/{}", self.step + 1, self.questions.len()),
-        );
-        lines.push(format!("{step_label} {}", t.bold(&cur.question)));
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{}/{}", self.step + 1, self.questions.len()),
+                pal.dim(),
+            ),
+            Span::raw(" "),
+            Span::styled(cur.question.clone(), bold(Style::default())),
+        ]));
         if let Some(detail) = &cur.detail {
-            lines.push(t.fg("muted", &format!("    {detail}")));
+            lines.push(Line::from(vec![Span::styled(
+                format!("    {detail}"),
+                pal.faint(),
+            )]));
         }
-        lines.push(String::new());
+        lines.push(Line::raw(""));
 
         for (i, o) in cur.options.iter().enumerate() {
             let active = i == self.cursor.selected();
-            let cursor = t.fg(
-                "accent",
-                &if active {
-                    SELECT_CURSOR.to_string()
-                } else {
-                    select_gutter()
-                },
-            );
-            let num = t.fg(if active { "accent" } else { "dim" }, &(i + 1).to_string());
-            let label = if active {
-                t.bold(&o.label)
+            let cursor = if active {
+                SELECT_CURSOR.to_string()
             } else {
-                o.label.clone()
+                select_gutter()
             };
-            let mut line = format!("{cursor}{num}  {label}");
+            let mut spans = vec![
+                Span::styled(cursor, pal.acc()),
+                Span::styled(
+                    (i + 1).to_string(),
+                    if active { pal.acc() } else { pal.dim() },
+                ),
+                Span::raw("  "),
+                Span::styled(
+                    o.label.clone(),
+                    if active {
+                        bold(Style::default())
+                    } else {
+                        Style::default()
+                    },
+                ),
+            ];
             if let Some(description) = &o.description {
-                line += &t.fg("muted", &format!("   {description}"));
+                spans.push(Span::styled(format!("   {description}"), pal.faint()));
             }
             if o.recommended {
-                line += &t.fg("warning", "   recommended");
+                spans.push(Span::styled("   recommended", pal.warn()));
             }
-            lines.push(line);
+            lines.push(Line::from(spans));
         }
 
         if cur.allow_custom {
             let active = self.cursor.selected() == cur.options.len();
-            let cursor = t.fg(
-                "accent",
-                &if active {
-                    SELECT_CURSOR.to_string()
-                } else {
-                    select_gutter()
-                },
-            );
-            let num = t.fg(
-                if active { "accent" } else { "dim" },
-                &(cur.options.len() + 1).to_string(),
-            );
+            let cursor = if active {
+                SELECT_CURSOR.to_string()
+            } else {
+                select_gutter()
+            };
+            let mut spans = vec![
+                Span::styled(cursor, pal.acc()),
+                Span::styled(
+                    (cur.options.len() + 1).to_string(),
+                    if active { pal.acc() } else { pal.dim() },
+                ),
+                Span::raw("  "),
+            ];
             if active {
                 let value = self.custom_input.get_value();
                 let caret = if self.focused {
-                    t.fg("warning", "▏")
+                    Some(Span::styled("▏", pal.warn()))
                 } else {
-                    String::new()
+                    None
                 };
-                let body = if value.is_empty() {
-                    format!("{caret}{}", t.fg("dim", "type it"))
+                spans.push(Span::styled("something else", bold(Style::default())));
+                spans.push(Span::raw("  "));
+                if value.is_empty() {
+                    if let Some(caret) = caret.clone() {
+                        spans.push(caret);
+                    }
+                    spans.push(Span::styled("type it", pal.dim()));
                 } else {
-                    format!("{}{caret}", t.fg("text", value))
-                };
-                lines.push(format!(
-                    "{cursor}{num}  {}  {body}",
-                    t.bold("something else"),
-                ));
+                    spans.push(Span::styled(value.to_string(), pal.legacy("text")));
+                    if let Some(caret) = caret {
+                        spans.push(caret);
+                    }
+                }
             } else {
-                lines.push(format!(
-                    "{cursor}{num}  {}   {}",
-                    t.fg("muted", "something else"),
-                    t.fg("dim", "type it"),
-                ));
+                spans.push(Span::styled("something else", pal.faint()));
+                spans.push(Span::raw("   "));
+                spans.push(Span::styled("type it", pal.dim()));
             }
+            lines.push(Line::from(spans));
         }
 
         lines.push(self.render_hints(last));
         lines
     }
 
-    fn render_body(&self, width: usize) -> Vec<String> {
+    fn render_body(&self) -> Vec<Line<'static>> {
         let mut rows = self.render_rows();
-        let foot = rows.pop().unwrap_or_default();
-        render_card(
-            "◉ MISSION CONTROL ASKS",
-            "sets the default for every call",
-            &rows,
-            &foot,
-            width,
-        )
+        rows.pop();
+        rows
+    }
+
+    fn render_foot(&self) -> Line<'static> {
+        let rows = self.render_rows();
+        rows.last().cloned().unwrap_or_else(|| Line::raw(""))
     }
 }
 
@@ -300,7 +337,16 @@ impl AskOptionsComponent {
 
 impl Component for AskOptionsComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.state.borrow().render_body(width as usize)
+        let state = self.state.borrow();
+        let rows = state.render_body();
+        let foot = state.render_foot();
+        render_card(
+            "◉ MISSION CONTROL ASKS",
+            "sets the default for every call",
+            &rows,
+            &foot,
+            width as usize,
+        )
     }
 
     fn handle_input(&mut self, data: &str) {

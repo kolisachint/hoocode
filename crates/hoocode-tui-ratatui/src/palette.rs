@@ -185,13 +185,36 @@ impl Palette {
             color => color,
         }
     }
-    /// The foreground colour for `name`, following the fallback chain. A
-    /// token the theme leaves at its default (`""`) resolves to the
-    /// default-text colour: that substitution is load-bearing for chrome
-    /// the palette styles directly (the comms glyph keeps both its colour
-    /// and its trailing space through it). Call sites porting chalk-styled
-    /// rows use an explicit default style instead, matching chalk's
-    /// default opener cell for cell.
+
+    /// The selected-row band (theme `selectedBg`; default when the theme
+    /// has none, e.g. NO_COLOR). The background mirrors `theme().bg`:
+    /// the live theme's ANSI first, the resolved snapshot second.
+    pub fn band(&self) -> Style {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return Style::default();
+        }
+        if let Some(theme) = hoocode_code_tui_theme::try_theme() {
+            if theme.has_bg("selectedBg") {
+                let ansi = theme.get_bg_ansi("selectedBg");
+                if let Some(css) = ansi_to_hex(ansi) {
+                    if let Some(color) = css_to_color(&css) {
+                        return Style::new().bg(color);
+                    }
+                }
+                return Style::default();
+            }
+        }
+        if let Some(css) = self.colors.get("selectedBg") {
+            if let Some(color) = css_to_color(css) {
+                return Style::new().bg(color);
+            }
+        }
+        Style::default()
+    }
+    /// The foreground colour for `name`, following the fallback chain.
+    /// The resolved snapshot wins; in-memory themes fall back to the live
+    /// theme. Empty tokens resolve to the default text colour here (so
+    /// `ink` paints the glyph `#e5e5e7` on dark, as M2 goldens lock).
     fn color_for(&self, name: &str) -> Option<Color> {
         let mut chain = vec![name];
         if let Some(legacy) = fallback_for(name) {
@@ -219,6 +242,50 @@ impl Palette {
             }
         }
         None
+    }
+
+    /// A legacy theme token's style, exactly as `theme().fg` renders it:
+    /// the live theme's ANSI first (empty tokens like `"text"` stay the
+    /// default style), the resolved snapshot when no live theme is loaded.
+    /// Use this where the ported code called `theme().fg("text", …)`; MC
+    /// tokens keep [`Palette::style`].
+    pub fn legacy(&self, name: &str) -> Style {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return Style::default();
+        }
+        if let Some(theme) = hoocode_code_tui_theme::try_theme() {
+            if theme.has(name) {
+                let ansi = theme.get_fg_ansi(name);
+                if let Some(css) = ansi_to_hex(ansi) {
+                    if let Some(color) = css_to_color(&css) {
+                        return Style::new().fg(color);
+                    }
+                }
+                return Style::default();
+            }
+        }
+        self.style(name)
+    }
+
+    /// A background fill for `name` (the session colour swatch): the same
+    /// resolution as [`Palette::legacy`], painted as the background.
+    pub fn fill(&self, name: &str) -> Style {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return Style::default();
+        }
+        if let Some(theme) = hoocode_code_tui_theme::try_theme() {
+            if theme.has(name) {
+                let ansi = theme.get_fg_ansi(name);
+                if let Some(css) = ansi_to_hex(ansi) {
+                    if let Some(color) = css_to_color(&css) {
+                        return Style::new().bg(color);
+                    }
+                }
+                return Style::default();
+            }
+        }
+        self.color_for(name)
+            .map_or_else(Style::default, |color| Style::new().bg(color))
     }
 }
 
@@ -320,19 +387,20 @@ fn bg_color(ansi: &str) -> Option<Color> {
     }
 }
 
-/// A foreground SGR opener as CSS hex: `\x1b[38;2;r;g;bm` or
-/// `\x1b[38;5;nm`. The default opener (`\x1b[39m`) is `None`: no colour.
+/// A foreground or background SGR opener as CSS hex: `\x1b[38;2;r;g;bm`,
+/// `\x1b[48;2;r;g;bm`, or the `;5;` 256-colour forms. The default openers
+/// (`\x1b[39m`, `\x1b[49m`) are `None`: no colour.
 fn ansi_to_hex(ansi: &str) -> Option<String> {
     let body = ansi.strip_prefix("\x1b[")?.strip_suffix('m')?;
     let mut parts = body.split(';');
     match (parts.next()?, parts.next()?) {
-        ("38", "2") => {
+        ("38", "2") | ("48", "2") => {
             let r = parts.next()?.parse::<u8>().ok()?;
             let g = parts.next()?.parse::<u8>().ok()?;
             let b = parts.next()?.parse::<u8>().ok()?;
             Some(format!("#{r:02x}{g:02x}{b:02x}"))
         }
-        ("38", "5") => parts
+        ("38", "5") | ("48", "5") => parts
             .next()?
             .parse::<i64>()
             .ok()

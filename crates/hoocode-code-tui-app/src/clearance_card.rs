@@ -13,10 +13,10 @@
 use hoocode_code_permissions::{
     is_always_wrapper, shell_program, ClearanceChoice, ClearanceInfo, ReachCell,
 };
-use hoocode_code_tui_keybindings::raw_key_hint;
-use hoocode_code_tui_theme::theme;
-use hoocode_code_tui_widgets::card_frame::render_card;
+use hoocode_code_tui_keybindings::format_key_text;
+use hoocode_code_tui_widgets::card_frame::{card_foot, render_card};
 use hoocode_tui_components::Input;
+use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
 
 /// What the card answers with (the gate's [`ClearanceChoice`], sent on).
@@ -99,21 +99,27 @@ impl ClearanceCard {
         }
     }
 
-    fn reach_row(&self) -> String {
-        let t = theme();
+    fn reach_row(&self) -> Line<'static> {
+        let pal = Palette::current();
+        let mut spans = vec![Span::styled("REACH", pal.dim()), Span::raw("   ")];
         let cells = [
-            reach_cell("read", &self.info.reach.read),
-            reach_cell("write", &self.info.reach.write),
-            reach_cell("network", &self.info.reach.network),
-            reach_cell("pipe", &self.info.reach.pipe),
+            ("read", &self.info.reach.read),
+            ("write", &self.info.reach.write),
+            ("network", &self.info.reach.network),
+            ("pipe", &self.info.reach.pipe),
         ];
-        format!("{}   {}", t.fg("dim", "REACH"), cells.join("   "))
+        for (i, (name, cell)) in cells.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::raw("   "));
+            }
+            spans.extend(reach_cell(name, cell));
+        }
+        Line::from(spans)
     }
 
-    fn keys_row(&self) -> String {
-        let t = theme();
-        let sep = t.fg("muted", " · ");
-        let mut hints = vec![raw_key_hint("y", "go once")];
+    fn keys_row(&self) -> Line<'static> {
+        let pal = Palette::current();
+        let mut hints = vec![key_hint("y", "go once")];
         // Wrappers (sudo, …) are never approvable: no `a` hint, and the
         // key answers once.
         if let Some(program) = self.always_offer() {
@@ -124,40 +130,48 @@ impl ClearanceCard {
             } else {
                 format!("in {}", self.info.mode.to_uppercase())
             };
-            hints.push(raw_key_hint("a", &format!("always {program} {scope}")));
+            hints.push(key_hint("a", &format!("always {program} {scope}")));
         }
-        hints.push(raw_key_hint("n", "abort + say why"));
-        hints.push(raw_key_hint("e", "edit first"));
-        hints.join(&sep)
+        hints.push(key_hint("n", "abort + say why"));
+        hints.push(key_hint("e", "edit first"));
+        let mut spans = Vec::new();
+        for (i, hint) in hints.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::styled(" · ", pal.faint()));
+            }
+            spans.extend(hint.clone().spans);
+        }
+        Line::from(spans)
     }
 
-    fn body(&self) -> Vec<String> {
-        let t = theme();
+    fn body(&self) -> Vec<Line<'static>> {
+        let pal = Palette::current();
         let mut rows = Vec::new();
         if self.editing {
-            let caret = if self.focused {
-                t.fg("warning", "▏")
-            } else {
-                String::new()
-            };
-            rows.push(format!(
-                "{} {}{caret}",
-                t.fg("warning", "✎"),
-                t.fg("text", self.edit.get_value()),
-            ));
+            let mut spans = vec![
+                Span::styled("✎", pal.warn()),
+                Span::raw(" "),
+                Span::styled(self.edit.get_value().to_string(), pal.legacy("text")),
+            ];
+            if self.focused {
+                spans.push(Span::styled("▏", pal.warn()));
+            }
+            rows.push(Line::from(spans));
         } else {
-            rows.push(t.fg("text", &self.info.detail));
+            rows.push(Line::from(vec![Span::styled(
+                self.info.detail.clone(),
+                pal.legacy("text"),
+            )]));
             if !self.reply.is_empty() {
-                let caret = if self.focused {
-                    t.fg("warning", "▏")
-                } else {
-                    String::new()
-                };
-                rows.push(format!(
-                    "{} {}{caret}",
-                    t.fg("warning", "▸"),
-                    t.fg("text", &self.reply),
-                ));
+                let mut spans = vec![
+                    Span::styled("▸", pal.warn()),
+                    Span::raw(" "),
+                    Span::styled(self.reply.clone(), pal.legacy("text")),
+                ];
+                if self.focused {
+                    spans.push(Span::styled("▏", pal.warn()));
+                }
+                rows.push(Line::from(spans));
             }
         }
         rows.push(self.reach_row());
@@ -174,20 +188,30 @@ impl ClearanceCard {
     }
 }
 
+/// One key hint: the dim key plus its muted description.
+fn key_hint(key: &str, description: &str) -> Line<'static> {
+    let pal = Palette::current();
+    Line::from(vec![
+        Span::styled(format_key_text(key, false), pal.dim()),
+        Span::styled(format!(" {description}"), pal.faint()),
+    ])
+}
+
 /// One REACH cell: `■` warn when on, `□` faint when off, then the name and
 /// the qualifier (a real path, a program count).
-fn reach_cell(name: &str, cell: &ReachCell) -> String {
-    let t = theme();
-    let mark = if cell.on {
-        t.fg("warning", "■")
+fn reach_cell(name: &str, cell: &ReachCell) -> Vec<Span<'static>> {
+    let pal = Palette::current();
+    let mut spans = if cell.on {
+        vec![Span::styled("■", pal.warn())]
     } else {
-        t.fg("faint", "□")
+        vec![Span::styled("□", pal.faint())]
     };
-    let mut out = format!("{mark} {}", t.fg("text", name));
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled(name.to_string(), pal.legacy("text")));
     if let Some(qualifier) = &cell.qualifier {
-        out += &t.fg("dim", &format!(" {qualifier}"));
+        spans.push(Span::styled(format!(" {qualifier}"), pal.dim()));
     }
-    out
+    spans
 }
 
 impl Component for ClearanceCard {
@@ -196,7 +220,7 @@ impl Component for ClearanceCard {
             &self.title(),
             &self.right(),
             &self.body(),
-            &self.foot(),
+            &card_foot(&self.foot()),
             width as usize,
         )
     }

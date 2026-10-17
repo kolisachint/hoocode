@@ -1,5 +1,12 @@
 //! The `/settings` pane, hoocode `components/settings-selector.ts`.
 //!
+//! One [`SettingsList`] as the SYSTEMS console (M7, ratatui):
+//! `SYSTEMS · /settings  N tok/turn`, the `▸` query row, one row per
+//! setting, and the hint foot. The theme submenu draws as the HULL console
+//! (`SelectSubmenu` with [`SubmenuConsole`]): live preview, `enter` keeps,
+//! `esc` reverts. Shared `Console` chrome in
+//! `code-tui-widgets/src/console.rs`; keys, filtering and events unchanged.
+//!
 //! One [`SettingsList`] in the prompt's frame. The top level is short: the
 //! tool rows, then categories whose submenus hold the leaf settings. Every
 //! change goes out as one [`SettingsChange`].
@@ -26,13 +33,15 @@ use hoocode_code_tui_keybindings::key_display_text;
 use hoocode_code_tui_theme::{
     get_select_list_theme, get_settings_list_theme, get_theme_description, style_input, theme,
 };
-use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
+use hoocode_code_tui_widgets::console::{hints, query_row, Console};
 use hoocode_code_tui_widgets::tool_output_view::{tool_output_view_description, TOOL_OUTPUT_VIEWS};
 use hoocode_tui_components::{
     Input, SelectItem, SelectList, SettingItem, SettingsList, SettingsListOptions, Spacer,
     SubmenuOutcome, Text,
 };
+use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
+use hoocode_tui_util::{visible_width, wrap_text_with_ansi};
 
 use crate::framed_list::layout;
 use crate::small_selectors::thinking_level_description;
@@ -971,14 +980,35 @@ fn flags_submenu(
     ListSubmenu::new(list).handle()
 }
 
-/// `SelectSubmenu`: a titled select list (thinking level, theme).
+/// `SelectSubmenu`: a titled select list (thinking level, theme). With
+/// [`SubmenuConsole`] it draws as a console instead (today only HULL).
 pub struct SelectSubmenu {
     container: Container,
     list: Rc<RefCell<SelectList>>,
+    console: Option<SubmenuConsole>,
+}
+
+/// Console chrome for a select submenu: the title, the count, an optional
+/// top line, and the hint foot (all literal, so goldens hold everywhere).
+#[derive(Clone, Debug)]
+pub struct SubmenuConsole {
+    pub title: String,
+    pub count: String,
+    pub top: String,
+    pub hint: Vec<(String, String)>,
+}
+
+/// `1 theme`, `N themes`.
+fn themes(count: usize) -> String {
+    if count == 1 {
+        "1 theme".to_string()
+    } else {
+        format!("{count} themes")
+    }
 }
 
 impl SelectSubmenu {
-    fn new(
+    pub fn new(
         title: &str,
         description: &str,
         options: Vec<SelectItem>,
@@ -1022,12 +1052,29 @@ impl SelectSubmenu {
             0,
             0,
         ))));
-        Self { container, list }
+        Self {
+            container,
+            list,
+            console: None,
+        }
+    }
+
+    /// Draw as a console instead of the framed list (the HULL submenu).
+    pub fn with_console(mut self, console: SubmenuConsole) -> Self {
+        self.console = Some(console);
+        self
     }
 }
 
 impl Component for SelectSubmenu {
+    /// The framed list, or the console when [`SubmenuConsole`] is set:
+    /// the title and count, the rows with `›` on the selection band, and
+    /// the hint foot. Keys and events are unchanged (the list still owns
+    /// them, so live preview and revert keep working).
     fn render(&mut self, width: u16) -> Vec<String> {
+        if let Some(console) = self.console.clone() {
+            return self.render_console(width as usize, &console);
+        }
         self.container.render(width)
     }
 
@@ -1037,6 +1084,59 @@ impl Component for SelectSubmenu {
 
     fn invalidate(&mut self) {
         self.container.invalidate();
+    }
+}
+
+impl SelectSubmenu {
+    /// One console page over the select list's window. The selected row
+    /// reads accent and carries the `● in use` marker: moving the cursor
+    /// previews the theme at once, so the selection is always the theme
+    /// in use while the console is open.
+    fn render_console(&self, width: usize, console: &SubmenuConsole) -> Vec<String> {
+        let pal = Palette::current();
+        let list = self.list.borrow();
+        let mut out = Console::new(console.title.clone(), console.count.clone());
+        if !console.top.is_empty() {
+            out.top = vec![Line::from(vec![Span::styled(
+                console.top.clone(),
+                pal.faint(),
+            )])];
+        }
+        let (rows, selected) = list.console_window();
+        out.rows = rows
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                let is_selected = Some(i) == selected;
+                let mut spans = vec![
+                    if is_selected {
+                        Span::styled(item.label.clone(), pal.acc())
+                    } else {
+                        Span::raw(item.label.clone())
+                    },
+                    Span::raw("  ".to_string()),
+                    Span::styled(item.description.clone().unwrap_or_default(), pal.faint()),
+                ];
+                if is_selected {
+                    spans.push(Span::styled("  ● in use".to_string(), pal.acc()));
+                }
+                Line::from(spans)
+            })
+            .collect();
+        out.selected = selected;
+        if let Some(footer) = list.footer() {
+            out.bottom = vec![Line::from(vec![Span::styled(
+                format!("  {footer}"),
+                pal.faint(),
+            )])];
+        }
+        let pairs: Vec<(&str, &str)> = console
+            .hint
+            .iter()
+            .map(|(key, description)| (key.as_str(), description.as_str()))
+            .collect();
+        out.hint = hints(&pairs);
+        out.render(width)
     }
 }
 
@@ -1077,19 +1177,32 @@ fn format_surface_line(surface: &PromptSurface) -> String {
 struct SurfaceLine {
     text: Option<Rc<RefCell<Text>>>,
     measure: Option<Rc<dyn Fn() -> PromptSurface>>,
+    /// The last measured surface, for the console's `N tok/turn` count.
+    last: Rc<RefCell<Option<PromptSurface>>>,
 }
 
 impl SurfaceLine {
     fn refresh(&self) {
-        if let (Some(text), Some(measure)) = (&self.text, &self.measure) {
-            text.borrow_mut().set_text(format_surface_line(&measure()));
+        if let Some(measure) = &self.measure {
+            let surface = measure();
+            *self.last.borrow_mut() = Some(surface.clone());
+            if let Some(text) = &self.text {
+                text.borrow_mut().set_text(format_surface_line(&surface));
+            }
+        }
+    }
+
+    /// The `N tok/turn` count, empty without a session to measure.
+    fn count_text(&self) -> String {
+        match self.last.borrow().as_ref() {
+            Some(surface) => format!("{} tok/turn", token_count(surface.total_tokens as u64)),
+            None => String::new(),
         }
     }
 }
 
-/// `SettingsSelectorComponent`: the whole pane in the prompt's frame.
+/// `SettingsSelectorComponent`: the whole pane as the SYSTEMS console.
 pub struct SettingsSelectorComponent {
-    frame: InputFrame,
     surface: SurfaceLine,
     list: Rc<RefCell<SettingsList>>,
 }
@@ -1117,6 +1230,7 @@ impl SettingsSelectorComponent {
         let surface = SurfaceLine {
             text: surface_text.clone(),
             measure: config.measure_token_surface.clone(),
+            last: Rc::new(RefCell::new(initial_surface.clone())),
         };
         let tools_on = config.tools.iter().filter(|t| t.enabled).count();
         let tools_off = config.tools.len() - tools_on;
@@ -1433,30 +1547,43 @@ impl SettingsSelectorComponent {
                     let preview_callback = callback.clone();
                     let select_slot = slot.clone();
                     let original = current.to_string();
-                    Rc::new(RefCell::new(SelectSubmenu::new(
-                        "Theme",
-                        "Select color theme",
-                        options,
-                        current,
-                        move |value| {
-                            emit(&select_callback, SettingsChange::Theme(value.to_string()));
-                            done(&select_slot, Some(value.to_string()));
-                        },
-                        move || {
-                            // Restore the theme the list opened on.
-                            emit(
-                                &cancel_callback,
-                                SettingsChange::ThemePreview(original.clone()),
-                            );
-                            done(&slot, None);
-                        },
-                        Some(Box::new(move |value: &str| {
-                            emit(
-                                &preview_callback,
-                                SettingsChange::ThemePreview(value.to_string()),
-                            );
-                        })),
-                    ))) as ComponentHandle
+                    let hull = SubmenuConsole {
+                        title: "HULL · /theme".to_string(),
+                        count: themes(config.available_themes.len()),
+                        top: "Select color theme".to_string(),
+                        hint: vec![
+                            ("↑↓".to_string(), "preview live".to_string()),
+                            ("enter".to_string(), "keep".to_string()),
+                            ("esc".to_string(), "back".to_string()),
+                        ],
+                    };
+                    Rc::new(RefCell::new(
+                        SelectSubmenu::new(
+                            "Theme",
+                            "Select color theme",
+                            options,
+                            current,
+                            move |value| {
+                                emit(&select_callback, SettingsChange::Theme(value.to_string()));
+                                done(&select_slot, Some(value.to_string()));
+                            },
+                            move || {
+                                // Restore the theme the list opened on.
+                                emit(
+                                    &cancel_callback,
+                                    SettingsChange::ThemePreview(original.clone()),
+                                );
+                                done(&slot, None);
+                            },
+                            Some(Box::new(move |value: &str| {
+                                emit(
+                                    &preview_callback,
+                                    SettingsChange::ThemePreview(value.to_string()),
+                                );
+                            })),
+                        )
+                        .with_console(hull),
+                    )) as ComponentHandle
                 }),
             ));
         }
@@ -1755,17 +1882,7 @@ impl SettingsSelectorComponent {
             move || emit(&cancel_callback, SettingsChange::Cancel),
         );
 
-        let mut frame = InputFrame::new(InputFrameOptions::default());
-        frame.set_title("settings");
-        frame.add_child(list.clone());
-        if let Some(text) = surface_text {
-            frame.add_child(text);
-        }
-        Self {
-            frame,
-            surface,
-            list,
-        }
+        Self { surface, list }
     }
 
     /// Re-price the per-turn surface. A host that applies the pane's changes
@@ -1782,8 +1899,99 @@ impl SettingsSelectorComponent {
 }
 
 impl Component for SettingsSelectorComponent {
+    /// The SYSTEMS console: the `▸` query row, one row per setting with
+    /// `›` on the selection band, the per-turn surface and description
+    /// below, and the hint foot. An open submenu renders through itself:
+    /// the HULL console for themes, the framed list for the rest. Keys,
+    /// filtering and events are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.frame.render(width)
+        if self.list.borrow().has_submenu() {
+            return self.list.borrow_mut().render(width);
+        }
+        let width = width as usize;
+        let inner = width.saturating_sub(2);
+        let list = self.list.borrow();
+        let mut console = Console::new("SYSTEMS · /settings", self.surface.count_text());
+        let query = list.query_text().to_string();
+        console.query = Some(query_row(&query, false));
+        let max_label = list
+            .items()
+            .iter()
+            .map(|item| visible_width(&item.label))
+            .max()
+            .unwrap_or(0)
+            .min(30);
+        let selected = list.selected();
+        let window = list.window();
+        let items: Vec<(String, String, Option<String>, Option<String>)> = list
+            .filtered_items()
+            .iter()
+            .map(|item| {
+                (
+                    item.label.clone(),
+                    item.current_value.clone(),
+                    item.value_suffix.clone(),
+                    item.description.clone(),
+                )
+            })
+            .collect();
+        let footer = list.scroll_footer();
+        let description = items
+            .get(selected)
+            .and_then(|(_, _, _, description)| description.clone());
+        drop(list);
+        console.rows = window
+            .clone()
+            .filter_map(|i| {
+                let (label, value, suffix, _) = items.get(i)?;
+                Some(setting_row(
+                    label,
+                    value,
+                    suffix.as_deref(),
+                    i == selected,
+                    max_label,
+                ))
+            })
+            .collect();
+        console.selected = window.clone().position(|i| i == selected);
+        let pal = Palette::current();
+        let mut bottom = Vec::new();
+        if items.is_empty() {
+            bottom.push(Line::from(vec![Span::styled(
+                if query.is_empty() {
+                    "  No settings available".to_string()
+                } else {
+                    "  No matching settings".to_string()
+                },
+                pal.faint(),
+            )]));
+        } else {
+            if let Some(footer) = footer {
+                bottom.push(Line::from(vec![Span::styled(
+                    format!("  {footer}"),
+                    pal.faint(),
+                )]));
+            }
+            if let Some(description) = description {
+                for line in wrap_text_with_ansi(&description, inner) {
+                    bottom.push(Line::from(vec![Span::styled(
+                        format!("  {line}"),
+                        pal.dim(),
+                    )]));
+                }
+            }
+        }
+        if let Some(surface) = self.surface.last.borrow().as_ref() {
+            bottom.push(surface_row(surface));
+        }
+        console.bottom = bottom;
+        console.hint = hints(&[
+            ("↑↓", "move"),
+            ("space", "toggle"),
+            ("enter", "open"),
+            ("esc", "close"),
+        ]);
+        console.render(width)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -1791,8 +1999,69 @@ impl Component for SettingsSelectorComponent {
     }
 
     fn invalidate(&mut self) {
-        self.frame.invalidate();
+        self.list.borrow_mut().invalidate();
     }
+}
+
+/// One setting row (content only; the console adds the `›` marker or
+/// gutter and the selection band): the label padded to the pane's column,
+/// the value, and the price suffix. The selected row reads accent.
+fn setting_row(
+    label: &str,
+    value: &str,
+    suffix: Option<&str>,
+    selected: bool,
+    label_width: usize,
+) -> Line<'static> {
+    let pal = Palette::current();
+    let padded = format!(
+        "{label}{}",
+        " ".repeat(label_width.saturating_sub(visible_width(label)))
+    );
+    Line::from(vec![
+        if selected {
+            Span::styled(padded, pal.acc())
+        } else {
+            Span::raw(padded)
+        },
+        Span::raw("  ".to_string()),
+        if selected {
+            Span::styled(value.to_string(), pal.acc())
+        } else {
+            Span::styled(value.to_string(), pal.faint())
+        },
+        Span::styled(
+            suffix
+                .filter(|suffix| !suffix.is_empty())
+                .map(|suffix| format!("  {suffix}"))
+                .unwrap_or_default(),
+            pal.faint(),
+        ),
+    ])
+}
+
+/// The per-turn surface as a bottom row, like the old pane's line under
+/// the list (`formatSurfaceLine`).
+fn surface_row(surface: &PromptSurface) -> Line<'static> {
+    let pal = Palette::current();
+    let n = surface.tools.len();
+    Line::from(vec![
+        Span::raw("  Per-turn surface: ".to_string()),
+        Span::raw(format!(
+            "{} tokens",
+            token_count(surface.total_tokens as u64)
+        )),
+        Span::raw("  ".to_string()),
+        Span::styled(
+            format!(
+                "({} system prompt + {} schemas, {n} tool{})",
+                token_count(surface.system_prompt_tokens as u64),
+                token_count(surface.tool_schema_tokens as u64),
+                if n == 1 { "" } else { "s" },
+            ),
+            pal.faint(),
+        ),
+    ])
 }
 
 #[cfg(test)]

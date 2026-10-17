@@ -1,0 +1,78 @@
+┏━ SYSTEMS · /settings  4,140 tok/turn ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
+┃▸                                                                             ┃
+┃› Tools        1 on  2,710 tok/turn                                           ┃
+┃  Tool output  peek                                                           ┃
+┃  Models       all models                                                     ┃
+┃  Context      3 settings                                                     ┃
+┃  Behavior     6 settings                                                     ┃
+┃  Interface    8 settings                                                     ┃
+┃  Plugins      3 settings                                                     ┃
+┃  Images       2 settings                                                     ┃
+┃  Learning     5 settings                                                     ┃
+┃  Advanced     8 settings                                                     ┃
+┃  Enable/disable tools and tool groups (web, semantic search), each priced by ┃
+┃  what its schema costs per turn. Changes persist across sessions.            ┃
+┃  Per-turn surface: 4,140 tokens  (1,430 system prompt + 2,710 schemas, 2 too…┃
+┗━ ↑↓ move · space toggle · enter open · esc close ━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+--- styles ---
+r0 c0-1 fg=#9b8cff
+r0 c3-37 fg=#9b8cff bold
+r0 c39-75 fg=#9b8cff
+r0 c78-79 fg=#9b8cff
+r1 c0 fg=#9b8cff
+r1 c1 fg=#5cc8bb
+r1 c79 fg=#9b8cff
+r2 c0 fg=#9b8cff
+r2 c1-13 fg=#5cc8bb bg=#2a2a36
+r2 c14-15 bg=#2a2a36
+r2 c16-19 fg=#5cc8bb bg=#2a2a36
+r2 c20-35 fg=#a8a8a8 bg=#2a2a36
+r2 c36-78 bg=#2a2a36
+r2 c79 fg=#9b8cff
+r3 c0 fg=#9b8cff
+r3 c16-19 fg=#a8a8a8
+r3 c79 fg=#9b8cff
+r4 c0 fg=#9b8cff
+r4 c16-25 fg=#a8a8a8
+r4 c79 fg=#9b8cff
+r5 c0 fg=#9b8cff
+r5 c16-25 fg=#a8a8a8
+r5 c79 fg=#9b8cff
+r6 c0 fg=#9b8cff
+r6 c16-25 fg=#a8a8a8
+r6 c79 fg=#9b8cff
+r7 c0 fg=#9b8cff
+r7 c16-25 fg=#a8a8a8
+r7 c79 fg=#9b8cff
+r8 c0 fg=#9b8cff
+r8 c16-25 fg=#a8a8a8
+r8 c79 fg=#9b8cff
+r9 c0 fg=#9b8cff
+r9 c16-25 fg=#a8a8a8
+r9 c79 fg=#9b8cff
+r10 c0 fg=#9b8cff
+r10 c16-25 fg=#a8a8a8
+r10 c79 fg=#9b8cff
+r11 c0 fg=#9b8cff
+r11 c16-25 fg=#a8a8a8
+r11 c79 fg=#9b8cff
+r12 c0 fg=#9b8cff
+r12 c1-77 fg=#989898
+r12 c79 fg=#9b8cff
+r13 c0 fg=#9b8cff
+r13 c1-66 fg=#989898
+r13 c79 fg=#9b8cff
+r14 c0 fg=#9b8cff
+r14 c35-78 fg=#a8a8a8
+r14 c79 fg=#9b8cff
+r15 c0-1 fg=#9b8cff
+r15 c3-4 fg=#989898
+r15 c5-12 fg=#a8a8a8
+r15 c13-17 fg=#989898
+r15 c18-27 fg=#a8a8a8
+r15 c28-32 fg=#989898
+r15 c33-40 fg=#a8a8a8
+r15 c41-43 fg=#989898
+r15 c44-49 fg=#a8a8a8
+r15 c51-75 fg=#9b8cff
+r15 c78-79 fg=#9b8cff

@@ -1921,6 +1921,7 @@ dependencies = [
  "hoocode-tui-components",
  "hoocode-tui-fuzzy",
  "hoocode-tui-keys",
+ "hoocode-tui-ratatui",
  "hoocode-tui-render",
  "hoocode-tui-util",
  "serde_json",
