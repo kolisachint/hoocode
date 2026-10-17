@@ -200,6 +200,27 @@ impl Palette {
         }
         self.style(name)
     }
+
+    /// A background fill for `name` (the session colour swatch): the same
+    /// resolution as [`Palette::legacy`], painted as the background.
+    pub fn fill(&self, name: &str) -> Style {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return Style::default();
+        }
+        if let Some(theme) = hoocode_code_tui_theme::try_theme() {
+            if theme.has(name) {
+                let ansi = theme.get_fg_ansi(name);
+                if let Some(css) = ansi_to_hex(ansi) {
+                    if let Some(color) = css_to_color(&css) {
+                        return Style::new().bg(color);
+                    }
+                }
+                return Style::default();
+            }
+        }
+        self.color_for(name)
+            .map_or_else(Style::default, |color| Style::new().bg(color))
+    }
 }
 
 /// The ratatui style for an open-ended theme token (Mission Control or

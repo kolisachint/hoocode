@@ -7,6 +7,7 @@ mod flight_path;
 mod fork_console;
 mod hangar;
 mod learn_settings_pane;
+mod mission_log;
 mod model_selector;
 mod oauth_selector;
 mod picker_widths;

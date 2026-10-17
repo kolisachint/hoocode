@@ -1,0 +1,50 @@
+┏━ MISSION LOG · /resume  2 sessions ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
+┃◉ Current Folder | ○ All  Name: All  Sort: Threaded                           ┃
+┃tab scope · re:<pattern> regex · "phrase" exact                               ┃
+┃▸                                                                             ┃
+┃›   wrap width                                                             5 …┃
+┃    add a width check to wrap_text in src/wrap.rs              coral-basin 5 …┃
+┗━ tab scope · alt+o sort · alt+x delete · enter open · esc close ━━━━━━━━━━  ━┛
+--- styles ---
+r0 c0-1 fg=#9b8cff
+r0 c3-35 fg=#9b8cff bold
+r0 c37-75 fg=#9b8cff
+r0 c78-79 fg=#9b8cff
+r1 c0 fg=#9b8cff
+r1 c1-16 fg=#5cc8bb
+r1 c17-32 fg=#a8a8a8
+r1 c33-35 fg=#5cc8bb
+r1 c36-43 fg=#a8a8a8
+r1 c44-51 fg=#5cc8bb
+r1 c79 fg=#9b8cff
+r2 c0 fg=#9b8cff
+r2 c1-3 fg=#989898
+r2 c4-47 fg=#a8a8a8
+r2 c79 fg=#9b8cff
+r3 c0 fg=#9b8cff
+r3 c1 fg=#5cc8bb
+r3 c79 fg=#9b8cff
+r4 c0 fg=#9b8cff
+r4 c1-2 fg=#5cc8bb bg=#2a2a36
+r4 c3-4 bg=#2a2a36
+r4 c5-14 fg=#ffff00 bg=#2a2a36 bold
+r4 c15-75 bg=#2a2a36
+r4 c76-78 fg=#989898 bg=#2a2a36
+r4 c79 fg=#9b8cff
+r5 c0 fg=#9b8cff
+r5 c3 bg=#7aa2f7
+r5 c64-78 fg=#989898
+r5 c79 fg=#9b8cff
+r6 c0-1 fg=#9b8cff
+r6 c3-5 fg=#989898
+r6 c6-14 fg=#a8a8a8
+r6 c15-19 fg=#989898
+r6 c20-27 fg=#a8a8a8
+r6 c28-32 fg=#989898
+r6 c33-42 fg=#a8a8a8
+r6 c43-47 fg=#989898
+r6 c48-55 fg=#a8a8a8
+r6 c56-58 fg=#989898
+r6 c59-64 fg=#a8a8a8
+r6 c66-75 fg=#9b8cff
+r6 c78-79 fg=#9b8cff
