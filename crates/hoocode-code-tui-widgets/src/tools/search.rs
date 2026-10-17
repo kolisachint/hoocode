@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::text;
 use crate::render_utils::{invalid_arg_text, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
-use crate::tool_output_view::peek_block;
+use crate::tool_output_view::PEEK_LINES;
 
 /// A JS number as `String(n)` prints it.
 pub(crate) fn js_number(value: &Value) -> String {
@@ -30,12 +30,12 @@ fn format_search_call(args: &Value) -> String {
     let t = theme();
     let query_display = match str_arg(args.get("query")) {
         None => invalid_arg_text(),
-        Some(q) => format!("\"{q}\""),
+        Some(q) if !q.is_empty() => t.fg("accent", &q),
+        Some(_) => t.fg("toolOutput", "..."),
     };
     let mut text = format!(
-        "{}{}",
-        t.fg("toolTitle", &t.bold("CodeSearch ")),
-        t.fg("accent", &query_display)
+        "{}{query_display}",
+        t.fg("toolTitle", &t.bold("CodeSearch "))
     );
     let mut extras = Vec::new();
     if let Some(mode) = args.get("mode").and_then(Value::as_str) {
@@ -52,16 +52,99 @@ fn format_search_call(args: &Value) -> String {
     text
 }
 
+/// One parsed snippet row: its file section and 1-indexed line number.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SearchHit {
+    file: String,
+    lineno: usize,
+    snippet: String,
+}
+
+/// `path:start-end [sources]`, the header the assembler prints per file
+/// section (`crates/hoocode-code-tool-search/src/assembler.rs`).
+fn parse_section_header(line: &str) -> Option<String> {
+    let line = line.strip_suffix(']').filter(|_| line.ends_with(']'))?;
+    let (head, _) = line.rsplit_once(" [")?;
+    let (path, _) = head.rsplit_once(':')?;
+    (!path.is_empty()).then(|| path.to_string())
+}
+
+/// `  12: snippet`, an indented snippet row under a section header.
+fn parse_snippet_row(line: &str) -> Option<(usize, String)> {
+    let rest = line.strip_prefix("  ")?.trim_start();
+    let (num, snippet) = rest.split_once(':')?;
+    Some((
+        num.trim().parse().ok()?,
+        snippet.strip_prefix(' ').unwrap_or(snippet).to_string(),
+    ))
+}
+
+/// The result body: one faint-`lineno` + dim-`snippet` row per hit, grouped
+/// under a dim file row only when hits span files (a single file's header
+/// would repeat the header's own path), then the design's `+N more` fold.
 fn format_search_result(result: &ToolResultView<'_>, show_images: bool) -> String {
     let t = theme();
     let output = js_trim(result.text(show_images));
     if output.is_empty() {
         return String::new();
     }
-    let lines: Vec<String> = output.split('\n').map(str::to_string).collect();
-    peek_block(&lines, |shown| {
-        shown.iter().map(|l| t.fg("toolOutput", l)).collect()
-    })
+    let mut files: Vec<String> = Vec::new();
+    let mut hits: Vec<SearchHit> = Vec::new();
+    let mut plain: Vec<String> = Vec::new();
+    let mut current: Option<String> = None;
+    for line in output.split('\n') {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Some((lineno, snippet)) = parse_snippet_row(line) {
+            let file = current.clone().unwrap_or_default();
+            if !files.contains(&file) {
+                files.push(file.clone());
+            }
+            hits.push(SearchHit {
+                file,
+                lineno,
+                snippet,
+            });
+        } else if let Some(path) = parse_section_header(line) {
+            current = Some(path);
+        } else {
+            // `No results for ...`, `[notice]`, or a header-only section.
+            plain.push(t.fg("dim", line));
+        }
+    }
+    if hits.is_empty() {
+        return plain.join("\n");
+    }
+    let multi_file = files.len() > 1;
+    let digits = hits
+        .iter()
+        .map(|h| h.lineno.to_string().len())
+        .max()
+        .unwrap_or(1)
+        .max(2);
+    let mut rows: Vec<String> = Vec::new();
+    let mut last_file: Option<&str> = None;
+    for hit in &hits {
+        if multi_file && last_file != Some(hit.file.as_str()) {
+            rows.push(t.fg("dim", &hit.file));
+            last_file = Some(hit.file.as_str());
+        }
+        let num = format!("{:>digits$}", hit.lineno, digits = digits);
+        rows.push(format!(
+            "{} {}",
+            t.fg("faint", &num),
+            t.fg("dim", &hit.snippet)
+        ));
+    }
+    rows.extend(plain);
+    if rows.len() <= PEEK_LINES {
+        return rows.join("\n");
+    }
+    let hidden = rows.len() - PEEK_LINES;
+    rows.truncate(PEEK_LINES);
+    rows.push(t.fg("faint", &format!("+{hidden} more")));
+    rows.join("\n")
 }
 
 pub fn definition() -> ToolRenderDefinition {

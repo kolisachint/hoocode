@@ -446,15 +446,18 @@ mod parity {
         }
     }
 
+    /// Mission Control (brief C): the `:start-end` range left the call line
+    /// for the step header's right side (`peek_right` shows `lines X–Y of Z`),
+    /// so the call names the resource only.
     #[test]
-    fn shows_the_read_line_range_in_compact_reads() {
+    fn the_read_line_range_left_the_call_line_for_the_header_stats() {
         let _g = lock();
         let cwd = cwd();
         for (path, compact) in [
-            (format!("{cwd}/attio/SKILL.md"), "[skill] attio:120-329"),
+            (format!("{cwd}/attio/SKILL.md"), "[skill] attio"),
             (
                 tools::read::readme_path().to_string_lossy().into_owned(),
-                "Read docs README.md:120-329",
+                "Read docs README.md",
             ),
         ] {
             let mut c = component(
@@ -466,6 +469,7 @@ mod parity {
             );
             let collapsed = strip_all(&c.render(120));
             assert!(collapsed.contains(compact), "{collapsed}");
+            assert!(!collapsed.contains(":120-329"), "{collapsed}");
             assert!(!collapsed.contains("to expand"), "{collapsed}");
         }
     }
