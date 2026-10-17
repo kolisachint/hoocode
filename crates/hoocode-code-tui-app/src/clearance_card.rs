@@ -10,7 +10,7 @@
 //! text as the next message instead; the agent then runs the revised command
 //! (asking again when it still needs clearance).
 
-use hoocode_code_permissions::{ClearanceChoice, ClearanceInfo, ReachCell};
+use hoocode_code_permissions::{shell_program, ClearanceChoice, ClearanceInfo, ReachCell};
 use hoocode_code_tui_keybindings::raw_key_hint;
 use hoocode_code_tui_theme::theme;
 use hoocode_code_tui_widgets::card_frame::render_card;
@@ -67,11 +67,13 @@ impl ClearanceCard {
     }
 
     /// The `a` key's program: the Shell command's first word, else the tool.
+    /// The word comes from the gate's [`shell_program`], so the label and
+    /// the stored rule always agree.
     fn program(&self) -> String {
         if self.info.tool == "Shell" {
             let command = self.info.detail.trim_start_matches("$ ").trim_start();
-            if let Some(word) = command.split_whitespace().next() {
-                return word.to_string();
+            if let Some(program) = shell_program(command) {
+                return program;
             }
         }
         self.info.tool.clone()

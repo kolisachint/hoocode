@@ -273,19 +273,17 @@ impl AskOptionsComponent {
     }
 
     /// Esc on the card: answer this step with option 1 (Mission Control,
-    /// spec §6.2). A step with no options to pick cannot answer: it skips.
+    /// spec §6.2). Anything else skips: elicitation forms, and a step with
+    /// no options to pick.
     fn escape(&mut self) {
-        let first = {
-            let mut state = self.state.borrow_mut();
-            if !state.esc_answers_first || state.current().options.is_empty() {
-                return;
-            }
-            state.cursor.select(0);
-            true
-        };
-        if first {
-            self.confirm();
+        let first = self.state.borrow().esc_answers_first
+            && !self.state.borrow().current().options.is_empty();
+        if !first {
+            (self.on_cancel)();
+            return;
         }
+        self.state.borrow_mut().cursor.select(0);
+        self.confirm();
     }
 
     fn back(&mut self) {
@@ -329,11 +327,7 @@ impl Component for AskOptionsComponent {
             return;
         }
         if kb.matches(data, "tui.select.cancel") {
-            if self.state.borrow().esc_answers_first {
-                self.escape();
-            } else {
-                (self.on_cancel)();
-            }
+            self.escape();
             return;
         }
 

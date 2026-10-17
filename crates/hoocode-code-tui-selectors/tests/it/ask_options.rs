@@ -298,3 +298,28 @@ fn escape_skips_for_elicitation_forms() {
     assert!(*cancelled.borrow());
     assert_eq!(*submitted.borrow(), None);
 }
+
+#[test]
+fn escape_skips_when_no_option_can_answer() {
+    let _g = lock();
+    let submitted: Submitted = Rc::default();
+    let cancelled = Rc::new(RefCell::new(false));
+    let (s, c) = (submitted.clone(), cancelled.clone());
+    let mut pane = AskOptionsComponent::new(
+        vec![AskQuestion {
+            question: "free text?".into(),
+            short: None,
+            detail: None,
+            allow_custom: false,
+            options: vec![],
+        }],
+        Box::new(move |answers| *s.borrow_mut() = Some(answers)),
+        Box::new(move || *c.borrow_mut() = true),
+        AskOptionsOptions {
+            esc_answers_first: true,
+        },
+    );
+    pane.handle_input(ESC);
+    assert!(*cancelled.borrow());
+    assert_eq!(*submitted.borrow(), None);
+}

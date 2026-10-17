@@ -66,7 +66,7 @@ fn edge_row(corners: (char, char), left: &[String], right: &[String], width: usi
 
 /// Draws the card at `width` columns: the warn top edge with `title` and
 /// `right`, `body` between `┃` edges, and the foot edge. Rows that do not
-/// fit are cut with `…`, the title first. Below four columns the frame has
+/// fit are cut with `…`, the title first. Below ten columns the frame has
 /// no room, so the body draws bare.
 pub fn render_card(
     title: &str,
@@ -75,7 +75,7 @@ pub fn render_card(
     foot: &str,
     width: usize,
 ) -> Vec<String> {
-    if width < 4 {
+    if width < 10 {
         return body
             .iter()
             .map(|line| truncate_to_width(line, width, "…", false))
@@ -97,4 +97,39 @@ pub fn render_card(
     }
     out.push(edge_row(('┗', '┛'), &[theme().fg("dim", foot)], &[], width));
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn body() -> Vec<String> {
+        vec![
+            "$ printf 'alpha\\nbeta\\ngamma\\n' | sort -r".to_string(),
+            "REACH   ■ pipe 2 programs".to_string(),
+            "y go once · a always printf in BUILD".to_string(),
+        ]
+    }
+
+    /// Every emitted line fits its width, even where the frame has no room.
+    #[test]
+    fn narrow_cards_fit() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        for width in [3, 19] {
+            let rows = render_card(
+                "◉ CLEARANCE NEEDED",
+                "BUILD asks for Shell",
+                &body(),
+                "or type a reply",
+                width,
+            );
+            assert!(!rows.is_empty());
+            for row in &rows {
+                assert!(
+                    visible_width(row) <= width,
+                    "width {width}: {row:?} is too wide"
+                );
+            }
+        }
+    }
 }

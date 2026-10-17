@@ -410,6 +410,28 @@ fn matches_bash_pattern(pattern: &str, command: &str) -> bool {
     regex::Regex::new(pattern).is_ok_and(|re| re.is_match(command))
 }
 
+/// A Shell command's first word (the `a always …` program), with one layer
+/// of surrounding quotes stripped. Shared with the clearance card's label.
+pub fn shell_program(command: &str) -> Option<String> {
+    let word = command.split_whitespace().next()?;
+    let word = word
+        .strip_prefix('\'')
+        .or_else(|| word.strip_prefix('"'))
+        .unwrap_or(word);
+    let word = word
+        .strip_suffix('\'')
+        .or_else(|| word.strip_suffix('"'))
+        .unwrap_or(word);
+    (!word.is_empty()).then(|| word.to_string())
+}
+
+/// An anchored rule for one Shell program (`^\s*printf(?:\s|$)`): it
+/// matches `printf y` but neither `printfoo` nor `rm`. The program is
+/// regex-escaped, so `./run.sh` does not match `./runXsh`.
+pub fn always_bash_pattern(program: &str) -> String {
+    format!("^\\s*{}(?:\\s|$)", regex::escape(program))
+}
+
 /// `mutationPath`: `path`, else `file_path` (non-empty strings).
 pub fn mutation_path(input: &Value) -> Option<String> {
     ["path", "file_path"].iter().find_map(|k| {
@@ -539,6 +561,19 @@ pub fn evaluate(
     if list("auto_allow").is_some_and(|a| a.iter().any(|t| t == tool_name)) {
         return Verdict::Allow;
     }
+    // A program the user always-approved (`a` on the clearance card) runs
+    // without asking. The rules are anchored to the command's first word,
+    // so `printf` never covers `printfoo` or `rm`.
+    if tool_name == "Shell"
+        && list("always_bash_commands").is_some_and(|patterns| {
+            let command = input.get("command").and_then(Value::as_str).unwrap_or("");
+            patterns
+                .iter()
+                .any(|pattern| matches_bash_pattern(pattern, command))
+        })
+    {
+        return Verdict::Allow;
+    }
     if fail_closed {
         return Verdict::Block(format!(
             "Tool \"{tool_name}\" needs approval, but no client can answer in this session (rpc mode denies it). Add it to auto_allow for mode \"{mode}\" in hoo-config.json to allow it."
@@ -588,7 +623,28 @@ impl HooPermissionGate {
                     }),
                     // The revised text runs as a later message; this call stays denied.
                     ClearanceChoice::Revise(_) => Some("Denied by permission gate".into()),
+                    // "Always" scopes to the Shell program (`a always printf`),
+                    // never the whole tool: an anchored rule for the first
+                    // word only. Other tools keep tool-name scope.
                     ClearanceChoice::Always => {
+                        let mode = config::active_mode(&merged).unwrap_or_else(|| "build".into());
+                        let program = (tool_name == "Shell").then(|| {
+                            shell_program(
+                                input.get("command").and_then(Value::as_str).unwrap_or(""),
+                            )
+                        });
+                        let (key, value, notice) = match program {
+                            Some(Some(program)) => (
+                                "always_bash_commands",
+                                always_bash_pattern(&program),
+                                format!("\"{program}\" added to always-allow for mode \"{mode}\""),
+                            ),
+                            _ => (
+                                "auto_allow",
+                                tool_name.to_string(),
+                                format!("\"{tool_name}\" added to auto-allow for mode \"{mode}\""),
+                            ),
+                        };
                         // "Always" goes to the global config only.
                         let mut latest = config::read_config();
                         let mode = config::active_mode(&latest).unwrap_or_else(|| "build".into());
@@ -604,19 +660,17 @@ impl HooPermissionGate {
                         });
                         if let Some(Value::Object(mode_cfg)) = entry {
                             let mut allow: Vec<Value> = mode_cfg
-                                .get("auto_allow")
+                                .get(key)
                                 .and_then(Value::as_array)
                                 .cloned()
                                 .unwrap_or_default();
-                            if !allow.iter().any(|v| v.as_str() == Some(tool_name)) {
-                                allow.push(tool_name.into());
+                            if !allow.iter().any(|v| v.as_str() == Some(&value)) {
+                                allow.push(Value::String(value));
                             }
-                            mode_cfg.insert("auto_allow".into(), Value::Array(allow));
+                            mode_cfg.insert(key.into(), Value::Array(allow));
                         }
                         let _ = config::write_config(&latest);
-                        ui.notify(&format!(
-                            "\"{tool_name}\" added to auto-allow for mode \"{mode}\""
-                        ));
+                        ui.notify(&notice);
                         None
                     }
                 }

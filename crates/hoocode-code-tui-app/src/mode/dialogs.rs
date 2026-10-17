@@ -211,6 +211,13 @@ impl Mode {
         reply: mpsc::Sender<ClearanceChoice>,
     ) {
         self.close_clearance(ClearanceChoice::Deny { reason: None });
+        // A quit card up already is superseded: the slot belongs to the
+        // clearance, and quitting again re-asks (otherwise the quit state
+        // would wait on a card that is gone).
+        self.quit_jobs = QuitJobs::Unasked;
+        self.end_shift = EndShift::Unasked;
+        self.end_shift_card = None;
+        self.end_shift_jobs_card = None;
         let on_done = self.actions.clone();
         let card = handle(ClearanceCard::new(
             info,
@@ -252,9 +259,21 @@ impl Mode {
         }
     }
 
+    /// Takes a pending clearance's answer channel, if any. Showing a quit
+    /// card denies it: the gated call belongs to a shift that is ending,
+    /// and the gate must never wait on an answer that never comes.
+    fn take_pending_clearance(&mut self) -> Option<mpsc::Sender<ClearanceChoice>> {
+        self.clearance.take().map(|(_, reply)| reply)
+    }
+
     /// `showEndShift`: the amber end-of-shift card with the shift's debrief.
-    /// `enter` ends the shift, `esc` stays (spec §6.2).
+    /// `enter` ends the shift, `esc` stays (spec §6.2). A pending clearance
+    /// is denied first, and a satellites card already up is replaced.
     pub(super) fn show_end_shift(&mut self, debrief: ShiftDebrief) {
+        if let Some(reply) = self.take_pending_clearance() {
+            let _ = reply.send(ClearanceChoice::Deny { reason: None });
+        }
+        self.end_shift_jobs_card = None;
         let on_done = self.actions.clone();
         let card = handle(EndShiftCard::new(
             debrief,
@@ -274,7 +293,13 @@ impl Mode {
 
     /// `showEndShiftJobs`: the amber card for quitting with satellites up
     /// (spec §4 c8). `k` brings them down, `l` leaves them, `esc` stays.
+    /// A pending clearance is denied first, and a plain card already up is
+    /// replaced.
     pub(super) fn show_end_shift_jobs(&mut self, jobs: Vec<ShiftJob>) {
+        if let Some(reply) = self.take_pending_clearance() {
+            let _ = reply.send(ClearanceChoice::Deny { reason: None });
+        }
+        self.end_shift_card = None;
         let on_done = self.actions.clone();
         let card = handle(EndShiftJobsCard::new(
             jobs,
