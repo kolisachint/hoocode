@@ -2554,7 +2554,12 @@ mod tests {
 
         #[test]
         fn peek_draws_each_trace_above_the_call_it_led_to() {
-            let lines = draw(two_turns(), json!({"toolOutputView": "peek"}));
+            // M4 hides thinking by default, so the trace bodies are asked
+            // for here; the trace-above-call ordering is what this test owns.
+            let lines = draw(
+                two_turns(),
+                json!({"toolOutputView": "peek", "hideThinkingBlock": false}),
+            );
             // The second trace is above its own call, not below it, and
             // below the first call. The trace does not split the run: both
             // calls stay in one chain (thinking never splits a chain).
@@ -2566,10 +2571,12 @@ mod tests {
         #[test]
         fn a_folded_trace_sits_above_its_call_in_one_run() {
             let lines = draw(two_turns(), json!({"hideThinkingBlock": true}));
+            // M4 folds thinking to a header-only Think row (`✻ thought`),
+            // which carries no `Thinking...` label.
             let labels: Vec<usize> = lines
                 .iter()
                 .enumerate()
-                .filter(|(_, l)| l.contains("Thinking..."))
+                .filter(|(_, l)| l.contains("✻ thought"))
                 .map(|(i, _)| i)
                 .collect();
             assert_eq!(labels.len(), 2, "{}", lines.join("\n"));
