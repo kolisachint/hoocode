@@ -19,6 +19,7 @@ use std::path::Path;
 use hoocode_code_agent_session::format::{format_tokens, js_to_fixed};
 use hoocode_code_task_store::{task_store, TaskSource, TaskStatus};
 use hoocode_code_tui_theme::theme;
+use hoocode_tui_ratatui::{bold, paint, Palette, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::js_math::js_round;
 use hoocode_tui_util::{truncate_to_width, visible_width};
@@ -102,6 +103,17 @@ fn join_pieces(pieces: &[Piece], sep: &str) -> Piece {
     (plain.join(sep), styled.join(sep))
 }
 
+/// The palette style for a footer status colour name: the gauge and flag
+/// keep their error/warning meaning, the muted tail stays muted.
+fn status_style(pal: &Palette, color: &str) -> Style {
+    match color {
+        "error" => pal.err(),
+        "warning" => pal.warn(),
+        "accent" => pal.acc(),
+        _ => pal.faint(),
+    }
+}
+
 /// A compact context-fill gauge, coloured by proximity to the compaction
 /// trip point.
 fn context_gauge(percent: f64, error_level: f64, warn_level: f64) -> Piece {
@@ -116,10 +128,10 @@ fn context_gauge(percent: f64, error_level: f64, warn_level: f64) -> Piece {
     } else {
         "accent"
     };
-    let t = theme();
+    let pal = Palette::current();
     (
         format!("{fill}{track}"),
-        t.fg(color, &fill) + &t.fg("halftone", &track),
+        paint(status_style(&pal, color), &fill) + &paint(pal.legacy("halftone"), &track),
     )
 }
 
@@ -145,17 +157,17 @@ fn subagent_counts() -> (usize, usize) {
 /// `◇2 running · 1 queued`. Queued is included: a pool with five slots and
 /// twelve dispatches is five running and seven waiting.
 fn subagent_piece(running: usize, queued: usize) -> Piece {
-    let t = theme();
+    let pal = Palette::current();
     if queued > 0 {
         (
             format!("◇{running} running · {queued} queued"),
-            t.fg("accent", &format!("◇{running}"))
-                + &t.fg("dim", &format!(" running · {queued} queued")),
+            paint(pal.acc(), &format!("◇{running}"))
+                + &paint(pal.dim(), &format!(" running · {queued} queued")),
         )
     } else {
         (
             format!("◇{running} running"),
-            t.fg("accent", &format!("◇{running}")) + &t.fg("dim", " running"),
+            paint(pal.acc(), &format!("◇{running}")) + &paint(pal.dim(), " running"),
         )
     }
 }
@@ -184,10 +196,10 @@ pub(crate) fn sanitize_status_text(text: &str) -> String {
 
 /// One footer line for a transient progress entry.
 fn render_startup_line(entry: &StartupProgress) -> String {
-    let t = theme();
+    let pal = Palette::current();
     match entry {
         StartupProgress::Error { label, message, .. } => {
-            t.fg("dim", &format!("{label}: {message}"))
+            paint(pal.dim(), &format!("{label}: {message}"))
         }
         StartupProgress::Download {
             label,
@@ -196,7 +208,7 @@ fn render_startup_line(entry: &StartupProgress) -> String {
             ..
         } => format!(
             "{} {}",
-            t.fg("text", label),
+            paint(pal.ink(), label),
             render_download_progress(*received_bytes, *total_bytes, None)
         ),
         StartupProgress::Work {
@@ -213,7 +225,7 @@ fn render_startup_line(entry: &StartupProgress) -> String {
             };
             format!(
                 "{} {}",
-                t.fg("text", label),
+                paint(pal.ink(), label),
                 render_progress_bar(ratio, &format!("{done}/{total} {unit}"), None)
             )
         }
@@ -309,12 +321,17 @@ fn space_piece() -> Piece {
 
 /// The mode chip, padded to `CHIP_WIDTH`, in the chip style.
 fn chip_piece(mode: &str) -> Piece {
-    let t = theme();
+    let pal = Palette::current();
     let text = pad_plain(mode, CHIP_WIDTH);
-    let styled = if t.has_bg("brandBg") && t.has("brandText") {
-        t.bg("brandBg", &t.bold(&t.fg("brandText", &text)))
+    // The brand query stays on the theme (it asks what exists, not how to
+    // paint); the styling itself is palette spans.
+    let styled = if theme().has_bg("brandBg") && theme().has("brandText") {
+        paint(
+            bold(pal.legacy("brandText").patch(pal.bg("brandBg"))),
+            &text,
+        )
     } else {
-        t.bold(&t.fg("accent", &text))
+        paint(bold(pal.acc()), &text)
     };
     (text, styled)
 }
@@ -322,9 +339,10 @@ fn chip_piece(mode: &str) -> Piece {
 /// The percent, right-aligned in four cells: `  2%`, ` 88%`, `100%`.
 fn percent_piece(text: &str, color: &str) -> Piece {
     let pad = " ".repeat(4usize.saturating_sub(visible_width(text)));
+    let pal = Palette::current();
     (
         format!("{pad}{text}"),
-        format!("{pad}{}", theme().fg(color, text)),
+        format!("{pad}{}", paint(status_style(&pal, color), text)),
     )
 }
 
@@ -386,27 +404,30 @@ fn line1_candidates(d: &Line1Data) -> Vec<Line1Parts> {
 /// Row 1 with the parts in `p`: the left part (mode chip, dial and the
 /// identity, padded to `LEFT_COLUMN`) and the right part.
 fn row1_parts(d: &Line1Data, p: &Line1Parts) -> (Piece, Option<Piece>) {
-    let t = theme();
-    let mut identity = (d.name.clone(), t.bold(&t.fg("text", &d.name)));
+    let pal = Palette::current();
+    let mut identity = (d.name.clone(), paint(bold(pal.ink()), &d.name));
     if let Some(branch) = d.branch.as_ref().filter(|_| p.branch) {
         identity.0 += &format!("  {GIT_BRANCH_GLYPH} {branch}");
         identity.1 += &format!(
             "  {} {}",
-            t.fg("dim", GIT_BRANCH_GLYPH),
-            t.fg("muted", branch)
+            paint(pal.dim(), GIT_BRANCH_GLYPH),
+            paint(pal.faint(), branch)
         );
     }
     if let Some(session) = d.session.as_ref().filter(|_| p.session) {
         identity.0 += &format!(" • {session}");
-        identity.1 += &t.fg("dim", &format!(" • {session}"));
+        identity.1 += &paint(pal.dim(), &format!(" • {session}"));
     }
     if let Some(path) = &p.path {
         identity.0 += &format!("  {path}");
-        identity.1 += &format!("  {}", t.fg("dim", path));
+        identity.1 += &format!("  {}", paint(pal.dim(), path));
     }
     let head = pad_piece(
         join_pieces(
-            &[chip_piece(&d.mode), (d.dial.clone(), t.fg("dim", &d.dial))],
+            &[
+                chip_piece(&d.mode),
+                (d.dial.clone(), paint(pal.dim(), &d.dial)),
+            ],
             " · ",
         ),
         LEFT_COLUMN,
@@ -597,16 +618,16 @@ fn build_short(d: &ShortData, p: &ShortParts) -> Piece {
 
 /// `◇2` for the short layout, `◇2 · 1 queued` when some wait.
 fn subagent_short_piece(running: usize, queued: usize) -> Piece {
-    let t = theme();
+    let pal = Palette::current();
     let head = format!("◇{running}");
     if queued > 0 {
         let tail = format!(" · {queued} queued");
         (
             format!("{head}{tail}"),
-            t.fg("accent", &head) + &t.fg("dim", &tail),
+            paint(pal.acc(), &head) + &paint(pal.dim(), &tail),
         )
     } else {
-        (head.clone(), t.fg("accent", &head))
+        (head.clone(), paint(pal.acc(), &head))
     }
 }
 
@@ -677,20 +698,21 @@ impl FooterComponent {
     /// progress. Each is at most `width` cells. Show them in the notification
     /// area.
     pub fn transient_lines(&self, width: usize) -> Vec<String> {
+        let pal = Palette::current();
         let mut lines = Vec::new();
         if let Some(notice) = &self.notice {
             lines.push(truncate_to_width(
-                &theme().fg("warning", notice),
+                &paint(pal.warn(), notice),
                 width,
-                &theme().fg("dim", "..."),
+                &paint(pal.dim(), "..."),
                 false,
             ));
         }
         if let Some(notice) = &self.retry_notice {
             lines.push(truncate_to_width(
-                &theme().fg("warning", &sanitize_status_text(notice)),
+                &paint(pal.warn(), &sanitize_status_text(notice)),
                 width,
-                &theme().fg("dim", "..."),
+                &paint(pal.dim(), "..."),
                 false,
             ));
         }
@@ -704,7 +726,7 @@ impl FooterComponent {
             lines.push(truncate_to_width(
                 &line,
                 width,
-                &theme().fg("dim", "..."),
+                &paint(pal.dim(), "..."),
                 false,
             ));
         }
@@ -712,7 +734,7 @@ impl FooterComponent {
             lines.push(truncate_to_width(
                 &render_startup_line(&entry),
                 width,
-                &theme().fg("dim", "…"),
+                &paint(pal.dim(), "…"),
                 false,
             ));
         }
@@ -720,7 +742,7 @@ impl FooterComponent {
     }
 
     fn render_lines(&self, width: usize) -> Vec<String> {
-        let t = theme();
+        let pal = Palette::current();
         let source = &self.source;
         let (total_input, total_output, total_cache_read, total_cache_write, total_cost) =
             source.usage_totals();
@@ -773,8 +795,8 @@ impl FooterComponent {
         };
         // The `!` is the warning cue that does not depend on colour. It shows
         // where the bar changes colour.
-        let flag =
-            (context_percent_value >= warn_level).then(|| ("!".to_string(), t.fg(pct_color, "!")));
+        let flag = (context_percent_value >= warn_level)
+            .then(|| ("!".to_string(), paint(status_style(&pal, pct_color), "!")));
         let (bar_plain, bar_styled) = context_gauge(context_percent_value, error_level, warn_level);
         let gauge = cat_pieces(&[
             (bar_plain, bar_styled),
@@ -786,14 +808,14 @@ impl FooterComponent {
                 &format!("of {}", format_tokens(context_window)),
                 WINDOW_WIDTH,
             );
-            (text.clone(), t.fg("dim", &text))
+            (text.clone(), paint(pal.dim(), &text))
         });
 
         // ── Shared: usage
         let arrow = |a: &str, n: u64| {
             (
                 format!("{a}{}", format_tokens(n)),
-                t.fg("dim", a) + &t.fg("muted", &format_tokens(n)),
+                paint(pal.dim(), a) + &paint(pal.faint(), &format_tokens(n)),
             )
         };
         let mut io = Vec::new();
@@ -811,7 +833,7 @@ impl FooterComponent {
             );
             (
                 format!("cache {figures}"),
-                t.fg("dim", "cache ") + &t.fg("muted", &figures),
+                paint(pal.dim(), "cache ") + &paint(pal.faint(), &figures),
             )
         });
         let using_subscription = model.is_some() && source.is_using_oauth();
@@ -821,7 +843,7 @@ impl FooterComponent {
                 format_cost(total_cost),
                 if using_subscription { " sub" } else { "" }
             );
-            (text.clone(), t.fg("muted", &text))
+            (text.clone(), paint(pal.faint(), &text))
         });
 
         // ── Shared: model
@@ -844,7 +866,7 @@ impl FooterComponent {
             .map(|m| {
                 (
                     format!("({}) ", m.provider),
-                    t.fg("dim", &format!("({}) ", m.provider)),
+                    paint(pal.dim(), &format!("({}) ", m.provider)),
                 )
             });
 
@@ -877,12 +899,12 @@ impl FooterComponent {
                             Some(r) => cat_pieces(&[left, ("  ".into(), "  ".into()), r]),
                             None => left,
                         };
-                        truncate_to_width(&all.1, width, &t.fg("dim", "…"), false)
+                        truncate_to_width(&all.1, width, &paint(pal.dim(), "…"), false)
                     });
 
                 // ── Row 2 — session vitals
                 let model_piece = {
-                    let mut piece = (model_name.clone(), t.fg("muted", &model_name));
+                    let mut piece = (model_name.clone(), paint(pal.faint(), &model_name));
                     if let Some(level) = &level {
                         let text = if level == "off" {
                             "thinking off".to_string()
@@ -890,7 +912,7 @@ impl FooterComponent {
                             level.clone()
                         };
                         piece.0 += &format!(" · {text}");
-                        piece.1 += &t.fg("dim", &format!(" · {text}"));
+                        piece.1 += &paint(pal.dim(), &format!(" · {text}"));
                     }
                     piece
                 };
@@ -919,7 +941,7 @@ impl FooterComponent {
                         truncate_to_width(
                             &build_line2(&d2, &last).1,
                             width,
-                            &t.fg("dim", "…"),
+                            &paint(pal.dim(), "…"),
                             false,
                         )
                     });
@@ -929,11 +951,11 @@ impl FooterComponent {
             FooterDensity::Line => {
                 let model_piece = {
                     let short = short_model_name(&model_name);
-                    let mut piece = (short.to_string(), t.fg("muted", short));
+                    let mut piece = (short.to_string(), paint(pal.faint(), short));
                     if let Some(level) = &level {
                         let level = short_level(level);
                         piece.0 += &format!(" · {level}");
-                        piece.1 += &t.fg("dim", &format!(" · {level}"));
+                        piece.1 += &paint(pal.dim(), &format!(" · {level}"));
                     }
                     piece
                 };
@@ -943,13 +965,13 @@ impl FooterComponent {
                     gauge: cat_pieces(&[gauge, flag.clone().unwrap_or_default()]),
                     branch: branch.map(|b| {
                         (format!("{GIT_BRANCH_GLYPH} {b}"), {
-                            t.fg("dim", GIT_BRANCH_GLYPH) + " " + &t.fg("muted", &b)
+                            paint(pal.dim(), GIT_BRANCH_GLYPH) + " " + &paint(pal.faint(), &b)
                         })
                     }),
                     model: model_piece,
-                    name: (name.clone(), t.bold(&t.fg("text", &name))),
+                    name: (name.clone(), paint(bold(pal.ink()), &name)),
                     cost: cost_short,
-                    dial: (dial.clone(), t.fg("dim", &dial)),
+                    dial: (dial.clone(), paint(pal.dim(), &dial)),
                     subagents: has_subagents.then(|| subagent_short_piece(n_sub, n_queued)),
                 };
                 let line = short_candidates(&d)
@@ -970,7 +992,7 @@ impl FooterComponent {
                         truncate_to_width(
                             &build_short(&d, &last).1,
                             width,
-                            &t.fg("dim", "…"),
+                            &paint(pal.dim(), "…"),
                             false,
                         )
                     });
