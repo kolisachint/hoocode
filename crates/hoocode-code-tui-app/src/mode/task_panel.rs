@@ -215,6 +215,11 @@ impl Mode {
                         id: info.id,
                         command: info.command,
                         running: info.state.is_running(),
+                        // The registry keeps no orbit clock, so the card
+                        // shows none; the log path tells where its output stays.
+                        elapsed_secs: None,
+                        total_secs: None,
+                        log_path: Some(info.log_path.display().to_string()),
                     })
                     .collect();
                 self.show_end_shift_jobs(jobs);

@@ -1,4 +1,4 @@
-┏━ FLIGHT PLAN  0/0 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ agents 0 · sats 3 ━┓
+┏━ FLIGHT PLAN  0/0 ━━━━━━━━━━━━━━━━━━━━━━━ agents 0 · sats 3 /tasks · ctrl+g ━┓
 ┃› ✓ cargo build --release                                                     ┃
 ┃  ✗ cargo test -p nope                                              ⚠︎ exit 101┃
 ┃  ⊘ sleep 600                                                                 ┃
@@ -6,8 +6,8 @@
 --- styles ---
 r0 c0-1 fg=#9b8cff
 r0 c3-18 fg=#9b8cff bold
-r0 c20-58 fg=#9b8cff
-r0 c60-76 fg=#a8a8a8
+r0 c20-42 fg=#9b8cff
+r0 c44-76 fg=#a8a8a8
 r0 c78-79 fg=#9b8cff
 r1 c0 fg=#9b8cff
 r1 c1-2 fg=#5cc8bb bg=#2a2a36

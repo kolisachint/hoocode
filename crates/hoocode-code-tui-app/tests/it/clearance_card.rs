@@ -53,7 +53,7 @@ fn shell_card_shows_title_command_reach_and_keys() {
     let rows = rows(&mut card, 100);
     assert_eq!(rows.len(), 5, "{rows:?}");
     assert!(
-        rows[0].contains("◉ CLEARANCE NEEDED"),
+        rows[0].contains("◎ CLEARANCE NEEDED"),
         "row 0: {:?}",
         rows[0]
     );
@@ -70,7 +70,7 @@ fn shell_card_shows_title_command_reach_and_keys() {
         rows[2]
     );
     assert!(rows[2].contains("□ read"), "row 2: {:?}", rows[2]);
-    assert!(rows[3].contains("y go once"), "row 3: {:?}", rows[3]);
+    assert!(rows[3].contains("y go, once"), "row 3: {:?}", rows[3]);
     assert!(
         rows[3].contains("a always printf in this session"),
         "row 3: {:?}",
@@ -187,17 +187,19 @@ fn padded_plan_mode_omits_always_and_a_runs_once() {
 }
 
 #[test]
-fn step_number_shows_when_the_host_knows_it() {
+fn the_title_stays_bare_when_the_host_knows_the_step() {
     let _g = lock(Some("dark"));
     let mut info = shell_info("$ wc -l src/wrap.rs");
     info.step = Some(1);
     let (mut card, _) = card(info);
     let rows = rows(&mut card, 100);
+    // The held call is the card's only step, so no number (spec §4 c1).
     assert!(
-        rows[0].contains("◉ CLEARANCE NEEDED · step 01"),
+        rows[0].contains("◎ CLEARANCE NEEDED"),
         "row 0: {:?}",
         rows[0]
     );
+    assert!(!rows[0].contains("step"), "row 0: {:?}", rows[0]);
 }
 
 #[test]
