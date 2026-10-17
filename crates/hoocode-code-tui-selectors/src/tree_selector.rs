@@ -18,10 +18,10 @@ use hoocode_code_tui_theme::{
 };
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
 use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
-use hoocode_tui_components::{Input, PickerCursor, TruncatedText};
+use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::{Component, ComponentHandle};
-use hoocode_tui_util::truncate_to_width;
+use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
 use serde_json::Value;
 
 /// One session entry, flattened out of the tree.
@@ -1251,6 +1251,37 @@ struct Body {
     label_input: Rc<RefCell<Option<LabelInput>>>,
 }
 
+/// The `/tree` key hints: whole items, dropped from the end until the row
+/// fits, so a hint is never cut mid-word.
+struct HintRow {
+    items: Vec<String>,
+    sep: String,
+}
+
+impl Component for HintRow {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        let width = usize::from(width);
+        let line = fit_hints(&self.items, &self.sep, width);
+        let pad = width.saturating_sub(visible_width(&line));
+        vec![format!("{line}{}", " ".repeat(pad))]
+    }
+}
+
+/// The longest run of leading items that fits `width`, joined by `sep`. When
+/// even the first item is too wide, it is cut at a word boundary.
+fn fit_hints(items: &[String], sep: &str, width: usize) -> String {
+    for count in (1..=items.len()).rev() {
+        let line = items[..count].join(sep);
+        if visible_width(&line) <= width {
+            return line;
+        }
+    }
+    items
+        .first()
+        .map(|first| truncate_at_word(first, width))
+        .unwrap_or_default()
+}
+
 impl Component for Body {
     fn render(&mut self, width: u16) -> Vec<String> {
         match self.label_input.borrow_mut().as_mut() {
@@ -1315,7 +1346,7 @@ impl TreeSelectorComponent {
         ]
         .map(arrow)
         .join("/");
-        let hints = [
+        let hints = Vec::from([
             raw_key_hint("↑/↓", "move"),
             raw_key_hint("←/→", "page"),
             raw_key_hint(&fold_keys, "fold"),
@@ -1326,9 +1357,8 @@ impl TreeSelectorComponent {
                 &app_key_label("app.tree.toggleLabelTimestamp"),
                 "timestamps",
             ),
-        ]
-        .join(&sep);
-        frame.add_child(Rc::new(RefCell::new(TruncatedText::new(hints, 0, 0))));
+        ]);
+        frame.add_child(Rc::new(RefCell::new(HintRow { items: hints, sep })));
         frame.add_child(Rc::new(RefCell::new(SearchLine(list.clone()))));
         // A divider inside the frame, between the keys and the tree.
         frame.add_child(Rc::new(RefCell::new(DynamicBorder::new(None))));

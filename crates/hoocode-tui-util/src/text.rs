@@ -542,6 +542,42 @@ pub fn truncate_to_width(text: &str, max_width: usize, ellipsis: &str, pad: bool
     )
 }
 
+/// Truncate plain `text` to at most `max_width` columns, ending with `…` when
+/// it is cut. The cut falls between words when one fits; only a first word
+/// longer than the width is cut inside.
+pub fn truncate_at_word(text: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    if visible_width(text) <= max_width {
+        return text.to_string();
+    }
+    // Plain prefix of `text` that fits in one column less than the width.
+    let mut head = String::new();
+    let mut used = 0usize;
+    for ch in text.chars() {
+        let w = visible_width(ch.encode_utf8(&mut [0; 4]));
+        if used + w > max_width - 1 {
+            break;
+        }
+        head.push(ch);
+        used += w;
+    }
+    // The head is whole words when the next character of `text` is a space.
+    let whole_words = text
+        .strip_prefix(head.as_str())
+        .is_some_and(|rest| rest.starts_with(' '));
+    let kept = if whole_words {
+        head.as_str()
+    } else {
+        match head.rsplit_once(' ') {
+            Some((before, _)) if !before.trim().is_empty() => before,
+            _ => head.as_str(),
+        }
+    };
+    format!("{}…", kept.trim_end())
+}
+
 // ---------------------------------------------------------------------------
 // Column slicing
 // ---------------------------------------------------------------------------

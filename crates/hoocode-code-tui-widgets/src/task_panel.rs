@@ -130,12 +130,9 @@ fn is_delegated(task: &Task) -> bool {
     task.kind() != TaskKind::Plan
 }
 
-fn agent_glyph(kind: TaskAgentKind) -> &'static str {
-    match kind {
-        TaskAgentKind::Main => "◆",
-        TaskAgentKind::Subagent => "◇",
-    }
-}
+/// The owner glyph of a subagent's row. The main agent's rows carry none
+/// (`show_owner_glyph` is false for them), so it has no glyph.
+const SUBAGENT_GLYPH: &str = "◇";
 
 /// The rail colour for a lens's overall state: any failure, else any live
 /// work, else done.
@@ -465,10 +462,11 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
                 TaskAgentKind::Main
             });
     let show_owner_glyph = is_mcp || owner_kind != TaskAgentKind::Main;
+    // Not mcp and shown means a subagent: the main agent's rows show no glyph.
     let source_glyph = if is_mcp {
         MCP_SOURCE_GLYPH
     } else {
-        agent_glyph(owner_kind)
+        SUBAGENT_GLYPH
     };
     let agent_type_name = (!is_mcp && owner_kind == TaskAgentKind::Subagent)
         .then(|| task.subagent_mode.as_deref().or(task.agent.as_deref()))

@@ -1,9 +1,6 @@
-//! Brand identity (`core/brand.ts`): the product mark and the glyph vocabulary
-//! shared by the footer and the startup summary. Colour is the theme's
-//! `accent`; this is the non-colour identity.
-
-/// The mark — a filled hexagon, rendered in the accent colour.
-pub const BRAND_MARK: &str = "⬢";
+//! Brand identity (`core/brand.ts`): the glyph vocabulary shared by the footer
+//! and the startup summary. Colour is the theme's `accent`; this is the
+//! non-colour identity.
 
 /// Capability classes a session can load, and their glyphs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,7 +9,6 @@ pub enum Category {
     Commands,
     Agents,
     Mcp,
-    Themes,
     Context,
 }
 
@@ -24,7 +20,6 @@ impl Category {
             Category::Commands => "⌘",
             Category::Agents => "◈",
             Category::Mcp => "⧉",
-            Category::Themes => "◒",
             Category::Context => "❯",
         }
     }

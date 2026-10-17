@@ -18,6 +18,7 @@ mod subagent_live_tail;
 mod support;
 mod task_panel;
 mod theme_block_rendering;
+mod tool_block_once;
 mod tool_chain;
 mod tool_chain_summary;
 mod tool_execution_component;

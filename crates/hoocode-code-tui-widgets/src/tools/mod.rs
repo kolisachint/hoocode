@@ -15,6 +15,7 @@ pub mod plugins;
 pub mod read;
 pub mod search;
 pub mod subagent;
+pub mod todo;
 pub mod web;
 pub mod write;
 
@@ -41,6 +42,7 @@ pub fn registered_tool_definition(name: &str) -> ToolRenderDefinition {
     match name {
         "Agent" => subagent::task_definition(),
         "AgentOutput" => subagent::task_output_definition(),
+        "TodoWrite" => todo::definition(),
         n if plugins::RENDERED_PLUGIN_TOOLS.contains(&n) => plugins::definition(),
         _ => ToolRenderDefinition::default(),
     }

@@ -2,7 +2,9 @@
 
 use hoocode_tui_keys::KeybindingsManager;
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{apply_background_to_line, truncate_to_width, visible_width};
+use hoocode_tui_util::{
+    apply_background_to_line, truncate_at_word, truncate_to_width, visible_width,
+};
 
 use crate::color::ColorFn;
 use crate::picker_cursor::PickerCursor;
@@ -204,8 +206,12 @@ impl SelectList {
                 let remaining_width = (width as i64) - (description_start as i64);
 
                 if remaining_width > MIN_DESCRIPTION_WIDTH as i64 {
-                    let truncated_desc =
-                        truncate_to_width(desc, remaining_width as usize, "", false);
+                    // Cut between words, then pad: the description still runs to the last cell.
+                    let cut = truncate_at_word(desc, remaining_width as usize);
+                    let truncated_desc = format!(
+                        "{cut}{}",
+                        " ".repeat((remaining_width as usize).saturating_sub(visible_width(&cut)))
+                    );
                     if is_selected {
                         return self.render_selected(
                             &format!("{prefix}{truncated_value}{spacing}{truncated_desc}"),

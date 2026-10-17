@@ -156,7 +156,10 @@ fn format_write_preview(raw_path: Option<&str>, content: &str) -> Option<String>
     }))
 }
 
-fn format_write_call(args: &Value, cache: Option<&HighlightCache>) -> String {
+/// The call line. `show_body` is set while the args stream in: the content
+/// then previews under the header. Once the args are complete the result
+/// prints the same content (numbered), so the call stays a header only.
+fn format_write_call(args: &Value, cache: Option<&HighlightCache>, show_body: bool) -> String {
     let t = theme();
     let raw_path = str_arg(arg_or(args, "file_path", "path"));
     let content = str_arg(args.get("content"));
@@ -172,7 +175,7 @@ fn format_write_call(args: &Value, cache: Option<&HighlightCache>) -> String {
             "\n\n{}",
             t.fg("error", "[invalid content arg - expected string]")
         )),
-        Some(content) if !content.is_empty() => {
+        Some(content) if show_body && !content.is_empty() => {
             let lang = raw_path.as_deref().and_then(get_language_from_path);
             let rendered: Vec<String> = match (lang, cache) {
                 (Some(_), Some(cache)) => cache.highlighted_lines.clone(),
@@ -215,17 +218,13 @@ pub fn definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: Some(Rc::new(|args, ctx| {
             let raw_path = str_arg(arg_or(args, "file_path", "path"));
-            let content = str_arg(args.get("content"));
-            let cache = match &content {
-                Some(content) => {
+            // The live preview is built only while the args stream in.
+            let cache = match str_arg(args.get("content")) {
+                Some(content) if !ctx.args_complete => {
                     let previous = HighlightCache::load(ctx.state.get(CACHE_KEY));
-                    if ctx.args_complete {
-                        rebuild_full(raw_path.as_deref(), content)
-                    } else {
-                        update_incremental(previous, raw_path.as_deref(), content)
-                    }
+                    update_incremental(previous, raw_path.as_deref(), &content)
                 }
-                None => None,
+                _ => None,
             };
             match &cache {
                 Some(c) => {
@@ -235,7 +234,11 @@ pub fn definition() -> ToolRenderDefinition {
                     ctx.state.remove(CACHE_KEY);
                 }
             }
-            Ok(text(format_write_call(args, cache.as_ref())))
+            Ok(text(format_write_call(
+                args,
+                cache.as_ref(),
+                !ctx.args_complete,
+            )))
         })),
         render_result: Some(Rc::new(|result, _options, ctx| {
             if ctx.is_error {

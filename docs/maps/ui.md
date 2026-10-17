@@ -63,6 +63,7 @@ update this page in the same commit.
 | `Read` (and skills) | `read.rs` |
 | `Edit` | `edit.rs` |
 | `Write` | `write.rs` |
+| `TodoWrite` (opt-in) | `todo.rs`: one header row (`TodoWrite  3 items · 1 done`). The plan shows in the task panel |
 | `CodeSearch` | `search.rs` |
 | `Agent`, `AgentOutput` (subagents) | `subagent.rs`. An Agent block's result slot shows its run's live tail (the newest 5 rows, peek) while the run goes, else its result. The tail and the run lookup are `hoocode-code-subagents` `live.rs` (`tail`, `is_running`, `run_for_tool_call`); the block is fed by `mode/subagents.rs` `apply_subagent_event`. `app.subagent.attach` (Ctrl+N, at the prompt) attaches to the newest Agent block's run (`mode/attach.rs` `attach_newest_agent_block`) |
 | Plugin tools | `plugins.rs` |
@@ -85,7 +86,7 @@ Every picker moves its cursor with `PickerCursor` (`tui-components/src/picker_cu
 | `/agents` | subagent runs of this session (running, done, interrupted), one row each; Enter attaches to the chosen run | `show_selector` (`ExtensionSelectorComponent`); the rows are read on the tools pool by `mode/attach.rs` `list_runs`, then `agent_runs_listed` opens the picker and `AppEvent::AttachPicked` attaches |
 | `/resume` | session picker | `session_selector.rs`, `session_selector_search.rs`. Subagent runs (`<session>/subagents/`) are rows under their parent in the threaded view, added by the loaders in `hoocode-code-tui-app/src/session_picker.rs` (`with_subagent_runs`, from `list_subagent_sessions` in `code-session`). A row reads `<type> · <complete\|failed\|…>`, `running` or `interrupted`. A search, or a non-threaded sort, lists the parent rows only. Enter on an `interrupted` run opens a choice: `v` views its transcript, `r` resumes it (`SubagentRunRef` to `pool.resume` in `hoocode-code-tui-app/src/mode/subagents.rs`; in-session picker only), esc backs out. Deleting a session deletes its `subagents/` dir. |
 | `--resume` on the command line | session picker on its own TUI | `hoocode-code-tui-app/src/session_picker.rs` |
-| `/tree` | session tree | `tree_selector.rs` |
+| `/tree` | session tree | `tree_selector.rs` (the key-hint row drops whole items from its end when narrow) |
 | `/fork` | pick a user message | `user_message_selector.rs` |
 | MCP trust prompt (once per process, at startup, when a project or plugin declares MCP servers) | the permission selector (`TuiPermissionUi`, `DialogRequest::Select`); asked on a thread by `mode/mcp.rs` `ask_mcp_trust`, answered as `MCP_TRUST_YES` / `MCP_TRUST_NO`; the grant runs `McpHub::grant` (trust store, then start) |
 | `/login`, `/logout` | provider pickers, login dialog | `oauth_selector.rs`, `login_dialog.rs`; flow in `hoocode-code-tui-app/src/login_controller.rs` |
