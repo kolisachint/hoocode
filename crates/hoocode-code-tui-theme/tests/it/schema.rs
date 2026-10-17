@@ -174,6 +174,7 @@ fn every_bundled_theme_validates() {
         "colorsafe-dark",
         "colorsafe-light",
         "dark",
+        "deep-space",
         "light",
         "solarized-dark",
         "solarized-light",

@@ -14,7 +14,7 @@ use crate::schema::{parse_theme_json_content, ColorValue, ThemeJson};
 use crate::theme::{Theme, ThemeOptions, AGENT_COLOR_TOKENS, THEME_BGS};
 
 /// The bundled theme files, by file name (the `readdirSync().sort()` order).
-const BUILTIN_THEME_FILES: [(&str, &str); 8] = [
+const BUILTIN_THEME_FILES: [(&str, &str); 9] = [
     (
         "colorsafe-dark.json",
         include_str!("../themes/colorsafe-dark.json"),
@@ -24,6 +24,7 @@ const BUILTIN_THEME_FILES: [(&str, &str); 8] = [
         include_str!("../themes/colorsafe-light.json"),
     ),
     ("dark.json", include_str!("../themes/dark.json")),
+    ("deep-space.json", include_str!("../themes/deep-space.json")),
     ("light.json", include_str!("../themes/light.json")),
     (
         "solarized-dark.json",
