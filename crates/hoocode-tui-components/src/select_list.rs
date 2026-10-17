@@ -106,6 +106,23 @@ impl SelectList {
         self.filtered_items.get(self.cursor.selected())
     }
 
+    /// Console rendering: the cursor's window as items, with the selection
+    /// remapped into it (the rows arrive pre-windowed).
+    pub fn console_window(&self) -> (Vec<SelectItem>, Option<usize>) {
+        let window = self.cursor.window();
+        let selected = self.cursor.selected();
+        let rows = window
+            .clone()
+            .map(|i| self.filtered_items[i].clone())
+            .collect();
+        (rows, window.clone().position(|i| i == selected))
+    }
+
+    /// The scroll position, when the window is scrolled.
+    pub fn footer(&self) -> Option<String> {
+        self.cursor.footer()
+    }
+
     pub fn handle_input_with(&mut self, key_data: &str, kb: &KeybindingsManager) {
         let before = self.cursor.selected();
         if self.cursor.handle_key(key_data, kb) {

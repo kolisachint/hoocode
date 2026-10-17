@@ -19,4 +19,5 @@ mod session_selector_search;
 mod session_subagent_delete;
 mod settings_token_surface;
 mod support;
+mod systems_console;
 mod tree_selector;
