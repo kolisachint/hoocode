@@ -69,14 +69,18 @@ impl ClearanceCard {
     }
 
     /// The `a` key's program, when `a` is offered at all: the Shell
-    /// command's first word (never a wrapper like sudo), else the tool.
-    /// The word comes from the gate's [`shell_program`], so the label and
-    /// the stored rule always agree.
+    /// command's first word, else the tool. Never offered in PLAN mode,
+    /// nor for slash programs (`/bin/sh`) or wrappers like sudo (the
+    /// word comes from the gate's [`shell_program`], so the label and
+    /// the stored rule always agree).
     fn always_offer(&self) -> Option<String> {
+        if self.info.mode.eq_ignore_ascii_case("plan") {
+            return None;
+        }
         if self.info.tool == "Shell" {
             let command = self.info.detail.trim_start_matches("$ ").trim_start();
             let program = shell_program(command)?;
-            (!is_always_wrapper(&program)).then_some(program)
+            (!program.contains('/') && !is_always_wrapper(&program)).then_some(program)
         } else {
             Some(self.info.tool.clone())
         }
@@ -113,10 +117,14 @@ impl ClearanceCard {
         // Wrappers (sudo, …) are never approvable: no `a` hint, and the
         // key answers once.
         if let Some(program) = self.always_offer() {
-            hints.push(raw_key_hint(
-                "a",
-                &format!("always {} in {}", program, self.info.mode.to_uppercase()),
-            ));
+            // Shell approvals live for this session only; other tools
+            // persist to the mode's auto-allow.
+            let scope = if self.info.tool == "Shell" {
+                "in this session".to_string()
+            } else {
+                format!("in {}", self.info.mode.to_uppercase())
+            };
+            hints.push(raw_key_hint("a", &format!("always {program} {scope}")));
         }
         hints.push(raw_key_hint("n", "abort + say why"));
         hints.push(raw_key_hint("e", "edit first"));
