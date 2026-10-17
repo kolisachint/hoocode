@@ -533,9 +533,11 @@ mod spacing {
             80,
         );
         // The fence rows do not print; the block's last code line is the anchor.
+        // (The first code line carries the faint `js` language label, so
+        // match by prefix, not equality.)
         let idx = lines
             .iter()
-            .position(|l| l == "  const hello = \"world\";")
+            .position(|l| l.starts_with("  const hello = \"world\";"))
             .expect("code line");
         assert_eq!(empty_lines_after(&lines, idx), Some(1));
     }

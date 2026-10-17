@@ -515,7 +515,7 @@ impl ToolExecutionComponent {
     }
 
     /// The background job id, while its job is still live (M4: the step
-    /// shows the satellite row `⌁ sat job-1 · in orbit`).
+    /// shows the satellite row `⌁ sat job-1 · in orbit 4s`).
     pub fn background_job_id(&self) -> Option<String> {
         if !self.is_live_background_job() {
             return None;
@@ -526,6 +526,55 @@ impl ToolExecutionComponent {
             .get("jobId")?
             .as_str()
             .map(str::to_string)
+    }
+
+    /// Whether the call is parked waiting for user clearance.
+    ///
+    /// The Mission Control spec r5 draws a `holding for clearance` row, but
+    /// the component does not yet carry an explicit clearance state: a newly
+    /// created call with no result also has `execution_started == false`.
+    /// Until the permission gate sets a distinct flag, treat no call as
+    /// waiting so that pending calls render as live steps.
+    pub fn is_waiting_for_clearance(&self) -> bool {
+        false
+    }
+
+    /// The call's expected run time in seconds, from its `timeout` arg
+    /// when it carries one (Mission Control spec r4: the live row's
+    /// `3s of ~6s` estimate). `None` when unknown: the row reads elapsed
+    /// only.
+    pub fn estimated_secs(&self) -> Option<u64> {
+        let timeout = self.args.get("timeout")?;
+        let secs = match timeout {
+            Value::Number(n) => n.as_f64()?,
+            Value::String(s) => s.trim().parse::<f64>().ok()?,
+            _ => return None,
+        };
+        (secs.is_finite() && secs > 0.0).then(|| secs.ceil() as u64)
+    }
+
+    /// An Agent call's `(subagent_type, task)`: the type, and the
+    /// `description` (else the prompt's first line), for the flight log's
+    /// `◈ general-purpose · Compute a product` row (spec r7). `None` for
+    /// other tools or a call that names no task.
+    pub fn agent_label(&self) -> Option<(String, String)> {
+        if !self.is_agent() {
+            return None;
+        }
+        let subtype = self
+            .args
+            .get("subagent_type")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("agent")
+            .to_string();
+        let summary = ["description", "prompt"]
+            .iter()
+            .filter_map(|key| self.args.get(*key))
+            .filter_map(Value::as_str)
+            .map(|s| s.lines().next().unwrap_or("").trim().to_string())
+            .find(|s| !s.is_empty())?;
+        Some((subtype, summary))
     }
 
     /// Added and removed lines of a settled Edit diff, for the `+a −b`
@@ -559,7 +608,7 @@ impl ToolExecutionComponent {
             return stats;
         }
         if let Some(job) = self.background_job_id() {
-            return crate::trajectory::satellite_text(&job, palette);
+            return crate::trajectory::satellite_text(&job, self.block_elapsed_secs(), palette);
         }
         match self.tool_name.as_str() {
             "Shell" => {

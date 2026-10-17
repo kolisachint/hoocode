@@ -16,7 +16,7 @@ use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{ansi_spans, spans_width, truncate_spans, with_base_style, Palette};
 
 use crate::assistant_message::AssistantMessageComponent;
-use crate::radar::{hit_row, live_row};
+use crate::radar::{agent_live_row, hit_row, live_row, satellite_row, waiting_row};
 use crate::tool_chain_summary::{
     chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
 };
@@ -245,10 +245,14 @@ impl ToolChainComponent {
     }
 
     /// The mission's flight-log rows for this chain (M5, radar): one line
-    /// per hit (`⊗ 04 … HIT`) and per live step (`◐ 01 … 3s`), numbered by
-    /// mission step. Settled clean calls get no row: the mission row above
-    /// already counts them. Lead-in traces keep their think line, so
-    /// thinking that led to a call still reads under its mission.
+    /// per hit (`⊗ 04 … HIT`), per live step (`◐ 01 … 3s`, with a progress
+    /// bar when the call's estimate is known), per waiting step
+    /// (`◉ 01 … holding for clearance`, the queue's head first), per live
+    /// subagent (`◈ type · task`), and per live background job (its
+    /// satellite row), numbered by mission step. Settled clean calls get no
+    /// row: the mission row above already counts them. Lead-in traces keep
+    /// their think line with its gist, so thinking that led to a call
+    /// still reads under its mission.
     fn flight_rows(&self, width: usize, palette: &Palette) -> Vec<String> {
         let mut out = Vec::new();
         for component in &self.lead_ins {
@@ -260,6 +264,7 @@ impl ToolChainComponent {
                 out.push(line);
             }
         }
+        let mut waited = false;
         for (i, block) in self.blocks.iter().enumerate() {
             let step = self.base_step + i + 1;
             let body = block.borrow();
@@ -280,16 +285,43 @@ impl ToolChainComponent {
                     palette,
                     width,
                 ));
-            } else if entry.is_partial {
-                let secs = body.block_elapsed_secs().unwrap_or(0);
-                out.push(live_row(
+            } else if body.is_waiting_for_clearance() {
+                // The queue's head holds `◉`; steps behind it read `○ next`.
+                let head = !waited;
+                waited = true;
+                out.push(waiting_row(
                     step,
                     &entry.tool,
                     &entry.subject,
-                    secs,
+                    head,
                     palette,
                     width,
                 ));
+            } else if entry.is_partial {
+                let secs = body.block_elapsed_secs().unwrap_or(0);
+                if let Some(job) = body.background_job_id() {
+                    out.push(satellite_row(
+                        step,
+                        &entry.tool,
+                        &entry.subject,
+                        &job,
+                        secs,
+                        palette,
+                        width,
+                    ));
+                } else if let Some((subtype, task)) = body.agent_label() {
+                    out.push(agent_live_row(step, &subtype, &task, secs, palette, width));
+                } else {
+                    out.push(live_row(
+                        step,
+                        &entry.tool,
+                        &entry.subject,
+                        secs,
+                        body.estimated_secs(),
+                        palette,
+                        width,
+                    ));
+                }
             }
         }
         out

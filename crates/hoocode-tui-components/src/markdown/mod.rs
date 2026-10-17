@@ -213,6 +213,7 @@ mod tests {
             underline: identity(),
             highlight_code: None,
             code_block_indent: None,
+            code_block_bg: None,
         }
     }
 

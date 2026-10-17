@@ -1,4 +1,8 @@
 ▲ M1  how does wrapping work?
 --- styles ---
-r0 c0 fg=#c77bde
-r0 c2-3 fg=#c77bde bold
+r0 c0 fg=#9b8cff bg=#1c1c26 bold
+r0 c1 bg=#1c1c26
+r0 c2-3 fg=#9b8cff bg=#1c1c26 bold
+r0 c4-5 bg=#1c1c26
+r0 c6-28 fg=#e5e5e7 bg=#1c1c26 bold
+r0 c29-79 bg=#1c1c26

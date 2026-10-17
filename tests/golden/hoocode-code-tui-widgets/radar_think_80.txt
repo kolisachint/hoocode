@@ -1,4 +1,6 @@
  here is the answer
-✻ thought 0s
+✻ thought 0s · weighing the options
 --- styles ---
-r1 c0-11 fg=#a8a8a8
+r1 c0-11 fg=#9b8cff
+r1 c12-14 fg=#a8a8a8
+r1 c15-34 fg=#989898
