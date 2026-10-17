@@ -1,26 +1,25 @@
 //! The extension selector dialog: `components/extension-selector.ts` with
-//! its parts (`selected-row-list.ts`, `dynamic-border.ts`,
-//! `countdown-timer.ts`).
+//! its countdown timer (`countdown-timer.ts`).
+//!
+//! Drawn as a ratatui [`Console`](hoocode_code_tui_widgets::console::Console):
+//! the title (with the countdown) names the console, the options are its
+//! rows, and the hint foot names the keys.
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use hoocode_code_tui_keybindings::{key_hint, raw_key_hint};
-use hoocode_code_tui_theme::{select_gutter, theme, SELECT_CURSOR};
+use hoocode_code_tui_widgets::console::{hints, Console};
 use hoocode_tui_components::PickerCursor;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_render::{Component, ComponentHandle};
-
-use crate::input_frame::{InputFrame, InputFrameOptions};
-
-pub use hoocode_code_tui_widgets::selected_row_list::{SelectableRow, SelectedRowList};
+use hoocode_tui_ratatui::{Line, Palette, Span, Style};
+use hoocode_tui_render::Component;
 
 /// Vi-style moves, on top of the `tui.select.up` and `tui.select.down` bindings.
 const VI_UP: &str = "k";
 const VI_DOWN: &str = "j";
 /// The newline byte (Enter), accepted as a confirm besides `tui.select.confirm`.
 const NEWLINE: &str = "\n";
+/// The list window: at most this many options draw.
+const MAX_VISIBLE: usize = 10;
 
 /// A text styler.
 pub type ColorFn = Box<dyn Fn(&str) -> String>;
@@ -78,13 +77,24 @@ pub enum SelectorOutcome {
     Cancelled,
 }
 
-/// `ExtensionSelectorComponent`: a titled frame of options, navigated with
+/// One option row (content only; the console adds the `›` marker or gutter
+/// and the selection band): the option text, accent on the selected row.
+fn option_row(option: &str, selected: bool) -> Line<'static> {
+    Line::from(vec![Span::styled(
+        option.to_string(),
+        if selected {
+            Palette::current().acc()
+        } else {
+            Style::default()
+        },
+    )])
+}
+
+/// `ExtensionSelectorComponent`: a titled console of options, navigated with
 /// the select keys (and `j`/`k`).
 pub struct ExtensionSelectorComponent {
-    frame: InputFrame,
     options: Vec<String>,
     cursor: PickerCursor,
-    list: Rc<RefCell<SelectedRowList>>,
     base_title: String,
     countdown: Option<CountdownTimer>,
     on_done: Box<dyn FnMut(SelectorOutcome)>,
@@ -97,58 +107,22 @@ impl ExtensionSelectorComponent {
         timeout: Option<Duration>,
         on_done: Box<dyn FnMut(SelectorOutcome)>,
     ) -> Self {
-        let mut frame = InputFrame::new(InputFrameOptions {
-            title: Some(title.to_string()),
-            ..Default::default()
-        });
         let countdown = timeout.filter(|t| !t.is_zero()).map(CountdownTimer::new);
-        if let Some(c) = &countdown {
-            frame.set_title(&format!("{title} ({}s)", c.remaining_seconds()));
-        }
-        let list = Rc::new(RefCell::new(SelectedRowList::new(Vec::new(), 1)));
-        frame.add_child(list.clone() as ComponentHandle);
-        frame.set_hint(&format!(
-            "{}  {}  {}",
-            raw_key_hint("↑↓", "navigate"),
-            key_hint("tui.select.confirm", "select"),
-            key_hint("tui.select.cancel", "cancel")
-        ));
-        let mut this = Self {
-            frame,
-            cursor: PickerCursor::new(options.len(), 10),
+        Self {
+            cursor: PickerCursor::new(options.len(), MAX_VISIBLE),
             options,
-            list,
             base_title: title.to_string(),
             countdown,
             on_done,
-        };
-        this.update_list();
-        this
+        }
     }
 
-    fn update_list(&mut self) {
-        let t = theme();
-        let rows = self
-            .options
-            .iter()
-            .enumerate()
-            .map(|(i, option)| {
-                let selected = i == self.cursor.selected();
-                SelectableRow {
-                    text: if selected {
-                        format!(
-                            "{}{}",
-                            t.fg("accent", SELECT_CURSOR),
-                            t.fg("accent", option)
-                        )
-                    } else {
-                        format!("{}{}", select_gutter(), t.fg("text", option))
-                    },
-                    selected,
-                }
-            })
-            .collect();
-        self.list.borrow_mut().set_rows(rows);
+    /// The console name: the title, with the seconds left while timed.
+    fn title(&self) -> String {
+        match &self.countdown {
+            Some(c) => format!("{} ({}s)", self.base_title, c.remaining_seconds()),
+            None => self.base_title.clone(),
+        }
     }
 
     /// The countdown's next tick, if it runs.
@@ -156,7 +130,7 @@ impl ExtensionSelectorComponent {
         self.countdown.as_ref().and_then(CountdownTimer::deadline)
     }
 
-    /// Advance the countdown; true when the title changed (or it expired).
+    /// Advance the countdown; true when it ticked (or expired).
     pub fn poll(&mut self) -> bool {
         let Some(countdown) = &mut self.countdown else {
             return false;
@@ -164,8 +138,6 @@ impl ExtensionSelectorComponent {
         match countdown.poll(Instant::now()) {
             None => false,
             Some(seconds) => {
-                let title = format!("{} ({seconds}s)", self.base_title);
-                self.frame.set_title(&title);
                 if seconds == 0 {
                     self.dispose();
                     (self.on_done)(SelectorOutcome::Cancelled);
@@ -183,12 +155,21 @@ impl ExtensionSelectorComponent {
 }
 
 impl Component for ExtensionSelectorComponent {
+    /// The console: the title (with the countdown), the options with `›`
+    /// on the selection band, and the hint foot. Keys are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.frame.render(width)
-    }
-
-    fn invalidate(&mut self) {
-        self.frame.invalidate();
+        let selected = self.cursor.selected();
+        let mut console = Console::new(self.title(), "");
+        console.rows = self
+            .options
+            .iter()
+            .enumerate()
+            .map(|(i, option)| option_row(option, i == selected))
+            .collect();
+        console.selected = (!self.options.is_empty()).then_some(selected);
+        console.max_visible = Some(self.cursor.max_visible());
+        console.hint = hints(&[("↑↓", "navigate"), ("enter", "select"), ("esc", "cancel")]);
+        console.render(width as usize)
     }
 
     fn is_focusable(&self) -> bool {
@@ -199,15 +180,14 @@ impl Component for ExtensionSelectorComponent {
         let kb = get_keybindings();
         if data == VI_UP || data == VI_DOWN {
             self.cursor.step(if data == VI_UP { -1 } else { 1 });
-            self.update_list();
-        } else if self.cursor.handle_key(data, &kb) {
-            self.update_list();
-        } else if kb.matches(data, "tui.select.confirm") || data == NEWLINE {
-            if let Some(selected) = self.options.get(self.cursor.selected()).cloned() {
-                (self.on_done)(SelectorOutcome::Selected(selected));
+        } else if !self.cursor.handle_key(data, &kb) {
+            if kb.matches(data, "tui.select.confirm") || data == NEWLINE {
+                if let Some(selected) = self.options.get(self.cursor.selected()).cloned() {
+                    (self.on_done)(SelectorOutcome::Selected(selected));
+                }
+            } else if kb.matches(data, "tui.select.cancel") {
+                (self.on_done)(SelectorOutcome::Cancelled);
             }
-        } else if kb.matches(data, "tui.select.cancel") {
-            (self.on_done)(SelectorOutcome::Cancelled);
         }
     }
 }

@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use crate::support::lock;
 use hoocode_code_tui_app::extension_selector::*;
 use hoocode_code_tui_app::input_frame::set_input_frame_border;
+use hoocode_code_tui_widgets::selected_row_list::{SelectableRow, SelectedRowList};
 use hoocode_tui_components::FrameBorderStyle;
 use hoocode_tui_render::Component;
 use hoocode_tui_util::strip_vt_control_characters;
