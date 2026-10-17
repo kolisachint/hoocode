@@ -1,5 +1,7 @@
- ⊗ 04 Shell  cargo test -p hoocode…  HIT
+ ⊗ 04 Shell  cargo test -p hooco…   HIT
 --- styles ---
 r0 c1 fg=#d58181
-r0 c3-5 fg=#ffff00 bold
-r0 c37-39 fg=#d58181 bold
+r0 c3-5 fg=#f0c674 bold
+r0 c6-10 fg=#e5e5e7 bold
+r0 c13-31 fg=#e5e5e7
+r0 c35-39 fg=#d58181 bold inverse

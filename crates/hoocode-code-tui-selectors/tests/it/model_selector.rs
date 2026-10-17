@@ -126,7 +126,7 @@ fn lists_the_current_model_first_ticked_then_by_provider() {
     let mut selector = ModelSelectorComponent::new(Some(current), Ok(models), None, vec![], None);
     let rendered = strip(&selector.render(100));
     assert!(rendered.contains("Only showing models from configured providers"));
-    assert!(rendered.contains("m-1 [mid] ✓"));
+    assert!(rendered.contains("m-1 [mid] 128k free ● flying"));
     assert!(rendered.contains("Model Name: M"));
     let order: Vec<_> = rendered
         .lines()
@@ -142,7 +142,10 @@ fn marks_only_the_models_of_expired_providers() {
     let mut selector = ModelSelectorComponent::new(None, Ok(models), None, vec![], None);
     selector.set_expired_providers(["beta".to_string()]);
     let rendered = strip(&selector.render(100));
-    assert!(rendered.contains("b-1 [beta] expired"), "{rendered}");
+    assert!(
+        rendered.contains("b-1 [beta] 128k free expired"),
+        "{rendered}"
+    );
     assert!(rendered.contains("a-1 [alpha]"), "{rendered}");
     assert!(!rendered.contains("a-1 [alpha] expired"), "{rendered}");
     assert_eq!(rendered.matches("expired").count(), 1, "{rendered}");

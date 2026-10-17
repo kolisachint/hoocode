@@ -317,6 +317,9 @@ pub fn get_markdown_theme() -> MarkdownTheme {
             }
         })),
         code_block_indent: None,
+        // Mission Control (spec a3): code blocks sit on the dark band,
+        // the language top-right in faint.
+        code_block_bg: Some(Box::new(|text: &str| theme().bg("toolBandBg", text))),
     }
 }
 

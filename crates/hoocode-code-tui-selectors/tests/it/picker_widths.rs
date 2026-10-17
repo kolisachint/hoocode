@@ -59,6 +59,7 @@ fn make_session(id: &str, first_message: &str) -> SessionInfo {
         created: DateTime::<Utc>::UNIX_EPOCH,
         modified: DateTime::<Utc>::UNIX_EPOCH,
         message_count: 1,
+        model: None,
         first_message: first_message.into(),
         all_messages_text: first_message.into(),
         subagent: None,

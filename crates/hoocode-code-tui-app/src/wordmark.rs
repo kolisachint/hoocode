@@ -95,6 +95,45 @@ pub struct CompactWordmarkOptions<'a> {
     pub muted: Style<'a>,
     /// The trailing blinking cursor, when set.
     pub cursor: Option<Style<'a>>,
+    /// Plain brand style (bold ink in the banner). When set, the name
+    /// renders whole with no `hoo│code` split and no cursor.
+    pub brand: Option<Style<'a>>,
+    /// Paint the owl accent-to-violet per column (design a1). Off keeps the
+    /// uniform glyph style, and keeps this function pure for tests.
+    pub gradient: bool,
+}
+
+/// The owl glyph painted per column, accent to violet (design a1): 7
+/// columns, endpoints from the live palette. `None` when colour is off or
+/// the tokens do not resolve to RGB (in-memory themes): the caller falls
+/// back to the uniform glyph style.
+fn gradient_glyph_lines() -> Option<[String; 3]> {
+    use hoocode_tui_ratatui::core::style::Color;
+    if !hoocode_code_tui_theme::chalk::enabled() {
+        return None;
+    }
+    let pal = hoocode_tui_ratatui::Palette::current();
+    let (start, end) = match (pal.acc().fg, pal.vio().fg) {
+        (Some(Color::Rgb(sr, sg, sb)), Some(Color::Rgb(er, eg, eb))) => {
+            ((sr, sg, sb), (er, eg, eb))
+        }
+        _ => return None,
+    };
+    let paint = |i: usize, ch: char| {
+        let mix = |s: u8, e: u8| s as i16 + (e as i16 - s as i16) * i as i16 / 6;
+        format!(
+            "\x1b[38;2;{};{};{}m{ch}\x1b[39m",
+            mix(start.0, end.0),
+            mix(start.1, end.1),
+            mix(start.2, end.2)
+        )
+    };
+    Some(WORDMARK_GLYPH.map(|row| {
+        row.chars()
+            .enumerate()
+            .map(|(i, ch)| paint(i, ch))
+            .collect()
+    }))
 }
 
 /// `buildCompactWordmark`: glyph beside brand, tagline + version, and cwd,
@@ -104,14 +143,20 @@ pub fn build_compact_wordmark(options: &CompactWordmarkOptions<'_>) -> String {
     let glyph_style = options.glyph.unwrap_or(accent);
     let tagline = options.tagline.unwrap_or("coding agent");
 
-    // Highlight the "hoo" prefix when present, otherwise accent the whole name.
-    let name = match options.app_name.strip_prefix("hoo") {
-        Some(rest) => format!("{}{}{rest}", accent("hoo"), (options.muted)("│")),
-        None => accent(options.app_name),
-    };
-    let brand = match options.cursor {
-        Some(cursor) => format!("{name}{}", cursor("_")),
-        None => name,
+    // The plain brand renders whole with no split and no cursor (design a1).
+    // Otherwise highlight the "hoo" prefix when present, with the cursor.
+    let brand = match options.brand {
+        Some(brand) => brand(options.app_name),
+        None => {
+            let name = match options.app_name.strip_prefix("hoo") {
+                Some(rest) => format!("{}{}{rest}", accent("hoo"), (options.muted)("│")),
+                None => accent(options.app_name),
+            };
+            match options.cursor {
+                Some(cursor) => format!("{name}{}", cursor("_")),
+                None => name,
+            }
+        }
     };
     let dim = options.dim;
     let right = [
@@ -124,10 +169,16 @@ pub fn build_compact_wordmark(options: &CompactWordmarkOptions<'_>) -> String {
         ),
         dim(options.cwd),
     ];
-    WORDMARK_GLYPH
-        .iter()
+    // The gradient paints each owl column accent-to-violet (design a1);
+    // otherwise the whole glyph takes the uniform glyph style.
+    let left: [String; 3] = if options.gradient {
+        gradient_glyph_lines().unwrap_or_else(|| WORDMARK_GLYPH.map(glyph_style))
+    } else {
+        WORDMARK_GLYPH.map(glyph_style)
+    };
+    left.iter()
         .zip(right.iter())
-        .map(|(glyph, text)| format!("{}{GLYPH_GAP}{text}", glyph_style(glyph)))
+        .map(|(glyph, text)| format!("{glyph}{GLYPH_GAP}{text}"))
         .collect::<Vec<_>>()
         .join("\n")
 }

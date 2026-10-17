@@ -109,7 +109,7 @@
 ┃  alt+5  Tree filter: show all entries                                        ┃
 ┃  alt+c  Tree filter: cycle forward                                           ┃
 ┃  shift+alt+c  Tree filter: cycle backward                                    ┃
-┗━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+┗━ tab layer · type search · esc close ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
 r0 c3-35 fg=#9b8cff bold
@@ -446,5 +446,11 @@ r110 c0 fg=#9b8cff
 r110 c14-42 fg=#a8a8a8
 r110 c79 fg=#9b8cff
 r111 c0-1 fg=#9b8cff
-r111 c4-75 fg=#9b8cff
+r111 c3-5 fg=#989898
+r111 c6-14 fg=#a8a8a8
+r111 c15-18 fg=#989898
+r111 c19-28 fg=#a8a8a8
+r111 c29-31 fg=#989898
+r111 c32-37 fg=#a8a8a8
+r111 c39-75 fg=#9b8cff
 r111 c78-79 fg=#9b8cff

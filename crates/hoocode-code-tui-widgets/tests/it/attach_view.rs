@@ -15,7 +15,7 @@ fn the_header_names_the_run_its_state_and_how_to_go_back() {
     let shown = strip_all(&header.render(80));
     assert_eq!(
         shown.trim_end(),
-        "◂ explore · Find the footer code · running · Esc back"
+        "◆ explore · Find the footer code · running · Esc back"
     );
     assert_golden!("attach_header_80", render_golden(&mut header, 80));
 }
@@ -62,8 +62,9 @@ fn the_prompt_hint_says_the_view_is_read_only_and_names_the_way_back() {
     let _g = lock();
     let mut prompt = AttachPrompt::new();
     let shown = strip_all(&prompt.render(80));
-    assert!(shown.contains("Read-only"), "{shown}");
-    assert!(shown.contains("goes back"), "{shown}");
+    assert!(shown.contains("READ-ONLY"), "{shown}");
+    assert!(shown.contains("this agent's own log"), "{shown}");
+    assert!(shown.contains("back to the main ship"), "{shown}");
     assert_golden!("attach_prompt_80", render_golden(&mut prompt, 80));
 }
 

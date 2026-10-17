@@ -1,2 +1,5 @@
-◭ HOOCODE  BUILD  hoocode                         SHIP claude-haiku-5-5  FUEL ▰▰▰▱▱▱▱▱ 42%  CR $1.23
+ ◭ HOOCODE   BUILD   /work/hoocode              SHIP claude-haiku-5-5  FUEL ▰▰▰▱▱▱▱▱ 42%  CR $1.230
 --- styles ---
+r0 c1 bold
+r0 c3-9 bold
+r0 c12-18 bold

@@ -27,9 +27,10 @@ const LIGHT_THEMES: [&str; 4] = [
     "solarized-light",
     "vox-cutout-light",
 ];
-const DARK_THEMES: [&str; 4] = [
+const DARK_THEMES: [&str; 5] = [
     "colorsafe-dark",
     "dark",
+    "deep-space",
     "solarized-dark",
     "vox-cutout-dark",
 ];
@@ -697,11 +698,11 @@ mod the_shipped_roster {
     use super::*;
 
     #[test]
-    fn is_eight_themes_four_light_and_four_dark() {
+    fn is_nine_themes_four_light_and_five_dark() {
         isolate();
         assert_eq!(get_available_themes(), shipped_themes());
         assert_eq!(LIGHT_THEMES.len(), 4);
-        assert_eq!(DARK_THEMES.len(), 4);
+        assert_eq!(DARK_THEMES.len(), 5);
     }
 
     #[test]

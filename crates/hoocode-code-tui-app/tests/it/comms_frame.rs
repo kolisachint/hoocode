@@ -76,7 +76,7 @@ fn prompt_editor() -> Rc<RefCell<Editor>> {
 }
 
 fn frame(state: CommsState, view: ToolOutputView, mode: &str) -> CommsFrame {
-    frame_painted(state, view, mode, None)
+    frame_painted(state, view, mode, None, (Vec::new(), Vec::new()))
 }
 
 fn frame_painted(
@@ -84,6 +84,7 @@ fn frame_painted(
     view: ToolOutputView,
     mode: &str,
     paint: Option<hoocode_code_tui_app::hull_paint::HullPaint>,
+    queue: (Vec<String>, Vec<String>),
 ) -> CommsFrame {
     let editor = prompt_editor();
     let input = editor.clone();
@@ -95,6 +96,7 @@ fn frame_painted(
     CommsFrame::new(
         handle,
         move || state.clone(),
+        move || queue.clone(),
         move |style: InputStyle| {
             let mut editor = input.borrow_mut();
             editor.placeholder = style.placeholder;
@@ -116,6 +118,7 @@ fn in_flight() -> CommsFrame {
     frame(
         CommsState::InFlight {
             elapsed: Some(Duration::from_secs(4)),
+            step: Some(1),
         },
         ToolOutputView::Peek,
         "build",
@@ -159,12 +162,12 @@ fn ready_shows_the_title_placeholder_and_foot() {
 }
 
 #[test]
-fn in_flight_shows_the_elapsed_time_and_queue_placeholder() {
+fn in_flight_shows_the_step_elapsed_time_and_queue_placeholder() {
     let _g = lock(Some("dark"));
     let rows = rows(&mut in_flight(), 100);
     assert_eq!(rows.len(), 3, "{rows:?}");
     assert!(
-        rows[0].contains("◐ IN FLIGHT · 4s · esc abort"),
+        rows[0].contains("◐ IN FLIGHT · step 1 · 4s · esc abort"),
         "row 0: {:?}",
         rows[0]
     );
@@ -179,7 +182,10 @@ fn in_flight_shows_the_elapsed_time_and_queue_placeholder() {
 fn in_flight_without_elapsed_omits_the_time() {
     let _g = lock(Some("dark"));
     let mut frame = frame(
-        CommsState::InFlight { elapsed: None },
+        CommsState::InFlight {
+            elapsed: None,
+            step: None,
+        },
         ToolOutputView::Peek,
         "build",
     );
@@ -212,7 +218,7 @@ fn comms_lost_titles_the_hail_again_and_switch_ship() {
     );
     assert_eq!(rows.len(), 3, "{rows:?}");
     assert!(
-        rows[0].contains("⊗ COMMS LOST · enter hail again · /model switch ship"),
+        rows[0].contains("⊗ COMMS LOST · enter hail again · alt+m switch ship"),
         "row 0: {:?}",
         rows[0]
     );
@@ -232,6 +238,7 @@ fn painted_frame_golden() {
         ToolOutputView::Peek,
         "build",
         Some(HullPaint::Parity),
+        (Vec::new(), Vec::new()),
     );
     assert_golden!("comms_paint_100x3", render_golden(&mut frame, 100));
 }
@@ -245,11 +252,52 @@ fn painted_frame_names_the_paint_and_takes_its_colour() {
         ToolOutputView::Peek,
         "build",
         Some(HullPaint::Parity),
+        (Vec::new(), Vec::new()),
     );
     let rows = rows(&mut frame, 100);
     assert!(rows[0].contains("READY"), "row 0: {:?}", rows[0]);
     assert!(rows[0].ends_with(" parity ━┓"), "row 0: {:?}", rows[0]);
     assert!(!rows[0].contains("app-edit"), "row 0: {:?}", rows[0]);
+}
+
+#[test]
+fn queued_messages_draw_inside_the_frame_with_their_dispositions() {
+    let _g = lock(Some("dark"));
+    let mut frame = frame_painted(
+        CommsState::InFlight {
+            elapsed: Some(Duration::from_secs(6)),
+            step: Some(1),
+        },
+        ToolOutputView::Peek,
+        "build",
+        None,
+        (
+            vec!["keep it short".to_string()],
+            vec!["then list tests".to_string()],
+        ),
+    );
+    let rows = rows(&mut frame, 100);
+    assert_eq!(rows.len(), 5, "{rows:?}");
+    assert!(
+        rows[0].contains("◐ IN FLIGHT · step 1 · 6s · esc abort"),
+        "row 0: {:?}",
+        rows[0]
+    );
+    assert!(
+        rows[1].contains("● keep it short queued · sends after this step"),
+        "row 1: {:?}",
+        rows[1]
+    );
+    assert!(
+        rows[2].contains("○ then list tests queued · sends after landing"),
+        "row 2: {:?}",
+        rows[2]
+    );
+    assert!(
+        rows[4].contains("edit queue"),
+        "foot names the way back: {:?}",
+        rows[4]
+    );
 }
 
 #[test]
@@ -302,7 +350,11 @@ fn input_styles_follow_the_state() {
         }
     );
     assert_eq!(
-        CommsState::InFlight { elapsed: None }.input_style(),
+        CommsState::InFlight {
+            elapsed: None,
+            step: None,
+        }
+        .input_style(),
         InputStyle {
             placeholder: IN_FLIGHT_PLACEHOLDER.to_string(),
             glyph: GlyphStyle::Acc,

@@ -222,7 +222,7 @@ fn paint_bar(runs: Vec<BarRun>, width: usize) -> String {
 }
 
 /// The SCAN bar's keys from the bindings: `{confirm} lock|next` and
-/// `{exit} close`, plus the `n/p` step pair while locked when bound.
+/// `{exit} clear`, plus the `n/p` step pair while locked when bound.
 /// Unbound names are left out; the bar never shows a bare verb.
 fn scan_keys(typing: bool) -> String {
     let verb = if typing { "lock" } else { "next" };
@@ -235,7 +235,7 @@ fn scan_keys(typing: bool) -> String {
     });
     let exit = key_text("app.scroll.exit");
     if !exit.is_empty() {
-        keys.push(format!("{exit} close"));
+        keys.push(format!("{exit} clear"));
     }
     if !typing {
         let mut step = Vec::new();

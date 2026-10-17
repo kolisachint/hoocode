@@ -156,6 +156,9 @@ pub struct SessionInfo {
     pub modified: chrono::DateTime<Utc>,
     /// Number of message entries.
     pub message_count: usize,
+    /// Short model id from the latest `ModelChange` entry, when the session
+    /// recorded one (the ship that flew it).
+    pub model: Option<String>,
     /// Text of the first user message.
     pub first_message: String,
     /// All user/assistant message text concatenated.
@@ -1355,6 +1358,7 @@ pub fn build_session_info(path: impl AsRef<Path>) -> Option<SessionInfo> {
     let mtime_dt: chrono::DateTime<Utc> = mtime.into();
 
     let mut message_count = 0;
+    let mut model: Option<String> = None;
     let mut first_message = String::new();
     let mut all_messages: Vec<String> = Vec::new();
     let mut name: Option<String> = None;
@@ -1374,6 +1378,9 @@ pub fn build_session_info(path: impl AsRef<Path>) -> Option<SessionInfo> {
             if c.is_some() {
                 color = *c;
             }
+        }
+        if let FileEntry::ModelChange { model_id, .. } = entry {
+            model = Some(model_id.clone());
         }
         if let FileEntry::Message { message, .. } = entry {
             message_count += 1;
@@ -1406,6 +1413,7 @@ pub fn build_session_info(path: impl AsRef<Path>) -> Option<SessionInfo> {
         created,
         modified,
         message_count,
+        model,
         first_message: if first_message.is_empty() {
             "(no messages)".to_string()
         } else {

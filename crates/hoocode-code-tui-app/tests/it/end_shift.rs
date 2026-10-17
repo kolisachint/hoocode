@@ -30,11 +30,17 @@ fn jobs() -> Vec<ShiftJob> {
             id: "job-1".to_string(),
             command: "sleep 60".to_string(),
             running: true,
+            elapsed_secs: Some(4),
+            total_secs: Some(60),
+            log_path: Some("jobs/job-1.log".to_string()),
         },
         ShiftJob {
             id: "job-2".to_string(),
             command: "sleep 120".to_string(),
             running: true,
+            elapsed_secs: None,
+            total_secs: None,
+            log_path: None,
         },
     ]
 }
@@ -108,12 +114,17 @@ fn jobs_card_lists_the_satellites() {
     let rows = rows(&mut card, 100);
     assert_eq!(rows.len(), 6, "{rows:?}");
     assert!(
-        rows[0].contains("◉ END SHIFT WITH 2 SATELLITES UP?"),
+        rows[0].contains("◎ END SHIFT WITH 2 SATELLITES UP?"),
         "row 0: {:?}",
         rows[0]
     );
     assert!(rows[1].contains("◐ job-1"), "row 1: {:?}", rows[1]);
     assert!(rows[1].contains("sleep 60"), "row 1: {:?}", rows[1]);
+    assert!(
+        rows[1].contains("in orbit 4s of ~60s"),
+        "row 1: {:?}",
+        rows[1]
+    );
     assert!(rows[2].contains("◐ job-2"), "row 2: {:?}", rows[2]);
     assert!(
         rows[4].contains("k bring it down, then end shift"),
@@ -140,9 +151,14 @@ fn single_satellite_uses_the_singular() {
     let mut card = EndShiftJobsCard::new(jobs()[..1].to_vec(), Box::new(|_| {}));
     let rows = rows(&mut card, 100);
     assert!(
-        rows[0].contains("◉ END SHIFT WITH 1 SATELLITE UP?"),
+        rows[0].contains("◎ END SHIFT WITH 1 SATELLITE UP?"),
         "row 0: {:?}",
         rows[0]
+    );
+    assert!(
+        rows[3].contains("log stays in jobs/job-1.log"),
+        "foot names the log: {:?}",
+        rows[3]
     );
 }
 

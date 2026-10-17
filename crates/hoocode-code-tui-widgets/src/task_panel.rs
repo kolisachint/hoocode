@@ -1030,7 +1030,7 @@ fn render_flight_plan(
     let agents = model.row_ids(TaskPanelView::Subagents).len();
     let sats = model.row_ids(TaskPanelView::Shell).len();
     console.right = Line::from(vec![Span::styled(
-        format!("agents {agents} · sats {sats}"),
+        format!("agents {agents} · sats {sats} /tasks · ctrl+g"),
         pal.faint(),
     )]);
     if view == TaskPanelView::Plan {

@@ -1,9 +1,10 @@
 //! The Mission Control clearance card (M6, spec §4 c1, r5): the warn frame
-//! that replaces the comms frame while a gated call waits. The title names
-//! the held step when the host knows it; the right label names the mode and
-//! the tool; the REACH line reads the call's real data ([`reach_for`]); the
-//! keys row keeps each key's behaviour (`y` once, `a` always, `n` abort,
-//! `e` edit first). Typed text is the abort's reason (`enter` sends it).
+//! that replaces the comms frame while a gated call waits. The title is the
+//! bare `◎ CLEARANCE NEEDED` (the held step is the card's only step, so no
+//! number); the right label names the mode and the tool; the REACH line
+//! reads the call's real data ([`reach_for`]); the keys row keeps each key's
+//! behaviour (`y` once, `a` always, `n` abort, `e` edit first). Typed text is
+//! the abort's reason (`enter` sends it).
 //!
 //! `e edit first` cannot run inside the gate (the call's arguments are
 //! fixed), so `enter` denies the original call and the host sends the edited
@@ -51,12 +52,11 @@ impl ClearanceCard {
         }
     }
 
-    /// `◉ CLEARANCE NEEDED · step NN` (the step only when the host knows it).
+    /// `◎ CLEARANCE NEEDED`, bare: the held call is the card's only step,
+    /// so no number (spec §4 c1). The ring (`◎`) is the card's own glyph;
+    /// the question card keeps `◉`.
     fn title(&self) -> String {
-        match self.info.step {
-            Some(step) => format!("◉ CLEARANCE NEEDED · step {step:02}"),
-            None => "◉ CLEARANCE NEEDED".to_string(),
-        }
+        "◎ CLEARANCE NEEDED".to_string()
     }
 
     /// `BUILD asks for Shell`.
@@ -119,7 +119,7 @@ impl ClearanceCard {
 
     fn keys_row(&self) -> Line<'static> {
         let pal = Palette::current();
-        let mut hints = vec![key_hint("y", "go once")];
+        let mut hints = vec![key_hint("y", "go, once")];
         // Wrappers (sudo, …) are never approvable: no `a` hint, and the
         // key answers once.
         if let Some(program) = self.always_offer() {

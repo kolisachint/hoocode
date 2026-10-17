@@ -29,6 +29,7 @@ fn make(id: &str, name: Option<&str>, first_message: &str) -> SessionInfo {
         created: DateTime::<Utc>::UNIX_EPOCH,
         modified: DateTime::<Utc>::UNIX_EPOCH,
         message_count: 5,
+        model: None,
         all_messages_text: first_message.to_string(),
         subagent: None,
         first_message: first_message.to_string(),

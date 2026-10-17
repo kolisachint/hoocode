@@ -3,11 +3,11 @@
    ┊     1 line one
    ┊     2 line two
 
- 02 ⊗ Shell  cargo test -p hoocode-code-tui-widgets            HIT exit 3 · 0.1s
+ 02 ⊗ Shell  cargo test -p hoocode-code-tui-widgets           HIT  exit 3 · 0.1s
    ┊    boom
    ┊    Command exited with code 3
 --- styles ---
-r1 c1-2 fg=#ffff00 bold
+r1 c1-2 fg=#f0c674 bold
 r1 c4-5 fg=#b5bd68 bg=#16161f
 r1 c6-9 bg=#16161f bold
 r1 c10 bg=#16161f
@@ -23,10 +23,10 @@ r3 c6-7 bg=#16161f
 r3 c8-9 fg=#989898 bg=#16161f
 r3 c10 bg=#16161f
 r3 c11-18 fg=#a8a8a8 bg=#16161f
-r5 c1-2 fg=#ffff00 bold
+r5 c1-2 fg=#f0c674 bold
 r5 c4-5 fg=#d58181
 r5 c6-10 bold
-r5 c63-65 fg=#d58181 bold
+r5 c61-65 fg=#d58181 bold inverse
 r5 c67-72 fg=#a8a8a8
 r5 c74 fg=#a8a8a8
 r5 c76-79 fg=#a8a8a8

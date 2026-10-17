@@ -2,7 +2,9 @@
 //! `show-images-selector.ts` and `session-color-selector.ts`. Each is a
 //! [`FramedSelectList`]; the callbacks go on its list.
 
-use hoocode_code_tui_theme::get_available_themes;
+use hoocode_code_tui_theme::{
+    get_available_themes, get_resolved_theme_colors, get_theme_description,
+};
 use hoocode_tui_components::SelectItem;
 
 use crate::framed_list::FramedSelectList;
@@ -46,22 +48,49 @@ pub fn thinking_selector(current_level: &str, available_levels: &[&str]) -> Fram
     FramedSelectList::new("thinking", items, count, selected)
 }
 
-/// `ThemeSelectorComponent`: every available theme, the current one marked
-/// and selected. Wire `on_selection_change` for the live preview.
+/// `ThemeSelectorComponent`: every available theme with its swatches and
+/// description, the current one marked `● in use` and selected. Wire
+/// `on_selection_change` for the live preview.
 pub fn theme_selector(current_theme: &str) -> FramedSelectList {
     let themes = get_available_themes();
     let items = themes
         .iter()
         .map(|name| {
-            item(
-                name,
-                name,
-                (name == current_theme).then(|| "(current)".to_string()),
-            )
+            let in_use = name == current_theme;
+            let description = match (get_theme_description(name), in_use) {
+                (Some(text), true) => Some(format!("{text} ● in use")),
+                (Some(text), false) => Some(text),
+                (None, true) => Some("● in use".to_string()),
+                (None, false) => None,
+            };
+            item(name, name, description)
         })
         .collect();
     let selected = themes.iter().position(|t| t == current_theme);
-    FramedSelectList::new("theme", items, 10, selected)
+    let swatches = themes
+        .iter()
+        .map(|name| (name.clone(), theme_swatches(name)))
+        .collect();
+    FramedSelectList::new("HULL · /theme", items, 10, selected)
+        .with_count(if themes.len() == 1 {
+            "1 theme".to_string()
+        } else {
+            format!("{} themes", themes.len())
+        })
+        .with_swatches(swatches)
+}
+
+/// Four swatches from a theme's own palette for its picker row: the
+/// accent, success, warning and error tokens, skipping any the theme
+/// does not resolve.
+fn theme_swatches(name: &str) -> Vec<String> {
+    let Ok(colors) = get_resolved_theme_colors(Some(name)) else {
+        return Vec::new();
+    };
+    ["accent", "success", "warning", "error"]
+        .iter()
+        .filter_map(|token| colors.get(*token).cloned())
+        .collect()
 }
 
 /// `ShowImagesSelectorComponent`: values `yes` / `no`.

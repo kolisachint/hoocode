@@ -1,4 +1,4 @@
-┏━ ⊗ COMMS LOST · enter hail again · /model switch ship ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ app-edit ━┓
+┏━ ⊗ COMMS LOST · enter hail again · alt+m switch ship ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ app-edit ━┓
 ┃ ▸ press enter to hail again                                                                      ┃
 ┗━ peek ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ↑48k ↓9.8k ━┛
 --- styles ---
@@ -9,9 +9,9 @@ r0 c16 fg=#a8a8a8
 r0 c18-22 fg=#e5e5e7
 r0 c24-33 fg=#989898
 r0 c35 fg=#a8a8a8
-r0 c37-42 fg=#e5e5e7
-r0 c44-54 fg=#989898
-r0 c56-87 fg=#d58181
+r0 c37-41 fg=#e5e5e7
+r0 c43-53 fg=#989898
+r0 c55-87 fg=#d58181
 r0 c89-96 fg=#5cc8bb
 r0 c98-99 fg=#d58181
 r1 c0 fg=#d58181

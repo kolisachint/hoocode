@@ -17,7 +17,7 @@ use hoocode_tui_ratatui::{Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::truncate_to_width;
 
-use crate::console::Console;
+use crate::console::{hints, Console};
 
 /// The keyboard is drawn at the spec width; narrower falls back to the list.
 const KEYBOARD_MIN_WIDTH: usize = 100;
@@ -120,14 +120,14 @@ fn ctrl_actions(entries: &[(&KeybindingEntry, Vec<String>)]) -> Vec<(char, Strin
         .collect()
 }
 
-/// One keyboard row: the label cap plus the letter caps, lit caps in ink,
-/// the rest faint.
-fn keyboard_row(label: &str, letters: &[char], lit: &[char]) -> Line<'static> {
+/// One keyboard row: the label cap plus the letter caps, lit caps in
+/// `lit`, the rest faint.
+fn keyboard_row(label: &str, letters: &[char], lit: &[char], lit_style: Style) -> Line<'static> {
     let pal = Palette::current();
     let mut spans = vec![Span::styled(label.to_string(), pal.dim()), Span::raw("  ")];
     for letter in letters {
         let style = if lit.contains(letter) {
-            Style::default()
+            lit_style
         } else {
             pal.faint()
         };
@@ -173,16 +173,19 @@ fn keyboard(entries: &[(&KeybindingEntry, Vec<String>)]) -> Vec<Line<'static>> {
         "tab",
         &top,
         &lit_caps(entries, Layer::Plain, &top),
+        Style::default(),
     ));
     rows.push(keyboard_row(
         "ctrl",
         &home,
         &lit_caps(entries, Layer::Ctrl, &home),
+        pal.acc(),
     ));
     rows.push(keyboard_row(
         "shift",
         &bottom,
         &lit_caps(entries, Layer::Plain, &bottom),
+        Style::default(),
     ));
     rows
 }
@@ -238,9 +241,17 @@ impl Component for ControlsComponent {
             .collect();
         let count = entries.len();
         let mut console = Console::new("CONTROLS · /hotkeys", format!("{} bindings", count));
+        // The layer tabs (M8d9): the ctrl layer is the lit one.
+        let tabs = Line::from(vec![
+            Span::styled("plain ".to_string(), pal.dim()),
+            Span::styled("ctrl ".to_string(), pal.acc()),
+            Span::styled("alt".to_string(), pal.dim()),
+        ]);
         if width >= KEYBOARD_MIN_WIDTH {
-            console.top = keyboard(&entries);
-            console.right = Line::from(vec![Span::styled("ctrl layer", pal.faint())]);
+            let mut top = vec![tabs];
+            top.extend(keyboard(&entries));
+            console.top = top;
+            console.right = Line::from(vec![Span::styled("ctrl layer", pal.acc())]);
             let inner = width.saturating_sub(4);
             console.rows = ctrl_actions(&entries)
                 .into_iter()
@@ -250,6 +261,7 @@ impl Component for ControlsComponent {
             let inner = width.saturating_sub(4);
             console.rows = key_list(&entries, inner);
         }
+        console.hint = hints(&[("tab", "layer"), ("type", "search"), ("esc", "close")]);
         console.render(width)
     }
 

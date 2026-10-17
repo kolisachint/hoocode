@@ -107,14 +107,15 @@ impl LoginDialogComponent {
         self.events.push(LoginDialogEvent::Cancelled);
     }
 
-    /// `showAuth`: the URL (a link) and any instructions. No QR facility
-    /// exists in the repo, so the dialog says so and points at the link.
+    /// `showAuth`: the URL (a link) and any instructions, as the docking's
+    /// numbered steps. No QR facility exists in the repo, so the dialog
+    /// says so and points at the link.
     pub fn show_auth(&mut self, url: &str, instructions: Option<&str>) {
         let pal = Palette::current();
         self.separate();
-        self.rows.push(line(url.to_string(), pal.acc()));
+        self.rows.push(line(format!("1 {url}"), pal.acc()));
         self.rows.push(line(
-            "open the link in a browser to dock".to_string(),
+            "scan, or enter to open the browser".to_string(),
             pal.faint(),
         ));
         self.rows.push(line(
@@ -129,11 +130,12 @@ impl LoginDialogComponent {
         self.hint = hints(&[("esc", "cancel")]);
     }
 
-    /// `showManualInput`: an input for a pasted code or redirect URL.
+    /// `showManualInput`: an input for a pasted code or redirect URL, as
+    /// docking step 2 after the browser step.
     pub fn show_manual_input(&mut self, prompt: &str) {
         let pal = Palette::current();
         self.separate();
-        self.rows.push(line(prompt.to_string(), pal.faint()));
+        self.rows.push(line(format!("2 {prompt}"), pal.faint()));
         self.awaiting_input = true;
         self.hint = hints(&[("enter", "submit"), ("esc", "cancel")]);
     }

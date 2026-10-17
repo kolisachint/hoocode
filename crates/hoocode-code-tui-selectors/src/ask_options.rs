@@ -185,7 +185,9 @@ impl State {
                 spans.push(Span::styled(format!("   {description}"), pal.faint()));
             }
             if o.recommended {
-                spans.push(Span::styled("   recommended", pal.warn()));
+                // The recommended answer reads green (spec §4 c2): it is the
+                // safe default, not a warning.
+                spans.push(Span::styled("   recommended", pal.ok()));
             }
             lines.push(Line::from(spans));
         }

@@ -1060,6 +1060,10 @@ impl TreeList {
         if self.active_path_ids.contains(&node.id) {
             spans.push(Span::styled("• ".to_string(), pal.acc()));
         }
+        // The design's cyan tag on the live node (M8d7).
+        if self.current_leaf_id.as_deref() == Some(node.id.as_str()) {
+            spans.push(Span::styled("YOU ARE HERE ".to_string(), pal.acc()));
+        }
         if let Some(label) = &node.label {
             spans.push(Span::styled(format!("[{label}] "), pal.warn()));
         }
@@ -1206,9 +1210,10 @@ fn nodes(count: usize) -> String {
 /// The hint foot with literal keys, so the bytes hold on macOS and Linux:
 /// the longest leading run that fits `available`, like the old top row.
 fn tree_hint(available: usize) -> Line<'static> {
-    const HINTS: [(&str, &str); 5] = [
+    const HINTS: [(&str, &str); 6] = [
         ("↑↓", "move"),
         ("enter", "go here"),
+        ("f", "fork"),
         ("alt+l", "label"),
         ("alt+t", "timestamps"),
         ("esc", "close"),

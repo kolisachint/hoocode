@@ -2,8 +2,9 @@
 //! end of shift, hull paint" card): the amber cards that replace the comms
 //! frame when a quit is asked. With nothing running, the card carries the
 //! shift's debrief (`enter` ends the shift, `esc` stays); with satellites up,
-//! it lists them (`k` brings them down and ends, `l` leaves them in orbit,
-//! `enter` is the default: bring them down).
+//! the `◎ END SHIFT WITH 1 SATELLITE UP?` card lists them with their orbit
+//! clocks (`k` brings them down and ends, `l` leaves them in orbit, `enter`
+//! is the default: bring them down).
 
 use hoocode_code_tui_keybindings::format_key_text;
 use hoocode_code_tui_widgets::card_frame::{card_foot, render_card};
@@ -113,12 +114,20 @@ impl Component for EndShiftCard {
     }
 }
 
-/// One satellite on the jobs card: its id, command and state word.
+/// One satellite on the jobs card: its id, command and state word. The
+/// orbit clock (`elapsed_secs` of `~total_secs`) and the log path render
+/// when the host knows them (spec §4 c8: `in orbit 4s of ~60s`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShiftJob {
     pub id: String,
     pub command: String,
     pub running: bool,
+    /// Seconds in orbit, when known.
+    pub elapsed_secs: Option<u64>,
+    /// Rough total (a `sleep N` command's `N`), when known.
+    pub total_secs: Option<u64>,
+    /// Where its output stays, when known (`jobs/job-1.log`).
+    pub log_path: Option<String>,
 }
 
 /// The jobs card's answer. It keeps the old prompt's outcomes: the default
@@ -154,11 +163,12 @@ impl EndShiftJobsCard {
         }
     }
 
-    /// `◉ END SHIFT WITH 1 SATELLITE UP?`
+    /// `◎ END SHIFT WITH 1 SATELLITE UP?` The ring (`◎`) is the card's own
+    /// glyph, shared with the clearance card.
     fn title(&self) -> String {
         let n = self.jobs.len();
         let noun = if n == 1 { "SATELLITE" } else { "SATELLITES" };
-        format!("◉ END SHIFT WITH {n} {noun} UP?")
+        format!("◎ END SHIFT WITH {n} {noun} UP?")
     }
 
     fn body(&self) -> Vec<Line<'static>> {
@@ -170,7 +180,23 @@ impl EndShiftJobsCard {
             } else {
                 ("●", pal.dim())
             };
-            let state = if job.running { "in orbit" } else { "done" };
+            let mut state = if job.running {
+                "in orbit".to_string()
+            } else {
+                "done".to_string()
+            };
+            // The orbit clock, when the host knows it: `in orbit 4s of ~60s`.
+            if job.running {
+                match (job.elapsed_secs, job.total_secs) {
+                    (Some(elapsed), Some(total)) => {
+                        state = format!("in orbit {elapsed}s of ~{total}s");
+                    }
+                    (Some(elapsed), None) => {
+                        state = format!("in orbit {elapsed}s");
+                    }
+                    _ => {}
+                }
+            }
             rows.push(Line::from(vec![
                 Span::raw("  "),
                 Span::styled(mark, mark_style),
@@ -183,10 +209,19 @@ impl EndShiftJobsCard {
             ]));
         }
         rows.push(Line::raw(""));
-        rows.push(hints_line(&[
+        let mut hints: Vec<(&str, &str)> = vec![
             ("k", "bring it down, then end shift"),
             ("l", "leave it in orbit"),
-        ]));
+        ];
+        // One satellite: the foot names where its log stays (spec §4 c8).
+        let log_note;
+        if self.jobs.len() == 1 {
+            if let Some(path) = self.jobs[0].log_path.as_deref() {
+                log_note = format!("log stays in {path}");
+                hints.push(("", log_note.as_str()));
+            }
+        }
+        rows.push(hints_line(&hints));
         rows
     }
 }

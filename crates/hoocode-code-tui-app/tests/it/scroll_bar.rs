@@ -104,7 +104,7 @@ fn scan_bar_shows_the_query_contacts_and_keys() {
     let _g = lock(Some("dark"));
     let text = row(&scan_status("beta item 25", false));
     assert!(text.contains("⌕ SCAN  beta item 25  1 contact"), "{text:?}");
-    assert!(text.contains("enter next · escape close · n/p"), "{text:?}");
+    assert!(text.contains("enter next · escape clear · n/p"), "{text:?}");
 }
 
 #[test]
@@ -112,5 +112,5 @@ fn scan_bar_typing_shows_the_caret_and_lock_keys() {
     let _g = lock(Some("dark"));
     let text = row(&scan_status("beta", true));
     assert!(text.contains("⌕ SCAN  beta█  1 contact"), "{text:?}");
-    assert!(text.contains("enter lock · escape close"), "{text:?}");
+    assert!(text.contains("enter lock · escape clear"), "{text:?}");
 }

@@ -14,7 +14,7 @@ use ratatui_core::style::{Color, Modifier, Style};
 
 /// The Mission Control chrome tokens, each with the legacy theme token it
 /// falls back to when a theme does not define it yet.
-pub const PALETTE_TOKENS: [(&str, &str); 10] = [
+pub const PALETTE_TOKENS: [(&str, &str); 11] = [
     ("ink", "text"),
     ("dim", "dim"),
     ("faint", "muted"),
@@ -25,6 +25,7 @@ pub const PALETTE_TOKENS: [(&str, &str); 10] = [
     ("you", "agent2"),
     ("vio", "agent2"),
     ("gold", "warning"),
+    ("bH", "selectedBg"),
 ];
 
 /// The legacy token `name` falls back to, if it is a Mission Control token.

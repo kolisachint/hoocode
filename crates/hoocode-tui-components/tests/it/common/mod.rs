@@ -44,5 +44,6 @@ pub fn theme() -> MarkdownTheme {
         underline: sgr("\x1b[4m", "\x1b[24m"),
         highlight_code: None,
         code_block_indent: None,
+        code_block_bg: None,
     }
 }
