@@ -15,7 +15,7 @@ use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_ratatui::{bold, Line, Palette, Span};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::is_js_space;
-use hoocode_tui_util::truncate_to_width;
+use hoocode_tui_util::{truncate_to_width, visible_width};
 
 /// `UserMessageItem`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,17 +62,47 @@ impl UserMessageList {
 
 /// One message row (content only; the console adds the `›` marker or
 /// gutter and the selection band): the text with newlines flattened and
-/// JS-trimmed, cut to the inner width. The selected row reads bold accent.
-fn message_row(text: &str, selected: bool, width: usize) -> Line<'static> {
+/// JS-trimmed, cut to the inner width. The selected row reads bold accent
+/// and carries the separation load: how many messages launch and their
+/// fuel estimate (M8d8).
+fn message_row(
+    text: &str,
+    carries: Option<(usize, usize)>,
+    selected: bool,
+    width: usize,
+) -> Line<'static> {
     let pal = Palette::current();
     let normalized = text.replace('\n', " ");
     let normalized = normalized.trim_matches(is_js_space);
-    let truncated = truncate_to_width(normalized, width.saturating_sub(2), "...", false);
-    if selected {
-        Line::from(vec![Span::styled(truncated, bold(pal.acc()))])
-    } else {
-        Line::raw(truncated)
+    let suffix = carries.map(|(count, fuel)| {
+        format!(
+            " · carries {count} {} · {:.1}k fuel",
+            if count == 1 { "message" } else { "messages" },
+            fuel as f64 / 1000.0,
+        )
+    });
+    let suffix_width = suffix.as_deref().map(visible_width).unwrap_or(0);
+    let truncated = truncate_to_width(
+        normalized,
+        width.saturating_sub(2).saturating_sub(suffix_width),
+        "...",
+        false,
+    );
+    let mut text = truncated;
+    if let Some(suffix) = suffix {
+        text.push_str(&suffix);
     }
+    if selected {
+        Line::from(vec![Span::styled(text, bold(pal.acc()))])
+    } else {
+        Line::raw(text)
+    }
+}
+
+/// Rough token estimate for the separation load: UTF-16 code units per
+/// token, as the tool-schema measurer counts.
+fn estimate_tokens(text: &str) -> usize {
+    text.encode_utf16().count().div_ceil(4)
 }
 
 impl UserMessageList {
@@ -136,16 +166,17 @@ impl UserMessageSelectorComponent {
 }
 
 impl Component for UserMessageSelectorComponent {
-    /// The STAGE SEPARATION console: the explanation on top, one row per
-    /// user message with `›` on the selection band, the position and
-    /// scroll rows below, and the hint foot. Keys and events unchanged.
+    /// The STAGE SEPARATION console: what launching means on top, one row
+    /// per user message with the separation load on the selected row, the
+    /// dotted amber rule below, and the position and hint foot. Keys and
+    /// events unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
         let pal = Palette::current();
         let list = self.list.borrow();
         let width = width as usize;
         let mut console = Console::new("STAGE SEPARATION · /fork", "");
         console.top = vec![Line::from(vec![Span::styled(
-            "Select a user message to copy the active path up to that point into a new session",
+            "Everything above the line launches as a new session; this one keeps flying.",
             pal.faint(),
         )])];
         let len = list.messages.len();
@@ -157,15 +188,34 @@ impl Component for UserMessageSelectorComponent {
         } else {
             let window = list.cursor.window();
             let selected = list.cursor.selected();
+            // The separation load: everything above the line launches, so
+            // the selected row carries the messages through it and their
+            // fuel estimate.
+            let fuel: usize = list.messages[..=selected.min(len - 1)]
+                .iter()
+                .map(|m| estimate_tokens(&m.text))
+                .sum();
+            let carries = selected.saturating_add(1);
             console.rows = window
                 .clone()
-                .map(|i| message_row(&list.messages[i].text, i == selected, width))
+                .map(|i| {
+                    message_row(
+                        &list.messages[i].text,
+                        (i == selected).then_some((carries, fuel)),
+                        i == selected,
+                        width,
+                    )
+                })
                 .collect();
             console.selected = window.clone().position(|i| i == selected);
             let mut bottom = vec![Line::from(vec![Span::styled(
+                format!("  ✂ {}", "╌".repeat(width.saturating_sub(6).max(8))),
+                pal.warn(),
+            )])];
+            bottom.push(Line::from(vec![Span::styled(
                 format!("  Message {} of {len}", selected + 1),
                 pal.faint(),
-            )])];
+            )]));
             if let Some(footer) = list.cursor.footer() {
                 bottom.push(Line::from(vec![Span::styled(
                     format!("  {footer}"),

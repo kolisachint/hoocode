@@ -224,8 +224,9 @@ impl Transcript {
     }
 
     /// The failed Model block: a spacer, the `⊗ Model` header in the error
-    /// colour with its message, the muted body under the header, and — when
-    /// the streak ran out of retries — the hail axis with its note (M8e1):
+    /// colour with its message and — when the streak ran out of retries —
+    /// the `COMMS LOST N hails` chip (M8e1), the muted body under the
+    /// header, and the hail axis with its note:
     ///
     /// ```text
     ///  ⊗ Model  529 upstream overloaded
@@ -234,6 +235,15 @@ impl Transcript {
     /// ```
     pub(super) fn add_model_error(&mut self, title: &str, body: &str, hails: u64) {
         let t = theme();
+        let mut header = format!(
+            "{} {}  {}",
+            t.fg("error", "⊗"),
+            t.bold(&t.fg("toolTitle", "Model")),
+            t.fg("error", title)
+        );
+        if hails >= 2 {
+            header.push_str(&t.fg("error", &format!("  COMMS LOST {hails} hails")));
+        }
         let mut block = Container::new();
         block.add_child(as_component(&Rc::new(RefCell::new(Text::new(
             format!(

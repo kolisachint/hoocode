@@ -1154,6 +1154,40 @@ fn token_count(tokens: u64) -> String {
     out
 }
 
+/// The LAUNCH WEIGHT block above the rows: what every turn carries, and
+/// the stacked prompt-vs-schemas bar in the surface's own split.
+fn launch_weight_top(surface: &PromptSurface, inner: usize) -> Vec<Line<'static>> {
+    let pal = Palette::current();
+    let total = surface.total_tokens.max(1);
+    let bar_width = inner.clamp(8, 48);
+    let prompt_cells = ((surface.system_prompt_tokens * bar_width) / total)
+        .clamp(usize::from(surface.system_prompt_tokens > 0), bar_width);
+    let prompt_bar = "█".repeat(prompt_cells);
+    let schemas_bar = "█".repeat(bar_width.saturating_sub(prompt_cells));
+    vec![
+        Line::from(vec![
+            Span::styled("LAUNCH WEIGHT ".to_string(), pal.dim()),
+            Span::raw(format!(
+                "every turn carries {} tokens",
+                token_count(surface.total_tokens as u64),
+            )),
+        ]),
+        Line::from(vec![
+            Span::styled(prompt_bar, pal.acc()),
+            Span::styled(schemas_bar, pal.vio()),
+            Span::raw(" ".to_string()),
+            Span::styled(
+                format!(
+                    "prompt {} · schemas {}",
+                    token_count(surface.system_prompt_tokens as u64),
+                    token_count(surface.tool_schema_tokens as u64),
+                ),
+                pal.faint(),
+            ),
+        ]),
+    ]
+}
+
 /// The fixed per-turn cost, as one line under the pane (`formatSurfaceLine`).
 fn format_surface_line(surface: &PromptSurface) -> String {
     let n = surface.tools.len();
@@ -1923,6 +1957,11 @@ impl Component for SettingsSelectorComponent {
             .min(30);
         let selected = list.selected();
         let window = list.window();
+        // The launch weight: the tokens every turn carries before typing,
+        // as a stacked prompt/schemas bar above the rows (M8d4).
+        if let Some(surface) = self.surface.last.borrow().as_ref() {
+            console.top = launch_weight_top(surface, inner);
+        }
         let items: Vec<(String, String, Option<String>, Option<String>)> = list
             .filtered_items()
             .iter()

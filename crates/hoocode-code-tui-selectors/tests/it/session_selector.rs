@@ -67,6 +67,7 @@ fn make(id: &str, o: Make) -> SessionInfo {
             .map(|m| m.parse().unwrap())
             .unwrap_or(DateTime::<Utc>::UNIX_EPOCH),
         message_count: 1,
+        model: None,
         all_messages_text: first.clone(),
         subagent: None,
         first_message: first,

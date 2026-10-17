@@ -30,7 +30,7 @@ use hoocode_code_tui_widgets::console::{hints, query_row, Console};
 use hoocode_home::shorten_path;
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, KeybindingsManager};
-use hoocode_tui_ratatui::{bold, Line, Palette, Span};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::js_trim;
 use hoocode_tui_util::{truncate_to_width, visible_width};
@@ -354,6 +354,7 @@ mod name_filter_tests {
             created: DateTime::<Utc>::UNIX_EPOCH,
             modified: DateTime::<Utc>::UNIX_EPOCH,
             message_count: 1,
+            model: None,
             all_messages_text: String::new(),
             first_message: String::new(),
             subagent: run.then(|| SubagentRun {
@@ -450,6 +451,35 @@ pub enum ListEvent {
     /// Resume an interrupted run (`r` in its choice).
     ResumeSubagent(SubagentRunRef),
     Error(String),
+}
+
+/// The ship that flew a session: the short model id from its latest
+/// model change, or `—` when the session recorded none.
+fn ship_name(session: &SessionInfo) -> String {
+    session
+        .model
+        .as_deref()
+        .map(|id| id.rsplit('/').next().unwrap_or(id))
+        .unwrap_or("—")
+        .to_string()
+}
+
+/// The search hit count for a session: matches of the current query in
+/// its searchable text, or zero while unfiltered.
+fn hit_count(session: &SessionInfo, query: &str) -> usize {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return 0;
+    }
+    let haystack = format!(
+        "{} {} {} {}",
+        session.id,
+        session.name.as_deref().unwrap_or(""),
+        session.all_messages_text,
+        session.cwd
+    )
+    .to_lowercase();
+    haystack.match_indices(&needle).count()
 }
 
 /// `SessionList`: the search line and one row per session.
@@ -765,21 +795,48 @@ impl SessionList {
             spans.push(Span::raw("  ".to_string()));
         }
         let age = format_session_date(session.modified, now);
-        let mut right = match &session.subagent {
-            Some(run) => format!("{} {age}", subagent_label(run)),
+        // The mission table's right columns: the ship that flew the
+        // session, its step count, the search hit count, and when. Hits
+        // read red; unnamed rows keep the id slug so they stay
+        // distinguishable.
+        let body = if is_confirming_delete {
+            pal.err()
+        } else {
+            pal.dim()
+        };
+        let hits = hit_count(session, &self.search_value());
+        let mut right: Vec<(String, Style)> = match &session.subagent {
+            Some(run) => vec![(format!("{} {age}", subagent_label(run)), body)],
             None => {
-                let mut right = format!("{} {age}", session.message_count);
+                let mut columns = Vec::new();
                 if !has_name {
-                    right = format!("{} {right}", session_slug_for(&session.id));
+                    columns.push((session_slug_for(&session.id), body));
                 }
-                right
+                columns.push((
+                    ship_name(session),
+                    if session.model.is_some() && !is_confirming_delete {
+                        Style::default()
+                    } else {
+                        body
+                    },
+                ));
+                columns.push((session.message_count.to_string(), body));
+                columns.push((hits.to_string(), if hits > 0 { pal.err() } else { body }));
+                columns.push((age, body));
+                columns
             }
         };
         if self.show_cwd && !session.cwd.is_empty() {
-            right = format!("{} {right}", shorten_path(&session.cwd));
+            right.insert(0, (shorten_path(&session.cwd).to_string(), body));
         }
         if self.show_path {
-            right = format!("{} {right}", shorten_path(&session.path.to_string_lossy()));
+            right.insert(
+                0,
+                (
+                    shorten_path(&session.path.to_string_lossy()).to_string(),
+                    body,
+                ),
+            );
         }
         let prefix_width = visible_width(&prefix) as i64;
         let branch_width = if branch.is_empty() {
@@ -787,7 +844,11 @@ impl SessionList {
         } else {
             visible_width(&format!("{GIT_BRANCH_GLYPH} {branch}  ")) as i64
         };
-        let right_width = visible_width(&right) as i64;
+        let right_width = right
+            .iter()
+            .map(|(text, _)| visible_width(text) as i64)
+            .sum::<i64>()
+            + right.len().saturating_sub(1) as i64;
         let available = inner as i64 - 2 - prefix_width - branch_width - right_width - 2;
         let truncated = truncate_to_width(normalized, available.max(10) as usize, "…", false);
         let name_width = visible_width(&truncated) as i64;
@@ -807,14 +868,12 @@ impl SessionList {
         let spacing =
             (inner as i64 - 2 - prefix_width - branch_width - name_width - right_width).max(1);
         spans.push(Span::raw(" ".repeat(spacing as usize)));
-        spans.push(Span::styled(
-            right,
-            if is_confirming_delete {
-                pal.err()
-            } else {
-                pal.dim()
-            },
-        ));
+        for (n, (text, style)) in right.into_iter().enumerate() {
+            if n > 0 {
+                spans.push(Span::raw(" ".to_string()));
+            }
+            spans.push(Span::styled(text, style));
+        }
         Line::from(spans)
     }
 

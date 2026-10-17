@@ -149,7 +149,7 @@ impl CommsState {
                 Seg::new(ink, "enter"),
                 Seg::new(dim, "hail again"),
                 Seg::new(faint, "·"),
-                Seg::new(ink, "/model"),
+                Seg::new(ink, "alt+m"),
                 Seg::new(dim, "switch ship"),
             ],
             CommsState::Landed { elapsed, steps } => landed_title(
