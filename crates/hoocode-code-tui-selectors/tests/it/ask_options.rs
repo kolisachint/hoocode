@@ -6,6 +6,8 @@ use std::rc::Rc;
 use crate::support::{lock, strip};
 use hoocode_code_tools_optin::ask_options::{AskOption, AskQuestion};
 use hoocode_code_tui_selectors::ask_options::{AskOptionsComponent, AskOptionsOptions};
+use hoocode_tui_render::assert_golden;
+use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::Component;
 
 const UP: &str = "\x1b[A";
@@ -51,6 +53,15 @@ fn questions() -> Vec<AskQuestion> {
 type Submitted = Rc<RefCell<Option<Vec<String>>>>;
 
 fn pane() -> (AskOptionsComponent, Submitted, Rc<RefCell<bool>>) {
+    pane_with(true)
+}
+
+/// The elicitation form: esc skips instead of picking option 1.
+fn elicitation_pane() -> (AskOptionsComponent, Submitted, Rc<RefCell<bool>>) {
+    pane_with(false)
+}
+
+fn pane_with(esc_answers_first: bool) -> (AskOptionsComponent, Submitted, Rc<RefCell<bool>>) {
     let submitted: Submitted = Rc::default();
     let cancelled = Rc::new(RefCell::new(false));
     let (s, c) = (submitted.clone(), cancelled.clone());
@@ -58,7 +69,7 @@ fn pane() -> (AskOptionsComponent, Submitted, Rc<RefCell<bool>>) {
         questions(),
         Box::new(move |answers| *s.borrow_mut() = Some(answers)),
         Box::new(move || *c.borrow_mut() = true),
-        AskOptionsOptions::default(),
+        AskOptionsOptions { esc_answers_first },
     );
     (pane, submitted, cancelled)
 }
@@ -76,13 +87,15 @@ fn renders_header_question_options_and_custom_row() {
     let _g = lock();
     let (mut c, _, _) = pane();
     let out = out(&mut c);
-    assert!(out.contains("input needed"), "{out}");
+    assert!(out.contains("MISSION CONTROL ASKS"), "{out}");
     assert!(out.contains("1/2 where should retry logic live?"), "{out}");
     assert!(out.contains("the http client is shared by every provider adapter"));
-    assert!(out.contains("1 hoocode-ai"));
-    assert!(out.contains("2 agent-core"));
-    assert!(out.contains("custom answer"));
-    assert!(out.contains("(1/3)"));
+    assert!(out.contains("1  hoocode-ai"));
+    assert!(out.contains("2  agent-core"));
+    assert!(out.contains("3  something else"));
+    assert!(out.contains("type it"));
+    assert!(out.contains("1–3 answer"));
+    assert!(out.contains("pick 1"));
 }
 
 #[test]
@@ -91,12 +104,15 @@ fn moves_the_cursor_and_clamps_at_both_ends() {
     let (mut c, _, _) = pane();
     c.handle_input(DOWN);
     let o = out(&mut c);
-    assert!(o.contains("› 2 agent-core"), "{o}");
-    assert!(o.contains("(2/3)"));
+    assert!(o.contains("› 2  agent-core"), "{o}");
+    assert!(o.contains("1–3 answer"), "{o}");
     c.handle_input(UP);
-    assert!(out(&mut c).contains("› 1 hoocode-ai"));
+    assert!(out(&mut c).contains("› 1  hoocode-ai"));
     c.handle_input(UP);
-    assert!(out(&mut c).contains("(1/3)"), "up at the top stays put");
+    assert!(
+        out(&mut c).contains("› 1  hoocode-ai"),
+        "up at the top stays put"
+    );
 }
 
 #[test]
@@ -203,9 +219,107 @@ fn does_not_submit_an_empty_custom_answer() {
 }
 
 #[test]
-fn skips_with_escape() {
+fn question_card_golden() {
     let _g = lock();
-    let (mut c, _, cancelled) = pane();
+    let (mut c, _, _) = pane();
+    assert_golden!("ask_card_100", render_golden(&mut c, 100));
+}
+
+#[test]
+fn recommended_tag_shows() {
+    let _g = lock();
+    let submitted: Submitted = Rc::default();
+    let mut pane = AskOptionsComponent::new(
+        vec![AskQuestion {
+            question: "strategy?".into(),
+            short: None,
+            detail: None,
+            allow_custom: true,
+            options: vec![
+                AskOption {
+                    label: "exponential".into(),
+                    description: Some("doubling".into()),
+                    recommended: true,
+                },
+                option("fixed", "same wait"),
+            ],
+        }],
+        Box::new(move |answers| *submitted.borrow_mut() = Some(answers)),
+        Box::new(|| {}),
+        AskOptionsOptions {
+            esc_answers_first: true,
+        },
+    );
+    let out = strip(&pane.render(100));
+    assert!(out.contains("1  exponential"), "{out}");
+    assert!(out.contains("recommended"), "{out}");
+    assert!(out.contains("3  something else"), "{out}");
+}
+
+#[test]
+fn custom_row_number_moves_without_answering() {
+    let _g = lock();
+    let (mut c, submitted, _) = pane();
+    // Row 3 is the custom row: its number only moves there.
+    c.handle_input("3");
+    assert_eq!(*submitted.borrow(), None);
+    let rendered = out(&mut c);
+    assert!(rendered.contains("› 3  something else"), "{rendered}");
+    // Typing then sends with enter on the next step.
+    for key in ["m", "i", "n"] {
+        c.handle_input(key);
+    }
+    assert!(out(&mut c).contains("min"));
+}
+#[test]
+fn escape_picks_option_one_on_the_card() {
+    let _g = lock();
+    let (mut c, submitted, cancelled) = pane();
+    // Esc answers the current step with option 1, then the next.
+    c.handle_input(ESC);
+    assert!(!*cancelled.borrow());
+    assert_eq!(*submitted.borrow(), None);
+    c.handle_input(ESC);
+    assert!(!*cancelled.borrow());
+    assert_eq!(
+        *submitted.borrow(),
+        Some(vec![
+            "hoocode-ai".to_string(),
+            "exponential + jitter".to_string()
+        ])
+    );
+}
+
+#[test]
+fn escape_skips_for_elicitation_forms() {
+    let _g = lock();
+    let (mut c, submitted, cancelled) = elicitation_pane();
     c.handle_input(ESC);
     assert!(*cancelled.borrow());
+    assert_eq!(*submitted.borrow(), None);
+}
+
+#[test]
+fn escape_skips_when_no_option_can_answer() {
+    let _g = lock();
+    let submitted: Submitted = Rc::default();
+    let cancelled = Rc::new(RefCell::new(false));
+    let (s, c) = (submitted.clone(), cancelled.clone());
+    let mut pane = AskOptionsComponent::new(
+        vec![AskQuestion {
+            question: "free text?".into(),
+            short: None,
+            detail: None,
+            allow_custom: false,
+            options: vec![],
+        }],
+        Box::new(move |answers| *s.borrow_mut() = Some(answers)),
+        Box::new(move || *c.borrow_mut() = true),
+        AskOptionsOptions {
+            esc_answers_first: true,
+        },
+    );
+    pane.handle_input(ESC);
+    assert!(*cancelled.borrow());
+    assert_eq!(*submitted.borrow(), None);
 }

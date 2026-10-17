@@ -6,6 +6,7 @@ pub mod attach_view;
 pub mod background_notice;
 pub mod bash_execution;
 pub mod brand;
+pub mod card_frame;
 pub mod custom_message;
 pub mod diff;
 pub mod dynamic_border;

@@ -59,6 +59,271 @@ pub const FAIL_CLOSED_ENV: &str = "HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED";
 /// no client on its stdio can answer a prompt. Never set it anywhere else.
 pub const WARM_WORKER_ENV: &str = "HOOCODE_INTERNAL_WARM_WORKER";
 
+/// One REACH cell on the clearance card: on (`■`) or off (`□`), with an
+/// optional qualifier from the call's real data (a path, a program count).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReachCell {
+    pub on: bool,
+    pub qualifier: Option<String>,
+}
+
+impl ReachCell {
+    fn off() -> Self {
+        Self {
+            on: false,
+            qualifier: None,
+        }
+    }
+
+    fn on(qualifier: Option<String>) -> Self {
+        Self {
+            on: true,
+            qualifier,
+        }
+    }
+}
+
+/// The clearance card's REACH line (Mission Control spec §4 c1, §8.11): what
+/// the call can reach. Qualifiers use the real path, never a renamed one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reach {
+    pub read: ReachCell,
+    pub write: ReachCell,
+    pub network: ReachCell,
+    pub pipe: ReachCell,
+}
+
+/// Commands that almost always mean the network (a hint, not enforcement).
+const NETWORK_PROGRAMS: [&str; 11] = [
+    "curl", "wget", "ssh", "scp", "sftp", "ping", "nc", "netcat", "ncat", "telnet", "ftp",
+];
+
+/// The REACH cells for a gated call, from the call's real data where the
+/// gate has it: the Shell command's paths, pipe and redirect, the mutation
+/// path of Edit/Write, the network of WebFetch/WebSearch.
+pub fn reach_for(tool_name: &str, input: &Value) -> Reach {
+    match tool_name {
+        "Edit" => {
+            let path = mutation_path(input);
+            Reach {
+                read: ReachCell::on(path.clone()),
+                write: ReachCell::on(path),
+                network: ReachCell::off(),
+                pipe: ReachCell::off(),
+            }
+        }
+        "Write" => Reach {
+            read: ReachCell::off(),
+            write: ReachCell::on(mutation_path(input)),
+            network: ReachCell::off(),
+            pipe: ReachCell::off(),
+        },
+        "WebFetch" | "WebSearch" => Reach {
+            read: ReachCell::off(),
+            write: ReachCell::off(),
+            network: ReachCell::on(None),
+            pipe: ReachCell::off(),
+        },
+        "Shell" => shell_reach(input.get("command").and_then(Value::as_str).unwrap_or("")),
+        _ => Reach {
+            read: ReachCell::off(),
+            write: ReachCell::off(),
+            network: ReachCell::off(),
+            pipe: ReachCell::off(),
+        },
+    }
+}
+
+/// One word of a Shell command, with whether it opens a quoted run.
+fn push_word(words: &mut Vec<String>, current: &mut String) {
+    if !current.is_empty() {
+        words.push(std::mem::take(current));
+    }
+}
+
+/// The pipe segments of a Shell command: words per segment, plus the write
+/// redirect targets. Quotes and backslash escapes hold words together;
+/// `||`, `&&`, `;`, `<` and `(` end a segment without joining a pipe.
+fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
+    let mut segments: Vec<Vec<String>> = vec![Vec::new()];
+    let mut redirects = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut chars = command.chars().peekable();
+    // A `>`/`>>` waits for its target word; `piped` tracks single-`|` joins.
+    // `prev_sig` is the last non-space char outside quotes: an `&` right
+    // after `>` belongs to a descriptor dup (`2>&1`), not the background.
+    let mut redirect_pending = false;
+    let mut piped = false;
+    let mut prev_sig: Option<char> = None;
+    while let Some(c) = chars.next() {
+        if escaped {
+            current.push(c);
+            escaped = false;
+            continue;
+        }
+        if c == '\\' && quote != Some('\'') {
+            escaped = true;
+            continue;
+        }
+        if let Some(q) = quote {
+            if c == q {
+                quote = None;
+            } else {
+                current.push(c);
+            }
+            continue;
+        }
+        match c {
+            '\'' | '"' => quote = Some(c),
+            '|' => {
+                take_redirect(&mut redirects, &mut redirect_pending, &mut current);
+                push_word(segments.last_mut().expect("segment"), &mut current);
+                if chars.peek() == Some(&'|') {
+                    chars.next();
+                } else {
+                    piped = true;
+                }
+                segments.push(Vec::new());
+                redirect_pending = false;
+                prev_sig = Some('|');
+            }
+            '&' | ';' | '<' | '(' | ')' => {
+                if c == '&' && prev_sig == Some('>') {
+                    // A descriptor dup (`2>&1`): the word continues.
+                    current.push(c);
+                    prev_sig = Some(c);
+                    continue;
+                }
+                if c == '&' && chars.peek() == Some(&'&') {
+                    chars.next();
+                }
+                take_redirect(&mut redirects, &mut redirect_pending, &mut current);
+                push_word(segments.last_mut().expect("segment"), &mut current);
+                segments.push(Vec::new());
+                redirect_pending = false;
+                prev_sig = Some(c);
+            }
+            '>' => {
+                if chars.peek() == Some(&'>') {
+                    chars.next();
+                }
+                take_redirect(&mut redirects, &mut redirect_pending, &mut current);
+                push_word(segments.last_mut().expect("segment"), &mut current);
+                redirect_pending = true;
+                prev_sig = Some('>');
+            }
+            c if c.is_whitespace() => {
+                take_redirect(&mut redirects, &mut redirect_pending, &mut current);
+                push_word(segments.last_mut().expect("segment"), &mut current);
+            }
+            _ => {
+                current.push(c);
+                prev_sig = Some(c);
+            }
+        }
+    }
+    take_redirect(&mut redirects, &mut redirect_pending, &mut current);
+    push_word(segments.last_mut().expect("segment"), &mut current);
+    segments.retain(|words| !words.is_empty());
+    (segments, redirects, piped)
+}
+
+/// Completes a pending redirect target (`>` then a word).
+fn take_redirect(redirects: &mut Vec<String>, pending: &mut bool, current: &mut String) {
+    if *pending && !current.is_empty() {
+        redirects.push(std::mem::take(current));
+        *pending = false;
+    }
+}
+
+/// Whether a word names a file: it holds a `/` or a `.` (flags, assignments
+/// and the segment's own program are filtered before this runs).
+fn is_path_word(word: &str) -> bool {
+    word.contains('/') || word.contains('.')
+}
+
+/// The REACH cells of a Shell command: the first path-like argument reads,
+/// a `>`/`>>` target writes, a pipe joins N programs, a network program or
+/// URL reaches the network.
+fn shell_reach(command: &str) -> Reach {
+    let (segments, redirects, piped) = split_segments(command);
+    let mut read: Option<String> = None;
+    let mut network = false;
+    for words in &segments {
+        for (i, word) in words.iter().enumerate() {
+            let lower = word.to_ascii_lowercase();
+            if lower.contains("http://") || lower.contains("https://") {
+                network = true;
+            }
+            // The segment's program: `curl` et al. reach the network, and
+            // the program itself is never the read path.
+            if i == 0 {
+                if NETWORK_PROGRAMS.contains(&lower.as_str()) {
+                    network = true;
+                }
+                continue;
+            }
+            if word.starts_with('-') || word.contains('=') {
+                continue;
+            }
+            if read.is_none() && is_path_word(word) {
+                read = Some(word.clone());
+            }
+        }
+    }
+    let programs = segments.len();
+    Reach {
+        read: ReachCell {
+            on: read.is_some(),
+            qualifier: read,
+        },
+        write: ReachCell {
+            on: !redirects.is_empty(),
+            qualifier: redirects.into_iter().next(),
+        },
+        network: ReachCell {
+            on: network,
+            qualifier: None,
+        },
+        pipe: ReachCell {
+            on: piped,
+            qualifier: piped.then(|| format!("{programs} programs")),
+        },
+    }
+}
+
+/// What the clearance card shows for one gated call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClearanceInfo {
+    /// The tool asking (`Shell`, `Edit`, …).
+    pub tool: String,
+    /// The call's subject (`describe_tool`: `$ <command>`, `Edit <path>`, …).
+    pub detail: String,
+    /// The active mode id (`build`, `plan`, …); the card uppercases it.
+    pub mode: String,
+    /// The held step number, when the host knows the trajectory (`step NN`).
+    /// The gate never knows it, so it passes `None`.
+    pub step: Option<usize>,
+    /// What the call can reach, from the call's real data.
+    pub reach: Reach,
+}
+
+/// The clearance card's answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClearanceChoice {
+    /// Run this call once.
+    Once,
+    /// Add the tool to the mode's auto-allow, then run.
+    Always,
+    /// Block the call; `reason` is the typed abort reason, if any.
+    Deny { reason: Option<String> },
+    /// Do not run this call; the host sends the revised text as the next
+    /// message instead (`e edit first`).
+    Revise(String),
+}
+
 /// Who can answer for a gated call that needs approval (a `PermissionGate`'s
 /// channel). Decides what [`evaluate`] returns for such a call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +341,18 @@ pub trait PermissionUi: Send + Sync {
     fn select(&self, title: &str, options: &[&str]) -> Option<String>;
     /// An info notification.
     fn notify(&self, message: &str);
+    /// The clearance card for a gated call. The default asks the legacy
+    /// three-choice prompt and maps it back, so hosts without a card keep
+    /// working (`Revise` has no legacy form and reads as a denial).
+    fn select_clearance(&self, info: &ClearanceInfo) -> ClearanceChoice {
+        let title = format!("Allow: {}", info.detail);
+        match self.select(&title, &CHOICES) {
+            Some(c) if c.starts_with("Always") => ClearanceChoice::Always,
+            Some(c) if c.starts_with("No") => ClearanceChoice::Deny { reason: None },
+            Some(_) => ClearanceChoice::Once,
+            None => ClearanceChoice::Deny { reason: None },
+        }
+    }
 }
 
 /// `matchesAllowedPath`: exact or `*`-glob match of the path (and, for an
@@ -146,6 +423,116 @@ fn relative(from: &Path, to: &Path) -> String {
 /// `matchesBashPattern`: an invalid pattern never matches.
 fn matches_bash_pattern(pattern: &str, command: &str) -> bool {
     regex::Regex::new(pattern).is_ok_and(|re| re.is_match(command))
+}
+
+/// A Shell command's first word (the `a always …` program), with one layer
+/// of surrounding quotes stripped. Shared with the clearance card's label.
+pub fn shell_program(command: &str) -> Option<String> {
+    let word = command.split_whitespace().next()?;
+    let word = word
+        .strip_prefix('\'')
+        .or_else(|| word.strip_prefix('"'))
+        .unwrap_or(word);
+    let word = word
+        .strip_suffix('\'')
+        .or_else(|| word.strip_suffix('"'))
+        .unwrap_or(word);
+    (!word.is_empty()).then(|| word.to_string())
+}
+
+/// Wrapper programs are never approvable: `a` on them only runs once.
+/// (`find` runs whatever `-exec` names; the rest hand control to another
+/// program or shell.)
+pub const ALWAYS_WRAPPERS: [&str; 22] = [
+    "sudo", "doas", "su", "env", "sh", "bash", "zsh", "dash", "fish", "eval", "exec", "source",
+    ".", "xargs", "nohup", "time", "command", "builtin", "nice", "timeout", "watch", "find",
+];
+
+/// Whether `program` hands control elsewhere, so no always-rule may cover it.
+pub fn is_always_wrapper(program: &str) -> bool {
+    ALWAYS_WRAPPERS.contains(&program)
+}
+
+/// Whether `command` hides code the first-word check cannot see: command
+/// or process substitution, expansions, here-docs, or a line break. The
+/// scan skips single-quoted runs (nothing expands there); double quotes
+/// still expand, so they stay checked.
+fn has_code_expansion(command: &str) -> bool {
+    if command.contains('\n') || command.contains('\r') {
+        return true;
+    }
+    let mut single = false;
+    let mut escaped = false;
+    let mut prev: Option<char> = None;
+    for c in command.chars() {
+        if single {
+            if c == '\'' {
+                single = false;
+            }
+            continue;
+        }
+        if escaped {
+            escaped = false;
+            prev = None;
+            continue;
+        }
+        match c {
+            '\\' => {
+                escaped = true;
+                prev = None;
+            }
+            '\'' => {
+                single = true;
+                prev = None;
+            }
+            '`' => return true,
+            '(' if matches!(prev, Some('$') | Some('<') | Some('>')) => return true,
+            '{' if prev == Some('$') => return true,
+            '<' if prev == Some('<') => return true,
+            _ => prev = matches!(c, '$' | '<' | '>').then_some(c),
+        }
+    }
+    false
+}
+
+/// Whether `word` assigns (`NAME=value`): allowing what follows would allow
+/// whatever the assignment redefines, so it never auto-allows.
+fn is_assignment(word: &str) -> bool {
+    let Some((name, _)) = word.split_once('=') else {
+        return false;
+    };
+    !name.is_empty()
+        && name
+            .chars()
+            .enumerate()
+            .all(|(i, c)| c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit()))
+}
+
+/// Whether an always-rule for `approved` programs covers `command`: every
+/// pipe segment's program (first word) is approved, with no wrapper, no
+/// leading assignment, no code expansion, and no file redirect (descriptor
+/// dups like `2>&1` and `/dev/null` are fine). Anything else falls through
+/// to a prompt — never a block, never a silent allow.
+pub fn always_allows(command: &str, approved: &[String]) -> bool {
+    if has_code_expansion(command) {
+        return false;
+    }
+    let (segments, redirects, _) = split_segments(command);
+    if segments.is_empty() {
+        return false;
+    }
+    if redirects
+        .iter()
+        .any(|target| target != "/dev/null" && !target.starts_with('&'))
+    {
+        return false;
+    }
+    segments.iter().all(|words| {
+        let program = &words[0];
+        !is_always_wrapper(program)
+            && !is_assignment(program)
+            && approved.iter().any(|name| name == program)
+    })
 }
 
 /// `mutationPath`: `path`, else `file_path` (non-empty strings).
@@ -277,12 +664,50 @@ pub fn evaluate(
     if list("auto_allow").is_some_and(|a| a.iter().any(|t| t == tool_name)) {
         return Verdict::Allow;
     }
+    // A program the user always-approved (`a` on the clearance card) runs
+    // without asking, when the whole command stays inside the approval:
+    // every segment's program is approved, with no wrapper, assignment,
+    // expansion or file redirect. Anything else falls through to a prompt.
+    if tool_name == "Shell"
+        && list("always_bash_programs").is_some_and(|programs| {
+            let command = input.get("command").and_then(Value::as_str).unwrap_or("");
+            always_allows(command, &programs)
+        })
+    {
+        return Verdict::Allow;
+    }
     if fail_closed {
         return Verdict::Block(format!(
             "Tool \"{tool_name}\" needs approval, but no client can answer in this session (rpc mode denies it). Add it to auto_allow for mode \"{mode}\" in hoo-config.json to allow it."
         ));
     }
     Verdict::Prompt
+}
+
+/// Appends `value` to the mode's string list `key`, without duplicates.
+/// "Always" goes to the global config only.
+fn insert_mode_list(latest: &mut HooConfig, mode: &str, key: &str, value: String) {
+    let modes = latest
+        .entry("modes")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if !modes.is_object() {
+        *modes = Value::Object(Default::default());
+    }
+    let entry = modes.as_object_mut().map(|m| {
+        m.entry(mode.to_string())
+            .or_insert_with(|| Value::Object(Default::default()))
+    });
+    if let Some(Value::Object(mode_cfg)) = entry {
+        let mut allow: Vec<Value> = mode_cfg
+            .get(key)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if !allow.iter().any(|v| v.as_str() == Some(&value)) {
+            allow.push(Value::String(value));
+        }
+        mode_cfg.insert(key.into(), Value::Array(allow));
+    }
 }
 
 /// hoocode's permission gate for one working directory.
@@ -309,43 +734,62 @@ impl HooPermissionGate {
                 let Some(ui) = self.ui.as_ref() else {
                     return Some("Denied by permission gate".into());
                 };
-                let title = format!("Allow: {}", describe_tool(tool_name, input));
-                let choice = ui.select(&title, &CHOICES);
-                match choice {
-                    None => Some("Denied by permission gate".into()),
-                    Some(c) if c.starts_with("No") => Some("Denied by permission gate".into()),
-                    Some(c) if c.starts_with("Always") => {
+                let info = ClearanceInfo {
+                    tool: tool_name.to_string(),
+                    detail: describe_tool(tool_name, input),
+                    mode: config::active_mode(&merged).unwrap_or_else(|| "build".into()),
+                    step: None,
+                    reach: reach_for(tool_name, input),
+                };
+                match ui.select_clearance(&info) {
+                    ClearanceChoice::Once => None,
+                    ClearanceChoice::Deny { reason } => Some(match reason {
+                        Some(reason) if !reason.trim().is_empty() => {
+                            format!("Denied by permission gate: {}", reason.trim())
+                        }
+                        _ => "Denied by permission gate".into(),
+                    }),
+                    // The revised text runs as a later message; this call stays denied.
+                    ClearanceChoice::Revise(_) => Some("Denied by permission gate".into()),
+                    // "Always" scopes to the Shell program (`a always printf`),
+                    // never the whole tool. Wrappers (sudo, …) are never
+                    // approvable: `a` only runs them once, and says so.
+                    // Other tools keep tool-name scope in `auto_allow`.
+                    ClearanceChoice::Always => {
                         // "Always" goes to the global config only.
                         let mut latest = config::read_config();
                         let mode = config::active_mode(&latest).unwrap_or_else(|| "build".into());
-                        let modes = latest
-                            .entry("modes")
-                            .or_insert_with(|| Value::Object(Default::default()));
-                        if !modes.is_object() {
-                            *modes = Value::Object(Default::default());
-                        }
-                        let entry = modes.as_object_mut().map(|m| {
-                            m.entry(mode.clone())
-                                .or_insert_with(|| Value::Object(Default::default()))
-                        });
-                        if let Some(Value::Object(mode_cfg)) = entry {
-                            let mut allow: Vec<Value> = mode_cfg
-                                .get("auto_allow")
-                                .and_then(Value::as_array)
-                                .cloned()
-                                .unwrap_or_default();
-                            if !allow.iter().any(|v| v.as_str() == Some(tool_name)) {
-                                allow.push(tool_name.into());
+                        if tool_name == "Shell" {
+                            let command =
+                                input.get("command").and_then(Value::as_str).unwrap_or("");
+                            match shell_program(command).filter(|p| !is_always_wrapper(p)) {
+                                Some(program) => {
+                                    insert_mode_list(
+                                        &mut latest,
+                                        &mode,
+                                        "always_bash_programs",
+                                        program.clone(),
+                                    );
+                                    let _ = config::write_config(&latest);
+                                    ui.notify(&format!(
+                                        "\"{program}\" added to always-allow for mode \"{mode}\""
+                                    ));
+                                    None
+                                }
+                                None => {
+                                    ui.notify("\"always\" isn't offered here; ran once");
+                                    None
+                                }
                             }
-                            mode_cfg.insert("auto_allow".into(), Value::Array(allow));
+                        } else {
+                            insert_mode_list(&mut latest, &mode, "auto_allow", tool_name.into());
+                            let _ = config::write_config(&latest);
+                            ui.notify(&format!(
+                                "\"{tool_name}\" added to auto-allow for mode \"{mode}\""
+                            ));
+                            None
                         }
-                        let _ = config::write_config(&latest);
-                        ui.notify(&format!(
-                            "\"{tool_name}\" added to auto-allow for mode \"{mode}\""
-                        ));
-                        None
                     }
-                    Some(_) => None,
                 }
             }
         }

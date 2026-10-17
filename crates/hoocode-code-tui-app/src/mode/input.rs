@@ -19,8 +19,10 @@ use hoocode_tui_components::{
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::Component;
 
+use hoocode_code_permissions::ClearanceChoice;
 use hoocode_code_tui_selectors::session_selector::SubagentRunRef;
 
+use crate::end_shift::{EndShiftChoice, EndShiftJobsChoice};
 use crate::extension_editor::EditorOutcome;
 use crate::extension_selector::SelectorOutcome;
 use crate::startup_progress;
@@ -65,6 +67,9 @@ pub(super) enum Action {
     SubagentResume(SubagentRunRef),
     /// The options pane closed: the answers, or `None` when skipped.
     AskOptionsDone(Option<Vec<String>>),
+    ClearanceDone(ClearanceChoice),
+    EndShiftDone(EndShiftChoice),
+    EndShiftJobsDone(EndShiftJobsChoice),
     /// The multi-line editor dialog closed.
     EditorDialogDone(EditorOutcome),
     /// The prompt turned into or out of bash mode (`!`); sent only on that flip.
@@ -771,14 +776,14 @@ impl Mode {
                     .last_sigint
                     .is_some_and(|at| now.duration_since(at) < Duration::from_millis(500))
                 {
-                    self.exit_requested = true;
+                    self.request_user_quit();
                 } else {
                     self.editor.borrow_mut().editor.set_text("");
                     self.last_sigint = Some(now);
                     self.dirty.set(true);
                 }
             }
-            Action::Exit => self.exit_requested = true,
+            Action::Exit => self.request_user_quit(),
             Action::Suspend => self.handle_ctrl_z(),
             Action::ToolsExpand => self.toggle_tool_output_view(),
             Action::ViewForward | Action::ViewBackward => {
@@ -854,6 +859,9 @@ impl Mode {
             Action::PanelFocus => self.focus_task_panel(),
             Action::SubagentAttach => self.attach_newest_agent_block(),
             Action::AskOptionsDone(answers) => self.hide_ask_options(answers),
+            Action::ClearanceDone(choice) => self.close_clearance(choice),
+            Action::EndShiftDone(choice) => self.close_end_shift(choice),
+            Action::EndShiftJobsDone(choice) => self.close_end_shift_jobs(choice),
             Action::EditorDialogDone(outcome) => self.close_editor_dialog(outcome),
             Action::SessionSelectorDone(path) => {
                 self.close_session_selector();

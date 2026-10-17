@@ -5,10 +5,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::{self};
 
+use hoocode_code_permissions::{ClearanceChoice, ClearanceInfo};
 use hoocode_code_tools_optin::AskQuestion;
 use hoocode_code_tui_selectors::ask_options::{AskOptionsComponent, AskOptionsOptions};
 use hoocode_tui_components::EditorHost;
 use hoocode_tui_render::ComponentHandle;
+
+use crate::clearance_card::ClearanceCard;
+use crate::end_shift::{EndShiftCard, EndShiftJobsCard, ShiftDebrief, ShiftJob};
 
 use crate::extension_editor::{EditorOutcome, ExtensionEditorComponent};
 use crate::extension_selector::{ExtensionSelectorComponent, SelectorOutcome};
@@ -64,6 +68,15 @@ pub(super) type Answer = Box<dyn FnOnce(Option<String>)>;
 
 /// A pane's answers, collected by its `on_done`.
 pub(super) type Outcomes = Rc<RefCell<Vec<SelectorOutcome>>>;
+
+/// The open clearance card and the channel its answer goes back on.
+pub(super) type OpenClearance = (Rc<RefCell<ClearanceCard>>, mpsc::Sender<ClearanceChoice>);
+
+/// The open end-of-shift card (its answer is an [`Action`], so no channel).
+pub(super) type OpenEndShift = Rc<RefCell<EndShiftCard>>;
+
+/// The open end-of-shift-with-satellites card.
+pub(super) type OpenEndShiftJobs = Rc<RefCell<EndShiftJobsCard>>;
 
 impl Mode {
     /// Puts `picker` in the editor's slot, focused, after disposing the picker
@@ -144,6 +157,7 @@ impl Mode {
         &mut self,
         questions: Vec<AskQuestion>,
         reply: mpsc::Sender<Option<Vec<String>>>,
+        esc_answers_first: bool,
     ) {
         if questions.is_empty() {
             let _ = reply.send(None);
@@ -161,7 +175,7 @@ impl Mode {
                     .push(Action::AskOptionsDone(Some(answers)))
             }),
             Box::new(move || on_cancel.borrow_mut().push(Action::AskOptionsDone(None))),
-            AskOptionsOptions::default(),
+            AskOptionsOptions { esc_answers_first },
         ));
         {
             let mut container = self.editor_container.borrow_mut();
@@ -185,6 +199,124 @@ impl Mode {
             container.add_child(self.prompt_component());
         }
         self.tui.set_focus(Some(self.prompt_component()));
+        self.dirty.set(true);
+    }
+
+    /// `showClearance`: the clearance card in the editor's slot (it replaces
+    /// the comms frame). A card still up belongs to a call that is gone: it
+    /// reads as denied.
+    pub(super) fn show_clearance_card(
+        &mut self,
+        info: ClearanceInfo,
+        reply: mpsc::Sender<ClearanceChoice>,
+    ) {
+        self.close_clearance(ClearanceChoice::Deny { reason: None });
+        // A quit in flight is superseded with it: the slot belongs to the
+        // clearance, quitting again re-asks, and a later fatal error
+        // leaves at once (see `superseded_quit`).
+        let cleared = superseded_quit();
+        self.quit_jobs = cleared.jobs;
+        self.end_shift = cleared.shift;
+        self.exit_requested = cleared.exit;
+        self.user_quit = cleared.user;
+        self.end_shift_card = None;
+        self.end_shift_jobs_card = None;
+        let on_done = self.actions.clone();
+        let card = handle(ClearanceCard::new(
+            info,
+            Box::new(move |choice| {
+                on_done.borrow_mut().push(Action::ClearanceDone(choice));
+            }),
+        ));
+        {
+            let mut container = self.editor_container.borrow_mut();
+            container.clear();
+            container.add_child(as_component(&card));
+        }
+        self.tui.set_focus(Some(as_component(&card)));
+        self.clearance = Some((card, reply));
+        self.dirty.set(true);
+    }
+
+    /// Answers the gate and puts the prompt back. `Revise` also sends the
+    /// edited text as the next message, so the agent runs the revised
+    /// command (the gate cannot retarget the call it already holds).
+    pub(super) fn close_clearance(&mut self, choice: ClearanceChoice) {
+        let Some((_, reply)) = self.clearance.take() else {
+            return;
+        };
+        let revised = match &choice {
+            ClearanceChoice::Revise(text) => Some(text.clone()),
+            _ => None,
+        };
+        let _ = reply.send(choice);
+        {
+            let mut container = self.editor_container.borrow_mut();
+            container.clear();
+            container.add_child(self.prompt_component());
+        }
+        self.tui.set_focus(Some(self.prompt_component()));
+        self.dirty.set(true);
+        if let Some(text) = revised {
+            self.prompt(text);
+        }
+    }
+
+    /// Takes a pending clearance's answer channel, if any. Showing a quit
+    /// card denies it: the gated call belongs to a shift that is ending,
+    /// and the gate must never wait on an answer that never comes.
+    fn take_pending_clearance(&mut self) -> Option<mpsc::Sender<ClearanceChoice>> {
+        self.clearance.take().map(|(_, reply)| reply)
+    }
+
+    /// `showEndShift`: the amber end-of-shift card with the shift's debrief.
+    /// `enter` ends the shift, `esc` stays (spec §6.2). A pending clearance
+    /// is denied first, and a satellites card already up is replaced.
+    pub(super) fn show_end_shift(&mut self, debrief: ShiftDebrief) {
+        if let Some(reply) = self.take_pending_clearance() {
+            let _ = reply.send(ClearanceChoice::Deny { reason: None });
+        }
+        self.end_shift_jobs_card = None;
+        let on_done = self.actions.clone();
+        let card = handle(EndShiftCard::new(
+            debrief,
+            Box::new(move |choice| {
+                on_done.borrow_mut().push(Action::EndShiftDone(choice));
+            }),
+        ));
+        {
+            let mut container = self.editor_container.borrow_mut();
+            container.clear();
+            container.add_child(as_component(&card));
+        }
+        self.tui.set_focus(Some(as_component(&card)));
+        self.end_shift_card = Some(card);
+        self.dirty.set(true);
+    }
+
+    /// `showEndShiftJobs`: the amber card for quitting with satellites up
+    /// (spec §4 c8). `k` brings them down, `l` leaves them, `esc` stays.
+    /// A pending clearance is denied first, and a plain card already up is
+    /// replaced.
+    pub(super) fn show_end_shift_jobs(&mut self, jobs: Vec<ShiftJob>) {
+        if let Some(reply) = self.take_pending_clearance() {
+            let _ = reply.send(ClearanceChoice::Deny { reason: None });
+        }
+        self.end_shift_card = None;
+        let on_done = self.actions.clone();
+        let card = handle(EndShiftJobsCard::new(
+            jobs,
+            Box::new(move |choice| {
+                on_done.borrow_mut().push(Action::EndShiftJobsDone(choice));
+            }),
+        ));
+        {
+            let mut container = self.editor_container.borrow_mut();
+            container.clear();
+            container.add_child(as_component(&card));
+        }
+        self.tui.set_focus(Some(as_component(&card)));
+        self.end_shift_jobs_card = Some(card);
         self.dirty.set(true);
     }
 

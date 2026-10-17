@@ -137,7 +137,7 @@ impl Mode {
     pub(super) fn run_builtin_command(&mut self, command: BuiltinCommand, text: &str) {
         self.editor.borrow_mut().editor.set_text("");
         match command {
-            BuiltinCommand::Quit => self.exit_requested = true,
+            BuiltinCommand::Quit => self.request_user_quit(),
             BuiltinCommand::Resume => self.show_session_selector(),
             BuiltinCommand::Tree => self.show_tree_selector(None),
             BuiltinCommand::Name => self.handle_name_command(text),

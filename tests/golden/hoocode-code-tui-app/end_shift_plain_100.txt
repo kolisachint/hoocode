@@ -1,0 +1,29 @@
+┏━ ◉ END OF SHIFT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ esc stay ━┓
+┃2 missions · 5 steps · ↑48.2k ↓9.8k · CR $1.234                                                   ┃
+┃                                                                                                  ┃
+┃enter end the shift · esc stay                                                                    ┃
+┗━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+--- styles ---
+r0 c0-1 fg=#ffff00
+r0 c3-16 fg=#ffff00 bold
+r0 c18-87 fg=#ffff00
+r0 c89-96 fg=#ffff00
+r0 c98-99 fg=#ffff00
+r1 c0 fg=#ffff00
+r1 c11-13 fg=#a8a8a8
+r1 c21-23 fg=#a8a8a8
+r1 c24-35 fg=#989898
+r1 c36-38 fg=#a8a8a8
+r1 c39-47 fg=#989898
+r1 c99 fg=#ffff00
+r2 c0 fg=#ffff00
+r2 c99 fg=#ffff00
+r3 c0 fg=#ffff00
+r3 c1-5 fg=#989898
+r3 c6-22 fg=#a8a8a8
+r3 c23-25 fg=#989898
+r3 c26-30 fg=#a8a8a8
+r3 c99 fg=#ffff00
+r4 c0-1 fg=#ffff00
+r4 c4-95 fg=#ffff00
+r4 c98-99 fg=#ffff00

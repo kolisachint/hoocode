@@ -4,7 +4,9 @@
 mod anthropic_warning_ts;
 mod at_file_completion;
 mod chrome_layout;
+mod clearance_card;
 mod comms_frame;
+mod end_shift;
 mod extension_selector;
 mod footer;
 mod footer_data_provider;
