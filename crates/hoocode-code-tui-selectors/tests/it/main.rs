@@ -3,6 +3,7 @@
 
 mod ask_options;
 mod config_selector;
+mod hangar;
 mod learn_settings_pane;
 mod model_selector;
 mod oauth_selector;

@@ -69,8 +69,9 @@ fn listed_ids(rendered: &str, provider: &str) -> Vec<String> {
         .filter(|line| line.contains(&format!("[{provider}]")))
         .map(|line| {
             let trimmed = line.trim();
-            let trimmed = trimmed.strip_prefix('│').unwrap_or(trimmed);
-            let trimmed = trimmed.strip_suffix('│').unwrap_or(trimmed).trim();
+            // Thin (`│`) or console-thick (`┃`) frame edge.
+            let trimmed = trimmed.strip_prefix(['│', '┃']).unwrap_or(trimmed);
+            let trimmed = trimmed.strip_suffix(['│', '┃']).unwrap_or(trimmed).trim();
             let trimmed = trimmed.strip_prefix(SELECT_CURSOR).unwrap_or(trimmed);
             trimmed.split(" [").next().unwrap().trim().to_string()
         })
