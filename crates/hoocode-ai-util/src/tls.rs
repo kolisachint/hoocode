@@ -122,9 +122,9 @@ fn warn_once(message: &str) {
     let color =
         std::io::stdout().is_terminal() && std::env::var("TERM").map_or(true, |t| t != "dumb");
     if color {
-        eprintln!("\x1b[33m[tls] {message}\x1b[39m");
+        hoocode_runtime::diagnostics::write_stderr(&format!("\x1b[33m[tls] {message}\x1b[39m\n"));
     } else {
-        eprintln!("[tls] {message}");
+        hoocode_runtime::diagnostics::write_stderr(&format!("[tls] {message}\n"));
     }
 }
 

@@ -588,6 +588,7 @@ fn indicator(picker: bool) -> String {
         width: 120,
         search: None,
         picker,
+        new_lines: 0,
     })
 }
 

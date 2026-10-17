@@ -209,7 +209,7 @@ impl RpcClient {
                         break;
                     }
                     let text = String::from_utf8_lossy(&buf[..n]).into_owned();
-                    eprint!("{text}");
+                    hoocode_runtime::diagnostics::write_stderr(&text);
                     lock(&shared.stderr).push_str(&text);
                 }
             });

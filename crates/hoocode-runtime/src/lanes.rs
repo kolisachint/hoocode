@@ -41,7 +41,9 @@ static PRIORITY_LOGGED: AtomicBool = AtomicBool::new(false);
 pub fn apply_current_thread_lane(lane: Lane) {
     if let Err(reason) = set_current_thread_lane(lane) {
         if !PRIORITY_LOGGED.swap(true, Ordering::Relaxed) {
-            eprintln!("hoocode: could not set thread priority ({lane:?} lane): {reason}");
+            crate::diagnostics::write_stderr(&format!(
+                "hoocode: could not set thread priority ({lane:?} lane): {reason}\n"
+            ));
         }
     }
 }

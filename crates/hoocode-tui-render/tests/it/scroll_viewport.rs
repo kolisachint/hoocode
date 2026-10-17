@@ -587,6 +587,7 @@ fn the_default_indicator_offers_the_arrows_and_escape_only_at_the_prompt() {
         width: 120,
         search: None,
         picker: false,
+        new_lines: 0,
     };
     let prompt = default_scroll_status(&status);
     assert!(prompt.contains("esc live"), "{prompt}");

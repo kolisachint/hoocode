@@ -27,6 +27,7 @@
 
 mod bg;
 mod child;
+pub mod diagnostics;
 mod lanes;
 mod limits;
 mod memory;

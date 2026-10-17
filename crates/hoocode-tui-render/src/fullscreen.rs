@@ -32,9 +32,10 @@ pub struct Rows {
 ///
 /// `top_natural` is the rows the top chrome wants (HUD, gap, attach),
 /// `bottom_natural` the rows the bottom wants, `bar` whether the view is
-/// pinned. The bottom keeps at least one row and the body at least one, so
-/// the result always sums to `height` (screens under four rows show only the
-/// bottom, which may leave rows blank).
+/// pinned. The top gives way first: the bottom keeps at least one row and the
+/// body at least one. From four rows up the regions sum to `height`. Under
+/// four rows only the bottom shows, and it may be shorter than the screen;
+/// the composer pads the rest with blank rows.
 pub fn split_rows(height: usize, top_natural: usize, bar: bool, bottom_natural: usize) -> Rows {
     if height < MIN_HEIGHT_WITH_BODY {
         return Rows {
@@ -50,10 +51,12 @@ pub fn split_rows(height: usize, top_natural: usize, bar: bool, bottom_natural: 
     } else {
         top_natural.min(1)
     };
+    // Leave two rows for the body and the bottom, whatever the top wants.
+    let top = top.min(height - 2);
     let free = height - top;
     let bar = usize::from(bar && free >= MIN_FREE_ROWS_FOR_BAR);
-    let bottom = bottom_natural.min(free - bar - 1);
-    let body = free - bar - bottom;
+    let bottom = bottom_natural.min(free.saturating_sub(bar + 1));
+    let body = free.saturating_sub(bar + bottom);
     Rows {
         top,
         body,
@@ -314,6 +317,69 @@ mod tests {
         );
         // Under four rows there is no body, so no status row either.
         assert_eq!(split_rows(3, 2, true, B).bar, 0);
+    }
+
+    #[test]
+    fn layout_tall_top_gives_way_at_six_rows() {
+        // A top taller than the screen allows (HUD, gap, attach) keeps two rows for the body and bottom.
+        assert_eq!(
+            split_rows(6, 7, false, 7),
+            Rows {
+                top: 4,
+                body: 1,
+                bar: 0,
+                bottom: 1
+            }
+        );
+        // Top 5 at six rows: the prompt used to vanish; now the bottom keeps a row.
+        assert_eq!(
+            split_rows(6, 5, false, 7),
+            Rows {
+                top: 4,
+                body: 1,
+                bar: 0,
+                bottom: 1
+            }
+        );
+        // Pinned on the same screen: the status row is dropped, not the prompt.
+        assert_eq!(
+            split_rows(6, 5, true, 7),
+            Rows {
+                top: 4,
+                body: 1,
+                bar: 0,
+                bottom: 1
+            }
+        );
+    }
+
+    #[test]
+    fn layout_sweep_keeps_rows_and_never_panics() {
+        for height in 0..40 {
+            for top_natural in 0..10 {
+                for bottom_natural in 0..40 {
+                    for bar in [false, true] {
+                        let rows = split_rows(height, top_natural, bar, bottom_natural);
+                        let sum = rows.top + rows.body + rows.bar + rows.bottom;
+                        let case = format!("height {height}, top {top_natural}, bar {bar}, bottom {bottom_natural}: {rows:?}");
+                        assert!(sum <= height, "{case}: rows exceed the screen");
+                        assert!(
+                            sum == height
+                                || (height < MIN_HEIGHT_WITH_BODY && bottom_natural < height),
+                            "{case}: rows do not sum to the screen"
+                        );
+                        assert!(rows.bar <= 1, "{case}");
+                        assert!(rows.bottom <= bottom_natural, "{case}");
+                        if height >= 2 && bottom_natural >= 1 {
+                            assert!(rows.bottom >= 1, "{case}: the prompt row is kept");
+                        }
+                        if height >= MIN_HEIGHT_WITH_BODY {
+                            assert!(rows.body >= 1, "{case}: the body keeps a row");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

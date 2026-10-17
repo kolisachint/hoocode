@@ -18,6 +18,7 @@ doctest = false
 
 [dependencies]
 hoocode-ai-types = { workspace = true }
+hoocode-runtime = { workspace = true }
 hoocode-code-agent-session = { workspace = true }
 hoocode-code-settings = { workspace = true }
 serde = { version = "1", features = ["derive"] }

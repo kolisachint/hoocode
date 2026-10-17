@@ -508,6 +508,18 @@ fn install_panic_hook() {
     );
 }
 
+/// Appends stderr text that an interactive session withheld from the terminal.
+fn append_stderr_to_debug_log(text: &str) {
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(hoocode_code_paths::debug_log_path())
+    {
+        let _ = file.write_all(text.as_bytes());
+    }
+}
+
 /// Appends a panic report to the debug log. Unlike agent log lines, it is written
 /// whether or not `DEBUG_AGENT_LOG` is set: a crash should always leave a record.
 fn append_panic_log(report: &str) {
@@ -1051,8 +1063,12 @@ impl Mode {
     ) -> Result<(), String> {
         self.tui
             .set_frame_observer(Some(self.perf.frame_observer()));
-        // Before the terminal starts, so a panic from here on restores it.
+        // Before the terminal starts, so a panic from here on restores it. Stray
+        // stderr text goes to the debug log while the TUI owns the terminal.
         install_panic_hook();
+        hoocode_runtime::diagnostics::set_stderr_sink(Some(Box::new(|text: &str| {
+            append_stderr_to_debug_log(text);
+        })));
         let mut input = self.tui.start();
         self.install_interrupt_hook();
         // From here the TUI owns the terminal: the agent's operational log
@@ -1413,6 +1429,10 @@ impl Mode {
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
             }
+            // Text that reached the terminal out of band moved the screen: repaint all of it.
+            if hoocode_runtime::diagnostics::take_stderr_written() {
+                self.tui.request_render(true);
+            }
             self.tui.flush_scheduled_render();
             self.show_main();
             self.perf.end_iteration(iteration_started);
@@ -1444,6 +1464,7 @@ impl Mode {
         // Abort, kill tool groups, flush, close MCP, release, then restore the terminal.
         let reports = shutdown::run(&self.session, || {
             set_terminal_owned_by_tui(false);
+            hoocode_runtime::diagnostics::set_stderr_sink(None);
             self.tui.stop();
         });
         for report in reports

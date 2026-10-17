@@ -1324,6 +1324,7 @@ version = "0.1.24"
 dependencies = [
  "chrono",
  "hoocode-ai-types",
+ "hoocode-runtime",
  "regex",
  "reqwest 0.12.28",
  "rustls-native-certs",
@@ -1647,6 +1648,7 @@ dependencies = [
  "hoocode-code-session",
  "hoocode-code-settings",
  "hoocode-code-tool-api",
+ "hoocode-runtime",
  "libc",
  "serde",
  "serde_json",
