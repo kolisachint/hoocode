@@ -256,6 +256,9 @@ impl Transcript {
         let Some(i) = self.missions.iter().position(|m| m.seq == seq) else {
             return false;
         };
+        if self.missions[i].landed {
+            return false;
+        }
         let (steps, hits) = self.mission_tally_seq(seq);
         if steps == 0 {
             return false;
@@ -284,6 +287,36 @@ impl Transcript {
             ))));
         self.missions[i].landed = true;
         true
+    }
+
+    /// Takes a chain out of the chat and the chain list, pulling later
+    /// mission starts down so a later mission keeps its first chain.
+    /// A mission starting exactly at the removed chain keeps its start:
+    /// the next chain slides into that index.
+    pub(super) fn remove_chain(&mut self, chain: &Rc<RefCell<ToolChainComponent>>) {
+        self.chat.borrow_mut().remove_child(&as_component(chain));
+        if let Some(index) = self.chains.iter().position(|c| Rc::ptr_eq(c, chain)) {
+            self.chains.remove(index);
+            for mission in &mut self.missions {
+                if mission.start > index {
+                    mission.start -= 1;
+                }
+            }
+        }
+        if self
+            .open_chain
+            .as_ref()
+            .is_some_and(|c| Rc::ptr_eq(c, chain))
+        {
+            self.open_chain = None;
+        }
+        if self
+            .latest_chain
+            .as_ref()
+            .is_some_and(|c| Rc::ptr_eq(c, chain))
+        {
+            self.latest_chain = None;
+        }
     }
 
     /// Renumbers every chain from the mission ranges: a retry that takes
@@ -876,9 +909,7 @@ impl Mode {
             return;
         };
         if chain.borrow().is_empty() {
-            let h = as_component(&chain);
-            self.transcript.chat.borrow_mut().remove_child(&h);
-            self.transcript.chains.retain(|c| !Rc::ptr_eq(c, &chain));
+            self.transcript.remove_chain(&chain);
         } else {
             chain.borrow_mut().close(outcome);
         }
@@ -1360,6 +1391,36 @@ mod tests {
         assert!(!chat_text(&t.chat).contains("LANDED"));
     }
 
+    /// A removed chain pulls later mission starts down: M2 keeps its first
+    /// chain and still lands with its own step, numbered 01.
+    #[test]
+    fn removing_a_whole_chain_keeps_the_later_missions_start() {
+        let mut t = fresh_transcript();
+        t.begin_mission("first", None);
+        let failed = chain_with(1);
+        t.chains.push(failed.clone());
+        t.open_chain = Some(failed.clone());
+        t.begin_mission("second", None);
+        assert_eq!(t.missions[1].start, 1);
+        // The failed attempt's chain leaves after M2 began.
+        let block = failed.borrow().tool_blocks()[0].clone();
+        t.remove_tool_block(&block);
+        t.rebase_steps();
+        assert!(t.chains.iter().all(|c| !Rc::ptr_eq(c, &failed)));
+        assert_eq!(t.missions[1].start, 0);
+        // M2 still lands with its own step, numbered 01.
+        let m2 = chain_with(1);
+        m2.borrow_mut().set_base_step(t.mission_tally().0);
+        t.chains.push(m2.clone());
+        assert!(t.land_mission(2, 10, 20, 0.001, 0.2));
+        let text = chat_text(&t.chat);
+        let landed: Vec<&str> = text.lines().filter(|l| l.contains("LANDED")).collect();
+        assert_eq!(landed.len(), 1, "{text}");
+        assert!(landed[0].contains("1 step"), "{text}");
+        let rendered = strip_vt_control_characters(&m2.borrow_mut().render(100).join("\n"));
+        assert!(rendered.contains(" 01 "), "{rendered}");
+    }
+
     /// Taking a block out renumbers the later steps (01, 02 — never 01, 03).
     #[test]
     fn removing_a_block_renumbers_the_later_steps() {
@@ -1372,6 +1433,8 @@ mod tests {
         t.chains.push(second.clone());
         let dropped = first.borrow().tool_blocks()[0].clone();
         t.remove_tool_block(&dropped);
+        // The drop path renumbers once after the loop.
+        t.rebase_steps();
         let rendered = strip_vt_control_characters(&second.borrow_mut().render(100).join("\n"));
         assert!(rendered.contains(" 02 "), "{rendered}");
         assert!(!rendered.contains(" 03 "), "{rendered}");

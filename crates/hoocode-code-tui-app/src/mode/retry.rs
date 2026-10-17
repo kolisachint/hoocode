@@ -104,6 +104,9 @@ impl Transcript {
         for block in std::mem::take(&mut self.attempt_tools) {
             self.remove_tool_block(&block);
         }
+        // Renumber once for the whole drop: positional step numbers shift
+        // when blocks leave (M4).
+        self.rebase_steps();
     }
 
     /// Takes one tool block out of its chain; a chain left empty leaves the chat.
@@ -119,22 +122,7 @@ impl Transcript {
             }
             chain.borrow_mut().remove(block);
             if chain.borrow().is_empty() {
-                self.chat.borrow_mut().remove_child(&as_component(&chain));
-                self.chains.retain(|c| !Rc::ptr_eq(c, &chain));
-                if self
-                    .open_chain
-                    .as_ref()
-                    .is_some_and(|c| Rc::ptr_eq(c, &chain))
-                {
-                    self.open_chain = None;
-                }
-                if self
-                    .latest_chain
-                    .as_ref()
-                    .is_some_and(|c| Rc::ptr_eq(c, &chain))
-                {
-                    self.latest_chain = None;
-                }
+                self.remove_chain(&chain);
             }
         }
         if self
@@ -144,9 +132,6 @@ impl Transcript {
         {
             self.latest_block = None;
         }
-        // Positional step numbers shift when blocks leave: renumber every
-        // chain from the mission ranges (M4).
-        self.rebase_steps();
     }
 
     /// The retry streak and its failed attempt are gone: the session they
