@@ -4,15 +4,20 @@
 //! times: tool blocks get no `startedAt` (no `Took`/`Elapsed` line) and the
 //! task panel shows only plan items, never delegated runs.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use hoocode_ai_types::{AssistantMessage, Content, ThinkingContent};
 use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_widgets::session_chip::render_session_chip;
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity, TaskPanelView};
+use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
+use hoocode_code_tui_widgets::trajectory::MissionHeader;
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
 use hoocode_tui_components::Text;
 use hoocode_tui_render::golden::render_golden;
@@ -634,4 +639,45 @@ fn assistant_message_thinking_label_80() {
         "assistant_message_thinking_label_80",
         render_golden(&mut msg, 80)
     );
+}
+
+// ---- Mission Control trajectory (M4) ----
+
+#[test]
+fn trajectory_mission_header_80() {
+    let _g = lock();
+    let mut header = MissionHeader::new(1, "how does wrapping work?", None);
+    assert_golden!(
+        "trajectory_mission_header_80",
+        render_golden(&mut header, 80)
+    );
+}
+
+#[test]
+fn trajectory_mission_header_skill_80() {
+    let _g = lock();
+    let mut header = MissionHeader::new(6, "check wrap.rs", Some("review"));
+    assert_golden!(
+        "trajectory_mission_header_skill_80",
+        render_golden(&mut header, 80)
+    );
+}
+
+#[test]
+fn trajectory_steps_hit_80() {
+    // Numbered steps on the `┊` rail; the failed Shell shows the HIT chip
+    // in place of its success stats.
+    let _g = lock();
+    let mut chain = ToolChainComponent::new(ToolOutputView::Peek);
+    let mut read = tool(
+        "Read",
+        json!({ "path": "src/wrap.rs" }),
+        ToolOutputView::Peek,
+    );
+    read.update_result(result("line one\nline two", false, json!({})), false);
+    chain.add(Rc::new(RefCell::new(read)));
+    let mut shell = tool("Shell", shell_args(), ToolOutputView::Peek);
+    shell.update_result(result("boom\nexit code 3", true, json!({})), false);
+    chain.add(Rc::new(RefCell::new(shell)));
+    assert_golden!("trajectory_steps_hit_80", render_golden(&mut chain, 80));
 }

@@ -33,6 +33,7 @@ use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecu
 use hoocode_code_tui_widgets::tool_output_view::cycle_tool_output_view;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
+use hoocode_code_tui_widgets::trajectory::{self, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
 use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
@@ -77,6 +78,11 @@ pub(super) struct Transcript {
     pub(super) retry_streak: Option<super::retry::RetryStreak>,
     /// The tool blocks of the latest failed attempt, dropped with its row.
     pub(super) attempt_tools: Vec<hoocode_code_tui_widgets::tool_chain::ToolBlock>,
+    /// Mission Control (M4): the mission counter for `▲ M{n}` headers, and
+    /// the chain index the current mission starts at, so steps number per
+    /// mission and the landing line can tally them.
+    pub(super) mission_seq: usize,
+    pub(super) mission_chain_start: usize,
 }
 
 impl Transcript {
@@ -101,6 +107,8 @@ impl Transcript {
             attempt_error: None,
             retry_streak: None,
             attempt_tools: Vec::new(),
+            mission_seq: 0,
+            mission_chain_start: 0,
         }
     }
 
@@ -146,6 +154,15 @@ pub(super) fn truncated_marker(content: &str) -> TruncationResult {
     TruncationResult {
         truncated: true,
         ..truncate_tail(content, TruncationOptions::default())
+    }
+}
+
+/// The user message under an M4 mission header: everything after the first
+/// line, which the header already carries. Empty for a one-line prompt.
+fn mission_body(text: &str) -> String {
+    match text.split_once('\n') {
+        Some((_, rest)) => rest.to_string(),
+        None => String::new(),
     }
 }
 
@@ -217,6 +234,43 @@ impl Mode {
         self.status.borrow_mut().clear();
     }
 
+    /// Steps and failed steps in the current mission, for the step numbers
+    /// and the landing line (M4). A user message opens a mission: everything
+    /// after it, up to the next one, belongs to it.
+    fn mission_tally(&self) -> (usize, usize) {
+        let mut steps = 0;
+        let mut hits = 0;
+        for chain in self
+            .transcript
+            .chains
+            .iter()
+            .skip(self.transcript.mission_chain_start)
+        {
+            for block in chain.borrow().tool_blocks() {
+                steps += 1;
+                if block.borrow().is_error() {
+                    hits += 1;
+                }
+            }
+        }
+        (steps, hits)
+    }
+
+    /// The mission header opening a user turn: `▲ M{n}  prompt`, with the
+    /// skill chip when the turn runs a skill (M4).
+    fn add_mission_header(&mut self, text: &str, skill: Option<&str>) {
+        self.transcript.mission_seq += 1;
+        self.transcript.mission_chain_start = self.transcript.chains.len();
+        if !self.transcript.chat.borrow().children.is_empty() {
+            self.add_to_chat(as_component(&handle(Spacer::new(1))));
+        }
+        self.add_to_chat(as_component(&handle(MissionHeader::new(
+            self.transcript.mission_seq,
+            text,
+            skill,
+        ))));
+    }
+
     /// `addMessageToChat` for the roles this transcript draws so far.
     pub(super) fn add_message_to_chat(&mut self, message: &AgentMessage, populate_history: bool) {
         match message {
@@ -233,19 +287,23 @@ impl Mode {
                 if text.is_empty() {
                     return;
                 }
-                if !self.transcript.chat.borrow().children.is_empty() {
-                    self.add_to_chat(as_component(&handle(Spacer::new(1))));
-                }
+                // Every user turn opens a mission (M4): the `▲ M{n}` header
+                // carries the first line, the rest stays in the message.
                 match parse_skill_block(&text) {
                     Some(skill) => {
+                        let prompt = skill.user_message.as_deref().unwrap_or(&text);
+                        self.add_mission_header(prompt, Some(&skill.name));
                         // The message the user typed comes first; the skill it
                         // invoked is drawn under it.
                         if let Some(message) = skill.user_message {
-                            let component = UserMessageComponent::with_theme(
-                                &message,
-                                (self.markdown_theme())(),
-                            );
-                            self.add_to_chat(as_component(&handle(component)));
+                            let body = mission_body(&message);
+                            if !body.is_empty() {
+                                let component = UserMessageComponent::with_theme(
+                                    &body,
+                                    (self.markdown_theme())(),
+                                );
+                                self.add_to_chat(as_component(&handle(component)));
+                            }
                         }
                         let component =
                             handle(SkillBlockComponent::new(&skill.name, &skill.content));
@@ -257,6 +315,7 @@ impl Mode {
                     }
                     None => match parse_background_notice(&text) {
                         Some(notice) => {
+                            self.add_mission_header(&text, None);
                             let component = handle(BackgroundNoticeComponent::new(notice));
                             component
                                 .borrow_mut()
@@ -265,9 +324,15 @@ impl Mode {
                             self.add_to_chat(as_component(&component));
                         }
                         None => {
-                            let component =
-                                UserMessageComponent::with_theme(&text, (self.markdown_theme())());
-                            self.add_to_chat(as_component(&handle(component)));
+                            self.add_mission_header(&text, None);
+                            let body = mission_body(&text);
+                            if !body.is_empty() {
+                                let component = UserMessageComponent::with_theme(
+                                    &body,
+                                    (self.markdown_theme())(),
+                                );
+                                self.add_to_chat(as_component(&handle(component)));
+                            }
                         }
                     },
                 }
@@ -282,6 +347,10 @@ impl Mode {
                     self.markdown_theme(),
                     DEFAULT_HIDDEN_THINKING_LABEL,
                 ));
+                // Mission Control peek: prose sits on the `┊` rail.
+                component
+                    .borrow_mut()
+                    .set_rail(self.tool_output_view == ToolOutputView::Peek);
                 self.transcript.assistant_components.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
@@ -594,6 +663,9 @@ impl Mode {
             Some(chain) if chain.borrow().is_open() => chain.clone(),
             _ => {
                 let chain = handle(ToolChainComponent::new(self.tool_output_view));
+                // Steps number per mission (M4): the chain starts after the
+                // steps the mission already holds.
+                chain.borrow_mut().set_base_step(self.mission_tally().0);
                 self.add_to_chat(as_component(&chain));
                 self.transcript.chains.push(chain.clone());
                 self.transcript.open_chain = Some(chain.clone());
@@ -891,6 +963,10 @@ impl Mode {
         // Peek opens each message's body; radar folds it to a row. The startup
         // header and resource listing stay compact (they open under `verbose`).
         let peek = view == ToolOutputView::Peek;
+        // Mission Control peek: prose sits on the `┊` rail; radar has none.
+        for component in &self.transcript.assistant_components {
+            component.borrow_mut().set_rail(peek);
+        }
         for component in &self.transcript.custom_messages {
             component.borrow_mut().set_expanded(peek);
         }
@@ -986,33 +1062,54 @@ impl Mode {
         if input <= 0 && output <= 0 {
             return;
         }
-        let t = theme();
-        let mut segs = vec![
-            format!(
-                "{}{}{}{}",
-                t.fg("dim", "↑"),
-                t.fg("muted", &format_tokens(input.max(0) as u64)),
-                t.fg("dim", " ↓"),
-                t.fg("muted", &format_tokens(output.max(0) as u64)),
-            ),
-            t.fg("muted", &format_duration_secs(secs)),
-        ];
-        if cost > 0.0 {
-            segs.push(t.fg(
-                "muted",
-                &format!(
-                    "${}",
-                    hoocode_code_agent_session::format::js_to_fixed(cost, 3)
-                ),
-            ));
-        }
-        let separator = t.fg("dim", " · ");
+        // Mission Control (M4): a mission with steps ends with one landing
+        // line (steps, hits, time, tokens, cost). A stepless turn keeps the
+        // old accounting row.
+        let (steps, hits) = self.mission_tally();
         self.add_to_chat(as_component(&handle(Spacer::new(1))));
-        self.add_to_chat(as_component(&handle(Text::new(
-            segs.join(&separator),
-            1,
-            0,
-        ))));
+        if steps == 0 {
+            let t = theme();
+            let mut segs = vec![
+                format!(
+                    "{}{}{}{}",
+                    t.fg("dim", "↑"),
+                    t.fg("muted", &format_tokens(input.max(0) as u64)),
+                    t.fg("dim", " ↓"),
+                    t.fg("muted", &format_tokens(output.max(0) as u64)),
+                ),
+                t.fg("muted", &format_duration_secs(secs)),
+            ];
+            if cost > 0.0 {
+                segs.push(t.fg(
+                    "muted",
+                    &format!(
+                        "${}",
+                        hoocode_code_agent_session::format::js_to_fixed(cost, 3)
+                    ),
+                ));
+            }
+            let separator = t.fg("dim", " · ");
+            self.add_to_chat(as_component(&handle(Text::new(
+                segs.join(&separator),
+                1,
+                0,
+            ))));
+            return;
+        }
+        let line = trajectory::landing_line(
+            steps,
+            hits,
+            &format_duration_secs(secs),
+            &format!(
+                "{} tokens",
+                format_tokens((input.max(0) + output.max(0)) as u64)
+            ),
+            &format!(
+                "${}",
+                hoocode_code_agent_session::format::js_to_fixed(cost, 3)
+            ),
+        );
+        self.add_to_chat(as_component(&handle(Text::new(line, 1, 0))));
     }
 }
 

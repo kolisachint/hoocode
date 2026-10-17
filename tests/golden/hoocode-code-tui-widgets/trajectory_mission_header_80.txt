@@ -1,0 +1,4 @@
+▲ M1  how does wrapping work?
+--- styles ---
+r0 c0 fg=#c77bde
+r0 c2-3 fg=#c77bde bold

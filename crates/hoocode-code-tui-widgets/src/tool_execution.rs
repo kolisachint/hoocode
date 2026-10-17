@@ -439,6 +439,43 @@ impl ToolExecutionComponent {
             .is_some_and(|task| task.status == hoocode_code_task_store::TaskStatus::InProgress)
     }
 
+    /// Whether the settled result is an error (M4: the step shows the HIT
+    /// chip in place of its success stats).
+    pub fn is_error(&self) -> bool {
+        self.result.as_ref().is_some_and(|r| r.is_error)
+    }
+
+    /// Whether this block is an Agent call (M4: its body keeps the violet
+    /// agent rail).
+    pub fn is_agent(&self) -> bool {
+        self.tool_name == "Agent"
+    }
+
+    /// The background job id, while its job is still live (M4: the step
+    /// shows the satellite row `⌁ sat job-1 · in orbit`).
+    pub fn background_job_id(&self) -> Option<String> {
+        if !self.is_live_background_job() {
+            return None;
+        }
+        self.result
+            .as_ref()?
+            .details
+            .get("jobId")?
+            .as_str()
+            .map(str::to_string)
+    }
+
+    /// Added and removed lines of a settled Edit diff, for the `+a −b`
+    /// counts on the step header (M4). `None` for other tools, errors, or a
+    /// result with no diff.
+    pub fn edit_diff_stats(&self) -> Option<(usize, usize)> {
+        if self.tool_name != "Edit" || self.is_error() {
+            return None;
+        }
+        let diff = self.result.as_ref()?.details.get("diff")?.as_str()?;
+        Some(crate::trajectory::diff_stats(diff))
+    }
+
     /// The failure text, for a collapsed chain to print under its line.
     pub fn error_text(&self) -> String {
         if self.result.as_ref().is_some_and(|r| r.is_error) {

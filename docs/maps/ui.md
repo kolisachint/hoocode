@@ -63,6 +63,7 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | Custom and branch-summary messages | `custom_message.rs` |
 | One tool call's block | `tool_execution.rs` |
 | A run of tool calls on one line; radar view (the live radar line, its failure rows, the chain's labels and stats) | `tool_chain.rs`, `tool_chain_summary.rs` |
+| Mission Control trajectory (M4, peek): mission headers, numbered steps on the `┊` rail, Think rows, landing lines | `trajectory.rs` (`MissionHeader`, step/rail/fold/chip/landing helpers); peek numbering in `tool_chain.rs`, Think row + prose rail in `assistant_message.rs` |
 | One call's signal row (a block drawn alone in radar); the call subject helpers `tool_subject`, `chain_subject` | `tool_signal.rs` |
 | Dial: radar ↔ peek (Ctrl+O toggles, persisted). `peek_block` is the shared peek body | `tool_output_view.rs` |
 | `<skill …>` block of a `/skill:name` message (radar row / peek body) | `skill_block.rs` |

@@ -24,6 +24,7 @@ pub mod tool_execution;
 pub mod tool_output_view;
 pub mod tool_signal;
 pub mod tools;
+pub mod trajectory;
 mod user_message;
 pub mod visual_truncate;
 

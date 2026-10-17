@@ -325,12 +325,12 @@ fn a_single_call_in_peek_is_still_its_own_block() {
     );
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    // Peek draws the call's own block: a Shell call reads as `● Shell  command`,
-    // its output indented under the tool name, with no blank row after the call.
+    // Mission Control peek: the step is numbered and sits on the `┊` rail —
+    // ` 01 ● Shell  command`, then `   ┊  l1` — with no summary row.
     let rows: Vec<&str> = out.lines().map(str::trim_end).collect();
     assert!(
         rows.windows(2)
-            .any(|w| w == ["  ● Shell  npm run check", "    l1"]),
+            .any(|w| w == [" 01 ● Shell  npm run check", "   ┊    l1"]),
         "{out}"
     );
     assert!(!out.contains("1 call"), "{out}");

@@ -11,6 +11,7 @@ use hoocode_tui_components::{DefaultTextStyle, Markdown, MarkdownTheme, Spacer, 
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use hoocode_tui_util::js_regex::is_js_space;
 
+use crate::trajectory;
 use crate::wrap_zone;
 
 /// How a thinking block renders.
@@ -191,7 +192,9 @@ pub struct AssistantMessageComponent {
     content: Container,
     thinking_display: ThinkingDisplay,
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
-    hidden_thinking_label: String,
+    /// Mission Control peek (M4): prose lines sit on the `┊` rail. Think
+    /// headers (`·· …`) keep their own slot and skip the rail.
+    rail: bool,
     /// Shared with the caller's streaming message, so a delta does not copy it.
     last_message: Option<Rc<AssistantMessage>>,
     has_tool_calls: bool,
@@ -222,13 +225,15 @@ impl AssistantMessageComponent {
         message: Option<&AssistantMessage>,
         thinking_display: ThinkingDisplay,
         markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
-        hidden_thinking_label: &str,
+        // The collapsed-thinking label predates the M4 Think row, which
+        // carries its own header; kept for signature stability.
+        _hidden_thinking_label: &str,
     ) -> Self {
         let mut this = Self {
             content: Container::new(),
             thinking_display,
             markdown_theme,
-            hidden_thinking_label: hidden_thinking_label.to_string(),
+            rail: false,
             last_message: None,
             has_tool_calls: false,
             markdown_cache: HashMap::new(),
@@ -306,9 +311,9 @@ impl AssistantMessageComponent {
         self.refresh();
     }
 
-    pub fn set_hidden_thinking_label(&mut self, label: &str) {
-        self.hidden_thinking_label = label.to_string();
-        self.refresh();
+    /// Mission Control peek (M4): prose lines sit on the `┊` rail.
+    pub fn set_rail(&mut self, rail: bool) {
+        self.rail = rail;
     }
 
     fn refresh(&mut self) {
@@ -362,14 +367,17 @@ impl AssistantMessageComponent {
                     if self.thinking_display == ThinkingDisplay::Omit {
                         continue;
                     }
+                    // The M4 Think row: the `··` slot, header only. Full
+                    // display adds the trace itself under it, on the rail.
                     let visible_after = message.content[i + 1..]
                         .iter()
                         .any(|c| self.is_visible_block(c));
-                    if self.thinking_display == ThinkingDisplay::Label {
-                        let t = theme();
-                        let label = t.italic(&t.fg("thinkingText", &self.hidden_thinking_label));
-                        self.content.add_child(handle(Text::new(label, 1, 0)));
-                    } else {
+                    self.content.add_child(handle(Text::new(
+                        trajectory::think_header(streaming),
+                        0,
+                        0,
+                    )));
+                    if self.thinking_display == ThinkingDisplay::Full {
                         let text = format!("✻ {}", js_trim(&t.thinking));
                         self.add_markdown_block(BlockKey::Thinking(i), &text, streaming, true);
                     }
@@ -419,8 +427,34 @@ impl AssistantMessageComponent {
 
 impl Component for AssistantMessageComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let lines = self.content.render(width);
-        if self.has_tool_calls || lines.is_empty() {
+        if self.has_tool_calls {
+            return self.content.render(width);
+        }
+        if !self.rail {
+            let lines = self.content.render(width);
+            if lines.is_empty() {
+                return lines;
+            }
+            return wrap_zone(lines);
+        }
+        // Mission Control peek: prose sits on the `┊` rail, so the inner
+        // content wraps six cells narrower and every line takes the rail.
+        // Think headers keep their own `··` slot.
+        let width = width as usize;
+        let inner = width.saturating_sub(6).max(1) as u16;
+        let lines: Vec<String> = self
+            .content
+            .render(inner)
+            .into_iter()
+            .map(|line| {
+                if trajectory::is_think_header(&line) {
+                    line
+                } else {
+                    trajectory::rail_line(&line, width, false)
+                }
+            })
+            .collect();
+        if lines.is_empty() {
             return lines;
         }
         wrap_zone(lines)

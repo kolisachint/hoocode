@@ -638,6 +638,9 @@ impl Mode {
                     self.markdown_theme(),
                     DEFAULT_HIDDEN_THINKING_LABEL,
                 ));
+                component
+                    .borrow_mut()
+                    .set_rail(self.tool_output_view == ToolOutputView::Peek);
                 self.add_to_chat(as_component(&component));
                 self.transcript.assistant_components.push(component.clone());
                 self.transcript.streaming = Some(component.clone());
