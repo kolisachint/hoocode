@@ -24,7 +24,8 @@ use serde_json::Value;
 use crate::tool_chain_summary::ChainEntry;
 use crate::tool_output_view::{ToolOutputView, DEFAULT_TOOL_OUTPUT_VIEW, PEEK_LINES};
 use crate::tool_signal::{
-    tool_subject, ResultHolder, ResultText, ToolResult, ToolSignalComponent, ToolSignalInput,
+    chain_subject, tool_subject, ResultHolder, ResultText, ToolResult, ToolSignalComponent,
+    ToolSignalInput,
 };
 use crate::tools::builtin_tool_definition;
 
@@ -400,9 +401,9 @@ impl ToolExecutionComponent {
         };
         ChainEntry {
             tool: self.tool_name.clone(),
-            subject: tool_subject(&self.args, &self.cwd),
+            subject: chain_subject(&self.tool_name, &self.args, &self.cwd),
             is_error: self.result.as_ref().is_some_and(|r| r.is_error),
-            is_partial: self.result.is_none() || self.is_partial,
+            is_partial: self.result.is_none() || self.is_partial || self.is_background_launch(),
             output_lines: if crate::is_blank(&output) {
                 0
             } else {
@@ -415,6 +416,18 @@ impl ToolExecutionComponent {
                 self.result.as_deref().map(ResultHolder::result),
             ),
         }
+    }
+
+    /// A background shell job returns its id at once, but the job is still
+    /// running: the call stays running in its chain. The TUI cannot see the
+    /// job end (ShellOutput reports it as text only), so this holds for as
+    /// long as the chain is shown.
+    fn is_background_launch(&self) -> bool {
+        self.tool_name == "Shell"
+            && self
+                .result
+                .as_ref()
+                .is_some_and(|r| !r.is_error && r.result().details.get("jobId").is_some())
     }
 
     /// The failure text, for a collapsed chain to print under its line.

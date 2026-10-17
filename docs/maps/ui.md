@@ -44,7 +44,8 @@ update this page in the same commit.
 | Assistant message (markdown, thinking) | `assistant_message.rs` → `tui-components/src/markdown/` |
 | Custom and branch-summary messages | `custom_message.rs` |
 | One tool call's block | `tool_execution.rs` |
-| A run of tool calls on one line; radar view | `tool_chain.rs`, `tool_chain_summary.rs`, `tool_signal.rs` |
+| A run of tool calls on one line; radar view (the live radar line, its failure rows, the chain's labels and stats) | `tool_chain.rs`, `tool_chain_summary.rs` |
+| One call's signal row (a block drawn alone in radar); the call subject helpers `tool_subject`, `chain_subject` | `tool_signal.rs` |
 | Dial: radar ↔ peek (Ctrl+O toggles, persisted). `peek_block` is the shared peek body | `tool_output_view.rs` |
 | `<skill …>` block of a `/skill:name` message (radar row / peek body) | `skill_block.rs` |
 | Background-run notice (radar row / peek body) | `background_notice.rs` |

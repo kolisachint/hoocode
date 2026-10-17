@@ -7,6 +7,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use hoocode_ai_types::Content;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{truncate_to_width, visible_width};
@@ -18,6 +19,17 @@ use crate::tool_execution::ToolExecutionComponent;
 use crate::tool_output_view::ToolOutputView;
 
 pub type ToolBlock = Rc<RefCell<ToolExecutionComponent>>;
+
+/// Whether an assistant message's content ends the open chain: visible text
+/// does. Thinking never does, in either view.
+pub fn speaking_ends_chain(content: &[Content]) -> bool {
+    content
+        .iter()
+        .any(|c| matches!(c, Content::Text(t) if !t.text.trim().is_empty()))
+}
+
+/// The output lines a failed call shows under its chain line.
+const FAILURE_TAIL_LINES: usize = 2;
 
 pub struct ToolChainComponent {
     blocks: Vec<ToolBlock>,
@@ -64,7 +76,7 @@ impl ToolChainComponent {
         &self.blocks
     }
 
-    /// Settle the chain; `Interrupted` keeps the running rendering.
+    /// Settle the chain. An interrupted chain reads `⊘ interrupted`.
     pub fn close(&mut self, outcome: ChainState) {
         self.state = outcome;
     }
@@ -113,18 +125,35 @@ impl ToolChainComponent {
             .iter()
             .map(|b| b.borrow().chain_entry())
             .collect();
-        let running = self.state == ChainState::Running;
-        let glyph = if running { "◐" } else { "●" };
-        let glyph_tone = if entries.iter().any(|e| e.is_error) {
-            "error"
-        } else if running {
-            "warning"
+        // What the line reads as: interrupted when the turn was cut short;
+        // running while any call is still going; otherwise done, even while
+        // the chain stays open for the model's next call.
+        let shown = if self.state == ChainState::Interrupted {
+            ChainState::Interrupted
+        } else if entries.iter().any(|e| e.is_partial) {
+            ChainState::Running
         } else {
-            "success"
+            ChainState::Done
+        };
+        let running = shown == ChainState::Running;
+        let failed = entries.iter().any(|e| e.is_error);
+        let glyph = match shown {
+            ChainState::Running => "◐",
+            ChainState::Interrupted if !failed => "⊘",
+            ChainState::Interrupted | ChainState::Done => "●",
+        };
+        let glyph_tone = if failed {
+            "error"
+        } else {
+            match shown {
+                ChainState::Running => "warning",
+                ChainState::Interrupted => "muted",
+                ChainState::Done => "success",
+            }
         };
 
         let t = theme();
-        let (left_plain, left_styled) = if self.state == ChainState::Done {
+        let (left_plain, left_styled) = if shown == ChainState::Done {
             let phrase = chain_phrase(&entries);
             (phrase.clone(), t.fg("toolTitle", &phrase))
         } else {
@@ -159,7 +188,7 @@ impl ToolChainComponent {
             (plain, styled)
         };
 
-        let stats = chain_stats(&entries, self.state);
+        let stats = chain_stats(&entries, shown);
         let stroke = self.latest && t.has_bg("activeToolBg");
         let mark = |text: &str| {
             if stroke {
@@ -170,19 +199,31 @@ impl ToolChainComponent {
         };
         let prefix = format!("{glyph} ");
         let budget = width.saturating_sub(1 + visible_width(&prefix));
-        let line = if visible_width(&left_plain) + 2 + visible_width(&stats) <= budget {
-            let pad = " ".repeat(budget - visible_width(&left_plain) - visible_width(&stats));
+        let stats_width = visible_width(&stats);
+        // The stats always stay, flush right. The label gives way first.
+        let line = if visible_width(&left_plain) + 2 + stats_width <= budget {
+            let pad = " ".repeat(budget - visible_width(&left_plain) - stats_width);
             format!(
                 " {}{}{pad}{}",
                 t.fg(glyph_tone, &prefix),
                 mark(&left_styled),
                 t.fg("muted", &stats)
             )
+        } else if budget >= stats_width + 3 {
+            let label = truncate_to_width(&left_styled, budget - stats_width - 2, "…", false);
+            let pad = " ".repeat(budget - visible_width(&label) - stats_width);
+            format!(
+                " {}{}{pad}{}",
+                t.fg(glyph_tone, &prefix),
+                mark(&label),
+                t.fg("muted", &stats)
+            )
         } else {
+            // Too narrow for a label at all: the stats are cut as a last resort.
             format!(
                 " {}{}",
                 t.fg(glyph_tone, &prefix),
-                mark(&truncate_to_width(&left_styled, budget, "...", false))
+                t.fg("muted", &truncate_to_width(&stats, budget, "…", false))
             )
         };
         let mut out = vec![line];
@@ -190,7 +231,8 @@ impl ToolChainComponent {
         out
     }
 
-    /// Each failed call's reason, indented under the chain line.
+    /// Each failed call's header and the last lines of its reason, under the
+    /// chain line. A longer reason folds to its tail, with the way to see it all.
     fn failure_lines(&self, width: usize) -> Vec<String> {
         let t = theme();
         let mut lines = Vec::new();
@@ -201,20 +243,35 @@ impl ToolChainComponent {
                 continue;
             }
             let header = format!(
-                "   {} {}  {}",
+                "    {} {}  {}",
                 t.fg("error", "✗"),
                 t.fg("toolTitle", &entry.tool),
                 t.fg("toolOutput", &entry.subject)
             );
-            lines.push(truncate_to_width(&header, width, "...", false));
-            for raw in block.error_text().split('\n') {
-                if crate::is_blank(raw) {
-                    continue;
-                }
+            lines.push(truncate_to_width(&header, width, "…", false));
+            let text = block.error_text();
+            let reason: Vec<&str> = text
+                .split('\n')
+                .filter(|raw| !crate::is_blank(raw))
+                .collect();
+            let hidden = reason.len().saturating_sub(FAILURE_TAIL_LINES);
+            for raw in &reason[hidden..] {
                 lines.push(truncate_to_width(
-                    &format!("     {}", t.fg("toolOutput", raw)),
+                    &format!("      {}", t.fg("toolOutput", raw)),
                     width,
-                    "...",
+                    "…",
+                    false,
+                ));
+            }
+            if hidden > 0 {
+                let noun = if hidden == 1 { "line" } else { "lines" };
+                lines.push(truncate_to_width(
+                    &format!(
+                        "      {}",
+                        t.fg("muted", &format!("… {hidden} more {noun} · ctrl+o"))
+                    ),
+                    width,
+                    "…",
                     false,
                 ));
             }

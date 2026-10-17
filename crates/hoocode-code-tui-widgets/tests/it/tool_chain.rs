@@ -4,8 +4,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::support::{lock, strip};
-use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
+use hoocode_ai_types::{Content, ThinkingContent};
+use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
@@ -98,7 +98,10 @@ fn run() -> Vec<Call> {
 #[test]
 fn collapses_a_run_of_calls_to_one_line_in_radar() {
     let _g = lock();
-    let mut chain = chain_of(Radar, run(), "c");
+    // The last call still runs, so the line shows the run's shape.
+    let mut calls = run();
+    calls[2].pending = true;
+    let mut chain = chain_of(Radar, calls, "c");
     let out = render(&mut chain);
     let lines: Vec<&str> = out.split('\n').filter(|l| !l.trim().is_empty()).collect();
     assert_eq!(lines.len(), 1);
@@ -338,6 +341,7 @@ fn two_calls_are_still_worth_folding() {
     let _g = lock();
     let mut calls = run();
     calls.truncate(2);
+    calls[1].pending = true;
     let mut chain = chain_of(Radar, calls, "two");
     assert!(chain.is_summarised());
     assert!(render(&mut chain).contains("CodeSearch › Read"));
@@ -381,4 +385,154 @@ fn reports_whether_it_is_still_collecting_calls() {
     assert!(chain.is_open());
     chain.close(ChainState::Done);
     assert!(!chain.is_open());
+}
+
+fn background_shell() -> ToolExecutionComponent {
+    let mut block = ToolExecutionComponent::new(
+        "Shell",
+        "bg-0",
+        json!({"command": "npm run dev", "run_in_background": true}),
+        ToolExecutionOptions {
+            view: Radar,
+            ..Default::default()
+        },
+        None,
+        &cwd(),
+    );
+    block.update_result(
+        ToolResult {
+            content: vec![Content::text("Started background job j1")],
+            details: json!({"jobId": "j1"}),
+            is_error: false,
+        },
+        false,
+    );
+    block
+}
+
+#[test]
+fn an_interrupted_chain_with_no_failure_is_cancelled_never_green() {
+    let _g = lock();
+    let mut chain = chain_of(Radar, run(), "cancel");
+    chain.close(ChainState::Interrupted);
+    let out = render(&mut chain);
+    assert!(out.contains("⊘"), "{out}");
+    assert!(!out.contains('●'), "{out}");
+}
+
+#[test]
+fn a_background_call_reads_running_while_its_job_runs() {
+    let _g = lock();
+    let mut chain = ToolChainComponent::new(Radar);
+    chain.add(Rc::new(RefCell::new(background_shell())));
+    chain.close(ChainState::Done);
+    let out = render(&mut chain);
+    assert!(out.contains("◐"), "{out}");
+    assert!(!out.contains('●'), "{out}");
+    assert!(out.contains("running"), "{out}");
+}
+
+#[test]
+fn a_finished_shell_reads_done_as_soon_as_its_result_arrives() {
+    let _g = lock();
+    // The chain is still open: the model has not answered yet.
+    let mut chain = chain_of(
+        Radar,
+        vec![call("Shell", json!({"command": "npm test"}), "ok")],
+        "fin",
+    );
+    let out = render(&mut chain);
+    assert!(out.contains("● Ran npm test"), "{out}");
+    assert!(!out.contains("running"), "{out}");
+    assert!(!out.contains('◐'), "{out}");
+}
+
+#[test]
+fn a_failed_call_shows_the_last_two_lines_of_its_reason() {
+    let _g = lock();
+    let mut chain = chain_of(
+        Radar,
+        vec![Call {
+            is_error: true,
+            ..call("Shell", json!({"command": "make"}), "l1\nl2\nl3\nl4\nl5")
+        }],
+        "cap",
+    );
+    chain.close(ChainState::Done);
+    let out = render(&mut chain);
+    assert!(out.contains("l4"), "{out}");
+    assert!(out.contains("l5"), "{out}");
+    assert!(!out.contains("l3"), "{out}");
+    assert!(out.contains("… 3 more lines · ctrl+o"), "{out}");
+    let body = out.lines().find(|l| l.contains("l4")).unwrap();
+    assert!(body.starts_with("      l4"), "{body:?}");
+}
+
+#[test]
+fn a_failed_call_with_two_lines_or_fewer_shows_no_fold() {
+    let _g = lock();
+    let mut chain = chain_of(
+        Radar,
+        vec![Call {
+            is_error: true,
+            ..call("Shell", json!({"command": "make"}), "l1\nl2")
+        }],
+        "short",
+    );
+    chain.close(ChainState::Done);
+    let out = render(&mut chain);
+    assert!(out.contains("l1") && out.contains("l2"), "{out}");
+    assert!(!out.contains("more line"), "{out}");
+}
+
+#[test]
+fn the_stats_stay_at_eighty_columns_and_the_label_gives_way() {
+    let _g = lock();
+    let long = format!("npm run check -- {}", "--flag-with-a-long-name ".repeat(6));
+    let mut chain = chain_of(
+        Radar,
+        vec![call("Shell", json!({ "command": long }), "l1\nl2\nl3")],
+        "wide",
+    );
+    chain.close(ChainState::Done);
+    let lines = chain.render(80);
+    let row = strip(&lines[1]);
+    assert!(hoocode_tui_util::visible_width(&lines[1]) <= 80, "{row:?}");
+    assert!(row.ends_with("1 call · 3 lines"), "{row:?}");
+    assert!(row.contains('…'), "{row:?}");
+}
+
+#[test]
+fn an_agent_failure_names_the_description_not_the_whole_prompt() {
+    let _g = lock();
+    let mut chain = chain_of(
+        Radar,
+        vec![Call {
+            is_error: true,
+            ..call(
+                "Agent",
+                json!({
+                    "description": "Survey repo",
+                    "prompt": "Read every file in the repository and summarise the architecture"
+                }),
+                "boom",
+            )
+        }],
+        "agent",
+    );
+    chain.close(ChainState::Done);
+    let out = render(&mut chain);
+    assert!(out.contains("Survey repo"), "{out}");
+    assert!(!out.contains("Read every file"), "{out}");
+}
+
+#[test]
+fn thinking_never_ends_a_chain_but_speech_does() {
+    let thought = Content::Thinking(ThinkingContent {
+        thinking: "weighing the options".into(),
+        ..Default::default()
+    });
+    assert!(!speaking_ends_chain(std::slice::from_ref(&thought)));
+    assert!(speaking_ends_chain(&[thought, Content::text("Done.")]));
+    assert!(!speaking_ends_chain(&[Content::text("   ")]));
 }

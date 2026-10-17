@@ -565,7 +565,7 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
             if let Some(usage) = &task.usage {
                 let total = usage.input + usage.output;
                 if total > 0.0 {
-                    right_plain = format_tokens(total as u64);
+                    right_plain = format!("{} tokens", format_tokens(total as u64));
                     right_styled = t.fg("muted", &right_plain);
                 }
             }

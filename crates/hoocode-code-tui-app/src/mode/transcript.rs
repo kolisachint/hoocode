@@ -25,7 +25,7 @@ use hoocode_code_tui_widgets::custom_message::{
 };
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
+use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::cycle_tool_output_view;
@@ -553,14 +553,10 @@ impl Mode {
         self.dirty.set(true);
     }
 
-    /// `opensNewChain`: speaking ends the run, and so does a drawn trace.
+    /// `opensNewChain`: speaking ends the run. A trace never does, in either
+    /// view: thinking sits inside the chain it belongs to.
     pub(super) fn opens_new_chain(&self, message: &AssistantMessage) -> bool {
-        let draws_thinking = self.thinking_display() != ThinkingDisplay::Omit;
-        message.content.iter().any(|c| match c {
-            Content::Text(t) => !t.text.trim().is_empty(),
-            Content::Thinking(t) => draws_thinking && !t.thinking.trim().is_empty(),
-            _ => false,
-        })
+        speaking_ends_chain(&message.content)
     }
 
     /// `trimTranscriptMemory`: freeze all but the newest live tool blocks.

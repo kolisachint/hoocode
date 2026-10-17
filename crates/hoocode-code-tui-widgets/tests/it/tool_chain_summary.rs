@@ -342,6 +342,69 @@ mod chain_phrase_long_chains {
         let mut entries = many(50, "TodoWrite", |_| "plan".into());
         entries.extend(many(4, "Edit", |i| format!("src/x{i}.ts")));
         entries.extend(many(4, "Shell", |_| "check".into()));
-        assert_eq!(chain_phrase(&entries), "Edited 4 files · 4 commands");
+        // TodoWrite is in no family, so it is counted, not dropped.
+        assert_eq!(
+            chain_phrase(&entries),
+            "Edited 4 files · 4 commands · 50 other calls"
+        );
+    }
+}
+
+mod labels_and_counts {
+    use super::*;
+
+    #[test]
+    fn a_file_touched_twice_counts_once() {
+        assert_eq!(
+            chain_phrase(&[
+                c("Edit", "a.ts"),
+                c("Edit", "b.ts"),
+                c("Edit", "a.ts"),
+                c("Write", "c.ts"),
+                c("Write", "c.ts"),
+            ]),
+            "Edited 3 files"
+        );
+    }
+
+    #[test]
+    fn web_searches_are_not_fetched_pages() {
+        assert_eq!(
+            chain_phrase(&[c("WebSearch", "rust async"), c("WebSearch", "tokio select")]),
+            "Searched 2 web searches"
+        );
+        assert_eq!(
+            chain_phrase(&[
+                c("WebFetch", "https://a.dev/x"),
+                c("WebFetch", "https://b.dev/y")
+            ]),
+            "Fetched 2 pages"
+        );
+    }
+
+    #[test]
+    fn a_secondary_fetch_family_pluralises_as_fetches() {
+        let mut entries: Vec<ChainEntry> = (0..3).map(|i| c("Edit", &format!("f{i}.ts"))).collect();
+        entries.extend((0..7).map(|i| c("WebFetch", &format!("https://a.dev/{i}"))));
+        assert_eq!(chain_phrase(&entries), "Edited 3 files · 7 fetches");
+    }
+
+    #[test]
+    fn a_secondary_search_family_pluralises_as_searches() {
+        let mut entries: Vec<ChainEntry> = (0..3).map(|i| c("Edit", &format!("f{i}.ts"))).collect();
+        entries.extend((0..7).map(|i| c("CodeSearch", &format!("needle{i}"))));
+        assert_eq!(chain_phrase(&entries), "Edited 3 files · 7 searches");
+    }
+
+    #[test]
+    fn a_call_outside_every_family_still_counts_in_the_headline() {
+        assert_eq!(
+            chain_phrase(&[
+                c("Edit", "a.ts"),
+                c("Edit", "b.ts"),
+                c("mcp__github__search", "q"),
+            ]),
+            "Edited 2 files · 1 other call"
+        );
     }
 }

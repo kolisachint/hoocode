@@ -373,6 +373,23 @@ fn finished_tasks_show_combined_token_usage_per_row() {
 }
 
 #[test]
+fn a_finished_task_says_its_count_is_tokens() {
+    let _g = lock();
+    let d = create("Tiny lookup");
+    task_store().update(
+        d,
+        TaskPatch {
+            status: Some(TaskStatus::Done),
+            usage: Some(usage(100.0, 20.0, 0.0)),
+            ..Default::default()
+        },
+    );
+    let lines = render(&mut TaskPanelComponent::new(), 120);
+    let row = find(&lines, "Tiny lookup");
+    assert!(row.contains("120 tokens"), "{row}");
+}
+
+#[test]
 fn the_pane_carries_no_turn_token_or_cost_delta() {
     let _g = lock();
     let a = create_with("Explore module", sub("explore"));
