@@ -743,3 +743,18 @@ fn chain_entry_counts_output_lines_without_the_trailing_newline() {
     assert_eq!(counted(""), 0);
     assert_eq!(counted("\n"), 0);
 }
+
+mod result_fallback {
+    use super::*;
+
+    /// A registered tool with no result renderer: its output is peeked with the count of the
+    /// lines left out. A trailing newline ends the last line, it adds none.
+    #[test]
+    fn counts_the_lines_left_out_without_the_trailing_newline() {
+        let _g = lock();
+        let mut c = component("mystery", "1", json!({}), Peek, Some(base()));
+        c.update_result(result("a\nb\nc\nd\ne\nf\ng\n", false), false);
+        let shown = lines_of(&mut c, 80).join("\n");
+        assert!(shown.contains("... (2 more lines)"), "{shown}");
+    }
+}

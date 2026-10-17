@@ -991,6 +991,16 @@ impl Mode {
         wait.max(Duration::from_millis(1))
     }
 
+    /// Ctrl+C aborts the turn from the input thread, without waiting for this
+    /// loop. Set again on a session switch, so it reaches the current session.
+    fn install_interrupt_hook(&self) {
+        let session = self.session.clone();
+        hoocode_tui_terminal::interrupt::set_hook(Some(Arc::new(move || {
+            session.abort_retry();
+            session.agent().abort();
+        })));
+    }
+
     fn run(
         mut self,
         options_initial: (
@@ -1005,9 +1015,7 @@ impl Mode {
         // Before the terminal starts, so a panic from here on restores it.
         install_panic_hook();
         let mut input = self.tui.start();
-        // Ctrl+C aborts the turn from the input thread, without waiting for this loop.
-        let interrupt_agent = self.session.agent().clone();
-        hoocode_tui_terminal::interrupt::set_hook(Some(Arc::new(move || interrupt_agent.abort())));
+        self.install_interrupt_hook();
         // From here the TUI owns the terminal: the agent's operational log
         // lines (dispatch, warm fallback, lifeguard) must not write to it.
         set_terminal_owned_by_tui(true);

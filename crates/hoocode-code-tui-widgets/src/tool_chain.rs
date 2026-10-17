@@ -41,6 +41,11 @@ impl ToolChainComponent {
         self.blocks.push(block);
     }
 
+    /// Takes a block out of the chain (a failed attempt's calls).
+    pub fn remove(&mut self, block: &ToolBlock) {
+        self.blocks.retain(|b| !Rc::ptr_eq(b, block));
+    }
+
     /// True until the agent speaks or the turn settles.
     pub fn is_open(&self) -> bool {
         self.state == ChainState::Running

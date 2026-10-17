@@ -377,9 +377,14 @@ impl Mode {
                         });
                     }
                     component.borrow_mut().update_content(&assistant, false);
-                    if assistant.stop_reason == StopReason::Error {
-                        // A retry may take this row out (`retry.rs`).
-                        self.transcript.keep_attempt_error(component.clone());
+                    // A failed attempt is taken out again if a retry follows
+                    // (`retry.rs`): an error, or an abort during a retry.
+                    let failed_attempt = assistant.stop_reason == StopReason::Error
+                        || (assistant.stop_reason == StopReason::Aborted
+                            && self.session.retry_attempt() > 0);
+                    if failed_attempt {
+                        let tools = self.transcript.pending_tools.values().cloned().collect();
+                        self.transcript.keep_attempt_error(component.clone(), tools);
                     }
                     if matches!(
                         assistant.stop_reason,

@@ -72,6 +72,8 @@ pub(super) struct Transcript {
     pub(super) attempt_error: Option<Rc<RefCell<AssistantMessageComponent>>>,
     /// The auto-retry streak in progress (`retry.rs`).
     pub(super) retry_streak: Option<super::retry::RetryStreak>,
+    /// The tool blocks of the latest failed attempt, dropped with its row.
+    pub(super) attempt_tools: Vec<hoocode_code_tui_widgets::tool_chain::ToolBlock>,
 }
 
 impl Transcript {
@@ -95,7 +97,16 @@ impl Transcript {
             compaction_summaries: Vec::new(),
             attempt_error: None,
             retry_streak: None,
+            attempt_tools: Vec::new(),
         }
+    }
+
+    /// The view over a cleared chat. A retry still in progress keeps its
+    /// streak, so its end still reports how the streak went.
+    pub(super) fn reset_view(&mut self) {
+        let streak = self.retry_streak.take();
+        *self = Transcript::new(self.chat.clone());
+        self.retry_streak = streak;
     }
 }
 
@@ -307,7 +318,7 @@ impl Mode {
         self.transcript.pending_tools.clear();
         let mut rendered_pending: Vec<(String, Rc<RefCell<ToolExecutionComponent>>)> = Vec::new();
         let mut last_stop_reason = None;
-        for message in messages {
+        for (i, message) in messages.iter().enumerate() {
             match message {
                 AgentMessage::Assistant(assistant) => {
                     // The live path's chain boundary, so a rebuilt history shows
@@ -316,6 +327,31 @@ impl Mode {
                         self.close_open_chain(ChainState::Done);
                     }
                     last_stop_reason = Some(assistant.stop_reason);
+                    // A failed attempt the session retried is not shown again
+                    // (`retry.rs`); the streak that gave up is one Model block.
+                    if assistant.stop_reason == StopReason::Error {
+                        if retry::attempt_was_retried(messages, i) {
+                            continue;
+                        }
+                        let failed = retry::failed_attempts_before(messages, i);
+                        if let Some(first) = failed.first() {
+                            let elapsed = (assistant.timestamp - first.timestamp).max(0);
+                            let title = assistant
+                                .error_message
+                                .clone()
+                                .filter(|m| !m.is_empty())
+                                .unwrap_or_else(|| "Error".into());
+                            self.transcript.add_model_error(
+                                &title,
+                                &retry::model_error_body(
+                                    failed.len() as u64 + 1,
+                                    std::time::Duration::from_millis(elapsed as u64),
+                                    false,
+                                ),
+                            );
+                            continue;
+                        }
+                    }
                     self.add_message_to_chat(message, populate_history);
                     for content in &assistant.content {
                         let Content::ToolCall(call) = content else {
@@ -638,9 +674,8 @@ impl Mode {
 
     /// `resetTranscriptView`: drop every view reference into the transcript.
     pub(super) fn reset_transcript_view(&mut self) {
-        let chat = self.transcript.chat.clone();
-        chat.borrow_mut().clear();
-        self.transcript = Transcript::new(chat);
+        self.transcript.chat.borrow_mut().clear();
+        self.transcript.reset_view();
     }
 
     /// `renderCurrentSessionState`: the transcript of the session just

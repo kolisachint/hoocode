@@ -329,7 +329,7 @@ impl ToolExecutionComponent {
             return None;
         }
         let t = theme();
-        let lines: Vec<&str> = output.split('\n').collect();
+        let lines: Vec<&str> = output.lines().collect();
         if lines.len() <= PEEK_LINES {
             return Some(handle(Text::new(t.fg("toolOutput", &output), 0, 0)));
         }

@@ -719,8 +719,14 @@ impl Mode {
         // The queue belonged to the old session: its scheduled prompts will not run.
         self.scheduled_runs
             .drop_waiting(task_store(), &chrono::Local::now());
+        // The old session's retry backoff ends now, not after a sleep on a
+        // session nobody listens to; its streak is cleared with the notice.
+        self.session.abort_retry();
         self.subscription = None;
         self.session = runtime.session().clone();
+        self.install_interrupt_hook();
+        self.transcript.clear_retry();
+        self.footer.borrow_mut().set_retry_notice(None);
         self.footer.borrow_mut().set_source(Box::new(SessionFooter {
             session: self.session.clone(),
             is_oauth: self.is_oauth.clone(),
