@@ -1159,7 +1159,7 @@ fn focus_opens_the_flight_plan_console() {
     let mut panel = focused();
     let lines = plain(&mut panel, 120);
     assert!(
-        lines[0].contains("FLIGHT PLAN") && lines[0].contains("0/1"),
+        lines[0].contains("FLIGHT PLAN · ctrl+g") && lines[0].contains("0/1"),
         "{lines:#?}"
     );
     assert!(
@@ -1167,7 +1167,13 @@ fn focus_opens_the_flight_plan_console() {
         "{lines:#?}"
     );
     assert!(lines.iter().any(|l| l.contains("○ 0/1")), "{lines:#?}");
-    assert!(lines.last().unwrap().contains("esc back"), "{lines:#?}");
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("agents in flight") && l.contains("satellites")),
+        "{lines:#?}"
+    );
+    assert!(lines.last().unwrap().contains("esc close"), "{lines:#?}");
 
     let mut unfocused = TaskPanelComponent::new();
     let plain_lines = plain(&mut unfocused, 120);
