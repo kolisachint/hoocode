@@ -110,7 +110,11 @@ impl Mode {
 
     /// The turn that just ended (`PromptDone`): chime when it ran long enough.
     pub(super) fn finish_turn_chime(&mut self) {
-        if self.turn_timer.end(Instant::now(), self.turn_stop_reason) {
+        if self
+            .turn_timer
+            .borrow_mut()
+            .end(Instant::now(), self.turn_stop_reason)
+        {
             self.ring_chime();
         }
     }

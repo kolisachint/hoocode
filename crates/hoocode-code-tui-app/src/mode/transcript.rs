@@ -878,6 +878,7 @@ impl Mode {
             self.session.settings().set_tool_output_view(view);
         }
         self.footer.borrow_mut().set_tool_output_view(view);
+        self.comms.borrow_mut().set_tool_output_view(view);
         let thinking = self.thinking_display();
         for chain in &self.transcript.chains {
             chain.borrow_mut().set_view(view);

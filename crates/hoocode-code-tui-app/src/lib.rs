@@ -6,6 +6,7 @@ pub mod auto_loop;
 pub mod changelog;
 pub mod chime;
 pub mod chrome_layout;
+pub mod comms_frame;
 pub mod dialog_bridge;
 pub mod embsearch_progress;
 pub mod expandable_text;

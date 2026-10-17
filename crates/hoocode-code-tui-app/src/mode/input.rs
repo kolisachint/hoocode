@@ -443,7 +443,7 @@ impl Mode {
 
     pub(super) fn prompt_with_images(&mut self, text: String, images: Vec<ImageContent>) {
         startup_progress::clear();
-        self.turn_timer.begin(Instant::now());
+        self.turn_timer.borrow_mut().begin(Instant::now());
         let session = self.session.clone();
         let tx = self.tx.clone();
         self.runtime.spawn(async move {

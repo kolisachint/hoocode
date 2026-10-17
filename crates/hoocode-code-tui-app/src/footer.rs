@@ -54,6 +54,11 @@ pub trait FooterSource {
     /// Compaction reserve tokens.
     fn reserve_tokens(&self) -> u64;
     fn is_using_oauth(&self) -> bool;
+    /// Active MCP servers, shown as satellites (`⌁ N sat`) in the HUD. The
+    /// default is none; the session override counts connected servers.
+    fn satellite_count(&self) -> usize {
+        0
+    }
 }
 
 pub use hoocode_code_settings::ToolOutputView;

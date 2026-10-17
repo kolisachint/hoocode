@@ -40,7 +40,6 @@
 		"dim": "base01",
 		"text": "base1",
 		"thinkingText": "base01",
-
 		"selectedBg": "selectedBg",
 		"userMessageBg": "base02",
 		"userMessageText": "base1",
@@ -54,7 +53,6 @@
 		"warningBg": "warningBg",
 		"toolTitle": "base1",
 		"toolOutput": "base0",
-
 		"mdHeading": "orange",
 		"mdLink": "blue",
 		"mdLinkUrl": "base01",
@@ -65,11 +63,9 @@
 		"mdQuoteBorder": "cyan",
 		"mdHr": "base01",
 		"mdListBullet": "cyan",
-
 		"toolDiffAdded": "green",
 		"toolDiffRemoved": "red",
 		"toolDiffContext": "base01",
-
 		"syntaxComment": "base01",
 		"syntaxKeyword": "green",
 		"syntaxFunction": "blue",
@@ -79,16 +75,13 @@
 		"syntaxType": "yellow",
 		"syntaxOperator": "base0",
 		"syntaxPunctuation": "base0",
-
 		"thinkingOff": "base01",
 		"thinkingMinimal": "base0",
 		"thinkingLow": "blue",
 		"thinkingMedium": "cyan",
 		"thinkingHigh": "violet",
 		"thinkingXhigh": "magenta",
-
 		"bashMode": "green",
-
 		"agent1": "cyan",
 		"agent2": "violet",
 		"agent3": "yellow",
@@ -96,9 +89,13 @@
 		"agent5": "green",
 		"agent6": "blue",
 		"mcp": "orange",
-
 		"halftone": "track",
-		"activeToolBg": "activeToolBg"
+		"activeToolBg": "activeToolBg",
+		"ink": "base1",
+		"faint": "base1",
+		"you": "violet",
+		"vio": "violet",
+		"gold": "yellow"
 	},
 	"export": {
 		"pageBg": "#002b36",

@@ -8,6 +8,13 @@ use std::collections::BTreeMap;
 use hoocode_code_tui_theme::*;
 use serde_json::Value;
 
+/// Tokens the Rust side adds beyond the frozen hoocode gold: the Mission
+/// Control chrome (spec §2.3). Like `toolBandBg` below, they are skipped in
+/// the frozen-gold comparisons.
+const RUST_ONLY_TOKENS: [&str; 9] = [
+    "ink", "faint", "acc", "ok", "err", "warn", "you", "vio", "gold",
+];
+
 fn gold() -> Value {
     serde_json::from_str(include_str!("../fixtures/theme-gold.json")).unwrap()
 }
@@ -48,7 +55,10 @@ fn every_token_encodes_like_hoocode_in_both_modes() {
                     ));
                 }
             }
-            for token in THEME_COLORS {
+            for token in THEME_COLORS
+                .iter()
+                .filter(|t| !RUST_ONLY_TOKENS.contains(t))
+            {
                 if theme.has(token) != exp["fg"].get(token).is_some() {
                     failures.push(format!("{name} {key} has({token}) differs"));
                 }
@@ -79,6 +89,10 @@ fn resolved_and_export_colors_match_hoocode() {
         let mut resolved = get_resolved_theme_colors(Some(name)).unwrap();
         // toolBandBg is hoocode-only (not in the frozen TS gold).
         resolved.remove("toolBandBg");
+        // So are the Mission Control chrome tokens.
+        for token in RUST_ONLY_TOKENS {
+            resolved.remove(token);
+        }
         let exp: BTreeMap<String, String> =
             serde_json::from_value(expected["resolved"].clone()).unwrap();
         assert_eq!(resolved, exp, "{name}");

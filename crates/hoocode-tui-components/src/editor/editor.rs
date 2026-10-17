@@ -214,6 +214,11 @@ pub struct Editor {
     /// Prompt prefix shown on the first line (e.g. `❯`).
     pub prompt_prefix: String,
     pub prompt_color: ColorFn,
+    /// Placeholder shown on the input row while the editor is empty (the
+    /// comms frame sets it per state). Inert text: any keystroke replaces
+    /// it, because the editor itself is still empty.
+    pub placeholder: String,
+    pub placeholder_color: ColorFn,
 
     autocomplete_provider: Option<Box<dyn AutocompleteProvider>>,
     autocomplete_list: Option<SelectList>,
@@ -285,6 +290,8 @@ impl Editor {
             top_border_label: None,
             prompt_prefix: String::new(),
             prompt_color: Box::new(|s: &str| s.to_string()),
+            placeholder: String::new(),
+            placeholder_color: Box::new(|s: &str| s.to_string()),
             autocomplete_provider: None,
             autocomplete_list: None,
             autocomplete_state: None,
@@ -2026,7 +2033,23 @@ impl Component for Editor {
             let mut line_visible_width = visible_width(&layout_line.text);
             let mut cursor_in_padding = false;
 
-            if let (true, Some(cursor_pos)) = (layout_line.has_cursor, layout_line.cursor_pos) {
+            // An empty prompt shows the placeholder after the cursor marker;
+            // the hardware cursor still parks at the marker. The cursor never
+            // moves into the placeholder: the editor itself is still empty.
+            let show_placeholder =
+                self.is_editor_empty() && display_text.is_empty() && !self.placeholder.is_empty();
+            if show_placeholder {
+                let marker = if emit_cursor_marker {
+                    CURSOR_MARKER
+                } else {
+                    ""
+                };
+                display_text = format!("{marker}{}", (self.placeholder_color)(&self.placeholder));
+                line_visible_width = visible_width(&self.placeholder);
+            }
+
+            let cursor_here = layout_line.has_cursor && !show_placeholder;
+            if let (true, Some(cursor_pos)) = (cursor_here, layout_line.cursor_pos) {
                 let before = slice16(&display_text, 0, cursor_pos).to_string();
                 let after = slice16_from(&display_text, cursor_pos).to_string();
                 let marker = if emit_cursor_marker {

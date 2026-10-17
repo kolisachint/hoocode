@@ -1,0 +1,495 @@
+//! The Mission Control comms frame (M2): the 3-row heavy frame at the bottom
+//! of the screen. Its title carries the state (READY, IN FLIGHT, COMMS LOST,
+//! LANDED, DID NOT LAND, ABORTED); the bottom border carries the foot (the
+//! view dial and the token totals). It wraps the prompt editor, which renders
+//! only its text content: no border, no hint, no session chip. The editor
+//! shows a per-state placeholder while it is empty.
+//!
+//! The chrome (top and bottom edges) is drawn with ratatui
+//! ([`RatatuiComponent`]) from the Mission Control [`Palette`]; the input
+//! rows splice the editor's own lines (ANSI, with the cursor marker) between
+//! painted `┃` edges. At rest the frame is 3 rows; it grows with multi-line
+//! input and the autocomplete popup, which renders inside the frame.
+
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
+
+use hoocode_code_agent_session::format::format_tokens;
+use hoocode_tui_ratatui::core::buffer::Buffer;
+use hoocode_tui_ratatui::core::layout::Rect;
+use hoocode_tui_ratatui::core::style::Style;
+use hoocode_tui_ratatui::{bold, paint, Palette, RatatuiComponent};
+use hoocode_tui_render::{Component, ComponentHandle};
+use hoocode_tui_util::{truncate_to_width, visible_width};
+
+use crate::footer::{FooterSource, ToolOutputView};
+use crate::footer_data::FooterDataProvider;
+
+/// The READY placeholder: what the empty prompt invites.
+pub const READY_PLACEHOLDER: &str = "name your mission · / commands · @ files · ! shell";
+/// The IN FLIGHT placeholder: typed text queues behind the running mission.
+pub const IN_FLIGHT_PLACEHOLDER: &str = "type to queue the next mission";
+/// The COMMS LOST placeholder: enter hails again.
+pub const COMMS_LOST_PLACEHOLDER: &str = "press enter to hail again";
+
+/// The comms frame's state. Only READY and IN FLIGHT are wired to the
+/// session in M2; the rest render a plausible title and frame so the enum
+/// is complete for the cards and consoles that follow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommsState {
+    Ready,
+    /// A mission is running. `elapsed` runs from submit (`TurnTimer`); it is
+    /// `None` when no prompt is open, and the title then omits the time.
+    InFlight {
+        elapsed: Option<Duration>,
+    },
+    CommsLost,
+    Landed {
+        elapsed: Option<Duration>,
+        steps: Option<usize>,
+    },
+    DidNotLand {
+        elapsed: Option<Duration>,
+        steps: Option<usize>,
+    },
+    Aborted,
+}
+
+/// The input glyph's (`▸`) colour: accent during a mission, err after a lost
+/// one, ink otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphStyle {
+    Ink,
+    Acc,
+    Err,
+}
+
+impl GlyphStyle {
+    /// The palette style for the glyph.
+    pub fn style(&self) -> Style {
+        let palette = Palette::current();
+        match self {
+            GlyphStyle::Ink => palette.ink(),
+            GlyphStyle::Acc => palette.acc(),
+            GlyphStyle::Err => palette.err(),
+        }
+    }
+}
+
+/// What the comms frame tells the editor each render: the placeholder and
+/// the glyph colour for the state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputStyle {
+    pub placeholder: String,
+    pub glyph: GlyphStyle,
+}
+
+impl CommsState {
+    /// The frame colour: faint at rest, acc in flight, err when comms is lost.
+    fn frame_style(&self, palette: &Palette) -> Style {
+        match self {
+            CommsState::InFlight { .. } => palette.acc(),
+            CommsState::CommsLost => palette.err(),
+            _ => palette.faint(),
+        }
+    }
+
+    /// The placeholder and glyph for the state.
+    pub fn input_style(&self) -> InputStyle {
+        match self {
+            CommsState::InFlight { .. } => InputStyle {
+                placeholder: IN_FLIGHT_PLACEHOLDER.to_string(),
+                glyph: GlyphStyle::Acc,
+            },
+            CommsState::CommsLost => InputStyle {
+                placeholder: COMMS_LOST_PLACEHOLDER.to_string(),
+                glyph: GlyphStyle::Err,
+            },
+            _ => InputStyle {
+                placeholder: READY_PLACEHOLDER.to_string(),
+                glyph: GlyphStyle::Ink,
+            },
+        }
+    }
+
+    /// The title's styled runs, space-separated when drawn.
+    fn title_segs(&self, palette: &Palette) -> Vec<Seg> {
+        let dim = palette.dim();
+        let faint = palette.faint();
+        let ink = palette.ink();
+        match self {
+            CommsState::Ready => vec![Seg::new(dim, "READY")],
+            CommsState::InFlight { elapsed } => {
+                let mut segs = vec![
+                    Seg::new(palette.acc(), "◐"),
+                    Seg::new(bold(palette.acc()), "IN FLIGHT"),
+                    Seg::new(faint, "·"),
+                ];
+                if let Some(elapsed) = elapsed {
+                    segs.push(Seg::new(dim, &format!("{}s", elapsed.as_secs())));
+                    segs.push(Seg::new(faint, "·"));
+                }
+                segs.push(Seg::new(ink, "esc"));
+                segs.push(Seg::new(dim, "abort"));
+                segs
+            }
+            CommsState::CommsLost => vec![
+                Seg::new(palette.err(), "⊗"),
+                Seg::new(bold(palette.err()), "COMMS LOST"),
+                Seg::new(faint, "·"),
+                Seg::new(ink, "enter"),
+                Seg::new(dim, "hail again"),
+                Seg::new(faint, "·"),
+                Seg::new(ink, "/model"),
+                Seg::new(dim, "switch ship"),
+            ],
+            CommsState::Landed { elapsed, steps } => {
+                landed_title(palette.ok(), palette, *elapsed, *steps, "LANDED", "●")
+            }
+            CommsState::DidNotLand { elapsed, steps } => landed_title(
+                palette.err(),
+                palette,
+                *elapsed,
+                *steps,
+                "DID NOT LAND",
+                "⊗",
+            ),
+            CommsState::Aborted => vec![Seg::new(dim, "⊘ ABORTED · READY")],
+        }
+    }
+}
+
+/// A LANDED / DID NOT LAND title: the coloured mark and name, then the dim
+/// `time · N steps` when the debrief knows them.
+fn landed_title(
+    color: Style,
+    palette: &Palette,
+    elapsed: Option<Duration>,
+    steps: Option<usize>,
+    name: &str,
+    mark: &str,
+) -> Vec<Seg> {
+    let mut segs = vec![Seg::new(color, mark), Seg::new(bold(color), name)];
+    let mut tail = String::new();
+    if let Some(elapsed) = elapsed {
+        tail.push_str(&format!("{}s", elapsed.as_secs()));
+    }
+    if let Some(steps) = steps {
+        if !tail.is_empty() {
+            tail.push_str(" · ");
+        }
+        tail.push_str(&format_steps(steps));
+    }
+    if !tail.is_empty() {
+        segs.push(Seg::new(palette.faint(), "·"));
+        segs.push(Seg::new(palette.dim(), &tail));
+    }
+    segs
+}
+
+/// `1 step`, `N steps`.
+fn format_steps(steps: usize) -> String {
+    if steps == 1 {
+        "1 step".to_string()
+    } else {
+        format!("{steps} steps")
+    }
+}
+
+/// One styled run inside an edge row, with its width in cells.
+#[derive(Debug, Clone)]
+struct Seg {
+    text: String,
+    style: Style,
+    width: usize,
+}
+
+impl Seg {
+    fn new(style: Style, text: &str) -> Self {
+        Self {
+            text: text.to_string(),
+            style,
+            width: visible_width(text),
+        }
+    }
+
+    fn space() -> Self {
+        Self {
+            text: " ".to_string(),
+            style: Style::default(),
+            width: 1,
+        }
+    }
+}
+
+/// `segs` with one plain space between runs.
+fn spaced(mut segs: Vec<Seg>) -> Vec<Seg> {
+    let mut out = Vec::with_capacity(segs.len() * 2);
+    for (i, seg) in segs.drain(..).enumerate() {
+        if i > 0 {
+            out.push(Seg::space());
+        }
+        out.push(seg);
+    }
+    out
+}
+
+/// `segs` cut to `budget` cells, ending in `…` when cut. Returns the runs
+/// and their width.
+fn truncate_segs(segs: &[Seg], budget: usize) -> (Vec<Seg>, usize) {
+    let mut out = Vec::new();
+    let mut used = 0;
+    for seg in segs {
+        if used + seg.width <= budget {
+            used += seg.width;
+            out.push(seg.clone());
+            continue;
+        }
+        let room = budget.saturating_sub(used);
+        if room > 0 {
+            let text = truncate_to_width(&seg.text, room, "…", false);
+            let width = visible_width(&text);
+            used += width;
+            out.push(Seg {
+                text,
+                style: seg.style,
+                width,
+            });
+        }
+        break;
+    }
+    (out, used)
+}
+
+/// One drawn cell run: text, style, and width in cells.
+#[derive(Debug, Clone)]
+struct Run {
+    text: String,
+    style: Style,
+    width: usize,
+}
+
+/// An edge row as drawn runs: `┏━ title ━…━ right ━┓`. The title goes
+/// first when the row is short; past that both are cut.
+fn edge_runs(
+    frame: Style,
+    corners: (char, char),
+    left: &[Seg],
+    right: &[Seg],
+    width: usize,
+) -> Vec<Run> {
+    // Corners, two thick bars and four spaces are fixed; the fill is at
+    // least one cell, like the simulator's `box`.
+    let budget = width.saturating_sub(9);
+    let (right, rw) = truncate_segs(right, budget);
+    let (left, lw) = truncate_segs(left, budget.saturating_sub(rw));
+    let fill = width.saturating_sub(8 + lw + rw).max(1);
+    let mut runs = vec![
+        Run::from_seg(&Seg::new(frame, &corners.0.to_string())),
+        Run::from_seg(&Seg::new(frame, "━")),
+        Run::from_seg(&Seg::space()),
+    ];
+    runs.extend(left.iter().map(Run::from_seg));
+    runs.push(Run::from_seg(&Seg::space()));
+    runs.push(Run::from_seg(&Seg::new(frame, &"━".repeat(fill))));
+    runs.push(Run::from_seg(&Seg::space()));
+    runs.extend(right.iter().map(Run::from_seg));
+    runs.push(Run::from_seg(&Seg::space()));
+    runs.push(Run::from_seg(&Seg::new(frame, "━")));
+    runs.push(Run::from_seg(&Seg::new(frame, &corners.1.to_string())));
+    runs
+}
+
+impl Run {
+    fn from_seg(seg: &Seg) -> Self {
+        Self {
+            text: seg.text.clone(),
+            style: seg.style,
+            width: seg.width,
+        }
+    }
+}
+
+/// The chrome both edge rows draw: the frame style and the rows' runs.
+#[derive(Debug, Clone, Default)]
+struct ChromeData {
+    top: Vec<Run>,
+    bottom: Vec<Run>,
+}
+
+impl ChromeData {
+    fn build(
+        state: &CommsState,
+        palette: &Palette,
+        view: ToolOutputView,
+        plan_mode: bool,
+        input_total: u64,
+        output_total: u64,
+        width: usize,
+    ) -> Self {
+        let frame = state.frame_style(palette);
+        let top = edge_runs(
+            frame,
+            ('┏', '┓'),
+            &spaced(state.title_segs(palette)),
+            &[Seg::new(palette.acc(), "app-edit")],
+            width,
+        );
+        let mut foot = match view {
+            ToolOutputView::Peek => vec![Seg::new(palette.dim(), "peek")],
+            ToolOutputView::Radar => vec![Seg::new(palette.dim(), "radar · flight log")],
+        };
+        if plan_mode {
+            foot.push(Seg::new(palette.faint(), "·"));
+            foot.push(Seg::new(palette.vio(), "PLAN · nothing gets changed"));
+        }
+        let footr = Seg::new(
+            palette.dim(),
+            &format!(
+                "↑{} ↓{}",
+                format_tokens(input_total),
+                format_tokens(output_total)
+            ),
+        );
+        let bottom = edge_runs(frame, ('┗', '┛'), &spaced(foot), &[footr], width);
+        Self { top, bottom }
+    }
+}
+
+/// Draws one edge row's runs left to right, clipping at the row's width.
+fn draw_row(buf: &mut Buffer, x: u16, y: u16, width: u16, runs: &[Run]) {
+    let mut x = x;
+    let end = x.saturating_add(width);
+    for run in runs {
+        if x >= end || run.text.is_empty() {
+            continue;
+        }
+        let room = end.saturating_sub(x) as usize;
+        buf.set_stringn(x, y, &run.text, room, run.style);
+        x = x.saturating_add(run.width.min(room) as u16);
+    }
+}
+
+/// The chrome's draw closure, boxed so the wrapped component has a nameable type.
+type ChromeDraw = Box<dyn FnMut(Rect, &mut Buffer)>;
+
+/// The comms frame around the prompt editor. Reads the session on each
+/// render (through `read_state`); the editor keeps its key handling and
+/// focus, reached through this component.
+pub struct CommsFrame {
+    editor: ComponentHandle,
+    read_state: Rc<dyn Fn() -> CommsState>,
+    set_input: Rc<dyn Fn(InputStyle)>,
+    source: Box<dyn FooterSource>,
+    data: FooterDataProvider,
+    view: ToolOutputView,
+    chrome_data: Rc<RefCell<ChromeData>>,
+    chrome: RatatuiComponent<ChromeDraw>,
+}
+
+impl CommsFrame {
+    /// The frame around `editor`. `read_state` maps the session to a state;
+    /// `set_input` styles the editor's input row for it (the placeholder and
+    /// the glyph colour). `source` feeds the foot's token totals; `data`
+    /// tells the foot the view's plan note.
+    pub fn new(
+        editor: ComponentHandle,
+        read_state: impl Fn() -> CommsState + 'static,
+        set_input: impl Fn(InputStyle) + 'static,
+        source: Box<dyn FooterSource>,
+        data: FooterDataProvider,
+        view: ToolOutputView,
+    ) -> Self {
+        let chrome_data = Rc::new(RefCell::new(ChromeData::default()));
+        let draw_data = chrome_data.clone();
+        let draw: ChromeDraw = Box::new(move |area: Rect, buf: &mut Buffer| {
+            let data = draw_data.borrow();
+            draw_row(buf, area.x, area.y, area.width, &data.top);
+            if area.height > 1 {
+                draw_row(buf, area.x, area.y + 1, area.width, &data.bottom);
+            }
+        });
+        Self {
+            editor,
+            read_state: Rc::new(read_state),
+            set_input: Rc::new(set_input),
+            source,
+            data,
+            view,
+            chrome_data,
+            chrome: RatatuiComponent::new(2, draw),
+        }
+    }
+
+    /// The view dial's current stop (kept beside the footer's).
+    pub fn set_tool_output_view(&mut self, view: ToolOutputView) {
+        self.view = view;
+    }
+}
+
+impl Component for CommsFrame {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        if width == 0 {
+            return Vec::new();
+        }
+        let state = (self.read_state)();
+        (self.set_input)(state.input_style());
+        let palette = Palette::current();
+        let (input_total, output_total, _, _, _) = self.source.usage_totals();
+        let plan_mode = self.data.get_active_mode() == "plan";
+        let frame = state.frame_style(&palette);
+        *self.chrome_data.borrow_mut() = ChromeData::build(
+            &state,
+            &palette,
+            self.view,
+            plan_mode,
+            input_total,
+            output_total,
+            width as usize,
+        );
+        let chrome = self.chrome.render(width);
+        let inner = (width as usize).saturating_sub(2).max(1);
+        let mut editor_lines = self.editor.borrow_mut().render(inner as u16);
+        if editor_lines.is_empty() {
+            editor_lines.push(String::new());
+        }
+        let edge = paint(frame, "┃");
+        let mut out = Vec::with_capacity(editor_lines.len() + 2);
+        out.push(chrome.first().cloned().unwrap_or_default());
+        for line in editor_lines {
+            out.push(format!("{edge}{}{edge}", fit_line(&line, inner)));
+        }
+        out.push(chrome.get(1).cloned().unwrap_or_default());
+        out
+    }
+
+    fn handle_input(&mut self, data: &str) {
+        self.editor.borrow_mut().handle_input(data);
+    }
+
+    fn invalidate(&mut self) {
+        self.editor.borrow_mut().invalidate();
+        self.chrome.invalidate();
+    }
+
+    fn is_focusable(&self) -> bool {
+        self.editor.borrow().is_focusable()
+    }
+
+    fn set_focused(&mut self, focused: bool) {
+        self.editor.borrow_mut().set_focused(focused);
+    }
+}
+
+/// The editor's line at exactly `width` cells. The bare editor pads its
+/// lines there itself; this only pads short ones (never cuts: a cut could
+/// drop the cursor marker).
+fn fit_line(line: &str, width: usize) -> String {
+    let w = visible_width(line);
+    if w < width {
+        format!("{line}{}", " ".repeat(width - w))
+    } else {
+        line.to_string()
+    }
+}

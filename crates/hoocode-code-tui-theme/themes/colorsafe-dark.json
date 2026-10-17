@@ -35,7 +35,6 @@
 		"dim": "dimGray",
 		"text": "white",
 		"thinkingText": "gray",
-
 		"selectedBg": "selectedBg",
 		"userMessageBg": "userMsgBg",
 		"userMessageText": "white",
@@ -49,7 +48,6 @@
 		"warningBg": "warningBg",
 		"toolTitle": "white",
 		"toolOutput": "gray",
-
 		"mdHeading": "yellow",
 		"mdLink": "blue",
 		"mdLinkUrl": "dimGray",
@@ -60,11 +58,9 @@
 		"mdQuoteBorder": "orange",
 		"mdHr": "dimGray",
 		"mdListBullet": "sky",
-
 		"toolDiffAdded": "bluishGreen",
 		"toolDiffRemoved": "vermillion",
 		"toolDiffContext": "dimGray",
-
 		"syntaxComment": "dimGray",
 		"syntaxKeyword": "blue",
 		"syntaxFunction": "yellow",
@@ -74,23 +70,25 @@
 		"syntaxType": "purple",
 		"syntaxOperator": "paleGray",
 		"syntaxPunctuation": "paleGray",
-
 		"thinkingOff": "dimGray",
 		"thinkingMinimal": "#d2dcec",
 		"thinkingLow": "blue",
 		"thinkingMedium": "sky",
 		"thinkingHigh": "orange",
 		"thinkingXhigh": "purple",
-
 		"bashMode": "bluishGreen",
-
 		"agent1": "#7fd3f7",
 		"agent2": "#dca0e4",
 		"agent3": "#f2e26b",
 		"agent4": "#f0a3d0",
 		"agent5": "#4fd6b0",
 		"agent6": "#9db8ff",
-		"mcp": "purple"
+		"mcp": "purple",
+		"ink": "white",
+		"faint": "#d0d0d0",
+		"you": "#dca0e4",
+		"vio": "#dca0e4",
+		"gold": "yellow"
 	},
 	"export": {
 		"pageBg": "#0d0f12",

@@ -34,6 +34,12 @@ impl TurnTimer {
         self.started = Some(now);
     }
 
+    /// How long the open prompt has run at `now`; `None` when no prompt is open.
+    pub fn elapsed(&self, now: Instant) -> Option<Duration> {
+        self.started
+            .map(|started| now.saturating_duration_since(started))
+    }
+
     /// The prompt ended at `now`: whether it chimes. False when no prompt is open.
     pub fn end(&mut self, now: Instant, stop_reason: Option<StopReason>) -> bool {
         self.started.take().is_some_and(|started| {
@@ -65,6 +71,23 @@ impl ChimeDebounce {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn elapsed_is_none_without_an_open_prompt() {
+        let timer = TurnTimer::default();
+        assert_eq!(timer.elapsed(Instant::now()), None);
+    }
+
+    #[test]
+    fn elapsed_runs_from_submit() {
+        let mut timer = TurnTimer::default();
+        let start = Instant::now();
+        timer.begin(start);
+        assert_eq!(
+            timer.elapsed(start + Duration::from_secs(12)),
+            Some(Duration::from_secs(12))
+        );
+    }
 
     #[test]
     fn turn_must_run_longer_than_ten_seconds() {

@@ -72,8 +72,9 @@ pub const REQUIRED_COLOR_TOKENS: [&str; 51] = [
 ];
 
 /// Every color property the schema declares, in declaration order, with
-/// whether it is optional.
-const COLOR_PROPERTIES: [(&str, bool); 68] = [
+/// whether it is optional. The trailing ten are the Mission Control chrome
+/// tokens (spec §2.3); they are optional so older custom themes keep loading.
+const COLOR_PROPERTIES: [(&str, bool); 78] = [
     ("accent", false),
     ("border", false),
     ("borderAccent", false),
@@ -142,6 +143,17 @@ const COLOR_PROPERTIES: [(&str, bool); 68] = [
     ("tapeBg", true),
     ("tapeText", true),
     ("activeToolBg", true),
+    // Mission Control chrome (spec §2.3).
+    ("ink", true),
+    ("dim", true),
+    ("faint", true),
+    ("acc", true),
+    ("ok", true),
+    ("err", true),
+    ("warn", true),
+    ("you", true),
+    ("vio", true),
+    ("gold", true),
 ];
 
 /// The optional `export` section.

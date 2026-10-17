@@ -1,0 +1,24 @@
+┏━ ◐ IN FLIGHT · 4s · esc abort ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ app-edit ━┓
+┃ ▸ type to queue the next mission                                                                 ┃
+┗━ peek ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ↑48k ↓9.8k ━┛
+--- styles ---
+r0 c0-1 fg=#5cc8bb
+r0 c3 fg=#5cc8bb
+r0 c5-13 fg=#5cc8bb bold
+r0 c15 fg=#a8a8a8
+r0 c17-18 fg=#989898
+r0 c20 fg=#a8a8a8
+r0 c22-24 fg=#e5e5e7
+r0 c26-30 fg=#989898
+r0 c32-87 fg=#5cc8bb
+r0 c89-96 fg=#5cc8bb
+r0 c98-99 fg=#5cc8bb
+r1 c0 fg=#5cc8bb
+r1 c2-3 fg=#5cc8bb
+r1 c4-33 fg=#a8a8a8
+r1 c99 fg=#5cc8bb
+r2 c0-1 fg=#5cc8bb
+r2 c3-6 fg=#989898
+r2 c8-85 fg=#5cc8bb
+r2 c87-96 fg=#989898
+r2 c98-99 fg=#5cc8bb
