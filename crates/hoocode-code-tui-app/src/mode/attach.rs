@@ -1083,6 +1083,7 @@ mod tests {
         });
         let asked = assistant_at(vec![call], 2);
         let result = AgentMessage::ToolResult(hoocode_ai_types::ToolResultMessage {
+            duration_ms: None,
             tool_call_id: "call_1".into(),
             tool_name: "Read".into(),
             content: vec![Content::text("ok")],

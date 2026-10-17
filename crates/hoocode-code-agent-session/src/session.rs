@@ -801,7 +801,11 @@ impl AgentSession {
                     if let Some(model) = self.model() {
                         crate::provider_health::clear_provider_exhaustion(&model.provider);
                     }
-                    self.on_successful_assistant_response();
+                    if assistant.stop_reason == hoocode_ai_types::StopReason::Aborted {
+                        self.on_aborted_assistant_response();
+                    } else {
+                        self.on_successful_assistant_response();
+                    }
                 }
             }
         }
@@ -841,6 +845,8 @@ impl AgentSession {
                 }
             }
         }
+        // A streak that ends on an error it does not retry is over, failed.
+        self.on_unretried_error(&message);
         self.resolve_retry();
         self.check_compaction(&message, true).await;
     }

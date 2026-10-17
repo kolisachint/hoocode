@@ -49,7 +49,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | How a tool looks in the transcript | `code-tui-widgets/src/tools/` ([ui.md](ui.md)) |
 | A slash command | list: `code-resources/src/slash_commands.rs`; handler: `code-tui-app/src/mode/commands.rs` `run_builtin_command` |
 | Screen goldens: the scenarios, the mock LLM | `scripts/tui/` (`goldens.py`, `mockllm.py`, `scenarios/`); component goldens use the `tui-render` feature `golden` ([ui.md](ui.md)) |
-| Terminal writes (the `hoocode-term-out` thread, one frame in flight), input batching, SIGWINCH | `tui-terminal` (`output.rs`), `tui-render` (`tui.rs`), `runtime` (`signals.rs`); [concurrency.md](../design/concurrency.md) Phase 2 |
+| Terminal writes (the `hoocode-term-out` thread, one frame in flight), input batching, SIGWINCH, SIGTERM and SIGHUP | `tui-terminal` (`output.rs`, `interrupt.rs`), `tui-render` (`tui.rs`), `runtime` (`signals.rs`: `watch_sigwinch`, `watch_terminate`); [concurrency.md](../design/concurrency.md) Phase 2 |
 | Ctrl+C fast path and emergency exit, the ESC timer (no thread on Unix), the UI heartbeat, the panic hook (restore, flush, log, chain) | `tui-terminal` (`interrupt.rs`, `stdin_hub.rs`, `panic_hook.rs`); the UI beats and sets the hook in `code-tui-app` `run`; the panic hook is installed in `code-tui-app` `mode/mod.rs` `install_panic_hook`; [concurrency.md](../design/concurrency.md) Phase 2 |
 | Shell pipes read by async tasks on `hoocode-io` (no thread per pipe) | `code-tool-bash` (`operations.rs`) |
 | Background shell jobs: `Shell` with `run_in_background`, the job registry and its logs, `ShellOutput`, `ShellKill` (opt-in, `enableBackgroundShell`) | `code-tool-bash` (`jobs.rs`, `job_tools.rs`; each job is a Shell-tab row, `set_task_rows`, T5.3; a job's stdout and stderr are its log file, with no pipe); the session's registry is built in `code-cli` `runtime.rs` (`background_job_registry`); completion notices reach the model in `code-agent-session` `services.rs` (`transform_context`) |
@@ -85,7 +85,7 @@ in those tables; the generator keeps each crate's Status by name.
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
 | `home` | The user's home directory and `~` display: one policy for every hoocode crate | 11 | 153 / 0 | keep |
-| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 14 | 2090 / 1265 | keep |
+| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them. `diagnostics`: the stderr sink that keeps stray text off an interactive terminal (used by `ai-util`, `code-rpc`) | 14 | 2090 / 1265 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
@@ -164,7 +164,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 17264 / 5260 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI, including the full-screen HUD row (M1c, `hud.rs`; uses `tui-ratatui`) | 1 | 17264 / 5260 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 776 / 888 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8143 / 3724 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 5 | 2390 / 2557 | keep |
@@ -180,7 +180,8 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 2328 / 291 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1050 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1959 / 583 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2754 / 1997 | keep |
+| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: ratatui widgets drawn into a Buffer, then turned into lines for the Component model (Mission Control step M0) | 1 | 286 / 29 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI, and the full-screen mode (M1: `fullscreen.rs` row arithmetic; the frame in `tui.rs`) | 4 | 2754 / 1997 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3232 / 211 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 14 | 2258 / 611 | keep |
 

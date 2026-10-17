@@ -520,3 +520,49 @@ fn session_tree_fits_within_the_width_and_fills_its_selected_row() {
         }
     }
 }
+
+/// The key-hint row drops whole items from its end when the width is short:
+/// it never ends in `...` and never cuts an item mid-word.
+#[test]
+fn key_hints_drop_whole_items_when_the_width_is_short() {
+    let _g = lock();
+    let tree = branching_pair();
+    let mut s = selector(&tree, "asst-2");
+    let hint_row = |lines: Vec<String>| {
+        lines
+            .into_iter()
+            .map(|l| hoocode_tui_util::strip_vt_control_characters(&l))
+            .find(|l| l.contains("move"))
+            .expect("the key hints render")
+    };
+    let narrow = hint_row(s.render(40));
+    assert!(visible_width(&narrow) <= 40, "{narrow:?}");
+    assert!(!narrow.contains("..."), "{narrow:?}");
+    assert!(narrow.contains("move"), "{narrow:?}");
+    assert!(!narrow.contains("timestamps"), "{narrow:?}");
+
+    let wide = hint_row(s.render(160));
+    assert!(
+        wide.contains("move") && wide.contains("timestamps"),
+        "{wide:?}"
+    );
+}
+
+/// A narrow row whose first hint is styled is cut at its word: the escapes
+/// take no columns, so the hint row (six columns inside the frame) reads
+/// `↑/↓…` and never a run of SGR bytes.
+#[test]
+fn a_styled_first_hint_cut_to_six_columns_keeps_its_word() {
+    let _g = lock();
+    let tree = branching_pair();
+    let mut s = selector(&tree, "asst-2");
+    let lines = s.render(10);
+    let row = lines
+        .iter()
+        .find(|l| hoocode_tui_util::strip_vt_control_characters(l).contains("↑/↓"))
+        .unwrap_or_else(|| panic!("no hint row in {lines:?}"));
+    let plain = hoocode_tui_util::strip_vt_control_characters(row);
+    assert!(plain.contains("↑/↓…"), "{plain:?}");
+    assert!(!plain.contains("move"), "{plain:?}");
+    assert_eq!(visible_width(row), 10, "{plain:?}");
+}

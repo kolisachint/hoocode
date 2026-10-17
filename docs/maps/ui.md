@@ -1,6 +1,6 @@
 # UI map
 
-Where each part of the interactive screen lives. Snapshot of 2026-10-08. Crate names are `hoocode-*` since step 0c
+Where each part of the interactive screen lives. Snapshot of 2026-10-17 (full-screen, M1e). Crate names are `hoocode-*` since step 0c
 ([naming-and-paths.md](../../archive/docs/naming-and-paths.md)). Crates are
 described in [packages.md](packages.md). Names, not line numbers: line numbers drift.
 
@@ -9,19 +9,36 @@ update this page in the same commit.
 
 ## The screen, top to bottom
 
+Full-screen is the default (M1c, `hud.rs`, `mode/mod.rs`). The app runs on the alternate screen and `Tui` draws the frame. Rows top to bottom:
+
 ```
-┌ transcript (re-rendered component tree) ─ messages, tool blocks, notices ────┐
-│ task panel ─ TodoWrite plan items, subagent runs                             │
-│ notification band ─ tips, transient notices, progress bar                    │
-│ ┌ prompt frame ─ editor, autocomplete; pickers and dialogs replace it ─────┐ │
-│ └──────────────────────────────────────────────────────────────────────────┘ │
-└ footer ─ 2 rows: folder, branch, path │ model, context, cost ────────────────┘
+HUD ─ row 1: ◭ HOOCODE  BUILD  folder │ SHIP model  FUEL ctx%  CR $cost   (placeholder, M3 fills it)
+  (gap: one blank row)
+  attach slot ─ the attached subagent's header, when attached (top chrome)
+┌ body ─ header, then transcript (chat). Live: follows the tail. Pinned: holds still ─┐
+│ ...                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+  bar ─ pinned only: position, keys, search. Drawn by Tui between body and bottom
+  pending messages, status, widgets above
+  task panel ─ TodoWrite plan items, subagent runs
+  notification band ─ tips, transient notices, progress bar
+  ┌ prompt frame ─ editor, autocomplete; pickers and dialogs replace it ───────────┐
+  └────────────────────────────────────────────────────────────────────────────────┘
+  footer ─ 2 rows: folder, branch, path │ model, context, cost (kept in full-screen for now; M3 removes the duplicates)
 ```
+
+`HOOCODE_FULLSCREEN=0` turns full-screen off for one run (the env var wins over the `fullscreen` setting, default `true`). Off, the screen is the inline tree with no HUD and no gap: the rows of `mode/mod.rs` `tree_plan(false)` in `hud.rs`. The tree order for both modes is `hud.rs` `tree_plan`; the test that pins it is `tests/it/hud.rs`.
+
+The inline tree (off) from top to bottom: the header, a flex spacer (`screen_fill`), the attach slot, the chat, then the rest as above. The full-screen tree (on): the HUD, a gap, the attach slot (top chrome), the body (header and chat), then the rest as above. Root children before the body are the top chrome, those after it the bottom (`Tui::set_fullscreen_body`).
+
+Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and SIGHUP restore the terminal first, then exit 128 plus the signal (`tui-terminal/src/interrupt.rs`, `install_terminate_restore`, M1e). A UI-thread panic restores it too (the panic hook).
 
 | Region | Component | File |
 |---|---|---|
 | Whole screen, event loop | `InteractiveMode` (`Mode`) | `hoocode-code-tui-app/src/mode/mod.rs` (struct, setup, loop); the rest is split by concern into `mode/*.rs`: `input` (editor and keys), `transcript` (`Transcript`: the chat container and the components that track it; reset replaces it), `events` (agent and session events), `prompt_queue`, `session_ops`, `session_op` (the session operations that run off the UI thread: `SessionOpDone`, `SessionOutcome`, `finish_session_op`), `tree`, `models`, `auth`, `settings`, `dialogs`, `subagents`, `bash`, `clipboard`, `mcp`, `chrome` (footer, title, colour), `commands` (slash commands), `shutdown` (the exit steps after the loop, each with a deadline; concurrency.md §4) |
 | Transcript scroll-back view | scroll view | `hoocode-code-tui-app/src/scroll_view.rs` |
+| Full-screen frame: the alternate screen, the per-row diff, the body window, the bar | `Tui` full-screen mode | `hoocode-tui-render/src/tui.rs` (`paint_fullscreen`, `compose_fullscreen`), row arithmetic in `fullscreen.rs` |
+| HUD row (placeholder: mode, folder, model, context, cost), the setting read, the tree plan | HUD | `hoocode-code-tui-app/src/hud.rs` (`hud_text`, `hud_component`, `fullscreen_enabled`, `tree_plan`); drawn with `hoocode-tui-ratatui` |
 | Startup banner | wordmark | `hoocode-code-tui-app/src/wordmark.rs` |
 | Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
 | Task panel: tabs Plan · Agents · Shell · Schedule · MCP (a tab shows while it has rows), a count per tab; focused (Ctrl+G) it takes the keys in [Task panel](#task-panel) | task panel | `code-tui-widgets/src/task_panel.rs` (tabs, rows, keys); focus and events in `hoocode-code-tui-app/src/mode/task_panel.rs` |
@@ -32,7 +49,7 @@ update this page in the same commit.
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
 | Attached subagent view (T3.3): a header row above the chat (`◂ <type> · <description> · <state> · Esc back`), and the prompt's place with a read-only hint; Esc goes back. The chat shows the run's transcript while attached; the session's is parked and kept up to date | attached view | `code-tui-widgets/src/attach_view.rs` (header, hint). The swap, the routing and the run's events: `hoocode-code-tui-app/src/mode/attach.rs`; the header's slot is `Mode::attach_slot` (above the chat) |
 | Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `mode/input.rs` `setup_autocomplete_provider`. `@file` uses the in-process finder `hoocode-code-tools::file_finder`, injected by `mode/input.rs` `at_file_finder` (no `fd`) and run on a worker thread (`autocomplete/file_search.rs`): typing never waits, and the editor re-asks when a walk finishes (`take_ready`). |
-| Footer | footer, footer data. Always two rows: row 1 folder, branch, session, path, then mode chip and view dial; row 2 model, context gauge, tokens, cost. Compact keeps both rows. Transient messages show above the prompt, not in the footer: a warning line (memory shedding, UI stall), extension statuses and startup progress, read with `FooterComponent::transient_lines`. The warning is set by `mode/mod.rs` `sync_runtime_health` | `hoocode-code-tui-app/src/footer.rs`, `footer_data.rs` |
+| Footer | footer, footer data. Always two rows: row 1 folder, branch, session, path, then mode chip and view dial; row 2 model, context gauge, tokens, cost. Compact keeps both rows. Transient messages show above the prompt, not in the footer: a warning line (memory shedding, UI stall), the auto-retry notice (`retrying · attempt 2 of 6 · …`, set from `AutoRetryStart` and cleared by `AutoRetryEnd` in `mode/events.rs` through `set_retry_notice`), extension statuses and startup progress, read with `FooterComponent::transient_lines`. The warning is set by `mode/mod.rs` `sync_runtime_health` | `hoocode-code-tui-app/src/footer.rs`, `footer_data.rs` |
 | Session chip | session chip | `code-tui-widgets/src/session_chip.rs` |
 | How much room chrome gets (two stops: full, compact; `/chrome <full\|compact>`, `Alt+Z` / `Shift+Alt+Z` toggle) | chrome layout | `hoocode-code-tui-app/src/chrome_layout.rs` |
 
@@ -44,7 +61,8 @@ update this page in the same commit.
 | Assistant message (markdown, thinking) | `assistant_message.rs` → `tui-components/src/markdown/` |
 | Custom and branch-summary messages | `custom_message.rs` |
 | One tool call's block | `tool_execution.rs` |
-| A run of tool calls on one line; radar view | `tool_chain.rs`, `tool_chain_summary.rs`, `tool_signal.rs` |
+| A run of tool calls on one line; radar view (the live radar line, its failure rows, the chain's labels and stats) | `tool_chain.rs`, `tool_chain_summary.rs` |
+| One call's signal row (a block drawn alone in radar); the call subject helpers `tool_subject`, `chain_subject` | `tool_signal.rs` |
 | Dial: radar ↔ peek (Ctrl+O toggles, persisted). `peek_block` is the shared peek body | `tool_output_view.rs` |
 | `<skill …>` block of a `/skill:name` message (radar row / peek body) | `skill_block.rs` |
 | Background-run notice (radar row / peek body) | `background_notice.rs` |
@@ -52,6 +70,7 @@ update this page in the same commit.
 | Diffs | `diff.rs`, `jsdiff.rs` |
 | File content with line numbers | `read_output.rs` |
 | Notice rows (`showRecord`) | `hoocode-code-tui-app/src/record_row.rs` |
+| Failed Model block (`⊗ Model`, one per retry streak that gave up or was cancelled; the failed attempts' own rows are taken out of the chat) | `hoocode-code-tui-app/src/mode/retry.rs` (built on the chat from `AutoRetryStart` / `AutoRetryEnd` in `mode/events.rs`) |
 
 ### Tool renderers (`code-tui-widgets/src/tools/`)
 
@@ -61,7 +80,8 @@ update this page in the same commit.
 | `ShellOutput`, `ShellKill` (opt-in) | none: the default block. Their jobs show in the Shell tab (T5.3) |
 | `Read` (and skills) | `read.rs` |
 | `Edit` | `edit.rs` |
-| `Write` | `write.rs` |
+| `Write` | `write.rs`: the content previews under the header while there is no result; the result (numbered content, or the error) is then the one copy |
+| `TodoWrite` (opt-in) | `todo.rs`: one header row (`TodoWrite  3 items · 1 done`). The plan shows in the task panel |
 | `CodeSearch` | `search.rs` |
 | `Agent`, `AgentOutput` (subagents) | `subagent.rs`. An Agent block's result slot shows its run's live tail (the newest 5 rows, peek) while the run goes, else its result. The tail and the run lookup are `hoocode-code-subagents` `live.rs` (`tail`, `is_running`, `run_for_tool_call`); the block is fed by `mode/subagents.rs` `apply_subagent_event`. `app.subagent.attach` (Ctrl+N, at the prompt) attaches to the newest Agent block's run (`mode/attach.rs` `attach_newest_agent_block`) |
 | Plugin tools | `plugins.rs` |
@@ -84,7 +104,7 @@ Every picker moves its cursor with `PickerCursor` (`tui-components/src/picker_cu
 | `/agents` | subagent runs of this session (running, done, interrupted), one row each; Enter attaches to the chosen run | `show_selector` (`ExtensionSelectorComponent`); the rows are read on the tools pool by `mode/attach.rs` `list_runs`, then `agent_runs_listed` opens the picker and `AppEvent::AttachPicked` attaches |
 | `/resume` | session picker | `session_selector.rs`, `session_selector_search.rs`. Subagent runs (`<session>/subagents/`) are rows under their parent in the threaded view, added by the loaders in `hoocode-code-tui-app/src/session_picker.rs` (`with_subagent_runs`, from `list_subagent_sessions` in `code-session`). A row reads `<type> · <complete\|failed\|…>`, `running` or `interrupted`. A search, or a non-threaded sort, lists the parent rows only. Enter on an `interrupted` run opens a choice: `v` views its transcript, `r` resumes it (`SubagentRunRef` to `pool.resume` in `hoocode-code-tui-app/src/mode/subagents.rs`; in-session picker only), esc backs out. Deleting a session deletes its `subagents/` dir. |
 | `--resume` on the command line | session picker on its own TUI | `hoocode-code-tui-app/src/session_picker.rs` |
-| `/tree` | session tree | `tree_selector.rs` |
+| `/tree` | session tree | `tree_selector.rs` (the key-hint row drops whole items from its end when narrow) |
 | `/fork` | pick a user message | `user_message_selector.rs` |
 | MCP trust prompt (once per process, at startup, when a project or plugin declares MCP servers) | the permission selector (`TuiPermissionUi`, `DialogRequest::Select`); asked on a thread by `mode/mcp.rs` `ask_mcp_trust`, answered as `MCP_TRUST_YES` / `MCP_TRUST_NO`; the grant runs `McpHub::grant` (trust store, then start) |
 | `/login`, `/logout` | provider pickers, login dialog | `oauth_selector.rs`, `login_dialog.rs`; flow in `hoocode-code-tui-app/src/login_controller.rs` |
@@ -133,16 +153,31 @@ The TUI owns the mechanism; the app owns which key does what.
 - Pinning works from any focus. Picker keys never un-pin.
 - PgDn past the bottom, or the wheel reaching the bottom, returns to live.
 - Status row (bottom): position, then the keys: line, `PgUp/PgDn page`, top, live. Search has its own text.
+  The line keys are `↑/↓` over an empty prompt and `shift+↑/shift+↓` while the prompt holds text.
+- Full-screen and mouse reporting on (the default): a plain drag does not select text. Selection is shift+drag.
+- The view pinned on a message keeps that message on top when the tool output view (ctrl+o) changes rows.
+  A rebuild of the transcript (`/new`, `/resume`, the thinking toggle, ctrl+t) goes live.
+- Full-screen (M1d, the default): the body is the transcript (header and chat). The bar row sits above the bottom,
+  and carries `↓ N new` while pinned: lines that arrived since the view last pinned or moved. A shorter transcript
+  (a clear) starts the count again. The scrollbar column is always reserved (blank while live, so pinning does not
+  reflow), and its glyphs are drawn per body row while pinned. Search marks its matches in the body. A focused
+  picker replaces the bottom rows while pinned. A body image whose picture would reach above the body is named
+  `[image]`.
 
 **Files**
 
 | Concern | Where |
 |---|---|
 | Pin, clamp, page, live, search, wheel, scrollbar click, picker split, paint | `tui-render/src/tui.rs`: `scroll_by_lines`, `scroll_by_pages`, `scroll_to_top`, `scroll_to_live`, `scroll_to_row`, `transcript_width`, `pinned_split`, `press_scrollbar`, `render_scroll_view`, `handle_mouse_event` |
+| Full-screen scroll (M1d): body window, bar with `N new`, scrollbar column, picker rows, search marks, image clip | `tui-render/src/tui.rs`: `compose_fullscreen`, `body_row`, `region_row`, `fullscreen_regions`, `fullscreen_measure` (before the first frame) |
 | Scrollbar glyphs (pure), `SCROLLBAR_THUMB`, `SCROLLBAR_TRACK` | `tui-render/src/scrollbar.rs` |
+| Full-screen mode (M1): alternate screen for the run, one frame composed from regions, per-row diff, no scrollback writes. Off by default (`Tui::set_fullscreen`); the app's default and `HOOCODE_FULLSCREEN` come in M1c | `tui-render/src/tui.rs`: `set_fullscreen`, `set_fullscreen_body`, `paint_fullscreen`, `compose_fullscreen`, `start`, `stop` |
+| Stray stderr text (a TLS warning, child output, a reload warning, an extension handler error) while the TUI owns the terminal: it goes to the debug log. Every such write goes through `write_stderr` | `hoocode-runtime/src/diagnostics.rs` (`write_stderr`); sink installed in `run` (`mode/mod.rs`) |
+| Full-screen row arithmetic (pure): `split_rows`, `body_start`, `bottom_window`, `anchor_on_resize`, `body_width`, `new_lines_since` | `tui-render/src/fullscreen.rs` |
 | Prompt focus: `Tui.scroll_prompt`. Any other focus is a picker (`scroll_pane`) | `tui-render/src/tui.rs`; set in `install_scroll_view` |
 | Key routing, search, status text, keys at the prompt | `hoocode-code-tui-app/src/scroll_view.rs`: `handle_live`, `handle_picker`, `handle_input`, `format_scroll_status`, `install_scroll_view` |
-| Jump to user message | `scroll_view.rs` `jump_to_user_message`, at `transcript_width()` |
+| Keeping the pinned top on its message across a change of rows | `scroll_view.rs`: `capture_top`, `reanchor_top` (called from `apply_tool_output_view` in `mode/transcript.rs`) |
+| Jump to user message (full-screen: offsets inside the body; inline: among the root's children) | `scroll_view.rs` `jump_to_user_message`, at `transcript_width()` |
 
 **Key routing**
 
@@ -152,19 +187,20 @@ The TUI owns the mechanism; the app owns which key does what.
 | Ctrl+Home / Ctrl+End | Top / live | Same |
 | Wheel | Scroll; wheel up pins | Same |
 | Scrollbar click | Pinned only: page toward the click | Same |
-| ↑ / ↓ | Pinned: one line. Live: the prompt | Picker |
+| ↑ / ↓ | Pinned: one line over an empty prompt; with text, the prompt. Live: the prompt | Picker |
+| Shift+↑ / Shift+↓ | Live: Shift+↑ pins one line up; Shift+↓ does nothing. Pinned: one line | Picker |
 | Ctrl+↑ / Ctrl+↓ | Previous / next user message | Picker |
 | Ctrl+R | Pin at bottom, open search | Picker |
 | `/` | Pinned: search in view. Live: types `/` | Picker |
 | `n` / `p` | Search open: next / previous match. Else the prompt | Picker |
-| Esc | Search open: clear it. Else live | Picker |
+| Esc | Search open: clear it. Else live; during an agent run, also aborts it | Picker |
 | Enter, typed text | Search open: the query (Enter commits). Else pinned: back to live, then the prompt | Picker, never un-pins |
 
 A key that is not a scroll key un-pins at the prompt, then does its usual job.
 
 ## Task panel
 
-One tab per kind of task: **Plan** (TodoWrite items, each linked run nested under its item), **Agents** (the subagent forest), **Schedule** (scheduled jobs, one row each, with `next in …`), **Shell** (background shell jobs, one row each: running with Abort, then done, failed with its exit status, or killed; the rows are `shell:<id>`, published by `hoocode-code-tool-bash` `jobs.rs`), **MCP** (MCP servers and calls). A tab shows only while it has rows. Unfocused, the panel shows the current tab's rows and one count per tab on the strip (`Plan 1/3  Agents 1/1`). Adding a kind means a `TaskPanelView` variant, its label, and a rule in `lens_rows`.
+One tab per kind of task: **Plan** (TodoWrite items, each linked run nested under its item), **Agents** (the subagent forest), **Schedule** (scheduled jobs, one row each, with `next in …`), **Shell** (background shell jobs, one row each: running with Abort, then done, failed with its exit status, or killed; the rows are `shell:<id>`, published by `hoocode-code-tool-bash` `jobs.rs`), **MCP** (MCP servers and calls). A tab shows only while it has rows. Unfocused, the panel shows the current tab's rows and one count per tab on the strip (`Plan 1/3  Agents 1/1`). In the compact density (`Summary`, one row) it shows the plan line on the left (`Plan 3/5  ◐ <running item>`, cut with `…`) and the other tabs' counts on the right; the plan is rebuilt from the session's last successful TodoWrite on resume, reload and tree navigation (`restore_plan` in `hoocode-code-tools-optin`, called from `render_initial_messages`). Adding a kind means a `TaskPanelView` variant, its label, and a rule in `lens_rows`.
 
 | Concern | Where |
 |---|---|
@@ -225,7 +261,7 @@ A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs
 | Concern | Crate / file |
 |---|---|
 | Differential renderer, frames, pinned scroll view, scrollbar | `tui-render/src/tui.rs`, `component.rs`, `scrollbar.rs` |
-| Terminal: raw mode, stdin reader, resize (SIGWINCH), mouse | `tui-terminal/src/lib.rs`, `stdin_buffer.rs`, `mouse.rs` |
+| Terminal: raw mode, stdin reader, resize (SIGWINCH), mouse, SIGTERM and SIGHUP restore | `tui-terminal/src/lib.rs`, `stdin_buffer.rs`, `mouse.rs`, `interrupt.rs` |
 | Terminal output: every write, in order; one pending frame | `tui-terminal/src/output.rs` (`hoocode-term-out`) |
 | Key parsing (Kitty, modifyOtherKeys), matching | `tui-keys` |
 | App key map, `keybindings.json`, hint text | `code-tui-keybindings` |

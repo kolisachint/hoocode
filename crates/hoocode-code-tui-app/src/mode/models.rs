@@ -171,6 +171,7 @@ impl Mode {
             Some(result) => {
                 self.footer.borrow_mut().invalidate();
                 self.update_editor_border_color();
+                self.dirty.set(true);
                 let thinking =
                     if result.model.reasoning && result.thinking_level != ThinkingLevel::Off {
                         format!(" (thinking: {})", result.thinking_level.as_str())
@@ -216,6 +217,8 @@ impl Mode {
             Ok(()) => {
                 self.footer.borrow_mut().invalidate();
                 self.update_editor_border_color();
+                // The HUD shows the model: the frame must follow it.
+                self.dirty.set(true);
                 self.show_status(&format!("Model: {}", model.id));
                 self.maybe_warn_about_anthropic_subscription_auth(Some(model));
             }

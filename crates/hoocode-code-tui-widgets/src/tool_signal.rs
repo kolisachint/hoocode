@@ -86,6 +86,21 @@ fn radar_target(args: &Value, cwd: &str) -> String {
     truncate_to_width(first, RADAR_TARGET_WIDTH, "…", false)
 }
 
+/// The subject a chain line names a call by. An Agent call is named by its
+/// description; its prompt is the whole brief and would fill the row.
+pub fn chain_subject(tool: &str, args: &Value, cwd: &str) -> String {
+    if tool == "Agent" {
+        if let Some(description) = args.get("description").and_then(Value::as_str) {
+            if !description.trim().is_empty() {
+                let mut record = serde_json::Map::new();
+                record.insert("description".into(), Value::String(description.into()));
+                return tool_subject(&Value::Object(record), cwd);
+            }
+        }
+    }
+    tool_subject(args, cwd)
+}
+
 /// `toolSubject`: the single most identifying argument, on one line.
 pub fn tool_subject(args: &Value, cwd: &str) -> String {
     let display = subject_source(args, cwd);

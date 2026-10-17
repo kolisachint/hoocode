@@ -373,6 +373,23 @@ fn finished_tasks_show_combined_token_usage_per_row() {
 }
 
 #[test]
+fn a_finished_task_says_its_count_is_tokens() {
+    let _g = lock();
+    let d = create("Tiny lookup");
+    task_store().update(
+        d,
+        TaskPatch {
+            status: Some(TaskStatus::Done),
+            usage: Some(usage(100.0, 20.0, 0.0)),
+            ..Default::default()
+        },
+    );
+    let lines = render(&mut TaskPanelComponent::new(), 120);
+    let row = find(&lines, "Tiny lookup");
+    assert!(row.contains("120 tokens"), "{row}");
+}
+
+#[test]
 fn the_pane_carries_no_turn_token_or_cost_delta() {
     let _g = lock();
     let a = create_with("Explore module", sub("explore"));
@@ -1309,4 +1326,76 @@ fn the_tick_runs_while_any_row_in_any_tab_is_running() {
     set(plan, TaskStatus::Done);
     render(&mut panel, 120);
     assert!(!panel.ticking());
+}
+
+/// The compact row (Summary density, unfocused): the plan on the left with
+/// its running item, the other tabs' counts on the right, the width asked for.
+#[test]
+fn summary_row_shows_the_plan_line_and_the_other_counts() {
+    let _g = lock();
+    let done = task_store().create("Read the parser", CreateTaskOptions::default());
+    task_store().update(
+        done.id,
+        TaskPatch {
+            status: Some(TaskStatus::Done),
+            ..Default::default()
+        },
+    );
+    let running = task_store().create("Add CJK width fixtures", CreateTaskOptions::default());
+    task_store().update(
+        running.id,
+        TaskPatch {
+            status: Some(TaskStatus::InProgress),
+            ..Default::default()
+        },
+    );
+    task_store().create(
+        "explore the tree",
+        CreateTaskOptions {
+            source: Some(TaskSource::Subagent),
+            ..Default::default()
+        },
+    );
+    let mut panel = TaskPanelComponent::new();
+    panel.set_density(TaskPanelDensity::Summary);
+    let lines = panel.render(60);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let plain = strip(&lines[0]);
+    assert!(
+        plain.contains("Plan 1/2  ◐ Add CJK width fixtures"),
+        "{plain:?}"
+    );
+    assert!(plain.contains("Agents 0/1"), "{plain:?}");
+    assert_eq!(visible_width(&lines[0]), 60, "{plain:?}");
+}
+
+/// A long running item is cut at a word, and the counts still fit.
+#[test]
+fn summary_row_cuts_a_long_running_item_at_a_word() {
+    let _g = lock();
+    let running = task_store().create(
+        "Add CJK width fixtures to the table tests",
+        CreateTaskOptions::default(),
+    );
+    task_store().update(
+        running.id,
+        TaskPatch {
+            status: Some(TaskStatus::InProgress),
+            ..Default::default()
+        },
+    );
+    task_store().create(
+        "explore",
+        CreateTaskOptions {
+            source: Some(TaskSource::Subagent),
+            ..Default::default()
+        },
+    );
+    let mut panel = TaskPanelComponent::new();
+    panel.set_density(TaskPanelDensity::Summary);
+    let lines = panel.render(40);
+    let plain = strip(&lines[0]);
+    assert!(plain.contains("Plan 0/1  ◐ Add CJK…"), "{plain:?}");
+    assert!(plain.contains("Agents 0/1"), "{plain:?}");
+    assert_eq!(visible_width(&lines[0]), 40, "{plain:?}");
 }

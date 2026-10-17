@@ -1,0 +1,30 @@
+[package]
+name = "hoocode-tui-ratatui"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = true
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-tui-render = { workspace = true }
+ratatui-core = { version = "0.1", default-features = false }
+ratatui-widgets = { version = "0.3", default-features = false }
+
+[dev-dependencies]
+# Golden snapshots (`assert_golden!`, tests/golden/<crate>/).
+hoocode-tui-render = { workspace = true, features = ["golden"] }
+
+# Byte-index slices of text are a panic risk on multi-byte input (see docs/design/reliability.md, 1.5).
+[lints.clippy]
+string_slice = "warn"

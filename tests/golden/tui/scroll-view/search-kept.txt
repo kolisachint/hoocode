@@ -1,5 +1,5 @@
-«» «fg=#5cc8bb»- «»beta item 14                                                                                    ░
-«» «fg=#5cc8bb»- «»beta item 15                                                                                    ░
+«»◭ HOOCODE  BUILD  work                                            SHIP mock-model  FUEL 0%  CR $0.00
+
 «» «fg=#5cc8bb»- «»beta item 16                                                                                    ░
 «» «fg=#5cc8bb»- «»beta item 17                                                                                    ░
 «» «fg=#5cc8bb»- «»beta item 18                                                                                    ░
@@ -11,10 +11,10 @@
 «» «fg=#5cc8bb»- «»beta item 24                                                                                    ░
 «» «fg=#5cc8bb»- «fg=#5cc8bb;inverse»beta item 25«»                                                                                    ░
 «»                                                                                                   ░
-«» «fg=#989898»↑«fg=#a8a8a8»100«fg=#989898» ↓«fg=#a8a8a8»20«fg=#989898» · «fg=#a8a8a8»<DUR>«»                                                                                   ░
-«»                                                                                                   ░
-«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐┃
-«fg=#757575»│«» ❯ «inverse» «»                                                                                             «fg=#757575»│«»┃
-«fg=#757575»└─────────────────────────────────────────────────────────────────────────────────────────────────┘«»┃
-«bold;fg=#5cc8bb»BUILD«»  «fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«»  «fg=#a8a8a8»mock-model«»  «bold»work«»  «fg=#989898»◍ peek«»                                                     ┃
+«» «fg=#989898»↑«fg=#a8a8a8»100«fg=#989898» ↓«fg=#a8a8a8»20«fg=#989898» · «fg=#a8a8a8»<DUR>«»                                                                                   ┃
 «inverse» search: beta item 25  1/1                                                   n/p step · escape done
+
+«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
+«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
+«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»BUILD«»  «fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«»  «fg=#a8a8a8»mock-model«»  «bold»work«»  «fg=#989898»◍ peek

@@ -155,6 +155,8 @@ const SCROLL_SCOPE: &[&str] = &[
     "app.scroll.lineDown",
     "app.scroll.previousMessage",
     "app.scroll.nextMessage",
+    "app.scroll.shiftLineUp",
+    "app.scroll.shiftLineDown",
     "app.scroll.pageUp",
     "app.scroll.pageDown",
     "app.scroll.top",
@@ -284,9 +286,12 @@ fn checks_every_binding_in_some_scope() {
     assert_eq!(unchecked, Vec::<&str>::new());
 }
 
-/// A key a terminal without the Kitty protocol can actually send.
+/// A key a terminal without the Kitty protocol can actually send. Shift+tab
+/// is the one shifted key every terminal sends. Shift+up and shift+down are
+/// the xterm form of the arrows (`ESC [ 1 ; 2 A`/`B`), which terminals send
+/// without Kitty too.
 fn reachable_without_kitty(key: &str) -> bool {
-    !key.starts_with("shift+") || key == "shift+tab"
+    !key.starts_with("shift+") || matches!(key, "shift+tab" | "shift+up" | "shift+down")
 }
 
 #[test]
@@ -563,7 +568,7 @@ fn families() -> Vec<(&'static str, Regex)> {
         ("Steer", r"^app\.(mode|model)\.|^app\.thinking\.cycle"),
         ("Read", r"^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|panel\.focus$)"),
         ("Screen", r"^app\.chrome\."),
-        ("Scroll", r"^app\.scroll\.(pageUp|pageDown|top|bottom|previousMessage|nextMessage|search)$"),
+        ("Scroll", r"^app\.scroll\.(pageUp|pageDown|top|bottom|previousMessage|nextMessage|shiftLineUp|shiftLineDown|search)$"),
         ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)"),
         (
             "Overlays",

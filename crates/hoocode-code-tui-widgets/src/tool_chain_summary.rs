@@ -163,14 +163,12 @@ pub fn chain_segments(entries: &[ChainEntry]) -> Vec<ChainSegment> {
 }
 
 fn plural(n: usize, one: &str) -> String {
-    format!(
-        "{n} {}",
-        if n == 1 {
-            one.to_string()
-        } else {
-            format!("{one}s")
-        }
-    )
+    plural_of(n, one, &format!("{one}s"))
+}
+
+/// `n` of a noun whose plural is not `one` + "s" (`fetch`, `fetches`).
+fn plural_of(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
 }
 
 /// The flush-right stats for either rendering.
@@ -252,7 +250,9 @@ fn subagent_stats(entries: &[ChainEntry], state: ChainState) -> String {
 struct ToolFamily {
     verb: &'static str,
     noun: &'static str,
+    nouns: &'static str,
     tail: &'static str,
+    tails: &'static str,
     tools: &'static [&'static str],
     subject_is_path: bool,
     act: Option<fn(&str) -> String>,
@@ -275,11 +275,13 @@ fn command_act(subject: &str) -> String {
 }
 
 /// Tool families, in the order a settled chain reports them.
-const FAMILIES: [ToolFamily; 6] = [
+const FAMILIES: [ToolFamily; 7] = [
     ToolFamily {
         verb: "Edited",
         noun: "file",
+        nouns: "files",
         tail: "edit",
+        tails: "edits",
         tools: &["Edit", "Write", "MultiEdit", "NotebookEdit"],
         subject_is_path: true,
         act: None,
@@ -287,7 +289,9 @@ const FAMILIES: [ToolFamily; 6] = [
     ToolFamily {
         verb: "Ran",
         noun: "command",
+        nouns: "commands",
         tail: "command",
+        tails: "commands",
         tools: &["Shell"],
         subject_is_path: false,
         act: Some(command_act),
@@ -295,7 +299,9 @@ const FAMILIES: [ToolFamily; 6] = [
     ToolFamily {
         verb: "Delegated",
         noun: "task",
+        nouns: "tasks",
         tail: "task",
+        tails: "tasks",
         tools: &SUBAGENT_TOOLS,
         subject_is_path: false,
         act: None,
@@ -303,15 +309,29 @@ const FAMILIES: [ToolFamily; 6] = [
     ToolFamily {
         verb: "Fetched",
         noun: "page",
+        nouns: "pages",
         tail: "fetch",
-        tools: &["WebFetch", "WebSearch"],
+        tails: "fetches",
+        tools: &["WebFetch"],
+        subject_is_path: false,
+        act: None,
+    },
+    ToolFamily {
+        verb: "Searched",
+        noun: "web search",
+        nouns: "web searches",
+        tail: "web search",
+        tails: "web searches",
+        tools: &["WebSearch"],
         subject_is_path: false,
         act: None,
     },
     ToolFamily {
         verb: "Read",
         noun: "file",
+        nouns: "files",
         tail: "read",
+        tails: "reads",
         tools: &["Read"],
         subject_is_path: true,
         act: None,
@@ -319,7 +339,9 @@ const FAMILIES: [ToolFamily; 6] = [
     ToolFamily {
         verb: "Searched",
         noun: "search",
+        nouns: "searches",
         tail: "search",
+        tails: "searches",
         tools: &["CodeSearch"],
         subject_is_path: true,
         act: None,
@@ -386,7 +408,6 @@ fn family_phrase(family: &ToolFamily, matched: &[&ChainEntry], long: bool) -> St
     } else {
         0
     };
-    let count = if units > 0 { units } else { matched.len() };
     let subjects: Vec<String> = matched
         .iter()
         .map(|e| match family.act {
@@ -396,6 +417,15 @@ fn family_phrase(family: &ToolFamily, matched: &[&ChainEntry], long: bool) -> St
         .filter(|s| !s.is_empty())
         .collect();
     let distinct: BTreeSet<&String> = subjects.iter().collect();
+    // A file family counts files: a file touched twice is one file. Calls with
+    // no subject each count on their own.
+    let count = if units > 0 {
+        units
+    } else if family.subject_is_path {
+        distinct.len() + (matched.len() - subjects.len())
+    } else {
+        matched.len()
+    };
     // A task group counts its tasks even when the calls share a subject.
     if units == 0 && subjects.len() == matched.len() && distinct.len() == 1 {
         return format!("{} {}", family.verb, subjects[0]);
@@ -416,7 +446,11 @@ fn family_phrase(family: &ToolFamily, matched: &[&ChainEntry], long: bool) -> St
     if family.noun == "search" {
         return "Explored".into();
     }
-    format!("{} {}", family.verb, plural(count, family.noun))
+    format!(
+        "{} {}",
+        family.verb,
+        plural_of(count, family.noun, family.nouns)
+    )
 }
 
 fn family_matches<'a>(entries: &'a [ChainEntry], family: &ToolFamily) -> Vec<&'a ChainEntry> {
@@ -482,11 +516,24 @@ pub fn chain_phrase(entries: &[ChainEntry]) -> String {
 
     let matched = per_family.swap_remove(chosen);
     let head = family_phrase(&FAMILIES[chosen], &matched, long);
-    if !long || matched.len() as f64 / entries.len() as f64 >= 0.5 {
-        return head;
+    let mut phrase = if !long || matched.len() as f64 / entries.len() as f64 >= 0.5 {
+        head
+    } else {
+        match largest_other_family(entries, chosen) {
+            Some((family, count)) => format!(
+                "{head} · {}",
+                plural_of(count, FAMILIES[family].tail, FAMILIES[family].tails)
+            ),
+            None => head,
+        }
+    };
+    // Calls outside every family (MCP, unknown tools) still count in the headline.
+    let others = entries
+        .iter()
+        .filter(|e| !FAMILIES.iter().any(|f| f.tools.contains(&e.tool.as_str())))
+        .count();
+    if others > 0 {
+        phrase.push_str(&format!(" · {}", plural(others, "other call")));
     }
-    match largest_other_family(entries, chosen) {
-        Some((family, count)) => format!("{head} · {}", plural(count, FAMILIES[family].tail)),
-        None => head,
-    }
+    phrase
 }

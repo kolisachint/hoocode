@@ -506,7 +506,7 @@ impl DefaultResourceLoader {
         let (base, warning) =
             resolve_prompt_input(self.options.system_prompt.as_deref(), "system prompt");
         if let Some(w) = warning {
-            eprintln!("\x1b[33m{w}\x1b[39m");
+            hoocode_runtime::diagnostics::write_stderr(&format!("\x1b[33m{w}\x1b[39m\n"));
         }
         self.system_prompt = match &self.options.system_prompt_override {
             Some(f) => f(base),
@@ -521,7 +521,7 @@ impl DefaultResourceLoader {
             .filter_map(|s| {
                 let (value, warning) = resolve_prompt_input(Some(s), "append system prompt");
                 if let Some(w) = warning {
-                    eprintln!("\x1b[33m{w}\x1b[39m");
+                    hoocode_runtime::diagnostics::write_stderr(&format!("\x1b[33m{w}\x1b[39m\n"));
                 }
                 value
             })

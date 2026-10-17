@@ -334,6 +334,11 @@ pub struct ToolResultMessage {
     /// Unix time in milliseconds.
     #[serde(default)]
     pub timestamp: i64,
+    /// How long the call ran, in milliseconds, set by the agent loop. Kept
+    /// out of the serialized message (the JSON and RPC streams and the session
+    /// file do not carry it); a transcript rebuilt in the same session reads it.
+    #[serde(skip)]
+    pub duration_ms: Option<u64>,
 }
 
 /// Union of all message types, tagged by `role`.
@@ -1014,6 +1019,7 @@ mod wire_tests {
     #[test]
     fn messages_are_tagged_by_role_in_camel_case() {
         let m = Message::ToolResult(ToolResultMessage {
+            duration_ms: None,
             tool_call_id: "c1".into(),
             tool_name: "Read".into(),
             content: vec![Content::text("x")],

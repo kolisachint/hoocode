@@ -238,6 +238,7 @@ fn turn_end_and_agent_end_carry_role_tagged_messages() {
         StopReason::ToolUse,
     );
     let tool_result = ToolResultMessage {
+        duration_ms: None,
         tool_call_id: "call_read_1".into(),
         tool_name: "Read".into(),
         content: vec![text("alpha")],

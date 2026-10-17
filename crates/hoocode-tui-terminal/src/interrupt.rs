@@ -135,6 +135,28 @@ fn emergency(previous: Option<Instant>, now: Instant, ui_stalled: bool) -> bool 
         && previous.is_some_and(|prev| now.saturating_duration_since(prev) <= EMERGENCY_WINDOW)
 }
 
+/// Set by [`install_terminate_restore`]: the watch stays alive for the process.
+#[cfg(unix)]
+static TERMINATE_WATCH: OnceLock<hoocode_runtime::SignalWatch> = OnceLock::new();
+
+/// `SIGTERM` and `SIGHUP` restore the terminal, flush the session (bounded) and
+/// exit with 128 plus the signal, as the emergency exit does. Without this the
+/// process dies on the alternate screen, which the full-screen TUI keeps. Idempotent.
+#[cfg(unix)]
+pub fn install_terminate_restore() {
+    if TERMINATE_WATCH.get().is_some() {
+        return;
+    }
+    let watch = hoocode_runtime::watch_terminate("hoocode-terminate", |signal| {
+        restore_terminal();
+        let _ = hoocode_runtime::session_io().flush_blocking(EMERGENCY_FLUSH);
+        std::process::exit(128 + signal);
+    });
+    if let Ok(watch) = watch {
+        let _ = TERMINATE_WATCH.set(watch);
+    }
+}
+
 /// Restores the terminal, flushes the session (bounded) and exits 130.
 fn emergency_exit() -> ! {
     restore_terminal();

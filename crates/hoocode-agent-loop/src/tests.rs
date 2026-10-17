@@ -1580,3 +1580,33 @@ async fn parallel_cap_with_ordered_start_tools_does_not_deadlock() {
         );
     }
 }
+
+/// Each tool result message records how long its call ran, so a transcript
+/// rebuilt in the same session can show the duration the live path showed.
+#[tokio::test]
+async fn tool_result_messages_store_the_call_duration() {
+    let slow = tool("slow", |_args| {
+        std::thread::sleep(Duration::from_millis(60));
+        Ok(echo_result("slow: ", &serde_json::json!({"value": "x"})))
+    });
+    let mut config = identity_config();
+    mock_stream(&mut config, |n, _| match n {
+        0 => tool_calls(&[("tool-1", "slow", serde_json::json!({"value": "x"}))]),
+        _ => text("done"),
+    });
+    let (_, messages) = collect(agent_loop(
+        vec![user("run it")],
+        context_with(vec![slow]),
+        config,
+    ))
+    .await;
+
+    let ms = messages
+        .iter()
+        .find_map(|m| match m {
+            AgentMessage::ToolResult(r) => r.duration_ms,
+            _ => None,
+        })
+        .expect("a tool result message with a duration");
+    assert!(ms >= 50, "duration {ms} ms should cover the 60 ms run");
+}

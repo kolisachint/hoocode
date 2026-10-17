@@ -71,16 +71,20 @@ pub fn format_duration_secs(secs: f64) -> String {
     if s < 10.0 {
         return format!("{}s", js_to_fixed(s, 1));
     }
-    if s < 60.0 {
-        return format!("{}s", js_round(s));
+    // Round the whole first, then split: rounding the minutes and the hours
+    // apart printed 3h59.5m as "3h60m" and 119.6s as "1m60s".
+    let whole = js_round(s);
+    if whole < 60.0 {
+        return format!("{whole}s");
     }
-    if s < 3600.0 {
-        let mins = (s / 60.0).floor();
-        let rem = js_round(s % 60.0);
+    if whole < 3600.0 {
+        let mins = (whole / 60.0).floor();
+        let rem = whole % 60.0;
         return format!("{mins}m{rem:02}s");
     }
-    let hrs = (s / 3600.0).floor();
-    let rem_mins = js_round((s % 3600.0) / 60.0);
+    let mins = js_round(s / 60.0);
+    let hrs = (mins / 60.0).floor();
+    let rem_mins = mins % 60.0;
     format!("{hrs}h{rem_mins:02}m")
 }
 

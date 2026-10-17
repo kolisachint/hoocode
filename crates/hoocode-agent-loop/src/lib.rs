@@ -16,6 +16,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, Instant};
 
 use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
@@ -504,6 +505,9 @@ struct FinalizedOutcome {
     tool_call: AgentToolCall,
     result: AgentToolResult,
     is_error: bool,
+    /// Wall-clock time the call ran, from its start to its settlement. Stored
+    /// on the result message as `durationMs`, so a rebuilt transcript shows it.
+    duration: Option<Duration>,
 }
 
 fn tool_calls_of(message: &AssistantMessage) -> Vec<AgentToolCall> {
@@ -619,6 +623,7 @@ fn emit_tool_result_message(message: &ToolResultMessage, emit: &mut AgentEventSi
 
 fn create_tool_result_message(finalized: &FinalizedOutcome) -> ToolResultMessage {
     ToolResultMessage {
+        duration_ms: finalized.duration.map(|d| d.as_millis() as u64),
         tool_call_id: finalized.tool_call.id.clone(),
         tool_name: finalized.tool_call.name.clone(),
         content: finalized.result.content.clone(),
@@ -651,6 +656,7 @@ fn immediate_outcome(
         tool_call: tool_call.clone(),
         result,
         is_error,
+        duration: None,
     }
 }
 
@@ -665,7 +671,9 @@ async fn execute_tool_calls_sequential(
     let mut messages = Vec::new();
     for tool_call in tool_calls {
         emit_tool_execution_start(&tool_call, emit);
-        let finalized = match prepare_tool_call(context, assistant_message, &tool_call, config) {
+        let started = Instant::now();
+        let mut finalized = match prepare_tool_call(context, assistant_message, &tool_call, config)
+        {
             Preparation::Immediate { result, is_error } => {
                 immediate_outcome(&tool_call, result, is_error)
             }
@@ -686,6 +694,7 @@ async fn execute_tool_calls_sequential(
                 finalize_executed_tool_call(context, assistant_message, &prepared, executed, config)
             }
         };
+        finalized.duration = Some(started.elapsed());
         emit_tool_execution_end(&finalized, emit);
         let message = create_tool_result_message(&finalized);
         emit_tool_result_message(&message, emit);
@@ -700,7 +709,7 @@ async fn execute_tool_calls_sequential(
 
 /// A started call: its index in the batch and its outcome once it settles.
 type RunningCall =
-    std::pin::Pin<Box<dyn std::future::Future<Output = (usize, ExecutedOutcome)> + Send>>;
+    std::pin::Pin<Box<dyn std::future::Future<Output = (usize, ExecutedOutcome, Duration)> + Send>>;
 
 /// Starts a parallel batch's prepared calls in call order, one per free slot of
 /// `limit` (`performance.maxParallelTools`). A call takes its slot here, before
@@ -747,8 +756,9 @@ impl SlotLauncher {
             running.push(Box::pin(async move {
                 // Released when this call settles, before the batch sees the result.
                 let _slot = slot;
+                let started = Instant::now();
                 let executed = run_tool(tool, tool_call, args, signal, Some(updates), order).await;
-                (index, executed)
+                (index, executed, started.elapsed())
             }));
         }
     }
@@ -803,12 +813,13 @@ async fn execute_tool_calls_parallel(
             Some(update) = rx.recv() => emit(update),
             Some(done) = running.next() => settled = Some(done),
         }
-        if let Some((index, executed)) = settled {
+        if let Some((index, executed, elapsed)) = settled {
             let prepared = prepared_calls[index]
                 .as_ref()
                 .expect("a running call was prepared");
-            let outcome =
+            let mut outcome =
                 finalize_executed_tool_call(context, assistant_message, prepared, executed, config);
+            outcome.duration = Some(elapsed);
             emit_tool_execution_end(&outcome, emit);
             finalized[index] = Some(outcome);
             // The freed slot goes to the next call in order.
@@ -1042,6 +1053,7 @@ fn finalize_executed_tool_call(
         tool_call: prepared.tool_call.clone(),
         result,
         is_error,
+        duration: None,
     }
 }
 
@@ -1108,6 +1120,7 @@ fn create_background_placeholder_outcome(
             terminate: false,
         },
         is_error: false,
+        duration: None,
     }
 }
 

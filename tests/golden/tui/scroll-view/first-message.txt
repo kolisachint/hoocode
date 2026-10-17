@@ -1,7 +1,9 @@
+«»◭ HOOCODE  BUILD  work                                            SHIP mock-model  FUEL 0%  CR $0.00
+
 «»                                                                                                   ┃
-«fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents«»                                                                            ┃
-«»                                                                                                   ┃
-«bg=#1c1c26»                                                                                                   «»┃
+«fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents«»                                                                            ░
+«»                                                                                                   ░
+«bg=#1c1c26»                                                                                                   «»░
 «bg=#1c1c26» first question                                                                                    «»░
 «bg=#1c1c26»                                                                                                   «»░
 «»                                                                                                   ░
@@ -10,11 +12,9 @@
 «» «fg=#5cc8bb»- «»alpha item 1                                                                                    ░
 «» «fg=#5cc8bb»- «»alpha item 2                                                                                    ░
 «» «fg=#5cc8bb»- «»alpha item 3                                                                                    ░
-«» «fg=#5cc8bb»- «»alpha item 4                                                                                    ░
-«» «fg=#5cc8bb»- «»alpha item 5                                                                                    ░
-«» «fg=#5cc8bb»- «»alpha item 6                                                                                    ░
-«» «fg=#5cc8bb»- «»alpha item 7                                                                                    ░
-«» «fg=#5cc8bb»- «»alpha item 8                                                                                    ░
-«» «fg=#5cc8bb»- «»alpha item 9                                                                                    ░
-«» «fg=#5cc8bb»- «»alpha item 10                                                                                   ░
-«inverse» 4–22 of 78  5%                         up/down line · PgUp/PgDn page · ctrl+home top · escape live
+«inverse» 4–15 of 73  5%                         up/down line · PgUp/PgDn page · ctrl+home top · escape live
+
+«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
+«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
+«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»BUILD«»  «fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«»  «fg=#a8a8a8»mock-model«»  «bold»work«»  «fg=#989898»◍ peek

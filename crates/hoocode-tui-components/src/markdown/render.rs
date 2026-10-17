@@ -147,12 +147,9 @@ impl Renderer<'_> {
                     prefix: prefix_of(&self.heading_style(level, SENTINEL)),
                 };
                 let text = self.render_inline_tokens(token.children(), Some(&heading_ctx));
-                let styled = if level >= 3 {
-                    let prefix = format!("{} ", "#".repeat(level as usize));
-                    format!("{}{text}", self.heading_style(level, &prefix))
-                } else {
-                    text
-                };
+                // Every level is drawn as a styled heading; the `#` marks are
+                // markup, not text, so they are never printed.
+                let styled = self.heading_style(level, &text);
                 lines.push(match &self.theme.heading_block {
                     Some(block) => block(&styled, level),
                     None => styled,
@@ -172,8 +169,7 @@ impl Renderer<'_> {
             }
             TokenType::Code => {
                 let indent = self.theme.code_block_indent.as_deref().unwrap_or("  ");
-                let lang = token.lang.as_deref().unwrap_or("");
-                lines.push((self.theme.code_block_border)(&format!("```{lang}")));
+                // The fence lines are markup: the block prints its code only.
                 if let Some(highlight) = &self.theme.highlight_code {
                     for line in highlight(token.text(), token.lang.as_deref()) {
                         lines.push(format!("{indent}{line}"));
@@ -183,7 +179,6 @@ impl Renderer<'_> {
                         lines.push(format!("{indent}{}", (self.theme.code_block)(line)));
                     }
                 }
-                lines.push((self.theme.code_block_border)("```"));
                 if spaced {
                     lines.push(String::new());
                 }

@@ -7,7 +7,9 @@
 
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::ansi::{ansi_runs, update_tracker_from_text, AnsiCodeTracker, AnsiRun};
+use crate::ansi::{
+    ansi_runs, extract_ansi_code, update_tracker_from_text, AnsiCodeTracker, AnsiRun,
+};
 use crate::width::{grapheme_width, visible_width};
 
 // ---------------------------------------------------------------------------
@@ -540,6 +542,99 @@ pub fn truncate_to_width(text: &str, max_width: usize, ellipsis: &str, pad: bool
         max_width,
         pad,
     )
+}
+
+/// Truncate `text` to at most `max_width` columns, ending with `…` when it is
+/// cut. The cut falls between words when one fits; only a first word longer
+/// than the width is cut inside. ANSI escapes take no columns and are never
+/// split; a cut inside styled text closes the style with a reset.
+pub fn truncate_at_word(text: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    if visible_width(text) <= max_width {
+        return text.to_string();
+    }
+    // Walk the visible characters that fit in one column less than the width.
+    let budget = max_width - 1;
+    let mut used = 0usize;
+    // Byte offsets: just past the last visible character that fits, and the
+    // last space that fits (a word break).
+    let mut head_end = 0usize;
+    let mut last_space: Option<usize> = None;
+    let mut next_is_space = false;
+    let mut i = 0usize;
+    while i < text.len() {
+        if let Some((_, len)) = extract_ansi_code(text, i) {
+            i += len;
+            continue;
+        }
+        let Some(ch) = crate::text_slice::suffix_from(text, i).chars().next() else {
+            break;
+        };
+        let w = visible_width(ch.encode_utf8(&mut [0; 4]));
+        if used + w > budget {
+            next_is_space = ch == ' ';
+            break;
+        }
+        used += w;
+        if ch == ' ' {
+            last_space = Some(i);
+        }
+        i += ch.len_utf8();
+        head_end = i;
+    }
+    // The head is whole words when the next visible character is a space.
+    let kept = if next_is_space {
+        crate::text_slice::prefix(text, head_end)
+    } else {
+        match last_space {
+            Some(space)
+                if !strip_vt_control_characters(crate::text_slice::prefix(text, space))
+                    .trim()
+                    .is_empty() =>
+            {
+                crate::text_slice::prefix(text, space)
+            }
+            _ => crate::text_slice::prefix(text, head_end),
+        }
+    };
+    let mut out = kept.trim_end().to_string();
+    let (style_open, link_open) = open_escapes(&out);
+    if style_open {
+        out.push_str("\x1b[0m");
+    }
+    if link_open {
+        // An OSC 8 hyperlink left open would run over the ellipsis and the text after it.
+        out.push_str("\x1b]8;;\x07");
+    }
+    out.push('…');
+    out
+}
+
+/// Whether `text` ends inside a style (the last SGR is not a reset) and
+/// inside an OSC 8 hyperlink (the last link sequence names a URL).
+fn open_escapes(text: &str) -> (bool, bool) {
+    let mut style_open = false;
+    let mut link_open = false;
+    let mut i = 0usize;
+    while i < text.len() {
+        let Some((code, len)) = extract_ansi_code(text, i) else {
+            i += crate::text_slice::suffix_from(text, i)
+                .chars()
+                .next()
+                .map_or(1, char::len_utf8);
+            continue;
+        };
+        if let Some(params) = code.strip_prefix("\x1b[").and_then(|c| c.strip_suffix('m')) {
+            style_open = !(params.is_empty() || params.split(';').all(|p| p == "0"));
+        } else if let Some(body) = code.strip_prefix("\x1b]8;") {
+            let body = body.trim_end_matches('\x07').trim_end_matches("\x1b\\");
+            link_open = body.split_once(';').is_some_and(|(_, url)| !url.is_empty());
+        }
+        i += len;
+    }
+    (style_open, link_open)
 }
 
 // ---------------------------------------------------------------------------

@@ -228,12 +228,7 @@ mod lists {
         let _g = lock();
         assert_eq!(
             render_trimmed("- ```ts\n  alpha beta gamma delta epsilon zeta\n  ```", 24),
-            [
-                "- ```ts",
-                "    alpha beta gamma",
-                "  delta epsilon zeta",
-                "  ```"
-            ]
+            ["-   alpha beta gamma", "  delta epsilon zeta"]
         );
     }
 }
@@ -537,25 +532,18 @@ mod spacing {
             "hello world\n\n```js\nconst hello = \"world\";\n```\n\nagain, hello world",
             80,
         );
+        // The fence rows do not print; the block's last code line is the anchor.
         let idx = lines
             .iter()
-            .position(|l| l == "```")
-            .expect("closing backticks");
+            .position(|l| l == "  const hello = \"world\";")
+            .expect("code line");
         assert_eq!(empty_lines_after(&lines, idx), Some(1));
     }
 
     #[test]
     fn should_normalize_paragraph_and_code_block_spacing_to_one_blank_line() {
         let _g = lock();
-        let expected = [
-            "hello this is text",
-            "",
-            "```",
-            "  code block",
-            "```",
-            "",
-            "more text",
-        ];
+        let expected = ["hello this is text", "", "  code block", "", "more text"];
         for text in [
             "hello this is text\n```\ncode block\n```\nmore text",
             "hello this is text\n\n```\ncode block\n```\n\nmore text",

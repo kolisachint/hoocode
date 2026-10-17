@@ -727,3 +727,34 @@ mod freeze {
         assert_eq!(strip_all(&c.render(120)), snapshot);
     }
 }
+
+#[test]
+fn chain_entry_counts_output_lines_without_the_trailing_newline() {
+    let _g = lock();
+    let counted = |output: &str| {
+        let mut c = component("Shell", "c1", json!({}), Peek, None);
+        c.update_result(result(output, false), false);
+        c.chain_entry().output_lines
+    };
+    assert_eq!(counted("a\nb\n"), 2);
+    assert_eq!(counted("a\nb"), 2);
+    assert_eq!(counted("a\n\nb\n"), 3);
+    assert_eq!(counted("a"), 1);
+    assert_eq!(counted(""), 0);
+    assert_eq!(counted("\n"), 0);
+}
+
+mod result_fallback {
+    use super::*;
+
+    /// A registered tool with no result renderer: its output is peeked with the count of the
+    /// lines left out. A trailing newline ends the last line, it adds none.
+    #[test]
+    fn counts_the_lines_left_out_without_the_trailing_newline() {
+        let _g = lock();
+        let mut c = component("mystery", "1", json!({}), Peek, Some(base()));
+        c.update_result(result("a\nb\nc\nd\ne\nf\ng\n", false), false);
+        let shown = lines_of(&mut c, 80).join("\n");
+        assert!(shown.contains("... (2 more lines)"), "{shown}");
+    }
+}

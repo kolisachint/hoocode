@@ -144,19 +144,22 @@ fn build_result(
         )
     });
 
-    let timing = started_at.map(|start| {
+    // Live: the wall clock from the call's start. A rebuilt transcript has no
+    // clock; the duration the loop stored on the result stands in for it.
+    let elapsed_ms = match started_at {
+        Some(start) => Some(ended_at.unwrap_or_else(now_ms) - start),
+        None if !options.is_partial => result.details.get("durationMs").and_then(Value::as_f64),
+        None => None,
+    };
+    let timing = elapsed_ms.map(|ms| {
         let label = if options.is_partial {
             "Elapsed"
         } else {
             "Took"
         };
-        let end = ended_at.unwrap_or_else(now_ms);
         format!(
             "\n{}",
-            t.fg(
-                "muted",
-                &format!("{label} {}", format_duration(end - start))
-            )
+            t.fg("muted", &format!("{label} {}", format_duration(ms)))
         )
     });
 

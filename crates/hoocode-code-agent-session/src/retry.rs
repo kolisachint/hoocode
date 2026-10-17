@@ -17,6 +17,9 @@ static RETRYABLE_ERROR_PATTERN: LazyLock<regex_lite::Regex> = LazyLock::new(|| {
     .expect("retry pattern")
 });
 
+/// The error text a streak cancelled by `abort_retry` or an abort ends with.
+pub(crate) const RETRY_CANCELLED: &str = "Retry cancelled";
+
 /// The retry controller's state (`AutoRetryController` fields).
 #[derive(Default)]
 pub(crate) struct RetryState {
@@ -81,6 +84,32 @@ impl AgentSession {
         }
     }
 
+    /// An abort ended the run while a streak was in progress: the streak is
+    /// cancelled, not successful.
+    pub(crate) fn on_aborted_assistant_response(&self) {
+        let attempt = std::mem::take(&mut self.retry_state().attempt);
+        if attempt > 0 {
+            self.emit(AgentSessionEvent::AutoRetryEnd {
+                success: false,
+                attempt,
+                final_error: Some(RETRY_CANCELLED.into()),
+            });
+        }
+    }
+
+    /// A streak ends on an error it does not retry: that failed request
+    /// is one more than the retries sent, and the streak is over.
+    pub(crate) fn on_unretried_error(&self, message: &AssistantMessage) {
+        let retries = std::mem::take(&mut self.retry_state().attempt);
+        if retries > 0 {
+            self.emit(AgentSessionEvent::AutoRetryEnd {
+                success: false,
+                attempt: retries + 1,
+                final_error: message.error_message.clone(),
+            });
+        }
+    }
+
     /// `resolve()`: release whoever waits for the retry.
     pub(crate) fn resolve_retry(&self) {
         let was_pending = std::mem::take(&mut self.retry_state().pending);
@@ -104,9 +133,10 @@ impl AgentSession {
             state.attempt
         };
         if attempt > settings.max_retries {
+            // `attempt` counts the failed requests: the original and each retry.
             self.emit(AgentSessionEvent::AutoRetryEnd {
                 success: false,
-                attempt: attempt - 1,
+                attempt,
                 final_error: message.error_message.clone(),
             });
             self.retry_state().attempt = 0;
@@ -144,11 +174,13 @@ impl AgentSession {
         };
         self.retry_state().abort = None;
         if cancelled {
+            // The retry that was waiting is never sent: the failed requests are
+            // the retries started so far, the original included.
             let attempt = std::mem::take(&mut self.retry_state().attempt);
             self.emit(AgentSessionEvent::AutoRetryEnd {
                 success: false,
                 attempt,
-                final_error: Some("Retry cancelled".into()),
+                final_error: Some(RETRY_CANCELLED.into()),
             });
             self.resolve_retry();
             return false;
@@ -171,7 +203,9 @@ impl AgentSession {
         });
     }
 
-    /// Cancel an in-progress retry (`abortRetry`).
+    /// Cancel an in-progress retry (`abortRetry`). During the backoff the
+    /// sleep ends the streak with `AutoRetryEnd`; an attempt in flight ends
+    /// through its aborted message (see `on_aborted_assistant_response`).
     pub fn abort_retry(&self) {
         if let Some(signal) = &self.retry_state().abort {
             signal.abort();

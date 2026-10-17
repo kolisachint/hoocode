@@ -114,6 +114,8 @@ impl Mode {
         }
         self.update_pending_messages_display();
         if abort {
+            // A retry in progress ends with the run (`retry.rs`).
+            self.session.abort_retry();
             self.session.agent().abort();
         }
         count

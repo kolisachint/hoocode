@@ -1041,6 +1041,7 @@ async fn e2e_continue_processes_tool_results() {
         ..Default::default()
     };
     let result = ai_types::ToolResultMessage {
+        duration_ms: None,
         tool_call_id: "calc-1".into(),
         tool_name: "calculate".into(),
         content: vec![Content::text("5 + 3 = 8")],

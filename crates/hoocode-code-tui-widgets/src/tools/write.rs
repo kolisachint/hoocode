@@ -156,10 +156,13 @@ fn format_write_preview(raw_path: Option<&str>, content: &str) -> Option<String>
     }))
 }
 
-fn format_write_call(args: &Value, cache: Option<&HighlightCache>) -> String {
+/// The call line. `show_body` holds while there is no result: the content
+/// previews under the header as it streams, and stays while the call runs
+/// or if it was cut short. Once a result exists it is the one copy of the
+/// content (numbered, or the error), so the call is a header only.
+fn format_write_call(args: &Value, cache: Option<&HighlightCache>, show_body: bool) -> String {
     let t = theme();
     let raw_path = str_arg(arg_or(args, "file_path", "path"));
-    let content = str_arg(args.get("content"));
     let path = raw_path.as_deref().map(shorten_path);
     let path_display = match path {
         None => invalid_arg_text(),
@@ -167,19 +170,17 @@ fn format_write_call(args: &Value, cache: Option<&HighlightCache>) -> String {
         Some(_) => t.fg("toolOutput", "..."),
     };
     let mut text = format!("{} {path_display}", t.fg("toolTitle", &t.bold("Write")));
-    match content {
-        None => text.push_str(&format!(
-            "\n\n{}",
-            t.fg("error", "[invalid content arg - expected string]")
-        )),
-        Some(content) if !content.is_empty() => {
+    match args.get("content") {
+        None | Some(Value::Null) => {}
+        Some(Value::String(content)) if show_body && !content.is_empty() => {
+            let content = content.as_str();
             let lang = raw_path.as_deref().and_then(get_language_from_path);
             let rendered: Vec<String> = match (lang, cache) {
                 (Some(_), Some(cache)) => cache.highlighted_lines.clone(),
                 (Some(lang), None) => {
-                    highlight_code(&replace_tabs(&normalize_display_text(&content)), Some(lang))
+                    highlight_code(&replace_tabs(&normalize_display_text(content)), Some(lang))
                 }
-                (None, _) => normalize_display_text(&content)
+                (None, _) => normalize_display_text(content)
                     .split('\n')
                     .map(String::from)
                     .collect(),
@@ -206,7 +207,11 @@ fn format_write_call(args: &Value, cache: Option<&HighlightCache>) -> String {
                 ));
             }
         }
-        Some(_) => {}
+        Some(Value::String(_)) => {}
+        Some(_) => text.push_str(&format!(
+            "\n\n{}",
+            t.fg("error", "[invalid content arg - expected string]")
+        )),
     }
     text
 }
@@ -215,17 +220,14 @@ pub fn definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: Some(Rc::new(|args, ctx| {
             let raw_path = str_arg(arg_or(args, "file_path", "path"));
-            let content = str_arg(args.get("content"));
-            let cache = match &content {
-                Some(content) => {
+            // The preview is built only while no result has replaced it.
+            let show_body = !ctx.has_result;
+            let cache = match args.get("content").and_then(Value::as_str) {
+                Some(content) if show_body => {
                     let previous = HighlightCache::load(ctx.state.get(CACHE_KEY));
-                    if ctx.args_complete {
-                        rebuild_full(raw_path.as_deref(), content)
-                    } else {
-                        update_incremental(previous, raw_path.as_deref(), content)
-                    }
+                    update_incremental(previous, raw_path.as_deref(), content)
                 }
-                None => None,
+                _ => None,
             };
             match &cache {
                 Some(c) => {
@@ -235,7 +237,7 @@ pub fn definition() -> ToolRenderDefinition {
                     ctx.state.remove(CACHE_KEY);
                 }
             }
-            Ok(text(format_write_call(args, cache.as_ref())))
+            Ok(text(format_write_call(args, cache.as_ref(), show_body)))
         })),
         render_result: Some(Rc::new(|result, _options, ctx| {
             if ctx.is_error {

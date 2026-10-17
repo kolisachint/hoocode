@@ -175,6 +175,16 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             &["ctrl+down"],
             "Jump to your next message",
         ),
+        entry(
+            "app.scroll.shiftLineUp",
+            &["shift+up"],
+            "Scroll up a line; from the prompt, pins the view",
+        ),
+        entry(
+            "app.scroll.shiftLineDown",
+            &["shift+down"],
+            "Scroll down a line (pinned view)",
+        ),
         // ── Go — sessions and places
         entry(
             "app.session.resume",

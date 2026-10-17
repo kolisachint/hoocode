@@ -1,9 +1,10 @@
 //! `core/tools/todo.ts`: the TodoWrite tool over the task store.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use hoocode_agent_types::AgentToolResult;
-use hoocode_ai_types::{Content, TextContent};
+use hoocode_agent_types::{AgentMessage, AgentToolResult};
+use hoocode_ai_types::{Content, StopReason, TextContent};
 use hoocode_code_task_store::{Task, TaskPatch, TaskStatus, TaskStore};
 use hoocode_code_tool_api::{ToolDefinition, ToolError};
 use serde_json::{json, Value};
@@ -102,6 +103,55 @@ pub fn settle_dangling_main_tasks(store: &TaskStore, outcome: TaskStatus) -> usi
         }
     });
     dangling.len()
+}
+
+/// Rebuilds the plan of a loaded session: the store's plan items are replaced
+/// by the last TodoWrite call that succeeded in `messages` (a failed call
+/// changed nothing). A plan the session ended with unfinished is settled as
+/// the live turn would settle it: done after a clean stop, else cancelled.
+pub fn restore_plan(store: &TaskStore, messages: &[AgentMessage]) {
+    let mut pending: HashMap<&str, &Value> = HashMap::new();
+    let mut plan: Option<&Value> = None;
+    let mut last_stop: Option<StopReason> = None;
+    for message in messages {
+        match message {
+            AgentMessage::Assistant(assistant) => {
+                last_stop = Some(assistant.stop_reason);
+                for content in &assistant.content {
+                    if let Content::ToolCall(call) = content {
+                        if call.name == TODO_WRITE_TOOL_NAME {
+                            pending.insert(call.id.as_str(), &call.arguments);
+                        }
+                    }
+                }
+            }
+            AgentMessage::ToolResult(result) if !result.is_error => {
+                if let Some(args) = pending.remove(result.tool_call_id.as_str()) {
+                    plan = Some(args);
+                }
+            }
+            _ => {}
+        }
+    }
+    store.batch(|store| {
+        for task in store.list() {
+            if task.is_plan_item() && task.key.is_none() {
+                store.remove(task.id);
+            }
+        }
+    });
+    let Some(args) = plan else {
+        return;
+    };
+    if let Ok(items) = parse_items(args) {
+        reconcile(store, &items);
+    }
+    let outcome = if last_stop == Some(StopReason::Stop) {
+        TaskStatus::Done
+    } else {
+        TaskStatus::Cancelled
+    };
+    settle_dangling_main_tasks(store, outcome);
 }
 
 /// The TypeBox schema hoocode sends for TodoWrite.

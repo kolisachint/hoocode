@@ -80,6 +80,7 @@ members = [
     "crates/hoocode-tui-highlight",
     "crates/hoocode-tui-images",
     "crates/hoocode-tui-keys",
+    "crates/hoocode-tui-ratatui",
     "crates/hoocode-tui-render",
     "crates/hoocode-tui-terminal",
     "crates/hoocode-tui-util",
@@ -174,6 +175,7 @@ hoocode-tui-fuzzy = { path = "crates/hoocode-tui-fuzzy" }
 hoocode-tui-highlight = { path = "crates/hoocode-tui-highlight" }
 hoocode-tui-images = { path = "crates/hoocode-tui-images" }
 hoocode-tui-keys = { path = "crates/hoocode-tui-keys" }
+hoocode-tui-ratatui = { path = "crates/hoocode-tui-ratatui" }
 hoocode-tui-render = { path = "crates/hoocode-tui-render" }
 hoocode-tui-terminal = { path = "crates/hoocode-tui-terminal" }
 hoocode-tui-util = { path = "crates/hoocode-tui-util" }

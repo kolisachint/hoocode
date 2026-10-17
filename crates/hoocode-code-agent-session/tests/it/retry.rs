@@ -118,7 +118,86 @@ async fn exhausts_max_retries_and_emits_a_failure_event() {
         } => Some((*attempt, final_error.clone())),
         _ => None,
     });
-    assert_eq!(final_error, Some((2, Some("overloaded_error".into()))));
+    // The original request and both retries failed: three failed attempts.
+    assert_eq!(final_error, Some((3, Some("overloaded_error".into()))));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_streak_ending_in_a_non_retryable_error_ends_failed_and_resets() {
+    let h = harness(retry_settings(true, 3, 1));
+    h.set_responses(vec![error("overloaded_error"), error("invalid_api_key")]);
+    prompt(&h, "test").await;
+    let ends: Vec<(u64, Option<String>)> = h
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|e| match e {
+            AgentSessionEvent::AutoRetryEnd {
+                attempt,
+                final_error,
+                ..
+            } => Some((*attempt, final_error.clone())),
+            _ => None,
+        })
+        .collect();
+    // The original and the one retry failed: two failed attempts.
+    assert_eq!(ends, [(2, Some("invalid_api_key".into()))]);
+    assert_eq!(retry_events(&h), ["start:1", "end:false"]);
+    assert!(!h.session.is_retrying());
+    // The next streak counts from the first retry again.
+    h.set_responses(vec![error("overloaded_error"), text("ok")]);
+    prompt(&h, "again").await;
+    assert_eq!(
+        retry_events(&h),
+        ["start:1", "end:false", "start:1", "end:true"]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn abort_during_a_retry_attempt_ends_the_streak_as_cancelled() {
+    let h = harness(retry_settings(true, 3, 1));
+    h.set_responses(vec![error("overloaded_error"), text(&"x".repeat(20_000))]);
+    let armed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let tx = Mutex::new(Some(tx));
+    let flag = armed.clone();
+    let _sub = h.session.subscribe(move |event| match event {
+        AgentSessionEvent::AutoRetryStart { .. } => {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst)
+        }
+        AgentSessionEvent::Agent(AgentEvent::MessageUpdate { .. })
+            if flag.swap(false, std::sync::atomic::Ordering::SeqCst) =>
+        {
+            if let Some(tx) = tx.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+        }
+        _ => {}
+    });
+    let session = h.session.clone();
+    let run = tokio::spawn(async move { session.prompt("test", PromptOptions::default()).await });
+    rx.await.unwrap();
+    h.session.abort().await;
+    run.await.unwrap().unwrap();
+    let ends: Vec<(bool, u64, Option<String>)> = h
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|e| match e {
+            AgentSessionEvent::AutoRetryEnd {
+                success,
+                attempt,
+                final_error,
+            } => Some((*success, *attempt, final_error.clone())),
+            _ => None,
+        })
+        .collect();
+    // One retry was sent and the abort caught it in flight.
+    assert_eq!(ends, [(false, 1, Some("Retry cancelled".into()))]);
+    assert_eq!(h.session.retry_attempt(), 0);
+    assert!(!h.session.is_retrying());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -188,6 +267,7 @@ async fn cancels_retry_sleep_when_abort_retry_is_called() {
         })
         .collect();
     assert!(finals.contains(&Some("Retry cancelled".into())));
+    assert_eq!(h.session.retry_attempt(), 0);
     assert_eq!(h.faux.call_count(), 1);
 }
 

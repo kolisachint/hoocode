@@ -17,7 +17,7 @@ use hoocode_code_agent_session::{
 use hoocode_code_auth::AuthStorage;
 use hoocode_code_media::clipboard_image::ClipboardImage;
 use hoocode_code_media::rich_clipboard::CopyFlavour;
-use hoocode_code_paths::{APP_NAME, VERSION};
+use hoocode_code_paths::{env_override, APP_NAME, VERSION};
 use hoocode_code_settings::{ChromeDensity, EditorBorder, ToolOutputView};
 use hoocode_code_subagents::agent_log::{agent_log, set_terminal_owned_by_tui};
 use hoocode_code_subagents::live::LiveSink;
@@ -56,6 +56,7 @@ use crate::dialog_bridge::{set_dialog_sink, DialogRequest};
 use crate::expandable_text::ExpandableText;
 use crate::footer::{FooterComponent, FooterDensity};
 use crate::footer_data::FooterDataProvider;
+use crate::hud::{fullscreen_enabled, hud_component, tree_plan, TreePart};
 use crate::input_frame::set_input_frame_border;
 use crate::login_controller::LoginUpdate;
 use crate::notification_panel::{NotificationKind, NotificationPanel};
@@ -84,6 +85,7 @@ mod mcp;
 mod models;
 mod plugin;
 mod prompt_queue;
+mod retry;
 mod session_op;
 mod session_ops;
 mod settings;
@@ -395,6 +397,9 @@ fn expanded_instructions() -> String {
 struct Mode {
     /// The chat transcript and the components that track it (`transcript.rs`).
     transcript: Transcript,
+    /// The full-screen body holding the chat, when the screen has one: the
+    /// pinned view's anchor is laid out through it (`scroll_view.rs`).
+    scroll_body: Option<Rc<RefCell<Container>>>,
     /// The attached subagent view, while one is shown (`attach.rs`).
     attached: Option<attach::Attached>,
     /// The attached view's header row, above the chat (empty when not attached).
@@ -506,6 +511,18 @@ fn install_panic_hook() {
     );
 }
 
+/// Appends stderr text that an interactive session withheld from the terminal.
+fn append_stderr_to_debug_log(text: &str) {
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(hoocode_code_paths::debug_log_path())
+    {
+        let _ = file.write_all(text.as_bytes());
+    }
+}
+
 /// Appends a panic report to the debug log. Unlike agent log lines, it is written
 /// whether or not `DEBUG_AGENT_LOG` is set: a crash should always leave a record.
 fn append_panic_log(report: &str) {
@@ -566,6 +583,9 @@ impl Mode {
             settings.show_images(),
             settings.image_width_cells() as u32,
         );
+        // HOOCODE_FULLSCREEN=0 wins over the `fullscreen` setting (hud.rs).
+        let fullscreen =
+            fullscreen_enabled(env_override("FULLSCREEN").as_deref(), settings.fullscreen());
         drop(settings);
         let terminal = options
             .terminal
@@ -574,6 +594,7 @@ impl Mode {
         let perf = Perf::new(options.perf_log.as_deref());
         let mut tui = Tui::new(terminal, Some(show_hardware_cursor));
         tui.set_clear_on_shrink(clear_on_shrink);
+        tui.set_fullscreen(fullscreen);
 
         let keybindings = AppKeybindingsManager::create(None);
         keybindings.install();
@@ -759,6 +780,7 @@ impl Mode {
         header_container
             .borrow_mut()
             .add_child(as_component(&header));
+        let body = handle(Container::new());
         let screen_fill = handle(FlexSpacer::new());
         let widget_above = handle(Container::new());
         widget_above
@@ -769,33 +791,69 @@ impl Mode {
             .borrow_mut()
             .add_child(as_component(&editor));
 
-        tui.add_child(as_component(&header_container));
-        tui.add_child(as_component(&screen_fill));
-        tui.set_flex_spacer(Some(screen_fill.clone()));
+        // The app tree, in the order `tree_plan` gives (hud.rs). Inline: today's
+        // tree. Full-screen: the HUD row, a gap, the attach slot, then the body
+        // (header and chat), which `Tui` lays out and scrolls itself.
+        let hud = fullscreen.then(|| {
+            handle(hud_component(
+                Box::new(SessionFooter {
+                    session: session.clone(),
+                    is_oauth: is_oauth.clone(),
+                }),
+                footer_data.clone(),
+            ))
+        });
+        let gap = handle(Spacer::new(1));
         let attach_slot = handle(Container::new());
-        tui.add_child(as_component(&attach_slot));
-        tui.add_child(as_component(&chat));
         let pending_messages = handle(Container::new());
-        tui.add_child(as_component(&pending_messages));
         let status = handle(Container::new());
-        tui.add_child(as_component(&status));
-        tui.add_child(as_component(&widget_above));
-        tui.add_child(tasks_slot.clone());
-        tui.add_child(as_component(&notifications));
-        tui.add_child(handle(FooterTransientLines {
-            footer: footer.clone(),
-            footer_slot: footer_slot.clone(),
-        }));
-        tui.add_child(as_component(&editor_container));
-        tui.add_child(as_component(&handle(Container::new()))); // widgets below
-        tui.add_child(footer_slot.clone());
+        for part in tree_plan(fullscreen) {
+            match part {
+                TreePart::Hud => {
+                    if let Some(hud) = &hud {
+                        tui.add_child(as_component(hud));
+                    }
+                }
+                TreePart::Gap => tui.add_child(as_component(&gap)),
+                TreePart::Header => tui.add_child(as_component(&header_container)),
+                TreePart::ScreenFill => {
+                    tui.add_child(as_component(&screen_fill));
+                    tui.set_flex_spacer(Some(screen_fill.clone()));
+                }
+                TreePart::Attach => tui.add_child(as_component(&attach_slot)),
+                TreePart::Chat => tui.add_child(as_component(&chat)),
+                TreePart::Body => {
+                    body.borrow_mut().add_child(as_component(&header_container));
+                    body.borrow_mut().add_child(as_component(&chat));
+                    tui.add_child(as_component(&body));
+                    tui.set_fullscreen_body(Some(as_component(&body)));
+                }
+                TreePart::Pending => tui.add_child(as_component(&pending_messages)),
+                TreePart::Status => tui.add_child(as_component(&status)),
+                TreePart::WidgetAbove => tui.add_child(as_component(&widget_above)),
+                TreePart::Tasks => tui.add_child(tasks_slot.clone()),
+                TreePart::Notifications => tui.add_child(as_component(&notifications)),
+                TreePart::FooterTransient => tui.add_child(handle(FooterTransientLines {
+                    footer: footer.clone(),
+                    footer_slot: footer_slot.clone(),
+                })),
+                TreePart::Editor => tui.add_child(as_component(&editor_container)),
+                TreePart::WidgetsBelow => {
+                    tui.add_child(as_component(&handle(Container::new()))); // widgets below
+                }
+                TreePart::Footer => tui.add_child(footer_slot.clone()),
+            }
+        }
         tui.set_focus(Some(as_component(&editor)));
         // Scrolling the transcript: the prompt's pager keys, and the keys of
         // the pinned view (`scroll_view.rs`).
+        let prompt_text = editor.clone();
+        let busy_session = session.clone();
         install_scroll_view(
             &mut tui,
             as_component(&editor),
             chat.clone(),
+            fullscreen.then(|| body.clone()),
             Rc::new(|child: &ComponentHandle| {
                 child.borrow().as_any().is_some_and(|any| {
                     any.is::<UserMessageComponent>()
@@ -803,6 +861,12 @@ impl Mode {
                         || any.is::<BackgroundNoticeComponent>()
                 })
             }),
+            Rc::new(move || {
+                prompt_text
+                    .try_borrow()
+                    .map_or(true, |e| e.editor.get_text().is_empty())
+            }),
+            Rc::new(move || busy_session.is_streaming() || busy_session.is_retrying()),
         );
 
         let (tx, rx) = mpsc::channel();
@@ -816,6 +880,7 @@ impl Mode {
             perf,
             header,
             cursor_blink,
+            scroll_body: fullscreen.then(|| body.clone()),
             transcript: Transcript::new(chat),
             attached: None,
             attach_slot,
@@ -990,6 +1055,16 @@ impl Mode {
         wait.max(Duration::from_millis(1))
     }
 
+    /// Ctrl+C aborts the turn from the input thread, without waiting for this
+    /// loop. Set again on a session switch, so it reaches the current session.
+    fn install_interrupt_hook(&self) {
+        let session = self.session.clone();
+        hoocode_tui_terminal::interrupt::set_hook(Some(Arc::new(move || {
+            session.abort_retry();
+            session.agent().abort();
+        })));
+    }
+
     fn run(
         mut self,
         options_initial: (
@@ -1001,12 +1076,14 @@ impl Mode {
     ) -> Result<(), String> {
         self.tui
             .set_frame_observer(Some(self.perf.frame_observer()));
-        // Before the terminal starts, so a panic from here on restores it.
+        // Before the terminal starts, so a panic from here on restores it. Stray
+        // stderr text goes to the debug log while the TUI owns the terminal.
         install_panic_hook();
+        hoocode_runtime::diagnostics::set_stderr_sink(Some(Box::new(|text: &str| {
+            append_stderr_to_debug_log(text);
+        })));
         let mut input = self.tui.start();
-        // Ctrl+C aborts the turn from the input thread, without waiting for this loop.
-        let interrupt_agent = self.session.agent().clone();
-        hoocode_tui_terminal::interrupt::set_hook(Some(Arc::new(move || interrupt_agent.abort())));
+        self.install_interrupt_hook();
         // From here the TUI owns the terminal: the agent's operational log
         // lines (dispatch, warm fallback, lifeguard) must not write to it.
         set_terminal_owned_by_tui(true);
@@ -1396,6 +1473,7 @@ impl Mode {
         // Abort, kill tool groups, flush, close MCP, release, then restore the terminal.
         let reports = shutdown::run(&self.session, || {
             set_terminal_owned_by_tui(false);
+            hoocode_runtime::diagnostics::set_stderr_sink(None);
             self.tui.stop();
         });
         for report in reports

@@ -1,22 +1,22 @@
+«»◭ HOOCODE  BUILD  work                                            SHIP mock-model  FUEL 0%  CR $0.00
+
 «»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
 «»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
 «»▜▄▄▄▄▄▛  «fg=#989898»<WORK>
 
-
-
-
-
-
-
 «fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents
 
-
-«bg=#1c1c26» list the files
-
+«bg=#1c1c26»                                                                                                   
+«bg=#1c1c26» list the files                                                                                    
+«bg=#1c1c26»                                                                                                   
 
 «» Listing files.
 
 «»  «fg=#ffff00»● «bold»Shell«»  ls
+
+
+
+
 
 «<masked: blinking indicator>» <working-blink> Working...
 
@@ -26,5 +26,5 @@
 «fg=#6e93ff»│«»    Always (add to auto-allow for this mode)                                                      «fg=#6e93ff»│
 «fg=#6e93ff»│«» «fg=#989898»↑↓«fg=#a8a8a8» navigate«»  «fg=#989898»enter«fg=#a8a8a8» select«»  «fg=#989898»escape/ctrl+c«fg=#a8a8a8» cancel«»                                                  «fg=#6e93ff»│
 «fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»…<WORK>
+«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»<WORK>
 «fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«» «fg=#989898»of 128k«»  «fg=#a8a8a8»mock-model«»   «fg=#989898»↑«fg=#a8a8a8»100«» «fg=#989898»↓«fg=#a8a8a8»20

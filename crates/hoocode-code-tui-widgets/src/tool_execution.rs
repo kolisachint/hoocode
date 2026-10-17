@@ -24,7 +24,8 @@ use serde_json::Value;
 use crate::tool_chain_summary::ChainEntry;
 use crate::tool_output_view::{ToolOutputView, DEFAULT_TOOL_OUTPUT_VIEW, PEEK_LINES};
 use crate::tool_signal::{
-    tool_subject, ResultHolder, ResultText, ToolResult, ToolSignalComponent, ToolSignalInput,
+    chain_subject, tool_subject, ResultHolder, ResultText, ToolResult, ToolSignalComponent,
+    ToolSignalInput,
 };
 use crate::tools::builtin_tool_definition;
 
@@ -47,6 +48,9 @@ pub struct ToolRenderContext<'a> {
     pub expanded: bool,
     pub show_images: bool,
     pub is_error: bool,
+    /// A result (final, or a partial one) is in: the result renderer shows
+    /// it, so a call renderer keeps to its header.
+    pub has_result: bool,
 }
 
 /// `ToolRenderResultOptions`.
@@ -329,7 +333,7 @@ impl ToolExecutionComponent {
             return None;
         }
         let t = theme();
-        let lines: Vec<&str> = output.split('\n').collect();
+        let lines: Vec<&str> = output.lines().collect();
         if lines.len() <= PEEK_LINES {
             return Some(handle(Text::new(t.fg("toolOutput", &output), 0, 0)));
         }
@@ -397,13 +401,14 @@ impl ToolExecutionComponent {
         };
         ChainEntry {
             tool: self.tool_name.clone(),
-            subject: tool_subject(&self.args, &self.cwd),
+            subject: chain_subject(&self.tool_name, &self.args, &self.cwd),
             is_error: self.result.as_ref().is_some_and(|r| r.is_error),
-            is_partial: self.result.is_none() || self.is_partial,
+            is_partial: self.result.is_none() || self.is_partial || self.is_live_background_job(),
             output_lines: if crate::is_blank(&output) {
                 0
             } else {
-                output.split('\n').count()
+                // `lines` drops the trailing newline: "a\nb\n" is 2 lines.
+                output.lines().count()
             },
             outcome: crate::tools::subagent::task_outcome(
                 &self.tool_name,
@@ -411,6 +416,27 @@ impl ToolExecutionComponent {
                 self.result.as_deref().map(ResultHolder::result),
             ),
         }
+    }
+
+    /// A background shell job returns its id at once, and the call stays
+    /// running in its chain while the job does. Only a live, tracked job reads
+    /// running: its row in the task store is in progress. A replayed history
+    /// has no such row, so its launch reads done; a job that has ended, or
+    /// was killed, reads done too.
+    pub fn is_live_background_job(&self) -> bool {
+        if self.tool_name != "Shell" {
+            return false;
+        }
+        let Some(result) = self.result.as_ref().filter(|r| !r.is_error) else {
+            return false;
+        };
+        let Some(id) = result.result().details.get("jobId") else {
+            return false;
+        };
+        let job_id = id.as_str().map_or_else(|| id.to_string(), str::to_owned);
+        hoocode_code_task_store::task_store()
+            .find_keyed(&hoocode_code_tool_bash::jobs::row_key(&job_id))
+            .is_some_and(|task| task.status == hoocode_code_task_store::TaskStatus::InProgress)
     }
 
     /// The failure text, for a collapsed chain to print under its line.
@@ -546,6 +572,7 @@ impl ToolExecutionComponent {
                 expanded: false,
                 show_images: self.show_images,
                 is_error: self.result.as_ref().is_some_and(|r| r.is_error),
+                has_result: self.result.is_some(),
             },
             last,
         )
@@ -801,6 +828,7 @@ struct ToolRenderContextOwned {
     expanded: bool,
     show_images: bool,
     is_error: bool,
+    has_result: bool,
 }
 
 impl ToolRenderContextOwned {
@@ -826,6 +854,7 @@ impl ToolRenderContextOwned {
             expanded: self.expanded,
             show_images: self.show_images,
             is_error: self.is_error,
+            has_result: self.has_result,
         }
     }
 }

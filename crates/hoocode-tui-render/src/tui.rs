@@ -45,6 +45,7 @@ use hoocode_tui_util::{
 };
 
 use crate::component::{Component, ComponentHandle, Container, FlexSpacer};
+use crate::fullscreen;
 use crate::scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB};
 
 /// Cursor position marker: a zero-width APC escape sequence terminals
@@ -163,6 +164,9 @@ pub struct ScrollStatus {
     /// A picker (not the prompt) has focus: the arrows and escape go to it,
     /// so the indicator must not advertise them.
     pub picker: bool,
+    /// Lines that arrived since the view last pinned or scrolled (`↓ N new`).
+    /// Zero off the full-screen view.
+    pub new_lines: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,6 +358,37 @@ pub struct Tui {
     /// under, and the copies currently placed on the alternate screen.
     scroll_image_ids: HashMap<u32, u32>,
     scroll_placed_images: HashSet<u32>,
+
+    /// Full-screen mode (M1): the alternate screen for the whole run, and a
+    /// frame composed from regions. Off by default; set before `start`.
+    fullscreen: bool,
+    /// The transcript component in full-screen mode. Root children before it
+    /// are the top chrome, those after it the bottom.
+    fullscreen_body: Option<ComponentHandle>,
+    /// The rows of the last full-screen frame, as written, for the per-row diff.
+    previous_screen: Vec<String>,
+    /// The size of the last full-screen frame; `None` until one is painted.
+    previous_screen_size: Option<(usize, usize)>,
+    /// Body rows on screen in the last full-screen frame: the first screen
+    /// row and the lines, for link clicks.
+    fullscreen_body_window: Option<(i64, Vec<String>)>,
+    /// Body rows the last full-screen frame showed (the view height).
+    fullscreen_view: i64,
+    /// Between `start` and `stop`: a full-screen mode change would desync the frame.
+    started: bool,
+    /// The body's line count when the view last pinned or scrolled; the `N new`
+    /// count is what has grown since. A shorter transcript resets it.
+    fullscreen_seen_total: i64,
+    /// Set by [`Self::reset_new_lines_count`]: the next full-screen frame starts
+    /// the `N new` count at the transcript as it is then.
+    fullscreen_seen_reset: bool,
+}
+
+/// One composed full-screen frame: the rows as they are written, and the
+/// cursor (row, column), 0-based, when it is shown.
+struct Screen {
+    rows: Vec<String>,
+    cursor: Option<(usize, usize)>,
 }
 
 impl Tui {
@@ -395,6 +430,15 @@ impl Tui {
             input_interceptor: None,
             scroll_image_ids: HashMap::new(),
             scroll_placed_images: HashSet::new(),
+            fullscreen: false,
+            fullscreen_body: None,
+            previous_screen: Vec::new(),
+            previous_screen_size: None,
+            fullscreen_body_window: None,
+            fullscreen_view: 0,
+            started: false,
+            fullscreen_seen_total: 0,
+            fullscreen_seen_reset: false,
         }
     }
 
@@ -420,7 +464,7 @@ impl Tui {
     /// the last one being the scrollbar's.
     pub fn transcript_width(&self) -> u16 {
         let columns = self.terminal.columns();
-        if self.scroll_offset.is_some() {
+        if self.scroll_offset.is_some() || self.fullscreen {
             columns.saturating_sub(1).max(1)
         } else {
             columns
@@ -444,6 +488,13 @@ impl Tui {
                 self.scroll_to_live();
             }
         }
+    }
+
+    /// The transcript was rebuilt or the screen resized: its line count is no
+    /// longer comparable with the last one, so the `N new` count starts again
+    /// from the next frame's transcript. Only growth after that is counted.
+    pub fn reset_new_lines_count(&mut self) {
+        self.fullscreen_seen_reset = true;
     }
 
     /// Let the app paint the indicator in its own theme.
@@ -510,13 +561,72 @@ impl Tui {
     /// The screen rows a pinned window shows for the transcript; the status
     /// row is the last, and a picker takes its share at the bottom.
     fn scroll_view_height(&self) -> i64 {
+        if self.fullscreen {
+            return if self.previous_screen_size.is_some() {
+                self.fullscreen_view
+            } else {
+                self.fullscreen_measure().1
+            };
+        }
         let pane_len = self.scroll_pane_lines(self.terminal.columns()).len() as i64;
         self.pinned_split(pane_len).0
     }
 
+    /// The body's `(lines, rows shown)` as the next frame would lay them out.
+    /// Before the first frame nothing has been measured, so scrolling asks here.
+    fn fullscreen_measure(&self) -> (i64, i64) {
+        let width = self.terminal.columns() as usize;
+        let height = self.terminal.rows() as usize;
+        if width == 0 || height == 0 {
+            return (0, 0);
+        }
+        let (top, body, bottom) = self.fullscreen_regions();
+        let top_natural = render_children(&top, width as u16).len();
+        let bottom_natural = render_children(&bottom, width as u16).len();
+        let total = body.map_or(0, |body| {
+            body.borrow_mut()
+                .render(fullscreen::body_width(width) as u16)
+                .len()
+        });
+        let rows = fullscreen::split_rows(
+            height,
+            top_natural,
+            self.scroll_offset.is_some(),
+            bottom_natural,
+        );
+        (total as i64, rows.body as i64)
+    }
+
+    /// The full-screen children, split at the body: the top chrome, the body
+    /// (when it is a child), and the bottom. Without a body every child is bottom.
+    fn fullscreen_regions(
+        &self,
+    ) -> (
+        Vec<ComponentHandle>,
+        Option<ComponentHandle>,
+        Vec<ComponentHandle>,
+    ) {
+        let children = &self.root.children;
+        let index = self
+            .fullscreen_body
+            .as_ref()
+            .and_then(|body| children.iter().position(|child| Rc::ptr_eq(child, body)));
+        match index {
+            Some(index) => (
+                children[..index].to_vec(),
+                Some(children[index].clone()),
+                children[index + 1..].to_vec(),
+            ),
+            None => (Vec::new(), None, children.clone()),
+        }
+    }
+
     /// Rows available to scroll through; the filler is not transcript.
     fn transcript_length(&self) -> i64 {
-        if self.scroll_offset.is_some() {
+        if self.fullscreen && self.previous_screen_size.is_none() {
+            return self.fullscreen_measure().0;
+        }
+        if self.scroll_offset.is_some() || self.fullscreen {
             return self.scroll_total_lines;
         }
         self.previous_lines.len() as i64 - self.flex_height()
@@ -571,7 +681,10 @@ impl Tui {
         self.scroll_offset = None;
         self.scroll_search = None;
         self.release_scroll_images();
-        self.terminal.set_alternate_screen(false);
+        // A full-screen run stays on the alternate screen for its whole life.
+        if !self.fullscreen {
+            self.terminal.set_alternate_screen(false);
+        }
         self.last_cursor_pos = None;
         self.scroll_view_lines = None;
         self.request_render(false);
@@ -605,8 +718,14 @@ impl Tui {
             return;
         }
         self.scroll_offset = Some(offset.max(0));
+        if self.fullscreen {
+            // Reading or moving: the `N new` count starts again from here.
+            self.fullscreen_seen_total = self.scroll_total_lines;
+        }
         if entering {
-            self.terminal.set_alternate_screen(true);
+            if !self.fullscreen {
+                self.terminal.set_alternate_screen(true);
+            }
             self.terminal.hide_cursor();
         }
         self.request_render(false);
@@ -853,6 +972,13 @@ impl Tui {
     /// thread that owns this `Tui` (see module docs on the `Send` split).
     pub fn start(&mut self) -> Receiver<TuiEvent> {
         self.stopped = false;
+        self.started = true;
+        if self.fullscreen {
+            // The first frame is a full paint on the alternate screen.
+            self.previous_screen.clear();
+            self.previous_screen_size = None;
+            self.terminal.set_alternate_screen(true);
+        }
         let (tx, rx) = mpsc::channel();
         let tx_drained = tx.clone();
         self.terminal.on_output_drained(Box::new(move || {
@@ -936,7 +1062,49 @@ impl Tui {
         self.terminal.write("\x1b[16t");
     }
 
+    /// Turns the full-screen mode on or off (M1). Off by default. It is read by
+    /// [`Tui::start`], which enters the alternate screen when it is on. While
+    /// the TUI runs the call is ignored: switching screens under a live frame
+    /// would desync the diff. Between `stop` and `start` it takes effect.
+    pub fn set_fullscreen(&mut self, on: bool) {
+        if self.started {
+            return;
+        }
+        self.fullscreen = on;
+    }
+
+    /// Whether the full-screen mode is on.
+    pub fn fullscreen(&self) -> bool {
+        self.fullscreen
+    }
+
+    /// The transcript in full-screen mode. Root children before it are the top
+    /// chrome (HUD, gap, attach), those after it the bottom (prompt and below).
+    /// Unset, the body is empty and every child is bottom.
+    pub fn set_fullscreen_body(&mut self, body: Option<ComponentHandle>) {
+        self.fullscreen_body = body;
+    }
+
     pub fn stop(&mut self) {
+        self.started = false;
+        if self.fullscreen {
+            // Leaving the alternate screen restores the normal one, as it was
+            // before launch. Nothing is written below the content: that screen
+            // was ours, and a newline here would scroll the terminal. Kitty
+            // images are freed first, as the off path frees its pinned copies.
+            self.stopped = true;
+            let ids: Vec<u32> = self.previous_kitty_image_ids.drain().collect();
+            let buffer = self.delete_kitty_images(ids);
+            if !buffer.is_empty() {
+                self.terminal.write(&buffer);
+            }
+            self.previous_screen.clear();
+            self.previous_screen_size = None;
+            self.terminal.set_alternate_screen(false);
+            self.terminal.show_cursor();
+            self.terminal.stop();
+            return;
+        }
         // Off the alternate screen before the exit bookkeeping below, which
         // moves the cursor relative to content on the normal screen.
         if self.scroll_offset.is_some() {
@@ -1107,7 +1275,15 @@ impl Tui {
             return;
         }
         let view_height = self.scroll_view_height();
-        let index = row - 1;
+        // The view starts on screen row 1, or below the full-screen top chrome.
+        let first = if self.fullscreen {
+            self.fullscreen_body_window
+                .as_ref()
+                .map_or(0, |window| window.0)
+        } else {
+            0
+        };
+        let index = row - 1 - first;
         if index < 0 || index >= view_height {
             return;
         }
@@ -1132,6 +1308,13 @@ impl Tui {
     /// the last frame painted. A live buffer shorter than the screen is
     /// declined rather than guessed at. A picker's rows link to nothing.
     fn hyperlink_at_screen_cell(&self, row: i64, column: i64) -> Option<String> {
+        if self.fullscreen {
+            // Only body rows carry the transcript's links; `row` is 1-based.
+            let (first_row, lines) = self.fullscreen_body_window.as_ref()?;
+            let index = usize::try_from(row - 1 - first_row).ok()?;
+            let line = lines.get(index)?;
+            return hyperlink_at(line, column - 1).or_else(|| bare_url_at(line, column - 1));
+        }
         let pinned = self.scroll_offset.is_some();
         let lines: &[String] = if pinned {
             self.scroll_view_lines.as_deref()?
@@ -1322,6 +1505,10 @@ impl Tui {
 
     fn paint(&mut self) {
         if self.stopped {
+            return;
+        }
+        if self.fullscreen {
+            self.paint_fullscreen();
             return;
         }
         if self.scroll_offset.is_some() && !self.scroll_pane_fits() {
@@ -1827,6 +2014,7 @@ impl Tui {
             width,
             search: self.scroll_search_status(),
             picker: self.scroll_pane().is_some(),
+            new_lines: 0,
         };
         buffer.push_str(&(self.scroll_status_formatter)(&status));
         buffer.push_str("\x1b[?7h");
@@ -1834,6 +2022,237 @@ impl Tui {
         self.write_frame(&buffer);
         // Kept so a click on the pinned window can be placed.
         self.scroll_view_lines = Some(lines);
+    }
+
+    // ── Full-screen mode (M1b) ──────────────────────────────────────────
+
+    /// Paints one full-screen frame. A size change or a forced render clears the
+    /// screen and repaints every row; otherwise only the rows that changed since
+    /// the last frame are written. Nothing is written below the last row, and
+    /// autowrap is off, so no row scrolls into the terminal's scrollback.
+    fn paint_fullscreen(&mut self) {
+        let width = self.terminal.columns() as usize;
+        let height = self.terminal.rows() as usize;
+        let forced = std::mem::take(&mut self.force_redraw);
+        if width == 0 || height == 0 {
+            return;
+        }
+        let resized = self
+            .previous_screen_size
+            .is_some_and(|size| size != (width, height));
+        let full = forced || resized || self.previous_screen_size.is_none();
+        let screen = self.compose_fullscreen(width, height, resized);
+
+        let mut buffer = String::from("\x1b[?2026h\x1b[?7l");
+        buffer.push_str(HIDE_CURSOR);
+        if full {
+            let ids: Vec<u32> = self.previous_kitty_image_ids.iter().copied().collect();
+            buffer.push_str(&self.delete_kitty_images(ids));
+            buffer.push_str("\x1b[2J\x1b[H");
+            for (row, text) in screen.rows.iter().enumerate() {
+                buffer.push_str(&format!("\x1b[{};1H\x1b[2K{text}", row + 1));
+            }
+        } else {
+            let changed: Vec<usize> = (0..screen.rows.len())
+                .filter(|&row| self.previous_screen.get(row) != Some(&screen.rows[row]))
+                .collect();
+            // A kitty image on a row that changes goes first; the new row places its own copy.
+            let stale: Vec<u32> = changed
+                .iter()
+                .filter_map(|&row| self.previous_screen.get(row))
+                .flat_map(|text| extract_kitty_image_ids(text))
+                .collect();
+            buffer.push_str(&self.delete_kitty_images(stale));
+            for row in changed {
+                buffer.push_str(&format!("\x1b[{};1H\x1b[2K{}", row + 1, screen.rows[row]));
+            }
+        }
+        match screen.cursor {
+            Some((row, col)) => {
+                buffer.push_str(&format!("\x1b[{};{}H", row + 1, col + 1));
+                buffer.push_str(if self.show_hardware_cursor {
+                    SHOW_CURSOR
+                } else {
+                    HIDE_CURSOR
+                });
+            }
+            None => buffer.push_str(HIDE_CURSOR),
+        }
+        buffer.push_str("\x1b[?7h\x1b[?2026l");
+        self.write_frame(&buffer);
+
+        self.previous_kitty_image_ids = self.collect_kitty_image_ids(&screen.rows);
+        self.previous_screen = screen.rows;
+        self.previous_screen_size = Some((width, height));
+    }
+
+    /// Composes a full-screen frame of `height` rows: the top chrome, the body
+    /// window, the scroll status row while pinned, then the bottom. Each row is
+    /// already cut to its region's width and in the form it is written. While
+    /// pinned, a focused picker (not the prompt) takes the bottom rows, and the
+    /// body gets its scrollbar column and the search highlights.
+    fn compose_fullscreen(&mut self, width: usize, height: usize, resized: bool) -> Screen {
+        let (top_children, body, bottom_children) = self.fullscreen_regions();
+        let top_lines: Vec<String> = render_children(&top_children, width as u16)
+            .iter()
+            .map(|line| strip_cursor_marker(line))
+            .collect();
+        // The cursor marker is stripped where a line is drawn (the window), or on
+        // every line while pinned, where the search reads the whole body. A live
+        // frame does not copy the whole transcript a second time.
+        let mut body_lines: Vec<String> = match &body {
+            Some(body) => body
+                .borrow_mut()
+                .render(fullscreen::body_width(width) as u16),
+            None => Vec::new(),
+        };
+        let total = body_lines.len();
+        let pinned = self.scroll_offset.is_some();
+        // While pinned a picker takes the bottom; the prompt keeps its place.
+        let pane = if pinned {
+            self.scroll_pane_lines(width as u16)
+        } else {
+            Vec::new()
+        };
+        let mut bottom_lines = if pane.is_empty() {
+            render_children(&bottom_children, width as u16)
+        } else {
+            pane
+        };
+        let rows = fullscreen::split_rows(height, top_lines.len(), pinned, bottom_lines.len());
+
+        // A pinned view keeps its share of the transcript through a resize.
+        let mut pinned_top = self.scroll_offset.map(|top| top.max(0) as usize);
+        if let Some(top) = pinned_top.filter(|_| resized) {
+            let old_total = self.scroll_total_lines.max(0) as usize;
+            pinned_top = Some(fullscreen::anchor_on_resize(
+                top, old_total, total, rows.body,
+            ));
+        }
+        let start = fullscreen::body_start(total, rows.body, pinned_top);
+        if pinned_top.is_some() {
+            self.scroll_offset = Some(start as i64);
+        }
+        self.scroll_total_lines = total as i64;
+        self.fullscreen_view = rows.body as i64;
+        // A resize re-wraps the transcript and a rebuild replaces it: neither is
+        // output that arrived. A transcript that shrank (a clear) also starts over.
+        if resized || std::mem::take(&mut self.fullscreen_seen_reset) {
+            self.fullscreen_seen_total = total as i64;
+        }
+        self.fullscreen_seen_total = self.fullscreen_seen_total.min(total as i64);
+        // The search runs over the body lines, as the pinned painter's does.
+        let query = if pinned {
+            for line in &mut body_lines {
+                *line = strip_cursor_marker(line);
+            }
+            self.flat_lines = body_lines.clone();
+            self.refresh_scroll_search(total as i64);
+            self.scroll_search
+                .as_ref()
+                .map(|search| search.query.clone())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        let bottom_height = bottom_lines.len() as i64;
+        let cursor = self.extract_cursor_position(&mut bottom_lines, bottom_height);
+        let window = fullscreen::bottom_window(
+            bottom_lines.len(),
+            rows.bottom,
+            cursor.map(|c| c.row.max(0) as usize),
+        );
+        let bottom_start = rows.top + rows.body + rows.bar;
+        // The cursor shows on the live view only, and only when its row is on screen.
+        let cursor_at = cursor
+            .filter(|c| !pinned && window.contains(&(c.row.max(0) as usize)))
+            .map(|c| {
+                let row = bottom_start + c.row.max(0) as usize - window.start;
+                (row, (c.col.max(0) as usize).min(width.saturating_sub(1)))
+            });
+
+        let window_lines: Vec<String> = body_lines
+            .iter()
+            .skip(start)
+            .take(rows.body)
+            .map(|line| strip_cursor_marker(line))
+            .collect();
+        // The scrollbar shows while pinned only: the column is blank while live.
+        let glyphs = if pinned {
+            scrollbar_glyphs(rows.body as i64, total as i64, start as i64)
+        } else {
+            Vec::new()
+        };
+        let mut out: Vec<String> = Vec::with_capacity(height);
+        for (row, text) in top_lines.iter().take(rows.top).enumerate() {
+            out.push(self.region_row(text, width, row));
+        }
+        for row in 0..rows.body {
+            let text = window_lines.get(row).map_or("", String::as_str);
+            let marked = if query.is_empty() || hoocode_tui_images::is_image_line(text) {
+                text.to_string()
+            } else {
+                Self::highlight_scroll_matches(text, &query)
+            };
+            out.push(self.body_row(&marked, width, row, glyphs.get(row).copied()));
+        }
+        if rows.bar == 1 {
+            let status = ScrollStatus {
+                top: start as i64 + 1,
+                bottom: (start + rows.body).min(total) as i64,
+                total: total as i64,
+                view_height: rows.body as i64,
+                at_top: start == 0,
+                at_bottom: start >= total.saturating_sub(rows.body),
+                width: width as i64,
+                search: self.scroll_search_status(),
+                picker: false,
+                new_lines: fullscreen::new_lines_since(self.fullscreen_seen_total as usize, total)
+                    as i64,
+            };
+            let text = (self.scroll_status_formatter)(&status);
+            out.push(self.emit_line(&text, width as i64));
+        }
+        for (row, text) in bottom_lines
+            .iter()
+            .skip(window.start)
+            .take(window.len())
+            .enumerate()
+        {
+            out.push(self.region_row(text, width, row));
+        }
+        // Screens under four rows show the bottom alone, which may leave rows blank.
+        out.resize(height, String::new());
+        self.fullscreen_body_window = Some((rows.top as i64, window_lines));
+        Screen {
+            rows: out,
+            cursor: cursor_at,
+        }
+    }
+
+    /// One row of a full-screen region, cut to `width` columns. An image line
+    /// whose picture would reach above the region (more rows up than `row`)
+    /// is named in its place, so no picture overlays the chrome or the prompt.
+    fn region_row(&mut self, text: &str, width: usize, row: usize) -> String {
+        if hoocode_tui_images::is_image_line(text) && image_row_offset(text) > row as i64 {
+            return self.emit_line(IMAGE_PLACEHOLDER, width as i64);
+        }
+        self.emit_line(text, width as i64)
+    }
+
+    /// One body row. With a scrollbar glyph, the row is padded to the body
+    /// width so the glyph lands in the reserved last column.
+    fn body_row(&mut self, text: &str, width: usize, row: usize, glyph: Option<char>) -> String {
+        let body_width = fullscreen::body_width(width);
+        let glyph = match glyph {
+            Some(glyph) if !hoocode_tui_images::is_image_line(text) => glyph,
+            _ => return self.region_row(text, body_width, row),
+        };
+        let shown = self.region_row(text, body_width, row);
+        let content = shown.strip_suffix(SEGMENT_RESET).unwrap_or(&shown);
+        let pad = body_width.saturating_sub(visible_width(content));
+        format!("{content}{}{SEGMENT_RESET}{glyph}", " ".repeat(pad))
     }
 
     /// Take the pinned window's own copies of the images off the screen.
@@ -1891,9 +2310,25 @@ impl Tui {
     }
 }
 
+/// The cursor marker removed from a line. Only the bottom carries the cursor,
+/// so every other line is stripped of it and drawn without it.
+fn strip_cursor_marker(line: &str) -> String {
+    line.replacen(CURSOR_MARKER, "", 1)
+}
+
+/// Renders each child in order and joins the lines (full-screen regions).
+fn render_children(children: &[ComponentHandle], width: u16) -> Vec<String> {
+    let mut lines = Vec::new();
+    for child in children {
+        lines.extend(child.borrow_mut().render(width));
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scrollbar::SCROLLBAR_TRACK;
     use std::cell::RefCell as StdRefCell;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -1921,6 +2356,8 @@ mod tests {
         show_cursor_calls: Arc<Mutex<u32>>,
         /// Stands in for the output thread still writing the last frame.
         frame_busy: Arc<Mutex<bool>>,
+        /// Every `set_alternate_screen` call, in order.
+        alternate_screen: Arc<Mutex<Vec<bool>>>,
     }
 
     impl MockTerminal {
@@ -1932,6 +2369,7 @@ mod tests {
                 hide_cursor_calls: Arc::new(Mutex::new(0)),
                 show_cursor_calls: Arc::new(Mutex::new(0)),
                 frame_busy: Arc::new(Mutex::new(false)),
+                alternate_screen: Arc::new(Mutex::new(Vec::new())),
             }
         }
     }
@@ -1972,6 +2410,9 @@ mod tests {
         fn frame_pending(&self) -> bool {
             *self.frame_busy.lock().unwrap()
         }
+        fn set_alternate_screen(&mut self, active: bool) {
+            self.alternate_screen.lock().unwrap().push(active);
+        }
     }
 
     struct TestComponent {
@@ -2007,6 +2448,7 @@ mod tests {
         cols: Arc<Mutex<u16>>,
         rows: Arc<Mutex<u16>>,
         frame_busy: Arc<Mutex<bool>>,
+        alternate_screen: Arc<Mutex<Vec<bool>>>,
     }
 
     impl MockHandles {
@@ -2023,6 +2465,7 @@ mod tests {
             cols: terminal.cols.clone(),
             rows: terminal.rows.clone(),
             frame_busy: terminal.frame_busy.clone(),
+            alternate_screen: terminal.alternate_screen.clone(),
         };
         (Tui::new(Box::new(terminal), Some(false)), handles)
     }
@@ -2298,5 +2741,614 @@ mod tests {
         let out = handles.writes.joined();
         assert!(out.contains(&"x".repeat(40)), "line is cut at the width");
         assert!(!out.contains(&"x".repeat(41)), "nothing past the width");
+    }
+
+    // ── Full-screen mode (M1b) ──────────────────────────────────────────
+
+    /// What `emit_line` appends after every row's text.
+    const ROW_END: &str = "\x1b[0m\x1b]8;;\x07";
+
+    /// The text written for screen row `row`, if the frame wrote that row.
+    fn written_row(writes: &str, row: usize) -> Option<String> {
+        let marker = format!("\x1b[{};1H\x1b[2K", row + 1);
+        let start = writes.find(&marker)? + marker.len();
+        let rest = writes.get(start..)?;
+        let end = rest.find(ROW_END)?;
+        rest.get(..end).map(str::to_string)
+    }
+
+    fn assert_screen(writes: &str, expected: &[String]) {
+        for (row, text) in expected.iter().enumerate() {
+            assert_eq!(
+                written_row(writes, row).as_deref(),
+                Some(text.as_str()),
+                "screen row {row}"
+            );
+        }
+    }
+
+    fn text_component(lines: Vec<String>) -> ComponentHandle {
+        let component = TestComponent::new();
+        component.borrow_mut().lines = lines;
+        component
+    }
+
+    /// The bottom: seven rows, the cursor on the third.
+    fn bottom_lines() -> Vec<String> {
+        vec![
+            "p0".to_string(),
+            "p1".to_string(),
+            format!("p2{CURSOR_MARKER}"),
+            "p3".to_string(),
+            "p4".to_string(),
+            "p5".to_string(),
+            "p6".to_string(),
+        ]
+    }
+
+    /// The bottom rows as they show on screen: the cursor marker is stripped.
+    fn bottom_rows() -> Vec<String> {
+        ["p0", "p1", "p2", "p3", "p4", "p5", "p6"]
+            .iter()
+            .map(|row| row.to_string())
+            .collect()
+    }
+
+    struct FullscreenFixture {
+        tui: Tui,
+        handles: MockHandles,
+        body: Rc<StdRefCell<TestComponent>>,
+        bottom: Rc<StdRefCell<TestComponent>>,
+    }
+
+    /// The tree the app will build (M1c), with fixed content: a HUD, a gap, an
+    /// optional attach row, a 40-row body and a 7-row bottom. Full-screen is on.
+    fn fullscreen_fixture(cols: u16, rows: u16, attach: bool) -> FullscreenFixture {
+        let (mut tui, handles) = new_tui(cols, rows);
+        tui.set_fullscreen(true);
+        tui.add_child(text_component(vec!["HUD".to_string()]));
+        tui.add_child(text_component(vec![String::new()]));
+        if attach {
+            tui.add_child(text_component(vec!["ATTACH".to_string()]));
+        }
+        let body = TestComponent::new();
+        body.borrow_mut().lines = (0..40).map(|i| format!("b{i:02}")).collect();
+        tui.add_child(body.clone());
+        let body_handle: ComponentHandle = body.clone();
+        tui.set_fullscreen_body(Some(body_handle));
+        let bottom = TestComponent::new();
+        bottom.borrow_mut().lines = bottom_lines();
+        tui.add_child(bottom.clone());
+        FullscreenFixture {
+            tui,
+            handles,
+            body,
+            bottom,
+        }
+    }
+
+    #[test]
+    fn fullscreen_start_enters_alternate_screen_stop_leaves_it() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        assert_eq!(*f.handles.alternate_screen.lock().unwrap(), vec![true]);
+        f.tui.stop();
+        assert_eq!(
+            *f.handles.alternate_screen.lock().unwrap(),
+            vec![true, false]
+        );
+    }
+
+    #[test]
+    fn fullscreen_stop_writes_nothing_below_content() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.handles.writes.clear();
+        f.tui.stop();
+        assert_eq!(
+            f.handles.writes.joined(),
+            "",
+            "no newline or cursor move below the frame"
+        );
+    }
+
+    #[test]
+    fn fullscreen_off_never_touches_the_alternate_screen() {
+        let (mut tui, handles) = new_tui(100, 30);
+        assert!(!tui.fullscreen(), "off by default");
+        let _events = tui.start();
+        tui.stop();
+        assert!(handles.alternate_screen.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn fullscreen_frame_100x30_composes_regions() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        let mut expected = vec!["HUD".to_string(), String::new()];
+        // Live: the last 21 body rows. Then the 7 bottom rows.
+        expected.extend((19..40).map(|i| format!("b{i:02}")));
+        expected.extend(bottom_rows());
+        let writes = f.handles.writes.joined();
+        assert_screen(&writes, &expected);
+        // The cursor is on bottom row 2, column 2, which is screen row 25 (1-based 26).
+        assert!(writes.contains("\x1b[26;3H"), "cursor in the prompt");
+    }
+
+    #[test]
+    fn fullscreen_frame_80x24_with_attach_row() {
+        let mut f = fullscreen_fixture(80, 24, true);
+        let _events = f.tui.start();
+        let mut expected = vec!["HUD".to_string(), String::new(), "ATTACH".to_string()];
+        // 24 - 3 top - 7 bottom = 14 body rows.
+        expected.extend((26..40).map(|i| format!("b{i:02}")));
+        expected.extend(bottom_rows());
+        let writes = f.handles.writes.joined();
+        assert_screen(&writes, &expected);
+        assert!(writes.contains("\x1b[20;3H"), "cursor in the prompt");
+    }
+
+    #[test]
+    fn fullscreen_repaints_only_changed_rows() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.handles.writes.clear();
+        f.bottom.borrow_mut().lines[4] = "p4 changed".to_string();
+        f.tui.request_render(false);
+        let writes = f.handles.writes.joined();
+        assert_eq!(writes.matches("\x1b[2K").count(), 1, "one row rewritten");
+        // Bottom row 4 is screen row 27 (23 + 4).
+        assert_eq!(written_row(&writes, 27).as_deref(), Some("p4 changed"));
+        assert!(!writes.contains("\x1b[2J"), "a diff frame does not clear");
+    }
+
+    #[test]
+    fn fullscreen_resize_clears_then_repaints_all_rows() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.handles.writes.clear();
+        f.handles.set_size(100, 28);
+        f.tui.request_render(false);
+        let writes = f.handles.writes.joined();
+        assert!(writes.contains("\x1b[2J\x1b[H"), "the screen is cleared");
+        assert_eq!(
+            writes.matches("\x1b[2K").count(),
+            28,
+            "every row of the new size"
+        );
+        // 28 rows: 2 top, 7 bottom, so 19 body rows from row 21.
+        assert_eq!(written_row(&writes, 2).as_deref(), Some("b21"));
+    }
+
+    #[test]
+    fn fullscreen_restart_repaints_everything() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.tui.stop();
+        f.handles.writes.clear();
+        let _events = f.tui.start();
+        assert_eq!(
+            *f.handles.alternate_screen.lock().unwrap(),
+            vec![true, false, true],
+            "suspend and the editor round trip re-enter the alternate screen"
+        );
+        assert_eq!(
+            f.handles.writes.joined().matches("\x1b[2K").count(),
+            30,
+            "every row is painted again"
+        );
+    }
+
+    #[test]
+    fn fullscreen_session_writes_no_scrollback_sequences() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.bottom.borrow_mut().lines[0] = "changed".to_string();
+        f.tui.request_render(false);
+        f.handles.set_size(80, 24);
+        f.tui.request_render(false);
+        f.tui.stop();
+        let writes = f.handles.writes.joined();
+        assert!(
+            !writes.contains("\x1b[3J"),
+            "the scrollback is never cleared"
+        );
+        assert!(
+            !writes.contains('\n') && !writes.contains('\r'),
+            "no line feed or carriage return: nothing scrolls"
+        );
+    }
+
+    #[test]
+    fn fullscreen_pinned_view_holds_its_rows_and_shows_status() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.handles.writes.clear();
+        assert!(f.tui.scroll_by_lines(-5), "moves up from the tail");
+        assert!(f.tui.scroll_pinned());
+        let writes = f.handles.writes.joined();
+        // 40 body rows, pinned at row 14, 20 rows shown (one row is the status row).
+        // Padded to the body width, so the scrollbar glyph lands in the last column.
+        assert_eq!(
+            written_row(&writes, 2)
+                .map(|row| row.trim_end().to_string())
+                .as_deref(),
+            Some("b14")
+        );
+        assert_eq!(
+            written_row(&writes, 21)
+                .map(|row| row.trim_end().to_string())
+                .as_deref(),
+            Some("b33")
+        );
+        assert!(written_row(&writes, 22).is_some(), "the status row");
+        assert!(!writes.contains("\x1b[26;3H"), "no cursor while pinned");
+        assert_eq!(
+            *f.handles.alternate_screen.lock().unwrap(),
+            vec![true],
+            "pinning does not toggle the alternate screen"
+        );
+
+        f.handles.writes.clear();
+        assert!(f.tui.scroll_to_live());
+        let writes = f.handles.writes.joined();
+        assert_eq!(written_row(&writes, 2).as_deref(), Some("b19"));
+        assert_eq!(*f.handles.alternate_screen.lock().unwrap(), vec![true]);
+    }
+
+    #[test]
+    fn fullscreen_set_while_running_is_ignored() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.tui.set_fullscreen(false);
+        assert!(
+            f.tui.fullscreen(),
+            "the mode does not change under a live frame"
+        );
+        assert_eq!(
+            *f.handles.alternate_screen.lock().unwrap(),
+            vec![true],
+            "no screen switch"
+        );
+        f.tui.stop();
+        f.tui.set_fullscreen(false);
+        assert!(
+            !f.tui.fullscreen(),
+            "between stop and start it takes effect"
+        );
+    }
+
+    #[test]
+    fn fullscreen_short_screen_keeps_the_prompt_row() {
+        // A top taller than the screen allows: the bottom keeps its row.
+        let (mut tui, handles) = new_tui(40, 6);
+        tui.set_fullscreen(true);
+        for i in 0..5 {
+            tui.add_child(text_component(vec![format!("top{i}")]));
+        }
+        let body = text_component(vec!["body".to_string()]);
+        tui.add_child(body.clone());
+        tui.set_fullscreen_body(Some(body));
+        let bottom = TestComponent::new();
+        bottom.borrow_mut().lines = bottom_lines();
+        tui.add_child(bottom);
+        let _events = tui.start();
+        let writes = handles.writes.joined();
+        assert_eq!(
+            written_row(&writes, 5).as_deref(),
+            Some("p2"),
+            "the prompt row is painted"
+        );
+        assert!(writes.contains("\x1b[6;3H"), "cursor on the prompt row");
+    }
+
+    #[test]
+    fn fullscreen_cursor_marker_is_stripped_from_body_rows() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        f.body.borrow_mut().lines[25] = format!("b25{CURSOR_MARKER}");
+        let _events = f.tui.start();
+        let writes = f.handles.writes.joined();
+        assert!(
+            !writes.contains(CURSOR_MARKER),
+            "no marker reaches the screen"
+        );
+        assert!(writes.contains("b25"), "the row keeps its text");
+    }
+
+    #[test]
+    fn fullscreen_image_is_named_when_its_picture_reaches_above_the_body() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        // Live: body row 0 is transcript line 19. A picture two rows up would
+        // overlay the gap, so it is named; one row up stays inside the body.
+        f.body.borrow_mut().lines[19] = "\x1b[2A\x1b_Ga=T,i=9;AAAA\x1b\\".to_string();
+        f.body.borrow_mut().lines[20] = "\x1b[1A\x1b_Ga=T,i=10;AAAA\x1b\\".to_string();
+        let _events = f.tui.start();
+        let writes = f.handles.writes.joined();
+        let row_0 = written_row(&writes, 2).expect("body row 0");
+        assert!(row_0.contains("[image]"), "named: {row_0}");
+        assert!(!row_0.contains("i=9"), "the picture is not drawn: {row_0}");
+        let row_1 = written_row(&writes, 3).expect("body row 1");
+        assert!(row_1.contains("i=10"), "drawn inside the body: {row_1}");
+    }
+
+    #[test]
+    fn fullscreen_stop_frees_the_kitty_images_it_placed() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        f.body.borrow_mut().lines[22] = "\x1b_Ga=T,i=7;AAAA\x1b\\".to_string();
+        let _events = f.tui.start();
+        f.handles.writes.clear();
+        f.tui.stop();
+        let writes = f.handles.writes.joined();
+        let delete = hoocode_tui_images::delete_kitty_image(7);
+        assert!(
+            writes.contains(&delete),
+            "image 7 is deleted before the screen is left"
+        );
+        assert_eq!(
+            *f.handles.alternate_screen.lock().unwrap(),
+            vec![true, false],
+            "the alternate screen is left"
+        );
+    }
+
+    #[test]
+    fn fullscreen_scroll_before_the_first_frame_uses_the_body_height() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        // No start and no frame yet: the body is measured, 21 rows live over 40 lines.
+        assert!(f.tui.scroll_by_lines(-5), "moves up from the live tail");
+        assert_eq!(
+            f.tui
+                .get_scroll_position()
+                .map(|(top, total, _)| (top, total)),
+            Some((14, 40)),
+            "19 is the live top, less 5"
+        );
+    }
+
+    #[test]
+    fn fullscreen_live_view_follows_output() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.handles.writes.clear();
+        f.body
+            .borrow_mut()
+            .lines
+            .extend(["n0", "n1", "n2"].map(String::from));
+        f.tui.request_render(false);
+        let writes = f.handles.writes.joined();
+        assert_eq!(
+            written_row(&writes, 22).as_deref(),
+            Some("n2"),
+            "the tail follows"
+        );
+        assert_eq!(
+            written_row(&writes, 2).as_deref(),
+            Some("b22"),
+            "the window moved down by three"
+        );
+    }
+
+    #[test]
+    fn fullscreen_pinned_view_holds_while_output_grows_and_counts_new_lines() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        f.tui
+            .set_scroll_status_formatter(Box::new(|status| format!("NEW{}", status.new_lines)));
+        let _events = f.tui.start();
+        assert!(f.tui.scroll_by_lines(-5));
+        f.handles.writes.clear();
+        f.body
+            .borrow_mut()
+            .lines
+            .extend((0..8).map(|i| format!("n{i}")));
+        // A forced frame writes every row, so the held rows are visible.
+        f.tui.request_render(true);
+        let writes = f.handles.writes.joined();
+        assert_eq!(
+            written_row(&writes, 2)
+                .map(|row| row.trim_end().to_string())
+                .as_deref(),
+            Some("b14"),
+            "the pinned window holds its top row"
+        );
+        assert_eq!(
+            written_row(&writes, 22).as_deref(),
+            Some("NEW8"),
+            "the bar counts the new lines"
+        );
+
+        // Moving the view starts the count again from here: the move itself paints it.
+        f.handles.writes.clear();
+        assert!(f.tui.scroll_by_lines(-1));
+        assert_eq!(
+            written_row(&f.handles.writes.joined(), 22).as_deref(),
+            Some("NEW0")
+        );
+
+        // A shorter transcript (a clear) starts the count over: a frame that sees it resets it.
+        f.body.borrow_mut().lines.truncate(10);
+        f.handles.writes.clear();
+        f.tui.request_render(true);
+        assert_eq!(
+            written_row(&f.handles.writes.joined(), 22).as_deref(),
+            Some("NEW0")
+        );
+        f.body
+            .borrow_mut()
+            .lines
+            .extend((0..3).map(|i| format!("m{i}")));
+        f.handles.writes.clear();
+        f.tui.request_render(false);
+        assert_eq!(
+            written_row(&f.handles.writes.joined(), 22).as_deref(),
+            Some("NEW3")
+        );
+    }
+
+    #[test]
+    fn fullscreen_new_count_ignores_a_rebuild_that_is_not_new_output() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        f.tui
+            .set_scroll_status_formatter(Box::new(|status| format!("NEW{}", status.new_lines)));
+        let _events = f.tui.start();
+        assert!(f.tui.scroll_by_lines(-5));
+        f.body
+            .borrow_mut()
+            .lines
+            .extend((0..8).map(|i| format!("n{i}")));
+        f.tui.request_render(true);
+
+        // A toggle rebuilds the rows: the transcript grows, but nothing new arrived.
+        f.body.borrow_mut().lines = (0..50).map(|i| format!("r{i}")).collect();
+        f.tui.reset_new_lines_count();
+        f.handles.writes.clear();
+        f.tui.request_render(true);
+        assert_eq!(
+            written_row(&f.handles.writes.joined(), 22).as_deref(),
+            Some("NEW0"),
+            "a rebuild is not output"
+        );
+
+        f.body
+            .borrow_mut()
+            .lines
+            .extend((0..2).map(|i| format!("m{i}")));
+        f.handles.writes.clear();
+        f.tui.request_render(false);
+        assert_eq!(
+            written_row(&f.handles.writes.joined(), 22).as_deref(),
+            Some("NEW2"),
+            "only growth after the rebuild counts"
+        );
+    }
+
+    #[test]
+    fn fullscreen_pinned_scrollbar_draws_a_glyph_per_body_row() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        f.handles.writes.clear();
+        f.tui.request_render(false);
+        let live = f.handles.writes.joined();
+        assert!(
+            !live.contains(SCROLLBAR_THUMB) && !live.contains(SCROLLBAR_TRACK),
+            "blank while live"
+        );
+        assert!(f.tui.scroll_by_lines(-5));
+        let writes = f.handles.writes.joined();
+        // 40 lines over 20 rows: a thumb of 10 and a track of 10, each after the row's text.
+        let glyphs = writes.matches(SEGMENT_RESET).count();
+        assert!(glyphs >= 20, "one reset per body row: {glyphs}");
+        let thumbs = writes
+            .matches(&format!("{SEGMENT_RESET}{SCROLLBAR_THUMB}"))
+            .count();
+        let tracks = writes
+            .matches(&format!("{SEGMENT_RESET}{SCROLLBAR_TRACK}"))
+            .count();
+        assert_eq!((thumbs, tracks), (10, 10));
+        let row = written_row(&writes, 2).expect("body row 0");
+        assert!(row.starts_with("b14"), "{row}");
+    }
+
+    #[test]
+    fn fullscreen_pinned_picker_takes_the_bottom_rows() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let picker = TestComponent::new();
+        picker.borrow_mut().lines = vec!["PICK A".to_string(), "PICK B".to_string()];
+        picker.borrow_mut().focusable = true;
+        f.tui.add_child(picker.clone());
+        let prompt: ComponentHandle = f.bottom.clone();
+        f.tui.scroll_prompt = Some(prompt);
+        let _events = f.tui.start();
+        f.tui.set_focus(Some(picker.clone()));
+        f.handles.writes.clear();
+        assert!(f.tui.scroll_by_lines(-5));
+        // The picker's rows were on screen already (it is a bottom child too), so a forced frame shows them.
+        f.handles.writes.clear();
+        f.tui.request_render(true);
+        let writes = f.handles.writes.joined();
+        // Pinned with a picker: the body keeps 25 rows, the status row is 27, the picker is last.
+        assert_eq!(written_row(&writes, 28).as_deref(), Some("PICK A"));
+        assert_eq!(written_row(&writes, 29).as_deref(), Some("PICK B"));
+        assert!(
+            !writes.contains("p0"),
+            "the prompt rows are not drawn while the picker is up"
+        );
+    }
+
+    #[test]
+    fn fullscreen_search_highlights_body_rows() {
+        let mut f = fullscreen_fixture(100, 30, false);
+        let _events = f.tui.start();
+        assert!(f.tui.scroll_by_lines(-5));
+        f.handles.writes.clear();
+        assert_eq!(f.tui.set_scroll_search("b20", false), 1);
+        let writes = f.handles.writes.joined();
+        assert!(
+            writes.contains("\x1b[7mb20\x1b[27m"),
+            "the match is marked in its row"
+        );
+        assert!(!writes.contains("\x1b[7mb21"), "other rows are not marked");
+    }
+
+    /// Frame time with a long transcript, full-screen and off. Timing only, so it is
+    /// ignored by default:
+    /// `cargo test -p hoocode-tui-render perf_long_transcript -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "timing only: run by hand"]
+    fn perf_long_transcript_frame_time() {
+        const LINES: usize = 5000;
+        const FRAMES: u32 = 300;
+        let body_lines = |tail: &str| -> Vec<String> {
+            let mut lines: Vec<String> = (0..LINES)
+                .map(|i| format!("line {i:05} lorem ipsum dolor sit amet, consectetur"))
+                .collect();
+            lines.push(tail.to_string());
+            lines
+        };
+        let body = TestComponent::new();
+        body.borrow_mut().lines = body_lines("tail");
+        let start_body = std::time::Instant::now();
+        for _ in 0..FRAMES {
+            let _ = body.borrow_mut().render(100);
+        }
+        let body_only = start_body.elapsed() / FRAMES;
+        println!("component render of {LINES} lines: {body_only:?} per call");
+        for fullscreen in [true, false] {
+            let (mut tui, handles) = new_tui(100, 40);
+            tui.set_fullscreen(fullscreen);
+            tui.add_child(text_component(vec!["HUD".to_string()]));
+            let body = TestComponent::new();
+            body.borrow_mut().lines = body_lines("tail");
+            tui.add_child(body.clone());
+            if fullscreen {
+                let body_handle: ComponentHandle = body.clone();
+                tui.set_fullscreen_body(Some(body_handle));
+            }
+            let bottom = TestComponent::new();
+            bottom.borrow_mut().lines = bottom_lines();
+            tui.add_child(bottom.clone());
+            let _events = tui.start();
+            tui.request_render(true);
+            handles.writes.clear();
+            let mut bytes = 0usize;
+            let started = std::time::Instant::now();
+            for frame in 0..FRAMES {
+                if let Some(last) = body.borrow_mut().lines.last_mut() {
+                    *last = format!("tail {frame}");
+                }
+                tui.request_render(false);
+                bytes += handles.writes.joined().len();
+                handles.writes.clear();
+            }
+            let per_frame = started.elapsed() / FRAMES;
+            println!(
+                "{} {LINES} lines, 100x40: {per_frame:?} per frame, {} bytes per frame",
+                if fullscreen {
+                    "full-screen"
+                } else {
+                    "off        "
+                },
+                bytes / FRAMES as usize
+            );
+        }
     }
 }

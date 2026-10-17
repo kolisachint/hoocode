@@ -21,6 +21,7 @@ use hoocode_tui_render::Component;
 
 use crate::startup_progress;
 
+use super::retry::retry_notice_text;
 use super::*;
 
 /// What dangling plan rows settle to when a request ends: done after a clean
@@ -167,7 +168,30 @@ impl Mode {
                 self.update_session_chip();
                 self.update_terminal_title();
             }
-            _ => {}
+            AgentSessionEvent::AutoRetryStart {
+                attempt,
+                max_attempts,
+                error_message,
+                ..
+            } => {
+                self.transcript.start_retry(&error_message);
+                self.footer
+                    .borrow_mut()
+                    .set_retry_notice(Some(retry_notice_text(
+                        attempt,
+                        max_attempts,
+                        &error_message,
+                    )));
+            }
+            AgentSessionEvent::AutoRetryEnd {
+                success,
+                attempt,
+                final_error,
+            } => {
+                self.transcript
+                    .end_retry(success, attempt, final_error.as_deref());
+                self.footer.borrow_mut().set_retry_notice(None);
+            }
         }
         self.dirty.set(true);
     }
@@ -313,6 +337,7 @@ impl Mode {
                     // its previous calls formed.
                     if !self.chain_closed_for_current_message && self.opens_new_chain(&assistant) {
                         self.chain_closed_for_current_message = true;
+                        self.release_streaming_trace();
                         self.close_open_chain(ChainState::Done);
                     }
                     for content in &assistant.content {
@@ -322,6 +347,9 @@ impl Mode {
                         match self.transcript.pending_tools.get(&call.id) {
                             Some(block) => block.borrow_mut().update_args(call.arguments.clone()),
                             None => {
+                                if let Some(trace) = self.transcript.streaming.clone() {
+                                    self.place_trace_in_chain(&trace);
+                                }
                                 let block = self.new_tool_block(
                                     &call.name,
                                     &call.id,
@@ -353,6 +381,15 @@ impl Mode {
                         });
                     }
                     component.borrow_mut().update_content(&assistant, false);
+                    // A failed attempt is taken out again if a retry follows
+                    // (`retry.rs`): an error, or an abort during a retry.
+                    let failed_attempt = assistant.stop_reason == StopReason::Error
+                        || (assistant.stop_reason == StopReason::Aborted
+                            && self.session.retry_attempt() > 0);
+                    if failed_attempt {
+                        let tools = self.transcript.pending_tools.values().cloned().collect();
+                        self.transcript.keep_attempt_error(component.clone(), tools);
+                    }
                     if matches!(
                         assistant.stop_reason,
                         StopReason::Aborted | StopReason::Error

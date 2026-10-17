@@ -540,6 +540,34 @@ fn transient_messages_are_read_through_the_accessor_not_as_rows() {
     startup_progress::clear();
 }
 
+#[test]
+fn the_retry_notice_is_a_transient_line_between_the_warning_and_the_statuses() {
+    let _g = lock(Some("dark"));
+    let dir = tempfile::tempdir().unwrap();
+    let data = data_for(&dir, Some("main"));
+    data.set_extension_status("a", Some("alpha"));
+    let mut f = FooterComponent::new(Box::new(full_stub()), data);
+    f.set_notice(Some("Memory above the soft limit".into()));
+    f.set_retry_notice(Some(
+        "retrying · attempt 2 of 6 · 529 upstream\noverloaded".into(),
+    ));
+
+    let transient = f.transient_lines(120);
+    assert_eq!(transient.len(), 3, "{transient:?}");
+    assert!(plain(&transient[0]).contains("Memory above the soft limit"));
+    assert_eq!(
+        plain(&transient[1]),
+        "retrying · attempt 2 of 6 · 529 upstream overloaded"
+    );
+    assert!(plain(&transient[2]).contains("alpha"));
+    let rows: Vec<String> = f.render(120).iter().map(|r| plain(r)).collect();
+    assert_eq!(rows.len(), 2);
+    assert!(!rows.iter().any(|r| r.contains("retrying")));
+
+    f.set_retry_notice(None);
+    assert_eq!(f.transient_lines(120).len(), 2);
+}
+
 fn last_line(f: &mut FooterComponent, width: u16) -> String {
     plain(f.transient_lines(width as usize).last().unwrap())
 }

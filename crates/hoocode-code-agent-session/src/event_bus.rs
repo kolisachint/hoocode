@@ -60,7 +60,9 @@ impl EventBus {
         };
         for handler in handlers {
             if let Err(err) = handler(data) {
-                eprintln!("Event handler error ({channel}): {err}");
+                hoocode_runtime::diagnostics::write_stderr(&format!(
+                    "Event handler error ({channel}): {err}\n"
+                ));
             }
         }
     }

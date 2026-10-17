@@ -207,6 +207,7 @@ fn tool_call(id: &str, name: &str, arguments: Value) -> Content {
 
 fn tool_result(id: &str, name: &str, text: &str) -> Message {
     Message::ToolResult(ToolResultMessage {
+        duration_ms: None,
         tool_call_id: id.into(),
         tool_name: name.into(),
         content: vec![Content::Text(TextContent::new(text))],
@@ -432,6 +433,7 @@ fn copilot_initiator_is_agent_after_a_tool_result_and_images_set_the_vision_head
             StopReason::ToolUse,
         ),
         Message::ToolResult(ToolResultMessage {
+            duration_ms: None,
             tool_call_id: "call_1".into(),
             tool_name: "Read".into(),
             content: vec![image],

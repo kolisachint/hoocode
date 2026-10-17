@@ -753,6 +753,9 @@ impl Mode {
                 } else if self.session.is_streaming() {
                     // Queued messages come back to the prompt, then the run stops.
                     self.restore_queued_messages_to_editor(true);
+                } else if self.session.is_retrying() {
+                    // Backing off before the next attempt: cancel the retry.
+                    self.session.abort_retry();
                 } else if self.session.is_bash_running() {
                     self.session.abort_bash();
                 } else if self.is_bash_mode {

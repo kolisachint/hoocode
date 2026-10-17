@@ -2477,12 +2477,25 @@ mod tests {
 
         /// The transcript as first drawn, one row per line, ANSI stripped.
         fn draw(messages: Vec<AgentMessage>, settings: serde_json::Value) -> Vec<String> {
-            let args = crate::args::parse_args(&[]);
-            let agent_dir = tempfile::tempdir().unwrap();
             let mut manager = SessionManager::in_memory("/w");
             for message in messages {
                 manager.append_message(message);
             }
+            draw_session(manager, settings)
+        }
+
+        /// The transcript of a session as built by `manager`, one row per line.
+        fn draw_session(manager: SessionManager, settings: serde_json::Value) -> Vec<String> {
+            // These tests read the inline layout, rows counted from the top of
+            // the screen. Full-screen (the HUD row, the body) is on by default,
+            // so the inline layout is asked for here unless a test says otherwise.
+            let mut settings = settings;
+            if let Some(map) = settings.as_object_mut() {
+                map.entry("fullscreen")
+                    .or_insert(serde_json::Value::Bool(false));
+            }
+            let args = crate::args::parse_args(&[]);
+            let agent_dir = tempfile::tempdir().unwrap();
             let (session, _) = assemble_session(
                 &args,
                 std::path::PathBuf::from("/w"),
@@ -2543,14 +2556,15 @@ mod tests {
         fn peek_draws_each_trace_above_the_call_it_led_to() {
             let lines = draw(two_turns(), json!({"toolOutputView": "peek"}));
             // The second trace is above its own call, not below it, and
-            // below the first call: the run is split at the trace.
+            // below the first call. The trace does not split the run: both
+            // calls stay in one chain (thinking never splits a chain).
             assert!(at(&lines, "TRACE_ONE") < at(&lines, "QUERY_ONE"));
             assert!(at(&lines, "QUERY_ONE") < at(&lines, "TRACE_TWO"));
             assert!(at(&lines, "TRACE_TWO") < at(&lines, "QUERY_TWO"));
         }
 
         #[test]
-        fn a_folded_trace_still_ends_the_run() {
+        fn a_folded_trace_sits_above_its_call_in_one_run() {
             let lines = draw(two_turns(), json!({"hideThinkingBlock": true}));
             let labels: Vec<usize> = lines
                 .iter()
@@ -2561,6 +2575,69 @@ mod tests {
             assert_eq!(labels.len(), 2, "{}", lines.join("\n"));
             assert!(at(&lines, "QUERY_ONE") < labels[1]);
             assert!(labels[1] < at(&lines, "QUERY_TWO"));
+        }
+
+        /// The plan is the session's last TodoWrite, and a compaction does not
+        /// hide it: the compacted context drops the call, the branch keeps it.
+        #[test]
+        fn a_plan_written_before_a_compaction_is_restored_on_resume() {
+            let assistant = |content: serde_json::Value, stop: &str| -> AgentMessage {
+                serde_json::from_value(json!({
+                    "role": "assistant", "content": content,
+                    "api": "test-api", "provider": "test-provider", "model": "test-model",
+                    "stopReason": stop, "timestamp": 0,
+                }))
+                .unwrap()
+            };
+            let todo = assistant(
+                json!([{"type": "toolCall", "id": "todo-1", "name": "TodoWrite",
+                "arguments": {"todos": [
+                    {"content": "PLAN_READ_THE_SPEC", "status": "completed"},
+                    {"content": "PLAN_SHIP_IT", "status": "pending"},
+                ]}}]),
+                "toolUse",
+            );
+            let mut manager = SessionManager::in_memory("/w");
+            manager.append_message(
+                serde_json::from_value(json!({
+                    "role": "user", "content": "build it", "timestamp": 0,
+                }))
+                .unwrap(),
+            );
+            manager.append_message(todo);
+            manager.append_message(tool_result("todo-1", "Plan updated"));
+            manager.append_message(assistant(
+                json!([{"type": "text", "text": "Plan set."}]),
+                "stop",
+            ));
+            let kept = manager.append_message(
+                serde_json::from_value(json!({
+                    "role": "user", "content": "keep going", "timestamp": 0,
+                }))
+                .unwrap(),
+            );
+            manager.append_compaction("Summary of the work so far", kept, 1000, None, None, None);
+            manager.append_message(assistant(
+                json!([{"type": "text", "text": "Done."}]),
+                "stop",
+            ));
+
+            hoocode_code_task_store::task_store().clear();
+            draw_session(manager, json!({}));
+            let titles: Vec<String> = hoocode_code_task_store::task_store()
+                .list()
+                .into_iter()
+                .filter(|t| t.is_plan_item())
+                .map(|t| t.title)
+                .collect();
+            assert!(
+                titles.iter().any(|t| t.contains("PLAN_READ_THE_SPEC")),
+                "{titles:?}"
+            );
+            assert!(
+                titles.iter().any(|t| t.contains("PLAN_SHIP_IT")),
+                "{titles:?}"
+            );
         }
 
         #[test]
@@ -2598,14 +2675,20 @@ mod tests {
             // rows are found by that stat, not by the tool's name.
             assert_eq!(line_of(&lines, "×2"), None, "{}", lines.join("\n"));
             let spoken_at = at(&lines, "SPOKEN");
-            let calls: Vec<usize> = lines
+            // The first chain is closed by the speech, so it reads done (`●`).
+            // The second is the last one in a history that ends on a tool
+            // result with no answer: the turn was cut short, so it reads
+            // interrupted (`⊘`), never green.
+            let calls: Vec<(usize, &str)> = lines
                 .iter()
                 .enumerate()
-                .filter(|(_, l)| l.contains("● ") && l.contains("1 call"))
-                .map(|(i, _)| i)
+                .filter(|(_, l)| l.contains("1 call") && (l.contains("● ") || l.contains("⊘ ")))
+                .map(|(i, l)| (i, if l.contains("⊘ ") { "⊘" } else { "●" }))
                 .collect();
-            assert!(calls.len() >= 2, "{}", lines.join("\n"));
-            assert!(calls[0] < spoken_at && spoken_at < calls[1]);
+            assert_eq!(calls.len(), 2, "{}", lines.join("\n"));
+            assert_eq!(calls[0].1, "●", "{}", lines.join("\n"));
+            assert_eq!(calls[1].1, "⊘", "{}", lines.join("\n"));
+            assert!(calls[0].0 < spoken_at && spoken_at < calls[1].0);
         }
     }
 

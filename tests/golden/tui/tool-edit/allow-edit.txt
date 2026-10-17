@@ -1,32 +1,32 @@
-«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
+«»◭ HOOCODE  BUILD  work                                            SHIP mock-model  FUEL 0%  CR $0.00
+
 «»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
 «»▜▄▄▄▄▄▛  «fg=#989898»<WORK>
 
-
 «fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents
 
+«bg=#1c1c26»                                                                                                   
+«bg=#1c1c26» edit the app                                                                                      
+«bg=#1c1c26»                                                                                                   
 
-«bg=#1c1c26» edit the app
-
+«bg=#16161f»  «bg=#16161f;fg=#ffff00»● «bg=#16161f;bold»Edit«bg=#16161f» «bg=#16161f;fg=#5cc8bb»src/app.ts«bg=#16161f»                                                                                
+«bg=#16161f»    «bg=#16161f;fg=#a8a8a8» 1 export function greet(name: string): string {«bg=#16161f»                                               
+«bg=#16161f»    «bg=#16161f;fg=#d58181»-2    return `«bg=#16161f;fg=#d58181;inverse»hello«bg=#16161f;fg=#d58181» ${name}`;«bg=#16161f»                                                                  
+«bg=#16161f»    «bg=#16161f;fg=#b5bd68»+2    return `«bg=#16161f;fg=#b5bd68;inverse»Hello,«bg=#16161f;fg=#b5bd68» ${name}«bg=#16161f;fg=#b5bd68;inverse»!«bg=#16161f;fg=#b5bd68»`;«bg=#16161f»                                                                
+«bg=#16161f»    «bg=#16161f;fg=#a8a8a8» 3 }«bg=#16161f»                                                                                           
+«bg=#16161f»    «bg=#16161f;fg=#a8a8a8» 4                                                                                             
+«bg=#16161f»    «bg=#16161f;fg=#a8a8a8»... (3 more lines)«bg=#16161f»                                                                             
 
 «» Editing.
 
-«bg=#16161f»  «bg=#16161f;fg=#ffff00»● «bg=#16161f;bold»Edit«bg=#16161f» «bg=#16161f;fg=#5cc8bb»src/app.ts
-«bg=#16161f»    «bg=#16161f;fg=#a8a8a8» 1 export function greet(name: string): string {
-«bg=#16161f»    «bg=#16161f;fg=#d58181»-2    return `«bg=#16161f;fg=#d58181;inverse»hello«bg=#16161f;fg=#d58181» ${name}`;
-«bg=#16161f»    «bg=#16161f;fg=#b5bd68»+2    return `«bg=#16161f;fg=#b5bd68;inverse»Hello,«bg=#16161f;fg=#b5bd68» ${name}«bg=#16161f;fg=#b5bd68;inverse»!«bg=#16161f;fg=#b5bd68»`;
-«bg=#16161f»    «bg=#16161f;fg=#a8a8a8» 3 }
-«bg=#16161f»    «bg=#16161f;fg=#a8a8a8» 4
-«bg=#16161f»    «bg=#16161f;fg=#a8a8a8»... (3 more lines)
-
-«bg=#16161f»  «bg=#16161f;fg=#ffff00»● «bg=#16161f;bold»Write«bg=#16161f» «bg=#16161f;fg=#5cc8bb»tools/util.py
-
-«bg=#16161f»    «bg=#16161f;fg=#599ed7»import«bg=#16161f» sys
-
-
-«bg=#16161f»    «bg=#16161f;fg=#599ed7»def«bg=#16161f» «bg=#16161f;fg=#dcdcaa»main«bg=#16161f»(«bg=#16161f;fg=#9cdcfe»args: «bg=#16161f;fg=#4ec9b0»list«bg=#16161f»[«bg=#16161f;fg=#4ec9b0»str«bg=#16161f»]) -> «bg=#16161f;fg=#4ec9b0»int«bg=#16161f»:
-«bg=#16161f»        «bg=#16161f;fg=#ce9178»"""Print the arguments."""
-«bg=#16161f»    «bg=#16161f;fg=#a8a8a8»... (7 more lines, 12 total)
+«bg=#16161f»  «bg=#16161f;fg=#ffff00»● «bg=#16161f;bold»Write«bg=#16161f» «bg=#16161f;fg=#5cc8bb»tools/util.py«bg=#16161f»                                                                            
+«bg=#16161f»                                                                                                   
+«bg=#16161f»    «bg=#16161f;fg=#599ed7»import«bg=#16161f» sys                                                                                     
+«bg=#16161f»                                                                                                   
+«bg=#16161f»                                                                                                   
+«bg=#16161f»    «bg=#16161f;fg=#599ed7»def«bg=#16161f» «bg=#16161f;fg=#dcdcaa»main«bg=#16161f»(«bg=#16161f;fg=#9cdcfe»args: «bg=#16161f;fg=#4ec9b0»list«bg=#16161f»[«bg=#16161f;fg=#4ec9b0»str«bg=#16161f»]) -> «bg=#16161f;fg=#4ec9b0»int«bg=#16161f»:                                                              
+«bg=#16161f»        «bg=#16161f;fg=#ce9178»"""Print the arguments."""«bg=#16161f;fg=#a8a8a8»                                                                 
+«bg=#16161f»    «bg=#16161f;fg=#a8a8a8»... (7 more lines, 12 total)«bg=#16161f»                                                                   
 
 «<masked: blinking indicator>» <working-blink> Working...
 
@@ -36,5 +36,5 @@
 «fg=#6e93ff»│«»    Always (add to auto-allow for this mode)                                                      «fg=#6e93ff»│
 «fg=#6e93ff»│«» «fg=#989898»↑↓«fg=#a8a8a8» navigate«»  «fg=#989898»enter«fg=#a8a8a8» select«»  «fg=#989898»escape/ctrl+c«fg=#a8a8a8» cancel«»                                                  «fg=#6e93ff»│
 «fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»…<WORK>
+«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»<WORK>
 «fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«» «fg=#989898»of 128k«»  «fg=#a8a8a8»mock-model«»   «fg=#989898»↑«fg=#a8a8a8»100«» «fg=#989898»↓«fg=#a8a8a8»20

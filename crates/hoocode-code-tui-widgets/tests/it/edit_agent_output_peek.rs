@@ -85,6 +85,7 @@ mod edit {
             expanded,
             show_images: false,
             is_error: false,
+            has_result: true,
         };
         let result = ToolResultView {
             content: &content,
@@ -150,6 +151,7 @@ mod edit {
                 is_partial: false,
                 expanded,
                 show_images: false,
+                has_result: false,
                 is_error: false,
             };
             let call = (def.render_call.as_ref().expect("Edit call slot"))(&args, &mut ctx)

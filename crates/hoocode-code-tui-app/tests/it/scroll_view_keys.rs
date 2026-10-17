@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use hoocode_code_tui_app::scroll_view::{capture_top, reanchor_top};
 use hoocode_code_tui_app::scroll_view::{
     format_scroll_status, install_scroll_view, jump_to_user_message, TurnDirection,
 };
@@ -135,11 +136,15 @@ fn setup() -> Harness {
     )));
     ui.add_child(transcript);
     ui.add_child(editor.clone());
+    let prompt = editor.clone();
     install_scroll_view(
         &mut ui,
         editor.clone(),
         Rc::new(RefCell::new(Container::new())),
+        None,
         Rc::new(|_: &ComponentHandle| false),
+        Rc::new(move || prompt.borrow().get_text().is_empty()),
+        Rc::new(|| false),
     );
     ui.set_focus(Some(editor.clone()));
     // One frame, so there is a line buffer to scroll through.
@@ -157,6 +162,8 @@ const UP: &str = "\x1b[A";
 const DOWN: &str = "\x1b[B";
 const ESCAPE: &str = "\x1b";
 const WHEEL_UP: &str = "\x1b[<64;1;1M";
+const SHIFT_UP: &str = "\x1b[1;2A";
+const SHIFT_DOWN: &str = "\x1b[1;2B";
 
 // --- at the prompt ----------------------------------------------------------
 
@@ -412,6 +419,7 @@ fn lands_on_the_most_recent_message_first_coming_from_live() {
     assert!(jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Previous,
         &is_user
     ));
@@ -422,10 +430,11 @@ fn lands_on_the_most_recent_message_first_coming_from_live() {
 #[test]
 fn keeps_stepping_back_through_earlier_messages() {
     let (mut ui, chat) = transcript();
-    jump_to_user_message(&mut ui, &chat, TurnDirection::Previous, &is_user);
+    jump_to_user_message(&mut ui, &chat, None, TurnDirection::Previous, &is_user);
     assert!(jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Previous,
         &is_user
     ));
@@ -435,11 +444,12 @@ fn keeps_stepping_back_through_earlier_messages() {
 #[test]
 fn stops_rather_than_wrapping_at_the_first_message() {
     let (mut ui, chat) = transcript();
-    jump_to_user_message(&mut ui, &chat, TurnDirection::Previous, &is_user);
-    jump_to_user_message(&mut ui, &chat, TurnDirection::Previous, &is_user);
+    jump_to_user_message(&mut ui, &chat, None, TurnDirection::Previous, &is_user);
+    jump_to_user_message(&mut ui, &chat, None, TurnDirection::Previous, &is_user);
     assert!(!jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Previous,
         &is_user
     ));
@@ -448,11 +458,12 @@ fn stops_rather_than_wrapping_at_the_first_message() {
 #[test]
 fn comes_forward_again() {
     let (mut ui, chat) = transcript();
-    jump_to_user_message(&mut ui, &chat, TurnDirection::Previous, &is_user);
-    jump_to_user_message(&mut ui, &chat, TurnDirection::Previous, &is_user);
+    jump_to_user_message(&mut ui, &chat, None, TurnDirection::Previous, &is_user);
+    jump_to_user_message(&mut ui, &chat, None, TurnDirection::Previous, &is_user);
     assert!(jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Next,
         &is_user
     ));
@@ -469,6 +480,7 @@ fn does_nothing_when_nothing_in_the_transcript_is_yours() {
     assert!(!jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Previous,
         &is_user
     ));
@@ -483,6 +495,7 @@ fn declines_before_anything_has_been_rendered() {
     assert!(!jump_to_user_message(
         &mut ui,
         &chat,
+        None,
         TurnDirection::Previous,
         &is_user
     ));
@@ -576,19 +589,27 @@ fn leaves_slash_alone_at_the_prompt_where_it_starts_a_slash_command() {
 // --- the indicator's hints ----------------------------------------------------
 
 fn indicator(picker: bool) -> String {
+    indicator_over(picker, true)
+}
+
+fn indicator_over(picker: bool, editor_empty: bool) -> String {
     init_theme(Some("dark"), false);
     AppKeybindingsManager::default().install();
-    format_scroll_status(&ScrollStatus {
-        top: 10,
-        bottom: 20,
-        total: 120,
-        view_height: 11,
-        at_top: false,
-        at_bottom: false,
-        width: 120,
-        search: None,
-        picker,
-    })
+    format_scroll_status(
+        &ScrollStatus {
+            top: 10,
+            bottom: 20,
+            total: 120,
+            view_height: 11,
+            at_top: false,
+            at_bottom: false,
+            width: 120,
+            search: None,
+            picker,
+            new_lines: 0,
+        },
+        editor_empty,
+    )
 }
 
 #[test]
@@ -619,4 +640,213 @@ fn the_indicator_with_a_picker_focused_offers_only_paging() {
         !text.contains('\u{2191}') && !text.contains('\u{2193}'),
         "{text}"
     );
+}
+
+// --- the plain arrows and the prompt's text --------------------------------------
+
+#[test]
+fn plain_arrows_go_to_the_prompt_while_it_holds_text() {
+    let mut h = setup();
+    h.editor.borrow_mut().set_text("one\ntwo");
+    h.send(PAGE_UP);
+    let top = h.top();
+    h.send(UP);
+    assert!(h.ui.scroll_pinned(), "the pin stays");
+    assert_eq!(h.top(), top, "the view did not move");
+    h.send("x");
+    assert_eq!(h.text(), "onex\ntwo", "the up arrow moved the cursor");
+}
+
+#[test]
+fn shifted_arrows_still_step_the_view_over_prompt_text() {
+    let mut h = setup();
+    h.editor.borrow_mut().set_text("one\ntwo");
+    h.send(PAGE_UP);
+    let top = h.top();
+    h.send(SHIFT_UP);
+    assert_eq!(h.top(), top - 1);
+    h.send(SHIFT_DOWN);
+    assert_eq!(h.top(), top);
+    assert_eq!(h.text(), "one\ntwo", "the prompt kept its text");
+}
+
+#[test]
+fn the_indicator_over_prompt_text_names_the_shifted_arrows() {
+    init_theme(Some("dark"), false);
+    AppKeybindingsManager::default().install();
+    let plain = format!(
+        "{}/{} line",
+        key_text("app.scroll.lineUp"),
+        key_text("app.scroll.lineDown")
+    );
+    let shifted = format!(
+        "{}/{} line",
+        key_text("app.scroll.shiftLineUp"),
+        key_text("app.scroll.shiftLineDown")
+    );
+    let over_text = indicator_over(false, false);
+    assert!(over_text.contains(&shifted), "{over_text}");
+    assert!(!over_text.contains(&plain), "{over_text}");
+    let empty = indicator_over(false, true);
+    assert!(empty.contains(&plain), "{empty}");
+}
+
+/// A focused component that records the keys it is sent, as the prompt would.
+struct Probe(Rc<RefCell<Vec<String>>>);
+
+impl Component for Probe {
+    fn render(&mut self, _width: u16) -> Vec<String> {
+        vec!["prompt".into()]
+    }
+    fn is_focusable(&self) -> bool {
+        true
+    }
+    fn handle_input(&mut self, data: &str) {
+        self.0.borrow_mut().push(data.to_string());
+    }
+}
+
+/// A pinned-capable screen whose prompt is a [`Probe`], with an agent run
+/// going or not. Returns the screen and the keys the prompt was sent.
+fn probe_setup(busy: bool) -> (Tui, Rc<RefCell<Vec<String>>>) {
+    let (mut ui, _alternate) = new_tui();
+    let transcript = Rc::new(RefCell::new(Block {
+        rows: (1..=120).map(|i| format!("line {i}")).collect(),
+        user: false,
+    }));
+    let keys = Rc::new(RefCell::new(Vec::new()));
+    let prompt = Rc::new(RefCell::new(Probe(keys.clone())));
+    ui.add_child(transcript);
+    ui.add_child(prompt.clone());
+    install_scroll_view(
+        &mut ui,
+        prompt.clone(),
+        Rc::new(RefCell::new(Container::new())),
+        None,
+        Rc::new(|_: &ComponentHandle| false),
+        Rc::new(|| true),
+        Rc::new(move || busy),
+    );
+    ui.set_focus(Some(prompt));
+    let _events = ui.start();
+    (ui, keys)
+}
+
+#[test]
+fn escape_while_an_agent_runs_goes_live_and_reaches_the_prompt_to_abort() {
+    let (mut ui, keys) = probe_setup(true);
+    ui.process_event(TuiEvent::input(PAGE_UP));
+    assert!(ui.scroll_pinned());
+    ui.process_event(TuiEvent::input(ESCAPE));
+    assert!(!ui.scroll_pinned());
+    assert_eq!(*keys.borrow(), vec![ESCAPE.to_string()]);
+}
+
+#[test]
+fn escape_while_idle_only_goes_live() {
+    let (mut ui, keys) = probe_setup(false);
+    ui.process_event(TuiEvent::input(PAGE_UP));
+    ui.process_event(TuiEvent::input(ESCAPE));
+    assert!(!ui.scroll_pinned());
+    assert!(keys.borrow().is_empty(), "the prompt did not see it");
+}
+
+// --- keeping the top message across a rebuild ------------------------------------
+
+/// Rows that can grow, as a message does when a tool block is opened.
+struct Lines(Rc<RefCell<Vec<String>>>);
+
+impl Component for Lines {
+    fn render(&mut self, _width: u16) -> Vec<String> {
+        self.0.borrow().clone()
+    }
+    fn invalidate(&mut self) {}
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+}
+
+/// A full-screen screen whose body holds a chat of three messages: `a` (one
+/// row), `b` (thirty) and `c` (twenty). `a`'s rows stay editable.
+struct FullScreen {
+    ui: Tui,
+    chat: Rc<RefCell<Container>>,
+    body: Rc<RefCell<Container>>,
+    first: Rc<RefCell<Vec<String>>>,
+}
+
+fn full_screen() -> FullScreen {
+    let (mut ui, _alternate) = new_tui();
+    ui.set_fullscreen(true);
+    let message = |label: &str, rows: usize| {
+        Rc::new(RefCell::new(
+            (0..rows)
+                .map(|i| format!("{label}:{i}"))
+                .collect::<Vec<_>>(),
+        ))
+    };
+    let first = message("a", 1);
+    let chat = Rc::new(RefCell::new(Container::new()));
+    chat.borrow_mut()
+        .add_child(Rc::new(RefCell::new(Lines(first.clone()))));
+    chat.borrow_mut()
+        .add_child(Rc::new(RefCell::new(Lines(message("b", 30)))));
+    chat.borrow_mut()
+        .add_child(Rc::new(RefCell::new(Lines(message("c", 20)))));
+    let body = Rc::new(RefCell::new(Container::new()));
+    body.borrow_mut().add_child(chat.clone());
+    ui.add_child(body.clone());
+    ui.set_fullscreen_body(Some(body.clone()));
+    let _events = ui.start();
+    FullScreen {
+        ui,
+        chat,
+        body,
+        first,
+    }
+}
+
+#[test]
+fn a_change_above_the_pinned_message_keeps_that_message_on_top() {
+    let mut s = full_screen();
+    // Row 5 is the fifth row of `b`: the pin holds it.
+    s.ui.restore_scroll_top(Some(5));
+    s.ui.request_render(true);
+    let anchor = capture_top(&s.ui, &s.chat, Some(&s.body));
+    assert!(anchor.is_some(), "the top row sits in a message");
+    // Opening `a`'s tool block adds three rows above the anchor.
+    s.first
+        .borrow_mut()
+        .extend(["x1", "x2", "x3"].map(String::from));
+    reanchor_top(&mut s.ui, &s.chat, Some(&s.body), anchor);
+    assert!(s.ui.scroll_pinned());
+    assert_eq!(
+        s.ui.get_scroll_position().unwrap().0,
+        8,
+        "still the fifth row of `b`, now three rows lower"
+    );
+}
+
+#[test]
+fn going_live_when_the_anchored_message_is_gone() {
+    let mut s = full_screen();
+    s.ui.restore_scroll_top(Some(5));
+    s.ui.request_render(true);
+    let anchor = capture_top(&s.ui, &s.chat, Some(&s.body));
+    s.chat.borrow_mut().clear();
+    reanchor_top(&mut s.ui, &s.chat, Some(&s.body), anchor);
+    assert!(!s.ui.scroll_pinned());
+}
+
+#[test]
+fn going_live_without_a_body_and_leaving_a_live_view_alone() {
+    let mut s = full_screen();
+    s.ui.restore_scroll_top(Some(5));
+    s.ui.request_render(true);
+    assert!(capture_top(&s.ui, &s.chat, None).is_none());
+    reanchor_top(&mut s.ui, &s.chat, None, None);
+    assert!(!s.ui.scroll_pinned());
+    s.ui.scroll_to_live();
+    reanchor_top(&mut s.ui, &s.chat, Some(&s.body), None);
+    assert!(!s.ui.scroll_pinned(), "a live view stays live");
 }

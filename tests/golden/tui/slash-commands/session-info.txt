@@ -1,16 +1,8 @@
+«»◭ HOOCODE  BUILD  work                                            SHIP mock-model  FUEL 0%  CR $0.00
+
 «»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
 «»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
 «»▜▄▄▄▄▄▛  «fg=#989898»<WORK>
-
-
-
-
-
-
-
-
-
-
 
 «fg=#989898»no project resources loaded
 
@@ -33,8 +25,16 @@
 «» «fg=#989898»Total:«» 0
 
 
+
+
+
+
+
+
+
+
 «<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
 «fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
 «fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»…<WORK>
+«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»<WORK>
 «fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«» «fg=#989898»of 128k«»  «fg=#a8a8a8»mock-model

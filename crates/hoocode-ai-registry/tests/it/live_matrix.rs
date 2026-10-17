@@ -168,6 +168,7 @@ fn prior_tool_call(model: &Model, id: &str, name: &str) -> Message {
 
 fn tool_result(id: &str, name: &str, content: Vec<Content>) -> Message {
     Message::ToolResult(ToolResultMessage {
+        duration_ms: None,
         tool_call_id: id.into(),
         tool_name: name.into(),
         content,

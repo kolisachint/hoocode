@@ -249,6 +249,7 @@ fn prepares_compaction_using_the_latest_compaction_summary_as_previous_summary()
 #[test]
 fn serializes_conversation_with_truncated_tool_results() {
     let messages = vec![Message::ToolResult(ToolResultMessage {
+        duration_ms: None,
         tool_call_id: "tc1".into(),
         tool_name: "Read".into(),
         content: vec![Content::text("x".repeat(5000))],
@@ -269,6 +270,7 @@ fn serializes_conversation_with_truncated_tool_results() {
 fn serialize_does_not_truncate_short_tool_results() {
     let short = "x".repeat(1500);
     let messages = vec![Message::ToolResult(ToolResultMessage {
+        duration_ms: None,
         tool_call_id: "tc1".into(),
         tool_name: "Read".into(),
         content: vec![Content::text(short.clone())],
