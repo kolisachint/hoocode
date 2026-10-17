@@ -1,20 +1,24 @@
-◭ HOOCODE  BUILD  hoocode                 parity  SHIP claude-haiku-5-5  FUEL ▰▰▰▱▱▱▱▱ 42%  CR $1.23
+ ◭ HOOCODE   BUILD   /work/hoocode      parity  SHIP claude-haiku-5-5  FUEL ▰▰▰▱▱▱▱▱ 42%  CR $1.230
 --- styles ---
-r0 c0-8 fg=#5cc8bb bg=#352c1a
-r0 c9-10 bg=#352c1a
-r0 c11-15 fg=#5cc8bb bg=#352c1a
-r0 c16-17 bg=#352c1a
-r0 c18-24 fg=#989898 bg=#352c1a
-r0 c25-41 bg=#352c1a
-r0 c42-47 fg=#f0c674 bg=#352c1a
-r0 c48-49 bg=#352c1a
-r0 c50-54 fg=#989898 bg=#352c1a
-r0 c55-70 fg=#e5e5e7 bg=#352c1a
-r0 c71-72 bg=#352c1a
-r0 c73-77 fg=#989898 bg=#352c1a
-r0 c78-85 fg=#5cc8bb bg=#352c1a
-r0 c86 bg=#352c1a
-r0 c87-89 fg=#5cc8bb bg=#352c1a
-r0 c90-91 bg=#352c1a
-r0 c92-94 fg=#989898 bg=#352c1a
-r0 c95-99 fg=#e5e5e7 bg=#352c1a
+r0 c0 bg=#352c1a
+r0 c1 fg=#5cc8bb bg=#352c1a bold
+r0 c2 bg=#352c1a
+r0 c3-9 fg=#e5e5e7 bg=#352c1a bold
+r0 c10-11 bg=#352c1a
+r0 c12-18 fg=0 bg=#5cc8bb bold
+r0 c19-20 bg=#352c1a
+r0 c21-33 fg=#989898 bg=#352c1a
+r0 c34-39 bg=#352c1a
+r0 c40-45 fg=#f0c674 bg=#352c1a bold
+r0 c46-47 bg=#352c1a
+r0 c48-52 fg=#a8a8a8 bg=#352c1a
+r0 c53-68 fg=#e5e5e7 bg=#352c1a
+r0 c69-70 bg=#352c1a
+r0 c71-75 fg=#a8a8a8 bg=#352c1a
+r0 c76-83 fg=#5cc8bb bg=#352c1a
+r0 c84 bg=#352c1a
+r0 c85-87 fg=#5cc8bb bg=#352c1a
+r0 c88-89 bg=#352c1a
+r0 c90-92 fg=#a8a8a8 bg=#352c1a
+r0 c93-98 fg=#e5e5e7 bg=#352c1a
+r0 c99 bg=#352c1a
