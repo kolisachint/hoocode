@@ -106,7 +106,10 @@ fn hud_row_shows_the_plan_chip_in_plan_mode() {
     data.set_active_mode("plan");
     let mut component = hud_component(Box::new(Stub), data);
     let rows = render_golden(&mut component, 100);
-    assert!(rows.contains("◭ HOOCODE  PLAN  hoocode"), "{rows}");
+    assert!(
+        rows.contains("◭ HOOCODE") && rows.contains("PLAN") && rows.contains("/work/hoocode"),
+        "{rows}"
+    );
 }
 
 #[test]

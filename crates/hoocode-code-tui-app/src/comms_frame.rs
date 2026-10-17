@@ -126,7 +126,9 @@ impl CommsState {
         let faint = palette.faint();
         let ink = palette.ink();
         match self {
-            CommsState::Ready => vec![Seg::new(paint.unwrap_or(dim), "READY")],
+            // READY stays dim even under a hull paint (design e5): the frame
+            // and the right label take the paint, the title does not.
+            CommsState::Ready => vec![Seg::new(dim, "READY")],
             CommsState::InFlight { elapsed } => {
                 let state = paint.unwrap_or_else(|| palette.acc());
                 let mut segs = vec![

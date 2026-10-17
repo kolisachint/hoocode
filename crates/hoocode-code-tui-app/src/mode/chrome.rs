@@ -172,15 +172,15 @@ impl Mode {
         true
     }
 
-    /// The hull paint, shown as a toast by name (M8e5). The session file
-    /// keeps it, so a resume restores it; the provider feeds the chrome.
+    /// The hull paint, announced with its swatches (design e5): `hull
+    /// paint` plus one swatch per paint (`◂` marks the active one) and the
+    /// `· <colour>` suffix, then what the paint takes. A record, so cycling
+    /// updates one transcript row. The session file keeps it, so a resume
+    /// restores it; the provider feeds the chrome.
     fn set_hull_paint(&mut self, paint: Option<HullPaint>) {
         self.session.set_hull_paint(paint.map(HullPaint::name));
         self.footer_data.set_hull_paint(paint);
-        self.notify(
-            NotificationKind::Info,
-            paint.map_or("none", HullPaint::name),
-        );
+        self.show_record(&hull_paint_record(paint));
     }
 
     /// `cycleSessionColor`: one step on the colour dial.
@@ -253,6 +253,61 @@ fn parse_chrome_stop(argument: &str) -> Result<ChromeDensity, String> {
         "Unknown chrome stop \"{argument}\". Use: {}",
         all.join(", ")
     ))
+}
+
+// The `/color` notice as transcript rows (design e5): `hull paint` plus one
+// swatch per paint (`◂` marks the active one) and the `· <colour>` suffix,
+// then what the paint takes. `show_record` keeps ANSI, so the swatches and
+// the name carry their colours; cycling updates one row.
+fn hull_paint_record(paint: Option<HullPaint>) -> String {
+    let t = theme();
+    // Optional theme tokens fall back to accent.
+    let swatch = |candidate: HullPaint| {
+        let token = candidate.swatch_token();
+        let token = if t.has(token) { token } else { "accent" };
+        t.fg(token, "\u{25a0}\u{25a0}")
+    };
+    let mut cells = String::new();
+    for candidate in [
+        HullPaint::Parity,
+        HullPaint::Cyan,
+        HullPaint::Violet,
+        HullPaint::Lime,
+        HullPaint::Red,
+    ] {
+        if !cells.is_empty() {
+            cells.push_str("  ");
+        }
+        cells.push_str(&swatch(candidate));
+        if Some(candidate) == paint {
+            let token = candidate.swatch_token();
+            let token = if t.has(token) { token } else { "accent" };
+            cells.push_str(&t.fg(token, "\u{25c2}"));
+        }
+    }
+    let name = match paint {
+        Some(active) => {
+            let token = active.swatch_token();
+            let token = if t.has(token) { token } else { "accent" };
+            t.bold(&t.fg(
+                token,
+                &format!("{} \u{b7} {}", active.name(), active.legacy_name()),
+            ))
+        }
+        None => t.fg("dim", "none"),
+    };
+    let faint = if t.has("faint") {
+        t.fg(
+            "faint",
+            "the HUD, the comms frame and the terminal tab title all take it",
+        )
+    } else {
+        t.fg(
+            "muted",
+            "the HUD, the comms frame and the terminal tab title all take it",
+        )
+    };
+    format!("{} {cells}  {name}\n{faint}", t.fg("text", "hull paint"),)
 }
 
 #[cfg(test)]
