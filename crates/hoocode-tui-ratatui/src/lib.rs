@@ -7,15 +7,19 @@
 //! Callers depend on this crate alone; `core` and `widgets` re-export the ratatui
 //! crates it is built on.
 
+mod ansi;
+mod cache;
 mod component;
 mod lines;
 mod palette;
 
+pub use ansi::{ansi_spans, spans_width, truncate_spans, with_base_style};
+pub use cache::{current_theme_key, RowCache};
 pub use component::RatatuiComponent;
 pub use lines::{buffer_to_lines, paint};
 pub use palette::{
-    acc, bold, dim, err, faint, from_token, gold, ink, italic, ok, reversed, vio, warn, you,
-    Palette, PALETTE_TOKENS,
+    acc, bold, dim, err, faint, from_token, gold, ink, italic, ok, reversed, theme_key, vio, warn,
+    you, Palette, ThemeKey, PALETTE_TOKENS,
 };
 
 pub use ratatui_core as core;

@@ -62,8 +62,9 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | Assistant message (markdown, thinking) | `assistant_message.rs` → `tui-components/src/markdown/` |
 | Custom and branch-summary messages | `custom_message.rs` |
 | One tool call's block | `tool_execution.rs` |
-| A run of tool calls on one line; radar view (the live radar line, its failure rows, the chain's labels and stats) | `tool_chain.rs`, `tool_chain_summary.rs` |
-| Mission Control trajectory (M4, peek): mission headers, numbered steps on the `┊` rail, Think rows, landing lines | `trajectory.rs` (`MissionHeader`, step/rail/fold/chip/landing helpers); peek numbering in `tool_chain.rs`, Think row + prose rail in `assistant_message.rs` |
+| A run of tool calls; radar view is the chain's flight-log rows (one line per hit / live step; orphan chains keep the old summary line) | `tool_chain.rs`, `tool_chain_summary.rs` |
+| Mission Control trajectory (M4, peek): mission headers, numbered steps on the `┊` rail, Think rows, landing lines. M5 port: every row draws through a ratatui `Buffer` + the palette (`header_parts` span layout; block bodies parse back via `tui-ratatui` `ansi_spans`) | `trajectory.rs` (`MissionHeader`, step/rail/fold/chip/landing helpers); peek numbering in `tool_chain.rs`, Think row + prose rail in `assistant_message.rs` |
+| Mission Control flight log (M5, radar): one row per mission (mark, prompt, steps, `N✕`, time, cost), hit/live/think lines under it; peek-only rows hide via `PeekOnly`; landing rows rebuild with the tally | `radar.rs` (`FlightMark`, `FlightStats`, mission/hit/live/think rows, `PeekOnly`); `trajectory.rs` `LandingLine`; `MissionRange` header + flight + landing data and `refresh_flight_stats` in `code-tui-app` `mode/transcript.rs` |
 | One call's signal row (a block drawn alone in radar); the call subject helpers `tool_subject`, `chain_subject` | `tool_signal.rs` |
 | Dial: radar ↔ peek (Ctrl+O toggles, persisted). `peek_block` is the shared peek body | `tool_output_view.rs` |
 | `<skill …>` block of a `/skill:name` message (radar row / peek body) | `skill_block.rs` |

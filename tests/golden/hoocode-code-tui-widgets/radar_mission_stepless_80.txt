@@ -1,0 +1,5 @@
+ M3 ● just talking                                                        $0.000
+--- styles ---
+r0 c1-2 fg=#c77bde bold
+r0 c4 fg=#b5bd68
+r0 c74-79 fg=#a8a8a8

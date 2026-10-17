@@ -1,7 +1,7 @@
 //! The chat transcript: rendering messages and tool blocks, streaming, the status and notice
 //! rows, and the tool output views.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -26,6 +26,7 @@ use hoocode_code_tui_widgets::custom_message::{
     BranchSummaryMessageComponent, CompactionSummaryMessageComponent, CustomMessageComponent,
 };
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
+use hoocode_code_tui_widgets::radar::{FlightMark, FlightStats, PeekOnly};
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
@@ -83,15 +84,24 @@ pub(super) struct Transcript {
     /// grow, and step numbers rebase from them after a retry takes blocks
     /// out.
     pub(super) missions: Vec<MissionRange>,
+    /// Whether the radar flight log is showing (M5): peek-only rows hide
+    /// while set. Shared with the wrappers, so rows added in either view
+    /// follow later flips.
+    pub(super) radar_active: Rc<Cell<bool>>,
 }
 
 /// One M4 mission: its header number, the chain index it starts at, and
-/// whether its landing line is out yet.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// whether its landing line is out yet. The header handle and flight data
+/// back the radar flight-log row (M5); the header itself carries the
+/// prompt and skill.
+#[derive(Debug, Clone)]
 pub(super) struct MissionRange {
     pub(super) seq: usize,
     pub(super) start: usize,
     pub(super) landed: bool,
+    pub(super) header: Rc<RefCell<MissionHeader>>,
+    pub(super) flight: Rc<RefCell<FlightStats>>,
+    pub(super) landing: Option<Rc<RefCell<trajectory::LandingLine>>>,
 }
 
 impl Transcript {
@@ -117,15 +127,19 @@ impl Transcript {
             retry_streak: None,
             attempt_tools: Vec::new(),
             missions: Vec::new(),
+            radar_active: Rc::new(Cell::new(false)),
         }
     }
 
     /// The view over a cleared chat. A retry still in progress keeps its
-    /// streak, so its end still reports how the streak went.
+    /// streak, so its end still reports how the streak went. The radar flag
+    /// survives too, so peek-only rows stay hidden across a rebuild.
     pub(super) fn reset_view(&mut self) {
         let streak = self.retry_streak.take();
+        let radar_active = self.radar_active.clone();
         *self = Transcript::new(self.chat.clone());
         self.retry_streak = streak;
+        self.radar_active = radar_active;
     }
 }
 
@@ -223,24 +237,106 @@ impl Transcript {
         (!mission.landed && self.mission_tally().0 > 0).then_some(mission.seq)
     }
 
-    /// Opens a mission: the `▲ M{n}` header over the chat.
-    pub(super) fn begin_mission(&mut self, prompt: &str, skill: Option<&str>) {
+    /// A peek-only row in the chat (M5): drawn in peek, hidden in radar.
+    fn peek_child(&self, child: ComponentHandle) -> ComponentHandle {
+        as_component(&PeekOnly::wrap(self.radar_active.clone(), child))
+    }
+
+    /// The mission's mark from its chains (M5): an open chain still flies;
+    /// else an interrupted chain did not land (`⊗` with failed steps) or
+    /// was aborted (`⊘`); settled chains read landed.
+    fn mission_mark(&self, start: usize, end: usize) -> FlightMark {
+        let end = end.min(self.chains.len());
+        let start = start.min(end);
+        let chains = &self.chains[start..end];
+        if chains.iter().any(|c| c.borrow().is_open()) {
+            return FlightMark::InFlight;
+        }
+        if chains
+            .iter()
+            .any(|c| c.borrow().chain_state() == ChainState::Interrupted)
+        {
+            // Hits tally as the landing lines count them.
+            return if self.tally_range(start, end).1 > 0 {
+                FlightMark::DidNotLand
+            } else {
+                FlightMark::Aborted
+            };
+        }
+        FlightMark::Landed
+    }
+
+    /// Refreshes every mission's flight counts and mark from its chains
+    /// (M5): steps and hits tally as the landing lines count them, and
+    /// unlanded missions read their mark off their chains. Times and costs
+    /// land with the mission; the flying mission's come from the mode.
+    pub(super) fn refresh_flight_marks(&mut self) {
+        let chain_count = self.chains.len();
+        for i in 0..self.missions.len() {
+            let end = self
+                .missions
+                .get(i + 1)
+                .map(|m| m.start)
+                .unwrap_or(chain_count);
+            let start = self.missions[i].start;
+            let (steps, hits) = self.tally_range(start, end);
+            let mark = if self.missions[i].landed {
+                self.missions[i].flight.borrow().mark
+            } else {
+                self.mission_mark(start, end)
+            };
+            let mut flight = self.missions[i].flight.borrow_mut();
+            flight.steps = steps;
+            flight.hits = hits;
+            flight.mark = mark;
+            drop(flight);
+            // A landed mission whose tally moved (a retry took blocks
+            // out) rebuilds its landing row, so peek and radar agree.
+            if self.missions[i].landed {
+                if let Some(landing) = self.missions[i].landing.clone() {
+                    landing.borrow_mut().set_counts(steps, hits);
+                }
+            }
+        }
+        let first_start = self.missions.first().map(|m| m.start);
+        for (i, chain) in self.chains.iter().enumerate() {
+            chain
+                .borrow_mut()
+                .set_orphan(first_start.is_some_and(|start| i < start));
+        }
+    }
+
+    /// Opens a mission: the `▲ M{n}` header over the chat. In radar the
+    /// header draws the mission's flight-log row instead.
+    pub(super) fn begin_mission(
+        &mut self,
+        prompt: &str,
+        skill: Option<&str>,
+        view: ToolOutputView,
+    ) {
         let seq = self.missions.len() + 1;
+        let flight = Rc::new(RefCell::new(FlightStats {
+            mark: FlightMark::InFlight,
+            ..Default::default()
+        }));
+        let mut header = MissionHeader::new(seq, prompt, skill);
+        header.set_view(view);
+        header.set_flight(flight.clone());
+        let header = handle(header);
         self.missions.push(MissionRange {
             seq,
             start: self.chains.len(),
             landed: false,
+            header: header.clone(),
+            flight,
+            landing: None,
         });
         if !self.chat.borrow().children.is_empty() {
             self.chat
                 .borrow_mut()
-                .add_child(as_component(&handle(Spacer::new(1))));
+                .add_child(self.peek_child(as_component(&handle(Spacer::new(1)))));
         }
-        self.chat
-            .borrow_mut()
-            .add_child(as_component(&handle(MissionHeader::new(
-                seq, prompt, skill,
-            ))));
+        self.chat.borrow_mut().add_child(as_component(&header));
     }
 
     /// Appends the mission's landing line and marks it landed. No row for
@@ -263,28 +359,48 @@ impl Transcript {
         if steps == 0 {
             return false;
         }
+        let landed_time = format_duration_secs(secs);
+        let cost_text = format!(
+            "${}",
+            hoocode_code_agent_session::format::js_to_fixed(cost, 3)
+        );
         self.chat
             .borrow_mut()
-            .add_child(as_component(&handle(Spacer::new(1))));
+            .add_child(self.peek_child(as_component(&handle(Spacer::new(1)))));
+        // The landing row draws from spans (M5 review): the transcript
+        // refreshes its counts when a landed mission's tally moves.
+        let tokens = format!(
+            "{} tokens",
+            format_tokens((input.max(0) + output.max(0)) as u64)
+        );
+        let landing = handle(trajectory::LandingLine::new(
+            steps,
+            hits,
+            &landed_time,
+            &tokens,
+            &cost_text,
+        ));
+        self.missions[i].landing = Some(landing.clone());
         self.chat
             .borrow_mut()
-            .add_child(as_component(&handle(Text::new(
-                trajectory::landing_line(
-                    steps,
-                    hits,
-                    &format_duration_secs(secs),
-                    &format!(
-                        "{} tokens",
-                        format_tokens((input.max(0) + output.max(0)) as u64)
-                    ),
-                    &format!(
-                        "${}",
-                        hoocode_code_agent_session::format::js_to_fixed(cost, 3)
-                    ),
-                ),
-                1,
-                0,
-            ))));
+            .add_child(self.peek_child(as_component(&landing)));
+        // The chains are closed by now, so the mark reads the outcome: a
+        // clean mission landed, an interrupted one keeps `⊗` or `⊘`.
+        let start = self.missions[i].start;
+        let end = self
+            .missions
+            .get(i + 1)
+            .map(|m| m.start)
+            .unwrap_or(self.chains.len());
+        let mark = self.mission_mark(start, end);
+        let mut flight = self.missions[i].flight.borrow_mut();
+        flight.steps = steps;
+        flight.hits = hits;
+        flight.mark = mark;
+        flight.landed_time = Some(landed_time);
+        flight.cost = Some(cost_text);
+        flight.started = None;
+        drop(flight);
         self.missions[i].landed = true;
         true
     }
@@ -317,6 +433,7 @@ impl Transcript {
         {
             self.latest_chain = None;
         }
+        self.refresh_flight_marks();
     }
 
     /// Renumbers every chain from the mission ranges: a retry that takes
@@ -424,7 +541,9 @@ impl Mode {
         if let Some(seq) = self.transcript.unlanded_current() {
             self.land_previous_mission(seq);
         }
-        self.transcript.begin_mission(text, skill);
+        self.transcript
+            .begin_mission(text, skill, self.tool_output_view);
+        self.refresh_flight_stats();
     }
 
     /// A queued follow-up lands the running mission where its own header
@@ -446,6 +565,36 @@ impl Mode {
         };
         self.turn_cost_anchor = Some((now, Instant::now()));
         self.transcript.land_mission(seq, input, output, cost, secs);
+        self.refresh_flight_stats();
+    }
+
+    /// Refreshes the radar flight rows (M5) after the transcript changed:
+    /// counts and marks come off the missions, and the flying mission reads
+    /// its elapsed time off the turn anchor and its cost off usage since
+    /// the anchor. Landed missions keep the time and cost they landed with.
+    pub(super) fn refresh_flight_stats(&mut self) {
+        self.transcript.refresh_flight_marks();
+        let Some(mission) = self.transcript.missions.last() else {
+            return;
+        };
+        if mission.landed {
+            return;
+        }
+        let now = sum_assistant_usage(self.session.session_manager().entries());
+        let mut flight = mission.flight.borrow_mut();
+        match &self.turn_cost_anchor {
+            Some((anchor, at)) => {
+                flight.started = Some(*at);
+                flight.cost = Some(format!(
+                    "${}",
+                    hoocode_code_agent_session::format::js_to_fixed(now.cost - anchor.cost, 3)
+                ));
+            }
+            None => {
+                flight.started = None;
+                flight.cost = None;
+            }
+        }
     }
 
     /// `addMessageToChat` for the roles this transcript draws so far.
@@ -479,7 +628,10 @@ impl Mode {
                                     &body,
                                     (self.markdown_theme())(),
                                 );
-                                self.add_to_chat(as_component(&handle(component)));
+                                // Radar hides the body: the flight-log row
+                                // carries the first line.
+                                let child = as_component(&handle(component));
+                                self.add_to_chat(self.transcript.peek_child(child));
                             }
                         }
                         let component =
@@ -508,7 +660,10 @@ impl Mode {
                                     &body,
                                     (self.markdown_theme())(),
                                 );
-                                self.add_to_chat(as_component(&handle(component)));
+                                // Radar hides the body: the flight-log row
+                                // carries the first line.
+                                let child = as_component(&handle(component));
+                                self.add_to_chat(self.transcript.peek_child(child));
                             }
                         }
                     },
@@ -865,6 +1020,7 @@ impl Mode {
             }
             chain.borrow_mut().set_latest(true);
         }
+        self.refresh_flight_stats();
         self.dirty.set(true);
     }
 
@@ -913,6 +1069,7 @@ impl Mode {
         } else {
             chain.borrow_mut().close(outcome);
         }
+        self.refresh_flight_stats();
         self.dirty.set(true);
     }
 
@@ -1126,6 +1283,15 @@ impl Mode {
         }
         self.footer.borrow_mut().set_tool_output_view(view);
         self.comms.borrow_mut().set_tool_output_view(view);
+        // Radar hides the peek-only rows (landing lines, message bodies)
+        // and switches the mission headers to their flight-log rows.
+        self.transcript
+            .radar_active
+            .set(view == ToolOutputView::Radar);
+        for mission in &self.transcript.missions {
+            mission.header.borrow_mut().set_view(view);
+        }
+        self.refresh_flight_stats();
         let thinking = self.thinking_display();
         for chain in &self.transcript.chains {
             chain.borrow_mut().set_view(view);
@@ -1238,9 +1404,12 @@ impl Mode {
         // keeps the old accounting row, silent when nothing was accounted.
         if let Some(seq) = self.transcript.missions.last().map(|m| m.seq) {
             if self.transcript.land_mission(seq, input, output, cost, secs) {
+                self.refresh_flight_stats();
                 return;
             }
         }
+        // A stepless mission still reads its time and cost in radar.
+        self.refresh_flight_stats();
         // Nothing was accounted: stay silent rather than print zeroes.
         if input <= 0 && output <= 0 {
             return;
@@ -1329,13 +1498,107 @@ mod tests {
         chain
     }
 
+    /// The flight row reads the mission's own tally: steps and hits count
+    /// as the landing line counts them, and landing stores the time, cost
+    /// and mark (no duplicate counting).
+    #[test]
+    fn flight_stats_land_with_the_mission() {
+        use hoocode_code_tui_widgets::radar::FlightMark;
+
+        let mut t = fresh_transcript();
+        t.begin_mission("do it", None, ToolOutputView::Peek);
+        let chain = chain_with(2);
+        t.chains.push(chain.clone());
+        t.refresh_flight_marks();
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!(flight.steps, 2);
+        assert_eq!(flight.hits, 0);
+        assert_eq!(flight.mark, FlightMark::InFlight);
+        drop(flight);
+        chain.borrow_mut().close(ChainState::Done);
+        assert!(t.land_mission(1, 100, 200, 0.002, 0.5));
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!(flight.steps, 2);
+        assert_eq!(flight.hits, 0);
+        assert_eq!(flight.mark, FlightMark::Landed);
+        assert!(flight.landed_time.is_some());
+        assert!(flight.cost.is_some());
+        assert!(flight.started.is_none());
+    }
+
+    /// A landed mission whose tally moves rebuilds its landing row, so
+    /// peek and radar agree on the counts.
+    #[test]
+    fn landed_counts_rebuild_the_landing_row() {
+        let mut t = fresh_transcript();
+        t.begin_mission("do it", None, ToolOutputView::Peek);
+        let chain = chain_with(2);
+        t.chains.push(chain.clone());
+        chain.borrow_mut().close(ChainState::Done);
+        assert!(t.land_mission(1, 100, 200, 0.002, 0.5));
+        assert!(chat_text(&t.chat).contains("2 steps"));
+        // A retry takes a block out after landing: both rows follow.
+        let dropped = chain.borrow().tool_blocks()[0].clone();
+        t.remove_tool_block(&dropped);
+        t.rebase_steps();
+        let text = chat_text(&t.chat);
+        assert!(text.contains("1 step"), "{text}");
+        assert!(!text.contains("2 steps"), "{text}");
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!((flight.steps, flight.hits), (1, 0));
+        let landing = t.missions[0].landing.as_ref().unwrap().borrow();
+        assert_eq!(landing.counts(), (1, 0));
+    }
+
+    /// An interrupted mission keeps `⊗` when a step failed, `⊘` when none did.
+    #[test]
+    fn flight_mark_reads_the_outcome_off_interrupted_chains() {
+        use hoocode_code_tui_widgets::radar::FlightMark;
+
+        let mut t = fresh_transcript();
+        t.begin_mission("run it", None, ToolOutputView::Peek);
+        let mut failed = ToolExecutionComponent::new(
+            "Shell",
+            "call-bad",
+            json!({"command": "exit 3"}),
+            ToolExecutionOptions {
+                view: ToolOutputView::Peek,
+                ..Default::default()
+            },
+            None,
+            "/",
+        );
+        failed.update_result(
+            ToolResult {
+                content: vec![Content::text("boom")],
+                details: json!({}),
+                is_error: true,
+            },
+            false,
+        );
+        let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        chain.borrow_mut().add(Rc::new(RefCell::new(failed)));
+        t.chains.push(chain.clone());
+        chain.borrow_mut().close(ChainState::Interrupted);
+        t.refresh_flight_marks();
+        assert_eq!(t.missions[0].flight.borrow().mark, FlightMark::DidNotLand);
+
+        let mut t = fresh_transcript();
+        t.begin_mission("run it", None, ToolOutputView::Peek);
+        let clean = chain_with(1);
+        t.chains.push(clean.clone());
+        clean.borrow_mut().close(ChainState::Interrupted);
+        t.refresh_flight_marks();
+        assert_eq!(t.missions[0].flight.borrow().mark, FlightMark::Aborted);
+    }
+
     /// A queued follow-up lands the running mission where its own header
     /// lands: two missions, two landing lines, each with its own steps and
     /// its own usage (no double counting).
     #[test]
     fn a_queued_follow_up_lands_each_mission_with_its_own_steps() {
         let mut t = fresh_transcript();
-        t.begin_mission("first prompt", None);
+        t.begin_mission("first prompt", None, ToolOutputView::Peek);
         let first = chain_with(2);
         t.chains.push(first.clone());
         t.open_chain = Some(first);
@@ -1346,7 +1609,7 @@ mod tests {
         t.open_chain = None;
         assert!(t.land_mission(1, 100, 200, 0.002, 0.5));
         // M2 opens with one step; PromptDone lands it with the remainder.
-        t.begin_mission("second prompt", None);
+        t.begin_mission("second prompt", None, ToolOutputView::Peek);
         assert_eq!(t.unlanded_current(), None);
         let second = chain_with(1);
         second.borrow_mut().set_base_step(t.mission_tally().0);
@@ -1372,7 +1635,7 @@ mod tests {
     #[test]
     fn a_mission_with_steps_lands_even_when_nothing_was_used() {
         let mut t = fresh_transcript();
-        t.begin_mission("do it", None);
+        t.begin_mission("do it", None, ToolOutputView::Peek);
         t.chains.push(chain_with(1));
         assert!(t.land_mission(1, 0, 0, 0.0, 0.5));
         let text = chat_text(&t.chat);
@@ -1386,7 +1649,7 @@ mod tests {
     #[test]
     fn a_stepless_mission_has_no_landing_line() {
         let mut t = fresh_transcript();
-        t.begin_mission("just talking", None);
+        t.begin_mission("just talking", None, ToolOutputView::Peek);
         assert!(!t.land_mission(1, 10, 20, 0.01, 0.5));
         assert!(!chat_text(&t.chat).contains("LANDED"));
     }
@@ -1396,11 +1659,11 @@ mod tests {
     #[test]
     fn removing_a_whole_chain_keeps_the_later_missions_start() {
         let mut t = fresh_transcript();
-        t.begin_mission("first", None);
+        t.begin_mission("first", None, ToolOutputView::Peek);
         let failed = chain_with(1);
         t.chains.push(failed.clone());
         t.open_chain = Some(failed.clone());
-        t.begin_mission("second", None);
+        t.begin_mission("second", None, ToolOutputView::Peek);
         assert_eq!(t.missions[1].start, 1);
         // The failed attempt's chain leaves after M2 began.
         let block = failed.borrow().tool_blocks()[0].clone();
@@ -1425,7 +1688,7 @@ mod tests {
     #[test]
     fn removing_a_block_renumbers_the_later_steps() {
         let mut t = fresh_transcript();
-        t.begin_mission("m", None);
+        t.begin_mission("m", None, ToolOutputView::Peek);
         let first = chain_with(2);
         let second = chain_with(1);
         second.borrow_mut().set_base_step(2);

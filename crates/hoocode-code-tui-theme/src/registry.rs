@@ -419,6 +419,17 @@ pub fn current_theme_name() -> Option<String> {
     state().current_name.clone()
 }
 
+/// Counts theme changes: every [`init_theme`], [`set_theme`],
+/// [`unset_theme`] and watcher reload bumps it (see [`notify_change`]).
+/// Render caches key on `(current_theme_name(), theme_generation())`, so
+/// a reload under the same name still invalidates them.
+static THEME_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The theme generation: higher means a newer theme.
+pub fn theme_generation() -> u64 {
+    THEME_GENERATION.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// `setRegisteredThemes`: themes registered by extensions, by name.
 pub fn set_registered_themes(themes: Vec<Theme>) {
     let mut s = state();
@@ -458,9 +469,12 @@ pub fn init_theme(theme_name: Option<&str>, enable_watcher: bool) {
             s.theme = Some(dark);
         }
     }
+    // A fresh load is a new theme even under the same name.
+    THEME_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn notify_change() {
+    THEME_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let callback = state().on_change.clone();
     if let Some(callback) = callback {
         callback();

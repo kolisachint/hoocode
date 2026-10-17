@@ -417,6 +417,8 @@ impl Mode {
                             );
                         }
                         self.transcript.pending_tools.clear();
+                        // Aborted and errored turns flip hits at once.
+                        self.refresh_flight_stats();
                     } else {
                         // Args are complete: edit blocks compute their diffs.
                         for block in self.transcript.pending_tools.values() {
@@ -476,6 +478,8 @@ impl Mode {
                         },
                         false,
                     );
+                    // A settled result can flip the mission's hit count.
+                    self.refresh_flight_stats();
                     self.trim_transcript_memory();
                 }
             }

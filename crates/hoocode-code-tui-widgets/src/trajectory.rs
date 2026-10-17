@@ -4,13 +4,83 @@
 //! header, numbered steps on a `┊` rail (an agent's sub-steps keep their
 //! violet `┃` rail), and one `● LANDED` line closing the mission.
 //!
-//! Colours go through the legacy theme tokens; the Mission Control palette
-//! (`hoocode-tui-ratatui`) maps its chrome tokens onto these (`you` and
-//! `vio` onto `agent2`, `gold` onto `warning`), so both stay in step.
+//! Every row is drawn through a ratatui buffer (`hoocode-tui-ratatui`):
+//! fresh chrome goes through the Mission Control palette, block bodies
+//! still arrive as chalk-styled strings and are parsed back into spans, so
+//! the goldens stay identical. Colours keep the legacy theme tokens M4
+//! styled with (via the palette's `from_token`); the palette's newer MC
+//! tokens (`you`, `vio`, `gold`) are a later recolor.
 
-use hoocode_code_tui_theme::theme;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use hoocode_tui_ratatui::core::buffer::Buffer;
+use hoocode_tui_ratatui::core::layout::Rect;
+use hoocode_tui_ratatui::core::style::Style;
+use hoocode_tui_ratatui::core::text::{Line, Span};
+use hoocode_tui_ratatui::{
+    ansi_spans, bold, paint, spans_width, truncate_spans, Palette, RatatuiComponent, RowCache,
+};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width, visible_width};
+
+use crate::tool_output_view::ToolOutputView;
+#[cfg(test)]
+use hoocode_tui_util::visible_width;
+use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width};
+
+/// Draws one row of `spans` through a ratatui buffer `width` wide. Spans
+/// are cut with `…` first when they do not fit; the buffer only clips.
+pub(crate) fn row_line(spans: Vec<Span<'static>>, width: usize) -> String {
+    let width = u16::try_from(width).unwrap_or(u16::MAX).max(1);
+    RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
+        // The closure may draw again after an invalidate: rebuild the row
+        // from the captured spans every time.
+        let spans = truncate_spans(spans.clone(), usize::from(area.width), "…");
+        buf.set_line(area.x, area.y, &Line::from(spans), area.width);
+    })
+    .render(width)
+    .pop()
+    .unwrap_or_default()
+}
+
+/// Draws one row of `spans` through a ratatui buffer exactly `width`
+/// wide, clipping (never truncating) at the edge. For rows laid out
+/// elsewhere (wrapping components): unlike [`row_line`], no `…`.
+pub(crate) fn draw_line(spans: Vec<Span<'static>>, width: usize) -> String {
+    let width = u16::try_from(width).unwrap_or(u16::MAX).max(1);
+    RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
+        buf.set_line(area.x, area.y, &Line::from(spans.clone()), area.width);
+    })
+    .render(width)
+    .pop()
+    .unwrap_or_default()
+}
+
+/// Draws `left` flush left and `right` flush right through a ratatui
+/// buffer. The gap between them stays blank cells.
+pub(crate) fn two_part_row(
+    left: Vec<Span<'static>>,
+    right: Vec<Span<'static>>,
+    width: usize,
+) -> String {
+    let width = u16::try_from(width).unwrap_or(u16::MAX).max(1);
+    RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
+        let room = usize::from(area.width);
+        let right_width = spans_width(&right).min(room);
+        let x = (room - right_width) as u16;
+        let left = truncate_spans(left.clone(), usize::from(x), "…");
+        buf.set_line(area.x, area.y, &Line::from(left), area.width);
+        buf.set_line(
+            area.x + x,
+            area.y,
+            &Line::from(right.clone()),
+            area.width.saturating_sub(x),
+        );
+    })
+    .render(width)
+    .pop()
+    .unwrap_or_default()
+}
 
 /// How many output lines of a step the rail shows before the fold.
 pub const TRAJECTORY_BODY_LINES: usize = 3;
@@ -24,18 +94,28 @@ pub const AGENT_RAIL: &str = "┃";
 /// The slot thinking takes: it is not a tool call, so it takes no step number.
 pub const THINK_SLOT: &str = "··";
 
-/// A step number, 1-based and gold: `01`.
-pub fn step_number(index: usize) -> String {
-    let t = theme();
-    t.fg("warning", &t.bold(&format!("{index:02}")))
+/// A step number, 1-based and gold: `01`. The port keeps the legacy
+/// `warning` token M4 styled with (not the palette's newer `gold`), so the
+/// goldens stay byte-identical.
+pub fn step_number(index: usize, palette: &Palette) -> String {
+    paint(bold(palette.warn()), &format!("{index:02}"))
 }
 
-/// The rail prefix a body line sits on: `   ┊  ` (or the agent `┃`).
-fn rail_prefix(agent: bool) -> String {
-    let t = theme();
-    let rail = if agent { AGENT_RAIL } else { RAIL };
-    let token = if agent { "agent2" } else { "muted" };
-    format!("   {}  ", t.fg(token, rail))
+/// The rail prefix a body line sits on: `   ┊  ` (or the agent `┃`), as
+/// spans. The port keeps the legacy `agent2` token M4 styled the agent
+/// rail with (not the palette's newer `vio`), so the goldens stay
+/// byte-identical.
+fn rail_prefix_spans(agent: bool, palette: &Palette) -> Vec<Span<'static>> {
+    let (rail, style) = if agent {
+        (AGENT_RAIL, palette.style("agent2"))
+    } else {
+        (RAIL, palette.faint())
+    };
+    vec![
+        Span::styled("   ".to_string(), Style::default()),
+        Span::styled(rail.to_string(), style),
+        Span::styled("  ".to_string(), Style::default()),
+    ]
 }
 
 /// The container padding (two cells) past leading styling: block lines are
@@ -106,18 +186,17 @@ pub fn split_padding(line: &str) -> (String, String) {
 /// cells) is dropped first, so relative indent inside the line survives; the
 /// line keeps its own styling, only the rail is added. A blank line keeps
 /// the rail bare, so the rail reads unbroken.
-pub fn rail_line(line: &str, width: usize, agent: bool) -> String {
-    let t = theme();
+pub fn rail_line(line: &str, width: usize, agent: bool, palette: &Palette) -> String {
     if strip_vt_control_characters(line).trim().is_empty() {
-        return truncate_to_width(&format!("   {}", t.fg("muted", RAIL)), width, "", false);
+        let spans = rail_prefix_spans(agent, palette);
+        return row_line(truncate_spans(spans, width, ""), width);
     }
+    // The openers the split kept belong to the content that follows: one
+    // parse keeps them on it.
     let (prefix, content) = split_padding(line);
-    truncate_to_width(
-        &format!("{}{}{}", rail_prefix(agent), prefix, content),
-        width,
-        "…",
-        false,
-    )
+    let mut spans = rail_prefix_spans(agent, palette);
+    spans.extend(ansi_spans(&format!("{prefix}{content}")));
+    row_line(truncate_spans(spans, width, "…"), width)
 }
 
 /// Whether a rendered line is a thinking-slot header (`·· …`): the prose
@@ -129,41 +208,33 @@ pub fn is_think_header(line: &str) -> bool {
 }
 
 /// The fold under a step with more output: `   ┊  +N more`.
-pub fn fold_line(hidden: usize, width: usize, agent: bool) -> String {
-    let t = theme();
+pub fn fold_line(hidden: usize, width: usize, agent: bool, palette: &Palette) -> String {
     let noun = if hidden == 1 { "line" } else { "lines" };
-    truncate_to_width(
-        &format!(
-            "{}{}",
-            rail_prefix(agent),
-            t.fg("muted", &format!("+{hidden} more {noun}"))
-        ),
-        width,
-        "…",
-        false,
-    )
+    let mut spans = rail_prefix_spans(agent, palette);
+    spans.push(Span::styled(
+        format!("+{hidden} more {noun}"),
+        palette.faint(),
+    ));
+    row_line(truncate_spans(spans, width, "…"), width)
 }
 
 /// The chip replacing a failed step's success stats: ` HIT`, in red.
-pub fn hit_chip() -> String {
-    let t = theme();
-    format!(" {}", t.fg("error", &t.bold("HIT")))
+pub fn hit_chip(palette: &Palette) -> String {
+    format!(" {}", paint(bold(palette.err()), "HIT"))
 }
 
 /// The chip on a step that wrote a new file: ` NEW`, in green.
-pub fn new_chip() -> String {
-    let t = theme();
-    format!(" {}", t.fg("success", &t.bold("NEW")))
+pub fn new_chip(palette: &Palette) -> String {
+    format!(" {}", paint(bold(palette.ok()), "NEW"))
 }
 
 /// A background job's row, in place of its stats: `⌁ sat job-1 · in orbit`.
-pub fn satellite_text(job: &str) -> String {
-    let t = theme();
+pub fn satellite_text(job: &str, palette: &Palette) -> String {
     format!(
         "{} sat {} {} in orbit",
-        t.fg("accent", "⌁"),
-        t.fg("accent", job),
-        t.fg("dim", "·"),
+        paint(palette.acc(), "⌁"),
+        paint(palette.acc(), job),
+        paint(palette.dim(), "·"),
     )
 }
 
@@ -183,60 +254,80 @@ pub fn short_dur(secs: u64) -> String {
 pub struct ThinkHeader {
     running: bool,
     secs: Option<u64>,
+    cache: RefCell<RowCache>,
 }
 
 impl ThinkHeader {
     pub fn new(running: bool, secs: Option<u64>) -> Self {
-        Self { running, secs }
+        Self {
+            running,
+            secs,
+            cache: RefCell::new(RowCache::default()),
+        }
     }
 }
 
 impl Component for ThinkHeader {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let width = width as usize;
+        let theme = hoocode_tui_ratatui::current_theme_key();
+        // A done header never changes: cache it. A running header reads a
+        // live clock, so it redraws on every tick.
+        if !self.running {
+            if let Some(cached) = self.cache.borrow().get(width, &theme) {
+                return cached.to_vec();
+            }
+        }
+        let palette = Palette::current();
         if width == 0 {
             return Vec::new();
         }
-        let slot = t.fg("muted", THINK_SLOT);
+        let width = width as usize;
+        let slot = Span::styled(THINK_SLOT.to_string(), palette.faint());
         if self.running {
-            let left = format!(
-                "{slot} {} {}",
-                t.fg("warning", "◐"),
-                t.fg("toolTitle", "Think")
-            );
-            let right = self
-                .secs
-                .map(|s| t.fg("thinkingText", &format!("✻ {}", short_dur(s))))
-                .unwrap_or_default();
-            if right.is_empty() {
-                return vec![truncate_to_width(&left, width, "…", false)];
-            }
-            let pad = width.saturating_sub(visible_width(&left) + visible_width(&right) + 2);
-            return vec![truncate_to_width(
-                &format!("{left}  {}{right}", " ".repeat(pad)),
-                width,
-                "…",
-                false,
+            let left = vec![
+                slot,
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled("◐".to_string(), palette.style("warning")),
+                Span::styled(" ".to_string(), Style::default()),
+                // `toolTitle` is "" in the theme: chalk's default opener.
+                Span::styled("Think".to_string(), Style::default()),
+            ];
+            let Some(secs) = self.secs else {
+                return vec![row_line(truncate_spans(left, width, "…"), width)];
+            };
+            let right = vec![Span::styled(
+                format!("✻ {}", short_dur(secs)),
+                palette.style("thinkingText"),
             )];
+            let gap = width.saturating_sub(spans_width(&left) + spans_width(&right) + 2);
+            let mut spans = left;
+            spans.push(Span::styled(" ".repeat(gap + 2), Style::default()));
+            spans.extend(right);
+            return vec![row_line(truncate_spans(spans, width, "…"), width)];
         }
         let thought = match self.secs {
             Some(s) => format!("✻ thought {}", short_dur(s)),
             None => "✻ thought".to_string(),
         };
-        vec![truncate_to_width(
-            &format!(
-                "{slot} {} {}  {} {} {}",
-                t.fg("success", "●"),
-                t.fg("toolTitle", "Think"),
-                t.fg("thinkingText", &thought),
-                t.fg("dim", "·"),
-                t.fg("text", "ctrl+t"),
-            ),
-            width,
-            "…",
-            false,
-        )]
+        let spans = vec![
+            slot,
+            Span::styled(" ".to_string(), Style::default()),
+            Span::styled("●".to_string(), palette.ok()),
+            Span::styled(" ".to_string(), Style::default()),
+            // `toolTitle` is "" in the theme: chalk's default opener.
+            Span::styled("Think".to_string(), Style::default()),
+            Span::styled("  ".to_string(), Style::default()),
+            Span::styled(thought, palette.style("thinkingText")),
+            Span::styled(" ".to_string(), Style::default()),
+            Span::styled("·".to_string(), palette.dim()),
+            Span::styled(" ".to_string(), Style::default()),
+            // `text` is "" in the theme: chalk's default opener.
+            Span::styled("ctrl+t".to_string(), Style::default()),
+        ];
+        let lines = vec![row_line(truncate_spans(spans, width, "…"), width)];
+        let key = u16::try_from(width).unwrap_or(u16::MAX);
+        self.cache.borrow_mut().set(key, theme, lines.clone());
+        lines
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
@@ -268,6 +359,47 @@ pub fn files_text(total: usize) -> String {
     }
 }
 
+/// The prompt's first line, flattened: what a header row carries.
+pub(crate) fn first_line(text: &str) -> String {
+    text.lines()
+        .next()
+        .unwrap_or_default()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A header row split into its flush-left and flush-right runs:
+/// ` {number} {prefix}{left}` left, `right` (the stats) right. The label is
+/// cut with `…` first and the stats stay whole; the stats are cut only when
+/// they fit nowhere.
+pub fn header_parts(
+    number: Vec<Span<'static>>,
+    left_prefix: Vec<Span<'static>>,
+    left: Vec<Span<'static>>,
+    right: Vec<Span<'static>>,
+    width: usize,
+) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
+    let mut stem = vec![Span::styled(" ".to_string(), Style::default())];
+    stem.extend(number);
+    stem.push(Span::styled(" ".to_string(), Style::default()));
+    stem.extend(left_prefix);
+    stem.extend(left);
+    if right.is_empty() {
+        return (truncate_spans(stem, width, "…"), Vec::new());
+    }
+    let gap = 2;
+    let pad = width.saturating_sub(spans_width(&stem) + spans_width(&right));
+    if pad >= gap {
+        return (stem, right);
+    }
+    let budget = width.saturating_sub(spans_width(&right) + gap);
+    if budget == 0 {
+        return (Vec::new(), truncate_spans(right, width, "…"));
+    }
+    (truncate_spans(stem, budget, "…"), right)
+}
+
 /// A step header row at exactly the row width: ` NN {left}` flush left,
 /// `right` (the stats) flush right. The label is cut with `…` first and the
 /// stats stay whole; the stats are cut only when they fit nowhere.
@@ -281,22 +413,16 @@ pub fn step_header(
     if width == 0 {
         return String::new();
     }
-    let stem = format!(" {number} {left_prefix}{left}");
-    if right.is_empty() {
-        return truncate_to_width(&stem, width, "…", false);
-    }
-    let gap = 2;
-    let pad = width.saturating_sub(visible_width(&stem) + visible_width(right));
-    if pad >= gap {
-        return format!("{stem}{}{right}", " ".repeat(pad));
-    }
-    let budget = width.saturating_sub(visible_width(right) + gap);
-    if budget == 0 {
-        return truncate_to_width(right, width, "…", false);
-    }
-    let cut = truncate_to_width(&stem, budget, "…", false);
-    let pad = width.saturating_sub(visible_width(&cut) + visible_width(right));
-    format!("{cut}{}{right}", " ".repeat(pad))
+    // The openers the split kept belong to the label that follows: one
+    // parse keeps them on it.
+    let (left, right) = header_parts(
+        ansi_spans(number),
+        Vec::new(),
+        ansi_spans(&format!("{left_prefix}{left}")),
+        ansi_spans(right),
+        width,
+    );
+    two_part_row(left, right, width)
 }
 
 /// `1 step`, `N steps`.
@@ -318,22 +444,126 @@ pub fn hits_text(hits: usize) -> String {
 }
 
 /// The landing line ending every mission: steps, hits, time, tokens, cost.
-pub fn landing_line(steps: usize, hits: usize, secs: &str, tokens: &str, cost: &str) -> String {
-    let t = theme();
-    let sep = t.fg("dim", " · ");
-    [
-        format!(
-            "{} {}",
-            t.fg("success", "●"),
-            t.fg("success", &t.bold("LANDED"))
-        ),
-        t.fg("muted", &steps_text(steps)),
-        t.fg("muted", &hits_text(hits)),
-        t.fg("muted", secs),
-        t.fg("muted", tokens),
-        t.fg("muted", cost),
-    ]
-    .join(&sep)
+/// The landing line's spans: `● LANDED · 2 steps · 1 hit · …`, muted with
+/// dim separators, as the row joins them.
+pub fn landing_spans(
+    steps: usize,
+    hits: usize,
+    secs: &str,
+    tokens: &str,
+    cost: &str,
+    palette: &Palette,
+) -> Vec<Span<'static>> {
+    let mut out = vec![
+        Span::styled("●".to_string(), palette.ok()),
+        Span::styled(" ".to_string(), Style::default()),
+        Span::styled("LANDED".to_string(), bold(palette.ok())),
+    ];
+    for piece in [
+        steps_text(steps),
+        hits_text(hits),
+        secs.to_string(),
+        tokens.to_string(),
+        cost.to_string(),
+    ] {
+        out.push(Span::styled(" · ".to_string(), palette.dim()));
+        out.push(Span::styled(piece, palette.faint()));
+    }
+    out
+}
+
+/// The landing line ending every mission: steps, hits, time, tokens, cost.
+pub fn landing_line(
+    steps: usize,
+    hits: usize,
+    secs: &str,
+    tokens: &str,
+    cost: &str,
+    palette: &Palette,
+) -> String {
+    // Unbounded: the row below (`LandingLine`) lays the spans out at the
+    // render width. The spans carry no truncation, so this matches the
+    // laid-out row cell for cell whenever it fits.
+    let width = spans_width(&landing_spans(steps, hits, secs, tokens, cost, palette));
+    row_line(
+        landing_spans(steps, hits, secs, tokens, cost, palette),
+        width.max(1),
+    )
+}
+
+/// A mission's landing line as a component (M5): the peek row the
+/// transcript refreshes when a landed mission's counts change, so peek
+/// and radar agree. The spans render at the render width; overlong rows
+/// wrap exactly the way the old padded `Text` did.
+#[derive(Debug)]
+pub struct LandingLine {
+    steps: usize,
+    hits: usize,
+    secs: String,
+    tokens: String,
+    cost: String,
+    cache: RefCell<RowCache>,
+}
+
+impl LandingLine {
+    pub fn new(steps: usize, hits: usize, secs: &str, tokens: &str, cost: &str) -> Self {
+        Self {
+            steps,
+            hits,
+            secs: secs.to_string(),
+            tokens: tokens.to_string(),
+            cost: cost.to_string(),
+            cache: RefCell::new(RowCache::default()),
+        }
+    }
+
+    /// The counts the row reads. The transcript calls this when a landed
+    /// mission's tally moves; a change drops the cached render.
+    pub fn set_counts(&mut self, steps: usize, hits: usize) {
+        if self.steps != steps || self.hits != hits {
+            self.steps = steps;
+            self.hits = hits;
+            self.cache.borrow_mut().clear();
+        }
+    }
+
+    /// The counts the row reads, for the peek/radar agreement check.
+    pub fn counts(&self) -> (usize, usize) {
+        (self.steps, self.hits)
+    }
+}
+
+impl Component for LandingLine {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        let theme = hoocode_tui_ratatui::current_theme_key();
+        if let Some(cached) = self.cache.borrow().get(width, &theme) {
+            return cached.to_vec();
+        }
+        let palette = Palette::current();
+        // One leading cell, as the old padded `Text` drew.
+        let mut spans = vec![Span::styled(" ".to_string(), Style::default())];
+        spans.extend(landing_spans(
+            self.steps,
+            self.hits,
+            &self.secs,
+            &self.tokens,
+            &self.cost,
+            &palette,
+        ));
+        let room = spans_width(&spans).max(1);
+        let full = draw_line(spans, room);
+        let content_width = (width as usize).saturating_sub(2).max(1);
+        let lines: Vec<String> = hoocode_tui_util::wrap_text_with_ansi(&full, content_width)
+            .into_iter()
+            .map(|line| format!(" {line} "))
+            .collect();
+        self.cache.borrow_mut().set(width, theme, lines.clone());
+        lines
+    }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
 }
 
 /// Added and removed lines in a unified diff: `+` and `-` first-column
@@ -361,61 +591,113 @@ pub fn diff_counts_text(added: usize, removed: usize) -> String {
 
 /// The mission header: `▲ M1  prompt`, the `▲` and `M1` in the `you` colour.
 /// A skill chip (`✦ name`) sits right-aligned. The prompt is cut with `…`
-/// when it does not fit beside the chip.
+/// when it does not fit beside the chip. In radar view the header draws the
+/// mission's flight-log row instead (M5); see `radar`.
+#[derive(Debug)]
 pub struct MissionHeader {
     seq: usize,
     prompt: String,
     skill: Option<String>,
+    view: ToolOutputView,
+    flight: Option<Rc<RefCell<crate::radar::FlightStats>>>,
+    cache: RefCell<RowCache>,
 }
 
 impl MissionHeader {
     pub fn new(seq: usize, prompt: &str, skill: Option<&str>) -> Self {
         // One line: the prompt's first line, flattened.
-        let prompt = prompt
-            .lines()
-            .next()
-            .unwrap_or_default()
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
         Self {
             seq,
-            prompt,
+            prompt: first_line(prompt),
             skill: skill.map(str::to_string),
+            view: ToolOutputView::Peek,
+            flight: None,
+            cache: RefCell::new(RowCache::default()),
         }
+    }
+
+    /// The view dial's current stop: peek draws the `▲ M{n}` header, radar
+    /// the flight-log row.
+    pub fn set_view(&mut self, view: ToolOutputView) {
+        self.view = view;
+        self.cache.borrow_mut().clear();
+    }
+
+    /// The mission's flight-log data, refreshed by the transcript as the
+    /// mission runs and lands; the header reads it on every render.
+    pub fn set_flight(&mut self, flight: Rc<RefCell<crate::radar::FlightStats>>) {
+        self.flight = Some(flight);
     }
 }
 
 impl Component for MissionHeader {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let width = width as usize;
         if width == 0 {
             return Vec::new();
         }
-        let mark = format!(
-            "{} {}",
-            t.fg("agent2", "▲"),
-            t.fg("agent2", &t.bold(&format!("M{}", self.seq))),
-        );
-        let chip = self
+        let palette = Palette::current();
+        let theme = hoocode_tui_ratatui::current_theme_key();
+        let width = width as usize;
+        if self.view == ToolOutputView::Radar {
+            if let Some(flight) = &self.flight {
+                let stats = flight.borrow();
+                // Live data behind shared state: redraw every tick.
+                return vec![crate::radar::mission_row(
+                    self.seq,
+                    &self.prompt,
+                    &stats,
+                    &palette,
+                    width,
+                )];
+            }
+        } else if let Some(cached) = self
+            .cache
+            .borrow()
+            .get(u16::try_from(width).unwrap_or(u16::MAX), &theme)
+        {
+            // The peek header is fixed at construction: cache it.
+            return cached.to_vec();
+        }
+        // The port keeps the legacy `agent2` token M4 styled the mark
+        // with (not the palette's newer `you`), so the goldens stay
+        // byte-identical.
+        let mark_style = palette.style("agent2");
+        let mut spans = vec![
+            Span::styled("▲".to_string(), mark_style),
+            Span::styled(" ".to_string(), Style::default()),
+            Span::styled(format!("M{}", self.seq), bold(mark_style)),
+            Span::styled("  ".to_string(), Style::default()),
+        ];
+        let chip: Vec<Span<'static>> = self
             .skill
             .as_deref()
-            .map(|name| format!("{} {}", t.fg("accent", "✦"), t.fg("accent", name)))
+            .map(|name| {
+                vec![
+                    Span::styled("✦".to_string(), palette.acc()),
+                    Span::styled(" ".to_string(), Style::default()),
+                    Span::styled(name.to_string(), palette.acc()),
+                ]
+            })
             .unwrap_or_default();
-        let chip_width = visible_width(&chip);
-        let prompt_budget = width
-            .saturating_sub(visible_width(&mark) + 2 + chip_width + usize::from(!chip.is_empty()));
-        let prompt = truncate_to_width(&self.prompt, prompt_budget, "…", false);
-        let mut line = format!("{mark}  {prompt}");
+        let prompt_budget = width.saturating_sub(
+            spans_width(&spans) + spans_width(&chip) + usize::from(!chip.is_empty()),
+        );
+        // The prompt is plain text, so the string cut and the span cut are
+        // the same cells; the resets a cut adds are stripped.
+        let prompt =
+            truncate_to_width(&self.prompt, prompt_budget, "…", false).replace("\x1b[0m", "");
+        spans.push(Span::styled(prompt, Style::default()));
         if !chip.is_empty() {
             let pad = width
-                .saturating_sub(visible_width(&line) + chip_width)
+                .saturating_sub(spans_width(&spans) + spans_width(&chip))
                 .max(1);
-            line.push_str(&" ".repeat(pad));
-            line.push_str(&chip);
+            spans.push(Span::styled(" ".repeat(pad), Style::default()));
+            spans.extend(chip);
         }
-        vec![truncate_to_width(&line, width, "…", false)]
+        let lines = vec![row_line(truncate_spans(spans, width, "…"), width)];
+        let key = u16::try_from(width).unwrap_or(u16::MAX);
+        self.cache.borrow_mut().set(key, theme, lines.clone());
+        lines
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
@@ -430,8 +712,9 @@ mod tests {
     #[test]
     fn step_numbers_are_gold_and_two_wide() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
-        assert!(step_number(1).contains("01"));
-        assert!(step_number(12).contains("12"));
+        let palette = Palette::current();
+        assert!(step_number(1, &palette).contains("01"));
+        assert!(step_number(12, &palette).contains("12"));
     }
 
     #[test]
@@ -443,7 +726,8 @@ mod tests {
     #[test]
     fn landing_line_counts_read_right() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
-        let line = landing_line(2, 1, "0.5s", "0.8k tokens", "$0.002");
+        let palette = Palette::current();
+        let line = landing_line(2, 1, "0.5s", "0.8k tokens", "$0.002", &palette);
         let bare = strip_vt_control_characters(&line);
         assert!(bare.contains("LANDED"), "{bare}");
         assert!(bare.contains("2 steps"), "{bare}");

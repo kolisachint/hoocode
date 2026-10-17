@@ -19,6 +19,7 @@ doctest = false
 [dependencies]
 hoocode-code-tui-theme = { workspace = true }
 hoocode-tui-render = { workspace = true }
+hoocode-tui-util = { workspace = true }
 ratatui-core = { version = "0.1", default-features = false }
 ratatui-widgets = { version = "0.3", default-features = false }
 

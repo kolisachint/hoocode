@@ -928,7 +928,7 @@ impl Mode {
         );
 
         let (tx, rx) = mpsc::channel();
-        Self {
+        let mode = Self {
             session,
             runtime: options.runtime,
             tui,
@@ -1012,7 +1012,13 @@ impl Mode {
             restarted_input: None,
             session_op: None,
             mode_dial_after: None,
-        }
+        };
+        // Peek-only rows follow the saved view from the first frame: a
+        // restored radar session hides them without waiting for a flip.
+        mode.transcript
+            .radar_active
+            .set(mode.tool_output_view == ToolOutputView::Radar);
+        mode
     }
 
     /// The next time something is due without input.
