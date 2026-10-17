@@ -4,6 +4,8 @@ Status: **design agreed 2026-10-17** ([decisions-2026-10-17.md](decisions-2026-1
 
 **Next (2026-10-17, later):** the Mission Control card ([mission-control.md](mission-control.md)) builds on this one; where they differ, see its table.
 
+Mission Control wins where they differ (user, 2026-10-17); the TUI goes full screen, so "Not doing: no fullscreen" no longer holds.
+
 ## Goal
 
 1. One system for every TUI surface in peek and radar: colour, marks, hints, layers.
