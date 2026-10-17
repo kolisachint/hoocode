@@ -7,13 +7,13 @@ use hoocode_code_paths::VERSION;
 use hoocode_code_resources::BUILTIN_SLASH_COMMANDS;
 use hoocode_code_tui_selectors::oauth_selector::LoginMode;
 use hoocode_code_tui_theme::theme;
+use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
 use hoocode_tui_components::{Markdown, Spacer, Text};
 use hoocode_tui_render::{Tui, TuiEvent};
 use hoocode_tui_util::visible_width;
 
 use crate::changelog::{changelog_path, parse_changelog};
-use crate::hotkeys::hotkeys_markdown;
 use crate::suspend::{suspend_to_background, SuspendOps, SuspendOutcome};
 
 use super::*;
@@ -137,7 +137,7 @@ impl Mode {
     pub(super) fn run_builtin_command(&mut self, command: BuiltinCommand, text: &str) {
         self.editor.borrow_mut().editor.set_text("");
         match command {
-            BuiltinCommand::Quit => self.exit_requested = true,
+            BuiltinCommand::Quit => self.request_user_quit(),
             BuiltinCommand::Resume => self.show_session_selector(),
             BuiltinCommand::Tree => self.show_tree_selector(None),
             BuiltinCommand::Name => self.handle_name_command(text),
@@ -171,11 +171,7 @@ impl Mode {
             BuiltinCommand::Mcp => self.handle_mcp_command(text),
             BuiltinCommand::Plugin => self.handle_plugin_command(text),
             BuiltinCommand::Color => {
-                // An argument sets the slot outright; bare `/color` opens the
-                // swatches.
-                if !self.handle_color_command(text) {
-                    self.show_session_color_selector();
-                }
+                self.handle_color_command(text);
             }
             BuiltinCommand::Chrome => self.handle_chrome_command(text),
             BuiltinCommand::Fork => self.show_user_message_selector(),
@@ -201,9 +197,11 @@ impl Mode {
         self.dirty.set(true);
     }
 
-    /// `handleHotkeys`.
+    /// `handleHotkeys`: the CONTROLS console (M7, spec d9), with the drawn
+    /// keyboard from the real keybindings at the spec width and the key
+    /// list below it.
     pub(super) fn handle_hotkeys_command(&mut self) {
-        self.show_bordered_markdown("Keyboard Shortcuts", &hotkeys_markdown());
+        self.add_to_chat(as_component(&handle(ControlsComponent::new())));
     }
 
     /// `handleChangelog`: every entry, oldest first.

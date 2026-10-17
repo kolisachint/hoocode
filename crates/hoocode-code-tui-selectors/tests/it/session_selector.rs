@@ -138,22 +138,21 @@ fn confirmation_changes(events: &[ListEvent]) -> Vec<Option<PathBuf>> {
 // ---- rename ---------------------------------------------------------------
 
 #[test]
-fn shows_rename_hint_in_resume_picker_configuration() {
+fn rename_key_opens_rename_mode_when_a_handler_is_set() {
     let _g = lock();
-    let (rename_key, _) = alt_key("app.session.rename");
+    let (_, rename_input) = alt_key("app.session.rename");
     let mut s = selector(
         vec![make("a", Make::default())],
         SessionSelectorOptions {
+            rename_session: Some(Box::new(|_: &Path, _: &str| Ok(()))),
             show_rename_hint: Some(true),
             ..default_options()
         },
         None,
     );
+    press_list(&mut s, &rename_input);
     let out = render(&mut s, 120);
-    // Display text: "option+r" on macOS.
-    let rename_key = hoocode_code_tui_keybindings::format_key_text(&rename_key, false);
-    assert!(out.contains(&rename_key), "{out}");
-    assert!(out.contains("rename"), "{out}");
+    assert!(out.contains("Rename Session"), "{out}");
 }
 
 #[test]
@@ -301,8 +300,8 @@ fn late_all_load_does_not_switch_scope_back_to_all() {
     s.poll();
 
     let out = render(&mut s, 120);
-    assert!(out.contains("Resume Session (Current Folder)"), "{out}");
-    assert!(!out.contains("Resume Session (All)"), "{out}");
+    assert!(out.contains("◉ Current Folder"), "{out}");
+    assert!(!out.contains("◉ All"), "{out}");
 }
 
 #[test]

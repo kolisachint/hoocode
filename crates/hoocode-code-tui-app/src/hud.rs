@@ -26,6 +26,7 @@ use hoocode_tui_util::visible_width;
 
 use crate::footer::FooterSource;
 use crate::footer_data::FooterDataProvider;
+use crate::hull_paint::HullPaint;
 
 /// The fields the HUD row shows.
 #[derive(Debug, Clone, PartialEq)]
@@ -44,6 +45,8 @@ pub struct HudData {
     pub fuel: Option<f64>,
     /// The session cost, already formatted: `$1.23`.
     pub cost: String,
+    /// The hull paint (`/color`, M8e5); `None` is unpainted.
+    pub paint: Option<HullPaint>,
 }
 
 /// One styled run of the HUD row: plain text plus the palette token styling
@@ -131,6 +134,9 @@ fn push_token(runs: &mut Vec<HudRun>, text: String, token: &'static str) {
 /// then fuel and credits.
 fn right_runs(data: &HudData, with_ship: bool) -> Vec<HudRun> {
     let mut runs = Vec::new();
+    if let Some(paint) = data.paint {
+        push_token(&mut runs, paint.name().to_string(), paint.token());
+    }
     if data.agents > 0 {
         push_token(&mut runs, format!("◈ {} agent", data.agents), "vio");
     }
@@ -298,6 +304,7 @@ pub fn read_hud(source: &dyn FooterSource, data: &FooterDataProvider) -> HudData
         Some((_, percent)) => percent,
     };
     HudData {
+        paint: data.get_hull_paint(),
         mode: data.get_active_mode().to_uppercase(),
         folder,
         agents: running_agents(),
@@ -317,9 +324,15 @@ pub fn hud_component(
     RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
         let width = usize::from(area.width);
         let pal = Palette::current();
-        let spans: Vec<Span<'static>> = hud_runs(&read_hud(source.as_ref(), &data), width)
+        let hud = read_hud(source.as_ref(), &data);
+        // The hull tint replaces the row background while painted (M8e5).
+        let tint = hud.paint.and_then(|paint| pal.hull_tint(paint.token()));
+        let spans: Vec<Span<'static>> = hud_runs(&hud, width)
             .into_iter()
-            .map(|r| Span::styled(r.text, pal.style(r.token)))
+            .map(|r| {
+                let style = pal.style(r.token);
+                Span::styled(r.text, tint.map_or(style, |bg| style.bg(bg)))
+            })
             .collect();
         buf.set_line(area.x, area.y, &Line::from(spans), area.width);
     })
@@ -394,6 +407,7 @@ mod tests {
             model: "claude-haiku-5-5".into(),
             fuel: Some(42.0),
             cost: "$1.23".into(),
+            paint: None,
         }
     }
 

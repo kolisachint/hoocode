@@ -110,15 +110,16 @@ fn plain(lines: Vec<String>) -> Vec<String> {
     lines.iter().map(|l| strip(l)).collect()
 }
 
-/// The group row's line: the first non-blank row of a collapsed chain.
-fn group_row(chain: &mut ToolChainComponent) -> String {
+// --- radar: settled subagents fold into the mission row; only a failed
+// --- subagent keeps its own hit row ------------------------------------------
+
+/// The non-blank rows of a radar chain.
+fn radar_rows(chain: &mut ToolChainComponent) -> Vec<String> {
     plain(chain.render(120))
         .into_iter()
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or_default()
+        .filter(|l| !l.trim().is_empty())
+        .collect()
 }
-
-// --- radar: the group row's outcome counts -------------------------------------
 
 #[test]
 fn radar_group_row_counts_outcomes_and_omits_zero_counts() {
@@ -126,19 +127,19 @@ fn radar_group_row_counts_outcomes_and_omits_zero_counts() {
     let mut subs: Vec<Sub> = (0..10).map(|_| agent_done()).collect();
     subs.push(agent_stopped());
     let mut chain = group(Radar, subs, ChainState::Done);
-    let row = group_row(&mut chain);
-    assert!(row.contains("Delegated 11 tasks"), "{row:?}");
-    assert!(row.contains("10 done · 1 stopped"), "{row:?}");
-    assert!(!row.contains("failed"), "{row:?}");
-    assert!(!row.contains("running"), "{row:?}");
+    // Ten settled subagents fold away; the stopped one keeps a hit row.
+    let rows = radar_rows(&mut chain);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(rows[0].contains("⊗"), "{rows:?}");
+    assert!(rows[0].contains("HIT"), "{rows:?}");
+    assert!(rows[0].trim_end().ends_with("HIT"), "{rows:?}");
 }
 
 #[test]
 fn radar_group_row_shows_only_the_outcomes_that_happened() {
     let _g = lock();
     let mut chain = group(Radar, vec![agent_done(), agent_done()], ChainState::Done);
-    let row = group_row(&mut chain);
-    assert!(row.ends_with("2 done"), "{row:?}");
+    assert!(radar_rows(&mut chain).is_empty());
 }
 
 #[test]
@@ -151,9 +152,7 @@ fn radar_group_row_counts_each_task_once_however_often_it_was_polled() {
         poll("explore#2", "done"),
     ];
     let mut chain = group(Radar, subs, ChainState::Done);
-    let row = group_row(&mut chain);
-    assert!(row.contains("Delegated 2 tasks"), "{row:?}");
-    assert!(row.ends_with("2 done"), "{row:?}");
+    assert!(radar_rows(&mut chain).is_empty());
 }
 
 #[test]
@@ -161,9 +160,7 @@ fn radar_group_row_falls_back_to_a_call_count_without_outcomes() {
     let _g = lock();
     let subs = vec![background_placeholder(), background_placeholder()];
     let mut chain = group(Radar, subs, ChainState::Done);
-    let row = group_row(&mut chain);
-    assert!(row.contains("Delegated"), "{row:?}");
-    assert!(row.ends_with("2 calls"), "{row:?}");
+    assert!(radar_rows(&mut chain).is_empty());
 }
 
 // --- peek: AgentOutput's folded body ---------------------------------------------

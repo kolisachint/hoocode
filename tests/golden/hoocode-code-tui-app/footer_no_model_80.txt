@@ -3,7 +3,7 @@ BUILD · ◍ peek        project • amber-harbor  /work/project
 --- styles ---
 r0 c0-4 fg=#5cc8bb bold
 r0 c8-13 fg=#989898
-r0 c22-28 bold
+r0 c22-28 fg=#e5e5e7 bold
 r0 c29-43 fg=#989898
 r0 c46-58 fg=#989898
 r1 c0-7 fg=#989898

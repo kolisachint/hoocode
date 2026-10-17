@@ -1,0 +1,6 @@
+ ⊗ 05 Shell  cargo test -p hoocode-code-tui-widgets  →  boom                 HIT
+--- styles ---
+r0 c1 fg=#d58181
+r0 c3-5 fg=#ffff00 bold
+r0 c51-55 fg=#989898
+r0 c77-79 fg=#d58181 bold

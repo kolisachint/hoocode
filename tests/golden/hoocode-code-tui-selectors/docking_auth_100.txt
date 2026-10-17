@@ -1,0 +1,31 @@
+┏━ DOCKING · /login  Anthropic ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
+┃https://example.test/oauth/authorize?code=WXYZ-1234                                               ┃
+┃open the link in a browser to dock                                                                ┃
+┃No QR code in this terminal build — the link above docks the same provider.                       ┃
+┃                                                                                                  ┃
+┃Approve the subscription in the browser.                                                          ┃
+┗━ esc cancel ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+--- styles ---
+r0 c0-1 fg=#9b8cff
+r0 c3-29 fg=#9b8cff bold
+r0 c31-95 fg=#9b8cff
+r0 c98-99 fg=#9b8cff
+r1 c0 fg=#9b8cff
+r1 c1-51 fg=#5cc8bb
+r1 c99 fg=#9b8cff
+r2 c0 fg=#9b8cff
+r2 c1-34 fg=#a8a8a8
+r2 c99 fg=#9b8cff
+r3 c0 fg=#9b8cff
+r3 c1-75 fg=#a8a8a8
+r3 c99 fg=#9b8cff
+r4 c0 fg=#9b8cff
+r4 c99 fg=#9b8cff
+r5 c0 fg=#9b8cff
+r5 c1-40 fg=#ffff00
+r5 c99 fg=#9b8cff
+r6 c0-1 fg=#9b8cff
+r6 c3-5 fg=#989898
+r6 c6-12 fg=#a8a8a8
+r6 c14-95 fg=#9b8cff
+r6 c98-99 fg=#9b8cff

@@ -66,10 +66,11 @@ fn union(a: Option<&Value>, b: Option<&Value>) -> Value {
     Value::from(dedupe(strings(a).into_iter().chain(strings(b))))
 }
 
-/// `mergeConfigs`: project `active_mode` / `thinking_escalation` win; per mode,
-/// `auto_allow`, `allowed_write_paths`, `denied_tools`, `denied_bash_commands`
-/// are unioned while `enabled_tools` and `allowed_bash_commands` fall back to
-/// the global value; project `mode_paths` come first.
+/// `mergeConfigs`: project `active_mode` / `thinking_escalation` win; per
+/// mode, `auto_allow`, `allowed_write_paths`,
+/// `denied_tools` and `denied_bash_commands` are unioned, while
+/// `enabled_tools` and `allowed_bash_commands` fall back to the global
+/// value; project `mode_paths` come first.
 pub fn merge_configs(global: &HooConfig, project: &HooConfig) -> HooConfig {
     let mut merged = global.clone();
     for key in ["active_mode", "thinking_escalation"] {

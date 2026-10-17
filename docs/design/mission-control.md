@@ -1,6 +1,6 @@
 # TUI: Mission Control (the cockpit) on ratatui
 
-Status: **design agreed 2026-10-17 (user answers recorded below); M0, U0 and M1 done (2026-10-17).** The rest is not built. Next: M2 (the comms frame). M1 is in [M1 in detail](#m1-in-detail), with its as-built notes and gaps.
+Status: **design agreed 2026-10-17 (user answers recorded below); M0 to M8 built on the integration branch `agent/mc-int` (2026-10-17), not yet merged to main.** U0 is done. Per milestone: M1 is in [M1 in detail](#m1-in-detail), with its as-built notes and gaps. Known gaps are listed in the build-order table and in the milestone notes; screen goldens (`color-chrome`, changed by M8 hull paint) are accepted at the pre-release check.
 
 Sources (read only, kept as the reference):
 
@@ -255,13 +255,13 @@ Spec §6.1 and §6.2 are the reference. Letter keys work with ctrl or alt. Today
 | M0 Foundation | `hoocode-tui-ratatui` crate. Buffer-to-lines adapter (`RatatuiComponent`). Golden test of the adapter. No visible change. **Done 2026-10-17** (ratatui-core 0.1.2, ratatui-widgets 0.3.2, no second crossterm). The palette moves to M2 | none | S/M |
 | U0 Bug fixes | tui-surfaces Phase U0, steps U0.1 to U0.10, on today's renderer. Haiku subagents. Runs before M1 (Q3). **Done 2026-10-17** (commits 8a4c231 to d9954f5; as built in [tui-surfaces.md](tui-surfaces.md)) | none (bugs) | S to M |
 | M1 Full-screen shell | Alternate screen. Full-screen mode in `Tui`, one frame string through `Terminal::write_frame` (`hoocode-term-out`). Layout: HUD row 1, transcript area with app-owned scroll, bottom area. REWIND and SCAN are app-owned. Folds in the former MR step. Detail: [M1 in detail](#m1-in-detail) | none (frame) | L. **Done 2026-10-17** (M1a to M1e: commits cfe54c4, 2ae76b9, 174ebc2, 7f58fed, and the M1e commit). As built and known gaps: [M1 in detail](#m1-in-detail), section "As built" |
-| M2 Comms frame | Heavy frame, state titles, right label, foot (view and tokens), `▸` input row, queued notes inside. Replaces the prompt frame and its border state. Palette from the theme tokens | a1 to a4, c4 | M |
-| M3 HUD | One row replacing the two-row footer. Fields and truncation. Hull paint tint | a1, r10, e5 | M |
-| M4 Trajectory (peek) | Mission header `▲ M1`, numbered steps with gold numbers, `┊` rail, up to 3 output lines, HIT chip, NEW chip, landing line, Think row, agent `┃` sub-steps `1.1`, skill chip, satellite row | b1 to b7, a2, a3 | L |
-| M5 Flight log (radar) | One row per mission. Plan row | r1 to r11 | M |
-| M6 Clearance and question cards | Warn frame replacing the comms frame. End-of-shift card. Flight plan console | c1 to c3, c5 to c8 | M |
-| M7 Consoles | The list pattern in a thick block: commands, `@` files, hangar, settings, hull, mission log, flight path, docking, fork, keys | d1 to d10 | L |
-| M8 History and chrome | COMMS LOST model error with hail ticks, rewind bar, scan bar, jettison row, toasts, session colour | e1 to e6 | M |
+| M2 Comms frame | Heavy frame, state titles, right label, foot (view and tokens), `▸` input row, queued notes inside. Replaces the prompt frame and its border state. Palette from the theme tokens | a1 to a4, c4 | M | **Done** (ratatui; `comms_frame.rs`).
+| M3 HUD | One row replacing the two-row footer. Fields and truncation. Hull paint tint | a1, r10, e5 | M | **Done** (ratatui; `hud.rs`, hull tint).
+| M4 Trajectory (peek) | Mission header `▲ M1`, numbered steps with gold numbers, `┊` rail, up to 3 output lines, HIT chip, NEW chip, landing line, Think row, agent `┃` sub-steps `1.1`, skill chip, satellite row | b1 to b7, a2, a3 | L | **Done** (ratatui port in M5). Agent sub-steps `1.1` not built; see M4 notes in `ui.md`.
+| M5 Flight log (radar) | One row per mission. Plan row | r1 to r11 | M | **Done** (ratatui). Plan waypoint row not built (no data); OSC-8 links dropped.
+| M6 Clearance and question cards | Warn frame replacing the comms frame. End-of-shift card. Flight plan console | c1 to c3, c5 to c8 | M | **Done** (ratatui cards). Shell "always" is session-only, program-scoped, fail-closed. Flight plan console moved to M7.
+| M7 Consoles | The list pattern in a thick block: commands, `@` files, hangar, settings, hull, mission log, flight path, docking, fork, keys | d1 to d10 | L | **Done** (ratatui; shared `Console`). Consoles built as listed in `ui.md`. No QR code for `/login` (URL only, no new dependency).
+| M8 History and chrome | COMMS LOST model error with hail ticks, rewind bar, scan bar, jettison row, toasts, session colour | e1 to e6 | M | **Done** (ratatui). Hull paint saved per session. Single-attempt errors never enter COMMS LOST.
 
 - Replaces tui-surfaces: M2 to M8 cover the same surfaces as its U1 to U7, with the Mission Control look. Its UR (the Inline viewport port) is replaced by M1, the full-screen shell.
 - U0 (the bugs) runs after M0 and before M1 (Q3).

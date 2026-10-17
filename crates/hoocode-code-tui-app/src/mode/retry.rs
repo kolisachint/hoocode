@@ -37,10 +37,48 @@ use crate::footer::sanitize_status_text;
 /// The error text the session gives a streak it cancelled (`abort_retry`).
 pub(crate) const RETRY_CANCELLED: &str = "Retry cancelled";
 
+/// The hail axis width in cells: six hails with doubling gaps, plus the
+/// `backoff doubles` note, fit a 100-column transcript.
+const HAIL_AXIS_WIDTH: usize = 48;
+
 /// One retry streak, from its first `AutoRetryStart` to its end.
 pub(super) struct RetryStreak {
     started: Instant,
     last_error: String,
+}
+
+/// The hail axis under a lost Model block (M8e1): one `⊗` per failed request
+/// on a time axis whose gaps double, like the backoff (`2, 4, 8, …` s).
+/// `·` fills the gaps. At least one cell per hail; a single hail sits at
+/// the left edge.
+pub(crate) fn hail_axis(hails: u64, width: usize) -> String {
+    let hails = hails.max(1) as usize;
+    let width = width.max(hails);
+    let mut row = vec!['·'; width];
+    // Gap before hail `i` doubles: 1, 2, 4, …; the span is `2^(n-1) − 1`.
+    // Ticks never share a cell: a tick lands on its scaled position or the
+    // next free cell, so narrow rows keep every hail.
+    let span = 2u64
+        .saturating_pow(hails.saturating_sub(1) as u32)
+        .saturating_sub(1);
+    let mut at = 0u64;
+    let mut prev = 0usize;
+    for i in 0..hails {
+        let scaled = if span == 0 {
+            0
+        } else {
+            ((at * (width as u64 - 1) + span / 2) / span) as usize
+        };
+        let col = if i == 0 {
+            0
+        } else {
+            scaled.max(prev + 1).min(width - 1)
+        };
+        row[col] = '⊗';
+        prev = col;
+        at += 2u64.saturating_pow(i as u32);
+    }
+    row.iter().collect()
 }
 
 /// The notification band's line while the session retries.
@@ -104,10 +142,14 @@ impl Transcript {
         for block in std::mem::take(&mut self.attempt_tools) {
             self.remove_tool_block(&block);
         }
+        // Renumber once for the whole drop: positional step numbers shift
+        // when blocks leave (M4).
+        self.rebase_steps();
+        self.refresh_flight_marks();
     }
 
     /// Takes one tool block out of its chain; a chain left empty leaves the chat.
-    fn remove_tool_block(&mut self, block: &ToolBlock) {
+    pub(super) fn remove_tool_block(&mut self, block: &ToolBlock) {
         for chain in self.chains.clone() {
             if !chain
                 .borrow()
@@ -119,22 +161,7 @@ impl Transcript {
             }
             chain.borrow_mut().remove(block);
             if chain.borrow().is_empty() {
-                self.chat.borrow_mut().remove_child(&as_component(&chain));
-                self.chains.retain(|c| !Rc::ptr_eq(c, &chain));
-                if self
-                    .open_chain
-                    .as_ref()
-                    .is_some_and(|c| Rc::ptr_eq(c, &chain))
-                {
-                    self.open_chain = None;
-                }
-                if self
-                    .latest_chain
-                    .as_ref()
-                    .is_some_and(|c| Rc::ptr_eq(c, &chain))
-                {
-                    self.latest_chain = None;
-                }
+                self.remove_chain(&chain);
             }
         }
         if self
@@ -144,6 +171,7 @@ impl Transcript {
         {
             self.latest_block = None;
         }
+        self.refresh_flight_marks();
     }
 
     /// The retry streak and its failed attempt are gone: the session they
@@ -165,7 +193,9 @@ impl Transcript {
     }
 
     /// `AutoRetryEnd`: the failed attempt leaves the chat. When the streak
-    /// gave up or was cancelled, one failed Model block says so.
+    /// gave up or was cancelled, one failed Model block says so. A streak
+    /// that ran out of retries is COMMS LOST (M8e1): the block carries the
+    /// hail axis, and `comms_lost` is the caller's to set from `attempts`.
     pub(super) fn end_retry(&mut self, success: bool, attempts: u64, final_error: Option<&str>) {
         self.drop_attempt_error();
         let streak = self.retry_streak.take();
@@ -179,12 +209,30 @@ impl Transcript {
             _ => "Error".to_string(),
         };
         let elapsed = streak.map_or(Duration::ZERO, |s| s.started.elapsed());
-        self.add_model_error(&title, &model_error_body(attempts, elapsed, cancelled));
+        // Hails only when the streak actually retried: a lone unretried
+        // error is not a lost mission.
+        let hails = if cancelled || attempts < 2 {
+            0
+        } else {
+            attempts
+        };
+        self.add_model_error(
+            &title,
+            &model_error_body(attempts, elapsed, cancelled),
+            hails,
+        );
     }
 
     /// The failed Model block: a spacer, the `⊗ Model` header in the error
-    /// colour with its message, and the muted body under the header.
-    pub(super) fn add_model_error(&mut self, title: &str, body: &str) {
+    /// colour with its message, the muted body under the header, and — when
+    /// the streak ran out of retries — the hail axis with its note (M8e1):
+    ///
+    /// ```text
+    ///  ⊗ Model  529 upstream overloaded
+    ///    gave up after 6 attempts in 6.2s · send again to retry
+    ///    ·⊗·⊗···⊗·······⊗···············⊗···············  backoff doubles
+    /// ```
+    pub(super) fn add_model_error(&mut self, title: &str, body: &str, hails: u64) {
         let t = theme();
         let mut block = Container::new();
         block.add_child(as_component(&Rc::new(RefCell::new(Text::new(
@@ -202,6 +250,18 @@ impl Transcript {
             1,
             0,
         )))));
+        if hails >= 2 {
+            let axis = hail_axis(hails, HAIL_AXIS_WIDTH);
+            block.add_child(as_component(&Rc::new(RefCell::new(Text::new(
+                format!(
+                    "  {}  {}",
+                    t.fg("error", &axis),
+                    t.fg("muted", "backoff doubles")
+                ),
+                1,
+                0,
+            )))));
+        }
         self.chat
             .borrow_mut()
             .add_child(as_component(&Rc::new(RefCell::new(Spacer::new(1)))));
@@ -219,6 +279,7 @@ mod tests {
     use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
     use hoocode_code_tui_widgets::tool_output_view::DEFAULT_TOOL_OUTPUT_VIEW;
     use hoocode_code_tui_widgets::ThinkingDisplay;
+    use hoocode_tui_render::assert_golden;
     use hoocode_tui_util::strip_vt_control_characters;
 
     /// The chat as plain text, 100 columns.
@@ -293,6 +354,48 @@ mod tests {
     }
 
     #[test]
+    fn hail_axis_ticks_double_their_gaps() {
+        assert_eq!(hail_axis(0, 8), "⊗·······");
+        assert_eq!(hail_axis(1, 8), "⊗·······");
+        let axis = hail_axis(6, 32);
+        let mut ticks = Vec::new();
+        for (col, c) in axis.chars().enumerate() {
+            if c == '⊗' {
+                ticks.push(col);
+            }
+        }
+        // Gaps of 1, 2, 4, 8, 16 cells across the 32-cell axis.
+        assert_eq!(ticks, vec![0, 1, 3, 7, 15, 31], "{axis}");
+    }
+
+    #[test]
+    fn hail_axis_never_drops_a_hail_on_a_narrow_row() {
+        let axis = hail_axis(6, 4);
+        assert_eq!(axis.chars().filter(|c| *c == '⊗').count(), 6, "{axis}");
+    }
+
+    #[test]
+    fn lost_model_block_with_hail_axis_golden() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let mut t = fresh();
+        // Six hails, then COMMS LOST (M8e1). Fixed numbers: the streak's
+        // own clock is covered by the give-up test, not the golden.
+        t.add_model_error(
+            "529 upstream overloaded",
+            &model_error_body(6, Duration::from_secs_f64(6.2), false),
+            6,
+        );
+        // Plain rows: the hail shapes (`⊗`, `·`) are the surface and do not
+        // depend on the theme. Colours ride the process-wide theme, which
+        // unit tests cannot pin; the comms goldens pin the chrome instead.
+        let text: Vec<String> = chat_text(&t.chat)
+            .lines()
+            .map(|line| line.trim_end().to_string())
+            .collect();
+        assert_golden!("retry_comms_lost_block_100", text.join("\n"));
+    }
+
+    #[test]
     fn a_streak_that_gives_up_leaves_one_model_block_and_no_error_rows() {
         let mut t = fresh();
         // The original request fails, then each of the six retries fails in
@@ -309,6 +412,11 @@ mod tests {
         assert!(!text.contains("Error: 529"), "{text}");
         assert!(text.contains("gave up after 7 attempts in"), "{text}");
         assert!(text.contains("· send again to retry"), "{text}");
+        assert!(text.contains("backoff doubles"), "{text}");
+        assert!(
+            text.contains('⊗') && text.matches('⊗').count() >= 7,
+            "the header tick plus six hail ticks: {text}"
+        );
         assert!(t.attempt_error.is_none());
         assert!(t.assistant_components.is_empty());
     }
@@ -337,6 +445,7 @@ mod tests {
         assert_eq!(text.matches("⊗ Model").count(), 1, "{text}");
         assert!(text.contains("503 service unavailable"), "{text}");
         assert!(text.contains("stopped after 1 attempt in"), "{text}");
+        assert!(!text.contains("backoff doubles"), "{text}");
     }
 
     #[test]

@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model"
+description = "Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent)"
 readme = "README.md"
 
 [package.metadata.hoocode]
@@ -19,6 +19,7 @@ doctest = false
 [dependencies]
 hoocode-code-tui-theme = { workspace = true }
 hoocode-tui-render = { workspace = true }
+hoocode-tui-util = { workspace = true }
 ratatui-core = { version = "0.1", default-features = false }
 ratatui-widgets = { version = "0.3", default-features = false }
 

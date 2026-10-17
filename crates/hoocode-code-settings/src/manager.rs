@@ -968,8 +968,11 @@ impl SettingsManager {
         }
     }
 
+    /// Mission Control (M4): thinking shows as a header-only Think row;
+    /// ctrl+t reveals the trace. The default is hidden, so the peek stays
+    /// a trajectory of steps.
     pub fn hide_thinking_block(&self) -> bool {
-        self.bool_or("hideThinkingBlock", false)
+        self.bool_or("hideThinkingBlock", true)
     }
 
     pub fn set_hide_thinking_block(&mut self, hide: bool) {

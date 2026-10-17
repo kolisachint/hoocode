@@ -1,0 +1,11 @@
+ M2 ● rev…  4 steps · 1✕ · 0.6s · $0.006
+--- styles ---
+r0 c1-2 fg=#c77bde bold
+r0 c4 fg=#b5bd68
+r0 c12-18 fg=#a8a8a8
+r0 c19-21 fg=#989898
+r0 c22-23 fg=#a8a8a8
+r0 c24-26 fg=#989898
+r0 c27-30 fg=#a8a8a8
+r0 c31-33 fg=#989898
+r0 c34-39 fg=#a8a8a8

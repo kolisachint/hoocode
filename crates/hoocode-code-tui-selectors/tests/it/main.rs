@@ -3,7 +3,11 @@
 
 mod ask_options;
 mod config_selector;
+mod flight_path;
+mod fork_console;
+mod hangar;
 mod learn_settings_pane;
+mod mission_log;
 mod model_selector;
 mod oauth_selector;
 mod picker_widths;
@@ -15,4 +19,5 @@ mod session_selector_search;
 mod session_subagent_delete;
 mod settings_token_surface;
 mod support;
+mod systems_console;
 mod tree_selector;

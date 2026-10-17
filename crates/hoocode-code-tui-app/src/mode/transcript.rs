@@ -1,12 +1,14 @@
 //! The chat transcript: rendering messages and tool blocks, streaming, the status and notice
 //! rows, and the tool output views.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Instant;
 
 use hoocode_agent_types::AgentMessage;
-use hoocode_ai_types::{AssistantMessage, Content, StopReason};
+use hoocode_ai_types::{
+    AssistantMessage, Content, ImageContent, StopReason, UserContent, UserMessage,
+};
 use hoocode_ai_util::is_long_retry_delay_error;
 use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_agent_session::stats::{
@@ -26,6 +28,7 @@ use hoocode_code_tui_widgets::custom_message::{
     BranchSummaryMessageComponent, CompactionSummaryMessageComponent, CustomMessageComponent,
 };
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
+use hoocode_code_tui_widgets::radar::{FlightMark, FlightStats, PeekOnly};
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
@@ -33,11 +36,13 @@ use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecu
 use hoocode_code_tui_widgets::tool_output_view::cycle_tool_output_view;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
+use hoocode_code_tui_widgets::trajectory::{self, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
 use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
 
+use crate::hull_paint::HullPaint;
 use crate::notification_panel::NotificationKind;
 use crate::resource_display::show_loaded_resources;
 use crate::scroll_view;
@@ -77,6 +82,59 @@ pub(super) struct Transcript {
     pub(super) retry_streak: Option<super::retry::RetryStreak>,
     /// The tool blocks of the latest failed attempt, dropped with its row.
     pub(super) attempt_tools: Vec<hoocode_code_tui_widgets::tool_chain::ToolBlock>,
+    /// The last prompt actually sent: empty enter hails it again after
+    /// COMMS LOST (M8e1).
+    pub(super) last_prompt: Option<LastPrompt>,
+    /// Mission Control (M4): one range per `▲ M{n}` header. Steps number
+    /// per mission and each mission gets its own landing line; ranges only
+    /// grow, and step numbers rebase from them after a retry takes blocks
+    /// out.
+    pub(super) missions: Vec<MissionRange>,
+    /// Whether the radar flight log is showing (M5): peek-only rows hide
+    /// while set. Shared with the wrappers, so rows added in either view
+    /// follow later flips.
+    pub(super) radar_active: Rc<Cell<bool>>,
+}
+
+/// The last prompt actually sent, text plus images: empty enter hails it
+/// again after COMMS LOST.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(super) struct LastPrompt {
+    pub(super) text: String,
+    pub(super) images: Vec<ImageContent>,
+}
+
+/// The prompt a rebuilt user message stands for: its text plus the images
+/// recorded with it, so hailing it again resends the whole turn.
+pub(super) fn user_prompt(user: &UserMessage) -> LastPrompt {
+    let mut prompt = LastPrompt::default();
+    match &user.content {
+        UserContent::Text(text) => prompt.text = text.clone(),
+        UserContent::Blocks(blocks) => {
+            for block in blocks {
+                match block {
+                    Content::Text(text) => prompt.text.push_str(&text.text),
+                    Content::Image(image) => prompt.images.push(image.clone()),
+                    _ => {}
+                }
+            }
+        }
+    }
+    prompt
+}
+
+/// One M4 mission: its header number, the chain index it starts at, and
+/// whether its landing line is out yet. The header handle and flight data
+/// back the radar flight-log row (M5); the header itself carries the
+/// prompt and skill.
+#[derive(Debug, Clone)]
+pub(super) struct MissionRange {
+    pub(super) seq: usize,
+    pub(super) start: usize,
+    pub(super) landed: bool,
+    pub(super) header: Rc<RefCell<MissionHeader>>,
+    pub(super) flight: Rc<RefCell<FlightStats>>,
+    pub(super) landing: Option<Rc<RefCell<trajectory::LandingLine>>>,
 }
 
 impl Transcript {
@@ -101,15 +159,29 @@ impl Transcript {
             attempt_error: None,
             retry_streak: None,
             attempt_tools: Vec::new(),
+            last_prompt: None,
+            missions: Vec::new(),
+            radar_active: Rc::new(Cell::new(false)),
         }
     }
 
     /// The view over a cleared chat. A retry still in progress keeps its
-    /// streak, so its end still reports how the streak went.
+    /// streak, so its end still reports how the streak went. The radar flag
+    /// survives too, so peek-only rows stay hidden across a rebuild.
     pub(super) fn reset_view(&mut self) {
         let streak = self.retry_streak.take();
+        let radar_active = self.radar_active.clone();
         *self = Transcript::new(self.chat.clone());
         self.retry_streak = streak;
+        self.radar_active = radar_active;
+    }
+
+    /// The missions a compaction folds, first to last (`M1–M3`), for the
+    /// JETTISONED row (M8e6). `None` when the transcript holds no missions.
+    pub(super) fn jettisoned_range(&self) -> Option<(usize, usize)> {
+        let first = self.missions.first()?.seq;
+        let last = self.missions.last()?.seq;
+        Some((first, last))
     }
 }
 
@@ -146,6 +218,288 @@ pub(super) fn truncated_marker(content: &str) -> TruncationResult {
     TruncationResult {
         truncated: true,
         ..truncate_tail(content, TruncationOptions::default())
+    }
+}
+
+/// The user message under an M4 mission header: everything after the first
+/// line, which the header already carries. Empty for a one-line prompt.
+fn mission_body(text: &str) -> String {
+    match text.split_once('\n') {
+        Some((_, rest)) => rest.to_string(),
+        None => String::new(),
+    }
+}
+
+impl Transcript {
+    /// Steps and failed steps in `chains[start..end]`.
+    fn tally_range(&self, start: usize, end: usize) -> (usize, usize) {
+        let mut steps = 0;
+        let mut hits = 0;
+        for chain in self
+            .chains
+            .iter()
+            .skip(start)
+            .take(end.saturating_sub(start))
+        {
+            for block in chain.borrow().tool_blocks() {
+                steps += 1;
+                if block.borrow().is_error() {
+                    hits += 1;
+                }
+            }
+        }
+        (steps, hits)
+    }
+
+    /// Steps and failed steps in the current (last) mission. Before the
+    /// first header, every chain counts.
+    pub(super) fn mission_tally(&self) -> (usize, usize) {
+        let start = self.missions.last().map_or(0, |m| m.start);
+        self.tally_range(start, self.chains.len())
+    }
+
+    /// Steps and failed steps of one mission by header number.
+    fn mission_tally_seq(&self, seq: usize) -> (usize, usize) {
+        let Some(i) = self.missions.iter().position(|m| m.seq == seq) else {
+            return (0, 0);
+        };
+        let end = self
+            .missions
+            .get(i + 1)
+            .map(|m| m.start)
+            .unwrap_or(self.chains.len());
+        self.tally_range(self.missions[i].start, end)
+    }
+
+    /// The current mission when it still needs its landing line: it has
+    /// steps and none is out yet. A new header lands it first, so a queued
+    /// follow-up never swallows the running mission.
+    pub(super) fn unlanded_current(&self) -> Option<usize> {
+        let mission = self.missions.last()?;
+        (!mission.landed && self.mission_tally().0 > 0).then_some(mission.seq)
+    }
+
+    /// A peek-only row in the chat (M5): drawn in peek, hidden in radar.
+    fn peek_child(&self, child: ComponentHandle) -> ComponentHandle {
+        as_component(&PeekOnly::wrap(self.radar_active.clone(), child))
+    }
+
+    /// The mission's mark from its chains (M5): an open chain still flies;
+    /// else an interrupted chain did not land (`⊗` with failed steps) or
+    /// was aborted (`⊘`); settled chains read landed.
+    fn mission_mark(&self, start: usize, end: usize) -> FlightMark {
+        let end = end.min(self.chains.len());
+        let start = start.min(end);
+        let chains = &self.chains[start..end];
+        if chains.iter().any(|c| c.borrow().is_open()) {
+            return FlightMark::InFlight;
+        }
+        if chains
+            .iter()
+            .any(|c| c.borrow().chain_state() == ChainState::Interrupted)
+        {
+            // Hits tally as the landing lines count them.
+            return if self.tally_range(start, end).1 > 0 {
+                FlightMark::DidNotLand
+            } else {
+                FlightMark::Aborted
+            };
+        }
+        FlightMark::Landed
+    }
+
+    /// Refreshes every mission's flight counts and mark from its chains
+    /// (M5): steps and hits tally as the landing lines count them, and
+    /// unlanded missions read their mark off their chains. Times and costs
+    /// land with the mission; the flying mission's come from the mode.
+    pub(super) fn refresh_flight_marks(&mut self) {
+        let chain_count = self.chains.len();
+        for i in 0..self.missions.len() {
+            let end = self
+                .missions
+                .get(i + 1)
+                .map(|m| m.start)
+                .unwrap_or(chain_count);
+            let start = self.missions[i].start;
+            let (steps, hits) = self.tally_range(start, end);
+            let mark = if self.missions[i].landed {
+                self.missions[i].flight.borrow().mark
+            } else {
+                self.mission_mark(start, end)
+            };
+            let mut flight = self.missions[i].flight.borrow_mut();
+            flight.steps = steps;
+            flight.hits = hits;
+            flight.mark = mark;
+            drop(flight);
+            // A landed mission whose tally moved (a retry took blocks
+            // out) rebuilds its landing row, so peek and radar agree.
+            if self.missions[i].landed {
+                if let Some(landing) = self.missions[i].landing.clone() {
+                    landing.borrow_mut().set_counts(steps, hits);
+                }
+            }
+        }
+        let first_start = self.missions.first().map(|m| m.start);
+        for (i, chain) in self.chains.iter().enumerate() {
+            // No mission yet: every chain stands before the first one,
+            // so all keep the summary line (a restored or fed transcript
+            // with no user turn never opens a mission).
+            chain
+                .borrow_mut()
+                .set_orphan(first_start.is_none_or(|start| i < start));
+        }
+    }
+
+    /// Opens a mission: the `▲ M{n}` header over the chat. In radar the
+    /// header draws the mission's flight-log row instead.
+    pub(super) fn begin_mission(
+        &mut self,
+        prompt: &str,
+        skill: Option<&str>,
+        view: ToolOutputView,
+    ) {
+        let seq = self.missions.len() + 1;
+        let flight = Rc::new(RefCell::new(FlightStats {
+            mark: FlightMark::InFlight,
+            ..Default::default()
+        }));
+        let mut header = MissionHeader::new(seq, prompt, skill);
+        header.set_view(view);
+        header.set_flight(flight.clone());
+        let header = handle(header);
+        self.missions.push(MissionRange {
+            seq,
+            start: self.chains.len(),
+            landed: false,
+            header: header.clone(),
+            flight,
+            landing: None,
+        });
+        if !self.chat.borrow().children.is_empty() {
+            self.chat
+                .borrow_mut()
+                .add_child(self.peek_child(as_component(&handle(Spacer::new(1)))));
+        }
+        self.chat.borrow_mut().add_child(as_component(&header));
+    }
+
+    /// Appends the mission's landing line and marks it landed. No row for
+    /// a stepless mission (returns false).
+    pub(super) fn land_mission(
+        &mut self,
+        seq: usize,
+        input: i64,
+        output: i64,
+        cost: f64,
+        secs: f64,
+    ) -> bool {
+        let Some(i) = self.missions.iter().position(|m| m.seq == seq) else {
+            return false;
+        };
+        if self.missions[i].landed {
+            return false;
+        }
+        let (steps, hits) = self.mission_tally_seq(seq);
+        if steps == 0 {
+            return false;
+        }
+        let landed_time = format_duration_secs(secs);
+        let cost_text = format!(
+            "${}",
+            hoocode_code_agent_session::format::js_to_fixed(cost, 3)
+        );
+        self.chat
+            .borrow_mut()
+            .add_child(self.peek_child(as_component(&handle(Spacer::new(1)))));
+        // The landing row draws from spans (M5 review): the transcript
+        // refreshes its counts when a landed mission's tally moves.
+        let tokens = format!(
+            "{} tokens",
+            format_tokens((input.max(0) + output.max(0)) as u64)
+        );
+        let landing = handle(trajectory::LandingLine::new(
+            steps,
+            hits,
+            &landed_time,
+            &tokens,
+            &cost_text,
+        ));
+        self.missions[i].landing = Some(landing.clone());
+        self.chat
+            .borrow_mut()
+            .add_child(self.peek_child(as_component(&landing)));
+        // The chains are closed by now, so the mark reads the outcome: a
+        // clean mission landed, an interrupted one keeps `⊗` or `⊘`.
+        let start = self.missions[i].start;
+        let end = self
+            .missions
+            .get(i + 1)
+            .map(|m| m.start)
+            .unwrap_or(self.chains.len());
+        let mark = self.mission_mark(start, end);
+        let mut flight = self.missions[i].flight.borrow_mut();
+        flight.steps = steps;
+        flight.hits = hits;
+        flight.mark = mark;
+        flight.landed_time = Some(landed_time);
+        flight.cost = Some(cost_text);
+        flight.started = None;
+        drop(flight);
+        self.missions[i].landed = true;
+        true
+    }
+
+    /// Takes a chain out of the chat and the chain list, pulling later
+    /// mission starts down so a later mission keeps its first chain.
+    /// A mission starting exactly at the removed chain keeps its start:
+    /// the next chain slides into that index.
+    pub(super) fn remove_chain(&mut self, chain: &Rc<RefCell<ToolChainComponent>>) {
+        self.chat.borrow_mut().remove_child(&as_component(chain));
+        if let Some(index) = self.chains.iter().position(|c| Rc::ptr_eq(c, chain)) {
+            self.chains.remove(index);
+            for mission in &mut self.missions {
+                if mission.start > index {
+                    mission.start -= 1;
+                }
+            }
+        }
+        if self
+            .open_chain
+            .as_ref()
+            .is_some_and(|c| Rc::ptr_eq(c, chain))
+        {
+            self.open_chain = None;
+        }
+        if self
+            .latest_chain
+            .as_ref()
+            .is_some_and(|c| Rc::ptr_eq(c, chain))
+        {
+            self.latest_chain = None;
+        }
+        self.refresh_flight_marks();
+    }
+
+    /// Renumbers every chain from the mission ranges: a retry that takes
+    /// blocks out leaves positional numbering behind otherwise.
+    pub(super) fn rebase_steps(&mut self) {
+        let mut current_start: Option<usize> = None;
+        let mut steps_before = 0;
+        for (i, chain) in self.chains.iter().enumerate() {
+            let start = self
+                .missions
+                .iter()
+                .rev()
+                .find(|m| m.start <= i)
+                .map(|m| m.start);
+            if start != current_start {
+                current_start = start;
+                steps_before = 0;
+            }
+            chain.borrow_mut().set_base_step(steps_before);
+            steps_before += chain.borrow().tool_blocks().len();
+        }
     }
 }
 
@@ -217,6 +571,77 @@ impl Mode {
         self.status.borrow_mut().clear();
     }
 
+    /// Steps and failed steps in the current mission, for the step numbers
+    /// and the landing line (M4). A user message opens a mission: everything
+    /// after it, up to the next one, belongs to it.
+    fn mission_tally(&self) -> (usize, usize) {
+        self.transcript.mission_tally()
+    }
+
+    /// The mission header opening a user turn: `▲ M{n}  prompt`, with the
+    /// skill chip when the turn runs a skill (M4). A queued follow-up opens
+    /// its own mission while the previous one still runs; see
+    /// `land_previous_mission`.
+    fn add_mission_header(&mut self, text: &str, skill: Option<&str>) {
+        if let Some(seq) = self.transcript.unlanded_current() {
+            self.land_previous_mission(seq);
+        }
+        self.transcript
+            .begin_mission(text, skill, self.tool_output_view);
+        self.refresh_flight_stats();
+    }
+
+    /// A queued follow-up lands the running mission where its own header
+    /// lands: the open chain closes and the mission gets its own landing
+    /// line. Usage since the turn anchor is that mission's; the anchor
+    /// resets so the final landing at PromptDone shows only the remainder
+    /// (no double counting).
+    fn land_previous_mission(&mut self, seq: usize) {
+        self.close_open_chain(ChainState::Done);
+        let now = sum_assistant_usage(self.session.session_manager().entries());
+        let (input, output, cost, secs) = match self.turn_cost_anchor.take() {
+            Some((anchor, at)) => (
+                now.input as i64 - anchor.input as i64,
+                now.output as i64 - anchor.output as i64,
+                now.cost - anchor.cost,
+                at.elapsed().as_secs_f64(),
+            ),
+            None => (0, 0, 0.0, 0.0),
+        };
+        self.turn_cost_anchor = Some((now, Instant::now()));
+        self.transcript.land_mission(seq, input, output, cost, secs);
+        self.refresh_flight_stats();
+    }
+
+    /// Refreshes the radar flight rows (M5) after the transcript changed:
+    /// counts and marks come off the missions, and the flying mission reads
+    /// its elapsed time off the turn anchor and its cost off usage since
+    /// the anchor. Landed missions keep the time and cost they landed with.
+    pub(super) fn refresh_flight_stats(&mut self) {
+        self.transcript.refresh_flight_marks();
+        let Some(mission) = self.transcript.missions.last() else {
+            return;
+        };
+        if mission.landed {
+            return;
+        }
+        let now = sum_assistant_usage(self.session.session_manager().entries());
+        let mut flight = mission.flight.borrow_mut();
+        match &self.turn_cost_anchor {
+            Some((anchor, at)) => {
+                flight.started = Some(*at);
+                flight.cost = Some(format!(
+                    "${}",
+                    hoocode_code_agent_session::format::js_to_fixed(now.cost - anchor.cost, 3)
+                ));
+            }
+            None => {
+                flight.started = None;
+                flight.cost = None;
+            }
+        }
+    }
+
     /// `addMessageToChat` for the roles this transcript draws so far.
     pub(super) fn add_message_to_chat(&mut self, message: &AgentMessage, populate_history: bool) {
         match message {
@@ -233,19 +658,26 @@ impl Mode {
                 if text.is_empty() {
                     return;
                 }
-                if !self.transcript.chat.borrow().children.is_empty() {
-                    self.add_to_chat(as_component(&handle(Spacer::new(1))));
-                }
+                // Every user turn opens a mission (M4): the `▲ M{n}` header
+                // carries the first line, the rest stays in the message.
                 match parse_skill_block(&text) {
                     Some(skill) => {
+                        let prompt = skill.user_message.as_deref().unwrap_or(&text);
+                        self.add_mission_header(prompt, Some(&skill.name));
                         // The message the user typed comes first; the skill it
                         // invoked is drawn under it.
                         if let Some(message) = skill.user_message {
-                            let component = UserMessageComponent::with_theme(
-                                &message,
-                                (self.markdown_theme())(),
-                            );
-                            self.add_to_chat(as_component(&handle(component)));
+                            let body = mission_body(&message);
+                            if !body.is_empty() {
+                                let component = UserMessageComponent::with_theme(
+                                    &body,
+                                    (self.markdown_theme())(),
+                                );
+                                // Radar hides the body: the flight-log row
+                                // carries the first line.
+                                let child = as_component(&handle(component));
+                                self.add_to_chat(self.transcript.peek_child(child));
+                            }
                         }
                         let component =
                             handle(SkillBlockComponent::new(&skill.name, &skill.content));
@@ -257,6 +689,7 @@ impl Mode {
                     }
                     None => match parse_background_notice(&text) {
                         Some(notice) => {
+                            self.add_mission_header(&text, None);
                             let component = handle(BackgroundNoticeComponent::new(notice));
                             component
                                 .borrow_mut()
@@ -265,9 +698,18 @@ impl Mode {
                             self.add_to_chat(as_component(&component));
                         }
                         None => {
-                            let component =
-                                UserMessageComponent::with_theme(&text, (self.markdown_theme())());
-                            self.add_to_chat(as_component(&handle(component)));
+                            self.add_mission_header(&text, None);
+                            let body = mission_body(&text);
+                            if !body.is_empty() {
+                                let component = UserMessageComponent::with_theme(
+                                    &body,
+                                    (self.markdown_theme())(),
+                                );
+                                // Radar hides the body: the flight-log row
+                                // carries the first line.
+                                let child = as_component(&handle(component));
+                                self.add_to_chat(self.transcript.peek_child(child));
+                            }
                         }
                     },
                 }
@@ -282,6 +724,10 @@ impl Mode {
                     self.markdown_theme(),
                     DEFAULT_HIDDEN_THINKING_LABEL,
                 ));
+                // Mission Control peek: prose sits on the `┊` rail.
+                component
+                    .borrow_mut()
+                    .set_rail(self.tool_output_view == ToolOutputView::Peek);
                 self.transcript.assistant_components.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
@@ -355,6 +801,9 @@ impl Mode {
         for (i, message) in messages.iter().enumerate() {
             match message {
                 AgentMessage::User(user) => {
+                    // The hail behind empty enter after COMMS LOST (M8e1):
+                    // the last replayed user message stands for the prompt.
+                    self.transcript.last_prompt = Some(user_prompt(user));
                     // A new turn: the one before it has ended, and its
                     // per-turn token row goes where the live path drew it.
                     if let Some(ended) = turn.take() {
@@ -400,7 +849,15 @@ impl Mode {
                                     std::time::Duration::from_millis(elapsed as u64),
                                     false,
                                 ),
+                                // A rebuilt streak that gave up is COMMS LOST
+                                // too (M8e1): its hails are its attempts.
+                                failed.len() as u64 + 1,
                             );
+                            // Without a user message behind it there is
+                            // nothing to hail again: stay out of COMMS LOST.
+                            if self.transcript.last_prompt.is_some() {
+                                self.comms_lost.set(failed.len() as u64 + 1 >= 2);
+                            }
                             continue;
                         }
                     }
@@ -499,6 +956,13 @@ impl Mode {
     /// `renderInitialMessages`: the loaded session's transcript, and how often
     /// it was compacted.
     pub(super) fn render_initial_messages(&mut self) {
+        // The hull paint lives in the session file; the provider is only
+        // its render cache (M8e5).
+        let paint = self
+            .session
+            .hull_paint()
+            .and_then(|name| HullPaint::parse(&name).ok().flatten());
+        self.footer_data.set_hull_paint(paint);
         let messages = self.session.messages();
         // The plan is the session's own: rebuilt from its last TodoWrite, so a
         // resumed or reloaded session shows the plan it ended with. That call
@@ -594,6 +1058,9 @@ impl Mode {
             Some(chain) if chain.borrow().is_open() => chain.clone(),
             _ => {
                 let chain = handle(ToolChainComponent::new(self.tool_output_view));
+                // Steps number per mission (M4): the chain starts after the
+                // steps the mission already holds.
+                chain.borrow_mut().set_base_step(self.mission_tally().0);
                 self.add_to_chat(as_component(&chain));
                 self.transcript.chains.push(chain.clone());
                 self.transcript.open_chain = Some(chain.clone());
@@ -616,6 +1083,7 @@ impl Mode {
             }
             chain.borrow_mut().set_latest(true);
         }
+        self.refresh_flight_stats();
         self.dirty.set(true);
     }
 
@@ -660,12 +1128,11 @@ impl Mode {
             return;
         };
         if chain.borrow().is_empty() {
-            let h = as_component(&chain);
-            self.transcript.chat.borrow_mut().remove_child(&h);
-            self.transcript.chains.retain(|c| !Rc::ptr_eq(c, &chain));
+            self.transcript.remove_chain(&chain);
         } else {
             chain.borrow_mut().close(outcome);
         }
+        self.refresh_flight_stats();
         self.dirty.set(true);
     }
 
@@ -800,6 +1267,8 @@ impl Mode {
     pub(super) fn reset_transcript_view(&mut self) {
         self.transcript.chat.borrow_mut().clear();
         self.transcript.reset_view();
+        // A fresh transcript is not a lost mission.
+        self.comms_lost.set(false);
         self.tui.scroll_to_live();
         self.tui.reset_new_lines_count();
     }
@@ -879,6 +1348,15 @@ impl Mode {
         }
         self.footer.borrow_mut().set_tool_output_view(view);
         self.comms.borrow_mut().set_tool_output_view(view);
+        // Radar hides the peek-only rows (landing lines, message bodies)
+        // and switches the mission headers to their flight-log rows.
+        self.transcript
+            .radar_active
+            .set(view == ToolOutputView::Radar);
+        for mission in &self.transcript.missions {
+            mission.header.borrow_mut().set_view(view);
+        }
+        self.refresh_flight_stats();
         let thinking = self.thinking_display();
         for chain in &self.transcript.chains {
             chain.borrow_mut().set_view(view);
@@ -891,6 +1369,10 @@ impl Mode {
         // Peek opens each message's body; radar folds it to a row. The startup
         // header and resource listing stay compact (they open under `verbose`).
         let peek = view == ToolOutputView::Peek;
+        // Mission Control peek: prose sits on the `┊` rail; radar has none.
+        for component in &self.transcript.assistant_components {
+            component.borrow_mut().set_rail(peek);
+        }
         for component in &self.transcript.custom_messages {
             component.borrow_mut().set_expanded(peek);
         }
@@ -982,10 +1464,22 @@ impl Mode {
 
     /// The row itself: tokens in and out, the turn's time, and its cost.
     fn show_turn_cost_row(&mut self, input: i64, output: i64, cost: f64, secs: f64) {
+        // Mission Control (M4): tally first. A mission with steps always
+        // lands, even at zero usage (`0 tokens · $0.000`). A stepless turn
+        // keeps the old accounting row, silent when nothing was accounted.
+        if let Some(seq) = self.transcript.missions.last().map(|m| m.seq) {
+            if self.transcript.land_mission(seq, input, output, cost, secs) {
+                self.refresh_flight_stats();
+                return;
+            }
+        }
+        // A stepless mission still reads its time and cost in radar.
+        self.refresh_flight_stats();
         // Nothing was accounted: stay silent rather than print zeroes.
         if input <= 0 && output <= 0 {
             return;
         }
+        self.add_to_chat(as_component(&handle(Spacer::new(1))));
         let t = theme();
         let mut segs = vec![
             format!(
@@ -1007,7 +1501,6 @@ impl Mode {
             ));
         }
         let separator = t.fg("dim", " · ");
-        self.add_to_chat(as_component(&handle(Spacer::new(1))));
         self.add_to_chat(as_component(&handle(Text::new(
             segs.join(&separator),
             1,
@@ -1020,7 +1513,302 @@ impl Mode {
 mod tests {
     use super::*;
     use hoocode_ai_types::{Content, ToolResultMessage};
+    use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
+    use hoocode_code_tui_widgets::tool_signal::ToolResult;
+    use hoocode_tui_util::strip_vt_control_characters;
     use serde_json::{json, Value};
+
+    fn fresh_transcript() -> Transcript {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        Transcript::new(Rc::new(RefCell::new(Container::new())))
+    }
+
+    fn user_message(content: UserContent) -> UserMessage {
+        UserMessage {
+            content,
+            timestamp: 0,
+        }
+    }
+
+    #[test]
+    fn user_prompt_reads_plain_text() {
+        let prompt = user_prompt(&user_message(UserContent::Text("hail me".into())));
+        assert_eq!(prompt.text, "hail me");
+        assert!(prompt.images.is_empty());
+    }
+
+    #[test]
+    fn user_prompt_reads_blocks_with_images() {
+        let prompt = user_prompt(&user_message(UserContent::Blocks(vec![
+            Content::Text(hoocode_ai_types::TextContent {
+                text: "look ".into(),
+                text_signature: None,
+            }),
+            Content::Image(ImageContent {
+                data: "aGVsbG8=".into(),
+                media_type: "image/png".into(),
+            }),
+        ])));
+        assert_eq!(prompt.text, "look ");
+        assert_eq!(prompt.images.len(), 1);
+        assert_eq!(prompt.images[0].media_type, "image/png");
+    }
+
+    #[test]
+    fn reset_view_clears_the_last_prompt() {
+        let mut transcript = fresh_transcript();
+        transcript.last_prompt = Some(LastPrompt {
+            text: "hail me".into(),
+            images: Vec::new(),
+        });
+        transcript.reset_view();
+        assert_eq!(transcript.last_prompt, None);
+    }
+
+    /// The chat as plain text, 100 columns.
+    fn chat_text(chat: &Rc<RefCell<Container>>) -> String {
+        let mut lines = Vec::new();
+        for child in chat.borrow().children.iter() {
+            lines.extend(child.borrow_mut().render(100));
+        }
+        strip_vt_control_characters(&lines.join("\n"))
+    }
+
+    fn shell_block(id: &str) -> ToolBlock {
+        let mut block = ToolExecutionComponent::new(
+            "Shell",
+            id,
+            json!({"command": "echo hi"}),
+            ToolExecutionOptions {
+                view: ToolOutputView::Peek,
+                ..Default::default()
+            },
+            None,
+            "/",
+        );
+        block.update_result(
+            ToolResult {
+                content: vec![Content::text("hi")],
+                details: json!({}),
+                is_error: false,
+            },
+            false,
+        );
+        Rc::new(RefCell::new(block))
+    }
+
+    fn chain_with(n: usize) -> Rc<RefCell<ToolChainComponent>> {
+        let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        for i in 0..n {
+            chain.borrow_mut().add(shell_block(&format!("call-{i}")));
+        }
+        chain
+    }
+
+    /// The flight row reads the mission's own tally: steps and hits count
+    /// as the landing line counts them, and landing stores the time, cost
+    /// and mark (no duplicate counting).
+    #[test]
+    fn flight_stats_land_with_the_mission() {
+        use hoocode_code_tui_widgets::radar::FlightMark;
+
+        let mut t = fresh_transcript();
+        t.begin_mission("do it", None, ToolOutputView::Peek);
+        let chain = chain_with(2);
+        t.chains.push(chain.clone());
+        t.refresh_flight_marks();
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!(flight.steps, 2);
+        assert_eq!(flight.hits, 0);
+        assert_eq!(flight.mark, FlightMark::InFlight);
+        drop(flight);
+        chain.borrow_mut().close(ChainState::Done);
+        assert!(t.land_mission(1, 100, 200, 0.002, 0.5));
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!(flight.steps, 2);
+        assert_eq!(flight.hits, 0);
+        assert_eq!(flight.mark, FlightMark::Landed);
+        assert!(flight.landed_time.is_some());
+        assert!(flight.cost.is_some());
+        assert!(flight.started.is_none());
+    }
+
+    /// A landed mission whose tally moves rebuilds its landing row, so
+    /// peek and radar agree on the counts.
+    #[test]
+    fn landed_counts_rebuild_the_landing_row() {
+        let mut t = fresh_transcript();
+        t.begin_mission("do it", None, ToolOutputView::Peek);
+        let chain = chain_with(2);
+        t.chains.push(chain.clone());
+        chain.borrow_mut().close(ChainState::Done);
+        assert!(t.land_mission(1, 100, 200, 0.002, 0.5));
+        assert!(chat_text(&t.chat).contains("2 steps"));
+        // A retry takes a block out after landing: both rows follow.
+        let dropped = chain.borrow().tool_blocks()[0].clone();
+        t.remove_tool_block(&dropped);
+        t.rebase_steps();
+        let text = chat_text(&t.chat);
+        assert!(text.contains("1 step"), "{text}");
+        assert!(!text.contains("2 steps"), "{text}");
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!((flight.steps, flight.hits), (1, 0));
+        let landing = t.missions[0].landing.as_ref().unwrap().borrow();
+        assert_eq!(landing.counts(), (1, 0));
+    }
+
+    /// An interrupted mission keeps `⊗` when a step failed, `⊘` when none did.
+    #[test]
+    fn flight_mark_reads_the_outcome_off_interrupted_chains() {
+        use hoocode_code_tui_widgets::radar::FlightMark;
+
+        let mut t = fresh_transcript();
+        t.begin_mission("run it", None, ToolOutputView::Peek);
+        let mut failed = ToolExecutionComponent::new(
+            "Shell",
+            "call-bad",
+            json!({"command": "exit 3"}),
+            ToolExecutionOptions {
+                view: ToolOutputView::Peek,
+                ..Default::default()
+            },
+            None,
+            "/",
+        );
+        failed.update_result(
+            ToolResult {
+                content: vec![Content::text("boom")],
+                details: json!({}),
+                is_error: true,
+            },
+            false,
+        );
+        let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        chain.borrow_mut().add(Rc::new(RefCell::new(failed)));
+        t.chains.push(chain.clone());
+        chain.borrow_mut().close(ChainState::Interrupted);
+        t.refresh_flight_marks();
+        assert_eq!(t.missions[0].flight.borrow().mark, FlightMark::DidNotLand);
+
+        let mut t = fresh_transcript();
+        t.begin_mission("run it", None, ToolOutputView::Peek);
+        let clean = chain_with(1);
+        t.chains.push(clean.clone());
+        clean.borrow_mut().close(ChainState::Interrupted);
+        t.refresh_flight_marks();
+        assert_eq!(t.missions[0].flight.borrow().mark, FlightMark::Aborted);
+    }
+
+    /// A queued follow-up lands the running mission where its own header
+    /// lands: two missions, two landing lines, each with its own steps and
+    /// its own usage (no double counting).
+    #[test]
+    fn a_queued_follow_up_lands_each_mission_with_its_own_steps() {
+        let mut t = fresh_transcript();
+        t.begin_mission("first prompt", None, ToolOutputView::Peek);
+        let first = chain_with(2);
+        t.chains.push(first.clone());
+        t.open_chain = Some(first);
+        // The follow-up's header finds M1 unlanded with steps: the mode
+        // closes the chain and lands it with the usage known so far.
+        assert_eq!(t.unlanded_current(), Some(1));
+        t.chains[0].borrow_mut().close(ChainState::Done);
+        t.open_chain = None;
+        assert!(t.land_mission(1, 100, 200, 0.002, 0.5));
+        // M2 opens with one step; PromptDone lands it with the remainder.
+        t.begin_mission("second prompt", None, ToolOutputView::Peek);
+        assert_eq!(t.unlanded_current(), None);
+        let second = chain_with(1);
+        second.borrow_mut().set_base_step(t.mission_tally().0);
+        t.chains.push(second.clone());
+        t.open_chain = Some(second);
+        assert!(t.land_mission(2, 50, 60, 0.001, 0.3));
+        let text = chat_text(&t.chat);
+        let landed: Vec<&str> = text.lines().filter(|l| l.contains("LANDED")).collect();
+        assert_eq!(landed.len(), 2, "{text}");
+        assert!(landed[0].contains("2 steps"), "{text}");
+        assert!(landed[1].contains("1 step"), "{text}");
+        assert!(
+            landed[0].contains(&format!("{} tokens", format_tokens(300))),
+            "{text}"
+        );
+        assert!(
+            landed[1].contains(&format!("{} tokens", format_tokens(110))),
+            "{text}"
+        );
+    }
+
+    /// A mission with steps always lands, even when nothing was used.
+    #[test]
+    fn a_mission_with_steps_lands_even_when_nothing_was_used() {
+        let mut t = fresh_transcript();
+        t.begin_mission("do it", None, ToolOutputView::Peek);
+        t.chains.push(chain_with(1));
+        assert!(t.land_mission(1, 0, 0, 0.0, 0.5));
+        let text = chat_text(&t.chat);
+        assert!(text.contains("LANDED"), "{text}");
+        assert!(text.contains("1 step"), "{text}");
+        assert!(text.contains("0 tokens"), "{text}");
+        assert!(text.contains("$0.000"), "{text}");
+    }
+
+    /// A stepless mission has no landing line.
+    #[test]
+    fn a_stepless_mission_has_no_landing_line() {
+        let mut t = fresh_transcript();
+        t.begin_mission("just talking", None, ToolOutputView::Peek);
+        assert!(!t.land_mission(1, 10, 20, 0.01, 0.5));
+        assert!(!chat_text(&t.chat).contains("LANDED"));
+    }
+
+    /// A removed chain pulls later mission starts down: M2 keeps its first
+    /// chain and still lands with its own step, numbered 01.
+    #[test]
+    fn removing_a_whole_chain_keeps_the_later_missions_start() {
+        let mut t = fresh_transcript();
+        t.begin_mission("first", None, ToolOutputView::Peek);
+        let failed = chain_with(1);
+        t.chains.push(failed.clone());
+        t.open_chain = Some(failed.clone());
+        t.begin_mission("second", None, ToolOutputView::Peek);
+        assert_eq!(t.missions[1].start, 1);
+        // The failed attempt's chain leaves after M2 began.
+        let block = failed.borrow().tool_blocks()[0].clone();
+        t.remove_tool_block(&block);
+        t.rebase_steps();
+        assert!(t.chains.iter().all(|c| !Rc::ptr_eq(c, &failed)));
+        assert_eq!(t.missions[1].start, 0);
+        // M2 still lands with its own step, numbered 01.
+        let m2 = chain_with(1);
+        m2.borrow_mut().set_base_step(t.mission_tally().0);
+        t.chains.push(m2.clone());
+        assert!(t.land_mission(2, 10, 20, 0.001, 0.2));
+        let text = chat_text(&t.chat);
+        let landed: Vec<&str> = text.lines().filter(|l| l.contains("LANDED")).collect();
+        assert_eq!(landed.len(), 1, "{text}");
+        assert!(landed[0].contains("1 step"), "{text}");
+        let rendered = strip_vt_control_characters(&m2.borrow_mut().render(100).join("\n"));
+        assert!(rendered.contains(" 01 "), "{rendered}");
+    }
+
+    /// Taking a block out renumbers the later steps (01, 02 — never 01, 03).
+    #[test]
+    fn removing_a_block_renumbers_the_later_steps() {
+        let mut t = fresh_transcript();
+        t.begin_mission("m", None, ToolOutputView::Peek);
+        let first = chain_with(2);
+        let second = chain_with(1);
+        second.borrow_mut().set_base_step(2);
+        t.chains.push(first.clone());
+        t.chains.push(second.clone());
+        let dropped = first.borrow().tool_blocks()[0].clone();
+        t.remove_tool_block(&dropped);
+        // The drop path renumbers once after the loop.
+        t.rebase_steps();
+        let rendered = strip_vt_control_characters(&second.borrow_mut().render(100).join("\n"));
+        assert!(rendered.contains(" 02 "), "{rendered}");
+        assert!(!rendered.contains(" 03 "), "{rendered}");
+    }
 
     fn result(details: Option<Value>, duration_ms: Option<u64>) -> ToolResultMessage {
         ToolResultMessage {

@@ -7,15 +7,37 @@
 //! Callers depend on this crate alone; `core` and `widgets` re-export the ratatui
 //! crates it is built on.
 
+mod ansi;
+mod cache;
 mod component;
+mod frame;
 mod lines;
 mod palette;
 
+pub use ansi::{ansi_spans, spans_width, truncate_spans, with_base_style};
+pub use cache::{current_theme_key, RowCache};
 pub use component::RatatuiComponent;
+pub use frame::{flatten, render_chrome, truncate_line, Chrome};
 pub use lines::{buffer_to_lines, paint};
 pub use palette::{
-    acc, bold, dim, err, faint, from_token, gold, ink, italic, ok, reversed, vio, warn, you,
-    Palette, PALETTE_TOKENS,
+    acc, bold, dim, err, faint, from_token, gold, ink, italic, ok, reversed, theme_key, vio, warn,
+    you, Palette, ThemeKey, PALETTE_TOKENS,
+};
+
+/// The ratatui primitives Mission Control surfaces draw with: [`Line`] and
+/// [`Span`] for styled rows, [`Style`] for tokens, and the [`Block`]
+/// (thick borders), [`List`] and [`Paragraph`] widgets.
+pub use ratatui_core::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Modifier, Style},
+    text::{Line, Span},
+};
+pub use ratatui_widgets::{
+    block::Block,
+    borders::BorderType,
+    list::{List, ListItem, ListState},
+    paragraph::Paragraph,
 };
 
 pub use ratatui_core as core;

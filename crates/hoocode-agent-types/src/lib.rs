@@ -304,6 +304,11 @@ pub struct CompactionSummaryMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tokens_after: Option<u64>,
     pub timestamp: i64,
+    /// The missions folded into this summary (`M1–M3`), for the Mission
+    /// Control JETTISONED row. Absent on entries written before compaction
+    /// knew the transcript's missions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mission_range: Option<(usize, usize)>,
 }
 
 /// A conversation message as seen by the agent: an LLM message or a harness message.
@@ -894,3 +899,51 @@ pub struct ShouldStopAfterTurnContext {
 
 /// Context passed to `prepare_next_turn`.
 pub type PrepareNextTurnContext = ShouldStopAfterTurnContext;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Entries written before compaction knew the transcript's missions carry
+    /// no `missionRange` (and old ones no `tokensAfter` either): they still
+    /// load, with `None` where the new fields would be (M8e6).
+    #[test]
+    fn old_compaction_summaries_load_without_the_new_fields() {
+        let old: AgentMessage = serde_json::from_str(
+            r#"{"role":"compactionSummary","summary":"s","tokensBefore":120,"timestamp":1}"#,
+        )
+        .unwrap();
+        match old {
+            AgentMessage::CompactionSummary(message) => {
+                assert_eq!(message.summary, "s");
+                assert_eq!(message.tokens_before, 120);
+                assert_eq!(message.tokens_after, None);
+                assert_eq!(message.mission_range, None);
+            }
+            _ => panic!("wrong variant: {old:?}"),
+        }
+    }
+
+    #[test]
+    fn new_compaction_summaries_keep_their_mission_range() {
+        let message: AgentMessage = serde_json::from_str(
+            r#"{"role":"compactionSummary","summary":"s","tokensBefore":120,"tokensAfter":144,"timestamp":1,"missionRange":[1,3]}"#,
+        )
+        .unwrap();
+        match message {
+            AgentMessage::CompactionSummary(message) => {
+                assert_eq!(message.tokens_after, Some(144));
+                assert_eq!(message.mission_range, Some((1, 3)));
+            }
+            _ => panic!("wrong variant: {message:?}"),
+        }
+        // Absent fields stay absent on the way back out.
+        let old: AgentMessage = serde_json::from_str(
+            r#"{"role":"compactionSummary","summary":"s","tokensBefore":120,"timestamp":1}"#,
+        )
+        .unwrap();
+        let json = serde_json::to_value(&old).unwrap();
+        assert!(json.get("missionRange").is_none(), "{json}");
+        assert!(json.get("tokensAfter").is_none(), "{json}");
+    }
+}

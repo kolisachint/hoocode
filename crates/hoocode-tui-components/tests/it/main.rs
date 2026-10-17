@@ -11,6 +11,7 @@ pub(crate) fn capabilities_lock() -> MutexGuard<'static, ()> {
     LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+mod autocomplete_console;
 mod autocomplete_ts;
 mod common;
 mod editor;

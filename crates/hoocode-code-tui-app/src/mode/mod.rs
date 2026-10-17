@@ -18,6 +18,7 @@ use hoocode_code_auth::AuthStorage;
 use hoocode_code_media::clipboard_image::ClipboardImage;
 use hoocode_code_media::rich_clipboard::CopyFlavour;
 use hoocode_code_paths::{env_override, APP_NAME, VERSION};
+use hoocode_code_permissions::ClearanceChoice;
 use hoocode_code_settings::{ChromeDensity, EditorBorder, ToolOutputView};
 use hoocode_code_subagents::agent_log::{agent_log, set_terminal_owned_by_tui};
 use hoocode_code_subagents::live::LiveSink;
@@ -96,7 +97,7 @@ mod task_panel;
 mod transcript;
 mod tree;
 
-use self::task_panel::QuitJobs;
+use self::task_panel::{superseded_quit, EndShift, QuitJobs};
 use self::{auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, transcript::*};
 
 pub use self::events::plan_settle_outcome;
@@ -230,8 +231,6 @@ enum AppEvent {
         Option<u64>,
         Result<hoocode_code_tool_bash::jobs::JobRead, String>,
     ),
-    /// The quit prompt for running shell jobs was answered (`None`: Esc).
-    QuitJobsAnswer(Option<String>),
 }
 
 /// `new Date().toISOString()`.
@@ -449,6 +448,9 @@ struct Mode {
     /// The comms frame around the prompt (M2). Dialogs and the attached
     /// view replace it in the editor's slot; the prompt itself stays focused.
     comms: Rc<RefCell<CommsFrame>>,
+    /// COMMS LOST (M8e1): the last retry gave up and no hail or mission has
+    /// gone out since. Shared with the comms frame's state closure.
+    comms_lost: Rc<Cell<bool>>,
     editor_container: Rc<RefCell<Container>>,
     /// The picker in the editor's slot (`dialogs.rs`).
     picker: Option<ActivePicker>,
@@ -465,8 +467,13 @@ struct Mode {
     tx: Sender<AppEvent>,
     rx: Receiver<AppEvent>,
     exit_requested: bool,
+    /// A user-initiated quit (`/quit`, ctrl+c twice, ctrl+d): it shows the
+    /// end-of-shift card instead of leaving at once.
+    user_quit: bool,
     /// Where the quit prompt for running shell jobs stands (T5.3).
     quit_jobs: QuitJobs,
+    /// Where the end-of-shift card stands (M6).
+    end_shift: EndShift,
     listing: Box<dyn Fn(&AgentSession) -> ResourceListing>,
     session_runtime: Option<AgentSessionRuntime>,
     subscription: Option<hoocode_code_agent_session::SessionSubscription>,
@@ -474,6 +481,9 @@ struct Mode {
     auth_storage: Arc<AuthStorage>,
     login: Option<LoginStep>,
     ask_options: Option<OpenAskOptions>,
+    clearance: Option<OpenClearance>,
+    end_shift_card: Option<OpenEndShift>,
+    end_shift_jobs_card: Option<OpenEndShiftJobs>,
     anthropic_warning_shown: bool,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
     last_escape: Option<Instant>,
@@ -676,6 +686,11 @@ impl Mode {
         let comms_session = session.clone();
         let comms_turn = turn_timer.clone();
         let comms_editor = editor.clone();
+        // COMMS LOST (M8e1): set when the last retry gives up, cleared by
+        // the next hail or mission. Shared with the event handler because
+        // the frame's state closure cannot borrow the mode.
+        let comms_lost = Rc::new(Cell::new(false));
+        let comms_lost_state = comms_lost.clone();
         let comms = handle(CommsFrame::new(
             as_component(&editor),
             move || {
@@ -683,6 +698,8 @@ impl Mode {
                     CommsState::InFlight {
                         elapsed: comms_turn.borrow().elapsed(Instant::now()),
                     }
+                } else if comms_lost_state.get() {
+                    CommsState::CommsLost
                 } else {
                     CommsState::Ready
                 }
@@ -920,8 +937,17 @@ impl Mode {
             Rc::new(move || busy_session.is_streaming() || busy_session.is_retrying()),
         );
 
+        // Mission Control transmissions (M8e4): in fullscreen the newest
+        // notice floats top-right over the transcript and the band stays
+        // empty; inline keeps the band.
+        notifications.borrow_mut().set_overlay(fullscreen);
+        let toast_panel = notifications.clone();
+        tui.set_toast_provider(Box::new(move |width| {
+            toast_panel.borrow().toast_lines(width)
+        }));
+
         let (tx, rx) = mpsc::channel();
-        Self {
+        let mode = Self {
             session,
             runtime: options.runtime,
             tui,
@@ -960,6 +986,7 @@ impl Mode {
             code_block_indent,
             editor,
             comms,
+            comms_lost,
             editor_container,
             actions,
             notifications,
@@ -974,6 +1001,8 @@ impl Mode {
             rx,
             exit_requested: false,
             quit_jobs: QuitJobs::Unasked,
+            end_shift: EndShift::Unasked,
+            user_quit: false,
             listing: options.listing,
             session_runtime: options.session_runtime,
             subscription: None,
@@ -982,6 +1011,9 @@ impl Mode {
             login: None,
             picker: None,
             ask_options: None,
+            clearance: None,
+            end_shift_card: None,
+            end_shift_jobs_card: None,
             anthropic_warning_shown: false,
             settings_changes: Rc::default(),
             last_escape: None,
@@ -1000,7 +1032,13 @@ impl Mode {
             restarted_input: None,
             session_op: None,
             mode_dial_after: None,
-        }
+        };
+        // Peek-only rows follow the saved view from the first frame: a
+        // restored radar session hides them without waiting for a flip.
+        mode.transcript
+            .radar_active
+            .set(mode.tool_output_view == ToolOutputView::Radar);
+        mode
     }
 
     /// The next time something is due without input.
@@ -1352,13 +1390,17 @@ impl Mode {
                         questions,
                         reply,
                         chime,
+                        esc_answers_first,
                     }) => {
                         if chime {
                             self.ring_chime();
                         }
-                        self.show_ask_options(questions, reply)
+                        self.show_ask_options(questions, reply, esc_answers_first)
                     }
                     AppEvent::Dialog(DialogRequest::HideAskOptions) => self.hide_ask_options(None),
+                    AppEvent::Dialog(DialogRequest::Clearance { info, reply }) => {
+                        self.show_clearance_card(info, reply)
+                    }
                     AppEvent::Login(update) => self.handle_login_update(update),
                     AppEvent::BashChunk(chunk) => {
                         if let Some(component) = &self.bash_component {
@@ -1377,7 +1419,6 @@ impl Mode {
                     AppEvent::ShellTail(key, since, result) => {
                         self.shell_tail_read(key, since, result)
                     }
-                    AppEvent::QuitJobsAnswer(choice) => self.quit_jobs_answered(choice),
                     AppEvent::AgentRunsListed(result) => self.agent_runs_listed(result),
                     AppEvent::AttachPicked(row) => {
                         if let Some(row) = row {
@@ -1507,6 +1548,9 @@ impl Mode {
         }
         if let Some((_, reply)) = self.ask_options.take() {
             let _ = reply.send(None);
+        }
+        if let Some((_, reply)) = self.clearance.take() {
+            let _ = reply.send(ClearanceChoice::Deny { reason: None });
         }
         if let Some((_, answer)) = self.editor_dialog.take() {
             answer(None);

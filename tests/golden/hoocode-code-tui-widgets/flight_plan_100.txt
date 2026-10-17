@@ -1,0 +1,52 @@
+┏━ FLIGHT PLAN  1/3 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ agents 1 · sats 0 ━┓
+┃●◐○ 1/3                                                                                           ┃
+┃ Plan 1/3   Agents 1/1   MCP 1/1                                                                  ┃
+┃› ✓ Read the migration plan                                                                       ┃
+┃  ◐ Port the task panel renderer                                                                  ┃
+┃  ○ Add golden snapshots                                                                          ┃
+┗━ ↑↓ move · enter jump to its steps · x drop · esc back ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+--- styles ---
+r0 c0-1 fg=#9b8cff
+r0 c3-18 fg=#9b8cff bold
+r0 c20-78 fg=#9b8cff
+r0 c80-96 fg=#a8a8a8
+r0 c98-99 fg=#9b8cff
+r1 c0 fg=#9b8cff
+r1 c1 fg=#b5bd68
+r1 c2 fg=#ffff00
+r1 c3-7 fg=#a8a8a8
+r1 c99 fg=#9b8cff
+r2 c0 fg=#9b8cff
+r2 c1-6 fg=#5cc8bb bold
+r2 c7-11 fg=#a8a8a8
+r2 c12-19 fg=#989898
+r2 c20-24 fg=#a8a8a8
+r2 c25-29 fg=#989898
+r2 c30-32 fg=#a8a8a8
+r2 c99 fg=#9b8cff
+r3 c0 fg=#9b8cff
+r3 c1-2 fg=#5cc8bb bg=#2a2a36
+r3 c3 fg=#b5bd68 bg=#2a2a36
+r3 c4 bg=#2a2a36
+r3 c5-27 fg=#a8a8a8 bg=#2a2a36
+r3 c28-98 bg=#2a2a36
+r3 c99 fg=#9b8cff
+r4 c0 fg=#9b8cff
+r4 c3 fg=#ffff00
+r4 c5-32 bold
+r4 c99 fg=#9b8cff
+r5 c0 fg=#9b8cff
+r5 c3 fg=#989898
+r5 c5-24 fg=#989898
+r5 c99 fg=#9b8cff
+r6 c0-1 fg=#9b8cff
+r6 c3-4 fg=#989898
+r6 c5-12 fg=#a8a8a8
+r6 c13-17 fg=#989898
+r6 c18-38 fg=#a8a8a8
+r6 c39 fg=#989898
+r6 c40-47 fg=#a8a8a8
+r6 c48-50 fg=#989898
+r6 c51-55 fg=#a8a8a8
+r6 c57-95 fg=#9b8cff
+r6 c98-99 fg=#9b8cff

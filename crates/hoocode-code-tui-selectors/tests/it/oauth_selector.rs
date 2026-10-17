@@ -10,6 +10,8 @@ use hoocode_code_tui_selectors::login_dialog::{LoginDialogComponent, LoginDialog
 use hoocode_code_tui_selectors::oauth_selector::{
     is_api_key_login_provider, AuthSelectorProvider, AuthType, LoginMode, OAuthSelectorComponent,
 };
+use hoocode_tui_render::assert_golden;
+use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::Component;
 
 use crate::support::{lock, strip};
@@ -162,7 +164,8 @@ fn the_login_dialog_hands_back_a_prompted_answer_and_aborts_on_escape() {
     let _g = lock();
     let mut dialog = LoginDialogComponent::new("OpenAI", None);
     let screen = strip(&dialog.render(80));
-    assert!(screen.contains("Login to OpenAI"));
+    assert!(screen.contains("DOCKING · /login"));
+    assert!(screen.contains("OpenAI"));
     assert!(screen.contains("Starting…"));
 
     // Enter before anything asks is not an answer.
@@ -184,4 +187,157 @@ fn the_login_dialog_hands_back_a_prompted_answer_and_aborts_on_escape() {
     dialog.handle_input("\x1b");
     assert_eq!(dialog.take_events(), [LoginDialogEvent::Cancelled]);
     assert!(signal.aborted());
+}
+
+fn docking_providers() -> Vec<AuthSelectorProvider> {
+    vec![
+        AuthSelectorProvider {
+            id: "anthropic".into(),
+            name: "Anthropic".into(),
+            auth_type: AuthType::OAuth,
+        },
+        AuthSelectorProvider {
+            id: "openai".into(),
+            name: "OpenAI".into(),
+            auth_type: AuthType::ApiKey,
+        },
+        AuthSelectorProvider {
+            id: "ollama".into(),
+            name: "Ollama".into(),
+            auth_type: AuthType::ApiKey,
+        },
+    ]
+}
+
+fn docking_provider_selector() -> OAuthSelectorComponent {
+    let credential: AuthCredential = serde_json::from_value(serde_json::json!({
+        "type": "oauth", "access": "access-token", "refresh": "refresh-token",
+        "expires": 4_102_444_800_000u64
+    }))
+    .unwrap();
+    let auth = Arc::new(AuthStorage::in_memory([(
+        "anthropic".to_string(),
+        credential,
+    )]));
+    // `openai` reads its key from the environment; `ollama` stays unconfigured.
+    let mut selector = OAuthSelectorComponent::new(
+        LoginMode::Login,
+        auth,
+        docking_providers(),
+        Some(Box::new(|id: &str| {
+            if id == "openai" {
+                AuthStatus {
+                    configured: true,
+                    source: Some(AuthSource::Environment),
+                    label: Some("OPENAI_API_KEY".into()),
+                }
+            } else {
+                AuthStatus {
+                    configured: false,
+                    source: None,
+                    label: None,
+                }
+            }
+        })),
+    );
+    selector.set_focused(true);
+    selector
+}
+
+fn check_docking_provider(name: &str, width: u16) {
+    let _g = lock();
+    let mut selector = docking_provider_selector();
+    let rendered = render_golden(&mut selector, width);
+    let text = rendered.split("--- styles ---").next().unwrap_or_default();
+    assert!(
+        text.contains("DOCKING · /login  3 providers"),
+        "{name}: missing title in\n{text}"
+    );
+    assert!(
+        text.lines()
+            .any(|l| l.contains('›') && l.contains("Anthropic")),
+        "{name}: missing selected provider in\n{text}"
+    );
+    assert!(
+        text.contains("✓ configured"),
+        "{name}: missing stored-auth suffix in\n{text}"
+    );
+    assert!(
+        text.contains("env: OPENAI_API_KEY"),
+        "{name}: missing env suffix in\n{text}"
+    );
+    assert!(
+        text.contains("unconfigured"),
+        "{name}: missing unconfigured suffix in\n{text}"
+    );
+    assert!(
+        text.contains("enter choose"),
+        "{name}: missing hint foot in\n{text}"
+    );
+    assert_golden!(name, rendered);
+}
+
+#[test]
+fn docking_provider_100() {
+    check_docking_provider("docking_provider_100", 100);
+}
+
+#[test]
+fn docking_provider_80() {
+    check_docking_provider("docking_provider_80", 80);
+}
+
+/// Typing narrows the list and the title counts the match.
+#[test]
+fn docking_provider_search_counts_the_match() {
+    let _g = lock();
+    let mut selector = docking_provider_selector();
+    selector.handle_input("oll");
+    let rendered = render_golden(&mut selector, 100);
+    let text = rendered.split("--- styles ---").next().unwrap_or_default();
+    assert!(
+        text.contains("1 provider of 3"),
+        "missing filtered count in\n{text}"
+    );
+    assert!(!text.contains("Anthropic"), "unfiltered row still listed");
+}
+
+fn docking_auth_dialog() -> LoginDialogComponent {
+    let mut dialog = LoginDialogComponent::new("Anthropic", None);
+    dialog.show_auth(
+        "https://example.test/oauth/authorize?code=WXYZ-1234",
+        Some("Approve the subscription in the browser."),
+    );
+    dialog
+}
+
+fn check_docking_auth(name: &str, width: u16) {
+    let _g = lock();
+    let mut dialog = docking_auth_dialog();
+    let rendered = render_golden(&mut dialog, width);
+    let text = rendered.split("--- styles ---").next().unwrap_or_default();
+    assert!(
+        text.contains("DOCKING · /login  Anthropic"),
+        "{name}: missing title in\n{text}"
+    );
+    assert!(
+        text.contains("https://example.test/oauth/authorize?code=WXYZ-1234"),
+        "{name}: missing auth URL in\n{text}"
+    );
+    // No QR facility in the repo: the dialog says so next to the link.
+    assert!(
+        text.contains("No QR code"),
+        "{name}: missing QR gap note in\n{text}"
+    );
+    assert_golden!(name, rendered);
+}
+
+#[test]
+fn docking_auth_100() {
+    check_docking_auth("docking_auth_100", 100);
+}
+
+#[test]
+fn docking_auth_80() {
+    check_docking_auth("docking_auth_80", 80);
 }

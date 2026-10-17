@@ -90,6 +90,7 @@ fn compaction(
         tokens_after: None,
         details: None,
         from_hook: None,
+        mission_range: None,
     }
 }
 

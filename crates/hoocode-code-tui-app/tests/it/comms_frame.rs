@@ -8,7 +8,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use hoocode_code_tui_app::comms_frame::{
-    CommsFrame, CommsState, GlyphStyle, InputStyle, IN_FLIGHT_PLACEHOLDER, READY_PLACEHOLDER,
+    CommsFrame, CommsState, GlyphStyle, InputStyle, COMMS_LOST_PLACEHOLDER, IN_FLIGHT_PLACEHOLDER,
+    READY_PLACEHOLDER,
 };
 use hoocode_code_tui_app::footer::{FooterModel, FooterSource, ToolOutputView};
 use hoocode_code_tui_app::footer_data::FooterDataProvider;
@@ -75,12 +76,22 @@ fn prompt_editor() -> Rc<RefCell<Editor>> {
 }
 
 fn frame(state: CommsState, view: ToolOutputView, mode: &str) -> CommsFrame {
+    frame_painted(state, view, mode, None)
+}
+
+fn frame_painted(
+    state: CommsState,
+    view: ToolOutputView,
+    mode: &str,
+    paint: Option<hoocode_code_tui_app::hull_paint::HullPaint>,
+) -> CommsFrame {
     let editor = prompt_editor();
     let input = editor.clone();
     let handle: ComponentHandle = editor.clone();
     // A fixed path: no machine paths reach the goldens.
     let data = FooterDataProvider::new("/work/hoocode");
     data.set_active_mode(mode);
+    data.set_hull_paint(paint);
     CommsFrame::new(
         handle,
         move || state.clone(),
@@ -178,6 +189,67 @@ fn in_flight_without_elapsed_omits_the_time() {
         "row 0: {:?}",
         rows[0]
     );
+}
+
+#[test]
+fn comms_lost_frame_golden() {
+    let _g = lock(Some("dark"));
+    assert_golden!(
+        "comms_lost_100x3",
+        render_golden(
+            &mut frame(CommsState::CommsLost, ToolOutputView::Peek, "build"),
+            100
+        )
+    );
+}
+
+#[test]
+fn comms_lost_titles_the_hail_again_and_switch_ship() {
+    let _g = lock(Some("dark"));
+    let rows = rows(
+        &mut frame(CommsState::CommsLost, ToolOutputView::Peek, "build"),
+        100,
+    );
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    assert!(
+        rows[0].contains("⊗ COMMS LOST · enter hail again · /model switch ship"),
+        "row 0: {:?}",
+        rows[0]
+    );
+    assert!(
+        rows[1].contains(COMMS_LOST_PLACEHOLDER),
+        "row 1: {:?}",
+        rows[1]
+    );
+}
+
+#[test]
+fn painted_frame_golden() {
+    use hoocode_code_tui_app::hull_paint::HullPaint;
+    let _g = lock(Some("dark"));
+    let mut frame = frame_painted(
+        CommsState::Ready,
+        ToolOutputView::Peek,
+        "build",
+        Some(HullPaint::Parity),
+    );
+    assert_golden!("comms_paint_100x3", render_golden(&mut frame, 100));
+}
+
+#[test]
+fn painted_frame_names_the_paint_and_takes_its_colour() {
+    use hoocode_code_tui_app::hull_paint::HullPaint;
+    let _g = lock(Some("dark"));
+    let mut frame = frame_painted(
+        CommsState::Ready,
+        ToolOutputView::Peek,
+        "build",
+        Some(HullPaint::Parity),
+    );
+    let rows = rows(&mut frame, 100);
+    assert!(rows[0].contains("READY"), "row 0: {:?}", rows[0]);
+    assert!(rows[0].ends_with(" parity ━┓"), "row 0: {:?}", rows[0]);
+    assert!(!rows[0].contains("app-edit"), "row 0: {:?}", rows[0]);
 }
 
 #[test]

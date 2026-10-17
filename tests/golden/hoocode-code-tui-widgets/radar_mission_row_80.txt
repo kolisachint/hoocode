@@ -1,0 +1,11 @@
+ M1 ● what does the wrap crate do?                   1 step · 0✕ · 0.8s · $0.003
+--- styles ---
+r0 c1-2 fg=#c77bde bold
+r0 c4 fg=#b5bd68
+r0 c53-58 fg=#a8a8a8
+r0 c59-61 fg=#989898
+r0 c62-63 fg=#a8a8a8
+r0 c64-66 fg=#989898
+r0 c67-70 fg=#a8a8a8
+r0 c71-73 fg=#989898
+r0 c74-79 fg=#a8a8a8

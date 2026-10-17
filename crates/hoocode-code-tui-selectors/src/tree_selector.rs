@@ -3,6 +3,11 @@
 //! Entries are read in their JSON wire form (what the session file holds,
 //! and what the original's `entry.type` / `entry.message.role` checks see),
 //! so the filter, search and display rules stay line for line with the TS.
+//!
+//! The FLIGHT PATH console (M7, ratatui): `FLIGHT PATH · /tree  N nodes`,
+//! the `▸` query row, one row per entry with `›` on the selection band,
+//! the position footer, and the hint foot. Shared `Console` chrome in
+//! `code-tui-widgets/src/console.rs`; keys, filtering and events unchanged.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -12,16 +17,13 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Datelike, Local, Timelike};
 use hoocode_code_session::SessionTreeNode;
 use hoocode_code_settings::TreeFilterMode;
-use hoocode_code_tui_keybindings::{app_key_label, format_key_text, key_hint, raw_key_hint};
-use hoocode_code_tui_theme::{
-    paint_selected_row, select_gutter, style_input, theme, SELECT_CURSOR,
-};
-use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
-use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
+use hoocode_code_tui_theme::style_input;
+use hoocode_code_tui_widgets::console::{hints, query_row, Console};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_render::{Component, ComponentHandle};
-use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
+use hoocode_tui_ratatui::{bold, italic, Line, Palette, Span};
+use hoocode_tui_render::Component;
+use hoocode_tui_util::visible_width;
 use serde_json::Value;
 
 /// One session entry, flattened out of the tree.
@@ -778,51 +780,57 @@ impl TreeList {
     }
 
     /// `getEntryDisplayText`.
-    fn entry_display_text(&self, n: usize, selected: bool) -> String {
-        let t = theme();
+    /// One entry's content (the console adds the `›` marker or gutter and
+    /// the selection band): the same text as the old string renderer, as
+    /// [`Palette`] spans. The selected row reads bold.
+    fn entry_line(&self, n: usize, selected: bool) -> Line<'static> {
+        let pal = Palette::current();
         let entry = &self.nodes[n].entry;
-        let result = match entry_type(entry) {
+        let mut spans: Vec<Span<'static>> = match entry_type(entry) {
             "message" => {
                 let message = &entry["message"];
                 match str_field(message, "role").unwrap_or("") {
-                    "user" => {
-                        t.fg("accent", "user: ")
-                            + &normalize(&extract_content(message.get("content")))
-                    }
+                    "user" => vec![
+                        Span::styled("user: ".to_string(), pal.acc()),
+                        Span::raw(normalize(&extract_content(message.get("content")))),
+                    ],
                     "assistant" => {
                         let text = normalize(&extract_content(message.get("content")));
-                        let head = t.fg("success", "assistant: ");
+                        let mut spans = vec![Span::styled("assistant: ".to_string(), pal.ok())];
                         if !text.is_empty() {
-                            head + &text
+                            spans.push(Span::raw(text));
                         } else if str_field(message, "stopReason") == Some("aborted") {
-                            head + &t.fg("muted", "(aborted)")
+                            spans.push(Span::styled("(aborted)".to_string(), pal.faint()));
                         } else if let Some(err) =
                             str_field(message, "errorMessage").filter(|e| !e.is_empty())
                         {
-                            head + &t.fg("error", &js_slice(&normalize(err), 80))
+                            spans.push(Span::styled(js_slice(&normalize(err), 80), pal.err()));
                         } else {
-                            head + &t.fg("muted", "(no content)")
+                            spans.push(Span::styled("(no content)".to_string(), pal.faint()));
                         }
+                        spans
                     }
                     "toolResult" => {
                         let call =
                             str_field(message, "toolCallId").and_then(|id| self.tool_calls.get(id));
                         match call {
-                            Some((name, args)) => t.fg("muted", &format_tool_call(name, args)),
-                            None => t.fg(
-                                "muted",
-                                &format!("[{}]", str_field(message, "toolName").unwrap_or("tool")),
-                            ),
+                            Some((name, args)) => {
+                                vec![Span::styled(format_tool_call(name, args), pal.faint())]
+                            }
+                            None => vec![Span::styled(
+                                format!("[{}]", str_field(message, "toolName").unwrap_or("tool")),
+                                pal.faint(),
+                            )],
                         }
                     }
-                    "bashExecution" => t.fg(
-                        "dim",
-                        &format!(
+                    "bashExecution" => vec![Span::styled(
+                        format!(
                             "[bash]: {}",
                             normalize(str_field(message, "command").unwrap_or(""))
                         ),
-                    ),
-                    role => t.fg("dim", &format!("[{role}]")),
+                        pal.dim(),
+                    )],
+                    role => vec![Span::styled(format!("[{role}]"), pal.dim())],
                 }
             }
             "custom_message" => {
@@ -835,60 +843,70 @@ impl TreeList {
                         .collect(),
                     _ => String::new(),
                 };
-                t.fg(
-                    "customMessageLabel",
-                    &format!("[{}]: ", str_field(entry, "customType").unwrap_or("")),
-                ) + &normalize(&content)
+                vec![
+                    Span::styled(
+                        format!("[{}]: ", str_field(entry, "customType").unwrap_or("")),
+                        pal.legacy("customMessageLabel"),
+                    ),
+                    Span::raw(normalize(&content)),
+                ]
             }
             "compaction" => {
                 let before = entry
                     .get("tokensBefore")
                     .and_then(Value::as_f64)
                     .unwrap_or(0.0);
-                t.fg(
-                    "borderAccent",
-                    &format!("[compaction: {}k tokens]", (before / 1000.0).round() as i64),
-                )
+                vec![Span::styled(
+                    format!("[compaction: {}k tokens]", (before / 1000.0).round() as i64),
+                    pal.legacy("borderAccent"),
+                )]
             }
-            "branch_summary" => {
-                t.fg("warning", "[branch summary]: ")
-                    + &normalize(str_field(entry, "summary").unwrap_or(""))
-            }
-            "model_change" => t.fg(
-                "dim",
-                &format!("[model: {}]", str_field(entry, "modelId").unwrap_or("")),
-            ),
-            "thinking_level_change" => t.fg(
-                "dim",
-                &format!(
+            "branch_summary" => vec![
+                Span::styled("[branch summary]: ".to_string(), pal.warn()),
+                Span::raw(normalize(str_field(entry, "summary").unwrap_or(""))),
+            ],
+            "model_change" => vec![Span::styled(
+                format!("[model: {}]", str_field(entry, "modelId").unwrap_or("")),
+                pal.dim(),
+            )],
+            "thinking_level_change" => vec![Span::styled(
+                format!(
                     "[thinking: {}]",
                     str_field(entry, "thinkingLevel").unwrap_or("")
                 ),
-            ),
-            "custom" => t.fg(
-                "dim",
-                &format!("[custom: {}]", str_field(entry, "customType").unwrap_or("")),
-            ),
-            "label" => t.fg(
-                "dim",
-                &format!(
+                pal.dim(),
+            )],
+            "custom" => vec![Span::styled(
+                format!("[custom: {}]", str_field(entry, "customType").unwrap_or("")),
+                pal.dim(),
+            )],
+            "label" => vec![Span::styled(
+                format!(
                     "[label: {}]",
                     str_field(entry, "label").unwrap_or("(cleared)")
                 ),
-            ),
+                pal.dim(),
+            )],
             "session_info" => match str_field(entry, "name").filter(|n| !n.is_empty()) {
-                Some(name) => t.fg("dim", "[title: ") + &t.fg("dim", name) + &t.fg("dim", "]"),
-                None => {
-                    t.fg("dim", "[title: ") + &t.italic(&t.fg("dim", "empty")) + &t.fg("dim", "]")
-                }
+                Some(name) => vec![
+                    Span::styled("[title: ".to_string(), pal.dim()),
+                    Span::styled(name.to_string(), pal.dim()),
+                    Span::styled("]".to_string(), pal.dim()),
+                ],
+                None => vec![
+                    Span::styled("[title: ".to_string(), pal.dim()),
+                    Span::styled("empty".to_string(), italic(pal.dim())),
+                    Span::styled("]".to_string(), pal.dim()),
+                ],
             },
-            _ => String::new(),
+            _ => Vec::new(),
         };
         if selected {
-            t.bold(&result)
-        } else {
-            result
+            for span in &mut spans {
+                span.style = bold(span.style);
+            }
         }
+        Line::from(spans)
     }
 
     /// `isFoldable`: has visible children, and is a root or a segment start.
@@ -988,111 +1006,110 @@ impl TreeList {
     }
 }
 
-impl Component for TreeList {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let w = width as usize;
-        let mut lines = Vec::new();
-        if self.filtered_nodes.is_empty() {
-            lines.push(truncate_to_width(
-                &t.fg("muted", "  No entries found"),
-                w,
-                "...",
-                false,
-            ));
-            lines.push(truncate_to_width(
-                &t.fg("muted", &format!("  (0/0){}", self.status_labels())),
-                w,
-                "...",
-                false,
-            ));
-            return lines;
+impl TreeList {
+    /// The FLIGHT PATH count: the visible entries, or the matches of the
+    /// total while searching.
+    fn count_text(&self) -> String {
+        let total = self.flat_nodes.len();
+        if self.search_query.is_empty() {
+            nodes(self.filtered_nodes.len())
+        } else {
+            format!("{} of {}", nodes(self.filtered_nodes.len()), total)
         }
-        let window = self.cursor.window();
-        for i in window {
-            let flat = &self.filtered_nodes[i];
-            let node = &self.nodes[flat.node];
-            let selected = i == self.cursor.selected();
-            let cursor = if selected {
-                t.fg("accent", SELECT_CURSOR)
+    }
+
+    /// One entry row (content only; the console adds the `›` marker or
+    /// gutter and the selection band): the graph prefix, the fold and path
+    /// markers, the label, and the entry's text.
+    fn console_row(&self, i: usize, selected: bool) -> Line<'static> {
+        let pal = Palette::current();
+        let flat = &self.filtered_nodes[i];
+        let node = &self.nodes[flat.node];
+        let display_indent = if self.multiple_roots {
+            flat.indent.saturating_sub(1)
+        } else {
+            flat.indent
+        };
+        let connector = flat.show_connector && !flat.is_virtual_root_child;
+        let connector_position = connector.then(|| display_indent as isize - 1);
+        let folded = self.folded.contains(&node.id);
+        let mut prefix = String::new();
+        for c in 0..display_indent * 3 {
+            let level = c / 3;
+            let pos = c % 3;
+            if let Some(gutter) = flat.gutters.iter().find(|g| g.position == level) {
+                prefix.push(if pos == 0 && gutter.show { '│' } else { ' ' });
+            } else if connector_position == Some(level as isize) {
+                prefix.push(match pos {
+                    0 if flat.is_last => '└',
+                    0 => '├',
+                    1 if folded => '⊞',
+                    1 if self.is_foldable(&node.id) => '⊟',
+                    1 => '─',
+                    _ => ' ',
+                });
             } else {
-                select_gutter()
-            };
-            let display_indent = if self.multiple_roots {
-                flat.indent.saturating_sub(1)
-            } else {
-                flat.indent
-            };
-            let connector = flat.show_connector && !flat.is_virtual_root_child;
-            let connector_position = connector.then(|| display_indent as isize - 1);
-            let folded = self.folded.contains(&node.id);
-            let mut prefix = String::new();
-            for c in 0..display_indent * 3 {
-                let level = c / 3;
-                let pos = c % 3;
-                if let Some(gutter) = flat.gutters.iter().find(|g| g.position == level) {
-                    prefix.push(if pos == 0 && gutter.show { '│' } else { ' ' });
-                } else if connector_position == Some(level as isize) {
-                    prefix.push(match pos {
-                        0 if flat.is_last => '└',
-                        0 => '├',
-                        1 if folded => '⊞',
-                        1 if self.is_foldable(&node.id) => '⊟',
-                        1 => '─',
-                        _ => ' ',
-                    });
-                } else {
-                    prefix.push(' ');
-                }
+                prefix.push(' ');
             }
-            // Roots have no connector to carry the fold marker.
-            let fold_marker = if folded && !connector {
-                t.fg("accent", "⊞ ")
-            } else {
-                String::new()
-            };
-            let path_marker = if self.active_path_ids.contains(&node.id) {
-                t.fg("accent", "• ")
-            } else {
-                String::new()
-            };
-            let label = node
-                .label
-                .as_ref()
-                .map(|l| t.fg("warning", &format!("[{l}] ")))
-                .unwrap_or_default();
-            let label_time = match (&node.label, &node.label_timestamp) {
-                (Some(_), Some(ts)) if self.show_label_timestamps => {
-                    t.fg("muted", &format!("{} ", format_label_timestamp(ts)))
-                }
-                _ => String::new(),
-            };
-            let content = self.entry_display_text(flat.node, selected);
-            let line = truncate_to_width(
-                &format!(
-                    "{cursor}{}{fold_marker}{path_marker}{label}{label_time}{content}",
-                    t.fg("dim", &prefix)
-                ),
-                w,
-                "...",
-                false,
-            );
-            lines.push(if selected {
-                paint_selected_row(&line, w)
-            } else {
-                line
-            });
         }
-        lines.push(truncate_to_width(
-            &t.fg(
-                "muted",
-                &format!("  {}{}", self.cursor.position(), self.status_labels()),
-            ),
-            w,
-            "...",
-            false,
-        ));
-        lines
+        let mut spans = vec![Span::styled(prefix, pal.dim())];
+        // Roots have no connector to carry the fold marker.
+        if folded && !connector {
+            spans.push(Span::styled("⊞ ".to_string(), pal.acc()));
+        }
+        if self.active_path_ids.contains(&node.id) {
+            spans.push(Span::styled("• ".to_string(), pal.acc()));
+        }
+        if let Some(label) = &node.label {
+            spans.push(Span::styled(format!("[{label}] "), pal.warn()));
+        }
+        match (&node.label, &node.label_timestamp) {
+            (Some(_), Some(ts)) if self.show_label_timestamps => {
+                spans.push(Span::styled(
+                    format!("{} ", format_label_timestamp(ts)),
+                    pal.faint(),
+                ));
+            }
+            _ => {}
+        }
+        let mut content = self.entry_line(flat.node, selected);
+        spans.append(&mut content.spans);
+        Line::from(spans)
+    }
+
+    /// The cursor's window as console rows, with the selection remapped
+    /// into it (the rows arrive pre-windowed, so the console draws one page).
+    fn console_rows(&self) -> (Vec<Line<'static>>, Option<usize>) {
+        let window = self.cursor.window();
+        let selected = self.cursor.selected();
+        let rows = window
+            .clone()
+            .map(|i| self.console_row(i, i == selected))
+            .collect();
+        (rows, window.clone().position(|i| i == selected))
+    }
+
+    /// Rows below the list: the empty-list line and the scroll position
+    /// with the filter and timestamp flags.
+    fn footer_lines(&self) -> Vec<Line<'static>> {
+        let pal = Palette::current();
+        let mut out = Vec::new();
+        if self.filtered_nodes.is_empty() {
+            out.push(Line::from(vec![Span::styled(
+                "  No entries found".to_string(),
+                pal.faint(),
+            )]));
+            out.push(Line::from(vec![Span::styled(
+                format!("  (0/0){}", self.status_labels()),
+                pal.faint(),
+            )]));
+        } else {
+            out.push(Line::from(vec![Span::styled(
+                format!("  {}{}", self.cursor.position(), self.status_labels()),
+                pal.faint(),
+            )]));
+        }
+        out
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -1177,25 +1194,36 @@ impl Component for TreeList {
     }
 }
 
-/// `SearchLine`: the query the tree is filtered by.
-struct SearchLine(Rc<RefCell<TreeList>>);
-
-impl Component for SearchLine {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let list = self.0.borrow();
-        let query = list.search_query();
-        let line = if query.is_empty() {
-            format!("  {}", t.fg("muted", "Type to search:"))
-        } else {
-            format!(
-                "  {} {}",
-                t.fg("muted", "Type to search:"),
-                t.fg("accent", query)
-            )
-        };
-        vec![truncate_to_width(&line, width as usize, "...", false)]
+/// `1 node`, `N nodes`.
+fn nodes(count: usize) -> String {
+    if count == 1 {
+        "1 node".to_string()
+    } else {
+        format!("{count} nodes")
     }
+}
+
+/// The hint foot with literal keys, so the bytes hold on macOS and Linux:
+/// the longest leading run that fits `available`, like the old top row.
+fn tree_hint(available: usize) -> Line<'static> {
+    const HINTS: [(&str, &str); 5] = [
+        ("↑↓", "move"),
+        ("enter", "go here"),
+        ("alt+l", "label"),
+        ("alt+t", "timestamps"),
+        ("esc", "close"),
+    ];
+    for count in (1..=HINTS.len()).rev() {
+        let plain = HINTS[..count]
+            .iter()
+            .map(|(key, description)| format!("{key} {description}"))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        if visible_width(&plain) <= available {
+            return hints(&HINTS[..count]);
+        }
+    }
+    hints(&HINTS[..1])
 }
 
 /// `LabelInput`: the label editor that replaces the tree while open.
@@ -1214,87 +1242,35 @@ impl LabelInput {
         Self { input, entry_id }
     }
 
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let w = width as usize;
-        let indent = "  ";
-        let mut lines = vec![truncate_to_width(
-            &format!("{indent}{}", t.fg("muted", "Label (empty to remove):")),
-            w,
-            "...",
-            false,
-        )];
-        let available = width.saturating_sub(indent.len() as u16);
-        lines.extend(
-            self.input
-                .render(available)
-                .into_iter()
-                .map(|l| truncate_to_width(&format!("{indent}{l}"), w, "...", false)),
-        );
-        lines.push(truncate_to_width(
-            &format!(
-                "{indent}{}  {}",
-                key_hint("tui.select.confirm", "save"),
-                key_hint("tui.select.cancel", "cancel")
-            ),
-            w,
-            "...",
-            false,
-        ));
-        lines
-    }
-}
-
-/// The part under the divider: the tree, or the label editor over it.
-struct Body {
-    list: Rc<RefCell<TreeList>>,
-    label_input: Rc<RefCell<Option<LabelInput>>>,
-}
-
-/// The `/tree` key hints: whole items, dropped from the end until the row
-/// fits, so a hint is never cut mid-word.
-struct HintRow {
-    items: Vec<String>,
-    sep: String,
-}
-
-impl Component for HintRow {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let width = usize::from(width);
-        let line = fit_hints(&self.items, &self.sep, width);
-        let pad = width.saturating_sub(visible_width(&line));
-        vec![format!("{line}{}", " ".repeat(pad))]
-    }
-}
-
-/// The longest run of leading items that fits `width`, joined by `sep`. When
-/// even the first item is too wide, it is cut at a word boundary.
-fn fit_hints(items: &[String], sep: &str, width: usize) -> String {
-    for count in (1..=items.len()).rev() {
-        let line = items[..count].join(sep);
-        if visible_width(&line) <= width {
-            return line;
+    /// The label editor as console rows: the prompt and the value with a
+    /// `▏` caret at the input's cursor while focused.
+    fn console_lines(&self, focused: bool) -> Vec<Line<'static>> {
+        let pal = Palette::current();
+        let value = self.input.get_value().to_string();
+        let cursor = self.input.get_cursor().min(value.len());
+        let (before, after) = value.split_at(if value.is_char_boundary(cursor) {
+            cursor
+        } else {
+            value.len()
+        });
+        let mut row = vec![Span::raw("  ".to_string()), Span::raw(before.to_string())];
+        if focused {
+            row.push(Span::styled("▏".to_string(), pal.warn()));
         }
-    }
-    items
-        .first()
-        .map(|first| truncate_at_word(first, width))
-        .unwrap_or_default()
-}
-
-impl Component for Body {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        match self.label_input.borrow_mut().as_mut() {
-            Some(input) => input.render(width),
-            None => self.list.borrow_mut().render(width),
-        }
+        row.push(Span::raw(after.to_string()));
+        vec![
+            Line::from(vec![Span::styled(
+                "  Label (empty to remove):".to_string(),
+                pal.faint(),
+            )]),
+            Line::from(row),
+        ]
     }
 }
 
-/// `TreeSelectorComponent`: the tree in the prompt's frame, titled
-/// "session tree", with its keys above and the query line.
+/// `TreeSelectorComponent`: the FLIGHT PATH console, titled
+/// `FLIGHT PATH · /tree`, with the query row and the hint foot.
 pub struct TreeSelectorComponent {
-    frame: InputFrame,
     list: Rc<RefCell<TreeList>>,
     label_input: Rc<RefCell<Option<LabelInput>>>,
     focused: bool,
@@ -1318,59 +1294,10 @@ impl TreeSelectorComponent {
             initial_filter_mode,
         )));
         let label_input: Rc<RefCell<Option<LabelInput>>> = Rc::default();
-        let mut frame = InputFrame::new(InputFrameOptions {
-            title: Some("session tree".to_string()),
-            ..Default::default()
-        });
-        let t = theme();
-        let sep = t.fg("muted", " · ");
-        // Each end formatted before joining: the ellipsis is not a key separator.
-        let filter_range = [
-            app_key_label("app.tree.filter.default"),
-            app_key_label("app.tree.filter.all"),
-        ]
-        .map(|k| format_key_text(&k, false))
-        .join("…");
-        let arrow = |key: String| -> String {
-            if let Some(stem) = key.strip_suffix("left") {
-                format!("{stem}←")
-            } else if let Some(stem) = key.strip_suffix("right") {
-                format!("{stem}→")
-            } else {
-                key
-            }
-        };
-        let fold_keys = [
-            app_key_label("app.tree.foldOrUp"),
-            app_key_label("app.tree.unfoldOrDown"),
-        ]
-        .map(arrow)
-        .join("/");
-        let hints = Vec::from([
-            raw_key_hint("↑/↓", "move"),
-            raw_key_hint("←/→", "page"),
-            raw_key_hint(&fold_keys, "fold"),
-            raw_key_hint(&filter_range, "filter"),
-            raw_key_hint(&app_key_label("app.tree.filter.cycleForward"), "cycle"),
-            raw_key_hint(&app_key_label("app.tree.editLabel"), "label"),
-            raw_key_hint(
-                &app_key_label("app.tree.toggleLabelTimestamp"),
-                "timestamps",
-            ),
-        ]);
-        frame.add_child(Rc::new(RefCell::new(HintRow { items: hints, sep })));
-        frame.add_child(Rc::new(RefCell::new(SearchLine(list.clone()))));
-        // A divider inside the frame, between the keys and the tree.
-        frame.add_child(Rc::new(RefCell::new(DynamicBorder::new(None))));
-        frame.add_child(Rc::new(RefCell::new(Body {
-            list: list.clone(),
-            label_input: label_input.clone(),
-        })) as ComponentHandle);
         let auto_cancel_at = tree
             .is_empty()
             .then(|| Instant::now() + Duration::from_millis(100));
         Self {
-            frame,
             list,
             label_input,
             focused: false,
@@ -1425,11 +1352,40 @@ impl TreeSelectorComponent {
             input.input.handle_input_with(data, &kb);
         }
     }
+
+    /// The label editor as console rows (see `LabelInput::console_lines`).
+    fn label_lines(&self) -> Vec<Line<'static>> {
+        let focused = self.focused;
+        let slot = self.label_input.borrow();
+        match slot.as_ref() {
+            Some(editor) => editor.console_lines(focused),
+            None => Vec::new(),
+        }
+    }
 }
 
 impl Component for TreeSelectorComponent {
+    /// The FLIGHT PATH console: the `▸` query row, one row per entry with
+    /// `›` on the selection band, the position footer, and the hint foot.
+    /// The label editor replaces the tree while open. Keys, filtering
+    /// and events are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.frame.render(width)
+        let width = width as usize;
+        let mut console = Console::new("FLIGHT PATH · /tree", self.list.borrow().count_text());
+        if self.label_input.borrow().is_some() {
+            console.top = self.label_lines();
+            console.hint = hints(&[("enter", "save"), ("esc", "cancel")]);
+        } else {
+            let list = self.list.borrow();
+            console.query = Some(query_row(list.search_query(), false));
+            let (rows, selected) = list.console_rows();
+            console.rows = rows;
+            console.selected = selected;
+            console.bottom = list.footer_lines();
+            drop(list);
+            console.hint = tree_hint(width.saturating_sub(12));
+        }
+        console.render(width)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -1445,10 +1401,7 @@ impl Component for TreeSelectorComponent {
             *self.label_input.borrow_mut() = Some(input);
         }
     }
-
-    fn invalidate(&mut self) {
-        self.frame.invalidate();
-    }
+    fn invalidate(&mut self) {}
 
     fn is_focusable(&self) -> bool {
         true

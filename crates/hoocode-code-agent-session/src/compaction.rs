@@ -131,6 +131,8 @@ impl AgentSession {
     }
 
     /// `_applyCompaction`: summarize, persist, and reload the agent context.
+    // The range pushed the compaction apply past seven arguments.
+    #[allow(clippy::too_many_arguments)]
     async fn apply_compaction(
         &self,
         preparation: &CompactionPreparation,
@@ -139,6 +141,7 @@ impl AgentSession {
         headers: Option<std::collections::HashMap<String, String>>,
         custom_instructions: Option<&str>,
         signal: &AbortSignal,
+        mission_range: Option<(usize, usize)>,
     ) -> Result<Applied, String> {
         let options = SummarizeOptions {
             api_key: Some(api_key),
@@ -165,6 +168,7 @@ impl AgentSession {
                 generated.tokens_after,
                 generated.details.clone(),
                 Some(false),
+                mission_range,
             );
             manager.build_context().messages
         };
@@ -176,9 +180,13 @@ impl AgentSession {
     }
 
     /// Compact the context now (`/compact`): aborts the current run first.
+    /// Compact the context now (`/compact`). `mission_range` is the
+    /// transcript missions folded into the summary, for the JETTISONED row;
+    /// it is written into the compaction entry so a resume keeps it (M8e6).
     pub async fn compact(
         &self,
         custom_instructions: Option<&str>,
+        mission_range: Option<(usize, usize)>,
     ) -> Result<CompactionResult, AgentSessionError> {
         self.disconnect_from_agent();
         self.abort().await;
@@ -189,7 +197,7 @@ impl AgentSession {
         });
 
         let result = self
-            .run_manual_compaction(custom_instructions, &signal)
+            .run_manual_compaction(custom_instructions, &signal, mission_range)
             .await;
         match &result {
             Ok(result) => self.emit(AgentSessionEvent::CompactionEnd {
@@ -219,6 +227,7 @@ impl AgentSession {
         &self,
         custom_instructions: Option<&str>,
         signal: &AbortSignal,
+        mission_range: Option<(usize, usize)>,
     ) -> Result<CompactionResult, AgentSessionError> {
         let Some(model) = self.model() else {
             return Err(AgentSessionError(format_no_model_selected_message()));
@@ -247,6 +256,7 @@ impl AgentSession {
                 headers,
                 custom_instructions,
                 signal,
+                mission_range,
             )
             .await
             .map_err(AgentSessionError)?
@@ -401,7 +411,7 @@ impl AgentSession {
             return self.end_auto(reason, false, None);
         };
         match self
-            .apply_compaction(&preparation, &model, api_key, headers, None, signal)
+            .apply_compaction(&preparation, &model, api_key, headers, None, signal, None)
             .await
         {
             Ok(Applied::Cancelled) => self.end_auto(reason, true, None),

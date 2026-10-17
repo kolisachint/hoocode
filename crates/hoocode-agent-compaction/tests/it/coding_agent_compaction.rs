@@ -89,6 +89,7 @@ impl Chain {
             tokens_after: None,
             details: None,
             from_hook: None,
+            mission_range: None,
         }
     }
 
@@ -502,6 +503,7 @@ fn preserves_kept_messages_across_repeated_compactions_when_they_still_fit() {
         tokens_after: None,
         details: None,
         from_hook: None,
+        mission_range: None,
     };
     let mut after = path.clone();
     after.push(compaction2);
@@ -755,6 +757,7 @@ async fn generates_a_compaction_result_for_the_large_session_and_reloads() {
         tokens_after: result.tokens_after,
         details: result.details.clone(),
         from_hook: None,
+        mission_range: None,
     });
     let reloaded = build_session_context(&reloaded);
     assert!(reloaded.messages.len() < loaded.messages.len());

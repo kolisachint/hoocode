@@ -11,14 +11,14 @@ use std::rc::Rc;
 
 use hoocode_ai_models::models_are_equal;
 use hoocode_ai_types::Model;
-use hoocode_code_tui_keybindings::key_hint;
-use hoocode_code_tui_theme::{select_gutter, style_input, theme, SELECT_CURSOR};
-use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
-use hoocode_code_tui_widgets::selected_row_list::{SelectableRow, SelectedRowList};
-use hoocode_tui_components::{Input, PickerCursor, Spacer, Text};
+use hoocode_code_tui_keybindings::key_text;
+use hoocode_code_tui_theme::style_input;
+use hoocode_code_tui_widgets::console::{hints, query_row, Console};
+use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_render::{Component, ComponentHandle};
+use hoocode_tui_ratatui::{Line, Palette, Span, Style};
+use hoocode_tui_render::Component;
 
 use crate::config_selector::locale_compare;
 
@@ -48,6 +48,8 @@ struct State {
     error: Option<String>,
     /// Providers whose stored OAuth token has expired (see `set_expired_providers`).
     expired: HashSet<String>,
+    /// Whether the picker has focus: the query caret draws while set.
+    focused: bool,
 }
 
 impl State {
@@ -71,102 +73,153 @@ impl State {
         self.cursor.set_query(self.filtered.len());
     }
 
-    fn scope_text(&self) -> String {
-        let t = theme();
-        let pick = |scope, label| {
-            t.fg(
+    fn scope_text(&self, pal: &Palette) -> Line<'static> {
+        let pick = |scope, label: &str| {
+            Span::styled(
+                label.to_string(),
                 if self.scope == scope {
-                    "accent"
+                    pal.acc()
                 } else {
-                    "muted"
+                    pal.faint()
                 },
-                label,
             )
         };
-        format!(
-            "{}{}{}{}",
-            t.fg("muted", "Scope: "),
+        Line::from(vec![
+            Span::styled("Scope: ", pal.faint()),
             pick(ModelScope::All, "all"),
-            t.fg("muted", " | "),
-            pick(ModelScope::Scoped, "scoped")
-        )
+            Span::styled(" | ", pal.faint()),
+            pick(ModelScope::Scoped, "scoped"),
+        ])
+    }
+
+    /// The HANGAR title count: the filtered ships of the scope's ships.
+    fn count_text(&self, query: &str) -> String {
+        let total = self.active().len();
+        if query.is_empty() {
+            ships(total)
+        } else {
+            format!("{} of {}", ships(self.filtered.len()), total)
+        }
+    }
+
+    /// Scope lines above the query: the switch and its hint, or the
+    /// providers warning when the scope is all there is.
+    fn top_rows(&self, pal: &Palette) -> Vec<Line<'static>> {
+        if self.scope == ModelScope::All {
+            vec![Line::from(vec![Span::styled(
+                "Only showing models from configured providers. Use /login to add providers.",
+                pal.warn(),
+            )])]
+        } else {
+            vec![
+                self.scope_text(pal),
+                Line::from(vec![
+                    Span::styled(key_text("tui.input.tab"), pal.dim()),
+                    Span::styled(" scope", pal.faint()),
+                    Span::styled(" (all/scoped)", pal.faint()),
+                ]),
+            ]
+        }
+    }
+
+    /// Rows below the list: the scroll position, errors, and the selected
+    /// ship's display name.
+    fn bottom_rows(&self, pal: &Palette) -> Vec<Line<'static>> {
+        let mut rows = Vec::new();
+        if let Some(footer) = self.cursor.footer() {
+            rows.push(Line::from(vec![Span::styled(
+                format!("  {footer}"),
+                pal.faint(),
+            )]));
+        }
+        if let Some(error) = &self.error {
+            for line in error.split('\n') {
+                rows.push(Line::from(vec![Span::styled(
+                    (*line).to_string(),
+                    pal.err(),
+                )]));
+            }
+        } else if self.filtered.is_empty() {
+            rows.push(Line::from(vec![Span::styled(
+                "  No matching models",
+                pal.faint(),
+            )]));
+        } else {
+            rows.push(Line::raw(""));
+            rows.push(Line::from(vec![Span::styled(
+                format!(
+                    "  Model Name: {}",
+                    self.filtered[self.cursor.selected()].name
+                ),
+                pal.faint(),
+            )]));
+        }
+        rows
+    }
+
+    /// The hint foot: the console keys (the scope switch only where it
+    /// flips something).
+    fn hint_row(&self) -> Line<'static> {
+        if self.scoped.is_empty() {
+            hints(&[("↑↓", "ship"), ("enter", "fly it"), ("esc", "close")])
+        } else {
+            hints(&[
+                ("↑↓", "ship"),
+                ("enter", "fly it"),
+                ("tab", "scope"),
+                ("esc", "close"),
+            ])
+        }
     }
 }
 
-fn scope_hint_text() -> String {
-    key_hint("tui.input.tab", "scope") + &theme().fg("muted", " (all/scoped)")
+/// One ship row (content only; the console adds the `›` marker or gutter
+/// and the selection band): the id (accent on the selected row), the
+/// provider badge, and the `expired` or current `✓` marker.
+fn ship_row(
+    model: &Model,
+    current: Option<&Model>,
+    expired: &HashSet<String>,
+    selected: bool,
+) -> Line<'static> {
+    let pal = Palette::current();
+    let mut spans = vec![
+        Span::styled(
+            model.id.clone(),
+            if selected {
+                pal.acc()
+            } else {
+                Style::default()
+            },
+        ),
+        Span::raw(" "),
+        Span::styled(
+            format!("[{provider}]", provider = model.provider),
+            pal.faint(),
+        ),
+    ];
+    if expired.contains(&model.provider) {
+        spans.push(Span::styled(" expired", pal.warn()));
+    } else if models_are_equal(current, Some(model)) {
+        spans.push(Span::styled(" ✓", pal.ok()));
+    }
+    Line::from(spans)
 }
 
-/// The list under the query line (`updateList`).
-struct ModelList(Rc<RefCell<State>>);
-
-impl Component for ModelList {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let state = self.0.borrow();
-        let len = state.filtered.len();
-        let rows = state
-            .cursor
-            .window()
-            .map(|i| {
-                let model = &state.filtered[i];
-                let selected = i == state.cursor.selected();
-                let prefix = if selected {
-                    t.fg("accent", SELECT_CURSOR)
-                } else {
-                    select_gutter()
-                };
-                let id = if selected {
-                    t.fg("accent", &model.id)
-                } else {
-                    model.id.clone()
-                };
-                let badge = t.fg("muted", &format!("[{}]", model.provider));
-                let expired = if state.expired.contains(&model.provider) {
-                    t.fg("warning", " expired")
-                } else {
-                    String::new()
-                };
-                let check = if models_are_equal(state.current.as_ref(), Some(model)) {
-                    t.fg("success", " ✓")
-                } else {
-                    String::new()
-                };
-                SelectableRow {
-                    text: format!("{prefix}{id} {badge}{expired}{check}"),
-                    selected,
-                }
-            })
-            .collect();
-        let mut lines = SelectedRowList::new(rows, 0).render(width);
-        let mut add = |text: String| lines.extend(Text::new(text, 0, 0).render(width));
-        if let Some(footer) = state.cursor.footer() {
-            add(t.fg("muted", &format!("  {footer}")));
-        }
-        if let Some(error) = &state.error {
-            for line in error.split('\n') {
-                add(t.fg("error", line));
-            }
-        } else if len == 0 {
-            add(t.fg("muted", "  No matching models"));
-        } else {
-            let name = &state.filtered[state.cursor.selected()].name;
-            lines.extend(Spacer::new(1).render(width));
-            lines.extend(
-                Text::new(t.fg("muted", &format!("  Model Name: {name}")), 0, 0).render(width),
-            );
-        }
-        lines
+/// `1 ship`, `N ships`.
+fn ships(count: usize) -> String {
+    if count == 1 {
+        "1 ship".to_string()
+    } else {
+        format!("{count} ships")
     }
 }
 
 /// `ModelSelectorComponent`: a searchable model list, with an all/scoped
 /// switch when the session has a model scope.
 pub struct ModelSelectorComponent {
-    frame: InputFrame,
     search: Rc<RefCell<Input>>,
     state: Rc<RefCell<State>>,
-    scope_text: Option<Rc<RefCell<Text>>>,
     events: Vec<ModelSelectorEvent>,
     submitted: Rc<RefCell<bool>>,
 }
@@ -211,6 +264,7 @@ impl ModelSelectorComponent {
             cursor: PickerCursor::new(0, MAX_VISIBLE),
             error,
             expired: HashSet::new(),
+            focused: false,
         };
         state.filtered = state.active().to_vec();
         state.cursor.reset(state.filtered.len());
@@ -221,25 +275,6 @@ impl ModelSelectorComponent {
             .unwrap_or(0);
         state.cursor.select(current_row);
 
-        let mut frame = InputFrame::new(InputFrameOptions {
-            title: Some("model".to_string()),
-            ..Default::default()
-        });
-        let mut scope_text = None;
-        if state.scope == ModelScope::Scoped {
-            let text = Rc::new(RefCell::new(Text::new(state.scope_text(), 0, 0)));
-            frame.add_child(text.clone());
-            frame.add_child(Rc::new(RefCell::new(Text::new(scope_hint_text(), 0, 0))));
-            scope_text = Some(text);
-        } else {
-            let hint =
-                "Only showing models from configured providers. Use /login to add providers.";
-            frame.add_child(Rc::new(RefCell::new(Text::new(
-                theme().fg("warning", hint),
-                0,
-                0,
-            ))));
-        }
         let mut input = Input::new();
         style_input(&mut input);
         if let Some(search) = initial_search.filter(|s| !s.is_empty()) {
@@ -250,15 +285,10 @@ impl ModelSelectorComponent {
         let flag = submitted.clone();
         input.on_submit = Some(Box::new(move |_: &str| *flag.borrow_mut() = true));
         let search = Rc::new(RefCell::new(input));
-        frame.add_child(search.clone());
-        frame.add_child(Rc::new(RefCell::new(Spacer::new(1))));
         let state = Rc::new(RefCell::new(state));
-        frame.add_child(Rc::new(RefCell::new(ModelList(state.clone()))) as ComponentHandle);
         Self {
-            frame,
             search,
             state,
-            scope_text,
             events: Vec::new(),
             submitted,
         }
@@ -303,15 +333,35 @@ impl ModelSelectorComponent {
             .unwrap_or(0);
         state.filter(&query);
         state.cursor.select(current_row);
-        if let Some(text) = &self.scope_text {
-            text.borrow_mut().set_text(state.scope_text());
-        }
     }
 }
 
 impl Component for ModelSelectorComponent {
+    /// The HANGAR console: scope lines, the `▸` query row, the ships with
+    /// `›` on the selection band, the scroll position and detail rows, and
+    /// the hint foot. Keys and filtering are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.frame.render(width)
+        let pal = Palette::current();
+        let state = self.state.borrow();
+        let search = self.search.borrow();
+        let query = search.get_value().to_string();
+        let mut console = Console::new("HANGAR · /model", state.count_text(&query));
+        console.top = state.top_rows(&pal);
+        console.query = Some(query_row(&query, state.focused));
+        let current = state.current.clone();
+        let expired = state.expired.clone();
+        let selected = state.cursor.selected();
+        console.rows = state
+            .filtered
+            .iter()
+            .enumerate()
+            .map(|(i, model)| ship_row(model, current.as_ref(), &expired, i == selected))
+            .collect();
+        console.selected = (!state.filtered.is_empty()).then_some(selected);
+        console.max_visible = Some(state.cursor.max_visible());
+        console.bottom = state.bottom_rows(&pal);
+        console.hint = state.hint_row();
+        console.render(width as usize)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -348,7 +398,7 @@ impl Component for ModelSelectorComponent {
     }
 
     fn invalidate(&mut self) {
-        self.frame.invalidate();
+        self.search.borrow_mut().invalidate();
     }
 
     fn is_focusable(&self) -> bool {
@@ -356,6 +406,7 @@ impl Component for ModelSelectorComponent {
     }
 
     fn set_focused(&mut self, focused: bool) {
+        self.state.borrow_mut().focused = focused;
         self.search.borrow_mut().set_focused(focused);
     }
 }

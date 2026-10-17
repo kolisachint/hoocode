@@ -31,7 +31,7 @@ fn now_ms() -> f64 {
 }
 
 /// `formatDuration`: seconds with one decimal.
-fn format_duration(ms: f64) -> String {
+pub(crate) fn format_duration(ms: f64) -> String {
     hoocode_code_agent_session::format::js_to_fixed(ms / 1000.0, 1) + "s"
 }
 
@@ -90,6 +90,9 @@ fn build_result(
     show_images: bool,
     started_at: Option<f64>,
     ended_at: Option<f64>,
+    // A failed run shows no `Took`: the header's `HIT` chip carries the
+    // exit code and duration instead.
+    is_error: bool,
 ) -> BashResult {
     let t = theme();
     let output = js_trim(result.text(show_images));
@@ -151,7 +154,7 @@ fn build_result(
         None if !options.is_partial => result.details.get("durationMs").and_then(Value::as_f64),
         None => None,
     };
-    let timing = elapsed_ms.map(|ms| {
+    let timing = (!is_error).then_some(elapsed_ms).flatten().map(|ms| {
         let label = if options.is_partial {
             "Elapsed"
         } else {
@@ -191,7 +194,14 @@ pub fn definition() -> ToolRenderDefinition {
                 ctx.state.remove(TICKING_KEY);
             }
             let ended = ctx.state.get("endedAt").and_then(Value::as_f64);
-            let body = build_result(result, options, ctx.show_images, started, ended);
+            let body = build_result(
+                result,
+                options,
+                ctx.show_images,
+                started,
+                ended,
+                ctx.is_error,
+            );
             Ok(Rc::new(RefCell::new(body)))
         })),
     }

@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 use hoocode_code_tui_theme::theme;
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_tui_render::Component;
+
+use crate::transmission::{transmission_component, TransmissionData, TOAST_WIDTH};
 use hoocode_tui_util::{apply_background_to_line, truncate_to_width, visible_width};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +83,9 @@ pub struct NotificationPanel {
     max_body_rows: Box<dyn Fn() -> usize>,
     clock: Clock,
     cache: Option<(usize, usize, Vec<String>)>,
+    /// Mission Control overlay mode (M8e4): the band goes quiet and the
+    /// newest notification floats top-right over the transcript instead.
+    overlay: bool,
 }
 
 impl NotificationPanel {
@@ -103,6 +108,7 @@ impl NotificationPanel {
             max_body_rows: max_body_rows.unwrap_or_else(|| Box::new(|| MAX_BODY_ROWS)),
             clock,
             cache: None,
+            overlay: false,
         }
     }
 
@@ -215,6 +221,50 @@ impl NotificationPanel {
         (current.kind.ttl() + BODY_ROW * self.body_rows(current).len() as u32).min(MAX_TTL)
     }
 
+    /// Mission Control overlay mode (M8e4): `true` in fullscreen, where
+    /// the toast lines float over the transcript and the band stays empty.
+    pub fn set_overlay(&mut self, overlay: bool) {
+        self.overlay = overlay;
+        self.cache = None;
+    }
+
+    /// The newest notification as transmission toast lines (M8e4), `width`
+    /// cells wide: the title, its body rows, and the drain row. Empty when
+    /// nothing is up, or when the screen cannot frame a toast.
+    pub fn toast_lines(&self, width: usize) -> Vec<String> {
+        let Some(current) = self.queue.last() else {
+            return Vec::new();
+        };
+        let render_width = width.min(TOAST_WIDTH);
+        if render_width < 12 {
+            return Vec::new();
+        }
+        // The head owns the clock: a toast still queued behind it has not
+        // started draining, so its bar is full.
+        let remaining = if self.queue.len() == 1 {
+            match self.deadline {
+                Some(deadline) => {
+                    let now = (self.clock)();
+                    let total = self.ttl(current).as_secs_f32().max(0.001);
+                    (deadline.saturating_duration_since(now).as_secs_f32() / total).clamp(0.0, 1.0)
+                }
+                None => 1.0,
+            }
+        } else {
+            1.0
+        };
+        let mut toast = transmission_component(
+            TransmissionData {
+                title: current.title.clone(),
+                body: current.body.clone(),
+                note: current.note.clone(),
+                remaining,
+            },
+            render_width,
+        );
+        toast.render(render_width as u16)
+    }
+
     fn arm(&mut self, from: Instant) {
         self.deadline = self.queue.first().map(|current| from + self.ttl(current));
     }
@@ -250,6 +300,9 @@ impl Component for NotificationPanel {
             return Vec::new();
         };
         if width < 4 {
+            return Vec::new();
+        }
+        if self.overlay {
             return Vec::new();
         }
         let rows = self.budget();

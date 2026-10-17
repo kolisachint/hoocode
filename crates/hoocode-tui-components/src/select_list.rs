@@ -106,6 +106,43 @@ impl SelectList {
         self.filtered_items.get(self.cursor.selected())
     }
 
+    /// Console rendering: the cursor's window as items, with the selection
+    /// remapped into it (the rows arrive pre-windowed).
+    pub fn console_window(&self) -> (Vec<SelectItem>, Option<usize>) {
+        let window = self.cursor.window();
+        let selected = self.cursor.selected();
+        let rows = window
+            .clone()
+            .map(|i| self.filtered_items[i].clone())
+            .collect();
+        (rows, window.clone().position(|i| i == selected))
+    }
+
+    /// The scroll position, when the window is scrolled.
+    pub fn footer(&self) -> Option<String> {
+        self.cursor.footer()
+    }
+
+    /// The shown items, in order.
+    pub fn shown_items(&self) -> &[SelectItem] {
+        &self.filtered_items
+    }
+
+    /// The selected row's index into [`items`](Self::items).
+    pub fn selected_index(&self) -> usize {
+        self.cursor.selected()
+    }
+
+    /// How many rows show at once.
+    pub fn max_visible(&self) -> usize {
+        self.cursor.max_visible()
+    }
+
+    /// The shown window's indices into [`items`](Self::items).
+    pub fn window(&self) -> std::ops::Range<usize> {
+        self.cursor.window()
+    }
+
     pub fn handle_input_with(&mut self, key_data: &str, kb: &KeybindingsManager) {
         let before = self.cursor.selected();
         if self.cursor.handle_key(key_data, kb) {

@@ -27,7 +27,7 @@ pub use registry::{
     get_theme_by_name, get_theme_description, get_theme_export_colors, init_theme,
     load_theme_from_path, load_theme_json, on_theme_change, resolve_theme_name,
     set_registered_themes, set_theme, set_theme_instance, stop_theme_watcher, successor_theme_for,
-    theme, try_theme, ThemeExportColors, ThemeInfo, THEME_SCHEMA_JSON,
+    theme, theme_generation, try_theme, ThemeExportColors, ThemeInfo, THEME_SCHEMA_JSON,
 };
 pub use schema::{parse_theme_json, parse_theme_json_content, ThemeJson, REQUIRED_COLOR_TOKENS};
 pub use theme::{

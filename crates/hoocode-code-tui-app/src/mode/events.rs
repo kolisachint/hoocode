@@ -22,6 +22,7 @@ use hoocode_tui_render::Component;
 use crate::startup_progress;
 
 use super::retry::retry_notice_text;
+use super::retry::RETRY_CANCELLED;
 use super::*;
 
 /// What dangling plan rows settle to when a request ends: done after a clean
@@ -179,6 +180,7 @@ impl Mode {
                 ..
             } => {
                 self.transcript.start_retry(&error_message);
+                self.comms_lost.set(false);
                 self.footer
                     .borrow_mut()
                     .set_retry_notice(Some(retry_notice_text(
@@ -194,6 +196,12 @@ impl Mode {
             } => {
                 self.transcript
                     .end_retry(success, attempt, final_error.as_deref());
+                // COMMS LOST (M8e1): the last retry gave up after a real
+                // streak. A lone unretried error, a cancellation and a
+                // success leave the frame alone.
+                let lost =
+                    !success && final_error.as_deref() != Some(RETRY_CANCELLED) && attempt >= 2;
+                self.comms_lost.set(lost);
                 self.footer.borrow_mut().set_retry_notice(None);
             }
         }
@@ -264,6 +272,9 @@ impl Mode {
                 self.show_status("Auto-compaction cancelled");
             }
         } else if let Some(result) = result {
+            // The missions this compaction folds, for the JETTISONED row
+            // (M8e6): read before the reset drops the transcript's ranges.
+            let mission_range = self.transcript.jettisoned_range();
             self.reset_transcript_view();
             let messages = self.session.session_manager().build_context().messages;
             self.render_session_context(&messages, false);
@@ -272,6 +283,7 @@ impl Mode {
                 tokens_before: result.tokens_before,
                 tokens_after: result.tokens_after,
                 timestamp: hoocode_ai_types::now_ms(),
+                mission_range,
             });
             self.add_message_to_chat(&summary, false);
             self.footer.borrow_mut().invalidate();
@@ -319,6 +331,9 @@ impl Mode {
                         self.markdown_theme(),
                         DEFAULT_HIDDEN_THINKING_LABEL,
                     ));
+                    component
+                        .borrow_mut()
+                        .set_rail(self.tool_output_view == ToolOutputView::Peek);
                     self.add_to_chat(as_component(&component));
                     component.borrow_mut().update_content(assistant, false);
                     self.transcript.assistant_components.push(component.clone());
@@ -414,6 +429,8 @@ impl Mode {
                             );
                         }
                         self.transcript.pending_tools.clear();
+                        // Aborted and errored turns flip hits at once.
+                        self.refresh_flight_stats();
                     } else {
                         // Args are complete: edit blocks compute their diffs.
                         for block in self.transcript.pending_tools.values() {
@@ -473,6 +490,8 @@ impl Mode {
                         },
                         false,
                     );
+                    // A settled result can flip the mission's hit count.
+                    self.refresh_flight_stats();
                     self.trim_transcript_memory();
                 }
             }

@@ -97,16 +97,20 @@ fn run() -> Vec<Call> {
 }
 
 #[test]
-fn collapses_a_run_of_calls_to_one_line_in_radar() {
+fn radar_shows_a_live_step_for_the_call_still_running() {
     let _g = lock();
-    // The last call still runs, so the line shows the run's shape.
+    // Settled clean calls get no row: the mission row above counts them.
+    // The call still running reads as its live step.
     let mut calls = run();
     calls[2].pending = true;
     let mut chain = chain_of(Radar, calls, "c");
     let out = render(&mut chain);
     let lines: Vec<&str> = out.split('\n').filter(|l| !l.trim().is_empty()).collect();
-    assert_eq!(lines.len(), 1);
-    assert!(lines[0].contains("CodeSearch › Read › Edit"));
+    assert_eq!(lines.len(), 1, "{out}");
+    assert!(lines[0].contains("◐"), "{out}");
+    assert!(lines[0].contains("03"), "{out}");
+    assert!(lines[0].contains("Edit"), "{out}");
+    assert!(!out.contains("›"), "{out}");
 }
 
 #[test]
@@ -119,25 +123,22 @@ fn shows_the_shape_while_running_and_what_it_amounted_to_once_done() {
     });
     let mut running = chain_of(Radar, calls, "r");
     let out = render(&mut running);
-    assert!(out.contains("CodeSearch › Read › Edit › Shell"));
-    assert!(out.contains("running"));
+    assert!(out.contains("◐"), "{out}");
+    assert!(out.contains("04"), "{out}");
+    assert!(out.contains("Shell"), "{out}");
 
+    // Settled clean: nothing left for the chain to say.
     let mut done = chain_of(Radar, run(), "d");
     done.close(ChainState::Done);
-    let settled = render(&mut done);
-    assert!(settled.contains("Edited"));
-    assert!(!settled.contains("CodeSearch › Read"));
+    assert!(render(&mut done).trim().is_empty());
 }
 
 #[test]
-fn an_interrupted_chain_keeps_the_shape_and_says_so_claiming_nothing() {
+fn an_interrupted_chain_with_no_hits_leaves_radar_to_its_mission_row() {
     let _g = lock();
     let mut chain = chain_of(Radar, run(), "i");
     chain.close(ChainState::Interrupted);
-    let out = render(&mut chain);
-    assert!(out.contains("CodeSearch › Read › Edit"));
-    assert!(out.contains("interrupted"));
-    assert!(!out.contains("Edited src"));
+    assert!(render(&mut chain).trim().is_empty());
 }
 
 #[test]
@@ -157,8 +158,12 @@ fn a_collapsed_chain_still_shows_why_a_call_failed() {
     );
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    assert!(out.contains("1 failed"));
-    assert!(out.contains("ASSERTION FAILED"));
+    assert!(out.contains("⊗"), "{out}");
+    assert!(out.contains("02"), "{out}");
+    assert!(out.contains("HIT"), "{out}");
+    assert!(out.contains("bun test"), "{out}");
+    assert!(out.contains("ASSERTION FAILED"), "{out}");
+    assert!(!out.contains("1 failed"), "{out}");
 }
 
 #[test]
@@ -191,7 +196,7 @@ fn follows_the_dial_when_the_view_changes_under_it() {
     chain.close(ChainState::Done);
     assert!(!render(&mut chain).contains('›'));
     chain.set_view(Radar);
-    assert!(render(&mut chain).contains("Edited"));
+    assert!(render(&mut chain).trim().is_empty());
     chain.set_view(Peek);
     assert!(!render(&mut chain).contains('›'));
 }
@@ -224,7 +229,7 @@ fn every_tools_call_line_starts_in_the_same_column() {
 }
 
 #[test]
-fn a_failures_reason_hangs_off_its_radar_row_rather_than_starting_a_new_column() {
+fn a_hit_row_carries_tool_subject_snippet_and_chip_on_one_line() {
     let _g = lock();
     let mut chain = chain_of(
         Radar,
@@ -236,32 +241,29 @@ fn a_failures_reason_hangs_off_its_radar_row_rather_than_starting_a_new_column()
     );
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    let lines: Vec<&str> = out.split('\n').collect();
-    let row = lines.iter().position(|l| l.contains('●')).unwrap();
-    let body = lines
-        .iter()
-        .position(|l| l.contains("ASSERTION FAILED"))
-        .unwrap();
-    assert!(body > row);
-    let col = |s: &str, pat: &str| s.find(pat).map(|b| s[..b].chars().count()).unwrap();
-    assert!(col(lines[body], "ASSERTION") > col(lines[row], "●"));
+    let rows: Vec<&str> = out.split('\n').filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(rows.len(), 1, "{out}");
+    assert!(rows[0].contains("⊗"), "{out}");
+    assert!(rows[0].contains("Shell"), "{out}");
+    assert!(rows[0].contains("bun test"), "{out}");
+    assert!(rows[0].contains("ASSERTION FAILED"), "{out}");
+    assert!(rows[0].trim_end().ends_with("HIT"), "{out}");
 }
 
 #[test]
-fn a_chain_of_one_reads_like_a_run_in_radar() {
+fn a_settled_clean_chain_reads_nothing_in_radar() {
     let _g = lock();
     let first = run().remove(0);
     let mut chain = chain_of(Radar, vec![first], "one");
     chain.close(ChainState::Done);
-    let out = render(&mut chain);
-    assert!(out.contains("Searched toolOutputView"));
-    assert!(out.contains("1 call · 2 lines"));
-    assert!(!out.contains("CodeSearch"));
+    assert!(render(&mut chain).trim().is_empty());
     assert!(chain.is_summarised());
 }
 
 #[test]
-fn a_single_call_in_radar_uses_the_group_summary_row() {
+fn an_orphan_single_call_in_radar_keeps_the_group_summary_row() {
+    // A chain before the first mission has no flight-log row above it, so
+    // radar keeps its old summary line.
     let _g = lock();
     let mut chain = chain_of(
         Radar,
@@ -272,6 +274,7 @@ fn a_single_call_in_radar_uses_the_group_summary_row() {
         )],
         "single",
     );
+    chain.set_orphan(true);
     chain.close(ChainState::Done);
     let lines = chain.render(100);
     assert_eq!(lines[0], "");
@@ -282,7 +285,7 @@ fn a_single_call_in_radar_uses_the_group_summary_row() {
 }
 
 #[test]
-fn a_running_single_call_in_radar_still_says_running() {
+fn a_running_single_call_in_radar_reads_as_a_live_step() {
     let _g = lock();
     let mut chain = chain_of(
         Radar,
@@ -293,8 +296,10 @@ fn a_running_single_call_in_radar_still_says_running() {
         "running1",
     );
     let out = render(&mut chain);
-    assert!(out.contains("Shell…"), "{out}");
-    assert!(out.contains("running"), "{out}");
+    assert!(out.contains("◐"), "{out}");
+    assert!(out.contains("01"), "{out}");
+    assert!(out.contains("npm run check"), "{out}");
+    assert!(!out.contains("running"), "{out}");
 }
 
 #[test]
@@ -310,9 +315,11 @@ fn a_failed_single_call_in_radar_still_shows_its_reason() {
     );
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    assert!(out.contains("Ran bun test"), "{out}");
-    assert!(out.contains("1 call · 1 failed"), "{out}");
+    assert!(out.contains("⊗"), "{out}");
+    assert!(out.contains("bun test"), "{out}");
+    assert!(out.contains("HIT"), "{out}");
     assert!(out.contains("ASSERTION FAILED"), "{out}");
+    assert!(!out.contains("1 call"), "{out}");
 }
 
 #[test]
@@ -325,12 +332,18 @@ fn a_single_call_in_peek_is_still_its_own_block() {
     );
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    // Peek draws the call's own block: a Shell call reads as `● Shell  command`,
-    // its output indented under the tool name, with no blank row after the call.
+    // Mission Control peek: the step is numbered and sits on the `┊` rail —
+    // ` 01 ● Shell  command` with `exit 0 · 1 line` right-aligned, then
+    // `   ┊    l1` — with no summary row.
     let rows: Vec<&str> = out.lines().map(str::trim_end).collect();
+    // Stem ` 01 ● Shell  npm run check` is 26 cells, stats 15: 59 spaces.
+    let header = format!(
+        " 01 ● Shell  npm run check{}exit 0 · 1 line",
+        " ".repeat(59)
+    );
     assert!(
         rows.windows(2)
-            .any(|w| w == ["  ● Shell  npm run check", "    l1"]),
+            .any(|w| w == [header.as_str(), "   ┊    l1"]),
         "{out}"
     );
     assert!(!out.contains("1 call"), "{out}");
@@ -338,36 +351,35 @@ fn a_single_call_in_peek_is_still_its_own_block() {
 }
 
 #[test]
-fn two_calls_are_still_worth_folding() {
+fn two_calls_with_one_running_show_the_live_step_in_radar() {
     let _g = lock();
     let mut calls = run();
     calls.truncate(2);
     calls[1].pending = true;
     let mut chain = chain_of(Radar, calls, "two");
     assert!(chain.is_summarised());
-    assert!(render(&mut chain).contains("CodeSearch › Read"));
+    let out = render(&mut chain);
+    assert!(out.contains("◐"), "{out}");
+    assert!(out.contains("02"), "{out}");
+    assert!(!out.contains("CodeSearch › Read"), "{out}");
 }
 
 #[test]
-fn holds_a_radar_run_off_whatever_came_before_it() {
+fn a_settled_chain_attaches_straight_under_its_mission_row() {
+    // No lead-in blank: the flight-log rows sit directly under the mission.
     let _g = lock();
     let mut chain = chain_of(Radar, run(), "lead");
     chain.close(ChainState::Done);
-    let lines = chain.render(100);
-    assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0], "");
-    assert!(strip(&lines[1]).contains("Edited"));
+    assert!(chain.render(100).is_empty());
 }
 
 #[test]
-fn a_radar_run_of_one_gets_the_same_lead_in() {
+fn a_settled_run_of_one_leaves_no_lead_in_either() {
     let _g = lock();
     let first = run().remove(0);
     let mut chain = chain_of(Radar, vec![first], "lead-one");
     chain.close(ChainState::Done);
-    let lines = chain.render(100);
-    assert_eq!(lines[0], "");
-    assert!(strip(&lines[1]).contains("Searched toolOutputView"));
+    assert!(chain.render(100).is_empty());
 }
 
 #[test]
@@ -416,9 +428,8 @@ fn an_interrupted_chain_with_no_failure_is_cancelled_never_green() {
     let _g = lock();
     let mut chain = chain_of(Radar, run(), "cancel");
     chain.close(ChainState::Interrupted);
-    let out = render(&mut chain);
-    assert!(out.contains("⊘"), "{out}");
-    assert!(!out.contains('●'), "{out}");
+    // The `⊘` reads on the mission row; the chain adds nothing.
+    assert!(render(&mut chain).trim().is_empty());
 }
 
 /// The job's row in the task store, as the Shell tool keeps it: `shell:<id>`,
@@ -457,18 +468,17 @@ fn a_background_call_reads_running_while_its_job_runs() {
     let out = render(&mut chain_with_job(ChainState::Done));
     set_job_row("j1", None);
     assert!(out.contains("◐"), "{out}");
+    assert!(out.contains("npm run dev"), "{out}");
     assert!(!out.contains('●'), "{out}");
-    assert!(out.contains("running"), "{out}");
 }
 
 #[test]
 fn a_replayed_background_call_with_no_live_job_reads_done() {
     let _g = lock();
     set_job_row("j1", None);
-    let out = render(&mut chain_with_job(ChainState::Done));
-    assert!(out.contains("●"), "{out}");
-    assert!(!out.contains('◐'), "{out}");
-    assert!(!out.contains("running"), "{out}");
+    assert!(render(&mut chain_with_job(ChainState::Done))
+        .trim()
+        .is_empty());
 }
 
 #[test]
@@ -479,6 +489,7 @@ fn an_aborted_chain_keeps_a_live_background_job_running() {
     let out = render(&mut chain_with_job(ChainState::Interrupted));
     set_job_row("j1", None);
     assert!(out.contains("◐"), "{out}");
+    assert!(out.contains("npm run dev"), "{out}");
     assert!(!out.contains('⊘'), "{out}");
 }
 
@@ -486,10 +497,9 @@ fn an_aborted_chain_keeps_a_live_background_job_running() {
 fn an_aborted_chain_whose_job_has_ended_reads_interrupted() {
     let _g = lock();
     set_job_row("j1", Some(TaskStatus::Done));
-    let out = render(&mut chain_with_job(ChainState::Interrupted));
-    set_job_row("j1", None);
-    assert!(out.contains("⊘"), "{out}");
-    assert!(!out.contains('◐'), "{out}");
+    assert!(render(&mut chain_with_job(ChainState::Interrupted))
+        .trim()
+        .is_empty());
 }
 
 #[test]
@@ -501,14 +511,11 @@ fn a_finished_shell_reads_done_as_soon_as_its_result_arrives() {
         vec![call("Shell", json!({"command": "npm test"}), "ok")],
         "fin",
     );
-    let out = render(&mut chain);
-    assert!(out.contains("● Ran npm test"), "{out}");
-    assert!(!out.contains("running"), "{out}");
-    assert!(!out.contains('◐'), "{out}");
+    assert!(render(&mut chain).trim().is_empty());
 }
 
 #[test]
-fn a_failed_call_shows_the_last_two_lines_of_its_reason() {
+fn a_hit_row_names_the_first_line_of_the_failure() {
     let _g = lock();
     let mut chain = chain_of(
         Radar,
@@ -520,12 +527,12 @@ fn a_failed_call_shows_the_last_two_lines_of_its_reason() {
     );
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    assert!(out.contains("l4"), "{out}");
-    assert!(out.contains("l5"), "{out}");
+    let rows: Vec<&str> = out.split('\n').filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(rows.len(), 1, "{out}");
+    assert!(rows[0].contains("l1"), "{out}");
+    assert!(rows[0].trim_end().ends_with("HIT"), "{out}");
     assert!(!out.contains("l3"), "{out}");
-    assert!(out.contains("… 3 more lines · ctrl+o"), "{out}");
-    let body = out.lines().find(|l| l.contains("l4")).unwrap();
-    assert!(body.starts_with("      l4"), "{body:?}");
+    assert!(!out.contains("more line"), "{out}");
 }
 
 #[test]
@@ -541,27 +548,32 @@ fn a_failed_call_with_two_lines_or_fewer_shows_no_fold() {
     );
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    assert!(out.contains("l1") && out.contains("l2"), "{out}");
+    assert!(out.contains("l1"), "{out}");
+    assert!(out.contains("HIT"), "{out}");
     assert!(!out.contains("more line"), "{out}");
 }
 
 /// The stats are whole. A label that does not fit beside them is dropped;
 /// the stats are cut only when they do not fit alone.
 #[test]
-fn a_label_that_does_not_fit_beside_the_stats_is_dropped() {
+fn a_hit_row_keeps_hit_whole_and_cuts_the_subject_first() {
     let _g = lock();
     let long = format!("npm run check -- {}", "--flag-with-a-long-name ".repeat(6));
     let mut chain = chain_of(
         Radar,
-        vec![call("Shell", json!({ "command": long }), "l1\nl2\nl3")],
+        vec![Call {
+            is_error: true,
+            ..call("Shell", json!({ "command": long }), "boom")
+        }],
         "drop",
     );
     chain.close(ChainState::Done);
-    let row = strip(&chain.render(30)[1]);
-    assert!(row.ends_with("1 call · 3 lines"), "{row:?}");
-    assert!(!row.contains("npm"), "{row:?}");
-    assert!(!row.contains('…'), "{row:?}");
-    assert_eq!(hoocode_tui_util::visible_width(&row), 30, "{row:?}");
+    let lines = chain.render(30);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let row = strip(&lines[0]);
+    assert!(row.trim_end().ends_with("HIT"), "{row:?}");
+    assert!(row.contains('…'), "{row:?}");
+    assert!(hoocode_tui_util::visible_width(&lines[0]) <= 30, "{row:?}");
 }
 
 #[test]
@@ -569,19 +581,19 @@ fn stats_that_do_not_fit_alone_are_cut_last() {
     let _g = lock();
     let mut chain = chain_of(
         Radar,
-        vec![call(
-            "Shell",
-            json!({ "command": "npm test" }),
-            "l1\nl2\nl3",
-        )],
+        vec![Call {
+            is_error: true,
+            ..call("Shell", json!({ "command": "npm test" }), "boom")
+        }],
         "cut",
     );
     chain.close(ChainState::Done);
     let lines = chain.render(12);
-    let row = strip(&lines[1]);
-    assert!(hoocode_tui_util::visible_width(&lines[1]) <= 12, "{row:?}");
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let row = strip(&lines[0]);
+    assert!(hoocode_tui_util::visible_width(&lines[0]) <= 12, "{row:?}");
     assert!(row.contains('…'), "{row:?}");
-    assert!(!row.contains("npm"), "{row:?}");
+    assert!(row.trim_end().ends_with("HIT"), "{row:?}");
 }
 
 #[test]
@@ -590,15 +602,19 @@ fn the_stats_stay_at_eighty_columns_and_the_label_gives_way() {
     let long = format!("npm run check -- {}", "--flag-with-a-long-name ".repeat(6));
     let mut chain = chain_of(
         Radar,
-        vec![call("Shell", json!({ "command": long }), "l1\nl2\nl3")],
+        vec![Call {
+            is_error: true,
+            ..call("Shell", json!({ "command": long }), "boom")
+        }],
         "wide",
     );
     chain.close(ChainState::Done);
     let lines = chain.render(80);
-    let row = strip(&lines[1]);
-    assert!(hoocode_tui_util::visible_width(&lines[1]) <= 80, "{row:?}");
-    assert!(row.ends_with("1 call · 3 lines"), "{row:?}");
-    assert!(!row.contains("npm"), "{row:?}");
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let row = strip(&lines[0]);
+    assert!(hoocode_tui_util::visible_width(&lines[0]) <= 80, "{row:?}");
+    assert!(row.trim_end().ends_with("HIT"), "{row:?}");
+    assert!(row.contains('…'), "{row:?}");
 }
 
 #[test]

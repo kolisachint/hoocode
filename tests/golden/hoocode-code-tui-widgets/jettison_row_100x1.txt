@@ -1,0 +1,5 @@
+≋≋≋ JETTISONED M1–M3 into one summary stage · 120 → 144 tokens (grew 24) · ctrl+o for peek
+--- styles ---
+r0 c0-71 fg=#9b8cff
+r0 c72-89 fg=#989898
+r0 c90-99 fg=#9b8cff

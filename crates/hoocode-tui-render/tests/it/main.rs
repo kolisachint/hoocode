@@ -9,4 +9,5 @@ mod hyperlink_click;
 mod screen_fill;
 mod scroll_viewport;
 mod support;
+mod toast_overlay;
 mod tui_render_ts;

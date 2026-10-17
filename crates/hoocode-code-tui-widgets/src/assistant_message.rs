@@ -3,21 +3,24 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::Instant;
 
 use hoocode_ai_types::{AssistantMessage, Content, StopReason, ABORTED_MESSAGE};
 use hoocode_code_tui_theme::{get_markdown_theme, theme};
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::{DefaultTextStyle, Markdown, MarkdownTheme, Spacer, Text};
+use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use hoocode_tui_util::js_regex::is_js_space;
 
+use crate::trajectory;
 use crate::wrap_zone;
 
 /// How a thinking block renders.
 ///
-/// `Omit` exists for radar: under a chain summary, a message whose only
-/// content is thinking plus tool calls has nothing left on screen once its
-/// calls collapse, so a stack of `Thinking...` lines would be pure noise.
+/// `Omit` exists for radar: the flight log shows the message's last prose
+/// line plus its `✻ thought Ns` line, so a stack of `Thinking...` lines
+/// would be pure noise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThinkingDisplay {
     #[default]
@@ -191,7 +194,9 @@ pub struct AssistantMessageComponent {
     content: Container,
     thinking_display: ThinkingDisplay,
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
-    hidden_thinking_label: String,
+    /// Mission Control peek (M4): prose lines sit on the `┊` rail. Think
+    /// headers (`·· …`) keep their own slot and skip the rail.
+    rail: bool,
     /// Shared with the caller's streaming message, so a delta does not copy it.
     last_message: Option<Rc<AssistantMessage>>,
     has_tool_calls: bool,
@@ -202,6 +207,11 @@ pub struct AssistantMessageComponent {
     /// Whether the last `update_content` was a streaming update, so a
     /// `refresh` (e.g. a thinking toggle mid-stream) keeps the same form.
     streaming: bool,
+    /// The Think row's clock (M4): when the trace started streaming and
+    /// when it settled. Unknown for resumed sessions, which never timed
+    /// the trace; the header then omits the time.
+    think_start: Option<Instant>,
+    think_end: Option<Instant>,
 }
 
 fn handle<C: Component + 'static>(c: C) -> ComponentHandle {
@@ -222,18 +232,22 @@ impl AssistantMessageComponent {
         message: Option<&AssistantMessage>,
         thinking_display: ThinkingDisplay,
         markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
-        hidden_thinking_label: &str,
+        // The collapsed-thinking label predates the M4 Think row, which
+        // carries its own header; kept for signature stability.
+        _hidden_thinking_label: &str,
     ) -> Self {
         let mut this = Self {
             content: Container::new(),
             thinking_display,
             markdown_theme,
-            hidden_thinking_label: hidden_thinking_label.to_string(),
+            rail: false,
             last_message: None,
             has_tool_calls: false,
             markdown_cache: HashMap::new(),
             has_segmented_blocks: false,
             streaming: false,
+            think_start: None,
+            think_end: None,
         };
         if let Some(message) = message {
             this.update_content(message, false);
@@ -306,9 +320,28 @@ impl AssistantMessageComponent {
         self.refresh();
     }
 
-    pub fn set_hidden_thinking_label(&mut self, label: &str) {
-        self.hidden_thinking_label = label.to_string();
-        self.refresh();
+    /// Mission Control peek (M4): prose lines sit on the `┊` rail.
+    pub fn set_rail(&mut self, rail: bool) {
+        self.rail = rail;
+    }
+
+    /// The Think row's seconds: elapsed since the trace started while it
+    /// runs, the settled span once done, `None` when never timed.
+    ///
+    /// The radar flight log reads the same clock for its `✻ thought Ns`
+    /// line (M5).
+    pub(crate) fn radar_think_line(&self, width: usize, palette: &Palette) -> Option<String> {
+        self.think_secs(self.streaming)
+            .map(|secs| crate::radar::think_row(secs, palette, width))
+    }
+
+    fn think_secs(&self, streaming: bool) -> Option<u64> {
+        let start = self.think_start?;
+        if streaming {
+            return Some(start.elapsed().as_secs());
+        }
+        self.think_end
+            .map(|end| end.duration_since(start).as_secs())
     }
 
     fn refresh(&mut self) {
@@ -338,6 +371,20 @@ impl AssistantMessageComponent {
     pub fn update_shared(&mut self, message: Rc<AssistantMessage>, streaming: bool) {
         self.last_message = Some(message.clone());
         self.streaming = streaming;
+        // The Think row's clock: the first streaming update carrying
+        // thinking starts it; the first settled update stops it.
+        let has_thinking = message
+            .content
+            .iter()
+            .any(|c| matches!(c, Content::Thinking(t) if !is_blank(&t.thinking)));
+        if has_thinking {
+            if streaming && self.think_start.is_none() {
+                self.think_start = Some(Instant::now());
+            }
+            if !streaming && self.think_start.is_some() && self.think_end.is_none() {
+                self.think_end = Some(Instant::now());
+            }
+        }
 
         // A final render replaces streaming segments with the single form.
         if !streaming && self.has_segmented_blocks {
@@ -362,14 +409,16 @@ impl AssistantMessageComponent {
                     if self.thinking_display == ThinkingDisplay::Omit {
                         continue;
                     }
+                    // The M4 Think row: the `··` slot, header only. Full
+                    // display adds the trace itself under it, on the rail.
                     let visible_after = message.content[i + 1..]
                         .iter()
                         .any(|c| self.is_visible_block(c));
-                    if self.thinking_display == ThinkingDisplay::Label {
-                        let t = theme();
-                        let label = t.italic(&t.fg("thinkingText", &self.hidden_thinking_label));
-                        self.content.add_child(handle(Text::new(label, 1, 0)));
-                    } else {
+                    self.content.add_child(handle(trajectory::ThinkHeader::new(
+                        streaming,
+                        self.think_secs(streaming),
+                    )));
+                    if self.thinking_display == ThinkingDisplay::Full {
                         let text = format!("✻ {}", js_trim(&t.thinking));
                         self.add_markdown_block(BlockKey::Thinking(i), &text, streaming, true);
                     }
@@ -417,10 +466,70 @@ impl AssistantMessageComponent {
     }
 }
 
+impl AssistantMessageComponent {
+    /// The radar flight log (M5): the message's last prose line, then its
+    /// `✻ thought Ns` line with no gist. A message with neither renders
+    /// nothing.
+    fn render_radar(&mut self, width: u16, palette: &Palette) -> Vec<String> {
+        let lines = self.content.render(width);
+        let prose = lines
+            .iter()
+            .rev()
+            .find(|line| {
+                !hoocode_tui_util::strip_vt_control_characters(line)
+                    .trim()
+                    .is_empty()
+            })
+            .cloned();
+        let mut out = Vec::new();
+        if let Some(line) = prose {
+            out.push(line);
+        }
+        if let Some(line) = self.radar_think_line(width as usize, palette) {
+            out.push(line);
+        }
+        if out.is_empty() {
+            return out;
+        }
+        wrap_zone(out)
+    }
+}
+
 impl Component for AssistantMessageComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let lines = self.content.render(width);
-        if self.has_tool_calls || lines.is_empty() {
+        // One palette per render pass, passed down to every row.
+        let palette = Palette::current();
+        if self.thinking_display == ThinkingDisplay::Omit {
+            return self.render_radar(width, &palette);
+        }
+        if self.has_tool_calls {
+            return self.content.render(width);
+        }
+        if !self.rail {
+            let lines = self.content.render(width);
+            if lines.is_empty() {
+                return lines;
+            }
+            return wrap_zone(lines);
+        }
+        // Mission Control peek: prose sits on the `┊` rail, so the inner
+        // content wraps six cells narrower and every line takes the rail.
+        // Think headers keep their own `··` slot.
+        let width = width as usize;
+        let inner = width.saturating_sub(6).max(1) as u16;
+        let lines: Vec<String> = self
+            .content
+            .render(inner)
+            .into_iter()
+            .map(|line| {
+                if trajectory::is_think_header(&line) {
+                    line
+                } else {
+                    trajectory::rail_line(&line, width, false, &palette)
+                }
+            })
+            .collect();
+        if lines.is_empty() {
             return lines;
         }
         wrap_zone(lines)

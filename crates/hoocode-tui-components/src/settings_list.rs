@@ -10,6 +10,7 @@
 //! done, and `SettingsList` polls the slot after dispatching each input.
 
 use std::cell::RefCell;
+use std::ops::Range;
 use std::rc::Rc;
 
 use hoocode_tui_fuzzy::fuzzy_filter;
@@ -23,6 +24,7 @@ use crate::color::ColorFn;
 use crate::input::Input;
 use crate::picker_cursor::PickerCursor;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubmenuOutcome {
     Selected(String),
     Cancelled,
@@ -126,6 +128,39 @@ impl SettingsList {
             .iter()
             .map(|&i| &self.items[i])
             .collect()
+    }
+
+    /// The search query, for console rendering.
+    pub fn query_text(&self) -> &str {
+        self.search_input
+            .as_ref()
+            .map(|input| input.get_value())
+            .unwrap_or("")
+    }
+
+    /// The selected row in the displayed list.
+    pub fn selected(&self) -> usize {
+        self.cursor.selected()
+    }
+
+    /// The cursor's window over the displayed list.
+    pub fn window(&self) -> Range<usize> {
+        self.cursor.window()
+    }
+
+    /// The scroll position, when the window is scrolled.
+    pub fn scroll_footer(&self) -> Option<String> {
+        self.cursor.footer()
+    }
+
+    /// Whether a submenu is open (a console renders through it).
+    pub fn has_submenu(&self) -> bool {
+        self.submenu_component.is_some()
+    }
+
+    /// The open submenu, if any (tests drive the submenu a row opened).
+    pub fn open_submenu(&self) -> Option<ComponentHandle> {
+        self.submenu_component.clone()
     }
 
     /// Fire the change callback as the list does when a row changes

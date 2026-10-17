@@ -1,0 +1,17 @@
+╭ ● TRANSMISSION  shift+alt+z undo           ╮
+│ chrome is now compact                      │
+│ ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ │
+╰────────────────────────────────────────────╯
+--- styles ---
+r0 c0-1 fg=#a8a8a8
+r0 c2 fg=#5cc8bb
+r0 c3-15 fg=#e5e5e7 bold
+r0 c18-33 fg=#989898
+r0 c45 fg=#a8a8a8
+r1 c0-1 fg=#a8a8a8
+r1 c2-22 fg=#e5e5e7
+r1 c44-45 fg=#a8a8a8
+r2 c0-1 fg=#a8a8a8
+r2 c2-43 fg=#5cc8bb
+r2 c44-45 fg=#a8a8a8
+r3 c0-45 fg=#a8a8a8

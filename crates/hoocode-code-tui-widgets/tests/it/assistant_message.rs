@@ -85,12 +85,23 @@ fn omit_drops_the_thinking_block_but_keeps_the_text_around_it() {
 
 #[test]
 fn label_stands_in_for_the_trace() {
+    // Mission Control (M4): the collapsed trace is a Think row in the `··`
+    // slot, header only; Full adds the trace itself under it.
     let _g = lock();
     let mut c = AssistantMessageComponent::new(
         Some(&assistant(vec![thinking("weighing the options")])),
         ThinkingDisplay::Label,
     );
     let rendered = c.render(60).join("\n");
-    assert!(rendered.contains("Thinking..."));
+    assert!(rendered.contains("Think"));
+    assert!(rendered.contains("··"));
     assert!(!rendered.contains("weighing the options"));
+
+    let mut c = AssistantMessageComponent::new(
+        Some(&assistant(vec![thinking("weighing the options")])),
+        ThinkingDisplay::Full,
+    );
+    let rendered = c.render(60).join("\n");
+    assert!(rendered.contains("Think"));
+    assert!(rendered.contains("weighing the options"));
 }

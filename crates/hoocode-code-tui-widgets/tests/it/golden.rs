@@ -4,15 +4,20 @@
 //! times: tool blocks get no `startedAt` (no `Took`/`Elapsed` line) and the
 //! task panel shows only plan items, never delegated runs.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use hoocode_ai_types::{AssistantMessage, Content, ThinkingContent};
 use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_widgets::session_chip::render_session_chip;
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity, TaskPanelView};
+use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
+use hoocode_code_tui_widgets::trajectory::MissionHeader;
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
 use hoocode_tui_components::Text;
 use hoocode_tui_render::golden::render_golden;
@@ -219,21 +224,29 @@ fn task_panel_tabs_unfocused_80() {
 }
 
 #[test]
-fn task_panel_tabs_focused_plan_80() {
+fn flight_plan_80() {
     let _g = lock();
     AppKeybindingsManager::default().install();
     task_store().clear();
     three_tabs();
     let mut panel = TaskPanelComponent::new();
     panel.set_focused(true);
-    assert_golden!(
-        "task_panel_tabs_focused_plan_80",
-        render_golden(&mut panel, 80)
-    );
+    assert_golden!("flight_plan_80", render_golden(&mut panel, 80));
 }
 
 #[test]
-fn task_panel_tabs_focused_agents_80() {
+fn flight_plan_100() {
+    let _g = lock();
+    AppKeybindingsManager::default().install();
+    task_store().clear();
+    three_tabs();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_focused(true);
+    assert_golden!("flight_plan_100", render_golden(&mut panel, 100));
+}
+
+#[test]
+fn flight_plan_agents_80() {
     let _g = lock();
     AppKeybindingsManager::default().install();
     task_store().clear();
@@ -241,25 +254,7 @@ fn task_panel_tabs_focused_agents_80() {
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Subagents);
     panel.set_focused(true);
-    assert_golden!(
-        "task_panel_tabs_focused_agents_80",
-        render_golden(&mut panel, 80)
-    );
-}
-
-#[test]
-fn task_panel_tabs_focused_mcp_80() {
-    let _g = lock();
-    AppKeybindingsManager::default().install();
-    task_store().clear();
-    three_tabs();
-    let mut panel = TaskPanelComponent::new();
-    panel.set_view(TaskPanelView::Mcp);
-    panel.set_focused(true);
-    assert_golden!(
-        "task_panel_tabs_focused_mcp_80",
-        render_golden(&mut panel, 80)
-    );
+    assert_golden!("flight_plan_agents_80", render_golden(&mut panel, 80));
 }
 
 // ---- task panel: Shell tab (T5.3) ----
@@ -298,7 +293,7 @@ fn shell_jobs() {
 }
 
 #[test]
-fn task_panel_shell_tab_focused_80() {
+fn flight_plan_shell_80() {
     let _g = lock();
     AppKeybindingsManager::default().install();
     task_store().clear();
@@ -306,10 +301,7 @@ fn task_panel_shell_tab_focused_80() {
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Shell);
     panel.set_focused(true);
-    assert_golden!(
-        "task_panel_shell_tab_focused_80",
-        render_golden(&mut panel, 80)
-    );
+    assert_golden!("flight_plan_shell_80", render_golden(&mut panel, 80));
 }
 
 #[test]
@@ -634,4 +626,205 @@ fn assistant_message_thinking_label_80() {
         "assistant_message_thinking_label_80",
         render_golden(&mut msg, 80)
     );
+}
+
+// ---- Mission Control trajectory (M4) ----
+
+#[test]
+fn trajectory_mission_header_80() {
+    let _g = lock();
+    let mut header = MissionHeader::new(1, "how does wrapping work?", None);
+    assert_golden!(
+        "trajectory_mission_header_80",
+        render_golden(&mut header, 80)
+    );
+}
+
+#[test]
+fn trajectory_mission_header_skill_80() {
+    let _g = lock();
+    let mut header = MissionHeader::new(6, "check wrap.rs", Some("review"));
+    assert_golden!(
+        "trajectory_mission_header_skill_80",
+        render_golden(&mut header, 80)
+    );
+}
+
+#[test]
+fn trajectory_steps_hit_80() {
+    // Numbered steps on the `┊` rail; the failed Shell shows the HIT chip
+    // in place of its success stats.
+    let _g = lock();
+    let mut chain = ToolChainComponent::new(ToolOutputView::Peek);
+    let mut read = tool(
+        "Read",
+        json!({ "path": "src/wrap.rs" }),
+        ToolOutputView::Peek,
+    );
+    read.update_result(result("line one\nline two", false, json!({})), false);
+    chain.add(Rc::new(RefCell::new(read)));
+    let mut shell = tool("Shell", shell_args(), ToolOutputView::Peek);
+    shell.update_result(
+        result(
+            "boom\nCommand exited with code 3",
+            true,
+            json!({ "durationMs": 100.0 }),
+        ),
+        false,
+    );
+    chain.add(Rc::new(RefCell::new(shell)));
+    assert_golden!("trajectory_steps_hit_80", render_golden(&mut chain, 80));
+}
+
+// ---- Mission Control flight log (M5, radar) ----
+
+use hoocode_code_tui_widgets::radar::{FlightMark, FlightStats};
+
+fn flight_stats(
+    mark: FlightMark,
+    steps: usize,
+    hits: usize,
+    time: Option<&str>,
+    cost: Option<&str>,
+) -> Rc<RefCell<FlightStats>> {
+    Rc::new(RefCell::new(FlightStats {
+        mark,
+        steps,
+        hits,
+        landed_time: time.map(str::to_string),
+        started: None,
+        cost: cost.map(str::to_string),
+    }))
+}
+
+fn radar_header(seq: usize, prompt: &str, stats: Rc<RefCell<FlightStats>>) -> MissionHeader {
+    let mut header = MissionHeader::new(seq, prompt, None);
+    header.set_view(ToolOutputView::Radar);
+    header.set_flight(stats);
+    header
+}
+
+#[test]
+fn radar_mission_row_80() {
+    // One flight-log row: the mark, the prompt, steps, hits, time, cost.
+    let _g = lock();
+    let mut header = radar_header(
+        1,
+        "what does the wrap crate do?",
+        flight_stats(FlightMark::Landed, 1, 0, Some("0.8s"), Some("$0.003")),
+    );
+    assert_golden!("radar_mission_row_80", render_golden(&mut header, 80));
+}
+
+#[test]
+fn radar_mission_row_40() {
+    // Narrow: the prompt is cut with `…` first, the stats stay whole.
+    let _g = lock();
+    let mut header = radar_header(
+        2,
+        "review the wrap helper for overflow bugs",
+        flight_stats(FlightMark::Landed, 4, 1, Some("0.6s"), Some("$0.006")),
+    );
+    assert_golden!("radar_mission_row_40", render_golden(&mut header, 40));
+}
+
+#[test]
+fn radar_mission_in_flight_80() {
+    // A flying mission reads `◐`; with no landed time the row shows the
+    // cost only. Elapsed time comes off the turn clock at render, so the
+    // golden pins the row without it.
+    let _g = lock();
+    let mut header = radar_header(
+        2,
+        "run a slow check",
+        flight_stats(FlightMark::InFlight, 1, 0, None, Some("$0.001")),
+    );
+    assert_golden!("radar_mission_in_flight_80", render_golden(&mut header, 80));
+}
+
+#[test]
+fn radar_mission_stepless_80() {
+    // No steps: `0 steps 0✕` is omitted, the row reads mark, prompt, cost.
+    let _g = lock();
+    let mut header = radar_header(
+        3,
+        "just talking",
+        flight_stats(FlightMark::Landed, 0, 0, None, Some("$0.000")),
+    );
+    assert_golden!("radar_mission_stepless_80", render_golden(&mut header, 80));
+}
+
+#[test]
+fn radar_chain_hits_80() {
+    // Each hit gets its own line under the mission: mission-relative step,
+    // tool, subject, first output line, `HIT`. Settled clean calls get none.
+    let _g = lock();
+    let mut chain = ToolChainComponent::new(ToolOutputView::Radar);
+    chain.set_base_step(3);
+    let mut read = tool(
+        "Read",
+        json!({ "path": "src/wrap.rs" }),
+        ToolOutputView::Radar,
+    );
+    read.update_result(result("line one\nline two", false, json!({})), false);
+    chain.add(Rc::new(RefCell::new(read)));
+    let mut shell = tool("Shell", shell_args(), ToolOutputView::Radar);
+    shell.update_result(
+        result(
+            "boom\nCommand exited with code 3",
+            true,
+            json!({ "durationMs": 100.0 }),
+        ),
+        false,
+    );
+    chain.add(Rc::new(RefCell::new(shell)));
+    assert_golden!("radar_chain_hits_80", render_golden(&mut chain, 80));
+}
+
+#[test]
+fn radar_chain_hits_40() {
+    // Narrow: the subject is cut first, `HIT` stays whole.
+    let _g = lock();
+    let mut chain = ToolChainComponent::new(ToolOutputView::Radar);
+    chain.set_base_step(3);
+    let mut shell = tool("Shell", shell_args(), ToolOutputView::Radar);
+    shell.update_result(
+        result(
+            "boom\nCommand exited with code 3",
+            true,
+            json!({ "durationMs": 100.0 }),
+        ),
+        false,
+    );
+    chain.add(Rc::new(RefCell::new(shell)));
+    assert_golden!("radar_chain_hits_40", render_golden(&mut chain, 40));
+}
+
+#[test]
+fn radar_chain_live_80() {
+    // A flying mission's live step: elapsed only, no progress bar.
+    let _g = lock();
+    let mut chain = ToolChainComponent::new(ToolOutputView::Radar);
+    chain.add(Rc::new(RefCell::new(tool(
+        "Shell",
+        json!({ "command": "sleep 6; echo done" }),
+        ToolOutputView::Radar,
+    ))));
+    assert_golden!("radar_chain_live_80", render_golden(&mut chain, 80));
+}
+
+#[test]
+fn radar_think_80() {
+    // Thinking under its mission: the last prose line, then
+    // `✻ thought Ns` with no gist.
+    let _g = lock();
+    let mut msg = AssistantMessageComponent::new(None, ThinkingDisplay::Omit);
+    msg.update_content(
+        &assistant(vec![
+            thinking("weighing the options"),
+            Content::text("here is the answer"),
+        ]),
+        true,
+    );
+    assert_golden!("radar_think_80", render_golden(&mut msg, 80));
 }

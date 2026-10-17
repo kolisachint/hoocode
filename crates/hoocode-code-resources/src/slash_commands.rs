@@ -62,7 +62,7 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
     },
     BuiltinSlashCommand {
         name: "color",
-        description: "Set the session chip color: /color <1-6|name> (bare = pick one)",
+        description: "Cycle the hull paint: /color [none|parity|cyan|violet|lime|red]",
     },
     BuiltinSlashCommand {
         name: "chrome",

@@ -19,8 +19,10 @@ use hoocode_tui_components::{
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_render::Component;
 
+use hoocode_code_permissions::ClearanceChoice;
 use hoocode_code_tui_selectors::session_selector::SubagentRunRef;
 
+use crate::end_shift::{EndShiftChoice, EndShiftJobsChoice};
 use crate::extension_editor::EditorOutcome;
 use crate::extension_selector::SelectorOutcome;
 use crate::startup_progress;
@@ -65,6 +67,9 @@ pub(super) enum Action {
     SubagentResume(SubagentRunRef),
     /// The options pane closed: the answers, or `None` when skipped.
     AskOptionsDone(Option<Vec<String>>),
+    ClearanceDone(ClearanceChoice),
+    EndShiftDone(EndShiftChoice),
+    EndShiftJobsDone(EndShiftJobsChoice),
     /// The multi-line editor dialog closed.
     EditorDialogDone(EditorOutcome),
     /// The prompt turned into or out of bash mode (`!`); sent only on that flip.
@@ -78,10 +83,6 @@ pub(super) enum Action {
     /// `app.session.color.cycleForward` / `cycleBackward`.
     SessionColorForward,
     SessionColorBackward,
-    /// The colour picker moved to this slot (live preview).
-    SessionColorPreview(u8),
-    /// The colour picker closed: the chosen slot, or `None` when cancelled.
-    SessionColorDone(Option<u8>),
     /// `app.session.changeDirectory`: prefill `/cd `.
     ChangeDirectoryPrefill,
     /// `app.session.fork`: `/fork`.
@@ -376,6 +377,13 @@ fn change_directory_completions(
     completions
 }
 
+/// Whether empty enter may hail the last prompt again: only while idle,
+/// like a typed mission. Each flag mirrors a guard on the typed path of
+/// submit (M8e1).
+fn can_hail(session_op: bool, compacting: bool, streaming: bool, bash_running: bool) -> bool {
+    !session_op && !compacting && !streaming && !bash_running
+}
+
 /// `resolveVoiceSilenceMs`: `VOICETOOLS_SILENCE_MS` (clamped to
 /// 300-10000) wins over the setting.
 pub(super) fn resolve_voice_silence_ms(setting: u64) -> u64 {
@@ -443,6 +451,13 @@ impl Mode {
 
     pub(super) fn prompt_with_images(&mut self, text: String, images: Vec<ImageContent>) {
         startup_progress::clear();
+        // A hail or a mission leaves COMMS LOST behind; the frame reads
+        // READY or IN FLIGHT again (M8e1).
+        self.comms_lost.set(false);
+        self.transcript.last_prompt = Some(LastPrompt {
+            text: text.clone(),
+            images: images.clone(),
+        });
         self.turn_timer.borrow_mut().begin(Instant::now());
         let session = self.session.clone();
         let tx = self.tx.clone();
@@ -462,9 +477,27 @@ impl Mode {
         });
     }
 
+    /// Whether empty enter may hail the last prompt again: only while idle,
+    /// like a typed mission. Each flag mirrors a guard on the typed path of
+    /// submit (M8e1).
     pub(super) fn submit(&mut self, text: String) {
         let text = text.trim().to_string();
         if text.is_empty() {
+            // Empty enter after COMMS LOST hails the last prompt again
+            // (M8e1): text plus images, and only while idle, like a typed
+            // mission.
+            if self.comms_lost.get()
+                && can_hail(
+                    self.session_op.is_some(),
+                    self.session.is_compacting(),
+                    self.session.is_streaming(),
+                    self.session.is_bash_running(),
+                )
+            {
+                if let Some(last) = self.transcript.last_prompt.clone() {
+                    self.prompt_with_images(last.text, last.images);
+                }
+            }
             return;
         }
         // A session change is running: the text goes back to the prompt.
@@ -771,14 +804,14 @@ impl Mode {
                     .last_sigint
                     .is_some_and(|at| now.duration_since(at) < Duration::from_millis(500))
                 {
-                    self.exit_requested = true;
+                    self.request_user_quit();
                 } else {
                     self.editor.borrow_mut().editor.set_text("");
                     self.last_sigint = Some(now);
                     self.dirty.set(true);
                 }
             }
-            Action::Exit => self.exit_requested = true,
+            Action::Exit => self.request_user_quit(),
             Action::Suspend => self.handle_ctrl_z(),
             Action::ToolsExpand => self.toggle_tool_output_view(),
             Action::ViewForward | Action::ViewBackward => {
@@ -828,8 +861,6 @@ impl Mode {
             Action::SessionColorForward | Action::SessionColorBackward => {
                 self.cycle_session_color(action == Action::SessionColorForward)
             }
-            Action::SessionColorPreview(slot) => self.preview_session_color(slot),
-            Action::SessionColorDone(slot) => self.close_session_color_selector(slot),
             Action::ChangeDirectoryPrefill => {
                 // Prefill rather than act: the editor's path completion is the
                 // way to name the target.
@@ -854,6 +885,9 @@ impl Mode {
             Action::PanelFocus => self.focus_task_panel(),
             Action::SubagentAttach => self.attach_newest_agent_block(),
             Action::AskOptionsDone(answers) => self.hide_ask_options(answers),
+            Action::ClearanceDone(choice) => self.close_clearance(choice),
+            Action::EndShiftDone(choice) => self.close_end_shift(choice),
+            Action::EndShiftJobsDone(choice) => self.close_end_shift_jobs(choice),
             Action::EditorDialogDone(outcome) => self.close_editor_dialog(outcome),
             Action::SessionSelectorDone(path) => {
                 self.close_session_selector();
@@ -871,5 +905,21 @@ impl Mode {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::can_hail;
+
+    #[test]
+    fn hail_needs_a_fully_idle_session() {
+        assert!(can_hail(false, false, false, false));
+        assert!(!can_hail(true, false, false, false));
+        assert!(!can_hail(false, true, false, false));
+        assert!(!can_hail(false, false, true, false));
+        // A running bash holds the hail, like a typed mission waits for it.
+        assert!(!can_hail(false, false, false, true));
+        assert!(!can_hail(true, true, true, true));
     }
 }

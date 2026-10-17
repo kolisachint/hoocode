@@ -168,7 +168,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 776 / 888 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8143 / 3724 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 5 | 2390 / 2557 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 8536 / 6241 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI (the Mission Control trajectory draws through `tui-ratatui`, M5; the M8 JETTISONED row too) | 2 | 8536 / 6241 | keep |
 
 ### TUI library (`tui-*`)
 
@@ -180,7 +180,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 2328 / 291 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1050 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1959 / 583 | keep |
-| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: ratatui widgets drawn into a Buffer, then turned into lines for the Component model (Mission Control step M0) | 1 | 286 / 29 | keep |
+| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent; M5 adds the `ansi.rs` ANSI→spans bridge) | 3 | 851 / 172 | keep |
 | `tui-render` | Differential rendering for the hoocode TUI, and the full-screen mode (M1: `fullscreen.rs` row arithmetic; the frame in `tui.rs`) | 4 | 2754 / 1997 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3232 / 211 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 14 | 2258 / 611 | keep |

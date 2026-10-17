@@ -1,0 +1,36 @@
+┏━ STAGE SEPARATION · /fork ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
+┃Select a user message to copy the active path up to that point into a new ses…┃
+┃  what does the wrap crate do?                                                ┃
+┃› add a width check to wrap_text in src/wrap.rs                               ┃
+┃  lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor┃
+┃  Message 2 of 3                                                              ┃
+┗━ ↑↓ move the line · enter fork · esc close ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+--- styles ---
+r0 c0-1 fg=#9b8cff
+r0 c3-26 fg=#9b8cff bold
+r0 c28-75 fg=#9b8cff
+r0 c78-79 fg=#9b8cff
+r1 c0 fg=#9b8cff
+r1 c1-78 fg=#a8a8a8
+r1 c79 fg=#9b8cff
+r2 c0 fg=#9b8cff
+r2 c79 fg=#9b8cff
+r3 c0 fg=#9b8cff
+r3 c1-2 fg=#5cc8bb bg=#2a2a36
+r3 c3-47 fg=#5cc8bb bg=#2a2a36 bold
+r3 c48-78 bg=#2a2a36
+r3 c79 fg=#9b8cff
+r4 c0 fg=#9b8cff
+r4 c79 fg=#9b8cff
+r5 c0 fg=#9b8cff
+r5 c1-16 fg=#a8a8a8
+r5 c79 fg=#9b8cff
+r6 c0-1 fg=#9b8cff
+r6 c3-4 fg=#989898
+r6 c5-21 fg=#a8a8a8
+r6 c22-26 fg=#989898
+r6 c27-34 fg=#a8a8a8
+r6 c35-37 fg=#989898
+r6 c38-43 fg=#a8a8a8
+r6 c45-75 fg=#9b8cff
+r6 c78-79 fg=#9b8cff

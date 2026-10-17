@@ -1,32 +1,40 @@
-//! The options pane (`components/ask-options.ts`): the agent asks the user for
-//! one decision per step. Up/down move (wrapping), `app.options.next` (→)
-//! confirms and advances (submitting on the last step), `app.options.back`
-//! (←) steps back, 1-9 quick-pick, the custom row takes typed text (where the
-//! arrows move the text cursor first), and cancel (esc) skips the lot.
-//! Answered steps stay as a breadcrumb.
+//! The question card (`components/ask-options.ts`): the agent asks the user,
+//! one decision per step. It draws the Mission Control amber card (M6,
+//! spec §4 c2): `◉ MISSION CONTROL ASKS` with numbered answers, the
+//! recommended one tagged, and the last row `N something else · type it`.
+//! Up/down move (wrapping), `app.options.next` (→) confirms and advances
+//! (submitting on the last step), `app.options.back` (←) steps back, 1-9
+//! quick-pick (the custom row's number only moves there, typing sends with
+//! `enter`), and esc picks option 1 for the tool — or skips, for MCP
+//! elicitation forms, which keep esc-as-cancel. Answered steps stay as a
+//! breadcrumb.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use hoocode_code_tools_optin::ask_options::AskQuestion;
-use hoocode_code_tui_theme::{select_gutter, theme, SELECT_CURSOR};
-use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
-use hoocode_tui_components::{Input, PickerCursor, DEFAULT_INPUT_PROMPT};
+use hoocode_code_tui_keybindings::format_key_text;
+use hoocode_code_tui_theme::{select_gutter, SELECT_CURSOR};
+use hoocode_code_tui_widgets::card_frame::render_card;
+use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, matches_key};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{truncate_to_width, visible_width};
 
 /// `AskOptionsOptions`.
 #[derive(Debug, Clone, Copy)]
 pub struct AskOptionsOptions {
-    /// Draw the prompt's frame around the pane; false when a host surface
-    /// frames it already.
-    pub framed: bool,
+    /// Mission Control: esc answers the current step with option 1 (the
+    /// question card, spec §6.2). False keeps esc-as-skip, for MCP
+    /// elicitation forms (their Cancel choice must stay reachable).
+    pub esc_answers_first: bool,
 }
 
 impl Default for AskOptionsOptions {
     fn default() -> Self {
-        Self { framed: true }
+        Self {
+            esc_answers_first: true,
+        }
     }
 }
 
@@ -39,6 +47,7 @@ struct State {
     answers: Vec<String>,
     custom_input: Input,
     focused: bool,
+    esc_answers_first: bool,
 }
 
 impl State {
@@ -65,181 +74,184 @@ impl State {
         (self.custom_input.get_cursor() >= typed, typed == 0)
     }
 
-    fn render_hints(&self, last: bool) -> String {
-        let kb = get_keybindings();
-        let t = theme();
-        let sep = t.fg("muted", " · ");
-        let hint = |keys: &str, desc: &str| t.fg("dim", keys) + &t.fg("muted", &format!(" {desc}"));
-        let up_down = format!(
-            "{}/{}",
-            kb.get_keys("tui.select.up").join("/"),
-            kb.get_keys("tui.select.down").join("/")
-        );
+    /// One hint: the dim key plus its muted description.
+    fn hint(&self, keys: &str, desc: &str) -> Vec<Span<'static>> {
+        let pal = Palette::current();
+        vec![
+            Span::styled(format_key_text(keys, false), pal.dim()),
+            Span::styled(format!(" {desc}"), pal.faint()),
+        ]
+    }
+
+    fn render_hints(&self, last: bool) -> Line<'static> {
+        let pal = Palette::current();
+        let mut spans = vec![
+            Span::styled(format!("1–{}", Self::row_count(self.current())), pal.dim()),
+            Span::styled(" answer", pal.faint()),
+        ];
         let (next, back) = self.custom_arrows();
-        let mut parts = vec![hint(&up_down, "move")];
-        // Mid-answer the arrows are the text cursor's: name the key that commits.
-        let next_keys = if next {
-            kb.get_keys("app.options.next")
-        } else {
-            kb.get_keys("tui.select.confirm")
-        };
-        parts.push(hint(
-            &next_keys.join("/"),
+        let mut parts = vec![self.hint("↑↓", "move")];
+        // Mid-answer the arrows are the text cursor's: enter commits.
+        parts.push(self.hint(
+            if next { "→" } else { "enter" },
             if last { "submit" } else { "next" },
         ));
         if self.step > 0 && back {
-            parts.push(hint(&kb.get_keys("app.options.back").join("/"), "back"));
+            parts.push(self.hint("←", "back"));
         }
-        parts.push(hint(&kb.get_keys("tui.select.cancel").join("/"), "skip"));
-        parts.join(&sep)
+        // Spec §6.2: esc picks option 1 on the card (elicitation skips).
+        parts.push(self.hint(
+            "esc",
+            if self.esc_answers_first {
+                "pick 1"
+            } else {
+                "skip"
+            },
+        ));
+        for part in parts {
+            spans.push(Span::styled(" · ", pal.faint()));
+            spans.extend(part);
+        }
+        Line::from(spans)
     }
 
-    fn render_body(&self, width: usize, labelled: bool) -> Vec<String> {
-        let t = theme();
+    fn render_rows(&self) -> Vec<Line<'static>> {
+        let pal = Palette::current();
         let mut lines = Vec::new();
         let cur = self.current();
         let last = self.step == self.questions.len() - 1;
 
-        let title = if labelled {
-            t.bold(&t.fg("borderAccent", "INPUT NEEDED"))
-        } else {
-            String::new()
-        };
-        lines.push(spread(&title, &self.render_hints(last), width));
-
         for i in 0..self.step {
             let q = &self.questions[i];
-            let check = t.fg("success", "✓");
-            let label = t.fg("dim", q.short.as_deref().unwrap_or(&q.question));
-            let arrow = t.fg("dim", "→ ");
-            let answer = t.fg("accent", self.answers.get(i).map_or("", String::as_str));
-            lines.push(truncate_to_width(
-                &format!("{check} {label}   {arrow}{answer}"),
-                width,
-                "...",
-                false,
-            ));
+            lines.push(Line::from(vec![
+                Span::styled("✓", pal.ok()),
+                Span::raw(" "),
+                Span::styled(
+                    q.short.as_deref().unwrap_or(&q.question).to_string(),
+                    pal.dim(),
+                ),
+                Span::raw("   "),
+                Span::styled("→ ", pal.dim()),
+                Span::styled(
+                    self.answers.get(i).map_or(String::new(), |s| s.clone()),
+                    pal.acc(),
+                ),
+            ]));
         }
         if self.step > 0 {
-            lines.push(String::new());
+            lines.push(Line::raw(""));
         }
 
-        let step_label = t.fg(
-            "dim",
-            &format!("{}/{}", self.step + 1, self.questions.len()),
-        );
-        lines.push(truncate_to_width(
-            &format!("{step_label} {}", t.bold(&cur.question)),
-            width,
-            "...",
-            false,
-        ));
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{}/{}", self.step + 1, self.questions.len()),
+                pal.dim(),
+            ),
+            Span::raw(" "),
+            Span::styled(cur.question.clone(), bold(Style::default())),
+        ]));
         if let Some(detail) = &cur.detail {
-            lines.push(truncate_to_width(
-                &t.fg("muted", &format!("    {detail}")),
-                width,
-                "...",
-                false,
-            ));
+            lines.push(Line::from(vec![Span::styled(
+                format!("    {detail}"),
+                pal.faint(),
+            )]));
         }
-        lines.push(String::new());
+        lines.push(Line::raw(""));
 
         for (i, o) in cur.options.iter().enumerate() {
             let active = i == self.cursor.selected();
-            let cursor = t.fg(
-                "accent",
-                &if active {
-                    SELECT_CURSOR.to_string()
-                } else {
-                    select_gutter()
-                },
-            );
-            let num = t.fg(if active { "accent" } else { "dim" }, &(i + 1).to_string());
-            let label = if active {
-                t.bold(&o.label)
+            let cursor = if active {
+                SELECT_CURSOR.to_string()
             } else {
-                o.label.clone()
+                select_gutter()
             };
-            let mut line = format!("{cursor}{num} {label}");
-            if o.recommended {
-                line += &t.fg("success", " (recommended)");
-            }
+            let mut spans = vec![
+                Span::styled(cursor, pal.acc()),
+                Span::styled(
+                    (i + 1).to_string(),
+                    if active { pal.acc() } else { pal.dim() },
+                ),
+                Span::raw("  "),
+                Span::styled(
+                    o.label.clone(),
+                    if active {
+                        bold(Style::default())
+                    } else {
+                        Style::default()
+                    },
+                ),
+            ];
             if let Some(description) = &o.description {
-                line += &t.fg("muted", &format!("   {description}"));
+                spans.push(Span::styled(format!("   {description}"), pal.faint()));
             }
-            lines.push(truncate_to_width(&line, width, "...", false));
+            if o.recommended {
+                spans.push(Span::styled("   recommended", pal.warn()));
+            }
+            lines.push(Line::from(spans));
         }
 
         if cur.allow_custom {
             let active = self.cursor.selected() == cur.options.len();
-            let cursor = t.fg(
-                "accent",
-                &if active {
-                    SELECT_CURSOR.to_string()
-                } else {
-                    select_gutter()
-                },
-            );
-            let plus = t.fg(if active { "accent" } else { "dim" }, "+");
+            let cursor = if active {
+                SELECT_CURSOR.to_string()
+            } else {
+                select_gutter()
+            };
+            let mut spans = vec![
+                Span::styled(cursor, pal.acc()),
+                Span::styled(
+                    (cur.options.len() + 1).to_string(),
+                    if active { pal.acc() } else { pal.dim() },
+                ),
+                Span::raw("  "),
+            ];
             if active {
                 let value = self.custom_input.get_value();
-                let prompt = t.fg("muted", DEFAULT_INPUT_PROMPT);
                 let caret = if self.focused {
-                    t.fg("accent", "▏")
+                    Some(Span::styled("▏", pal.warn()))
                 } else {
-                    String::new()
+                    None
                 };
-                let body = if value.is_empty() {
-                    format!("{caret}{}", t.fg("dim", "type your own answer"))
+                spans.push(Span::styled("something else", bold(Style::default())));
+                spans.push(Span::raw("  "));
+                if value.is_empty() {
+                    if let Some(caret) = caret.clone() {
+                        spans.push(caret);
+                    }
+                    spans.push(Span::styled("type it", pal.dim()));
                 } else {
-                    format!("{}{caret}", t.fg("text", value))
-                };
-                lines.push(truncate_to_width(
-                    &format!("{cursor}{plus} {prompt} {body}"),
-                    width,
-                    "...",
-                    false,
-                ));
+                    spans.push(Span::styled(value.to_string(), pal.legacy("text")));
+                    if let Some(caret) = caret {
+                        spans.push(caret);
+                    }
+                }
             } else {
-                let label = t.fg("muted", "custom answer");
-                let desc = t.fg("dim", "type your own");
-                lines.push(truncate_to_width(
-                    &format!("{cursor}{plus} {label}   {desc}"),
-                    width,
-                    "...",
-                    false,
-                ));
+                spans.push(Span::styled("something else", pal.faint()));
+                spans.push(Span::raw("   "));
+                spans.push(Span::styled("type it", pal.dim()));
             }
+            lines.push(Line::from(spans));
         }
 
-        lines.push(t.fg("dim", &self.cursor.position()));
+        lines.push(self.render_hints(last));
         lines
     }
-}
 
-fn spread(left: &str, right: &str, width: usize) -> String {
-    let gap = (width as i64 - visible_width(left) as i64 - visible_width(right) as i64).max(1);
-    truncate_to_width(
-        &format!("{left}{}{right}", " ".repeat(gap as usize)),
-        width,
-        "",
-        false,
-    )
-}
+    fn render_body(&self) -> Vec<Line<'static>> {
+        let mut rows = self.render_rows();
+        rows.pop();
+        rows
+    }
 
-/// The framed pane's body, recomputed from live state each frame.
-struct Body(Rc<RefCell<State>>);
-
-impl Component for Body {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        self.0.borrow().render_body(width as usize, false)
+    fn render_foot(&self) -> Line<'static> {
+        let rows = self.render_rows();
+        rows.last().cloned().unwrap_or_else(|| Line::raw(""))
     }
 }
 
 /// `AskOptionsComponent`.
 pub struct AskOptionsComponent {
     state: Rc<RefCell<State>>,
-    frame: Option<InputFrame>,
     on_submit: Box<dyn FnMut(Vec<String>)>,
     on_cancel: Box<dyn FnMut()>,
 }
@@ -259,18 +271,10 @@ impl AskOptionsComponent {
             answers: Vec::new(),
             custom_input: Input::new(),
             focused: false,
+            esc_answers_first: options.esc_answers_first,
         }));
-        let frame = options.framed.then(|| {
-            let mut frame = InputFrame::new(InputFrameOptions {
-                title: Some("input needed".to_string()),
-                ..Default::default()
-            });
-            frame.add_child(Rc::new(RefCell::new(Body(state.clone()))));
-            frame
-        });
         Self {
             state,
-            frame,
             on_submit,
             on_cancel,
         }
@@ -305,6 +309,20 @@ impl AskOptionsComponent {
         }
     }
 
+    /// Esc on the card: answer this step with option 1 (Mission Control,
+    /// spec §6.2). Anything else skips: elicitation forms, and a step with
+    /// no options to pick.
+    fn escape(&mut self) {
+        let first = self.state.borrow().esc_answers_first
+            && !self.state.borrow().current().options.is_empty();
+        if !first {
+            (self.on_cancel)();
+            return;
+        }
+        self.state.borrow_mut().cursor.select(0);
+        self.confirm();
+    }
+
     fn back(&mut self) {
         let mut state = self.state.borrow_mut();
         if state.step == 0 {
@@ -319,10 +337,16 @@ impl AskOptionsComponent {
 
 impl Component for AskOptionsComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        match &mut self.frame {
-            Some(frame) => frame.render(width),
-            None => self.state.borrow().render_body(width as usize, true),
-        }
+        let state = self.state.borrow();
+        let rows = state.render_body();
+        let foot = state.render_foot();
+        render_card(
+            "◉ MISSION CONTROL ASKS",
+            "sets the default for every call",
+            &rows,
+            &foot,
+            width as usize,
+        )
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -349,7 +373,7 @@ impl Component for AskOptionsComponent {
             return;
         }
         if kb.matches(data, "tui.select.cancel") {
-            (self.on_cancel)();
+            self.escape();
             return;
         }
 
@@ -359,22 +383,21 @@ impl Component for AskOptionsComponent {
             return;
         }
 
-        // Quick-pick among the listed options (not the custom row).
+        // Quick-pick among the rows: an option answers at once; the custom
+        // row's number only moves there, and typing sends with `enter`.
         let mut chars = data.chars();
         if let (Some(c @ '1'..='9'), None) = (chars.next(), chars.next()) {
             let n = c as usize - '1' as usize;
             if n < option_count {
                 self.state.borrow_mut().cursor.select(n);
                 self.confirm();
+            } else if n == option_count && self.state.borrow().current().allow_custom {
+                self.state.borrow_mut().cursor.select(n);
             }
         }
     }
 
-    fn invalidate(&mut self) {
-        if let Some(frame) = &mut self.frame {
-            frame.invalidate();
-        }
-    }
+    fn invalidate(&mut self) {}
 
     fn is_focusable(&self) -> bool {
         true

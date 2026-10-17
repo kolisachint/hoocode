@@ -1,6 +1,12 @@
 //! The provider pickers of `/login` and `/logout`, hoocode
 //! `components/oauth-selector.ts`, and `isApiKeyLoginProvider` from
 //! `login-controller.ts`.
+//!
+//! The picker draws as the DOCKING console (M7, spec §4 d10): the heavy
+//! frame names the flow and counts the providers, the `▸` query row filters,
+//! and the hint foot names the keys. There is no QR facility in the repo and
+//! no new deps are allowed, so docking shows the provider rows here and the
+//! URL/code in the login dialog; the dialog notes the QR gap.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -9,13 +15,13 @@ use std::sync::Arc;
 
 use hoocode_code_auth::provider_display_names::built_in_provider_display_name;
 use hoocode_code_auth::{AuthCredential, AuthSource, AuthStatus, AuthStorage};
-use hoocode_code_tui_theme::{select_gutter, style_input, theme, SELECT_CURSOR};
-use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
-use hoocode_code_tui_widgets::selected_row_list::{SelectableRow, SelectedRowList};
-use hoocode_tui_components::{Input, PickerCursor, Spacer, TruncatedText};
+use hoocode_code_tui_theme::style_input;
+use hoocode_code_tui_widgets::console::{hints, query_row, Console};
+use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_render::{Component, ComponentHandle};
+use hoocode_tui_ratatui::{Line, Palette, Span, Style};
+use hoocode_tui_render::Component;
 
 /// Whether a provider signs in with an API key rather than a subscription
 /// (`isApiKeyLoginProvider`). `built_in_provider_ids` defaults to every
@@ -79,41 +85,47 @@ struct State {
     mode: LoginMode,
     auth: Arc<AuthStorage>,
     status: AuthStatusFn,
+    /// Whether the picker has focus: the query caret draws while set.
+    focused: bool,
 }
 
 impl State {
-    /// `formatStatusIndicator`.
-    fn status_indicator(&self, provider: &AuthSelectorProvider) -> String {
-        let t = theme();
+    /// The auth state after the provider name, as styled spans
+    /// (`formatStatusIndicator`).
+    fn status_spans(&self, provider: &AuthSelectorProvider) -> Vec<Span<'static>> {
+        let pal = Palette::current();
         let stored = self.auth.get(&provider.id).map(|c| match c {
             AuthCredential::OAuth(_) => AuthType::OAuth,
             AuthCredential::ApiKey { .. } => AuthType::ApiKey,
         });
         if stored == Some(provider.auth_type) {
-            return t.fg("success", " ✓ configured");
+            return vec![Span::styled(" ✓ configured", pal.ok())];
         }
         if let Some(stored) = stored {
             let label = match stored {
                 AuthType::OAuth => "subscription configured",
                 AuthType::ApiKey => "API key configured",
             };
-            return t.fg("muted", " • ") + &t.fg("warning", label);
+            return vec![
+                Span::styled(" • ", pal.faint()),
+                Span::styled(label, pal.warn()),
+            ];
         }
         if provider.auth_type != AuthType::ApiKey {
-            return t.fg("muted", " • unconfigured");
+            return vec![Span::styled(" • unconfigured", pal.faint())];
         }
         let status = (self.status)(&provider.id);
-        match status.source {
-            Some(AuthSource::Environment) => t.fg(
-                "success",
-                &format!(" ✓ env: {}", status.label.as_deref().unwrap_or("API key")),
-            ),
-            Some(AuthSource::Runtime) => t.fg("success", " ✓ runtime API key"),
-            Some(AuthSource::Fallback) => t.fg("success", " ✓ custom API key"),
-            Some(AuthSource::ModelsJsonKey) => t.fg("success", " ✓ key in models.json"),
-            Some(AuthSource::ModelsJsonCommand) => t.fg("success", " ✓ command in models.json"),
-            _ => t.fg("muted", " • unconfigured"),
-        }
+        let label = match status.source {
+            Some(AuthSource::Environment) => {
+                format!(" ✓ env: {}", status.label.as_deref().unwrap_or("API key"))
+            }
+            Some(AuthSource::Runtime) => " ✓ runtime API key".to_string(),
+            Some(AuthSource::Fallback) => " ✓ custom API key".to_string(),
+            Some(AuthSource::ModelsJsonKey) => " ✓ key in models.json".to_string(),
+            Some(AuthSource::ModelsJsonCommand) => " ✓ command in models.json".to_string(),
+            _ => return vec![Span::styled(" • unconfigured", pal.faint())],
+        };
+        vec![Span::styled(label, pal.ok())]
     }
 
     fn filter(&mut self, query: &str) {
@@ -132,56 +144,41 @@ impl State {
     }
 }
 
-/// The list under the query line (`updateList`).
-struct ProviderList(Rc<RefCell<State>>);
-
-impl Component for ProviderList {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let state = self.0.borrow();
-        let rows = state
-            .cursor
-            .window()
-            .map(|i| {
-                let provider = &state.filtered[i];
-                let selected = i == state.cursor.selected();
-                let prefix = if selected {
-                    t.fg("accent", SELECT_CURSOR)
-                } else {
-                    select_gutter()
-                };
-                let name = t.fg(if selected { "accent" } else { "text" }, &provider.name);
-                SelectableRow {
-                    text: format!("{prefix}{name}{}", state.status_indicator(provider)),
-                    selected,
-                }
-            })
-            .collect();
-        let mut lines = SelectedRowList::new(rows, 1).render(width);
-        if let Some(footer) = state.cursor.footer() {
-            let info = t.fg("muted", &format!("  {footer}"));
-            lines.extend(TruncatedText::new(info, 0, 0).render(width));
-        }
-        if state.filtered.is_empty() {
-            let message = if !state.all.is_empty() {
-                "No matching providers"
-            } else if state.mode == LoginMode::Login {
-                "No providers available"
+/// One provider row (content only; the console adds the `›` marker or gutter
+/// and the selection band): the name (accent on the selected row) and the
+/// auth-state suffix.
+fn provider_row(
+    provider: &AuthSelectorProvider,
+    status: Vec<Span<'static>>,
+    selected: bool,
+) -> Line<'static> {
+    let mut spans = vec![
+        Span::styled(
+            provider.name.clone(),
+            if selected {
+                Palette::current().acc()
             } else {
-                "No providers logged in. Use /login first."
-            };
-            lines.extend(
-                TruncatedText::new(t.fg("muted", &format!("  {message}")), 0, 0).render(width),
-            );
-        }
-        lines
+                Style::default()
+            },
+        ),
+        Span::raw(" "),
+    ];
+    spans.extend(status);
+    Line::from(spans)
+}
+
+/// `1 provider`, `N providers`.
+fn providers(count: usize) -> String {
+    if count == 1 {
+        "1 provider".to_string()
+    } else {
+        format!("{count} providers")
     }
 }
 
 /// `OAuthSelectorComponent`: a searchable provider list with each
-/// provider's auth state.
+/// provider's auth state, drawn as the DOCKING console.
 pub struct OAuthSelectorComponent {
-    frame: InputFrame,
     search: Rc<RefCell<Input>>,
     state: Rc<RefCell<State>>,
     events: Vec<OAuthSelectorEvent>,
@@ -207,28 +204,15 @@ impl OAuthSelectorComponent {
             mode,
             auth,
             status,
+            focused: false,
         }));
-        let mut frame = InputFrame::new(InputFrameOptions {
-            title: Some(
-                match mode {
-                    LoginMode::Login => "login provider",
-                    LoginMode::Logout => "logout provider",
-                }
-                .to_string(),
-            ),
-            ..Default::default()
-        });
         let mut input = Input::new();
         style_input(&mut input);
         let submitted: Rc<RefCell<bool>> = Rc::default();
         let flag = submitted.clone();
         input.on_submit = Some(Box::new(move |_: &str| *flag.borrow_mut() = true));
         let search = Rc::new(RefCell::new(input));
-        frame.add_child(search.clone());
-        frame.add_child(Rc::new(RefCell::new(Spacer::new(1))));
-        frame.add_child(Rc::new(RefCell::new(ProviderList(state.clone()))) as ComponentHandle);
         Self {
-            frame,
             search,
             state,
             events: Vec::new(),
@@ -251,8 +235,58 @@ impl OAuthSelectorComponent {
 }
 
 impl Component for OAuthSelectorComponent {
+    /// The DOCKING console: the `▸` query row, the providers with `›` on the
+    /// selection band, the scroll position and empty-list rows, and the hint
+    /// foot. Keys and filtering are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.frame.render(width)
+        let pal = Palette::current();
+        let state = self.state.borrow();
+        let search = self.search.borrow();
+        let query = search.get_value().to_string();
+        let total = state.all.len();
+        let count = if query.is_empty() {
+            providers(total)
+        } else {
+            format!("{} of {}", providers(state.filtered.len()), total)
+        };
+        let name = match state.mode {
+            LoginMode::Login => "DOCKING · /login",
+            LoginMode::Logout => "DOCKING · /logout",
+        };
+        let mut console = Console::new(name, count);
+        console.query = Some(query_row(&query, state.focused));
+        let selected = state.cursor.selected();
+        console.rows = state
+            .filtered
+            .iter()
+            .enumerate()
+            .map(|(i, provider)| {
+                provider_row(provider, state.status_spans(provider), i == selected)
+            })
+            .collect();
+        console.selected = (!state.filtered.is_empty()).then_some(selected);
+        console.max_visible = Some(state.cursor.max_visible());
+        if let Some(footer) = state.cursor.footer() {
+            console.bottom.push(Line::from(vec![Span::styled(
+                format!("  {footer}"),
+                pal.faint(),
+            )]));
+        }
+        if state.filtered.is_empty() {
+            let message = if !state.all.is_empty() {
+                "No matching providers"
+            } else if state.mode == LoginMode::Login {
+                "No providers available"
+            } else {
+                "No providers logged in. Use /login first."
+            };
+            console.bottom.push(Line::from(vec![Span::styled(
+                format!("  {message}"),
+                pal.faint(),
+            )]));
+        }
+        console.hint = hints(&[("↑↓", "move"), ("enter", "choose"), ("esc", "cancel")]);
+        console.render(width as usize)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -276,7 +310,7 @@ impl Component for OAuthSelectorComponent {
     }
 
     fn invalidate(&mut self) {
-        self.frame.invalidate();
+        self.search.borrow_mut().invalidate();
     }
 
     fn is_focusable(&self) -> bool {
@@ -284,6 +318,7 @@ impl Component for OAuthSelectorComponent {
     }
 
     fn set_focused(&mut self, focused: bool) {
+        self.state.borrow_mut().focused = focused;
         self.search.borrow_mut().set_focused(focused);
     }
 }

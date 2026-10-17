@@ -44,18 +44,49 @@ pub struct Palette {
     colors: BTreeMap<String, String>,
 }
 
+/// What a render cache keys on: the theme name plus the generation, so a
+/// reload under the same name still invalidates.
+pub type ThemeKey = (Option<String>, u64);
+
+/// The current theme key.
+pub fn theme_key() -> ThemeKey {
+    (
+        hoocode_code_tui_theme::current_theme_name(),
+        hoocode_code_tui_theme::theme_generation(),
+    )
+}
+
+/// One JSON parse per theme, not per row: the snapshot for the current
+/// theme key is shared until the theme changes.
+static SNAPSHOT: std::sync::Mutex<(Option<ThemeKey>, Option<Palette>)> =
+    std::sync::Mutex::new((None, None));
+
 impl Palette {
     /// The current process theme's resolved colours (CSS hex per token). An
     /// unknown or in-memory theme resolves to no colours here; [`Palette::style`]
-    /// still reads those through the live theme's ANSI.
+    /// still reads those through the live theme's ANSI. Snapshots are
+    /// shared per theme key: hold one [`Palette`] per render pass and pass
+    /// it down instead of calling this per row.
     pub fn current() -> Self {
+        let key = theme_key();
+        if let Ok(guard) = SNAPSHOT.lock() {
+            if guard.0.as_ref() == Some(&key) {
+                if let Some(palette) = guard.1.clone() {
+                    return palette;
+                }
+            }
+        }
         let mut colors = BTreeMap::new();
-        if let Some(name) = hoocode_code_tui_theme::current_theme_name() {
-            if let Ok(resolved) = hoocode_code_tui_theme::get_resolved_theme_colors(Some(&name)) {
+        if let Some(name) = &key.0 {
+            if let Ok(resolved) = hoocode_code_tui_theme::get_resolved_theme_colors(Some(name)) {
                 colors = resolved;
             }
         }
-        Self { colors }
+        let palette = Self { colors };
+        if let Ok(mut guard) = SNAPSHOT.lock() {
+            *guard = (Some(key), Some(palette.clone()));
+        }
+        palette
     }
 
     /// The ratatui style for `name`: the token's colour, or its legacy
@@ -119,7 +150,71 @@ impl Palette {
         self.style("gold")
     }
 
+    /// A background-token style (the `activeToolBg` latest-row stroke):
+    /// the token's background colour, or the default style when the theme
+    /// sets none. With colour off the style is always default.
+    pub fn bg(&self, name: &str) -> Style {
+        self.bg_color(name)
+            .map_or_else(Style::default, |color| Style::default().bg(color))
+    }
+
+    /// A background token's colour, if the theme sets one (and colour is
+    /// on). Row builders merge it into their spans' styles.
+    pub fn bg_color(&self, name: &str) -> Option<Color> {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return None;
+        }
+        let theme = hoocode_code_tui_theme::try_theme()?;
+        if !theme.has_bg(name) {
+            return None;
+        }
+        bg_color(theme.get_bg_ansi(name))
+    }
+    /// The hull tint for a paint token (M8e5): the token's colour
+    /// darkened for a row background. `None` with colour off or when the
+    /// token does not resolve.
+    pub fn hull_tint(&self, name: &str) -> Option<Color> {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return None;
+        }
+        match self.color_for(name) {
+            Some(Color::Rgb(r, g, b)) => {
+                let dim = |c: u8| ((f32::from(c) * 0.22).round() as u8).max(1);
+                Some(Color::Rgb(dim(r), dim(g), dim(b)))
+            }
+            color => color,
+        }
+    }
+
+    /// The selected-row band (theme `selectedBg`; default when the theme
+    /// has none, e.g. NO_COLOR). The background mirrors `theme().bg`:
+    /// the live theme's ANSI first, the resolved snapshot second.
+    pub fn band(&self) -> Style {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return Style::default();
+        }
+        if let Some(theme) = hoocode_code_tui_theme::try_theme() {
+            if theme.has_bg("selectedBg") {
+                let ansi = theme.get_bg_ansi("selectedBg");
+                if let Some(css) = ansi_to_hex(ansi) {
+                    if let Some(color) = css_to_color(&css) {
+                        return Style::new().bg(color);
+                    }
+                }
+                return Style::default();
+            }
+        }
+        if let Some(css) = self.colors.get("selectedBg") {
+            if let Some(color) = css_to_color(css) {
+                return Style::new().bg(color);
+            }
+        }
+        Style::default()
+    }
     /// The foreground colour for `name`, following the fallback chain.
+    /// The resolved snapshot wins; in-memory themes fall back to the live
+    /// theme. Empty tokens resolve to the default text colour here (so
+    /// `ink` paints the glyph `#e5e5e7` on dark, as M2 goldens lock).
     fn color_for(&self, name: &str) -> Option<Color> {
         let mut chain = vec![name];
         if let Some(legacy) = fallback_for(name) {
@@ -147,6 +242,50 @@ impl Palette {
             }
         }
         None
+    }
+
+    /// A legacy theme token's style, exactly as `theme().fg` renders it:
+    /// the live theme's ANSI first (empty tokens like `"text"` stay the
+    /// default style), the resolved snapshot when no live theme is loaded.
+    /// Use this where the ported code called `theme().fg("text", …)`; MC
+    /// tokens keep [`Palette::style`].
+    pub fn legacy(&self, name: &str) -> Style {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return Style::default();
+        }
+        if let Some(theme) = hoocode_code_tui_theme::try_theme() {
+            if theme.has(name) {
+                let ansi = theme.get_fg_ansi(name);
+                if let Some(css) = ansi_to_hex(ansi) {
+                    if let Some(color) = css_to_color(&css) {
+                        return Style::new().fg(color);
+                    }
+                }
+                return Style::default();
+            }
+        }
+        self.style(name)
+    }
+
+    /// A background fill for `name` (the session colour swatch): the same
+    /// resolution as [`Palette::legacy`], painted as the background.
+    pub fn fill(&self, name: &str) -> Style {
+        if !hoocode_code_tui_theme::chalk::enabled() {
+            return Style::default();
+        }
+        if let Some(theme) = hoocode_code_tui_theme::try_theme() {
+            if theme.has(name) {
+                let ansi = theme.get_fg_ansi(name);
+                if let Some(css) = ansi_to_hex(ansi) {
+                    if let Some(color) = css_to_color(&css) {
+                        return Style::new().bg(color);
+                    }
+                }
+                return Style::default();
+            }
+        }
+        self.color_for(name)
+            .map_or_else(Style::default, |color| Style::new().bg(color))
     }
 }
 
@@ -231,19 +370,37 @@ fn css_to_color(css: &str) -> Option<Color> {
     ))
 }
 
-/// A foreground SGR opener as CSS hex: `\x1b[38;2;r;g;bm` or
-/// `\x1b[38;5;nm`. The default opener (`\x1b[39m`) is `None`: no colour.
+/// A background SGR opener as a colour: `\x1b[48;2;r;g;bm` or
+/// `\x1b[48;5;nm`. Anything else (including the default `\x1b[49m`) is
+/// `None`: no colour.
+fn bg_color(ansi: &str) -> Option<Color> {
+    let body = ansi.strip_prefix("\x1b[")?.strip_suffix('m')?;
+    let mut parts = body.split(';');
+    match (parts.next()?, parts.next()?) {
+        ("48", "2") => Some(Color::Rgb(
+            parts.next()?.parse::<u8>().ok()?,
+            parts.next()?.parse::<u8>().ok()?,
+            parts.next()?.parse::<u8>().ok()?,
+        )),
+        ("48", "5") => parts.next()?.parse::<u8>().ok().map(Color::Indexed),
+        _ => None,
+    }
+}
+
+/// A foreground or background SGR opener as CSS hex: `\x1b[38;2;r;g;bm`,
+/// `\x1b[48;2;r;g;bm`, or the `;5;` 256-colour forms. The default openers
+/// (`\x1b[39m`, `\x1b[49m`) are `None`: no colour.
 fn ansi_to_hex(ansi: &str) -> Option<String> {
     let body = ansi.strip_prefix("\x1b[")?.strip_suffix('m')?;
     let mut parts = body.split(';');
     match (parts.next()?, parts.next()?) {
-        ("38", "2") => {
+        ("38", "2") | ("48", "2") => {
             let r = parts.next()?.parse::<u8>().ok()?;
             let g = parts.next()?.parse::<u8>().ok()?;
             let b = parts.next()?.parse::<u8>().ok()?;
             Some(format!("#{r:02x}{g:02x}{b:02x}"))
         }
-        ("38", "5") => parts
+        ("38", "5") | ("48", "5") => parts
             .next()?
             .parse::<i64>()
             .ok()
