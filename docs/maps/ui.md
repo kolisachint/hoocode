@@ -12,7 +12,7 @@ update this page in the same commit.
 Full-screen is the default (M1c, `hud.rs`, `mode/mod.rs`). The app runs on the alternate screen and `Tui` draws the frame. Rows top to bottom:
 
 ```
-HUD ─ row 1: ◭ HOOCODE  BUILD  folder │ SHIP model  FUEL ctx%  CR $cost   (placeholder, M3 fills it)
+HUD ─ row 1: ◭ HOOCODE  <mode>  <folder> │ [◈ N agent] [⌁ N sat] SHIP <model>  FUEL <8-cell bar> <pct>  CR <cost>   (M3; no footer in full-screen)
   (gap: one blank row)
   attach slot ─ the attached subagent's header, when attached (top chrome)
 ┌ body ─ header, then transcript (chat). Live: follows the tail. Pinned: holds still ─┐
@@ -24,7 +24,7 @@ HUD ─ row 1: ◭ HOOCODE  BUILD  folder │ SHIP model  FUEL ctx%  CR $cost   
   notification band ─ tips, transient notices, progress bar
   ┌ prompt frame ─ editor, autocomplete; pickers and dialogs replace it ───────────┐
   └────────────────────────────────────────────────────────────────────────────────┘
-  footer ─ 2 rows: folder, branch, path │ model, context, cost (kept in full-screen for now; M3 removes the duplicates)
+  (no footer in full-screen: the HUD replaces it. Inline `HOOCODE_FULLSCREEN=0` keeps the two-row footer: folder, branch, path │ model, context, cost)
 ```
 
 `HOOCODE_FULLSCREEN=0` turns full-screen off for one run (the env var wins over the `fullscreen` setting, default `true`). Off, the screen is the inline tree with no HUD and no gap: the rows of `mode/mod.rs` `tree_plan(false)` in `hud.rs`. The tree order for both modes is `hud.rs` `tree_plan`; the test that pins it is `tests/it/hud.rs`.
@@ -38,7 +38,7 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | Whole screen, event loop | `InteractiveMode` (`Mode`) | `hoocode-code-tui-app/src/mode/mod.rs` (struct, setup, loop); the rest is split by concern into `mode/*.rs`: `input` (editor and keys), `transcript` (`Transcript`: the chat container and the components that track it; reset replaces it), `events` (agent and session events), `prompt_queue`, `session_ops`, `session_op` (the session operations that run off the UI thread: `SessionOpDone`, `SessionOutcome`, `finish_session_op`), `tree`, `models`, `auth`, `settings`, `dialogs`, `subagents`, `bash`, `clipboard`, `mcp`, `chrome` (footer, title, colour), `commands` (slash commands), `shutdown` (the exit steps after the loop, each with a deadline; concurrency.md §4) |
 | Transcript scroll-back view | scroll view | `hoocode-code-tui-app/src/scroll_view.rs` |
 | Full-screen frame: the alternate screen, the per-row diff, the body window, the bar | `Tui` full-screen mode | `hoocode-tui-render/src/tui.rs` (`paint_fullscreen`, `compose_fullscreen`), row arithmetic in `fullscreen.rs` |
-| HUD row (placeholder: mode, folder, model, context, cost), the setting read, the tree plan | HUD | `hoocode-code-tui-app/src/hud.rs` (`hud_text`, `hud_component`, `fullscreen_enabled`, `tree_plan`); drawn with `hoocode-tui-ratatui` |
+| HUD row: `◭ HOOCODE`, mode chip (`BUILD` accent, `PLAN` violet), folder dim · right, in order: `◈ N agent` (violet, while agents run), `⌁ N sat` (accent, while satellites are up), `SHIP` + model, `FUEL` 8-cell bar + percent (acc below 70%, warn below 90%, err from 90%), `CR` + spend · narrow (80 cols): drops the folder first, then the ship; mode, fuel and credits stay · other cuts trim the left part first with `…` at its end, the right part from the right · the setting read, the tree plan | HUD | `hoocode-code-tui-app/src/hud.rs` (`hud_text`, `hud_runs`, `hud_component`, `read_hud`, `fuel_bar`, `fuel_token`, `fullscreen_enabled`, `tree_plan`); drawn with `hoocode-tui-ratatui` |
 | Startup banner | wordmark | `hoocode-code-tui-app/src/wordmark.rs` |
 | Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
 | Task panel: tabs Plan · Agents · Shell · Schedule · MCP (a tab shows while it has rows), a count per tab; focused (Ctrl+G) it takes the keys in [Task panel](#task-panel) | task panel | `code-tui-widgets/src/task_panel.rs` (tabs, rows, keys); focus and events in `hoocode-code-tui-app/src/mode/task_panel.rs` |
@@ -49,7 +49,7 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
 | Attached subagent view (T3.3): a header row above the chat (`◂ <type> · <description> · <state> · Esc back`), and the prompt's place with a read-only hint; Esc goes back. The chat shows the run's transcript while attached; the session's is parked and kept up to date | attached view | `code-tui-widgets/src/attach_view.rs` (header, hint). The swap, the routing and the run's events: `hoocode-code-tui-app/src/mode/attach.rs`; the header's slot is `Mode::attach_slot` (above the chat) |
 | Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `mode/input.rs` `setup_autocomplete_provider`. `@file` uses the in-process finder `hoocode-code-tools::file_finder`, injected by `mode/input.rs` `at_file_finder` (no `fd`) and run on a worker thread (`autocomplete/file_search.rs`): typing never waits, and the editor re-asks when a walk finishes (`take_ready`). |
-| Footer | footer, footer data. Always two rows: row 1 folder, branch, session, path, then mode chip and view dial; row 2 model, context gauge, tokens, cost. Compact keeps both rows. Transient messages show above the prompt, not in the footer: a warning line (memory shedding, UI stall), the auto-retry notice (`retrying · attempt 2 of 6 · …`, set from `AutoRetryStart` and cleared by `AutoRetryEnd` in `mode/events.rs` through `set_retry_notice`), extension statuses and startup progress, read with `FooterComponent::transient_lines`. The warning is set by `mode/mod.rs` `sync_runtime_health` | `hoocode-code-tui-app/src/footer.rs`, `footer_data.rs` |
+| Footer (inline mode only) | footer, footer data. Always two rows: row 1 folder, branch, session, path, then mode chip and view dial; row 2 model, context gauge, tokens, cost. Compact keeps both rows. Transient messages show above the prompt, not in the footer: a warning line (memory shedding, UI stall), the auto-retry notice (`retrying · attempt 2 of 6 · …`, set from `AutoRetryStart` and cleared by `AutoRetryEnd` in `mode/events.rs` through `set_retry_notice`), extension statuses and startup progress, read with `FooterComponent::transient_lines`. The warning is set by `mode/mod.rs` `sync_runtime_health` | `hoocode-code-tui-app/src/footer.rs`, `footer_data.rs` |
 | Session chip | session chip | `code-tui-widgets/src/session_chip.rs` |
 | How much room chrome gets (two stops: full, compact; `/chrome <full\|compact>`, `Alt+Z` / `Shift+Alt+Z` toggle) | chrome layout | `hoocode-code-tui-app/src/chrome_layout.rs` |
 

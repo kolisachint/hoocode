@@ -3,6 +3,7 @@
 
 use std::rc::Rc;
 
+use hoocode_code_agent_session::mcp::McpStatus;
 use hoocode_code_agent_session::AgentSession;
 use hoocode_code_paths::APP_TITLE;
 use hoocode_code_session::identity::{
@@ -73,6 +74,16 @@ impl FooterSource for SessionFooter {
         self.session
             .model()
             .is_some_and(|m| (self.is_oauth)(&m.provider.to_string()))
+    }
+
+    fn satellite_count(&self) -> usize {
+        // TODO(M3): confirm the satellite count counts connected servers only.
+        self.session.mcp().map_or(0, |hub| {
+            hub.servers()
+                .iter()
+                .filter(|s| s.status == McpStatus::Connected)
+                .count()
+        })
     }
 }
 

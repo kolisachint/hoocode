@@ -101,7 +101,7 @@ fn default_on_gives_hud_gap_body_bottom() {
             TreePart::Body
         ]
     );
-    assert_eq!(plan.last(), Some(&TreePart::Footer));
+    assert!(!plan.contains(&TreePart::Footer));
     assert!(!plan.contains(&TreePart::ScreenFill));
     assert!(!plan.contains(&TreePart::Header));
     assert!(!plan.contains(&TreePart::Chat));
