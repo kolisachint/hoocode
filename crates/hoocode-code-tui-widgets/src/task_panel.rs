@@ -1003,10 +1003,11 @@ fn flight_row(
 }
 
 /// The focused panel as the FLIGHT PLAN console (M7, spec §4 c6): the plan's
-/// done/total in the title, the agents/satellites counts on the right, the
-/// waypoint track over the plan rows, the tab strip while several tabs have
-/// rows, and the spec hint foot. Tabs, keys, filtering and events are
-/// unchanged; only the chrome and the rows move to the console.
+/// done/total in the title, the waypoint track over the plan rows, the tab
+/// strip while several tabs have rows, the agents-in-flight and satellites
+/// row below the list (the target's `planRows`), and the spec hint foot.
+/// Tabs, keys, filtering and events are unchanged; only the chrome and the
+/// rows move to the console.
 fn render_flight_plan(
     model: &RowModel,
     view: TaskPanelView,
@@ -1026,13 +1027,10 @@ fn render_flight_plan(
         total += 1;
         done += usize::from(task.status == TaskStatus::Done);
     }
-    let mut console = Console::new("FLIGHT PLAN", format!("{done}/{total}"));
+    let mut console = Console::new("FLIGHT PLAN · ctrl+g", format!("{done}/{total}"));
     let agents = model.row_ids(TaskPanelView::Subagents).len();
     let sats = model.row_ids(TaskPanelView::Shell).len();
-    console.right = Line::from(vec![Span::styled(
-        format!("agents {agents} · sats {sats} /tasks · ctrl+g"),
-        pal.faint(),
-    )]);
+    let sats = model.row_ids(TaskPanelView::Shell).len();
     if view == TaskPanelView::Plan {
         console.top.push(flight_track(model));
     }
@@ -1057,11 +1055,27 @@ fn render_flight_plan(
             )
         })
         .collect();
+    console.bottom = vec![
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("◈", pal.vio()),
+            Span::raw(" "),
+            Span::styled("agents in flight", pal.dim()),
+            Span::raw(" "),
+            Span::styled(agents.to_string(), pal.ink()),
+            Span::raw("    "),
+            Span::styled("⌁", pal.acc()),
+            Span::raw(" "),
+            Span::styled("satellites", pal.dim()),
+            Span::raw(" "),
+            Span::styled(sats.to_string(), pal.ink()),
+        ]),
+    ];
     console.hint = hints(&[
         ("↑↓", "move"),
         ("enter", "jump to its steps"),
         ("x", "drop"),
-        ("esc", "back"),
+        ("esc", "close"),
     ]);
     console.render(width)
 }

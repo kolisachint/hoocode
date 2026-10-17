@@ -1851,6 +1851,7 @@ fn resource_listing(
     let mut listing = ResourceListing {
         cwd: cwd.clone(),
         quiet_startup,
+        ship: session.model().map(|model| model.id),
         ..Default::default()
     };
     if let Some(resources) = last_resources() {

@@ -1688,12 +1688,12 @@ impl Editor {
                 };
                 (
                     format!("CONSOLE · commands  {count}"),
-                    "↑↓ pick · tab complete · enter run".to_string(),
+                    "↑↓ pick · tab complete · enter run · esc clear".to_string(),
                 )
             }
             ConsoleKind::Files => (
                 format!("CARGO · @ files  {}", popup_matches(items.len())),
-                "↑↓ pick · tab load · / into folder".to_string(),
+                "↑↓ pick · tab load · esc close".to_string(),
             ),
         };
         let slash =
