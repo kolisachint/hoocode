@@ -10,9 +10,10 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::Instant;
 
 use hoocode_ai_types::Content;
-use hoocode_code_tui_theme::theme;
+use hoocode_code_tui_theme::{get_language_from_path, theme};
 use hoocode_tui_components::{
     BoxComponent, ColorFn, Image, ImageOptions, ImageTheme, Spacer, Text,
 };
@@ -28,6 +29,59 @@ use crate::tool_signal::{
     ToolSignalInput,
 };
 use crate::tools::builtin_tool_definition;
+
+/// The exit code of a failed Shell result: our tool reports it as
+/// `Command exited with code N` on the last line. Timeouts and aborts name
+/// no code.
+fn shell_exit_code(error_text: &str) -> Option<i32> {
+    error_text
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|l| !l.is_empty())?
+        .strip_prefix("Command exited with code ")?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// Output lines of a Shell result, ignoring the `(no output)` placeholder.
+fn shell_output_lines(output: &str) -> usize {
+    let trimmed = output.trim();
+    if trimmed.is_empty() || trimmed == "(no output)" {
+        0
+    } else {
+        trimmed.lines().count()
+    }
+}
+
+/// Distinct files in CodeSearch output: its `path:start-end [sources]`
+/// headers. Snippet lines are indented; notices start with `[`.
+fn search_file_count(output: &str) -> usize {
+    let mut files = std::collections::HashSet::new();
+    for line in output.lines() {
+        if line.starts_with([' ', '\t']) || line.is_empty() {
+            continue;
+        }
+        let Some((path, rest)) = line.split_once(':') else {
+            continue;
+        };
+        if path.is_empty() || path.starts_with('[') {
+            continue;
+        }
+        let Some((range, sources)) = rest.split_once(' ') else {
+            continue;
+        };
+        let Some((a, b)) = range.split_once('-') else {
+            continue;
+        };
+        if a.parse::<u64>().is_ok() && b.parse::<u64>().is_ok() && sources.starts_with('[') {
+            files.insert(path);
+        }
+    }
+    files.len()
+}
 
 /// `ToolRenderContext`: what a renderer is told about the call.
 pub struct ToolRenderContext<'a> {
@@ -239,6 +293,10 @@ pub struct ToolExecutionComponent {
     frozen_truncated: Option<(usize, ToolOutputView, Vec<String>)>,
     /// The call's summary, taken when it freezes: its payloads are released then.
     frozen_entry: Option<ChainEntry>,
+    /// The step's clock (M4): block creation starts it, `update_result`
+    /// stops it. Rebuilt history settles at once, so its span reads ~0.
+    started: Instant,
+    settled_at: Option<Instant>,
 }
 
 impl ToolExecutionComponent {
@@ -282,6 +340,8 @@ impl ToolExecutionComponent {
             frozen_width: 0,
             frozen_truncated: None,
             frozen_entry: None,
+            started: Instant::now(),
+            settled_at: None,
         };
         if this.has_renderer_definition() {
             this.children.push(this.content_box.clone());
@@ -381,6 +441,9 @@ impl ToolExecutionComponent {
     pub fn update_result(&mut self, result: ToolResult, is_partial: bool) {
         self.result = Some(Rc::new(ResultHolder::new(result)));
         self.is_partial = is_partial;
+        if !is_partial && self.settled_at.is_none() {
+            self.settled_at = Some(Instant::now());
+        }
         self.update_display();
     }
 
@@ -437,6 +500,180 @@ impl ToolExecutionComponent {
         hoocode_code_task_store::task_store()
             .find_keyed(&hoocode_code_tool_bash::jobs::row_key(&job_id))
             .is_some_and(|task| task.status == hoocode_code_task_store::TaskStatus::InProgress)
+    }
+
+    /// Whether the settled result is an error (M4: the step shows the HIT
+    /// chip in place of its success stats).
+    pub fn is_error(&self) -> bool {
+        self.result.as_ref().is_some_and(|r| r.is_error)
+    }
+
+    /// Whether this block is an Agent call (M4: its body keeps the violet
+    /// agent rail).
+    pub fn is_agent(&self) -> bool {
+        self.tool_name == "Agent"
+    }
+
+    /// The background job id, while its job is still live (M4: the step
+    /// shows the satellite row `⌁ sat job-1 · in orbit`).
+    pub fn background_job_id(&self) -> Option<String> {
+        if !self.is_live_background_job() {
+            return None;
+        }
+        self.result
+            .as_ref()?
+            .details
+            .get("jobId")?
+            .as_str()
+            .map(str::to_string)
+    }
+
+    /// Added and removed lines of a settled Edit diff, for the `+a −b`
+    /// counts on the step header (M4). `None` for other tools, errors, or a
+    /// result with no diff.
+    pub fn edit_diff_stats(&self) -> Option<(usize, usize)> {
+        if self.tool_name != "Edit" || self.is_error() {
+            return None;
+        }
+        let diff = self.result.as_ref()?.details.get("diff")?.as_str()?;
+        Some(crate::trajectory::diff_stats(diff))
+    }
+
+    /// The step header's right side (M4): the stats, right-aligned by the
+    /// chain. A failed step shows only the `HIT` chip (plus the exit code
+    /// and duration when known): it replaces the success stats, never
+    /// appends to them. Empty when the step carries no stats.
+    pub fn peek_right(&self) -> String {
+        let t = theme();
+        let dim = |s: &str| t.fg("muted", s);
+        if self.is_error() {
+            let mut stats = crate::trajectory::hit_chip();
+            if self.tool_name == "Shell" {
+                if let Some(code) = shell_exit_code(&self.text_output()) {
+                    stats.push_str(&format!(" {}", dim(&format!("exit {code}"))));
+                }
+            }
+            if let Some(dur) = self.result_duration() {
+                stats.push_str(&format!(" {} {}", dim("·"), dim(&dur)));
+            }
+            return stats;
+        }
+        if let Some(job) = self.background_job_id() {
+            return crate::trajectory::satellite_text(&job);
+        }
+        match self.tool_name.as_str() {
+            "Shell" => {
+                let Some(_) = self.result.as_ref() else {
+                    return String::new();
+                };
+                let mut parts = vec![dim("exit 0")];
+                let lines = shell_output_lines(&self.text_output());
+                if lines > 0 {
+                    parts.push(dim(&crate::trajectory::lines_text(lines)));
+                }
+                if let Some(dur) = self.result_duration() {
+                    parts.push(dim(&dur));
+                }
+                parts.join(&dim(" · "))
+            }
+            "Read" => {
+                let Some(_) = self.result.as_ref() else {
+                    return String::new();
+                };
+                let total = self
+                    .result
+                    .as_ref()
+                    .and_then(|r| r.details.get("truncation"))
+                    .and_then(|tr| tr.get("totalLines"))
+                    .and_then(Value::as_u64)
+                    .map(|n| n as usize)
+                    .unwrap_or_else(|| self.text_output().lines().count());
+                let ranged = self.args.get("offset").is_some() || self.args.get("limit").is_some();
+                if !ranged {
+                    return dim(&crate::trajectory::lines_text(total));
+                }
+                let start = self
+                    .args
+                    .get("offset")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1)
+                    .max(1) as usize;
+                let shown = total.min(crate::trajectory::TRAJECTORY_BODY_LINES);
+                dim(&format!(
+                    "lines {start}–{} of {total}",
+                    start + shown.saturating_sub(1)
+                ))
+            }
+            "CodeSearch" => {
+                let Some(result) = self.result.as_ref() else {
+                    return String::new();
+                };
+                let hits = result
+                    .details
+                    .get("resultCount")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0) as usize;
+                let mut stats = if hits == 1 {
+                    "1 hit".to_string()
+                } else {
+                    format!("{hits} hits")
+                };
+                let files = search_file_count(&self.text_output());
+                if files > 0 {
+                    stats.push_str(&format!(" · {}", crate::trajectory::files_text(files)));
+                }
+                dim(&stats)
+            }
+            "Edit" => self
+                .edit_diff_stats()
+                .map(|(added, removed)| crate::trajectory::diff_counts_text(added, removed))
+                .unwrap_or_default(),
+            "Write" => {
+                let Some(_) = self.result.as_ref() else {
+                    return String::new();
+                };
+                let mut stats = crate::trajectory::new_chip();
+                let lines = self
+                    .args
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .map_or(0, |c| c.lines().count());
+                stats.push_str(&format!("  +{lines}"));
+                let path = self
+                    .args
+                    .get("file_path")
+                    .or_else(|| self.args.get("path"))
+                    .and_then(Value::as_str);
+                if let Some(lang) = path.and_then(get_language_from_path) {
+                    stats.push_str(&format!(" {} {}", dim("·"), dim(lang)));
+                }
+                stats
+            }
+            "Agent" => self
+                .block_elapsed_secs()
+                .filter(|s| *s >= 1)
+                .map(|s| dim(&crate::trajectory::short_dur(s)))
+                .unwrap_or_default(),
+            _ => String::new(),
+        }
+    }
+
+    /// The settled result's `durationMs`, as `0.4s`. `None` while running
+    /// or when the loop stored no duration.
+    fn result_duration(&self) -> Option<String> {
+        self.result
+            .as_ref()?
+            .details
+            .get("durationMs")?
+            .as_f64()
+            .map(crate::tools::bash::format_duration)
+    }
+
+    /// Seconds since the block opened (settled at `update_result`).
+    /// Rebuilt history settles at once, so its span reads ~0.
+    fn block_elapsed_secs(&self) -> Option<u64> {
+        let end = self.settled_at.unwrap_or_else(Instant::now);
+        end.duration_since(self.started).as_secs().into()
     }
 
     /// The failure text, for a collapsed chain to print under its line.

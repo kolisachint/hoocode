@@ -33,6 +33,7 @@ use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecu
 use hoocode_code_tui_widgets::tool_output_view::cycle_tool_output_view;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
+use hoocode_code_tui_widgets::trajectory::{self, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
 use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
@@ -77,6 +78,20 @@ pub(super) struct Transcript {
     pub(super) retry_streak: Option<super::retry::RetryStreak>,
     /// The tool blocks of the latest failed attempt, dropped with its row.
     pub(super) attempt_tools: Vec<hoocode_code_tui_widgets::tool_chain::ToolBlock>,
+    /// Mission Control (M4): one range per `▲ M{n}` header. Steps number
+    /// per mission and each mission gets its own landing line; ranges only
+    /// grow, and step numbers rebase from them after a retry takes blocks
+    /// out.
+    pub(super) missions: Vec<MissionRange>,
+}
+
+/// One M4 mission: its header number, the chain index it starts at, and
+/// whether its landing line is out yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct MissionRange {
+    pub(super) seq: usize,
+    pub(super) start: usize,
+    pub(super) landed: bool,
 }
 
 impl Transcript {
@@ -101,6 +116,7 @@ impl Transcript {
             attempt_error: None,
             retry_streak: None,
             attempt_tools: Vec::new(),
+            missions: Vec::new(),
         }
     }
 
@@ -146,6 +162,182 @@ pub(super) fn truncated_marker(content: &str) -> TruncationResult {
     TruncationResult {
         truncated: true,
         ..truncate_tail(content, TruncationOptions::default())
+    }
+}
+
+/// The user message under an M4 mission header: everything after the first
+/// line, which the header already carries. Empty for a one-line prompt.
+fn mission_body(text: &str) -> String {
+    match text.split_once('\n') {
+        Some((_, rest)) => rest.to_string(),
+        None => String::new(),
+    }
+}
+
+impl Transcript {
+    /// Steps and failed steps in `chains[start..end]`.
+    fn tally_range(&self, start: usize, end: usize) -> (usize, usize) {
+        let mut steps = 0;
+        let mut hits = 0;
+        for chain in self
+            .chains
+            .iter()
+            .skip(start)
+            .take(end.saturating_sub(start))
+        {
+            for block in chain.borrow().tool_blocks() {
+                steps += 1;
+                if block.borrow().is_error() {
+                    hits += 1;
+                }
+            }
+        }
+        (steps, hits)
+    }
+
+    /// Steps and failed steps in the current (last) mission. Before the
+    /// first header, every chain counts.
+    pub(super) fn mission_tally(&self) -> (usize, usize) {
+        let start = self.missions.last().map_or(0, |m| m.start);
+        self.tally_range(start, self.chains.len())
+    }
+
+    /// Steps and failed steps of one mission by header number.
+    fn mission_tally_seq(&self, seq: usize) -> (usize, usize) {
+        let Some(i) = self.missions.iter().position(|m| m.seq == seq) else {
+            return (0, 0);
+        };
+        let end = self
+            .missions
+            .get(i + 1)
+            .map(|m| m.start)
+            .unwrap_or(self.chains.len());
+        self.tally_range(self.missions[i].start, end)
+    }
+
+    /// The current mission when it still needs its landing line: it has
+    /// steps and none is out yet. A new header lands it first, so a queued
+    /// follow-up never swallows the running mission.
+    pub(super) fn unlanded_current(&self) -> Option<usize> {
+        let mission = self.missions.last()?;
+        (!mission.landed && self.mission_tally().0 > 0).then_some(mission.seq)
+    }
+
+    /// Opens a mission: the `▲ M{n}` header over the chat.
+    pub(super) fn begin_mission(&mut self, prompt: &str, skill: Option<&str>) {
+        let seq = self.missions.len() + 1;
+        self.missions.push(MissionRange {
+            seq,
+            start: self.chains.len(),
+            landed: false,
+        });
+        if !self.chat.borrow().children.is_empty() {
+            self.chat
+                .borrow_mut()
+                .add_child(as_component(&handle(Spacer::new(1))));
+        }
+        self.chat
+            .borrow_mut()
+            .add_child(as_component(&handle(MissionHeader::new(
+                seq, prompt, skill,
+            ))));
+    }
+
+    /// Appends the mission's landing line and marks it landed. No row for
+    /// a stepless mission (returns false).
+    pub(super) fn land_mission(
+        &mut self,
+        seq: usize,
+        input: i64,
+        output: i64,
+        cost: f64,
+        secs: f64,
+    ) -> bool {
+        let Some(i) = self.missions.iter().position(|m| m.seq == seq) else {
+            return false;
+        };
+        if self.missions[i].landed {
+            return false;
+        }
+        let (steps, hits) = self.mission_tally_seq(seq);
+        if steps == 0 {
+            return false;
+        }
+        self.chat
+            .borrow_mut()
+            .add_child(as_component(&handle(Spacer::new(1))));
+        self.chat
+            .borrow_mut()
+            .add_child(as_component(&handle(Text::new(
+                trajectory::landing_line(
+                    steps,
+                    hits,
+                    &format_duration_secs(secs),
+                    &format!(
+                        "{} tokens",
+                        format_tokens((input.max(0) + output.max(0)) as u64)
+                    ),
+                    &format!(
+                        "${}",
+                        hoocode_code_agent_session::format::js_to_fixed(cost, 3)
+                    ),
+                ),
+                1,
+                0,
+            ))));
+        self.missions[i].landed = true;
+        true
+    }
+
+    /// Takes a chain out of the chat and the chain list, pulling later
+    /// mission starts down so a later mission keeps its first chain.
+    /// A mission starting exactly at the removed chain keeps its start:
+    /// the next chain slides into that index.
+    pub(super) fn remove_chain(&mut self, chain: &Rc<RefCell<ToolChainComponent>>) {
+        self.chat.borrow_mut().remove_child(&as_component(chain));
+        if let Some(index) = self.chains.iter().position(|c| Rc::ptr_eq(c, chain)) {
+            self.chains.remove(index);
+            for mission in &mut self.missions {
+                if mission.start > index {
+                    mission.start -= 1;
+                }
+            }
+        }
+        if self
+            .open_chain
+            .as_ref()
+            .is_some_and(|c| Rc::ptr_eq(c, chain))
+        {
+            self.open_chain = None;
+        }
+        if self
+            .latest_chain
+            .as_ref()
+            .is_some_and(|c| Rc::ptr_eq(c, chain))
+        {
+            self.latest_chain = None;
+        }
+    }
+
+    /// Renumbers every chain from the mission ranges: a retry that takes
+    /// blocks out leaves positional numbering behind otherwise.
+    pub(super) fn rebase_steps(&mut self) {
+        let mut current_start: Option<usize> = None;
+        let mut steps_before = 0;
+        for (i, chain) in self.chains.iter().enumerate() {
+            let start = self
+                .missions
+                .iter()
+                .rev()
+                .find(|m| m.start <= i)
+                .map(|m| m.start);
+            if start != current_start {
+                current_start = start;
+                steps_before = 0;
+            }
+            chain.borrow_mut().set_base_step(steps_before);
+            steps_before += chain.borrow().tool_blocks().len();
+        }
     }
 }
 
@@ -217,6 +409,45 @@ impl Mode {
         self.status.borrow_mut().clear();
     }
 
+    /// Steps and failed steps in the current mission, for the step numbers
+    /// and the landing line (M4). A user message opens a mission: everything
+    /// after it, up to the next one, belongs to it.
+    fn mission_tally(&self) -> (usize, usize) {
+        self.transcript.mission_tally()
+    }
+
+    /// The mission header opening a user turn: `▲ M{n}  prompt`, with the
+    /// skill chip when the turn runs a skill (M4). A queued follow-up opens
+    /// its own mission while the previous one still runs; see
+    /// `land_previous_mission`.
+    fn add_mission_header(&mut self, text: &str, skill: Option<&str>) {
+        if let Some(seq) = self.transcript.unlanded_current() {
+            self.land_previous_mission(seq);
+        }
+        self.transcript.begin_mission(text, skill);
+    }
+
+    /// A queued follow-up lands the running mission where its own header
+    /// lands: the open chain closes and the mission gets its own landing
+    /// line. Usage since the turn anchor is that mission's; the anchor
+    /// resets so the final landing at PromptDone shows only the remainder
+    /// (no double counting).
+    fn land_previous_mission(&mut self, seq: usize) {
+        self.close_open_chain(ChainState::Done);
+        let now = sum_assistant_usage(self.session.session_manager().entries());
+        let (input, output, cost, secs) = match self.turn_cost_anchor.take() {
+            Some((anchor, at)) => (
+                now.input as i64 - anchor.input as i64,
+                now.output as i64 - anchor.output as i64,
+                now.cost - anchor.cost,
+                at.elapsed().as_secs_f64(),
+            ),
+            None => (0, 0, 0.0, 0.0),
+        };
+        self.turn_cost_anchor = Some((now, Instant::now()));
+        self.transcript.land_mission(seq, input, output, cost, secs);
+    }
+
     /// `addMessageToChat` for the roles this transcript draws so far.
     pub(super) fn add_message_to_chat(&mut self, message: &AgentMessage, populate_history: bool) {
         match message {
@@ -233,19 +464,23 @@ impl Mode {
                 if text.is_empty() {
                     return;
                 }
-                if !self.transcript.chat.borrow().children.is_empty() {
-                    self.add_to_chat(as_component(&handle(Spacer::new(1))));
-                }
+                // Every user turn opens a mission (M4): the `▲ M{n}` header
+                // carries the first line, the rest stays in the message.
                 match parse_skill_block(&text) {
                     Some(skill) => {
+                        let prompt = skill.user_message.as_deref().unwrap_or(&text);
+                        self.add_mission_header(prompt, Some(&skill.name));
                         // The message the user typed comes first; the skill it
                         // invoked is drawn under it.
                         if let Some(message) = skill.user_message {
-                            let component = UserMessageComponent::with_theme(
-                                &message,
-                                (self.markdown_theme())(),
-                            );
-                            self.add_to_chat(as_component(&handle(component)));
+                            let body = mission_body(&message);
+                            if !body.is_empty() {
+                                let component = UserMessageComponent::with_theme(
+                                    &body,
+                                    (self.markdown_theme())(),
+                                );
+                                self.add_to_chat(as_component(&handle(component)));
+                            }
                         }
                         let component =
                             handle(SkillBlockComponent::new(&skill.name, &skill.content));
@@ -257,6 +492,7 @@ impl Mode {
                     }
                     None => match parse_background_notice(&text) {
                         Some(notice) => {
+                            self.add_mission_header(&text, None);
                             let component = handle(BackgroundNoticeComponent::new(notice));
                             component
                                 .borrow_mut()
@@ -265,9 +501,15 @@ impl Mode {
                             self.add_to_chat(as_component(&component));
                         }
                         None => {
-                            let component =
-                                UserMessageComponent::with_theme(&text, (self.markdown_theme())());
-                            self.add_to_chat(as_component(&handle(component)));
+                            self.add_mission_header(&text, None);
+                            let body = mission_body(&text);
+                            if !body.is_empty() {
+                                let component = UserMessageComponent::with_theme(
+                                    &body,
+                                    (self.markdown_theme())(),
+                                );
+                                self.add_to_chat(as_component(&handle(component)));
+                            }
                         }
                     },
                 }
@@ -282,6 +524,10 @@ impl Mode {
                     self.markdown_theme(),
                     DEFAULT_HIDDEN_THINKING_LABEL,
                 ));
+                // Mission Control peek: prose sits on the `┊` rail.
+                component
+                    .borrow_mut()
+                    .set_rail(self.tool_output_view == ToolOutputView::Peek);
                 self.transcript.assistant_components.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
@@ -594,6 +840,9 @@ impl Mode {
             Some(chain) if chain.borrow().is_open() => chain.clone(),
             _ => {
                 let chain = handle(ToolChainComponent::new(self.tool_output_view));
+                // Steps number per mission (M4): the chain starts after the
+                // steps the mission already holds.
+                chain.borrow_mut().set_base_step(self.mission_tally().0);
                 self.add_to_chat(as_component(&chain));
                 self.transcript.chains.push(chain.clone());
                 self.transcript.open_chain = Some(chain.clone());
@@ -660,9 +909,7 @@ impl Mode {
             return;
         };
         if chain.borrow().is_empty() {
-            let h = as_component(&chain);
-            self.transcript.chat.borrow_mut().remove_child(&h);
-            self.transcript.chains.retain(|c| !Rc::ptr_eq(c, &chain));
+            self.transcript.remove_chain(&chain);
         } else {
             chain.borrow_mut().close(outcome);
         }
@@ -891,6 +1138,10 @@ impl Mode {
         // Peek opens each message's body; radar folds it to a row. The startup
         // header and resource listing stay compact (they open under `verbose`).
         let peek = view == ToolOutputView::Peek;
+        // Mission Control peek: prose sits on the `┊` rail; radar has none.
+        for component in &self.transcript.assistant_components {
+            component.borrow_mut().set_rail(peek);
+        }
         for component in &self.transcript.custom_messages {
             component.borrow_mut().set_expanded(peek);
         }
@@ -982,10 +1233,19 @@ impl Mode {
 
     /// The row itself: tokens in and out, the turn's time, and its cost.
     fn show_turn_cost_row(&mut self, input: i64, output: i64, cost: f64, secs: f64) {
+        // Mission Control (M4): tally first. A mission with steps always
+        // lands, even at zero usage (`0 tokens · $0.000`). A stepless turn
+        // keeps the old accounting row, silent when nothing was accounted.
+        if let Some(seq) = self.transcript.missions.last().map(|m| m.seq) {
+            if self.transcript.land_mission(seq, input, output, cost, secs) {
+                return;
+            }
+        }
         // Nothing was accounted: stay silent rather than print zeroes.
         if input <= 0 && output <= 0 {
             return;
         }
+        self.add_to_chat(as_component(&handle(Spacer::new(1))));
         let t = theme();
         let mut segs = vec![
             format!(
@@ -1007,7 +1267,6 @@ impl Mode {
             ));
         }
         let separator = t.fg("dim", " · ");
-        self.add_to_chat(as_component(&handle(Spacer::new(1))));
         self.add_to_chat(as_component(&handle(Text::new(
             segs.join(&separator),
             1,
@@ -1020,7 +1279,166 @@ impl Mode {
 mod tests {
     use super::*;
     use hoocode_ai_types::{Content, ToolResultMessage};
+    use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
+    use hoocode_code_tui_widgets::tool_signal::ToolResult;
+    use hoocode_tui_util::strip_vt_control_characters;
     use serde_json::{json, Value};
+
+    fn fresh_transcript() -> Transcript {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        Transcript::new(Rc::new(RefCell::new(Container::new())))
+    }
+
+    /// The chat as plain text, 100 columns.
+    fn chat_text(chat: &Rc<RefCell<Container>>) -> String {
+        let mut lines = Vec::new();
+        for child in chat.borrow().children.iter() {
+            lines.extend(child.borrow_mut().render(100));
+        }
+        strip_vt_control_characters(&lines.join("\n"))
+    }
+
+    fn shell_block(id: &str) -> ToolBlock {
+        let mut block = ToolExecutionComponent::new(
+            "Shell",
+            id,
+            json!({"command": "echo hi"}),
+            ToolExecutionOptions {
+                view: ToolOutputView::Peek,
+                ..Default::default()
+            },
+            None,
+            "/",
+        );
+        block.update_result(
+            ToolResult {
+                content: vec![Content::text("hi")],
+                details: json!({}),
+                is_error: false,
+            },
+            false,
+        );
+        Rc::new(RefCell::new(block))
+    }
+
+    fn chain_with(n: usize) -> Rc<RefCell<ToolChainComponent>> {
+        let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        for i in 0..n {
+            chain.borrow_mut().add(shell_block(&format!("call-{i}")));
+        }
+        chain
+    }
+
+    /// A queued follow-up lands the running mission where its own header
+    /// lands: two missions, two landing lines, each with its own steps and
+    /// its own usage (no double counting).
+    #[test]
+    fn a_queued_follow_up_lands_each_mission_with_its_own_steps() {
+        let mut t = fresh_transcript();
+        t.begin_mission("first prompt", None);
+        let first = chain_with(2);
+        t.chains.push(first.clone());
+        t.open_chain = Some(first);
+        // The follow-up's header finds M1 unlanded with steps: the mode
+        // closes the chain and lands it with the usage known so far.
+        assert_eq!(t.unlanded_current(), Some(1));
+        t.chains[0].borrow_mut().close(ChainState::Done);
+        t.open_chain = None;
+        assert!(t.land_mission(1, 100, 200, 0.002, 0.5));
+        // M2 opens with one step; PromptDone lands it with the remainder.
+        t.begin_mission("second prompt", None);
+        assert_eq!(t.unlanded_current(), None);
+        let second = chain_with(1);
+        second.borrow_mut().set_base_step(t.mission_tally().0);
+        t.chains.push(second.clone());
+        t.open_chain = Some(second);
+        assert!(t.land_mission(2, 50, 60, 0.001, 0.3));
+        let text = chat_text(&t.chat);
+        let landed: Vec<&str> = text.lines().filter(|l| l.contains("LANDED")).collect();
+        assert_eq!(landed.len(), 2, "{text}");
+        assert!(landed[0].contains("2 steps"), "{text}");
+        assert!(landed[1].contains("1 step"), "{text}");
+        assert!(
+            landed[0].contains(&format!("{} tokens", format_tokens(300))),
+            "{text}"
+        );
+        assert!(
+            landed[1].contains(&format!("{} tokens", format_tokens(110))),
+            "{text}"
+        );
+    }
+
+    /// A mission with steps always lands, even when nothing was used.
+    #[test]
+    fn a_mission_with_steps_lands_even_when_nothing_was_used() {
+        let mut t = fresh_transcript();
+        t.begin_mission("do it", None);
+        t.chains.push(chain_with(1));
+        assert!(t.land_mission(1, 0, 0, 0.0, 0.5));
+        let text = chat_text(&t.chat);
+        assert!(text.contains("LANDED"), "{text}");
+        assert!(text.contains("1 step"), "{text}");
+        assert!(text.contains("0 tokens"), "{text}");
+        assert!(text.contains("$0.000"), "{text}");
+    }
+
+    /// A stepless mission has no landing line.
+    #[test]
+    fn a_stepless_mission_has_no_landing_line() {
+        let mut t = fresh_transcript();
+        t.begin_mission("just talking", None);
+        assert!(!t.land_mission(1, 10, 20, 0.01, 0.5));
+        assert!(!chat_text(&t.chat).contains("LANDED"));
+    }
+
+    /// A removed chain pulls later mission starts down: M2 keeps its first
+    /// chain and still lands with its own step, numbered 01.
+    #[test]
+    fn removing_a_whole_chain_keeps_the_later_missions_start() {
+        let mut t = fresh_transcript();
+        t.begin_mission("first", None);
+        let failed = chain_with(1);
+        t.chains.push(failed.clone());
+        t.open_chain = Some(failed.clone());
+        t.begin_mission("second", None);
+        assert_eq!(t.missions[1].start, 1);
+        // The failed attempt's chain leaves after M2 began.
+        let block = failed.borrow().tool_blocks()[0].clone();
+        t.remove_tool_block(&block);
+        t.rebase_steps();
+        assert!(t.chains.iter().all(|c| !Rc::ptr_eq(c, &failed)));
+        assert_eq!(t.missions[1].start, 0);
+        // M2 still lands with its own step, numbered 01.
+        let m2 = chain_with(1);
+        m2.borrow_mut().set_base_step(t.mission_tally().0);
+        t.chains.push(m2.clone());
+        assert!(t.land_mission(2, 10, 20, 0.001, 0.2));
+        let text = chat_text(&t.chat);
+        let landed: Vec<&str> = text.lines().filter(|l| l.contains("LANDED")).collect();
+        assert_eq!(landed.len(), 1, "{text}");
+        assert!(landed[0].contains("1 step"), "{text}");
+        let rendered = strip_vt_control_characters(&m2.borrow_mut().render(100).join("\n"));
+        assert!(rendered.contains(" 01 "), "{rendered}");
+    }
+
+    /// Taking a block out renumbers the later steps (01, 02 — never 01, 03).
+    #[test]
+    fn removing_a_block_renumbers_the_later_steps() {
+        let mut t = fresh_transcript();
+        t.begin_mission("m", None);
+        let first = chain_with(2);
+        let second = chain_with(1);
+        second.borrow_mut().set_base_step(2);
+        t.chains.push(first.clone());
+        t.chains.push(second.clone());
+        let dropped = first.borrow().tool_blocks()[0].clone();
+        t.remove_tool_block(&dropped);
+        // The drop path renumbers once after the loop.
+        t.rebase_steps();
+        let rendered = strip_vt_control_characters(&second.borrow_mut().render(100).join("\n"));
+        assert!(rendered.contains(" 02 "), "{rendered}");
+        assert!(!rendered.contains(" 03 "), "{rendered}");
+    }
 
     fn result(details: Option<Value>, duration_ms: Option<u64>) -> ToolResultMessage {
         ToolResultMessage {

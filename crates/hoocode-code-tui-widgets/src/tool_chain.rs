@@ -10,7 +10,9 @@ use std::rc::Rc;
 use hoocode_ai_types::Content;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{truncate_to_width, visible_width};
+use hoocode_tui_util::{
+    strip_vt_control_characters as strip_line, truncate_to_width, visible_width,
+};
 
 use crate::assistant_message::AssistantMessageComponent;
 use crate::tool_chain_summary::{
@@ -18,6 +20,7 @@ use crate::tool_chain_summary::{
 };
 use crate::tool_execution::ToolExecutionComponent;
 use crate::tool_output_view::ToolOutputView;
+use crate::trajectory;
 
 pub type ToolBlock = Rc<RefCell<ToolExecutionComponent>>;
 
@@ -47,6 +50,10 @@ pub struct ToolChainComponent {
     state: ChainState,
     /// The newest run in the transcript; radar marks it.
     latest: bool,
+    /// The mission step number this chain starts at (M4: steps are numbered
+    /// per mission, so a chain opened after prose keeps counting). The
+    /// transcript sets it when the chain opens.
+    base_step: usize,
 }
 
 impl ToolChainComponent {
@@ -57,7 +64,12 @@ impl ToolChainComponent {
             view,
             state: ChainState::Running,
             latest: false,
+            base_step: 0,
         }
+    }
+
+    pub fn set_base_step(&mut self, base: usize) {
+        self.base_step = base;
     }
 
     pub fn add(&mut self, block: ToolBlock) {
@@ -152,16 +164,60 @@ impl ToolChainComponent {
             .is_some_and(|b| !b.borrow().draws_leading_gap())
     }
 
+    /// The peek trajectory: each block a numbered step on the `┊` rail
+    /// (an Agent block keeps the violet `┃` rail), up to
+    /// [`trajectory::TRAJECTORY_BODY_LINES`] body lines, then a `+N more`
+    /// fold. A failed step shows the `HIT` chip in place of its success
+    /// stats; an Edit step shows its `+a −b` counts and a Write step the
+    /// `NEW` chip; a live background job shows its satellite row.
+    fn peek_rows(&mut self, width: u16) -> Vec<String> {
+        let width = width as usize;
+        let mut out = Vec::new();
+        for (i, block) in self.blocks.iter().enumerate() {
+            for lead in self.lead_ins.iter().filter(|l| l.before == i) {
+                out.extend(lead.component.borrow_mut().render(width as u16));
+            }
+            let step = self.base_step + i + 1;
+            let agent = block.borrow().is_agent();
+            let lines = block.borrow_mut().render(width as u16);
+            // The header is the block's first non-blank line: blocks draw
+            // their own leading gap, which stays untouched.
+            let first = lines.iter().position(|l| !strip_line(l).trim().is_empty());
+            let Some(first) = first else {
+                out.extend(lines);
+                continue;
+            };
+            out.extend(lines[..first].iter().cloned());
+            let rest = &lines[first + 1..];
+            let (prefix, content) = trajectory::split_padding(&lines[first]);
+            // A failed step carries `⊗` in place of its dot, and the `HIT`
+            // chip replaces its success stats (never appends to them).
+            let content = if block.borrow().is_error() {
+                trajectory::failure_dot(&content)
+            } else {
+                content
+            };
+            out.push(trajectory::step_header(
+                &trajectory::step_number(step),
+                &prefix,
+                &content,
+                &block.borrow().peek_right(),
+                width,
+            ));
+            let shown = rest.len().min(trajectory::TRAJECTORY_BODY_LINES);
+            for line in &rest[..shown] {
+                out.push(trajectory::rail_line(line, width, agent));
+            }
+            if rest.len() > shown {
+                out.push(trajectory::fold_line(rest.len() - shown, width, agent));
+            }
+        }
+        out
+    }
+
     fn rows(&mut self, width: u16) -> Vec<String> {
         if !self.is_collapsed() {
-            let mut out = Vec::new();
-            for (i, block) in self.blocks.iter().enumerate() {
-                for lead in self.lead_ins.iter().filter(|l| l.before == i) {
-                    out.extend(lead.component.borrow_mut().render(width));
-                }
-                out.extend(block.borrow_mut().render(width));
-            }
-            return out;
+            return self.peek_rows(width);
         }
         let width = width as usize;
         let entries: Vec<_> = self
