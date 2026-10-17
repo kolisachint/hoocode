@@ -46,7 +46,7 @@ first.** Don't pick one yourself.
 | Plan | Card | Phases | First step |
 |---|---|---|---|
 | Core | this page, "The core plan" | milestones 0a–8 | per the status line below |
-| TUI | [tui-activity.md](tui-activity.md) | T0 goldens · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell. All work by Haiku subagents | T0 done 2026-10-09; T3, T4 and T5 done 2026-10-15 (T5.3 closed T1.3 too) |
+| TUI | [tui-activity.md](tui-activity.md) | T0 goldens · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell · U surfaces ([tui-surfaces.md](tui-surfaces.md), agreed 2026-10-17). All work by Haiku subagents | T0 done 2026-10-09; T3, T4 and T5 done 2026-10-15 (T5.3 closed T1.3 too) |
 
 ## Next session (from 2026-10-15, third session)
 

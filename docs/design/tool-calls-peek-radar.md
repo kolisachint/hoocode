@@ -2,6 +2,7 @@
 
 Date: 2026-10-10
 Status: **design agreed, implementation in progress.**
+Partly superseded 2026-10-17 by [tui-surfaces.md](tui-surfaces.md): the radar row (one row per chain, verb phrases) and the `◍ ◌` dial glyphs. Radar is peek's headers, with a run of calls folded into one row of counts; the dial says `peek` or `radar`.
 Scope: transcript tool blocks. Ctrl+O toggles radar / peek (setting `toolOutputView`).
 
 ## Current state (facts, with file refs)

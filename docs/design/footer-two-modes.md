@@ -2,6 +2,7 @@
 
 Date: 2026-10-10
 Status: **design agreed, implementation in progress.**
+Partly superseded 2026-10-17 by [tui-surfaces.md](tui-surfaces.md): the dial glyphs `◍ ◌` (the dial says `peek` or `radar`), and the running count `◇N`, now `◈ N`.
 
 The footer goes from three densities (full, compact, bare) to two: **detailed** and **short**.
 Both are readable at a glance, and the left edge always holds the most useful visuals.
