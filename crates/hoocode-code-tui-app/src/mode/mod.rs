@@ -493,6 +493,11 @@ struct Mode {
     tree_navigation_seq: u64,
     editor_dialog: Option<OpenEditorDialog>,
     pending_messages: Rc<RefCell<Container>>,
+    /// The queued steering and follow-up messages, as `(steering, follow-up)`.
+    /// Written by `update_pending_messages_display`, read by the comms frame,
+    /// which draws them inside itself (spec §4 c4). Shared so the frame's
+    /// closure can read it without borrowing the mode.
+    queue_snapshot: Rc<RefCell<(Vec<String>, Vec<String>)>>,
     is_bash_mode: bool,
     bash_component: Option<Rc<RefCell<BashExecutionComponent>>>,
     pending_bash_components: Vec<Rc<RefCell<BashExecutionComponent>>>,
@@ -686,6 +691,10 @@ impl Mode {
         let comms_session = session.clone();
         let comms_turn = turn_timer.clone();
         let comms_editor = editor.clone();
+        // The queue snapshot the comms frame reads: `update_pending_messages_display`
+        // writes it, the frame draws it inside itself (spec §4 c4).
+        let queue_snapshot: Rc<RefCell<(Vec<String>, Vec<String>)>> = Rc::default();
+        let queue_snapshot_state = queue_snapshot.clone();
         // COMMS LOST (M8e1): set when the last retry gives up, cleared by
         // the next hail or mission. Shared with the event handler because
         // the frame's state closure cannot borrow the mode.
@@ -695,8 +704,13 @@ impl Mode {
             as_component(&editor),
             move || {
                 if comms_session.is_streaming() || comms_session.is_retrying() {
+                    // The running step's number: the calls already settled in
+                    // this session, plus the one in flight (steps number
+                    // session-wide, so M2 keeps counting past M1).
+                    let step = comms_session.get_session_stats().tool_calls + 1;
                     CommsState::InFlight {
                         elapsed: comms_turn.borrow().elapsed(Instant::now()),
+                        step: Some(step),
                     }
                 } else if comms_lost_state.get() {
                     CommsState::CommsLost
@@ -704,6 +718,7 @@ impl Mode {
                     CommsState::Ready
                 }
             },
+            move || queue_snapshot_state.borrow().clone(),
             move |style: InputStyle| {
                 let mut editor = comms_editor.borrow_mut();
                 editor.editor.placeholder = style.placeholder;
@@ -1021,6 +1036,7 @@ impl Mode {
             tree_navigation_seq: 0,
             editor_dialog: None,
             pending_messages,
+            queue_snapshot,
             is_bash_mode: false,
             bash_component: None,
             pending_bash_components: Vec::new(),

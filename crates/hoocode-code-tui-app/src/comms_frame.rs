@@ -16,6 +16,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use hoocode_code_agent_session::format::format_tokens;
+use hoocode_code_tui_keybindings::key_display_text;
 use hoocode_tui_ratatui::core::buffer::Buffer;
 use hoocode_tui_ratatui::core::layout::Rect;
 use hoocode_tui_ratatui::core::style::Style;
@@ -27,8 +28,9 @@ use crate::footer::{FooterSource, ToolOutputView};
 use crate::footer_data::FooterDataProvider;
 use crate::hull_paint::HullPaint;
 
-/// The READY placeholder: what the empty prompt invites.
-pub const READY_PLACEHOLDER: &str = "name your mission · / commands · @ files · ! shell";
+/// The READY placeholder: what the empty prompt invites. Short on purpose:
+/// the `/`, `@` and `!` keys get their own suggestion row.
+pub const READY_PLACEHOLDER: &str = "name your mission";
 /// The IN FLIGHT placeholder: typed text queues behind the running mission.
 pub const IN_FLIGHT_PLACEHOLDER: &str = "type to queue the next mission";
 /// The COMMS LOST placeholder: enter hails again.
@@ -44,6 +46,9 @@ pub enum CommsState {
     /// `None` when no prompt is open, and the title then omits the time.
     InFlight {
         elapsed: Option<Duration>,
+        /// The running step's number (1-based, session-wide): the title's
+        /// `step N`. `None` omits it, when the host does not know it.
+        step: Option<usize>,
     },
     CommsLost,
     Landed {
@@ -127,13 +132,17 @@ impl CommsState {
         let ink = palette.ink();
         match self {
             CommsState::Ready => vec![Seg::new(paint.unwrap_or(dim), "READY")],
-            CommsState::InFlight { elapsed } => {
+            CommsState::InFlight { elapsed, step } => {
                 let state = paint.unwrap_or_else(|| palette.acc());
                 let mut segs = vec![
                     Seg::new(state, "◐"),
                     Seg::new(bold(state), "IN FLIGHT"),
                     Seg::new(faint, "·"),
                 ];
+                if let Some(step) = step {
+                    segs.push(Seg::new(dim, &format!("step {step}")));
+                    segs.push(Seg::new(faint, "·"));
+                }
                 if let Some(elapsed) = elapsed {
                     segs.push(Seg::new(dim, &format!("{}s", elapsed.as_secs())));
                     segs.push(Seg::new(faint, "·"));
@@ -342,6 +351,7 @@ impl ChromeData {
         plan_mode: bool,
         input_total: u64,
         output_total: u64,
+        has_queue: bool,
         width: usize,
     ) -> Self {
         // The hull paint (`/color`, M8e5) is the frame's right label, and
@@ -366,6 +376,16 @@ impl ChromeData {
         if plan_mode {
             foot.push(Seg::new(palette.faint(), "·"));
             foot.push(Seg::new(palette.vio(), "PLAN · nothing gets changed"));
+        }
+        // A queued note says how to take it back (spec §4 c4). The key is
+        // the dequeue binding's own label, so a rebound key still reads true.
+        if has_queue {
+            foot.push(Seg::new(palette.faint(), "·"));
+            foot.push(Seg::new(
+                palette.dim(),
+                &key_display_text("app.message.dequeue"),
+            ));
+            foot.push(Seg::new(palette.dim(), "edit queue"));
         }
         let footr = Seg::new(
             palette.dim(),
@@ -403,6 +423,9 @@ type ChromeDraw = Box<dyn FnMut(Rect, &mut Buffer)>;
 pub struct CommsFrame {
     editor: ComponentHandle,
     read_state: Rc<dyn Fn() -> CommsState>,
+    /// The messages queued while the agent works, as `(steering, follow-up)`.
+    /// They draw inside the frame (spec §4 c4), above the input row.
+    read_queue: Rc<dyn Fn() -> (Vec<String>, Vec<String>)>,
     set_input: Rc<dyn Fn(InputStyle)>,
     source: Box<dyn FooterSource>,
     data: FooterDataProvider,
@@ -413,12 +436,14 @@ pub struct CommsFrame {
 
 impl CommsFrame {
     /// The frame around `editor`. `read_state` maps the session to a state;
-    /// `set_input` styles the editor's input row for it (the placeholder and
-    /// the glyph colour). `source` feeds the foot's token totals; `data`
-    /// tells the foot the view's plan note.
+    /// `read_queue` reads the queued steering and follow-up messages, drawn
+    /// inside the frame above the input row; `set_input` styles the editor's
+    /// input row for it (the placeholder and the glyph colour). `source`
+    /// feeds the foot's token totals; `data` tells the foot the view's plan note.
     pub fn new(
         editor: ComponentHandle,
         read_state: impl Fn() -> CommsState + 'static,
+        read_queue: impl Fn() -> (Vec<String>, Vec<String>) + 'static,
         set_input: impl Fn(InputStyle) + 'static,
         source: Box<dyn FooterSource>,
         data: FooterDataProvider,
@@ -436,6 +461,7 @@ impl CommsFrame {
         Self {
             editor,
             read_state: Rc::new(read_state),
+            read_queue: Rc::new(read_queue),
             set_input: Rc::new(set_input),
             source,
             data,
@@ -463,6 +489,7 @@ impl Component for CommsFrame {
         let plan_mode = self.data.get_active_mode() == "plan";
         let hull = self.data.get_hull_paint();
         let frame = state.frame_style(&palette, hull.map(|hull| palette.style(hull.token())));
+        let (steering, follow_up) = (self.read_queue)();
         *self.chrome_data.borrow_mut() = ChromeData::build(
             &state,
             &palette,
@@ -471,6 +498,7 @@ impl Component for CommsFrame {
             plan_mode,
             input_total,
             output_total,
+            !(steering.is_empty() && follow_up.is_empty()),
             width as usize,
         );
         let chrome = self.chrome.render(width);
@@ -482,6 +510,9 @@ impl Component for CommsFrame {
         let edge = paint(frame, "┃");
         let mut out = Vec::with_capacity(editor_lines.len() + 2);
         out.push(chrome.first().cloned().unwrap_or_default());
+        for row in queue_rows(&steering, &follow_up, inner, &palette) {
+            out.push(format!("{edge}{}{edge}", fit_line(&row, inner)));
+        }
         for line in editor_lines {
             out.push(format!("{edge}{}{edge}", fit_line(&line, inner)));
         }
@@ -505,6 +536,46 @@ impl Component for CommsFrame {
     fn set_focused(&mut self, focused: bool) {
         self.editor.borrow_mut().set_focused(focused);
     }
+}
+
+/// The queued messages as frame rows: `● text queued · sends after this
+/// step` for steering notes, `○ text queued · sends after landing` for
+/// follow-ups (spec §4 c4). Each row is cut to `inner` cells; the frame's
+/// `fit_line` pads it (never cuts: a cut could drop the editor's cursor).
+fn queue_rows(
+    steering: &[String],
+    follow_up: &[String],
+    inner: usize,
+    palette: &Palette,
+) -> Vec<String> {
+    let mut rows = Vec::new();
+    for (texts, bullet, bullet_style, disposition) in [
+        (
+            steering,
+            "●",
+            palette.acc(),
+            "queued · sends after this step",
+        ),
+        (
+            follow_up,
+            "○",
+            palette.dim(),
+            "queued · sends after landing",
+        ),
+    ] {
+        for text in texts {
+            let tail = format!(" {disposition}");
+            let room = inner.saturating_sub(2 + visible_width(&tail));
+            let text = truncate_to_width(text, room, "…", false);
+            rows.push(format!(
+                "{} {}{}",
+                paint(bullet_style, bullet),
+                text,
+                paint(palette.dim(), &tail)
+            ));
+        }
+    }
+    rows
 }
 
 /// The editor's line at exactly `width` cells. The bare editor pads its

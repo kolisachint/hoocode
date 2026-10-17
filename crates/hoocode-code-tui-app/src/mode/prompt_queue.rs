@@ -1,10 +1,6 @@
 //! Prompts queued while the agent streams or compacts, and follow-up / dequeue keys.
 
 use hoocode_code_agent_session::{AgentSession, PromptOptions, StreamingBehavior};
-use hoocode_code_tui_keybindings::key_display_text;
-use hoocode_code_tui_theme::theme;
-use hoocode_tui_components::Spacer;
-use hoocode_tui_components::TruncatedText;
 
 use super::*;
 
@@ -49,7 +45,9 @@ impl Mode {
     }
 
     /// `updatePendingMessagesDisplay`: the queued steering and follow-up
-    /// messages above the prompt, with the dequeue hint.
+    /// messages, oldest first. They draw inside the comms frame (spec §4 c4),
+    /// which reads them from the snapshot; the pending container keeps only
+    /// parked `!` rows. The dequeue hint lives in the frame's foot.
     pub(super) fn update_pending_messages_display(&mut self) {
         let mut steering = self.session.get_steering_messages();
         let mut follow_up = self.session.get_follow_up_messages();
@@ -59,29 +57,7 @@ impl Mode {
                 StreamingBehavior::FollowUp => follow_up.push(text.clone()),
             }
         }
-        let mut pending = self.pending_messages.borrow_mut();
-        pending.clear();
-        if steering.is_empty() && follow_up.is_empty() {
-            self.dirty.set(true);
-            return;
-        }
-        let t = theme();
-        pending.add_child(as_component(&handle(Spacer::new(1))));
-        let rows = steering
-            .iter()
-            .map(|m| format!("Steering: {m}"))
-            .chain(follow_up.iter().map(|m| format!("Follow-up: {m}")))
-            .chain(std::iter::once(format!(
-                "↳ {} to edit all queued messages",
-                key_display_text("app.message.dequeue")
-            )));
-        for row in rows {
-            pending.add_child(as_component(&handle(TruncatedText::new(
-                t.fg("dim", &row),
-                1,
-                0,
-            ))));
-        }
+        *self.queue_snapshot.borrow_mut() = (steering, follow_up);
         self.dirty.set(true);
     }
 

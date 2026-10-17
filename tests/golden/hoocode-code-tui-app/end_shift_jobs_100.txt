@@ -1,5 +1,5 @@
-┏━ ◉ END SHIFT WITH 2 SATELLITES UP? ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ esc stay ━┓
-┃  ◐ job-1  sleep 60   in orbit                                                                    ┃
+┏━ ◎ END SHIFT WITH 2 SATELLITES UP? ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ esc stay ━┓
+┃  ◐ job-1  sleep 60   in orbit 4s of ~60s                                                         ┃
 ┃  ◐ job-2  sleep 120   in orbit                                                                   ┃
 ┃                                                                                                  ┃
 ┃k bring it down, then end shift · l leave it in orbit                                             ┃
@@ -12,7 +12,7 @@ r0 c89-96 fg=#ffff00
 r0 c98-99 fg=#ffff00
 r1 c0 fg=#ffff00
 r1 c3 fg=#5cc8bb
-r1 c23-30 fg=#989898
+r1 c23-41 fg=#989898
 r1 c99 fg=#ffff00
 r2 c0 fg=#ffff00
 r2 c3 fg=#5cc8bb

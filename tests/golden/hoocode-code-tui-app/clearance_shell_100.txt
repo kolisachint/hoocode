@@ -1,7 +1,7 @@
-┏━ ◉ CLEARANCE NEEDED ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ BUILD asks for Shell ━┓
+┏━ ◎ CLEARANCE NEEDED ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ BUILD asks for Shell ━┓
 ┃$ printf 'alpha\nbeta\ngamma\n' | sort -r                                                         ┃
 ┃REACH   □ read   □ write   □ network   ■ pipe 2 programs                                          ┃
-┃y go once · a always printf in this session · n abort + say why · e edit first                    ┃
+┃y go, once · a always printf in this session · n abort + say why · e edit first                   ┃
 ┗━ or type a reply ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#ffff00
@@ -21,13 +21,13 @@ r2 c46-56 fg=#989898
 r2 c99 fg=#ffff00
 r3 c0 fg=#ffff00
 r3 c1 fg=#989898
-r3 c2-12 fg=#a8a8a8
-r3 c13 fg=#989898
-r3 c14-46 fg=#a8a8a8
-r3 c47 fg=#989898
-r3 c48-66 fg=#a8a8a8
-r3 c67 fg=#989898
-r3 c68-78 fg=#a8a8a8
+r3 c2-13 fg=#a8a8a8
+r3 c14 fg=#989898
+r3 c15-47 fg=#a8a8a8
+r3 c48 fg=#989898
+r3 c49-67 fg=#a8a8a8
+r3 c68 fg=#989898
+r3 c69-79 fg=#a8a8a8
 r3 c99 fg=#ffff00
 r4 c0-1 fg=#ffff00
 r4 c3-17 fg=#989898
