@@ -53,7 +53,6 @@
     },
     {
       "snapshot": "screen",
-      "history": true,
       "contains": [
         "The subagent says 6 times 7 is 42."
       ]

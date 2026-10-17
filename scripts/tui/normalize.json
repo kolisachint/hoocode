@@ -7,6 +7,8 @@
     {"pattern": "{TMP}", "replace": "<TMP>"},
     {"pattern": "[/A-Za-z0-9_.-]*/goldens-[A-Za-z0-9_]+/work", "replace": "<WORK>", "why": "The footer shortens a long cwd from the left (…/var/folders/…), so the exact {WORK} rule misses it on macOS."},
     {"pattern": "[/A-Za-z0-9_.-]*/goldens-[A-Za-z0-9_]+/home", "replace": "<HOME>"},
+    {"pattern": "…<WORK>", "replace": "<WORK>", "why": "The footer cuts a long cwd from the left, so its length (and whether the ellipsis shows) depends on the temp dir."},
+    {"pattern": "\\b(?:alt|Alt|option|Option)\\+", "replace": "<alt>+", "why": "hints.rs labels the alt key Option on macOS and alt elsewhere. Both read the same here."},
     {"pattern": "/tmp/parity-[A-Za-z0-9_]+", "replace": "<TMP>"},
     {"pattern": "\\bhoo│code_", "replace": "<WORDMARK>"},
     {"pattern": "\\bhoo│code *$", "replace": "<WORDMARK>", "why": "The header cursor blinks: a hidden phase shows a space at the end of the brand row. Same mask, both phases."},

@@ -1,6 +1,6 @@
 # UI map
 
-Where each part of the interactive screen lives. Snapshot of 2026-10-17 (full-screen, M1c). Crate names are `hoocode-*` since step 0c
+Where each part of the interactive screen lives. Snapshot of 2026-10-17 (full-screen, M1e). Crate names are `hoocode-*` since step 0c
 ([naming-and-paths.md](../../archive/docs/naming-and-paths.md)). Crates are
 described in [packages.md](packages.md). Names, not line numbers: line numbers drift.
 
@@ -31,7 +31,7 @@ HUD ─ row 1: ◭ HOOCODE  BUILD  folder │ SHIP model  FUEL ctx%  CR $cost   
 
 The inline tree (off) from top to bottom: the header, a flex spacer (`screen_fill`), the attach slot, the chat, then the rest as above. The full-screen tree (on): the HUD, a gap, the attach slot (top chrome), the body (header and chat), then the rest as above. Root children before the body are the top chrome, those after it the bottom (`Tui::set_fullscreen_body`).
 
-Exit leaves the alternate screen and prints nothing (`Tui::stop`).
+Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and SIGHUP restore the terminal first, then exit 128 plus the signal (`tui-terminal/src/interrupt.rs`, `install_terminate_restore`, M1e). A UI-thread panic restores it too (the panic hook).
 
 | Region | Component | File |
 |---|---|---|
@@ -256,7 +256,7 @@ A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs
 | Concern | Crate / file |
 |---|---|
 | Differential renderer, frames, pinned scroll view, scrollbar | `tui-render/src/tui.rs`, `component.rs`, `scrollbar.rs` |
-| Terminal: raw mode, stdin reader, resize (SIGWINCH), mouse | `tui-terminal/src/lib.rs`, `stdin_buffer.rs`, `mouse.rs` |
+| Terminal: raw mode, stdin reader, resize (SIGWINCH), mouse, SIGTERM and SIGHUP restore | `tui-terminal/src/lib.rs`, `stdin_buffer.rs`, `mouse.rs`, `interrupt.rs` |
 | Terminal output: every write, in order; one pending frame | `tui-terminal/src/output.rs` (`hoocode-term-out`) |
 | Key parsing (Kitty, modifyOtherKeys), matching | `tui-keys` |
 | App key map, `keybindings.json`, hint text | `code-tui-keybindings` |

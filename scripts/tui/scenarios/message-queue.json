@@ -199,7 +199,6 @@
     },
     {
       "snapshot": "delivered",
-      "history": true,
       "contains": [
         "Answer after steering.",
         "Answer to the follow-up."

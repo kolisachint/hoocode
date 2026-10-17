@@ -1,20 +1,20 @@
-«bg=#1c1c26» second question                                                                                   «»░
-«bg=#1c1c26»                                                                                                   «»░
-«»                                                                                                   ░
-«» Second answer.                                                                                    ░
-«»                                                                                                   ░
-«» «fg=#5cc8bb»- «»beta item 1                                                                                     ░
-«» «fg=#5cc8bb»- «»beta item 2                                                                                     ░
+«»◭ HOOCODE  BUILD  work                                            SHIP mock-model  FUEL 0%  CR $0.00
+
 «» «fg=#5cc8bb»- «»beta item 3                                                                                     ░
 «» «fg=#5cc8bb»- «»beta item 4                                                                                     ░
 «» «fg=#5cc8bb»- «»beta item 5                                                                                     ░
-«» «fg=#5cc8bb»- «»beta item 6                                                                                     ┃
-«» «fg=#5cc8bb»- «»beta item 7                                                                                     ┃
-«» «fg=#5cc8bb»- «»beta item 8                                                                                     ┃
-«» «fg=#5cc8bb»- «»beta item 9                                                                                     ┃
+«» «fg=#5cc8bb»- «»beta item 6                                                                                     ░
+«» «fg=#5cc8bb»- «»beta item 7                                                                                     ░
+«» «fg=#5cc8bb»- «»beta item 8                                                                                     ░
+«» «fg=#5cc8bb»- «»beta item 9                                                                                     ░
 «» «fg=#5cc8bb»- «»beta item 10                                                                                    ░
-«» «fg=#5cc8bb»- «»beta item 11                                                                                    ░
+«» «fg=#5cc8bb»- «»beta item 11                                                                                    ┃
 «» «fg=#5cc8bb»- «»beta item 12                                                                                    ░
 «» «fg=#5cc8bb»- «»beta item 13                                                                                    ░
 «» «fg=#5cc8bb»- «»beta item 14                                                                                    ░
-«inverse» 42–60 of 78  54%                       up/down line · PgUp/PgDn page · ctrl+home top · escape live
+«inverse» 49–60 of 73  67%                       up/down line · PgUp/PgDn page · ctrl+home top · escape live
+
+«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
+«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
+«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«bold;fg=#5cc8bb»BUILD«»  «fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«»  «fg=#a8a8a8»mock-model«»  «bold»work«»  «fg=#989898»◍ peek

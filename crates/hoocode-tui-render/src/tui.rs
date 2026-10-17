@@ -2086,13 +2086,13 @@ impl Tui {
             .iter()
             .map(|line| strip_cursor_marker(line))
             .collect();
-        let body_lines: Vec<String> = match &body {
+        // The cursor marker is stripped where a line is drawn (the window), or on
+        // every line while pinned, where the search reads the whole body. A live
+        // frame does not copy the whole transcript a second time.
+        let mut body_lines: Vec<String> = match &body {
             Some(body) => body
                 .borrow_mut()
-                .render(fullscreen::body_width(width) as u16)
-                .iter()
-                .map(|line| strip_cursor_marker(line))
-                .collect(),
+                .render(fullscreen::body_width(width) as u16),
             None => Vec::new(),
         };
         let total = body_lines.len();
@@ -2128,6 +2128,9 @@ impl Tui {
         self.fullscreen_seen_total = self.fullscreen_seen_total.min(total as i64);
         // The search runs over the body lines, as the pinned painter's does.
         let query = if pinned {
+            for line in &mut body_lines {
+                *line = strip_cursor_marker(line);
+            }
             self.flat_lines = body_lines.clone();
             self.refresh_scroll_search(total as i64);
             self.scroll_search
@@ -2158,7 +2161,7 @@ impl Tui {
             .iter()
             .skip(start)
             .take(rows.body)
-            .cloned()
+            .map(|line| strip_cursor_marker(line))
             .collect();
         // The scrollbar shows while pinned only: the column is blank while live.
         let glyphs = if pinned {
@@ -3232,5 +3235,68 @@ mod tests {
             "the match is marked in its row"
         );
         assert!(!writes.contains("\x1b[7mb21"), "other rows are not marked");
+    }
+
+    /// Frame time with a long transcript, full-screen and off. Timing only, so it is
+    /// ignored by default:
+    /// `cargo test -p hoocode-tui-render perf_long_transcript -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "timing only: run by hand"]
+    fn perf_long_transcript_frame_time() {
+        const LINES: usize = 5000;
+        const FRAMES: u32 = 300;
+        let body_lines = |tail: &str| -> Vec<String> {
+            let mut lines: Vec<String> = (0..LINES)
+                .map(|i| format!("line {i:05} lorem ipsum dolor sit amet, consectetur"))
+                .collect();
+            lines.push(tail.to_string());
+            lines
+        };
+        let body = TestComponent::new();
+        body.borrow_mut().lines = body_lines("tail");
+        let start_body = std::time::Instant::now();
+        for _ in 0..FRAMES {
+            let _ = body.borrow_mut().render(100);
+        }
+        let body_only = start_body.elapsed() / FRAMES;
+        println!("component render of {LINES} lines: {body_only:?} per call");
+        for fullscreen in [true, false] {
+            let (mut tui, handles) = new_tui(100, 40);
+            tui.set_fullscreen(fullscreen);
+            tui.add_child(text_component(vec!["HUD".to_string()]));
+            let body = TestComponent::new();
+            body.borrow_mut().lines = body_lines("tail");
+            tui.add_child(body.clone());
+            if fullscreen {
+                let body_handle: ComponentHandle = body.clone();
+                tui.set_fullscreen_body(Some(body_handle));
+            }
+            let bottom = TestComponent::new();
+            bottom.borrow_mut().lines = bottom_lines();
+            tui.add_child(bottom.clone());
+            let _events = tui.start();
+            tui.request_render(true);
+            handles.writes.clear();
+            let mut bytes = 0usize;
+            let started = std::time::Instant::now();
+            for frame in 0..FRAMES {
+                if let Some(last) = body.borrow_mut().lines.last_mut() {
+                    *last = format!("tail {frame}");
+                }
+                tui.request_render(false);
+                bytes += handles.writes.joined().len();
+                handles.writes.clear();
+            }
+            let per_frame = started.elapsed() / FRAMES;
+            println!(
+                "{} {LINES} lines, 100x40: {per_frame:?} per frame, {} bytes per frame",
+                if fullscreen {
+                    "full-screen"
+                } else {
+                    "off        "
+                },
+                bytes / FRAMES as usize
+            );
+        }
     }
 }

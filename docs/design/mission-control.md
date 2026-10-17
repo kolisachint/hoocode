@@ -1,6 +1,6 @@
 # TUI: Mission Control (the cockpit) on ratatui
 
-Status: **design agreed 2026-10-17 (user answers recorded below); M0 and U0 done (2026-10-17).** The rest is not built. Next: M1 (the full-screen shell), detailed in [M1 in detail](#m1-in-detail).
+Status: **design agreed 2026-10-17 (user answers recorded below); M0, U0 and M1 done (2026-10-17).** The rest is not built. Next: M2 (the comms frame). M1 is in [M1 in detail](#m1-in-detail), with its as-built notes and gaps.
 
 Sources (read only, kept as the reference):
 
@@ -254,7 +254,7 @@ Spec §6.1 and §6.2 are the reference. Letter keys work with ctrl or alt. Today
 |---|---|---|---|
 | M0 Foundation | `hoocode-tui-ratatui` crate. Buffer-to-lines adapter (`RatatuiComponent`). Golden test of the adapter. No visible change. **Done 2026-10-17** (ratatui-core 0.1.2, ratatui-widgets 0.3.2, no second crossterm). The palette moves to M2 | none | S/M |
 | U0 Bug fixes | tui-surfaces Phase U0, steps U0.1 to U0.10, on today's renderer. Haiku subagents. Runs before M1 (Q3). **Done 2026-10-17** (commits 8a4c231 to d9954f5; as built in [tui-surfaces.md](tui-surfaces.md)) | none (bugs) | S to M |
-| M1 Full-screen shell | Alternate screen. Full-screen mode in `Tui`, one frame string through `Terminal::write_frame` (`hoocode-term-out`). Layout: HUD row 1, transcript area with app-owned scroll, bottom area. REWIND and SCAN are app-owned. Folds in the former MR step. Detail: [M1 in detail](#m1-in-detail) | none (frame) | L |
+| M1 Full-screen shell | Alternate screen. Full-screen mode in `Tui`, one frame string through `Terminal::write_frame` (`hoocode-term-out`). Layout: HUD row 1, transcript area with app-owned scroll, bottom area. REWIND and SCAN are app-owned. Folds in the former MR step. Detail: [M1 in detail](#m1-in-detail) | none (frame) | L. **Done 2026-10-17** (M1a to M1e: commits cfe54c4, 2ae76b9, 174ebc2, 7f58fed, and the M1e commit). As built and known gaps: [M1 in detail](#m1-in-detail), section "As built" |
 | M2 Comms frame | Heavy frame, state titles, right label, foot (view and tokens), `▸` input row, queued notes inside. Replaces the prompt frame and its border state. Palette from the theme tokens | a1 to a4, c4 | M |
 | M3 HUD | One row replacing the two-row footer. Fields and truncation. Hull paint tint | a1, r10, e5 | M |
 | M4 Trajectory (peek) | Mission header `▲ M1`, numbered steps with gold numbers, `┊` rail, up to 3 output lines, HIT chip, NEW chip, landing line, Think row, agent `┃` sub-steps `1.1`, skill chip, satellite row | b1 to b7, a2, a3 | L |
@@ -276,6 +276,26 @@ Spec §6.1 and §6.2 are the reference. Letter keys work with ctrl or alt. Today
 - Errors: the hand-written error enums. No `anyhow` or `thiserror`.
 
 ### M1 in detail
+
+**As built (M1a to M1e, 2026-10-17).** Full-screen is on by default; `HOOCODE_FULLSCREEN=0` turns it off for a run.
+
+- M1a: row arithmetic in `tui-render/src/fullscreen.rs` (commit cfe54c4). M1b: full-screen mode in `Tui` (cfe54c4), with review fixes (174ebc2). M1c: HUD row, gap, tree and setting (2ae76b9). M1d: scroll on the body, `N new`, shift+arrows, jump to user message in the body (7f58fed). M1e: lifecycle and checks (the M1e commit).
+- M1e checks, by hand under tmux with the mock LLM (the real binary): ctrl+z, then `fg`, returns to the normal screen while stopped and re-enters the alternate screen with a repaint. Alt+e (the external editor, `$EDITOR`) and `!echo` (bash mode, which runs inline and never leaves the screen) keep the alternate screen. Ctrl+C twice exits and restores; the tty is back in cooked mode. SIGTERM restored only after the fix in M1e (see the gaps below).
+- M1e automated: `tui-terminal/tests/it/crash_restore.rs` runs a child process. A UI-thread panic writes the restore sequence (`?1049l` and the rest) to stdout. SIGTERM restores and exits 143. `tui-render` has an ignored timing test, `perf_long_transcript_frame_time`.
+- M1e fixes found by these checks: SIGTERM and SIGHUP had no handler, so a TUI killed by SIGTERM left the alternate screen on (the normal screen was not restored). Now `interrupt::install_terminate_restore` (installed from `ProcessTerminal::start`) restores and exits. Full-screen compose strips the cursor marker only on the drawn rows, not on the whole transcript, while live (5,000 lines: 2.8 ms to 1.3 ms per frame in a debug build).
+- M1e goldens: the two scrollback checks now read the visible screen (`message-queue.json` `delivered`, `subagent-task.json` `screen`; the answers are on screen). All 11 screen goldens are accepted after review: the HUD and gap rows, the tail view (the header scrolls off when the transcript is longer than the body), no flex spacer (`screen_fill`) in full-screen, and the footer path without its leading ellipsis. Two platform labels are normalized (`alt`/`Option`, `hints.rs`), so the goldens hold on macOS and Linux. The U0 rounding fix shows in `attached-running` (`4h00m left`, not `1h60m`); that golden was stale before M1.
+- Frame timing (debug build, `/perf` on a 2,000-line answer): frame build p50 about 27 to 33 ms in both modes, from transcript component rendering. Full-screen adds about 0.5 ms per frame at 5,000 lines in the harness, and the composition is not the bottleneck.
+
+Known gaps (not fixed in M1):
+
+- No debug trigger for a UI-thread panic in the `hoocode` binary. The panic path is tested in a child process at the terminal level, not from the app.
+- Composition still asks each body component for all of its lines each frame (O(transcript)). A windowed render API on the chat component would make it O(screen). Not simple, so a follow-up.
+- Frame build p50 of about 30 ms during a 2,000-line stream is the component render (debug build). Release numbers are not measured.
+- A summary on exit is not printed (a decided follow-up, not a decision).
+- The inline path (`HOOCODE_FULLSCREEN=0`) stays until the next release, then goes.
+- With mouse reporting on, plain drag does not select text; use shift+drag.
+- The M1 keys keep today's step (view height minus 2), not spec §6.1's step.
+
 
 Read on 2026-10-17 at commit 9638ed8. File names are the anchor. Line numbers are as read and may drift. M1 is the full-screen shell only. The real HUD fields, the comms frame, the trajectory and the rest come in M2 to M8.
 
@@ -454,7 +474,7 @@ Changes for M1:
 | Last-screen capture (`goldens.py:554`, `capture(history=True)`) | After exit it shows the pre-launch screen. Do not read it as the transcript |
 | Sizes | 10 scenarios at 100 columns, one at 140. Heights from 12 to 40. The 12-row scenario tests the short-screen rules |
 
-Check before updating screen goldens: in tmux, `capture-pane -p` should return the alternate screen while it is active. M1e checks that once by hand. This design step did not run tmux.
+Check before updating screen goldens: in tmux, `capture-pane -p` returns the alternate screen while it is active. M1e checked that by hand (2026-10-17), and it holds.
 
 #### (8) Sub-steps
 

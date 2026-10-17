@@ -381,6 +381,8 @@ impl Terminal for ProcessTerminal {
             self.drained_wake.take(),
         )
         .ok();
+        #[cfg(unix)]
+        interrupt::install_terminate_restore();
         self.was_raw = crossterm::terminal::is_raw_mode_enabled().unwrap_or(false);
         let _ = crossterm::terminal::enable_raw_mode();
 

@@ -18,6 +18,7 @@
 //! - [`session_io`]: the `hoocode-session-io` thread, the only writer of session
 //!   files, with a bounded queue and flush barriers.
 //! - [`watch_sigwinch`] (Unix): terminal resize signal, on its own named thread.
+//! - [`watch_terminate`] (Unix): `SIGTERM` and `SIGHUP`, on their own named thread.
 //! - [`watchdog`]: the `hoocode-watchdog` thread: UI heartbeat, stall reports,
 //!   io starvation probe and memory sampling.
 //! - [`memory`] (re-exported here): soft and hard process memory limits, and
@@ -64,6 +65,8 @@ pub use shutdown::{
     fits_budget, run_ordered, ShutdownStep, StepOutcome, StepReport, RESTORE_RESERVE,
     SHUTDOWN_BUDGET, SHUTDOWN_THREAD,
 };
+#[cfg(unix)]
+pub use signals::watch_terminate;
 #[cfg(unix)]
 pub use signals::{watch_sigwinch, SignalWatch};
 pub use threads::{bounded_channel, spawn_named_thread, spawn_thread, sync_bounded_channel};
