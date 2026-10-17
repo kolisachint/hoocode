@@ -3,6 +3,7 @@
 
 mod ask_options;
 mod config_selector;
+mod flight_path;
 mod fork_console;
 mod hangar;
 mod learn_settings_pane;
