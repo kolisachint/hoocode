@@ -20,6 +20,7 @@ mod login_controller;
 mod notification_panel;
 mod progress_bar;
 mod resource_display;
+mod scroll_bar;
 mod scroll_view_keys;
 mod session_chip;
 mod stale_todo_settle_ts;
