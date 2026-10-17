@@ -7,6 +7,8 @@ use hoocode_code_subagents::instance::get_subagent_pool;
 use hoocode_code_task_store::{task_store, ActionNotifier, RowAction, TaskKind};
 use hoocode_code_tui_widgets::task_panel::{PanelEvent, TaskPanelView};
 
+use crate::end_shift::{EndShiftChoice, EndShiftJobsChoice, ShiftDebrief, ShiftJob};
+
 use super::*;
 
 /// Where the quit prompt for running shell jobs stands (T5.3).
@@ -15,6 +17,19 @@ pub(super) enum QuitJobs {
     /// No quit has asked yet, or the last one was cancelled.
     Unasked,
     /// The prompt is on screen.
+    Asking,
+    /// Answered: the quit goes ahead.
+    Decided,
+}
+
+/// Where the end-of-shift card stands (M6, spec §6.2): a user-initiated
+/// quit (`/quit`, ctrl+c twice, ctrl+d) with nothing running shows the
+/// amber card. `enter` ends the shift, `esc` stays.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EndShift {
+    /// No quit has asked yet, or the last one was cancelled.
+    Unasked,
+    /// The card is on screen.
     Asking,
     /// Answered: the quit goes ahead.
     Decided,
@@ -82,55 +97,112 @@ impl Mode {
         }
     }
 
-    /// Whether the event loop ends. A quit while shell jobs run asks once
-    /// (T5.3): "Kill all" (the default) or "Leave running". Esc keeps the app
-    /// open, and the next quit asks again.
+    /// A user-initiated quit (`/quit`, ctrl+c twice, ctrl+d): the loop
+    /// shows the end-of-shift card (or the satellites card) instead of
+    /// leaving at once. Session errors exit without asking.
+    pub(super) fn request_user_quit(&mut self) {
+        self.exit_requested = true;
+        self.user_quit = true;
+    }
+
+    /// Whether the event loop ends. A quit while shell jobs run shows the
+    /// satellites card (T5.3, spec §4 c8): `k` brings every job down (the
+    /// old default), `l` leaves them. A user-initiated quit with nothing
+    /// running shows the end-of-shift card with the shift's debrief (M6,
+    /// spec §6.2): `enter` ends, `esc` stays. Anything else (a fatal
+    /// session error) leaves at once. Esc keeps the app open, and the next
+    /// quit asks again. A quit asked again while a card is up changes nothing.
     pub(super) fn ready_to_quit(&mut self) -> bool {
         if !self.exit_requested {
             return false;
         }
         match self.quit_jobs {
             QuitJobs::Decided => true,
-            // A quit asked again while the prompt is up changes nothing.
             QuitJobs::Asking => {
                 self.exit_requested = false;
                 false
             }
-            QuitJobs::Unasked => {
-                let running = hoocode_code_tool_bash::jobs::running_job_count();
-                if running == 0 {
-                    return true;
+            QuitJobs::Unasked => match self.end_shift {
+                EndShift::Decided => true,
+                EndShift::Asking => {
+                    self.exit_requested = false;
+                    false
                 }
-                self.exit_requested = false;
-                self.quit_jobs = QuitJobs::Asking;
-                let noun = if running == 1 { "job" } else { "jobs" };
-                let title = format!("{running} background shell {noun} still running. Quit?");
-                let answer = self.answer_to(AppEvent::QuitJobsAnswer);
-                self.show_selector(
-                    &title,
-                    vec!["Kill all".into(), "Leave running".into()],
-                    answer,
-                );
-                false
-            }
+                EndShift::Unasked => {
+                    if hoocode_code_tool_bash::jobs::running_job_count() > 0 {
+                        self.exit_requested = false;
+                        self.quit_jobs = QuitJobs::Asking;
+                        let jobs = hoocode_code_tool_bash::jobs::running_jobs()
+                            .into_iter()
+                            .map(|info| ShiftJob {
+                                id: info.id,
+                                command: info.command,
+                                running: info.state.is_running(),
+                            })
+                            .collect();
+                        self.show_end_shift_jobs(jobs);
+                        return false;
+                    }
+                    if self.user_quit {
+                        self.exit_requested = false;
+                        self.end_shift = EndShift::Asking;
+                        self.show_end_shift(self.shift_debrief());
+                        return false;
+                    }
+                    true
+                }
+            },
         }
     }
 
-    /// The quit prompt's answer. "Kill all" stops every job of the process
-    /// before the app exits; "Leave running" exits and leaves them.
-    pub(super) fn quit_jobs_answered(&mut self, choice: Option<String>) {
-        match choice.as_deref() {
-            Some("Kill all") => {
+    /// The shift's debrief for the end-of-shift card, from the session's
+    /// real totals: missions (user messages), steps (tool calls), tokens,
+    /// spend. Hits and landings are not tracked, so the card does not claim them.
+    fn shift_debrief(&self) -> ShiftDebrief {
+        let stats = self.session.get_session_stats();
+        ShiftDebrief {
+            missions: stats.user_messages,
+            steps: stats.tool_calls,
+            input_tokens: stats.tokens.input,
+            output_tokens: stats.tokens.output,
+            cost: stats.cost,
+        }
+    }
+
+    /// The end-of-shift card's answer. `enter` ends the shift; `esc` stays.
+    pub(super) fn close_end_shift(&mut self, choice: EndShiftChoice) {
+        self.end_shift_card = None;
+        self.restore_editor();
+        match choice {
+            EndShiftChoice::End => {
+                self.end_shift = EndShift::Decided;
+                self.exit_requested = true;
+            }
+            EndShiftChoice::Stay => {
+                self.end_shift = EndShift::Unasked;
+                self.user_quit = false;
+            }
+        }
+        self.dirty.set(true);
+    }
+
+    /// The satellites card's answer. "Bring it down" stops every job's
+    /// process group before the app exits (the old default); "leave it"
+    /// exits and leaves them. Esc stays in the app.
+    pub(super) fn close_end_shift_jobs(&mut self, choice: EndShiftJobsChoice) {
+        self.end_shift_jobs_card = None;
+        self.restore_editor();
+        match choice {
+            EndShiftJobsChoice::KillAll => {
                 hoocode_code_tool_bash::jobs::kill_all_jobs();
                 self.quit_jobs = QuitJobs::Decided;
                 self.exit_requested = true;
             }
-            Some("Leave running") => {
+            EndShiftJobsChoice::LeaveRunning => {
                 self.quit_jobs = QuitJobs::Decided;
                 self.exit_requested = true;
             }
-            // Esc: stay in the app.
-            _ => self.quit_jobs = QuitJobs::Unasked,
+            EndShiftJobsChoice::Stay => self.quit_jobs = QuitJobs::Unasked,
         }
         self.dirty.set(true);
     }

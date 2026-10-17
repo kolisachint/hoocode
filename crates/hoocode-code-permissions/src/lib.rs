@@ -59,6 +59,256 @@ pub const FAIL_CLOSED_ENV: &str = "HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED";
 /// no client on its stdio can answer a prompt. Never set it anywhere else.
 pub const WARM_WORKER_ENV: &str = "HOOCODE_INTERNAL_WARM_WORKER";
 
+/// One REACH cell on the clearance card: on (`■`) or off (`□`), with an
+/// optional qualifier from the call's real data (a path, a program count).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReachCell {
+    pub on: bool,
+    pub qualifier: Option<String>,
+}
+
+impl ReachCell {
+    fn off() -> Self {
+        Self {
+            on: false,
+            qualifier: None,
+        }
+    }
+
+    fn on(qualifier: Option<String>) -> Self {
+        Self {
+            on: true,
+            qualifier,
+        }
+    }
+}
+
+/// The clearance card's REACH line (Mission Control spec §4 c1, §8.11): what
+/// the call can reach. Qualifiers use the real path, never a renamed one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reach {
+    pub read: ReachCell,
+    pub write: ReachCell,
+    pub network: ReachCell,
+    pub pipe: ReachCell,
+}
+
+/// Commands that almost always mean the network (a hint, not enforcement).
+const NETWORK_PROGRAMS: [&str; 11] = [
+    "curl", "wget", "ssh", "scp", "sftp", "ping", "nc", "netcat", "ncat", "telnet", "ftp",
+];
+
+/// The REACH cells for a gated call, from the call's real data where the
+/// gate has it: the Shell command's paths, pipe and redirect, the mutation
+/// path of Edit/Write, the network of WebFetch/WebSearch.
+pub fn reach_for(tool_name: &str, input: &Value) -> Reach {
+    match tool_name {
+        "Edit" => {
+            let path = mutation_path(input);
+            Reach {
+                read: ReachCell::on(path.clone()),
+                write: ReachCell::on(path),
+                network: ReachCell::off(),
+                pipe: ReachCell::off(),
+            }
+        }
+        "Write" => Reach {
+            read: ReachCell::off(),
+            write: ReachCell::on(mutation_path(input)),
+            network: ReachCell::off(),
+            pipe: ReachCell::off(),
+        },
+        "WebFetch" | "WebSearch" => Reach {
+            read: ReachCell::off(),
+            write: ReachCell::off(),
+            network: ReachCell::on(None),
+            pipe: ReachCell::off(),
+        },
+        "Shell" => shell_reach(input.get("command").and_then(Value::as_str).unwrap_or("")),
+        _ => Reach {
+            read: ReachCell::off(),
+            write: ReachCell::off(),
+            network: ReachCell::off(),
+            pipe: ReachCell::off(),
+        },
+    }
+}
+
+/// One word of a Shell command, with whether it opens a quoted run.
+fn push_word(words: &mut Vec<String>, current: &mut String) {
+    if !current.is_empty() {
+        words.push(std::mem::take(current));
+    }
+}
+
+/// The pipe segments of a Shell command: words per segment, plus the write
+/// redirect targets. Quotes and backslash escapes hold words together;
+/// `||`, `&&`, `;`, `<` and `(` end a segment without joining a pipe.
+fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
+    let mut segments: Vec<Vec<String>> = vec![Vec::new()];
+    let mut redirects = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut chars = command.chars().peekable();
+    // A `>`/`>>` waits for its target word; `piped` tracks single-`|` joins.
+    let mut redirect_pending = false;
+    let mut piped = false;
+    while let Some(c) = chars.next() {
+        if escaped {
+            current.push(c);
+            escaped = false;
+            continue;
+        }
+        if c == '\\' && quote != Some('\'') {
+            escaped = true;
+            continue;
+        }
+        if let Some(q) = quote {
+            if c == q {
+                quote = None;
+            } else {
+                current.push(c);
+            }
+            continue;
+        }
+        match c {
+            '\'' | '"' => quote = Some(c),
+            '|' => {
+                take_redirect(&mut redirects, &mut redirect_pending, &mut current);
+                push_word(segments.last_mut().expect("segment"), &mut current);
+                if chars.peek() == Some(&'|') {
+                    chars.next();
+                } else {
+                    piped = true;
+                }
+                segments.push(Vec::new());
+                redirect_pending = false;
+            }
+            '&' | ';' | '<' | '(' | ')' => {
+                if c == '&' && chars.peek() == Some(&'&') {
+                    chars.next();
+                }
+                take_redirect(&mut redirects, &mut redirect_pending, &mut current);
+                push_word(segments.last_mut().expect("segment"), &mut current);
+                segments.push(Vec::new());
+                redirect_pending = false;
+            }
+            '>' => {
+                if chars.peek() == Some(&'>') {
+                    chars.next();
+                }
+                take_redirect(&mut redirects, &mut redirect_pending, &mut current);
+                push_word(segments.last_mut().expect("segment"), &mut current);
+                redirect_pending = true;
+            }
+            c if c.is_whitespace() => {
+                take_redirect(&mut redirects, &mut redirect_pending, &mut current);
+                push_word(segments.last_mut().expect("segment"), &mut current);
+            }
+            _ => current.push(c),
+        }
+    }
+    take_redirect(&mut redirects, &mut redirect_pending, &mut current);
+    push_word(segments.last_mut().expect("segment"), &mut current);
+    segments.retain(|words| !words.is_empty());
+    (segments, redirects, piped)
+}
+
+/// Completes a pending redirect target (`>` then a word).
+fn take_redirect(redirects: &mut Vec<String>, pending: &mut bool, current: &mut String) {
+    if *pending && !current.is_empty() {
+        redirects.push(std::mem::take(current));
+        *pending = false;
+    }
+}
+
+/// Whether a word names a file: it holds a `/` or a `.` (flags, assignments
+/// and the segment's own program are filtered before this runs).
+fn is_path_word(word: &str) -> bool {
+    word.contains('/') || word.contains('.')
+}
+
+/// The REACH cells of a Shell command: the first path-like argument reads,
+/// a `>`/`>>` target writes, a pipe joins N programs, a network program or
+/// URL reaches the network.
+fn shell_reach(command: &str) -> Reach {
+    let (segments, redirects, piped) = split_segments(command);
+    let mut read: Option<String> = None;
+    let mut network = false;
+    for words in &segments {
+        for (i, word) in words.iter().enumerate() {
+            let lower = word.to_ascii_lowercase();
+            if lower.contains("http://") || lower.contains("https://") {
+                network = true;
+            }
+            // The segment's program: `curl` et al. reach the network, and
+            // the program itself is never the read path.
+            if i == 0 {
+                if NETWORK_PROGRAMS.contains(&lower.as_str()) {
+                    network = true;
+                }
+                continue;
+            }
+            if word.starts_with('-') || word.contains('=') {
+                continue;
+            }
+            if read.is_none() && is_path_word(word) {
+                read = Some(word.clone());
+            }
+        }
+    }
+    let programs = segments.len();
+    Reach {
+        read: ReachCell {
+            on: read.is_some(),
+            qualifier: read,
+        },
+        write: ReachCell {
+            on: !redirects.is_empty(),
+            qualifier: redirects.into_iter().next(),
+        },
+        network: ReachCell {
+            on: network,
+            qualifier: None,
+        },
+        pipe: ReachCell {
+            on: piped,
+            qualifier: piped.then(|| format!("{programs} programs")),
+        },
+    }
+}
+
+/// What the clearance card shows for one gated call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClearanceInfo {
+    /// The tool asking (`Shell`, `Edit`, …).
+    pub tool: String,
+    /// The call's subject (`describe_tool`: `$ <command>`, `Edit <path>`, …).
+    pub detail: String,
+    /// The active mode id (`build`, `plan`, …); the card uppercases it.
+    pub mode: String,
+    /// The held step number, when the host knows the trajectory (`step NN`).
+    /// The gate never knows it, so it passes `None`.
+    pub step: Option<usize>,
+    /// What the call can reach, from the call's real data.
+    pub reach: Reach,
+}
+
+/// The clearance card's answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClearanceChoice {
+    /// Run this call once.
+    Once,
+    /// Add the tool to the mode's auto-allow, then run.
+    Always,
+    /// Block the call; `reason` is the typed abort reason, if any.
+    Deny { reason: Option<String> },
+    /// Do not run this call; the host sends the revised text as the next
+    /// message instead (`e edit first`).
+    Revise(String),
+}
+
 /// Who can answer for a gated call that needs approval (a `PermissionGate`'s
 /// channel). Decides what [`evaluate`] returns for such a call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +326,18 @@ pub trait PermissionUi: Send + Sync {
     fn select(&self, title: &str, options: &[&str]) -> Option<String>;
     /// An info notification.
     fn notify(&self, message: &str);
+    /// The clearance card for a gated call. The default asks the legacy
+    /// three-choice prompt and maps it back, so hosts without a card keep
+    /// working (`Revise` has no legacy form and reads as a denial).
+    fn select_clearance(&self, info: &ClearanceInfo) -> ClearanceChoice {
+        let title = format!("Allow: {}", info.detail);
+        match self.select(&title, &CHOICES) {
+            Some(c) if c.starts_with("Always") => ClearanceChoice::Always,
+            Some(c) if c.starts_with("No") => ClearanceChoice::Deny { reason: None },
+            Some(_) => ClearanceChoice::Once,
+            None => ClearanceChoice::Deny { reason: None },
+        }
+    }
 }
 
 /// `matchesAllowedPath`: exact or `*`-glob match of the path (and, for an
@@ -309,12 +571,24 @@ impl HooPermissionGate {
                 let Some(ui) = self.ui.as_ref() else {
                     return Some("Denied by permission gate".into());
                 };
-                let title = format!("Allow: {}", describe_tool(tool_name, input));
-                let choice = ui.select(&title, &CHOICES);
-                match choice {
-                    None => Some("Denied by permission gate".into()),
-                    Some(c) if c.starts_with("No") => Some("Denied by permission gate".into()),
-                    Some(c) if c.starts_with("Always") => {
+                let info = ClearanceInfo {
+                    tool: tool_name.to_string(),
+                    detail: describe_tool(tool_name, input),
+                    mode: config::active_mode(&merged).unwrap_or_else(|| "build".into()),
+                    step: None,
+                    reach: reach_for(tool_name, input),
+                };
+                match ui.select_clearance(&info) {
+                    ClearanceChoice::Once => None,
+                    ClearanceChoice::Deny { reason } => Some(match reason {
+                        Some(reason) if !reason.trim().is_empty() => {
+                            format!("Denied by permission gate: {}", reason.trim())
+                        }
+                        _ => "Denied by permission gate".into(),
+                    }),
+                    // The revised text runs as a later message; this call stays denied.
+                    ClearanceChoice::Revise(_) => Some("Denied by permission gate".into()),
+                    ClearanceChoice::Always => {
                         // "Always" goes to the global config only.
                         let mut latest = config::read_config();
                         let mode = config::active_mode(&latest).unwrap_or_else(|| "build".into());
@@ -345,7 +619,6 @@ impl HooPermissionGate {
                         ));
                         None
                     }
-                    Some(_) => None,
                 }
             }
         }

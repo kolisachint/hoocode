@@ -18,6 +18,7 @@ use hoocode_code_auth::AuthStorage;
 use hoocode_code_media::clipboard_image::ClipboardImage;
 use hoocode_code_media::rich_clipboard::CopyFlavour;
 use hoocode_code_paths::{env_override, APP_NAME, VERSION};
+use hoocode_code_permissions::ClearanceChoice;
 use hoocode_code_settings::{ChromeDensity, EditorBorder, ToolOutputView};
 use hoocode_code_subagents::agent_log::{agent_log, set_terminal_owned_by_tui};
 use hoocode_code_subagents::live::LiveSink;
@@ -96,7 +97,7 @@ mod task_panel;
 mod transcript;
 mod tree;
 
-use self::task_panel::QuitJobs;
+use self::task_panel::{EndShift, QuitJobs};
 use self::{auth::*, chrome::*, commands::*, dialogs::*, input::*, models::*, transcript::*};
 
 pub use self::events::plan_settle_outcome;
@@ -230,8 +231,6 @@ enum AppEvent {
         Option<u64>,
         Result<hoocode_code_tool_bash::jobs::JobRead, String>,
     ),
-    /// The quit prompt for running shell jobs was answered (`None`: Esc).
-    QuitJobsAnswer(Option<String>),
 }
 
 /// `new Date().toISOString()`.
@@ -465,8 +464,13 @@ struct Mode {
     tx: Sender<AppEvent>,
     rx: Receiver<AppEvent>,
     exit_requested: bool,
+    /// A user-initiated quit (`/quit`, ctrl+c twice, ctrl+d): it shows the
+    /// end-of-shift card instead of leaving at once.
+    user_quit: bool,
     /// Where the quit prompt for running shell jobs stands (T5.3).
     quit_jobs: QuitJobs,
+    /// Where the end-of-shift card stands (M6).
+    end_shift: EndShift,
     listing: Box<dyn Fn(&AgentSession) -> ResourceListing>,
     session_runtime: Option<AgentSessionRuntime>,
     subscription: Option<hoocode_code_agent_session::SessionSubscription>,
@@ -474,6 +478,9 @@ struct Mode {
     auth_storage: Arc<AuthStorage>,
     login: Option<LoginStep>,
     ask_options: Option<OpenAskOptions>,
+    clearance: Option<OpenClearance>,
+    end_shift_card: Option<OpenEndShift>,
+    end_shift_jobs_card: Option<OpenEndShiftJobs>,
     anthropic_warning_shown: bool,
     settings_changes: Rc<RefCell<Vec<SettingsChange>>>,
     last_escape: Option<Instant>,
@@ -974,6 +981,8 @@ impl Mode {
             rx,
             exit_requested: false,
             quit_jobs: QuitJobs::Unasked,
+            end_shift: EndShift::Unasked,
+            user_quit: false,
             listing: options.listing,
             session_runtime: options.session_runtime,
             subscription: None,
@@ -982,6 +991,9 @@ impl Mode {
             login: None,
             picker: None,
             ask_options: None,
+            clearance: None,
+            end_shift_card: None,
+            end_shift_jobs_card: None,
             anthropic_warning_shown: false,
             settings_changes: Rc::default(),
             last_escape: None,
@@ -1352,13 +1364,17 @@ impl Mode {
                         questions,
                         reply,
                         chime,
+                        esc_answers_first,
                     }) => {
                         if chime {
                             self.ring_chime();
                         }
-                        self.show_ask_options(questions, reply)
+                        self.show_ask_options(questions, reply, esc_answers_first)
                     }
                     AppEvent::Dialog(DialogRequest::HideAskOptions) => self.hide_ask_options(None),
+                    AppEvent::Dialog(DialogRequest::Clearance { info, reply }) => {
+                        self.show_clearance_card(info, reply)
+                    }
                     AppEvent::Login(update) => self.handle_login_update(update),
                     AppEvent::BashChunk(chunk) => {
                         if let Some(component) = &self.bash_component {
@@ -1377,7 +1393,6 @@ impl Mode {
                     AppEvent::ShellTail(key, since, result) => {
                         self.shell_tail_read(key, since, result)
                     }
-                    AppEvent::QuitJobsAnswer(choice) => self.quit_jobs_answered(choice),
                     AppEvent::AgentRunsListed(result) => self.agent_runs_listed(result),
                     AppEvent::AttachPicked(row) => {
                         if let Some(row) = row {
@@ -1507,6 +1522,9 @@ impl Mode {
         }
         if let Some((_, reply)) = self.ask_options.take() {
             let _ = reply.send(None);
+        }
+        if let Some((_, reply)) = self.clearance.take() {
+            let _ = reply.send(ClearanceChoice::Deny { reason: None });
         }
         if let Some((_, answer)) = self.editor_dialog.take() {
             answer(None);

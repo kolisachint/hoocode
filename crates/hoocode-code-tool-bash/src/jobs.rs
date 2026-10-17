@@ -409,16 +409,23 @@ pub fn output_open(log_path: &Path) -> Option<bool> {
 
 /// How many jobs are running in this process, in every registry.
 pub fn running_job_count() -> usize {
+    running_jobs().len()
+}
+
+/// Every running job in this process, in every registry (the end-of-shift
+/// card lists them as satellites).
+pub fn running_jobs() -> Vec<JobInfo> {
     live_registries()
         .iter()
-        .map(|shared| {
+        .flat_map(|shared| {
             lock(&shared.state)
                 .jobs
                 .iter()
                 .filter(|e| e.info.state.is_running())
-                .count()
+                .map(|e| e.info.clone())
+                .collect::<Vec<_>>()
         })
-        .sum()
+        .collect()
 }
 
 /// Asks every running job in this process to stop now, and signals their

@@ -1,0 +1,31 @@
+┏━ ◉ END SHIFT WITH 2 SATELLITES UP? ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ esc stay ━┓
+┃  ◐ job-1  sleep 60   in orbit                                                                    ┃
+┃  ◐ job-2  sleep 120   in orbit                                                                   ┃
+┃                                                                                                  ┃
+┃k bring it down, then end shift · l leave it in orbit                                             ┃
+┗━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+--- styles ---
+r0 c0-1 fg=#ffff00
+r0 c3-35 fg=#ffff00 bold
+r0 c37-87 fg=#ffff00
+r0 c89-96 fg=#ffff00
+r0 c98-99 fg=#ffff00
+r1 c0 fg=#ffff00
+r1 c3 fg=#5cc8bb
+r1 c23-30 fg=#989898
+r1 c99 fg=#ffff00
+r2 c0 fg=#ffff00
+r2 c3 fg=#5cc8bb
+r2 c24-31 fg=#989898
+r2 c99 fg=#ffff00
+r3 c0 fg=#ffff00
+r3 c99 fg=#ffff00
+r4 c0 fg=#ffff00
+r4 c1 fg=#989898
+r4 c2-34 fg=#a8a8a8
+r4 c35 fg=#989898
+r4 c36-53 fg=#a8a8a8
+r4 c99 fg=#ffff00
+r5 c0-1 fg=#ffff00
+r5 c4-95 fg=#ffff00
+r5 c98-99 fg=#ffff00
