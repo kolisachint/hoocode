@@ -2161,8 +2161,8 @@ mod tests {
         );
         assert!(result.is_ok());
         let drawn = hoocode_tui_util::strip_vt_control_characters(&output.lock().unwrap());
-        assert!(drawn.contains("❯"), "{drawn}");
-        assert!(drawn.contains("BUILD · ◍ peek"), "{drawn}");
+        assert!(drawn.contains("▸ name your mission"), "{drawn}");
+        assert!(drawn.contains("━ peek ━"), "{drawn}");
         assert!(drawn.contains("coding agent · v0.0.1"), "{drawn}");
         assert!(drawn.contains("hi"), "{drawn}");
         assert_eq!(*title.lock().unwrap(), "HooCode - w");
@@ -2768,12 +2768,19 @@ mod tests {
         fn ctrl_o_toggles_between_radar_and_peek() {
             let (drawn, _) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O, CTRL_O]);
             assert!(
-                in_order(&drawn, &["◌ radar", "◍ peek", "◌ radar"]),
+                in_order(
+                    &drawn,
+                    &[
+                        "━ radar · flight log ━",
+                        "━ peek ━",
+                        "━ radar · flight log ━"
+                    ]
+                ),
                 "{drawn}"
             );
             let (drawn, _) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O, CTRL_O]);
             assert!(
-                in_order(&drawn, &["◍ peek", "◌ radar", "◍ peek"]),
+                in_order(&drawn, &["━ peek ━", "━ radar · flight log ━", "━ peek ━"]),
                 "{drawn}"
             );
         }
@@ -2781,10 +2788,13 @@ mod tests {
         #[test]
         fn a_stored_full_setting_loads_as_peek_and_toggles_to_radar() {
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[]);
-            assert!(drawn.contains("◍ peek"), "{drawn}");
-            assert!(!drawn.contains("◌ radar"), "{drawn}");
+            assert!(drawn.contains("━ peek ━"), "{drawn}");
+            assert!(!drawn.contains("━ radar · flight log ━"), "{drawn}");
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
-            assert!(in_order(&drawn, &["◍ peek", "◌ radar"]), "{drawn}");
+            assert!(
+                in_order(&drawn, &["━ peek ━", "━ radar · flight log ━"]),
+                "{drawn}"
+            );
         }
 
         #[test]
@@ -2799,7 +2809,7 @@ mod tests {
         fn the_toggle_leaves_the_startup_header_compact() {
             // The header opens under `verbose`, not with the dial.
             let (drawn, _) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O]);
-            assert!(in_order(&drawn, &["◍ peek"]), "{drawn}");
+            assert!(in_order(&drawn, &["━ peek ━"]), "{drawn}");
             assert!(
                 !drawn.contains("Compose — the message in your hands"),
                 "{drawn}"
