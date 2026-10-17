@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::{Content, ThinkingContent};
+use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -420,16 +421,75 @@ fn an_interrupted_chain_with_no_failure_is_cancelled_never_green() {
     assert!(!out.contains('●'), "{out}");
 }
 
+/// The job's row in the task store, as the Shell tool keeps it: `shell:<id>`,
+/// in progress while the job runs. `None` removes it (a replayed history).
+fn set_job_row(job: &str, status: Option<TaskStatus>) {
+    let key = hoocode_code_tool_bash::jobs::row_key(job);
+    task_store().remove_keyed(&key);
+    if let Some(status) = status {
+        task_store().upsert_keyed(
+            &key,
+            "npm run dev",
+            CreateTaskOptions {
+                source: Some(TaskSource::Shell),
+                key: Some(key.clone()),
+                ..Default::default()
+            },
+            TaskPatch {
+                status: Some(status),
+                ..Default::default()
+            },
+        );
+    }
+}
+
+fn chain_with_job(state: ChainState) -> ToolChainComponent {
+    let mut chain = ToolChainComponent::new(Radar);
+    chain.add(Rc::new(RefCell::new(background_shell())));
+    chain.close(state);
+    chain
+}
+
 #[test]
 fn a_background_call_reads_running_while_its_job_runs() {
     let _g = lock();
-    let mut chain = ToolChainComponent::new(Radar);
-    chain.add(Rc::new(RefCell::new(background_shell())));
-    chain.close(ChainState::Done);
-    let out = render(&mut chain);
+    set_job_row("j1", Some(TaskStatus::InProgress));
+    let out = render(&mut chain_with_job(ChainState::Done));
+    set_job_row("j1", None);
     assert!(out.contains("◐"), "{out}");
     assert!(!out.contains('●'), "{out}");
     assert!(out.contains("running"), "{out}");
+}
+
+#[test]
+fn a_replayed_background_call_with_no_live_job_reads_done() {
+    let _g = lock();
+    set_job_row("j1", None);
+    let out = render(&mut chain_with_job(ChainState::Done));
+    assert!(out.contains("●"), "{out}");
+    assert!(!out.contains('◐'), "{out}");
+    assert!(!out.contains("running"), "{out}");
+}
+
+#[test]
+fn an_aborted_chain_keeps_a_live_background_job_running() {
+    let _g = lock();
+    // Aborting the turn does not stop a job: the chain still reads running.
+    set_job_row("j1", Some(TaskStatus::InProgress));
+    let out = render(&mut chain_with_job(ChainState::Interrupted));
+    set_job_row("j1", None);
+    assert!(out.contains("◐"), "{out}");
+    assert!(!out.contains('⊘'), "{out}");
+}
+
+#[test]
+fn an_aborted_chain_whose_job_has_ended_reads_interrupted() {
+    let _g = lock();
+    set_job_row("j1", Some(TaskStatus::Done));
+    let out = render(&mut chain_with_job(ChainState::Interrupted));
+    set_job_row("j1", None);
+    assert!(out.contains("⊘"), "{out}");
+    assert!(!out.contains('◐'), "{out}");
 }
 
 #[test]
@@ -485,6 +545,45 @@ fn a_failed_call_with_two_lines_or_fewer_shows_no_fold() {
     assert!(!out.contains("more line"), "{out}");
 }
 
+/// The stats are whole. A label that does not fit beside them is dropped;
+/// the stats are cut only when they do not fit alone.
+#[test]
+fn a_label_that_does_not_fit_beside_the_stats_is_dropped() {
+    let _g = lock();
+    let long = format!("npm run check -- {}", "--flag-with-a-long-name ".repeat(6));
+    let mut chain = chain_of(
+        Radar,
+        vec![call("Shell", json!({ "command": long }), "l1\nl2\nl3")],
+        "drop",
+    );
+    chain.close(ChainState::Done);
+    let row = strip(&chain.render(30)[1]);
+    assert!(row.ends_with("1 call · 3 lines"), "{row:?}");
+    assert!(!row.contains("npm"), "{row:?}");
+    assert!(!row.contains('…'), "{row:?}");
+    assert_eq!(hoocode_tui_util::visible_width(&row), 30, "{row:?}");
+}
+
+#[test]
+fn stats_that_do_not_fit_alone_are_cut_last() {
+    let _g = lock();
+    let mut chain = chain_of(
+        Radar,
+        vec![call(
+            "Shell",
+            json!({ "command": "npm test" }),
+            "l1\nl2\nl3",
+        )],
+        "cut",
+    );
+    chain.close(ChainState::Done);
+    let lines = chain.render(12);
+    let row = strip(&lines[1]);
+    assert!(hoocode_tui_util::visible_width(&lines[1]) <= 12, "{row:?}");
+    assert!(row.contains('…'), "{row:?}");
+    assert!(!row.contains("npm"), "{row:?}");
+}
+
 #[test]
 fn the_stats_stay_at_eighty_columns_and_the_label_gives_way() {
     let _g = lock();
@@ -499,7 +598,7 @@ fn the_stats_stay_at_eighty_columns_and_the_label_gives_way() {
     let row = strip(&lines[1]);
     assert!(hoocode_tui_util::visible_width(&lines[1]) <= 80, "{row:?}");
     assert!(row.ends_with("1 call · 3 lines"), "{row:?}");
-    assert!(row.contains('…'), "{row:?}");
+    assert!(!row.contains("npm"), "{row:?}");
 }
 
 #[test]

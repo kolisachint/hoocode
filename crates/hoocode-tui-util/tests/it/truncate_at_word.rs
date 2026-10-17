@@ -51,3 +51,20 @@ fn a_cut_inside_a_styled_word_closes_the_style() {
     assert_eq!(cut, "\x1b[38;5;208mSuperca\x1b[0m…");
     assert_eq!(visible_width(&cut), 8);
 }
+
+/// A cut inside an OSC 8 hyperlink closes the link before the ellipsis, so
+/// the link does not run over the text after it.
+#[test]
+fn a_cut_inside_a_hyperlink_closes_the_link() {
+    let linked = "\x1b]8;;https://example.com\x07open link text here\x1b]8;;\x07";
+    let cut = truncate_at_word(linked, 10);
+    assert_eq!(cut, "\x1b]8;;https://example.com\x07open link\x1b]8;;\x07…");
+    assert_eq!(visible_width(&cut), 10);
+}
+
+/// A cut after a style has closed adds no second reset.
+#[test]
+fn a_cut_after_a_closed_style_adds_no_reset() {
+    let styled = "\x1b[31mred\x1b[0m and more";
+    assert_eq!(truncate_at_word(styled, 6), "\x1b[31mred\x1b[0m…");
+}

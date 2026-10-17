@@ -337,6 +337,7 @@ impl Mode {
                     // its previous calls formed.
                     if !self.chain_closed_for_current_message && self.opens_new_chain(&assistant) {
                         self.chain_closed_for_current_message = true;
+                        self.release_streaming_trace();
                         self.close_open_chain(ChainState::Done);
                     }
                     for content in &assistant.content {
@@ -346,6 +347,9 @@ impl Mode {
                         match self.transcript.pending_tools.get(&call.id) {
                             Some(block) => block.borrow_mut().update_args(call.arguments.clone()),
                             None => {
+                                if let Some(trace) = self.transcript.streaming.clone() {
+                                    self.place_trace_in_chain(&trace);
+                                }
                                 let block = self.new_tool_block(
                                     &call.name,
                                     &call.id,

@@ -404,6 +404,16 @@ impl Mode {
                         }
                     }
                     self.add_message_to_chat(message, populate_history);
+                    let trace = self.transcript.assistant_components.last().cloned();
+                    if let Some(trace) = &trace {
+                        if assistant
+                            .content
+                            .iter()
+                            .any(|c| matches!(c, Content::ToolCall(_)))
+                        {
+                            self.place_trace_in_chain(trace);
+                        }
+                    }
                     for content in &assistant.content {
                         let Content::ToolCall(call) = content else {
                             continue;
@@ -490,8 +500,20 @@ impl Mode {
     pub(super) fn render_initial_messages(&mut self) {
         let messages = self.session.messages();
         // The plan is the session's own: rebuilt from its last TodoWrite, so a
-        // resumed or reloaded session shows the plan it ended with.
-        hoocode_code_tools_optin::restore_plan(hoocode_code_task_store::task_store(), &messages);
+        // resumed or reloaded session shows the plan it ended with. That call
+        // may sit before a compaction, so the whole branch is read, not the
+        // compacted context.
+        let branch: Vec<AgentMessage> = self
+            .session
+            .session_manager()
+            .branch(None)
+            .into_iter()
+            .filter_map(|e| match e {
+                hoocode_code_session::FileEntry::Message { message, .. } => Some(message.clone()),
+                _ => None,
+            })
+            .collect();
+        hoocode_code_tools_optin::restore_plan(hoocode_code_task_store::task_store(), &branch);
         self.update_editor_border_color();
         self.render_session_context(&messages, true);
         let compactions = self
@@ -594,6 +616,41 @@ impl Mode {
             chain.borrow_mut().set_latest(true);
         }
         self.dirty.set(true);
+    }
+
+    /// Moves a message's trace into the open chain, above the calls it is
+    /// about to add, so thinking reads above the call it led to. Skipped when
+    /// no chain is open: the trace then sits above the chain it opens.
+    pub(super) fn place_trace_in_chain(
+        &mut self,
+        component: &Rc<RefCell<AssistantMessageComponent>>,
+    ) {
+        let Some(chain) = self.transcript.open_chain.clone() else {
+            return;
+        };
+        if !chain.borrow().is_open() || chain.borrow().has_lead_in(component) {
+            return;
+        }
+        self.transcript
+            .chat
+            .borrow_mut()
+            .remove_child(&as_component(component));
+        chain.borrow_mut().add_lead_in(component.clone());
+    }
+
+    /// The streaming message speaks after its calls joined the open chain:
+    /// its trace goes back into the transcript, after the chain, so its text
+    /// is not drawn inside the run.
+    pub(super) fn release_streaming_trace(&mut self) {
+        let (Some(chain), Some(component)) = (
+            self.transcript.open_chain.clone(),
+            self.transcript.streaming.clone(),
+        ) else {
+            return;
+        };
+        if chain.borrow_mut().take_lead_in(&component) {
+            self.add_to_chat(as_component(&component));
+        }
     }
 
     /// `closeOpenChain`: settle the chain collecting calls.

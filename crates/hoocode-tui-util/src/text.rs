@@ -600,11 +600,41 @@ pub fn truncate_at_word(text: &str, max_width: usize) -> String {
         }
     };
     let mut out = kept.trim_end().to_string();
-    if out.contains('\x1b') {
+    let (style_open, link_open) = open_escapes(&out);
+    if style_open {
         out.push_str("\x1b[0m");
+    }
+    if link_open {
+        // An OSC 8 hyperlink left open would run over the ellipsis and the text after it.
+        out.push_str("\x1b]8;;\x07");
     }
     out.push('…');
     out
+}
+
+/// Whether `text` ends inside a style (the last SGR is not a reset) and
+/// inside an OSC 8 hyperlink (the last link sequence names a URL).
+fn open_escapes(text: &str) -> (bool, bool) {
+    let mut style_open = false;
+    let mut link_open = false;
+    let mut i = 0usize;
+    while i < text.len() {
+        let Some((code, len)) = extract_ansi_code(text, i) else {
+            i += crate::text_slice::suffix_from(text, i)
+                .chars()
+                .next()
+                .map_or(1, char::len_utf8);
+            continue;
+        };
+        if let Some(params) = code.strip_prefix("\x1b[").and_then(|c| c.strip_suffix('m')) {
+            style_open = !(params.is_empty() || params.split(';').all(|p| p == "0"));
+        } else if let Some(body) = code.strip_prefix("\x1b]8;") {
+            let body = body.trim_end_matches('\x07').trim_end_matches("\x1b\\");
+            link_open = body.split_once(';').is_some_and(|(_, url)| !url.is_empty());
+        }
+        i += len;
+    }
+    (style_open, link_open)
 }
 
 // ---------------------------------------------------------------------------

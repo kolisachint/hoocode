@@ -403,7 +403,7 @@ impl ToolExecutionComponent {
             tool: self.tool_name.clone(),
             subject: chain_subject(&self.tool_name, &self.args, &self.cwd),
             is_error: self.result.as_ref().is_some_and(|r| r.is_error),
-            is_partial: self.result.is_none() || self.is_partial || self.is_background_launch(),
+            is_partial: self.result.is_none() || self.is_partial || self.is_live_background_job(),
             output_lines: if crate::is_blank(&output) {
                 0
             } else {
@@ -418,16 +418,25 @@ impl ToolExecutionComponent {
         }
     }
 
-    /// A background shell job returns its id at once, but the job is still
-    /// running: the call stays running in its chain. The TUI cannot see the
-    /// job end (ShellOutput reports it as text only), so this holds for as
-    /// long as the chain is shown.
-    fn is_background_launch(&self) -> bool {
-        self.tool_name == "Shell"
-            && self
-                .result
-                .as_ref()
-                .is_some_and(|r| !r.is_error && r.result().details.get("jobId").is_some())
+    /// A background shell job returns its id at once, and the call stays
+    /// running in its chain while the job does. Only a live, tracked job reads
+    /// running: its row in the task store is in progress. A replayed history
+    /// has no such row, so its launch reads done; a job that has ended, or
+    /// was killed, reads done too.
+    pub fn is_live_background_job(&self) -> bool {
+        if self.tool_name != "Shell" {
+            return false;
+        }
+        let Some(result) = self.result.as_ref().filter(|r| !r.is_error) else {
+            return false;
+        };
+        let Some(id) = result.result().details.get("jobId") else {
+            return false;
+        };
+        let job_id = id.as_str().map_or_else(|| id.to_string(), str::to_owned);
+        hoocode_code_task_store::task_store()
+            .find_keyed(&hoocode_code_tool_bash::jobs::row_key(&job_id))
+            .is_some_and(|task| task.status == hoocode_code_task_store::TaskStatus::InProgress)
     }
 
     /// The failure text, for a collapsed chain to print under its line.

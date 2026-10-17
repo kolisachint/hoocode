@@ -12,6 +12,7 @@ use hoocode_code_tui_theme::theme;
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
+use crate::assistant_message::AssistantMessageComponent;
 use crate::tool_chain_summary::{
     chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
 };
@@ -31,8 +32,17 @@ pub fn speaking_ends_chain(content: &[Content]) -> bool {
 /// The output lines a failed call shows under its chain line.
 const FAILURE_TAIL_LINES: usize = 2;
 
+/// A message's thinking that leads into the run: drawn just above the call
+/// at index `before`, so a trace sits above the call it led to. The chain
+/// does not split at it.
+struct LeadIn {
+    before: usize,
+    component: Rc<RefCell<AssistantMessageComponent>>,
+}
+
 pub struct ToolChainComponent {
     blocks: Vec<ToolBlock>,
+    lead_ins: Vec<LeadIn>,
     view: ToolOutputView,
     state: ChainState,
     /// The newest run in the transcript; radar marks it.
@@ -43,6 +53,7 @@ impl ToolChainComponent {
     pub fn new(view: ToolOutputView) -> Self {
         Self {
             blocks: Vec::new(),
+            lead_ins: Vec::new(),
             view,
             state: ChainState::Running,
             latest: false,
@@ -55,7 +66,37 @@ impl ToolChainComponent {
 
     /// Takes a block out of the chain (a failed attempt's calls).
     pub fn remove(&mut self, block: &ToolBlock) {
-        self.blocks.retain(|b| !Rc::ptr_eq(b, block));
+        let Some(index) = self.blocks.iter().position(|b| Rc::ptr_eq(b, block)) else {
+            return;
+        };
+        self.blocks.remove(index);
+        for lead in &mut self.lead_ins {
+            if lead.before > index {
+                lead.before -= 1;
+            }
+        }
+    }
+
+    /// Draws a message's trace above the calls added from now on.
+    pub fn add_lead_in(&mut self, component: Rc<RefCell<AssistantMessageComponent>>) {
+        self.lead_ins.push(LeadIn {
+            before: self.blocks.len(),
+            component,
+        });
+    }
+
+    pub fn has_lead_in(&self, component: &Rc<RefCell<AssistantMessageComponent>>) -> bool {
+        self.lead_ins
+            .iter()
+            .any(|l| Rc::ptr_eq(&l.component, component))
+    }
+
+    /// Gives a trace back to the caller; true when it was in this chain.
+    pub fn take_lead_in(&mut self, component: &Rc<RefCell<AssistantMessageComponent>>) -> bool {
+        let before = self.lead_ins.len();
+        self.lead_ins
+            .retain(|l| !Rc::ptr_eq(&l.component, component));
+        self.lead_ins.len() != before
     }
 
     /// True until the agent speaks or the turn settles.
@@ -114,7 +155,10 @@ impl ToolChainComponent {
     fn rows(&mut self, width: u16) -> Vec<String> {
         if !self.is_collapsed() {
             let mut out = Vec::new();
-            for block in &self.blocks {
+            for (i, block) in self.blocks.iter().enumerate() {
+                for lead in self.lead_ins.iter().filter(|l| l.before == i) {
+                    out.extend(lead.component.borrow_mut().render(width));
+                }
                 out.extend(block.borrow_mut().render(width));
             }
             return out;
@@ -128,7 +172,13 @@ impl ToolChainComponent {
         // What the line reads as: interrupted when the turn was cut short;
         // running while any call is still going; otherwise done, even while
         // the chain stays open for the model's next call.
-        let shown = if self.state == ChainState::Interrupted {
+        // An interrupted turn does not stop a background job: an interrupted
+        // chain whose job is still live keeps reading running.
+        let live_job = self
+            .blocks
+            .iter()
+            .any(|b| b.borrow().is_live_background_job());
+        let shown = if self.state == ChainState::Interrupted && !live_job {
             ChainState::Interrupted
         } else if entries.iter().any(|e| e.is_partial) {
             ChainState::Running
@@ -200,7 +250,8 @@ impl ToolChainComponent {
         let prefix = format!("{glyph} ");
         let budget = width.saturating_sub(1 + visible_width(&prefix));
         let stats_width = visible_width(&stats);
-        // The stats always stay, flush right. The label gives way first.
+        // Stats whole, flush right. When the label does not fit beside them it
+        // is dropped; the stats are cut only when they do not fit alone.
         let line = if visible_width(&left_plain) + 2 + stats_width <= budget {
             let pad = " ".repeat(budget - visible_width(&left_plain) - stats_width);
             format!(
@@ -209,17 +260,14 @@ impl ToolChainComponent {
                 mark(&left_styled),
                 t.fg("muted", &stats)
             )
-        } else if budget >= stats_width + 3 {
-            let label = truncate_to_width(&left_styled, budget - stats_width - 2, "…", false);
-            let pad = " ".repeat(budget - visible_width(&label) - stats_width);
+        } else if stats_width <= budget {
+            let pad = " ".repeat(budget - stats_width);
             format!(
-                " {}{}{pad}{}",
+                " {}{pad}{}",
                 t.fg(glyph_tone, &prefix),
-                mark(&label),
                 t.fg("muted", &stats)
             )
         } else {
-            // Too narrow for a label at all: the stats are cut as a last resort.
             format!(
                 " {}{}",
                 t.fg(glyph_tone, &prefix),
@@ -268,7 +316,13 @@ impl ToolChainComponent {
                 lines.push(truncate_to_width(
                     &format!(
                         "      {}",
-                        t.fg("muted", &format!("… {hidden} more {noun} · ctrl+o"))
+                        t.fg(
+                            "muted",
+                            &format!(
+                                "… {hidden} more {noun} · {}",
+                                hoocode_code_tui_keybindings::key_text("app.tools.expand")
+                            )
+                        )
                     ),
                     width,
                     "…",
@@ -295,6 +349,9 @@ impl Component for ToolChainComponent {
     fn invalidate(&mut self) {
         for block in &self.blocks {
             block.borrow_mut().invalidate();
+        }
+        for lead in &self.lead_ins {
+            lead.component.borrow_mut().invalidate();
         }
     }
 }
