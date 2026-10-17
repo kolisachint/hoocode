@@ -448,6 +448,9 @@ struct Mode {
     /// The comms frame around the prompt (M2). Dialogs and the attached
     /// view replace it in the editor's slot; the prompt itself stays focused.
     comms: Rc<RefCell<CommsFrame>>,
+    /// COMMS LOST (M8e1): the last retry gave up and no hail or mission has
+    /// gone out since. Shared with the comms frame's state closure.
+    comms_lost: Rc<Cell<bool>>,
     editor_container: Rc<RefCell<Container>>,
     /// The picker in the editor's slot (`dialogs.rs`).
     picker: Option<ActivePicker>,
@@ -683,6 +686,11 @@ impl Mode {
         let comms_session = session.clone();
         let comms_turn = turn_timer.clone();
         let comms_editor = editor.clone();
+        // COMMS LOST (M8e1): set when the last retry gives up, cleared by
+        // the next hail or mission. Shared with the event handler because
+        // the frame's state closure cannot borrow the mode.
+        let comms_lost = Rc::new(Cell::new(false));
+        let comms_lost_state = comms_lost.clone();
         let comms = handle(CommsFrame::new(
             as_component(&editor),
             move || {
@@ -690,6 +698,8 @@ impl Mode {
                     CommsState::InFlight {
                         elapsed: comms_turn.borrow().elapsed(Instant::now()),
                     }
+                } else if comms_lost_state.get() {
+                    CommsState::CommsLost
                 } else {
                     CommsState::Ready
                 }
@@ -967,6 +977,7 @@ impl Mode {
             code_block_indent,
             editor,
             comms,
+            comms_lost,
             editor_container,
             actions,
             notifications,

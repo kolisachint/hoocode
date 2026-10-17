@@ -46,7 +46,7 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | Completion bell (`chimeOnTurnComplete`): one `\x07` when a turn over 10 s ends (not after an abort) or when `AskUserQuestion` opens (not MCP elicitation forms); repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` (pure timing, `TurnTimer` set at prompt submit); rung by `ring_chime` and `finish_turn_chime` in `mode/events.rs`, and at the `AskOptions` dialog in `mode/mod.rs` when its request has `chime` set (`dialog_bridge.rs`) |
 | Progress bar | progress bar, startup progress | `hoocode-code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
 | Prompt editor | `CustomEditor` around a borderless `Editor` (`▸` prefix, per-state placeholder) | `mode/input.rs` (`CustomEditor`); `tui-components/src/editor/` (`placeholder`, `placeholder_color`) |
-| Comms frame (M2) | `CommsFrame` around the prompt: heavy `┏┓┗┛` edges, state titles (READY dim, `◐ IN FLIGHT · time · esc abort` acc, `⊗ COMMS LOST` err, `● LANDED` ok, `⊗ DID NOT LAND` err, `⊘ ABORTED · READY` dim), foot with the view dial, the PLAN note and `↑in ↓out` token totals | `hoocode-code-tui-app/src/comms_frame.rs` (`CommsState`, `InputStyle`, `GlyphStyle`); read from the session (`is_streaming`/`is_retrying` for READY vs IN FLIGHT, `TurnTimer::elapsed` for the time) and `FooterSource::usage_totals` |
+| Comms frame (M2) | `CommsFrame` around the prompt: heavy `┏┓┗┛` edges, state titles (READY dim, `◐ IN FLIGHT · time · esc abort` acc, `⊗ COMMS LOST` err, `● LANDED` ok, `⊗ DID NOT LAND` err, `⊘ ABORTED · READY` dim), foot with the view dial, the PLAN note and `↑in ↓out` token totals | `hoocode-code-tui-app/src/comms_frame.rs` (`CommsState`, `InputStyle`, `GlyphStyle`); read from the session (`is_streaming`/`is_retrying` for READY vs IN FLIGHT, the `comms_lost` flag for COMMS LOST — set when the last retry gives up, cleared by the next hail or mission — `TurnTimer::elapsed` for the time) and `FooterSource::usage_totals` |
 | Prompt frame | frame, input frame (dialogs; the main prompt uses the comms frame now) | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
 | Attached subagent view (T3.3): a header row above the chat (`◂ <type> · <description> · <state> · Esc back`), and the prompt's place with a read-only hint; Esc goes back. The chat shows the run's transcript while attached; the session's is parked and kept up to date | attached view | `code-tui-widgets/src/attach_view.rs` (header, hint). The swap, the routing and the run's events: `hoocode-code-tui-app/src/mode/attach.rs`; the header's slot is `Mode::attach_slot` (above the chat) |
 | Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `mode/input.rs` `setup_autocomplete_provider`. `@file` uses the in-process finder `hoocode-code-tools::file_finder`, injected by `mode/input.rs` `at_file_finder` (no `fd`) and run on a worker thread (`autocomplete/file_search.rs`): typing never waits, and the editor re-asks when a walk finishes (`take_ready`). |
@@ -72,7 +72,7 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | Diffs | `diff.rs`, `jsdiff.rs` |
 | File content with line numbers | `read_output.rs` |
 | Notice rows (`showRecord`) | `hoocode-code-tui-app/src/record_row.rs` |
-| Failed Model block (`⊗ Model`, one per retry streak that gave up or was cancelled; the failed attempts' own rows are taken out of the chat) | `hoocode-code-tui-app/src/mode/retry.rs` (built on the chat from `AutoRetryStart` / `AutoRetryEnd` in `mode/events.rs`) |
+| Failed Model block (`⊗ Model`, one per retry streak that gave up or was cancelled; the failed attempts' own rows are taken out of the chat). A streak that ran out of retries is COMMS LOST: the block carries the hail axis (`⊗` per failed request, gaps doubling, `backoff doubles`), and empty enter hails the last prompt again | `hoocode-code-tui-app/src/mode/retry.rs` (`hail_axis`, built on the chat from `AutoRetryStart` / `AutoRetryEnd` in `mode/events.rs`; the `comms_lost` flag in `mode/mod.rs`, the last prompt in `Transcript`) |
 
 ### Tool renderers (`code-tui-widgets/src/tools/`)
 
@@ -156,7 +156,7 @@ The TUI owns the mechanism; the app owns which key does what.
   The transcript keeps at least one row.
 - Pinning works from any focus. Picker keys never un-pin.
 - PgDn past the bottom, or the wheel reaching the bottom, returns to live.
-- Status row (bottom): position, then the keys: line, `PgUp/PgDn page`, top, live. Search has its own text.
+- Status row (bottom): the REWIND bar while pinned (`◂◂ REWIND  43–61 of 78 · 55%  ↓ 3 new`, label in vio, then the keys: line, `PgUp/PgDn page`, top, live). The SCAN bar while searching (`⌕ SCAN  query  N contact(s)`, label in warn; typing: `enter lock · esc close`; locked: `enter next · esc close`).
   The line keys are `↑/↓` over an empty prompt and `shift+↑/shift+↓` while the prompt holds text.
 - Full-screen and mouse reporting on (the default): a plain drag does not select text. Selection is shift+drag.
 - The view pinned on a message keeps that message on top when the tool output view (ctrl+o) changes rows.
@@ -164,7 +164,7 @@ The TUI owns the mechanism; the app owns which key does what.
 - Full-screen (M1d, the default): the body is the transcript (header and chat). The bar row sits above the bottom,
   and carries `↓ N new` while pinned: lines that arrived since the view last pinned or moved. A shorter transcript
   (a clear) starts the count again. The scrollbar column is always reserved (blank while live, so pinning does not
-  reflow), and its glyphs are drawn per body row while pinned. Search marks its matches in the body. A focused
+  reflow), and its glyphs are drawn per body row while pinned. Search marks its matches in the body (`◂ contact` on each matched row) and steps with enter/`n`/`p`. A focused
   picker replaces the bottom rows while pinned. A body image whose picture would reach above the body is named
   `[image]`.
 
@@ -179,7 +179,7 @@ The TUI owns the mechanism; the app owns which key does what.
 | Stray stderr text (a TLS warning, child output, a reload warning, an extension handler error) while the TUI owns the terminal: it goes to the debug log. Every such write goes through `write_stderr` | `hoocode-runtime/src/diagnostics.rs` (`write_stderr`); sink installed in `run` (`mode/mod.rs`) |
 | Full-screen row arithmetic (pure): `split_rows`, `body_start`, `bottom_window`, `anchor_on_resize`, `body_width`, `new_lines_since` | `tui-render/src/fullscreen.rs` |
 | Prompt focus: `Tui.scroll_prompt`. Any other focus is a picker (`scroll_pane`) | `tui-render/src/tui.rs`; set in `install_scroll_view` |
-| Key routing, search, status text, keys at the prompt | `hoocode-code-tui-app/src/scroll_view.rs`: `handle_live`, `handle_picker`, `handle_input`, `format_scroll_status`, `install_scroll_view` |
+| Key routing, search, status text, keys at the prompt | `hoocode-code-tui-app/src/scroll_view.rs`: `handle_live`, `handle_picker`, `handle_input`, `format_scroll_status` (REWIND/SCAN bars as ratatui spans via `BarRun`/`paint_bar`), `install_scroll_view` |
 | Keeping the pinned top on its message across a change of rows | `scroll_view.rs`: `capture_top`, `reanchor_top` (called from `apply_tool_output_view` in `mode/transcript.rs`) |
 | Jump to user message (full-screen: offsets inside the body; inline: among the root's children) | `scroll_view.rs` `jump_to_user_message`, at `transcript_width()` |
 
@@ -197,6 +197,7 @@ The TUI owns the mechanism; the app owns which key does what.
 | Ctrl+R | Pin at bottom, open search | Picker |
 | `/` | Pinned: search in view. Live: types `/` | Picker |
 | `n` / `p` | Search open: next / previous match. Else the prompt | Picker |
+| Enter | Search locked: next contact. Typing: locks the query. Else the prompt | Picker |
 | Esc | Search open: clear it. Else live; during an agent run, also aborts it | Picker |
 | Enter, typed text | Search open: the query (Enter commits). Else pinned: back to live, then the prompt | Picker, never un-pins |
 

@@ -22,6 +22,7 @@ use hoocode_tui_render::Component;
 use crate::startup_progress;
 
 use super::retry::retry_notice_text;
+use super::retry::RETRY_CANCELLED;
 use super::*;
 
 /// What dangling plan rows settle to when a request ends: done after a clean
@@ -179,6 +180,7 @@ impl Mode {
                 ..
             } => {
                 self.transcript.start_retry(&error_message);
+                self.comms_lost.set(false);
                 self.footer
                     .borrow_mut()
                     .set_retry_notice(Some(retry_notice_text(
@@ -194,6 +196,12 @@ impl Mode {
             } => {
                 self.transcript
                     .end_retry(success, attempt, final_error.as_deref());
+                // COMMS LOST (M8e1): the last retry gave up after a real
+                // streak. A lone unretried error, a cancellation and a
+                // success leave the frame alone.
+                let lost =
+                    !success && final_error.as_deref() != Some(RETRY_CANCELLED) && attempt >= 2;
+                self.comms_lost.set(lost);
                 self.footer.borrow_mut().set_retry_notice(None);
             }
         }

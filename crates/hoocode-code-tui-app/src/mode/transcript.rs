@@ -78,6 +78,9 @@ pub(super) struct Transcript {
     pub(super) retry_streak: Option<super::retry::RetryStreak>,
     /// The tool blocks of the latest failed attempt, dropped with its row.
     pub(super) attempt_tools: Vec<hoocode_code_tui_widgets::tool_chain::ToolBlock>,
+    /// The last prompt actually sent: empty enter hails it again after
+    /// COMMS LOST (M8e1).
+    pub(super) last_prompt: Option<String>,
     /// Mission Control (M4): one range per `▲ M{n}` header. Steps number
     /// per mission and each mission gets its own landing line; ranges only
     /// grow, and step numbers rebase from them after a retry takes blocks
@@ -116,6 +119,7 @@ impl Transcript {
             attempt_error: None,
             retry_streak: None,
             attempt_tools: Vec::new(),
+            last_prompt: None,
             missions: Vec::new(),
         }
     }
@@ -646,7 +650,11 @@ impl Mode {
                                     std::time::Duration::from_millis(elapsed as u64),
                                     false,
                                 ),
+                                // A rebuilt streak that gave up is COMMS LOST
+                                // too (M8e1): its hails are its attempts.
+                                failed.len() as u64 + 1,
                             );
+                            self.comms_lost.set(failed.len() as u64 + 1 >= 2);
                             continue;
                         }
                     }
@@ -1047,6 +1055,8 @@ impl Mode {
     pub(super) fn reset_transcript_view(&mut self) {
         self.transcript.chat.borrow_mut().clear();
         self.transcript.reset_view();
+        // A fresh transcript is not a lost mission.
+        self.comms_lost.set(false);
         self.tui.scroll_to_live();
         self.tui.reset_new_lines_count();
     }

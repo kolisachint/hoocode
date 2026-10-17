@@ -448,6 +448,10 @@ impl Mode {
 
     pub(super) fn prompt_with_images(&mut self, text: String, images: Vec<ImageContent>) {
         startup_progress::clear();
+        // A hail or a mission leaves COMMS LOST behind; the frame reads
+        // READY or IN FLIGHT again (M8e1).
+        self.comms_lost.set(false);
+        self.transcript.last_prompt = Some(text.clone());
         self.turn_timer.borrow_mut().begin(Instant::now());
         let session = self.session.clone();
         let tx = self.tx.clone();
@@ -470,6 +474,12 @@ impl Mode {
     pub(super) fn submit(&mut self, text: String) {
         let text = text.trim().to_string();
         if text.is_empty() {
+            // Empty enter after COMMS LOST hails the last prompt again (M8e1).
+            if self.comms_lost.get() {
+                if let Some(last) = self.transcript.last_prompt.clone() {
+                    self.prompt(last);
+                }
+            }
             return;
         }
         // A session change is running: the text goes back to the prompt.

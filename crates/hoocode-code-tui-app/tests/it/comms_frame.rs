@@ -8,7 +8,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use hoocode_code_tui_app::comms_frame::{
-    CommsFrame, CommsState, GlyphStyle, InputStyle, IN_FLIGHT_PLACEHOLDER, READY_PLACEHOLDER,
+    CommsFrame, CommsState, GlyphStyle, InputStyle, COMMS_LOST_PLACEHOLDER, IN_FLIGHT_PLACEHOLDER,
+    READY_PLACEHOLDER,
 };
 use hoocode_code_tui_app::footer::{FooterModel, FooterSource, ToolOutputView};
 use hoocode_code_tui_app::footer_data::FooterDataProvider;
@@ -177,6 +178,38 @@ fn in_flight_without_elapsed_omits_the_time() {
         rows[0].contains("◐ IN FLIGHT · esc abort"),
         "row 0: {:?}",
         rows[0]
+    );
+}
+
+#[test]
+fn comms_lost_frame_golden() {
+    let _g = lock(Some("dark"));
+    assert_golden!(
+        "comms_lost_100x3",
+        render_golden(
+            &mut frame(CommsState::CommsLost, ToolOutputView::Peek, "build"),
+            100
+        )
+    );
+}
+
+#[test]
+fn comms_lost_titles_the_hail_again_and_switch_ship() {
+    let _g = lock(Some("dark"));
+    let rows = rows(
+        &mut frame(CommsState::CommsLost, ToolOutputView::Peek, "build"),
+        100,
+    );
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    assert!(
+        rows[0].contains("⊗ COMMS LOST · enter hail again · /model switch ship"),
+        "row 0: {:?}",
+        rows[0]
+    );
+    assert!(
+        rows[1].contains(COMMS_LOST_PLACEHOLDER),
+        "row 1: {:?}",
+        rows[1]
     );
 }
 

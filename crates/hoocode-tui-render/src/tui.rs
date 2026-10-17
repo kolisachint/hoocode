@@ -872,7 +872,11 @@ impl Tui {
     }
 
     /// Mark the query where it appears in a row about to be painted, slicing
-    /// by display column so the row's own styling survives.
+    /// by display column so the row's own styling survives. A matched row
+    /// also carries the Mission Control contact marker (M8e3): `◂ contact`.
+    /// The marker is plain text (a shape, not a colour, per the NO_COLOR
+    /// rules); the frame cuts the row to the body width, so long rows keep
+    /// the highlight and drop the marker first.
     fn highlight_scroll_matches(line: &str, query: &str) -> String {
         let plain = strip_vt_control_characters(line);
         let needle = query.to_lowercase();
@@ -913,6 +917,7 @@ impl Tui {
         }
         let tail_col = visible_width(hoocode_tui_util::text_slice::prefix(&plain, cursor));
         out.push_str(&slice_by_column(line, tail_col, usize::MAX / 2, false));
+        out.push_str(" \u{25c2} contact");
         out
     }
 
