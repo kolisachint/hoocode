@@ -72,7 +72,7 @@ fn shell_card_shows_title_command_reach_and_keys() {
     assert!(rows[2].contains("□ read"), "row 2: {:?}", rows[2]);
     assert!(rows[3].contains("y go once"), "row 3: {:?}", rows[3]);
     assert!(
-        rows[3].contains("a always printf in BUILD"),
+        rows[3].contains("a always printf in this session"),
         "row 3: {:?}",
         rows[3]
     );
@@ -144,6 +144,22 @@ fn edit_card_names_the_real_path() {
 fn wrapper_omits_always_and_a_runs_once() {
     let _g = lock(Some("dark"));
     let (mut card, answered) = card(shell_info("$ sudo rm -rf /tmp/x"));
+    let rows = rows(&mut card, 100);
+    assert!(
+        !rows[3].contains("a always"),
+        "row 3 must omit `a`: {:?}",
+        rows[3]
+    );
+    card.handle_input("a");
+    assert_eq!(*answered.borrow(), Some(ClearanceChoice::Once));
+}
+
+#[test]
+fn plan_mode_omits_always_and_a_runs_once() {
+    let _g = lock(Some("dark"));
+    let mut info = shell_info("$ printf y");
+    info.mode = "plan".to_string();
+    let (mut card, answered) = card(info);
     let rows = rows(&mut card, 100);
     assert!(
         !rows[3].contains("a always"),

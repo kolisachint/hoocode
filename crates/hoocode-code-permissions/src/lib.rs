@@ -4,8 +4,9 @@
 use hoocode_agent_types::{AgentToolCall, PermissionDecision, PermissionGate};
 use hoocode_code_modes::config::{self, HooConfig};
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// `GATED_TOOLS`: prompted in interactive sessions. `ShellKill` stops a background
 /// job, so it asks like `Shell`; `ShellOutput` only reads and is not gated.
@@ -152,11 +153,12 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
     let mut escaped = false;
     let mut chars = command.chars().peekable();
     // A `>`/`>>` waits for its target word; `piped` tracks single-`|` joins.
-    // `prev_sig` is the last non-space char outside quotes: an `&` right
-    // after `>` belongs to a descriptor dup (`2>&1`), not the background.
+    // `prev` is the last char outside quotes, spaces included: an `&`
+    // continues a word only directly after `>` (`2>&1`), so `2> &1`
+    // splits and fails closed.
     let mut redirect_pending = false;
     let mut piped = false;
-    let mut prev_sig: Option<char> = None;
+    let mut prev: Option<char> = None;
     while let Some(c) = chars.next() {
         if escaped {
             current.push(c);
@@ -187,13 +189,13 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
                 }
                 segments.push(Vec::new());
                 redirect_pending = false;
-                prev_sig = Some('|');
+                prev = Some('|');
             }
             '&' | ';' | '<' | '(' | ')' => {
-                if c == '&' && prev_sig == Some('>') {
+                if c == '&' && prev == Some('>') {
                     // A descriptor dup (`2>&1`): the word continues.
                     current.push(c);
-                    prev_sig = Some(c);
+                    prev = Some(c);
                     continue;
                 }
                 if c == '&' && chars.peek() == Some(&'&') {
@@ -203,7 +205,7 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
                 push_word(segments.last_mut().expect("segment"), &mut current);
                 segments.push(Vec::new());
                 redirect_pending = false;
-                prev_sig = Some(c);
+                prev = Some(c);
             }
             '>' => {
                 if chars.peek() == Some(&'>') {
@@ -212,15 +214,16 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
                 take_redirect(&mut redirects, &mut redirect_pending, &mut current);
                 push_word(segments.last_mut().expect("segment"), &mut current);
                 redirect_pending = true;
-                prev_sig = Some('>');
+                prev = Some('>');
             }
             c if c.is_whitespace() => {
                 take_redirect(&mut redirects, &mut redirect_pending, &mut current);
                 push_word(segments.last_mut().expect("segment"), &mut current);
+                prev = Some(' ');
             }
             _ => {
                 current.push(c);
-                prev_sig = Some(c);
+                prev = Some(c);
             }
         }
     }
@@ -440,17 +443,27 @@ pub fn shell_program(command: &str) -> Option<String> {
     (!word.is_empty()).then(|| word.to_string())
 }
 
-/// Wrapper programs are never approvable: `a` on them only runs once.
-/// (`find` runs whatever `-exec` names; the rest hand control to another
-/// program or shell.)
-pub const ALWAYS_WRAPPERS: [&str; 22] = [
-    "sudo", "doas", "su", "env", "sh", "bash", "zsh", "dash", "fish", "eval", "exec", "source",
-    ".", "xargs", "nohup", "time", "command", "builtin", "nice", "timeout", "watch", "find",
+/// Programs an always-rule may never cover: prefix runners that hand
+/// control to another program, and every bash/zsh builtin and keyword
+/// (they mutate shell state or run what their arguments name). Compared
+/// by basename, case-insensitive (`./sudo` and `SUDO` count). For these,
+/// `a` only runs once.
+pub const ALWAYS_WRAPPERS: [&str; 83] = [
+    "sudo", "doas", "su", "env", "sh", "bash", "zsh", "dash", "fish", "xargs", "nohup", "nice",
+    "timeout", "watch", "find", "trap", "export", "declare", "typeset", "local", "readonly", "set",
+    "unset", "shopt", "coproc", "function", "alias", "unalias", "cd", "pushd", "popd", "kill",
+    "wait", "jobs", "fg", "bg", "disown", "suspend", "exec", "eval", "source", ".", "command",
+    "builtin", "enable", "hash", "ulimit", "umask", "read", "mapfile", "let", "getopts", "fc",
+    "history", "logout", "exit", "return", "break", "continue", "shift", "times", "type", "[[",
+    "if", "then", "elif", "else", "fi", "for", "while", "until", "case", "esac", "select", "time",
+    "do", "done", "in", "{", "}", "(", ")", "!",
 ];
 
-/// Whether `program` hands control elsewhere, so no always-rule may cover it.
+/// Whether `program` hands control elsewhere, so no always-rule may cover
+/// it: the basename, case-insensitive.
 pub fn is_always_wrapper(program: &str) -> bool {
-    ALWAYS_WRAPPERS.contains(&program)
+    let base = program.rsplit('/').next().unwrap_or(program);
+    ALWAYS_WRAPPERS.contains(&base.to_ascii_lowercase().as_str())
 }
 
 /// Whether `command` hides code the first-word check cannot see: command
@@ -510,10 +523,14 @@ fn is_assignment(word: &str) -> bool {
 
 /// Whether an always-rule for `approved` programs covers `command`: every
 /// pipe segment's program (first word) is approved, with no wrapper, no
-/// leading assignment, no code expansion, and no file redirect (descriptor
-/// dups like `2>&1` and `/dev/null` are fine). Anything else falls through
-/// to a prompt — never a block, never a silent allow.
+/// slash in the program, no leading assignment, no code expansion, no file
+/// redirect (descriptor dups like `2>&1` and `/dev/null` are fine), and no
+/// command over 32 KiB. Anything else falls through to a prompt — never a
+/// block, never a silent allow.
 pub fn always_allows(command: &str, approved: &[String]) -> bool {
+    if command.len() > 32 * 1024 {
+        return false;
+    }
     if has_code_expansion(command) {
         return false;
     }
@@ -529,7 +546,8 @@ pub fn always_allows(command: &str, approved: &[String]) -> bool {
     }
     segments.iter().all(|words| {
         let program = &words[0];
-        !is_always_wrapper(program)
+        !program.contains('/')
+            && !is_always_wrapper(program)
             && !is_assignment(program)
             && approved.iter().any(|name| name == program)
     })
@@ -664,15 +682,16 @@ pub fn evaluate(
     if list("auto_allow").is_some_and(|a| a.iter().any(|t| t == tool_name)) {
         return Verdict::Allow;
     }
-    // A program the user always-approved (`a` on the clearance card) runs
-    // without asking, when the whole command stays inside the approval:
-    // every segment's program is approved, with no wrapper, assignment,
-    // expansion or file redirect. Anything else falls through to a prompt.
+    // A program the session always-approved (`a` on the clearance card)
+    // runs without asking, when the whole command stays inside the
+    // approval. Never consulted in PLAN mode. Anything else falls
+    // through to a prompt.
     if tool_name == "Shell"
-        && list("always_bash_programs").is_some_and(|programs| {
-            let command = input.get("command").and_then(Value::as_str).unwrap_or("");
-            always_allows(command, &programs)
-        })
+        && !mode.eq_ignore_ascii_case("plan")
+        && always_allows(
+            input.get("command").and_then(Value::as_str).unwrap_or(""),
+            &session_programs(cwd, &mode),
+        )
     {
         return Verdict::Allow;
     }
@@ -708,6 +727,36 @@ fn insert_mode_list(latest: &mut HooConfig, mode: &str, key: &str, value: String
         }
         mode_cfg.insert(key.into(), Value::Array(allow));
     }
+}
+
+/// Session-only Shell always-approvals, keyed by (cwd, mode): in memory,
+/// cleared on process exit, never read from or written to config. A
+/// subagent of the same session shares them only for the same cwd.
+/// Session approvals by (cwd, mode).
+type SessionApprovals = HashMap<(PathBuf, String), HashSet<String>>;
+
+static SESSION_ALWAYS: std::sync::LazyLock<Mutex<SessionApprovals>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn session_store() -> std::sync::MutexGuard<'static, SessionApprovals> {
+    SESSION_ALWAYS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Remembers `program` for the session: later commands it covers run
+/// without asking (same cwd and mode only).
+pub fn session_allow_program(cwd: &Path, mode: &str, program: &str) {
+    session_store()
+        .entry((cwd.to_path_buf(), mode.to_string()))
+        .or_default()
+        .insert(program.to_string());
+}
+
+/// The session's always-approved programs for (cwd, mode).
+fn session_programs(cwd: &Path, mode: &str) -> Vec<String> {
+    session_store()
+        .get(&(cwd.to_path_buf(), mode.to_string()))
+        .map(|programs| programs.iter().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// hoocode's permission gate for one working directory.
@@ -751,28 +800,25 @@ impl HooPermissionGate {
                     }),
                     // The revised text runs as a later message; this call stays denied.
                     ClearanceChoice::Revise(_) => Some("Denied by permission gate".into()),
-                    // "Always" scopes to the Shell program (`a always printf`),
-                    // never the whole tool. Wrappers (sudo, …) are never
-                    // approvable: `a` only runs them once, and says so.
+                    // "Always" on Shell is session-only: remembered in memory
+                    // for this cwd and mode (the merged mode, same value the
+                    // check consults), never written to config. Slash
+                    // programs, wrappers and PLAN mode only run once.
                     // Other tools keep tool-name scope in `auto_allow`.
                     ClearanceChoice::Always => {
                         // "Always" goes to the global config only.
                         let mut latest = config::read_config();
-                        let mode = config::active_mode(&latest).unwrap_or_else(|| "build".into());
-                        if tool_name == "Shell" {
+                        let mode = config::active_mode(&merged).unwrap_or_else(|| "build".into());
+                        if tool_name == "Shell" && !mode.eq_ignore_ascii_case("plan") {
                             let command =
                                 input.get("command").and_then(Value::as_str).unwrap_or("");
-                            match shell_program(command).filter(|p| !is_always_wrapper(p)) {
+                            match shell_program(command)
+                                .filter(|p| !p.contains('/') && !is_always_wrapper(p))
+                            {
                                 Some(program) => {
-                                    insert_mode_list(
-                                        &mut latest,
-                                        &mode,
-                                        "always_bash_programs",
-                                        program.clone(),
-                                    );
-                                    let _ = config::write_config(&latest);
+                                    session_allow_program(&self.cwd, &mode, &program);
                                     ui.notify(&format!(
-                                        "\"{program}\" added to always-allow for mode \"{mode}\""
+                                        "\"{program}\" always allowed in this session"
                                     ));
                                     None
                                 }
@@ -781,6 +827,11 @@ impl HooPermissionGate {
                                     None
                                 }
                             }
+                        } else if tool_name == "Shell" {
+                            // PLAN mode: `a` is not offered, so this only
+                            // runs it once.
+                            ui.notify("\"always\" isn't offered here; ran once");
+                            None
                         } else {
                             insert_mode_list(&mut latest, &mode, "auto_allow", tool_name.into());
                             let _ = config::write_config(&latest);
