@@ -74,7 +74,7 @@ impl ClearanceCard {
     /// word comes from the gate's [`shell_program`], so the label and
     /// the stored rule always agree).
     fn always_offer(&self) -> Option<String> {
-        if self.info.mode.eq_ignore_ascii_case("plan") {
+        if self.info.mode.trim().eq_ignore_ascii_case("plan") {
             return None;
         }
         if self.info.tool == "Shell" {
