@@ -12,14 +12,12 @@ use hoocode_code_resources::node_path;
 use hoocode_code_resources::package_resolve::{PathMetadata, ResolvedPaths, ResolvedResource};
 use hoocode_code_resources::{SourceOrigin, SourceScope};
 use hoocode_code_settings::{PackageFilter, PackageSource, SettingsManager};
-use hoocode_code_tui_keybindings::raw_key_hint;
-use hoocode_code_tui_theme::{
-    paint_selected_row, select_gutter, style_input, theme, SELECT_CURSOR,
-};
-use hoocode_tui_components::{Input, PickerCursor, Spacer};
+use hoocode_code_tui_theme::style_input;
+use hoocode_code_tui_widgets::console::{hints, query_row, Console};
+use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, matches_key};
-use hoocode_tui_render::{Component, ComponentHandle, Container};
-use hoocode_tui_util::{truncate_to_width, visible_width};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
+use hoocode_tui_render::Component;
 use serde_json::Value;
 
 /// The four resource kinds the list shows, in display order.
@@ -273,31 +271,9 @@ pub fn build_groups(resolved: &ResolvedPaths) -> Vec<ResourceGroup> {
     groups
 }
 
-/// `ConfigSelectorHeader`: the title with the keys on the right, and the
-/// search hint.
-struct Header;
-
-impl Component for Header {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let width = width as usize;
-        let title = t.bold("Resource Configuration");
-        let hint =
-            raw_key_hint("space", "toggle") + &t.fg("muted", " · ") + &raw_key_hint("esc", "close");
-        let spacing = width
-            .saturating_sub(visible_width(&title) + visible_width(&hint))
-            .max(1);
-        vec![
-            truncate_to_width(
-                &format!("{title}{}{hint}", " ".repeat(spacing)),
-                width,
-                "",
-                false,
-            ),
-            t.fg("muted", "Type to filter resources"),
-        ]
-    }
-}
+/// The list window: at most this many rows draw, centred on the
+/// selection (the console windows like [`PickerCursor::window`]).
+const MAX_VISIBLE: usize = 15;
 
 /// One row of the list: a group header, a type header, or a resource
 /// (indices into `groups`).
@@ -312,6 +288,10 @@ enum Entry {
 pub type OnToggle = Box<dyn FnMut(&ResourceItem, bool)>;
 
 /// `ResourceList`: the searchable, toggleable list the keyboard goes to.
+/// It draws as the RESOURCES console (M7, ratatui): `RESOURCES · config`,
+/// the `▸` query row, one row per entry with `›` on the selection band,
+/// and the hint foot. Shared `Console` chrome in
+/// `code-tui-widgets/src/console.rs`; keys, filtering and events unchanged.
 pub struct ResourceList {
     groups: Vec<ResourceGroup>,
     flat: Vec<Entry>,
@@ -321,6 +301,8 @@ pub struct ResourceList {
     settings: Rc<RefCell<SettingsManager>>,
     cwd: String,
     agent_dir: String,
+    /// Whether the picker has focus: the query caret draws while set.
+    focused: bool,
     pub on_cancel: Option<Box<dyn FnMut()>>,
     pub on_exit: Option<Box<dyn FnMut()>>,
     pub on_toggle: Option<OnToggle>,
@@ -345,13 +327,14 @@ impl ResourceList {
         }
         let mut list = Self {
             groups,
-            cursor: PickerCursor::new(flat.len(), 15),
+            cursor: PickerCursor::new(flat.len(), MAX_VISIBLE),
             filtered: flat.clone(),
             flat,
             search,
             settings,
             cwd: cwd.to_string(),
             agent_dir: agent_dir.to_string(),
+            focused: false,
             on_cancel: None,
             on_exit: None,
             on_toggle: None,
@@ -572,57 +555,74 @@ impl ResourceList {
     }
 }
 
-impl Component for ResourceList {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let w = width as usize;
-        let mut lines = self.search.render(width);
-        lines.push(String::new());
-        if self.filtered.is_empty() {
-            lines.push(t.fg("muted", "  No resources found"));
-            return lines;
-        }
-        for i in self.cursor.window() {
-            let selected = i == self.cursor.selected();
-            match self.filtered[i] {
-                Entry::Group(g) => {
-                    let label = t.fg("accent", &t.bold(&self.groups[g].label));
-                    lines.push(truncate_to_width(&format!("  {label}"), w, "", false));
-                }
-                Entry::Subgroup(g, s) => {
-                    let label = t.fg("muted", &self.groups[g].subgroups[s].label);
-                    lines.push(truncate_to_width(&format!("    {label}"), w, "", false));
-                }
-                entry @ Entry::Item(..) => {
-                    let item = self.item(entry).unwrap();
-                    let cursor = if selected {
-                        t.fg("accent", SELECT_CURSOR)
-                    } else {
-                        select_gutter()
-                    };
-                    let checkbox = if item.enabled {
-                        t.fg("success", "[x]")
-                    } else {
-                        t.fg("dim", "[ ]")
-                    };
-                    let name = if selected {
-                        t.bold(&t.fg("accent", &item.display_name))
-                    } else {
-                        item.display_name.clone()
-                    };
-                    let line = truncate_to_width(
-                        &format!("{cursor}    {checkbox} {name}"),
-                        w,
-                        "...",
-                        false,
-                    );
-                    lines.push(if selected {
-                        paint_selected_row(&line, w)
-                    } else {
-                        line
-                    });
-                }
+impl ResourceList {
+    /// The RESOURCES console (`RESOURCES · config`): the `▸` query row,
+    /// one row per filtered entry with `›` on the selection band, the
+    /// scroll position, and the hint foot.
+    fn console(&self) -> Console {
+        let pal = Palette::current();
+        let query = self.search.get_value().to_string();
+        let mut console = Console::new("RESOURCES · config", self.count_text(&query));
+        console.query = Some(query_row(&query, self.focused));
+        let selected = self.cursor.selected();
+        console.rows = self
+            .filtered
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| self.entry_row(*entry, i == selected, &pal))
+            .collect();
+        console.selected = (!self.filtered.is_empty()).then_some(selected);
+        console.max_visible = Some(self.cursor.max_visible());
+        console.bottom = self.bottom_rows(&pal);
+        console.hint = hints(&[("↑↓", "move"), ("space", "toggle"), ("esc", "close")]);
+        console
+    }
+
+    /// One filtered entry as a console row (content only; the console adds
+    /// the `›` marker or gutter and the selection band): group headers as
+    /// plain bold lines, type headers dimmed, items as the state checkbox,
+    /// the name (accent on the selected row), and the dimmed path.
+    fn entry_row(&self, entry: Entry, selected: bool, pal: &Palette) -> Line<'static> {
+        match entry {
+            Entry::Group(g) => Line::from(vec![Span::styled(
+                self.groups[g].label.clone(),
+                bold(Style::default()),
+            )]),
+            Entry::Subgroup(g, s) => Line::from(vec![Span::styled(
+                format!("  {}", self.groups[g].subgroups[s].label),
+                pal.faint(),
+            )]),
+            entry @ Entry::Item(..) => {
+                let item = self.item(entry).unwrap();
+                let checkbox = if item.enabled {
+                    Span::styled("[x]", pal.ok())
+                } else {
+                    Span::styled("[ ]", pal.dim())
+                };
+                let name = if selected {
+                    Span::styled(item.display_name.clone(), bold(pal.acc()))
+                } else {
+                    Span::raw(item.display_name.clone())
+                };
+                Line::from(vec![
+                    checkbox,
+                    Span::raw(" "),
+                    name,
+                    Span::raw("  "),
+                    Span::styled(item.path.clone(), pal.dim()),
+                ])
             }
+        }
+    }
+
+    /// Rows below the list: the empty-list line, or the scroll position over
+    /// resources (headers are not counted).
+    fn bottom_rows(&self, pal: &Palette) -> Vec<Line<'static>> {
+        if self.filtered.is_empty() {
+            return vec![Line::from(vec![Span::styled(
+                "  No resources found".to_string(),
+                pal.faint(),
+            )])];
         }
         if self.cursor.is_scrolled() {
             let count = self.filtered.iter().filter(|e| Self::is_item(e)).count();
@@ -631,9 +631,46 @@ impl Component for ResourceList {
                 .filter(|e| Self::is_item(e))
                 .count()
                 + 1;
-            lines.push(t.fg("dim", &format!("  ({current}/{count})")));
+            vec![Line::from(vec![Span::styled(
+                format!("  ({current}/{count})"),
+                pal.dim(),
+            )])]
+        } else {
+            Vec::new()
         }
-        lines
+    }
+
+    /// The console count: the resources shown, of the resources listed.
+    fn count_text(&self, query: &str) -> String {
+        let total: usize = self
+            .groups
+            .iter()
+            .map(|g| g.subgroups.iter().map(|s| s.items.len()).sum::<usize>())
+            .sum();
+        if query.trim().is_empty() {
+            resources(total)
+        } else {
+            let shown = self.filtered.iter().filter(|e| Self::is_item(e)).count();
+            format!("{} of {total}", resources(shown))
+        }
+    }
+}
+
+/// `1 resource`, `N resources`.
+fn resources(count: usize) -> String {
+    if count == 1 {
+        "1 resource".to_string()
+    } else {
+        format!("{count} resources")
+    }
+}
+
+impl Component for ResourceList {
+    /// The RESOURCES console: the `▸` query row, one row per entry with
+    /// `›` on the selection band, the scroll position, and the hint foot.
+    /// Grouping, sorting, filtering and toggle persistence are unchanged.
+    fn render(&mut self, width: u16) -> Vec<String> {
+        self.console().render(width as usize)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -689,13 +726,14 @@ impl Component for ResourceList {
     }
 
     fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
         self.search.set_focused(focused);
     }
 }
 
-/// `ConfigSelectorComponent`: header, then the resource list.
+/// `ConfigSelectorComponent`: the config subcommand's resource list as the
+/// RESOURCES console (M7, ratatui).
 pub struct ConfigSelectorComponent {
-    container: Container,
     list: Rc<RefCell<ResourceList>>,
 }
 
@@ -709,17 +747,12 @@ impl ConfigSelectorComponent {
         on_close: impl FnMut() + 'static,
         on_exit: impl FnMut() + 'static,
     ) -> Self {
-        let mut container = Container::default();
-        // Minimal chrome: no filled borders.
-        container.add_child(Rc::new(RefCell::new(Spacer::new(1))));
-        container.add_child(Rc::new(RefCell::new(Header)));
-        container.add_child(Rc::new(RefCell::new(Spacer::new(1))));
         let mut list = ResourceList::new(build_groups(resolved), settings, cwd, agent_dir);
         list.on_cancel = Some(Box::new(on_close));
         list.on_exit = Some(Box::new(on_exit));
-        let list = Rc::new(RefCell::new(list));
-        container.add_child(list.clone() as ComponentHandle);
-        Self { container, list }
+        Self {
+            list: Rc::new(RefCell::new(list)),
+        }
     }
 
     /// `getResourceList()`: what the keyboard goes to.
@@ -729,8 +762,11 @@ impl ConfigSelectorComponent {
 }
 
 impl Component for ConfigSelectorComponent {
+    /// The RESOURCES console: the `▸` query row, one row per entry with `›`
+    /// on the selection band, the scroll position, and the hint foot. Keys,
+    /// grouping, filtering and toggle persistence are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.container.render(width)
+        self.list.borrow_mut().render(width)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -738,7 +774,7 @@ impl Component for ConfigSelectorComponent {
     }
 
     fn invalidate(&mut self) {
-        self.container.invalidate();
+        self.list.borrow_mut().invalidate();
     }
 
     fn is_focusable(&self) -> bool {
