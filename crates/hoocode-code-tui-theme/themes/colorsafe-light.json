@@ -34,7 +34,6 @@
 		"dim": "dimGray",
 		"text": "ink",
 		"thinkingText": "gray",
-
 		"selectedBg": "selectedBg",
 		"userMessageBg": "userMsgBg",
 		"userMessageText": "ink",
@@ -48,7 +47,6 @@
 		"warningBg": "warningBg",
 		"toolTitle": "ink",
 		"toolOutput": "gray",
-
 		"mdHeading": "olive",
 		"mdLink": "violet",
 		"mdLinkUrl": "dimGray",
@@ -59,11 +57,9 @@
 		"mdQuoteBorder": "plum",
 		"mdHr": "dimGray",
 		"mdListBullet": "blue",
-
 		"toolDiffAdded": "green",
 		"toolDiffRemoved": "magenta",
 		"toolDiffContext": "dimGray",
-
 		"syntaxComment": "dimGray",
 		"syntaxKeyword": "blue",
 		"syntaxFunction": "olive",
@@ -73,23 +69,25 @@
 		"syntaxType": "plum",
 		"syntaxOperator": "inkSoft",
 		"syntaxPunctuation": "inkSoft",
-
 		"thinkingOff": "dimGray",
 		"thinkingMinimal": "gray",
 		"thinkingLow": "violet",
 		"thinkingMedium": "blue",
 		"thinkingHigh": "olive",
 		"thinkingXhigh": "magenta",
-
 		"bashMode": "green",
-
 		"agent1": "#00382d",
 		"agent2": "#621197",
 		"agent3": "#5a4500",
 		"agent4": "#830745",
 		"agent5": "#00570f",
 		"agent6": "#0000f5",
-		"mcp": "#570557"
+		"mcp": "#570557",
+		"ink": "ink",
+		"faint": "dimGray",
+		"you": "violet",
+		"vio": "violet",
+		"gold": "olive"
 	},
 	"export": {
 		"pageBg": "#ffffff",

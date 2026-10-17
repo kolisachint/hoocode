@@ -9,9 +9,14 @@
 
 mod component;
 mod lines;
+mod palette;
 
 pub use component::RatatuiComponent;
 pub use lines::buffer_to_lines;
+pub use palette::{
+    acc, bold, dim, err, faint, from_token, gold, ink, italic, ok, reversed, vio, warn, you,
+    Palette, PALETTE_TOKENS,
+};
 
 pub use ratatui_core as core;
 pub use ratatui_widgets as widgets;

@@ -10,7 +10,8 @@ use crate::color::{
 
 /// Foreground tokens (`ThemeColor`). A theme may also carry tokens beyond
 /// these (theme JSON is open), so the API takes token names as strings.
-pub const THEME_COLORS: [&str; 57] = [
+/// The trailing ten are the Mission Control chrome tokens (spec §2.3).
+pub const THEME_COLORS: [&str; 67] = [
     "accent",
     "border",
     "borderAccent",
@@ -68,6 +69,17 @@ pub const THEME_COLORS: [&str; 57] = [
     "halftone",
     "headlineText",
     "tapeText",
+    // Mission Control chrome (spec §2.3).
+    "ink",
+    "dim",
+    "faint",
+    "acc",
+    "ok",
+    "err",
+    "warn",
+    "you",
+    "vio",
+    "gold",
 ];
 
 /// Background tokens (`ThemeBg`).

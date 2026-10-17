@@ -43,7 +43,6 @@
 		"dim": "newsprint",
 		"text": "inkPale",
 		"thinkingText": "press",
-
 		"selectedBg": "stockGold",
 		"userMessageBg": "sheetDark",
 		"userMessageText": "inkPale",
@@ -57,7 +56,6 @@
 		"warningBg": "stockTape",
 		"toolTitle": "inkPale",
 		"toolOutput": "press",
-
 		"mdHeading": "amber",
 		"mdLink": "blue",
 		"mdLinkUrl": "newsprint",
@@ -68,11 +66,9 @@
 		"mdQuoteBorder": "amber",
 		"mdHr": "cut",
 		"mdListBullet": "amber",
-
 		"toolDiffAdded": "green",
 		"toolDiffRemoved": "red",
 		"toolDiffContext": "newsprint",
-
 		"syntaxComment": "green",
 		"syntaxKeyword": "blue",
 		"syntaxFunction": "amber",
@@ -82,16 +78,13 @@
 		"syntaxType": "teal",
 		"syntaxOperator": "cut",
 		"syntaxPunctuation": "cut",
-
 		"thinkingOff": "cutMuted",
 		"thinkingMinimal": "inkPale",
 		"thinkingLow": "teal",
 		"thinkingMedium": "blue",
 		"thinkingHigh": "purple",
 		"thinkingXhigh": "magenta",
-
 		"bashMode": "green",
-
 		"agent1": "teal",
 		"agent2": "purple",
 		"agent3": "amber",
@@ -99,17 +92,20 @@
 		"agent5": "green",
 		"agent6": "blue",
 		"mcp": "steel",
-
 		"brandBg": "tapeYellow",
 		"brandText": "ink",
-
 		"paperShadow": "shadow",
 		"halftone": "track",
 		"headlineBg": "tapeYellow",
 		"headlineText": "ink",
 		"tapeBg": "tapeStrip",
 		"tapeText": "ink",
-		"activeToolBg": "stockGold"
+		"activeToolBg": "stockGold",
+		"ink": "inkPale",
+		"faint": "cut",
+		"you": "purple",
+		"vio": "purple",
+		"gold": "amber"
 	},
 	"export": {
 		"pageBg": "#002b36",

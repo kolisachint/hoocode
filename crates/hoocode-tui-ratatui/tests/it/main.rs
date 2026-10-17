@@ -1,1 +1,2 @@
 mod golden;
+mod palette;

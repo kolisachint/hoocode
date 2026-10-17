@@ -1,0 +1,22 @@
+ink ▲ M1 ◐ working
+dim ▲ M1 ◐ working
+faint ▲ M1 ◐ working
+acc ▲ M1 ◐ working
+ok ▲ M1 ◐ working
+err ▲ M1 ◐ working
+warn ▲ M1 ◐ working
+you ▲ M1 ◐ working
+vio ▲ M1 ◐ working
+gold ▲ M1 ◐ working
+bold ▲ M1 ◐ working
+--- styles ---
+r1 c0-17 fg=#989898
+r2 c0-19 fg=#a8a8a8
+r3 c0-17 fg=#5cc8bb
+r4 c0-16 fg=#b5bd68
+r5 c0-17 fg=#d58181
+r6 c0-18 fg=#ffff00
+r7 c0-17 fg=#9b8cff
+r8 c0-17 fg=#9b8cff
+r9 c0-18 fg=#f0c674
+r10 c0-18 fg=#5cc8bb bold

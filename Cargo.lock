@@ -2068,6 +2068,7 @@ dependencies = [
 name = "hoocode-tui-ratatui"
 version = "0.1.25"
 dependencies = [
+ "hoocode-code-tui-theme",
  "hoocode-tui-render",
  "ratatui-core",
  "ratatui-widgets",
