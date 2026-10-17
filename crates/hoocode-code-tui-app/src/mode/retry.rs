@@ -107,7 +107,7 @@ impl Transcript {
     }
 
     /// Takes one tool block out of its chain; a chain left empty leaves the chat.
-    fn remove_tool_block(&mut self, block: &ToolBlock) {
+    pub(super) fn remove_tool_block(&mut self, block: &ToolBlock) {
         for chain in self.chains.clone() {
             if !chain
                 .borrow()
@@ -144,6 +144,9 @@ impl Transcript {
         {
             self.latest_block = None;
         }
+        // Positional step numbers shift when blocks leave: renumber every
+        // chain from the mission ranges (M4).
+        self.rebase_steps();
     }
 
     /// The retry streak and its failed attempt are gone: the session they
