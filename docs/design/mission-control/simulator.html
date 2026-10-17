@@ -1,0 +1,1206 @@
+<!doctype html>
+<html lang="en" data-term="deep"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>hoocode Mission Control Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+:root{--pg-bg:#05070f;--pg-ink:#e6ecff;--pg-dim:#8690ad;--pg-acc:#5ce1e6;--pg-line:#1a2036;--pg-line2:#111628;--pg-card:#0b1020;
+--sans:"Space Grotesk",system-ui,sans-serif;--display:"Orbitron","Space Grotesk",system-ui,sans-serif;
+--mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+--t-shadow:0 0 0 1px #ffffff05 inset,0 40px 80px -40px #5ce1e630;--t-glow:none}
+body{background:radial-gradient(1px 1px at 12% 18%,#fff8,transparent),radial-gradient(1px 1px at 72% 9%,#fff6,transparent),radial-gradient(1px 1px at 43% 66%,#fff5,transparent),radial-gradient(1px 1px at 88% 52%,#fff7,transparent),radial-gradient(1px 1px at 25% 84%,#fff4,transparent),radial-gradient(900px 500px at 85% -10%,#9b8cff18,transparent),var(--pg-bg);background-attachment:fixed}
+h1{font:700 40px/1.1 var(--display);letter-spacing:.04em;text-transform:uppercase;background:linear-gradient(90deg,#ffd76a,#5ce1e6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.gold{color:var(--gold)}
+html[data-term=deep]{--t-bg:#070b18;--t-edge:#1a2340;--ink:#e6ecff;--dim:#7d87a6;--faint:#3a4462;--acc:#5ce1e6;--you:#9b8cff;--vio:#9b8cff;--ok:#7ee081;--err:#ff5c7a;--warn:#ffb547;--gold:#ffd76a;--mag:#ff7ad9;--ghost:#1e2640;
+--kw:#b7a8ff;--str:#7ee081;--ty:#ffd76a;--num:#ffd76a;--com:#56607e;--fn:#8af0f3;
+--bU:#141432;--bS:#1a2342;--bA:#0e2418;--bD:#2b1020;--bA2:#225a2c;--bD2:#5e1a2c;--bW:#0b1124;--bE:#2b1020;--bY:#4d3a0d;--bH:#0d1328;--bP:#0d1328;--bM:#121a33}
+html[data-term=daylight]{--t-bg:#f7f8fc;--t-edge:#dde1ee;--ink:#141a2e;--dim:#5d6684;--faint:#b0b6c9;--acc:#0a8a91;--you:#5b4bd1;--vio:#5b4bd1;--ok:#2f8a3a;--err:#d23355;--warn:#b26a00;--gold:#b88a00;--mag:#b0307e;--ghost:#dfe2ec;
+--kw:#5b4bd1;--str:#2f8a3a;--ty:#9a6a00;--num:#9a6a00;--com:#a0a7bd;--fn:#0a6f75;
+--bU:#ecebfb;--bS:#e2e6f4;--bA:#e3f3e2;--bD:#fbe3e8;--bA2:#bfe6be;--bD2:#f5bccb;--bW:#eff1f8;--bE:#fbe3e8;--bY:#fae3a3;--bH:#eceff7;--bP:#eceff7;--bM:#e6e9f3;--t-shadow:0 30px 60px -36px #0003}
+html[data-term=nocolor]{--t-bg:#0b0c10;--t-edge:#22252e;--ink:#e6e6e6;--dim:#8d8f96;--faint:#55575e;--acc:#e6e6e6;--you:#e6e6e6;--vio:#e6e6e6;--ok:#e6e6e6;--err:#e6e6e6;--warn:#e6e6e6;--gold:#e6e6e6;--mag:#e6e6e6;--ghost:#33353b;
+--kw:#e6e6e6;--str:#e6e6e6;--ty:#e6e6e6;--num:#e6e6e6;--com:#8d8f96;--fn:#e6e6e6;
+--bU:transparent;--bS:#33353b;--bA:transparent;--bD:transparent;--bA2:#33353b;--bD2:#33353b;--bW:transparent;--bE:transparent;--bY:#e6e6e6;--bH:transparent;--bP:transparent;--bM:transparent}
+html[data-term=nocolor] .r [style*="color:#"]:not([style*="#f4f4f2"]){color:var(--ink)!important}
+html[data-term=nocolor] .r [style*="background:#"]:not([style*="#f4f4f2"]){background:transparent!important}
+.fr{color:var(--faint)}
+
+html,body{margin:0;height:100%}
+body{background:var(--pg-bg);color:var(--pg-ink);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center}
+.top{width:100%;max-width:1180px;box-sizing:border-box;padding:12px 16px 8px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font:12px var(--mono);color:var(--pg-dim)}
+.top b{font:700 15px var(--display);letter-spacing:.06em;color:var(--pg-ink);text-transform:uppercase;background:linear-gradient(90deg,#ffd76a,#5ce1e6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.top .sp{flex:1}
+.seg{display:inline-flex;border:1px solid var(--pg-line);border-radius:7px;overflow:hidden}
+.seg button{all:unset;cursor:pointer;padding:4px 9px;color:var(--pg-dim);font:12px var(--mono)}
+.seg button+button{border-left:1px solid var(--pg-line)}
+.seg button[aria-pressed=true]{background:var(--pg-card);color:var(--pg-ink)}
+.btn{all:unset;cursor:pointer;padding:4px 10px;border:1px solid var(--pg-line);border-radius:7px;font:12px var(--mono);color:var(--pg-dim)}
+.btn:hover,.seg button:hover{color:var(--pg-ink)}
+#wrap{width:100%;max-width:1180px;box-sizing:border-box;padding:0 16px}
+#term{outline:none;background:var(--t-bg);border:1px solid var(--t-edge);border-radius:10px;box-shadow:var(--t-shadow);padding:10px 12px;overflow:hidden;cursor:text;margin:0 auto;width:fit-content;max-width:100%}
+#term:focus{border-color:color-mix(in oklab,var(--acc) 45%,var(--t-edge))}
+#screen{font-family:var(--mono);font-size:var(--fs);color:var(--ink);font-variant-ligatures:none;font-variant-emoji:text;width:100ch}
+.r{display:block;white-space:pre;height:var(--lh);line-height:var(--lh)}
+.r span{display:inline-block;vertical-align:top;height:var(--lh)}
+.r i.c{display:inline-block;width:1ch;text-align:center;font-style:normal;overflow:visible;vertical-align:top}
+.r svg.g{display:inline-block;width:1ch;height:var(--lh);vertical-align:top;overflow:visible}
+.r b.hl,.r b.fb{display:inline-block;height:var(--lh);vertical-align:top}
+.r b.fb{background:currentColor}
+.h1{background:linear-gradient(currentColor,currentColor) 0 50%/100% 1px no-repeat}
+.h2{background:linear-gradient(currentColor,currentColor) 0 50%/100% 2px no-repeat}
+.h3{background:repeating-linear-gradient(90deg,currentColor 0 1.5px,transparent 1.5px 3.9px) 0 50%/100% 1px no-repeat}
+.h4{background:repeating-linear-gradient(90deg,currentColor 0 4px,transparent 4px 7.8px) 0 50%/100% 1px no-repeat}
+.ink{color:var(--ink)}.dim{color:var(--dim)}.faint{color:var(--faint)}.acc{color:var(--acc)}.you{color:var(--you)}.ok{color:var(--ok)}.err{color:var(--err)}.warn{color:var(--warn)}.vio{color:var(--vio)}.mag{color:var(--mag)}.gold{color:var(--gold)}.ghost{color:var(--ghost)}
+.b{font-weight:700}.it{font-style:italic}.u{text-decoration:underline;text-underline-offset:3px}
+.cur{background:var(--ink);color:var(--t-bg);animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{background:transparent;color:inherit}}
+.kw{color:var(--kw)}.str{color:var(--str)}.ty{color:var(--ty)}.num{color:var(--num)}.com{color:var(--com);font-style:italic}.fn{color:var(--fn)}
+.bU{background:var(--bU)}.bS{background:var(--bS)}.bA{background:var(--bA)}.bD{background:var(--bD)}.bA2{background:var(--bA2)}.bD2{background:var(--bD2)}.bW{background:var(--bW)}.bH{background:var(--bH)}.bM{background:var(--bM)}.bY{background:var(--bY)}
+.kAcc{background:var(--acc);color:var(--t-bg);font-weight:700}.kVio{background:var(--vio);color:var(--t-bg);font-weight:700}.kWarn{background:var(--warn);color:var(--t-bg);font-weight:700}
+.kErr{background:var(--err);color:var(--t-bg);font-weight:700}.kOk{background:var(--ok);color:var(--t-bg);font-weight:700}.kGold{background:var(--gold);color:var(--t-bg);font-weight:700}.kDim{background:var(--bS);color:var(--ink)}
+.f_tbg{color:var(--t-bg)}.f_vio{color:var(--vio)}.f_acc{color:var(--acc)}
+.b_gold{background:var(--gold)}.b_silver{background:color-mix(in oklab,var(--ink) 60%,var(--t-bg))}.b_bronze{background:color-mix(in oklab,var(--warn) 70%,var(--err))}
+.qrd{color:#0b0b0b;background:#f4f4f2}
+.bTint{background:color-mix(in oklab,var(--hull,var(--gold)) 16%,var(--t-bg))}
+.hull{color:var(--hull,var(--faint))}
+.below{width:100%;max-width:1180px;box-sizing:border-box;padding:14px 16px 40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;font-size:13px;color:var(--pg-dim)}
+.below h3{font:600 12px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--pg-ink);margin:0 0 8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{all:unset;cursor:pointer;font:12px var(--mono);border:1px solid var(--pg-line);border-radius:999px;padding:3px 10px;color:var(--pg-ink);background:var(--pg-card)}
+.chip:hover{border-color:var(--pg-acc)}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font:12px var(--mono)}
+.keys kbd{color:var(--pg-ink)}
+ul.tests{margin:0;padding-left:18px}ul.tests li{margin:3px 0}
+kbd{font-family:var(--mono)}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="k2297" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="4" cy="8.5" r="3.3" fill="none" stroke="currentColor" stroke-width="1.15"/><path d="M2.3,6.8 L5.7,10.2 M5.7,6.8 L2.3,10.2" stroke="currentColor" stroke-width="1.15"/></symbol><symbol id="k2298" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="4" cy="8.5" r="3.3" fill="none" stroke="currentColor" stroke-width="1.15"/><path d="M1.8,10.7 L6.2,6.3" stroke="currentColor" stroke-width="1.15"/></symbol><symbol id="k2502" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k2503" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k2506" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 V17" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/></symbol><symbol id="k250a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 V17" stroke="currentColor" stroke-width="1" stroke-dasharray="1.2 2"/></symbol><symbol id="k250c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M8,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k250f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M8,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k2510" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M0,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k2513" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M0,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k2514" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M8,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k2517" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M8,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k2518" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M0,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k251b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M0,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k251c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M8,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k251d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M8,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k2520" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M8,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k2523" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M8,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k2524" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M0,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k2528" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M0,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k252b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M0,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k252c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M0,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M8,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k252f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M0,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M8,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k2533" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M0,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M8,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k2534" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M0,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M8,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k2537" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M0,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M8,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k253b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M0,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M8,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k253c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M0,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/><path d="M8,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k254b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M0,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M8,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k254e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 V17" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2"/></symbol><symbol id="k256d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M8,8.5 Q4,8.5 4,12.5 V17" fill="none" stroke="currentColor" stroke-width="1.15"/></symbol><symbol id="k256e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M0,8.5 Q4,8.5 4,12.5 V17" fill="none" stroke="currentColor" stroke-width="1.15"/></symbol><symbol id="k256f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M0,8.5 Q4,8.5 4,4.5 V0" fill="none" stroke="currentColor" stroke-width="1.15"/></symbol><symbol id="k2570" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M8,8.5 Q4,8.5 4,4.5 V0" fill="none" stroke="currentColor" stroke-width="1.15"/></symbol><symbol id="k2574" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M0,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k2575" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k2576" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M8,8.5 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k2577" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="square"/></symbol><symbol id="k2578" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M0,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k2579" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,0 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k257a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M8,9 L4,9" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k257b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><path d="M4,17 L4,8.5" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></symbol><symbol id="k2580" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="8.90" height="8.90" fill="currentColor"/></symbol><symbol id="k2581" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="14.68" width="8.90" height="2.52" fill="currentColor"/></symbol><symbol id="k2582" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="12.55" width="8.90" height="4.65" fill="currentColor"/></symbol><symbol id="k2583" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="10.43" width="8.90" height="6.78" fill="currentColor"/></symbol><symbol id="k2584" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="8.30" width="8.90" height="8.90" fill="currentColor"/></symbol><symbol id="k2585" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="6.17" width="8.90" height="11.03" fill="currentColor"/></symbol><symbol id="k2586" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="4.05" width="8.90" height="13.15" fill="currentColor"/></symbol><symbol id="k2587" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="1.93" width="8.90" height="15.28" fill="currentColor"/></symbol><symbol id="k2588" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="8.90" height="17.40" fill="currentColor"/></symbol><symbol id="k2589" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="7.90" height="17.40" fill="currentColor"/></symbol><symbol id="k258a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="6.90" height="17.40" fill="currentColor"/></symbol><symbol id="k258b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="5.90" height="17.40" fill="currentColor"/></symbol><symbol id="k258c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="4.90" height="17.40" fill="currentColor"/></symbol><symbol id="k258d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="3.90" height="17.40" fill="currentColor"/></symbol><symbol id="k258e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="2.90" height="17.40" fill="currentColor"/></symbol><symbol id="k258f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="1.90" height="17.40" fill="currentColor"/></symbol><symbol id="k2590" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="3.55" y="-0.20" width="4.90" height="17.40" fill="currentColor"/></symbol><symbol id="k2591" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.2" y="-0.2" width="8.4" height="17.4" fill="currentColor" opacity="0.22"/></symbol><symbol id="k2592" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.2" y="-0.2" width="8.4" height="17.4" fill="currentColor" opacity="0.45"/></symbol><symbol id="k2593" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.2" y="-0.2" width="8.4" height="17.4" fill="currentColor" opacity="0.7"/></symbol><symbol id="k2594" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="8.90" height="2.50" fill="currentColor"/></symbol><symbol id="k2595" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="6.55" y="-0.20" width="1.90" height="17.40" fill="currentColor"/></symbol><symbol id="k2596" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="8.30" width="4.90" height="8.90" fill="currentColor"/></symbol><symbol id="k2597" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="3.55" y="8.30" width="4.90" height="8.90" fill="currentColor"/></symbol><symbol id="k2598" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="4.90" height="8.90" fill="currentColor"/></symbol><symbol id="k2599" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="4.90" height="17.40" fill="currentColor"/><rect x="3.55" y="8.30" width="4.90" height="8.90" fill="currentColor"/></symbol><symbol id="k259a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="4.90" height="8.90" fill="currentColor"/><rect x="3.55" y="8.30" width="4.90" height="8.90" fill="currentColor"/></symbol><symbol id="k259b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="8.90" height="8.90" fill="currentColor"/><rect x="-0.45" y="8.30" width="4.90" height="8.90" fill="currentColor"/></symbol><symbol id="k259c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="-0.45" y="-0.20" width="8.90" height="8.90" fill="currentColor"/><rect x="3.55" y="8.30" width="4.90" height="8.90" fill="currentColor"/></symbol><symbol id="k259d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="3.55" y="-0.20" width="4.90" height="8.90" fill="currentColor"/></symbol><symbol id="k259e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="3.55" y="-0.20" width="4.90" height="8.90" fill="currentColor"/><rect x="-0.45" y="8.30" width="4.90" height="8.90" fill="currentColor"/></symbol><symbol id="k259f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><rect x="3.55" y="-0.20" width="4.90" height="17.40" fill="currentColor"/><rect x="-0.45" y="8.30" width="4.90" height="8.90" fill="currentColor"/></symbol><symbol id="k25c9" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="4" cy="8.5" r="3.3" fill="none" stroke="currentColor" stroke-width="1.15"/><circle cx="4" cy="8.5" r="1.6" fill="currentColor"/></symbol><symbol id="k25cb" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="4" cy="8.5" r="3.3" fill="none" stroke="currentColor" stroke-width="1.15"/></symbol><symbol id="k25cf" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="4" cy="8.5" r="3.8" fill="currentColor"/></symbol><symbol id="k25d0" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="4" cy="8.5" r="3.3" fill="none" stroke="currentColor" stroke-width="1.15"/><path d="M4,5.2 A3.3,3.3 0 0 0 4,11.8 Z" fill="currentColor"/></symbol><symbol id="k25d1" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="4" cy="8.5" r="3.3" fill="none" stroke="currentColor" stroke-width="1.15"/><path d="M4,5.2 A3.3,3.3 0 0 1 4,11.8 Z" fill="currentColor"/></symbol><symbol id="k25d4" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="4" cy="8.5" r="3.3" fill="none" stroke="currentColor" stroke-width="1.15"/><path d="M4,8.5 V5.2 A3.3,3.3 0 0 1 7.3,8.5 Z" fill="currentColor"/></symbol><symbol id="k25d5" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="4" cy="8.5" r="3.3" fill="none" stroke="currentColor" stroke-width="1.15"/><path d="M4,8.5 V5.2 A3.3,3.3 0 1 1 0.7,8.5 Z" fill="currentColor"/></symbol><symbol id="k2800" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><g/></symbol><symbol id="k2801" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/></symbol><symbol id="k2802" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2803" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2804" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2805" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2806" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2807" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2808" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/></symbol><symbol id="k2809" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/></symbol><symbol id="k280a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/></symbol><symbol id="k280b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/></symbol><symbol id="k280c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/></symbol><symbol id="k280d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/></symbol><symbol id="k280e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/></symbol><symbol id="k280f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/></symbol><symbol id="k2810" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2811" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2812" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2813" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2814" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2815" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2816" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2817" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2818" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2819" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k281a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k281b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k281c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k281d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k281e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k281f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/></symbol><symbol id="k2820" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2821" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2822" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2823" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2824" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2825" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2826" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2827" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2828" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2829" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k282a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k282b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k282c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k282d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k282e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k282f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2830" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2831" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2832" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2833" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2834" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2835" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2836" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2837" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2838" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2839" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k283a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k283b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k283c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k283d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k283e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k283f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/></symbol><symbol id="k2840" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2841" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2842" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2843" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2844" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2845" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2846" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2847" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2848" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2849" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k284a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k284b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k284c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k284d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k284e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k284f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2850" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2851" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2852" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2853" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2854" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2855" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2856" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2857" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2858" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2859" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k285a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k285b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k285c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k285d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k285e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k285f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2860" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2861" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2862" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2863" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2864" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2865" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2866" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2867" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2868" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2869" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k286a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k286b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k286c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k286d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k286e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k286f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2870" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2871" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2872" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2873" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2874" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2875" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2876" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2877" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2878" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2879" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k287a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k287b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k287c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k287d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k287e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k287f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2880" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2881" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2882" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2883" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2884" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2885" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2886" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2887" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2888" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2889" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k288a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k288b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k288c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k288d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k288e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k288f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2890" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2891" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2892" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2893" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2894" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2895" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2896" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2897" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2898" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k2899" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k289a" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k289b" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k289c" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k289d" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k289e" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k289f" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28a0" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28a1" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28a2" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28a3" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28a4" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28a5" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28a6" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28a7" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28a8" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28a9" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28aa" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ab" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ac" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ad" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ae" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28af" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28b0" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28b1" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28b2" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28b3" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28b4" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28b5" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28b6" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28b7" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28b8" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28b9" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ba" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28bb" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28bc" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28bd" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28be" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28bf" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28c0" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28c1" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28c2" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28c3" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28c4" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28c5" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28c6" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28c7" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28c8" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28c9" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ca" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28cb" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28cc" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28cd" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ce" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28cf" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28d0" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28d1" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28d2" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28d3" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28d4" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28d5" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28d6" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28d7" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28d8" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28d9" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28da" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28db" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28dc" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28dd" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28de" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28df" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28e0" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28e1" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28e2" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28e3" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28e4" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28e5" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28e6" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28e7" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28e8" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28e9" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ea" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28eb" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ec" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ed" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ee" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ef" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28f0" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28f1" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28f2" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28f3" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28f4" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28f5" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28f6" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28f7" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28f8" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28f9" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28fa" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28fb" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28fc" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28fd" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28fe" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol><symbol id="k28ff" viewBox="0 0 8 17" preserveAspectRatio="none" overflow="visible"><circle cx="2.3" cy="2.6" r="1.15" fill="currentColor"/><circle cx="2.3" cy="6.5" r="1.15" fill="currentColor"/><circle cx="2.3" cy="10.4" r="1.15" fill="currentColor"/><circle cx="5.7" cy="2.6" r="1.15" fill="currentColor"/><circle cx="5.7" cy="6.5" r="1.15" fill="currentColor"/><circle cx="5.7" cy="10.4" r="1.15" fill="currentColor"/><circle cx="2.3" cy="14.3" r="1.15" fill="currentColor"/><circle cx="5.7" cy="14.3" r="1.15" fill="currentColor"/></symbol></defs></svg>
+<div class="top"><b>Mission Control</b><span>hoocode TUI simulator · click the terminal and type · <a href="index.html" style="color:inherit">← design spec</a></span><span class="sp"></span>
+<span>theme</span><span class="seg" id="themes"><button data-t="deep" aria-pressed="true">deep-space</button><button data-t="daylight" aria-pressed="false">daylight</button><button data-t="nocolor" aria-pressed="false">NO_COLOR</button></span>
+<span>speed</span><span class="seg" id="speeds"><button data-s="1" aria-pressed="true">1×</button><button data-s="2" aria-pressed="false">2×</button><button data-s="4" aria-pressed="false">4×</button></span>
+</div>
+<div id="wrap"><div id="term" tabindex="0" aria-label="hoocode terminal"><div id="screen"></div></div></div>
+<div class="below">
+<div><h3>Try a mission</h3><div class="chips" id="tries"></div>
+<p style="margin:10px 0 0">Chips type into the prompt; press <kbd>enter</kbd> in the terminal to launch. Keyword routing picks the scenario, and the ship you're flying changes how it goes.</p></div>
+<div><h3>Keys</h3><div class="keys">
+<kbd>enter</kbd><span>launch a mission · queue one while flying</span>
+<kbd>esc</kbd><span>abort · close a console · back to live</span>
+<kbd>ctrl/alt+o</kbd><span>peek ↔ radar (flight log)</span>
+<kbd>ctrl/alt+g</kbd><span>flight plan</span>
+<kbd>ctrl/alt+r</kbd><span>scan (search) the session</span>
+<kbd>pgup pgdn</kbd><span>rewind · wheel works too</span>
+<kbd>shift+tab</kbd><span>BUILD ↔ PLAN mode</span>
+<kbd>tab</kbd><span>accept the ghost suggestion</span>
+<kbd>/</kbd><span>commands: /model /help /plan /theme /resume /login /compact /color /mode /clear /quit</span>
+<kbd>@</kbd> <span>attach a file · <kbd>!</kbd> run your own shell command</span>
+<kbd>ctrl+c ×2</kbd><span>end of shift</span>
+</div></div>
+<div><h3>Test end to end</h3><ul class="tests">
+<li>Fly <code>fix the off-by-one in wrap_text</code>, then <kbd>ctrl+o</kbd> to see it in the flight log.</li>
+<li><code>run the commands</code>: answer the clearance with <kbd>y</kbd>, <kbd>n</kbd>, <kbd>a</kbd> or <kbd>e</kbd>.</li>
+<li><code>add retries to the provider wrapper</code>: answer mission control with <kbd>1</kbd>–<kbd>4</kbd>, then <kbd>ctrl+g</kbd> for the flight plan.</li>
+<li>An agent, a background satellite, a slow step, a provider that fails: each has a chip on the left.</li>
+<li>Type while a mission flies, and the note queues as the next mission.</li>
+<li><code>/model</code> switches ship; the same prompt flies differently on each.</li>
+</ul></div>
+</div>
+<script>const DATA={"wordmark": [[["█", "mix:acc:vio:0"], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], ["█", "mix:acc:vio:80"], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""], [" ", ""]], [["█", "mix:acc:vio:0"], ["▀", "mix:acc:vio:2"], ["▀", "mix:acc:vio:5"], ["▄", "mix:acc:vio:8"], [" ", ""], ["▄", "mix:acc:vio:14"], ["▀", "mix:acc:vio:17"], ["▀", "mix:acc:vio:20"], ["▄", "mix:acc:vio:22"], [" ", ""], ["▄", "mix:acc:vio:28"], ["▀", "mix:acc:vio:31"], ["▀", "mix:acc:vio:34"], ["▄", "mix:acc:vio:37"], [" ", ""], ["▄", "mix:acc:vio:42"], ["▀", "mix:acc:vio:45"], ["▀", "mix:acc:vio:48"], ["▀", "mix:acc:vio:51"], [" ", ""], ["▄", "mix:acc:vio:57"], ["▀", "mix:acc:vio:60"], ["▀", "mix:acc:vio:62"], ["▄", "mix:acc:vio:65"], [" ", ""], ["▄", "mix:acc:vio:71"], ["▀", "mix:acc:vio:74"], ["▀", "mix:acc:vio:77"], ["█", "mix:acc:vio:80"], [" ", ""], ["▄", "mix:acc:vio:85"], ["▀", "mix:acc:vio:88"], ["▀", "mix:acc:vio:91"], ["▄", "mix:acc:vio:94"], [" ", ""]], [["█", "mix:acc:vio:0"], [" ", ""], [" ", ""], ["█", "mix:acc:vio:8"], [" ", ""], ["█", "mix:acc:vio:14"], [" ", ""], [" ", ""], ["█", "mix:acc:vio:22"], [" ", ""], ["█", "mix:acc:vio:28"], [" ", ""], [" ", ""], ["█", "mix:acc:vio:37"], [" ", ""], ["█", "mix:acc:vio:42"], [" ", ""], [" ", ""], [" ", ""], [" ", ""], ["█", "mix:acc:vio:57"], [" ", ""], [" ", ""], ["█", "mix:acc:vio:65"], [" ", ""], ["█", "mix:acc:vio:71"], [" ", ""], [" ", ""], ["█", "mix:acc:vio:80"], [" ", ""], ["█", "mix:acc:vio:85"], ["▀", "mix:acc:vio:88"], ["▀", "mix:acc:vio:91"], ["▀", "mix:acc:vio:94"], [" ", ""]], [["▀", "mix:acc:vio:0"], [" ", ""], [" ", ""], ["▀", "mix:acc:vio:8"], [" ", ""], [" ", ""], ["▀", "mix:acc:vio:17"], ["▀", "mix:acc:vio:20"], [" ", ""], [" ", ""], [" ", ""], ["▀", "mix:acc:vio:31"], ["▀", "mix:acc:vio:34"], [" ", ""], [" ", ""], [" ", ""], ["▀", "mix:acc:vio:45"], ["▀", "mix:acc:vio:48"], ["▀", "mix:acc:vio:51"], [" ", ""], [" ", ""], ["▀", "mix:acc:vio:60"], ["▀", "mix:acc:vio:62"], [" ", ""], [" ", ""], [" ", ""], ["▀", "mix:acc:vio:74"], ["▀", "mix:acc:vio:77"], ["▀", "mix:acc:vio:80"], [" ", ""], [" ", ""], ["▀", "mix:acc:vio:88"], ["▀", "mix:acc:vio:91"], ["▀", "mix:acc:vio:94"], [" ", ""]]], "qr": [[[" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["▄", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["█", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["█", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["█", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["█", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], ["█", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["▄", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["█", "qrd"], [" ", "qrd"]], [[" ", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["█", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▀", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["▀", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["▀", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▀", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["█", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["▀", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["█", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["█", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["█", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["▄", "qrd"], [" ", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["█", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▄", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["█", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["█", "qrd"], [" ", "qrd"], [" ", "qrd"], ["▄", "qrd"], [" ", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"]], [[" ", "qrd"], ["█", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["▀", "qrd"], ["▄", "qrd"], ["█", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], [" ", "qrd"], ["█", "qrd"], [" ", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["▄", "qrd"], ["█", "qrd"], [" ", "qrd"], ["█", "qrd"], ["▀", "qrd"], [" ", "qrd"]], [[" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"], [" ", "qrd"]]], "sym": "⊗⊘│┃┆┊┌┏┐┓└┗┘┛├┝┠┣┤┨┫┬┯┳┴┷┻┼╋╎╭╮╯╰╴╵╶╷╸╹╺╻▀▁▂▃▄▅▆▇█▉▊▋▌▍▎▏▐░▒▓▔▕▖▗▘▙▚▛▜▝▞▟◉○●◐◑◔◕⠀⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯⠰⠱⠲⠳⠴⠵⠶⠷⠸⠹⠺⠻⠼⠽⠾⠿⡀⡁⡂⡃⡄⡅⡆⡇⡈⡉⡊⡋⡌⡍⡎⡏⡐⡑⡒⡓⡔⡕⡖⡗⡘⡙⡚⡛⡜⡝⡞⡟⡠⡡⡢⡣⡤⡥⡦⡧⡨⡩⡪⡫⡬⡭⡮⡯⡰⡱⡲⡳⡴⡵⡶⡷⡸⡹⡺⡻⡼⡽⡾⡿⢀⢁⢂⢃⢄⢅⢆⢇⢈⢉⢊⢋⢌⢍⢎⢏⢐⢑⢒⢓⢔⢕⢖⢗⢘⢙⢚⢛⢜⢝⢞⢟⢠⢡⢢⢣⢤⢥⢦⢧⢨⢩⢪⢫⢬⢭⢮⢯⢰⢱⢲⢳⢴⢵⢶⢷⢸⢹⢺⢻⢼⢽⢾⢿⣀⣁⣂⣃⣄⣅⣆⣇⣈⣉⣊⣋⣌⣍⣎⣏⣐⣑⣒⣓⣔⣕⣖⣗⣘⣙⣚⣛⣜⣝⣞⣟⣠⣡⣢⣣⣤⣥⣦⣧⣨⣩⣪⣫⣬⣭⣮⣯⣰⣱⣲⣳⣴⣵⣶⣷⣸⣹⣺⣻⣼⣽⣾⣿"};</script>
+<script>(function () {
+'use strict';
+/* =====================================================================
+   hoocode · Mission Control — a working TUI simulator.
+   Everything is drawn into a W×H grid of terminal cells, the way a
+   ratatui app would: markup → cells → rows → one <div> per row.
+   ===================================================================== */
+const W = 100;
+let H = 36;
+let SPEED = 1;
+const SYM = new Set([...DATA.sym]);
+const HRUN = { '─': 'h1', '━': 'h2', '┄': 'h3', '┈': 'h3', '╌': 'h4' };
+const $ = (s) => document.querySelector(s);
+
+/* ---------------------------------------------------------------- cells */
+const TOK = /\[\[([^:\]]*):(.*?)\]\]/g;
+function P(m, base = '') {
+  if (Array.isArray(m)) return m;
+  m = String(m);
+  const out = [];
+  let pos = 0, mo;
+  TOK.lastIndex = 0;
+  while ((mo = TOK.exec(m)) !== null) {
+    for (const ch of m.slice(pos, mo.index)) out.push([ch, base]);
+    const st = (base + ' ' + mo[1].replace(/\./g, ' ')).trim();
+    for (const ch of mo[2]) out.push([ch, st]);
+    pos = TOK.lastIndex;
+  }
+  for (const ch of m.slice(pos)) out.push([ch, base]);
+  return out;
+}
+const esc = (t) => String(t).replace(/\[\[/g, '[ [').replace(/\]\]/g, '] ]');
+const vlen = (m) => P(m).length;
+function pad(m, n, fs = '') {
+  let c = P(m);
+  if (c.length > n) { c = c.slice(0, Math.max(0, n - 1)); c.push(['…', 'faint']); }
+  c = c.slice();
+  while (c.length < n) c.push([' ', fs]);
+  return c;
+}
+function hasbg(st) {
+  for (const t of st.split(' ')) {
+    if (!t) continue;
+    if (t.startsWith('bg') || /^[bk][A-Z]/.test(t) || t.startsWith('b_') || t === 'qrd' || t === 'cur') return true;
+  }
+  return false;
+}
+function withbg(row, bg) {
+  if (!bg) return row;
+  return row.map(([c, s]) => (hasbg(s) ? [c, s] : [c, (s + ' ' + bg).trim()]));
+}
+function lr(l, r, w) {
+  let L = P(l), R = P(r);
+  let gap = w - L.length - R.length;
+  if (gap < 1 && R.length) {
+    const keep = Math.max(0, w - R.length - 2);
+    if (L.length > keep) { L = L.slice(0, Math.max(0, keep - 1)).concat([['…', 'faint']]); }
+    gap = w - L.length - R.length;
+    if (gap < 0) { R = R.slice(0, Math.max(0, w - L.length)); gap = w - L.length - R.length; }
+  }
+  if (gap < 0) return pad(L, w);
+  return L.concat(Array.from({ length: gap }, () => [' ', '']), R);
+}
+const sel = (m) => ({ m, bg: 'bS' });
+const BS = {
+  round: { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' },
+  heavy: { tl: '┏', tr: '┓', bl: '┗', br: '┛', h: '━', v: '┃' },
+};
+function box(w, rows, o = {}) {
+  const b = BS[o.kind || 'heavy'], color = o.color || 'faint', padx = o.padx == null ? 1 : o.padx;
+  const sp = () => [' ', ''];
+  const edge = (l, r, lt, rt) => {
+    let lc = lt ? P(lt) : [], rc = rt ? P(rt) : [];
+    const room = w - 6;
+    if (lc.length + rc.length > room) {
+      rc = rc.length > room / 2 ? rc.slice(0, Math.floor(room / 2)) : rc;
+      if (lc.length + rc.length > room) lc = lc.slice(0, room - rc.length - 1).concat([['…', 'faint']]);
+    }
+    let seg = [[l, color]];
+    if (lc.length) seg = seg.concat([[b.h, color], sp()], lc, [sp()]);
+    const tail = rc.length ? [sp()].concat(rc, [sp(), [b.h, color]]) : [];
+    const fill = Math.max(1, w - 1 - seg.length - tail.length);
+    return seg.concat(Array.from({ length: fill }, () => [b.h, color]), tail, [[r, color]]).slice(0, w);
+  };
+  const out = [edge(b.tl, b.tr, o.title, o.right)];
+  for (let r of rows) {
+    let bg = '';
+    if (r && !Array.isArray(r) && typeof r === 'object') { bg = r.bg; r = r.m; }
+    const c = pad(r == null ? '' : r, w - 2 - 2 * padx);
+    let line = [];
+    for (let i = 0; i < padx; i++) line.push(sp());
+    line = line.concat(c);
+    for (let i = 0; i < padx; i++) line.push(sp());
+    line = withbg(line, bg || o.rowbg || '');
+    out.push([[b.v, color], ...line, [b.v, color]]);
+  }
+  out.push(edge(b.bl, b.br, o.foot, o.footr));
+  return out;
+}
+function hcat(...parts) { let o = []; for (const p of parts) o = o.concat(P(p)); return o; }
+
+/* ---------------------------------------------------------------- html */
+const esch = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function styleAttr(st) {
+  const cls = [], css = [];
+  for (const t of st.split(' ')) {
+    if (!t) continue;
+    if (t.startsWith('mix:')) { const [, a, b, p] = t.split(':'); css.push(`color:color-mix(in oklab,var(--${a}) ${p}%,var(--${b}))`); }
+    else if (t.startsWith('bg#')) css.push('background:' + t.slice(2));
+    else if (t[0] === '#') css.push('color:' + t);
+    else cls.push(t);
+  }
+  return (cls.length ? ` class="${cls.join(' ')}"` : '') + (css.length ? ` style="${css.join(';')}"` : '');
+}
+function inner(text) {
+  const a = [...text];
+  let o = '', i = 0;
+  while (i < a.length) {
+    const ch = a[i];
+    if (ch === '█' || HRUN[ch]) {
+      let j = i; while (j < a.length && a[j] === ch) j++;
+      o += ch === '█' ? `<b class="fb" style="width:${j - i}ch"></b>` : `<b class="hl ${HRUN[ch]}" style="width:${j - i}ch"></b>`;
+      i = j; continue;
+    }
+    const cp = ch.codePointAt(0);
+    if (cp >= 32 && cp < 127) {
+      let j = i; while (j < a.length && a[j].codePointAt(0) >= 32 && a[j].codePointAt(0) < 127) j++;
+      o += esch(a.slice(i, j).join('')); i = j; continue;
+    }
+    o += SYM.has(ch) ? `<svg class="g"><use href="#k${cp.toString(16)}" width="100%" height="100%"/></svg>` : `<i class="c">${esch(ch)}</i>`;
+    i++;
+  }
+  return o;
+}
+function rowHTML(row) {
+  let o = '', i = 0;
+  while (i < row.length) {
+    const st = row[i][1]; let j = i, t = '';
+    while (j < row.length && row[j][1] === st) { t += row[j][0]; j++; }
+    const inn = inner(t);
+    o += st ? `<span${styleAttr(st)}>${inn}</span>` : inn;
+    i = j;
+  }
+  return o;
+}
+const rowEls = [], rowCache = [];
+function paint(rows) {
+  const sc = $('#screen');
+  while (rowEls.length < H) { const d = document.createElement('div'); d.className = 'r'; sc.appendChild(d); rowEls.push(d); rowCache.push(null); }
+  while (rowEls.length > H) { sc.removeChild(rowEls.pop()); rowCache.pop(); }
+  for (let y = 0; y < H; y++) {
+    const h = rowHTML(pad(rows[y] || [], W));
+    if (h !== rowCache[y]) { rowEls[y].innerHTML = h; rowCache[y] = h; }
+  }
+}
+
+/* ---------------------------------------------------------------- utils */
+function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+let seedCounter = (Date.now() & 0xffff) ^ 0x5bd1;
+const fmtT = (s) => (s < 10 ? s.toFixed(1) + 's' : s < 60 ? Math.round(s) + 's' : Math.floor(s / 60) + 'm' + String(Math.round(s % 60)).padStart(2, '0') + 's');
+const fmtC = (c) => '$' + c.toFixed(3);
+const fmtK = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n)));
+const pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const median = (a) => { if (!a.length) return 0; const b = [...a].sort((x, y) => x - y); const m = b.length >> 1; return b.length % 2 ? b[m] : Math.round((b[m - 1] + b[m]) / 2); };
+function wrap(text, width) {
+  const words = String(text).split(' '); const lines = []; let cur = '';
+  for (const w of words) { if ((cur + (cur ? ' ' : '') + w).length > width && cur) { lines.push(cur); cur = w; } else cur += (cur ? ' ' : '') + w; }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [''];
+}
+const md = (t) => esc(t).replace(/`([^`]+)`/g, '[[acc:$1]]');
+const plain = (t) => String(t).replace(/`/g, '');
+function path(p, base = 'ink') { const i = p.lastIndexOf('/'); return i < 0 ? `[[${base}:${esc(p)}]]` : `[[dim:${esc(p.slice(0, i + 1))}]][[${base}:${esc(p.slice(i + 1))}]]`; }
+const H_ = (...a) => { const o = []; for (let i = 0; i < a.length; i += 2) o.push(`[[ink:${a[i]}]] [[dim:${a[i + 1]}]]`); return o.join(' [[faint:·]] '); };
+const K = (k, cls = 'kDim') => `[[${cls}: ${k} ]]`;
+const bar = (v, w, cls = 'acc') => { const n = Math.max(0, Math.min(w, Math.round(v / 100 * w))); return `[[${cls}:${'█'.repeat(n)}]][[faint:${'░'.repeat(w - n)}]]`; };
+
+/* ---------------------------------------------------------------- ships */
+const SHIPS = ['mock-large', 'mock-fast', 'mock-local'];
+const PROF = {
+  'mock-large': { spd: 1.0, detour: 0.10, slip: 0.10, crash: 0.05, inP: 3, outP: 15, col: 'acc', think: 1.0 },
+  'mock-fast': { spd: 0.45, detour: 0.45, slip: 0.35, crash: 0.12, inP: 0.45, outP: 1.8, col: 'you', think: 0.6 },
+  'mock-local': { spd: 1.9, detour: 0.6, slip: 0.5, crash: 0.45, inP: 0, outP: 0, col: 'dim', think: 1.4 },
+};
+const BASE = { Read: 0.45, Search: 0.4, Grep: 0.35, Edit: 0.65, Write: 0.75, Shell: 1.0, Agent: 0.3, Plan: 0.2, Ask: 0.1 };
+const ALLOW0 = ['cargo', 'wc', 'ls', 'cat', 'grep', 'git status', 'git diff', 'echo', 'sleep'];
+
+/* ---------------------------------------------------------------- scenarios */
+const say = (text) => ({ op: 'say', text });
+function St(tool, arg, o = {}) { return Object.assign({ op: 'step', tool, arg, dur: BASE[tool] || 0.5, lines: 0, meta: '', peek: [], fail: false, failMeta: '' }, o); }
+const RUST = [
+  '[[kw:let mut]] [[ink:lines]] [[dim:=]] [[fn:vec!]][[ink:[]][[ty:String]][[ink:::]][[fn:new]][[ink:()];]]',
+  '[[kw:for]] [[ink:word]] [[kw:in]] [[ink:text.]][[fn:split_whitespace]][[ink:() {]]',
+  '    [[ink:lines.]][[fn:last_mut]][[ink:().]][[fn:unwrap]][[ink:().]][[fn:push_str]][[ink:(word);]]',
+  '[[ink:}]]',
+];
+function classify(t) {
+  t = t.toLowerCase();
+  if (t.startsWith('/skill:')) return 'skill';
+  if (/flaky|overload|529/.test(t)) return 'flaky';
+  if (/background|server|watch|sleep 60/.test(t)) return 'job';
+  if (/\bslow\b/.test(t)) return 'slow';
+  if (/delete|rm -|remove the|push|deploy|install/.test(t)) return 'risky';
+  if (/agent|subagent|explore|\bfind\b|where is/.test(t)) return 'agent';
+  if (/retr(y|ies)|strategy|decide/.test(t)) return 'retries';
+  if (/fix|bug|broken|off-by|crash/.test(t)) return 'bugfix';
+  if (/refactor|rename|clean ?up|module/.test(t)) return 'refactor';
+  if (/test/.test(t)) return 'tests';
+  if (/run the|commands|check/.test(t)) return 'check';
+  if (/add|implement|create|build|helper|make|write/.test(t)) return 'feature';
+  return 'explain';
+}
+const TAGOF = { bugfix: 'bugfix', feature: 'feature', retries: 'feature', tests: 'tests', explain: 'explain', agent: 'explore', refactor: 'refactor', check: 'check', job: 'ops', slow: 'check', risky: 'ops', flaky: 'explain', skill: 'review' };
+const SUG = { bugfix: 'add a regression test for that', feature: 'write tests for it', retries: 'write tests for the backoff helper', tests: 'run the whole suite', explain: 'fix the off-by-one in wrap_text', agent: 'explain the footer code', refactor: 'run the tests again', check: 'add retries to the provider wrapper', job: '/plan', slow: 'run the commands', risky: 'what does the wrap crate do?', flaky: 'what does the wrap crate do?', skill: 'fix the off-by-one in wrap_text' };
+
+function finalTest(ops, p, r, cmd, pass, failPeek) {
+  const crash = r() < p.crash;
+  ops.push(crash
+    ? St('Shell', cmd, { dur: 1.9, fail: true, failMeta: 'exit 101', peek: [failPeek] })
+    : St('Shell', cmd, { dur: 1.9, meta: `[[ok:${pass}]]`, peek: [`test result: [[ok:ok]]. ${pass}; 0 failed`] }));
+  return crash;
+}
+function script(prompt, ship, r, opts = {}) {
+  const p = PROF[ship], kind = opts.retry ? 'explain' : classify(prompt), ops = [];
+  const det = () => r() < p.detour, slip = () => r() < p.slip;
+  let crash = false;
+  switch (kind) {
+    case 'bugfix':
+      ops.push(say('Reading the code and its test first.'));
+      ops.push(St('Read', 'src/wrap.rs', { lines: 31, meta: '31 lines', peek: ['[[com://! Word wrapping for the transcript and the editor.]]'] }));
+      ops.push(St('Read', 'tests/wrap_tests.rs', { lines: 41, meta: '41 lines' }));
+      if (det()) ops.push(St('Search', 'len()', { lines: 6, meta: '6 hits · 2 files' }));
+      if (slip()) ops.push(St('Shell', 'cargo test wrap', { dur: 1.8, fail: true, failMeta: 'exit 101', peek: ['test wrap::wide_chars ... [[err:FAILED]]'] }));
+      ops.push(St('Edit', 'src/wrap.rs', { lines: 3, meta: '[[ok:+2]] [[err:−1]]', peek: ['[[err:−]] [[dim:if current.]][[ink.bD2:len()]][[dim: + word.len() > width {]]', '[[ok:+]] [[dim:if current.]][[ink.bA2:width()]][[dim: + word.width() > width {]]'] }));
+      if (det() && det()) ops.push(St('Read', 'src/wrap.rs', { lines: 31, meta: 're-read · 31 lines' }));
+      crash = finalTest(ops, p, r, 'cargo test wrap', '12 passed', 'test result: [[err:FAILED]]. 10 passed; 2 failed');
+      ops.push(say(crash ? 'Two tests still fail: tabs are still measured as one column. I stopped here.' : 'Fixed: the width check compared bytes, not columns. All 12 tests pass.'));
+      break;
+    case 'tests':
+      ops.push(St('Read', 'src/wrap.rs', { lines: 31, meta: '31 lines' }));
+      ops.push(St('Write', 'tests/wrap_tabs.rs', { lines: 18, meta: '[[kOk: NEW ]] [[ok:+18]]', peek: ['[[kw:#[test]]]', '[[kw:fn]] [[fn:tabs_count_as_four]]() {'] }));
+      if (slip()) {
+        ops.push(St('Shell', 'cargo test wrap_tabs', { dur: 1.5, fail: true, failMeta: 'exit 101', peek: ['error[E0425]: cannot find function `wrap` in this scope'] }));
+        ops.push(St('Edit', 'tests/wrap_tabs.rs', { lines: 2, meta: '[[ok:+1]] [[err:−1]]' }));
+      }
+      crash = finalTest(ops, p, r, 'cargo test', '13 passed', 'test result: [[err:FAILED]]. 12 passed; 1 failed');
+      ops.push(say(crash ? 'The new test fails: the helper treats a tab as one column. That is a real bug, so I left the test failing.' : 'Added `tests/wrap_tabs.rs`; all 13 tests pass.'));
+      break;
+    case 'retries':
+      ops.push(say('Before I write the retry loop I need one decision.'));
+      ops.push({ op: 'ask', q: 'Which retry strategy should the provider wrapper use?', opts: [['exponential backoff', 'doubling delay, capped at 60 s', true], ['fixed delay', 'same wait between every attempt'], ['no retry', 'fail on the first error']] });
+      ops.push({ op: 'plan', way: ['Read the provider', 'Write the backoff helper', 'Wire retries in', 'Run the tests'] });
+      ops.push({ op: 'way', i: 0 });
+      ops.push(St('Read', 'src/provider.rs', { lines: 88, meta: '88 lines' }));
+      if (det()) ops.push(St('Search', 'retry', { lines: 4, meta: '4 hits' }));
+      ops.push({ op: 'way', i: 1 });
+      ops.push(St('Write', 'src/backoff.rs', { lines: 24, meta: '[[kOk: NEW ]] [[ok:+24]]', peek: ['[[kw:pub struct]] [[ty:Backoff]] { [[ink:base]]: [[ty:Duration]], [[ink:cap]]: [[ty:Duration]] }'] }));
+      ops.push({ op: 'way', i: 2 });
+      ops.push(St('Edit', 'src/provider.rs', { lines: 21, meta: '[[ok:+18]] [[err:−3]]' }));
+      if (slip()) { ops.push(St('Shell', 'cargo test provider', { dur: 1.8, fail: true, failMeta: 'exit 101', peek: ['thread \'retries_on_529\' panicked: left: 3, right: 4'] })); ops.push(St('Edit', 'src/provider.rs', { lines: 2, meta: '[[ok:+1]] [[err:−1]]' })); }
+      ops.push({ op: 'way', i: 3 });
+      crash = finalTest(ops, p, r, 'cargo test', '14 passed', 'test result: [[err:FAILED]]. 12 passed; 2 failed');
+      ops.push(say(crash ? 'Retries are wired in, but two provider tests still fail on the cap.' : 'Retries are in: {strategy}, capped at 60 s. All 14 tests pass.'));
+      break;
+    case 'feature':
+      ops.push({ op: 'plan', way: ['Read the module', 'Write the helper', 'Run the tests'] });
+      ops.push({ op: 'way', i: 0 });
+      ops.push(St('Read', 'src/wrap.rs', { lines: 31, meta: '31 lines' }));
+      if (det()) ops.push(St('Search', 'Duration', { lines: 3, meta: '3 hits' }));
+      ops.push({ op: 'way', i: 1 });
+      ops.push(St('Write', 'src/backoff.rs', { lines: 12, meta: '[[kOk: NEW ]] [[ok:+12]]', peek: ['[[kw:use]] [[ty:std::time::Duration]];'] }));
+      if (slip()) { ops.push(St('Shell', 'cargo build', { dur: 1.4, fail: true, failMeta: 'exit 101', peek: ['error[E0432]: unresolved import `crate::backoff`'] })); ops.push(St('Edit', 'src/lib.rs', { lines: 1, meta: '[[ok:+1]]' })); }
+      ops.push({ op: 'way', i: 2 });
+      crash = finalTest(ops, p, r, 'cargo test', '12 passed', 'test result: [[err:FAILED]]. 11 passed; 1 failed');
+      ops.push(say(crash ? 'The helper is written but one test fails.' : 'Wrote `src/backoff.rs` with exponential backoff; tests pass.'));
+      break;
+    case 'refactor':
+      ops.push(St('Search', 'wrap_text', { lines: 9, meta: '9 hits · 4 files' }));
+      ops.push(St('Edit', 'src/wrap.rs', { lines: 14, meta: '[[ok:+9]] [[err:−5]]' }));
+      ops.push(St('Edit', 'src/editor.rs', { lines: 2, meta: '[[ok:+1]] [[err:−1]]' }));
+      ops.push(St('Edit', 'src/transcript.rs', { lines: 2, meta: '[[ok:+1]] [[err:−1]]' }));
+      if (det()) ops.push(St('Read', 'src/lib.rs', { lines: 22, meta: '22 lines' }));
+      if (slip()) { ops.push(St('Shell', 'cargo build', { dur: 1.4, fail: true, failMeta: 'exit 101', peek: ['error[E0603]: function `wrap_text` is private'] })); ops.push(St('Edit', 'src/wrap.rs', { lines: 1, meta: '[[ok:+1]] [[err:−1]]' })); }
+      crash = finalTest(ops, p, r, 'cargo test', '12 passed', 'test result: [[err:FAILED]]. 11 passed; 1 failed');
+      ops.push(say(crash ? 'Moved, but one caller still breaks.' : 'Moved `wrap_text` into its own module and updated 3 callers.'));
+      break;
+    case 'check':
+      ops.push(say('Running them.'));
+      ops.push(St('Shell', "printf 'alpha\\nbeta\\ngamma\\n' | sort -r", { meta: '3 lines', peek: ['gamma', 'beta', 'alpha'] }));
+      ops.push(St('Shell', 'echo boom; exit 3', { fail: true, failMeta: 'exit 3', peek: ['boom'] }));
+      ops.push(say('The first command ran. The second exits 3, as written.'));
+      break;
+    case 'risky':
+      ops.push(say('That deletes build output; it needs your clearance.'));
+      ops.push(St('Shell', 'rm -rf target/', { meta: 'freed 1.2 GB' }));
+      ops.push(say('Removed `target/`. The next build will be a full one.'));
+      break;
+    case 'job':
+      ops.push(say('Starting it in the background.'));
+      ops.push({ op: 'job', cmd: 'cargo run --bin devserver', secs: 18 });
+      ops.push(say('Running as job-1. A transmission arrives when it lands; ctrl+g shows it.'));
+      break;
+    case 'slow':
+      ops.push(say('Starting a six second check.'));
+      ops.push(St('Shell', 'sleep 6; echo done', { dur: 6 / p.spd, meta: '1 line', peek: ['done'] }));
+      ops.push(say('It finished and printed `done`.'));
+      break;
+    case 'agent':
+      ops.push(say('Sending an agent to look.'));
+      ops.push({ op: 'agent', name: 'explore', task: 'Find the footer code', sub: [
+        St('Grep', 'fn render', { meta: '4 hits' }),
+        St('Read', 'crates/hoocode-tui/src/status.rs', { lines: 88, meta: '88 lines' }),
+        ...(det() ? [St('Read', 'crates/hoocode-tui/src/theme.rs', { lines: 61, meta: '61 lines' })] : []),
+        St('Read', 'crates/hoocode-tui/src/footer.rs', { lines: 54, meta: '54 lines' }),
+      ] });
+      ops.push(say('The footer is built in `footer.rs`; `status.rs` draws the model chip.'));
+      break;
+    case 'flaky':
+      ops.push({ op: 'hails', lost: true });
+      break;
+    case 'skill':
+      ops.push(St('Read', 'src/wrap.rs', { lines: 31, meta: '31 lines' }));
+      ops.push(say('▲ `wrap_text` has no doc comment.'));
+      ops.push(say('▲ `current.len()` counts bytes, not columns, so wide characters overflow.'));
+      ops.push(say('▲ No unit test covers `wrap_text`.'));
+      break;
+    default: // explain
+      ops.push({ op: 'think', secs: 1.2 * p.think, gist: 'read wrap.rs → explain the algorithm' });
+      ops.push(St('Read', 'src/wrap.rs', { lines: 31, meta: '31 lines', peek: ['[[com://! Word wrapping for the transcript and the editor.]]'] }));
+      if (det()) ops.push(St('Search', 'wrap_text', { lines: 5, meta: '5 hits · 1 file' }));
+      ops.push(say('`wrap_text` splits on whitespace and fills each line greedily:'));
+      ops.push({ op: 'code', lang: 'rust', lines: RUST });
+      ops.push(say('A word longer than `width` is never split; it gets a line of its own.'));
+  }
+  ops.push({ op: 'outcome', landed: !crash });
+  if (opts.plan) {
+    const keep = ops.filter((o) => o.op === 'say' || o.op === 'think' || (o.op === 'step' && /Read|Search|Grep/.test(o.tool)));
+    keep.push({ op: 'plan', way: ['Read', 'Change', 'Verify'] });
+    keep.push(say('PLAN mode: nothing was changed. shift+tab to BUILD, then fly it.'));
+    keep.push({ op: 'outcome', landed: true });
+    return { kind, tag: TAGOF[kind], ops: keep };
+  }
+  return { kind, tag: TAGOF[kind], ops };
+}
+
+/* ---------------------------------------------------------------- state */
+const S = {
+  view: 'peek', mode: 'BUILD', ship: 'mock-large', think: 0,
+  entries: [], n: 0, input: '', cur: 0, hist: [], hidx: -1, queue: [],
+  ov: null, pend: null, run: null, race: null, scroll: 0, search: null,
+  toasts: [], sats: [], allow: new Set(ALLOW0), ctx: 0, got: 0, max: 0, cr: 0, ghost: '', last: null,
+  palSel: 0, ctrlc: 0, hull: null, ended: false, shift: null, satN: 0, rating: 0,
+};
+const ABORT = { abort: true };
+
+function now() { return performance.now(); }
+function sleep(sec, ctl) {
+  return new Promise((res, rej) => {
+    const t0 = now(), ms = (sec * 1000) / SPEED;
+    const base = ctl.m ? ctl.m.simT : 0;
+    const tick = () => {
+      if (ctl.abort) return rej(ABORT);
+      const el = now() - t0;
+      if (ctl.m) ctl.m.liveT = base + Math.min(sec, (el / 1000) * SPEED);
+      if (el >= ms) { if (ctl.m) ctl.m.simT = base + sec; return res(); }
+      setTimeout(tick, 30);
+    };
+    tick();
+  });
+}
+function waitUser(p) { return new Promise((res) => { S.pend = Object.assign(p, { resolve: (v) => { S.pend = null; res(v); } }); }); }
+const nextId = (m) => String(++m.stepN).padStart(2, '0');
+function toast(text, dur = 4) { S.toasts.push({ text, t0: now(), dur }); }
+
+/* ---------------------------------------------------------------- flying */
+async function doStep(m, op, ctl, id, into) {
+  const p = PROF[m.ship], r = ctl.r;
+  const it = { k: 'step', id, tool: op.tool, arg: op.arg, state: 'run', meta: '', peek: [], t0: m.simT, dur: 0 };
+  into.push(it);
+  if (op.tool === 'Shell' && !ctl.auto) {
+    const allowed = [...S.allow].some((a) => op.arg.startsWith(a));
+    if (!allowed && m.mode === 'BUILD') {
+      it.state = 'hold';
+      const t0 = now();
+      const ans = await waitUser({ type: 'clear', item: it, cmd: op.arg, m, sel: 0, editing: false });
+      m.waitMs += now() - t0;
+      if (ans.act === 'n') { it.state = 'deny'; it.meta = '[[dim:denied]]' + (ans.why ? ` [[faint:· “${esc(ans.why)}”]]` : ''); return false; }
+      if (ans.act === 'a') { S.allow.add(op.arg.split(' ')[0]); toast(`always allowing [[ink.b:${esc(op.arg.split(' ')[0])}]] in BUILD`); }
+      if (ans.cmd) it.arg = ans.cmd;
+      it.state = 'run';
+    }
+  }
+  const d = op.dur * p.spd * (0.8 + r() * 0.4);
+  await sleep(d, ctl);
+  it.dur = d;
+  m.steps++;
+  m.tin += 1100 + op.lines * 14 + r() * 500; m.tout += 70 + r() * 160 + (/Edit|Write/.test(op.tool) ? 220 : 0);
+  m.tools[op.tool] = (m.tools[op.tool] || 0) + 1;
+  if (op.fail) { it.state = 'fail'; it.meta = op.failMeta; m.hits++; m.fails[op.tool] = (m.fails[op.tool] || 0) + 1; }
+  else { it.state = 'done'; it.meta = op.meta; }
+  it.peek = op.peek || [];
+  return true;
+}
+async function fly(m, sc, ctl) {
+  const p = PROF[m.ship];
+  try {
+    for (const op of sc.ops) {
+      if (op.op === 'say') {
+        let t = op.text; if (m.answer) t = t.replace('{strategy}', m.answer);
+        m.items.push({ k: 'prose', text: t }); m.tout += 60; await sleep(0.45 * p.spd, ctl);
+      } else if (op.op === 'think') {
+        const it = { k: 'think', gist: op.gist, live: true, t0: m.simT };
+        m.items.push(it); const secs = op.secs * (1 + S.think * 0.6); await sleep(secs, ctl); it.live = false; it.secs = secs; m.tout += 120;
+      } else if (op.op === 'code') { m.items.push({ k: 'code', lang: op.lang, lines: op.lines }); await sleep(0.5 * p.spd, ctl); }
+      else if (op.op === 'step') { await doStep(m, op, ctl, nextId(m), m.items); }
+      else if (op.op === 'ask') {
+        const it = { k: 'ask', id: nextId(m), q: op.q, opts: op.opts, state: 'hold' };
+        m.items.push(it);
+        if (ctl.auto) { it.answer = op.opts[0][0]; }
+        else { const t0 = now(); const a = await waitUser({ type: 'ask', item: it, m, sel: 0, typing: false }); m.waitMs += now() - t0; it.answer = a; }
+        it.state = 'done'; m.answer = it.answer; m.steps++;
+        m.items.push({ k: 'prose', text: `Going with ${it.answer}.` });
+      } else if (op.op === 'plan') {
+        const it = { k: 'plan', id: nextId(m), way: op.way, cur: -1 };
+        m.items.push(it); m.plan = it; m.steps++; await sleep(0.2, ctl);
+      } else if (op.op === 'way') { if (m.plan) m.plan.cur = op.i; }
+      else if (op.op === 'agent') {
+        const it = { k: 'agent', id: nextId(m), name: op.name, task: op.task, state: 'run', sub: [], t0: m.simT };
+        m.items.push(it); m.steps++; S.agents = (S.agents || 0) + 1;
+        let k = 0;
+        try { for (const so of op.sub) { k++; await doStep(m, so, ctl, `${+it.id}.${k}`, it.sub); } }
+        finally { S.agents--; }
+        it.state = 'done'; it.meta = `${pl(it.sub.length, 'step')} · ${fmtT(m.simT - it.t0)}`;
+      } else if (op.op === 'job') {
+        const id = nextId(m); const jid = 'job-' + (++S.satN);
+        const it = { k: 'step', id, tool: 'Shell', arg: op.cmd, state: 'run', meta: `[[acc:⌁ sat ${jid}]]`, peek: [], sat: true };
+        m.items.push(it); m.steps++;
+        S.sats.push({ id: jid, cmd: op.cmd, secs: op.secs, t0: now(), item: it });
+        await sleep(0.4, ctl);
+      } else if (op.op === 'hails') {
+        const it = { k: 'hail', n: 0, state: 'run' };
+        m.items.push(it);
+        for (let i = 0; i < 6; i++) { await sleep(0.1 * Math.pow(2, i) * 0.6, ctl); it.n++; m.hails++; }
+        it.state = 'fail';
+        if (op.lost) { m.status = 'lost'; m.landed = false; return; }
+      } else if (op.op === 'outcome') { m.landed = op.landed; }
+    }
+    m.status = m.landed ? 'landed' : 'unlanded';
+  } catch (e) {
+    if (e === ABORT) { m.status = 'aborted'; for (const it of m.items) { if (it.state === 'run' || it.state === 'hold') it.state = 'deny'; } }
+    else { console.error(e); m.status = 'aborted'; }
+  }
+}
+function newMission(text, opts = {}) {
+  const r = rng(++seedCounter * 2654435761);
+  const sc = script(text, S.ship, r, { plan: S.mode === 'PLAN', retry: opts.retry });
+  const m = { kind: 'mission', n: ++S.n, text, ship: S.ship, tag: sc.tag, kindName: sc.kind, items: [], status: 'fly', mode: S.mode,
+    steps: 0, stepN: 0, hits: 0, hails: 0, tin: 0, tout: 0, simT: 0, liveT: 0, waitMs: 0, tools: {}, fails: {}, skill: text.startsWith('/skill:') ? text.slice(7).split(' ')[0] : null };
+  if (m.skill) m.text = text.slice(8 + m.skill.length) || 'review';
+  S.entries.push(m);
+  return { m, sc, r };
+}
+async function launch(text, opts = {}) {
+  if (S.run || S.race) { S.queue.push(text); return; }
+  S.scroll = 0; S.ghost = '';
+  const { m, sc, r } = newMission(text, opts);
+  const ctl = { m, r, abort: false };
+  S.run = ctl;
+  await fly(m, sc, ctl);
+  S.run = null;
+  finish(m);
+  if (S.queue.length && m.status !== 'lost') { const q = S.queue.shift(); setTimeout(() => launch(q), 300 / SPEED); }
+}
+function finish(m) {
+  m.time = m.simT;
+  m.cost = m.tin * PROF[m.ship].inP / 1e6 + m.tout * PROF[m.ship].outP / 1e6;
+  S.ctx += m.tin; S.cr += m.cost;
+  if (m.status === 'aborted') { S.last = m; return; }
+  m.debrief = true;
+  S.last = m;
+  S.ghost = m.status === 'lost' ? '' : SUG[m.kindName] || '';
+}
+
+/* ---------------------------------------------------------------- user shell */
+const SH = {
+  'ls': ['Cargo.toml  README.md  src/  tests/  target/'], 'pwd': ['~/src/hoocode'],
+  'git status': ['On branch main', 'Changes not staged for commit:', '        modified:   src/wrap.rs'],
+  'git log --oneline': ['a1c2e3f wrap: measure columns, not bytes', '9be0d41 add backoff helper'],
+  'cargo test': ['test result: ok. 12 passed; 0 failed'], 'whoami': ['pilot'],
+};
+function userShell(cmd) {
+  let out = SH[cmd], code = 0;
+  if (!out && cmd.startsWith('echo ')) out = [cmd.slice(5)];
+  if (!out) { out = [`${cmd.split(' ')[0]}: not available in this simulator`]; code = 127; }
+  S.entries.push({ kind: 'shell', cmd, out, code });
+}
+
+/* ---------------------------------------------------------------- views */
+const MK = { run: '[[acc:◐]]', done: '[[ok:●]]', fail: '[[err:⊗]]', hold: '[[warn:◉]]', deny: '[[dim:⊘]]', next: '[[faint:○]]' };
+function stepArg(it) { return /Read|Edit|Write/.test(it.tool) ? path(it.arg) : `[[ink:${esc(it.arg)}]]`; }
+function stepMeta(it, m) {
+  if (it.state === 'run') return it.sat ? it.meta : `[[acc:${fmtT(Math.max(0, (m.liveT || 0) - (it.t0 || 0)))}]]`;
+  if (it.state === 'hold') return '[[warn:holding for clearance]]';
+  if (it.state === 'fail') return `[[kErr: HIT ]] [[err:${it.meta}]]` + (it.dur ? ` [[dim:· ${fmtT(it.dur)}]]` : '');
+  if (it.state === 'deny') return it.meta || '[[dim:aborted]]';
+  return (it.meta || '') + (it.dur ? ` [[dim:· ${fmtT(it.dur)}]]` : '');
+}
+function stepRow(it, m, prefix = '  ') {
+  const id = String(it.id).padStart(2, ' ');
+  return lr(`${prefix}[[gold:${id}]] ${MK[it.state]} [[ink.b:${it.tool.padEnd(7)}]] ${stepArg(it)}`, stepMeta(it, m) + ' ', W);
+}
+function peekRows(lines, indent) { return lines.slice(0, 3).map((l) => P(`${indent}[[dim:${''}]]` + (l.includes('[[') ? l : `[[dim:${esc(l)}]]`))); }
+function itemLines(it, m) {
+  const o = [];
+  const sp = '   [[faint:┊]]  ';
+  switch (it.k) {
+    case 'prose':
+      for (const ln of wrap(plain(it.text).length > 90 ? it.text : it.text, 90)) o.push(P(sp + (ln.startsWith('▲') ? `[[warn:▲]]${md(ln.slice(1))}` : md(ln))));
+      break;
+    case 'code':
+      it.lines.forEach((ln, i) => o.push(hcat(sp, withbg(lr(' ' + ln, i === 0 ? `[[faint:${it.lang}]] ` : '', 88), 'bW'))));
+      break;
+    case 'think':
+      o.push(lr(`  [[faint:··]] ${it.live ? MK.run : MK.done} [[ink.b:Think  ]] [[faint.it:${esc(it.gist)}]]`, `[[vio:✻ ${fmtT(it.live ? Math.max(0, m.liveT - it.t0) : it.secs)}]] `, W));
+      break;
+    case 'step':
+      o.push(stepRow(it, m));
+      if (it.state !== 'run' && it.state !== 'hold') o.push(...peekRows(it.peek, '   [[faint:┊]]          '));
+      break;
+    case 'agent':
+      o.push(lr(`  [[gold:${it.id}]] ${MK[it.state]} [[ink.b:Agent  ]] [[vio.b:◈]] [[ink:${it.name}]] [[dim:· ${it.task}]]`, (it.state === 'run' ? `[[acc:${fmtT(Math.max(0, m.liveT - it.t0))}]]` : `[[dim:${it.meta}]]`) + ' ', W));
+      for (const s of it.sub) o.push(lr(`   [[faint:┊]]  [[vio:┃]] [[gold:${s.id}]] ${MK[s.state]} [[ink:${s.tool.padEnd(6)}]] ${stepArg(s)}`, stepMeta(s, m) + ' ', W));
+      break;
+    case 'ask':
+      o.push(lr(`  [[gold:${it.id}]] ${MK[it.state]} [[ink.b:Ask    ]] [[ink:${esc(it.q)}]]`, it.state === 'hold' ? '[[warn:holding for you]] ' : `[[faint:→]] [[ink:${esc(it.answer)}]] `, W));
+      break;
+    case 'plan': {
+      o.push(lr(`  [[gold:${it.id}]] ${MK.done} [[ink.b:Plan   ]] [[ink:${pl(it.way.length, 'waypoint')}]]`, '', W));
+      let tr = '';
+      const fin = m.status && m.status !== 'fly' && m.status !== 'aborted';
+      const cur0 = it.cur;
+      it = Object.assign({}, it, { cur: fin ? it.way.length : it.cur });
+      it.way.forEach((w, i) => { const st = i < it.cur ? 'ok' : i === it.cur ? 'acc' : 'faint'; const g = i < it.cur ? '●' : i === it.cur ? '◐' : '○'; tr += `[[${st}:${g}]]` + (i < it.way.length - 1 ? (i < it.cur ? '[[ok:━━━]]' : '[[faint:┄┄┄]]') : ''); });
+      const cw = fin ? 'all waypoints reached' : cur0 >= 0 ? it.way[Math.min(cur0, it.way.length - 1)] : it.way[0];
+      o.push(P(`${sp}[[faint:FLIGHT PLAN]]  ${tr}  [[ink:${fin ? it.way.length : Math.max(0, cur0) + (cur0 >= 0 ? 1 : 0)}/${it.way.length}]]  [[${fin ? 'ok' : 'ink'}:${esc(cw)}]]`));
+      break;
+    }
+    case 'hail': {
+      o.push(lr(`  [[faint:··]] ${MK[it.state]} [[ink.b:Model  ]] [[ink:529 upstream overloaded]]`, (it.state === 'fail' ? '[[kErr: COMMS LOST ]] ' : '[[warn:hailing]] ') + `[[dim:${pl(it.n, 'hail')}]] `, W));
+      const line = Array.from({ length: 61 }, () => ['·', 'faint']);
+      const ts = [0.1, 0.3, 0.7, 1.5, 3.1, 6.2];
+      for (let i = 0; i < it.n; i++) line[Math.round(ts[i] / 6.2 * 60)] = ['⊗', 'err'];
+      o.push(hcat(sp + '        ', line, '  [[faint:backoff doubles]]'));
+      break;
+    }
+  }
+  return o;
+}
+function debriefRow(m) {
+  if (m.status === 'aborted') return P(`  [[dim:⊘ ABORTED]] [[faint:·]] [[dim:${pl(m.steps, 'step')} · ${fmtT(m.time)}]]`);
+  if (m.status === 'lost') return P(`  [[err:⊗]] [[err.b:COMMS LOST]] [[faint:·]] [[dim:${pl(m.hails, 'hail')} · the provider failed, not the agent · enter hails again]]`);
+  const h = m.hits ? `[[err:${pl(m.hits, 'hit')}]]` : '[[dim:0 hits]]';
+  const out = m.status === 'landed' ? '[[ok:●]] [[ok.b:LANDED]]' : '[[err:⊗]] [[err.b:DID NOT LAND]]';
+  const plan = m.mode === 'PLAN' ? ' [[vio:· PLAN mode]]' : '';
+  return P(`  ${out} [[faint:·]] [[ink:${m.steps}]] [[dim:${m.steps === 1 ? 'step' : 'steps'}]] [[faint:·]] ${h} [[faint:·]] [[dim:${fmtT(m.time)} · ${fmtK(m.tin + m.tout)} tokens · ${fmtC(m.cost)}]]${plan}`);
+}
+function headRow(m) {
+  const right = (m.skill ? `[[kVio: ✦ ${esc(m.skill)} ]] ` : '') + `[[faint:SHIP]] [[${PROF[m.ship].col}:${m.ship}]] `;
+  return withbg(lr(` [[you.b:▲ M${m.n}]]  [[ink.b:${esc(m.text)}]]`, right, W), 'bU');
+}
+function peekMission(m) {
+  const o = [headRow(m)];
+  for (const it of m.items) o.push(...itemLines(it, m));
+  if (m.debrief || m.status === 'aborted' || m.status === 'lost') o.push(debriefRow(m));
+  return o;
+}
+function radarMission(m) {
+  const t = m.status === 'fly' ? m.liveT : m.time;
+  const st = m.status === 'fly' ? '[[acc:◐]]' : m.status === 'aborted' ? '[[dim:⊘]]' : m.status === 'lost' ? '[[err:⊗]]' : m.status === 'landed' ? '[[ok:●]]' : '[[err:⊗]]';
+  const hits = m.hits ? `[[err:${m.hits}✕]]` : '[[faint:0✕]]';
+  const o = [lr(` [[you:M${m.n}]] ${st}  [[ink.b:${esc(m.text)}]]`, `[[ink:${m.steps}]] [[dim:${m.steps === 1 ? 'step ' : 'steps'}]]  ${hits}  [[dim:${fmtT(t || 0).padStart(6)}  ${fmtC(m.cost || 0)}]] [[${PROF[m.ship].col}:${m.ship.slice(5).padEnd(5)}]] `, W)];
+  const walk = (list) => { for (const it of list) {
+    if (it.k === 'agent') { if (it.state === 'run') o.push(P(`        ${MK.run} [[gold:${it.id}]] [[ink:Agent]]  [[vio:◈]] [[ink:${it.name}]]`)); walk(it.sub); continue; }
+    if ((it.k === 'step' || it.k === 'ask') && ['run', 'hold', 'fail'].includes(it.state)) {
+      const tail = it.state === 'fail' ? `  [[faint:→]] ${it.peek[0] ? (it.peek[0].includes('[[') ? it.peek[0] : `[[ink:${esc(it.peek[0])}]]`) : ''} [[kErr: HIT ]]` : it.state === 'hold' ? '  [[warn:holding]]' : '';
+      o.push(P(`        ${MK[it.state]} [[gold:${it.id}]] [[ink:${it.tool || 'Ask'}]]  ${it.k === 'ask' ? `[[ink:${esc(it.q)}]]` : `[[ink:${esc(it.arg)}]]`}${tail}`));
+    }
+    if (it.k === 'hail' && it.state === 'fail') o.push(P(`        [[err:⊗]] [[ink:Model]]  [[ink:529 upstream overloaded]] [[kErr: COMMS LOST ]]`));
+  } };
+  walk(m.items);
+  if (m.status !== 'fly') { const last = [...m.items].reverse().find((i) => i.k === 'prose'); if (last) o.push(P(`        [[dim:${esc(plain(last.text).slice(0, 86))}]]`)); }
+  return o;
+}
+const LOGO = ['▟▀▀▀▀▀▙', '▌▟▙ ▟▙▐', '▜▄▄▄▄▄▛'];
+function logoRow(i) { return [...LOGO[i]].map((ch, x) => [ch, ch === ' ' ? '' : `mix:acc:vio:${Math.round(x / 6 * 100)}`]); }
+function startLines() {
+  return [P(''),
+    hcat(' ', logoRow(0), '  [[ink.b:hoocode]]'),
+    hcat(' ', logoRow(1), '  [[dim:coding agent · v0.1.24]]'),
+    hcat(' ', logoRow(2), '  [[dim:~/src/hoocode]]'),
+    P(''),
+    P(` [[faint:SHIP]] [[${PROF[S.ship].col}:${S.ship}]]   [[acc:✦]] [[ink:3]] [[dim:skills]]  [[vio:◈]] [[ink:5]] [[dim:agents]]  [[acc:⌘]] [[ink:${CMDS.length}]] [[dim:commands]]   [[faint:· AGENTS.md 27 tok/turn]]`),
+    P(''),
+    P(` ${K('/')} [[dim:commands]]  ${K('@')} [[dim:files]]  ${K('!')} [[dim:shell]]  ${K('ctrl+o')} [[dim:peek ↔ flight log]]  ${K('/model')} [[dim:switch ship]]  ${K('/help')} [[dim:keys]]`)];
+}
+function transcript() {
+  const L = [];
+  for (const e of S.entries) {
+    e._y = L.length;
+    let ls = [];
+    if (e.kind === 'start') ls = startLines();
+    else if (e.kind === 'mission') ls = S.view === 'peek' ? peekMission(e) : radarMission(e);
+    else if (e.kind === 'shell') {
+      ls = [withbg(lr(` [[you.b:▲ $]]  [[ink.b:${esc(e.cmd)}]]`, `${e.code ? `[[err:exit ${e.code}]]` : '[[ok:exit 0]]'} [[dim:· yours, not a step]] `, W), 'bU')];
+      if (S.view === 'peek') for (const l of e.out) ls.push(P(`   [[faint:┊]]  [[dim:${esc(l)}]]`));
+    } else if (e.kind === 'note') ls = [P(e.m)];
+    else if (e.kind === 'jet') ls = [P(` [[vio:≋≋≋]] [[vio.b:JETTISONED]] [[dim:${e.text}]]`)];
+    L.push(...ls);
+    if (S.view === 'peek' || e.kind !== 'mission') L.push([]);
+  }
+  return L;
+}
+
+/* ---------------------------------------------------------------- chrome */
+function fuelPct() { return Math.min(100, Math.round((S.ctx + (S.run ? S.run.m.tin : 0)) / 128000 * 100)); }
+function hudRow() {
+  const f = fuelPct(), k = Math.round(f / 12.5);
+  const fc = f < 70 ? 'acc' : f < 90 ? 'warn' : 'err';
+  const ex = [];
+  if (S.race) ex.push('[[acc:◐ RACING]]');
+  if (S.agents > 0) ex.push(`[[vio:◈ ${S.agents} agent]]`);
+  if (S.sats.length) ex.push(`[[acc:⌁ ${S.sats.length} sat]]`);
+  const left = ` [[acc.b:◭]] [[ink.b:HOOCODE]]  [[${S.mode === 'BUILD' ? 'kAcc' : 'kVio'}: ${S.mode} ]]  [[dim:~/src/hoocode]]`;
+  const cr = S.cr + (S.run ? S.run.m.tin * PROF[S.run.m.ship].inP / 1e6 + S.run.m.tout * PROF[S.run.m.ship].outP / 1e6 : 0);
+  const right = (ex.length ? ex.join(' ') + '  ' : '') + `[[faint:SHIP]] [[${PROF[S.ship].col}:${S.ship}]]  [[faint:FUEL]] [[${fc}:${'▰'.repeat(k)}]][[faint:${'▱'.repeat(8 - k)}]] [[dim:${f}%]]  [[faint:CR]] [[ink:${fmtC(cr)}]] `;
+  return withbg(lr(left, right, W), S.hull ? 'bTint' : 'bH');
+}
+function inputCells(glyphCls, glyph, placeholder) {
+  const room = W - 8;
+  let t = S.input, c = S.cur, off = 0;
+  if (t.length >= room) { off = Math.max(0, c - room + 1); }
+  const vis = t.slice(off, off + room);
+  const cc = c - off;
+  const cells = P(`[[${glyphCls}.b:${glyph}]] `);
+  for (let i = 0; i < vis.length; i++) cells.push([vis[i], i === cc ? 'cur' : 'ink']);
+  if (cc >= vis.length) cells.push([' ', 'cur']);
+  if (!t && placeholder) cells.push(...P(`[[faint:${esc(placeholder)}]]`));
+  return cells;
+}
+function commsRows() {
+  const m = S.run && S.run.m;
+  let color = 'faint', title = '[[dim:READY]]';
+  if (m) { color = 'acc'; title = `[[acc:◐]] [[acc.b:IN FLIGHT]] [[faint:·]] [[dim:step ${m.steps + 1} · ${fmtT(m.liveT || 0)}]] [[faint:·]] ${H_('esc', 'abort')}`; }
+  else if (S.race) { color = 'acc'; title = `[[acc:◐]] [[acc.b:RACING]] [[faint:·]] [[dim:${fmtT((now() - S.race.t0) / 1000 * SPEED)}]] [[faint:·]] ${H_('esc', 'scrub all')}`; }
+  else if (S.last && S.last.status === 'lost') { color = 'err'; title = `[[err:⊗]] [[err.b:COMMS LOST]] [[faint:·]] ${H_('enter', 'hail again', '/model', 'switch ship')}`; }
+  else if (S.last && S.last.status === 'aborted') { title = '[[dim:⊘ ABORTED · READY]]'; }
+  else if (S.last && S.last.debrief) { title = `${S.last.status === 'landed' ? '[[ok:●]] [[ok.b:LANDED]]' : '[[err:⊗]] [[err.b:DID NOT LAND]]'} [[faint:·]] [[dim:${fmtT(S.last.time)} · ${pl(S.last.steps, 'step')}]]`; }
+  if (S.hull) color = 'hull';
+  const rows = [];
+  S.queue.forEach((q, i) => rows.push({ m: lr(`[[faint:○]] [[ink:${esc(q)}]]`, `[[dim:queued · becomes M${S.n + 1 + i}]]`, W - 4), bg: 'bU' }));
+  const ph = m || S.race ? 'type to queue the next mission' : S.last && S.last.status === 'lost' ? 'press enter to hail again' : S.ghost ? `${S.ghost}   tab` : 'name your mission · / commands · @ files · ! shell';
+  const gl = m ? 'acc' : S.last && S.last.status === 'lost' && !S.run ? 'err' : 'ink';
+  rows.push(inputCells(gl, '▸', ph));
+  const foot = `[[dim:${S.view === 'peek' ? 'peek' : 'radar · flight log'}]]` + (S.mode === 'PLAN' ? ' [[faint:·]] [[vio:PLAN · nothing gets changed]]' : '') + (S.queue.length ? ` [[faint:·]] ${H_('alt+↑', 'edit queue')}` : '');
+  const tot = S.entries.filter((e) => e.kind === 'mission').reduce((a, e) => [a[0] + e.tin, a[1] + e.tout], [0, 0]);
+  return box(W, rows, { kind: 'heavy', color, title, right: `[[acc:${S.hull ? S.hull.name : 'app-edit'}]]`, foot, footr: `[[dim:↑${fmtK(tot[0])} ↓${fmtK(tot[1])}]]` });
+}
+function reachOf(cmd) {
+  const w = /rm |>|mv |cp |tee /.test(cmd), n = /curl|wget|npm|pip|push|pull|fetch/.test(cmd), p = /\|/.test(cmd);
+  const cap = (name, on, x = '') => `[[${on ? 'warn' : 'faint'}:${on ? '■' : '□'}]] [[${on ? 'ink' : 'faint'}:${name}]]` + (x && on ? ` [[dim:${x}]]` : '');
+  return `[[dim:REACH]]   ${cap('read', true, 'repo')}   ${cap('write', w, w ? cmd.split(' ').slice(-1)[0] : '')}   ${cap('network', n)}   ${cap('pipe', p, '2 programs')}`;
+}
+function clearCard() {
+  const p = S.pend;
+  const rows = [{ m: `[[faint:$]] [[ink.b:${esc(p.cmd)}]]`, bg: 'bW' }, reachOf(p.cmd),
+    `${K('y', 'kAcc')} [[ink:go, once]]   ${K('a')} [[ink:always]] [[dim:${esc(p.cmd.split(' ')[0])} in BUILD]]   ${K('n')} [[ink:abort + say why]]   ${K('e')} [[ink:edit first]]`];
+  if (p.editing || S.input) rows.push(inputCells('warn', p.editing ? '✎' : '▸', ''));
+  const foot = p.editing ? H_('enter', 'run edited', 'esc', 'cancel edit') : S.input ? H_('enter', 'abort with this reason', 'esc', 'clear') : '[[dim:or type a reply]]';
+  return box(W, rows, { kind: 'heavy', color: 'warn', title: `[[warn:◉]] [[warn.b:CLEARANCE NEEDED]] [[faint:·]] [[dim:step ${p.item.id}]]`, right: '[[dim:BUILD asks for Shell]]', foot });
+}
+function askCard() {
+  const p = S.pend, it = p.item;
+  const rows = [`[[ink.b:${esc(it.q)}]]`, ''];
+  it.opts.forEach(([l, d, rec], i) => {
+    const r = lr(`${K(String(i + 1), i === p.sel ? 'kAcc' : 'kDim')} [[ink${i === p.sel ? '.b' : ''}:${l.padEnd(22)}]] [[dim:${d}]]`, rec ? '[[ok:recommended]]' : '', W - 4);
+    rows.push(i === p.sel ? sel(r) : r);
+  });
+  rows.push(lr(`${K('4', p.sel === 3 ? 'kAcc' : 'kDim')} [[ink:something else]]`, '', W - 4));
+  if (p.sel === 3 || S.input) rows.push(inputCells('warn', '▸', 'type your answer'));
+  return box(W, rows, { kind: 'heavy', color: 'warn', title: '[[warn:◉]] [[warn.b:MISSION CONTROL ASKS]]', right: '[[dim:sets the default for every call]]', foot: H_('1–4', 'answer', '↑↓', 'move', 'enter', 'choose') });
+}
+/* ---------------------------------------------------------------- consoles */
+const CMDS = [
+  ['/model', 'HANGAR · switch ship'],
+  ['/help', 'CONTROLS · keys'], ['/plan', 'FLIGHT PLAN · waypoints, agents, satellites'], ['/theme', 'HULL · terminal theme'], ['/color', 'HULL PAINT · session colour'],
+  ['/resume', 'MISSION LOG · jump to a mission'], ['/login', 'DOCKING · sign in to a provider'], ['/compact', 'JETTISON earlier missions into a summary'],
+  ['/mode', 'BUILD ↔ PLAN'], ['/clear', 'clear the screen'], ['/skill:review', '✦ skill · review a file'], ['/quit', 'END OF SHIFT'],
+];
+const FILES = ['src/wrap.rs', 'src/provider.rs', 'src/backoff.rs', 'src/lib.rs', 'src/editor.rs', 'src/transcript.rs', 'tests/wrap_tests.rs', 'tests/wrap_tabs.rs', 'Cargo.toml', 'README.md'];
+function cmdMatches() { const q = S.input.slice(1).split(' ')[0].toLowerCase(); return CMDS.filter(([c]) => c.slice(1).startsWith(q) || c.includes(q)); }
+function atToken() { const before = S.input.slice(0, S.cur); const m = before.match(/@([\w./-]*)$/); return m ? m[1] : null; }
+function underline(s, q) { const i = s.toLowerCase().indexOf(q.toLowerCase()); if (!q || i < 0) return `[[ink:${esc(s)}]]`; return `[[ink:${esc(s.slice(0, i))}]][[ink.b.u:${esc(s.slice(i, i + q.length))}]][[ink:${esc(s.slice(i + q.length))}]]`; }
+function paletteRows() {
+  const list = cmdMatches();
+  S.palSel = Math.min(S.palSel, Math.max(0, list.length - 1));
+  const q = S.input.slice(1).split(' ')[0];
+  const rows = list.slice(0, 8).map(([c, d], i) => { const r = lr(`${i === S.palSel ? '[[acc:›]]' : ' '} [[ink:/]]${underline(c.slice(1), q)}`, `[[dim:${d}]]`, W - 4); return i === S.palSel ? sel(r) : r; });
+  if (!rows.length) rows.push('[[dim:no command matches]]');
+  rows.push(inputCells('ink', '▸', ''));
+  return box(W, rows, { kind: 'heavy', color: 'you', title: '[[ink.b:CONSOLE]] [[dim:· commands]]', right: `[[dim:${list.length} of ${CMDS.length}]]`, foot: H_('↑↓', 'pick', 'tab', 'complete', 'enter', 'run', 'esc', 'clear') });
+}
+function fileRows() {
+  const q = atToken();
+  const list = FILES.filter((f) => f.toLowerCase().includes(q.toLowerCase()));
+  S.palSel = Math.min(S.palSel, Math.max(0, list.length - 1));
+  const touched = new Set(); S.entries.forEach((e) => e.kind === 'mission' && e.items.forEach((it) => it.arg && touched.add(it.arg)));
+  const rows = list.slice(0, 7).map((f, i) => { const r = lr(`${i === S.palSel ? '[[acc:›]]' : ' '} ${underline(f, q)}`, touched.has(f) ? '[[dim:touched this shift]]' : '', W - 4); return i === S.palSel ? sel(r) : r; });
+  if (!rows.length) rows.push('[[dim:no file matches]]');
+  rows.push(inputCells('ink', '▸', ''));
+  return box(W, rows, { kind: 'heavy', color: 'you', title: '[[ink.b:CARGO]] [[dim:· @ files]]', right: `[[dim:${list.length} match${list.length === 1 ? '' : 'es'}]]`, foot: H_('↑↓', 'pick', 'tab', 'load', 'esc', 'close') });
+}
+const SHIPINFO = { 'mock-large': ['mock', '200k', '$3.00 / $15.00'], 'mock-fast': ['mock', '128k', '$0.45 / $1.80'], 'mock-local': ['ollama', '32k', 'free · runs on this machine'] };
+function hangarRows() {
+  const o = S.ov;
+  const rows = ['[[faint:  ship          provider   context   price in / out per 1M]]'];
+  SHIPS.forEach((ship, i) => {
+    const [pv, cx, pr] = SHIPINFO[ship];
+    const r = lr(`${i === o.sel ? '[[acc:›]]' : ' '} [[${PROF[ship].col}.b:${ship.padEnd(12)}]]  [[dim:${pv.padEnd(9)}]]  [[ink:${cx.padEnd(8)}]]  [[dim:${pr}]]`, ship === S.ship ? '[[ok:● flying]]' : '', W - 4);
+    rows.push(i === o.sel ? sel(r) : r);
+  });
+  rows.push('');
+  const lv = ['○ off', '◔ low', '◑ medium', '◕ high'];
+  rows.push(`[[dim:thinking]]  ${lv.map((l, i) => (i === S.think ? `[[ink.bS: ${l} ]]` : `[[dim:${l}]]`)).join('  ')}`);
+  rows.push('[[faint:each ship flies differently in this simulator: speed, detours, failed calls and cost all change]]');
+  return box(W, rows, { kind: 'heavy', color: 'you', title: '[[ink.b:HANGAR]] [[dim:· /model]]', right: '[[dim:3 ships signed in]]', foot: H_('↑↓', 'ship', 'enter', 'fly it', '←→', 'thinking', 'esc', 'close') });
+}
+function planRows() {
+  const m = [...S.entries].reverse().find((e) => e.kind === 'mission' && e.plan);
+  const rows = [];
+  if (m) {
+    rows.push(`[[you:M${m.n}]] [[ink.b:${esc(m.text)}]]`);
+    m.plan.way.forEach((w, i) => {
+      const st = i < m.plan.cur || (m.status !== 'fly' && m.status !== 'aborted') ? 'done' : i === m.plan.cur ? 'run' : 'next';
+      rows.push(lr(`  ${MK[st]} [[${st === 'next' ? 'dim' : st === 'run' ? 'ink.b' : 'dim'}:${esc(w)}]]`, st === 'run' ? `[[acc:step ${m.steps + 1}]]` : '', W - 4));
+    });
+  } else rows.push('[[dim:No flight plan yet. Missions that plan (try “add retries to the provider wrapper”) show waypoints here.]]');
+  rows.push('');
+  rows.push(`[[vio:◈]] [[dim:agents in flight]] [[ink:${S.agents || 0}]]    [[acc:⌁]] [[dim:satellites]] ` + (S.sats.length ? S.sats.map((s) => `[[ink:${s.id}]] [[dim:${esc(s.cmd)} · ${fmtT((now() - s.t0) / 1000 * SPEED)} of ~${s.secs}s]]`).join('  ') : '[[ink:0]]'));
+  return box(W, rows, { kind: 'heavy', color: 'you', title: '[[ink.b:FLIGHT PLAN]] [[dim:· ctrl+g]]', foot: H_('esc', 'close') });
+}
+function keysRows() {
+  const layer = ['plain', 'ctrl', 'alt'][S.ov.layer];
+  const bound = { plain: { '/': 1, '@': 1, '!': 1 }, ctrl: { c: 1, o: 1, g: 1, r: 1 }, alt: { o: 1, g: 1, r: 1, m: 1 } }[layer];
+  const key = (k, w = 3, cls) => `[[${cls || (bound[k] ? 'kAcc' : 'kDim')}:${k.padStart(Math.ceil((w + k.length) / 2)).padEnd(w)}]]`;
+  const R = [[key('esc', 4, 'kAcc'), ...'1234567890'.split('').map((c) => key(c))], [key('tab', 4, layer === 'plain' ? 'kAcc' : 'kDim'), ...'qwertyuiop'.split('').map((c) => key(c))],
+    [key('ctrl', 5, layer === 'ctrl' ? 'kVio' : 'kDim'), ...'asdfghjkl'.split('').map((c) => key(c))], [key('shift', 6), ...'zxcvbnm'.split('').map((c) => key(c)), key('/'), key('@')]];
+  const legend = { plain: ['[[vio.b:plain]] [[dim:layer]]', '[[acc:/]] [[ink:commands]]', '[[acc:@]] [[ink:attach a file]]', '[[acc:!]] [[ink:your own shell]]', '[[acc:tab]] [[ink:accept the suggestion]]', '[[acc:esc]] [[ink:abort · close · live]]', '[[acc:shift+tab]] [[ink:BUILD ↔ PLAN]]'],
+    ctrl: ['[[vio.b:ctrl]] [[dim:layer]]', '[[acc:c]] [[ink:clear · twice ends shift]]', '[[acc:o]] [[ink:peek ↔ flight log]]', '[[acc:g]] [[ink:flight plan]]', '[[acc:r]] [[ink:scan the session]]', '[[acc:pgup/pgdn]] [[ink:rewind]]', ''],
+    alt: ['[[vio.b:alt]] [[dim:layer · same as ctrl, browser-safe]]', '[[acc:o]] [[ink:peek ↔ flight log]]', '[[acc:g]] [[ink:flight plan]]', '[[acc:r]] [[ink:scan]]', '[[acc:↑]] [[ink:edit the queue]]', '[[acc:enter]] [[ink:queue a mission]]', ''] }[layer];
+  const rows = [];
+  for (let i = 0; i < 7; i++) rows.push(hcat(pad(i % 2 === 0 && R[i / 2] ? ' ' + R[i / 2].join(' ') : '', 52), ' ', pad(legend[i] || '', 43)));
+  return box(W, rows, { kind: 'heavy', color: 'you', title: `[[ink.b:CONTROLS]] [[dim:· /help]]  ${['plain', 'ctrl', 'alt'].map((l, i) => K(l, i === S.ov.layer ? 'kVio' : 'kDim')).join(' ')}`, foot: H_('tab', 'layer', 'esc', 'close') });
+}
+const THEMES = [['deep', 'deep-space', 'the default · navy void'], ['daylight', 'daylight', 'paper white cockpit'], ['nocolor', 'NO_COLOR', 'shapes only: every state still reads']];
+function themeRows() {
+  const rows = THEMES.map(([k, n, d], i) => { const r = lr(`${i === S.ov.sel ? '[[acc:›]]' : ' '} [[ink${i === S.ov.sel ? '.b' : ''}:${n.padEnd(14)}]] [[dim:${d}]]`, k === S.ov.orig ? '[[ok:● in use]]' : '', W - 4); return i === S.ov.sel ? sel(r) : r; });
+  return box(W, rows, { kind: 'heavy', color: 'you', title: '[[ink.b:HULL]] [[dim:· /theme]]', foot: H_('↑↓', 'preview live', 'enter', 'keep', 'esc', 'revert') });
+}
+function logRows() {
+  const ms = S.entries.filter((e) => e.kind === 'mission');
+  const rows = ['[[faint:  mission                                              ship          result   steps   time]]'];
+  if (!ms.length) rows.push('[[dim:No missions yet this shift.]]');
+  ms.slice(-10).forEach((m, i, arr) => {
+    const idx = i; const isSel = idx === Math.min(S.ov.sel, arr.length - 1);
+    const res = m.status === 'fly' ? '[[acc:◐]]' : m.status === 'aborted' ? '[[dim:⊘]]' : m.status === 'landed' ? '[[ok:●]]' : '[[err:⊗]]';
+    const r = `${isSel ? '[[acc:›]]' : ' '} [[you:M${m.n}]] [[ink:${esc(m.text).slice(0, 44).padEnd(44)}]]  [[${m.ship ? PROF[m.ship].col : 'dim'}:${(m.ship || 'race').padEnd(12)}]]  ${res}    [[ink:${String(m.steps || '').padStart(3)}]]    [[dim:${m.time ? fmtT(m.time) : ''}]]`;
+    rows.push(isSel ? sel(r) : r);
+  });
+  return box(W, rows, { kind: 'heavy', color: 'you', title: '[[ink.b:MISSION LOG]] [[dim:· /resume]]', right: '[[dim:this shift]]', foot: H_('↑↓', 'move', 'enter', 'jump there', 'esc', 'close') });
+}
+function loginRows() {
+  const left = ['[[ink.b:Dock with a provider to fly.]]', '', { m: `${K('1', 'kAcc')} [[ink.b:subscription]]`, bg: S.ov.sel === 0 ? 'bS' : '' }, '    [[dim:scan, or enter to open the browser]]', '',
+    { m: `${K('2')} [[ink:API key]] [[dim:· kept in the OS keychain]]`, bg: S.ov.sel === 1 ? 'bS' : '' }, '', '[[dim:code]] [[ink.b:WXYZ-1234]] [[faint:· 9:41 left]]', '[[acc:◐]] [[dim:waiting for docking clamps…]]'];
+  const rows = [];
+  for (let i = 0; i < Math.max(left.length, DATA.qr.length); i++) {
+    const l = left[i] || '';
+    const lc = typeof l === 'object' ? withbg(pad(l.m, 50), l.bg) : pad(l, 50);
+    rows.push(hcat(lc, '  ', DATA.qr[i] || []));
+  }
+  return box(W, rows, { kind: 'heavy', color: 'you', title: '[[ink.b:DOCKING]] [[dim:· /login]]', foot: H_('1 2', 'choose', 'enter', 'dock', 'esc', 'cancel') });
+}
+function shiftRows() {
+  const all = S.entries.filter((e) => e.kind === 'mission' && e.status !== 'fly');
+  const ms = all.filter((e) => e.debrief && e.status !== 'lost');
+  const steps = ms.reduce((a, m) => a + m.steps, 0), hits = ms.reduce((a, m) => a + m.hits, 0);
+  const hails = all.reduce((a, m) => a + m.hails, 0), t = ms.reduce((a, m) => a + m.time, 0);
+  const landedN = ms.filter((m) => m.status === 'landed').length;
+  const rows = [`[[ink:${pl(all.length, 'mission')}]] [[dim:· ${landedN} landed]]`, ''];
+  if (!all.length) rows.push('[[dim:No missions this shift.]]');
+  all.slice(-6).forEach((m) => rows.push(lr(`[[you:M${m.n}]] ${m.status === 'landed' ? '[[ok:●]]' : m.status === 'aborted' ? '[[dim:⊘]]' : '[[err:⊗]]'} [[dim:${esc(m.text).slice(0, 52)}]]`, `[[dim:${pl(m.steps, 'step')} ·]] ${m.hits ? `[[err:${pl(m.hits, 'hit')}]]` : '[[dim:0 hits]]'} [[dim:· ${fmtC(m.cost || 0)} ·]] [[${PROF[m.ship].col}:${m.ship}]]`, W - 4)));
+  rows.push('');
+  rows.push(`[[dim:${pl(steps, 'step')} · ${pl(hits, 'hit')} · ${pl(hails, 'hail')} · ${fmtT(t)} · ${fmtC(S.cr)}]]`);
+  return box(W, rows, { kind: 'heavy', color: 'you', title: '[[ink.b:END OF SHIFT]]', foot: H_('enter', 'end shift', 'esc', 'stay') });
+}
+/* ---------------------------------------------------------------- render */
+function bottom() {
+  if (S.shift) return shiftRows();
+  if (S.ov) return ({ hangar: hangarRows, plan: planRows, keys: keysRows, theme: themeRows, log: logRows, login: loginRows })[S.ov.type]();
+  if (S.pend && S.pend.type === 'clear') return clearCard();
+  if (S.pend && S.pend.type === 'ask') return askCard();
+  if (S.input.startsWith('/') && !S.input.includes(' ')) return paletteRows();
+  if (atToken() !== null) return fileRows();
+  return commsRows();
+}
+function render() {
+  if (S.ended) { endedScreen(); return; }
+  const rows = [hudRow(), []];
+  const bot = bottom();
+  const extra = [];
+  const L = transcript();
+  if (S.search) {
+    const q = S.search.q.toLowerCase();
+    S.search.hits = [];
+    if (q) L.forEach((row, y) => { const t = row.map((c) => c[0]).join('').toLowerCase(); let i = t.indexOf(q); if (i >= 0) S.search.hits.push(y); while (i >= 0) { for (let k = i; k < i + q.length; k++) row[k] = [row[k][0], 'kWarn']; i = t.indexOf(q, i + q.length); } });
+    const n = S.search.hits.length, cur = n ? (S.search.i % n) + 1 : 0;
+    extra.push(withbg(lr(` [[kWarn: ⌕ SCAN ]] [[ink:${esc(S.search.q)}]][[cur: ]]`, `[[ink:${n ? `${cur} of ${n}` : 'no contact'}]]  ${H_('enter', 'next', 'esc', 'close')} `, W), 'bH'));
+  } else if (S.scroll > 0) {
+    extra.push(withbg(lr(` [[kVio: ◂◂ REWIND ]] [[dim:${S.scroll} lines above live]]`, `${H_('pgup pgdn', 'page', 'esc', 'live')} `, W), 'bH'));
+  }
+  const viewH = Math.max(3, H - 2 - bot.length - extra.length);
+  const maxScroll = Math.max(0, L.length - viewH);
+  if (S.scroll > maxScroll) S.scroll = maxScroll;
+  const end = L.length - S.scroll, start = Math.max(0, end - viewH);
+  const vis = L.slice(start, end);
+  // scrollbar while rewound
+  if (S.scroll > 0 && L.length > viewH) {
+    const th = Math.max(1, Math.round(viewH * viewH / L.length)), tp = Math.round((start / L.length) * viewH);
+    for (let y = 0; y < viewH; y++) { const row = pad(vis[y] || [], W); row[W - 1] = y >= tp && y < tp + th ? ['┃', 'ink'] : ['│', 'faint']; vis[y] = row; }
+  }
+  while (vis.length < viewH) vis.push([]);
+  rows.push(...vis, ...extra, ...bot);
+  // toasts
+  S.toasts = S.toasts.filter((t) => (now() - t.t0) / 1000 < t.dur);
+  if (S.toasts.length) {
+    const t = S.toasts[S.toasts.length - 1];
+    const left = 1 - (now() - t.t0) / 1000 / t.dur, bw = 40, k = Math.round(bw * left);
+    const tb = box(46, [t.text, `[[acc:${'▔'.repeat(k)}]][[faint:${'▔'.repeat(bw - k)}]]`], { kind: 'round', color: 'acc', title: '[[acc:●]] [[acc.b:TRANSMISSION]]' });
+    tb.forEach((r, i) => { const y = 2 + i; if (rows[y]) { const row = pad(rows[y], W); for (let x = 0; x < r.length; x++) row[W - 47 + x] = [r[x][0], (r[x][1] + ' bM').trim()]; rows[y] = row; } });
+  }
+  paint(rows);
+}
+function endedScreen() {
+  const rows = [hudRow(), [], [],
+    hcat('  ', logoRow(0), '  [[ink.b:hoocode]]'), hcat('  ', logoRow(1), '  [[dim:shift ended]]'), hcat('  ', logoRow(2), `  [[dim:${pl(S.entries.filter((e) => e.kind === 'mission').length, 'mission')} · ${fmtC(S.cr)}]]`),
+    [], P('  [[dim:Reload the page to start a new shift.]]')];
+  paint(rows);
+}
+/* ---------------------------------------------------------------- input */
+function insert(s) { S.input = S.input.slice(0, S.cur) + s + S.input.slice(S.cur); S.cur += s.length; S.palSel = 0; }
+function submit() {
+  const t = S.input.trim();
+  S.input = ''; S.cur = 0; S.hidx = -1;
+  if (!t) {
+    if (S.last && S.last.status === 'lost' && !S.run) launch(S.last.text, { retry: true });
+    return;
+  }
+  S.hist.push(t);
+  if (t.startsWith('/') && !t.startsWith('/skill:')) return command(t);
+  if (t.startsWith('!')) { userShell(t.slice(1).trim()); S.scroll = 0; return; }
+  if (S.run || S.race) { S.queue.push(t); return; }
+  launch(t);
+}
+function command(t) {
+  const [c, ...rest] = t.split(' '); const arg = rest.join(' ');
+  switch (c) {
+    case '/model': S.ov = { type: 'hangar', sel: SHIPS.indexOf(S.ship) }; break;
+    case '/help': case '/keys': case '/hotkeys': S.ov = { type: 'keys', layer: 0 }; break;
+    case '/plan': S.ov = { type: 'plan' }; break;
+    case '/theme': { const cur = document.documentElement.getAttribute('data-term'); S.ov = { type: 'theme', sel: THEMES.findIndex((x) => x[0] === cur), orig: cur }; break; }
+    case '/resume': case '/log': S.ov = { type: 'log', sel: 99 }; break;
+    case '/login': S.ov = { type: 'login', sel: 0 }; break;
+    case '/compact': {
+      const ms = S.entries.filter((e) => e.kind === 'mission' || e.kind === 'shell');
+      if (ms.length < 2) { toast('[[dim:nothing to jettison yet]]'); break; }
+      const before = S.ctx; S.entries = [S.entries.find((e) => e.kind === 'start'), { kind: 'jet', text: `M1–M${S.n} into one summary stage · ${fmtK(before)} → ${fmtK(Math.round(before * 0.06))} tokens` }].filter(Boolean);
+      S.ctx = Math.round(before * 0.06); toast('jettisoned · fuel recounted'); break;
+    }
+    case '/clear': S.entries = S.entries.filter((e) => e.kind === 'start'); S.scroll = 0; break;
+    case '/mode': S.mode = S.mode === 'BUILD' ? 'PLAN' : 'BUILD'; toast(`mode · [[ink.b:${S.mode}]]`); break;
+    case '/color': {
+      const C = [['gold', 'parity'], ['acc', 'cyan'], ['vio', 'violet'], ['ok', 'lime'], ['err', 'red']];
+      const i = S.hull ? (C.findIndex((x) => x[1] === S.hull.name) + 1) % (C.length + 1) : 0;
+      if (i >= C.length) { S.hull = null; document.getElementById('term').style.removeProperty('--hull'); toast('hull paint removed'); }
+      else { S.hull = { name: C[i][1] }; document.getElementById('term').style.setProperty('--hull', `var(--${C[i][0]})`); toast(`hull paint · [[hull:${C[i][1]}]]`); }
+      break;
+    }
+    case '/quit': case '/exit': openShift(); break;
+    default: toast(`[[err:unknown command]] [[ink:${esc(c)}]] [[dim:· try /help]]`);
+  }
+}
+function openShift() {
+  if (S.sats.length) toast(`[[warn:${pl(S.sats.length, 'satellite')} still up]] [[dim:· they land on their own]]`);
+  S.shift = true;
+}
+
+const isCtrl = (e, k) => (e.ctrlKey || e.altKey) && (e.key.toLowerCase() === k || e.code === 'Key' + k.toUpperCase());
+function onKey(e) {
+  if (S.ended) return;
+  const k = e.key;
+  // ---------- shift end
+  if (S.shift) {
+    e.preventDefault();
+    if (k === 'Escape') S.shift = null;
+    else if (k === 'Enter') { S.ended = true; }
+    return render();
+  }
+  // ---------- global view keys
+  if (isCtrl(e, 'o')) { e.preventDefault(); S.view = S.view === 'peek' ? 'radar' : 'peek'; return render(); }
+  if (isCtrl(e, 'g')) { e.preventDefault(); S.ov = S.ov && S.ov.type === 'plan' ? null : { type: 'plan' }; return render(); }
+  if (isCtrl(e, 'r')) { e.preventDefault(); S.search = S.search ? null : { q: '', i: 0 }; return render(); }
+  if (k === 'PageUp' || (e.shiftKey && k === 'ArrowUp' && !S.ov)) { e.preventDefault(); S.scroll += Math.max(3, H - 12); return render(); }
+  if (k === 'PageDown' || (e.shiftKey && k === 'ArrowDown' && !S.ov)) { e.preventDefault(); S.scroll = Math.max(0, S.scroll - Math.max(3, H - 12)); return render(); }
+  if (k === 'Tab' && e.shiftKey && !S.ov) { e.preventDefault(); S.mode = S.mode === 'BUILD' ? 'PLAN' : 'BUILD'; toast(`mode · [[ink.b:${S.mode}]]`); return render(); }
+  if (isCtrl(e, 'c') && !e.altKey) {
+    e.preventDefault();
+    if (S.input) { S.input = ''; S.cur = 0; }
+    else if (now() - S.ctrlc < 1500) openShift();
+    else { S.ctrlc = now(); toast('[[dim:ctrl+c again to end the shift]]', 1.5); }
+    return render();
+  }
+  // ---------- search
+  if (S.search) {
+    if (k === 'Escape') { S.search = null; e.preventDefault(); return render(); }
+    if (k === 'Enter') {
+      e.preventDefault();
+      const hits = S.search.hits || []; if (hits.length) { const y = hits[S.search.i % hits.length]; S.search.i++; const L = transcript().length; const viewH = H - 9; S.scroll = Math.max(0, L - y - Math.floor(viewH / 2)); }
+      return render();
+    }
+    if (k === 'Backspace') { S.search.q = S.search.q.slice(0, -1); S.search.i = 0; e.preventDefault(); return render(); }
+    if (k.length === 1 && !e.ctrlKey && !e.metaKey) { S.search.q += k; S.search.i = 0; e.preventDefault(); return render(); }
+    return;
+  }
+  // ---------- modal consoles
+  if (S.ov) { e.preventDefault(); consoleKey(e); return render(); }
+  // ---------- pending cards
+  if (S.pend) { if (pendKey(e)) { e.preventDefault(); return render(); } }
+  // ---------- palette / files
+  const pal = S.input.startsWith('/') && !S.input.includes(' ');
+  const at = atToken();
+  if ((pal || at !== null) && (k === 'ArrowDown' || k === 'ArrowUp')) { e.preventDefault(); S.palSel = Math.max(0, S.palSel + (k === 'ArrowDown' ? 1 : -1)); return render(); }
+  if (pal && (k === 'Tab' || k === 'Enter')) {
+    e.preventDefault();
+    const m = cmdMatches()[S.palSel];
+    if (m) { if (k === 'Tab' || m[0] === '/skill:review' || m[0] === '/race') { S.input = m[0] + ' '; S.cur = S.input.length; if (k === 'Enter' && m[0] === '/race') submit(); } else { S.input = m[0]; submit(); } }
+    return render();
+  }
+  if (at !== null && (k === 'Tab' || k === 'Enter')) {
+    const list = FILES.filter((f) => f.toLowerCase().includes(at.toLowerCase()));
+    const f = list[S.palSel];
+    if (f) { e.preventDefault(); const before = S.input.slice(0, S.cur).replace(/@[\w./-]*$/, '@' + f + ' '); S.input = before + S.input.slice(S.cur); S.cur = before.length; S.palSel = 0; return render(); }
+  }
+  // ---------- editing
+  if (k === 'Enter') { e.preventDefault(); if (e.altKey && S.input.trim()) { S.queue.push(S.input.trim()); S.input = ''; S.cur = 0; } else submit(); return render(); }
+  if (k === 'Escape') {
+    e.preventDefault();
+    if (S.scroll) S.scroll = 0;
+    else if (S.run) { S.run.abort = true; S.queue = []; }
+    else if (S.race) { toast('[[dim:a race can’t be scrubbed in this simulator; it ends on its own]]'); }
+    else { S.input = ''; S.cur = 0; }
+    return render();
+  }
+  if (k === 'Tab') { e.preventDefault(); if (!S.input && S.ghost) { S.input = S.ghost; S.cur = S.input.length; } return render(); }
+  if (k === 'Backspace') { e.preventDefault(); if (S.cur > 0) { S.input = S.input.slice(0, S.cur - 1) + S.input.slice(S.cur); S.cur--; } return render(); }
+  if (k === 'Delete') { e.preventDefault(); S.input = S.input.slice(0, S.cur) + S.input.slice(S.cur + 1); return render(); }
+  if (k === 'ArrowLeft') { e.preventDefault(); S.cur = Math.max(0, S.cur - 1); return render(); }
+  if (k === 'ArrowRight') { e.preventDefault(); S.cur = Math.min(S.input.length, S.cur + 1); return render(); }
+  if (k === 'Home') { e.preventDefault(); S.cur = 0; return render(); }
+  if (k === 'End') { e.preventDefault(); S.cur = S.input.length; return render(); }
+  if (k === 'ArrowUp' && e.altKey) { e.preventDefault(); if (S.queue.length) { S.input = S.queue.pop(); S.cur = S.input.length; } return render(); }
+  if (k === 'ArrowUp') { e.preventDefault(); if (S.hist.length) { S.hidx = S.hidx < 0 ? S.hist.length - 1 : Math.max(0, S.hidx - 1); S.input = S.hist[S.hidx]; S.cur = S.input.length; } return render(); }
+  if (k === 'ArrowDown') { e.preventDefault(); if (S.hidx >= 0) { S.hidx++; if (S.hidx >= S.hist.length) { S.hidx = -1; S.input = ''; } else S.input = S.hist[S.hidx]; S.cur = S.input.length; } return render(); }
+  if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); insert(k); return render(); }
+}
+function pendKey(e) {
+  const p = S.pend, k = e.key;
+  if (p.type === 'clear') {
+    if (p.editing) {
+      if (k === 'Enter') { const cmd = S.input.trim() || p.cmd; S.input = ''; S.cur = 0; p.resolve({ act: 'y', cmd }); return true; }
+      if (k === 'Escape') { p.editing = false; S.input = ''; S.cur = 0; return true; }
+      return false;
+    }
+    if (!S.input) {
+      if (k === 'y' || k === 'Y') { p.resolve({ act: 'y' }); return true; }
+      if (k === 'a' || k === 'A') { p.resolve({ act: 'a' }); return true; }
+      if (k === 'n' || k === 'N') { p.resolve({ act: 'n' }); return true; }
+      if (k === 'e' || k === 'E') { p.editing = true; S.input = p.cmd; S.cur = S.input.length; return true; }
+      if (k === 'Escape') { p.resolve({ act: 'n' }); return true; }
+      if (k === 'Enter') { p.resolve({ act: 'y' }); return true; }
+    } else if (k === 'Enter') { const why = S.input.trim(); S.input = ''; S.cur = 0; p.resolve({ act: 'n', why }); return true; }
+    return false;
+  }
+  if (p.type === 'ask') {
+    if (p.sel === 3 || S.input) {
+      if (k === 'Enter' && S.input.trim()) { const a = S.input.trim(); S.input = ''; S.cur = 0; p.resolve(a); return true; }
+      if (k === 'Escape') { S.input = ''; S.cur = 0; p.sel = 0; return true; }
+      if (k === 'ArrowUp' && !S.input) { p.sel = 2; return true; }
+      return false;
+    }
+    if (/^[1-3]$/.test(k)) { p.resolve(p.item.opts[+k - 1][0]); return true; }
+    if (k === '4') { p.sel = 3; return true; }
+    if (k === 'ArrowDown') { p.sel = Math.min(3, p.sel + 1); return true; }
+    if (k === 'ArrowUp') { p.sel = Math.max(0, p.sel - 1); return true; }
+    if (k === 'Enter') { if (p.sel < 3) p.resolve(p.item.opts[p.sel][0]); return true; }
+    if (k === 'Escape') { p.resolve(p.item.opts[0][0]); return true; }
+    return false;
+  }
+  return false;
+}
+function consoleKey(e) {
+  const o = S.ov, k = e.key;
+  const close = () => { S.ov = null; };
+  if (o.type === 'theme') {
+    if (k === 'ArrowDown' || k === 'ArrowUp') { o.sel = (o.sel + (k === 'ArrowDown' ? 1 : THEMES.length - 1)) % THEMES.length; setTheme(THEMES[o.sel][0]); }
+    else if (k === 'Enter') { setTheme(THEMES[o.sel][0]); close(); }
+    else if (k === 'Escape') { setTheme(o.orig); close(); }
+    return;
+  }
+  if (k === 'Escape') { if (o.type === 'card' && o.from) { S.ov = o.from; } else close(); return; }
+  switch (o.type) {
+    case 'hangar':
+      if (k === 'ArrowDown') o.sel = (o.sel + 1) % 3;
+      else if (k === 'ArrowUp') o.sel = (o.sel + 2) % 3;
+      else if (k === 'ArrowLeft') S.think = Math.max(0, S.think - 1);
+      else if (k === 'ArrowRight') S.think = Math.min(3, S.think + 1);
+      else if (k === 'Enter') { S.ship = SHIPS[o.sel]; toast(`now flying [[${PROF[S.ship].col}.b:${S.ship}]]`); close(); }
+      break;
+    case 'keys': if (k === 'Tab') o.layer = (o.layer + 1) % 3; break;
+    case 'log': {
+      const ms = S.entries.filter((x) => x.kind === 'mission').slice(-10);
+      o.sel = Math.min(o.sel, ms.length - 1);
+      if (k === 'ArrowDown') o.sel = Math.min(ms.length - 1, o.sel + 1);
+      else if (k === 'ArrowUp') o.sel = Math.max(0, o.sel - 1);
+      else if (k === 'Enter' && ms[o.sel]) { const target = ms[o.sel]; close(); render(); const L = transcript().length; S.scroll = Math.max(0, L - target._y - (H - 8)); }
+      break;
+    }
+    case 'login':
+      if (k === '1' || k === '2') o.sel = +k - 1;
+      else if (k === 'ArrowDown' || k === 'ArrowUp') o.sel = 1 - o.sel;
+      else if (k === 'Enter') { toast(o.sel === 0 ? 'docked · subscription' : 'docked · API key saved to the keychain'); close(); }
+      break;
+    case 'plan': break;
+  }
+}
+function setTheme(t) {
+  document.documentElement.setAttribute('data-term', t);
+  document.querySelectorAll('#themes button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.t === t ? 'true' : 'false'));
+}
+
+/* ---------------------------------------------------------------- loop */
+function tick() {
+  // satellites land on their own
+  for (const s of [...S.sats]) {
+    if ((now() - s.t0) / 1000 * SPEED >= s.secs) {
+      S.sats.splice(S.sats.indexOf(s), 1);
+      s.item.state = 'done'; s.item.meta = `[[dim:landed · exit 0 · ${s.secs}s]]`;
+      toast(`[[ink.b:${s.id}]] [[dim:landed · exit 0 ·]] [[ink:${esc(s.cmd)}]]`, 5);
+    }
+  }
+  render();
+}
+function fit() {
+  const avail = Math.min(window.innerWidth - 58, 1150);
+  let fs = Math.floor((avail / (W * 0.602)) * 10) / 10;
+  fs = Math.max(7.5, Math.min(14, fs));
+  const lh = Math.round(fs * 1.32);
+  document.documentElement.style.setProperty('--fs', fs + 'px');
+  document.documentElement.style.setProperty('--lh', lh + 'px');
+  H = Math.max(24, Math.min(48, Math.floor((window.innerHeight - 120) / lh)));
+  render();
+}
+
+/* ---------------------------------------------------------------- boot */
+S.entries.push({ kind: 'start' });
+const term = $('#term');
+term.addEventListener('keydown', onKey);
+term.addEventListener('wheel', (e) => { e.preventDefault(); S.scroll = Math.max(0, S.scroll + (e.deltaY < 0 ? 3 : -3)); render(); }, { passive: false });
+term.addEventListener('mousedown', () => setTimeout(() => term.focus(), 0));
+document.querySelectorAll('#themes button').forEach((b) => b.addEventListener('click', () => { setTheme(b.dataset.t); term.focus(); }));
+document.querySelectorAll('#speeds button').forEach((b) => b.addEventListener('click', () => { SPEED = +b.dataset.s; document.querySelectorAll('#speeds button').forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false')); term.focus(); }));
+const TRIES = ['fix the off-by-one in wrap_text', 'what does the wrap crate do?', 'add retries to the provider wrapper', 'add a test for tabs', 'run the commands', 'find the footer code with an agent',
+  'start the dev server in the background', 'run a slow check', 'summarize the flaky provider', 'refactor wrap into a module', 'delete the target folder', '/skill:review src/wrap.rs', '/model', '/plan', '/help', '!git status'];
+const tries = $('#tries');
+TRIES.forEach((t) => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = t; b.addEventListener('click', () => { S.input = t; S.cur = t.length; S.palSel = 0; term.focus(); render(); }); tries.appendChild(b); });
+window.addEventListener('resize', fit);
+fit();
+setInterval(tick, 90);
+term.focus();
+window.__hoo = { S, render };
+})();
+</script>
+</body></html>
