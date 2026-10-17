@@ -11,10 +11,14 @@ use hoocode_code_tool_api::{
 use hoocode_code_tool_bash::shell::strip_ansi;
 use hoocode_code_tui_keybindings::key_hint;
 use hoocode_code_tui_theme::theme;
-use hoocode_tui_components::{Loader, Text};
-use hoocode_tui_render::{Component, ComponentHandle};
+use hoocode_tui_components::Loader;
+use hoocode_tui_ratatui::core::style::Style;
+use hoocode_tui_ratatui::core::text::Span;
+use hoocode_tui_ratatui::{bold, Palette};
+use hoocode_tui_render::Component;
+use hoocode_tui_util::wrap_text_with_ansi;
 
-use crate::visual_truncate::truncate_to_visual_lines;
+use crate::trajectory::{band_row, rail_line};
 
 /// Preview line limit for a `!` command. The dial does not expand it.
 const PREVIEW_LINES: usize = 20;
@@ -93,17 +97,6 @@ impl OutputTail {
     }
 }
 
-/// The collapsed preview: the last visual lines at the render width.
-struct Preview {
-    styled_input: String,
-}
-
-impl Component for Preview {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        truncate_to_visual_lines(&self.styled_input, PREVIEW_LINES, width, 1).visual_lines
-    }
-}
-
 pub struct BashExecutionComponent {
     command: String,
     status: Status,
@@ -112,7 +105,6 @@ pub struct BashExecutionComponent {
     truncation: Option<TruncationResult>,
     full_output_path: Option<String>,
     expanded: bool,
-    children: Vec<ComponentHandle>,
     tail: OutputTail,
 }
 
@@ -132,7 +124,7 @@ impl BashExecutionComponent {
             None,
         );
         loader.start();
-        let mut this = Self {
+        Self {
             command: command.to_string(),
             tail: OutputTail::default(),
             status: Status::Running,
@@ -141,27 +133,10 @@ impl BashExecutionComponent {
             truncation: None,
             full_output_path: None,
             expanded: false,
-            children: Vec::new(),
-        };
-        // Until the first update the header uses the spinner's colour (dim for
-        // `!!`), as the pin's constructor draws it.
-        let t = theme();
-        let header: ComponentHandle = Rc::new(RefCell::new(Text::new(
-            format!(
-                "{}{}",
-                t.fg("warning", "● "),
-                t.fg(color_key, &t.bold(&format!("$ {command}")))
-            ),
-            1,
-            0,
-        )));
-        this.children = vec![header, this.loader.clone()];
-        this
+        }
     }
-
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
-        self.update_display();
     }
 
     /// Advance the spinner; true when it changed.
@@ -171,7 +146,6 @@ impl BashExecutionComponent {
 
     pub fn append_output(&mut self, chunk: &str) {
         self.tail.append(chunk);
-        self.update_display();
     }
 
     pub fn set_complete(
@@ -192,11 +166,57 @@ impl BashExecutionComponent {
         self.truncation = truncation;
         self.full_output_path = full_output_path;
         self.loader.borrow_mut().stop();
-        self.update_display();
     }
 
-    fn update_display(&mut self) {
+    /// The `▲ $` band header (Mission Control spec a4): the mark in the
+    /// `you` token, the command in bold ink, and — once settled — the exit
+    /// on the right with `· no step, it's yours`. Your own `!` commands
+    /// are yours, not the agent's steps, so they get no step number.
+    fn header_row(&self, width: usize, palette: &Palette) -> String {
+        let left = vec![
+            Span::styled("▲ $".to_string(), bold(palette.you())),
+            Span::styled("  ".to_string(), Style::default()),
+            Span::styled(self.command.clone(), bold(palette.ink())),
+        ];
+        band_row(
+            left,
+            self.header_stats(palette),
+            width,
+            palette.bg_color("userMessageBg"),
+        )
+    }
+
+    /// The header's right side: the exit (ok/err, warn when cancelled)
+    /// plus `· no step, it's yours`. Empty while the command runs.
+    fn header_stats(&self, palette: &Palette) -> Vec<Span<'static>> {
+        let (exit, style) = match self.status {
+            Status::Running => return Vec::new(),
+            Status::Complete => (
+                format!("exit {}", self.exit_code.unwrap_or(0)),
+                palette.ok(),
+            ),
+            Status::Error => (
+                format!(
+                    "exit {}",
+                    self.exit_code
+                        .map_or("undefined".to_string(), |c| c.to_string())
+                ),
+                palette.err(),
+            ),
+            Status::Cancelled => ("cancelled".to_string(), palette.warn()),
+        };
+        vec![
+            Span::styled(exit, style),
+            Span::styled(" · ".to_string(), palette.dim()),
+            Span::styled("no step, it's yours".to_string(), palette.dim()),
+        ]
+    }
+
+    /// The output and footer rows: dim output on the `┊` rail, then the
+    /// spinner while running, else the fold/cancelled/truncation notices.
+    fn body_rows(&mut self, width: usize, palette: &Palette) -> Vec<String> {
         let t = theme();
+        let mut lines = Vec::new();
         let mut context = truncate_tail(
             &self.tail.text(),
             TruncationOptions {
@@ -205,86 +225,67 @@ impl BashExecutionComponent {
             },
         );
         context.truncated |= self.tail.dropped;
-        let available: Vec<&str> = if context.content.is_empty() {
-            Vec::new()
-        } else {
-            context.content.split('\n').collect()
-        };
-        let preview_start = available.len().saturating_sub(PREVIEW_LINES);
-        let hidden = preview_start;
-
-        let mut children: Vec<ComponentHandle> = Vec::new();
-        let dot_color = match self.status {
-            Status::Error => "error",
-            Status::Running => "warning",
-            _ => "success",
-        };
-        children.push(Rc::new(RefCell::new(Text::new(
-            format!(
-                "{}{}",
-                t.fg(dot_color, "● "),
-                t.fg("bashMode", &t.bold(&format!("$ {}", self.command)))
-            ),
-            1,
-            0,
-        ))));
-
-        if !available.is_empty() {
-            if self.expanded {
-                let text = available
-                    .iter()
-                    .map(|l| t.fg("muted", l))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                children.push(Rc::new(RefCell::new(Text::new(format!("\n{text}"), 1, 0))));
+        let mut hidden = 0;
+        if !context.content.is_empty() {
+            // The rail takes six cells; the output wraps in what is left.
+            let content_width = width.saturating_sub(6).max(1);
+            let mut visual = Vec::new();
+            for physical in context.content.split('\n') {
+                visual.extend(wrap_text_with_ansi(&t.fg("dim", physical), content_width));
+            }
+            let shown = if self.expanded {
+                visual.as_slice()
             } else {
-                let styled = available[preview_start..]
-                    .iter()
-                    .map(|l| t.fg("muted", l))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                children.push(Rc::new(RefCell::new(Preview {
-                    styled_input: format!("\n{styled}"),
-                })));
+                let skip = visual.len().saturating_sub(PREVIEW_LINES);
+                hidden = skip;
+                &visual[skip..]
+            };
+            for line in shown {
+                lines.push(rail_line(line, width, false, palette));
             }
         }
-
         if self.status == Status::Running {
-            children.push(self.loader.clone());
-        } else {
-            let mut parts = Vec::new();
-            if hidden > 0 {
-                if self.expanded {
-                    parts.push(format!("({})", key_hint("app.tools.expand", "to collapse")));
-                } else {
-                    parts.push(t.fg("muted", &format!("... {hidden} more lines")));
-                }
-            }
-            match self.status {
-                Status::Cancelled => parts.push(t.fg("warning", "(cancelled)")),
-                Status::Error => parts.push(t.fg(
-                    "error",
-                    &format!(
-                        "(exit {})",
-                        self.exit_code.map_or("undefined".to_string(), |c| c.to_string())
-                    ),
-                )),
-                _ => {}
-            }
-            let truncated =
-                self.truncation.as_ref().is_some_and(|tr| tr.truncated) || context.truncated;
-            if let (true, Some(path)) = (truncated, &self.full_output_path) {
-                parts.push(t.fg("warning", &format!("Output truncated. Full output: {path}")));
-            }
-            if !parts.is_empty() {
-                children.push(Rc::new(RefCell::new(Text::new(
-                    format!("\n{}", parts.join("\n")),
-                    1,
-                    0,
-                ))));
+            lines.extend(self.loader.borrow_mut().render(width as u16));
+            return lines;
+        }
+        let mut footer: Vec<String> = Vec::new();
+        if hidden > 0 {
+            if self.expanded {
+                footer.push(rail_line(
+                    &format!("({})", key_hint("app.tools.expand", "to collapse")),
+                    width,
+                    false,
+                    palette,
+                ));
+            } else {
+                footer.push(rail_line(
+                    &t.fg("dim", &format!("... {hidden} more lines")),
+                    width,
+                    false,
+                    palette,
+                ));
             }
         }
-        self.children = children;
+        if self.status == Status::Cancelled {
+            footer.push(rail_line(
+                &t.fg("warning", "(cancelled)"),
+                width,
+                false,
+                palette,
+            ));
+        }
+        let truncated =
+            self.truncation.as_ref().is_some_and(|tr| tr.truncated) || context.truncated;
+        if let (true, Some(path)) = (truncated, &self.full_output_path) {
+            footer.push(rail_line(
+                &t.fg("warning", &format!("Output truncated. Full output: {path}")),
+                width,
+                false,
+                palette,
+            ));
+        }
+        lines.extend(footer);
+        lines
     }
 
     /// The output kept for display: the last lines of it. The earlier ones
@@ -300,18 +301,15 @@ impl BashExecutionComponent {
 
 impl Component for BashExecutionComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let mut lines = Vec::new();
-        for child in &self.children {
-            lines.extend(child.borrow_mut().render(width));
-        }
+        let palette = Palette::current();
+        let width = (width as usize).max(1);
+        let mut lines = vec![self.header_row(width, &palette)];
+        lines.extend(self.body_rows(width, &palette));
         lines
     }
 
     fn invalidate(&mut self) {
-        for child in &self.children {
-            child.borrow_mut().invalidate();
-        }
-        self.update_display();
+        self.loader.borrow_mut().invalidate();
     }
 }
 

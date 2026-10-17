@@ -2,7 +2,7 @@
 //! `renderInlineTokens`, `renderList` and `renderTable`.
 
 use hoocode_tui_images::{get_capabilities, hyperlink};
-use hoocode_tui_util::{visible_width, wrap_text_with_ansi};
+use hoocode_tui_util::{apply_background_to_line, visible_width, wrap_text_with_ansi};
 
 use crate::color::ColorFn;
 
@@ -42,6 +42,10 @@ pub struct MarkdownTheme {
     pub highlight_code: Option<HighlightCodeFn>,
     /// Prefix applied to each rendered code block line (default: two spaces).
     pub code_block_indent: Option<String>,
+    /// Full-line background for code block lines (Mission Control `bW`
+    /// band). `None` keeps the old transparent lines; the app theme sets
+    /// the band, test themes leave it off so their goldens stay bare.
+    pub code_block_bg: Option<ColorFn>,
 }
 
 /// `InlineStyleContext.applyText`.
@@ -170,15 +174,47 @@ impl Renderer<'_> {
             TokenType::Code => {
                 let indent = self.theme.code_block_indent.as_deref().unwrap_or("  ");
                 // The fence lines are markup: the block prints its code only.
-                if let Some(highlight) = &self.theme.highlight_code {
-                    for line in highlight(token.text(), token.lang.as_deref()) {
-                        lines.push(format!("{indent}{line}"));
-                    }
+                let styled: Vec<String> = if let Some(highlight) = &self.theme.highlight_code {
+                    highlight(token.text(), token.lang.as_deref())
                 } else {
-                    for line in token.text().split('\n') {
-                        lines.push(format!("{indent}{}", (self.theme.code_block)(line)));
+                    token
+                        .text()
+                        .split('\n')
+                        .map(|line| (self.theme.code_block)(line))
+                        .collect()
+                };
+                // Mission Control (spec a3): the language reads top-right
+                // in faint. Two cells between code and label when they fit;
+                // otherwise the label is dropped, never wrapped.
+                let label = token
+                    .lang
+                    .as_deref()
+                    .filter(|l| !l.trim().is_empty())
+                    .map(|lang| (self.theme.code_block_border)(lang));
+                let mut code = Vec::with_capacity(styled.len());
+                for (i, line) in styled.into_iter().enumerate() {
+                    let mut row = format!("{indent}{line}");
+                    if i == 0 {
+                        if let Some(label) = &label {
+                            let room = width
+                                .saturating_sub(visible_width(&row))
+                                .saturating_sub(visible_width(label));
+                            if room >= 2 {
+                                row.push_str(&" ".repeat(room));
+                                row.push_str(label);
+                            }
+                        }
+                    }
+                    code.push(row);
+                }
+                // The block's dark band: every line padded full-width with
+                // resets repaired, so highlighted spans keep the band.
+                if let Some(bg) = &self.theme.code_block_bg {
+                    for line in &mut code {
+                        *line = apply_background_to_line(line, width.max(1), |s| bg(s));
                     }
                 }
+                lines.extend(code);
                 if spaced {
                     lines.push(String::new());
                 }

@@ -1,7 +1,7 @@
 
  Please fix this:
 
-   fn main() {
+   fn main() {                                                             rust
        println!("hi");
    }
 
@@ -10,17 +10,24 @@
 r0 c0-79 bg=#1c1c26
 r1 c0-79 bg=#1c1c26
 r2 c0-79 bg=#1c1c26
-r3 c0-2 bg=#1c1c26
-r3 c3-4 fg=#599ed7 bg=#1c1c26
-r3 c5 bg=#1c1c26
-r3 c6-9 fg=#dcdcaa bg=#1c1c26
-r3 c10-79 bg=#1c1c26
-r4 c0-6 bg=#1c1c26
-r4 c7-14 fg=#4ec9b0 bg=#1c1c26
-r4 c15 bg=#1c1c26
-r4 c16-19 fg=#ce9178 bg=#1c1c26
-r4 c20-79 bg=#1c1c26
-r5 c0-79 bg=#1c1c26
+r3 c0 bg=#1c1c26
+r3 c1-2 bg=#16161f
+r3 c3-4 fg=#599ed7 bg=#16161f
+r3 c5 bg=#16161f
+r3 c6-9 fg=#dcdcaa bg=#16161f
+r3 c10-74 bg=#16161f
+r3 c75-78 fg=#a8a8a8 bg=#16161f
+r3 c79 bg=#1c1c26
+r4 c0 bg=#1c1c26
+r4 c1-6 bg=#16161f
+r4 c7-14 fg=#4ec9b0 bg=#16161f
+r4 c15 bg=#16161f
+r4 c16-19 fg=#ce9178 bg=#16161f
+r4 c20-78 bg=#16161f
+r4 c79 bg=#1c1c26
+r5 c0 bg=#1c1c26
+r5 c1-78 bg=#16161f
+r5 c79 bg=#1c1c26
 r6 c0-79 bg=#1c1c26
 r7 c0-12 bg=#1c1c26
 r7 c13-19 fg=#5cc8bb bg=#1c1c26

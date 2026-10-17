@@ -36,5 +36,6 @@ fn theme() -> MarkdownTheme {
         underline: identity_color(),
         highlight_code: None,
         code_block_indent: None,
+        code_block_bg: None,
     }
 }

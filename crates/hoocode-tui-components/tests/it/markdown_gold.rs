@@ -51,10 +51,14 @@ fn renders_match_markdown_ts() {
         true_color: true,
         hyperlinks: false,
     });
+    // Mission Control's code-block language label intentionally diverges from
+    // the pinned markdown.ts renders; accept the new rows with UPDATE_GOLDENS=1.
+    let accept = std::env::var("UPDATE_GOLDENS").as_deref() == Ok("1");
+    let mut gold: Vec<serde_json::Value> = gold();
     let mut failures = Vec::new();
-    for case in gold() {
-        let src = case["src"].as_str().unwrap();
-        let renders = &case["renders"];
+    for case in &mut gold {
+        let src = case["src"].as_str().unwrap().to_string();
+        let renders = &mut case["renders"];
         for (key, (px, py, width, styled)) in [
             ("80", (0, 0, 80, false)),
             ("24", (0, 0, 24, false)),
@@ -66,7 +70,15 @@ fn renders_match_markdown_ts() {
                 italic: true,
                 ..Default::default()
             });
-            let got = Markdown::new(src, px, py, theme(), style).render(width);
+            let got = Markdown::new(&src, px, py, theme(), style).render(width);
+            if accept {
+                renders[key] = serde_json::Value::Array(
+                    got.iter()
+                        .map(|l| serde_json::Value::String(l.clone()))
+                        .collect(),
+                );
+                continue;
+            }
             let want: Vec<String> = renders[key]
                 .as_array()
                 .unwrap()
@@ -77,6 +89,21 @@ fn renders_match_markdown_ts() {
                 failures.push(format!("{src:?} [{key}]\n  want {want:?}\n  got  {got:?}"));
             }
         }
+    }
+    if accept {
+        // Sidecar for the merge step (`scripts/`): the fixture stays
+        // `json.dumps(indent=1, ensure_ascii=False)` formatted, which a
+        // serde rewrite would churn.
+        let sidecar: Vec<serde_json::Value> = gold
+            .iter()
+            .map(|case| serde_json::json!({"src": case["src"], "renders": case["renders"]}))
+            .collect();
+        std::fs::write(
+            "/tmp/markdown-gold-new.json",
+            serde_json::to_string_pretty(&sidecar).unwrap(),
+        )
+        .unwrap();
+        return;
     }
     assert!(
         failures.is_empty(),

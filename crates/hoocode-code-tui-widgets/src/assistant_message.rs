@@ -34,6 +34,26 @@ pub enum ThinkingDisplay {
 /// update re-parses only the growing tail.
 const SEGMENT_MIN_CHARS: usize = 2048;
 
+/// A thinking trace's gist (Mission Control spec a2/r11): the first
+/// non-blank line of the message's first thinking block,
+/// whitespace-collapsed. The Think header and the radar think row both
+/// read it; the row itself truncates it to fit.
+fn think_gist(message: &AssistantMessage) -> Option<String> {
+    message
+        .content
+        .iter()
+        .find_map(|content| match content {
+            Content::Thinking(t) => t
+                .thinking
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+                .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" ")),
+            _ => None,
+        })
+        .filter(|gist| !gist.is_empty())
+}
+
 /// Up to three leading spaces, then the rest. `None` for four or more: an
 /// indented code line, which no block pattern here matches.
 fn after_indent(line: &str) -> Option<&str> {
@@ -329,10 +349,19 @@ impl AssistantMessageComponent {
     /// runs, the settled span once done, `None` when never timed.
     ///
     /// The radar flight log reads the same clock for its `✻ thought Ns`
-    /// line (M5).
+    /// line (M5), with the same gist.
     pub(crate) fn radar_think_line(&self, width: usize, palette: &Palette) -> Option<String> {
-        self.think_secs(self.streaming)
-            .map(|secs| crate::radar::think_row(secs, palette, width))
+        let secs = self.think_secs(self.streaming)?;
+        let gist = self
+            .last_message
+            .as_ref()
+            .and_then(|message| think_gist(message));
+        Some(crate::radar::think_row(
+            secs,
+            gist.as_deref(),
+            palette,
+            width,
+        ))
     }
 
     fn think_secs(&self, streaming: bool) -> Option<u64> {
@@ -409,15 +438,16 @@ impl AssistantMessageComponent {
                     if self.thinking_display == ThinkingDisplay::Omit {
                         continue;
                     }
-                    // The M4 Think row: the `··` slot, header only. Full
-                    // display adds the trace itself under it, on the rail.
+                    // The Think row: the `··` slot with the trace's gist
+                    // (Mission Control spec a2). Full display adds the
+                    // trace itself under it, on the rail.
                     let visible_after = message.content[i + 1..]
                         .iter()
                         .any(|c| self.is_visible_block(c));
-                    self.content.add_child(handle(trajectory::ThinkHeader::new(
-                        streaming,
-                        self.think_secs(streaming),
-                    )));
+                    let mut header =
+                        trajectory::ThinkHeader::new(streaming, self.think_secs(streaming));
+                    header.set_gist(think_gist(&message));
+                    self.content.add_child(handle(header));
                     if self.thinking_display == ThinkingDisplay::Full {
                         let text = format!("✻ {}", js_trim(&t.thinking));
                         self.add_markdown_block(BlockKey::Thinking(i), &text, streaming, true);

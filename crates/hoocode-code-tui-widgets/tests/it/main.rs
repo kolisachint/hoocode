@@ -14,6 +14,7 @@ mod golden;
 mod jettison_row;
 mod message_block_fill;
 mod message_block_sheets;
+mod radar;
 mod selected_row_list;
 mod streaming_segmentation;
 mod subagent_folding;

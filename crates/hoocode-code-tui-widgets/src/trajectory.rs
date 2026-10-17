@@ -16,10 +16,11 @@ use std::rc::Rc;
 
 use hoocode_tui_ratatui::core::buffer::Buffer;
 use hoocode_tui_ratatui::core::layout::Rect;
-use hoocode_tui_ratatui::core::style::Style;
+use hoocode_tui_ratatui::core::style::{Color, Style};
 use hoocode_tui_ratatui::core::text::{Line, Span};
 use hoocode_tui_ratatui::{
-    ansi_spans, bold, paint, spans_width, truncate_spans, Palette, RatatuiComponent, RowCache,
+    ansi_spans, bold, italic, paint, reversed, spans_width, truncate_spans, Palette,
+    RatatuiComponent, RowCache,
 };
 use hoocode_tui_render::Component;
 
@@ -82,6 +83,38 @@ pub(crate) fn two_part_row(
     .unwrap_or_default()
 }
 
+/// A full-width band row (Mission Control `▲ M1` mission headers, spec
+/// a2–a4): `left` flush left, `right` flush right, every cell — including
+/// the gap — on `bg`. `bg` is a background token's colour; `None` keeps
+/// the row transparent (colour off, or a theme without the token).
+pub fn band_row(
+    left: Vec<Span<'static>>,
+    right: Vec<Span<'static>>,
+    width: usize,
+    bg: Option<Color>,
+) -> String {
+    let mut right = truncate_spans(right, width, "…");
+    let right_width = spans_width(&right);
+    let left_budget = width
+        .saturating_sub(right_width)
+        .saturating_sub(usize::from(!right.is_empty()));
+    let mut left = truncate_spans(left, left_budget, "…");
+    let gap = width.saturating_sub(spans_width(&left) + right_width);
+    // Every span shares the band: merges into each style, so resets the
+    // text arrived with keep the fill.
+    if let Some(bg) = bg {
+        for span in left.iter_mut().chain(right.iter_mut()) {
+            span.style.bg = Some(bg);
+        }
+    }
+    left.push(Span::styled(
+        " ".repeat(gap.max(usize::from(!right.is_empty()))),
+        Style::default().bg(bg.unwrap_or(Color::Reset)),
+    ));
+    left.extend(right);
+    row_line(left, width)
+}
+
 /// How many output lines of a step the rail shows before the fold.
 pub const TRAJECTORY_BODY_LINES: usize = 3;
 
@@ -94,20 +127,17 @@ pub const AGENT_RAIL: &str = "┃";
 /// The slot thinking takes: it is not a tool call, so it takes no step number.
 pub const THINK_SLOT: &str = "··";
 
-/// A step number, 1-based and gold: `01`. The port keeps the legacy
-/// `warning` token M4 styled with (not the palette's newer `gold`), so the
-/// goldens stay byte-identical.
+/// A step number, 1-based and gold: `01` (Mission Control spec b1).
 pub fn step_number(index: usize, palette: &Palette) -> String {
-    paint(bold(palette.warn()), &format!("{index:02}"))
+    paint(bold(palette.gold()), &format!("{index:02}"))
 }
 
 /// The rail prefix a body line sits on: `   ┊  ` (or the agent `┃`), as
-/// spans. The port keeps the legacy `agent2` token M4 styled the agent
-/// rail with (not the palette's newer `vio`), so the goldens stay
-/// byte-identical.
+/// spans. An agent's sub-steps keep the violet rail (Mission Control spec
+/// b5).
 fn rail_prefix_spans(agent: bool, palette: &Palette) -> Vec<Span<'static>> {
     let (rail, style) = if agent {
-        (AGENT_RAIL, palette.style("agent2"))
+        (AGENT_RAIL, palette.vio())
     } else {
         (RAIL, palette.faint())
     };
@@ -218,9 +248,10 @@ pub fn fold_line(hidden: usize, width: usize, agent: bool, palette: &Palette) ->
     row_line(truncate_spans(spans, width, "…"), width)
 }
 
-/// The chip replacing a failed step's success stats: ` HIT`, in red.
+/// The chip replacing a failed step's success stats: the inverted
+/// ` HIT ` block (Mission Control spec b2: err fill, bold).
 pub fn hit_chip(palette: &Palette) -> String {
-    format!(" {}", paint(bold(palette.err()), "HIT"))
+    format!(" {}", paint(reversed(bold(palette.err())), " HIT "))
 }
 
 /// The chip on a step that wrote a new file: ` NEW`, in green.
@@ -228,14 +259,20 @@ pub fn new_chip(palette: &Palette) -> String {
     format!(" {}", paint(bold(palette.ok()), "NEW"))
 }
 
-/// A background job's row, in place of its stats: `⌁ sat job-1 · in orbit`.
-pub fn satellite_text(job: &str, palette: &Palette) -> String {
-    format!(
+/// A background job's row, in place of its stats: `⌁ sat job-1 · in orbit
+/// 4s` (Mission Control spec r9). Without an elapsed time the tail is
+/// dropped.
+pub fn satellite_text(job: &str, secs: Option<u64>, palette: &Palette) -> String {
+    let mut out = format!(
         "{} sat {} {} in orbit",
         paint(palette.acc(), "⌁"),
         paint(palette.acc(), job),
         paint(palette.dim(), "·"),
-    )
+    );
+    if let Some(secs) = secs {
+        out.push_str(&format!(" {}", paint(palette.acc(), &short_dur(secs))));
+    }
+    out
 }
 
 /// A short duration: `4s`, `1m12s`.
@@ -247,13 +284,14 @@ pub fn short_dur(secs: u64) -> String {
     }
 }
 
-/// A Think row (spec §4 a2): the `··` slot, header only, no gist (design
-/// Q4). Running reads `·· ◐ Think  ✻ Ns` with the time right-aligned; done
-/// reads `·· ● Think  ✻ thought Ns · ctrl+t`. Unknown time (a resumed
-/// session never timed the trace) is omitted.
+/// A Think row (spec §4 a2): the `··` slot with the trace's gist. Running
+/// reads `·· ◐ Think  gist  ✻ Ns` with the time right-aligned; done reads
+/// `·· ● Think  gist  ✻ thought Ns · ctrl+t`. Unknown time (a resumed
+/// session never timed the trace) is omitted; no gist keeps the header bare.
 pub struct ThinkHeader {
     running: bool,
     secs: Option<u64>,
+    gist: Option<String>,
     cache: RefCell<RowCache>,
 }
 
@@ -262,7 +300,18 @@ impl ThinkHeader {
         Self {
             running,
             secs,
+            gist: None,
             cache: RefCell::new(RowCache::default()),
+        }
+    }
+
+    /// The trace's gist (its first line): faint italic after `Think`.
+    /// Clears the settled cache, so a gist set before the first render
+    /// is what the header keeps.
+    pub fn set_gist(&mut self, gist: Option<String>) {
+        if self.gist != gist {
+            self.gist = gist;
+            self.cache.borrow_mut().clear();
         }
     }
 }
@@ -282,22 +331,29 @@ impl Component for ThinkHeader {
             return Vec::new();
         }
         let width = width as usize;
-        let slot = Span::styled(THINK_SLOT.to_string(), palette.faint());
+        let slot = Span::styled(THINK_SLOT.to_string(), palette.gold());
+        // The trace's gist, faint italic between `Think` and the right time.
+        let gist: Vec<Span<'static>> = self.gist.as_deref().map_or_else(Vec::new, |gist| {
+            vec![
+                Span::styled("  ".to_string(), Style::default()),
+                Span::styled(gist.to_string(), italic(palette.faint())),
+            ]
+        });
         if self.running {
-            let left = vec![
+            let mut left = vec![
                 slot,
                 Span::styled(" ".to_string(), Style::default()),
                 Span::styled("◐".to_string(), palette.style("warning")),
                 Span::styled(" ".to_string(), Style::default()),
-                // `toolTitle` is "" in the theme: chalk's default opener.
-                Span::styled("Think".to_string(), Style::default()),
+                Span::styled("Think".to_string(), bold(palette.ink())),
             ];
+            left.extend(gist);
             let Some(secs) = self.secs else {
                 return vec![row_line(truncate_spans(left, width, "…"), width)];
             };
             let right = vec![Span::styled(
                 format!("✻ {}", short_dur(secs)),
-                palette.style("thinkingText"),
+                palette.vio(),
             )];
             let gap = width.saturating_sub(spans_width(&left) + spans_width(&right) + 2);
             let mut spans = left;
@@ -309,13 +365,15 @@ impl Component for ThinkHeader {
             Some(s) => format!("✻ thought {}", short_dur(s)),
             None => "✻ thought".to_string(),
         };
-        let spans = vec![
+        let mut spans = vec![
             slot,
             Span::styled(" ".to_string(), Style::default()),
             Span::styled("●".to_string(), palette.ok()),
             Span::styled(" ".to_string(), Style::default()),
-            // `toolTitle` is "" in the theme: chalk's default opener.
-            Span::styled("Think".to_string(), Style::default()),
+            Span::styled("Think".to_string(), bold(palette.ink())),
+        ];
+        spans.extend(gist);
+        spans.extend([
             Span::styled("  ".to_string(), Style::default()),
             Span::styled(thought, palette.style("thinkingText")),
             Span::styled(" ".to_string(), Style::default()),
@@ -323,7 +381,7 @@ impl Component for ThinkHeader {
             Span::styled(" ".to_string(), Style::default()),
             // `text` is "" in the theme: chalk's default opener.
             Span::styled("ctrl+t".to_string(), Style::default()),
-        ];
+        ]);
         let lines = vec![row_line(truncate_spans(spans, width, "…"), width)];
         let key = u16::try_from(width).unwrap_or(u16::MAX);
         self.cache.borrow_mut().set(key, theme, lines.clone());
@@ -658,14 +716,13 @@ impl Component for MissionHeader {
             // The peek header is fixed at construction: cache it.
             return cached.to_vec();
         }
-        // The port keeps the legacy `agent2` token M4 styled the mark
-        // with (not the palette's newer `you`), so the goldens stay
-        // byte-identical.
-        let mark_style = palette.style("agent2");
+        // Mission Control (spec a2–a4): the full-width `bU` band, `▲ M1`
+        // in the `you` token, the prompt in bold ink.
+        let bg = palette.bg_color("userMessageBg");
         let mut spans = vec![
-            Span::styled("▲".to_string(), mark_style),
+            Span::styled("▲".to_string(), bold(palette.you())),
             Span::styled(" ".to_string(), Style::default()),
-            Span::styled(format!("M{}", self.seq), bold(mark_style)),
+            Span::styled(format!("M{}", self.seq), bold(palette.you())),
             Span::styled("  ".to_string(), Style::default()),
         ];
         let chip: Vec<Span<'static>> = self
@@ -686,15 +743,9 @@ impl Component for MissionHeader {
         // the same cells; the resets a cut adds are stripped.
         let prompt =
             truncate_to_width(&self.prompt, prompt_budget, "…", false).replace("\x1b[0m", "");
-        spans.push(Span::styled(prompt, Style::default()));
-        if !chip.is_empty() {
-            let pad = width
-                .saturating_sub(spans_width(&spans) + spans_width(&chip))
-                .max(1);
-            spans.push(Span::styled(" ".repeat(pad), Style::default()));
-            spans.extend(chip);
-        }
-        let lines = vec![row_line(truncate_spans(spans, width, "…"), width)];
+        spans.push(Span::styled(prompt, bold(palette.ink())));
+        let line = band_row(spans, chip, width, bg);
+        let lines = vec![line];
         let key = u16::try_from(width).unwrap_or(u16::MAX);
         self.cache.borrow_mut().set(key, theme, lines.clone());
         lines
