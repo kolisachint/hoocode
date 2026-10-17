@@ -63,7 +63,7 @@ async fn should_trigger_manual_compaction_via_compact() {
     prompt(&h, "What is 2+2? Reply with just the number.").await;
     prompt(&h, "What is 3+3? Reply with just the number.").await;
 
-    let result = h.session.compact(None).await.unwrap();
+    let result = h.session.compact(None, None).await.unwrap();
     assert!(!result.summary.is_empty());
     assert!(result.tokens_before > 0);
 
@@ -84,7 +84,7 @@ async fn should_maintain_valid_session_state_after_compaction() {
     ]);
     prompt(&h, "What is the capital of France? One word answer.").await;
     prompt(&h, "What is the capital of Germany? One word answer.").await;
-    h.session.compact(None).await.unwrap();
+    h.session.compact(None, None).await.unwrap();
 
     prompt(&h, "What is the capital of Italy? One word answer.").await;
     assert!(!h.session.messages().is_empty());
@@ -103,7 +103,7 @@ async fn should_persist_compaction_to_session_file() {
     ]);
     prompt(&h, "Say hello").await;
     prompt(&h, "Say goodbye").await;
-    h.session.compact(None).await.unwrap();
+    h.session.compact(None, None).await.unwrap();
 
     let compactions = compaction_entries(&h);
     assert_eq!(compactions.len(), 1);
@@ -139,6 +139,41 @@ async fn should_persist_compaction_to_session_file() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn should_persist_the_folded_mission_range() {
+    let h = create_session(false);
+    h.set_responses(vec![
+        text("hello"),
+        text("goodbye"),
+        text("Summary."),
+        text("Prefix."),
+    ]);
+    prompt(&h, "Say hello").await;
+    prompt(&h, "Say goodbye").await;
+    // Two user turns fold into M1–M3 here (the app snapshots its transcript
+    // missions at `/compact` time, M8e6).
+    h.session.compact(None, Some((1, 3))).await.unwrap();
+
+    let file = h
+        .session
+        .session_manager()
+        .session_file()
+        .unwrap()
+        .to_path_buf();
+    let reopened = SessionManager::open(&file, None, None);
+    let summary = reopened
+        .build_context()
+        .messages
+        .into_iter()
+        .find_map(|message| match message {
+            hoocode_agent_types::AgentMessage::CompactionSummary(summary) => Some(summary),
+            _ => None,
+        })
+        .expect("a compaction summary after reload");
+    assert_eq!(summary.mission_range, Some((1, 3)));
+    assert!(summary.tokens_before > 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn should_work_with_no_session_mode_in_memory_only() {
     let h = create_session(true);
     h.set_responses(vec![
@@ -150,7 +185,7 @@ async fn should_work_with_no_session_mode_in_memory_only() {
     prompt(&h, "What is 2+2? Reply with just the number.").await;
     prompt(&h, "What is 3+3? Reply with just the number.").await;
 
-    let result = h.session.compact(None).await.unwrap();
+    let result = h.session.compact(None, None).await.unwrap();
     assert!(!result.summary.is_empty());
     assert!(h.session.session_manager().session_file().is_none());
     assert_eq!(compaction_entries(&h).len(), 1);
@@ -161,7 +196,7 @@ async fn should_emit_compaction_events_during_manual_compaction() {
     let h = create_session(false);
     h.set_responses(vec![text("hello"), text("Summary."), text("Prefix.")]);
     prompt(&h, "Say hello").await;
-    h.session.compact(None).await.unwrap();
+    h.session.compact(None, None).await.unwrap();
 
     let events = h.events.lock().unwrap();
     let compaction: Vec<_> = events

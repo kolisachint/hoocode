@@ -221,6 +221,37 @@ fn paint_bar(runs: Vec<BarRun>, width: usize) -> String {
         .unwrap_or_default()
 }
 
+/// The SCAN bar's keys from the bindings: `{confirm} lock|next` and
+/// `{exit} close`, plus the `n/p` step pair while locked when bound.
+/// Unbound names are left out; the bar never shows a bare verb.
+fn scan_keys(typing: bool) -> String {
+    let verb = if typing { "lock" } else { "next" };
+    let mut keys = Vec::new();
+    let confirm = key_text("tui.select.confirm");
+    keys.push(if confirm.is_empty() {
+        verb.to_string()
+    } else {
+        format!("{confirm} {verb}")
+    });
+    let exit = key_text("app.scroll.exit");
+    if !exit.is_empty() {
+        keys.push(format!("{exit} close"));
+    }
+    if !typing {
+        let mut step = Vec::new();
+        for id in ["app.scroll.searchNext", "app.scroll.searchPrevious"] {
+            let name = key_text(id);
+            if !name.is_empty() {
+                step.push(name);
+            }
+        }
+        if !step.is_empty() {
+            keys.push(step.join("/"));
+        }
+    }
+    keys.join(" · ")
+}
+
 /// `formatStatus`: the Mission Control bar above the comms frame while the
 /// view is pinned: the REWIND bar (`◂◂ REWIND  43–61 of 78 · 55%  ↓ 3 new`,
 /// label in vio), or the SCAN bar (`⌕ SCAN  query  N contact(s)`, label in
@@ -244,11 +275,7 @@ pub fn format_scroll_status(status: &ScrollStatus, editor_empty: bool) -> String
             format!("  {}/{} contacts", search.index, search.count)
         };
         let left = format!(" ⌕ SCAN  {}{caret}{contacts}", search.query);
-        let keys = if search.typing {
-            "enter lock · esc close".to_string()
-        } else {
-            "enter next · esc close".to_string()
-        };
+        let keys = scan_keys(search.typing);
         let gap = status.width - visible_width(&left) as i64 - visible_width(&keys) as i64 - 2;
         let mut runs = left_runs(left, "⌕ SCAN", "warn");
         if gap >= 0 {

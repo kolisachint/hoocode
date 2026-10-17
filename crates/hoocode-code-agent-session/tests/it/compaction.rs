@@ -89,7 +89,7 @@ async fn manually_compacts_with_a_generated_summary() {
         .await
         .unwrap();
 
-    let result = h.session.compact(None).await.unwrap();
+    let result = h.session.compact(None, None).await.unwrap();
     assert!(
         result.summary.starts_with("summary from model"),
         "{}",
@@ -119,7 +119,7 @@ async fn manually_compacts_with_a_generated_summary() {
     );
     // Compacting again right away has nothing new to fold in.
     assert_eq!(
-        h.session.compact(None).await.unwrap_err().0,
+        h.session.compact(None, None).await.unwrap_err().0,
         "Already compacted"
     );
 }
@@ -130,7 +130,7 @@ async fn throws_when_compacting_without_a_model() {
     h.session
         .agent()
         .set_model(hoocode_agent_core::Agent::new().state().model);
-    let error = h.session.compact(None).await.unwrap_err();
+    let error = h.session.compact(None, None).await.unwrap_err();
     assert!(error.0.starts_with("No model selected"), "{error}");
 }
 
@@ -141,7 +141,7 @@ async fn throws_when_compacting_without_configured_auth() {
         ..Default::default()
     });
     let provider = h.faux.get_model().provider;
-    let error = h.session.compact(None).await.unwrap_err();
+    let error = h.session.compact(None, None).await.unwrap_err();
     assert!(
         error
             .0
@@ -177,7 +177,7 @@ async fn cancels_in_progress_manual_compaction_when_abort_compaction_is_called()
         .unwrap();
 
     let session = h.session.clone();
-    let run = tokio::spawn(async move { session.compact(None).await });
+    let run = tokio::spawn(async move { session.compact(None, None).await });
     while !h.session.is_compacting() {
         tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     }
@@ -278,7 +278,15 @@ async fn ignores_stale_pre_compaction_assistant_usage_on_pre_prompt_checks() {
         sm.append_message(user("before compaction", stale_ts - 1000));
         sm.append_message(AgentMessage::Assistant(stale.clone()));
         let first_kept = sm.entries()[0].id().unwrap().to_string();
-        sm.append_compaction("summary", first_kept, 610_000, None, None, Some(false));
+        sm.append_compaction(
+            "summary",
+            first_kept,
+            610_000,
+            None,
+            None,
+            Some(false),
+            None,
+        );
         sm.append_message(user("after compaction", now()));
     }
     assert_eq!(h.session.plan_compaction(&stale, false), None);
@@ -323,7 +331,15 @@ async fn does_not_trigger_threshold_compaction_when_only_kept_pre_compaction_usa
         sm.append_message(user("before compaction", pre - 1000));
         sm.append_message(AgentMessage::Assistant(kept.clone()));
         let first_kept = sm.entries()[0].id().unwrap().to_string();
-        sm.append_compaction("summary", first_kept, 190_000, None, None, Some(false));
+        sm.append_compaction(
+            "summary",
+            first_kept,
+            190_000,
+            None,
+            None,
+            Some(false),
+            None,
+        );
     }
     let failed = assistant(&h, StopReason::Error, Some("529 overloaded"), 0, now());
     h.session.agent().set_messages(vec![

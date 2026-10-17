@@ -2,9 +2,7 @@
 //! `show-images-selector.ts` and `session-color-selector.ts`. Each is a
 //! [`FramedSelectList`]; the callbacks go on its list.
 
-use hoocode_code_session::identity::{session_color_name, SESSION_COLOR_SLOTS};
 use hoocode_code_tui_theme::get_available_themes;
-use hoocode_code_tui_widgets::session_chip::render_session_chip;
 use hoocode_tui_components::SelectItem;
 
 use crate::framed_list::{layout, FramedSelectList};
@@ -87,35 +85,4 @@ pub fn show_images_selector(current_value: bool) -> FramedSelectList {
         layout(12, 32),
         Some(if current_value { 0 } else { 1 }),
     )
-}
-
-/// `SessionColorSelectorComponent`: one row per colour slot, each drawn as the
-/// chip it would give the session, named (the name `/color` takes). Values are
-/// the slot numbers.
-pub fn session_color_selector(session_name: &str, current_slot: u8) -> FramedSelectList {
-    let items: Vec<SelectItem> = (1..=SESSION_COLOR_SLOTS)
-        .map(|slot| {
-            let label = render_session_chip(session_name, i64::from(slot))
-                .map(|chip| chip.styled)
-                .unwrap_or_else(|| session_name.to_string());
-            let name = session_color_name(slot)
-                .map(str::to_string)
-                .unwrap_or_else(|| slot.to_string());
-            let description = if slot == current_slot {
-                format!("{name} · current")
-            } else {
-                name
-            };
-            SelectItem {
-                value: slot.to_string(),
-                label,
-                description: Some(description),
-            }
-        })
-        .collect();
-    let selected = items
-        .iter()
-        .position(|i| i.value == current_slot.to_string());
-    let count = items.len();
-    FramedSelectList::new("session colour", items, count, layout(26, 40), selected)
 }

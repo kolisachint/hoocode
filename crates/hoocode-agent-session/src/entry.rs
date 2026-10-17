@@ -88,6 +88,10 @@ pub enum FileEntry {
         details: Option<serde_json::Value>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         from_hook: Option<bool>,
+        /// Missions folded into the summary (`M1–M3`), for the JETTISONED
+        /// row. Absent on entries written before compaction knew them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mission_range: Option<(usize, usize)>,
     },
 
     /// Branch summary injected when returning to an earlier point.
@@ -150,6 +154,10 @@ pub enum FileEntry {
         /// Display colour slot (1-6), if set by this entry.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         color: Option<u8>,
+        /// Hull paint name (`/color`, M8e5), if set by this entry. Empty
+        /// clears it, like an empty name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hull: Option<String>,
     },
 }
 
@@ -218,6 +226,39 @@ mod tests {
     use super::*;
     use hoocode_agent_types::AgentMessage;
     use hoocode_ai_types::{Message, UserMessage};
+
+    #[test]
+    fn old_compaction_entries_load_without_a_mission_range() {
+        // Entries written before compaction knew the transcript's missions
+        // carry no `missionRange`: they still load, with `None` (M8e6).
+        let entry: FileEntry = serde_json::from_str(
+            r#"{"type":"compaction","id":"c1","parentId":"m2","timestamp":"2026-01-01T00:00:02.000Z","summary":"s","firstKeptEntryId":"m2","tokensBefore":120}"#,
+        )
+        .unwrap();
+        match entry {
+            FileEntry::Compaction {
+                tokens_after,
+                mission_range,
+                ..
+            } => {
+                assert_eq!(tokens_after, None);
+                assert_eq!(mission_range, None);
+            }
+            _ => panic!("wrong variant: {entry:?}"),
+        }
+    }
+
+    #[test]
+    fn old_session_info_entries_load_without_a_hull() {
+        let entry: FileEntry = serde_json::from_str(
+            r#"{"type":"session_info","id":"s1","timestamp":"2026-01-01T00:00:00.000Z","name":"hi"}"#,
+        )
+        .unwrap();
+        match entry {
+            FileEntry::SessionInfo { hull, .. } => assert_eq!(hull, None),
+            _ => panic!("wrong variant: {entry:?}"),
+        }
+    }
 
     #[test]
     fn header_roundtrips() {

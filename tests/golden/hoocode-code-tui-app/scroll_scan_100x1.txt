@@ -1,4 +1,4 @@
- ⌕ SCAN  beta item 25  1 contact                                             enter next · esc close
+ ⌕ SCAN  beta item 25  1 contact                                    enter next · escape close · n/p
 --- styles ---
 r0 c0 inverse
 r0 c1-6 fg=#ffff00 inverse

@@ -172,8 +172,10 @@ impl Mode {
         true
     }
 
-    /// The hull paint, shown as a toast by name (M8e5).
+    /// The hull paint, shown as a toast by name (M8e5). The session file
+    /// keeps it, so a resume restores it; the provider feeds the chrome.
     fn set_hull_paint(&mut self, paint: Option<HullPaint>) {
+        self.session.set_hull_paint(paint.map(HullPaint::name));
         self.footer_data.set_hull_paint(paint);
         self.notify(
             NotificationKind::Info,

@@ -376,7 +376,7 @@ fn reports_unknown_context_usage_immediately_after_compaction() {
         sm.append_message(assistant("response1", 180_000, 2));
         let kept = sm.append_message(user("second", 3));
         sm.append_message(assistant("response2", 195_000, 4));
-        sm.append_compaction("summary", kept, 195_000, None, None, None);
+        sm.append_compaction("summary", kept, 195_000, None, None, None, None);
         sm.append_message(user("third", 5));
     }
     sync_agent_messages(&h);
@@ -396,7 +396,7 @@ fn uses_post_compaction_usage_instead_of_stale_kept_usage() {
         sm.append_message(assistant("response1", 180_000, 2));
         let kept = sm.append_message(user("second", 3));
         sm.append_message(assistant("response2", 195_000, 4));
-        sm.append_compaction("summary", kept, 195_000, None, None, None);
+        sm.append_compaction("summary", kept, 195_000, None, None, None, None);
         sm.append_message(user("third", 5));
         sm.append_message(assistant("response3", 25_000, 6));
     }

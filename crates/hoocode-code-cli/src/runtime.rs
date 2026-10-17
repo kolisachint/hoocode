@@ -2616,7 +2616,15 @@ mod tests {
                 }))
                 .unwrap(),
             );
-            manager.append_compaction("Summary of the work so far", kept, 1000, None, None, None);
+            manager.append_compaction(
+                "Summary of the work so far",
+                kept,
+                1000,
+                None,
+                None,
+                None,
+                None,
+            );
             manager.append_message(assistant(
                 json!([{"type": "text", "text": "Done."}]),
                 "stop",

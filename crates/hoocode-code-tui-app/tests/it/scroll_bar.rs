@@ -69,6 +69,9 @@ fn row(status: &ScrollStatus) -> String {
 #[test]
 fn rewind_bar_golden() {
     let _g = lock(Some("dark"));
+    // The bar reads the global bindings: pin the defaults so the golden
+    // holds whatever else runs beside it.
+    AppKeybindingsManager::default().install();
     let mut line = BarLine(format_scroll_status(&rewind_status_picker(true), true));
     assert_golden!("scroll_rewind_100x1", render_golden(&mut line, 100));
 }
@@ -76,6 +79,7 @@ fn rewind_bar_golden() {
 #[test]
 fn scan_bar_golden() {
     let _g = lock(Some("dark"));
+    AppKeybindingsManager::default().install();
     let mut line = BarLine(format_scroll_status(
         &scan_status("beta item 25", false),
         true,
@@ -100,7 +104,7 @@ fn scan_bar_shows_the_query_contacts_and_keys() {
     let _g = lock(Some("dark"));
     let text = row(&scan_status("beta item 25", false));
     assert!(text.contains("⌕ SCAN  beta item 25  1 contact"), "{text:?}");
-    assert!(text.contains("enter next · esc close"), "{text:?}");
+    assert!(text.contains("enter next · escape close · n/p"), "{text:?}");
 }
 
 #[test]
@@ -108,5 +112,5 @@ fn scan_bar_typing_shows_the_caret_and_lock_keys() {
     let _g = lock(Some("dark"));
     let text = row(&scan_status("beta", true));
     assert!(text.contains("⌕ SCAN  beta█  1 contact"), "{text:?}");
-    assert!(text.contains("enter lock · esc close"), "{text:?}");
+    assert!(text.contains("enter lock · escape close"), "{text:?}");
 }

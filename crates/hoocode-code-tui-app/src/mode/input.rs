@@ -377,6 +377,13 @@ fn change_directory_completions(
     completions
 }
 
+/// Whether empty enter may hail the last prompt again: only while idle,
+/// like a typed mission. Each flag mirrors a guard on the typed path of
+/// submit (M8e1).
+fn can_hail(session_op: bool, compacting: bool, streaming: bool, bash_running: bool) -> bool {
+    !session_op && !compacting && !streaming && !bash_running
+}
+
 /// `resolveVoiceSilenceMs`: `VOICETOOLS_SILENCE_MS` (clamped to
 /// 300-10000) wins over the setting.
 pub(super) fn resolve_voice_silence_ms(setting: u64) -> u64 {
@@ -447,7 +454,10 @@ impl Mode {
         // A hail or a mission leaves COMMS LOST behind; the frame reads
         // READY or IN FLIGHT again (M8e1).
         self.comms_lost.set(false);
-        self.transcript.last_prompt = Some(text.clone());
+        self.transcript.last_prompt = Some(LastPrompt {
+            text: text.clone(),
+            images: images.clone(),
+        });
         self.turn_timer.borrow_mut().begin(Instant::now());
         let session = self.session.clone();
         let tx = self.tx.clone();
@@ -467,13 +477,25 @@ impl Mode {
         });
     }
 
+    /// Whether empty enter may hail the last prompt again: only while idle,
+    /// like a typed mission. Each flag mirrors a guard on the typed path of
+    /// submit (M8e1).
     pub(super) fn submit(&mut self, text: String) {
         let text = text.trim().to_string();
         if text.is_empty() {
-            // Empty enter after COMMS LOST hails the last prompt again (M8e1).
-            if self.comms_lost.get() {
+            // Empty enter after COMMS LOST hails the last prompt again
+            // (M8e1): text plus images, and only while idle, like a typed
+            // mission.
+            if self.comms_lost.get()
+                && can_hail(
+                    self.session_op.is_some(),
+                    self.session.is_compacting(),
+                    self.session.is_streaming(),
+                    self.session.is_bash_running(),
+                )
+            {
                 if let Some(last) = self.transcript.last_prompt.clone() {
-                    self.prompt(last);
+                    self.prompt_with_images(last.text, last.images);
                 }
             }
             return;
@@ -883,5 +905,21 @@ impl Mode {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::can_hail;
+
+    #[test]
+    fn hail_needs_a_fully_idle_session() {
+        assert!(can_hail(false, false, false, false));
+        assert!(!can_hail(true, false, false, false));
+        assert!(!can_hail(false, true, false, false));
+        assert!(!can_hail(false, false, true, false));
+        // A running bash holds the hail, like a typed mission waits for it.
+        assert!(!can_hail(false, false, false, true));
+        assert!(!can_hail(true, true, true, true));
     }
 }

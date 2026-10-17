@@ -2089,6 +2089,21 @@ impl AgentSession {
         self.emit(AgentSessionEvent::SessionInfoChanged { name });
     }
 
+    /// The hull paint name (`/color`, M8e5); `None` is unpainted.
+    pub fn hull_paint(&self) -> Option<String> {
+        self.session_manager().session_hull()
+    }
+
+    /// Set the hull paint (`/color`, M8e5); `None` clears it.
+    pub fn set_hull_paint(&self, paint: Option<&str>) {
+        let name = {
+            let mut manager = self.session_manager();
+            manager.set_session_hull(paint);
+            manager.session_name()
+        };
+        self.emit(AgentSessionEvent::SessionInfoChanged { name });
+    }
+
     /// Set the colour slot (1-6) of the session's chip.
     pub fn set_session_color(&self, slot: u8) {
         let name = {

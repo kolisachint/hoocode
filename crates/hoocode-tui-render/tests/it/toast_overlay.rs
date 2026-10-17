@@ -71,3 +71,26 @@ fn without_a_provider_the_body_is_untouched() {
     assert!(rows[2].starts_with("body "), "{:?}", rows[2]);
     assert!(!rows[2].contains('╭'), "{:?}", rows[2]);
 }
+
+#[test]
+fn toast_keeps_the_scrollbar_glyph() {
+    use hoocode_tui_render::{SCROLLBAR_THUMB, SCROLLBAR_TRACK};
+    let (mut tui, term) = setup();
+    // Pin the view: the reserved last column carries scrollbar glyphs.
+    assert!(tui.scroll_by_lines(-5));
+    tui.request_render(false);
+    let rows = term.screen();
+    let (head, tail) = (toast()[0].clone(), toast()[1].clone());
+    for (row, toast) in [(2, head), (3, tail)] {
+        let line = &rows[row];
+        let glyph = line.chars().last().unwrap();
+        assert!(
+            glyph == SCROLLBAR_THUMB || glyph == SCROLLBAR_TRACK,
+            "{line:?}"
+        );
+        assert!(
+            line[..line.len() - glyph.len_utf8()].ends_with(&toast),
+            "{line:?}"
+        );
+    }
+}
