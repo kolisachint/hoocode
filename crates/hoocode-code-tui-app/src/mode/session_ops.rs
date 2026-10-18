@@ -736,6 +736,13 @@ impl Mode {
             session: self.session.clone(),
             is_oauth: self.is_oauth.clone(),
         }));
+        // The HUD keeps its component: swap its source so SHIP reads the new
+        // session's model on the next render (the old source would freeze it).
+        *self.hud_source.borrow_mut() = Box::new(SessionFooter {
+            session: self.session.clone(),
+            is_oauth: self.is_oauth.clone(),
+        });
+        self.dirty.set(true);
         self.footer_data.set_cwd(self.session.cwd());
         self.subscription = Some(self.subscribe());
         self.update_editor_border_color();

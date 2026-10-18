@@ -2,6 +2,10 @@
 //! theme loads and every message block renders under it, including a custom
 //! theme with only the schema's required colors.
 //!
+//! No builtin ships the paper token set anymore, so the sheet assertions use
+//! the `test-paper` instance from `support` (values mirror the retired
+//! vox-cutout-dark).
+//!
 //! The TS block list includes `SkillInvocationMessageComponent`; skill
 //! invocation blocks come with the skills extension surface (phase 12).
 
@@ -9,7 +13,7 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-use crate::support::lock;
+use crate::support::{init_paper_theme, lock};
 use hoocode_agent_types::{BranchSummaryMessage, CompactionSummaryMessage, CustomMessage};
 use hoocode_ai_types::UserContent;
 use hoocode_code_tui_theme::{
@@ -174,9 +178,17 @@ fn faults(label: &str, lines: &[String], width: usize, sheet: bool) -> Vec<Strin
 #[test]
 fn has_at_least_the_themes_this_suite_expects() {
     let built_ins = built_ins();
-    assert!(built_ins.len() >= 8, "{built_ins:?}");
-    assert!(built_ins.contains(&"dark".to_string()));
-    assert!(built_ins.contains(&"vox-cutout-dark".to_string()));
+    assert_eq!(
+        built_ins,
+        [
+            "colorsafe-dark",
+            "colorsafe-light",
+            "dark",
+            "daylight",
+            "deep-space",
+            "light"
+        ]
+    );
     let available = get_available_themes();
     for name in &built_ins {
         assert!(available.contains(name), "{name}");
@@ -217,11 +229,14 @@ fn follows_a_theme_switch_under_blocks_already_on_screen_both_ways() {
     let mut built = blocks();
     let mut found = Vec::new();
     for (theme_name, sheet, stage) in [
-        ("dark", false, "built plain"),
-        ("vox-cutout-dark", true, "switched to paper"),
-        ("light", false, "switched back"),
+        (Some("dark"), false, "built plain"),
+        (None, true, "switched to paper"),
+        (Some("light"), false, "switched back"),
     ] {
-        init_theme(Some(theme_name), false);
+        match theme_name {
+            Some(name) => init_theme(Some(name), false),
+            None => init_paper_theme(),
+        }
         for (label, block) in built.iter_mut() {
             // The folded compaction summary is Mission Control chrome
             // (the JETTISONED row, M8e6), never a paper sheet.
@@ -239,7 +254,7 @@ fn follows_a_theme_switch_under_blocks_already_on_screen_both_ways() {
 }
 
 #[test]
-fn gives_exactly_the_two_cut_out_themes_the_paper_treatment() {
+fn no_shipped_theme_takes_the_paper_treatment() {
     let _g = lock();
     let with_paper: Vec<String> = built_ins()
         .into_iter()
@@ -249,7 +264,7 @@ fn gives_exactly_the_two_cut_out_themes_the_paper_treatment() {
         })
         .collect();
     init_theme(Some("dark"), false);
-    assert_eq!(with_paper, ["vox-cutout-dark", "vox-cutout-light"]);
+    assert_eq!(with_paper, Vec::<String>::new());
 }
 
 #[test]

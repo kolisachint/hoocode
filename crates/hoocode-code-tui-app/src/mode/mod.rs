@@ -40,6 +40,7 @@ use hoocode_code_tui_theme::{
 };
 use hoocode_code_tui_widgets::background_notice::BackgroundNoticeComponent;
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
+use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
@@ -56,9 +57,9 @@ use crate::chrome_layout::{
 use crate::comms_frame::{CommsFrame, CommsState, InputStyle};
 use crate::dialog_bridge::{set_dialog_sink, DialogRequest};
 use crate::expandable_text::ExpandableText;
-use crate::footer::{FooterComponent, FooterDensity};
+use crate::footer::{FooterComponent, FooterDensity, FooterSource};
 use crate::footer_data::FooterDataProvider;
-use crate::hud::{fullscreen_enabled, hud_component, tree_plan, TreePart};
+use crate::hud::{fullscreen_enabled, hud_component_shared, tree_plan, TreePart};
 use crate::input_frame::set_input_frame_border;
 use crate::login_controller::LoginUpdate;
 use crate::notification_panel::{NotificationKind, NotificationPanel};
@@ -483,6 +484,10 @@ struct Mode {
     notifications: Rc<RefCell<NotificationPanel>>,
     tips: TipsController,
     footer: Rc<RefCell<FooterComponent>>,
+    /// The HUD's session source: the component reads it on every render, so
+    /// a rebind swaps the boxed source instead of rebuilding the tree — and
+    /// SHIP follows the new session's model.
+    hud_source: Rc<RefCell<Box<dyn FooterSource>>>,
     /// The warning now (shedding or UI stall), if any: shown above the prompt.
     runtime_notice: Option<String>,
     shedding_shown: bool,
@@ -885,9 +890,15 @@ impl Mode {
         let body = handle(Container::new());
         let screen_fill = handle(FlexSpacer::new());
         let widget_above = handle(Container::new());
-        widget_above
-            .borrow_mut()
-            .add_child(as_component(&handle(Spacer::new(1))));
+        // Inline only: one blank row between the chat and the chrome that
+        // hangs off the bottom. Full-screen's bottom is exactly the spec's
+        // (the console or the 3-row comms frame), so an empty container
+        // renders zero rows there.
+        if !fullscreen {
+            widget_above
+                .borrow_mut()
+                .add_child(as_component(&handle(Spacer::new(1))));
+        }
         let editor_container = handle(Container::new());
         editor_container
             .borrow_mut()
@@ -896,12 +907,16 @@ impl Mode {
         // The app tree, in the order `tree_plan` gives (hud.rs). Inline: today's
         // tree. Full-screen: the HUD row, a gap, the attach slot, then the body
         // (header and chat), which `Tui` lays out and scrolls itself.
+        // The HUD's session source, shared with the component: rebinds swap
+        // the boxed source so SHIP follows the current session (`session_ops`).
+        let hud_source: Rc<RefCell<Box<dyn FooterSource>>> =
+            Rc::new(RefCell::new(Box::new(SessionFooter {
+                session: session.clone(),
+                is_oauth: is_oauth.clone(),
+            })));
         let hud = fullscreen.then(|| {
-            handle(hud_component(
-                Box::new(SessionFooter {
-                    session: session.clone(),
-                    is_oauth: is_oauth.clone(),
-                }),
+            handle(hud_component_shared(
+                hud_source.clone(),
                 footer_data.clone(),
             ))
         });
@@ -1032,6 +1047,7 @@ impl Mode {
             notifications,
             tips,
             footer,
+            hud_source,
             runtime_notice: None,
             shedding_shown: false,
             footer_data,
@@ -1539,6 +1555,7 @@ impl Mode {
             self.poll_tree_selector();
             self.poll_fork_selector();
             self.poll_model_selectors();
+            self.poll_controls();
             self.poll_login();
             self.poll_settings_selector();
             if self.loader.as_ref().is_some_and(|l| l.borrow_mut().tick()) {

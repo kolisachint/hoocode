@@ -13,14 +13,12 @@ use hoocode_tui_ratatui::{bold, render_chrome, Chrome, Line, Palette, Span};
 
 /// The card's title, already styled (bold warn): `◉ …` plus `· step NN`
 /// when the host knows the held step.
-pub fn card_title(title: &str) -> Line<'static> {
-    let pal = Palette::current();
+pub fn card_title(title: &str, pal: &Palette) -> Line<'static> {
     Line::from(vec![Span::styled(title.to_string(), bold(pal.warn()))])
 }
 
 /// The card's right label, already styled (warn).
-fn card_right(right: &str) -> Line<'static> {
-    let pal = Palette::current();
+fn card_right(right: &str, pal: &Palette) -> Line<'static> {
     Line::from(vec![Span::styled(right.to_string(), pal.warn())])
 }
 
@@ -45,8 +43,8 @@ pub fn render_card(
     render_chrome(
         &Chrome {
             frame: pal.warn(),
-            title: card_title(title),
-            right: card_right(right),
+            title: card_title(title, &pal),
+            right: card_right(right, &pal),
             foot: foot.clone(),
         },
         body,

@@ -42,3 +42,41 @@ pub fn strip(s: &str) -> String {
 pub fn strip_all(lines: &[String]) -> String {
     strip(&lines.join("\n"))
 }
+
+/// A paper-capable theme instance for the sheet tests: dark plus the cut-out
+/// token set (values mirror the retired vox-cutout-dark). No builtin ships a
+/// paper theme anymore, so the machinery tests use an instance instead.
+pub fn paper_theme() -> hoocode_code_tui_theme::Theme {
+    use hoocode_code_tui_theme::{builtin_theme_source, create_theme, parse_theme_json, ColorMode};
+    let mut value: serde_json::Value =
+        serde_json::from_str(builtin_theme_source("dark").unwrap()).unwrap();
+    value["name"] = serde_json::Value::String("test-paper".into());
+    let vars = value["vars"].as_object_mut().unwrap();
+    for (k, v) in [
+        ("shadow", "#837b68"),
+        ("tapeYellow", "#ffe600"),
+        ("tapeStrip", "#e8c98a"),
+        ("track", "#a49b86"),
+        ("ink", "#12100a"),
+    ] {
+        vars.insert(k.to_string(), serde_json::Value::String(v.to_string()));
+    }
+    let colors = value["colors"].as_object_mut().unwrap();
+    for (k, v) in [
+        ("paperShadow", "shadow"),
+        ("headlineBg", "tapeYellow"),
+        ("headlineText", "ink"),
+        ("tapeBg", "tapeStrip"),
+        ("tapeText", "ink"),
+        ("halftone", "track"),
+    ] {
+        colors.insert(k.to_string(), serde_json::Value::String(v.to_string()));
+    }
+    let instance = parse_theme_json("test-paper", &value).unwrap();
+    create_theme(&instance, Some(ColorMode::Truecolor), None).unwrap()
+}
+
+/// Switch the process-wide theme to the [`paper_theme`] instance.
+pub fn init_paper_theme() {
+    hoocode_code_tui_theme::set_theme_instance(paper_theme());
+}

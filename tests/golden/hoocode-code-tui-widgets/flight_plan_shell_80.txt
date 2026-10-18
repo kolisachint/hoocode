@@ -1,48 +1,41 @@
-┏━ FLIGHT PLAN · ctrl+g  0/0 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
-┃› ✓ cargo build --release                                                     ┃
-┃  ✗ cargo test -p nope                                              ⚠︎ exit 101┃
-┃  ⊘ sleep 600                                                                 ┃
-┃                                                                              ┃
-┃◈ agents in flight 0    ⌁ satellites 3                                        ┃
-┗━ ↑↓ move · enter jump to its steps · x drop · esc close ━━━━━━━━━━━━━━━━━━  ━┛
+┏━ FLIGHT PLAN  0/0  agents 0 · sats 0 ━━━━━━━━━━━━━━━━━━━━━━ /tasks · ctrl+g ━┓
+┃› ⌁ ● cargo build --release                                                   ┃
+┃  ⌁ ⊗ cargo test -p nope                                            ⚠︎ exit 101┃
+┃  ⌁ ⊘ sleep 600                                                               ┃
+┗━ ↑↓ move · enter jump to its steps · x drop · esc back ━━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
-r0 c3-27 fg=#9b8cff bold
-r0 c29-75 fg=#9b8cff
+r0 c3-37 fg=#9b8cff bold
+r0 c39-60 fg=#9b8cff
+r0 c62-76 fg=#a8a8a8
 r0 c78-79 fg=#9b8cff
 r1 c0 fg=#9b8cff
-r1 c1-2 fg=#5cc8bb bg=#2a2a36
-r1 c3 fg=#b5bd68 bg=#2a2a36
+r1 c1-3 fg=#5cc8bb bg=#2a2a36
 r1 c4 bg=#2a2a36
-r1 c5-25 fg=#a8a8a8 bg=#2a2a36
-r1 c26-78 bg=#2a2a36
+r1 c5 fg=#b5bd68 bg=#2a2a36
+r1 c6 bg=#2a2a36
+r1 c7-27 fg=#a8a8a8 bg=#2a2a36
+r1 c28-78 bg=#2a2a36
 r1 c79 fg=#9b8cff
 r2 c0 fg=#9b8cff
-r2 c3 fg=#d58181
-r2 c5-22 fg=#d58181
+r2 c3 fg=#5cc8bb
+r2 c5 fg=#d58181
+r2 c7-24 fg=#d58181
 r2 c69-78 fg=#ffff00
 r2 c79 fg=#9b8cff
 r3 c0 fg=#9b8cff
-r3 c3 fg=#989898
-r3 c5-13 fg=#989898
+r3 c3 fg=#5cc8bb
+r3 c5 fg=#989898
+r3 c7-15 fg=#989898
 r3 c79 fg=#9b8cff
-r4 c0 fg=#9b8cff
-r4 c79 fg=#9b8cff
-r5 c0-1 fg=#9b8cff
-r5 c3-18 fg=#989898
-r5 c20 fg=#e5e5e7
-r5 c25 fg=#5cc8bb
-r5 c27-36 fg=#989898
-r5 c38 fg=#e5e5e7
-r5 c79 fg=#9b8cff
-r6 c0-1 fg=#9b8cff
-r6 c3-4 fg=#989898
-r6 c5-12 fg=#a8a8a8
-r6 c13-17 fg=#989898
-r6 c18-38 fg=#a8a8a8
-r6 c39 fg=#989898
-r6 c40-47 fg=#a8a8a8
-r6 c48-50 fg=#989898
-r6 c51-56 fg=#a8a8a8
-r6 c58-75 fg=#9b8cff
-r6 c78-79 fg=#9b8cff
+r4 c0-1 fg=#9b8cff
+r4 c3-4 fg=#989898
+r4 c5-12 fg=#a8a8a8
+r4 c13-17 fg=#989898
+r4 c18-38 fg=#a8a8a8
+r4 c39 fg=#989898
+r4 c40-47 fg=#a8a8a8
+r4 c48-50 fg=#989898
+r4 c51-55 fg=#a8a8a8
+r4 c57-75 fg=#9b8cff
+r4 c78-79 fg=#9b8cff

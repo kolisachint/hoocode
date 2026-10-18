@@ -159,8 +159,6 @@ pub fn suggestions(items: Vec<AutocompleteItem>, prefix: &str) -> Option<Autocom
     Some(AutocompleteSuggestions {
         items,
         prefix: prefix.into(),
-        console: None,
-        total: None,
     })
 }
 

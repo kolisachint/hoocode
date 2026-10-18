@@ -210,8 +210,10 @@ fn paint_bar(runs: Vec<BarRun>, width: usize) -> String {
         return String::new();
     }
     let render_width = width.min(u16::MAX as usize) as u16;
+    // One palette per render pass, not per draw: the closure may draw again
+    // after an invalidate.
+    let pal = Palette::current();
     let mut bar = RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
-        let pal = Palette::current();
         let spans = bar_spans(&runs, usize::from(area.width), &pal);
         buf.set_line(area.x, area.y, &Line::from(spans), area.width);
     });

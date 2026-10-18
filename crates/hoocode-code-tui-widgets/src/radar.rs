@@ -19,11 +19,12 @@ use std::time::Instant;
 
 use hoocode_tui_ratatui::core::style::Style;
 use hoocode_tui_ratatui::core::text::Span;
-use hoocode_tui_ratatui::{bold, reversed, truncate_spans, Palette};
+use hoocode_tui_ratatui::{bold, reversed, Palette};
 use hoocode_tui_render::{Component, ComponentHandle};
 
+use crate::trajectory::two_part_row;
 use crate::trajectory::{first_line, header_parts, short_dur};
-use crate::trajectory::{row_line, two_part_row};
+use hoocode_tui_ratatui::row;
 
 /// A mission's mark in the flight log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -373,7 +374,7 @@ pub fn think_row(secs: u64, gist: Option<&str>, palette: &Palette, width: usize)
         spans.push(Span::styled(" · ".to_string(), palette.faint()));
         spans.push(Span::styled(gist.to_string(), palette.dim()));
     }
-    row_line(truncate_spans(spans, width, "…"), width)
+    row(spans, width)
 }
 
 /// A child that only draws in peek view: radar hides it. The hidden flag is

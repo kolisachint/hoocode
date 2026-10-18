@@ -39,7 +39,7 @@ use hoocode_tui_components::{
     Input, SelectItem, SelectList, SettingItem, SettingsList, SettingsListOptions, Spacer,
     SubmenuOutcome, Text,
 };
-use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_ratatui::{truncate_line, Line, Palette, Span};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use hoocode_tui_util::{visible_width, wrap_text_with_ansi};
 
@@ -1188,7 +1188,92 @@ fn launch_weight_top(surface: &PromptSurface, inner: usize) -> Vec<Line<'static>
     ]
 }
 
-/// The fixed per-turn cost, as one line under the pane (`formatSurfaceLine`).
+/// The LAUNCH WEIGHT panel for the right column (spec d4): what every
+/// turn carries, the prompt-vs-schemas bar, and each tool's price. Wide
+/// screens draw it beside the rows past a `│` rule; narrow ones keep the
+/// stacked top block, which stays the fallback under 100 columns.
+fn launch_weight_panel(surface: &PromptSurface) -> Vec<Line<'static>> {
+    let pal = Palette::current();
+    let bar_width = 16usize;
+    let total = surface.total_tokens.max(1);
+    let prompt_cells = ((surface.system_prompt_tokens * bar_width) / total)
+        .clamp(usize::from(surface.system_prompt_tokens > 0), bar_width);
+    let prompt_bar = "█".repeat(prompt_cells);
+    let schemas_bar = "█".repeat(bar_width.saturating_sub(prompt_cells));
+    let mut panel = vec![
+        Line::from(vec![
+            Span::styled("LAUNCH WEIGHT ".to_string(), pal.dim()),
+            Span::raw(format!(
+                "every turn carries {} tokens",
+                token_count(surface.total_tokens as u64),
+            )),
+        ]),
+        Line::from(vec![
+            Span::styled(prompt_bar, pal.acc()),
+            Span::styled(schemas_bar, pal.vio()),
+            Span::raw(" ".to_string()),
+            Span::styled(
+                format!(
+                    "prompt {} · schemas {}",
+                    token_count(surface.system_prompt_tokens as u64),
+                    token_count(surface.tool_schema_tokens as u64),
+                ),
+                pal.faint(),
+            ),
+        ]),
+    ];
+    let mut tools = surface.tools.clone();
+    tools.sort_by(|a, b| b.1.cmp(&a.1));
+    for (name, tokens) in tools.iter().take(5) {
+        panel.push(Line::from(vec![
+            Span::styled("■ ".to_string(), pal.dim()),
+            Span::raw(name.clone()),
+            Span::styled(format!(" {}", token_count(*tokens as u64)), pal.faint()),
+        ]));
+    }
+    if tools.len() > 5 {
+        panel.push(Line::from(vec![Span::styled(
+            format!("+ {} more", tools.len() - 5),
+            pal.faint(),
+        )]));
+    }
+    panel
+}
+
+/// The widest panel line, in cells: the right column's width.
+fn panel_width(panel: &[Line<'static>]) -> usize {
+    panel.iter().map(|line| line.width()).max().unwrap_or(0)
+}
+
+/// The left column's floor: under it the rows alone cannot read, so the
+/// pane keeps the stacked top block instead of the side panel.
+const SIDE_BY_SIDE_MIN_LEFT: usize = 40;
+
+/// Two columns past a `│` rule (spec d4): the setting rows left, the
+/// launch panel right. The shorter side reads blank.
+fn side_by_side(
+    left: Vec<Line<'static>>,
+    right: &[Line<'static>],
+    left_width: usize,
+    right_width: usize,
+) -> Vec<Line<'static>> {
+    let pal = Palette::current();
+    let total = left.len().max(right.len());
+    (0..total)
+        .map(|i| {
+            let content = left.get(i).cloned().unwrap_or_default();
+            let cut = truncate_line(&content, left_width);
+            let used = cut.width();
+            let mut spans = cut.spans.clone();
+            spans.push(Span::raw(" ".repeat(left_width.saturating_sub(used))));
+            spans.push(Span::styled(" │ ".to_string(), pal.dim()));
+            let panel_line = right.get(i).cloned().unwrap_or_default();
+            let panel_cut = truncate_line(&panel_line, right_width);
+            spans.extend(panel_cut.spans.iter().cloned());
+            Line::from(spans)
+        })
+        .collect()
+}
 fn format_surface_line(surface: &PromptSurface) -> String {
     let n = surface.tools.len();
     let tools = format!("{n} tool{}", if n == 1 { "" } else { "s" });
@@ -1957,10 +2042,22 @@ impl Component for SettingsSelectorComponent {
             .min(30);
         let selected = list.selected();
         let window = list.window();
-        // The launch weight: the tokens every turn carries before typing,
-        // as a stacked prompt/schemas bar above the rows (M8d4).
+        // The launch weight: the tokens every turn carries before typing.
+        // Wide screens draw it as spec d4's right-side `│` panel; narrow
+        // ones keep the stacked bar above the rows.
+        let mut side_panel: Option<(Vec<Line<'static>>, usize, usize)> = None;
         if let Some(surface) = self.surface.last.borrow().as_ref() {
-            console.top = launch_weight_top(surface, inner);
+            let panel = launch_weight_panel(surface);
+            let right_width = panel_width(&panel);
+            let left_width = inner
+                .saturating_sub(2)
+                .saturating_sub(3)
+                .saturating_sub(right_width);
+            if left_width >= SIDE_BY_SIDE_MIN_LEFT {
+                side_panel = Some((panel, left_width, right_width));
+            } else {
+                console.top = launch_weight_top(surface, inner);
+            }
         }
         let items: Vec<(String, String, Option<String>, Option<String>)> = list
             .filtered_items()
@@ -1979,7 +2076,7 @@ impl Component for SettingsSelectorComponent {
             .get(selected)
             .and_then(|(_, _, _, description)| description.clone());
         drop(list);
-        console.rows = window
+        let content: Vec<Line<'static>> = window
             .clone()
             .filter_map(|i| {
                 let (label, value, suffix, _) = items.get(i)?;
@@ -1992,6 +2089,13 @@ impl Component for SettingsSelectorComponent {
                 ))
             })
             .collect();
+        let wide = side_panel.is_some();
+        console.rows = match side_panel {
+            Some((panel, left_width, right_width)) => {
+                side_by_side(content, &panel, left_width, right_width)
+            }
+            None => content,
+        };
         console.selected = window.clone().position(|i| i == selected);
         let pal = Palette::current();
         let mut bottom = Vec::new();
@@ -2020,8 +2124,12 @@ impl Component for SettingsSelectorComponent {
                 }
             }
         }
-        if let Some(surface) = self.surface.last.borrow().as_ref() {
-            bottom.push(surface_row(surface));
+        // The stacked fallback keeps the per-turn surface below; the
+        // side panel already carries it on wide screens.
+        if !wide {
+            if let Some(surface) = self.surface.last.borrow().as_ref() {
+                bottom.push(surface_row(surface));
+            }
         }
         console.bottom = bottom;
         console.hint = hints(&[

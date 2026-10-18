@@ -32,12 +32,10 @@ fn themes() -> Vec<String> {
     [
         "dark",
         "light",
-        "solarized-dark",
-        "solarized-light",
+        "deep-space",
+        "daylight",
         "colorsafe-dark",
         "colorsafe-light",
-        "vox-cutout-dark",
-        "vox-cutout-light",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -83,10 +81,24 @@ fn check_systems(name: &str, width: u16) {
         text.lines().any(|l| l.contains('▸')),
         "{name}: missing query row in\n{text}"
     );
-    assert!(
-        text.contains("Per-turn surface: 4,140 tokens"),
-        "{name}: missing surface row in\n{text}"
-    );
+    if width >= 100 {
+        // Wide screens draw the launch weight as spec d4's right-side
+        // panel, not the stacked rows.
+        assert!(
+            text.lines()
+                .any(|l| l.contains('│') && l.contains("LAUNCH WEIGHT")),
+            "{name}: missing launch-weight panel in\n{text}"
+        );
+        assert!(
+            !text.contains("Per-turn surface"),
+            "{name}: stacked surface row in\n{text}"
+        );
+    } else {
+        assert!(
+            text.contains("Per-turn surface: 4,140 tokens"),
+            "{name}: missing surface row in\n{text}"
+        );
+    }
     assert!(
         text.contains("enter open"),
         "{name}: missing hint foot in\n{text}"
@@ -143,7 +155,7 @@ fn check_hull(name: &str, width: u16) {
     let rendered = render_golden(&mut *hull.borrow_mut(), width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("HULL · /theme  8 themes"),
+        text.contains("HULL · /theme  6 themes"),
         "{name}: missing title and count in\n{text}"
     );
     assert!(
