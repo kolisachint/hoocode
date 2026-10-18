@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::support::lock;
+use crate::support::{init_paper_theme, lock};
 use hoocode_agent_types::CustomMessage;
 use hoocode_ai_types::UserContent;
 use hoocode_code_tui_theme::{
@@ -275,7 +275,7 @@ fn content() -> Vec<(String, String)> {
 }
 
 const WIDTHS: &[u16] = &[120, 80, 60, 40, 34, 24, 20, 16, 12, 10, 8, 6, 5, 4, 3, 2];
-const THEMES: &[&str] = &["vox-cutout-dark", "vox-cutout-light"];
+const THEMES: &[&str] = &["test-paper"];
 
 fn md() -> Rc<dyn Fn() -> MarkdownTheme> {
     Rc::new(get_markdown_theme)
@@ -290,7 +290,7 @@ fn a_sheet_runs_to_the_terminals_last_cell() {
     let _g = lock();
     assert_eq!(PAPER_INSET, 1);
     for theme_name in THEMES {
-        init_theme(Some(theme_name), false);
+        init_paper_theme();
         for width in [120u16, 100, 80, 60, 40] {
             let lines = non_empty(UserMessageComponent::new("a message").render(width));
             let w = width as usize;
@@ -322,7 +322,7 @@ fn a_sheet_holds_its_geometry_at_every_width() {
     let _g = lock();
     let mut faults = Vec::new();
     for theme_name in THEMES {
-        init_theme(Some(theme_name), false);
+        init_paper_theme();
         for (label, text) in content() {
             for &width in WIDTHS {
                 let w = width as usize;

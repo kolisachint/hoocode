@@ -17,6 +17,7 @@ use ratatui_widgets::block::Block;
 use ratatui_widgets::borders::BorderType;
 use ratatui_widgets::paragraph::Paragraph;
 
+use crate::ansi::{spans_width, truncate_spans};
 use crate::lines::buffer_to_lines;
 use hoocode_tui_util::{truncate_to_width, visible_width};
 
@@ -36,36 +37,57 @@ pub struct Chrome {
 }
 
 /// `line` cut to `max` cells, ending in `…` when cut. The `…` keeps the cut
-/// span's style.
+/// span's style. One span-level cutter: [`truncate_spans`] does the cutting
+/// (the same cells [`hoocode_tui_util::truncate_to_width`] keeps), this
+/// only re-roots the trailing `…` onto the cut span's style for the frame.
 pub fn truncate_line(line: &Line<'static>, max: usize) -> Line<'static> {
-    let mut out: Vec<Span<'static>> = Vec::new();
+    if spans_width(&line.spans) <= max {
+        return line.clone();
+    }
+    if max == 0 {
+        return Line::from(Vec::new());
+    }
+    // The kept cells and the cut span, walked the way the old cutter did:
+    // whole spans while they fit, then the span holding the cut.
     let mut used = 0;
+    let mut cut = Style::default();
     for span in &line.spans {
         let width = visible_width(span.content.as_ref());
         if used + width <= max {
             used += width;
-            out.push(span.clone());
-            continue;
-        }
-        let room = max.saturating_sub(used);
-        if room == 0 {
+        } else {
+            cut = span.style;
             break;
         }
-        let mut piece = String::new();
-        let mut piece_width = 0;
-        for c in span.content.chars() {
-            let w = visible_width(&c.to_string());
-            if piece_width + w > room.saturating_sub(1) {
+    }
+    if used == max {
+        // The kept cells already fill the budget: no room for the ellipsis.
+        let mut out: Vec<Span<'static>> = Vec::new();
+        let mut kept = 0;
+        for span in &line.spans {
+            let width = visible_width(span.content.as_ref());
+            if kept + width <= max {
+                kept += width;
+                out.push(span.clone());
+            } else {
                 break;
             }
-            piece_width += w;
-            piece.push(c);
         }
-        if !piece.is_empty() || room > 0 {
-            piece.push('…');
-            out.push(Span::styled(piece, span.style));
-        }
-        break;
+        return Line::from(out);
+    }
+    let mut out = truncate_spans(line.spans.clone(), max, "…");
+    // The cutter always appends a default-styled ellipsis when it cuts.
+    let appended = out
+        .pop()
+        .is_some_and(|last| last.content.as_ref() == "…" && last.style == Style::default());
+    debug_assert!(appended);
+    if spans_width(&out) == used {
+        // Nothing of the cut span survived: the ellipsis stands alone in
+        // the cut span's style.
+        out.push(Span::styled("…", cut));
+    } else if let Some(prev) = out.last_mut() {
+        // The bare cell prefix keeps the cut span's style; rejoin it.
+        prev.content.to_mut().push('…');
     }
     Line::from(out)
 }

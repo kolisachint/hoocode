@@ -85,11 +85,9 @@ fn can_fill_every_slot_in_every_shipped_theme() {
         "colorsafe-dark",
         "colorsafe-light",
         "dark",
+        "daylight",
+        "deep-space",
         "light",
-        "solarized-dark",
-        "solarized-light",
-        "vox-cutout-dark",
-        "vox-cutout-light",
     ] {
         let t = get_theme_by_name(name).unwrap();
         for slot in 1..=6 {

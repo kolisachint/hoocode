@@ -13,6 +13,7 @@ use hoocode_code_tui_theme::*;
 use hoocode_tui_components::{BoxComponent, Text};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{strip_vt_control_characters, visible_width};
+use serde_json::Value;
 
 /// These tests switch the process-wide theme, so they run one at a time.
 fn lock(theme_name: &str) -> MutexGuard<'static, ()> {
@@ -48,6 +49,45 @@ fn sheet_of(rows: &[String]) -> BoxComponent {
 
 fn widths(lines: &[String]) -> Vec<usize> {
     lines.iter().map(|l| visible_width(l)).collect()
+}
+
+/// A paper-capable theme for the sheet/tape/headline tests: dark plus the
+/// cut-out token set (values mirror the retired vox-cutout-dark). No builtin
+/// ships a paper theme anymore, so the machinery tests use an instance.
+fn paper_theme() -> Theme {
+    let mut value: Value = serde_json::from_str(builtin_theme_source("dark").unwrap()).unwrap();
+    value["name"] = Value::String("test-paper".into());
+    let vars = value["vars"].as_object_mut().unwrap();
+    for (k, v) in [
+        ("shadow", "#837b68"),
+        ("tapeYellow", "#ffe600"),
+        ("tapeStrip", "#e8c98a"),
+        ("track", "#a49b86"),
+        ("ink", "#12100a"),
+    ] {
+        vars.insert(k.to_string(), Value::String(v.to_string()));
+    }
+    let colors = value["colors"].as_object_mut().unwrap();
+    for (k, v) in [
+        ("paperShadow", "shadow"),
+        ("headlineBg", "tapeYellow"),
+        ("headlineText", "ink"),
+        ("tapeBg", "tapeStrip"),
+        ("tapeText", "ink"),
+        ("halftone", "track"),
+    ] {
+        colors.insert(k.to_string(), Value::String(v.to_string()));
+    }
+    let instance = parse_theme_json("test-paper", &value).unwrap();
+    create_theme(&instance, Some(ColorMode::Truecolor), None).unwrap()
+}
+
+/// Like `lock`, but on the paper theme instance instead of a builtin.
+fn lock_paper(name: &str) -> MutexGuard<'static, ()> {
+    debug_assert_eq!(name, "test-paper");
+    let guard = crate::global_theme_lock();
+    set_theme_instance(paper_theme());
+    guard
 }
 
 mod a_theme_without_them {
@@ -102,12 +142,12 @@ mod a_theme_without_them {
 mod cutout_themes {
     use super::*;
 
-    const THEMES: [&str; 2] = ["vox-cutout-light", "vox-cutout-dark"];
+    const THEMES: [&str; 1] = ["test-paper"];
 
     #[test]
     fn cuts_the_block_into_a_sheet_with_a_shadow_on_both_edges() {
         for name in THEMES {
-            let _g = lock(name);
+            let _g = lock_paper(name);
             let lines = sheet_of(&["hello".into()]).render(40);
             assert_eq!(lines.len(), 4, "{name}");
             let band = 40 - PAPER_INSET;
@@ -126,7 +166,7 @@ mod cutout_themes {
     #[test]
     fn closes_the_bottom_corner_flush_with_the_shadows_column() {
         for name in THEMES {
-            let _g = lock(name);
+            let _g = lock_paper(name);
             let lines = sheet_of(&["hello".into()]).render(40);
             let run = strip(&lines[3]);
             assert!(!run.contains('▏'));
@@ -139,7 +179,7 @@ mod cutout_themes {
     #[test]
     fn rules_the_sheets_right_edge_instead_of_nicking_it() {
         for name in THEMES {
-            let _g = lock(name);
+            let _g = lock_paper(name);
             let rows: Vec<String> = (0..24).map(|i| format!("row {i}")).collect();
             let rendered = sheet_of(&rows).render(40);
             let band = 40 - PAPER_INSET;
@@ -160,7 +200,7 @@ mod cutout_themes {
     #[test]
     fn holds_every_row_of_the_sheet_to_one_width() {
         for name in THEMES {
-            let _g = lock(name);
+            let _g = lock_paper(name);
             let rows: Vec<String> = (0..12).map(|i| format!("row {i}")).collect();
             let lines = sheet_of(&rows).render(40);
             let edge = 40 - PAPER_INSET + 1;
@@ -175,7 +215,7 @@ mod cutout_themes {
     #[test]
     fn keeps_the_gutter_off_the_content() {
         for name in THEMES {
-            let _g = lock(name);
+            let _g = lock_paper(name);
             let text = "x".repeat(30);
             let rendered = sheet_of(std::slice::from_ref(&text)).render(40).join("\n");
             assert!(strip(&rendered).contains(&text), "{name}");
@@ -185,7 +225,7 @@ mod cutout_themes {
     #[test]
     fn renders_headings_as_a_filled_chip() {
         for name in THEMES {
-            let _g = lock(name);
+            let _g = lock_paper(name);
             let md = get_markdown_theme();
             assert!(md.heading_block.is_some());
             assert_eq!(
@@ -203,7 +243,7 @@ mod cutout_themes {
     #[test]
     fn leaves_headings_below_h2_as_coloured_text() {
         for name in THEMES {
-            let _g = lock(name);
+            let _g = lock_paper(name);
             let md = get_markdown_theme();
             assert_eq!((md.heading)("Deeper", 3), theme().fg("mdHeading", "Deeper"));
             assert_eq!(md.heading_block.as_ref().unwrap()("Deeper", 3), "Deeper");
@@ -213,7 +253,7 @@ mod cutout_themes {
     #[test]
     fn renders_the_message_label_as_a_tape_strip() {
         for name in THEMES {
-            let _g = lock(name);
+            let _g = lock_paper(name);
             let label = message_label("skill");
             let t = theme();
             assert_eq!(
@@ -227,7 +267,7 @@ mod cutout_themes {
     #[test]
     fn paints_a_gauge_track_apart_from_dim() {
         for name in THEMES {
-            let _g = lock(name);
+            let _g = lock_paper(name);
             assert_ne!(theme().fg("halftone", "▱"), theme().fg("dim", "▱"));
         }
     }
@@ -245,7 +285,7 @@ fn a_theme_that_sets_only_half_a_chip_pair_falls_back_rather_than_rendering_a_ha
 
 #[test]
 fn a_chip_painted_inside_a_filled_block_does_not_punch_a_hole_in_the_block_behind_it() {
-    let _g = lock("vox-cutout-light");
+    let _g = lock_paper("test-paper");
     let sentinel = "\u{0}";
     let block_opener = theme()
         .bg("customMessageBg", sentinel)
@@ -282,7 +322,7 @@ mod switching_theme_under_blocks_already_on_screen {
 
     #[test]
     fn drops_the_paper_treatment_when_leaving_a_cut_out_theme() {
-        let _g = lock("vox-cutout-dark");
+        let _g = lock_paper("test-paper");
         let mut b = sheet();
         assert_eq!(b.render(40).len(), 4);
         set_theme("dark", false).unwrap();
@@ -296,7 +336,7 @@ mod switching_theme_under_blocks_already_on_screen {
         let _g = lock("dark");
         let mut b = sheet();
         assert_eq!(b.render(40).len(), 3);
-        set_theme("vox-cutout-dark", false).unwrap();
+        set_theme_instance(paper_theme());
         let lines = b.render(40);
         assert_eq!(lines.len(), 4);
         assert_eq!(visible_width(&lines[3]), 40 - PAPER_INSET);
@@ -304,7 +344,7 @@ mod switching_theme_under_blocks_already_on_screen {
 
     #[test]
     fn keeps_a_markdown_theme_rendering_across_the_switch_both_ways() {
-        let _g = lock("vox-cutout-dark");
+        let _g = lock_paper("test-paper");
         let from_cutout = get_markdown_theme();
         set_theme("dark", false).unwrap();
         assert_eq!(
@@ -317,7 +357,7 @@ mod switching_theme_under_blocks_already_on_screen {
         );
 
         let from_plain = get_markdown_theme();
-        set_theme("vox-cutout-dark", false).unwrap();
+        set_theme_instance(paper_theme());
         assert_eq!(
             (from_plain.heading)("Title", 2),
             theme().fg("headlineText", "Title")

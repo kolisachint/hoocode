@@ -174,12 +174,9 @@ fn every_bundled_theme_validates() {
         "colorsafe-dark",
         "colorsafe-light",
         "dark",
+        "daylight",
         "deep-space",
         "light",
-        "solarized-dark",
-        "solarized-light",
-        "vox-cutout-dark",
-        "vox-cutout-light",
     ] {
         let parsed = parse_theme_json_content(name, builtin_theme_source(name).unwrap()).unwrap();
         assert_eq!(parsed.name, name);

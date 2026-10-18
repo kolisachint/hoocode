@@ -297,8 +297,10 @@ fn jettison_row(text: String, hint: String, width: usize) -> Vec<String> {
         return Vec::new();
     }
     let render_width = width.min(u16::MAX as usize) as u16;
+    // One palette per render pass, not per draw: the closure may draw again
+    // after an invalidate.
+    let pal = Palette::current();
     let mut row = RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
-        let pal = Palette::current();
         let spans = jettison_spans(&text, &hint, usize::from(area.width), &pal);
         buf.set_line(area.x, area.y, &Line::from(spans), area.width);
     });

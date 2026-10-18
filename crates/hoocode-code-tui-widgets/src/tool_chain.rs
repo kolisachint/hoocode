@@ -23,7 +23,8 @@ use crate::tool_chain_summary::{
 use crate::tool_execution::ToolExecutionComponent;
 use crate::tool_output_view::ToolOutputView;
 use crate::trajectory;
-use crate::trajectory::{row_line, two_part_row};
+use crate::trajectory::two_part_row;
+use hoocode_tui_ratatui::row;
 
 pub type ToolBlock = Rc<RefCell<ToolExecutionComponent>>;
 
@@ -440,7 +441,7 @@ impl ToolChainComponent {
             // Flush left like the old row: the cut stats sit right behind
             // the glyph, not flush right.
             prefix.extend(truncate_spans(right, budget, "…"));
-            row_line(prefix, width)
+            row(prefix, width)
         };
         let mut out = vec![line];
         out.extend(self.failure_lines(width, palette));
@@ -469,7 +470,7 @@ impl ToolChainComponent {
                 Span::styled("  ".to_string(), Style::default()),
             ];
             header.extend(with_base_style(ansi_spans(&entry.subject), output));
-            lines.push(row_line(truncate_spans(header, width, "…"), width));
+            lines.push(row(header, width));
             let text = block.error_text();
             let reason: Vec<&str> = text
                 .split('\n')
@@ -479,7 +480,7 @@ impl ToolChainComponent {
             for raw in &reason[hidden..] {
                 let mut line = vec![Span::styled("      ".to_string(), Style::default())];
                 line.extend(with_base_style(ansi_spans(raw), output));
-                lines.push(row_line(truncate_spans(line, width, "…"), width));
+                lines.push(row(line, width));
             }
             if hidden > 0 {
                 let noun = if hidden == 1 { "line" } else { "lines" };
@@ -493,7 +494,7 @@ impl ToolChainComponent {
                         palette.faint(),
                     ),
                 ];
-                lines.push(row_line(truncate_spans(line, width, "…"), width));
+                lines.push(row(line, width));
             }
         }
         lines
