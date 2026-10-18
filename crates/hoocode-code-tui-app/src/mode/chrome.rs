@@ -111,12 +111,15 @@ impl Mode {
     }
 
     pub(super) fn update_session_chip(&mut self) {
-        let chip = render_session_chip(
+        // The prompt lives inside the comms frame and draws no border of
+        // its own, so the session chip has nowhere to ride there. The
+        // inline footer keeps its own chip flag; fullscreen shows the
+        // session name in the terminal title and `/resume`.
+        let shown = render_session_chip(
             &self.session.display_name(),
             self.session.session_color_slot() as i64,
-        );
-        let shown = chip.is_some();
-        self.editor.borrow_mut().editor.top_border_label = chip;
+        )
+        .is_some();
         self.footer.borrow_mut().set_session_chip_shown(shown);
         self.dirty.set(true);
     }

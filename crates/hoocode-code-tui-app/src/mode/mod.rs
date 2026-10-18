@@ -672,7 +672,9 @@ impl Mode {
                 autocomplete_max_visible: Some(autocomplete_max_visible),
                 // The comms frame rules the prompt: the editor renders
                 // only its text content, with no border of its own.
-                border: None,
+                // NOTE: `None` would mean the editor default (`Rule`);
+                // `Some(None-style)` is the borderless editor.
+                border: Some(FrameBorderStyle::None),
             },
         );
         editor.prompt_prefix = "▸".into();
