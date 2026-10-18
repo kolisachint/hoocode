@@ -19,7 +19,7 @@ use hoocode_tui_ratatui::core::layout::Rect;
 use hoocode_tui_ratatui::core::style::{Color, Style};
 use hoocode_tui_ratatui::core::text::{Line, Span};
 use hoocode_tui_ratatui::{
-    ansi_spans, bold, italic, paint, reversed, spans_width, truncate_spans, Palette,
+    ansi_spans, bold, italic, paint, reversed, row, spans_width, truncate_spans, Palette,
     RatatuiComponent, RowCache,
 };
 use hoocode_tui_render::Component;
@@ -29,24 +29,9 @@ use crate::tool_output_view::ToolOutputView;
 use hoocode_tui_util::visible_width;
 use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width};
 
-/// Draws one row of `spans` through a ratatui buffer `width` wide. Spans
-/// are cut with `…` first when they do not fit; the buffer only clips.
-pub(crate) fn row_line(spans: Vec<Span<'static>>, width: usize) -> String {
-    let width = u16::try_from(width).unwrap_or(u16::MAX).max(1);
-    RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
-        // The closure may draw again after an invalidate: rebuild the row
-        // from the captured spans every time.
-        let spans = truncate_spans(spans.clone(), usize::from(area.width), "…");
-        buf.set_line(area.x, area.y, &Line::from(spans), area.width);
-    })
-    .render(width)
-    .pop()
-    .unwrap_or_default()
-}
-
 /// Draws one row of `spans` through a ratatui buffer exactly `width`
 /// wide, clipping (never truncating) at the edge. For rows laid out
-/// elsewhere (wrapping components): unlike [`row_line`], no `…`.
+/// elsewhere (wrapping components): unlike [`row`], no `…`.
 pub(crate) fn draw_line(spans: Vec<Span<'static>>, width: usize) -> String {
     let width = u16::try_from(width).unwrap_or(u16::MAX).max(1);
     RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
@@ -112,7 +97,7 @@ pub fn band_row(
         Style::default().bg(bg.unwrap_or(Color::Reset)),
     ));
     left.extend(right);
-    row_line(left, width)
+    row(left, width)
 }
 
 /// How many output lines of a step the rail shows before the fold.
@@ -219,14 +204,14 @@ pub fn split_padding(line: &str) -> (String, String) {
 pub fn rail_line(line: &str, width: usize, agent: bool, palette: &Palette) -> String {
     if strip_vt_control_characters(line).trim().is_empty() {
         let spans = rail_prefix_spans(agent, palette);
-        return row_line(truncate_spans(spans, width, ""), width);
+        return draw_line(truncate_spans(spans, width, ""), width);
     }
     // The openers the split kept belong to the content that follows: one
     // parse keeps them on it.
     let (prefix, content) = split_padding(line);
     let mut spans = rail_prefix_spans(agent, palette);
     spans.extend(ansi_spans(&format!("{prefix}{content}")));
-    row_line(truncate_spans(spans, width, "…"), width)
+    row(spans, width)
 }
 
 /// Whether a rendered line is a thinking-slot header (`·· …`): the prose
@@ -245,7 +230,7 @@ pub fn fold_line(hidden: usize, width: usize, agent: bool, palette: &Palette) ->
         format!("+{hidden} more {noun}"),
         palette.faint(),
     ));
-    row_line(truncate_spans(spans, width, "…"), width)
+    row(spans, width)
 }
 
 /// The chip replacing a failed step's success stats: the inverted
@@ -349,7 +334,7 @@ impl Component for ThinkHeader {
             ];
             left.extend(gist);
             let Some(secs) = self.secs else {
-                return vec![row_line(truncate_spans(left, width, "…"), width)];
+                return vec![row(left, width)];
             };
             let right = vec![Span::styled(
                 format!("✻ {}", short_dur(secs)),
@@ -359,7 +344,7 @@ impl Component for ThinkHeader {
             let mut spans = left;
             spans.push(Span::styled(" ".repeat(gap + 2), Style::default()));
             spans.extend(right);
-            return vec![row_line(truncate_spans(spans, width, "…"), width)];
+            return vec![row(spans, width)];
         }
         let thought = match self.secs {
             Some(s) => format!("✻ thought {}", short_dur(s)),
@@ -382,7 +367,7 @@ impl Component for ThinkHeader {
             // `text` is "" in the theme: chalk's default opener.
             Span::styled("ctrl+t".to_string(), Style::default()),
         ]);
-        let lines = vec![row_line(truncate_spans(spans, width, "…"), width)];
+        let lines = vec![row(spans, width)];
         let key = u16::try_from(width).unwrap_or(u16::MAX);
         self.cache.borrow_mut().set(key, theme, lines.clone());
         lines
@@ -543,7 +528,7 @@ pub fn landing_line(
     // render width. The spans carry no truncation, so this matches the
     // laid-out row cell for cell whenever it fits.
     let width = spans_width(&landing_spans(steps, hits, secs, tokens, cost, palette));
-    row_line(
+    row(
         landing_spans(steps, hits, secs, tokens, cost, palette),
         width.max(1),
     )

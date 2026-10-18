@@ -1,6 +1,10 @@
 //! Port of the pin's `test/message-block-sheets.test.ts`: every message block
-//! is a sheet under a cut-out theme and a plain full-width band otherwise, and
+//! is a sheet under a paper theme and a plain full-width band otherwise, and
 //! no component reaches for a block fill without `apply_block_fill`.
+//!
+//! No builtin ships the paper token set anymore, so the sheet tests use the
+//! `test-paper` instance from `support` (values mirror the retired
+//! vox-cutout-dark).
 //!
 //! The TS list includes `SkillInvocationMessageComponent`; skill invocation
 //! blocks come with the skills extension surface (phase 12), so it is not
@@ -10,7 +14,7 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-use crate::support::lock;
+use crate::support::{init_paper_theme, lock};
 use hoocode_agent_types::{BranchSummaryMessage, CompactionSummaryMessage, CustomMessage};
 use hoocode_ai_types::UserContent;
 use hoocode_code_tui_theme::{
@@ -96,7 +100,7 @@ fn rendered(block: &mut Box<dyn Component>) -> Vec<String> {
 #[test]
 fn every_message_block_is_a_sheet_under_a_cut_out_theme() {
     let _g = lock();
-    init_theme(Some("vox-cutout-dark"), false);
+    init_paper_theme();
     let band = WIDTH as usize - PAPER_INSET;
     // The folded compaction summary is Mission Control chrome (the
     // JETTISONED row, M8e6), not a sheet; `jettison_row.rs` covers it.

@@ -167,9 +167,9 @@ fn init_and_set_fall_back_to_dark_on_an_invalid_theme() {
 #[test]
 fn init_records_a_retired_name_as_its_successor() {
     let _agent = AgentDir::new();
-    init_theme(Some("vox-light"), false);
-    assert_eq!(current_theme_name().as_deref(), Some("vox-cutout-light"));
-    assert_eq!(theme().name.as_deref(), Some("vox-cutout-light"));
+    init_theme(Some("solarized-dark"), false);
+    assert_eq!(current_theme_name().as_deref(), Some("deep-space"));
+    assert_eq!(theme().name.as_deref(), Some("deep-space"));
 }
 
 #[test]
@@ -182,11 +182,11 @@ fn set_theme_runs_the_change_callback_and_instances_are_in_memory() {
     set_theme("light", false).unwrap();
     assert_eq!(*calls.lock().unwrap(), 1);
 
-    let instance = load_theme_json("solarized-dark").unwrap();
+    let instance = load_theme_json("deep-space").unwrap();
     let t = create_theme(&instance, Some(ColorMode::Truecolor), None).unwrap();
     set_theme_instance(t);
     assert_eq!(current_theme_name().as_deref(), Some("<in-memory>"));
-    assert_eq!(theme().name.as_deref(), Some("solarized-dark"));
+    assert_eq!(theme().name.as_deref(), Some("deep-space"));
     assert_eq!(*calls.lock().unwrap(), 2);
     on_theme_change(|| {});
 }

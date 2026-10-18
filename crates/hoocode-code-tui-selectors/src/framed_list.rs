@@ -33,8 +33,7 @@ pub(crate) fn layout(min: usize, max: usize) -> SelectListLayoutOptions {
 /// One picker row (content only; the console adds the `›` marker or gutter
 /// and the selection band): the swatch blocks, the primary label with its
 /// dim description.
-fn select_row(item: &SelectItem, swatches: &[String]) -> Line<'static> {
-    let pal = Palette::current();
+fn select_row(item: &SelectItem, swatches: &[String], pal: &Palette) -> Line<'static> {
     let label = if item.label.is_empty() {
         item.value.clone()
     } else {
@@ -138,7 +137,7 @@ impl Component for FramedSelectList {
                     .get(&item.value)
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
-                select_row(item, swatches)
+                select_row(item, swatches, &pal)
             })
             .collect();
         console.selected =

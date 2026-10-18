@@ -14,7 +14,7 @@ use crate::schema::{parse_theme_json_content, ColorValue, ThemeJson};
 use crate::theme::{Theme, ThemeOptions, AGENT_COLOR_TOKENS, THEME_BGS};
 
 /// The bundled theme files, by file name (the `readdirSync().sort()` order).
-const BUILTIN_THEME_FILES: [(&str, &str); 10] = [
+const BUILTIN_THEME_FILES: [(&str, &str); 6] = [
     (
         "colorsafe-dark.json",
         include_str!("../themes/colorsafe-dark.json"),
@@ -27,22 +27,6 @@ const BUILTIN_THEME_FILES: [(&str, &str); 10] = [
     ("daylight.json", include_str!("../themes/daylight.json")),
     ("deep-space.json", include_str!("../themes/deep-space.json")),
     ("light.json", include_str!("../themes/light.json")),
-    (
-        "solarized-dark.json",
-        include_str!("../themes/solarized-dark.json"),
-    ),
-    (
-        "solarized-light.json",
-        include_str!("../themes/solarized-light.json"),
-    ),
-    (
-        "vox-cutout-dark.json",
-        include_str!("../themes/vox-cutout-dark.json"),
-    ),
-    (
-        "vox-cutout-light.json",
-        include_str!("../themes/vox-cutout-light.json"),
-    ),
 ];
 
 /// The bundled JSON schema for theme files (`theme-schema.json`).
@@ -77,13 +61,17 @@ fn is_builtin_theme(name: &str) -> bool {
 }
 
 /// Built-ins that were retired, and what each one resolves to now.
-const RETIRED_THEMES: [(&str, &str); 6] = [
+const RETIRED_THEMES: [(&str, &str); 10] = [
     ("high-contrast-dark", "colorsafe-dark"),
     ("high-contrast-light", "colorsafe-light"),
     ("warm-dark", "colorsafe-dark"),
     ("warm-light", "colorsafe-light"),
-    ("vox-dark", "vox-cutout-dark"),
-    ("vox-light", "vox-cutout-light"),
+    ("vox-dark", "dark"),
+    ("vox-light", "light"),
+    ("solarized-dark", "deep-space"),
+    ("solarized-light", "daylight"),
+    ("vox-cutout-dark", "dark"),
+    ("vox-cutout-light", "light"),
 ];
 
 /// `successorThemeFor`: the theme a retired name now stands for.
