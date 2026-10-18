@@ -22,26 +22,19 @@ use hoocode_tui_editing::{KillPushOptions, KillRing, UndoStack};
 use hoocode_tui_keys::{decode_printable_key, get_keybindings, matches_key, KeybindingsManager};
 use hoocode_tui_render::{Component, CURSOR_MARKER};
 use hoocode_tui_util::js_regex::{is_js_space, js_trim};
-use hoocode_tui_util::{
-    apply_background_to_line, is_punctuation_char, is_whitespace_char, truncate_to_width,
-    visible_width,
-};
+use hoocode_tui_util::{is_punctuation_char, is_whitespace_char, visible_width};
 
 use super::word_wrap::{
     find_paste_markers, is_paste_marker, len16, segment_with_markers, slice16, slice16_from,
     word_wrap_segments, Segment,
 };
-use crate::autocomplete::{
-    AutocompleteItem, AutocompleteProvider, AutocompleteSuggestions, ConsoleKind,
-};
+use crate::autocomplete::{AutocompleteItem, AutocompleteProvider, AutocompleteSuggestions};
 use crate::color::ColorFn;
 use crate::frame::{
     padded_columns, render_frame_edge, FrameBorderChars, FrameBorderCharsOverride,
     FrameBorderStyle, FrameEdge, FrameEdgeOptions, FrameLabel,
 };
-use crate::select_list::{
-    SelectItem, SelectList, SelectListLayoutOptions, SelectListTheme, DEFAULT_SELECT_CURSOR,
-};
+use crate::select_list::{SelectItem, SelectList, SelectListLayoutOptions, SelectListTheme};
 
 /// `EditorBorderStyle` (an alias of the frame's).
 pub type EditorBorderStyle = FrameBorderStyle;
@@ -231,10 +224,6 @@ pub struct Editor {
     autocomplete_list: Option<SelectList>,
     autocomplete_state: Option<AutocompleteState>,
     autocomplete_prefix: String,
-    /// The console the open popup draws as, if any (M7, spec d1/d2).
-    autocomplete_console: Option<ConsoleKind>,
-    /// The unfiltered total for the commands count (`N of M`).
-    autocomplete_total: Option<usize>,
     autocomplete_max_visible: usize,
     /// A debounced request: `(deadline, force, explicit_tab)`.
     pending_autocomplete: Option<(Instant, bool, bool)>,
@@ -307,8 +296,6 @@ impl Editor {
             autocomplete_list: None,
             autocomplete_state: None,
             autocomplete_prefix: String::new(),
-            autocomplete_console: None,
-            autocomplete_total: None,
             autocomplete_max_visible: clamp_max_visible(
                 options.autocomplete_max_visible.unwrap_or(5),
             ),
@@ -1655,8 +1642,6 @@ impl Editor {
         state: AutocompleteState,
     ) {
         self.autocomplete_prefix = suggestions.prefix.clone();
-        self.autocomplete_console = suggestions.console;
-        self.autocomplete_total = suggestions.total;
         let mut list = self.create_autocomplete_list(&suggestions.prefix, &suggestions.items);
         if let Some(best) =
             Self::get_best_autocomplete_match_index(&suggestions.items, &suggestions.prefix)
@@ -1667,116 +1652,10 @@ impl Editor {
         self.set_autocomplete_state(Some(state));
     }
 
-    /// The open popup as a Mission Control console (M7, spec d1/d2): the
-    /// heavy frame names the flow and counts the rows (`N of M` for slash
-    /// commands, `N matches` for `@` files), each row carries its
-    /// right-aligned meta, the `▸` query row repeats the line, and the last
-    /// row hints the keys. Keys, filtering and events are unchanged.
-    /// `width` is the popup's content width; every line comes back exactly
-    /// that wide. Styling reuses the list theme's closures, like the rows
-    /// the select list draws itself.
-    fn console_popup(&self, kind: ConsoleKind, list: &SelectList, width: usize) -> Vec<String> {
-        let theme = (self.theme.select_list)();
-        let edge = |s: &str| (theme.selected_prefix)(s);
-        let items = list.shown_items();
-        let selected = list.selected_index();
-        let (title, hint) = match kind {
-            ConsoleKind::Commands => {
-                let count = match self.autocomplete_total {
-                    Some(total) => format!("{} of {}", items.len(), total),
-                    None => popup_matches(items.len()),
-                };
-                (
-                    format!("CONSOLE · commands  {count}"),
-                    "↑↓ pick · tab complete · enter run · esc clear".to_string(),
-                )
-            }
-            ConsoleKind::Files => (
-                format!("CARGO · @ files  {}", popup_matches(items.len())),
-                "↑↓ pick · tab load · esc close".to_string(),
-            ),
-        };
-        let slash =
-            matches!(kind, ConsoleKind::Commands) && self.autocomplete_prefix.starts_with('/');
-        // The chrome is two cells wider than the rows it holds.
-        let inner = width.saturating_sub(2).max(1);
-        // One edge cell each side, plus a space around the title text.
-        let fill = |text_width: usize| "━".repeat(width.saturating_sub(text_width + 6));
-        let mut lines = Vec::new();
-        lines.push(format!(
-            "{}{} {}{}",
-            edge("┏━ "),
-            (theme.selected_text)(&title),
-            edge(&fill(visible_width(&title))),
-            edge("━┓"),
-        ));
-        for i in list.window() {
-            let item = &items[i];
-            let mut name = if item.label.is_empty() {
-                item.value.clone()
-            } else {
-                item.label.clone()
-            };
-            if slash && !name.starts_with('/') {
-                name = format!("/{name}");
-            }
-            let is_selected = i == selected;
-            let description = item.description.as_deref().unwrap_or("");
-            let description_width = visible_width(description);
-            let max_name = inner.saturating_sub(2 + description_width + 1).max(1);
-            let name = truncate_to_width(&name, max_name, "…", false);
-            let gap = inner
-                .saturating_sub(2 + visible_width(&name) + description_width)
-                .max(1);
-            let marker = if is_selected {
-                (theme.selected_prefix)(theme.cursor.as_deref().unwrap_or(DEFAULT_SELECT_CURSOR))
-            } else {
-                "  ".to_string()
-            };
-            let row = format!(
-                "{marker}{name}{}{}",
-                " ".repeat(gap),
-                (theme.description)(description),
-            );
-            let row = if is_selected {
-                popup_selected(&theme, &row, inner)
-            } else {
-                format!(
-                    "{row}{}",
-                    " ".repeat(inner.saturating_sub(visible_width(&row))),
-                )
-            };
-            lines.push(format!("{}{}{}", edge("┃"), row, edge("┃")));
-        }
-        let query = format!(
-            "▸ {}{}",
-            self.current_line(),
-            if self.focused { "▏" } else { "" },
-        );
-        let query = truncate_to_width(&query, inner, "…", false);
-        lines.push(format!(
-            "{}{}{ }{}",
-            edge("┃"),
-            query,
-            " ".repeat(inner.saturating_sub(visible_width(&query))),
-            edge("┃"),
-        ));
-        lines.push(format!(
-            "{}{} {}{}",
-            edge("┗━ "),
-            (theme.description)(&hint),
-            edge(&fill(visible_width(&hint))),
-            edge("━┛"),
-        ));
-        lines
-    }
-
     fn clear_autocomplete_ui(&mut self) {
         self.set_autocomplete_state(None);
         self.autocomplete_list = None;
         self.autocomplete_prefix.clear();
-        self.autocomplete_console = None;
-        self.autocomplete_total = None;
     }
 
     /// The one place the list's presence changes, so it announces it.
@@ -2089,25 +1968,6 @@ impl Editor {
     }
 }
 
-/// `1 match`, `N matches`.
-fn popup_matches(count: usize) -> String {
-    if count == 1 {
-        "1 match".to_string()
-    } else {
-        format!("{count} matches")
-    }
-}
-
-/// Style the selected popup row and fill it to the edge when the list
-/// theme asks for a band: the select list's own rule.
-fn popup_selected(theme: &SelectListTheme, row: &str, width: usize) -> String {
-    let styled = (theme.selected_text)(row);
-    match &theme.selected_row {
-        Some(band) => apply_background_to_line(&styled, width, |t| band(t)),
-        None => styled,
-    }
-}
-
 impl Component for Editor {
     fn render(&mut self, width: u16) -> Vec<String> {
         let width = width as usize;
@@ -2239,28 +2099,16 @@ impl Component for Editor {
         }
 
         if self.autocomplete_state.is_some() {
-            // Aligned to the inner text edge, not the outer box edge.
+            // Aligned to the inner text edge, not the outer box edge. The
+            // popup is a frameless drop-down under the line: one surface at
+            // a time, so the comms frame stays the single box. Keys,
+            // filtering and events are unchanged.
             let ac_padding = " ".repeat(border_width + padding_x);
-            match self.autocomplete_console {
-                // The Mission Control consoles (M7, spec d1/d2): the heavy
-                // frame with the count, `›` on the selection band, the `▸`
-                // query row and the hint row. Keys, filtering and events
-                // are unchanged.
-                Some(kind) => {
-                    if let Some(list) = &self.autocomplete_list {
-                        for line in self.console_popup(kind, list, content_width) {
-                            result.push(format!("{ac_padding}{line}{ac_padding}"));
-                        }
-                    }
-                }
-                None => {
-                    if let Some(list) = &mut self.autocomplete_list {
-                        for line in list.render(content_width as u16) {
-                            let line_padding =
-                                " ".repeat(content_width.saturating_sub(visible_width(&line)));
-                            result.push(format!("{ac_padding}{line}{line_padding}{ac_padding}"));
-                        }
-                    }
+            if let Some(list) = &mut self.autocomplete_list {
+                for line in list.render(content_width as u16) {
+                    let line_padding =
+                        " ".repeat(content_width.saturating_sub(visible_width(&line)));
+                    result.push(format!("{ac_padding}{line}{line_padding}{ac_padding}"));
                 }
             }
         }
