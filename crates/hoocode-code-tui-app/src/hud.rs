@@ -15,6 +15,9 @@
 //! fuel and credits stay. Past that the left part is cut first, with `…` at
 //! its end; the right part is cut from the right.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use hoocode_code_agent_session::format::js_to_fixed;
 use hoocode_code_task_store::{task_store, TaskSource, TaskStatus};
 use hoocode_tui_ratatui::core::buffer::Buffer;
@@ -401,10 +404,22 @@ pub fn hud_component(
     source: Box<dyn FooterSource>,
     data: FooterDataProvider,
 ) -> RatatuiComponent<impl FnMut(Rect, &mut Buffer)> {
+    hud_component_shared(Rc::new(RefCell::new(source)), data)
+}
+
+/// The HUD reading a shared session source. The component keeps the handle,
+/// so a session rebind (`/new`, `/resume`, `/reload`, ...) swaps the boxed
+/// source instead of rebuilding the tree — and SHIP follows the new
+/// session's model on the next render.
+pub fn hud_component_shared(
+    source: Rc<RefCell<Box<dyn FooterSource>>>,
+    data: FooterDataProvider,
+) -> RatatuiComponent<impl FnMut(Rect, &mut Buffer)> {
     RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
         let width = usize::from(area.width);
         let pal = Palette::current();
-        let hud = read_hud(source.as_ref(), &data);
+        let borrowed = source.borrow();
+        let hud = read_hud(borrowed.as_ref(), &data);
         // The hull tint replaces the row background while painted (M8e5);
         // unpainted, the row sits on the `bH` band (design a1). The mode
         // chip keeps its solid background either way.
