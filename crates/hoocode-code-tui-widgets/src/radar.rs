@@ -1,6 +1,6 @@
 //! Mission Control flight log (radar) rows (M5, spec §4 r1–r11).
 //! In radar view each mission collapses to one flight-log row: the mark
-//! (`●` landed, `◐` in flight, `⊗` did not land, `⊘` aborted), the prompt,
+//! (`●` landed, `◉` in flight, `⊗` did not land, `⊘` aborted), the prompt,
 //! and the stats (steps, `N✕` hits, time, cost). The stats stay whole; the
 //! prompt is cut with `…` first. Under the mission row, each hit gets its
 //! own line (`⊗ 04 Shell  cmd  → snippet  HIT`), a flying mission shows its
@@ -17,6 +17,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Instant;
 
+use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::core::style::Style;
 use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{bold, reversed, Palette};
@@ -43,8 +44,8 @@ pub enum FlightMark {
 impl FlightMark {
     fn glyph(self) -> &'static str {
         match self {
-            FlightMark::Landed => "●",
-            FlightMark::InFlight => "◐",
+            FlightMark::Landed => status::DONE_STR,
+            FlightMark::InFlight => status::RUNNING_STR,
             FlightMark::DidNotLand => "⊗",
             FlightMark::Aborted => "⊘",
         }
@@ -204,7 +205,7 @@ pub fn hit_row(
 }
 
 /// A live step's own line (Mission Control spec r4):
-/// `◐ 01 Shell  sleep 6; echo done  ████████░░░░░░░░ 3s of ~6s`. `step` is
+/// `◉ 01 Shell  sleep 6; echo done  ████████░░░░░░░░ 3s of ~6s`. `step` is
 /// the mission-relative step number. With an estimate the bar fills
 /// sixteen cells by elapsed share; without one the row reads elapsed only.
 pub fn live_row(
@@ -219,7 +220,7 @@ pub fn live_row(
     if width == 0 {
         return String::new();
     }
-    let number = vec![Span::styled("◐".to_string(), palette.acc())];
+    let number = vec![Span::styled(status::RUNNING_STR.to_string(), palette.acc())];
     let prefix = vec![Span::styled(format!("{step:02} "), bold(palette.gold()))];
     let mut left = vec![
         Span::styled(tool.to_string(), bold(palette.ink())),
@@ -280,9 +281,13 @@ pub fn waiting_row(
         return String::new();
     }
     let (glyph, right_text, right_style) = if head {
-        ("◉", "holding for clearance".to_string(), palette.warn())
+        (
+            status::RUNNING_STR,
+            "holding for clearance".to_string(),
+            palette.warn(),
+        )
     } else {
-        ("○", "next".to_string(), palette.dim())
+        (status::TODO_STR, "next".to_string(), palette.dim())
     };
     let number = vec![Span::styled(glyph.to_string(), palette.warn())];
     let prefix = vec![Span::styled(format!("{step:02} "), bold(palette.gold()))];
@@ -297,7 +302,7 @@ pub fn waiting_row(
 }
 
 /// A live subagent step (Mission Control spec r7):
-/// `01 ◐ Agent  ◈ general-purpose · Compute a product  2s`.
+/// `01 ◉ Agent  ◈ general-purpose · Compute a product  2s`.
 pub fn agent_live_row(
     step: usize,
     subtype: &str,
@@ -309,7 +314,7 @@ pub fn agent_live_row(
     if width == 0 {
         return String::new();
     }
-    let number = vec![Span::styled("◐".to_string(), palette.acc())];
+    let number = vec![Span::styled(status::RUNNING_STR.to_string(), palette.acc())];
     let prefix = vec![Span::styled(format!("{step:02} "), bold(palette.gold()))];
     let mut left = vec![
         Span::styled("Agent".to_string(), bold(palette.ink())),
@@ -326,7 +331,7 @@ pub fn agent_live_row(
 }
 
 /// A live background job (Mission Control spec r9):
-/// `01 ◐ Shell  sleep 60  ⌁ sat job-1 · in orbit 4s`.
+/// `01 ◉ Shell  sleep 60  ⌁ sat job-1 · in orbit 4s`.
 pub fn satellite_row(
     step: usize,
     tool: &str,
@@ -339,7 +344,7 @@ pub fn satellite_row(
     if width == 0 {
         return String::new();
     }
-    let number = vec![Span::styled("◐".to_string(), palette.acc())];
+    let number = vec![Span::styled(status::RUNNING_STR.to_string(), palette.acc())];
     let prefix = vec![Span::styled(format!("{step:02} "), bold(palette.gold()))];
     let mut left = vec![
         Span::styled(tool.to_string(), bold(palette.ink())),

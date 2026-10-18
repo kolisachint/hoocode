@@ -8,6 +8,7 @@
 
 use hoocode_code_tui_keybindings::format_key_text;
 use hoocode_code_tui_widgets::card_frame::{card_foot, render_card};
+use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
 
@@ -176,9 +177,9 @@ impl EndShiftJobsCard {
         let mut rows = Vec::new();
         for job in &self.jobs {
             let (mark, mark_style) = if job.running {
-                ("◐", pal.acc())
+                (status::RUNNING_STR, pal.acc())
             } else {
-                ("●", pal.dim())
+                (status::DONE_STR, pal.dim())
             };
             let mut state = if job.running {
                 "in orbit".to_string()

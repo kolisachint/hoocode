@@ -1,7 +1,7 @@
 //! `components/task-panel.ts`: the task ledger above the prompt.
 //!
 //! Mission Control chrome (spec §4 r6/c5/c6): closed, the panel is one
-//! trajectory row — the `FLIGHT PLAN ●●◐○○ 2/5` waypoint track with the
+//! trajectory row — the `FLIGHT PLAN ●●◉○○ 2/5` waypoint track with the
 //! running waypoint's title. Open (Ctrl+G, `app.panel.focus`), it is the
 //! single heavy FLIGHT PLAN console: the plan's done/total with the live
 //! agent and satellite counts in the title, one waypoint row per row of the
@@ -35,6 +35,7 @@ use hoocode_code_task_store::{
 use hoocode_code_tui_keybindings::{app_key_label, format_key_text};
 use hoocode_code_tui_theme::agent_color_for;
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
+use hoocode_tui_glyphs::status;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
 use hoocode_tui_ratatui::{bold, paint, row, truncate_line, Line, Modifier, Palette, Span, Style};
 use hoocode_tui_render::Component;
@@ -44,12 +45,13 @@ use crate::console::{hints, Console};
 use crate::trajectory::short_dur;
 
 fn task_status_icon(status: TaskStatus) -> &'static str {
-    // Mission Control circles (spec §2): hollow = not started, half = running,
-    // solid = done, crossed = failed, barred = cancelled.
+    // Mission Control circles (spec §2): hollow = not started, fisheye =
+    // running, solid = done, crossed = failed, barred = cancelled. The
+    // half circle is missing from the font and falls back off-baseline.
     match status {
-        TaskStatus::Pending => "○",
-        TaskStatus::InProgress => "◐",
-        TaskStatus::Done => "●",
+        TaskStatus::Pending => status::TODO_STR,
+        TaskStatus::InProgress => status::RUNNING_STR,
+        TaskStatus::Done => status::DONE_STR,
         TaskStatus::Failed => "⊗",
         TaskStatus::Cancelled => "⊘",
     }
@@ -351,7 +353,7 @@ fn flat_lens_rows(tasks: &[Task], kind: TaskKind) -> Vec<PanelRow> {
 }
 
 /// The closed panel's row (spec §4 r6/c5): the flight-plan track inside the
-/// trajectory — `FLIGHT PLAN  ●●◐○○  2/5` with the running waypoint's title
+/// trajectory — `FLIGHT PLAN  ●●◉○○  2/5` with the running waypoint's title
 /// where it fits. One row, no tabs, no hint; Ctrl+G opens the console.
 fn render_summary_track(model: &RowModel, width: usize) -> String {
     let pal = Palette::current();
@@ -611,7 +613,7 @@ fn flight_status_style(status: TaskStatus) -> Style {
 }
 
 /// The waypoint track (spec §4 r6/c5): one circle per plan item — `●`
-/// done, `◐` running, `○` the rest — and the done/total count. The closed
+/// done, `◉` running, `○` the rest — and the done/total count. The closed
 /// panel's summary row; the open console names the counts in its title and
 /// shows the circles on the waypoint rows instead.
 fn flight_track(model: &RowModel) -> Line<'static> {
@@ -627,10 +629,10 @@ fn flight_track(model: &RowModel) -> Line<'static> {
         let (mark, style) = match task.status {
             TaskStatus::Done => {
                 done += 1;
-                ("●", pal.ok())
+                (status::DONE_STR, pal.ok())
             }
-            TaskStatus::InProgress => ("◐", pal.acc()),
-            _ => ("○", pal.faint()),
+            TaskStatus::InProgress => (status::RUNNING_STR, pal.acc()),
+            _ => (status::TODO_STR, pal.faint()),
         };
         spans.push(Span::styled(mark, style));
     }

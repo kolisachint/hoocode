@@ -31,6 +31,7 @@ hoocode-code-tools-fs = { workspace = true }
 hoocode-code-tui-keybindings = { workspace = true }
 hoocode-code-tui-theme = { workspace = true }
 hoocode-tui-components = { workspace = true }
+hoocode-tui-glyphs = { workspace = true }
 hoocode-tui-ratatui = { workspace = true }
 hoocode-tui-images = { workspace = true }
 hoocode-tui-keys = { workspace = true }

@@ -142,7 +142,7 @@ fn shows_active_subagent_tasks_with_status_icons_ids_and_mode_tags() {
         "Init project",
         "[explore]",
         "[edit]",
-        "◐",
+        "◉",
         "○",
     ] {
         assert!(text.contains(s), "{s}");
@@ -1337,7 +1337,7 @@ fn the_tick_runs_while_any_row_in_any_tab_is_running() {
 }
 
 /// The compact row (Summary density, unfocused) is the flight-plan track
-/// inside the trajectory (spec §4 r6/c5): `FLIGHT PLAN ●◐ 1/2` with the
+/// inside the trajectory (spec §4 r6/c5): `FLIGHT PLAN ●◉ 1/2` with the
 /// running waypoint's title, one row, at the width asked for.
 #[test]
 fn summary_row_shows_the_flight_plan_track_and_the_running_waypoint() {
@@ -1371,7 +1371,7 @@ fn summary_row_shows_the_flight_plan_track_and_the_running_waypoint() {
     assert_eq!(lines.len(), 1, "{lines:?}");
     let plain = strip(&lines[0]);
     assert!(
-        plain.contains("FLIGHT PLAN  ●◐ 1/2  Add CJK width fixtures"),
+        plain.contains("FLIGHT PLAN  ●◉ 1/2  Add CJK width fixtures"),
         "{plain:?}"
     );
     assert!(!plain.contains("Agents"), "no tab strip: {plain:?}");
@@ -1405,7 +1405,7 @@ fn summary_row_cuts_a_long_running_item_at_a_word() {
     let lines = panel.render(40);
     let plain = strip(&lines[0]);
     assert!(
-        plain.contains("FLIGHT PLAN  ◐ 0/1  Add CJK width…"),
+        plain.contains("FLIGHT PLAN  ◉ 0/1  Add CJK width…"),
         "{plain:?}"
     );
     assert_eq!(visible_width(&lines[0]), 40, "{plain:?}");

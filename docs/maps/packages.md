@@ -180,6 +180,8 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 2328 / 291 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1050 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1959 / 583 | keep |
+| `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface (status circles plus the running pulse; `◉` not `◐`, which the font lacks) | 3 | 120 / 40 | keep |
+| `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface (status circles plus the running pulse; `◉` not `◐`, which the font lacks) | 3 | 120 / 40 | keep |
 | `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent; M5 adds the `ansi.rs` ANSI→spans bridge) | 3 | 851 / 172 | keep |
 | `tui-render` | Differential rendering for the hoocode TUI, and the full-screen mode (M1: `fullscreen.rs` row arithmetic; the frame in `tui.rs`) | 4 | 2754 / 1997 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3232 / 211 | keep |

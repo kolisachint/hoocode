@@ -730,7 +730,7 @@ fn radar_mission_row_40() {
 
 #[test]
 fn radar_mission_in_flight_80() {
-    // A flying mission reads `◐`; with no landed time the row shows the
+    // A flying mission reads `◉`; with no landed time the row shows the
     // cost only. Elapsed time comes off the turn clock at render, so the
     // golden pins the row without it.
     let _g = lock();

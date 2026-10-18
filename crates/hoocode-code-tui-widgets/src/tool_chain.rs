@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use hoocode_ai_types::Content;
+use hoocode_tui_glyphs::status;
 use hoocode_tui_render::Component;
 use hoocode_tui_util::strip_vt_control_characters as strip_line;
 
@@ -246,7 +247,7 @@ impl ToolChainComponent {
     }
 
     /// The mission's flight-log rows for this chain (M5, radar): one line
-    /// per hit (`⊗ 04 … HIT`), per live step (`◐ 01 … 3s`, with a progress
+    /// per hit (`⊗ 04 … HIT`), per live step (`◉ 01 … 3s`, with a progress
     /// bar when the call's estimate is known), per waiting step
     /// (`◉ 01 … holding for clearance`, the queue's head first), per live
     /// subagent (`◈ type · task`), and per live background job (its
@@ -368,9 +369,9 @@ impl ToolChainComponent {
         let running = shown == ChainState::Running;
         let failed = entries.iter().any(|e| e.is_error);
         let glyph = match shown {
-            ChainState::Running => "◐",
+            ChainState::Running => status::RUNNING_STR,
             ChainState::Interrupted if !failed => "⊘",
-            ChainState::Interrupted | ChainState::Done => "●",
+            ChainState::Interrupted | ChainState::Done => status::DONE_STR,
         };
         // The legacy tones, as the chalk rows styled them (`toolTitle` is
         // "" in the theme: chalk's default opener).

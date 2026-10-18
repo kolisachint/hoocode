@@ -819,7 +819,9 @@ impl Mode {
         set_input_frame_border(border);
         {
             let mut editor = self.editor.borrow_mut();
-            editor.editor.set_border(border);
+            // The main prompt lives inside the comms frame, which draws
+            // the only border. The `editorBorder` setting rules the
+            // dialogs (`InputFrame`) above; the prompt stays borderless.
             editor.editor.set_padding_x(padding_x);
             editor
                 .editor

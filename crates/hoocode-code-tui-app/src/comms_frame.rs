@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use hoocode_code_agent_session::format::format_tokens;
 use hoocode_code_tui_keybindings::key_display_text;
+use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::core::buffer::Buffer;
 use hoocode_tui_ratatui::core::layout::Rect;
 use hoocode_tui_ratatui::core::style::Style;
@@ -137,7 +138,7 @@ impl CommsState {
             CommsState::InFlight { elapsed, step } => {
                 let state = paint.unwrap_or_else(|| palette.acc());
                 let mut segs = vec![
-                    Seg::new(state, "◐"),
+                    Seg::new(state, status::RUNNING_STR),
                     Seg::new(bold(state), "IN FLIGHT"),
                     Seg::new(faint, "·"),
                 ];
@@ -169,7 +170,7 @@ impl CommsState {
                 *elapsed,
                 *steps,
                 "LANDED",
-                "●",
+                status::DONE_STR,
             ),
             CommsState::DidNotLand { elapsed, steps } => landed_title(
                 paint.unwrap_or_else(|| palette.err()),
@@ -554,13 +555,13 @@ fn queue_rows(
     for (texts, bullet, bullet_style, disposition) in [
         (
             steering,
-            "●",
+            status::DONE_STR,
             palette.acc(),
             "queued · sends after this step",
         ),
         (
             follow_up,
-            "○",
+            status::TODO_STR,
             palette.dim(),
             "queued · sends after landing",
         ),

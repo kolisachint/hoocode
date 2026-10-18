@@ -1,4 +1,4 @@
- M2 ◐ run a slow check                                          1 step 0✕ $0.001
+ M2 ◉ run a slow check                                          1 step 0✕ $0.001
 --- styles ---
 r0 c1-2 fg=#9b8cff
 r0 c4 fg=#ffff00

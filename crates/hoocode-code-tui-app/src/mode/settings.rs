@@ -342,7 +342,6 @@ impl Mode {
                     EditorBorder::Rule => FrameBorderStyle::Rule,
                 };
                 set_input_frame_border(style);
-                self.editor.borrow_mut().editor.set_border(style);
             }
             SettingsChange::EditorPaddingX(padding) => {
                 self.session.settings().set_editor_padding_x(padding as i64);

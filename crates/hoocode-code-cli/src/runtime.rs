@@ -2573,16 +2573,25 @@ mod tests {
         fn a_folded_trace_sits_above_its_call_in_one_run() {
             let lines = draw(two_turns(), json!({"hideThinkingBlock": true}));
             // M4 folds thinking to a header-only Think row (`✻ thought`),
-            // which carries no `Thinking...` label.
-            let labels: Vec<usize> = lines
-                .iter()
-                .enumerate()
-                .filter(|(_, l)| l.contains("✻ thought"))
-                .map(|(i, _)| i)
-                .collect();
-            assert_eq!(labels.len(), 2, "{}", lines.join("\n"));
-            assert!(at(&lines, "QUERY_ONE") < labels[1]);
-            assert!(labels[1] < at(&lines, "QUERY_TWO"));
+            // which carries no `Thinking...` label. The scripted output
+            // holds every repaint (the settled frame and the quit card),
+            // so the ordering is read off the final frame: last
+            // occurrences, not a total count across frames.
+            let last = |needle: &str| {
+                lines
+                    .iter()
+                    .rposition(|l| l.contains(needle))
+                    .unwrap_or_else(|| panic!("{needle} not drawn:\n{}", lines.join("\n")))
+            };
+            let (t1, q1, t2, q2) = (
+                last("TRACE_ONE"),
+                last("QUERY_ONE"),
+                last("TRACE_TWO"),
+                last("QUERY_TWO"),
+            );
+            assert!(t1 < q1, "{}", lines.join("\n"));
+            assert!(q1 < t2, "{}", lines.join("\n"));
+            assert!(t2 < q2, "{}", lines.join("\n"));
         }
 
         /// The plan is the session's last TodoWrite, and a compaction does not
@@ -2695,16 +2704,24 @@ mod tests {
             // The second is the last one in a history that ends on a tool
             // result with no answer: the turn was cut short, so it reads
             // interrupted (`⊘`), never green.
+            // The scripted output holds every repaint (the settled
+            // frame and the quit card), so the rows are read off the
+            // final frame: the last two matches, not a total count.
             let calls: Vec<(usize, &str)> = lines
                 .iter()
                 .enumerate()
                 .filter(|(_, l)| l.contains("1 call") && (l.contains("● ") || l.contains("⊘ ")))
                 .map(|(i, l)| (i, if l.contains("⊘ ") { "⊘" } else { "●" }))
                 .collect();
-            assert_eq!(calls.len(), 2, "{}", lines.join("\n"));
-            assert_eq!(calls[0].1, "●", "{}", lines.join("\n"));
-            assert_eq!(calls[1].1, "⊘", "{}", lines.join("\n"));
-            assert!(calls[0].0 < spoken_at && spoken_at < calls[1].0);
+            assert!(calls.len() >= 2, "{}", lines.join("\n"));
+            let tail = &calls[calls.len() - 2..];
+            assert_eq!(tail[0].1, "●", "{}", lines.join("\n"));
+            assert_eq!(tail[1].1, "⊘", "{}", lines.join("\n"));
+            let spoken_last = lines
+                .iter()
+                .rposition(|l| l.contains("SPOKEN"))
+                .unwrap_or(spoken_at);
+            assert!(tail[0].0 < spoken_last && spoken_last < tail[1].0);
         }
     }
 

@@ -113,6 +113,24 @@ mod edit {
         assert!(!peek.contains("new line 8"), "{peek}");
     }
 
+    /// A mid-file edit: the window starts at the first change (keeping
+    /// one context line), so the peek shows the `-`/`+` lines instead of
+    /// the gap and context above them.
+    #[test]
+    fn result_diff_window_starts_at_first_change() {
+        let _g = lock();
+        let diff = [
+            "  1 a", "  2 b", "  3 c", "  4 d", "  5 e", "- 6 old", "+ 6 new", "  7 f",
+        ]
+        .join("\n");
+        let peek = strip(&render_result(&diff, false));
+        assert!(peek.contains("- 6 old"), "{peek}");
+        assert!(peek.contains("+ 6 new"), "{peek}");
+        assert!(peek.contains("  5 e"), "{peek}");
+        assert!(!peek.contains("  1 a"), "{peek}");
+        assert!(!peek.contains("more lines"), "{peek}");
+    }
+
     #[test]
     fn short_result_diff_has_no_hint_at_peek() {
         let _g = lock();

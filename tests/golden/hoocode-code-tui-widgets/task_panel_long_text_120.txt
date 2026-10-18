@@ -1,4 +1,4 @@
-┊ ◐ Refactor the authentication middleware so that session tokens are rotated on every privileged request and the … 0.0s
+┊ ◉ Refactor the authentication middleware so that session tokens are rotated on every privileged request and the … 0.0s
 ┊ ○ Short follow-up
 --- styles ---
 r0 c0 fg=#a8a8a8
