@@ -1,21 +1,24 @@
-▎ ✓ Read the migration plan
-▎ ◐ Port the task panel renderer
-▎ ○ Add golden snapshots
-▎ ✗ Run the parity check
-▎ ⊘ Drop the old lens tabs
+┊ ● Read the migration plan                                                 0.0s
+┊ ◐ Port the task panel renderer                                            0.0s
+┊ ○ Add golden snapshots
+┊ ⊗ Run the parity check                                                    0.0s
+┊ ⊘ Drop the old lens tabs
 --- styles ---
-r0 c0 fg=#d58181
+r0 c0 fg=#a8a8a8
 r0 c2 fg=#b5bd68
 r0 c4-26 fg=#a8a8a8
-r1 c0 fg=#d58181
-r1 c2 fg=#ffff00
+r0 c76-79 fg=#a8a8a8
+r1 c0 fg=#a8a8a8
+r1 c2 fg=#5cc8bb
 r1 c4-31 bold
-r2 c0 fg=#d58181
-r2 c2 fg=#989898
+r1 c76-79 fg=#a8a8a8
+r2 c0 fg=#a8a8a8
+r2 c2 fg=#a8a8a8
 r2 c4-23 fg=#989898
-r3 c0 fg=#d58181
+r3 c0 fg=#a8a8a8
 r3 c2 fg=#d58181
 r3 c4-23 fg=#d58181
-r4 c0 fg=#d58181
+r3 c76-79 fg=#a8a8a8
+r4 c0 fg=#a8a8a8
 r4 c2 fg=#989898
 r4 c4-25 fg=#989898

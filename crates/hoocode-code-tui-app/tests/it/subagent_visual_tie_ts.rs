@@ -216,10 +216,13 @@ fn colors_panel_rows_and_roster_names_with_the_same_per_type_hue() {
     set_status(run.id, TaskStatus::InProgress);
     let lines = render(&mut panel);
     let row = find(&lines, "scan the repo");
-    assert!(
-        row.contains(&fg_ansi(agent_color_for("explore"))),
-        "{row:?}"
+    // The `[explore]` tag carries the per-type hue; the row renders through
+    // a ratatui buffer, so the probe paints the same span the same way.
+    let tag = hoocode_tui_ratatui::paint(
+        hoocode_tui_ratatui::Palette::current().style(agent_color_for("explore")),
+        "[explore]",
     );
+    assert!(row.contains(&tag), "{row:?}");
     panel.dispose();
 }
 

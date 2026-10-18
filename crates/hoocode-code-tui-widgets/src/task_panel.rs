@@ -1,17 +1,23 @@
 //! `components/task-panel.ts`: the task ledger above the prompt.
 //!
-//! A state-coloured left rail (working / reviewed / stopped), a tab strip
-//! when more than one tab has rows, and the rows of the current tab. One tab
-//! per kind of task, in tab order (see [`TaskPanelView`]); a tab with no rows
-//! is hidden.
+//! Mission Control chrome (spec §4 r6/c5/c6): closed, the panel is one
+//! trajectory row — the `FLIGHT PLAN ●●◐○○ 2/5` waypoint track with the
+//! running waypoint's title. Open (Ctrl+G, `app.panel.focus`), it is the
+//! single heavy FLIGHT PLAN console: the plan's done/total with the live
+//! agent and satellite counts in the title, one waypoint row per row of the
+//! shown lens, and the spec hint foot. There is no tab strip: the tabs only
+//! choose which lens the rows (and the pick) read.
+//!
+//! One tab per kind of task, in tab order (see [`TaskPanelView`]); a tab
+//! with no rows is hidden.
 //! - Plan: the main agent's TodoWrite plan, each dispatched run nested under
 //!   the plan item it works on;
 //! - Agents: the subagent forest (`parentTaskId`), drawn with connectors;
 //! - MCP: the MCP calls, flat.
 //!
-//! Unfocused, the panel shows the current tab and a count per tab. Focused
-//! (Ctrl+G, `app.panel.focus`), it takes the keyboard: tabs switch, a row is
-//! picked, Enter opens it and `x` (twice) cancels a subagent run. What the app
+//! Focused, the panel takes the keyboard: the pick moves, Enter opens it
+//! and `x` (twice) cancels a subagent run; alt+l switches the lens behind
+//! it. What the app
 //! must do about those is queued as [`PanelEvent`]s, read with
 //! [`TaskPanelComponent::take_events`].
 //!
@@ -26,31 +32,33 @@ use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_task_store::{
     task_store, RowAction, Task, TaskAgent, TaskAgentKind, TaskKind, TaskStatus, TaskStore,
 };
-use hoocode_code_tui_keybindings::{app_key_label, format_key_text, raw_key_hint};
+use hoocode_code_tui_keybindings::{app_key_label, format_key_text};
+use hoocode_code_tui_theme::agent_color_for;
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
-use hoocode_code_tui_theme::{agent_color_for, theme};
 use hoocode_tui_keys::{get_keybindings, is_key_release};
-use hoocode_tui_ratatui::{bold, truncate_line, Line, Palette, Span, Style};
+use hoocode_tui_ratatui::{bold, paint, truncate_line, Line, Modifier, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
 
 use crate::console::{hints, Console};
+use crate::trajectory::short_dur;
 
 fn task_status_icon(status: TaskStatus) -> &'static str {
-    // Hollow = not started; ● stays the chat's tool status dot.
+    // Mission Control circles (spec §2): hollow = not started, half = running,
+    // solid = done, crossed = failed, barred = cancelled.
     match status {
         TaskStatus::Pending => "○",
         TaskStatus::InProgress => "◐",
-        TaskStatus::Done => "✓",
-        TaskStatus::Failed => "✗",
+        TaskStatus::Done => "●",
+        TaskStatus::Failed => "⊗",
         TaskStatus::Cancelled => "⊘",
     }
 }
 
 /// Marker for MCP-sourced rows, which have no owning agent.
 const MCP_SOURCE_GLYPH: &str = "⧉";
-/// The thin left rail that groups the pane.
-const RAIL: &str = "▎";
+/// The trajectory rail that groups the pane (spec §2: `┊`).
+const RAIL: &str = "┊";
 
 /// One tab of the panel: the rows of one [`TaskKind`]. Declared in tab order
 /// (the derived `Ord`), and [`TaskPanelView::ALL`] lists them, so [`RowModel`]
@@ -133,35 +141,16 @@ fn is_delegated(task: &Task) -> bool {
     task.kind() != TaskKind::Plan
 }
 
-/// The owner glyph of a subagent's row. The main agent's rows carry none
-/// (`show_owner_glyph` is false for them), so it has no glyph.
-const SUBAGENT_GLYPH: &str = "◇";
+/// The owner glyph of a subagent's row (spec §3.2: `◈`, violet). The main
+/// agent's rows carry none (`show_owner_glyph` is false for them), so it
+/// has no glyph.
+const SUBAGENT_GLYPH: &str = "◈";
 
-/// The rail colour for a lens's overall state: any failure, else any live
-/// work, else done.
-fn panel_state_color<'a>(tasks: impl Iterator<Item = &'a Task>) -> &'static str {
-    let (mut failed, mut active) = (false, false);
-    for task in tasks {
-        failed |= task.status == TaskStatus::Failed;
-        active |= task.status.is_active();
-    }
-    if failed {
-        "error"
-    } else if active {
-        "warning"
-    } else {
-        "success"
-    }
-}
-
-fn task_status_color(status: TaskStatus) -> &'static str {
-    match status {
-        TaskStatus::InProgress => "warning",
-        TaskStatus::Done => "success",
-        TaskStatus::Failed => "error",
-        // A user-initiated cancel is not an error.
-        TaskStatus::Pending | TaskStatus::Cancelled => "dim",
-    }
+/// The rail is the trajectory's quiet `┊`: state already reads on the rows'
+/// circles, so the gutter stays faint in every lens.
+fn panel_gutter() -> String {
+    let pal = Palette::current();
+    format!("{} ", paint(pal.faint(), RAIL))
 }
 
 fn now_ms() -> u64 {
@@ -329,6 +318,15 @@ impl RowModel {
     }
 }
 
+/// Rows of one lens with live work (spec §4 c6: `agents`/`sats` count
+/// what is still up, not what has landed).
+fn live_lens_count(model: &RowModel, view: TaskPanelView) -> usize {
+    model
+        .lens(view)
+        .filter(|(_, task)| task.status.is_active())
+        .count()
+}
+
 /// The rows of one tab for a set of tasks.
 fn lens_rows(view: TaskPanelView, tasks: &[Task]) -> Vec<PanelRow> {
     match view {
@@ -352,63 +350,36 @@ fn flat_lens_rows(tasks: &[Task], kind: TaskKind) -> Vec<PanelRow> {
         .collect()
 }
 
-/// `formatLensTabs`: one tab per lens with its done/total, plus key hints
-/// when they fit.
-/// The compact row (C10): the plan on the left, `Plan 3/5  ◐ <running item>`,
-/// and the other tabs' counts on the right. With no plan rows it is the tab
-/// strip alone.
-fn format_summary_line(
-    model: &RowModel,
-    width: usize,
-    view: TaskPanelView,
-    tab_views: &[TaskPanelView],
-) -> String {
-    let t = theme();
-    let plan = model.lens_stats(TaskPanelView::Plan);
-    let head = format!(
-        "{} {}/{}",
-        TaskPanelView::Plan.label(),
-        plan.done,
-        plan.total
-    );
-    if plan.total == 0 {
-        return format_lens_tabs(model, width, view, tab_views, false);
-    }
+/// The closed panel's row (spec §4 r6/c5): the flight-plan track inside the
+/// trajectory — `FLIGHT PLAN  ●●◐○○  2/5` with the running waypoint's title
+/// where it fits. One row, no tabs, no hint; Ctrl+G opens the console.
+fn render_summary_track(model: &RowModel, width: usize) -> String {
+    let pal = Palette::current();
+    let track = flight_track(model);
+    let track_width: usize = track.spans.iter().map(|s| s.width()).sum();
+    let mut spans = vec![Span::styled("FLIGHT PLAN  ", bold(pal.ink()))];
+    spans.extend(track.spans);
     let running = model
         .lens(TaskPanelView::Plan)
         .find(|(_, task)| task.status == TaskStatus::InProgress)
-        .map(|(_, task)| task.title.as_str());
-    let (left_plain, left_styled) = match running {
-        Some(title) => {
-            let icon = task_status_icon(TaskStatus::InProgress);
-            let prefix_width = visible_width(&head) + 2 + visible_width(icon) + 1;
-            let budget = (width * 2 / 3).saturating_sub(prefix_width);
-            let title = truncate_at_word(title, budget);
-            if title.is_empty() {
-                (head.clone(), head.clone())
-            } else {
-                (
-                    format!("{head}  {icon} {title}"),
-                    format!("{head}  {} {title}", t.fg("accent", icon)),
-                )
-            }
+        .map(|(_, task)| task.title.clone());
+    if let Some(title) = running {
+        let budget = width.saturating_sub(visible_width("FLIGHT PLAN  ") + track_width + 2);
+        let title = truncate_at_word(&title, budget);
+        if !title.is_empty() {
+            spans.push(Span::raw("  "));
+            spans.push(Span::styled(title, bold(Style::default())));
         }
-        None => (head.clone(), head.clone()),
-    };
-    let left_width = visible_width(&left_plain);
-    if left_width + 2 > width {
-        return format_lens_tabs(model, width, view, tab_views, false);
     }
-    let others: Vec<TaskPanelView> = tab_views
-        .iter()
-        .copied()
-        .filter(|v| *v != TaskPanelView::Plan)
-        .collect();
-    let right_width = width - left_width - 2;
-    let right = format_lens_tabs(model, right_width, view, &others, false);
-    format!("{left_styled}  {right}")
+    let line = crate::trajectory::row_line(spans, width);
+    // The buffer clips but never pads: fill the row to its width.
+    let used = visible_width(&line);
+    line + &pad(width.saturating_sub(used))
 }
 
+/// `formatLensTabs`: one tab per lens with its done/total, plus key hints
+/// when they fit. The unfocused rail rows keep it; the FLIGHT PLAN console
+/// and the summary track do not.
 fn format_lens_tabs(
     model: &RowModel,
     width: usize,
@@ -416,7 +387,7 @@ fn format_lens_tabs(
     tab_views: &[TaskPanelView],
     show_cycle_hint: bool,
 ) -> String {
-    let t = theme();
+    let pal = Palette::current();
     let tabs: Vec<(String, String)> = tab_views
         .iter()
         .map(|&v| {
@@ -424,21 +395,26 @@ fn format_lens_tabs(
             let count = format!("{}/{}", stats.done, stats.total);
             let plain = format!(" {} {count} ", v.label());
             if v != view {
-                return (plain.clone(), t.fg("dim", &plain));
+                return (plain.clone(), paint(pal.dim(), &plain));
             }
-            let body = format!(
-                " {} {} ",
-                t.bold(&t.fg("accent", v.label())),
-                t.fg("muted", &count)
-            );
-            (
-                plain,
-                if stats.live {
-                    t.bg("selectedBg", &body)
-                } else {
-                    body
-                },
-            )
+            // The selection band tints the label and the count, not the
+            // painted row: painting over paint output would mangle the
+            // inner escapes.
+            let body = if stats.live {
+                let band = pal.band();
+                format!(
+                    " {} {} ",
+                    paint(bold(pal.acc()).patch(band), v.label()),
+                    paint(pal.faint().patch(band), &count)
+                )
+            } else {
+                format!(
+                    " {} {} ",
+                    paint(bold(pal.acc()), v.label()),
+                    paint(pal.faint(), &count)
+                )
+            };
+            (plain, body)
         })
         .collect();
     let selected = tab_views
@@ -457,7 +433,7 @@ fn format_lens_tabs(
         let key = app_key_label("app.panel.focus");
         parts.push((
             format!("{} focus", format_key_text(&key, false)),
-            raw_key_hint(&key, "focus"),
+            paint(pal.dim(), &format_key_text(&key, false)) + &paint(pal.faint(), " focus"),
         ));
     }
     let sep = "  ";
@@ -470,7 +446,7 @@ fn format_lens_tabs(
         .iter()
         .map(|p| p.1.as_str())
         .collect::<Vec<_>>()
-        .join(&t.fg("muted", sep));
+        .join(&paint(pal.faint(), sep));
 
     // Narrowing order: drop the hints, then the unselected tabs.
     if !hint_plain.is_empty() && visible_width(&strip.0) + 2 + visible_width(&hint_plain) <= width {
@@ -502,173 +478,24 @@ struct LineOptions<'a> {
 /// `formatTaskLine`: status icon, owner glyph where it disambiguates, origin
 /// tag, title, and a right column (usage, live activity and run clock, or a
 /// warning note), padded to the pane width.
+/// `formatTaskLine`: the unfocused rail row. It reads the same [`flight_row`]
+/// helper as the focused console, so the circles, the `◈`/`⧉` marks and the
+/// right column match in both; [`row_line`](crate::trajectory::row_line)
+/// draws it through a ratatui buffer exactly `width` wide. The caller adds
+/// the `┊` gutter.
 fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u64) -> String {
-    let t = theme();
-    let icon = t.fg(
-        task_status_color(task.status),
-        task_status_icon(task.status),
-    );
-
-    let is_mcp = task.kind() == TaskKind::Mcp;
-    let owner_kind =
-        options
-            .owner
-            .map(|o| o.kind)
-            .unwrap_or(if task.kind() == TaskKind::Subagent {
-                TaskAgentKind::Subagent
-            } else {
-                TaskAgentKind::Main
-            });
-    let show_owner_glyph = is_mcp || owner_kind != TaskAgentKind::Main;
-    // Not mcp and shown means a subagent: the main agent's rows show no glyph.
-    let source_glyph = if is_mcp {
-        MCP_SOURCE_GLYPH
-    } else {
-        SUBAGENT_GLYPH
-    };
-    let agent_type_name = (!is_mcp && owner_kind == TaskAgentKind::Subagent)
-        .then(|| task.subagent_mode.as_deref().or(task.agent.as_deref()))
-        .flatten();
-    let styled_source = if !show_owner_glyph {
-        String::new()
-    } else if let Some(name) = agent_type_name {
-        t.fg(agent_color_for(name), source_glyph)
-    } else {
-        t.fg("dim", source_glyph)
-    };
-
-    let (tag, tag_color) = if is_mcp {
-        (
-            format!("[{}]", task.subagent_mode.as_deref().unwrap_or("MCP")),
-            "mcp",
+    crate::trajectory::row_line(
+        flight_row(
+            task,
+            options.owner,
+            options.tree_prefix,
+            options.confirm,
+            width,
+            now,
         )
-    } else if let Some(mode) = &task.subagent_mode {
-        (format!("[{mode}]"), agent_color_for(mode))
-    } else {
-        (String::new(), "accent")
-    };
-    let styled_tag = if tag.is_empty() {
-        String::new()
-    } else {
-        format!("{} ", t.fg(tag_color, &tag))
-    };
-    let title = task.title.as_str();
-    let styled_title = match task.status {
-        TaskStatus::Done => t.fg("muted", title),
-        TaskStatus::Pending => t.fg("dim", title),
-        TaskStatus::Failed => t.fg("error", title),
-        TaskStatus::Cancelled => t.fg("dim", &t.strikethrough(title)),
-        TaskStatus::InProgress => t.bold(title),
-    };
-
-    let mut right_plain = String::new();
-    let mut right_styled = String::new();
-    match task.status {
-        TaskStatus::Done | TaskStatus::Failed => {
-            if let Some(usage) = &task.usage {
-                let total = usage.input + usage.output;
-                if total > 0.0 {
-                    right_plain = format!("{} tokens", format_tokens(total as u64));
-                    right_styled = t.fg("muted", &right_plain);
-                }
-            }
-        }
-        TaskStatus::InProgress => {
-            let activity = options
-                .owner
-                .and_then(|o| o.activity.as_deref())
-                .filter(|a| !a.is_empty())
-                .map(|a| format!("⋯ {a}"))
-                .unwrap_or_default();
-            // Attempt, model, deadline: the three things that explain a slow or
-            // surprising run. Rendered at draw time, so the countdown ticks.
-            let run_detail = options
-                .owner
-                .map(|owner| describe_run(owner, now))
-                .unwrap_or_default();
-            let run_for = if is_delegated(task) {
-                format_duration_secs(task_elapsed_secs(task, now))
-            } else {
-                String::new()
-            };
-            let join = |plain: String, styled: String| -> (String, String) {
-                if run_detail.is_empty() {
-                    return (plain, styled);
-                }
-                (
-                    format!("{plain} · {run_detail}"),
-                    format!("{styled}{}", t.fg("dim", &format!(" · {run_detail}"))),
-                )
-            };
-            match (activity.is_empty(), run_for.is_empty()) {
-                (false, false) => {
-                    let (plain, styled) = join(
-                        format!("{activity} · {run_for}"),
-                        t.fg("warning", &activity) + &t.fg("dim", &format!(" · {run_for}")),
-                    );
-                    right_plain = plain;
-                    right_styled = styled;
-                }
-                (false, true) => {
-                    let (plain, styled) = join(activity.clone(), t.fg("warning", &activity));
-                    right_plain = plain;
-                    right_styled = styled;
-                }
-                (true, false) => {
-                    let (plain, styled) = join(run_for.clone(), t.fg("dim", &run_for));
-                    right_plain = plain;
-                    right_styled = styled;
-                }
-                (true, true) => {}
-            }
-        }
-        TaskStatus::Pending if task.kind() == TaskKind::Schedule => {
-            // A waiting job shows when it next fires (the store's `next_at`).
-            if let Some(next) = task.next_at.filter(|next| *next > now) {
-                right_plain = format!(
-                    "next in {}",
-                    format_duration_secs(((next - now) / 1000) as f64)
-                );
-                right_styled = t.fg("dim", &right_plain);
-            }
-        }
-        _ => {}
-    }
-    if let Some(note) = &task.note {
-        right_plain = format!("{WARNING_GLYPH} {note}");
-        right_styled = t.fg("warning", &right_plain);
-    }
-    if options.confirm {
-        right_plain = "press x again to cancel".to_string();
-        right_styled = t.fg("warning", &right_plain);
-    }
-
-    let right_width = if right_plain.is_empty() {
-        0
-    } else {
-        visible_width(&right_plain) + 1
-    };
-    let left_width = width.saturating_sub(right_width);
-    let tree_prefix = if options.tree_prefix.is_empty() {
-        String::new()
-    } else {
-        t.fg("borderMuted", options.tree_prefix)
-    };
-    let source = if styled_source.is_empty() {
-        String::new()
-    } else {
-        format!("{styled_source} ")
-    };
-    let left_body = format!("{tree_prefix}{icon} {source}{styled_tag}{styled_title}");
-    let left = truncate_to_width(&left_body, left_width, "…", false);
-    if right_plain.is_empty() {
-        let gap = width.saturating_sub(visible_width(&left));
-        return format!("{left}{}", pad(gap));
-    }
-    let gap = width
-        .saturating_sub(visible_width(&left) + visible_width(&right_plain))
-        .max(1);
-    format!("{left}{}{right_styled}", pad(gap))
+        .spans,
+        width,
+    )
 }
 
 /// `flatLensRows`: the plan, each linked subagent run nested under its item.
@@ -773,15 +600,20 @@ fn subagent_lens_rows(tasks: &[Task]) -> Vec<PanelRow> {
 fn flight_status_style(status: TaskStatus) -> Style {
     let pal = Palette::current();
     match status {
-        TaskStatus::InProgress => pal.warn(),
+        TaskStatus::InProgress => pal.acc(),
         TaskStatus::Done => pal.ok(),
         TaskStatus::Failed => pal.err(),
-        TaskStatus::Pending | TaskStatus::Cancelled => pal.dim(),
+        // Not started reads faint (spec §3.1: `○`); a user-initiated
+        // cancel is dim, not an error.
+        TaskStatus::Pending => pal.faint(),
+        TaskStatus::Cancelled => pal.dim(),
     }
 }
 
-/// The waypoint track for the plan tab (spec §4 c6): one circle per plan
-/// item — `●` done, `◐` running, `○` the rest — and the done/total count.
+/// The waypoint track (spec §4 r6/c5): one circle per plan item — `●`
+/// done, `◐` running, `○` the rest — and the done/total count. The closed
+/// panel's summary row; the open console names the counts in its title and
+/// shows the circles on the waypoint rows instead.
 fn flight_track(model: &RowModel) -> Line<'static> {
     let pal = Palette::current();
     let mut spans = Vec::new();
@@ -797,7 +629,7 @@ fn flight_track(model: &RowModel) -> Line<'static> {
                 done += 1;
                 ("●", pal.ok())
             }
-            TaskStatus::InProgress => ("◐", pal.warn()),
+            TaskStatus::InProgress => ("◐", pal.acc()),
             _ => ("○", pal.faint()),
         };
         spans.push(Span::styled(mark, style));
@@ -806,37 +638,10 @@ fn flight_track(model: &RowModel) -> Line<'static> {
     Line::from(spans)
 }
 
-/// The tab strip for the flight plan: one tab per tab with rows, with its
-/// done/total count; the shown tab in accent.
-fn flight_strip(
-    model: &RowModel,
-    view: TaskPanelView,
-    tab_views: &[TaskPanelView],
-) -> Line<'static> {
-    let pal = Palette::current();
-    let mut spans = Vec::new();
-    for (i, &tab) in tab_views.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled("  ", pal.faint()));
-        }
-        let stats = model.lens_stats(tab);
-        let style = if tab == view {
-            bold(pal.acc())
-        } else {
-            pal.dim()
-        };
-        spans.push(Span::styled(format!(" {} ", tab.label()), style));
-        spans.push(Span::styled(
-            format!("{}/{}", stats.done, stats.total),
-            pal.faint(),
-        ));
-    }
-    Line::from(spans)
-}
-
-/// The right detail of a flight-plan row: usage, live activity and run
-/// clock, the next firing, a warning note, or the armed-cancel ask.
-/// Plain text plus its style, like `format_task_line`'s right column.
+/// The right detail of a flight-plan row: the waypoint's elapsed time,
+/// usage, live activity and run clock, the next firing, a warning note, or
+/// the armed-cancel ask. Plain text plus its style, laid out by
+/// [`flight_row`].
 fn flight_detail(
     task: &Task,
     owner: Option<&TaskAgent>,
@@ -850,6 +655,23 @@ fn flight_detail(
     if let Some(note) = &task.note {
         return Some((format!("{WARNING_GLYPH} {note}"), pal.warn()));
     }
+    // A waypoint names the time it took (spec §4 c6): the plan has no step
+    // linkage yet, so the wall-clock time stands in for `steps 02–03 ·
+    // 0.4s`. Pending waypoints show nothing.
+    if task.kind() == TaskKind::Plan
+        && matches!(
+            task.status,
+            TaskStatus::Done | TaskStatus::Failed | TaskStatus::InProgress
+        )
+    {
+        return Some((
+            format_duration_secs(task_elapsed_secs(task, now)),
+            pal.faint(),
+        ));
+    }
+    // A running shell job is a satellite (spec §4 r9/c7). It is spanned in
+    // `flight_row`, not painted here: painting over `paint` output would
+    // mangle the inner escapes.
     match task.status {
         TaskStatus::Done | TaskStatus::Failed => {
             let total: f64 = task
@@ -896,7 +718,7 @@ fn flight_detail(
                 let style = if activity.is_empty() {
                     pal.faint()
                 } else {
-                    pal.warn()
+                    pal.acc()
                 };
                 return Some((plain, style));
             }
@@ -917,6 +739,27 @@ fn flight_detail(
     None
 }
 
+/// The row key of a shell job without its `shell:` store prefix.
+fn shell_job_name(task: &Task) -> &str {
+    task.key
+        .as_deref()
+        .and_then(|key| key.strip_prefix("shell:"))
+        .unwrap_or("job")
+}
+
+/// The right detail of a row, laid out like every other one: the row keeps
+/// the room the detail needs, then a gap, then the detail spans.
+fn append_detail(row: &mut Line<'static>, detail: Vec<Span<'static>>, inner: usize) {
+    use hoocode_tui_ratatui::truncate_spans;
+    let detail = truncate_spans(detail, inner, "…");
+    let detail_width: usize = detail.iter().map(|s| s.width()).sum();
+    let max_left = inner.saturating_sub(detail_width + 1).max(1);
+    *row = truncate_line(row, max_left);
+    let used: usize = row.spans.iter().map(|s| s.width()).sum();
+    let gap = inner.saturating_sub(used + detail_width).max(1);
+    row.spans.push(Span::raw(" ".repeat(gap)));
+    row.spans.extend(detail);
+}
 /// One flight-plan row (content only; the console adds the `›` marker or
 /// gutter and the selection band): the status circle, the owner glyph and
 /// tag where they disambiguate, the title, and the right detail.
@@ -936,6 +779,12 @@ fn flight_row(
         ),
         Span::raw(" "),
     ];
+    // A background shell job is a satellite (spec §2, §4 c7): the `⌁` mark
+    // tells it apart from a waypoint at a glance.
+    if task.kind() == TaskKind::Shell {
+        spans.insert(0, Span::raw(" "));
+        spans.insert(0, Span::styled("⌁", pal.acc()));
+    }
     if !tree_prefix.is_empty() {
         spans.push(Span::styled(tree_prefix.to_string(), pal.faint()));
     }
@@ -953,16 +802,8 @@ fn flight_row(
         } else {
             SUBAGENT_GLYPH
         };
-        let style = if is_mcp {
-            pal.style("mcp")
-        } else if let Some(name) = (!is_mcp && owner_kind == TaskAgentKind::Subagent)
-            .then(|| task.subagent_mode.as_deref().or(task.agent.as_deref()))
-            .flatten()
-        {
-            pal.style(agent_color_for(name))
-        } else {
-            pal.dim()
-        };
+        // Agents read violet (spec §2); MCP calls keep their own token.
+        let style = if is_mcp { pal.style("mcp") } else { pal.vio() };
         spans.push(Span::styled(glyph, style));
         spans.push(Span::raw(" "));
     }
@@ -984,34 +825,49 @@ fn flight_row(
         TaskStatus::Done => pal.faint(),
         TaskStatus::Failed => pal.err(),
         TaskStatus::InProgress => bold(Style::default()),
-        TaskStatus::Pending | TaskStatus::Cancelled => pal.dim(),
+        TaskStatus::Pending => pal.dim(),
+        TaskStatus::Cancelled => pal.dim().add_modifier(Modifier::CROSSED_OUT),
     };
     spans.push(Span::styled(task.title.clone(), title_style));
     let mut row = Line::from(spans);
+    // A running shell job is a satellite (spec §4 r9/c7): `⌁ sat job-1 ·
+    // in orbit 4s` on the right, spanned like the radar row.
+    if !confirm
+        && task.note.is_none()
+        && task.kind() == TaskKind::Shell
+        && task.status == TaskStatus::InProgress
+    {
+        let job = shell_job_name(task);
+        let elapsed = task_elapsed_secs(task, now) as u64;
+        append_detail(
+            &mut row,
+            vec![
+                Span::styled("⌁", pal.acc()),
+                Span::styled(format!(" sat {job} "), pal.acc()),
+                Span::styled("·", pal.dim()),
+                Span::styled(format!(" in orbit {}", short_dur(elapsed)), pal.acc()),
+            ],
+            inner,
+        );
+        return row;
+    }
     let Some((detail, detail_style)) = flight_detail(task, owner, confirm, now) else {
         return row;
     };
     let detail = truncate_to_width(&detail, inner, "…", false);
-    let detail_width = visible_width(&detail);
-    let max_left = inner.saturating_sub(detail_width + 1).max(1);
-    row = truncate_line(&row, max_left);
-    let used: usize = row.spans.iter().map(|s| s.width()).sum();
-    let gap = inner.saturating_sub(used + detail_width).max(1);
-    row.spans.push(Span::raw(" ".repeat(gap)));
-    row.spans.push(Span::styled(detail, detail_style));
+    append_detail(&mut row, vec![Span::styled(detail, detail_style)], inner);
     row
 }
 
-/// The focused panel as the FLIGHT PLAN console (M7, spec §4 c6): the plan's
-/// done/total in the title, the waypoint track over the plan rows, the tab
-/// strip while several tabs have rows, the agents-in-flight and satellites
-/// row below the list (the target's `planRows`), and the spec hint foot.
-/// Tabs, keys, filtering and events are unchanged; only the chrome and the
-/// rows move to the console.
+/// The focused panel as the single FLIGHT PLAN console (M7, spec §4 c6):
+/// the plan's done/total with the live agent and satellite counts in the
+/// title, one waypoint row per row of the shown lens, and the spec hint
+/// foot. There is no tab strip and no counts row: the title carries them.
+/// Tabs, keys, filtering and events are unchanged; only the chrome moves
+/// to the console.
 fn render_flight_plan(
     model: &RowModel,
     view: TaskPanelView,
-    tab_views: &[TaskPanelView],
     selected: Option<u64>,
     confirming: Option<u64>,
     width: usize,
@@ -1027,15 +883,13 @@ fn render_flight_plan(
         total += 1;
         done += usize::from(task.status == TaskStatus::Done);
     }
-    let mut console = Console::new("FLIGHT PLAN · ctrl+g", format!("{done}/{total}"));
-    let agents = model.row_ids(TaskPanelView::Subagents).len();
-    let sats = model.row_ids(TaskPanelView::Shell).len();
-    if view == TaskPanelView::Plan {
-        console.top.push(flight_track(model));
-    }
-    if tab_views.len() >= 2 {
-        console.top.push(flight_strip(model, view, tab_views));
-    }
+    let agents = live_lens_count(model, TaskPanelView::Subagents);
+    let sats = live_lens_count(model, TaskPanelView::Shell);
+    let mut console = Console::new(
+        "FLIGHT PLAN",
+        format!("{done}/{total}  agents {agents} · sats {sats}"),
+    );
+    console.right = Line::from(vec![Span::styled("/tasks · ctrl+g", pal.faint())]);
     let ids = model.row_ids(view);
     // Rows sit behind the console's `› ` marker or gutter, so they get two
     // cells less than the frame's inner width.
@@ -1054,27 +908,11 @@ fn render_flight_plan(
             )
         })
         .collect();
-    console.bottom = vec![
-        Line::raw(""),
-        Line::from(vec![
-            Span::styled("◈", pal.vio()),
-            Span::raw(" "),
-            Span::styled("agents in flight", pal.dim()),
-            Span::raw(" "),
-            Span::styled(agents.to_string(), pal.ink()),
-            Span::raw("    "),
-            Span::styled("⌁", pal.acc()),
-            Span::raw(" "),
-            Span::styled("satellites", pal.dim()),
-            Span::raw(" "),
-            Span::styled(sats.to_string(), pal.ink()),
-        ]),
-    ];
     console.hint = hints(&[
         ("↑↓", "move"),
         ("enter", "jump to its steps"),
         ("x", "drop"),
-        ("esc", "close"),
+        ("esc", "back"),
     ]);
     console.render(width)
 }
@@ -1113,10 +951,8 @@ fn resolve_selection(model: &RowModel, view: TaskPanelView, selected: Option<u64
 }
 
 /// The keys the panel answers to, in the order they are tried.
-const PANEL_KEYS: [&str; 8] = [
+const PANEL_KEYS: [&str; 6] = [
     "app.panel.focus",
-    "app.panel.nextTab",
-    "app.panel.prevTab",
     "app.panel.up",
     "app.panel.down",
     "app.panel.open",
@@ -1292,12 +1128,6 @@ impl TaskPanelComponent {
         match id {
             "app.panel.exit" if armed.is_some() => {}
             "app.panel.focus" | "app.panel.exit" => self.events.push(PanelEvent::Exit),
-            "app.panel.nextTab" => {
-                self.cycle_view(true);
-            }
-            "app.panel.prevTab" => {
-                self.cycle_view(false);
-            }
             "app.panel.up" => self.move_pick(-1),
             "app.panel.down" => self.move_pick(1),
             "app.panel.open" => self.open_pick(),
@@ -1328,14 +1158,7 @@ impl Component for TaskPanelComponent {
 
         let model = &self.model;
         let available = model.views();
-        let t = theme();
-        let gutter = format!(
-            "{} ",
-            t.fg(
-                panel_state_color(model.lens(view).map(|(_, task)| task)),
-                RAIL
-            )
-        );
+        let gutter = panel_gutter();
         // Focus shows the strip even with one tab, the pick marker, and a hint
         // line. Focus also shows the rows in full, whatever the density.
         let focused = self.focused;
@@ -1352,21 +1175,13 @@ impl Component for TaskPanelComponent {
         };
 
         if self.density == TaskPanelDensity::Summary && !focused {
-            return vec![gutter.clone() + &format_summary_line(model, inner, view, &tab_views)];
+            return vec![gutter.clone() + &render_summary_track(model, inner)];
         }
 
         // Focused (Ctrl+G): the FLIGHT PLAN console. Unfocused keeps the
         // rail rows, whatever the density.
         if focused {
-            return render_flight_plan(
-                model,
-                view,
-                &tab_views,
-                selected,
-                self.confirming,
-                width,
-                now,
-            );
+            return render_flight_plan(model, view, selected, self.confirming, width, now);
         }
 
         let mut lines = Vec::new();
@@ -1731,33 +1546,5 @@ mod row_model_tests {
         let mut model = RowModel::default();
         model.sync(&store);
         assert!(model.task(999).is_none());
-    }
-
-    #[test]
-    fn panel_state_color_reports_failure_then_live_work_then_done() {
-        let store = TaskStore::new();
-        let a = plan(&store, "a");
-        let b = plan(&store, "b");
-        store.update(
-            a,
-            TaskPatch {
-                status: Some(TaskStatus::Done),
-                ..Default::default()
-            },
-        );
-        let mut model = RowModel::default();
-        model.sync(&store);
-        let color =
-            |model: &RowModel| panel_state_color(model.lens(TaskPanelView::Plan).map(|(_, t)| t));
-        assert_eq!(color(&model), "warning", "a pending item is live work");
-        store.update(
-            b,
-            TaskPatch {
-                status: Some(TaskStatus::Failed),
-                ..Default::default()
-            },
-        );
-        model.sync(&store);
-        assert_eq!(color(&model), "error");
     }
 }

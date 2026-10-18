@@ -13,7 +13,7 @@ use hoocode_code_task_store::{
     TaskPatch, TaskSource, TaskStatus, TaskUsage,
 };
 use hoocode_code_tui_keybindings::app_key_label;
-use hoocode_code_tui_theme::{init_theme, theme};
+use hoocode_code_tui_theme::init_theme;
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity, TaskPanelView};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::visible_width;
@@ -166,14 +166,14 @@ fn each_lens_carries_the_owner_glyph_and_tag_for_its_own_rows() {
     panel.set_view(TaskPanelView::Plan);
     let flat = render(&mut panel, 120);
     let plain_row = find(&flat, "init project");
-    assert!(!plain_row.contains('◆') && !plain_row.contains('◇'));
+    assert!(!plain_row.contains('◈') && !plain_row.contains('⧉'));
     assert!(!flat.iter().any(|l| l.contains("find the bug")));
     assert!(!flat.iter().any(|l| l.contains("fetch")));
 
     panel.set_view(TaskPanelView::Subagents);
     let sa = render(&mut panel, 120);
     let sub_row = find(&sa, "find the bug");
-    assert!(sub_row.contains('◇') && sub_row.contains("[explore]"));
+    assert!(sub_row.contains('◈') && sub_row.contains("[explore]"));
     assert!(
         !sa.iter().any(|l| l.contains("fetch")),
         "MCP calls have their own tab"
@@ -269,13 +269,19 @@ fn an_idle_in_progress_subagent_row_keeps_its_run_clock() {
 }
 
 #[test]
-fn an_in_progress_main_plan_row_carries_no_run_clock() {
+fn an_in_progress_main_plan_row_carries_its_elapsed_time() {
     let _g = lock();
     let t = create("Patch the warning threshold");
     set(t, TaskStatus::InProgress);
     let lines = plain(&mut TaskPanelComponent::new(), 120);
     let row = find(&lines, "Patch the warning threshold");
-    assert!(row.trim_end().ends_with("threshold"), "{row}");
+    // Waypoints name their time (spec §4 c6); the free-running clock is
+    // for delegated rows.
+    let trimmed = row.trim_end();
+    assert!(
+        trimmed.ends_with('s') && !trimmed.ends_with("threshold"),
+        "{row}"
+    );
 }
 
 #[test]
@@ -305,7 +311,7 @@ fn completed_and_failed_tasks_stay_visible_with_their_status() {
     let lines = render(&mut TaskPanelComponent::new(), 120);
     assert_eq!(lines.len(), 3);
     let text = lines.join("\n");
-    for s in ["Still running", "Finished work", "Broken build", "✓", "✗"] {
+    for s in ["Still running", "Finished work", "Broken build", "●", "⊗"] {
         assert!(text.contains(s), "{s}");
     }
 }
@@ -357,7 +363,7 @@ fn long_titles_use_the_full_left_width() {
 #[test]
 fn finished_tasks_show_combined_token_usage_per_row() {
     let _g = lock();
-    let d = create("Investigate flaky test");
+    let d = create_with("Investigate flaky test", sub("explore"));
     task_store().update(
         d,
         TaskPatch {
@@ -375,7 +381,7 @@ fn finished_tasks_show_combined_token_usage_per_row() {
 #[test]
 fn a_finished_task_says_its_count_is_tokens() {
     let _g = lock();
-    let d = create("Tiny lookup");
+    let d = create_with("Tiny lookup", sub("explore"));
     task_store().update(
         d,
         TaskPatch {
@@ -430,11 +436,12 @@ fn each_tab_carries_its_own_lens_count() {
 fn a_filled_tab_marks_the_selected_lens_only_while_it_has_live_work() {
     let _g = lock();
     let plan = plan_and_done_run();
-    let bg = theme().get_bg_ansi("selectedBg").to_string();
     let mut panel = TaskPanelComponent::new();
-    assert!(render(&mut panel, 120)[0].contains(&bg));
+    // The selection band is a background SGR on the live-selected tab;
+    // nothing else on this line carries one.
+    assert!(render(&mut panel, 120)[0].contains("48;"));
     set(plan, TaskStatus::Done);
-    assert!(!render(&mut panel, 120)[0].contains(&bg));
+    assert!(!render(&mut panel, 120)[0].contains("48;"));
 }
 
 #[test]
@@ -706,7 +713,7 @@ fn subagents_tree_renders_delegated_roots_without_a_roster() {
     panel.set_view(TaskPanelView::Subagents);
     let lines = plain(&mut panel, 120);
     assert_eq!(lines.len(), 1);
-    for s in ["find the bug", "[explore]", "◇"] {
+    for s in ["find the bug", "[explore]", "◈"] {
         assert!(lines[0].contains(s), "{s}");
     }
 }
@@ -958,34 +965,18 @@ fn the_panel_is_focusable_only_when_it_has_rows() {
 }
 
 #[test]
-fn tab_and_shift_tab_cycle_the_tabs_that_have_rows() {
+fn tab_keys_are_inert_in_the_flight_plan_console() {
+    // The flight plan is a single console (spec §4 c6): tab and shift+tab
+    // do nothing here. The app switches the lens behind it (alt+l).
     let _g = lock();
     plan_sub_mcp(TaskStatus::InProgress, TaskStatus::InProgress);
     let mut panel = focused();
     render(&mut panel, 120);
     assert_eq!(panel.get_view(), TaskPanelView::Plan);
     press(&mut panel, TAB);
-    assert_eq!(panel.get_view(), TaskPanelView::Subagents);
-    press(&mut panel, TAB);
-    assert_eq!(panel.get_view(), TaskPanelView::Mcp);
-    press(&mut panel, TAB);
-    assert_eq!(panel.get_view(), TaskPanelView::Plan, "wraps");
     press(&mut panel, SHIFT_TAB);
-    assert_eq!(panel.get_view(), TaskPanelView::Mcp);
-    assert!(panel.take_events().is_empty());
-}
-
-#[test]
-fn tabs_without_rows_are_skipped_by_tab() {
-    let _g = lock();
-    create("plan item");
-    create_with("a call", mcp(Some("web")));
-    let mut panel = focused();
-    render(&mut panel, 120);
-    press(&mut panel, TAB);
-    assert_eq!(panel.get_view(), TaskPanelView::Mcp);
-    press(&mut panel, TAB);
     assert_eq!(panel.get_view(), TaskPanelView::Plan);
+    assert!(panel.take_events().is_empty());
 }
 
 #[test]
@@ -1106,7 +1097,7 @@ fn x_does_nothing_on_a_plan_item_or_a_finished_run() {
     let finished = run_with_id("done run", "run-9");
     set(finished, TaskStatus::Done);
     let mut panel = focused();
-    press(&mut panel, TAB);
+    panel.set_view(TaskPanelView::Subagents);
     render(&mut panel, 120);
     press(&mut panel, "x");
     press(&mut panel, "x");
@@ -1158,22 +1149,29 @@ fn focus_opens_the_flight_plan_console() {
     create("row a");
     let mut panel = focused();
     let lines = plain(&mut panel, 120);
+    // Spec §4 c6: `FLIGHT PLAN 2/5  agents 0 · sats 0` with `/tasks · ctrl+g`
+    // on the right edge.
     assert!(
-        lines[0].contains("FLIGHT PLAN · ctrl+g") && lines[0].contains("0/1"),
+        lines[0].contains("FLIGHT PLAN  0/1  agents 0 · sats 0"),
         "{lines:#?}"
     );
+    assert!(lines[0].contains("/tasks · ctrl+g"), "{lines:#?}");
     assert!(
         lines.iter().any(|l| l.contains('›') && l.contains("row a")),
         "{lines:#?}"
     );
-    assert!(lines.iter().any(|l| l.contains("○ 0/1")), "{lines:#?}");
+    // A single console: no tab strip and no counts row below the list.
     assert!(
-        lines
-            .iter()
-            .any(|l| l.contains("agents in flight") && l.contains("satellites")),
+        !lines.iter().any(|l| l.contains("agents in flight")),
         "{lines:#?}"
     );
-    assert!(lines.last().unwrap().contains("esc close"), "{lines:#?}");
+    assert!(
+        lines
+            .last()
+            .unwrap()
+            .contains("↑↓ move · enter jump to its steps · x drop · esc back"),
+        "{lines:#?}"
+    );
 
     let mut unfocused = TaskPanelComponent::new();
     let plain_lines = plain(&mut unfocused, 120);
@@ -1263,12 +1261,9 @@ fn schedule_tab_sits_between_agents_and_mcp() {
     create_with("a run", sub("explore"));
     let mut panel = focused();
     render(&mut panel, 120);
-    press(&mut panel, TAB);
-    assert_eq!(panel.get_view(), TaskPanelView::Subagents);
-    press(&mut panel, TAB);
-    assert_eq!(panel.get_view(), TaskPanelView::Schedule);
-    press(&mut panel, TAB);
-    assert_eq!(panel.get_view(), TaskPanelView::Mcp);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Subagents);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Schedule);
+    assert_eq!(panel.cycle_view(true), TaskPanelView::Mcp);
 }
 
 #[test]
@@ -1341,10 +1336,11 @@ fn the_tick_runs_while_any_row_in_any_tab_is_running() {
     assert!(!panel.ticking());
 }
 
-/// The compact row (Summary density, unfocused): the plan on the left with
-/// its running item, the other tabs' counts on the right, the width asked for.
+/// The compact row (Summary density, unfocused) is the flight-plan track
+/// inside the trajectory (spec §4 r6/c5): `FLIGHT PLAN ●◐ 1/2` with the
+/// running waypoint's title, one row, at the width asked for.
 #[test]
-fn summary_row_shows_the_plan_line_and_the_other_counts() {
+fn summary_row_shows_the_flight_plan_track_and_the_running_waypoint() {
     let _g = lock();
     let done = task_store().create("Read the parser", CreateTaskOptions::default());
     task_store().update(
@@ -1375,10 +1371,10 @@ fn summary_row_shows_the_plan_line_and_the_other_counts() {
     assert_eq!(lines.len(), 1, "{lines:?}");
     let plain = strip(&lines[0]);
     assert!(
-        plain.contains("Plan 1/2  ◐ Add CJK width fixtures"),
+        plain.contains("FLIGHT PLAN  ●◐ 1/2  Add CJK width fixtures"),
         "{plain:?}"
     );
-    assert!(plain.contains("Agents 0/1"), "{plain:?}");
+    assert!(!plain.contains("Agents"), "no tab strip: {plain:?}");
     assert_eq!(visible_width(&lines[0]), 60, "{plain:?}");
 }
 
@@ -1408,7 +1404,119 @@ fn summary_row_cuts_a_long_running_item_at_a_word() {
     panel.set_density(TaskPanelDensity::Summary);
     let lines = panel.render(40);
     let plain = strip(&lines[0]);
-    assert!(plain.contains("Plan 0/1  ◐ Add CJK…"), "{plain:?}");
-    assert!(plain.contains("Agents 0/1"), "{plain:?}");
+    assert!(
+        plain.contains("FLIGHT PLAN  ◐ 0/1  Add CJK width…"),
+        "{plain:?}"
+    );
     assert_eq!(visible_width(&lines[0]), 40, "{plain:?}");
+}
+
+// ---- Mission Control chrome (spec §4 c6/r6) ----
+
+fn shell() -> CreateTaskOptions {
+    CreateTaskOptions {
+        source: Some(TaskSource::Shell),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn focused_title_counts_live_agents_and_satellites() {
+    let _g = lock();
+    let a = create("row a");
+    let run = create_with("scan the repo", sub("explore"));
+    set(run, TaskStatus::InProgress);
+    let job = create_with("sleep 60", shell());
+    set(job, TaskStatus::InProgress);
+    let mut panel = focused();
+    let lines = plain(&mut panel, 120);
+    assert!(
+        lines[0].contains("FLIGHT PLAN  0/1  agents 1 · sats 1"),
+        "{lines:#?}"
+    );
+    // Landed work drops out of the counts.
+    set(a, TaskStatus::Done);
+    set(run, TaskStatus::Done);
+    set(job, TaskStatus::Done);
+    let lines = plain(&mut panel, 120);
+    assert!(
+        lines[0].contains("FLIGHT PLAN  1/1  agents 0 · sats 0"),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn focused_rows_mark_satellites_and_use_mission_circles() {
+    let _g = lock();
+    let done = create("read it");
+    set(done, TaskStatus::Done);
+    let failed = create("build it");
+    set(failed, TaskStatus::Failed);
+    create_with("sleep 60", shell());
+    let mut panel = focused();
+    panel.set_view(TaskPanelView::Shell);
+    let shell_lines = plain(&mut panel, 120);
+    assert!(
+        shell_lines
+            .iter()
+            .any(|l| l.contains('⌁') && l.contains("sleep 60")),
+        "{shell_lines:#?}"
+    );
+    panel.set_view(TaskPanelView::Plan);
+    let lines = plain(&mut panel, 120);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains('●') && l.contains("read it")),
+        "{lines:#?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains('⊗') && l.contains("build it")),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn running_shell_rows_carry_the_satellite_detail() {
+    // Spec §4 r9/c7: a running job reads `⌁ sat job-1 · in orbit 4s` on
+    // the right, like the radar row.
+    let _g = lock();
+    let job = task_store().create(
+        "sleep 60",
+        CreateTaskOptions {
+            source: Some(TaskSource::Shell),
+            key: Some("shell:job-1".into()),
+            ..Default::default()
+        },
+    );
+    task_store().update(
+        job.id,
+        TaskPatch {
+            status: Some(TaskStatus::InProgress),
+            ..Default::default()
+        },
+    );
+    let mut panel = focused();
+    panel.set_view(TaskPanelView::Shell);
+    let lines = plain(&mut panel, 120);
+    assert!(
+        lines.iter().any(|l| l.contains("⌁ sat job-1 · in orbit")),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn summary_row_without_a_running_waypoint_shows_only_the_track() {
+    let _g = lock();
+    let done = create("read it");
+    set(done, TaskStatus::Done);
+    let mut panel = TaskPanelComponent::new();
+    panel.set_density(TaskPanelDensity::Summary);
+    let lines = panel.render(60);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let plain = strip(&lines[0]);
+    assert!(plain.contains("FLIGHT PLAN  ● 1/1"), "{plain:?}");
+    assert_eq!(visible_width(&lines[0]), 60, "{plain:?}");
 }
