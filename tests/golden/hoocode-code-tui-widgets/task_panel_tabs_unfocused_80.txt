@@ -1,6 +1,6 @@
 ┊  Plan 1/3  Agents 1/1  MCP 1/1                                    ctrl+g focus
 ┊ ● Read the migration plan                                                 0.0s
-┊ ◐ Port the task panel renderer                                            0.0s
+┊ ◉ Port the task panel renderer                                            0.0s
 ┊ ○ Add golden snapshots
 --- styles ---
 r0 c0 fg=#a8a8a8

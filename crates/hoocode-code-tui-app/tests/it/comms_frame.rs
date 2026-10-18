@@ -167,7 +167,7 @@ fn in_flight_shows_the_step_elapsed_time_and_queue_placeholder() {
     let rows = rows(&mut in_flight(), 100);
     assert_eq!(rows.len(), 3, "{rows:?}");
     assert!(
-        rows[0].contains("◐ IN FLIGHT · step 1 · 4s · esc abort"),
+        rows[0].contains("◉ IN FLIGHT · step 1 · 4s · esc abort"),
         "row 0: {:?}",
         rows[0]
     );
@@ -191,7 +191,7 @@ fn in_flight_without_elapsed_omits_the_time() {
     );
     let rows = rows(&mut frame, 100);
     assert!(
-        rows[0].contains("◐ IN FLIGHT · esc abort"),
+        rows[0].contains("◉ IN FLIGHT · esc abort"),
         "row 0: {:?}",
         rows[0]
     );
@@ -279,7 +279,7 @@ fn queued_messages_draw_inside_the_frame_with_their_dispositions() {
     let rows = rows(&mut frame, 100);
     assert_eq!(rows.len(), 5, "{rows:?}");
     assert!(
-        rows[0].contains("◐ IN FLIGHT · step 1 · 6s · esc abort"),
+        rows[0].contains("◉ IN FLIGHT · step 1 · 6s · esc abort"),
         "row 0: {:?}",
         rows[0]
     );

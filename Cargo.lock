@@ -1874,6 +1874,7 @@ dependencies = [
  "hoocode-runtime",
  "hoocode-tui-components",
  "hoocode-tui-fuzzy",
+ "hoocode-tui-glyphs",
  "hoocode-tui-images",
  "hoocode-tui-keys",
  "hoocode-tui-ratatui",
@@ -1921,6 +1922,7 @@ dependencies = [
  "hoocode-home",
  "hoocode-tui-components",
  "hoocode-tui-fuzzy",
+ "hoocode-tui-glyphs",
  "hoocode-tui-keys",
  "hoocode-tui-ratatui",
  "hoocode-tui-render",
@@ -1962,6 +1964,7 @@ dependencies = [
  "hoocode-code-tui-theme",
  "hoocode-home",
  "hoocode-tui-components",
+ "hoocode-tui-glyphs",
  "hoocode-tui-images",
  "hoocode-tui-keys",
  "hoocode-tui-ratatui",
@@ -2039,6 +2042,10 @@ version = "0.1.30"
 
 [[package]]
 name = "hoocode-tui-fuzzy"
+version = "0.1.30"
+
+[[package]]
+name = "hoocode-tui-glyphs"
 version = "0.1.30"
 
 [[package]]

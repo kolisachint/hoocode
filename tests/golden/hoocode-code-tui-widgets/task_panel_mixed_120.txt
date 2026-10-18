@@ -1,5 +1,5 @@
 ┊ ● Read the migration plan                                                                                         0.0s
-┊ ◐ Port the task panel renderer                                                                                    0.0s
+┊ ◉ Port the task panel renderer                                                                                    0.0s
 ┊ ○ Add golden snapshots
 ┊ ⊗ Run the parity check                                                                                            0.0s
 ┊ ⊘ Drop the old lens tabs

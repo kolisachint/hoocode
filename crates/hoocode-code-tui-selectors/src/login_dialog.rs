@@ -21,6 +21,7 @@ use hoocode_ai_types::AbortSignal;
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{hints, Console};
 use hoocode_tui_components::Input;
+use hoocode_tui_glyphs::status;
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_ratatui::{Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
@@ -168,7 +169,8 @@ impl LoginDialogComponent {
     pub fn show_waiting(&mut self, message: &str) {
         let pal = Palette::current();
         self.separate();
-        self.rows.push(line(format!("◐ {message}"), pal.faint()));
+        self.rows
+            .push(line(format!("{} {message}", status::RUNNING), pal.faint()));
         self.hint = hints(&[("esc", "cancel")]);
     }
 

@@ -118,14 +118,14 @@ fn jobs_card_lists_the_satellites() {
         "row 0: {:?}",
         rows[0]
     );
-    assert!(rows[1].contains("◐ job-1"), "row 1: {:?}", rows[1]);
+    assert!(rows[1].contains("◉ job-1"), "row 1: {:?}", rows[1]);
     assert!(rows[1].contains("sleep 60"), "row 1: {:?}", rows[1]);
     assert!(
         rows[1].contains("in orbit 4s of ~60s"),
         "row 1: {:?}",
         rows[1]
     );
-    assert!(rows[2].contains("◐ job-2"), "row 2: {:?}", rows[2]);
+    assert!(rows[2].contains("◉ job-2"), "row 2: {:?}", rows[2]);
     assert!(
         rows[4].contains("k bring it down, then end shift"),
         "row 4: {:?}",

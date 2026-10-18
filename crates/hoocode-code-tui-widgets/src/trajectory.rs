@@ -14,6 +14,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::core::buffer::Buffer;
 use hoocode_tui_ratatui::core::layout::Rect;
 use hoocode_tui_ratatui::core::style::{Color, Style};
@@ -270,7 +271,7 @@ pub fn short_dur(secs: u64) -> String {
 }
 
 /// A Think row (spec §4 a2): the `··` slot with the trace's gist. Running
-/// reads `·· ◐ Think  gist  ✻ Ns` with the time right-aligned; done reads
+/// reads `·· ◉ Think  gist  ✻ Ns` with the time right-aligned; done reads
 /// `·· ● Think  gist  ✻ thought Ns · ctrl+t`. Unknown time (a resumed
 /// session never timed the trace) is omitted; no gist keeps the header bare.
 pub struct ThinkHeader {
@@ -328,7 +329,7 @@ impl Component for ThinkHeader {
             let mut left = vec![
                 slot,
                 Span::styled(" ".to_string(), Style::default()),
-                Span::styled("◐".to_string(), palette.style("warning")),
+                Span::styled(status::RUNNING_STR.to_string(), palette.style("warning")),
                 Span::styled(" ".to_string(), Style::default()),
                 Span::styled("Think".to_string(), bold(palette.ink())),
             ];
@@ -353,7 +354,7 @@ impl Component for ThinkHeader {
         let mut spans = vec![
             slot,
             Span::styled(" ".to_string(), Style::default()),
-            Span::styled("●".to_string(), palette.ok()),
+            Span::styled(status::DONE_STR.to_string(), palette.ok()),
             Span::styled(" ".to_string(), Style::default()),
             Span::styled("Think".to_string(), bold(palette.ink())),
         ];
@@ -498,7 +499,7 @@ pub fn landing_spans(
     palette: &Palette,
 ) -> Vec<Span<'static>> {
     let mut out = vec![
-        Span::styled("●".to_string(), palette.ok()),
+        Span::styled(status::DONE_STR.to_string(), palette.ok()),
         Span::styled(" ".to_string(), Style::default()),
         Span::styled("LANDED".to_string(), bold(palette.ok())),
     ];
@@ -809,7 +810,7 @@ mod tests {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let mut running = ThinkHeader::new(true, Some(4));
         let bare = strip_vt_control_characters(&running.render(40).join("\n"));
-        assert!(bare.contains("◐ Think"), "{bare}");
+        assert!(bare.contains("◉ Think"), "{bare}");
         assert!(bare.ends_with("✻ 4s"), "{bare}");
         let mut done = ThinkHeader::new(false, Some(72));
         let bare = strip_vt_control_characters(&done.render(40).join("\n"));

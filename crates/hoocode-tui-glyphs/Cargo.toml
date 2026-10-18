@@ -1,0 +1,16 @@
+[package]
+name = "hoocode-tui-glyphs"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The TUI status glyphs and their animation frames: one set for every surface"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false

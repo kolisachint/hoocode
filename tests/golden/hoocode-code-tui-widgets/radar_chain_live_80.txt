@@ -1,4 +1,4 @@
- ◐ 01 Shell  sleep 6; echo done                                               0s
+ ◉ 01 Shell  sleep 6; echo done                                               0s
 --- styles ---
 r0 c1 fg=#5cc8bb
 r0 c3-5 fg=#f0c674 bold
