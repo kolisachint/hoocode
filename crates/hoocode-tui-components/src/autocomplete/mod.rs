@@ -73,24 +73,9 @@ impl CommandEntry {
     }
 }
 
-/// Which Mission Control console an autocomplete popup draws as (M7):
-/// slash commands are the commands console (spec d1), `@` files the files
-/// console (spec d2). Plain path completion has no console and draws the
-/// legacy list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConsoleKind {
-    Commands,
-    Files,
-}
-
 pub struct AutocompleteSuggestions {
     pub items: Vec<AutocompleteItem>,
     pub prefix: String,
-    /// The console this popup draws as, if any.
-    pub console: Option<ConsoleKind>,
-    /// The unfiltered total for the commands count (`N of M`); `None`
-    /// counts the matches.
-    pub total: Option<usize>,
 }
 
 pub struct ApplyCompletionResult {
@@ -546,8 +531,6 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
             return Some(AutocompleteSuggestions {
                 items: suggestions,
                 prefix: at_prefix,
-                console: Some(ConsoleKind::Files),
-                total: None,
             });
         }
 
@@ -585,8 +568,6 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
                 return Some(AutocompleteSuggestions {
                     items: filtered,
                     prefix: text_before_cursor.clone(),
-                    console: Some(ConsoleKind::Commands),
-                    total: Some(self.commands.len()),
                 });
             }
 
@@ -612,8 +593,6 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
             return Some(AutocompleteSuggestions {
                 items: argument_suggestions,
                 prefix: argument_text.to_string(),
-                console: Some(ConsoleKind::Commands),
-                total: None,
             });
         }
 
@@ -625,8 +604,6 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
         Some(AutocompleteSuggestions {
             items: suggestions,
             prefix: path_match,
-            console: None,
-            total: None,
         })
     }
 
