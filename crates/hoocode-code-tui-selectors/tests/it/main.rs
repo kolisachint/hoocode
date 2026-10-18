@@ -20,4 +20,5 @@ mod session_subagent_delete;
 mod settings_token_surface;
 mod support;
 mod systems_console;
+mod systems_side_panel;
 mod tree_selector;

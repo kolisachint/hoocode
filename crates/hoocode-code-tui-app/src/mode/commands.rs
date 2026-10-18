@@ -197,11 +197,29 @@ impl Mode {
         self.dirty.set(true);
     }
 
-    /// `handleHotkeys`: the CONTROLS console (M7, spec d9), with the drawn
-    /// keyboard from the real keybindings at the spec width and the key
-    /// list below it.
+    /// `handleHotkeys`: the CONTROLS console (M7, spec d9), as a picker in
+    /// the editor's slot: `tab` switches the lit layer, typing filters the
+    /// actions, `esc` closes it. The board reads the live keybindings, so
+    /// a rebound key repaints it.
     pub(super) fn handle_hotkeys_command(&mut self) {
-        self.add_to_chat(as_component(&handle(ControlsComponent::new())));
+        let controls = handle(ControlsComponent::new());
+        self.set_picker(
+            ActivePicker::Controls(controls.clone()),
+            as_component(&controls),
+        );
+    }
+
+    /// The CONTROLS picker's answer: `esc` gives the editor back.
+    pub(super) fn poll_controls(&mut self) {
+        let done = matches!(
+            &self.picker,
+            Some(ActivePicker::Controls(controls))
+                if !controls.borrow_mut().take_events().is_empty()
+        );
+        if done {
+            self.picker = None;
+            self.restore_editor();
+        }
     }
 
     /// `handleChangelog`: every entry, oldest first.

@@ -1,8 +1,8 @@
 //! Component goldens: `/hotkeys` as the CONTROLS console — the drawn
-//! keyboard with the ctrl-layer keys lit at 100 columns, the key list at
-//! 80. Everything on screen comes from the real keybindings with literal
-//! key names (no `option`), so the bytes hold on macOS and Linux. Accept a
-//! deliberate change with
+//! keyboard with the lit layer's keys and the per-layer action list at
+//! 100 columns, the key list at 80. Everything on screen comes from the
+//! real keybindings with literal key names (no `option`), so the bytes
+//! hold on macOS and Linux. Accept a deliberate change with
 //! `UPDATE_GOLDENS=1 cargo nextest run -p hoocode-code-tui-widgets controls`.
 
 use hoocode_code_tui_widgets::controls::ControlsComponent;
@@ -17,20 +17,28 @@ fn check(name: &str, width: u16) {
     let rendered = render_golden(&mut controls, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("CONTROLS · /hotkeys"),
+        text.contains("CONTROLS · ?"),
         "{name}: missing title in\n{text}"
+    );
+    assert!(
+        text.contains("plain") && text.contains("ctrl") && text.contains("alt"),
+        "{name}: missing layer tabs in\n{text}"
+    );
+    assert!(
+        text.contains("bindings"),
+        "{name}: missing binding count in\n{text}"
     );
     assert_golden!(name, rendered);
 }
 
-/// The keyboard: esc and the letter rows with the bound caps.
+/// The keyboard: esc and the letter rows with the lit layer's caps.
 #[test]
 fn controls_100() {
     let _g = lock();
     let mut controls = ControlsComponent::new();
     let rendered = render_golden(&mut controls, 100);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
-    assert!(text.contains("CONTROLS · /hotkeys"), "missing title");
+    assert!(text.contains("CONTROLS · ?"), "missing title");
     assert!(text.contains("ctrl layer"), "missing layer label");
     assert!(
         text.lines().any(|l| l.contains("esc")),
@@ -39,6 +47,10 @@ fn controls_100() {
     assert!(
         text.contains("bindings"),
         "missing binding count in\n{text}"
+    );
+    assert!(
+        text.contains("tab layer · type search · esc close"),
+        "missing foot in\n{text}"
     );
     assert_golden!("controls_100", rendered);
 }

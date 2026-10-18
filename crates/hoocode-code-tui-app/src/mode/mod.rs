@@ -40,6 +40,7 @@ use hoocode_code_tui_theme::{
 };
 use hoocode_code_tui_widgets::background_notice::BackgroundNoticeComponent;
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
+use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
@@ -889,9 +890,15 @@ impl Mode {
         let body = handle(Container::new());
         let screen_fill = handle(FlexSpacer::new());
         let widget_above = handle(Container::new());
-        widget_above
-            .borrow_mut()
-            .add_child(as_component(&handle(Spacer::new(1))));
+        // Inline only: one blank row between the chat and the chrome that
+        // hangs off the bottom. Full-screen's bottom is exactly the spec's
+        // (the console or the 3-row comms frame), so an empty container
+        // renders zero rows there.
+        if !fullscreen {
+            widget_above
+                .borrow_mut()
+                .add_child(as_component(&handle(Spacer::new(1))));
+        }
         let editor_container = handle(Container::new());
         editor_container
             .borrow_mut()
@@ -1548,6 +1555,7 @@ impl Mode {
             self.poll_tree_selector();
             self.poll_fork_selector();
             self.poll_model_selectors();
+            self.poll_controls();
             self.poll_login();
             self.poll_settings_selector();
             if self.loader.as_ref().is_some_and(|l| l.borrow_mut().tick()) {
