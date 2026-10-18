@@ -120,8 +120,7 @@ mod edit {
     fn result_diff_window_starts_at_first_change() {
         let _g = lock();
         let diff = [
-            "  1 a", "  2 b", "  3 c", "  4 d", "  5 e", "- 6 old", "+ 6 new",
-            "  7 f",
+            "  1 a", "  2 b", "  3 c", "  4 d", "  5 e", "- 6 old", "+ 6 new", "  7 f",
         ]
         .join("\n");
         let peek = strip(&render_result(&diff, false));
