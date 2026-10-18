@@ -36,7 +36,7 @@ use hoocode_code_tui_keybindings::{app_key_label, format_key_text};
 use hoocode_code_tui_theme::agent_color_for;
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
-use hoocode_tui_ratatui::{bold, paint, truncate_line, Line, Modifier, Palette, Span, Style};
+use hoocode_tui_ratatui::{bold, paint, row, truncate_line, Line, Modifier, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
 
@@ -371,7 +371,7 @@ fn render_summary_track(model: &RowModel, width: usize) -> String {
             spans.push(Span::styled(title, bold(Style::default())));
         }
     }
-    let line = crate::trajectory::row_line(spans, width);
+    let line = row(spans, width);
     // The buffer clips but never pads: fill the row to its width.
     let used = visible_width(&line);
     line + &pad(width.saturating_sub(used))
@@ -480,11 +480,11 @@ struct LineOptions<'a> {
 /// warning note), padded to the pane width.
 /// `formatTaskLine`: the unfocused rail row. It reads the same [`flight_row`]
 /// helper as the focused console, so the circles, the `◈`/`⧉` marks and the
-/// right column match in both; [`row_line`](crate::trajectory::row_line)
+/// right column match in both; [`row`](hoocode_tui_ratatui::row)
 /// draws it through a ratatui buffer exactly `width` wide. The caller adds
 /// the `┊` gutter.
 fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u64) -> String {
-    crate::trajectory::row_line(
+    row(
         flight_row(
             task,
             options.owner,
