@@ -7,6 +7,7 @@ mod background_notice;
 mod bash_execution_width;
 mod bash_rebuild_took;
 mod controls;
+mod controls_layers;
 mod custom_message_radar;
 mod diff_gold;
 mod edit_agent_output_peek;

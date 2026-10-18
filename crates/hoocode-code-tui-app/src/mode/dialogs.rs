@@ -31,6 +31,8 @@ pub(super) enum ActivePicker {
     Model(Rc<RefCell<ModelSelectorComponent>>),
     ScopedModels(Rc<RefCell<ScopedModelsSelectorComponent>>),
     Settings(Rc<RefCell<SettingsSelectorComponent>>),
+    /// The CONTROLS console: the drawn keyboard with a lit layer.
+    Controls(Rc<RefCell<ControlsComponent>>),
 }
 
 impl ActivePicker {

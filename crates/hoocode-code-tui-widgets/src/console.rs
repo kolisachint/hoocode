@@ -50,6 +50,9 @@ pub struct Console {
     pub hint: Line<'static>,
     /// The right label on the top edge (`/tasks · ctrl+g`); empty draws nothing.
     pub right: Line<'static>,
+    /// Layer tabs on the top edge between the name and the count
+    /// (CONTROLS' `plain ctrl alt`); empty draws nothing.
+    pub tabs: Line<'static>,
     /// The frame colour; the `you` token when `None`.
     pub frame: Option<Style>,
 }
@@ -68,6 +71,7 @@ impl Console {
             bottom: Vec::new(),
             hint: Line::raw(""),
             right: Line::raw(""),
+            tabs: Line::raw(""),
             frame: None,
         }
     }
@@ -77,11 +81,17 @@ impl Console {
     pub fn render(&self, width: usize) -> Vec<String> {
         let pal = Palette::current();
         let frame = self.frame.unwrap_or_else(|| pal.you());
-        let title = if self.count.is_empty() {
-            self.name.clone()
-        } else {
-            format!("{}  {}", self.name, self.count)
-        };
+        let mut spans = vec![Span::styled(self.name.clone(), bold(frame))];
+        if self.tabs.width() > 0 {
+            // CONTROLS (spec d9): the layer tabs read between the name
+            // and the count (`CONTROLS · ?   plain   ctrl   alt   N bindings`).
+            spans.push(Span::raw("   ".to_string()));
+            spans.extend(self.tabs.spans.iter().cloned());
+        }
+        if !self.count.is_empty() {
+            spans.push(Span::styled(format!("  {}", self.count), bold(frame)));
+        }
+        let title = Line::from(spans);
         let (rows, selected) = window_rows(&self.rows, self.selected, self.max_visible);
         let mut body = self.top.clone();
         if let Some(query) = &self.query {
@@ -96,7 +106,7 @@ impl Console {
         render_chrome(
             &Chrome {
                 frame,
-                title: Line::from(vec![Span::styled(title, bold(frame))]),
+                title,
                 right: self.right.clone(),
                 foot: self.hint.clone(),
             },
