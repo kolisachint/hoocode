@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use crate::diff::render_diff;
 use crate::render_utils::{arg_or, invalid_arg_text, str_arg};
 use crate::tool_execution::ToolRenderDefinition;
-use crate::tool_output_view::peek_block;
+use crate::tool_output_view::{peek_block, peek_window, PEEK_LINES};
 use hoocode_home::shorten_path;
 
 /// `EditPreview`: the diff, or why the edit cannot apply.
@@ -46,7 +46,22 @@ struct CallState {
 /// renders the whole diff first and only then trims the rendered lines.
 fn diff_body(diff: &str) -> String {
     let lines: Vec<String> = render_diff(diff).split('\n').map(str::to_string).collect();
-    peek_block(&lines, |shown| shown.to_vec())
+    // The peek window shows the first lines: start at the first change
+    // (keeping one context line above it), so a mid-file edit shows the
+    // edit itself instead of the gap and context above it.
+    let first = lines
+        .iter()
+        .position(|l| {
+            let plain = hoocode_tui_util::strip_vt_control_characters(l);
+            let plain = plain.trim_start();
+            (plain.starts_with('+') || plain.starts_with('-'))
+                && !(plain.starts_with("+++") || plain.starts_with("---"))
+        })
+        .unwrap_or(0);
+    let start = first.saturating_sub(1).min(lines.len());
+    let window = &lines[start..];
+    let shown = &window[..window.len().min(PEEK_LINES)];
+    peek_window(lines.len() - start, shown, |shown| shown.to_vec())
 }
 
 /// (theme, diff, body): the colours come from the theme, so a theme switch
