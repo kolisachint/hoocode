@@ -2707,7 +2707,7 @@ mod tests {
             // The scripted output holds every repaint (the settled
             // frame and the quit card), so the rows are read off the
             // final frame: the last two matches, not a total count.
-            let mut calls: Vec<(usize, &str)> = lines
+            let calls: Vec<(usize, &str)> = lines
                 .iter()
                 .enumerate()
                 .filter(|(_, l)| l.contains("1 call") && (l.contains("● ") || l.contains("⊘ ")))
