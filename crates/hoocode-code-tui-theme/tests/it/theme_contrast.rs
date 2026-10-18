@@ -21,8 +21,9 @@ fn isolate() {
 }
 
 const ACCESSIBLE_THEMES: [&str; 2] = ["colorsafe-dark", "colorsafe-light"];
-const LIGHT_THEMES: [&str; 4] = [
+const LIGHT_THEMES: [&str; 5] = [
     "colorsafe-light",
+    "daylight",
     "light",
     "solarized-light",
     "vox-cutout-light",
@@ -698,10 +699,10 @@ mod the_shipped_roster {
     use super::*;
 
     #[test]
-    fn is_nine_themes_four_light_and_five_dark() {
+    fn is_ten_themes_five_light_and_five_dark() {
         isolate();
         assert_eq!(get_available_themes(), shipped_themes());
-        assert_eq!(LIGHT_THEMES.len(), 4);
+        assert_eq!(LIGHT_THEMES.len(), 5);
         assert_eq!(DARK_THEMES.len(), 5);
     }
 
