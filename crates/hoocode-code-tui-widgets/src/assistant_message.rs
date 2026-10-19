@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -232,6 +233,21 @@ pub struct AssistantMessageComponent {
     /// the trace; the header then omits the time.
     think_start: Option<Instant>,
     think_end: Option<Instant>,
+    /// Width-diagnosis log (`HOOCODE_WIDTH_DEBUG`): resolved once at
+    /// construction, so per-frame rendering does no environment I/O.
+    width_log: Option<PathBuf>,
+    /// The last `(width, source chars, longest source line)` logged, so a
+    /// steady frame does not append a line per render.
+    last_width_log: Option<(u16, usize, usize)>,
+}
+
+/// The width-diagnosis log file: `HOOCODE_WIDTH_DEBUG` set to a path.
+/// Unset or empty disables the logging below entirely.
+fn width_log_path() -> Option<PathBuf> {
+    std::env::var("HOOCODE_WIDTH_DEBUG")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
 }
 
 fn handle<C: Component + 'static>(c: C) -> ComponentHandle {
@@ -268,6 +284,8 @@ impl AssistantMessageComponent {
             streaming: false,
             think_start: None,
             think_end: None,
+            width_log: width_log_path(),
+            last_width_log: None,
         };
         if let Some(message) = message {
             this.update_content(message, false);
@@ -525,8 +543,80 @@ impl AssistantMessageComponent {
     }
 }
 
+impl AssistantMessageComponent {
+    /// Width diagnosis (`HOOCODE_WIDTH_DEBUG`): one appended line per
+    /// distinct `(width, source text)` shape: the width this render was
+    /// given, the longest source-text line it was given, and the longest
+    /// content run it drew. A narrow `out_longest` at a wide `width` with
+    /// a narrow `src_longest` means the text arrived pre-wrapped upstream
+    /// (hard breaks); a narrow `width` means size detection handed down a
+    /// narrow viewport. Never fails rendering: I/O errors are dropped.
+    fn log_width(&mut self, width: u16, lines: &[String]) {
+        let Some(path) = self.width_log.clone() else {
+            return;
+        };
+        let mut src_chars = 0usize;
+        let mut src_longest = 0usize;
+        if let Some(message) = self.last_message.as_ref() {
+            for block in &message.content {
+                let text = match block {
+                    Content::Text(t) => t.text.as_str(),
+                    Content::Thinking(t) => t.thinking.as_str(),
+                    _ => continue,
+                };
+                src_chars += text.len();
+                for line in text.split('\n') {
+                    src_longest = src_longest.max(hoocode_tui_util::visible_width(line));
+                }
+            }
+        }
+        let key = (width, src_chars, src_longest);
+        if self.last_width_log == Some(key) {
+            return;
+        }
+        self.last_width_log = Some(key);
+        let mut out_longest = 0usize;
+        for line in lines {
+            let plain = hoocode_tui_util::strip_vt_control_characters(line);
+            out_longest = out_longest.max(hoocode_tui_util::visible_width(plain.trim_end()));
+        }
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            use std::io::Write;
+            let _ = writeln!(
+                file,
+                "assistant-message render width={width} rail={} src_chars={src_chars} \
+                 src_longest={src_longest} out_lines={} out_longest={out_longest}",
+                u8::from(self.rail),
+                lines.len(),
+            );
+        }
+    }
+}
+
 impl Component for AssistantMessageComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
+        let lines = self.render_inner(width);
+        self.log_width(width, &lines);
+        lines
+    }
+
+    fn invalidate(&mut self) {
+        // Cached blocks may be detached right now; drop their caches too.
+        for entry in self.markdown_cache.values() {
+            entry.md.borrow_mut().invalidate();
+        }
+        self.content.invalidate();
+        self.refresh();
+    }
+}
+
+impl AssistantMessageComponent {
+    /// The render body, without the width-diagnosis logging.
+    fn render_inner(&mut self, width: u16) -> Vec<String> {
         // One palette per render pass, passed down to every row.
         let palette = Palette::current();
         if self.thinking_display == ThinkingDisplay::Omit {
@@ -563,15 +653,6 @@ impl Component for AssistantMessageComponent {
             return lines;
         }
         wrap_zone(lines)
-    }
-
-    fn invalidate(&mut self) {
-        // Cached blocks may be detached right now; drop their caches too.
-        for entry in self.markdown_cache.values() {
-            entry.md.borrow_mut().invalidate();
-        }
-        self.content.invalidate();
-        self.refresh();
     }
 }
 
@@ -673,5 +754,86 @@ mod tests {
             .markdown_cache
             .keys()
             .any(|k| matches!(k, BlockKey::Segment { .. })));
+    }
+
+    fn prose_message(text: String) -> AssistantMessage {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        AssistantMessage {
+            content: vec![Content::text(text)],
+            ..Default::default()
+        }
+    }
+
+    /// Visible width of each rendered line, and of its content before the
+    /// renderer's trailing padding. Zone markers and styling are stripped.
+    fn line_extents(lines: &[String]) -> Vec<(usize, usize)> {
+        lines
+            .iter()
+            .map(|line| {
+                let plain = hoocode_tui_util::strip_vt_control_characters(line);
+                (
+                    hoocode_tui_util::visible_width(&plain),
+                    hoocode_tui_util::visible_width(plain.trim_end()),
+                )
+            })
+            .collect()
+    }
+
+    /// The render path hands the full body width to Markdown, which wraps
+    /// at width-2 and pads back to the full width: unwrapped prose on a
+    /// wide terminal must run far past column 100, not wrap there.
+    #[test]
+    fn wide_unwrapped_prose_wraps_at_full_width() {
+        let text = (0..300)
+            .map(|n| format!("word{n}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let message = prose_message(text);
+        let mut component = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
+        component.update_content(&message, false);
+        let lines = component.render(200);
+        let extents = line_extents(&lines);
+        let content: Vec<(usize, usize)> = extents
+            .into_iter()
+            .filter(|(_, content)| *content > 0)
+            .collect();
+        assert!(!content.is_empty(), "prose renders content lines");
+        for (width, _) in &content {
+            assert_eq!(*width, 200, "content lines pad to the full width");
+        }
+        let widest = content.iter().map(|(_, c)| *c).max().unwrap_or(0);
+        assert!(
+            widest > 150,
+            "prose wraps near the full width, not ~100 (widest {widest})"
+        );
+    }
+
+    /// The reported symptom — text ending near column 100 with padding to
+    /// the edge on a wide terminal — reproduces if and only if the text
+    /// arrives pre-wrapped with hard breaks: the renderer cannot unwrap
+    /// them, it only pads each short line out to the full width.
+    #[test]
+    fn prewrapped_prose_keeps_narrow_breaks_with_full_width_padding() {
+        let line = "a ".repeat(50);
+        assert_eq!(line.len(), 100);
+        let text = vec![line.as_str(); 5].join("\n");
+        let message = prose_message(text);
+        let mut component = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
+        component.update_content(&message, false);
+        let lines = component.render(200);
+        let extents = line_extents(&lines);
+        let content: Vec<(usize, usize)> = extents
+            .into_iter()
+            .filter(|(_, content)| *content > 0)
+            .collect();
+        assert!(!content.is_empty(), "prose renders content lines");
+        for (width, _) in &content {
+            assert_eq!(*width, 200, "short lines pad all the way to the edge");
+        }
+        let widest = content.iter().map(|(_, c)| *c).max().unwrap_or(0);
+        assert!(
+            widest <= 101,
+            "hard breaks survive rendering (widest {widest})"
+        );
     }
 }
