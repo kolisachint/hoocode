@@ -25,9 +25,15 @@ let bin;
 try {
 	bin = require.resolve(`${pkg}/bin/hoocode`);
 } catch {
+	// This launcher ships under two names (`hoocode` and `@kolisachint/hoocode`),
+	// so the reinstall hint uses whichever one installed this copy.
+	let selfName = "@kolisachint/hoocode";
+	try {
+		selfName = require("../package.json").name;
+	} catch {}
 	console.error(`hoocode: the platform package ${pkg} is not installed.`);
 	console.error("It is an optional dependency; reinstall without --no-optional / --omit=optional:");
-	console.error("  npm install -g @kolisachint/hoocode");
+	console.error(`  npm install -g ${selfName}`);
 	process.exit(1);
 }
 
