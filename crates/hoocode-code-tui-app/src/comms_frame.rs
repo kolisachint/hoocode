@@ -15,12 +15,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use hoocode_code_agent_session::format::format_tokens;
+use hoocode_code_agent_session::format::{format_tokens, js_to_fixed};
 use hoocode_code_tui_keybindings::key_display_text;
+use hoocode_code_tui_theme::session_color_token;
 use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::core::buffer::Buffer;
 use hoocode_tui_ratatui::core::layout::Rect;
-use hoocode_tui_ratatui::core::style::Style;
+use hoocode_tui_ratatui::core::style::{Color, Style};
 use hoocode_tui_ratatui::{bold, paint, Palette, RatatuiComponent};
 use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::{truncate_to_width, visible_width};
@@ -28,6 +29,7 @@ use hoocode_tui_util::{truncate_to_width, visible_width};
 use crate::footer::{FooterSource, ToolOutputView};
 use crate::footer_data::FooterDataProvider;
 use crate::hull_paint::HullPaint;
+use crate::session_chip::{render_session_chip, session_chip_fits};
 
 /// The READY placeholder: what the empty prompt invites. Short on purpose:
 /// the `/`, `@` and `!` keys get their own suggestion row.
@@ -354,22 +356,31 @@ impl ChromeData {
         plan_mode: bool,
         input_total: u64,
         output_total: u64,
+        session_name: &str,
+        session_color_slot: u8,
+        context: Option<(u64, Option<f64>)>,
+        model_window: u64,
         has_queue: bool,
         width: usize,
     ) -> Self {
-        // The hull paint (`/color`, M8e5) is the frame's right label, and
-        // the frame title and border take its colour.
+        // The hull paint (`/color`, M8e5) keeps the frame's right label;
+        // otherwise the session chip rides top-right (the plain name when
+        // the chip doesn't fit the width). The frame title and border take
+        // the paint's colour either way.
         let paint = hull.map(|hull| palette.style(hull.token()));
         let frame = state.frame_style(palette, paint);
-        let label = match hull {
-            Some(hull) => Seg::new(paint.unwrap_or_else(|| palette.acc()), hull.name()),
-            None => Seg::new(palette.acc(), "app-edit"),
+        let right: Vec<Seg> = match hull {
+            Some(hull) => vec![Seg::new(
+                paint.unwrap_or_else(|| palette.acc()),
+                hull.name(),
+            )],
+            None => session_label(palette, session_name, session_color_slot, width),
         };
         let top = edge_runs(
             frame,
             ('┏', '┓'),
             &spaced(state.title_segs(palette, paint)),
-            &[label],
+            &right,
             width,
         );
         let mut foot = match view {
@@ -390,17 +401,75 @@ impl ChromeData {
             ));
             foot.push(Seg::new(palette.dim(), "edit queue"));
         }
-        let footr = Seg::new(
-            palette.dim(),
-            &format!(
-                "↑{} ↓{}",
-                format_tokens(input_total),
-                format_tokens(output_total)
-            ),
-        );
-        let bottom = edge_runs(frame, ('┗', '┛'), &spaced(foot), &[footr], width);
+        let footr = foot_totals(palette, input_total, output_total, context, model_window);
+        let bottom = edge_runs(frame, ('┗', '┛'), &spaced(foot), &footr, width);
         Self { top, bottom }
     }
+}
+
+/// The top-right label: the session chip (` name `, filled with the
+/// session's colour) when it fits, else the plain session name. An empty
+/// name keeps the old `app-edit` fallback.
+fn session_label(palette: &Palette, name: &str, color_slot: u8, width: usize) -> Vec<Seg> {
+    if session_chip_fits(width) {
+        if let Some(chip) = render_session_chip(name, i64::from(color_slot)) {
+            return vec![Seg::new(session_chip_style(palette, color_slot), &chip.plain)];
+        }
+    }
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        vec![Seg::new(palette.acc(), "app-edit")]
+    } else {
+        vec![Seg::new(palette.acc(), trimmed)]
+    }
+}
+
+/// The chip's style: dark text on the session colour, bold — the same
+/// reversed chip the HUD uses. Without a background fill, bold default.
+fn session_chip_style(palette: &Palette, color_slot: u8) -> Style {
+    let fill = palette.fill(session_color_token(i64::from(color_slot)));
+    if fill.bg.is_some() {
+        return bold(fill.fg(Color::Black));
+    }
+    bold(Style::default())
+}
+
+/// The bottom-right totals: `↑in ↓out · {pct}% of {window}`, reusing the
+/// footer's formatters. The context tail draws last, so `truncate_segs`
+/// cuts it before the totals on short rows. No window anywhere (no usage
+/// and no model window): just the totals.
+fn foot_totals(
+    palette: &Palette,
+    input_total: u64,
+    output_total: u64,
+    context: Option<(u64, Option<f64>)>,
+    model_window: u64,
+) -> Vec<Seg> {
+    let mut segs = vec![Seg::new(
+        palette.dim(),
+        &format!(
+            "↑{} ↓{}",
+            format_tokens(input_total),
+            format_tokens(output_total)
+        ),
+    )];
+    let window = context
+        .map(|(window, _)| window)
+        .filter(|window| *window > 0)
+        .unwrap_or(model_window);
+    if window > 0 {
+        let percent = match context {
+            Some((_, Some(percent))) => format!("{}%", js_to_fixed(percent, 0)),
+            Some((_, None)) => "?".to_string(),
+            None => format!("{}%", js_to_fixed(0.0, 0)),
+        };
+        segs.push(Seg::new(palette.faint(), " · "));
+        segs.push(Seg::new(
+            palette.dim(),
+            &format!("{percent} of {}", format_tokens(window)),
+        ));
+    }
+    segs
 }
 
 /// Draws one edge row's runs left to right, clipping at the row's width.
@@ -489,6 +558,14 @@ impl Component for CommsFrame {
         (self.set_input)(state.input_style());
         let palette = Palette::current();
         let (input_total, output_total, _, _, _) = self.source.usage_totals();
+        let session_name = self.source.display_name();
+        let session_color_slot = self.source.session_color_slot();
+        let context = self.source.context_usage();
+        let model_window = self
+            .source
+            .model()
+            .map(|model| model.context_window)
+            .unwrap_or(0);
         let plan_mode = self.data.get_active_mode() == "plan";
         let hull = self.data.get_hull_paint();
         let frame = state.frame_style(&palette, hull.map(|hull| palette.style(hull.token())));
@@ -501,6 +578,10 @@ impl Component for CommsFrame {
             plan_mode,
             input_total,
             output_total,
+            &session_name,
+            session_color_slot,
+            context,
+            model_window,
             !(steering.is_empty() && follow_up.is_empty()),
             width as usize,
         );

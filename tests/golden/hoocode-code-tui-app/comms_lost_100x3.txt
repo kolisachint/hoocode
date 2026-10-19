@@ -1,6 +1,6 @@
-┏━ ⊗ COMMS LOST · enter hail again · alt+m switch ship ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ app-edit ━┓
+┏━ ⊗ COMMS LOST · enter hail again · alt+m switch ship ━━━━━━━━━━━━━━━━━━━━━━━━━━━  amber-harbor  ━┓
 ┃ ▸ press enter to hail again                                                                      ┃
-┗━ peek ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ↑48k ↓9.8k ━┛
+┗━ peek ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ↑48k ↓9.8k · 42% of 200k ━┛
 --- styles ---
 r0 c0-1 fg=#d58181
 r0 c3 fg=#d58181
@@ -11,8 +11,8 @@ r0 c24-33 fg=#989898
 r0 c35 fg=#a8a8a8
 r0 c37-41 fg=#e5e5e7
 r0 c43-53 fg=#989898
-r0 c55-87 fg=#d58181
-r0 c89-96 fg=#5cc8bb
+r0 c55-81 fg=#d58181
+r0 c83-96 fg=0 bg=#7aa2f7 bold
 r0 c98-99 fg=#d58181
 r1 c0 fg=#d58181
 r1 c2-3 fg=#d58181
@@ -20,6 +20,8 @@ r1 c4-28 fg=#a8a8a8
 r1 c99 fg=#d58181
 r2 c0-1 fg=#d58181
 r2 c3-6 fg=#989898
-r2 c8-85 fg=#d58181
-r2 c87-96 fg=#989898
+r2 c8-71 fg=#d58181
+r2 c73-82 fg=#989898
+r2 c83-85 fg=#a8a8a8
+r2 c86-96 fg=#989898
 r2 c98-99 fg=#d58181

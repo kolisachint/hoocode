@@ -155,10 +155,10 @@ fn ready_shows_the_title_placeholder_and_foot() {
     let rows = rows(&mut ready(), 100);
     assert_eq!(rows.len(), 3, "{rows:?}");
     assert!(rows[0].starts_with("┏━ READY "), "row 0: {:?}", rows[0]);
-    assert!(rows[0].ends_with(" app-edit ━┓"), "row 0: {:?}", rows[0]);
+    assert!(rows[0].contains(" amber-harbor "), "row 0 shows the session chip: {:?}", rows[0]);
     assert!(rows[1].contains(READY_PLACEHOLDER), "row 1: {:?}", rows[1]);
     assert!(rows[2].contains("peek"), "row 2: {:?}", rows[2]);
-    assert!(rows[2].contains("↑48k ↓9.8k"), "row 2: {:?}", rows[2]);
+    assert!(rows[2].contains("↑48k ↓9.8k · 42% of 200k"), "row 2: {:?}", rows[2]);
 }
 
 #[test]
