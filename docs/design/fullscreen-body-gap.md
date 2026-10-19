@@ -29,8 +29,9 @@ padding while the transcript stays whole.
 body every row the top and bottom do not take: body 16 → 12 as the bottom
 goes 2 → 6. Live, `body_start` (`fullscreen.rs:77`) returns
 `total.saturating_sub(rows)` — 0 for a short transcript — and the composer
-pads the short window with `""` (`crates/hoocode-tui-render/src/tui.rs:2263`).
-Blank rows exist if and only if transcript lines < body rows.
+bottom-anchors the short window, padding `rows.body - window.len()` blank
+rows above it (`crates/hoocode-tui-render/src/tui.rs:2294`). Blank rows
+exist if and only if transcript lines < body rows.
 
 ## Suspects cleared
 
@@ -65,6 +66,29 @@ transcript (hides the newest messages), or shrink the panel (hides
 information) — all violate the spec or the no-regression constraint. The
 recovery the symptom asks for already happens: the panel's rows come out of
 the former padding, never out of the transcript.
+
+## Follow-up: bottom-anchored live short transcript (2026-10-19)
+
+Revisited per the user's screenshot (transcript ends at `Elapsed 0.0s`,
+blank rows, then the minimized FLIGHT PLAN): a live short transcript now
+bottom-anchors, so its tail sits directly above the bottom chrome and the
+blank rows pad above it. This intentionally revisits the M1 top-alignment
+(`docs/design/mission-control.md:407`) for the live short-transcript case
+only. Scope, in `compose_fullscreen` (`tui.rs:2294`):
+
+- Live (`scroll_offset` is `None`) and `total < rows.body`: pad
+  `rows.body - window.len()` blank rows above, then the transcript lines.
+- Pinned (`scroll_offset` is `Some`): unchanged, the window stays top-held.
+- `total >= rows.body`: unchanged, the tail already fills the body.
+- Scrollbar stays blank while live; the toast still floats on the first
+  body row (over a blank pad row is fine); the search query is empty while
+  live, so no highlight shifts.
+
+The three `fullscreen_body_gap` tests pin the new accounting (blanks above
+the transcript; panel and prompt contiguous below it), and the minimized /
+expanded counts now read: minimized → body 24, 4 blanks above the 20-row
+transcript; expanded (10-row console) → body 15, tail fills it, zero
+blanks.
 
 ## Follow-up: minimized panel (no reservation there either)
 

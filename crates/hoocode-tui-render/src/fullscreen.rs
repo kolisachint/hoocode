@@ -73,7 +73,9 @@ pub fn body_width(width: usize) -> usize {
 
 /// First body row to show in a window of `rows` rows over `total` body rows.
 /// Live (`pinned_top` is `None`) follows the tail. Pinned holds the top row,
-/// clamped to the tail. A short transcript starts at row 0.
+/// clamped to the tail. A short transcript starts at row 0; live, the
+/// composer pads the blank rows above it so its tail sits just above the
+/// bottom chrome.
 pub fn body_start(total: usize, rows: usize, pinned_top: Option<usize>) -> usize {
     let last = total.saturating_sub(rows);
     pinned_top.map_or(last, |top| top.min(last))
