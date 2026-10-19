@@ -26,6 +26,10 @@ VERSION_MARKER = 'version = "0.0.0"'
 
 
 def build(version: str, out: Path) -> None:
+    # `--outdir` is interpreted relative to the build backend's cwd (the
+    # staging dir below), so resolve it first: a relative out-dir would
+    # otherwise land inside the staging dir and vanish with it.
+    out = out.resolve()
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
