@@ -421,6 +421,12 @@ pub struct Tui {
     /// Set by [`Self::reset_new_lines_count`]: the next full-screen frame starts
     /// the `N new` count at the transcript as it is then.
     fullscreen_seen_reset: bool,
+    /// Width-diagnosis log (`HOOCODE_WIDTH_DEBUG`): resolved once at
+    /// construction, so per-frame painting does no environment I/O.
+    width_log: Option<std::path::PathBuf>,
+    /// The last `(paint site, columns, rows)` logged, so a steady screen
+    /// does not append a line per frame.
+    last_paint_log: Option<(&'static str, u16, u16)>,
 }
 
 /// One composed full-screen frame: the rows as they are written, and the
@@ -479,6 +485,47 @@ impl Tui {
             started: false,
             fullscreen_seen_total: 0,
             fullscreen_seen_reset: false,
+            width_log: std::env::var("HOOCODE_WIDTH_DEBUG")
+                .ok()
+                .filter(|v| !v.is_empty())
+                .map(std::path::PathBuf::from),
+            last_paint_log: None,
+        }
+    }
+
+    /// Width diagnosis (`HOOCODE_WIDTH_DEBUG`): one appended line per
+    /// distinct `(site, size)` shape: what `terminal.columns()` reports at
+    /// paint time, and the `$COLUMNS` fallback it would use if measuring
+    /// failed. Compare with the assistant-message lines: a narrow paint
+    /// size here means size detection (tty measure, `$COLUMNS`,
+    /// multiplexer pane) handed down a narrow viewport; a wide size here
+    /// with narrow source text there means pre-wrapped upstream text.
+    /// Never fails painting: I/O errors are dropped.
+    fn log_paint(&mut self, site: &'static str) {
+        let Some(path) = self.width_log.clone() else {
+            return;
+        };
+        let columns = self.terminal.columns();
+        let rows = self.terminal.rows();
+        let key = (site, columns, rows);
+        if self.last_paint_log == Some(key) {
+            return;
+        }
+        self.last_paint_log = Some(key);
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            use std::io::Write;
+            let _ = writeln!(
+                file,
+                "tui paint site={site} columns={columns} rows={rows} \
+                 COLUMNS={} fullscreen={} pinned={}",
+                std::env::var("COLUMNS").unwrap_or_default(),
+                u8::from(self.fullscreen),
+                u8::from(self.scroll_offset.is_some()),
+            );
         }
     }
 
@@ -1587,6 +1634,7 @@ impl Tui {
     /// A live paint: a full redraw when the screen cannot be diffed, else the
     /// rows that changed since the last frame.
     fn paint_live(&mut self) {
+        self.log_paint("live");
         let forced = std::mem::take(&mut self.force_redraw);
         let width = self.terminal.columns() as i64;
         let height = self.terminal.rows() as i64;
@@ -2006,6 +2054,7 @@ impl Tui {
     /// differential): at most a screenful inside one synchronized block. The
     /// differential state is left as the last live frame left it.
     fn render_scroll_view(&mut self) {
+        self.log_paint("scroll");
         let width = self.terminal.columns() as i64;
         let height = self.terminal.rows() as i64;
         // The transcript gives up its last column to the scrollbar.
@@ -2091,6 +2140,7 @@ impl Tui {
     /// the last frame are written. Nothing is written below the last row, and
     /// autowrap is off, so no row scrolls into the terminal's scrollback.
     fn paint_fullscreen(&mut self) {
+        self.log_paint("fullscreen");
         let width = self.terminal.columns() as usize;
         let height = self.terminal.rows() as usize;
         let forced = std::mem::take(&mut self.force_redraw);
