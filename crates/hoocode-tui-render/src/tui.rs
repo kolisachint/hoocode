@@ -2285,12 +2285,21 @@ impl Tui {
                 (row, (c.col.max(0) as usize).min(width.saturating_sub(1)))
             });
 
-        let window_lines: Vec<String> = body_lines
+        let mut window_lines: Vec<String> = body_lines
             .iter()
             .skip(start)
             .take(rows.body)
             .map(|line| strip_cursor_marker(line))
             .collect();
+        // Live with a short transcript: bottom-anchor the tail just above the
+        // bottom chrome, padding the blank rows above it (M1 top-alignment
+        // revisited for this case only). Pinned keeps the top-held window, and
+        // a transcript that fills the body is already tail-aligned.
+        if !pinned && window_lines.len() < rows.body {
+            let mut padded = vec![String::new(); rows.body - window_lines.len()];
+            padded.append(&mut window_lines);
+            window_lines = padded;
+        }
         // The scrollbar shows while pinned only: the column is blank while live.
         let glyphs = if pinned {
             scrollbar_glyphs(rows.body as i64, total as i64, start as i64)

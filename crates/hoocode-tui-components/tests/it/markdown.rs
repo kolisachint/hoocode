@@ -414,6 +414,32 @@ mod tables {
     }
 
     #[test]
+    fn should_stretch_narrow_table_to_fill_available_width() {
+        let _g = lock();
+        let lines = render_trimmed("| A | B |\n| --- | --- |\n| 1 | 2 |", 80);
+        let rows: Vec<&String> = lines.iter().filter(|l| l.starts_with('│')).collect();
+        assert!(!rows.is_empty());
+        for row in rows {
+            assert_eq!(row.chars().count(), 80, "{row:?}");
+        }
+    }
+
+    #[test]
+    fn should_stretch_wider_columns_more_than_narrow_ones() {
+        let _g = lock();
+        let lines = render_trimmed("| Name | Age |\n| --- | --- |\n| Alice | 30 |", 40);
+        let header = lines
+            .iter()
+            .find(|l| l.contains("Name") && l.contains("Age"))
+            .expect("header");
+        assert_eq!(header.chars().count(), 40, "{header:?}");
+        let segments: Vec<&str> = header.split('│').collect();
+        let name_width = segments[1].chars().count();
+        let age_width = segments[2].chars().count();
+        assert!(name_width > age_width, "{header:?}");
+    }
+
+    #[test]
     fn should_not_add_a_trailing_blank_line_when_table_is_the_last_rendered_block() {
         let _g = lock();
         let lines = render_trimmed("| Name |\n| --- |\n| Alice |", 80);
