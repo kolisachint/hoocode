@@ -150,7 +150,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2291 / 0 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 2129 / 746 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2414 / 1823 | keep |
-| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 10104 / 10418 | keep |
+| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 10104 / 10443 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1112 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1074 / 125 | keep |
 | `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 3028 / 1463 | keep |

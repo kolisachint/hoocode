@@ -1304,16 +1304,25 @@ async fn slash_subagent_passes_the_session_model_as_inherited_not_asked() {
 
 // AgentOutput cancel (2026-10-10, user decision: 2h subagents + cancel).
 
-/// A child that sits until its process group is killed.
-fn sleeper_child(dir: &Path) -> PathBuf {
+/// A child that signals it is really running, then sits until killed.
+/// The ready file proves the child process itself was spawned: the pool
+/// reports `Running` while the task is still in `starting`, before any
+/// child exists, and a cancel landing in that window misses and reports
+/// the task already finished.
+fn sleeper_child(dir: &Path) -> (PathBuf, PathBuf) {
     let path = dir.join("mock-sleeper.sh");
-    std::fs::write(&path, "#!/bin/sh\nsleep 30\n").unwrap();
+    let ready = dir.join("mock-sleeper.ready");
+    std::fs::write(
+        &path,
+        format!("#!/bin/sh\ntouch \"{}\"\nsleep 30\n", ready.display()),
+    )
+    .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    path
+    (path, ready)
 }
 
 async fn wait_until_running(pool: &SubagentPool, task_id: &str) {
@@ -1324,6 +1333,18 @@ async fn wait_until_running(pool: &SubagentPool, task_id: &str) {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
     panic!("{task_id} never started running");
+}
+
+/// The mock sleeper touches its ready file as its first act, so this
+/// proves the child holds a live slot (with a pid cancel can kill).
+async fn wait_until_spawned(ready: &Path) {
+    for _ in 0..1000 {
+        if ready.exists() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("{} never appeared", ready.display());
 }
 
 #[test]
@@ -1342,7 +1363,8 @@ async fn agent_output_cancel_stops_a_running_task() {
     isolate_agent_dir();
     let dir = tempfile::tempdir().unwrap();
     let cwd = dir.path().canonicalize().unwrap();
-    let pool = install_pool(&cwd, sleeper_child(&cwd));
+    let (sleeper, ready) = sleeper_child(&cwd);
+    let pool = install_pool(&cwd, sleeper);
     let inbox = subagent_inbox();
     inbox.clear();
     let task_id = "cancel-running";
@@ -1364,6 +1386,9 @@ async fn agent_output_cancel_stops_a_running_task() {
         })
     };
     wait_until_running(&pool, task_id).await;
+    // `Running` covers the pre-spawn `starting` window, where cancel misses.
+    // Only the child's own signal means a live process is waiting to be killed.
+    wait_until_spawned(&ready).await;
 
     let tool = create_task_output_tool_definition();
     let r = execute(
