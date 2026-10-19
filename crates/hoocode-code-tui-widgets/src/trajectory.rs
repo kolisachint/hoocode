@@ -28,7 +28,7 @@ use hoocode_tui_render::Component;
 use crate::tool_output_view::ToolOutputView;
 #[cfg(test)]
 use hoocode_tui_util::visible_width;
-use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width};
+use hoocode_tui_util::{strip_vt_control_characters, wrap_text_with_ansi};
 
 /// Draws one row of `spans` through a ratatui buffer exactly `width`
 /// wide, clipping (never truncating) at the edge. For rows laid out
@@ -634,9 +634,10 @@ pub fn diff_counts_text(added: usize, removed: usize) -> String {
 }
 
 /// The mission header: `▲ M1  prompt`, the `▲` and `M1` in the `you` colour.
-/// A skill chip (`✦ name`) sits right-aligned. The prompt is cut with `…`
-/// when it does not fit beside the chip. In radar view the header draws the
-/// mission's flight-log row instead (M5); see `radar`.
+/// A skill chip (`✦ name`) sits right-aligned. The prompt is never cut: it
+/// wraps across continuation band rows so the whole mission stays visible.
+/// In radar view the header draws the mission's flight-log row instead (M5);
+/// see `radar`.
 #[derive(Debug)]
 pub struct MissionHeader {
     seq: usize,
@@ -649,10 +650,10 @@ pub struct MissionHeader {
 
 impl MissionHeader {
     pub fn new(seq: usize, prompt: &str, skill: Option<&str>) -> Self {
-        // One line: the prompt's first line, flattened.
+        // The full prompt: peek wraps it across band rows, never cutting it.
         Self {
             seq,
-            prompt: first_line(prompt),
+            prompt: prompt.to_string(),
             skill: skill.map(str::to_string),
             view: ToolOutputView::Peek,
             flight: None,
@@ -725,13 +726,34 @@ impl Component for MissionHeader {
         let prompt_budget = width.saturating_sub(
             spans_width(&spans) + spans_width(&chip) + usize::from(!chip.is_empty()),
         );
-        // The prompt is plain text, so the string cut and the span cut are
-        // the same cells; the resets a cut adds are stripped.
-        let prompt =
-            truncate_to_width(&self.prompt, prompt_budget, "…", false).replace("\x1b[0m", "");
-        spans.push(Span::styled(prompt, bold(palette.ink())));
-        let line = band_row(spans, chip, width, bg);
-        let lines = vec![line];
+        // The prompt is never cut: it wraps across continuation band rows
+        // (same `bg`, indented to the prefix width, prompt text only) so
+        // the whole mission stays visible. No room (or an empty prompt)
+        // keeps today's single row.
+        if prompt_budget == 0 || self.prompt.is_empty() {
+            spans.push(Span::styled(self.prompt.clone(), bold(palette.ink())));
+            let line = band_row(spans, chip, width, bg);
+            let lines = vec![line];
+            let key = u16::try_from(width).unwrap_or(u16::MAX);
+            self.cache.borrow_mut().set(key, theme, lines.clone());
+            return lines;
+        }
+        let mut wrapped: Vec<String> = Vec::new();
+        for source in self.prompt.split('\n') {
+            wrapped.extend(wrap_text_with_ansi(source, prompt_budget));
+        }
+        let indent = " ".repeat(spans_width(&spans));
+        let mut lines = Vec::with_capacity(wrapped.len());
+        for (index, piece) in wrapped.into_iter().enumerate() {
+            let mut row = if index == 0 {
+                spans.clone()
+            } else {
+                vec![Span::styled(indent.clone(), Style::default())]
+            };
+            row.push(Span::styled(piece, bold(palette.ink())));
+            let right = if index == 0 { chip.clone() } else { Vec::new() };
+            lines.push(band_row(row, right, width, bg));
+        }
         let key = u16::try_from(width).unwrap_or(u16::MAX);
         self.cache.borrow_mut().set(key, theme, lines.clone());
         lines
@@ -832,5 +854,38 @@ mod tests {
         assert!(bare.contains("check wrap.rs"), "{bare}");
         assert!(bare.contains("review"), "{bare}");
         assert_eq!(visible_width(&line), 100);
+    }
+
+    #[test]
+    fn mission_header_wraps_long_prompts_instead_of_cutting() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let prompt =
+            "fix the overflow bug in the wrap helper so long mission prompts never get cut";
+        let mut header = MissionHeader::new(1, prompt, Some("review"));
+        let lines = header.render(40);
+        let bare = strip_vt_control_characters(&lines.join("\n"));
+        assert!(lines.len() >= 2, "{bare}");
+        assert!(!bare.contains('…'), "{bare}");
+        let flat = bare.split_whitespace().collect::<Vec<_>>().join(" ");
+        for word in prompt.split_whitespace() {
+            assert!(flat.contains(word), "{bare}");
+        }
+        assert!(bare.contains("review"), "{bare}");
+        for line in &lines {
+            assert_eq!(visible_width(line), 40);
+        }
+    }
+
+    #[test]
+    fn mission_header_keeps_every_prompt_line() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let mut header =
+            MissionHeader::new(2, "first half of the mission\nsecond half of it", None);
+        let lines = header.render(80);
+        let bare = strip_vt_control_characters(&lines.join("\n"));
+        assert!(lines.len() >= 2, "{bare}");
+        assert!(!bare.contains('…'), "{bare}");
+        assert!(bare.contains("first half of the mission"), "{bare}");
+        assert!(bare.contains("second half of it"), "{bare}");
     }
 }
