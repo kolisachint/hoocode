@@ -11,6 +11,7 @@ pub(crate) fn global_theme_lock() -> MutexGuard<'static, ()> {
     LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+mod auto_theme;
 mod gold;
 mod schema;
 mod theme_color_switch;
