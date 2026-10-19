@@ -230,6 +230,70 @@ fn strs(value: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Merge consecutive subagent-child text deltas into one JSONL line.
+///
+/// A `--mode json --task-id` child coalesces assistant text through
+/// `DeltaCoalescer` (100ms window in `hoocode-code-subagents::live`), so where
+/// one `message_update` line ends and the next starts depends on scheduling,
+/// not on the run: macOS emits `" the file starts with al" + "pha and
+/// beta."` where Linux emits one line. The concatenated text is
+/// deterministic, so the harness joins adjacent child-shaped text deltas
+/// before masking and snapshotting. Only the child's shape matches: exactly
+/// `{"type":"message_update","assistantMessageEvent":{"type":"text_delta",
+/// "delta":...}}`. Regular json/rpc deltas carry `partial`/`message`
+/// payloads (one SSE event per line, deterministic) and are left alone.
+fn merge_child_text_deltas(raw_stdout: &str) -> String {
+    fn child_delta(line: &str) -> Option<(Value, String)> {
+        let value: Value = serde_json::from_str(line).ok()?;
+        let obj = value.as_object()?;
+        if obj.get("type").and_then(Value::as_str) != Some("message_update") {
+            return None;
+        }
+        if obj.len() != 2 || !obj.contains_key("assistantMessageEvent") {
+            return None;
+        }
+        let event = obj.get("assistantMessageEvent")?.as_object()?;
+        if event.get("type").and_then(Value::as_str) != Some("text_delta") {
+            return None;
+        }
+        if event.len() != 2 || !event.contains_key("delta") {
+            return None;
+        }
+        let delta = event.get("delta")?.as_str()?.to_string();
+        Some((value, delta))
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    let mut pending: Option<(Value, String)> = None;
+    let flush = |pending: &mut Option<(Value, String)>, out: &mut Vec<String>| {
+        if let Some((mut value, delta)) = pending.take() {
+            if let Some(event) = value
+                .get_mut("assistantMessageEvent")
+                .and_then(Value::as_object_mut)
+            {
+                event.insert("delta".to_string(), Value::from(delta));
+            }
+            out.push(compact(&value));
+        }
+    };
+    for line in raw_stdout.split('\n') {
+        match child_delta(line) {
+            Some((_, delta)) if pending.is_some() => {
+                pending.as_mut().expect("pending").1.push_str(&delta);
+            }
+            Some(first) => {
+                pending = Some(first);
+            }
+            None => {
+                flush(&mut pending, &mut out);
+                out.push(line.to_string());
+            }
+        }
+    }
+    flush(&mut pending, &mut out);
+    out.join("\n")
+}
+
 /// `normalize_jsonl`: one JSON value per line, key order kept; scalars masked by
 /// key anywhere (`mask_keys`, default timestamp) and whole fields per event type
 /// (`mask_fields`); then the text rules.
@@ -351,7 +415,7 @@ fn render(sc: &Value, raw: &RawRun) -> String {
     match sc.get("stdout_jsonl") {
         Some(opts) if !opts.is_null() => parts.push(format!(
             "## stdout (jsonl)\n{}",
-            normalize_jsonl(&raw.stdout, &normalizer, opts)
+            normalize_jsonl(&merge_child_text_deltas(&raw.stdout), &normalizer, opts)
         )),
         _ => parts.push(format!("## stdout\n{}", normalizer.apply_text(&raw.stdout))),
     }
@@ -729,6 +793,24 @@ replay_tests! {
     print_tool_read_light => "print-tool-read-light",
     rpc_basic => "rpc-basic",
     rpc_session => "rpc-session",
+}
+
+#[test]
+fn child_text_deltas_merge_regardless_of_chunking() {
+    // The macOS split and the Linux single line must normalize identically.
+    let linux = "{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"Summary:\"}}\n{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\" the file starts with alpha and beta.\"}}\n";
+    let macos = "{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"Summary:\"}}\n{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\" the file starts with al\"}}\n{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"pha and beta.\"}}\n";
+    let merged = "{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"Summary: the file starts with alpha and beta.\"}}\n";
+    assert_eq!(merge_child_text_deltas(linux).trim_end(), merged.trim_end());
+    assert_eq!(merge_child_text_deltas(macos).trim_end(), merged.trim_end());
+
+    // A message_end between deltas keeps the two messages apart.
+    let two = "{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"ab\"}}\n{\"type\":\"message_end\",\"message\":{}}\n{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"delta\":\"cd\"}}\n";
+    assert_eq!(merge_child_text_deltas(two).trim_end(), two.trim_end());
+
+    // Regular json/rpc deltas carry partial/message payloads: untouched.
+    let rich = "{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"text_delta\",\"contentIndex\":0,\"delta\":\"ab\",\"partial\":\"<masked>\"},\"message\":\"<masked>\"}\n";
+    assert_eq!(merge_child_text_deltas(rich).trim_end(), rich.trim_end());
 }
 
 #[test]
