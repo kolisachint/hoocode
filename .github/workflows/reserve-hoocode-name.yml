@@ -37,7 +37,7 @@ jobs:
           EOF
           cat > bin/hoocode.js <<'EOF'
           #!/usr/bin/env node
-          console.log("This is a placeholder for hoocode. Install the current build with:\n  npm install -g @kolisachint/hoocode-agent");
+          console.log("This is a placeholder for hoocode. Install the current build with:\n  npm install -g hoocode");
           EOF
           chmod +x bin/hoocode.js
           cat > README.md <<'EOF'
@@ -46,7 +46,7 @@ jobs:
           Reserved name for the hoocode coding agent (https://github.com/kolisachint/hoocode).
           Until a release ships under this name, install the current build:
 
-              npm install -g @kolisachint/hoocode-agent
+              npm install -g hoocode
           EOF
       - name: Publish
         working-directory: pkg
@@ -95,7 +95,7 @@ jobs:
           Reserved name for the hoocode coding agent (https://github.com/kolisachint/hoocode).
           Until a release ships under this name, install the current build:
 
-              npm install -g @kolisachint/hoocode-agent
+              pip install hoocode
           EOF
           pip install -q build twine
           python -m build
