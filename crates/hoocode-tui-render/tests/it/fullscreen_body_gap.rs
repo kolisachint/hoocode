@@ -1,13 +1,12 @@
 //! Diagnostic: where the rows go when a short transcript meets the task panel.
 //!
-//! A fresh session on a tall screen shows blank rows between the last chat
-//! message and the FLIGHT PLAN panel. This pins the row accounting for that
-//! frame: the blanks are the body's top-aligned padding for a transcript
-//! shorter than its viewport (spec: `docs/design/mission-control.md` item 2
-//! under M1: "A short transcript starts at the top, and blank rows follow
-//! it... The body is top-aligned"), not rows reserved by the panel. The
-//! second test shows the recovery the other way: when the panel appears, the
-//! body shrinks by exactly the panel's rows, so the panel takes its rows from
+//! A fresh session on a tall screen used to show blank rows between the last
+//! chat message and the FLIGHT PLAN panel. Live short transcripts are now
+//! bottom-anchored: the tail sits just above the bottom chrome and the blank
+//! rows pad above it (a deliberate revisit of the M1 top-aligned spec in
+//! `docs/design/mission-control.md` for the live short-transcript case only).
+//! Pinned views keep the top-held window, and transcripts that fill the body
+//! are unchanged. The second test shows the panel still takes its rows from
 //! the former padding while the transcript stays whole.
 
 use crate::support::*;
@@ -54,15 +53,15 @@ fn short_transcript_pads_body_above_panel() {
     // Top chrome: HUD + gap.
     assert_eq!(screen[0], "HUD");
     assert_eq!(screen[1], "");
-    // The whole transcript, top-aligned: header then chat.
-    assert_eq!(
-        screen[2..9].to_vec(),
-        vec!["logo1", "logo2", "msg1", "msg2", "msg3", "msg4", "msg5"]
-    );
-    // Body keeps 12 rows (20 - 2 top - 6 bottom); 7 transcript rows leave 5 blank.
+    // The whole transcript, bottom-anchored: 5 blank rows pad above it and
+    // its tail sits just above the panel.
     assert!(
-        screen[9..14].iter().all(|row| row.is_empty()),
-        "body padding above the panel: {screen:?}"
+        screen[2..7].iter().all(|row| row.is_empty()),
+        "body padding above the transcript: {screen:?}"
+    );
+    assert_eq!(
+        screen[7..14].to_vec(),
+        vec!["logo1", "logo2", "msg1", "msg2", "msg3", "msg4", "msg5"]
     );
     // The bottom is contiguous: panel then prompt, no gap between them.
     assert_eq!(
@@ -76,12 +75,13 @@ fn short_transcript_pads_body_above_panel() {
 fn appearing_panel_takes_rows_from_padding_not_transcript() {
     let mut setup = setup(&[]);
     let before = setup.term.screen();
-    // No panel: bottom is the 2-row prompt, body is 16 rows, 9 of them blank.
+    // No panel: bottom is the 2-row prompt, body is 16 rows; 9 blank rows pad
+    // above the bottom-anchored transcript.
+    assert!(before[2..11].iter().all(|row| row.is_empty()));
     assert_eq!(
-        before[2..9].to_vec(),
+        before[11..18].to_vec(),
         vec!["logo1", "logo2", "msg1", "msg2", "msg3", "msg4", "msg5"]
     );
-    assert!(before[9..18].iter().all(|row| row.is_empty()));
     assert_eq!(before[18..20].to_vec(), vec!["prompt1", "prompt2"]);
 
     // The task panel appears with 4 rows.
@@ -94,12 +94,13 @@ fn appearing_panel_takes_rows_from_padding_not_transcript() {
     setup.tui.request_render(true);
     let after = setup.term.screen();
     // The transcript is untouched and still whole; the padding shrank by
-    // exactly the panel's 4 rows; panel and prompt stay contiguous.
+    // exactly the panel's 4 rows and still pads above it; panel and prompt
+    // stay contiguous.
+    assert!(after[2..7].iter().all(|row| row.is_empty()));
     assert_eq!(
-        after[2..9].to_vec(),
+        after[7..14].to_vec(),
         vec!["logo1", "logo2", "msg1", "msg2", "msg3", "msg4", "msg5"]
     );
-    assert!(after[9..14].iter().all(|row| row.is_empty()));
     assert_eq!(
         after[14..18].to_vec(),
         vec!["TASKS", "todo1", "todo2", "todo3"]
@@ -109,8 +110,8 @@ fn appearing_panel_takes_rows_from_padding_not_transcript() {
 
 /// The reported minimized-vs-expanded asymmetry, reproduced with row counts
 /// alone: a 20-row transcript on a 30-row screen. Minimized (the closed
-/// panel's single summary row) leaves a 24-row body, so 4 blank rows sit
-/// between the transcript and the panel. Expanded (a 10-row FLIGHT PLAN
+/// panel's single summary row) leaves a 24-row body, so 4 blank rows pad
+/// above the bottom-anchored transcript. Expanded (a 10-row FLIGHT PLAN
 /// console) shrinks the body to 15 rows, so the tail fills it with no
 /// blanks. No reserved-but-unpainted block is needed to explain it: both
 /// panel states render exactly their rows, and the body takes the rest.
@@ -148,11 +149,11 @@ fn minimized_panel_shows_gap_expanded_shows_tail() {
     // Minimized: summary track is 1 row; bottom is 4, body is 24.
     let min = frame(&["FLIGHT PLAN summary"]);
     assert_eq!(min.len(), H30 as usize);
-    assert_eq!(min[2..22].to_vec(), transcript);
     assert!(
-        min[22..26].iter().all(|row| row.is_empty()),
-        "minimized gap above the panel: {min:?}"
+        min[2..6].iter().all(|row| row.is_empty()),
+        "minimized padding above the transcript: {min:?}"
     );
+    assert_eq!(min[6..26].to_vec(), transcript);
     assert_eq!(min[26], "FLIGHT PLAN summary");
     assert_eq!(min[27..30].to_vec(), vec!["prompt1", "prompt2", "prompt3"]);
 
