@@ -8,6 +8,9 @@
     <out-dir>/hoocode-<os>-<cpu>/   one per platform: the binary, os/cpu-gated
     <out-dir>/hoocode/              @kolisachint/hoocode: a JS launcher that runs
                                     whichever platform package got installed
+    <out-dir>/hoocode-unscoped/    hoocode: the same launcher under the unscoped
+                                    name, depending on the same SCOPED platform
+                                    packages (there are no unscoped platform pkgs)
 
 The platform packages are optionalDependencies of the main one, so npm and bun
 install only the one matching the machine. No postinstall script.
@@ -100,7 +103,15 @@ def build(version: str, archives: Path, out: Path) -> None:
             **COMMON,
         },
     )
-    print(f"built {len(optional) + 1} packages for {version} in {out}")
+    # The unscoped `hoocode` name is ours too, so each release also ships the
+    # same launcher as a metapackage under it: same bins, same version, same
+    # SCOPED platform packages. No unscoped platform packages exist.
+    plain = out / "hoocode-unscoped"
+    shutil.copytree(main, plain)
+    manifest = json.loads((plain / "package.json").read_text())
+    manifest["name"] = "hoocode"
+    write_json(plain / "package.json", manifest)
+    print(f"built {len(optional) + 2} packages for {version} in {out}")
 
 
 if __name__ == "__main__":
