@@ -503,11 +503,38 @@ impl Renderer<'_> {
 
         let total_natural = natural.iter().sum::<usize>() + border_overhead;
         let widths: Vec<usize> = if total_natural <= available {
-            natural
+            // Narrow table: stretch the columns to fill the row instead of
+            // leaving the rest blank. Surplus goes proportional to each
+            // column's natural width (weight floor 1); the remainder spreads
+            // round-robin from the first column.
+            let mut widths: Vec<usize> = natural
                 .iter()
                 .zip(&min_cols)
                 .map(|(n, m)| *n.max(m))
-                .collect()
+                .collect();
+            let natural_sum: usize = widths.iter().sum();
+            let mut surplus = available_for_cells.saturating_sub(natural_sum);
+            if surplus > 0 {
+                let total_weight: usize = widths.iter().map(|w| (*w).max(1)).sum();
+                if total_weight > 0 {
+                    let mut shares = vec![0usize; num_cols];
+                    for (i, w) in widths.iter().enumerate() {
+                        shares[i] = ((*w).max(1) as f64 / total_weight as f64 * surplus as f64)
+                            .floor() as usize;
+                    }
+                    for i in 0..num_cols {
+                        widths[i] += shares[i];
+                    }
+                    surplus -= shares.iter().sum::<usize>();
+                }
+                let mut i = 0;
+                while surplus > 0 {
+                    widths[i % num_cols] += 1;
+                    surplus -= 1;
+                    i += 1;
+                }
+            }
+            widths
         } else {
             let total_grow: usize = natural
                 .iter()
