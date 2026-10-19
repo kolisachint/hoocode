@@ -1,6 +1,6 @@
-┏━ ◉ IN FLIGHT · step 1 · 4s · esc abort ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ app-edit ━┓
+┏━ ◉ IN FLIGHT · step 1 · 4s · esc abort ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  amber-harbor  ━┓
 ┃ ▸ type to queue the next mission                                                                 ┃
-┗━ peek ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ↑48k ↓9.8k ━┛
+┗━ peek ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ↑48k ↓9.8k · 42% of 200k ━┛
 --- styles ---
 r0 c0-1 fg=#5cc8bb
 r0 c3 fg=#5cc8bb
@@ -12,8 +12,8 @@ r0 c26-27 fg=#989898
 r0 c29 fg=#a8a8a8
 r0 c31-33 fg=#e5e5e7
 r0 c35-39 fg=#989898
-r0 c41-87 fg=#5cc8bb
-r0 c89-96 fg=#5cc8bb
+r0 c41-81 fg=#5cc8bb
+r0 c83-96 fg=0 bg=#7aa2f7 bold
 r0 c98-99 fg=#5cc8bb
 r1 c0 fg=#5cc8bb
 r1 c2-3 fg=#5cc8bb
@@ -21,6 +21,8 @@ r1 c4-33 fg=#a8a8a8
 r1 c99 fg=#5cc8bb
 r2 c0-1 fg=#5cc8bb
 r2 c3-6 fg=#989898
-r2 c8-85 fg=#5cc8bb
-r2 c87-96 fg=#989898
+r2 c8-71 fg=#5cc8bb
+r2 c73-82 fg=#989898
+r2 c83-85 fg=#a8a8a8
+r2 c86-96 fg=#989898
 r2 c98-99 fg=#5cc8bb

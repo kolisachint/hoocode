@@ -43,6 +43,10 @@ impl FooterSource for SessionFooter {
             .map(|u| (u.context_window, u.percent))
     }
 
+    fn session_color_slot(&self) -> u8 {
+        self.session.session_color_slot()
+    }
+
     fn model(&self) -> Option<FooterModel> {
         self.session.model().map(|m| FooterModel {
             id: m.id.clone(),

@@ -64,11 +64,9 @@ pub(crate) fn hail_axis(hails: u64, width: usize) -> String {
     let mut at = 0u64;
     let mut prev = 0usize;
     for i in 0..hails {
-        let scaled = if span == 0 {
-            0
-        } else {
-            ((at * (width as u64 - 1) + span / 2) / span) as usize
-        };
+        let scaled = ((at * (width as u64 - 1) + span / 2)
+            .checked_div(span)
+            .unwrap_or(0)) as usize;
         let col = if i == 0 {
             0
         } else {

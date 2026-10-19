@@ -35,8 +35,9 @@ use hoocode_code_tui_selectors::tree_selector::TreeSelectorComponent;
 use hoocode_code_tui_selectors::user_message_selector::UserMessageSelectorComponent;
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_code_tui_theme::{
-    get_editor_theme, init_theme, on_theme_change, set_registered_themes, set_theme, theme,
-    ThinkingBorderLevel,
+    current_theme_name, get_editor_theme, init_theme, is_auto_theme, on_theme_change,
+    resolve_auto_theme, set_registered_themes, set_theme, theme, ThinkingBorderLevel,
+    AUTO_THEME_POLL_INTERVAL,
 };
 use hoocode_code_tui_widgets::background_notice::BackgroundNoticeComponent;
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
@@ -467,6 +468,9 @@ struct Mode {
     chain_closed_for_current_message: bool,
     dial_reverse_taught: HashSet<&'static str>,
     last_tool_tick: Instant,
+    /// When the OS appearance is next re-checked while the settings theme is
+    /// `"auto"` (a `next_wakeup` deadline, so the loop wakes for it).
+    auto_theme_next_check: Instant,
     show_images: bool,
     image_width_cells: u32,
     code_block_indent: String,
@@ -1038,6 +1042,7 @@ impl Mode {
             chain_closed_for_current_message: false,
             dial_reverse_taught: HashSet::new(),
             last_tool_tick: Instant::now(),
+            auto_theme_next_check: Instant::now() + AUTO_THEME_POLL_INTERVAL,
             show_images,
             image_width_cells,
             code_block_indent,
@@ -1196,12 +1201,39 @@ impl Mode {
         if let Some(deadline) = self.picker.as_ref().and_then(|p| p.deadline()) {
             wait = wait.min(deadline.saturating_duration_since(now));
         }
+        // The OS-appearance re-check while the settings theme is `"auto"`:
+        // a deadline like the rest, so the loop wakes for it.
+        wait = wait.min(self.auto_theme_next_check.saturating_duration_since(now));
         if self.stream_render_pending {
             if let Some(at) = self.stream_render_at {
                 wait = wait.min((at + STREAM_RENDER_THROTTLE).saturating_duration_since(now));
             }
         }
         wait.max(Duration::from_millis(1))
+    }
+
+    /// `pollAutoTheme`: while the settings theme is `"auto"`, re-read the OS
+    /// appearance at most every `AUTO_THEME_POLL_INTERVAL` and switch to the
+    /// matching side. The settings keep the raw `"auto"` value; `set_theme`
+    /// fires the `ThemeChanged` repaint, so a flip lands like any other theme
+    /// change. Silent on failure: the next tick retries.
+    fn poll_auto_theme(&mut self) {
+        let now = Instant::now();
+        if now < self.auto_theme_next_check {
+            return;
+        }
+        self.auto_theme_next_check = now + AUTO_THEME_POLL_INTERVAL;
+        let setting = self.session.settings().theme();
+        let Some(setting) = setting else {
+            return;
+        };
+        if !is_auto_theme(&setting) {
+            return;
+        }
+        let resolved = resolve_auto_theme(&setting);
+        if current_theme_name().as_deref() != Some(resolved.as_str()) {
+            let _ = set_theme(&resolved, true);
+        }
     }
 
     /// Ctrl+C aborts the turn from the input thread, without waiting for this
@@ -1379,6 +1411,7 @@ impl Mode {
             self.tick_scheduler();
             self.poll_update_notice();
             self.advance_auto_loop();
+            self.poll_auto_theme();
             self.sync_runtime_health();
             if let Some(restarted) = self.restarted_input.take() {
                 input = restarted;

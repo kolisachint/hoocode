@@ -150,7 +150,7 @@ impl Runs {
         if self.waiting.is_empty() {
             return;
         }
-        let dropped: Vec<ScheduledTask> = self.waiting.drain(..).collect();
+        let dropped: Vec<ScheduledTask> = std::mem::take(&mut self.waiting);
         store.batch(|s| {
             for job in &dropped {
                 let key = row_key(&job.id);
@@ -181,7 +181,7 @@ impl Runs {
         if self.running.is_empty() {
             return;
         }
-        let finished: Vec<ScheduledTask> = self.running.drain(..).collect();
+        let finished: Vec<ScheduledTask> = std::mem::take(&mut self.running);
         store.batch(|s| {
             for job in &finished {
                 let key = row_key(&job.id);

@@ -354,6 +354,96 @@ fn default_theme() -> &'static str {
     detect_terminal_background_with(std::env::var("COLORFGBG").ok().as_deref())
 }
 
+/// The concrete themes `"auto"` follows: Light maps to `daylight`, Dark
+/// maps to `deep-space` (both built in, so the pair always loads).
+pub const AUTO_LIGHT_THEME: &str = "daylight";
+pub const AUTO_DARK_THEME: &str = "deep-space";
+
+/// How often the interactive mode re-checks the OS appearance while the
+/// settings theme is an auto value.
+pub const AUTO_THEME_POLL_INTERVAL: Duration = Duration::from_secs(60);
+
+/// True when the settings value asks the theme to follow the OS appearance:
+/// `"auto"`, or `"auto:<light>:<dark>"` for a custom pair (the day side
+/// first). The raw value stays in settings; only the resolved concrete
+/// name reaches the loader.
+pub fn is_auto_theme(value: &str) -> bool {
+    value == "auto" || value.starts_with("auto:")
+}
+
+/// The concrete pair an auto value stands for, as `(light, dark)`. Blank
+/// sides fall back to the built-in pair, so `"auto"` means
+/// `(daylight, deep-space)`.
+fn auto_pair(value: &str) -> (String, String) {
+    let mut parts = value.splitn(3, ':');
+    parts.next();
+    let light = parts.next().unwrap_or("").trim();
+    let dark = parts.next().unwrap_or("").trim();
+    (
+        if light.is_empty() {
+            AUTO_LIGHT_THEME.to_string()
+        } else {
+            light.to_string()
+        },
+        if dark.is_empty() {
+            AUTO_DARK_THEME.to_string()
+        } else {
+            dark.to_string()
+        },
+    )
+}
+
+/// The OS appearance, as `Some(dark)`: `None` when it cannot be read.
+/// On macOS `defaults read -g AppleInterfaceStyle` prints `Dark` only in
+/// dark mode (Light removes the key, so any other outcome reads as light);
+/// anywhere else there is nothing to read. A failure to even run `defaults`
+/// is `None` too, and the caller falls back to the `COLORFGBG` heuristic.
+#[cfg(target_os = "macos")]
+fn os_dark_mode() -> Option<bool> {
+    let output = std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleInterfaceStyle"])
+        .output()
+        .ok()?;
+    Some(
+        output.status.success()
+            && String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .eq_ignore_ascii_case("dark"),
+    )
+}
+
+/// No OS-appearance API outside macOS: the caller falls back to the
+/// `COLORFGBG` heuristic.
+#[cfg(not(target_os = "macos"))]
+fn os_dark_mode() -> Option<bool> {
+    None
+}
+
+/// `resolveAutoTheme`: the concrete theme an auto settings value means right
+/// now. Non-auto values pass through unchanged. The OS reading decides the
+/// side; when it cannot be read the `COLORFGBG` heuristic does (which itself
+/// falls back to dark), so a total failure resolves to the dark side. An
+/// unknown custom side falls back to its built-in default, silently: the
+/// loader's own `dark` fallback still covers a theme deleted mid-flight.
+pub fn resolve_auto_theme(value: &str) -> String {
+    if !is_auto_theme(value) {
+        return value.to_string();
+    }
+    let (light, dark) = auto_pair(value);
+    let dark_mode = os_dark_mode().unwrap_or_else(|| default_theme() == "dark");
+    let (side, fallback) = if dark_mode {
+        (dark, AUTO_DARK_THEME)
+    } else {
+        (light, AUTO_LIGHT_THEME)
+    };
+    let name = resolve_theme_name(&side);
+    if get_available_themes().iter().any(|t| t == &name) {
+        name
+    } else {
+        fallback.to_string()
+    }
+}
+
 // ============================================================================
 // Global theme
 // ============================================================================
@@ -439,10 +529,12 @@ fn fallback_dark() -> Arc<Theme> {
     load_theme("dark", None).expect("the bundled dark theme loads")
 }
 
-/// `initTheme`: load the requested (or detected default) theme; an invalid
-/// one falls back to `dark` silently.
+/// `initTheme`: load the requested (or detected default) theme; `"auto"`
+/// resolves to the OS side first, and an invalid one falls back to `dark`
+/// silently.
 pub fn init_theme(theme_name: Option<&str>, enable_watcher: bool) {
     let requested = theme_name.map_or_else(|| default_theme().to_string(), str::to_string);
+    let requested = resolve_auto_theme(&requested);
     let name = resolve_theme_name(&requested);
     state().current_name = Some(name.clone());
     match load_theme(&name, None) {
@@ -472,9 +564,11 @@ fn notify_change() {
 }
 
 /// `setTheme`: switch themes; on failure fall back to `dark` and return the
-/// error.
+/// error. `"auto"` resolves to the OS side first, so the current name is
+/// always concrete.
 pub fn set_theme(requested: &str, enable_watcher: bool) -> Result<(), String> {
-    let name = resolve_theme_name(requested);
+    let requested = resolve_auto_theme(requested);
+    let name = resolve_theme_name(&requested);
     state().current_name = Some(name.clone());
     match load_theme(&name, None) {
         Ok(theme) => {

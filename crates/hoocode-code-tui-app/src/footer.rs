@@ -52,6 +52,11 @@ pub trait FooterSource {
     fn thinking_level(&self) -> String;
     fn cwd(&self) -> String;
     fn display_name(&self) -> String;
+    /// The session colour slot (1-6) for the comms frame's session chip.
+    /// Stubs keep the default; the session override returns its slot.
+    fn session_color_slot(&self) -> u8 {
+        0
+    }
     /// Compaction reserve tokens.
     fn reserve_tokens(&self) -> u64;
     fn is_using_oauth(&self) -> bool;
