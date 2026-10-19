@@ -1223,7 +1223,7 @@ fn launch_weight_panel(surface: &PromptSurface) -> Vec<Line<'static>> {
         ]),
     ];
     let mut tools = surface.tools.clone();
-    tools.sort_by(|a, b| b.1.cmp(&a.1));
+    tools.sort_by_key(|a| std::cmp::Reverse(a.1));
     for (name, tokens) in tools.iter().take(5) {
         panel.push(Line::from(vec![
             Span::styled("■ ".to_string(), pal.dim()),

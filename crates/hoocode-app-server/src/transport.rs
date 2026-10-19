@@ -271,7 +271,9 @@ where
 }
 
 /// Send one JSON value as a WebSocket text frame.
+// NOTE: pre-existing `WsError` size trips newer clippy's `result_large_err`; boxing it would ripple through callers.
 #[cfg(unix)]
+#[allow(clippy::result_large_err)]
 async fn send_json<S>(sink: &mut S, value: &Value) -> Result<(), WsError>
 where
     S: futures_util::sink::Sink<WsMessage, Error = WsError> + Unpin,

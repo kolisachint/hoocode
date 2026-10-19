@@ -816,7 +816,7 @@ mod tests {
     fn prewrapped_prose_keeps_narrow_breaks_with_full_width_padding() {
         let line = "a ".repeat(50);
         assert_eq!(line.len(), 100);
-        let text = vec![line.as_str(); 5].join("\n");
+        let text = [line.as_str(); 5].join("\n");
         let message = prose_message(text);
         let mut component = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
         component.update_content(&message, false);

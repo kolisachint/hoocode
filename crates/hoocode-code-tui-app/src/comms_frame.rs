@@ -413,7 +413,10 @@ impl ChromeData {
 fn session_label(palette: &Palette, name: &str, color_slot: u8, width: usize) -> Vec<Seg> {
     if session_chip_fits(width) {
         if let Some(chip) = render_session_chip(name, i64::from(color_slot)) {
-            return vec![Seg::new(session_chip_style(palette, color_slot), &chip.plain)];
+            return vec![Seg::new(
+                session_chip_style(palette, color_slot),
+                &chip.plain,
+            )];
         }
     }
     let trimmed = name.trim();

@@ -65,7 +65,10 @@ fn short_transcript_pads_body_above_panel() {
         "body padding above the panel: {screen:?}"
     );
     // The bottom is contiguous: panel then prompt, no gap between them.
-    assert_eq!(screen[14..18].to_vec(), vec!["TASKS", "todo1", "todo2", "todo3"]);
+    assert_eq!(
+        screen[14..18].to_vec(),
+        vec!["TASKS", "todo1", "todo2", "todo3"]
+    );
     assert_eq!(screen[18..20].to_vec(), vec!["prompt1", "prompt2"]);
 }
 
@@ -74,9 +77,10 @@ fn appearing_panel_takes_rows_from_padding_not_transcript() {
     let mut setup = setup(&[]);
     let before = setup.term.screen();
     // No panel: bottom is the 2-row prompt, body is 16 rows, 9 of them blank.
-    assert_eq!(before[2..9].to_vec(), vec![
-        "logo1", "logo2", "msg1", "msg2", "msg3", "msg4", "msg5"
-    ]);
+    assert_eq!(
+        before[2..9].to_vec(),
+        vec!["logo1", "logo2", "msg1", "msg2", "msg3", "msg4", "msg5"]
+    );
     assert!(before[9..18].iter().all(|row| row.is_empty()));
     assert_eq!(before[18..20].to_vec(), vec!["prompt1", "prompt2"]);
 
@@ -91,11 +95,15 @@ fn appearing_panel_takes_rows_from_padding_not_transcript() {
     let after = setup.term.screen();
     // The transcript is untouched and still whole; the padding shrank by
     // exactly the panel's 4 rows; panel and prompt stay contiguous.
-    assert_eq!(after[2..9].to_vec(), vec![
-        "logo1", "logo2", "msg1", "msg2", "msg3", "msg4", "msg5"
-    ]);
+    assert_eq!(
+        after[2..9].to_vec(),
+        vec!["logo1", "logo2", "msg1", "msg2", "msg3", "msg4", "msg5"]
+    );
     assert!(after[9..14].iter().all(|row| row.is_empty()));
-    assert_eq!(after[14..18].to_vec(), vec!["TASKS", "todo1", "todo2", "todo3"]);
+    assert_eq!(
+        after[14..18].to_vec(),
+        vec!["TASKS", "todo1", "todo2", "todo3"]
+    );
     assert_eq!(after[18..20].to_vec(), vec!["prompt1", "prompt2"]);
 }
 
@@ -123,9 +131,10 @@ fn minimized_panel_shows_gap_expanded_shows_tail() {
         tui.add_child(Lines::new(&["HUD"]));
         tui.add_child(Lines::new(&[""]));
         let body = std::rc::Rc::new(std::cell::RefCell::new(Container::new()));
-        body.borrow_mut().add_child(std::rc::Rc::new(std::cell::RefCell::new(
-            crate::support::Lines(transcript.clone()),
-        )));
+        body.borrow_mut()
+            .add_child(std::rc::Rc::new(std::cell::RefCell::new(
+                crate::support::Lines(transcript.clone()),
+            )));
         let handle: ComponentHandle = body.clone();
         tui.add_child(handle.clone());
         tui.set_fullscreen_body(Some(handle));
@@ -149,7 +158,16 @@ fn minimized_panel_shows_gap_expanded_shows_tail() {
 
     // Expanded: 10-row console; bottom is 13, body is 15; the tail fills it.
     let console = [
-        "console-top", "tab", "t1", "t2", "t3", "t4", "t5", "t6", "hint", "console-bot",
+        "console-top",
+        "tab",
+        "t1",
+        "t2",
+        "t3",
+        "t4",
+        "t5",
+        "t6",
+        "hint",
+        "console-bot",
     ];
     let exp = frame(&console);
     assert_eq!(exp.len(), H30 as usize);

@@ -4,9 +4,9 @@
 mod cell_size_input;
 mod cursor_parking;
 mod flatcache_stress;
+mod fullscreen_body_gap;
 mod golden;
 mod hyperlink_click;
-mod fullscreen_body_gap;
 mod screen_fill;
 mod scroll_viewport;
 mod support;
