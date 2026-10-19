@@ -98,3 +98,62 @@ fn appearing_panel_takes_rows_from_padding_not_transcript() {
     assert_eq!(after[14..18].to_vec(), vec!["TASKS", "todo1", "todo2", "todo3"]);
     assert_eq!(after[18..20].to_vec(), vec!["prompt1", "prompt2"]);
 }
+
+/// The reported minimized-vs-expanded asymmetry, reproduced with row counts
+/// alone: a 20-row transcript on a 30-row screen. Minimized (the closed
+/// panel's single summary row) leaves a 24-row body, so 4 blank rows sit
+/// between the transcript and the panel. Expanded (a 10-row FLIGHT PLAN
+/// console) shrinks the body to 15 rows, so the tail fills it with no
+/// blanks. No reserved-but-unpainted block is needed to explain it: both
+/// panel states render exactly their rows, and the body takes the rest.
+#[test]
+fn minimized_panel_shows_gap_expanded_shows_tail() {
+    const H30: u16 = 30;
+    let transcript: Vec<String> = ["logo1".to_string(), "logo2".to_string()]
+        .into_iter()
+        .chain((1..=18).map(|i| format!("msg{i}")))
+        .collect();
+    assert_eq!(transcript.len(), 20);
+    let prompt = ["prompt1", "prompt2", "prompt3"];
+
+    let frame = |panel: &[&str]| -> Vec<String> {
+        let (terminal, term) = virtual_terminal(WIDTH, H30);
+        let mut tui = Tui::new(terminal, None);
+        tui.set_fullscreen(true);
+        tui.add_child(Lines::new(&["HUD"]));
+        tui.add_child(Lines::new(&[""]));
+        let body = std::rc::Rc::new(std::cell::RefCell::new(Container::new()));
+        body.borrow_mut().add_child(std::rc::Rc::new(std::cell::RefCell::new(
+            crate::support::Lines(transcript.clone()),
+        )));
+        let handle: ComponentHandle = body.clone();
+        tui.add_child(handle.clone());
+        tui.set_fullscreen_body(Some(handle));
+        tui.add_child(Lines::new(panel));
+        tui.add_child(Lines::new(&prompt));
+        let _events = tui.start();
+        tui.request_render(true);
+        term.screen()
+    };
+
+    // Minimized: summary track is 1 row; bottom is 4, body is 24.
+    let min = frame(&["FLIGHT PLAN summary"]);
+    assert_eq!(min.len(), H30 as usize);
+    assert_eq!(min[2..22].to_vec(), transcript);
+    assert!(
+        min[22..26].iter().all(|row| row.is_empty()),
+        "minimized gap above the panel: {min:?}"
+    );
+    assert_eq!(min[26], "FLIGHT PLAN summary");
+    assert_eq!(min[27..30].to_vec(), vec!["prompt1", "prompt2", "prompt3"]);
+
+    // Expanded: 10-row console; bottom is 13, body is 15; the tail fills it.
+    let console = [
+        "console-top", "tab", "t1", "t2", "t3", "t4", "t5", "t6", "hint", "console-bot",
+    ];
+    let exp = frame(&console);
+    assert_eq!(exp.len(), H30 as usize);
+    assert_eq!(exp[2..17].to_vec(), transcript[5..20].to_vec());
+    assert_eq!(exp[17..27].to_vec(), console);
+    assert_eq!(exp[27..30].to_vec(), vec!["prompt1", "prompt2", "prompt3"]);
+}

@@ -65,3 +65,26 @@ transcript (hides the newest messages), or shrink the panel (hides
 information) — all violate the spec or the no-regression constraint. The
 recovery the symptom asks for already happens: the panel's rows come out of
 the former padding, never out of the transcript.
+
+## Follow-up: minimized panel (no reservation there either)
+
+Minimized = the closed panel's single summary row
+(`task_panel.rs:355-380`, returned at `task_panel.rs:1179-1181` when
+`density == Summary && !focused`); expanded = the focused FLIGHT PLAN
+console (`task_panel.rs:1188-1190`, via Ctrl+G `focus_task_panel` in
+`mode/task_panel.rs:121-131`) or the unfocused rail rows
+(`task_panel.rs:1192-1201`). The console renders exactly its content rows
+(`console.rs:81-124`, `max_visible` unset for the flight plan). The `Slot`
+renders exactly the component's rows in every state
+(`component.rs:178-184`), so there is no fixed slot or reserved block that
+stays reserved when minimized: a minimized panel reserves exactly 1 row
+(or N rail rows), an expanded one exactly its console rows.
+
+The new `minimized_panel_shows_gap_expanded_shows_tail` test reproduces the
+refined report with row counts alone (30-row screen, 20-row transcript,
+3-row prompt): minimized → body 24, 4 blank rows between transcript and
+panel; expanded (10-row console) → body 15, tail fills it, zero blanks. The
+gap is the same top-aligned padding, larger when minimized only because a
+smaller panel leaves a bigger body. Nothing is reserved-but-unpainted, so
+there is no minimized-only reservation to collapse and no further rows to
+recover for the transcript.
