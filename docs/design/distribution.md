@@ -18,7 +18,18 @@ Every release made by `release.yml` (a merged PR with a `rust:*` label):
    `x86_64`/`aarch64` × `apple-darwin`/`unknown-linux-musl`. Linux builds are
    static, so one binary runs on every distro.
 2. **`SHA256SUMS`** covering the archives.
-3. **npm**: `@kolisachint/hoocode` plus `@kolisachint/hoocode-{darwin,linux}-{arm64,x64}`.
+3. **PyPI**: `hoocode`, a thin downloader wheel. It installs a `hoocode`
+   console script that, on first run, downloads the archive matching the
+   package version and platform, verifies its sha256 against the release
+   `SHA256SUMS`, extracts the binary into a user cache dir, and execs it.
+   Built by `scripts/pypi/build_pypi.py`, published with twine by
+   `scripts/pypi/publish_pypi.py` using the `PYPI_TOKEN` / `PYPI_API_TOKEN`
+   secret. Re-runs skip versions that already exist. After uploading, the
+   script checks the version against the PyPI JSON API and fails the job if
+   it has not turned up: a successful upload is installable only after
+   index propagation, and without this a partial publish looks identical
+   to a successful one.
+4. **npm**: `@kolisachint/hoocode` plus `@kolisachint/hoocode-{darwin,linux}-{arm64,x64}`.
    The main package is a small Node launcher (`npm/hoocode/bin/hoocode.js`);
    the platform packages are `optionalDependencies` gated by `os`/`cpu`, so
    npm and bun fetch only the one for the machine. No postinstall script.
@@ -31,7 +42,7 @@ Every release made by `release.yml` (a merged PR with a `rust:*` label):
    success does not mean `npm install` can resolve it yet. Verify a published
    release with
    `python3 scripts/npm/publish_packages.py <dist-dir> --verify-only`.
-4. **curl installer**: `install/install.sh`, served at
+5. **curl installer**: `install/install.sh`, served at
    `https://kolisachint.github.io/hoocode/install.sh`. The site repo
    (kolisachint.github.io) keeps a verbatim copy in `public/hoocode/`.
    It verifies `SHA256SUMS`, test-runs the binary before replacing anything,
@@ -48,4 +59,3 @@ Every release made by `release.yml` (a merged PR with a `rust:*` label):
 | **Auto-sync of `install.sh`** | The site copies it by hand for now. | Have the site's sync script also fetch `install/install.sh` from kolisachint/hoocode into `public/hoocode/`. |
 | **macOS signing** | Binaries carry only the linker's ad-hoc signature. curl, npm and `gh` downloads are not quarantined, so they run; a browser download triggers "Apple could not verify". | An Apple Developer ID, `codesign` + `notarytool` in `binaries.yml`. |
 | **Self-update** | `hoocode update` does not know which of curl or npm installed it. | Detect the install method (path under `~/.hoocode/bin` vs `node_modules`) and print the matching command. |
-| **PyPI** | Out of scope for now. | — |

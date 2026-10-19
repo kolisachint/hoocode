@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hoocode"
+version = "0.0.0" # stamped by scripts/pypi/build_pypi.py from the release tag; do not edit
+description = "hoocode coding agent (downloads the prebuilt binary on first run)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+
+[project.scripts]
+hoocode = "hoocode.launcher:main"
+
+[project.urls]
+Homepage = "https://github.com/kolisachint/hoocode"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hoocode"]

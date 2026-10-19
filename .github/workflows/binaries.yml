@@ -173,3 +173,36 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: python3 scripts/npm/publish_packages.py npm-dist
+
+  pypi:
+    # `hoocode` on PyPI: a thin downloader wheel built from pypi/ (the wheel
+    # holds only the launcher, so no archives are downloaded here). Only for
+    # releases that uploaded, and after build so the release attachments the
+    # launcher fetches exist. Called with secrets: inherit from release.yml,
+    # so PYPI_TOKEN / PYPI_API_TOKEN is available.
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' && (github.event_name == 'release' || inputs.upload) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build wheel
+        run: |
+          pip install -q build twine
+          python3 scripts/pypi/build_pypi.py "$TAG" pypi-dist
+          twine check pypi-dist/*
+      - name: Publish
+        # A version that is already published (a re-run) is skipped, not an
+        # error. After uploading, the version is checked against the PyPI JSON
+        # API: a successful upload is installable only after index propagation,
+        # so without this a partial publish looks identical to a successful one.
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN || secrets.PYPI_API_TOKEN }}
+        run: python3 scripts/pypi/publish_pypi.py pypi-dist
