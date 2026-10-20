@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use hoocode_ai_types::{AssistantMessage, Content, StopReason, ABORTED_MESSAGE};
@@ -14,6 +14,8 @@ use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use hoocode_tui_util::js_regex::is_js_space;
 
+use crate::radar::{self, HIT_INDENT, STEP_INDENT};
+use crate::tool_chain::ToolChainComponent;
 use crate::trajectory;
 use crate::wrap_zone;
 
@@ -34,6 +36,151 @@ pub enum ThinkingDisplay {
 /// Markdown; above it the text is segmented at stable block boundaries so each
 /// update re-parses only the growing tail.
 const SEGMENT_MIN_CHARS: usize = 2048;
+
+/// The radar prose of a message (M5): its last text paragraph, joined into
+/// one line of single spaces. A failed message with no text reads its
+/// error instead.
+fn radar_prose(message: &AssistantMessage) -> Option<String> {
+    let text = message
+        .content
+        .iter()
+        .rev()
+        .find_map(|content| match content {
+            Content::Text(t) => last_paragraph(&t.text),
+            _ => None,
+        });
+    text.or_else(|| {
+        let error = message.error_message.as_deref()?;
+        if !matches!(message.stop_reason, StopReason::Error) {
+            return None;
+        }
+        last_paragraph(&format!("Error: {error}"))
+    })
+}
+
+/// The last paragraph of `text` (blank-line separated), as plain text on
+/// one line. `None` when every line is blank.
+fn last_paragraph(text: &str) -> Option<String> {
+    let mut last: Option<String> = None;
+    let mut current: Vec<&str> = Vec::new();
+    for line in text.lines().chain(std::iter::once("")) {
+        // A rule (`---`) leaves no text, so it ends the paragraph too.
+        let line = strip_block_marker(line.trim());
+        if line.trim().is_empty() {
+            if !current.is_empty() {
+                last = Some(current.join(" "));
+                current.clear();
+            }
+        } else {
+            current.push(line.trim());
+        }
+    }
+    last.map(|paragraph| {
+        plain_inline(&paragraph)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    })
+    .filter(|paragraph| !paragraph.is_empty())
+}
+
+/// Drops a line's block marker: quote `>`, ATX heading `#`, bullet `-`,
+/// `*` or `+`, or ordered `1.` / `1)`. A rule line (`---`, `***`, `___`)
+/// reads as empty. Only the marker goes; the rest of the line is kept.
+fn strip_block_marker(line: &str) -> &str {
+    let mark = line.chars().find(|c| *c != ' ');
+    let marks = line.chars().filter(|c| *c != ' ').count();
+    if matches!(mark, Some('-' | '*' | '_'))
+        && marks >= 3
+        && line.chars().all(|c| c == ' ' || Some(c) == mark)
+    {
+        return "";
+    }
+    let mut rest = line;
+    loop {
+        let before = rest;
+        if let Some(after) = rest.strip_prefix('>') {
+            rest = after.trim_start();
+        }
+        let body = rest.trim_start_matches('#');
+        if body.len() < rest.len() && (body.is_empty() || body.starts_with(' ')) {
+            rest = body.trim_start();
+        }
+        if let Some(after) = rest
+            .strip_prefix("- ")
+            .or_else(|| rest.strip_prefix("* "))
+            .or_else(|| rest.strip_prefix("+ "))
+        {
+            rest = after.trim_start();
+        }
+        let number = rest.trim_start_matches(|c: char| c.is_ascii_digit());
+        let digits = rest.len() - number.len();
+        if (1..=2).contains(&digits) {
+            if let Some(after) = number
+                .strip_prefix(". ")
+                .or_else(|| number.strip_prefix(") "))
+            {
+                rest = after.trim_start();
+            }
+        }
+        if rest == before {
+            return rest;
+        }
+    }
+}
+
+/// Plain text for inline Markdown: emphasis marks (`*`, and `_` at a word
+/// edge) and code backticks drop, and a link `[text](url)` or image
+/// `![alt](url)` reads as its text. `snake_case` keeps its underscores.
+fn plain_inline(text: &str) -> String {
+    let unlinked = unlink(text);
+    let chars: Vec<char> = unlinked.chars().collect();
+    let mut out = String::with_capacity(unlinked.len());
+    for (i, &c) in chars.iter().enumerate() {
+        let is_mark = match c {
+            '`' | '*' => true,
+            '_' => {
+                let after_word = i
+                    .checked_sub(1)
+                    .and_then(|p| chars.get(p))
+                    .is_some_and(|p| p.is_alphanumeric());
+                let before_word = chars.get(i + 1).is_some_and(|n| n.is_alphanumeric());
+                !(after_word && before_word)
+            }
+            _ => false,
+        };
+        if !is_mark {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// `text` with each `[label](target)` and `![label](target)` replaced by its
+/// label. A bracket with no closing `](...)` stays as written.
+fn unlink(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some((before, from_open)) = rest.split_once('[') {
+        let Some((label, after_label)) = from_open.split_once("](") else {
+            break;
+        };
+        let Some((_target, tail)) = after_label.split_once(')') else {
+            break;
+        };
+        if label.contains('[') {
+            out.push_str(before);
+            out.push('[');
+            rest = from_open;
+            continue;
+        }
+        out.push_str(before.strip_suffix('!').unwrap_or(before));
+        out.push_str(label);
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
+}
 
 /// A thinking trace's gist (Mission Control spec a2/r11): the first
 /// non-blank line of the message's first thinking block,
@@ -218,6 +365,10 @@ pub struct AssistantMessageComponent {
     /// Mission Control peek (M4): prose lines sit on the `┊` rail. Think
     /// headers (`·· …`) keep their own slot and skip the rail.
     rail: bool,
+    /// Radar (M5): the chain whose rows sit right above this message's
+    /// prose line. The prose reads that chain's last row when it renders,
+    /// so a row that turns into a hit later still moves the prose to 12.
+    radar_above: Option<Weak<RefCell<ToolChainComponent>>>,
     /// Shared with the caller's streaming message, so a delta does not copy it.
     last_message: Option<Rc<AssistantMessage>>,
     has_tool_calls: bool,
@@ -277,6 +428,7 @@ impl AssistantMessageComponent {
             thinking_display,
             markdown_theme,
             rail: false,
+            radar_above: None,
             last_message: None,
             has_tool_calls: false,
             markdown_cache: HashMap::new(),
@@ -361,6 +513,27 @@ impl AssistantMessageComponent {
     /// Mission Control peek (M4): prose lines sit on the `┊` rail.
     pub fn set_rail(&mut self, rail: bool) {
         self.rail = rail;
+    }
+
+    /// Radar (M5): links the prose line to the chain above it (`None` when
+    /// no mission chain precedes it).
+    pub fn set_radar_above(&mut self, chain: Option<Weak<RefCell<ToolChainComponent>>>) {
+        self.radar_above = chain;
+    }
+
+    /// The prose line's indent: `HIT_INDENT` (12) when the chain above ends
+    /// in a hit row, otherwise `STEP_INDENT` (8) under the mission row.
+    fn radar_indent(&self) -> usize {
+        let after_hit = self
+            .radar_above
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .is_some_and(|chain| chain.try_borrow().is_ok_and(|chain| chain.ends_in_hit()));
+        if after_hit {
+            HIT_INDENT
+        } else {
+            STEP_INDENT
+        }
     }
 
     /// The Think row's seconds: elapsed since the trace started while it
@@ -515,25 +688,22 @@ impl AssistantMessageComponent {
 }
 
 impl AssistantMessageComponent {
-    /// The radar flight log (M5): the message's last prose line, then its
-    /// `✻ thought Ns` line with no gist. A message with neither renders
-    /// nothing.
+    /// The radar flight log (M5): the message's last paragraph on one line,
+    /// then its `✻ thought Ns` line with no gist. A message with neither
+    /// renders nothing. A failed message reads its error as the prose.
     fn render_radar(&mut self, width: u16, palette: &Palette) -> Vec<String> {
-        let lines = self.content.render(width);
-        let prose = lines
-            .iter()
-            .rev()
-            .find(|line| {
-                !hoocode_tui_util::strip_vt_control_characters(line)
-                    .trim()
-                    .is_empty()
-            })
-            .cloned();
+        let width = width as usize;
+        let prose = self.last_message.as_deref().and_then(radar_prose);
         let mut out = Vec::new();
-        if let Some(line) = prose {
-            out.push(line);
+        if let Some(prose) = prose {
+            out.push(radar::prose_row(
+                &prose,
+                self.radar_indent(),
+                palette,
+                width,
+            ));
         }
-        if let Some(line) = self.radar_think_line(width as usize, palette) {
+        if let Some(line) = self.radar_think_line(width, palette) {
             out.push(line);
         }
         if out.is_empty() {
@@ -835,5 +1005,32 @@ mod tests {
             widest <= 101,
             "hard breaks survive rendering (widest {widest})"
         );
+    }
+
+    #[test]
+    fn radar_prose_reads_plain_text() {
+        let text = "# Title\n\nIt is **bold**, `code` and [a link](https://x.y/z).\n- one _em_ and snake_case\n- two 2. three";
+        assert_eq!(
+            last_paragraph(text).as_deref(),
+            Some("It is bold, code and a link. one em and snake_case two 2. three")
+        );
+        assert_eq!(
+            last_paragraph("1) first\n2) second").as_deref(),
+            Some("first second")
+        );
+        assert_eq!(
+            last_paragraph("> quoted\n> text\n\n---\n").as_deref(),
+            Some("quoted text")
+        );
+        assert_eq!(last_paragraph("see [open").as_deref(), Some("see [open"));
+        assert_eq!(
+            last_paragraph("![alt text](img.png) done").as_deref(),
+            Some("alt text done")
+        );
+        assert_eq!(
+            last_paragraph("#tag and 2024. year").as_deref(),
+            Some("#tag and 2024. year")
+        );
+        assert_eq!(last_paragraph("   \n\n"), None);
     }
 }

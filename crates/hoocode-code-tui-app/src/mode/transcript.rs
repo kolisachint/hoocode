@@ -2,7 +2,7 @@
 //! rows, and the tool output views.
 
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use hoocode_agent_types::AgentMessage;
@@ -306,6 +306,19 @@ impl Transcript {
             };
         }
         FlightMark::Landed
+    }
+
+    /// The chain a new radar prose line sits under (M5): the open mission's
+    /// latest chain. `None` when no chain of the open mission precedes it.
+    pub(super) fn radar_chain_above(&self) -> Option<Weak<RefCell<ToolChainComponent>>> {
+        let in_mission = self
+            .missions
+            .last()
+            .is_some_and(|mission| self.chains.len() > mission.start);
+        if !in_mission {
+            return None;
+        }
+        self.chains.last().map(Rc::downgrade)
     }
 
     /// Refreshes every mission's flight counts and mark from its chains
@@ -736,6 +749,9 @@ impl Mode {
                 component
                     .borrow_mut()
                     .set_rail(self.tool_output_view == ToolOutputView::Peek);
+                component
+                    .borrow_mut()
+                    .set_radar_above(self.transcript.radar_chain_above());
                 self.transcript.assistant_components.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }

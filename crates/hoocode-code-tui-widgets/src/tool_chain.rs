@@ -246,15 +246,35 @@ impl ToolChainComponent {
         out
     }
 
+    /// Whether the chain's last flight row is a hit (radar): prose written
+    /// under it indents to the hit's text. Settled clean calls draw no row,
+    /// so they are skipped.
+    pub fn ends_in_hit(&self) -> bool {
+        self.blocks
+            .iter()
+            .rev()
+            .find_map(|block| {
+                let body = block.borrow();
+                if body.chain_entry().is_error {
+                    Some(true)
+                } else if body.is_waiting_for_clearance() || body.chain_entry().is_partial {
+                    Some(false)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(false)
+    }
+
     /// The mission's flight-log rows for this chain (M5, radar): one line
-    /// per hit (`⊗ 04 … HIT`), per live step (`◉ 01 … 3s`, with a progress
-    /// bar when the call's estimate is known), per waiting step
-    /// (`◉ 01 … holding for clearance`, the queue's head first), per live
-    /// subagent (`◈ type · task`), and per live background job (its
-    /// satellite row), numbered by mission step. Settled clean calls get no
-    /// row: the mission row above already counts them. Lead-in traces keep
-    /// their think line with its gist, so thinking that led to a call
-    /// still reads under its mission.
+    /// per hit (`⊗ 04 … HIT`, indented 12), per live step (`◐ 01 … 3s`,
+    /// indented 8, with a progress bar when the call's estimate is known),
+    /// per waiting step (`◉ 01 … holding for clearance`, the queue's head
+    /// first), per live subagent (`◈ type · task`), and per live background
+    /// job (its satellite row), numbered by mission step. Settled clean
+    /// calls get no row: the mission row above already counts them.
+    /// Lead-in traces keep their think line with its gist, so thinking
+    /// that led to a call still reads under its mission.
     fn flight_rows(&self, width: usize, palette: &Palette) -> Vec<String> {
         let mut out = Vec::new();
         for component in &self.lead_ins {

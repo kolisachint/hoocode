@@ -107,7 +107,7 @@ fn radar_shows_a_live_step_for_the_call_still_running() {
     let out = render(&mut chain);
     let lines: Vec<&str> = out.split('\n').filter(|l| !l.trim().is_empty()).collect();
     assert_eq!(lines.len(), 1, "{out}");
-    assert!(lines[0].contains("◉"), "{out}");
+    assert!(lines[0].contains("◐"), "{out}");
     assert!(lines[0].contains("03"), "{out}");
     assert!(lines[0].contains("Edit"), "{out}");
     assert!(!out.contains("›"), "{out}");
@@ -123,7 +123,7 @@ fn shows_the_shape_while_running_and_what_it_amounted_to_once_done() {
     });
     let mut running = chain_of(Radar, calls, "r");
     let out = render(&mut running);
-    assert!(out.contains("◉"), "{out}");
+    assert!(out.contains("◐"), "{out}");
     assert!(out.contains("04"), "{out}");
     assert!(out.contains("Shell"), "{out}");
 
@@ -296,7 +296,7 @@ fn a_running_single_call_in_radar_reads_as_a_live_step() {
         "running1",
     );
     let out = render(&mut chain);
-    assert!(out.contains("◉"), "{out}");
+    assert!(out.contains("◐"), "{out}");
     assert!(out.contains("01"), "{out}");
     assert!(out.contains("npm run check"), "{out}");
     assert!(!out.contains("running"), "{out}");
@@ -359,7 +359,7 @@ fn two_calls_with_one_running_show_the_live_step_in_radar() {
     let mut chain = chain_of(Radar, calls, "two");
     assert!(chain.is_summarised());
     let out = render(&mut chain);
-    assert!(out.contains("◉"), "{out}");
+    assert!(out.contains("◐"), "{out}");
     assert!(out.contains("02"), "{out}");
     assert!(!out.contains("CodeSearch › Read"), "{out}");
 }
@@ -467,7 +467,7 @@ fn a_background_call_reads_running_while_its_job_runs() {
     set_job_row("j1", Some(TaskStatus::InProgress));
     let out = render(&mut chain_with_job(ChainState::Done));
     set_job_row("j1", None);
-    assert!(out.contains("◉"), "{out}");
+    assert!(out.contains("◐"), "{out}");
     assert!(out.contains("npm run dev"), "{out}");
     assert!(!out.contains('●'), "{out}");
 }
@@ -488,7 +488,7 @@ fn an_aborted_chain_keeps_a_live_background_job_running() {
     set_job_row("j1", Some(TaskStatus::InProgress));
     let out = render(&mut chain_with_job(ChainState::Interrupted));
     set_job_row("j1", None);
-    assert!(out.contains("◉"), "{out}");
+    assert!(out.contains("◐"), "{out}");
     assert!(out.contains("npm run dev"), "{out}");
     assert!(!out.contains('⊘'), "{out}");
 }
@@ -568,12 +568,13 @@ fn a_hit_row_keeps_hit_whole_and_cuts_the_subject_first() {
         "drop",
     );
     chain.close(ChainState::Done);
-    let lines = chain.render(30);
+    // The hit's line is indented 12, so a subject shows a cut at 36 columns.
+    let lines = chain.render(36);
     assert_eq!(lines.len(), 1, "{lines:?}");
     let row = strip(&lines[0]);
     assert!(row.trim_end().ends_with("HIT"), "{row:?}");
     assert!(row.contains('…'), "{row:?}");
-    assert!(hoocode_tui_util::visible_width(&lines[0]) <= 30, "{row:?}");
+    assert!(hoocode_tui_util::visible_width(&lines[0]) <= 36, "{row:?}");
 }
 
 #[test]

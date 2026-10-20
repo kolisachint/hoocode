@@ -1,9 +1,9 @@
- M2 ◉ run a slow check                                          1 step 0✕ $0.001
+ M2 ◐  run a slow check                               1 step  0✕         $0.001
 --- styles ---
 r0 c1-2 fg=#9b8cff
-r0 c4 fg=#ffff00
-r0 c6-21 fg=#e5e5e7 bold
-r0 c64 fg=#5cc8bb
-r0 c66-69 fg=#989898
-r0 c71-72 fg=#a8a8a8
-r0 c74-79 fg=#989898
+r0 c4 fg=#5cc8bb
+r0 c7-22 fg=#e5e5e7 bold
+r0 c54 fg=#5cc8bb
+r0 c55-59 fg=#989898
+r0 c62-63 fg=#a8a8a8
+r0 c73-78 fg=#989898
