@@ -2,7 +2,7 @@
 //! rows, and the tool output views.
 
 use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use hoocode_agent_types::AgentMessage;
@@ -28,7 +28,7 @@ use hoocode_code_tui_widgets::custom_message::{
     BranchSummaryMessageComponent, CompactionSummaryMessageComponent, CustomMessageComponent,
 };
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
-use hoocode_code_tui_widgets::radar::{self, FlightMark, FlightStats, PeekOnly};
+use hoocode_code_tui_widgets::radar::{FlightMark, FlightStats, PeekOnly};
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
@@ -308,24 +308,17 @@ impl Transcript {
         FlightMark::Landed
     }
 
-    /// The radar prose indent (M5): prose written after a hit row of the
-    /// open mission's latest chain indents to the hit's text (12); other
-    /// prose sits under its mission row (8).
-    pub(super) fn radar_prose_indent(&self) -> usize {
+    /// The chain a new radar prose line sits under (M5): the open mission's
+    /// latest chain. `None` when no chain of the open mission precedes it.
+    pub(super) fn radar_chain_above(&self) -> Option<Weak<RefCell<ToolChainComponent>>> {
         let in_mission = self
             .missions
             .last()
             .is_some_and(|mission| self.chains.len() > mission.start);
-        let after_hit = in_mission
-            && self
-                .chains
-                .last()
-                .is_some_and(|chain| chain.borrow().ends_in_hit());
-        if after_hit {
-            radar::HIT_INDENT
-        } else {
-            radar::STEP_INDENT
+        if !in_mission {
+            return None;
         }
+        self.chains.last().map(Rc::downgrade)
     }
 
     /// Refreshes every mission's flight counts and mark from its chains
@@ -758,7 +751,7 @@ impl Mode {
                     .set_rail(self.tool_output_view == ToolOutputView::Peek);
                 component
                     .borrow_mut()
-                    .set_radar_indent(self.transcript.radar_prose_indent());
+                    .set_radar_above(self.transcript.radar_chain_above());
                 self.transcript.assistant_components.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }

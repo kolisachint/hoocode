@@ -232,7 +232,13 @@ fn split_stem(
     }
     let budget = width.saturating_sub(run_width + RUN_GAP);
     if budget == 0 {
-        return (Vec::new(), truncate_spans(run, width, "…"));
+        if run_width <= width {
+            return (Vec::new(), run);
+        }
+        // A cut run keeps the last column blank, like every other row.
+        let mut run = truncate_spans(run, width.saturating_sub(1), "…");
+        run.push(blank(1));
+        return (Vec::new(), run);
     }
     (truncate_spans(stem, budget, "…"), run)
 }
