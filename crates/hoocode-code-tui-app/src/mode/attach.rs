@@ -641,6 +641,9 @@ impl Mode {
                 component
                     .borrow_mut()
                     .set_rail(self.tool_output_view == ToolOutputView::Peek);
+                component
+                    .borrow_mut()
+                    .set_radar_indent(self.transcript.radar_prose_indent());
                 self.add_to_chat(as_component(&component));
                 self.transcript.assistant_components.push(component.clone());
                 self.transcript.streaming = Some(component.clone());

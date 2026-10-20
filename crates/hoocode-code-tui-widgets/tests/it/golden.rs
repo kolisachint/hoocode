@@ -717,6 +717,18 @@ fn radar_mission_row_80() {
 }
 
 #[test]
+fn radar_mission_row_100() {
+    // Wide: the stats hold their columns counted back from the right edge.
+    let _g = lock();
+    let mut header = radar_header(
+        1,
+        "what does the wrap crate do?",
+        flight_stats(FlightMark::Landed, 1, 0, Some("0.8s"), Some("$0.003")),
+    );
+    assert_golden!("radar_mission_row_100", render_golden(&mut header, 100));
+}
+
+#[test]
 fn radar_mission_row_40() {
     // Narrow: the prompt is cut with `…` first, the stats stay whole.
     let _g = lock();
@@ -802,12 +814,14 @@ fn radar_chain_hits_40() {
 
 #[test]
 fn radar_chain_live_80() {
-    // A flying mission's live step: elapsed only, no progress bar.
+    // A flying mission's live step, indented 8: the progress bar sits inline
+    // after the subject. The estimate comes off the call's `timeout`; the
+    // elapsed share is zero at render, so the bar is empty.
     let _g = lock();
     let mut chain = ToolChainComponent::new(ToolOutputView::Radar);
     chain.add(Rc::new(RefCell::new(tool(
         "Shell",
-        json!({ "command": "sleep 6; echo done" }),
+        json!({ "command": "sleep 6; echo done", "timeout": 6 }),
         ToolOutputView::Radar,
     ))));
     assert_golden!("radar_chain_live_80", render_golden(&mut chain, 80));

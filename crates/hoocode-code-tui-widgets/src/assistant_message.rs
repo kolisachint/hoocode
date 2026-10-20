@@ -14,6 +14,7 @@ use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use hoocode_tui_util::js_regex::is_js_space;
 
+use crate::radar::{self, STEP_INDENT};
 use crate::trajectory;
 use crate::wrap_zone;
 
@@ -34,6 +35,46 @@ pub enum ThinkingDisplay {
 /// Markdown; above it the text is segmented at stable block boundaries so each
 /// update re-parses only the growing tail.
 const SEGMENT_MIN_CHARS: usize = 2048;
+
+/// The radar prose of a message (M5): its last text paragraph, joined into
+/// one line of single spaces. A failed message with no text reads its
+/// error instead.
+fn radar_prose(message: &AssistantMessage) -> Option<String> {
+    let text = message
+        .content
+        .iter()
+        .rev()
+        .find_map(|content| match content {
+            Content::Text(t) => last_paragraph(&t.text),
+            _ => None,
+        });
+    text.or_else(|| {
+        let error = message.error_message.as_deref()?;
+        if !matches!(message.stop_reason, StopReason::Error) {
+            return None;
+        }
+        last_paragraph(&format!("Error: {error}"))
+    })
+}
+
+/// The last paragraph of `text` (blank-line separated), joined into one
+/// line. `None` when every line is blank.
+fn last_paragraph(text: &str) -> Option<String> {
+    let mut last: Option<String> = None;
+    let mut current: Vec<&str> = Vec::new();
+    for line in text.lines().chain(std::iter::once("")) {
+        if line.trim().is_empty() {
+            if !current.is_empty() {
+                last = Some(current.join(" "));
+                current.clear();
+            }
+        } else {
+            current.push(line.trim());
+        }
+    }
+    last.map(|paragraph| paragraph.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|paragraph| !paragraph.is_empty())
+}
 
 /// A thinking trace's gist (Mission Control spec a2/r11): the first
 /// non-blank line of the message's first thinking block,
@@ -218,6 +259,9 @@ pub struct AssistantMessageComponent {
     /// Mission Control peek (M4): prose lines sit on the `┊` rail. Think
     /// headers (`·· …`) keep their own slot and skip the rail.
     rail: bool,
+    /// Radar (M5): the indent of the prose line under the mission row, 8,
+    /// or 12 when a hit row sits right above it.
+    radar_indent: usize,
     /// Shared with the caller's streaming message, so a delta does not copy it.
     last_message: Option<Rc<AssistantMessage>>,
     has_tool_calls: bool,
@@ -277,6 +321,7 @@ impl AssistantMessageComponent {
             thinking_display,
             markdown_theme,
             rail: false,
+            radar_indent: STEP_INDENT,
             last_message: None,
             has_tool_calls: false,
             markdown_cache: HashMap::new(),
@@ -361,6 +406,12 @@ impl AssistantMessageComponent {
     /// Mission Control peek (M4): prose lines sit on the `┊` rail.
     pub fn set_rail(&mut self, rail: bool) {
         self.rail = rail;
+    }
+
+    /// Radar (M5): the prose line's indent, `radar::STEP_INDENT` under the
+    /// mission row or `radar::HIT_INDENT` under a hit row.
+    pub fn set_radar_indent(&mut self, indent: usize) {
+        self.radar_indent = indent;
     }
 
     /// The Think row's seconds: elapsed since the trace started while it
@@ -515,25 +566,17 @@ impl AssistantMessageComponent {
 }
 
 impl AssistantMessageComponent {
-    /// The radar flight log (M5): the message's last prose line, then its
-    /// `✻ thought Ns` line with no gist. A message with neither renders
-    /// nothing.
+    /// The radar flight log (M5): the message's last paragraph on one line,
+    /// then its `✻ thought Ns` line with no gist. A message with neither
+    /// renders nothing. A failed message reads its error as the prose.
     fn render_radar(&mut self, width: u16, palette: &Palette) -> Vec<String> {
-        let lines = self.content.render(width);
-        let prose = lines
-            .iter()
-            .rev()
-            .find(|line| {
-                !hoocode_tui_util::strip_vt_control_characters(line)
-                    .trim()
-                    .is_empty()
-            })
-            .cloned();
+        let width = width as usize;
+        let prose = self.last_message.as_deref().and_then(radar_prose);
         let mut out = Vec::new();
-        if let Some(line) = prose {
-            out.push(line);
+        if let Some(prose) = prose {
+            out.push(radar::prose_row(&prose, self.radar_indent, palette, width));
         }
-        if let Some(line) = self.radar_think_line(width as usize, palette) {
+        if let Some(line) = self.radar_think_line(width, palette) {
             out.push(line);
         }
         if out.is_empty() {

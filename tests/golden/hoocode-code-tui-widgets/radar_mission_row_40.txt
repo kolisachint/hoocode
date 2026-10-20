@@ -1,10 +1,10 @@
- M2 ● review th…  4 steps 1✕ 0.6s $0.006
+ M2 ●  rev…  4 steps  1✕   0.6s  $0.006
 --- styles ---
 r0 c1-2 fg=#9b8cff
 r0 c4 fg=#b5bd68
-r0 c6-14 fg=#e5e5e7 bold
-r0 c18 fg=#e5e5e7
-r0 c20-24 fg=#989898
-r0 c26-27 fg=#a8a8a8
-r0 c29-32 fg=#989898
-r0 c34-39 fg=#989898
+r0 c7-9 fg=#e5e5e7 bold
+r0 c13 fg=#e5e5e7
+r0 c14-19 fg=#989898
+r0 c22-23 fg=#a8a8a8
+r0 c27-30 fg=#989898
+r0 c33-38 fg=#989898
