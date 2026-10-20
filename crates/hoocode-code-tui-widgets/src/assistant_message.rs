@@ -369,6 +369,12 @@ pub struct AssistantMessageComponent {
     /// prose line. The prose reads that chain's last row when it renders,
     /// so a row that turns into a hit later still moves the prose to 12.
     radar_above: Option<Weak<RefCell<ToolChainComponent>>>,
+    /// Radar (M5): the mission (header number) this message belongs to; `None`
+    /// before the first mission. The transcript groups prose by it.
+    radar_mission: Option<usize>,
+    /// Radar (M5): whether this message's prose line shows. The transcript
+    /// sets it: only the last prose message of an ended mission shows one.
+    radar_prose_shown: bool,
     /// Shared with the caller's streaming message, so a delta does not copy it.
     last_message: Option<Rc<AssistantMessage>>,
     has_tool_calls: bool,
@@ -429,6 +435,8 @@ impl AssistantMessageComponent {
             markdown_theme,
             rail: false,
             radar_above: None,
+            radar_mission: None,
+            radar_prose_shown: false,
             last_message: None,
             has_tool_calls: false,
             markdown_cache: HashMap::new(),
@@ -519,6 +527,28 @@ impl AssistantMessageComponent {
     /// no mission chain precedes it).
     pub fn set_radar_above(&mut self, chain: Option<Weak<RefCell<ToolChainComponent>>>) {
         self.radar_above = chain;
+    }
+
+    /// Radar (M5): the mission this message belongs to (`None` before the
+    /// first mission).
+    pub fn radar_mission(&self) -> Option<usize> {
+        self.radar_mission
+    }
+
+    /// Radar (M5): tags the message with its mission.
+    pub fn set_radar_mission(&mut self, mission: Option<usize>) {
+        self.radar_mission = mission;
+    }
+
+    /// Radar (M5): whether the message has prose a radar line can show.
+    pub fn has_radar_prose(&self) -> bool {
+        self.last_message.as_deref().and_then(radar_prose).is_some()
+    }
+
+    /// Radar (M5): shows or hides the message's prose line. Thinking's
+    /// `✻ thought` line is not affected.
+    pub fn set_radar_prose_shown(&mut self, shown: bool) {
+        self.radar_prose_shown = shown;
     }
 
     /// The prose line's indent: `HIT_INDENT` (12) when the chain above ends
@@ -689,11 +719,15 @@ impl AssistantMessageComponent {
 
 impl AssistantMessageComponent {
     /// The radar flight log (M5): the message's last paragraph on one line,
-    /// then its `✻ thought Ns` line with no gist. A message with neither
-    /// renders nothing. A failed message reads its error as the prose.
+    /// when the transcript shows it (`set_radar_prose_shown`), then its
+    /// `✻ thought Ns` line with no gist. A message with neither renders
+    /// nothing. A failed message reads its error as the prose.
     fn render_radar(&mut self, width: u16, palette: &Palette) -> Vec<String> {
         let width = width as usize;
-        let prose = self.last_message.as_deref().and_then(radar_prose);
+        let prose = self
+            .radar_prose_shown
+            .then(|| self.last_message.as_deref().and_then(radar_prose))
+            .flatten();
         let mut out = Vec::new();
         if let Some(prose) = prose {
             out.push(radar::prose_row(

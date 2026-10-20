@@ -5,6 +5,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 use std::time::Instant;
 
+use crate::comms_frame::MissionOutcome;
 use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{
     AssistantMessage, Content, ImageContent, StopReason, UserContent, UserMessage,
@@ -321,6 +322,40 @@ impl Transcript {
         self.chains.last().map(Rc::downgrade)
     }
 
+    /// Radar prose (M5): a mission shows one prose line, from its last
+    /// assistant message with prose, and only once it has ended. A flying
+    /// mission shows none, and neither do its intermediate messages. A mission
+    /// ends when a later one opens, or when its turn settles (`flying` is
+    /// false). Messages before the first mission keep their prose.
+    pub(super) fn sync_radar_prose(&self, flying: bool) {
+        let last_seq = self.missions.last().map(|m| m.seq);
+        let mut last_with_prose: HashMap<usize, usize> = HashMap::new();
+        for (i, component) in self.assistant_components.iter().enumerate() {
+            let component = component.borrow();
+            if let Some(seq) = component.radar_mission() {
+                if component.has_radar_prose() {
+                    last_with_prose.insert(seq, i);
+                }
+            }
+        }
+        for (i, component) in self.assistant_components.iter().enumerate() {
+            let mut component = component.borrow_mut();
+            let shown = match component.radar_mission() {
+                None => component.has_radar_prose(),
+                Some(seq) => {
+                    let ended = Some(seq) != last_seq || !flying;
+                    ended && last_with_prose.get(&seq) == Some(&i)
+                }
+            };
+            component.set_radar_prose_shown(shown);
+        }
+    }
+
+    /// The sequence number of the mission a new message belongs to.
+    pub(super) fn current_mission(&self) -> Option<usize> {
+        self.missions.last().map(|m| m.seq)
+    }
+
     /// Refreshes every mission's flight counts and mark from its chains
     /// (M5): steps and hits tally as the landing lines count them, and
     /// unlanded missions read their mark off their chains. Times and costs
@@ -609,6 +644,8 @@ impl Mode {
         }
         self.transcript
             .begin_mission(text, skill, self.tool_output_view);
+        // The comms title reads the new mission until it settles.
+        self.mission_outcome.borrow_mut().take();
         self.refresh_flight_stats();
     }
 
@@ -640,6 +677,8 @@ impl Mode {
     /// the anchor. Landed missions keep the time and cost they landed with.
     pub(super) fn refresh_flight_stats(&mut self) {
         self.transcript.refresh_flight_marks();
+        self.transcript
+            .sync_radar_prose(self.turn_cost_anchor.is_some());
         let Some(mission) = self.transcript.missions.last() else {
             return;
         };
@@ -752,8 +791,13 @@ impl Mode {
                 component
                     .borrow_mut()
                     .set_radar_above(self.transcript.radar_chain_above());
+                component
+                    .borrow_mut()
+                    .set_radar_mission(self.transcript.current_mission());
                 self.transcript.assistant_components.push(component.clone());
                 self.add_to_chat(as_component(&component));
+                self.transcript
+                    .sync_radar_prose(self.turn_cost_anchor.is_some());
             }
             AgentMessage::Custom(custom) => {
                 if custom.display {
@@ -795,6 +839,7 @@ impl Mode {
             AgentMessage::BashExecution(bash) => {
                 let exclude = bash.exclude_from_context.unwrap_or(false);
                 let mut component = BashExecutionComponent::new(&bash.command, exclude);
+                component.set_radar_flag(self.transcript.radar_active.clone());
                 if !bash.output.is_empty() {
                     component.append_output(&bash.output);
                 }
@@ -1371,6 +1416,9 @@ impl Mode {
             self.session.settings().set_tool_output_view(view);
         }
         self.footer.borrow_mut().set_tool_output_view(view);
+        self.task_panel
+            .borrow_mut()
+            .set_radar(view == ToolOutputView::Radar);
         self.comms.borrow_mut().set_tool_output_view(view);
         // Radar hides the peek-only rows (landing lines, message bodies)
         // and switches the mission headers to their flight-log rows.
@@ -1468,6 +1516,20 @@ impl Mode {
         );
     }
 
+    /// Records how the mission that just settled ended, for the comms title
+    /// (LANDED, DID NOT LAND, ABORTED) until the next mission opens.
+    fn record_mission_outcome(&self, secs: f64) {
+        let Some(mission) = self.transcript.missions.last() else {
+            return;
+        };
+        let flight = mission.flight.borrow();
+        *self.mission_outcome.borrow_mut() = Some(MissionOutcome {
+            mark: flight.mark,
+            secs,
+            steps: flight.steps,
+        });
+    }
+
     /// The per-turn row of a settled turn in a rebuilt transcript: the same
     /// row `show_turn_cost` draws after a live turn.
     fn show_rebuilt_turn_cost(&mut self, turn: RebuiltTurn) {
@@ -1494,11 +1556,13 @@ impl Mode {
         if let Some(seq) = self.transcript.missions.last().map(|m| m.seq) {
             if self.transcript.land_mission(seq, input, output, cost, secs) {
                 self.refresh_flight_stats();
+                self.record_mission_outcome(secs);
                 return;
             }
         }
         // A stepless mission still reads its time and cost in radar.
         self.refresh_flight_stats();
+        self.record_mission_outcome(secs);
         // Nothing was accounted: stay silent rather than print zeroes.
         if input <= 0 && output <= 0 {
             return;
@@ -1545,6 +1609,56 @@ mod tests {
     fn fresh_transcript() -> Transcript {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         Transcript::new(Rc::new(RefCell::new(Container::new())))
+    }
+
+    /// A radar-tagged assistant message of the current mission, in the transcript.
+    fn radar_prose_message(
+        t: &mut Transcript,
+        text: &str,
+    ) -> Rc<RefCell<AssistantMessageComponent>> {
+        let message = hoocode_ai_types::AssistantMessage {
+            content: vec![Content::text(text)],
+            ..Default::default()
+        };
+        let component = Rc::new(RefCell::new(AssistantMessageComponent::new(
+            Some(&message),
+            ThinkingDisplay::Omit,
+        )));
+        component
+            .borrow_mut()
+            .set_radar_mission(t.current_mission());
+        t.assistant_components.push(component.clone());
+        component
+    }
+
+    /// The text a radar message draws (empty when its prose is held back).
+    fn radar_text(component: &Rc<RefCell<AssistantMessageComponent>>) -> String {
+        strip_vt_control_characters(&component.borrow_mut().render(60).join("\n"))
+    }
+
+    #[test]
+    fn radar_prose_shows_one_line_once_the_mission_ends() {
+        let mut t = fresh_transcript();
+        t.begin_mission("run alpha", None, ToolOutputView::Radar);
+        let running = radar_prose_message(&mut t, "Running alpha.");
+        let last = radar_prose_message(&mut t, "Alpha printed.");
+
+        // In flight: neither the intermediate message nor the last one reads.
+        t.sync_radar_prose(true);
+        assert!(!radar_text(&running).contains("Running alpha."));
+        assert!(!radar_text(&last).contains("Alpha printed."));
+
+        // Ended: only the last message's prose shows.
+        t.sync_radar_prose(false);
+        assert!(!radar_text(&running).contains("Running alpha."));
+        assert!(radar_text(&last).contains("Alpha printed."));
+
+        // A later mission opens: the ended one keeps its line, the open one has none.
+        t.begin_mission("run beta", None, ToolOutputView::Radar);
+        let beta = radar_prose_message(&mut t, "Beta is running.");
+        t.sync_radar_prose(true);
+        assert!(radar_text(&last).contains("Alpha printed."));
+        assert!(!radar_text(&beta).contains("Beta is running."));
     }
 
     fn user_message(content: UserContent) -> UserMessage {

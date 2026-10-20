@@ -77,6 +77,8 @@ fn omit_drops_the_thinking_block_but_keeps_the_text_around_it() {
         ])),
         ThinkingDisplay::Omit,
     );
+    // The transcript shows the prose once the mission has ended.
+    c.set_radar_prose_shown(true);
     let rendered = c.render(60).join("\n");
     assert!(rendered.contains("here is the answer"));
     assert!(!rendered.contains("weighing the options"));

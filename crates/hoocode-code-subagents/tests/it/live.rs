@@ -407,3 +407,37 @@ async fn the_pool_listener_sends_a_runs_events_to_the_live_sink() {
     set_live_sink(None);
     pool.dispose();
 }
+
+#[test]
+fn sub_steps_keep_running_and_failed_calls_and_drop_clean_ones() {
+    // The run's own calls: a clean one settles away, a failed one stays with
+    // its first output line, and the run's end clears them all.
+    let task = "live-sub-steps-radar";
+    apply(task, &json!({"type": "task_started"}));
+    apply(
+        task,
+        &json!({"type": "tool_execution_start", "toolCallId": "c1", "toolName": "Read", "args": {"path": "a.rs"}}),
+    );
+    apply(
+        task,
+        &json!({"type": "tool_execution_start", "toolCallId": "c2", "toolName": "Read", "args": {"path": "b.rs"}}),
+    );
+    apply(
+        task,
+        &json!({"type": "tool_execution_end", "toolCallId": "c1", "isError": false,
+                "result": {"content": [{"type": "text", "text": "fine"}]}}),
+    );
+    apply(
+        task,
+        &json!({"type": "tool_execution_end", "toolCallId": "c2", "isError": true,
+                "result": {"content": [{"type": "text", "text": "\n  no such file\nmore"}]}}),
+    );
+    let steps = hoocode_code_subagents::live::sub_steps(task);
+    assert_eq!(steps.len(), 1, "{steps:?}");
+    assert_eq!(steps[0].tool, "Read");
+    assert_eq!(steps[0].subject, "b.rs");
+    assert_eq!(steps[0].failure.as_deref(), Some("no such file"));
+
+    apply(task, &json!({"type": "task_done"}));
+    assert!(hoocode_code_subagents::live::sub_steps(task).is_empty());
+}

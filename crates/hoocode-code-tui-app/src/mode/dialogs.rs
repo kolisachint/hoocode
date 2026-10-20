@@ -213,6 +213,8 @@ impl Mode {
         reply: mpsc::Sender<ClearanceChoice>,
     ) {
         self.close_clearance(ClearanceChoice::Deny { reason: None });
+        let held_tool = info.tool.clone();
+        let held_detail = info.detail.clone();
         // A quit in flight is superseded with it: the slot belongs to the
         // clearance, quitting again re-asks, and a later fatal error
         // leaves at once (see `superseded_quit`).
@@ -237,6 +239,13 @@ impl Mode {
         }
         self.tui.set_focus(Some(as_component(&card)));
         self.clearance = Some((card, reply));
+        // The held step reads its waiting row (radar `◉`) while the card is up.
+        for block in self.transcript.pending_tools.values() {
+            let mut block = block.borrow_mut();
+            if block.is_held_by(&held_tool, &held_detail) {
+                block.set_waiting_for_clearance(true);
+            }
+        }
         self.dirty.set(true);
     }
 
@@ -252,6 +261,9 @@ impl Mode {
             _ => None,
         };
         let _ = reply.send(choice);
+        for block in self.transcript.pending_tools.values() {
+            block.borrow_mut().set_waiting_for_clearance(false);
+        }
         {
             let mut container = self.editor_container.borrow_mut();
             container.clear();

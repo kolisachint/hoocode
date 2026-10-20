@@ -150,7 +150,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2291 / 0 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 2129 / 746 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2414 / 1823 | keep |
-| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 10104 / 10443 | keep |
+| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 10178 / 10477 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1112 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1074 / 125 | keep |
 | `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 3028 / 1463 | keep |
@@ -164,11 +164,11 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 22452 / 7190 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 22630 / 7225 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 786 / 893 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8928 / 4789 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2516 / 2142 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 12445 / 7847 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 12679 / 7978 | keep |
 
 ### TUI library (`tui-*`)
 

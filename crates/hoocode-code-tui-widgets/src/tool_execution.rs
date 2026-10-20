@@ -283,6 +283,8 @@ pub struct ToolExecutionComponent {
     builtin_definition: Option<ToolRenderDefinition>,
     cwd: String,
     execution_started: bool,
+    /// The permission gate holds this call for clearance (radar's `◉` row).
+    waiting_for_clearance: bool,
     args_complete: bool,
     result: Option<Rc<ResultHolder>>,
     hide_component: bool,
@@ -331,6 +333,7 @@ impl ToolExecutionComponent {
             builtin_definition: builtin_tool_definition(tool_name),
             cwd: cwd.to_string(),
             execution_started: false,
+            waiting_for_clearance: false,
             args_complete: false,
             result: None,
             hide_component: false,
@@ -433,6 +436,26 @@ impl ToolExecutionComponent {
         self.update_display();
     }
 
+    /// Whether this call is the one a clearance card holds: the same tool,
+    /// no result yet, and its subject named in the card's detail (`$ ls`).
+    /// The start event lands before the gate asks, so the block already
+    /// reads as started here.
+    pub fn is_held_by(&self, tool: &str, detail: &str) -> bool {
+        if self.tool_name != tool || self.result.is_some() || self.frozen {
+            return false;
+        }
+        let subject = self.chain_entry().subject;
+        !subject.is_empty() && detail.contains(&subject)
+    }
+
+    /// Marks the call as parked for clearance (or released from it).
+    pub fn set_waiting_for_clearance(&mut self, waiting: bool) {
+        if self.waiting_for_clearance != waiting {
+            self.waiting_for_clearance = waiting;
+            self.update_display();
+        }
+    }
+
     pub fn set_args_complete(&mut self) {
         self.args_complete = true;
         self.update_display();
@@ -514,6 +537,21 @@ impl ToolExecutionComponent {
         self.tool_name == "Agent"
     }
 
+    /// The pool run an Agent call dispatched, the key of its live tail: the
+    /// run its result names, else the one the call remembered. `None` for
+    /// other tools.
+    pub fn agent_run_id(&self) -> Option<String> {
+        if !self.is_agent() {
+            return None;
+        }
+        self.result
+            .as_ref()
+            .and_then(|result| result.details.get("poolTaskId"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| hoocode_code_subagents::live::run_for_tool_call(&self.tool_call_id))
+    }
+
     /// The background job id, while its job is still live (M4: the step
     /// shows the satellite row `⌁ sat job-1 · in orbit 4s`).
     pub fn background_job_id(&self) -> Option<String> {
@@ -528,15 +566,11 @@ impl ToolExecutionComponent {
             .map(str::to_string)
     }
 
-    /// Whether the call is parked waiting for user clearance.
-    ///
-    /// The Mission Control spec r5 draws a `holding for clearance` row, but
-    /// the component does not yet carry an explicit clearance state: a newly
-    /// created call with no result also has `execution_started == false`.
-    /// Until the permission gate sets a distinct flag, treat no call as
-    /// waiting so that pending calls render as live steps.
+    /// Whether the call is parked waiting for user clearance: the permission
+    /// gate set the flag and the call has no result yet (Mission Control
+    /// spec r5: the `holding for clearance` row).
     pub fn is_waiting_for_clearance(&self) -> bool {
-        false
+        self.waiting_for_clearance && self.result.is_none() && !self.frozen
     }
 
     /// The call's expected run time in seconds, from its `timeout` arg
@@ -721,7 +755,12 @@ impl ToolExecutionComponent {
     /// Seconds since the block opened (settled at `update_result`).
     /// Rebuilt history settles at once, so its span reads ~0.
     pub(crate) fn block_elapsed_secs(&self) -> Option<u64> {
-        let end = self.settled_at.unwrap_or_else(Instant::now);
+        // A live background job outlives its start (which returns at once):
+        // its satellite clock keeps running until the job exits.
+        let end = match self.settled_at {
+            Some(settled) if !self.is_live_background_job() => settled,
+            _ => Instant::now(),
+        };
         end.duration_since(self.started).as_secs().into()
     }
 

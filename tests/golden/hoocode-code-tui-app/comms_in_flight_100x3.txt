@@ -1,4 +1,4 @@
-┏━ ◉ IN FLIGHT · step 1 · 4s · esc abort ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  amber-harbor  ━┓
+┏━ ◐ IN FLIGHT · step 1 · 4s · esc abort ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  amber-harbor  ━┓
 ┃ ▸ type to queue the next mission                                                                 ┃
 ┗━ peek ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ↑48k ↓9.8k · 42% of 200k ━┛
 --- styles ---

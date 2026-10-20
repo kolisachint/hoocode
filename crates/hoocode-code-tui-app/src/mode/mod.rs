@@ -55,7 +55,7 @@ use crate::chime::{ChimeDebounce, TurnTimer, BELL};
 use crate::chrome_layout::{
     ChromeLayoutController, ChromeSurfaces, FooterLayout, TasksLayout, SMALL_TERMINAL_ROWS,
 };
-use crate::comms_frame::{CommsFrame, CommsState, InputStyle};
+use crate::comms_frame::{CommsFrame, CommsState, InputStyle, MissionOutcome};
 use crate::dialog_bridge::{set_dialog_sink, DialogRequest};
 use crate::expandable_text::ExpandableText;
 use crate::footer::{FooterComponent, FooterDensity, FooterSource};
@@ -454,6 +454,9 @@ struct Mode {
     /// Scheduled prompts fired and not yet finished: their Schedule rows in the task panel.
     scheduled_runs: hoocode_code_scheduler::Runs,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
+    /// How the last settled mission ended: the comms title's LANDED,
+    /// DID NOT LAND or ABORTED until the next mission opens.
+    mission_outcome: Rc<RefCell<Option<MissionOutcome>>>,
     turn_stop_reason: Option<StopReason>,
     /// A `/plugin` change made while a turn ran: applied when the turn ends (`PromptDone`).
     plugin_reload_pending: bool,
@@ -736,6 +739,8 @@ impl Mode {
         // the frame's state closure cannot borrow the mode.
         let comms_lost = Rc::new(Cell::new(false));
         let comms_lost_state = comms_lost.clone();
+        let mission_outcome: Rc<RefCell<Option<MissionOutcome>>> = Rc::default();
+        let outcome_state = mission_outcome.clone();
         let comms = handle(CommsFrame::new(
             as_component(&editor),
             move || {
@@ -751,7 +756,10 @@ impl Mode {
                 } else if comms_lost_state.get() {
                     CommsState::CommsLost
                 } else {
-                    CommsState::Ready
+                    match outcome_state.borrow().as_ref() {
+                        Some(outcome) => outcome.comms_state(),
+                        None => CommsState::Ready,
+                    }
                 }
             },
             move || queue_snapshot_state.borrow().clone(),
@@ -774,7 +782,9 @@ impl Mode {
             tool_output_view,
         ));
         let footer_slot = handle(Slot::new(as_component(&footer)));
-        let task_panel = handle(TaskPanelComponent::new());
+        let mut task_panel_component = TaskPanelComponent::new();
+        task_panel_component.set_radar(tool_output_view == ToolOutputView::Radar);
+        let task_panel = handle(task_panel_component);
         let tasks_slot = handle(Slot::new(as_component(&task_panel)));
         let panel_for_density = task_panel.clone();
         let footer_for_density = footer.clone();
@@ -1031,6 +1041,7 @@ impl Mode {
             loop_tasks: Vec::new(),
             scheduled_runs: Default::default(),
             turn_cost_anchor: None,
+            mission_outcome,
             turn_stop_reason: None,
             plugin_reload_pending: false,
             plugin_notices: Vec::new(),
@@ -1576,6 +1587,12 @@ impl Mode {
                     self.dirty.set(true);
                 }
                 if self.task_panel.borrow().ticking() {
+                    self.dirty.set(true);
+                }
+                // A flying mission's clock: the radar mission row, the live
+                // step times and the comms title read it, so they redraw
+                // once a second while a turn runs.
+                if self.turn_cost_anchor.is_some() {
                     self.dirty.set(true);
                 }
                 // The attached job's output is followed once a second, off the UI thread.
