@@ -923,6 +923,8 @@ fn render_flight_plan(
 pub struct TaskPanelComponent {
     view: TaskPanelView,
     density: TaskPanelDensity,
+    /// Radar view: the unfocused panel draws nothing (see `render`).
+    radar: bool,
     disposed: bool,
     ticking: bool,
     model: RowModel,
@@ -967,6 +969,7 @@ impl TaskPanelComponent {
         Self {
             view: TaskPanelView::Plan,
             density: TaskPanelDensity::Full,
+            radar: false,
             disposed: false,
             ticking: false,
             model: RowModel::default(),
@@ -989,6 +992,12 @@ impl TaskPanelComponent {
     /// `setDensity`: driven by the chrome, not by the pane.
     pub fn set_density(&mut self, density: TaskPanelDensity) {
         self.density = density;
+    }
+
+    /// Radar view (M5): the flight log carries the running work, so the
+    /// unfocused panel hides. Focus (Ctrl+G) still opens the console.
+    pub fn set_radar(&mut self, radar: bool) {
+        self.radar = radar;
     }
 
     /// `cycleView`: the next tab with rows, wrapping; an emptied view snaps
@@ -1176,6 +1185,12 @@ impl Component for TaskPanelComponent {
                 .collect()
         };
 
+        // Radar draws the flight log instead: the unfocused ledger's rows (the
+        // subagents' rail rows included) would repeat it, so they hide. Focus
+        // still opens the console.
+        if self.radar && !focused {
+            return Vec::new();
+        }
         if self.density == TaskPanelDensity::Summary && !focused {
             return vec![gutter.clone() + &render_summary_track(model, inner)];
         }

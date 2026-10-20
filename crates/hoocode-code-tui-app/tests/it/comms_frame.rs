@@ -8,12 +8,13 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use hoocode_code_tui_app::comms_frame::{
-    CommsFrame, CommsState, GlyphStyle, InputStyle, COMMS_LOST_PLACEHOLDER, IN_FLIGHT_PLACEHOLDER,
-    READY_PLACEHOLDER,
+    CommsFrame, CommsState, GlyphStyle, InputStyle, MissionOutcome, COMMS_LOST_PLACEHOLDER,
+    IN_FLIGHT_PLACEHOLDER, READY_PLACEHOLDER,
 };
 use hoocode_code_tui_app::footer::{FooterModel, FooterSource, ToolOutputView};
 use hoocode_code_tui_app::footer_data::FooterDataProvider;
 use hoocode_code_tui_theme::get_editor_theme;
+use hoocode_code_tui_widgets::radar::FlightMark;
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle};
 use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
@@ -175,7 +176,7 @@ fn in_flight_shows_the_step_elapsed_time_and_queue_placeholder() {
     let rows = rows(&mut in_flight(), 100);
     assert_eq!(rows.len(), 3, "{rows:?}");
     assert!(
-        rows[0].contains("◉ IN FLIGHT · step 1 · 4s · esc abort"),
+        rows[0].contains("◐ IN FLIGHT · step 1 · 4s · esc abort"),
         "row 0: {:?}",
         rows[0]
     );
@@ -199,10 +200,44 @@ fn in_flight_without_elapsed_omits_the_time() {
     );
     let rows = rows(&mut frame, 100);
     assert!(
-        rows[0].contains("◉ IN FLIGHT · esc abort"),
+        rows[0].contains("◐ IN FLIGHT · esc abort"),
         "row 0: {:?}",
         rows[0]
     );
+}
+
+#[test]
+fn settled_missions_read_landed_did_not_land_or_aborted_until_the_next() {
+    let _g = lock(Some("dark"));
+    let landed = MissionOutcome {
+        mark: FlightMark::Landed,
+        secs: 3.0,
+        steps: 1,
+    };
+    let mut shown = frame(landed.comms_state(), ToolOutputView::Radar, "build");
+    let row = rows(&mut shown, 100)[0].clone();
+    assert!(row.contains("● LANDED · 3.0s · 1 step"), "row 0: {row:?}");
+
+    let lost = MissionOutcome {
+        mark: FlightMark::DidNotLand,
+        secs: 2.5,
+        steps: 4,
+    };
+    let mut shown = frame(lost.comms_state(), ToolOutputView::Radar, "build");
+    let row = rows(&mut shown, 100)[0].clone();
+    assert!(
+        row.contains("⊗ DID NOT LAND · 2.5s · 4 steps"),
+        "row 0: {row:?}"
+    );
+
+    let aborted = MissionOutcome {
+        mark: FlightMark::Aborted,
+        secs: 1.0,
+        steps: 2,
+    };
+    let mut shown = frame(aborted.comms_state(), ToolOutputView::Radar, "build");
+    let row = rows(&mut shown, 100)[0].clone();
+    assert!(row.contains("⊘ ABORTED · READY"), "row 0: {row:?}");
 }
 
 #[test]
@@ -287,7 +322,7 @@ fn queued_messages_draw_inside_the_frame_with_their_dispositions() {
     let rows = rows(&mut frame, 100);
     assert_eq!(rows.len(), 5, "{rows:?}");
     assert!(
-        rows[0].contains("◉ IN FLIGHT · step 1 · 6s · esc abort"),
+        rows[0].contains("◐ IN FLIGHT · step 1 · 6s · esc abort"),
         "row 0: {:?}",
         rows[0]
     );

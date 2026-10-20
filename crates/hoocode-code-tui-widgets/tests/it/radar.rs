@@ -1,8 +1,8 @@
 //! Direct Mission Control radar row checks (spec r5).
 //!
-//! The clearance rows render outside `flight_rows` while the component
-//! carries no clearance flag (`is_waiting_for_clearance` is `false` until
-//! the permission gate wires one), so pin `waiting_row` here.
+//! Direct Mission Control radar row checks (spec r5, r7, r9). The clearance
+//! hold is set by the clearance card (`set_waiting_for_clearance`), so the
+//! chain shows the `waiting_row` for a held call.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -10,8 +10,8 @@ use std::rc::Rc;
 use crate::support::{assistant, lock, strip};
 use hoocode_ai_types::Content;
 use hoocode_code_tui_widgets::radar::{
-    agent_live_row, hit_row, live_row, mission_row, prose_row, satellite_row, think_row,
-    waiting_row, FlightMark, FlightStats, HIT_INDENT, STEP_INDENT,
+    agent_live_row, hit_row, live_row, mission_row, prose_row, satellite_row, sub_hit_row,
+    sub_live_row, think_row, waiting_row, FlightMark, FlightStats, HIT_INDENT, STEP_INDENT,
 };
 use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -173,6 +173,8 @@ fn prose_moves_to_the_hit_text_when_the_chain_above_turns_into_a_hit() {
     let message = assistant(vec![Content::text("It wraps text.")]);
     let mut prose = AssistantMessageComponent::new(Some(&message), ThinkingDisplay::Omit);
     prose.set_radar_above(Some(Rc::downgrade(&chain)));
+    // The transcript shows the prose once the mission has ended.
+    prose.set_radar_prose_shown(true);
     let before = strip(&prose.render(40).join("\n"));
     assert!(before.starts_with("        It wraps text."), "{before:?}");
 
@@ -236,4 +238,129 @@ fn narrow_rows_keep_the_last_column_blank_and_never_overflow() {
             );
         }
     }
+}
+
+#[test]
+fn sub_step_rows_read_under_their_agent_at_the_step_indent() {
+    let palette = Palette::default();
+    let live = strip(&sub_live_row(1, 1, "Read", "src/lib.rs", 2, &palette, 80));
+    assert!(live.starts_with(&" ".repeat(STEP_INDENT)), "{live:?}");
+    assert!(live.contains("◐ 01.1 Read  src/lib.rs"), "{live:?}");
+    let hit = strip(&sub_hit_row(
+        1,
+        2,
+        "Read",
+        "missing.rs",
+        "no such file",
+        &palette,
+        80,
+    ));
+    assert!(hit.starts_with(&" ".repeat(STEP_INDENT)), "{hit:?}");
+    assert!(hit.contains("⊗ 01.2 Read  missing.rs"), "{hit:?}");
+    assert!(hit.contains("HIT"), "{hit:?}");
+}
+
+#[test]
+fn a_call_held_for_clearance_reads_the_waiting_row() {
+    // The permission gate parks a call that already started: the chain shows
+    // the `◉ holding for clearance` row, not a live `◐` row.
+    let _g = lock();
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let options = ToolExecutionOptions {
+        view: Radar,
+        ..Default::default()
+    };
+    let call = Rc::new(RefCell::new(ToolExecutionComponent::new(
+        "Shell",
+        "held-1",
+        json!({"command": "ls"}),
+        options,
+        None,
+        &cwd,
+    )));
+    call.borrow_mut().mark_execution_started();
+    assert!(!call.borrow().is_waiting_for_clearance());
+    assert!(call.borrow().is_held_by("Shell", "$ ls"));
+    assert!(!call.borrow().is_held_by("Shell", "$ rm -rf target/"));
+    call.borrow_mut().set_waiting_for_clearance(true);
+    assert!(call.borrow().is_waiting_for_clearance());
+
+    let mut chain = ToolChainComponent::new(Radar);
+    chain.add(call.clone());
+    let rows: Vec<String> = chain.render(80).iter().map(|row| strip(row)).collect();
+    let held = rows
+        .iter()
+        .find(|row| row.contains("01 Shell"))
+        .expect("a step row");
+    assert!(held.contains("◉"), "{held:?}");
+    assert!(held.contains("holding for clearance"), "{held:?}");
+    assert!(!held.contains("◐"), "{held:?}");
+
+    // Released (the card answered): the step is live again.
+    call.borrow_mut().set_waiting_for_clearance(false);
+    assert!(!call.borrow().is_waiting_for_clearance());
+}
+
+#[test]
+fn a_bang_row_shows_its_header_only_in_radar() {
+    use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
+    use std::cell::Cell;
+    let _g = lock();
+    let radar = Rc::new(Cell::new(true));
+    let mut bang = BashExecutionComponent::new("ls", false);
+    bang.set_radar_flag(radar.clone());
+    bang.append_output("README.md\nsrc\n");
+    bang.set_complete(Some(0), false, None, None);
+    let radar_rows: Vec<String> = bang.render(80).iter().map(|row| strip(row)).collect();
+    assert_eq!(radar_rows.len(), 1, "{radar_rows:?}");
+    assert!(radar_rows[0].contains("ls"), "{radar_rows:?}");
+    assert!(!radar_rows.iter().any(|row| row.contains("README.md")));
+
+    // Peek keeps the output under the header.
+    radar.set(false);
+    let peek_rows: Vec<String> = bang.render(80).iter().map(|row| strip(row)).collect();
+    assert!(
+        peek_rows.iter().any(|row| row.contains("README.md")),
+        "{peek_rows:?}"
+    );
+}
+
+#[test]
+fn the_unfocused_task_panel_hides_in_radar() {
+    use hoocode_code_task_store::{task_store, CreateTaskOptions};
+    use hoocode_code_tui_widgets::task_panel::TaskPanelComponent;
+    let _g = lock();
+    task_store().create("Read the migration plan", CreateTaskOptions::default());
+    let mut panel = TaskPanelComponent::new();
+    assert!(!panel.render(80).is_empty());
+    panel.set_radar(true);
+    assert!(panel.render(80).is_empty());
+    panel.set_radar(false);
+    assert!(!panel.render(80).is_empty());
+}
+
+#[test]
+fn a_flying_mission_clock_reads_elapsed_without_a_refresh() {
+    // The mission row's time is read off the start on every render, so it
+    // reads the time at the moment of drawing (the redraw is the app's tick).
+    let palette = Palette::default();
+    let flight = FlightStats {
+        mark: FlightMark::InFlight,
+        steps: 1,
+        hits: 0,
+        landed_time: None,
+        started: Some(std::time::Instant::now() - std::time::Duration::from_secs(13)),
+        cost: None,
+    };
+    let row = strip(&mission_row(
+        9,
+        "start a background job",
+        &flight,
+        &palette,
+        80,
+    ));
+    assert!(row.contains("13s"), "{row:?}");
 }

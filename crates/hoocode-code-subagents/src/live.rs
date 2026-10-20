@@ -219,11 +219,32 @@ fn flushed(coalescer: &mut DeltaCoalescer) -> Vec<Value> {
         .unwrap_or_default()
 }
 
-/// One run's activity: its last rows, and the line being streamed.
+/// Most sub-steps a run keeps: its running calls and its failed ones.
+const SUB_STEPS_KEPT: usize = 16;
+
+/// One of a subagent's own tool calls, as the radar flight log shows it:
+/// a running call, or a failed one that stays until it is read. A call that
+/// settles clean is dropped.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubStep {
+    /// The child's tool call id.
+    pub id: String,
+    pub tool: String,
+    /// The call's subject (a path, a command), as the tool's args name it.
+    pub subject: String,
+    /// When the call started.
+    pub started: Instant,
+    /// The first line of the failure's output, once the call failed.
+    pub failure: Option<String>,
+}
+
+/// One run's activity: its last rows, the line being streamed, and its
+/// own tool calls still running or failed.
 #[derive(Default)]
 struct RunTail {
     rows: VecDeque<String>,
     partial: String,
+    steps: Vec<SubStep>,
 }
 
 static TAILS: LazyLock<Mutex<HashMap<String, RunTail>>> = LazyLock::new(Mutex::default);
@@ -268,6 +289,27 @@ pub fn apply(task_id: &str, event: &Value) {
                 .unwrap_or("tool");
             let subject = tool_subject(event.get("args"));
             push_row(run, &format!("→ {tool}{subject}"));
+            run.steps.push(SubStep {
+                id: str_of(event, "toolCallId"),
+                tool: tool.to_string(),
+                subject: subject.trim().to_string(),
+                started: Instant::now(),
+                failure: None,
+            });
+            while run.steps.len() > SUB_STEPS_KEPT {
+                run.steps.remove(0);
+            }
+        }
+        "tool_execution_end" => {
+            let id = str_of(event, "toolCallId");
+            let Some(at) = run.steps.iter().position(|step| step.id == id) else {
+                return;
+            };
+            if event.get("isError").and_then(Value::as_bool) == Some(true) {
+                run.steps[at].failure = Some(end_snippet(event));
+            } else {
+                run.steps.remove(at);
+            }
         }
         "message_update" => {
             let delta = event
@@ -287,6 +329,38 @@ pub fn apply(task_id: &str, event: &Value) {
         "message_end" | "turn_end" => flush_partial(run),
         _ => {}
     }
+}
+
+fn str_of(event: &Value, key: &str) -> String {
+    event
+        .get(key)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// The first non-blank line of a finished call's text output.
+fn end_snippet(event: &Value) -> String {
+    event
+        .pointer("/result/content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|part| part.get("text").and_then(Value::as_str))
+        .flat_map(str::lines)
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(clip_line)
+        .unwrap_or_default()
+}
+
+/// The run's own tool calls still running or failed, oldest first. Empty
+/// once the run settles.
+pub fn sub_steps(task_id: &str) -> Vec<SubStep> {
+    tails()
+        .get(task_id)
+        .map(|run| run.steps.clone())
+        .unwrap_or_default()
 }
 
 /// The run's last [`TAIL_LINES`] rows: finished rows, then the line being

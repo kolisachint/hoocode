@@ -644,6 +644,9 @@ impl Mode {
                 component
                     .borrow_mut()
                     .set_radar_above(self.transcript.radar_chain_above());
+                component
+                    .borrow_mut()
+                    .set_radar_mission(self.transcript.current_mission());
                 self.add_to_chat(as_component(&component));
                 self.transcript.assistant_components.push(component.clone());
                 self.transcript.streaming = Some(component.clone());

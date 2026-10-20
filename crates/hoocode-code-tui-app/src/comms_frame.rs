@@ -15,7 +15,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use hoocode_code_agent_session::format::{format_tokens, js_to_fixed};
+use hoocode_code_agent_session::format::{format_duration_secs, format_tokens, js_to_fixed};
 use hoocode_code_tui_keybindings::key_display_text;
 use hoocode_code_tui_theme::session_color_token;
 use hoocode_tui_glyphs::status;
@@ -30,6 +30,7 @@ use crate::footer::{FooterSource, ToolOutputView};
 use crate::footer_data::FooterDataProvider;
 use crate::hull_paint::HullPaint;
 use crate::session_chip::{render_session_chip, session_chip_fits};
+use hoocode_code_tui_widgets::radar::FlightMark;
 
 /// The READY placeholder: what the empty prompt invites. Short on purpose:
 /// the `/`, `@` and `!` keys get their own suggestion row.
@@ -63,6 +64,32 @@ pub enum CommsState {
         steps: Option<usize>,
     },
     Aborted,
+}
+
+/// How the last mission ended, read by the frame's title until the next
+/// mission starts: `LANDED`, `DID NOT LAND` or `ABORTED`. Set when a turn
+/// settles; cleared when a mission opens.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MissionOutcome {
+    pub mark: FlightMark,
+    /// The mission's time, in seconds.
+    pub secs: f64,
+    pub steps: usize,
+}
+
+impl MissionOutcome {
+    /// The comms state the title shows for this outcome. A flying mark has
+    /// no outcome yet, so it reads READY.
+    pub fn comms_state(&self) -> CommsState {
+        let elapsed = Some(Duration::from_secs_f64(self.secs.max(0.0)));
+        let steps = (self.steps > 0).then_some(self.steps);
+        match self.mark {
+            FlightMark::Landed => CommsState::Landed { elapsed, steps },
+            FlightMark::DidNotLand => CommsState::DidNotLand { elapsed, steps },
+            FlightMark::Aborted => CommsState::Aborted,
+            FlightMark::InFlight => CommsState::Ready,
+        }
+    }
 }
 
 /// The input glyph's (`▸`) colour: accent during a mission, err after a lost
@@ -140,7 +167,7 @@ impl CommsState {
             CommsState::InFlight { elapsed, step } => {
                 let state = paint.unwrap_or_else(|| palette.acc());
                 let mut segs = vec![
-                    Seg::new(state, status::RUNNING_STR),
+                    Seg::new(state, "◐"),
                     Seg::new(bold(state), "IN FLIGHT"),
                     Seg::new(faint, "·"),
                 ];
@@ -200,7 +227,7 @@ fn landed_title(
     let mut segs = vec![Seg::new(color, mark), Seg::new(bold(color), name)];
     let mut tail = String::new();
     if let Some(elapsed) = elapsed {
-        tail.push_str(&format!("{}s", elapsed.as_secs()));
+        tail.push_str(&format_duration_secs(elapsed.as_secs_f64()));
     }
     if let Some(steps) = steps {
         if !tail.is_empty() {

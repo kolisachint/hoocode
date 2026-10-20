@@ -1,7 +1,7 @@
 //! `components/bash-execution.ts`: a user `!` command with streaming output,
 //! a spinner while it runs, and a status line once it ends.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 
@@ -106,6 +106,8 @@ pub struct BashExecutionComponent {
     full_output_path: Option<String>,
     expanded: bool,
     tail: OutputTail,
+    /// The transcript's radar flag, shared so a view flip reaches every row.
+    radar: Option<Rc<Cell<bool>>>,
 }
 
 impl BashExecutionComponent {
@@ -133,7 +135,18 @@ impl BashExecutionComponent {
             truncation: None,
             full_output_path: None,
             expanded: false,
+            radar: None,
         }
+    }
+
+    /// Radar (M5): while `flag` is set the row shows its header only, the
+    /// output stays in peek. The flag is the transcript's radar flag.
+    pub fn set_radar_flag(&mut self, flag: Rc<Cell<bool>>) {
+        self.radar = Some(flag);
+    }
+
+    fn radar_hidden(&self) -> bool {
+        self.radar.as_ref().is_some_and(|flag| flag.get())
     }
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
@@ -304,7 +317,9 @@ impl Component for BashExecutionComponent {
         let palette = Palette::current();
         let width = (width as usize).max(1);
         let mut lines = vec![self.header_row(width, &palette)];
-        lines.extend(self.body_rows(width, &palette));
+        if !self.radar_hidden() {
+            lines.extend(self.body_rows(width, &palette));
+        }
         lines
     }
 

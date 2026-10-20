@@ -17,7 +17,9 @@ use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{ansi_spans, spans_width, truncate_spans, with_base_style, Palette};
 
 use crate::assistant_message::AssistantMessageComponent;
-use crate::radar::{agent_live_row, hit_row, live_row, satellite_row, waiting_row};
+use crate::radar::{
+    agent_live_row, hit_row, live_row, satellite_row, sub_hit_row, sub_live_row, waiting_row,
+};
 use crate::tool_chain_summary::{
     chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
 };
@@ -270,8 +272,9 @@ impl ToolChainComponent {
     /// per hit (`⊗ 04 … HIT`, indented 12), per live step (`◐ 01 … 3s`,
     /// indented 8, with a progress bar when the call's estimate is known),
     /// per waiting step (`◉ 01 … holding for clearance`, the queue's head
-    /// first), per live subagent (`◈ type · task`), and per live background
-    /// job (its satellite row), numbered by mission step. Settled clean
+    /// first), per live subagent (`◈ type · task`) with its own running and
+    /// failed calls under it (`01.1`), and per live background job (its
+    /// satellite row), numbered by mission step. Settled clean
     /// calls get no row: the mission row above already counts them.
     /// Lead-in traces keep their think line with its gist, so thinking
     /// that led to a call still reads under its mission.
@@ -333,6 +336,33 @@ impl ToolChainComponent {
                     ));
                 } else if let Some((subtype, task)) = body.agent_label() {
                     out.push(agent_live_row(step, &subtype, &task, secs, palette, width));
+                    // The agent's own calls still running or failed sit under its row.
+                    if let Some(run) = body.agent_run_id() {
+                        let subs = hoocode_code_subagents::live::sub_steps(&run);
+                        for (n, sub) in subs.iter().enumerate() {
+                            let index = n + 1;
+                            match &sub.failure {
+                                Some(snippet) => out.push(sub_hit_row(
+                                    step,
+                                    index,
+                                    &sub.tool,
+                                    &sub.subject,
+                                    snippet,
+                                    palette,
+                                    width,
+                                )),
+                                None => out.push(sub_live_row(
+                                    step,
+                                    index,
+                                    &sub.tool,
+                                    &sub.subject,
+                                    sub.started.elapsed().as_secs(),
+                                    palette,
+                                    width,
+                                )),
+                            }
+                        }
+                    }
                 } else {
                     out.push(live_row(
                         step,

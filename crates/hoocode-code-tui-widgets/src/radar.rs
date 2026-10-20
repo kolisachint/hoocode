@@ -248,6 +248,17 @@ fn finish(line: Vec<Span<'static>>, width: usize) -> String {
     two_part_row(line, vec![blank(1)], width)
 }
 
+/// The number a mission step reads in its row: `01`, `12`.
+pub fn step_label(step: usize) -> String {
+    format!("{step:02}")
+}
+
+/// The number a subagent's own step reads under its agent's step: `01.2` is
+/// the second call the step-1 agent made.
+pub fn sub_label(parent: usize, index: usize) -> String {
+    format!("{parent:02}.{index}")
+}
+
 /// A step row's flush-left lead: `indent` blanks, the glyph, the
 /// mission-relative step number and the tool, then the gap the subject
 /// follows.
@@ -255,7 +266,7 @@ fn step_lead(
     indent: usize,
     glyph: &str,
     glyph_style: Style,
-    step: usize,
+    label: &str,
     tool: &str,
     palette: &Palette,
 ) -> Vec<Span<'static>> {
@@ -263,7 +274,7 @@ fn step_lead(
         blank(indent),
         span(glyph, glyph_style),
         blank(1),
-        span(format!("{step:02} "), bold(palette.gold())),
+        span(format!("{label} "), bold(palette.gold())),
         span(tool, bold(palette.ink())),
         blank(2),
     ]
@@ -350,10 +361,52 @@ pub fn hit_row(
     palette: &Palette,
     width: usize,
 ) -> String {
+    hit_line(
+        HIT_INDENT,
+        &step_label(step),
+        tool,
+        subject,
+        snippet,
+        palette,
+        width,
+    )
+}
+
+/// A failed subagent step, indented 8 under its agent row (the simulator's
+/// walk of the agent's steps): `        ⊗ 01.1 Read  x.rs  → snippet  HIT`.
+pub fn sub_hit_row(
+    parent: usize,
+    index: usize,
+    tool: &str,
+    subject: &str,
+    snippet: &str,
+    palette: &Palette,
+    width: usize,
+) -> String {
+    hit_line(
+        STEP_INDENT,
+        &sub_label(parent, index),
+        tool,
+        subject,
+        snippet,
+        palette,
+        width,
+    )
+}
+
+fn hit_line(
+    indent: usize,
+    label: &str,
+    tool: &str,
+    subject: &str,
+    snippet: &str,
+    palette: &Palette,
+    width: usize,
+) -> String {
     if width == 0 {
         return String::new();
     }
-    let lead = step_lead(HIT_INDENT, "⊗", palette.err(), step, tool, palette);
+    let lead = step_lead(indent, "⊗", palette.err(), label, tool, palette);
     // The subject and snippet keep whatever styling they arrived with (a
     // cut subject carries its resets); plain text stays ink.
     let snippet = if snippet.trim().is_empty() {
@@ -386,6 +439,47 @@ pub fn live_row(
     palette: &Palette,
     width: usize,
 ) -> String {
+    live_line(
+        &step_label(step),
+        tool,
+        subject,
+        elapsed_secs,
+        estimate_secs,
+        palette,
+        width,
+    )
+}
+
+/// A running subagent step under its agent row, indented 8 like its agent.
+pub fn sub_live_row(
+    parent: usize,
+    index: usize,
+    tool: &str,
+    subject: &str,
+    elapsed_secs: u64,
+    palette: &Palette,
+    width: usize,
+) -> String {
+    live_line(
+        &sub_label(parent, index),
+        tool,
+        subject,
+        elapsed_secs,
+        None,
+        palette,
+        width,
+    )
+}
+
+fn live_line(
+    label: &str,
+    tool: &str,
+    subject: &str,
+    elapsed_secs: u64,
+    estimate_secs: Option<u64>,
+    palette: &Palette,
+    width: usize,
+) -> String {
     if width == 0 {
         return String::new();
     }
@@ -393,7 +487,7 @@ pub fn live_row(
         STEP_INDENT,
         IN_FLIGHT_STR,
         palette.acc(),
-        step,
+        label,
         tool,
         palette,
     );
@@ -457,7 +551,14 @@ pub fn waiting_row(
     } else {
         (status::TODO_STR, "next", palette.dim())
     };
-    let mut stem = step_lead(STEP_INDENT, glyph, palette.warn(), step, tool, palette);
+    let mut stem = step_lead(
+        STEP_INDENT,
+        glyph,
+        palette.warn(),
+        &step_label(step),
+        tool,
+        palette,
+    );
     stem.extend(with_ink(ansi_spans(subject), palette));
     let run = vec![span(right_text, right_style), blank(1)];
     let (stem, run) = split_stem(stem, run, width);
@@ -481,7 +582,7 @@ pub fn agent_live_row(
         STEP_INDENT,
         IN_FLIGHT_STR,
         palette.acc(),
-        step,
+        &step_label(step),
         "Agent",
         palette,
     );
@@ -515,7 +616,7 @@ pub fn satellite_row(
         STEP_INDENT,
         IN_FLIGHT_STR,
         palette.acc(),
-        step,
+        &step_label(step),
         tool,
         palette,
     );

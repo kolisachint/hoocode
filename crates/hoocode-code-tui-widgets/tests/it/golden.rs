@@ -840,5 +840,7 @@ fn radar_think_80() {
         ]),
         true,
     );
+    // The transcript shows the prose once the mission has ended.
+    msg.set_radar_prose_shown(true);
     assert_golden!("radar_think_80", render_golden(&mut msg, 80));
 }
