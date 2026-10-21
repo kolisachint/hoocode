@@ -17,7 +17,7 @@ use super::text;
 use crate::read_output::render_read_output;
 use crate::render_utils::{arg_or, invalid_arg_text, replace_tabs, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
-use crate::tool_output_view::{peek_window, PEEK_LINES};
+use crate::tool_output_view::{line_budget, peek_window};
 use hoocode_home::shorten_path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,7 +42,7 @@ fn format_read_call(args: &Value) -> String {
     let display = match path {
         None => invalid_arg_text(),
         Some(p) if !p.is_empty() => t.fg("accent", &p),
-        Some(_) => t.fg("toolOutput", "..."),
+        Some(_) => t.fg("toolOutput", "…"),
     };
     format!("{} {display}", t.fg("toolTitle", &t.bold("Read")))
 }
@@ -141,6 +141,8 @@ fn format_compact_read_call(kind: &CompactKind, label: &str) -> String {
 #[derive(Debug, Clone)]
 struct ReadPreview {
     lang: Option<&'static str>,
+    /// The full stop: the window is every line.
+    expanded: bool,
     /// The theme the highlighting used: a theme switch re-highlights.
     theme: Arc<Theme>,
     output: String,
@@ -168,7 +170,8 @@ fn preview_state(objects: &mut HashMap<String, Rc<dyn Any>>) -> Rc<RefCell<Optio
 /// on real files (tests); it is not a proof for every input.
 const HIGHLIGHT_LOOKAHEAD: usize = 16;
 
-fn build_preview(output: &str, lang: Option<&'static str>) -> ReadPreview {
+fn build_preview(output: &str, lang: Option<&'static str>, expanded: bool) -> ReadPreview {
+    let budget = line_budget(expanded);
     let text = match lang {
         Some(_) => replace_tabs(output),
         None => output.to_string(),
@@ -181,22 +184,23 @@ fn build_preview(output: &str, lang: Option<&'static str>) -> ReadPreview {
         .map_or(0, |i| i + 1);
     let shown: Vec<String> = match lang {
         Some(lang) if total > 0 => {
-            let window = lines.len().min(PEEK_LINES + HIGHLIGHT_LOOKAHEAD);
+            let window = lines.len().min(budget.saturating_add(HIGHLIGHT_LOOKAHEAD));
             let mut code = lines[..window].join("\n");
             if window < lines.len() {
                 code.push('\n');
             }
             let mut rendered = highlight_code(&code, Some(lang));
-            rendered.truncate(total.min(PEEK_LINES));
+            rendered.truncate(total.min(budget));
             rendered
         }
-        _ => lines[..total.min(PEEK_LINES)]
+        _ => lines[..total.min(budget)]
             .iter()
             .map(|l| l.to_string())
             .collect(),
     };
     ReadPreview {
         lang,
+        expanded,
         theme: theme(),
         output: output.to_string(),
         total,
@@ -210,13 +214,17 @@ fn ensure_preview<'a>(
     memo: &'a mut Option<ReadPreview>,
     output: &str,
     lang: Option<&'static str>,
+    expanded: bool,
 ) -> &'a ReadPreview {
     let current = theme();
-    let fresh = memo
-        .as_ref()
-        .is_some_and(|p| p.lang == lang && p.output == output && Arc::ptr_eq(&p.theme, &current));
+    let fresh = memo.as_ref().is_some_and(|p| {
+        p.lang == lang
+            && p.expanded == expanded
+            && p.output == output
+            && Arc::ptr_eq(&p.theme, &current)
+    });
     if !fresh {
-        *memo = Some(build_preview(output, lang));
+        *memo = Some(build_preview(output, lang, expanded));
     }
     memo.as_ref().expect("set above when stale")
 }
@@ -225,14 +233,18 @@ fn format_read_result(
     args: &Value,
     result: &ToolResultView<'_>,
     show_images: bool,
+    expanded: bool,
     memo: &RefCell<Option<ReadPreview>>,
 ) -> String {
     let t = theme();
     let raw = raw_path(args);
-    let output = result.text(show_images);
+    // An image the terminal cannot draw leaves a placeholder row: it shows
+    // whole after the trimmed text, whatever the budget.
+    let (output, placeholders) = crate::fold::split_image_placeholders(result.text(show_images));
+    let output = output.as_str();
     let lang = raw.as_deref().and_then(get_language_from_path);
     let mut memo = memo.borrow_mut();
-    let preview = ensure_preview(&mut memo, output, lang);
+    let preview = ensure_preview(&mut memo, output, lang, expanded);
     let start_line = args
         .get("offset")
         .and_then(Value::as_f64)
@@ -241,7 +253,20 @@ fn format_read_result(
     let body = peek_window(preview.total, &preview.shown, |shown| {
         render_read_output(&shown.join("\n"), start_line)
     });
-    let mut text = body;
+    // An image-only result has no text to number: just its placeholder.
+    let mut text = if output.is_empty() && !placeholders.is_empty() {
+        String::new()
+    } else {
+        body
+    };
+    for placeholder in &placeholders {
+        let line = t.fg("toolOutput", placeholder);
+        if text.is_empty() {
+            text = line;
+        } else {
+            text.push_str(&format!("\n{line}"));
+        }
+    }
 
     let truncation = result.details.get("truncation");
     if let Some(tr) = truncation.filter(|tr| tr.get("truncated") == Some(&Value::Bool(true))) {
@@ -299,12 +324,13 @@ pub fn definition() -> ToolRenderDefinition {
                 None => format_read_call(args),
             }))
         })),
-        render_result: Some(Rc::new(|result, _, ctx| {
+        render_result: Some(Rc::new(|result, options, ctx| {
             let memo = preview_state(ctx.objects);
             Ok(text(format_read_result(
                 ctx.args,
                 result,
                 ctx.show_images,
+                options.expanded,
                 &memo,
             )))
         })),
@@ -319,34 +345,34 @@ mod tests {
     fn preview_counts_every_line_and_shows_the_first_few() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let output = "a\nb\nc\nd\ne\nf\ng\n\n";
-        let preview = build_preview(output, None);
+        let preview = build_preview(output, None, false);
         assert_eq!(preview.total, 7, "trailing empty lines are not counted");
         assert_eq!(preview.shown, ["a", "b", "c", "d", "e"]);
         let block = super::peek_window(preview.total, &preview.shown, |s| s.to_vec());
-        assert!(block.contains("... (2 more lines)"), "{block}");
+        assert!(block.contains("… 2 more lines"), "{block}");
     }
 
     #[test]
     fn preview_is_reused_for_the_same_output_and_rebuilt_on_change() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let mut memo = None;
-        ensure_preview(&mut memo, "let a = 1;\n", Some("rust"));
+        ensure_preview(&mut memo, "let a = 1;\n", Some("rust"), false);
         if let Some(p) = memo.as_mut() {
             p.shown = vec!["SENTINEL".into()];
         }
-        ensure_preview(&mut memo, "let a = 1;\n", Some("rust"));
+        ensure_preview(&mut memo, "let a = 1;\n", Some("rust"), false);
         assert_eq!(
             memo.as_ref().unwrap().shown,
             ["SENTINEL"],
             "same output hits the memo"
         );
-        ensure_preview(&mut memo, "let a = 2;\n", Some("rust"));
+        ensure_preview(&mut memo, "let a = 2;\n", Some("rust"), false);
         assert_ne!(
             memo.as_ref().unwrap().shown,
             ["SENTINEL"],
             "new output rebuilds"
         );
-        ensure_preview(&mut memo, "let a = 2;\n", None);
+        ensure_preview(&mut memo, "let a = 2;\n", None, false);
         assert_eq!(memo.as_ref().unwrap().lang, None, "a new language rebuilds");
     }
 
@@ -354,11 +380,11 @@ mod tests {
     fn preview_is_rebuilt_when_the_theme_changes() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let mut memo = None;
-        ensure_preview(&mut memo, "let a = 1;\n", Some("rust"));
+        ensure_preview(&mut memo, "let a = 1;\n", Some("rust"), false);
         // The same colours under another theme instance: the highlight is stale.
         memo.as_mut().unwrap().theme = Arc::new((*theme()).clone());
         memo.as_mut().unwrap().shown = vec!["SENTINEL".into()];
-        let shown = ensure_preview(&mut memo, "let a = 1;\n", Some("rust"))
+        let shown = ensure_preview(&mut memo, "let a = 1;\n", Some("rust"), false)
             .shown
             .clone();
         assert_ne!(shown, ["SENTINEL"], "a theme switch re-highlights");
@@ -371,14 +397,14 @@ mod tests {
         let rendered = highlight_code(&replace_tabs(output), Some(lang));
         let mut lines = super::super::trim_trailing_empty_lines(rendered);
         let total = lines.len();
-        lines.truncate(PEEK_LINES);
+        lines.truncate(crate::tool_output_view::PEEK_LINES);
         (total, lines)
     }
 
     fn assert_same_as_full_highlight(output: &str, lang: &'static str) {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let (old_total, old_shown) = full_highlight_preview(output, lang);
-        let new = build_preview(output, Some(lang));
+        let new = build_preview(output, Some(lang), false);
         assert_eq!(new.shown, old_shown, "visible lines differ for {lang}");
         assert_eq!(new.total, old_total, "line count differs for {lang}");
     }
@@ -408,7 +434,7 @@ mod tests {
             string.push_str(&format!("line {i}\n"));
         }
         let (_, old_shown) = full_highlight_preview(&string, "rust");
-        let new = build_preview(&string, Some("rust"));
+        let new = build_preview(&string, Some("rust"), false);
         assert_eq!(new.shown, old_shown, "visible lines differ");
         assert_eq!(new.total, 201);
     }
@@ -418,7 +444,7 @@ mod tests {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         // A string left open at the end: the highlighter adds a colour-only
         // line, which is not a line of the file.
-        let preview = build_preview("let s = \"open\nmore\n\n", Some("rust"));
+        let preview = build_preview("let s = \"open\nmore\n\n", Some("rust"), false);
         assert_eq!(preview.total, 2);
         assert!(preview.shown.len() <= 2, "{:?}", preview.shown);
     }
@@ -427,9 +453,9 @@ mod tests {
     fn only_the_window_is_highlighted() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let output: String = (0..5000).map(|i| format!("let v{i} = {i};\n")).collect();
-        let preview = build_preview(&output, Some("rust"));
+        let preview = build_preview(&output, Some("rust"), false);
         assert_eq!(preview.total, 5000);
-        assert_eq!(preview.shown.len(), PEEK_LINES);
+        assert_eq!(preview.shown.len(), crate::tool_output_view::PEEK_LINES);
         let head: String = (0..10).map(|i| format!("let v{i} = {i};\n")).collect();
         let (_, full) = full_highlight_preview(&head, "rust");
         assert_eq!(preview.shown, full, "the first lines are the same");

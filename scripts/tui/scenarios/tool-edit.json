@@ -45,7 +45,7 @@
   ],
   "steps": [
     {
-      "wait_for": "❯",
+      "wait_for": "▸ name your mission",
       "timeout": 30
     },
     {
@@ -61,7 +61,7 @@
       ]
     },
     {
-      "wait_for": "Allow: [Ee]dit src/app\\.ts",
+      "wait_for": "CLEARANCE NEEDED",
       "timeout": 30
     },
     {
@@ -71,7 +71,7 @@
     {
       "snapshot": "allow-edit",
       "contains": [
-        "Yes (once)",
+        "go, once",
         "+2"
       ]
     },
@@ -81,7 +81,7 @@
       ]
     },
     {
-      "wait_for": "Allow: [Ww]rite tools/util\\.py",
+      "wait_for": "[Ww]rite tools/util\\.py",
       "timeout": 30
     },
     {
@@ -105,7 +105,7 @@
       "snapshot": "after-tool",
       "contains": [
         "src/app.ts",
-        "def main",
+        "… 9 more lines",
         "wrote tools/util.py"
       ]
     }

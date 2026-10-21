@@ -242,7 +242,7 @@ pub fn tool_signal(input: &ToolSignalInput) -> (String, &'static str) {
 
 /// `renderToolSignalLine`: one radar row, without the status dot.
 pub fn render_tool_signal_line(input: &ToolSignalInput, width: usize) -> String {
-    let name: String = input.tool_name.chars().take(VERB_WIDTH).collect();
+    let name = truncate_to_width(&input.tool_name, VERB_WIDTH, "…", false);
     let verb = format!("{name:<w$}", w = VERB_WIDTH + VERB_GAP);
     let (signal, color) = tool_signal(input);
     let subject = radar_target(&input.args, &input.cwd);
@@ -255,7 +255,7 @@ pub fn render_tool_signal_line(input: &ToolSignalInput, width: usize) -> String 
     };
     let subject_width = available.saturating_sub(visible_width(&verb) + signal_width);
     let shown_subject = if subject_width > 0 {
-        truncate_to_width(&subject, subject_width, "...", false)
+        truncate_to_width(&subject, subject_width, "…", false)
     } else {
         String::new()
     };
@@ -367,8 +367,11 @@ line two
         let drawn = shared.text(true).to_string();
         let placeholder = shared.text(false).to_string();
         reset_capabilities_cache();
-        assert!(!drawn.contains("[image/png]"), "{drawn:?}");
-        assert!(placeholder.contains("[image/png]"), "{placeholder:?}");
+        assert!(!drawn.contains("[Image: image/png]"), "{drawn:?}");
+        assert!(
+            placeholder.contains("[Image: image/png]"),
+            "{placeholder:?}"
+        );
         assert_eq!(shared.text(true), drawn);
         assert_eq!(shared.text(false), placeholder);
     }

@@ -759,6 +759,6 @@ mod result_fallback {
         let mut c = component("mystery", "1", json!({}), Peek, Some(base()));
         c.update_result(result("a\nb\nc\nd\ne\nf\ng\n", false), false);
         let shown = lines_of(&mut c, 80).join("\n");
-        assert!(shown.contains("... (2 more lines)"), "{shown}");
+        assert!(shown.contains("… 2 more lines"), "{shown}");
     }
 }

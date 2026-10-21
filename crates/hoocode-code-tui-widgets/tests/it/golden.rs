@@ -13,11 +13,12 @@ use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_widgets::session_chip::render_session_chip;
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity, TaskPanelView};
 use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
+use hoocode_code_tui_widgets::tool_chain_summary::ChainEntry;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
-use hoocode_code_tui_widgets::trajectory::MissionHeader;
+use hoocode_code_tui_widgets::trajectory::{LandingLine, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
 use hoocode_tui_components::Text;
 use hoocode_tui_render::golden::render_golden;
@@ -694,6 +695,7 @@ fn flight_stats(
         landed_time: time.map(str::to_string),
         started: None,
         cost: cost.map(str::to_string),
+        chain: Vec::new(),
     }))
 }
 
@@ -843,4 +845,77 @@ fn radar_think_80() {
     // The transcript shows the prose once the mission has ended.
     msg.set_radar_prose_shown(true);
     assert_golden!("radar_think_80", render_golden(&mut msg, 80));
+}
+
+// ---- The turn's end and progress (radar chain row, landing outcomes) ----
+
+fn chain_entry(tool: &str, subject: &str, is_error: bool, is_partial: bool) -> ChainEntry {
+    ChainEntry {
+        tool: tool.to_string(),
+        subject: subject.to_string(),
+        is_error,
+        is_partial,
+        output_lines: 3,
+        outcome: None,
+    }
+}
+
+#[test]
+fn radar_mission_chain_live_80() {
+    // A flying mission: the prompt wraps whole, the progress row names the
+    // calls in order (`Tool ×N`, `Tool✗`), the last one still running.
+    let _g = lock();
+    let stats = flight_stats(FlightMark::InFlight, 4, 1, None, Some("$0.004"));
+    stats.borrow_mut().chain = vec![
+        chain_entry("Read", "src/wrap.rs", false, false),
+        chain_entry("Read", "src/lib.rs", false, false),
+        chain_entry("Edit", "src/wrap.rs", false, false),
+        chain_entry("Shell", "cargo test", true, false),
+        chain_entry("Shell", "cargo test", false, true),
+    ];
+    let mut header = radar_header(
+        1,
+        "fix the overflow bug in the wrap helper so long mission prompts never get cut, then run the suite",
+        stats,
+    );
+    assert_golden!(
+        "radar_mission_chain_live_80",
+        render_golden(&mut header, 80)
+    );
+}
+
+#[test]
+fn radar_mission_chain_landed_80() {
+    // Landed: the progress row reads what the turn amounted to.
+    let _g = lock();
+    let stats = flight_stats(FlightMark::Landed, 5, 0, Some("4.2s"), Some("$0.012"));
+    stats.borrow_mut().chain = vec![
+        chain_entry("Edit", "src/a.rs", false, false),
+        chain_entry("Edit", "src/b.rs", false, false),
+        chain_entry("Write", "src/c.rs", false, false),
+        chain_entry("Shell", "cargo fmt", false, false),
+        chain_entry("Shell", "cargo test", false, false),
+    ];
+    let mut header = radar_header(2, "split the wrap helper", stats);
+    assert_golden!(
+        "radar_mission_chain_landed_80",
+        render_golden(&mut header, 80)
+    );
+}
+
+#[test]
+fn landing_did_not_land_80() {
+    // Peek and full: the same outcome the radar row and the comms title
+    // read, with the turn's summary on the dim line after it.
+    let _g = lock();
+    let mut landing = LandingLine::new(
+        FlightMark::DidNotLand,
+        5,
+        1,
+        "4.2s",
+        "1.2k tokens",
+        "$0.012",
+    );
+    landing.set_summary(Some("Edited 3 files · ran 2 commands".to_string()));
+    assert_golden!("landing_did_not_land_80", render_golden(&mut landing, 80));
 }

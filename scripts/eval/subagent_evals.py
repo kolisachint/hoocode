@@ -64,6 +64,19 @@ CHILD_SUMMARY = "crates/ holds one directory per Rust crate; scripts/ holds tool
 CHILD_RESULT_NEEDLE = CHILD_SUMMARY[:30]
 
 
+# What a request body is searched for, so a scenario can say what a model was told.
+NEEDLES = {
+    "child_result": CHILD_RESULT_NEEDLE,
+    # The subagent's gated Shell call was denied: its parent has no UI to ask.
+    "clearance_denied": "has no UI to ask",
+}
+
+# A global config that lets subagents run Shell without asking. A subagent whose
+# parent has no UI is denied what needs approval, so a scenario that has one run
+# Shell says so here.
+SHELL_AUTO_ALLOW = json.dumps({"modes": {"build": {"auto_allow": ["Shell"]}}})
+
+
 def task_call(tool: str = "Agent", **arguments: Any) -> dict[str, Any]:
     """A parent turn that delegates to a subagent.
 
@@ -132,6 +145,9 @@ class Expect:
     route_tools_lack: dict[str, list[str]] | None = None
     # Routes that must have received a child's result in some request.
     results_flow: list[str] | None = None
+    # Needle names (see `NEEDLES`) a route's requests must have carried: what
+    # the model on that route was told.
+    route_sees: dict[str, list[str]] | None = None
     # Most requests in flight at once on a route, measured at the provider: a
     # subagent holds its pool slot for its whole run, so this is a lower bound
     # on how many subagents ran together.
@@ -433,6 +449,7 @@ SCENARIOS: list[Scenario] = [
         },
         prompt="Write an eval note in a worktree using a writing subagent.",
         worktree=True,
+        home_files={"hoo-config.json": SHELL_AUTO_ALLOW},
         expect=Expect(
             ledger_statuses=["complete"],
             ledger_ok=[True],
@@ -443,6 +460,42 @@ SCENARIOS: list[Scenario] = [
             branch_commits=1,
             parent_status_unchanged=True,
             nothing_pushed=True,
+        ),
+    ),
+    Scenario(
+        name="subagent_shell_denied_without_a_ui",
+        kind="parent",
+        doc=(
+            "A subagent's Shell call needs approval and its parent (--mode json) has no UI to "
+            "ask. The call is denied, not silently run: the child is told so, carries on, and "
+            "finishes. Nothing is auto-allowed in the config, so the denial is the gate's."
+        ),
+        routes={
+            "child": child_route(
+                [
+                    {"tool_calls": [{"name": "Shell", "arguments": {"command": "echo hi"}}]},
+                    {"text": CHILD_SUMMARY},
+                ]
+            ),
+            "parent": parent_route(
+                [
+                    task_call(
+                        background=False,
+                        subagent_type="general-purpose",
+                        description="run a command",
+                        prompt="Run echo hi and report.",
+                    ),
+                    {"text": PARENT_SUMMARY},
+                ]
+            ),
+        },
+        prompt="Run a command using a subagent.",
+        expect=Expect(
+            ledger_statuses=["complete"],
+            ledger_ok=[True],
+            child_requests=2,
+            parent_requests=2,
+            route_sees={"child": ["clearance_denied"]},
         ),
     ),
     Scenario(
@@ -1018,7 +1071,7 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
     log_path = root / "requests.jsonl"
     routes = bind_routes(scenario.routes, writer_paths(root)) if scenario.worktree else scenario.routes
     provider = ProbedProvider(
-        routes, log_path=str(log_path), needles={"child_result": CHILD_RESULT_NEEDLE}
+        routes, log_path=str(log_path), needles=NEEDLES
     )
     port = provider.start()
     failures: list[str] = []
@@ -1249,6 +1302,10 @@ def check(
         offered = {t for e in route_entries.get(route, []) for t in e.get("tools", [])}
         present = [n for n in names if n in offered]
         want(not present, f"{route} was offered {present}, expected none")
+    for route, names in (expect.route_sees or {}).items():
+        seen = {n for e in route_entries.get(route, []) for n in e.get("sees", [])}
+        missing = [n for n in names if n not in seen]
+        want(not missing, f"{route} was never told {missing}")
     for route in expect.results_flow or []:
         received = any("child_result" in e.get("sees", []) for e in route_entries.get(route, []))
         want(received, f"{route} never received a child's result")

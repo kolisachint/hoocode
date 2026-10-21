@@ -35,6 +35,8 @@ pub const FORWARDED_SUBAGENT_EVENTS: &[&str] = SUBAGENT_STDOUT_EVENT_TYPES;
 pub enum SubagentStdoutLine {
     Heartbeat,
     Progress(Map<String, Value>),
+    /// The child asks its parent to decide a gated call (see [`crate::clearance`]).
+    Clearance(Map<String, Value>),
     Ignore,
 }
 
@@ -51,6 +53,7 @@ pub fn classify_subagent_line(line: &str) -> SubagentStdoutLine {
         return SubagentStdoutLine::Heartbeat;
     }
     match parsed.get("type").and_then(Value::as_str) {
+        Some(crate::clearance::REQUEST_TYPE) => SubagentStdoutLine::Clearance(parsed),
         Some(t) if FORWARDED_SUBAGENT_EVENTS.contains(&t) => SubagentStdoutLine::Progress(parsed),
         _ => SubagentStdoutLine::Ignore,
     }

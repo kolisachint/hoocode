@@ -1,0 +1,42 @@
+▲ M1  Run the full integration suite and report the first failure.
+
+·· ● Think  The suite takes a few minutes. I will run it once and wait for the output.  ✻ thought · ctrl+t
+ ✻ The suite takes a few minutes. I will run it once and wait for the output.
+
+ Operation aborted
+
+ 01 ⊘ Shell  ./scripts/integration.sh --all                                                                  interrupted
+
+  ⊘ ABORTED · 1 step · 0 hits · 1.0s · 2.4k tokens · $0.006
+   Ran scripts/integration.sh
+--- styles ---
+r0 c0 fg=#9b8cff bg=#1c1c26 bold
+r0 c1 bg=#1c1c26
+r0 c2-3 fg=#9b8cff bg=#1c1c26 bold
+r0 c4-5 bg=#1c1c26
+r0 c6-65 fg=#e5e5e7 bg=#1c1c26 bold
+r0 c66-119 bg=#1c1c26
+r2 c0-1 fg=#f0c674
+r2 c3 fg=#b5bd68
+r2 c5-9 fg=#e5e5e7 bold
+r2 c12-85 fg=#a8a8a8 italic
+r2 c88-96 fg=#a8a8a8
+r2 c98 fg=#989898
+r3 c1-76 fg=#a8a8a8 italic
+r5 c1-17 fg=#d58181
+r7 c1-2 fg=#f0c674 bold
+r7 c4-5 fg=#989898
+r7 c6-10 bold
+r7 c109-119 fg=#a8a8a8
+r9 c2 fg=#989898
+r9 c4-13 fg=#989898
+r9 c14-19 fg=#a8a8a8
+r9 c20-22 fg=#989898
+r9 c23-28 fg=#a8a8a8
+r9 c29-31 fg=#989898
+r9 c32-35 fg=#a8a8a8
+r9 c36-38 fg=#989898
+r9 c39-49 fg=#a8a8a8
+r9 c50-52 fg=#989898
+r9 c53-58 fg=#a8a8a8
+r10 c3-28 fg=#989898

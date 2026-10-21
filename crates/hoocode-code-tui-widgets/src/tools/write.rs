@@ -8,12 +8,13 @@ use hoocode_tui_render::Container;
 use serde_json::{json, Value};
 
 use super::{text, trim_trailing_empty_lines};
+use crate::fold::more_lines_hint;
 use crate::read_output::render_read_output;
 use crate::render_utils::{
     arg_or, invalid_arg_text, normalize_display_text, replace_tabs, str_arg,
 };
 use crate::tool_execution::ToolRenderDefinition;
-use crate::tool_output_view::{peek_block, PEEK_LINES};
+use crate::tool_output_view::{line_budget, peek_block};
 use hoocode_home::shorten_path;
 
 /// Lines re-highlighted as one block while the content streams in.
@@ -140,8 +141,8 @@ fn update_incremental(
 }
 
 /// The success preview: the first lines of the written content, numbered like
-/// Read, with the peek `... (N more lines)` hint. `None` for empty content.
-fn format_write_preview(raw_path: Option<&str>, content: &str) -> Option<String> {
+/// Read, with the shared `… N more lines` hint. `None` for empty content.
+fn format_write_preview(raw_path: Option<&str>, content: &str, expanded: bool) -> Option<String> {
     let normalized = replace_tabs(&normalize_display_text(content));
     let rendered: Vec<String> = match raw_path.and_then(get_language_from_path) {
         Some(lang) => highlight_code(&normalized, Some(lang)),
@@ -151,7 +152,7 @@ fn format_write_preview(raw_path: Option<&str>, content: &str) -> Option<String>
     if lines.is_empty() {
         return None;
     }
-    Some(peek_block(&lines, |shown| {
+    Some(peek_block(expanded, &lines, |shown| {
         render_read_output(&shown.join("\n"), 1)
     }))
 }
@@ -160,14 +161,19 @@ fn format_write_preview(raw_path: Option<&str>, content: &str) -> Option<String>
 /// previews under the header as it streams, and stays while the call runs
 /// or if it was cut short. Once a result exists it is the one copy of the
 /// content (numbered, or the error), so the call is a header only.
-fn format_write_call(args: &Value, cache: Option<&HighlightCache>, show_body: bool) -> String {
+fn format_write_call(
+    args: &Value,
+    cache: Option<&HighlightCache>,
+    show_body: bool,
+    expanded: bool,
+) -> String {
     let t = theme();
     let raw_path = str_arg(arg_or(args, "file_path", "path"));
     let path = raw_path.as_deref().map(shorten_path);
     let path_display = match path {
         None => invalid_arg_text(),
         Some(p) if !p.is_empty() => t.fg("accent", &p),
-        Some(_) => t.fg("toolOutput", "..."),
+        Some(_) => t.fg("toolOutput", "…"),
     };
     let mut text = format!("{} {path_display}", t.fg("toolTitle", &t.bold("Write")));
     match args.get("content") {
@@ -187,7 +193,7 @@ fn format_write_call(args: &Value, cache: Option<&HighlightCache>, show_body: bo
             };
             let lines = trim_trailing_empty_lines(rendered);
             let total = lines.len();
-            let max = PEEK_LINES;
+            let max = line_budget(expanded);
             let shown: Vec<String> = lines
                 .iter()
                 .take(max)
@@ -199,12 +205,11 @@ fn format_write_call(args: &Value, cache: Option<&HighlightCache>, show_body: bo
                     }
                 })
                 .collect();
-            text.push_str(&format!("\n\n{}", shown.join("\n")));
+            // No blank row ahead of the content: the chain's fold counts every
+            // body row, so a gap here would take one of the peek's rows.
+            text.push_str(&format!("\n{}", shown.join("\n")));
             if total > max {
-                text.push_str(&t.fg(
-                    "muted",
-                    &format!("\n... ({} more lines, {total} total)", total - max),
-                ));
+                text.push_str(&format!("\n{}", more_lines_hint(total - max)));
             }
         }
         Some(Value::String(_)) => {}
@@ -237,9 +242,14 @@ pub fn definition() -> ToolRenderDefinition {
                     ctx.state.remove(CACHE_KEY);
                 }
             }
-            Ok(text(format_write_call(args, cache.as_ref(), show_body)))
+            Ok(text(format_write_call(
+                args,
+                cache.as_ref(),
+                show_body,
+                ctx.expanded,
+            )))
         })),
-        render_result: Some(Rc::new(|result, _options, ctx| {
+        render_result: Some(Rc::new(|result, options, ctx| {
             if ctx.is_error {
                 let output = result
                     .content
@@ -255,7 +265,9 @@ pub fn definition() -> ToolRenderDefinition {
                 }
             } else if let Some(content) = str_arg(ctx.args.get("content")) {
                 let raw_path = str_arg(arg_or(ctx.args, "file_path", "path"));
-                if let Some(preview) = format_write_preview(raw_path.as_deref(), &content) {
+                if let Some(preview) =
+                    format_write_preview(raw_path.as_deref(), &content, options.expanded)
+                {
                     return Ok(text(preview));
                 }
             }

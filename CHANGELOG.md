@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: subagents ran gated tools without asking (2026-10-21)
+- **A subagent's Shell, Edit, Write, WebFetch and WebSearch calls now go through clearance.** They used to run unasked because the child (`--mode json`) has no screen. The child now asks its parent over its pipes: `{"type":"clearance_request","id","tool","input"}` on stdout, `{"type":"clearance_response","id","allow","reason"?}` on stdin.
+- **In the TUI the parent's own gate decides,** so config rules and a session `always` apply once for the main agent and every subagent. The card names the subagent; the Agent block shows `◉ … holding for clearance` while it waits. Requests that arrive together queue instead of denying the card that is up. A child waiting on a person is not reaped as stalled.
+- **Without a UI it fails closed.** A subagent of a `--print`, `--mode json` or rpc parent is denied what needs approval, and so is one whose parent quits, whose stdin closes, or whose task is cancelled. Allow a tool with `auto_allow` in `hoo-config.json`. The stderr note of `--print` and `--mode json` says so.
+
 ### Fixed: subagent reliability (2026-10-11)
 - **Background tasks survive their run.** A task that settles after its run ended is delivered by the next run of the same session. Managers are kept per session (cap 64, idle first evicted).
 - **A tool-only final message no longer blanks the summary.** The summary falls back to the last text. It says `(from an earlier turn)` only when tool calls came after that text; an empty aborted wrap-up does not count. New RPC command `get_last_assistant_text_with_origin`.

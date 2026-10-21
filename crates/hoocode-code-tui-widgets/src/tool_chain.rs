@@ -10,15 +10,16 @@ use std::rc::Rc;
 use hoocode_ai_types::Content;
 use hoocode_tui_glyphs::status;
 use hoocode_tui_render::Component;
-use hoocode_tui_util::strip_vt_control_characters as strip_line;
 
 use hoocode_tui_ratatui::core::style::Style;
 use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{ansi_spans, spans_width, truncate_spans, with_base_style, Palette};
 
 use crate::assistant_message::AssistantMessageComponent;
+use crate::fold::{fold_rows, fold_rows_tail, more_lines_span};
 use crate::radar::{
-    agent_live_row, hit_row, live_row, satellite_row, sub_hit_row, sub_live_row, waiting_row,
+    self, agent_live_row, hit_row, live_row, satellite_row, sub_hit_row, sub_live_row,
+    sub_waiting_row, waiting_row,
 };
 use crate::tool_chain_summary::{
     chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
@@ -193,13 +194,21 @@ impl ToolChainComponent {
     }
 
     /// The peek trajectory: each block a numbered step on the `┊` rail
-    /// (an Agent block keeps the violet `┃` rail), up to
-    /// [`trajectory::TRAJECTORY_BODY_LINES`] body lines, then a `+N more`
-    /// fold. A failed step shows the `HIT` chip in place of its success
-    /// stats; an Edit step shows its `+a −b` counts and a Write step the
-    /// `NEW` chip; a live background job shows its satellite row.
+    /// (an Agent block keeps the violet `┃` rail). The step's header is its
+    /// call line, laid out beside the step number and the stats and wrapped,
+    /// never cut. Up to [`trajectory::TRAJECTORY_BODY_LINES`] body lines show,
+    /// then one `… N more lines` fold that counts every hidden output line,
+    /// the ones the renderer already left out included; images are never
+    /// folded; a Shell step shows its last lines instead, under a
+    /// `… N earlier lines` fold, and its footer (`Took 8.2s`) stays whole. The
+    /// full stop shows every body line and no fold. A failed
+    /// step shows the `HIT` chip in place of its success stats; an Edit step
+    /// its `+a −b` counts and a Write step the `NEW` chip; a live background
+    /// job shows its satellite row.
     fn peek_rows(&mut self, width: u16, palette: &Palette) -> Vec<String> {
         let width = width as usize;
+        let budget =
+            (self.view != ToolOutputView::Full).then_some(trajectory::TRAJECTORY_BODY_LINES);
         let mut out = Vec::new();
         for (i, block) in self.blocks.iter().enumerate() {
             for lead in self.lead_ins.iter().filter(|l| l.before == i) {
@@ -207,43 +216,71 @@ impl ToolChainComponent {
             }
             let step = self.base_step + i + 1;
             let agent = block.borrow().is_agent();
-            let lines = block.borrow_mut().render(width as u16);
-            // The header is the block's first non-blank line: blocks draw
-            // their own leading gap, which stays untouched.
-            let first = lines.iter().position(|l| !strip_line(l).trim().is_empty());
-            let Some(first) = first else {
-                out.extend(lines);
+            let parts = block.borrow_mut().step_parts(width as u16);
+            // The block's own leading gap stays untouched.
+            out.extend(parts.lead);
+            let Some(header) = parts.header else {
+                out.extend(parts.images);
                 continue;
             };
-            out.extend(lines[..first].iter().cloned());
-            let rest = &lines[first + 1..];
-            let (prefix, content) = trajectory::split_padding(&lines[first]);
+            let (prefix, content) = trajectory::split_padding(&header);
             // A failed step carries `⊗` in place of its dot, and the `HIT`
             // chip replaces its success stats (never appends to them).
-            let content = if block.borrow().is_error() {
+            let content = if block.borrow().is_interrupted() {
+                trajectory::interrupted_dot(&content)
+            } else if block.borrow().is_error() {
                 trajectory::failure_dot(&content)
             } else {
                 content
             };
-            out.push(trajectory::step_header(
+            out.extend(trajectory::step_header_rows(
                 &trajectory::step_number(step, palette),
                 &prefix,
                 &content,
                 &block.borrow().peek_right(palette),
                 width,
+                parts
+                    .header_band
+                    .then(|| palette.bg_color("toolBandBg"))
+                    .flatten(),
             ));
-            let shown = rest.len().min(trajectory::TRAJECTORY_BODY_LINES);
-            for line in &rest[..shown] {
-                out.push(trajectory::rail_line(line, width, agent, palette));
-            }
-            if rest.len() > shown {
-                out.push(trajectory::fold_line(
-                    rest.len() - shown,
+            // A body that shows the end of the output folds its first rows,
+            // with the hint above; any other folds its last, hint below.
+            let folded = if parts.tail {
+                fold_rows_tail(parts.body, budget)
+            } else {
+                fold_rows(parts.body, budget)
+            };
+            if parts.tail && folded.hidden > 0 {
+                out.push(trajectory::earlier_fold_line(
+                    folded.hidden,
                     width,
                     agent,
                     palette,
                 ));
             }
+            for line in &folded.shown {
+                out.push(trajectory::rail_line(line, width, agent, palette));
+            }
+            if !parts.tail && folded.hidden > 0 {
+                out.push(trajectory::fold_line(folded.hidden, width, agent, palette));
+            }
+            // A settled agent's own calls: the failed ones in peek, every one
+            // at the full stop, on the agent's rail.
+            if agent {
+                let full = self.view == ToolOutputView::Full;
+                for sub in block.borrow().settled_sub_steps() {
+                    if full || sub.failure.is_some() {
+                        let line = radar::sub_step_line(step, &sub, palette);
+                        out.extend(trajectory::sub_step_rows(&line, width, full, palette));
+                    }
+                }
+            }
+            // The rows that are not output close the step, never folded.
+            for line in &parts.footer {
+                out.push(trajectory::rail_line(line, width, agent, palette));
+            }
+            out.extend(parts.images);
         }
         out
     }
@@ -281,13 +318,12 @@ impl ToolChainComponent {
     fn flight_rows(&self, width: usize, palette: &Palette) -> Vec<String> {
         let mut out = Vec::new();
         for component in &self.lead_ins {
-            if let Some(line) = component
-                .component
-                .borrow()
-                .radar_think_line(width, palette)
-            {
-                out.push(line);
-            }
+            out.extend(
+                component
+                    .component
+                    .borrow()
+                    .radar_think_lines(width, palette),
+            );
         }
         let mut waited = false;
         for (i, block) in self.blocks.iter().enumerate() {
@@ -339,8 +375,8 @@ impl ToolChainComponent {
                     // The agent's own calls still running or failed sit under its row.
                     if let Some(run) = body.agent_run_id() {
                         let subs = hoocode_code_subagents::live::sub_steps(&run);
-                        for (n, sub) in subs.iter().enumerate() {
-                            let index = n + 1;
+                        for sub in &subs {
+                            let index = sub.index;
                             match &sub.failure {
                                 Some(snippet) => out.push(sub_hit_row(
                                     step,
@@ -348,6 +384,14 @@ impl ToolChainComponent {
                                     &sub.tool,
                                     &sub.subject,
                                     snippet,
+                                    palette,
+                                    width,
+                                )),
+                                None if sub.held => out.push(sub_waiting_row(
+                                    step,
+                                    index,
+                                    &sub.tool,
+                                    &sub.subject,
                                     palette,
                                     width,
                                 )),
@@ -370,6 +414,25 @@ impl ToolChainComponent {
                         &entry.subject,
                         secs,
                         body.estimated_secs(),
+                        palette,
+                        width,
+                    ));
+                }
+            }
+            // A settled run keeps the calls of its own that failed: problem
+            // rows only, under the agent step that made them.
+            if !entry.is_partial {
+                for sub in body
+                    .settled_sub_steps()
+                    .iter()
+                    .filter(|s| s.failure.is_some())
+                {
+                    out.push(sub_hit_row(
+                        step,
+                        sub.index,
+                        &sub.tool,
+                        &sub.subject,
+                        sub.failure.as_deref().unwrap_or_default(),
                         palette,
                         width,
                     ));
@@ -534,12 +597,12 @@ impl ToolChainComponent {
                 lines.push(row(line, width));
             }
             if hidden > 0 {
-                let noun = if hidden == 1 { "line" } else { "lines" };
                 let line = vec![
                     Span::styled("      ".to_string(), Style::default()),
+                    more_lines_span(hidden, palette),
                     Span::styled(
                         format!(
-                            "… {hidden} more {noun} · {}",
+                            " · {}",
                             hoocode_code_tui_keybindings::key_text("app.tools.expand")
                         ),
                         palette.faint(),

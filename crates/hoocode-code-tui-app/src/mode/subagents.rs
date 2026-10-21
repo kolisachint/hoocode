@@ -112,11 +112,18 @@ impl Mode {
     /// while the run is going, its result once it settles. A run's start and
     /// end re-render the block in full, since they switch between the two.
     pub(super) fn apply_subagent_event(&mut self, task_id: &str, event: serde_json::Value) {
-        let lifecycle = event
+        let kind = event
             .get("type")
             .and_then(serde_json::Value::as_str)
-            .is_some_and(|kind| kind.starts_with("task_"));
+            .unwrap_or("");
+        let lifecycle = kind.starts_with("task_");
+        let call_ended = kind == "tool_execution_end";
         live::apply(task_id, &event);
+        // A failed call of the run's own counts toward its mission's hits, so
+        // the flight row follows a call's end and the run's settle.
+        if call_ended || lifecycle {
+            self.refresh_flight_stats();
+        }
         // Only Agent blocks can hold a run: the name is checked first, so the
         // shared call-to-run table is read for those alone (once per block).
         let agent_blocks = self

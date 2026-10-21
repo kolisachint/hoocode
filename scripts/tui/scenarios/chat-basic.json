@@ -4,7 +4,7 @@
   "terminal": {"cols": 100, "rows": 30},
   "llm": [{"text": "Hello from the mock model. **bold** and `code`."}],
   "steps": [
-    {"wait_for": "❯", "timeout": 30},
+    {"wait_for": "▸ name your mission", "timeout": 30},
     {"wait_stable": 1.0, "timeout": 20},
     {"type": "say hello"},
     {"keys": ["Enter"]},

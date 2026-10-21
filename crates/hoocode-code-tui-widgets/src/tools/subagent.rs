@@ -21,6 +21,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use super::text;
+use crate::fold::{more_lines_hint, ELLIPSIS};
 use crate::tool_chain_summary::{TaskOutcome, TaskState};
 use crate::tool_execution::{
     ToolRenderContext, ToolRenderDefinition, ToolRenderResultOptions, ToolResultView,
@@ -56,6 +57,12 @@ pub(crate) fn label_color(label: &str, fallback: &'static str) -> &'static str {
 }
 
 pub fn format_task_call(args: &Value) -> String {
+    format_task_call_at(args, false)
+}
+
+/// [`format_task_call`], and at the full stop the rest of the task text under
+/// the header line (the header names the task by its first line only).
+pub fn format_task_call_at(args: &Value, expanded: bool) -> String {
     let t = theme();
     let agent_type = match args.get("subagent_type") {
         None | Some(Value::Null) => "agent".to_string(),
@@ -76,12 +83,31 @@ pub fn format_task_call(args: &Value) -> String {
     if args.get("background").and_then(Value::as_bool) == Some(true) {
         tail.push(t.fg("dim", "· background"));
     }
-    format!(
+    let mut line = format!(
         "{}{} {}",
         t.fg("toolTitle", &t.bold(title)),
         t.fg(agent_color_for(&agent_type), &agent_type),
         tail.join(" ")
-    )
+    );
+    if expanded {
+        if let Some(rest) = task_rest(args) {
+            line.push('\n');
+            line.push_str(&t.fg("dim", &rest));
+        }
+    }
+    line
+}
+
+/// The lines of the task text after the first: what the header leaves out.
+fn task_rest(args: &Value) -> Option<String> {
+    let text = ["description", "prompt"]
+        .iter()
+        .filter_map(|key| args.get(*key).and_then(Value::as_str))
+        .find(|s| !js_trim(s.lines().next().unwrap_or("")).is_empty())?;
+    let rest: Vec<&str> = text.lines().skip(1).collect();
+    let rest = rest.join("\n");
+    let rest = js_trim(&rest);
+    (!rest.is_empty()).then(|| rest.to_string())
 }
 
 /// What the Agent call line says the task is: `description` when given, else
@@ -211,13 +237,13 @@ pub(crate) fn elapsed_text(label: &str) -> Option<String> {
 /// The roster of background subagents (`AgentOutput list`), one row per task,
 /// trimmed to the peek budget. A single task's body is not built here: its
 /// peek is `peek_body`.
-pub fn format_task_output_result(result: &ToolResultView<'_>) -> String {
+pub fn format_task_output_result(result: &ToolResultView<'_>, expanded: bool) -> String {
     let text = result_text(result.content);
     if text.is_empty() {
         return String::new();
     }
     let lines: Vec<String> = text.split('\n').map(str::to_string).collect();
-    peek_block(&lines, |shown| {
+    peek_block(expanded, &lines, |shown| {
         shown.iter().map(|line| roster_line(line)).collect()
     })
 }
@@ -247,38 +273,26 @@ pub(crate) fn strip_markdown(line: &str) -> String {
 }
 
 /// The peek rows of a body: the first `SUMMARY_ROWS` rows of its plain prose,
-/// wrapped to `width` behind a gutter, then how many non-blank lines are left.
-fn summary_rows(body: &str, width: usize) -> Vec<String> {
+/// wrapped to `width` behind a gutter, then how many rows are left. Expanded
+/// (the full stop) keeps every row.
+fn summary_rows(body: &str, width: usize, expanded: bool) -> Vec<String> {
     let t = theme();
     let gutter = peek_gutter();
     let inner = width.saturating_sub(GUTTER_WIDTH).max(1);
-    let prose: Vec<String> = body
+    let budget = if expanded { usize::MAX } else { SUMMARY_ROWS };
+    let rows: Vec<String> = body
         .split('\n')
         .map(strip_markdown)
         .filter(|line| !line.is_empty())
+        .flat_map(|line| wrap_text_with_ansi(&line, inner))
         .collect();
-    let mut rows: Vec<String> = Vec::new();
-    // Source lines with at least one row on screen.
-    let mut started = 0;
-    for line in &prose {
-        let room = SUMMARY_ROWS - rows.len();
-        if room == 0 {
-            break;
-        }
-        started += 1;
-        rows.extend(wrap_text_with_ansi(line, inner).into_iter().take(room));
-    }
     let mut out: Vec<String> = rows
         .iter()
+        .take(budget)
         .map(|row| format!("{gutter}{}", t.fg("toolOutput", row)))
         .collect();
-    let more = prose.len() - started;
-    if more > 0 {
-        let noun = if more == 1 { "line" } else { "lines" };
-        out.push(format!(
-            "{gutter}{}",
-            t.fg("muted", &format!("… {more} more {noun}"))
-        ));
+    if rows.len() > budget {
+        out.push(format!("{gutter}{}", more_lines_hint(rows.len() - budget)));
     }
     out
 }
@@ -286,17 +300,18 @@ fn summary_rows(body: &str, width: usize) -> Vec<String> {
 /// A result body at peek: three rows of plain prose, no box.
 struct PeekBody {
     text: String,
+    expanded: bool,
 }
 
 impl Component for PeekBody {
     fn render(&mut self, width: u16) -> Vec<String> {
-        summary_rows(&self.text, width as usize)
+        summary_rows(&self.text, width as usize, self.expanded)
     }
 }
 
 /// A result's body at peek, as the three-row summary.
-fn peek_body(text: String) -> ComponentHandle {
-    Rc::new(RefCell::new(PeekBody { text }))
+fn peek_body(text: String, expanded: bool) -> ComponentHandle {
+    Rc::new(RefCell::new(PeekBody { text, expanded }))
 }
 
 /// The renderer state key a block sets while its subagent run is live (the
@@ -311,6 +326,8 @@ struct LiveTail {
     fallback: String,
     /// The call is still streaming its partial result (the run is starting).
     partial: bool,
+    /// The full stop: nothing is cut, long rows wrap.
+    expanded: bool,
 }
 
 impl LiveTail {
@@ -322,7 +339,7 @@ impl LiveTail {
 impl Component for LiveTail {
     fn render(&mut self, width: u16) -> Vec<String> {
         if !self.is_live() {
-            return summary_rows(&self.fallback, width as usize);
+            return summary_rows(&self.fallback, width as usize, self.expanded);
         }
         let t = theme();
         let gutter = peek_gutter();
@@ -332,9 +349,15 @@ impl Component for LiveTail {
         }
         let inner = (width as usize).saturating_sub(GUTTER_WIDTH).max(1);
         rows.iter()
-            .map(|row| {
-                let row = truncate_to_width(row, inner, "…", false);
-                format!("{gutter}{}", t.fg("toolOutput", &row))
+            .flat_map(|row| {
+                let cut: Vec<String> = if self.expanded {
+                    wrap_text_with_ansi(row, inner)
+                } else {
+                    vec![truncate_to_width(row, inner, ELLIPSIS, false)]
+                };
+                cut.into_iter()
+                    .map(|row| format!("{gutter}{}", t.fg("toolOutput", &row)))
+                    .collect::<Vec<_>>()
             })
             .collect()
     }
@@ -358,6 +381,7 @@ fn agent_result(
         run,
         fallback: result_text(result.content),
         partial: options.is_partial,
+        expanded: options.expanded,
     };
     if view.is_live() {
         ctx.state.insert(LIVE_KEY.into(), Value::Bool(true));
@@ -369,7 +393,9 @@ fn agent_result(
 
 pub fn task_definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
-        render_call: Some(Rc::new(|args, _| Ok(text(format_task_call(args))))),
+        render_call: Some(Rc::new(|args, ctx| {
+            Ok(text(format_task_call_at(args, ctx.expanded)))
+        })),
         render_result: Some(Rc::new(|result, options, ctx| {
             Ok(agent_result(result, options, ctx))
         })),
@@ -496,10 +522,10 @@ pub fn task_output_definition() -> ToolRenderDefinition {
                 state,
             })))
         })),
-        render_result: Some(Rc::new(|result, _, ctx| {
+        render_result: Some(Rc::new(|result, options, ctx| {
             let Some(status) = card_status(result) else {
                 // The roster keeps the peek budget of five lines.
-                return Ok(text(format_task_output_result(result)));
+                return Ok(text(format_task_output_result(result, options.expanded)));
             };
             let state = output_call_state(ctx.objects);
             {
@@ -511,7 +537,7 @@ pub fn task_output_definition() -> ToolRenderDefinition {
                     .and_then(Value::as_str)
                     .and_then(elapsed_text);
             }
-            Ok(peek_body(result_text(result.content)))
+            Ok(peek_body(result_text(result.content), options.expanded))
         })),
     }
 }

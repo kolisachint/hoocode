@@ -14,10 +14,11 @@
 
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{truncate_to_width, visible_width};
+use hoocode_tui_util::{truncate_to_width, visible_width, wrap_text_with_ansi};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use crate::fold::ELLIPSIS;
 use crate::tools::subagent::{elapsed_text, label_color, peek_gutter, strip_markdown};
 
 /// How a background subagent ended, as its notice words it.
@@ -125,6 +126,7 @@ pub struct BackgroundNoticeComponent {
     notice: BackgroundNotice,
     elapsed: Option<String>,
     expanded: bool,
+    full: bool,
 }
 
 impl BackgroundNoticeComponent {
@@ -140,12 +142,19 @@ impl BackgroundNoticeComponent {
             notice,
             elapsed,
             expanded: true,
+            full: false,
         }
     }
 
     /// `true` at peek (the summary and model show), `false` at radar.
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
+    }
+
+    /// `true` at the full stop: the summary wraps whole instead of being cut
+    /// to one row.
+    pub fn set_full(&mut self, full: bool) {
+        self.full = full;
     }
 
     fn head_line(&self) -> String {
@@ -194,8 +203,14 @@ impl Component for BackgroundNoticeComponent {
             if !summary.is_empty() {
                 let gutter = peek_gutter();
                 let inner = width.saturating_sub(visible_width(&gutter)).max(1);
-                let shown = truncate_to_width(&summary, inner, "…", false);
-                lines.push(format!("{gutter}{}", t.fg("toolOutput", &shown)));
+                if self.full {
+                    for row in wrap_text_with_ansi(&summary, inner) {
+                        lines.push(format!("{gutter}{}", t.fg("toolOutput", &row)));
+                    }
+                } else {
+                    let shown = truncate_to_width(&summary, inner, ELLIPSIS, false);
+                    lines.push(format!("{gutter}{}", t.fg("toolOutput", &shown)));
+                }
             }
             if let Some(model) = &self.notice.model {
                 let mut line = format!("model {model}");
@@ -205,9 +220,15 @@ impl Component for BackgroundNoticeComponent {
                 lines.push(format!("  {}", t.fg("dim", &line)));
             }
         }
+        if self.full {
+            return lines
+                .into_iter()
+                .flat_map(|line| wrap_text_with_ansi(&line, width.max(1)))
+                .collect();
+        }
         lines
             .into_iter()
-            .map(|line| truncate_to_width(&line, width, "…", false))
+            .map(|line| truncate_to_width(&line, width, ELLIPSIS, false))
             .collect()
     }
 }

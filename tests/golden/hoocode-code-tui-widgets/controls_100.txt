@@ -10,7 +10,7 @@
 ┃                               ctrl+g  Focus the task panel (again returns to the prompt)         ┃
 ┃                               ctrl+k  Delete to line end                                         ┃
 ┃                               ctrl+n  Attach to the subagent run of the last Agent block (read-on┃
-┃                               ctrl+o  Toggle tool output between radar and peek                  ┃
+┃                               ctrl+o  Step tool output: radar → peek → full → radar              ┃
 ┃                               ctrl+r  Search the transcript                                      ┃
 ┃                               ctrl+t  Toggle thinking blocks                                     ┃
 ┃                               ctrl+u  Delete to line start                                       ┃
@@ -85,7 +85,7 @@ r11 c0 fg=#9b8cff
 r11 c38-98 fg=#a8a8a8
 r11 c99 fg=#9b8cff
 r12 c0 fg=#9b8cff
-r12 c38-80 fg=#a8a8a8
+r12 c38-84 fg=#a8a8a8
 r12 c99 fg=#9b8cff
 r13 c0 fg=#9b8cff
 r13 c38-60 fg=#a8a8a8

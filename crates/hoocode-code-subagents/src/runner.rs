@@ -72,6 +72,12 @@ pub trait RunnerHandle: Send {
     /// the pool reads them in tasks that outlive the wait: a handle that lent
     /// them out could not also be awaited.
     fn take_streams(&mut self) -> (mpsc::Receiver<Vec<u8>>, mpsc::Receiver<Vec<u8>>);
+    /// Where lines for the run's stdin go (one line per message, the newline is
+    /// added). Dropping every sender closes the run's stdin. `None`: the run
+    /// has no stdin, and anything that needs an answer from the parent is denied.
+    fn take_stdin(&mut self) -> Option<mpsc::Sender<String>> {
+        None
+    }
     /// Resolves when the run has exited.
     fn wait(&mut self) -> BoxFuture<'static, std::io::Result<Option<i32>>>;
     /// End the run, as hard as the implementation can.
@@ -113,7 +119,9 @@ impl Runner for ProcessRunner {
             .args(&self.prefix_args)
             .args(&spec.argv)
             .env_clear()
-            .stdin(std::process::Stdio::null())
+            // The parent answers the child's clearance requests here
+            // (`crate::clearance`); the child never reads a prompt from it.
+            .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .current_dir(&spec.cwd);
@@ -144,7 +152,26 @@ struct ProcessHandle {
     pid: u32,
     stdout: Option<mpsc::Receiver<Vec<u8>>>,
     stderr: Option<mpsc::Receiver<Vec<u8>>>,
+    stdin: Option<mpsc::Sender<String>>,
     child: Option<std::process::Child>,
+}
+
+/// Feed lines from a channel into a child's stdin on the `hoocode-io` runtime.
+/// The task ends, and so closes the pipe, when every sender is dropped or a
+/// write fails (the child is gone).
+fn pump_stdin(pipe: Option<tokio::process::ChildStdin>) -> Option<mpsc::Sender<String>> {
+    use tokio::io::AsyncWriteExt;
+    let mut pipe = pipe?;
+    let (tx, mut rx) = mpsc::channel::<String>(16);
+    drop(hoocode_runtime::io_handle().spawn(async move {
+        while let Some(line) = rx.recv().await {
+            let line = format!("{line}\n");
+            if pipe.write_all(line.as_bytes()).await.is_err() || pipe.flush().await.is_err() {
+                break;
+            }
+        }
+    }));
+    Some(tx)
 }
 
 /// Pump a pipe into a channel on the `hoocode-io` runtime (on Unix; see
@@ -184,6 +211,7 @@ fn take_pipes(
 ) -> std::io::Result<(
     Option<tokio::process::ChildStdout>,
     Option<tokio::process::ChildStderr>,
+    Option<tokio::process::ChildStdin>,
 )> {
     let stdout = child
         .stdout
@@ -195,7 +223,12 @@ fn take_pipes(
         .take()
         .map(tokio::process::ChildStderr::from_std)
         .transpose()?;
-    Ok((stdout, stderr))
+    let stdin = child
+        .stdin
+        .take()
+        .map(tokio::process::ChildStdin::from_std)
+        .transpose()?;
+    Ok((stdout, stderr, stdin))
 }
 
 impl ProcessHandle {
@@ -208,7 +241,7 @@ impl ProcessHandle {
         // the pipes belong to the io runtime.
         let io = hoocode_runtime::io_handle();
         let _io = io.enter();
-        let (stdout, stderr) = match take_pipes(&mut child) {
+        let (stdout, stderr, stdin) = match take_pipes(&mut child) {
             Ok(pipes) => pipes,
             Err(error) => {
                 // The child is already running, and a dropped `Child` is never
@@ -220,10 +253,12 @@ impl ProcessHandle {
         };
         pump(stdout, stdout_tx);
         pump(stderr, stderr_tx);
+        let stdin = pump_stdin(stdin);
         Ok(Self {
             pid,
             stdout: Some(stdout_rx),
             stderr: Some(stderr_rx),
+            stdin,
             child: Some(child),
         })
     }
@@ -235,6 +270,10 @@ impl RunnerHandle for ProcessHandle {
             self.stdout.take().unwrap_or_else(empty_stream),
             self.stderr.take().unwrap_or_else(empty_stream),
         )
+    }
+
+    fn take_stdin(&mut self) -> Option<mpsc::Sender<String>> {
+        self.stdin.take()
     }
 
     fn wait(&mut self) -> BoxFuture<'static, std::io::Result<Option<i32>>> {
@@ -274,6 +313,8 @@ impl RunnerHandle for ProcessHandle {
 pub struct ScriptedRunner {
     steps: Arc<Vec<ScriptedStep>>,
     next: Arc<std::sync::atomic::AtomicUsize>,
+    /// Every line any dispatch's stdin received, in arrival order.
+    stdin: Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 /// What a [`ScriptedRunner`] does for one dispatch.
@@ -295,7 +336,14 @@ impl ScriptedRunner {
         Self {
             steps: Arc::new(steps),
             next: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            stdin: Arc::default(),
         }
+    }
+
+    /// The lines the pool wrote to the dispatches' stdin so far (the answers to
+    /// their clearance requests).
+    pub fn stdin_lines(&self) -> Vec<String> {
+        self.stdin.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// How many dispatches have been started.
@@ -312,7 +360,9 @@ impl Runner for ScriptedRunner {
             .get(index)
             .cloned()
             .unwrap_or_else(|| self.steps.last().cloned().unwrap_or_default());
-        Ok(Box::new(ScriptedHandle::new(spec, step)) as Box<dyn RunnerHandle>)
+        let mut handle = ScriptedHandle::new(spec, step);
+        handle.stdin_log = Some(self.stdin.clone());
+        Ok(Box::new(handle) as Box<dyn RunnerHandle>)
     }
 }
 
@@ -321,6 +371,7 @@ struct ScriptedHandle {
     step: ScriptedStep,
     stdout: Option<mpsc::Receiver<Vec<u8>>>,
     stderr: Option<mpsc::Receiver<Vec<u8>>>,
+    stdin_log: Option<Arc<std::sync::Mutex<Vec<String>>>>,
     finished: bool,
 }
 
@@ -373,12 +424,32 @@ impl ScriptedHandle {
             step,
             stdout: Some(stdout_rx),
             stderr: Some(stderr_rx),
+            stdin_log: None,
             finished: false,
         }
     }
 }
 
 impl RunnerHandle for ScriptedHandle {
+    fn take_stdin(&mut self) -> Option<mpsc::Sender<String>> {
+        let log = self.stdin_log.clone()?;
+        let (tx, mut rx) = mpsc::channel::<String>(16);
+        let record = async move {
+            while let Some(line) = rx.recv().await {
+                log.lock().unwrap_or_else(|e| e.into_inner()).push(line);
+            }
+        };
+        match tokio::runtime::Handle::try_current() {
+            Ok(handle) => {
+                handle.spawn(record);
+            }
+            Err(_) => {
+                let _ = hoocode_runtime::spawn_isolated("hoocode-subagent-stdin", record);
+            }
+        }
+        Some(tx)
+    }
+
     fn take_streams(&mut self) -> (mpsc::Receiver<Vec<u8>>, mpsc::Receiver<Vec<u8>>) {
         (
             self.stdout.take().unwrap_or_else(empty_stream),

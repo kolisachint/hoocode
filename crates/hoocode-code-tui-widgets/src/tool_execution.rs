@@ -7,7 +7,7 @@
 //! registered definition, slot by slot, as in the pin.
 
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
@@ -19,11 +19,14 @@ use hoocode_tui_components::{
 };
 use hoocode_tui_images::{get_capabilities, is_image_line, ImageProtocol};
 use hoocode_tui_render::{Component, ComponentHandle};
-use hoocode_tui_util::{truncate_to_width, visible_width};
+use hoocode_tui_util::{
+    strip_vt_control_characters, truncate_to_width, visible_width, wrap_text_with_ansi,
+};
 use serde_json::Value;
 
+use crate::fold::{more_lines_hint, ELLIPSIS};
 use crate::tool_chain_summary::ChainEntry;
-use crate::tool_output_view::{ToolOutputView, DEFAULT_TOOL_OUTPUT_VIEW, PEEK_LINES};
+use crate::tool_output_view::{line_budget, ToolOutputView, DEFAULT_TOOL_OUTPUT_VIEW};
 use crate::tool_signal::{
     chain_subject, tool_subject, ResultHolder, ResultText, ToolResult, ToolSignalComponent,
     ToolSignalInput,
@@ -105,6 +108,40 @@ pub struct ToolRenderContext<'a> {
     /// A result (final, or a partial one) is in: the result renderer shows
     /// it, so a call renderer keeps to its header.
     pub has_result: bool,
+}
+
+/// The key a result renderer files its [`BodyLayout`] under in the block's
+/// renderer objects.
+const BODY_LAYOUT_KEY: &str = "bodyLayout";
+
+/// What a result renderer says about its rows beyond the rows themselves, for
+/// the chain that folds them: whether the body shows the last lines of the
+/// output (a fold hint above it), and how many rows at its end are not output
+/// (a `Took` line, a truncation note). The chain folds the output and leaves
+/// those rows whole.
+#[derive(Debug, Default)]
+pub struct BodyLayout {
+    /// The body shows the end of the output; its fold hint reads `earlier`.
+    pub tail: bool,
+    /// Rows at the end of the body that are not output.
+    pub footer_rows: Cell<usize>,
+}
+
+/// The block's [`BodyLayout`], made on first use: a renderer takes it from its
+/// context's objects and keeps it up to date as it renders.
+pub fn body_layout(objects: &mut HashMap<String, Rc<dyn Any>>, tail: bool) -> Rc<BodyLayout> {
+    if let Some(layout) = objects
+        .get(BODY_LAYOUT_KEY)
+        .and_then(|o| o.clone().downcast::<BodyLayout>().ok())
+    {
+        return layout;
+    }
+    let layout = Rc::new(BodyLayout {
+        tail,
+        footer_rows: Cell::new(0),
+    });
+    objects.insert(BODY_LAYOUT_KEY.into(), layout.clone());
+    layout
 }
 
 /// `ToolRenderResultOptions`.
@@ -250,6 +287,10 @@ impl Component for IndentAll {
 struct FrozenLines {
     radar: Vec<String>,
     peek: Vec<String>,
+    full: Vec<String>,
+    /// The block's rows split for a chain step, at peek and at full.
+    peek_parts: StepParts,
+    full_parts: StepParts,
 }
 
 impl FrozenLines {
@@ -257,8 +298,111 @@ impl FrozenLines {
         match view {
             ToolOutputView::Radar => &self.radar,
             ToolOutputView::Peek => &self.peek,
+            ToolOutputView::Full => &self.full,
         }
     }
+
+    fn parts_for(&self, view: ToolOutputView) -> &StepParts {
+        match view {
+            ToolOutputView::Full => &self.full_parts,
+            ToolOutputView::Radar | ToolOutputView::Peek => &self.peek_parts,
+        }
+    }
+}
+
+/// A block's rows split for a chain step (the peek trajectory): the call
+/// header on its own, so the chain can lay it out beside the step number and
+/// the stats and wrap it instead of cutting it; the body under it, which the
+/// chain folds at peek and keeps whole at full; and the images, which are
+/// never folded.
+#[derive(Debug, Clone, Default)]
+pub struct StepParts {
+    /// Blank rows the block draws above itself.
+    pub lead: Vec<String>,
+    /// The call's first line, unwrapped, dot included. `None` when the block
+    /// draws nothing.
+    pub header: Option<String>,
+    /// Whether the header sits on the file-tool band (`toolBandBg`).
+    pub header_band: bool,
+    /// The rows under the header: renderer output, at the block's width.
+    pub body: Vec<String>,
+    /// Whether the body shows the last lines of the output (its fold hint,
+    /// when it has one, sits above the rows).
+    pub tail: bool,
+    /// Rows closing the body that are not output (`Took 8.2s`, a truncation
+    /// note): never folded or counted.
+    pub footer: Vec<String>,
+    /// Image rows (or none): drawn as they are, after the body.
+    pub images: Vec<String>,
+}
+
+/// Wide enough that a call's first line is not wrapped: the header is laid
+/// out again by the chain.
+const HEADER_WIDE: u16 = 4000;
+
+/// The visible, non-space characters of a row: what wrapping keeps.
+fn glyph_count(row: &str) -> usize {
+    strip_vt_control_characters(row)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .count()
+}
+
+/// A frozen line laid out again for a narrower terminal. Its trailing padding
+/// does not count; a line that still fits keeps its padding up to `width`
+/// when `pad` is set. A longer line is cut with `…`, or at the full stop
+/// wrapped, keeping its indent on every row.
+fn fit_frozen_line(line: &str, width: usize, wrap: bool, pad: bool) -> Vec<String> {
+    if is_image_line(line) {
+        return vec![line.to_string()];
+    }
+    let trimmed = crate::trajectory::trim_end_styled(line);
+    let used = visible_width(&trimmed);
+    if used <= width {
+        let fill = if pad { width - used } else { 0 };
+        return vec![format!("{trimmed}{}", " ".repeat(fill))];
+    }
+    if !wrap {
+        return vec![truncate_to_width(&trimmed, width, ELLIPSIS, false)];
+    }
+    let plain = strip_vt_control_characters(&trimmed);
+    let indent = plain
+        .chars()
+        .take_while(|c| *c == ' ')
+        .count()
+        .min(width / 2);
+    let pad_str = " ".repeat(indent);
+    let body = trim_leading_spaces(&trimmed, indent);
+    wrap_text_with_ansi(&body, width.saturating_sub(indent).max(1))
+        .into_iter()
+        .map(|row| format!("{pad_str}{row}"))
+        .collect()
+}
+
+/// `line` without its first `count` visible spaces (styling in front of
+/// them is kept).
+fn trim_leading_spaces(line: &str, count: usize) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut left = count;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            out.push(c);
+            for n in chars.by_ref() {
+                out.push(n);
+                if n.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else if c == ' ' && left > 0 {
+            left -= 1;
+        } else {
+            out.push(c);
+            out.extend(chars);
+            return out;
+        }
+    }
+    out
 }
 
 pub struct ToolExecutionComponent {
@@ -287,12 +431,20 @@ pub struct ToolExecutionComponent {
     waiting_for_clearance: bool,
     args_complete: bool,
     result: Option<Rc<ResultHolder>>,
+    /// The user's abort cut this call short: it is not a failure of its own
+    /// (no hit), and the abort reason is printed once, by the message.
+    interrupted: bool,
     hide_component: bool,
     is_latest: bool,
     frozen: bool,
     frozen_lines: Option<FrozenLines>,
     frozen_width: usize,
     frozen_truncated: Option<(usize, ToolOutputView, Vec<String>)>,
+    /// The call component the header is read from (peek and full).
+    header_source: Option<ComponentHandle>,
+    /// Width the frozen step parts were captured at, and the width they were
+    /// last fitted to.
+    frozen_parts_fit: Option<(usize, ToolOutputView, StepParts)>,
     /// The call's summary, taken when it freezes: its payloads are released then.
     frozen_entry: Option<ChainEntry>,
     /// The step's clock (M4): block creation starts it, `update_result`
@@ -336,12 +488,15 @@ impl ToolExecutionComponent {
             waiting_for_clearance: false,
             args_complete: false,
             result: None,
+            interrupted: false,
             hide_component: false,
             is_latest: false,
             frozen: false,
             frozen_lines: None,
             frozen_width: 0,
             frozen_truncated: None,
+            header_source: None,
+            frozen_parts_fit: None,
             frozen_entry: None,
             started: Instant::now(),
             settled_at: None,
@@ -396,21 +551,28 @@ impl ToolExecutionComponent {
             return None;
         }
         let t = theme();
-        let lines: Vec<&str> = output.lines().collect();
-        if lines.len() <= PEEK_LINES {
-            return Some(handle(Text::new(t.fg("toolOutput", &output), 0, 0)));
-        }
-        let shown = lines[..PEEK_LINES].join("\n");
-        let remaining = lines.len() - PEEK_LINES;
-        Some(handle(Text::new(
+        let (body, placeholders) = crate::fold::split_image_placeholders(&output);
+        let lines: Vec<&str> = body.lines().collect();
+        let budget = line_budget(self.expanded());
+        let mut text = if lines.len() <= budget {
+            t.fg("toolOutput", &body)
+        } else {
             format!(
-                "{}{}",
-                t.fg("toolOutput", &shown),
-                t.fg("muted", &format!("\n... ({remaining} more lines)"))
-            ),
-            0,
-            0,
-        )))
+                "{}\n{}",
+                t.fg("toolOutput", &lines[..budget].join("\n")),
+                more_lines_hint(lines.len() - budget)
+            )
+        };
+        if body.is_empty() {
+            text.clear();
+        }
+        for placeholder in &placeholders {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(&t.fg("toolOutput", placeholder));
+        }
+        Some(handle(Text::new(text, 0, 0)))
     }
 
     pub fn tool_name(&self) -> &str {
@@ -475,6 +637,19 @@ impl ToolExecutionComponent {
         self.update_display();
     }
 
+    /// Marks the call as cut short by the user's abort. Its result stays an
+    /// error to the renderer, but the step is not a hit and shows no body: the
+    /// message that was aborted says so once.
+    pub fn set_interrupted(&mut self) {
+        self.interrupted = true;
+        self.update_display();
+    }
+
+    /// Whether the user's abort cut this call short.
+    pub fn is_interrupted(&self) -> bool {
+        self.interrupted
+    }
+
     /// This call's contribution to its chain's summary line.
     pub fn chain_entry(&self) -> ChainEntry {
         if let Some(entry) = &self.frozen_entry {
@@ -488,7 +663,7 @@ impl ToolExecutionComponent {
         ChainEntry {
             tool: self.tool_name.clone(),
             subject: chain_subject(&self.tool_name, &self.args, &self.cwd),
-            is_error: self.result.as_ref().is_some_and(|r| r.is_error),
+            is_error: self.is_error(),
             is_partial: self.result.is_none() || self.is_partial || self.is_live_background_job(),
             output_lines: if crate::is_blank(&output) {
                 0
@@ -526,9 +701,10 @@ impl ToolExecutionComponent {
     }
 
     /// Whether the settled result is an error (M4: the step shows the HIT
-    /// chip in place of its success stats).
+    /// chip in place of its success stats). A call the user's abort cut short
+    /// is no failure of its own.
     pub fn is_error(&self) -> bool {
-        self.result.as_ref().is_some_and(|r| r.is_error)
+        !self.interrupted && self.result.as_ref().is_some_and(|r| r.is_error)
     }
 
     /// Whether this block is an Agent call (M4: its body keeps the violet
@@ -550,6 +726,15 @@ impl ToolExecutionComponent {
             .and_then(Value::as_str)
             .map(str::to_string)
             .or_else(|| hoocode_code_subagents::live::run_for_tool_call(&self.tool_call_id))
+    }
+
+    /// The own tool calls of the subagent run this Agent call dispatched, once
+    /// the run has settled (see [`hoocode_code_subagents::live::settled_steps`]).
+    /// Empty for other tools and while the run is going.
+    pub fn settled_sub_steps(&self) -> Vec<hoocode_code_subagents::live::SettledStep> {
+        self.agent_run_id()
+            .map(|run| hoocode_code_subagents::live::settled_steps(&run))
+            .unwrap_or_default()
     }
 
     /// The background job id, while its job is still live (M4: the step
@@ -629,6 +814,9 @@ impl ToolExecutionComponent {
     pub fn peek_right(&self, palette: &hoocode_tui_ratatui::Palette) -> String {
         let t = theme();
         let dim = |s: &str| t.fg("muted", s);
+        if self.interrupted {
+            return dim("interrupted");
+        }
         if self.is_error() {
             let mut stats = crate::trajectory::hit_chip(palette);
             if self.tool_name == "Shell" {
@@ -681,7 +869,11 @@ impl ToolExecutionComponent {
                     .and_then(Value::as_u64)
                     .unwrap_or(1)
                     .max(1) as usize;
-                let shown = total.min(crate::trajectory::TRAJECTORY_BODY_LINES);
+                let shown = if self.expanded() {
+                    total
+                } else {
+                    total.min(crate::trajectory::TRAJECTORY_BODY_LINES)
+                };
                 dim(&format!(
                     "lines {start}–{} of {total}",
                     start + shown.saturating_sub(1)
@@ -766,16 +958,21 @@ impl ToolExecutionComponent {
 
     /// The failure text, for a collapsed chain to print under its line.
     pub fn error_text(&self) -> String {
-        if self.result.as_ref().is_some_and(|r| r.is_error) {
+        if self.is_error() {
             self.text_output()
         } else {
             String::new()
         }
     }
 
+    /// Whether the block draws everything uncut: the full stop.
+    fn expanded(&self) -> bool {
+        self.view == ToolOutputView::Full
+    }
+
     /// A failure always shows its reason, in every view.
     fn should_show_body(&self) -> bool {
-        self.view != ToolOutputView::Radar || self.result.as_ref().is_some_and(|r| r.is_error)
+        !self.interrupted && (self.view != ToolOutputView::Radar || self.is_error())
     }
 
     fn should_show_signal_line(&self) -> bool {
@@ -878,6 +1075,7 @@ impl ToolExecutionComponent {
         self.renderer_objects.clear();
         self.call_component = None;
         self.result_component = None;
+        self.header_source = None;
         self.children.clear();
     }
 
@@ -894,7 +1092,7 @@ impl ToolExecutionComponent {
                 execution_started: self.execution_started,
                 args_complete: self.args_complete,
                 is_partial: self.is_partial,
-                expanded: false,
+                expanded: self.expanded(),
                 show_images: self.show_images,
                 is_error: self.result.as_ref().is_some_and(|r| r.is_error),
                 has_result: self.result.is_some(),
@@ -937,6 +1135,7 @@ impl ToolExecutionComponent {
     fn rebuild_display(&mut self) {
         let mut has_content = false;
         self.hide_component = false;
+        self.header_source = None;
         self.leading_spacer
             .borrow_mut()
             .set_lines(if self.should_show_signal_line() { 0 } else { 1 });
@@ -956,7 +1155,9 @@ impl ToolExecutionComponent {
             self.content_box.borrow_mut().clear();
 
             let t = theme();
-            let dot_color = if self.result.as_ref().is_some_and(|r| r.is_error) {
+            let dot_color = if self.interrupted {
+                "dim"
+            } else if self.result.as_ref().is_some_and(|r| r.is_error) {
                 "error"
             } else if self.is_partial {
                 "warning"
@@ -973,7 +1174,9 @@ impl ToolExecutionComponent {
                 match self.call_renderer() {
                     None => {
                         let fallback = self.create_call_fallback();
-                        self.add_to_shell(handle(PrefixFirstLine::new(dot.clone(), fallback)));
+                        let header = handle(PrefixFirstLine::new(dot.clone(), fallback));
+                        self.header_source = Some(header.clone());
+                        self.add_to_shell(header);
                         has_content = true;
                     }
                     Some(render_call) => {
@@ -990,7 +1193,9 @@ impl ToolExecutionComponent {
                                 self.create_call_fallback()
                             }
                         };
-                        self.add_to_shell(handle(PrefixFirstLine::new(dot.clone(), component)));
+                        let header = handle(PrefixFirstLine::new(dot.clone(), component));
+                        self.header_source = Some(header.clone());
+                        self.add_to_shell(header);
                         has_content = true;
                     }
                 }
@@ -1008,9 +1213,10 @@ impl ToolExecutionComponent {
                     Some(render_result) => {
                         let result = self.result.clone().unwrap();
                         let last = self.result_component.clone();
-                        // The dial has no stop that opens a result: renderers trim it.
+                        // Only the full stop opens a result: renderers trim it
+                        // otherwise.
                         let options = ToolRenderResultOptions {
-                            expanded: false,
+                            expanded: self.expanded(),
                             is_partial: self.is_partial,
                         };
                         let view = ToolResultView {
@@ -1104,7 +1310,9 @@ impl ToolExecutionComponent {
     /// The whole block as text, for a tool with no definition at all.
     fn format_tool_execution(&self) -> String {
         let t = theme();
-        let dot_color = if self.result.as_ref().is_some_and(|r| r.is_error) {
+        let dot_color = if self.interrupted {
+            "dim"
+        } else if self.result.as_ref().is_some_and(|r| r.is_error) {
             "error"
         } else if self.is_partial {
             "warning"
@@ -1213,7 +1421,7 @@ impl Component for ToolExecutionComponent {
 
 impl ToolExecutionComponent {
     /// A frozen block draws the lines captured for its current stop. The first
-    /// render after [`freeze`](Self::freeze) captures both stops.
+    /// render after [`freeze`](Self::freeze) captures every stop.
     fn render_frozen(&mut self, width: u16) -> Vec<String> {
         if self.frozen_lines.is_none() {
             self.capture_frozen(width);
@@ -1224,7 +1432,8 @@ impl ToolExecutionComponent {
             return Vec::new();
         };
         let lines = frozen.for_view(view);
-        // A narrower terminal re-truncates so no line overflows it.
+        // A narrower terminal lays the lines out again so none overflows it:
+        // cut at peek, wrapped at full.
         if w >= self.frozen_width {
             return lines.to_vec();
         }
@@ -1233,27 +1442,29 @@ impl ToolExecutionComponent {
                 return cached.clone();
             }
         }
-        let truncated: Vec<String> = lines
+        let wrap = view == ToolOutputView::Full;
+        let fitted: Vec<String> = lines
             .iter()
-            .map(|line| {
-                if is_image_line(line) || visible_width(line) <= w {
-                    line.clone()
-                } else {
-                    truncate_to_width(line, w, "...", false)
-                }
-            })
+            .flat_map(|line| fit_frozen_line(line, w, wrap, true))
             .collect();
-        self.frozen_truncated = Some((w, view, truncated.clone()));
-        truncated
+        self.frozen_truncated = Some((w, view, fitted.clone()));
+        fitted
     }
 
-    /// Draws the block at both stops, keeps both, and releases the payloads.
+    /// Draws the block at every stop, keeps them, and releases the payloads.
     fn capture_frozen(&mut self, width: u16) {
         let current = self.view;
         let radar = self.draw_at(ToolOutputView::Radar, width);
-        let peek = self.draw_at(ToolOutputView::Peek, width);
+        let (peek, peek_parts) = self.draw_with_parts(ToolOutputView::Peek, width);
+        let (full, full_parts) = self.draw_with_parts(ToolOutputView::Full, width);
         self.view = current;
-        self.frozen_lines = Some(FrozenLines { radar, peek });
+        self.frozen_lines = Some(FrozenLines {
+            radar,
+            peek,
+            full,
+            peek_parts,
+            full_parts,
+        });
         self.frozen_width = width as usize;
         self.release_heavy_state();
     }
@@ -1270,5 +1481,123 @@ impl ToolExecutionComponent {
             lines.extend(child.borrow_mut().render(width));
         }
         lines
+    }
+
+    /// [`draw_at`](Self::draw_at), and the same drawing split for a chain step.
+    fn draw_with_parts(&mut self, view: ToolOutputView, width: u16) -> (Vec<String>, StepParts) {
+        let lines = self.draw_at(view, width);
+        let parts = self.build_step_parts(width);
+        (lines, parts)
+    }
+
+    /// The block's rows split for a chain step (see [`StepParts`]), drawn at
+    /// `width` less the two columns the trajectory rail takes beyond the
+    /// block's own padding, so a body row fits on the rail whole.
+    pub fn step_parts(&mut self, width: u16) -> StepParts {
+        if !self.frozen {
+            return self.build_step_parts(width);
+        }
+        if self.frozen_lines.is_none() {
+            self.capture_frozen(width);
+        }
+        let view = self.view;
+        // The rail takes four columns beyond the block's own two of padding:
+        // a body row, padding included, fits `width - 4`.
+        let target = (width as usize).saturating_sub(4).max(1);
+        let Some(frozen) = &self.frozen_lines else {
+            return StepParts::default();
+        };
+        let parts = frozen.parts_for(view);
+        let captured = self.frozen_width.saturating_sub(4).max(1);
+        if target >= captured {
+            return parts.clone();
+        }
+        if let Some((cached_width, cached_view, cached)) = &self.frozen_parts_fit {
+            if *cached_width == target && *cached_view == view {
+                return cached.clone();
+            }
+        }
+        let wrap = view == ToolOutputView::Full;
+        let mut fitted = parts.clone();
+        let fit = |rows: &[String]| -> Vec<String> {
+            rows.iter()
+                .flat_map(|line| fit_frozen_line(line, target, wrap, false))
+                .collect()
+        };
+        fitted.body = fit(&parts.body);
+        fitted.footer = fit(&parts.footer);
+        self.frozen_parts_fit = Some((target, view, fitted.clone()));
+        fitted
+    }
+
+    fn build_step_parts(&mut self, width: u16) -> StepParts {
+        if self.hide_component {
+            return StepParts::default();
+        }
+        let main_width = width.saturating_sub(2).max(1);
+        let mut lead = Vec::new();
+        let mut main = Vec::new();
+        let mut images = Vec::new();
+        for (index, child) in self.children.iter().enumerate() {
+            match index {
+                0 => lead = child.borrow_mut().render(width),
+                1 => main = child.borrow_mut().render(main_width),
+                _ => images.extend(child.borrow_mut().render(width)),
+            }
+        }
+        let Some(first) = main.iter().position(|l| !crate::is_blank(l)) else {
+            lead.extend(main);
+            return StepParts {
+                lead,
+                header: None,
+                header_band: false,
+                body: Vec::new(),
+                tail: false,
+                footer: Vec::new(),
+                images,
+            };
+        };
+        // The header is the call's first line, laid out unwrapped; the rows it
+        // takes in `main` are found by counting the glyphs it carries.
+        let header = self
+            .header_source
+            .as_ref()
+            .and_then(|source| {
+                source
+                    .borrow_mut()
+                    .render(HEADER_WIDE)
+                    .into_iter()
+                    .find(|row| !crate::is_blank(row))
+            })
+            .map(|row| crate::trajectory::trim_end_styled(&row))
+            .unwrap_or_else(|| crate::trajectory::trim_end_styled(&main[first]));
+        let target = glyph_count(&header);
+        let mut taken = 0;
+        let mut seen = 0;
+        for row in &main[first..] {
+            if seen >= target.max(1) {
+                break;
+            }
+            seen += glyph_count(row);
+            taken += 1;
+        }
+        let mut body = main.split_off(first + taken);
+        main.truncate(first);
+        lead.extend(main);
+        let layout = self
+            .renderer_objects
+            .get(BODY_LAYOUT_KEY)
+            .and_then(|o| o.clone().downcast::<BodyLayout>().ok());
+        let (tail, footer_rows) = layout.map_or((false, 0), |l| (l.tail, l.footer_rows.get()));
+        let footer = body.split_off(body.len() - footer_rows.min(body.len()));
+        StepParts {
+            lead,
+            header: Some(header),
+            header_band: is_file_tool(&self.tool_name) && !self.should_show_signal_line(),
+            body,
+            tail,
+            footer,
+            images,
+        }
     }
 }

@@ -43,7 +43,7 @@
   ],
   "steps": [
     {
-      "wait_for": "Resume Session",
+      "wait_for": "MISSION LOG · /resume",
       "timeout": 30
     },
     {
@@ -53,7 +53,7 @@
     {
       "snapshot": "picker",
       "contains": [
-        "Resume Session (Current Folder)",
+        "MISSION LOG · /resume", "Current Folder",
         "remember the word apple"
       ]
     },

@@ -27,7 +27,11 @@ stop the same bug classes coming back.
      env `HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED`, so json subagents are closed too.
      Warm workers opt out of their own gate with the internal `HOOCODE_INTERNAL_WARM_WORKER`,
      unless their parent is fail-closed (the inherited flag wins).
-   - print and json keep `Allow` and print a one-line stderr note.
+   - print and json keep `Allow` for their own calls and print a one-line stderr note.
+   - Subagents (2026-10-21): a `--mode json` child with `--task-id` relays each call that
+     needs approval to its parent (`clearance_request` on stdout, `clearance_response` on
+     stdin). A TUI parent decides with its own gate and clearance card; a parent without a
+     UI (print, json, rpc) denies, as do stdin EOF, cancel and deadline.
    - MCP and plugin tools are gated too (2026-10-14, commit `fbc9eb7`). In rpc they are
      blocked unless `auto_allow` lists them (`mcp_*` names and the plugin lifecycle tools
      `SearchPlugins`, `ListPlugins`, `SuggestPluginInstall`, `InstallPlugin`, `ProposePlugin`).

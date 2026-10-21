@@ -3,10 +3,12 @@
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
+use hoocode_code_tui_widgets::fold::{fold_rows, fold_rows_tail, Folded};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
+use hoocode_code_tui_widgets::trajectory::TRAJECTORY_BODY_LINES;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
 
@@ -153,4 +155,50 @@ fn todo_write_failure_shows_no_counts_from_its_args() {
     let lines = rows(&mut b);
     assert!(lines[0].contains("TodoWrite"), "{lines:?}");
     assert!(!lines.iter().any(|l| l.contains("items")), "{lines:?}");
+}
+
+/// The rows a block's peek shows: its body folded the way the chain's rail
+/// folds it (`peek_rows` in `tool_chain.rs`), so the hint count is the one the
+/// trajectory prints.
+fn peek_fold(b: &mut ToolExecutionComponent) -> Folded {
+    let parts = b.step_parts(80);
+    if parts.tail {
+        fold_rows_tail(parts.body, Some(TRAJECTORY_BODY_LINES))
+    } else {
+        fold_rows(parts.body, Some(TRAJECTORY_BODY_LINES))
+    }
+}
+
+#[test]
+fn pending_write_preview_folds_like_the_finished_one() {
+    // A 12-line file: the peek shows three body rows and `… 9 more lines`
+    // once the result lands. The pending preview must match: no blank row
+    // ahead of the content, and the same fold count.
+    let _g = lock();
+    let content = "import sys\n\n\ndef main(args: list[str]) -> int:\n    \"\"\"Print the arguments.\"\"\"\n    for a in args:\n        print(f\"arg: {a}\")  # echo\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main(sys.argv[1:]))\n";
+    let args = json!({"path": "tools/util.py", "content": content});
+
+    let mut pending = block("Write", args.clone());
+    pending.set_args_complete();
+    let pending_fold = peek_fold(&mut pending);
+
+    let mut finished = block("Write", args);
+    finished.set_args_complete();
+    finished.update_result(result("Successfully wrote 12 lines", false), false);
+    let finished_fold = peek_fold(&mut finished);
+
+    assert_eq!(finished_fold.hidden, 9, "{finished_fold:?}");
+    assert_eq!(
+        pending_fold.hidden, finished_fold.hidden,
+        "{pending_fold:?}"
+    );
+    assert_eq!(
+        pending_fold.shown.len(),
+        finished_fold.shown.len(),
+        "{pending_fold:?}"
+    );
+    assert!(
+        strip(&pending_fold.shown[0]).contains("import sys"),
+        "{pending_fold:?}"
+    );
 }

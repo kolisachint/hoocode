@@ -39,7 +39,7 @@ mod agent_output {
     use super::*;
 
     /// The roster (`list`) keeps the peek trim: the first PEEK_LINES rows,
-    /// then a count of the rest. (2026-10-09: the dial has no Full stop.)
+    /// then a count of the rest. The full stop keeps every row.
     #[test]
     fn roster_is_peek_trimmed() {
         let _g = lock();
@@ -52,7 +52,7 @@ mod agent_output {
             details: &details,
             text: &hoocode_code_tui_widgets::tool_signal::ResultText::default(),
         };
-        let peek = strip(&format_task_output_result(&view));
+        let peek = strip(&format_task_output_result(&view, false));
         assert!(peek.contains("- explore#4  running  3s"), "{peek}");
         assert!(!peek.contains("- explore#5  running  3s"), "{peek}");
         assert!(peek.contains("more lines"), "{peek}");
@@ -107,10 +107,19 @@ mod edit {
         let _g = lock();
         let diff = diff_text(8);
         let peek = strip(&render_result(&diff, false));
-        assert!(peek.contains("... ("), "{peek}");
         assert!(peek.contains("more lines"), "{peek}");
         assert!(peek.contains("old line 1"), "{peek}");
         assert!(!peek.contains("new line 8"), "{peek}");
+    }
+
+    /// The full stop keeps the whole diff and no hint.
+    #[test]
+    fn result_diff_is_whole_at_the_full_stop() {
+        let _g = lock();
+        let diff = diff_text(8);
+        let full = strip(&render_result(&diff, true));
+        assert!(full.contains("new line 8"), "{full}");
+        assert!(!full.contains("more lines"), "{full}");
     }
 
     /// A mid-file edit: the window starts at the first change (keeping

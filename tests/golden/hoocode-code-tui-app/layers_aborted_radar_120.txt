@@ -1,0 +1,16 @@
+ M1 ⊘  Run the full integration suite and report the first failure.                           1 step  0✕   1.0s  $0.006
+        ⊘ Ran scripts/integration.sh                                                               1 call · interrupted
+        Operation aborted
+--- styles ---
+r0 c1-2 fg=#9b8cff
+r0 c4 fg=#989898
+r0 c7-66 fg=#e5e5e7 bold
+r0 c94 fg=#e5e5e7
+r0 c95-99 fg=#989898
+r0 c102-103 fg=#a8a8a8
+r0 c107-110 fg=#989898
+r0 c113-118 fg=#989898
+r1 c8 fg=#989898
+r1 c10-35 fg=#e5e5e7
+r1 c99-118 fg=#a8a8a8
+r2 c8-24 fg=#d58181

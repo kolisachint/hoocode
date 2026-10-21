@@ -9,7 +9,9 @@
 //!   a run's entries are dropped when it settles.
 //! - The tail store ([`apply`], [`tail`], [`is_running`]): the last
 //!   [`TAIL_LINES`] rows of a run's activity. It is written on the UI thread
-//!   only, and holds a few lines per running task.
+//!   only, and holds a few lines per running task. When a run settles its tail
+//!   goes, but a capped copy of its own tool calls stays ([`settled_steps`]),
+//!   with its failed total ([`failed_total`]).
 //!
 //! [`run_for_tool_call`] maps an Agent tool call to its pool run, so a tool
 //! block can find its run even when the call returned a background placeholder.
@@ -125,6 +127,12 @@ impl LiveForwarder {
             out.push((task_id, inner.clone()));
             return out;
         }
+        if event.name == "task_clearance" {
+            // Not a lifecycle event: the run goes on, parked on a person.
+            let mut value = event.data.clone();
+            value["type"] = json!("task_clearance");
+            return vec![(task_id, value)];
+        }
         if event.name.starts_with("task_") {
             // A lifecycle event: started, or a settle. The run's held text goes first.
             let mut out = self.flush_task(&task_id);
@@ -229,6 +237,8 @@ const SUB_STEPS_KEPT: usize = 16;
 pub struct SubStep {
     /// The child's tool call id.
     pub id: String,
+    /// The call's place in the run, 1-based: the `.2` of step `01.2`.
+    pub index: usize,
     pub tool: String,
     /// The call's subject (a path, a command), as the tool's args name it.
     pub subject: String,
@@ -236,15 +246,64 @@ pub struct SubStep {
     pub started: Instant,
     /// The first line of the failure's output, once the call failed.
     pub failure: Option<String>,
+    /// The call waits for the parent's clearance (`◉ holding for clearance`).
+    pub held: bool,
 }
 
-/// One run's activity: its last rows, the line being streamed, and its
-/// own tool calls still running or failed.
+/// Most of a run's own tool calls kept once it settles.
+const SETTLED_STEPS_KEPT: usize = 32;
+
+/// One of a settled run's own tool calls, for the transcript to show under
+/// the Agent step: every call in peek's full stop, the failed ones in peek and
+/// radar.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SettledStep {
+    /// The call's place in the run, 1-based: the `.2` of step `01.2`. Calls
+    /// the cap dropped leave gaps, so the numbers stay true.
+    pub index: usize,
+    pub tool: String,
+    /// The call's subject (a path, a command), as the tool's args name it.
+    pub subject: String,
+    /// The first line of the failure's output, when the call failed.
+    pub failure: Option<String>,
+}
+
+/// One run's activity: its last rows, the line being streamed, its own tool
+/// calls still running or failed, and a capped log of every call it made.
 #[derive(Default)]
 struct RunTail {
     rows: VecDeque<String>,
     partial: String,
     steps: Vec<SubStep>,
+    /// Every call in the order it started: `(call id, call)`.
+    log: Vec<(String, SettledStep)>,
+    /// Calls the run made so far (the log may hold fewer).
+    calls: usize,
+}
+
+impl RunTail {
+    /// Logs a call that started, dropping the oldest clean one (else the
+    /// oldest) when the log is full.
+    fn log_call(&mut self, id: String, tool: &str, subject: &str) {
+        self.calls += 1;
+        self.log.push((
+            id,
+            SettledStep {
+                index: self.calls,
+                tool: tool.to_string(),
+                subject: subject.to_string(),
+                failure: None,
+            },
+        ));
+        if self.log.len() > SETTLED_STEPS_KEPT {
+            let at = self
+                .log
+                .iter()
+                .position(|(_, step)| step.failure.is_none())
+                .unwrap_or(0);
+            self.log.remove(at);
+        }
+    }
 }
 
 static TAILS: LazyLock<Mutex<HashMap<String, RunTail>>> = LazyLock::new(Mutex::default);
@@ -260,6 +319,88 @@ struct CallRuns {
 
 static CALL_RUNS: LazyLock<Mutex<CallRuns>> = LazyLock::new(Mutex::default);
 
+/// Most runs whose failed-call totals are remembered.
+const FAILED_RUNS_KEPT: usize = 256;
+
+/// How many of its own tool calls each run saw fail. The tail goes when a run
+/// settles; the total stays, so the mission that dispatched the run keeps
+/// counting those failures. Oldest runs first for eviction.
+#[derive(Default)]
+struct FailedTotals {
+    by_run: HashMap<String, usize>,
+    order: VecDeque<String>,
+}
+
+static FAILED: LazyLock<Mutex<FailedTotals>> = LazyLock::new(Mutex::default);
+
+/// The own tool calls of runs that settled, capped per run
+/// ([`SETTLED_STEPS_KEPT`]) and in runs ([`FAILED_RUNS_KEPT`], oldest first).
+#[derive(Default)]
+struct SettledRuns {
+    by_run: HashMap<String, Vec<SettledStep>>,
+    order: VecDeque<String>,
+}
+
+static SETTLED: LazyLock<Mutex<SettledRuns>> = LazyLock::new(Mutex::default);
+
+fn settled_runs() -> MutexGuard<'static, SettledRuns> {
+    SETTLED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Keeps a settled run's calls.
+fn keep_settled(task_id: &str, steps: Vec<SettledStep>) {
+    let mut settled = settled_runs();
+    let SettledRuns { by_run, order } = &mut *settled;
+    if by_run.insert(task_id.to_string(), steps).is_none() {
+        order.push_back(task_id.to_string());
+    }
+    while order.len() > FAILED_RUNS_KEPT {
+        if let Some(old) = order.pop_front() {
+            by_run.remove(&old);
+        }
+    }
+}
+
+/// The own tool calls of a run that settled, in the order they started. Empty
+/// while the run is going (its tail and [`sub_steps`] show it) and for a run
+/// this process never saw.
+pub fn settled_steps(task_id: &str) -> Vec<SettledStep> {
+    settled_runs()
+        .by_run
+        .get(task_id)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn failed_totals() -> MutexGuard<'static, FailedTotals> {
+    FAILED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Counts one more failed call for the run.
+fn count_failure(task_id: &str) {
+    let mut totals = failed_totals();
+    let FailedTotals { by_run, order } = &mut *totals;
+    match by_run.get_mut(task_id) {
+        Some(count) => *count += 1,
+        None => {
+            by_run.insert(task_id.to_string(), 1);
+            order.push_back(task_id.to_string());
+        }
+    }
+    while order.len() > FAILED_RUNS_KEPT {
+        if let Some(old) = order.pop_front() {
+            by_run.remove(&old);
+        }
+    }
+}
+
+/// How many of its own tool calls the run saw fail. It survives the run's
+/// settle (the tail does not), so a mission can count a finished subagent's
+/// failures as its own hits. Zero for an unknown run.
+pub fn failed_total(task_id: &str) -> usize {
+    failed_totals().by_run.get(task_id).copied().unwrap_or(0)
+}
+
 fn tails() -> MutexGuard<'static, HashMap<String, RunTail>> {
     TAILS.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -270,10 +411,29 @@ pub fn apply(task_id: &str, event: &Value) {
     let kind = event.get("type").and_then(Value::as_str).unwrap_or("");
     if kind == "task_started" {
         tails().insert(task_id.to_string(), RunTail::default());
+        // A run that starts again (a resume) counts from nothing.
+        let mut totals = failed_totals();
+        if totals.by_run.remove(task_id).is_some() {
+            totals.order.retain(|id| id != task_id);
+        }
+        let mut settled = settled_runs();
+        if settled.by_run.remove(task_id).is_some() {
+            settled.order.retain(|id| id != task_id);
+        }
+        return;
+    }
+    if kind == "task_clearance" {
+        if let Some(run) = tails().get_mut(task_id) {
+            hold(run, event);
+        }
         return;
     }
     if kind.starts_with("task_") {
-        tails().remove(task_id);
+        // The tail goes with the run; its own calls stay, capped.
+        let run = tails().remove(task_id);
+        if let Some(run) = run.filter(|run| !run.log.is_empty()) {
+            keep_settled(task_id, run.log.into_iter().map(|(_, step)| step).collect());
+        }
         return;
     }
     let mut guard = tails();
@@ -289,12 +449,15 @@ pub fn apply(task_id: &str, event: &Value) {
                 .unwrap_or("tool");
             let subject = tool_subject(event.get("args"));
             push_row(run, &format!("→ {tool}{subject}"));
+            run.log_call(str_of(event, "toolCallId"), tool, subject.trim());
             run.steps.push(SubStep {
                 id: str_of(event, "toolCallId"),
+                index: run.calls,
                 tool: tool.to_string(),
                 subject: subject.trim().to_string(),
                 started: Instant::now(),
                 failure: None,
+                held: false,
             });
             while run.steps.len() > SUB_STEPS_KEPT {
                 run.steps.remove(0);
@@ -306,7 +469,12 @@ pub fn apply(task_id: &str, event: &Value) {
                 return;
             };
             if event.get("isError").and_then(Value::as_bool) == Some(true) {
-                run.steps[at].failure = Some(end_snippet(event));
+                let snippet = end_snippet(event);
+                if let Some((_, step)) = run.log.iter_mut().find(|(call, _)| *call == id) {
+                    step.failure = Some(snippet.clone());
+                }
+                run.steps[at].failure = Some(snippet);
+                count_failure(task_id);
             } else {
                 run.steps.remove(at);
             }
@@ -328,6 +496,40 @@ pub fn apply(task_id: &str, event: &Value) {
         }
         "message_end" | "turn_end" => flush_partial(run),
         _ => {}
+    }
+}
+
+/// A call of the run starts or stops waiting for clearance. The call's own
+/// step is marked when the run already shows it, else a step of its own stands
+/// in until the answer.
+fn hold(run: &mut RunTail, event: &Value) {
+    let tool = str_of(event, "tool");
+    let subject = str_of(event, "subject");
+    let stand_in = format!("clearance:{}", event.get("call").unwrap_or(&Value::Null));
+    let same =
+        |step: &SubStep| step.failure.is_none() && step.tool == tool && step.subject == subject;
+    if event.get("held").and_then(Value::as_bool) == Some(true) {
+        match run.steps.iter_mut().find(|step| same(step) && !step.held) {
+            Some(step) => step.held = true,
+            None => run.steps.push(SubStep {
+                id: stand_in,
+                // The held call has not started yet: it will be the next one.
+                index: run.calls + 1,
+                tool: tool.clone(),
+                subject: subject.clone(),
+                started: Instant::now(),
+                failure: None,
+                held: true,
+            }),
+        }
+        while run.steps.len() > SUB_STEPS_KEPT {
+            run.steps.remove(0);
+        }
+        push_row(run, &format!("◉ {tool} {subject} holding for clearance"));
+    } else if let Some(at) = run.steps.iter().position(|step| step.id == stand_in) {
+        run.steps.remove(at);
+    } else if let Some(step) = run.steps.iter_mut().find(|step| same(step) && step.held) {
+        step.held = false;
     }
 }
 
@@ -420,6 +622,11 @@ fn printable(text: &str) -> String {
 
 fn clip_line(row: &str) -> String {
     row.chars().take(LINE_CHARS).collect()
+}
+
+/// The subject of a call, trimmed (`tool_subject` without its leading space).
+pub fn subject_of(args: &Value) -> String {
+    tool_subject(Some(args)).trim().to_string()
 }
 
 /// The argument a tool line names: its path, command or pattern.

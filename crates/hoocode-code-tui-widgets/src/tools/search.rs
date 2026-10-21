@@ -7,9 +7,10 @@ use hoocode_tui_components::markdown::js_trim;
 use serde_json::Value;
 
 use super::text;
+use crate::fold::more_lines_hint;
 use crate::render_utils::{invalid_arg_text, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
-use crate::tool_output_view::PEEK_LINES;
+use crate::tool_output_view::line_budget;
 
 /// A JS number as `String(n)` prints it.
 pub(crate) fn js_number(value: &Value) -> String {
@@ -31,7 +32,7 @@ fn format_search_call(args: &Value) -> String {
     let query_display = match str_arg(args.get("query")) {
         None => invalid_arg_text(),
         Some(q) if !q.is_empty() => t.fg("accent", &q),
-        Some(_) => t.fg("toolOutput", "..."),
+        Some(_) => t.fg("toolOutput", "…"),
     };
     let mut text = format!(
         "{}{query_display}",
@@ -81,8 +82,8 @@ fn parse_snippet_row(line: &str) -> Option<(usize, String)> {
 
 /// The result body: one faint-`lineno` + dim-`snippet` row per hit, grouped
 /// under a dim file row only when hits span files (a single file's header
-/// would repeat the header's own path), then the design's `+N more` fold.
-fn format_search_result(result: &ToolResultView<'_>, show_images: bool) -> String {
+/// would repeat the header's own path), then the shared `… N more lines` fold.
+fn format_search_result(result: &ToolResultView<'_>, show_images: bool, expanded: bool) -> String {
     let t = theme();
     let output = js_trim(result.text(show_images));
     if output.is_empty() {
@@ -138,12 +139,13 @@ fn format_search_result(result: &ToolResultView<'_>, show_images: bool) -> Strin
         ));
     }
     rows.extend(plain);
-    if rows.len() <= PEEK_LINES {
+    let budget = line_budget(expanded);
+    if rows.len() <= budget {
         return rows.join("\n");
     }
-    let hidden = rows.len() - PEEK_LINES;
-    rows.truncate(PEEK_LINES);
-    rows.push(t.fg("faint", &format!("+{hidden} more")));
+    let hidden = rows.len() - budget;
+    rows.truncate(budget);
+    rows.push(more_lines_hint(hidden));
     rows.join("\n")
 }
 
@@ -151,7 +153,11 @@ pub fn definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: Some(Rc::new(|args, _ctx| Ok(text(format_search_call(args))))),
         render_result: Some(Rc::new(|result, _, ctx| {
-            Ok(text(format_search_result(result, ctx.show_images)))
+            Ok(text(format_search_result(
+                result,
+                ctx.show_images,
+                ctx.expanded,
+            )))
         })),
     }
 }

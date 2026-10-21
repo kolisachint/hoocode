@@ -12,6 +12,7 @@ use hoocode_tui_components::EditorHost;
 use hoocode_tui_render::ComponentHandle;
 
 use crate::clearance_card::ClearanceCard;
+use crate::clearance_queue::{PendingClearance, Withdrawn};
 use crate::end_shift::{EndShiftCard, EndShiftJobsCard, ShiftDebrief, ShiftJob};
 
 use crate::extension_editor::{EditorOutcome, ExtensionEditorComponent};
@@ -205,16 +206,40 @@ impl Mode {
     }
 
     /// `showClearance`: the clearance card in the editor's slot (it replaces
-    /// the comms frame). A card still up belongs to a call that is gone: it
-    /// reads as denied.
+    /// the comms frame). A request that arrives while a card is up waits
+    /// behind it (the main agent's call, or a subagent's relayed one) and is
+    /// shown when the card closes.
     pub(super) fn show_clearance_card(
         &mut self,
+        id: u64,
         info: ClearanceInfo,
         reply: mpsc::Sender<ClearanceChoice>,
     ) {
-        self.close_clearance(ClearanceChoice::Deny { reason: None });
+        if let Some(request) = self
+            .clearance_queue
+            .arrive(PendingClearance { id, info, reply })
+        {
+            self.open_clearance_card(request);
+        }
+    }
+
+    /// A subagent's request was withdrawn (the subagent ended): its card comes
+    /// down, or it leaves the queue. Either way it reads as denied.
+    pub(super) fn hide_clearance(&mut self, id: u64) {
+        match self.clearance_queue.withdraw(id) {
+            Withdrawn::Open => self.close_clearance(ClearanceChoice::Deny { reason: None }),
+            Withdrawn::Waiting(request) => {
+                let _ = request.reply.send(ClearanceChoice::Deny { reason: None });
+            }
+            Withdrawn::Unknown => {}
+        }
+    }
+
+    fn open_clearance_card(&mut self, request: PendingClearance) {
+        let PendingClearance { info, reply, .. } = request;
         let held_tool = info.tool.clone();
         let held_detail = info.detail.clone();
+        let held_by = info.from.clone();
         // A quit in flight is superseded with it: the slot belongs to the
         // clearance, quitting again re-asks, and a later fatal error
         // leaves at once (see `superseded_quit`).
@@ -240,9 +265,11 @@ impl Mode {
         self.tui.set_focus(Some(as_component(&card)));
         self.clearance = Some((card, reply));
         // The held step reads its waiting row (radar `◉`) while the card is up.
+        // A subagent's call is not one of this session's steps; its Agent block
+        // shows the hold from the run's own events.
         for block in self.transcript.pending_tools.values() {
             let mut block = block.borrow_mut();
-            if block.is_held_by(&held_tool, &held_detail) {
+            if held_by.is_none() && block.is_held_by(&held_tool, &held_detail) {
                 block.set_waiting_for_clearance(true);
             }
         }
@@ -274,13 +301,25 @@ impl Mode {
         if let Some(text) = revised {
             self.prompt(text);
         }
+        if let Some(next) = self.clearance_queue.closed() {
+            self.open_clearance_card(next);
+        }
     }
 
     /// Takes a pending clearance's answer channel, if any. Showing a quit
     /// card denies it: the gated call belongs to a shift that is ending,
     /// and the gate must never wait on an answer that never comes.
     fn take_pending_clearance(&mut self) -> Option<mpsc::Sender<ClearanceChoice>> {
+        self.deny_queued_clearances();
         self.clearance.take().map(|(_, reply)| reply)
+    }
+
+    /// Denies the requests waiting behind the open card (the shift is ending,
+    /// or the mode is closing).
+    pub(super) fn deny_queued_clearances(&mut self) {
+        for request in self.clearance_queue.drain() {
+            let _ = request.reply.send(ClearanceChoice::Deny { reason: None });
+        }
     }
 
     /// `showEndShift`: the amber end-of-shift card with the shift's debrief.

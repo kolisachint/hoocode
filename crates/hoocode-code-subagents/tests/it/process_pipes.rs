@@ -111,9 +111,12 @@ async fn a_silent_child_pipe_is_closed_once_the_receivers_go() {
         .spawn(spec("exec sleep 30"))
         .expect("spawn /bin/sh");
     let (stdout, stderr) = handle.take_streams();
+    // The parent's answers go in on stdin; with nothing to say it lets go too.
+    let stdin = handle.take_stdin();
     assert!(open_pipe_fds() > before, "the pipes should be open");
     drop(stdout);
     drop(stderr);
+    drop(stdin);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while open_pipe_fds() > before && std::time::Instant::now() < deadline {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -125,4 +128,23 @@ async fn a_silent_child_pipe_is_closed_once_the_receivers_go() {
     );
     handle.kill();
     let _ = handle.wait().await;
+}
+
+/// The parent talks to a child over its stdin: a line sent reaches it, and
+/// dropping the sender closes the pipe (the child reads EOF).
+#[tokio::test]
+async fn lines_sent_to_the_child_reach_its_stdin_and_the_end_closes_it() {
+    let _serial = crate::SERIAL.lock().await;
+    let mut handle = runner()
+        .spawn(spec(
+            "read first; printf 'got:%s\\n' \"$first\"; cat >/dev/null; printf 'eof\\n'",
+        ))
+        .expect("spawn /bin/sh");
+    let (stdout, _stderr) = handle.take_streams();
+    let stdin = handle.take_stdin().expect("a process child has a stdin");
+    stdin.send("hello".into()).await.unwrap();
+    drop(stdin);
+    let out = collect(stdout).await;
+    assert_eq!(String::from_utf8(out).unwrap(), "got:hello\neof\n");
+    assert_eq!(handle.wait().await.unwrap(), Some(0));
 }

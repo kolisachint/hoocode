@@ -441,3 +441,163 @@ fn sub_steps_keep_running_and_failed_calls_and_drop_clean_ones() {
     apply(task, &json!({"type": "task_done"}));
     assert!(hoocode_code_subagents::live::sub_steps(task).is_empty());
 }
+
+#[test]
+fn failed_total_counts_failed_calls_and_outlives_the_run() {
+    // A mission counts a subagent's failed calls as its own hits, so the
+    // total stays after the run's tail is gone, and a restart counts anew.
+    let task = "live-failed-total";
+    assert_eq!(hoocode_code_subagents::live::failed_total(task), 0);
+    apply(task, &json!({"type": "task_started"}));
+    for id in ["f1", "f2", "ok"] {
+        apply(
+            task,
+            &json!({"type": "tool_execution_start", "toolCallId": id, "toolName": "Read", "args": {"path": "a.rs"}}),
+        );
+        apply(
+            task,
+            &json!({"type": "tool_execution_end", "toolCallId": id, "isError": id != "ok",
+                    "result": {"content": [{"type": "text", "text": "no"}]}}),
+        );
+    }
+    assert_eq!(hoocode_code_subagents::live::failed_total(task), 2);
+
+    apply(task, &json!({"type": "task_failed"}));
+    assert!(hoocode_code_subagents::live::sub_steps(task).is_empty());
+    assert_eq!(hoocode_code_subagents::live::failed_total(task), 2);
+
+    apply(task, &json!({"type": "task_started"}));
+    assert_eq!(hoocode_code_subagents::live::failed_total(task), 0);
+}
+
+#[test]
+fn a_settled_run_keeps_a_capped_copy_of_its_own_calls() {
+    use hoocode_code_subagents::live::{settled_steps, sub_steps};
+
+    let task = "live-settled-steps";
+    assert!(settled_steps(task).is_empty());
+    apply(task, &json!({"type": "task_started"}));
+    for (id, fails) in [("a", false), ("b", true), ("c", false)] {
+        apply(
+            task,
+            &json!({"type": "tool_execution_start", "toolCallId": id, "toolName": "Grep", "args": {"pattern": id}}),
+        );
+        apply(
+            task,
+            &json!({"type": "tool_execution_end", "toolCallId": id, "isError": fails,
+                    "result": {"content": [{"type": "text", "text": "bad pattern"}]}}),
+        );
+    }
+    // While it runs, the live view holds the failed call; nothing is settled.
+    assert_eq!(sub_steps(task).len(), 1);
+    assert_eq!(sub_steps(task)[0].index, 2);
+    assert!(settled_steps(task).is_empty());
+
+    apply(task, &json!({"type": "task_done"}));
+    assert!(sub_steps(task).is_empty());
+    let steps = settled_steps(task);
+    let seen: Vec<_> = steps
+        .iter()
+        .map(|s| (s.index, s.subject.as_str(), s.failure.as_deref()))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            (1, "a", None),
+            (2, "b", Some("bad pattern")),
+            (3, "c", None)
+        ]
+    );
+
+    // A restart counts anew.
+    apply(task, &json!({"type": "task_started"}));
+    assert!(settled_steps(task).is_empty());
+}
+
+#[test]
+fn a_settled_run_drops_clean_calls_first_when_the_cap_is_reached() {
+    use hoocode_code_subagents::live::settled_steps;
+
+    let task = "live-settled-cap";
+    apply(task, &json!({"type": "task_started"}));
+    for n in 1..=40 {
+        let id = format!("c{n}");
+        apply(
+            task,
+            &json!({"type": "tool_execution_start", "toolCallId": id, "toolName": "Read", "args": {"path": id}}),
+        );
+        apply(
+            task,
+            &json!({"type": "tool_execution_end", "toolCallId": id, "isError": n == 2,
+                    "result": {"content": [{"type": "text", "text": "no"}]}}),
+        );
+    }
+    apply(task, &json!({"type": "task_done"}));
+    let steps = settled_steps(task);
+    assert_eq!(steps.len(), 32);
+    // The early failure outlives the clean calls around it, numbering intact.
+    assert!(steps.iter().any(|s| s.index == 2 && s.failure.is_some()));
+    assert_eq!(steps.last().map(|s| s.index), Some(40));
+}
+
+#[test]
+fn a_clearance_hold_marks_the_running_step_and_clears_with_the_answer() {
+    // The child's own call is parked on its parent: the step reads held, the
+    // run's tail says so, and the answer puts the step back to running. The
+    // run is not over (a `task_*` event that is not a settle).
+    let task = "live-sub-steps-held";
+    let hold = |held: bool| json!({"type": "task_clearance", "call": 4, "tool": "Shell", "subject": "rm -rf x", "held": held});
+    apply(task, &json!({"type": "task_started"}));
+    apply(
+        task,
+        &json!({"type": "tool_execution_start", "toolCallId": "c1", "toolName": "Shell", "args": {"command": "rm -rf x"}}),
+    );
+    apply(task, &hold(true));
+    let steps = hoocode_code_subagents::live::sub_steps(task);
+    assert_eq!(steps.len(), 1, "{steps:?}");
+    assert!(steps[0].held);
+    assert!(is_running(task));
+    assert!(
+        tail(task)
+            .last()
+            .is_some_and(|row| row.contains("holding for clearance")),
+        "{:?}",
+        tail(task)
+    );
+
+    apply(task, &hold(false));
+    let steps = hoocode_code_subagents::live::sub_steps(task);
+    assert_eq!(steps.len(), 1);
+    assert!(!steps[0].held);
+    apply(task, &json!({"type": "task_done"}));
+}
+
+#[test]
+fn a_clearance_hold_before_the_calls_start_stands_in_for_it() {
+    // The child writes its request before its start event reaches the pipe:
+    // a step of the hold's own shows until the answer, then goes.
+    let task = "live-sub-steps-stand-in";
+    let hold = |held: bool| json!({"type": "task_clearance", "call": 1, "tool": "Edit", "subject": "a.rs", "held": held});
+    apply(task, &json!({"type": "task_started"}));
+    apply(task, &hold(true));
+    let steps = hoocode_code_subagents::live::sub_steps(task);
+    assert_eq!((steps.len(), steps[0].held), (1, true), "{steps:?}");
+    apply(task, &hold(false));
+    assert!(hoocode_code_subagents::live::sub_steps(task).is_empty());
+    apply(task, &json!({"type": "task_done"}));
+}
+
+#[test]
+fn the_forwarder_passes_a_clearance_hold_through_as_it_is() {
+    let mut forwarder = LiveForwarder::default();
+    let event = PoolEvent {
+        name: "task_clearance",
+        data: json!({"task_id": "t9", "call": 2, "tool": "Shell", "subject": "ls", "held": true}),
+    };
+    let out = forwarder.forward(&event, Instant::now(), DELTA_THROTTLE);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].0, "t9");
+    assert_eq!(out[0].1["type"], "task_clearance");
+    assert_eq!(out[0].1["held"], true);
+    assert_eq!(out[0].1["tool"], "Shell");
+}

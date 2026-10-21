@@ -1,36 +1,36 @@
-«»◭ HOOCODE  BUILD  work                                            SHIP mock-model  FUEL 0%  CR $0.00
+«bg=#352c1a» «bg=#352c1a;bold;fg=#5cc8bb»◭«bg=#352c1a» «bg=#352c1a;bold;fg=#e5e5e7»HOOCODE«bg=#352c1a»  «bg=#5cc8bb;bold;fg=#000000» BUILD «bg=#352c1a»                            «bg=#352c1a;bold;fg=#f0c674»parity«bg=#352c1a»  «bg=#352c1a;fg=#a8a8a8»SHIP «bg=#352c1a;fg=#e5e5e7»mock-model«bg=#352c1a»  «bg=#352c1a;fg=#a8a8a8»FUEL ▱▱▱▱▱▱▱▱«bg=#352c1a» «bg=#352c1a;fg=#989898»0%«bg=#352c1a»  «bg=#352c1a;fg=#a8a8a8»CR «bg=#352c1a;fg=#e5e5e7»$0.000
 
-«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
-«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
-«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>
+«»                                                     «fg=#a8a8a8»╭ «fg=#5cc8bb»●«bold;fg=#e5e5e7» TRANSMISSION«»                             «fg=#a8a8a8»╮
+«»                                                     «fg=#a8a8a8»│ «fg=#e5e5e7»Usage: /color [none|parity|cyan|violet|li[0m
+«»                                                     «fg=#a8a8a8»│ «fg=#5cc8bb»▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔«fg=#a8a8a8» │
+«»                                                     «fg=#a8a8a8»╰────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+«fg=#5cc8bb»▟«fg=#66bec6»▀«fg=#71b4d1»▀«fg=#7baadd»▀«fg=#86a0e8»▀«fg=#9096f3»▀«fg=#9b8cff»▙«»  «bold»<app>«»                                  «fg=#a8a8a8»✦«»                                     «fg=#a8a8a8»·
+«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>«»                                         «fg=#a8a8a8»·
+«fg=#5cc8bb»▜«fg=#66bec6»▄«fg=#71b4d1»▄«fg=#7baadd»▄«fg=#86a0e8»▄«fg=#9096f3»▄«fg=#9b8cff»▛«»  «fg=#989898»<WORK>«»                                       «fg=#a8a8a8»⋆
 
 «fg=#989898»no project resources loaded
 
-«» «fg=#989898»Session color set:«» «bg=#d19a66;bold;fg=#0b0b0f» parity «»  «fg=#989898»yellow
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-«bg=#2e2e13» «bg=#2e2e13;fg=#ffff00»⚠︎«bg=#2e2e13» Usage: /color <1-6> or /color <cyan|purple|yellow|magenta|green|blue> (first letter works too...
-«fg=#757575»┌────────────────────────────────────────────────────────────────────────────────────────«bg=#d19a66;bold;fg=#0b0b0f» parity «fg=#757575»──┐
-«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
-«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»<WORK>
-«fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«» «fg=#989898»of 128k«»  «fg=#a8a8a8»mock-model
+«» hull paint «fg=#ffff00»■■◂«»  «fg=#5cc8bb»■■«»  «fg=#c77bde»■■«»  «fg=#b5bd68»■■«»  «fg=#d58181»■■«»  «bold;fg=#ffff00»parity · yellow
+«» «fg=#a8a8a8»the HUD, the comms frame and the terminal tab title all take it
+«fg=#f0c674»┏━«» «fg=#989898»READY«» «fg=#f0c674»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«» «fg=#f0c674»parity«» «fg=#f0c674»━┓
+«fg=#f0c674»┃«» «fg=#e5e5e7»▸ «fg=#a8a8a8»name your mission«»                                                                              «fg=#f0c674»┃
+«fg=#f0c674»┗━«» «fg=#989898»peek«» «fg=#f0c674»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«» «fg=#989898»↑0 ↓0«fg=#a8a8a8» · «fg=#989898»0% of 128k«» «fg=#f0c674»━┛

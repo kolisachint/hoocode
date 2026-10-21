@@ -46,9 +46,9 @@
 ┃  shift+alt+m  Cycle to previous model                                        ┃
 ┃  alt+t  Cycle thinking level (off → … → high)                                ┃
 ┃  shift+alt+t  Cycle thinking level backward                                  ┃
-┃  alt+o  Cycle tool output view (radar ↔ peek)                                ┃
+┃  alt+o  Cycle tool output view (radar → peek → full)                         ┃
 ┃  shift+alt+o  Cycle tool output view backward                                ┃
-┃  ctrl+o  Toggle tool output between radar and peek                           ┃
+┃  ctrl+o  Step tool output: radar → peek → full → radar                       ┃
 ┃  ctrl+t  Toggle thinking blocks                                              ┃
 ┃  alt+l  Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty ta[┃
 ┃  shift+alt+l  Cycle task panel view backward                                 ┃

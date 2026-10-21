@@ -1,5 +1,5 @@
 {
-  "description": "/color and /chrome: '/name parity' and '/color 3' pin the chip (the auto name and slot derive from the random session id; the /name notice, drawn in the random slot, is let go first); '/color bogus' warns with the usage; bare /color opens the swatch picker, Down previews the next slot on the live chip, Enter keeps it; alt+c steps the colour dial; '/chrome' names the stop, '/chrome compact' sets it, '/chrome nope' errors. --no-session keeps the footer fixed.",
+  "description": "/color and /chrome: '/name parity' and '/color 3' pin the chip (the auto name and slot derive from the random session id; the /name notice, drawn in the random slot, is let go first); '/color bogus' warns with the usage; bare /color cycles the hull paint (M8e5, no picker), alt+c steps the colour dial; '/chrome' names the stop, '/chrome compact' sets it, '/chrome nope' errors. --no-session keeps the footer fixed.",
   "phase": "11.4e2",
   "terminal": {
     "cols": 100,
@@ -20,7 +20,7 @@
   "llm": [],
   "steps": [
     {
-      "wait_for": "❯",
+      "wait_for": "▸ name your mission",
       "timeout": 30
     },
     {
@@ -52,7 +52,7 @@
       ]
     },
     {
-      "wait_for": "Session color set",
+      "wait_for": "hull paint",
       "timeout": 20
     },
     {
@@ -62,7 +62,8 @@
     {
       "snapshot": "set",
       "contains": [
-        "Session color set:"
+        "hull paint",
+        "parity · yellow"
       ]
     },
     {
@@ -96,7 +97,7 @@
       ]
     },
     {
-      "wait_for": "session colou?r",
+      "wait_for": "hull paint",
       "timeout": 20
     },
     {
@@ -104,31 +105,11 @@
       "timeout": 20
     },
     {
-      "snapshot": "picker"
-    },
-    {
-      "keys": [
-        "Down"
+      "snapshot": "cycled",
+      "contains": [
+        "hull paint",
+        "cyan"
       ]
-    },
-    {
-      "wait_stable": 1.0,
-      "timeout": 20
-    },
-    {
-      "snapshot": "preview"
-    },
-    {
-      "keys": [
-        "Enter"
-      ]
-    },
-    {
-      "wait_stable": 1.0,
-      "timeout": 20
-    },
-    {
-      "snapshot": "picked"
     },
     {
       "keys": [

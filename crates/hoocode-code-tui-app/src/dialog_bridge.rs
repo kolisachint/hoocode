@@ -3,14 +3,21 @@
 //! `ctx.ui.notify`), answered by the selector dialog, and the `ask_options`
 //! tool's questions (`ctx.ui.askOptions`), answered by the options pane.
 
-use std::sync::mpsc;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc};
 use std::sync::{Mutex, OnceLock};
 
 use std::time::Duration;
 
 use hoocode_ai_types::AbortSignal;
-use hoocode_code_permissions::{ClearanceChoice, ClearanceInfo, PermissionUi};
+use hoocode_code_permissions::{
+    ApprovalChannel, ClearanceChoice, ClearanceInfo, ClearanceRelay, HooPermissionGate,
+    PermissionUi, RelayRequest,
+};
 use hoocode_code_tools_optin::{AskOptionsHost, AskQuestion};
+
+use crate::clearance_queue::OWN_CALL;
 
 /// A request for the interactive mode.
 pub enum DialogRequest {
@@ -34,10 +41,17 @@ pub enum DialogRequest {
         esc_answers_first: bool,
     },
     /// Show the clearance card for a gated call; the answer goes back on `reply`.
+    /// `id` is what [`DialogRequest::HideClearance`] withdraws it by
+    /// ([`OWN_CALL`] for the main agent's calls, which are never withdrawn). A
+    /// card already up keeps its place and this one waits behind it.
     Clearance {
+        id: u64,
         info: ClearanceInfo,
         reply: mpsc::Sender<ClearanceChoice>,
     },
+    /// The asker stopped waiting (its subagent ended): take the card down, or
+    /// out of the queue, unanswered.
+    HideClearance(u64),
     /// The asker's signal fired: take the options pane down unanswered.
     HideAskOptions,
 }
@@ -87,18 +101,85 @@ impl PermissionUi for TuiPermissionUi {
     /// The clearance card in interactive mode. With no mode attached the
     /// call reads as denied (never a silent allow).
     fn select_clearance(&self, info: &ClearanceInfo) -> ClearanceChoice {
-        let (reply, answer) = mpsc::channel();
-        let sent = send(DialogRequest::Clearance {
-            info: info.clone(),
-            reply,
-        });
-        if !sent {
-            return ClearanceChoice::Deny { reason: None };
+        ask_clearance(OWN_CALL, info.clone(), None)
+    }
+}
+
+/// Shows the clearance card and waits for the answer. With `cancelled`, a
+/// flag that goes up takes the card down and reads as a denial.
+fn ask_clearance(id: u64, info: ClearanceInfo, cancelled: Option<&AtomicBool>) -> ClearanceChoice {
+    let deny = |reason: Option<&str>| ClearanceChoice::Deny {
+        reason: reason.map(str::to_string),
+    };
+    let (reply, answer) = mpsc::channel();
+    if !send(DialogRequest::Clearance { id, info, reply }) {
+        return deny(None);
+    }
+    let Some(cancelled) = cancelled else {
+        return answer.recv().unwrap_or_else(|_| deny(None));
+    };
+    loop {
+        match answer.recv_timeout(Duration::from_millis(50)) {
+            Ok(choice) => return choice,
+            Err(mpsc::RecvTimeoutError::Disconnected) => return deny(None),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if cancelled.load(Ordering::SeqCst) {
+                    send(DialogRequest::HideClearance(id));
+                    return deny(Some("the subagent ended"));
+                }
+            }
         }
-        answer
-            .recv()
-            .ok()
-            .unwrap_or(ClearanceChoice::Deny { reason: None })
+    }
+}
+
+/// The clearance card for a call a subagent asked about: the TUI's card, named
+/// for the subagent, that goes away if the subagent does.
+struct RelayedUi {
+    id: u64,
+    via: String,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl PermissionUi for RelayedUi {
+    fn select(&self, title: &str, options: &[&str]) -> Option<String> {
+        TuiPermissionUi.select(title, options)
+    }
+
+    fn notify(&self, message: &str) {
+        TuiPermissionUi.notify(message);
+    }
+
+    fn select_clearance(&self, info: &ClearanceInfo) -> ClearanceChoice {
+        let mut info = info.clone();
+        info.from = Some(self.via.clone());
+        ask_clearance(self.id, info, Some(&self.cancelled))
+    }
+}
+
+/// Decides the gated calls subagents ask about, with this session's own gate:
+/// its config rules and session grants apply, and a call that needs a person
+/// gets a card that names the subagent. Install it with
+/// `hoocode_code_subagents::instance::set_clearance_relay`.
+pub struct TuiClearanceRelay {
+    cwd: PathBuf,
+}
+
+impl TuiClearanceRelay {
+    pub fn new(cwd: PathBuf) -> Self {
+        Self { cwd }
+    }
+}
+
+impl ClearanceRelay for TuiClearanceRelay {
+    fn ask(&self, request: &RelayRequest) -> Option<String> {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let ui = RelayedUi {
+            id: NEXT.fetch_add(1, Ordering::Relaxed),
+            via: request.via.clone().unwrap_or_else(|| "subagent".into()),
+            cancelled: request.cancelled.clone(),
+        };
+        HooPermissionGate::new(self.cwd.clone(), ApprovalChannel::Ui, Some(Arc::new(ui)))
+            .check(&request.tool, &request.input)
     }
 }
 

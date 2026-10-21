@@ -59,13 +59,13 @@ impl ClearanceCard {
         "◎ CLEARANCE NEEDED".to_string()
     }
 
-    /// `BUILD asks for Shell`.
+    /// `BUILD asks for Shell`; a subagent's call names it: `BUILD · explore asks for Shell`.
     fn right(&self) -> String {
-        format!(
-            "{} asks for {}",
-            self.info.mode.to_uppercase(),
-            self.info.tool
-        )
+        let mode = self.info.mode.to_uppercase();
+        match &self.info.from {
+            Some(from) => format!("{mode} · {from} asks for {}", self.info.tool),
+            None => format!("{mode} asks for {}", self.info.tool),
+        }
     }
 
     /// The `a` key's program, when `a` is offered at all: the Shell

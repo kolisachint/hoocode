@@ -80,3 +80,17 @@ fn tolerates_surrounding_whitespace() {
         progress(json!({"type": "turn_end"}))
     );
 }
+
+#[test]
+fn a_clearance_request_is_its_own_kind_of_line() {
+    let line = r#"{"type":"clearance_request","id":3,"tool":"Shell","input":{"command":"ls"}}"#;
+    match classify_subagent_line(line) {
+        SubagentStdoutLine::Clearance(request) => {
+            assert_eq!(request["id"], 3);
+            assert_eq!(request["tool"], "Shell");
+        }
+        other => panic!("expected a clearance request, got {other:?}"),
+    }
+    // Not a progress event the UI would show as the run's activity.
+    assert!(!FORWARDED_SUBAGENT_EVENTS.contains(&"clearance_request"));
+}

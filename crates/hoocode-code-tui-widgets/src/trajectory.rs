@@ -25,6 +25,7 @@ use hoocode_tui_ratatui::{
 };
 use hoocode_tui_render::Component;
 
+use crate::radar::FlightMark;
 use crate::tool_output_view::ToolOutputView;
 #[cfg(test)]
 use hoocode_tui_util::visible_width;
@@ -146,7 +147,7 @@ fn rail_prefix_spans(agent: bool, palette: &Palette) -> Vec<Span<'static>> {
 /// spaces go, and the SGR resets around them are re-attached after, so the
 /// line still resets its colours. Byte-safe: the scan only walks ASCII
 /// (`m`, digits, `;`, `\x1b[`).
-fn trim_end_styled(line: &str) -> String {
+pub(crate) fn trim_end_styled(line: &str) -> String {
     use hoocode_tui_util::text_slice as ts;
     let mut s = line.trim_end_matches(' ');
     let mut tail = String::new();
@@ -223,15 +224,39 @@ pub fn is_think_header(line: &str) -> bool {
         .starts_with(THINK_SLOT)
 }
 
-/// The fold under a step with more output: `   ┊  +N more`.
+/// The fold under a step with more output: `   ┊  … N more lines`.
 pub fn fold_line(hidden: usize, width: usize, agent: bool, palette: &Palette) -> String {
-    let noun = if hidden == 1 { "line" } else { "lines" };
     let mut spans = rail_prefix_spans(agent, palette);
-    spans.push(Span::styled(
-        format!("+{hidden} more {noun}"),
-        palette.faint(),
-    ));
+    spans.push(crate::fold::more_lines_span(hidden, palette));
     row(spans, width)
+}
+
+/// The fold above a step that shows its last lines: `   ┊  … N earlier lines`.
+pub fn earlier_fold_line(hidden: usize, width: usize, agent: bool, palette: &Palette) -> String {
+    let mut spans = rail_prefix_spans(agent, palette);
+    spans.push(crate::fold::earlier_lines_span(hidden, palette));
+    row(spans, width)
+}
+
+/// A line under a step on its rail, in the agent's violet when the step is an
+/// Agent: cut to the width with `…`, or wrapped at the full stop, where
+/// nothing is cut.
+pub fn sub_step_rows(line: &str, width: usize, full: bool, palette: &Palette) -> Vec<String> {
+    // The rail takes six cells.
+    let inner = width.saturating_sub(6).max(1);
+    if full {
+        wrap_text_with_ansi(line, inner)
+            .iter()
+            .map(|piece| rail_line(piece, width, true, palette))
+            .collect()
+    } else {
+        vec![rail_line(
+            &hoocode_tui_util::truncate_to_width(line, inner, "…", false),
+            width,
+            true,
+            palette,
+        )]
+    }
 }
 
 /// The chip replacing a failed step's success stats: the inverted
@@ -278,6 +303,8 @@ pub struct ThinkHeader {
     running: bool,
     secs: Option<u64>,
     gist: Option<String>,
+    /// The full stop: the gist wraps under itself instead of ending in `…`.
+    wrap: bool,
     cache: RefCell<RowCache>,
 }
 
@@ -287,8 +314,60 @@ impl ThinkHeader {
             running,
             secs,
             gist: None,
+            wrap: false,
             cache: RefCell::new(RowCache::default()),
         }
+    }
+
+    /// Whether the gist wraps (the full stop never cuts) or is cut to one row.
+    pub fn set_wrap(&mut self, wrap: bool) {
+        if self.wrap != wrap {
+            self.wrap = wrap;
+            self.cache.borrow_mut().clear();
+        }
+    }
+
+    /// The header laid out without a cut: the gist wraps under its first word,
+    /// and the end of the row (`✻ thought 4s · ctrl+t`, or the running time
+    /// flush right) closes the last row that has room, else a row of its own.
+    fn wrapped_rows(
+        head: Vec<Span<'static>>,
+        gist: &str,
+        tail: Vec<Span<'static>>,
+        flush_right: bool,
+        palette: &Palette,
+        width: usize,
+    ) -> Vec<String> {
+        let hang = spans_width(&head) + 2;
+        let pieces = wrap_text_with_ansi(gist, width.saturating_sub(hang).max(1));
+        let tail_width = spans_width(&tail);
+        let last = pieces.len().saturating_sub(1);
+        let mut rows = Vec::with_capacity(pieces.len() + 1);
+        for (index, piece) in pieces.iter().enumerate() {
+            let mut spans = if index == 0 {
+                let mut spans = head.clone();
+                spans.push(Span::styled("  ".to_string(), Style::default()));
+                spans
+            } else {
+                vec![Span::styled(" ".repeat(hang), Style::default())]
+            };
+            spans.push(Span::styled(piece.clone(), italic(palette.faint())));
+            if index == last && spans_width(&spans) + 2 + tail_width <= width {
+                if flush_right {
+                    rows.push(two_part_row(spans, tail.clone(), width));
+                } else {
+                    spans.push(Span::styled("  ".to_string(), Style::default()));
+                    spans.extend(tail.clone());
+                    rows.push(row(spans, width));
+                }
+                return rows;
+            }
+            rows.push(row(spans, width));
+        }
+        let mut spans = vec![Span::styled(" ".repeat(hang), Style::default())];
+        spans.extend(tail);
+        rows.push(row(spans, width));
+        rows
     }
 
     /// The trace's gist (its first line): faint italic after `Think`.
@@ -326,6 +405,20 @@ impl Component for ThinkHeader {
             ]
         });
         if self.running {
+            if let (true, Some(gist), Some(secs)) = (self.wrap, self.gist.as_deref(), self.secs) {
+                let head = vec![
+                    slot,
+                    Span::styled(" ".to_string(), Style::default()),
+                    Span::styled(status::RUNNING_STR.to_string(), palette.style("warning")),
+                    Span::styled(" ".to_string(), Style::default()),
+                    Span::styled("Think".to_string(), bold(palette.ink())),
+                ];
+                let tail = vec![Span::styled(
+                    format!("✻ {}", short_dur(secs)),
+                    palette.vio(),
+                )];
+                return Self::wrapped_rows(head, gist, tail, true, &palette, width);
+            }
             let mut left = vec![
                 slot,
                 Span::styled(" ".to_string(), Style::default()),
@@ -351,6 +444,26 @@ impl Component for ThinkHeader {
             Some(s) => format!("✻ thought {}", short_dur(s)),
             None => "✻ thought".to_string(),
         };
+        if let (true, Some(gist)) = (self.wrap, self.gist.as_deref()) {
+            let head = vec![
+                slot,
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled(status::DONE_STR.to_string(), palette.ok()),
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled("Think".to_string(), bold(palette.ink())),
+            ];
+            let tail = vec![
+                Span::styled(thought, palette.style("thinkingText")),
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled("·".to_string(), palette.dim()),
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled("ctrl+t".to_string(), Style::default()),
+            ];
+            let lines = Self::wrapped_rows(head, gist, tail, false, &palette, width);
+            let key = u16::try_from(width).unwrap_or(u16::MAX);
+            self.cache.borrow_mut().set(key, theme, lines.clone());
+            return lines;
+        }
         let mut spans = vec![
             slot,
             Span::styled(" ".to_string(), Style::default()),
@@ -385,6 +498,11 @@ pub fn failure_dot(content: &str) -> String {
     content.replacen('●', "⊗", 1)
 }
 
+/// The `⊘` an interrupted step carries in place of its status dot.
+pub fn interrupted_dot(content: &str) -> String {
+    content.replacen('●', "⊘", 1)
+}
+
 /// `N lines`.
 pub fn lines_text(total: usize) -> String {
     if total == 1 {
@@ -401,16 +519,6 @@ pub fn files_text(total: usize) -> String {
     } else {
         format!("{total} files")
     }
-}
-
-/// The prompt's first line, flattened: what a header row carries.
-pub(crate) fn first_line(text: &str) -> String {
-    text.lines()
-        .next()
-        .unwrap_or_default()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// A header row split into its flush-left and flush-right runs:
@@ -469,6 +577,88 @@ pub fn step_header(
     two_part_row(left, right, width)
 }
 
+/// Columns a wrapped header row hangs in under its first row: past the
+/// status dot.
+const HEADER_HANG: usize = 2;
+/// Room the label keeps beside the stats before the stats move to a row of
+/// their own.
+const MIN_LABEL_BESIDE_STATS: usize = 16;
+
+/// A step header as rows, never cut: ` NN {label}` with `right` (the stats)
+/// flush right on the first row. The label wraps (a continuation row hangs
+/// under the text, past the status dot) instead of ending in `…`. When the
+/// stats leave the label too little room beside them, the label takes the
+/// full row and the stats close the header on the last row that has room,
+/// or on a row of their own. `label_bg` paints the label (a file tool's band).
+pub fn step_header_rows(
+    number: &str,
+    left_prefix: &str,
+    left: &str,
+    right: &str,
+    width: usize,
+    label_bg: Option<Color>,
+) -> Vec<String> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let number = ansi_spans(number);
+    let stem = 1 + spans_width(&number) + 1;
+    let stats = ansi_spans(right);
+    let stats_width = spans_width(&stats);
+    let label = format!("{left_prefix}{left}");
+    let full = width.saturating_sub(stem).max(1);
+    let beside = (stats_width > 0 && full >= stats_width + 2 + MIN_LABEL_BESIDE_STATS)
+        .then(|| full - stats_width - 2);
+    let avail = beside.unwrap_or(full);
+    let mut wrapped = wrap_text_with_ansi(&label, avail);
+    if wrapped.len() > 1 {
+        // Continuation rows hang in; wrap again at the width they have.
+        wrapped = wrap_text_with_ansi(&label, avail.saturating_sub(HEADER_HANG).max(1));
+    }
+    let count = wrapped.len();
+    // The row the stats sit on: the first when they fit beside the label,
+    // else the last row with room for them, else a row of their own.
+    let stats_row = if stats_width == 0 {
+        None
+    } else if beside.is_some() {
+        Some(0)
+    } else if hoocode_tui_util::visible_width(&wrapped[count - 1]) + 2 + stats_width <= full {
+        Some(count - 1)
+    } else {
+        Some(count)
+    };
+    let mut rows = Vec::with_capacity(count + 1);
+    for (index, piece) in wrapped.into_iter().enumerate() {
+        let mut left_spans = if index == 0 {
+            let mut spans = vec![Span::styled(" ".to_string(), Style::default())];
+            spans.extend(number.clone());
+            spans.push(Span::styled(" ".to_string(), Style::default()));
+            spans
+        } else {
+            vec![Span::styled(
+                " ".repeat(stem + HEADER_HANG),
+                Style::default(),
+            )]
+        };
+        let mut label = ansi_spans(&piece);
+        if let Some(bg) = label_bg {
+            for span in &mut label {
+                span.style.bg = Some(bg);
+            }
+        }
+        left_spans.extend(label);
+        rows.push(if stats_row == Some(index) {
+            two_part_row(left_spans, stats.clone(), width)
+        } else {
+            row(left_spans, width)
+        });
+    }
+    if stats_row == Some(count) {
+        rows.push(two_part_row(Vec::new(), stats, width));
+    }
+    rows
+}
+
 /// `1 step`, `N steps`.
 pub fn steps_text(steps: usize) -> String {
     if steps == 1 {
@@ -487,10 +677,13 @@ pub fn hits_text(hits: usize) -> String {
     }
 }
 
-/// The landing line ending every mission: steps, hits, time, tokens, cost.
 /// The landing line's spans: `● LANDED · 2 steps · 1 hit · …`, muted with
-/// dim separators, as the row joins them.
+/// dim separators, as the row joins them. The mark is the mission's outcome,
+/// the one the radar row and the comms title read: `● LANDED` (ok),
+/// `⊗ DID NOT LAND` (err) or `⊘ ABORTED` (dim). A stepless mission (no steps,
+/// no hits) leaves those counts out.
 pub fn landing_spans(
+    mark: FlightMark,
     steps: usize,
     hits: usize,
     secs: &str,
@@ -498,18 +691,22 @@ pub fn landing_spans(
     cost: &str,
     palette: &Palette,
 ) -> Vec<Span<'static>> {
+    let word_style = match mark {
+        FlightMark::Aborted => mark.style(palette),
+        _ => bold(mark.style(palette)),
+    };
     let mut out = vec![
-        Span::styled(status::DONE_STR.to_string(), palette.ok()),
+        Span::styled(mark.glyph().to_string(), mark.style(palette)),
         Span::styled(" ".to_string(), Style::default()),
-        Span::styled("LANDED".to_string(), bold(palette.ok())),
+        Span::styled(mark.word().to_string(), word_style),
     ];
-    for piece in [
-        steps_text(steps),
-        hits_text(hits),
-        secs.to_string(),
-        tokens.to_string(),
-        cost.to_string(),
-    ] {
+    let mut pieces = Vec::new();
+    if steps > 0 || hits > 0 {
+        pieces.push(steps_text(steps));
+        pieces.push(hits_text(hits));
+    }
+    pieces.extend([secs.to_string(), tokens.to_string(), cost.to_string()]);
+    for piece in pieces {
         out.push(Span::styled(" · ".to_string(), palette.dim()));
         out.push(Span::styled(piece, palette.faint()));
     }
@@ -518,6 +715,7 @@ pub fn landing_spans(
 
 /// The landing line ending every mission: steps, hits, time, tokens, cost.
 pub fn landing_line(
+    mark: FlightMark,
     steps: usize,
     hits: usize,
     secs: &str,
@@ -528,35 +726,46 @@ pub fn landing_line(
     // Unbounded: the row below (`LandingLine`) lays the spans out at the
     // render width. The spans carry no truncation, so this matches the
     // laid-out row cell for cell whenever it fits.
-    let width = spans_width(&landing_spans(steps, hits, secs, tokens, cost, palette));
-    row(
-        landing_spans(steps, hits, secs, tokens, cost, palette),
-        width.max(1),
-    )
+    let spans = landing_spans(mark, steps, hits, secs, tokens, cost, palette);
+    let width = spans_width(&spans);
+    row(spans, width.max(1))
 }
 
 /// A mission's landing line as a component (M5): the peek row the
 /// transcript refreshes when a landed mission's counts change, so peek
 /// and radar agree. The spans render at the render width; overlong rows
-/// wrap exactly the way the old padded `Text` did.
+/// wrap exactly the way the old padded `Text` did. A mission that did
+/// something also gets one dim line right after, saying what the turn
+/// amounted to (`Edited 3 files · ran 2 commands`).
 #[derive(Debug)]
 pub struct LandingLine {
+    mark: FlightMark,
     steps: usize,
     hits: usize,
     secs: String,
     tokens: String,
     cost: String,
+    summary: Option<String>,
     cache: RefCell<RowCache>,
 }
 
 impl LandingLine {
-    pub fn new(steps: usize, hits: usize, secs: &str, tokens: &str, cost: &str) -> Self {
+    pub fn new(
+        mark: FlightMark,
+        steps: usize,
+        hits: usize,
+        secs: &str,
+        tokens: &str,
+        cost: &str,
+    ) -> Self {
         Self {
+            mark,
             steps,
             hits,
             secs: secs.to_string(),
             tokens: tokens.to_string(),
             cost: cost.to_string(),
+            summary: None,
             cache: RefCell::new(RowCache::default()),
         }
     }
@@ -571,9 +780,29 @@ impl LandingLine {
         }
     }
 
+    /// What the turn amounted to, the line after the landing row. `None`
+    /// (or blank) draws no line.
+    pub fn set_summary(&mut self, summary: Option<String>) {
+        let summary = summary.filter(|text| !text.trim().is_empty());
+        if self.summary != summary {
+            self.summary = summary;
+            self.cache.borrow_mut().clear();
+        }
+    }
+
     /// The counts the row reads, for the peek/radar agreement check.
     pub fn counts(&self) -> (usize, usize) {
         (self.steps, self.hits)
+    }
+
+    /// The outcome the row shows.
+    pub fn mark(&self) -> FlightMark {
+        self.mark
+    }
+
+    /// The summary line, when there is one.
+    pub fn summary(&self) -> Option<&str> {
+        self.summary.as_deref()
     }
 }
 
@@ -587,6 +816,7 @@ impl Component for LandingLine {
         // One leading cell, as the old padded `Text` drew.
         let mut spans = vec![Span::styled(" ".to_string(), Style::default())];
         spans.extend(landing_spans(
+            self.mark,
             self.steps,
             self.hits,
             &self.secs,
@@ -597,10 +827,22 @@ impl Component for LandingLine {
         let room = spans_width(&spans).max(1);
         let full = draw_line(spans, room);
         let content_width = (width as usize).saturating_sub(2).max(1);
-        let lines: Vec<String> = hoocode_tui_util::wrap_text_with_ansi(&full, content_width)
+        let mut lines: Vec<String> = hoocode_tui_util::wrap_text_with_ansi(&full, content_width)
             .into_iter()
             .map(|line| format!(" {line} "))
             .collect();
+        if let Some(summary) = &self.summary {
+            // Dim, under the word the mark makes; wrapped, never cut.
+            let styled = paint(palette.dim(), summary);
+            lines.extend(
+                hoocode_tui_util::wrap_text_with_ansi(
+                    &styled,
+                    content_width.saturating_sub(2).max(1),
+                )
+                .into_iter()
+                .map(|line| format!("   {line} ")),
+            );
+        }
         self.cache.borrow_mut().set(width, theme, lines.clone());
         lines
     }
@@ -631,6 +873,50 @@ pub fn diff_stats(diff: &str) -> (usize, usize) {
 /// `+1 −1`: the changed-line counts on an Edit step's header.
 pub fn diff_counts_text(added: usize, removed: usize) -> String {
     format!("+{added} \u{2212}{removed}")
+}
+
+/// A band whose text is never cut: `prefix` and the first piece of `text`
+/// share the first row with `right` flush right; the rest of `text` wraps
+/// across continuation band rows (same `bg`, indented to the prefix width,
+/// text only). Every `\n` in `text` starts a row. No room beside the prefix
+/// (or empty text) keeps one row.
+pub(crate) fn wrapped_band_rows(
+    prefix: Vec<Span<'static>>,
+    text: &str,
+    text_style: Style,
+    right: Vec<Span<'static>>,
+    width: usize,
+    bg: Option<Color>,
+) -> Vec<String> {
+    let budget = width.saturating_sub(
+        spans_width(&prefix) + spans_width(&right) + usize::from(!right.is_empty()),
+    );
+    if budget == 0 || text.is_empty() {
+        let mut spans = prefix;
+        spans.push(Span::styled(text.to_string(), text_style));
+        return vec![band_row(spans, right, width, bg)];
+    }
+    let mut wrapped: Vec<String> = Vec::new();
+    for source in text.split('\n') {
+        wrapped.extend(wrap_text_with_ansi(source, budget));
+    }
+    let indent = " ".repeat(spans_width(&prefix));
+    let mut lines = Vec::with_capacity(wrapped.len());
+    for (index, piece) in wrapped.into_iter().enumerate() {
+        let mut row = if index == 0 {
+            prefix.clone()
+        } else {
+            vec![Span::styled(indent.clone(), Style::default())]
+        };
+        row.push(Span::styled(piece, text_style));
+        let right = if index == 0 {
+            right.clone()
+        } else {
+            Vec::new()
+        };
+        lines.push(band_row(row, right, width, bg));
+    }
+    lines
 }
 
 /// The mission header: `▲ M1  prompt`, the `▲` and `M1` in the `you` colour.
@@ -687,13 +973,11 @@ impl Component for MissionHeader {
             if let Some(flight) = &self.flight {
                 let stats = flight.borrow();
                 // Live data behind shared state: redraw every tick.
-                return vec![crate::radar::mission_row(
-                    self.seq,
-                    &self.prompt,
-                    &stats,
-                    &palette,
-                    width,
-                )];
+                let mut rows =
+                    crate::radar::mission_rows(self.seq, &self.prompt, &stats, &palette, width);
+                // The turn's progress row sits under the whole prompt.
+                rows.extend(crate::radar::chain_rows(&stats, &palette, width));
+                return rows;
             }
         } else if let Some(cached) = self
             .cache
@@ -706,7 +990,7 @@ impl Component for MissionHeader {
         // Mission Control (spec a2–a4): the full-width `bU` band, `▲ M1`
         // in the `you` token, the prompt in bold ink.
         let bg = palette.bg_color("userMessageBg");
-        let mut spans = vec![
+        let spans = vec![
             Span::styled("▲".to_string(), bold(palette.you())),
             Span::styled(" ".to_string(), Style::default()),
             Span::styled(format!("M{}", self.seq), bold(palette.you())),
@@ -723,37 +1007,7 @@ impl Component for MissionHeader {
                 ]
             })
             .unwrap_or_default();
-        let prompt_budget = width.saturating_sub(
-            spans_width(&spans) + spans_width(&chip) + usize::from(!chip.is_empty()),
-        );
-        // The prompt is never cut: it wraps across continuation band rows
-        // (same `bg`, indented to the prefix width, prompt text only) so
-        // the whole mission stays visible. No room (or an empty prompt)
-        // keeps today's single row.
-        if prompt_budget == 0 || self.prompt.is_empty() {
-            spans.push(Span::styled(self.prompt.clone(), bold(palette.ink())));
-            let line = band_row(spans, chip, width, bg);
-            let lines = vec![line];
-            let key = u16::try_from(width).unwrap_or(u16::MAX);
-            self.cache.borrow_mut().set(key, theme, lines.clone());
-            return lines;
-        }
-        let mut wrapped: Vec<String> = Vec::new();
-        for source in self.prompt.split('\n') {
-            wrapped.extend(wrap_text_with_ansi(source, prompt_budget));
-        }
-        let indent = " ".repeat(spans_width(&spans));
-        let mut lines = Vec::with_capacity(wrapped.len());
-        for (index, piece) in wrapped.into_iter().enumerate() {
-            let mut row = if index == 0 {
-                spans.clone()
-            } else {
-                vec![Span::styled(indent.clone(), Style::default())]
-            };
-            row.push(Span::styled(piece, bold(palette.ink())));
-            let right = if index == 0 { chip.clone() } else { Vec::new() };
-            lines.push(band_row(row, right, width, bg));
-        }
+        let lines = wrapped_band_rows(spans, &self.prompt, bold(palette.ink()), chip, width, bg);
         let key = u16::try_from(width).unwrap_or(u16::MAX);
         self.cache.borrow_mut().set(key, theme, lines.clone());
         lines
@@ -786,7 +1040,15 @@ mod tests {
     fn landing_line_counts_read_right() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let palette = Palette::current();
-        let line = landing_line(2, 1, "0.5s", "0.8k tokens", "$0.002", &palette);
+        let line = landing_line(
+            FlightMark::Landed,
+            2,
+            1,
+            "0.5s",
+            "0.8k tokens",
+            "$0.002",
+            &palette,
+        );
         let bare = strip_vt_control_characters(&line);
         assert!(bare.contains("LANDED"), "{bare}");
         assert!(bare.contains("2 steps"), "{bare}");

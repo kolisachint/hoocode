@@ -10,14 +10,16 @@ use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::Text;
 use hoocode_tui_render::Component;
-use hoocode_tui_util::truncate_to_width;
 use serde_json::{json, Value};
 
 use super::search::js_number;
 use super::text;
+use crate::fold::earlier_lines_hint;
 use crate::render_utils::{invalid_arg_text, str_arg};
-use crate::tool_execution::{ToolRenderDefinition, ToolRenderResultOptions, ToolResultView};
-use crate::tool_output_view::PEEK_LINES;
+use crate::tool_execution::{
+    body_layout, BodyLayout, ToolRenderDefinition, ToolRenderResultOptions, ToolResultView,
+};
+use crate::tool_output_view::line_budget;
 use crate::visual_truncate::truncate_to_visual_lines;
 
 /// State key: the block needs re-rendering every second (a live `Elapsed`).
@@ -51,7 +53,7 @@ pub fn format_bash_call(args: &Value) -> String {
     let display = match command {
         None => invalid_arg_text(),
         Some(c) if !c.is_empty() => c,
-        Some(_) => t.fg("toolOutput", "..."),
+        Some(_) => t.fg("toolOutput", "…"),
     };
     format!("{}  {display}{suffix}", t.fg("toolTitle", &t.bold("Shell")))
 }
@@ -59,6 +61,10 @@ pub fn format_bash_call(args: &Value) -> String {
 /// The result body (`BashResultRenderComponent`), laid out at render width.
 pub struct BashResult {
     styled_output: Option<String>,
+    /// Tells the step how many rows at the end of the body are not output.
+    layout: Rc<BodyLayout>,
+    /// The full stop: every line of the output, wrapped, nothing folded.
+    expanded: bool,
     warning: Option<String>,
     timing: Option<String>,
 }
@@ -67,19 +73,17 @@ impl Component for BashResult {
     fn render(&mut self, width: u16) -> Vec<String> {
         let mut lines = Vec::new();
         if let Some(output) = &self.styled_output {
-            let preview = truncate_to_visual_lines(output, PEEK_LINES, width, 0);
+            let preview = truncate_to_visual_lines(output, line_budget(self.expanded), width, 0);
             if preview.skipped_count > 0 {
-                let hint = theme().fg(
-                    "muted",
-                    &format!("... ({} earlier lines)", preview.skipped_count),
-                );
-                lines.push(truncate_to_width(&hint, width as usize, "...", false));
+                lines.push(earlier_lines_hint(preview.skipped_count));
             }
             lines.extend(preview.visual_lines);
         }
+        let output_rows = lines.len();
         for extra in [&self.warning, &self.timing].into_iter().flatten() {
             lines.extend(Text::new(extra.clone(), 0, 0).render(width));
         }
+        self.layout.footer_rows.set(lines.len() - output_rows);
         lines
     }
 }
@@ -93,6 +97,7 @@ fn build_result(
     // A failed run shows no `Took`: the header's `HIT` chip carries the
     // exit code and duration instead.
     is_error: bool,
+    layout: Rc<BodyLayout>,
 ) -> BashResult {
     let t = theme();
     let output = js_trim(result.text(show_images));
@@ -168,6 +173,8 @@ fn build_result(
 
     BashResult {
         styled_output,
+        layout,
+        expanded: options.expanded,
         warning,
         timing,
     }
@@ -201,6 +208,7 @@ pub fn definition() -> ToolRenderDefinition {
                 started,
                 ended,
                 ctx.is_error,
+                body_layout(ctx.objects, true),
             );
             Ok(Rc::new(RefCell::new(body)))
         })),

@@ -18,7 +18,7 @@ pub const RENDERED_PLUGIN_TOOLS: [&str; 4] = [
     "InstallPlugin",
 ];
 
-pub fn format_plugin_tool_result(result: &ToolResultView<'_>) -> String {
+pub fn format_plugin_tool_result(result: &ToolResultView<'_>, expanded: bool) -> String {
     let t = theme();
     let output = js_trim(result.text(false));
     if output.is_empty() {
@@ -26,7 +26,7 @@ pub fn format_plugin_tool_result(result: &ToolResultView<'_>) -> String {
     }
     let lines: Vec<String> = output.split('\n').map(str::to_string).collect();
     // The first row (the count line) is muted, the rows under it are body text.
-    peek_block(&lines, |shown| {
+    peek_block(expanded, &lines, |shown| {
         shown
             .iter()
             .enumerate()
@@ -44,8 +44,8 @@ pub fn format_plugin_tool_result(result: &ToolResultView<'_>) -> String {
 pub fn definition() -> ToolRenderDefinition {
     ToolRenderDefinition {
         render_call: None,
-        render_result: Some(Rc::new(|result, _, _| {
-            Ok(text(format_plugin_tool_result(result)))
+        render_result: Some(Rc::new(|result, _, ctx| {
+            Ok(text(format_plugin_tool_result(result, ctx.expanded)))
         })),
     }
 }

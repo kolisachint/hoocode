@@ -2,8 +2,10 @@
 //! In radar view each mission collapses to one flight-log row: the mark
 //! (`●` landed, `◐` in flight, `⊗` did not land, `⊘` aborted), the prompt,
 //! and the stats (steps, `N✕` hits, time, cost). The stats sit in fixed
-//! columns counted back from the right edge; the prompt is cut with `…`
-//! first. Under the mission row, each hit gets its own line
+//! columns counted back from the right edge; the prompt is never cut: it
+//! wraps onto rows aligned under its first word. Under it, the turn's
+//! progress row (`◐ Read › Edit › Shell …` while flying, the settled
+//! summary once over). Under that, each hit gets its own line
 //! (`⊗ 04 Shell  cmd  → snippet  HIT`, indented 12), a flying mission shows
 //! its live step (`◐` with an eight-cell progress bar and `3s of ~6s` when
 //! the call's estimate is known, indented 8), waiting steps read `◉ …
@@ -25,8 +27,12 @@ use hoocode_tui_ratatui::core::style::Style;
 use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{ansi_spans, bold, reversed, spans_width, truncate_spans, Palette};
 use hoocode_tui_render::{Component, ComponentHandle};
+use hoocode_tui_util::visible_width;
 
-use crate::trajectory::{first_line, short_dur, two_part_row};
+use crate::tool_chain_summary::{
+    chain_segments, chain_stats, turn_phrase, ChainEntry, ChainState, SegmentTone,
+};
+use crate::trajectory::{short_dur, two_part_row};
 
 /// The in-flight glyph: the mission mark, a live step, a live agent and a
 /// satellite job. Radar-local: the shared `status::RUNNING_STR` (`◉`) keeps
@@ -57,6 +63,10 @@ const TIME_FIELD: usize = 4;
 /// The blank columns a stem keeps before its right-hand run.
 const RUN_GAP: usize = 2;
 
+/// Room the prompt needs beside the stats on the mission row; with less, the
+/// prompt starts on the row below rather than break its first word.
+const MIN_BESIDE_STATS: usize = 12;
+
 /// A mission's mark in the flight log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlightMark {
@@ -72,7 +82,8 @@ pub enum FlightMark {
 }
 
 impl FlightMark {
-    fn glyph(self) -> &'static str {
+    /// The mark's glyph: `●`, `◐`, `⊗` or `⊘`.
+    pub(crate) fn glyph(self) -> &'static str {
         match self {
             FlightMark::Landed => status::DONE_STR,
             FlightMark::InFlight => IN_FLIGHT_STR,
@@ -81,7 +92,17 @@ impl FlightMark {
         }
     }
 
-    fn style(self, palette: &Palette) -> Style {
+    /// The outcome word the landing line and the comms title print.
+    pub fn word(self) -> &'static str {
+        match self {
+            FlightMark::Landed => "LANDED",
+            FlightMark::InFlight => "IN FLIGHT",
+            FlightMark::DidNotLand => "DID NOT LAND",
+            FlightMark::Aborted => "ABORTED",
+        }
+    }
+
+    pub(crate) fn style(self, palette: &Palette) -> Style {
         match self {
             FlightMark::Landed => palette.ok(),
             // The accent tone: a flying mission reads as the live rows do.
@@ -107,6 +128,9 @@ pub struct FlightStats {
     pub started: Option<Instant>,
     /// Cost, already formatted (`$0.003`); `None` when unknown.
     pub cost: Option<String>,
+    /// Every call of the mission, in order: the progress row under the
+    /// mission row reads its segments while flying and its phrase once over.
+    pub chain: Vec<ChainEntry>,
 }
 
 impl FlightStats {
@@ -322,30 +346,191 @@ fn inline_line(
     out
 }
 
-/// The mission row (Mission Control spec r1):
+/// Word-wraps plain `text` (whitespace collapsed) into rows: the first holds
+/// `first` columns, the rest `rest`. A word wider than its row breaks at the
+/// edge. Always at least one row.
+fn wrap_words(text: &str, first: usize, rest: usize) -> Vec<String> {
+    let mut rows: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0;
+    for word in text.split_whitespace() {
+        let budget = if rows.is_empty() { first } else { rest }.max(1);
+        let word_width = visible_width(word);
+        if current_width > 0 && current_width + 1 + word_width <= budget {
+            current.push(' ');
+            current.push_str(word);
+            current_width += 1 + word_width;
+            continue;
+        }
+        if current_width > 0 {
+            rows.push(std::mem::take(&mut current));
+            current_width = 0;
+        }
+        for ch in word.chars() {
+            let budget = if rows.is_empty() { first } else { rest }.max(1);
+            let ch_width = visible_width(ch.encode_utf8(&mut [0; 4]));
+            if current_width > 0 && current_width + ch_width > budget {
+                rows.push(std::mem::take(&mut current));
+                current_width = 0;
+            }
+            current.push(ch);
+            current_width += ch_width;
+        }
+    }
+    if current_width > 0 || rows.is_empty() {
+        rows.push(current);
+    }
+    rows
+}
+
+/// The mission rows (Mission Control spec r1):
 /// `M1 ●  prompt                1 step  0✕   0.8s  $0.003`. `M1` reads `you`,
-/// the glyph its mark, the prompt bold ink. The stats stay whole; the
-/// prompt is cut with `…` first. `prompt` is one line.
-pub fn mission_row(
+/// the glyph its mark, the prompt bold ink. The stats stay whole on the first
+/// row; the prompt is never cut. It wraps (every line of it), and the
+/// continuation rows hang under the prompt's first word.
+pub fn mission_rows(
     seq: usize,
     prompt: &str,
     stats: &FlightStats,
     palette: &Palette,
     width: usize,
-) -> String {
+) -> Vec<String> {
     if width == 0 {
-        return String::new();
+        return vec![String::new()];
     }
-    let stem = vec![
+    let lead = vec![
         blank(1),
         span(format!("M{seq}"), palette.you()),
         blank(1),
         span(stats.mark.glyph(), stats.mark.style(palette)),
         blank(2),
-        span(first_line(prompt), bold(palette.ink())),
     ];
-    let (stem, run) = split_stem(stem, stats.right_run(width, palette), width);
-    two_part_row(stem, run, width)
+    let hang = spans_width(&lead);
+    let run = stats.right_run(width, palette);
+    let first_room = width.saturating_sub(hang + spans_width(&run) + RUN_GAP);
+    let rest_room = width.saturating_sub(hang + 1).max(1);
+    // The prompt's lines, each whitespace-collapsed; blank lines go.
+    let lines: Vec<String> = prompt
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|line| !line.is_empty())
+        .collect();
+    let mut pieces: Vec<String> = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        // The first row has the least room (the stats sit on it); with too
+        // little for a word, the whole prompt hangs on the rows below.
+        let first_word = line.split_whitespace().next().map_or(0, visible_width);
+        if index == 0 && (first_room < MIN_BESIDE_STATS || first_word > first_room) {
+            pieces.push(String::new());
+            pieces.extend(wrap_words(line, rest_room, rest_room));
+        } else if index == 0 {
+            pieces.extend(wrap_words(line, first_room, rest_room));
+        } else {
+            pieces.extend(wrap_words(line, rest_room, rest_room));
+        }
+    }
+    if pieces.is_empty() {
+        pieces.push(String::new());
+    }
+    let style = bold(palette.ink());
+    let mut out = Vec::with_capacity(pieces.len());
+    for (index, piece) in pieces.into_iter().enumerate() {
+        if index == 0 {
+            let mut stem = lead.clone();
+            stem.push(span(piece, style));
+            let (stem, run) = split_stem(stem, run.clone(), width);
+            out.push(two_part_row(stem, run, width));
+        } else {
+            out.push(finish(vec![blank(hang), span(piece, style)], width));
+        }
+    }
+    out
+}
+
+/// The mission's progress row (restored from the chain line): while the
+/// mission flies, `◐ Read › Edit › Shell …` (`Tool ×N` for a run of the same
+/// tool, `Tool✗` for a failed call, dim `›` between); once it is over, the
+/// settled summary (`● Edited 3 files · ran 2 commands`) with the call stats
+/// flush right when they fit. Indented like the live rows (`STEP_INDENT`).
+/// Wraps, never cuts. No calls, no row.
+pub fn chain_rows(stats: &FlightStats, palette: &Palette, width: usize) -> Vec<String> {
+    if width == 0 || stats.chain.is_empty() {
+        return Vec::new();
+    }
+    let flying = stats.mark == FlightMark::InFlight;
+    let (glyph, glyph_style) = if flying {
+        (IN_FLIGHT_STR, palette.acc())
+    } else {
+        (stats.mark.glyph(), stats.mark.style(palette))
+    };
+    let lead = vec![blank(STEP_INDENT), span(glyph, glyph_style), blank(1)];
+    let hang = spans_width(&lead);
+    let room = width.saturating_sub(hang + 1).max(1);
+    let hang_blank = || vec![blank(hang)];
+    let mut rows: Vec<Vec<Span<'static>>> = Vec::new();
+    if flying {
+        // One unit per segment, its separator trailing: a row ends on `›`
+        // rather than a next row opening on it.
+        let segments = chain_segments(&stats.chain);
+        let count = segments.len();
+        let mut line = lead.clone();
+        let mut used = 0;
+        for (index, segment) in segments.into_iter().enumerate() {
+            let style = match segment.tone {
+                SegmentTone::Error => palette.err(),
+                SegmentTone::Running => palette.style("warning"),
+                SegmentTone::Ok => palette.ink(),
+            };
+            let last = index + 1 == count;
+            // The label, ` ›` (or the closing ` …`), and the space after a `›`.
+            let unit_width = visible_width(&segment.label) + 2 + usize::from(!last);
+            if used > 0 && used + unit_width > room {
+                rows.push(std::mem::replace(&mut line, hang_blank()));
+                used = 0;
+            }
+            used += unit_width;
+            line.push(span(segment.label, style));
+            if last {
+                line.push(span(" …", palette.dim()));
+            } else {
+                line.push(span(" ›", palette.dim()));
+                line.push(blank(1));
+            }
+        }
+        rows.push(line);
+    } else {
+        let phrase = turn_phrase(&stats.chain);
+        for (index, piece) in wrap_words(&phrase, room, room).into_iter().enumerate() {
+            let mut line = if index == 0 {
+                lead.clone()
+            } else {
+                hang_blank()
+            };
+            line.push(span(piece, palette.ink()));
+            rows.push(line);
+        }
+    }
+    let state = if stats.mark == FlightMark::Aborted {
+        ChainState::Interrupted
+    } else {
+        ChainState::Done
+    };
+    // Settled, the call stats close the last row, flush right, when they fit.
+    let tally = (!flying).then(|| chain_stats(&stats.chain, state));
+    let count = rows.len();
+    rows.into_iter()
+        .enumerate()
+        .map(|(index, line)| match &tally {
+            Some(tally)
+                if index + 1 == count
+                    && spans_width(&line) + RUN_GAP + visible_width(tally) < width =>
+            {
+                let right = vec![span(tally.clone(), palette.faint()), blank(1)];
+                two_part_row(line, right, width)
+            }
+            _ => finish(line, width),
+        })
+        .collect()
 }
 
 /// A hit's own line (Mission Control spec r1/r3), indented 12:
@@ -392,6 +577,41 @@ pub fn sub_hit_row(
         palette,
         width,
     )
+}
+
+/// A settled subagent call as one line, uncut, for the peek and full rails
+/// (`⊗ 01.2 Grep  pattern  → snippet  HIT`, or `● 01.1 Read  path`): the
+/// caller cuts it or wraps it. `parent` is the Agent step's number.
+pub fn sub_step_line(
+    parent: usize,
+    step: &hoocode_code_subagents::live::SettledStep,
+    palette: &Palette,
+) -> String {
+    let failed = step.failure.is_some();
+    let (glyph, style) = if failed {
+        ("⊗", palette.err())
+    } else {
+        (status::DONE_STR, palette.ok())
+    };
+    let mut spans = step_lead(
+        0,
+        glyph,
+        style,
+        &sub_label(parent, step.index),
+        &step.tool,
+        palette,
+    );
+    spans.extend(with_ink(ansi_spans(&step.subject), palette));
+    if let Some(snippet) = step.failure.as_deref().filter(|s| !s.trim().is_empty()) {
+        spans.push(span("  → ", palette.dim()));
+        spans.extend(with_ink(ansi_spans(snippet), palette));
+    }
+    if failed {
+        spans.push(blank(2));
+        spans.push(span("HIT", reversed(bold(palette.err()))));
+    }
+    let width = spans_width(&spans).max(1);
+    crate::trajectory::draw_line(spans, width)
 }
 
 fn hit_line(
@@ -543,6 +763,37 @@ pub fn waiting_row(
     palette: &Palette,
     width: usize,
 ) -> String {
+    waiting_line(&step_label(step), tool, subject, head, palette, width)
+}
+
+/// A subagent step parked for its parent's clearance, under its agent row:
+/// `        ◉ 01.1 Shell  wc -l src/wrap.rs      holding for clearance`.
+pub fn sub_waiting_row(
+    parent: usize,
+    index: usize,
+    tool: &str,
+    subject: &str,
+    palette: &Palette,
+    width: usize,
+) -> String {
+    waiting_line(
+        &sub_label(parent, index),
+        tool,
+        subject,
+        true,
+        palette,
+        width,
+    )
+}
+
+fn waiting_line(
+    label: &str,
+    tool: &str,
+    subject: &str,
+    head: bool,
+    palette: &Palette,
+    width: usize,
+) -> String {
     if width == 0 {
         return String::new();
     }
@@ -551,14 +802,7 @@ pub fn waiting_row(
     } else {
         (status::TODO_STR, "next", palette.dim())
     };
-    let mut stem = step_lead(
-        STEP_INDENT,
-        glyph,
-        palette.warn(),
-        &step_label(step),
-        tool,
-        palette,
-    );
+    let mut stem = step_lead(STEP_INDENT, glyph, palette.warn(), label, tool, palette);
     stem.extend(with_ink(ansi_spans(subject), palette));
     let run = vec![span(right_text, right_style), blank(1)];
     let (stem, run) = split_stem(stem, run, width);
@@ -635,36 +879,54 @@ pub fn satellite_row(
     two_part_row(stem, run, width)
 }
 
-/// Thinking's line under its mission (Mission Control spec r11), indented
-/// 8: `        ✻ thought 3s · The helper is 13 lines…`. The gist reads dim after
-/// the violet thought; without one the row is the thought alone.
-pub fn think_row(secs: u64, gist: Option<&str>, palette: &Palette, width: usize) -> String {
+/// Thinking's rows under their mission (Mission Control spec r11), indented
+/// 8: `        ✻ thought 3s · The helper is 13 lines`. The gist reads dim after
+/// the violet thought; without one the row is the thought alone. The gist is
+/// never cut: it wraps onto rows hanging under its first word.
+pub fn think_rows(secs: u64, gist: Option<&str>, palette: &Palette, width: usize) -> Vec<String> {
     if width == 0 {
-        return String::new();
+        return vec![String::new()];
     }
-    let mut spans = vec![
+    let mut lead = vec![
         blank(STEP_INDENT),
         span(format!("✻ thought {}", short_dur(secs)), palette.vio()),
     ];
-    if let Some(gist) = gist.filter(|gist| !gist.trim().is_empty()) {
-        spans.push(span(" · ", palette.faint()));
-        spans.push(span(gist.to_string(), palette.dim()));
-    }
-    finish(spans, width)
+    let Some(gist) = gist.filter(|gist| !gist.trim().is_empty()) else {
+        return vec![finish(lead, width)];
+    };
+    lead.push(span(" · ", palette.faint()));
+    let hang = spans_width(&lead);
+    let room = width.saturating_sub(hang + 1).max(1);
+    wrap_words(gist, room, room)
+        .into_iter()
+        .enumerate()
+        .map(|(index, piece)| {
+            let mut line = if index == 0 {
+                lead.clone()
+            } else {
+                vec![blank(hang)]
+            };
+            line.push(span(piece, palette.dim()));
+            finish(line, width)
+        })
+        .collect()
 }
 
-/// The prose line under a mission (Mission Control spec r1/r3): the
-/// message's last paragraph on one line, indented `indent` (8 under the
-/// mission row, 12 when a hit row is above it) and cut with `…` to leave
-/// the last column blank. `text` is already one line.
-pub fn prose_row(text: &str, indent: usize, palette: &Palette, width: usize) -> String {
+/// The prose rows under a mission (Mission Control spec r1/r3): the final
+/// message's plain text, one entry per `lines` item, indented `indent` (8
+/// under the mission row, 12 when a hit row is above it). Never cut: an
+/// entry wraps at the width, the last column kept blank. `style` is ink for
+/// the message and err for the abort or error reason.
+pub fn prose_rows(lines: &[String], indent: usize, style: Style, width: usize) -> Vec<String> {
     if width == 0 {
-        return String::new();
+        return Vec::new();
     }
-    finish(
-        vec![blank(indent), span(text.to_string(), palette.ink())],
-        width,
-    )
+    let room = width.saturating_sub(indent + 1).max(1);
+    lines
+        .iter()
+        .flat_map(|line| wrap_words(line, room, room))
+        .map(|piece| finish(vec![blank(indent), span(piece, style)], width))
+        .collect()
 }
 
 /// A child that only draws in peek view: radar hides it. The hidden flag is

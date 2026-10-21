@@ -244,11 +244,14 @@ fn colors_task_output_call_target_and_roster_lines_by_agent_type() {
         ..Default::default()
     })];
     let details = json!({"status": "list", "ok": true});
-    let rendered = format_task_output_result(&ToolResultView {
-        content: &content,
-        details: &details,
-        text: &hoocode_code_tui_widgets::tool_signal::ResultText::default(),
-    });
+    let rendered = format_task_output_result(
+        &ToolResultView {
+            content: &content,
+            details: &details,
+            text: &hoocode_code_tui_widgets::tool_signal::ResultText::default(),
+        },
+        false,
+    );
     assert!(rendered.contains(&explore));
     assert!(rendered.contains(&fg_ansi(agent_color_for("plan"))));
     assert!(strip(&rendered).contains("- explore#1  running  34s  · grep"));

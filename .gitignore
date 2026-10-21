@@ -9,3 +9,4 @@ scripts/**/__pycache__/
 .hoocode/dispatch/
 .hoocode/
 migration/**/__pycache__/
+.claude/worktrees/

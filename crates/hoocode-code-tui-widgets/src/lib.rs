@@ -12,6 +12,7 @@ pub mod controls;
 pub mod custom_message;
 pub mod diff;
 pub mod dynamic_border;
+pub mod fold;
 pub mod input_frame;
 mod js_json;
 pub mod jsdiff;

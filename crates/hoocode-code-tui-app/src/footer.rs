@@ -74,6 +74,7 @@ pub fn tool_output_view_glyph(view: ToolOutputView) -> &'static str {
     match view {
         ToolOutputView::Radar => "◌",
         ToolOutputView::Peek => "◍",
+        ToolOutputView::Full => "●",
     }
 }
 

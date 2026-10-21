@@ -9,7 +9,6 @@ use hoocode_code_tool_api::{
     truncate_tail, TruncationOptions, TruncationResult, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES,
 };
 use hoocode_code_tool_bash::shell::strip_ansi;
-use hoocode_code_tui_keybindings::key_hint;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::Loader;
 use hoocode_tui_ratatui::core::style::Style;
@@ -18,9 +17,10 @@ use hoocode_tui_ratatui::{bold, Palette};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::wrap_text_with_ansi;
 
-use crate::trajectory::{band_row, rail_line};
+use crate::fold::more_lines_hint;
+use crate::trajectory::{rail_line, wrapped_band_rows};
 
-/// Preview line limit for a `!` command. The dial does not expand it.
+/// Preview line limit for a `!` command at peek; the full stop shows every line.
 const PREVIEW_LINES: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,6 +108,9 @@ pub struct BashExecutionComponent {
     tail: OutputTail,
     /// The transcript's radar flag, shared so a view flip reaches every row.
     radar: Option<Rc<Cell<bool>>>,
+    /// The transcript's full flag: at the full stop the output shows whole
+    /// and the command is never cut.
+    full: Option<Rc<Cell<bool>>>,
 }
 
 impl BashExecutionComponent {
@@ -136,6 +139,7 @@ impl BashExecutionComponent {
             full_output_path: None,
             expanded: false,
             radar: None,
+            full: None,
         }
     }
 
@@ -148,6 +152,17 @@ impl BashExecutionComponent {
     fn radar_hidden(&self) -> bool {
         self.radar.as_ref().is_some_and(|flag| flag.get())
     }
+
+    /// The transcript's full flag, shared so a view flip reaches every row.
+    pub fn set_full_flag(&mut self, flag: Rc<Cell<bool>>) {
+        self.full = Some(flag);
+    }
+
+    /// Whether the output shows whole: the full stop, or `set_expanded`.
+    fn is_expanded(&self) -> bool {
+        self.expanded || self.full.as_ref().is_some_and(|flag| flag.get())
+    }
+
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
     }
@@ -185,14 +200,17 @@ impl BashExecutionComponent {
     /// `you` token, the command in bold ink, and — once settled — the exit
     /// on the right with `· no step, it's yours`. Your own `!` commands
     /// are yours, not the agent's steps, so they get no step number.
-    fn header_row(&self, width: usize, palette: &Palette) -> String {
-        let left = vec![
+    ///
+    /// The command is never cut: a long one wraps across continuation rows.
+    fn header_rows(&self, width: usize, palette: &Palette) -> Vec<String> {
+        let prefix = vec![
             Span::styled("▲ $".to_string(), bold(palette.you())),
             Span::styled("  ".to_string(), Style::default()),
-            Span::styled(self.command.clone(), bold(palette.ink())),
         ];
-        band_row(
-            left,
+        wrapped_band_rows(
+            prefix,
+            &self.command,
+            bold(palette.ink()),
             self.header_stats(palette),
             width,
             palette.bg_color("userMessageBg"),
@@ -246,7 +264,7 @@ impl BashExecutionComponent {
             for physical in context.content.split('\n') {
                 visual.extend(wrap_text_with_ansi(&t.fg("dim", physical), content_width));
             }
-            let shown = if self.expanded {
+            let shown = if self.is_expanded() {
                 visual.as_slice()
             } else {
                 let skip = visual.len().saturating_sub(PREVIEW_LINES);
@@ -263,21 +281,7 @@ impl BashExecutionComponent {
         }
         let mut footer: Vec<String> = Vec::new();
         if hidden > 0 {
-            if self.expanded {
-                footer.push(rail_line(
-                    &format!("({})", key_hint("app.tools.expand", "to collapse")),
-                    width,
-                    false,
-                    palette,
-                ));
-            } else {
-                footer.push(rail_line(
-                    &t.fg("dim", &format!("... {hidden} more lines")),
-                    width,
-                    false,
-                    palette,
-                ));
-            }
+            footer.push(rail_line(&more_lines_hint(hidden), width, false, palette));
         }
         if self.status == Status::Cancelled {
             footer.push(rail_line(
@@ -316,7 +320,7 @@ impl Component for BashExecutionComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
         let palette = Palette::current();
         let width = (width as usize).max(1);
-        let mut lines = vec![self.header_row(width, &palette)];
+        let mut lines = self.header_rows(width, &palette);
         if !self.radar_hidden() {
             lines.extend(self.body_rows(width, &palette));
         }

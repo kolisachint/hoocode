@@ -1,0 +1,14 @@
+ M2 ●  split the wrap helper                         5 steps  0✕   4.2s  $0.012
+        ● Edited src · ran 2 commands                        5 calls · 15 lines
+--- styles ---
+r0 c1-2 fg=#9b8cff
+r0 c4 fg=#b5bd68
+r0 c7-27 fg=#e5e5e7 bold
+r0 c53 fg=#e5e5e7
+r0 c54-59 fg=#989898
+r0 c62-63 fg=#a8a8a8
+r0 c67-70 fg=#989898
+r0 c73-78 fg=#989898
+r1 c8 fg=#b5bd68
+r1 c10-36 fg=#e5e5e7
+r1 c61-78 fg=#a8a8a8
