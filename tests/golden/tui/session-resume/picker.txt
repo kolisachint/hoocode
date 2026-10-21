@@ -1,9 +1,6 @@
-«fg=#6e93ff»┌──────────────────────────────────────────────────────────────────────────────────────«bold;fg=#5cc8bb» sessions «fg=#6e93ff»──┐
-«fg=#6e93ff»│«» «bold»Resume Session (Current Folder)«»              «fg=#5cc8bb»◉ Current Folder«fg=#a8a8a8» | ○ All«»  «fg=#a8a8a8»Name: «fg=#5cc8bb»All«»  «fg=#a8a8a8»Sort: «fg=#5cc8bb»Threaded«» «fg=#6e93ff»│
-«fg=#6e93ff»│«» «fg=#989898»tab«fg=#a8a8a8» scope · re:<pattern> regex · "phrase" exact«»                                                  «fg=#6e93ff»│
-«fg=#6e93ff»│«» «fg=#989898»<alt>+o«fg=#a8a8a8» sort · «fg=#989898»<alt>+n«fg=#a8a8a8» named · «fg=#989898»<alt>+x«fg=#a8a8a8» delete · «fg=#989898»<alt>+p«fg=#a8a8a8» path (off)«»                                       «fg=#6e93ff»│
-«fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
-«fg=#6e93ff»│«» «fg=#a8a8a8»❯ «inverse» «»                                                                                              «fg=#6e93ff»│
-«fg=#6e93ff»│«»                                                                                                  «fg=#6e93ff»│
-«fg=#6e93ff»│«» «bg=#2a2a36;fg=#5cc8bb»› «<masked: session colour swatch>» «bg=#2a2a36» «bg=#2a2a36;bold»remember the word apple«bg=#2a2a36» <slug>«bg=#2a2a36;fg=#989898» 2 now«» «fg=#6e93ff»│
-«fg=#6e93ff»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+«fg=#9b8cff»┏━«» «bold;fg=#9b8cff»MISSION LOG · /resume  1 session«» «fg=#9b8cff»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«»  «fg=#9b8cff»━┓
+«fg=#9b8cff»┃«fg=#5cc8bb»◉ Current Folder«fg=#a8a8a8» | ○ All  Name: «fg=#5cc8bb»All«fg=#a8a8a8»  Sort: «fg=#5cc8bb»Threaded«»                                               «fg=#9b8cff»┃
+«fg=#9b8cff»┃«fg=#989898»tab«fg=#a8a8a8» scope · re:<pattern> regex · "phrase" exact«»                                                   «fg=#9b8cff»┃
+«fg=#9b8cff»┃«fg=#5cc8bb»▸«» «fg=#ffff00»▏«»                                                                                               «fg=#9b8cff»┃
+«fg=#9b8cff»┃«bg=#2a2a36;fg=#5cc8bb»› «bg=#2a2a36»  «bg=#2a2a36;bold»remember the word apple«<masked: session chip>»  <session-chip>«bg=#2a2a36» mock-model «bg=#2a2a36;fg=#989898»2«bg=#2a2a36» «bg=#2a2a36;fg=#989898»0«bg=#2a2a36» «bg=#2a2a36;fg=#989898»…«fg=#9b8cff»┃
+«fg=#9b8cff»┗━«» «fg=#989898»↑↓«fg=#a8a8a8» move · «fg=#989898»tab«fg=#a8a8a8» scope · «fg=#989898»<alt>+o«fg=#a8a8a8» sort · «fg=#989898»<alt>+x«fg=#a8a8a8» delete · «fg=#989898»enter«fg=#a8a8a8» jump there · «fg=#989898»esc«fg=#a8a8a8» close«» «fg=#9b8cff»━━━━━━━━━━━━━━«»  «fg=#9b8cff»━┛

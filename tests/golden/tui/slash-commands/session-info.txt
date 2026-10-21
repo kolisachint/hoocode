@@ -1,8 +1,19 @@
-«»◭ HOOCODE  BUILD  work                                            SHIP mock-model  FUEL 0%  CR $0.00
+«bg=#2a2a36» «bg=#2a2a36;bold;fg=#5cc8bb»◭«bg=#2a2a36» «bg=#2a2a36;bold;fg=#e5e5e7»HOOCODE«bg=#2a2a36»  «bg=#5cc8bb;bold;fg=#000000» BUILD «bg=#2a2a36»  «bg=#2a2a36;fg=#989898»<WORK>«bg=#2a2a36»        «bg=#2a2a36;fg=#a8a8a8»SHIP «bg=#2a2a36;fg=#e5e5e7»mock-model«bg=#2a2a36»  «bg=#2a2a36;fg=#a8a8a8»FUEL ▱▱▱▱▱▱▱▱«bg=#2a2a36» «bg=#2a2a36;fg=#989898»0%«bg=#2a2a36»  «bg=#2a2a36;fg=#a8a8a8»CR «bg=#2a2a36;fg=#e5e5e7»$0.000
 
-«»▟▀▀▀▀▀▙  «fg=#5cc8bb»<WORDMARK>
-«»▌▟▙ ▟▙▐  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>
-«»▜▄▄▄▄▄▛  «fg=#989898»<WORK>
+
+
+
+
+
+
+
+
+
+
+
+«fg=#5cc8bb»▟«fg=#66bec6»▀«fg=#71b4d1»▀«fg=#7baadd»▀«fg=#86a0e8»▀«fg=#9096f3»▀«fg=#9b8cff»▙«»  «bold»<app>«»                                  «fg=#a8a8a8»✦«»                                     «fg=#a8a8a8»·
+«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>«»                                         «fg=#a8a8a8»·
+«fg=#5cc8bb»▜«fg=#66bec6»▄«fg=#71b4d1»▄«fg=#7baadd»▄«fg=#86a0e8»▄«fg=#9096f3»▄«fg=#9b8cff»▛«»  «fg=#989898»<WORK>«»                                       «fg=#a8a8a8»⋆
 
 «fg=#989898»no project resources loaded
 
@@ -24,17 +35,6 @@
 «» «fg=#989898»Output:«» 0
 «» «fg=#989898»Total:«» 0
 
-
-
-
-
-
-
-
-
-
-«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
-«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
-«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»<WORK>
-«fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«» «fg=#989898»of 128k«»  «fg=#a8a8a8»mock-model
+«fg=#a8a8a8»┏━«» «fg=#989898»READY«» «<masked: session chip>»━ <session-chip> ━┓
+«fg=#a8a8a8»┃«» «fg=#e5e5e7»▸ «fg=#a8a8a8»name your mission«»                                                                              «fg=#a8a8a8»┃
+«fg=#a8a8a8»┗━«» «fg=#989898»peek«» «fg=#a8a8a8»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«» «fg=#989898»↑0 ↓0«fg=#a8a8a8» · «fg=#989898»0% of 128k«» «fg=#a8a8a8»━┛

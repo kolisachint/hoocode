@@ -1,34 +1,34 @@
-«»◭ HOOCODE  BUILD  work                                            SHIP mock-model  FUEL 0%  CR $0.00
+«bg=#2a2a36» «bg=#2a2a36;bold;fg=#5cc8bb»◭«bg=#2a2a36» «bg=#2a2a36;bold;fg=#e5e5e7»HOOCODE«bg=#2a2a36»  «bg=#5cc8bb;bold;fg=#000000» BUILD «bg=#2a2a36»  «bg=#2a2a36;fg=#989898»<WORK>«bg=#2a2a36»        «bg=#2a2a36;fg=#a8a8a8»SHIP «bg=#2a2a36;fg=#e5e5e7»mock-model«bg=#2a2a36»  «bg=#2a2a36;fg=#a8a8a8»FUEL ▱▱▱▱▱▱▱▱«bg=#2a2a36» «bg=#2a2a36;fg=#989898»0%«bg=#2a2a36»  «bg=#2a2a36;fg=#a8a8a8»CR «bg=#2a2a36;fg=#e5e5e7»$0.000
 
-«fg=#5cc8bb»✦«» «bold»2«» «fg=#a8a8a8»skills«»   «fg=#5cc8bb»◈«» «bold»5«» «fg=#a8a8a8»agents
 
-«bg=#1c1c26»                                                                                                   
-«bg=#1c1c26» run the commands                                                                                  
-«bg=#1c1c26»                                                                                                   
 
-«»  «fg=#b5bd68»● «bold»Shell«»  printf 'alpha\nbeta\ngamma\n' | sort -r
-«»    «fg=#a8a8a8»gamma
-«»    «fg=#a8a8a8»beta
-«»    «fg=#a8a8a8»alpha
+«fg=#5cc8bb»▟«fg=#66bec6»▀«fg=#71b4d1»▀«fg=#7baadd»▀«fg=#86a0e8»▀«fg=#9096f3»▀«fg=#9b8cff»▙«»  «bold»<app>«»                                  «fg=#a8a8a8»✦«»                                     «fg=#a8a8a8»·
+«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>«»                                         «fg=#a8a8a8»·
+«fg=#5cc8bb»▜«fg=#66bec6»▄«fg=#71b4d1»▄«fg=#7baadd»▄«fg=#86a0e8»▄«fg=#9096f3»▄«fg=#9b8cff»▛«»  «fg=#989898»<WORK>«»                                       «fg=#a8a8a8»⋆
 
-«»    «fg=#a8a8a8»Took <DUR>
+«» «fg=#a8a8a8»SHIP«» mock-model   «fg=#5cc8bb»✦«» 2 «fg=#989898»skills«»  «fg=#9b8cff»◈«» 5 «fg=#989898»agents
+
+«bg=#1c1c26;bold;fg=#9b8cff»▲«bg=#1c1c26» «bg=#1c1c26;bold;fg=#9b8cff»M1«bg=#1c1c26»  «bg=#1c1c26;bold;fg=#e5e5e7»run the commands«bg=#1c1c26»                                                                             
+
+«» «bold;fg=#f0c674»01«» «fg=#b5bd68»● «bold»Shell«»  printf 'alpha\nbeta\ngamma\n' | sort -r                               «fg=#a8a8a8»exit 0 · 3 lines
+«»   «fg=#a8a8a8»┊«»    «fg=#a8a8a8»gamma
+«»   «fg=#a8a8a8»┊«»    «fg=#a8a8a8»beta
+«»   «fg=#a8a8a8»┊«»    «fg=#a8a8a8»alpha
+«»   «fg=#a8a8a8»┊
+«»   «fg=#a8a8a8»┊«»    «fg=#a8a8a8»Took <DUR>
 
 «» Running them.
 
-«»  «fg=#d58181»● «bold»Shell«»  echo boom; exit 3
-«»    «fg=#a8a8a8»boom
+«» «bold;fg=#f0c674»02«» «fg=#d58181»⊗ «bold»Shell«»  echo boom; exit 3                                                         «bold;fg=#d58181;inverse» HIT «» «fg=#a8a8a8»exit 3
+«»   «fg=#a8a8a8»┊«»  «fg=#989898»… 1 earlier line
+«»   «fg=#a8a8a8»┊
+«»   «fg=#a8a8a8»┊
+«»   «fg=#a8a8a8»┊«»    «fg=#a8a8a8»Command exited with code 3
+«»   «fg=#a8a8a8»┊
+«»   «fg=#a8a8a8»┊«»  Sorted, then failed with 3.
 
-
-«»    «fg=#a8a8a8»Command exited with code 3
-
-«»    «fg=#a8a8a8»Took <DUR>
-
-«» Sorted, then failed with 3.
-
-«» «fg=#989898»↑«fg=#a8a8a8»200«fg=#989898» ↓«fg=#a8a8a8»40«fg=#989898» · «fg=#a8a8a8»<DUR>
-
-«<masked>»┌<editor-top-border: session-name badge, color derived from random session id>┐
-«fg=#757575»│«» ❯ «inverse» «»                                                                                              «fg=#757575»│
-«fg=#757575»└──────────────────────────────────────────────────────────────────────────────────────────────────┘
-«bold;fg=#5cc8bb»BUILD«» · «fg=#989898»◍ peek«»        «bold»work«»  «fg=#989898»<WORK>
-«fg=#989898»▱▱▱▱▱▱▱▱«»   «fg=#a8a8a8»0%«» «fg=#989898»of 128k«»  «fg=#a8a8a8»mock-model«»   «fg=#989898»↑«fg=#a8a8a8»200«» «fg=#989898»↓«fg=#a8a8a8»40
+«»  «fg=#b5bd68»●«» «bold;fg=#b5bd68»LANDED«fg=#989898» · «fg=#a8a8a8»2 steps«fg=#989898» · «fg=#a8a8a8»1 hit«fg=#989898» · «fg=#a8a8a8»<DUR>«fg=#989898» · «fg=#a8a8a8»240 tokens«fg=#989898» · «fg=#a8a8a8»$0.000
+«»   «fg=#989898»Ran 2 commands
+«fg=#a8a8a8»┏━«» «fg=#b5bd68»●«» «bold;fg=#b5bd68»LANDED«» «fg=#a8a8a8»·«» «fg=#989898»<DUR> · 2 steps«» «<masked: session chip>»━ <session-chip> ━┓
+«fg=#a8a8a8»┃«» «fg=#e5e5e7»▸ «fg=#a8a8a8»name your mission«»                                                                              «fg=#a8a8a8»┃
+«fg=#a8a8a8»┗━«» «fg=#989898»peek«» «fg=#a8a8a8»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«» «fg=#989898»↑200 ↓40«fg=#a8a8a8» · «fg=#989898»0% of 128k«» «fg=#a8a8a8»━┛

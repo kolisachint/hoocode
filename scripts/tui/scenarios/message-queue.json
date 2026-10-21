@@ -35,7 +35,7 @@
   ],
   "steps": [
     {
-      "wait_for": "❯",
+      "wait_for": "▸ name your mission",
       "timeout": 30
     },
     {
@@ -66,7 +66,7 @@
       ]
     },
     {
-      "wait_for": "Steering: steer this way",
+      "wait_for": "steer this way",
       "timeout": 20
     },
     {
@@ -78,7 +78,7 @@
       ]
     },
     {
-      "wait_for": "Follow-up: and then this",
+      "wait_for": "and then this",
       "timeout": 20
     },
     {
@@ -87,9 +87,9 @@
     {
       "snapshot": "queued",
       "contains": [
-        "Steering: steer this way",
-        "Follow-up: and then this",
-        "to edit all queued messages"
+        "steer this way",
+        "and then this",
+        "<alt>+Up edit queue"
       ]
     },
     {
@@ -98,7 +98,7 @@
       ]
     },
     {
-      "wait_gone": "Follow-up: and then this",
+      "wait_gone": "queued · sends after",
       "timeout": 20
     },
     {
@@ -174,7 +174,7 @@
       ]
     },
     {
-      "wait_for": "Steering: steer now",
+      "wait_for": "steer now",
       "timeout": 20
     },
     {
@@ -186,7 +186,7 @@
       ]
     },
     {
-      "wait_for": "Follow-up: follow now",
+      "wait_for": "follow now",
       "timeout": 20
     },
     {

@@ -20,7 +20,7 @@
   "llm": [],
   "steps": [
     {
-      "wait_for": "❯",
+      "wait_for": "▸ name your mission",
       "timeout": 30
     },
     {

@@ -31,7 +31,7 @@
   ],
   "steps": [
     {
-      "wait_for": "❯",
+      "wait_for": "▸ name your mission",
       "timeout": 30
     },
     {
@@ -47,7 +47,7 @@
       ]
     },
     {
-      "wait_for": "Allow: \\$ printf",
+      "wait_for": "\\$ printf",
       "timeout": 30
     },
     {
@@ -57,7 +57,7 @@
     {
       "snapshot": "allow-prompt",
       "contains": [
-        "Yes (once)"
+        "go, once"
       ]
     },
     {
@@ -66,7 +66,7 @@
       ]
     },
     {
-      "wait_for": "Allow: \\$ echo boom",
+      "wait_for": "\\$ echo boom",
       "timeout": 30
     },
     {
