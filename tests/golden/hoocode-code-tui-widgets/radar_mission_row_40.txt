@@ -1,10 +1,13 @@
- M2 ●  rev…  4 steps  1✕   0.6s  $0.006
+ M2 ●        4 steps  1✕   0.6s  $0.006
+       review the wrap helper for
+       overflow bugs
 --- styles ---
 r0 c1-2 fg=#9b8cff
 r0 c4 fg=#b5bd68
-r0 c7-9 fg=#e5e5e7 bold
 r0 c13 fg=#e5e5e7
 r0 c14-19 fg=#989898
 r0 c22-23 fg=#a8a8a8
 r0 c27-30 fg=#989898
 r0 c33-38 fg=#989898
+r1 c7-32 fg=#e5e5e7 bold
+r2 c7-19 fg=#e5e5e7 bold

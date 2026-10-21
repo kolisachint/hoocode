@@ -1,7 +1,7 @@
 //! Port of the pin's `test/tool-chain-summary.test.ts`.
 
 use hoocode_code_tui_widgets::tool_chain_summary::{
-    chain_phrase, chain_segments, chain_stats, ChainEntry, ChainState, SegmentTone,
+    chain_phrase, chain_segments, chain_stats, turn_phrase, ChainEntry, ChainState, SegmentTone,
 };
 
 fn call(tool: &str, subject: &str, lines: usize, is_error: bool, is_partial: bool) -> ChainEntry {
@@ -406,5 +406,42 @@ mod labels_and_counts {
             ]),
             "Edited 2 files · 1 other call"
         );
+    }
+}
+
+mod turn_phrase_the_whole_turn {
+    use super::*;
+
+    #[test]
+    fn names_every_family_the_turn_touched() {
+        let entries = [
+            c("Edit", "a/x.rs"),
+            c("Edit", "b/y.rs"),
+            c("Edit", "c/z.rs"),
+            c("Shell", "cargo fmt"),
+            c("Shell", "cargo test"),
+        ];
+        assert_eq!(turn_phrase(&entries), "Edited 3 files · ran 2 commands");
+    }
+
+    #[test]
+    fn one_family_reads_as_the_chain_phrase() {
+        let entries = [c("Edit", "src/keys.ts")];
+        assert_eq!(turn_phrase(&entries), chain_phrase(&entries));
+        assert_eq!(turn_phrase(&entries), "Edited src/keys.ts");
+    }
+
+    #[test]
+    fn folds_the_rest_into_other_calls() {
+        let entries = [
+            c("Edit", "a/x.rs"),
+            c("Shell", "ls"),
+            c("Read", "d/q.rs"),
+            c("Agent", "t"),
+            c("mcp_thing", "x"),
+        ];
+        let phrase = turn_phrase(&entries);
+        assert!(phrase.starts_with("Edited a/x.rs · ran ls · "), "{phrase}");
+        assert!(phrase.ends_with("2 other calls"), "{phrase}");
     }
 }

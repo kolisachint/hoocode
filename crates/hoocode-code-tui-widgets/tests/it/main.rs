@@ -30,4 +30,5 @@ mod tool_chain_summary;
 mod tool_execution_component;
 mod tool_output_view;
 mod tool_renderers_gold;
+mod turn_end;
 mod user_message;

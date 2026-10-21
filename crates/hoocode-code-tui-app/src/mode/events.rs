@@ -501,10 +501,17 @@ impl Mode {
             AgentEvent::AgentEnd { .. } => {
                 self.transcript.pending_tools.clear();
                 self.stop_working_loader();
+                // The run ended with a message still streaming: its end never
+                // came. Settle what was streamed, so the text (and the reason,
+                // when it was cut off) stays on screen instead of vanishing.
                 if let Some(component) = self.transcript.streaming.take() {
-                    let handle = as_component(&component);
-                    self.transcript.chat.borrow_mut().remove_child(&handle);
-                    self.transcript.streaming_message = None;
+                    if let Some(message) = self.transcript.streaming_message.take() {
+                        self.turn_stop_reason.get_or_insert(message.stop_reason);
+                        component.borrow_mut().update_shared(message, false);
+                    }
+                    self.stream_render_pending = false;
+                    self.refresh_flight_stats();
+                    self.dirty.set(true);
                 }
             }
             _ => {}

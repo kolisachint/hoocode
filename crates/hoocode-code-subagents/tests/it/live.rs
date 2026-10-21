@@ -441,3 +441,31 @@ fn sub_steps_keep_running_and_failed_calls_and_drop_clean_ones() {
     apply(task, &json!({"type": "task_done"}));
     assert!(hoocode_code_subagents::live::sub_steps(task).is_empty());
 }
+
+#[test]
+fn failed_total_counts_failed_calls_and_outlives_the_run() {
+    // A mission counts a subagent's failed calls as its own hits, so the
+    // total stays after the run's tail is gone, and a restart counts anew.
+    let task = "live-failed-total";
+    assert_eq!(hoocode_code_subagents::live::failed_total(task), 0);
+    apply(task, &json!({"type": "task_started"}));
+    for id in ["f1", "f2", "ok"] {
+        apply(
+            task,
+            &json!({"type": "tool_execution_start", "toolCallId": id, "toolName": "Read", "args": {"path": "a.rs"}}),
+        );
+        apply(
+            task,
+            &json!({"type": "tool_execution_end", "toolCallId": id, "isError": id != "ok",
+                    "result": {"content": [{"type": "text", "text": "no"}]}}),
+        );
+    }
+    assert_eq!(hoocode_code_subagents::live::failed_total(task), 2);
+
+    apply(task, &json!({"type": "task_failed"}));
+    assert!(hoocode_code_subagents::live::sub_steps(task).is_empty());
+    assert_eq!(hoocode_code_subagents::live::failed_total(task), 2);
+
+    apply(task, &json!({"type": "task_started"}));
+    assert_eq!(hoocode_code_subagents::live::failed_total(task), 0);
+}

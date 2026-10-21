@@ -284,13 +284,12 @@ impl ToolChainComponent {
     fn flight_rows(&self, width: usize, palette: &Palette) -> Vec<String> {
         let mut out = Vec::new();
         for component in &self.lead_ins {
-            if let Some(line) = component
-                .component
-                .borrow()
-                .radar_think_line(width, palette)
-            {
-                out.push(line);
-            }
+            out.extend(
+                component
+                    .component
+                    .borrow()
+                    .radar_think_lines(width, palette),
+            );
         }
         let mut waited = false;
         for (i, block) in self.blocks.iter().enumerate() {

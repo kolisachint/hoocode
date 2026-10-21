@@ -1449,13 +1449,20 @@ impl Mode {
                         // The request has ended (retries and continuations
                         // included): settle it (`settleRequestOnIdle`). The
                         // last chain has nothing after it to close it.
-                        let outcome = if self.turn_stop_reason == Some(StopReason::Stop) {
+                        // A run that failed outright ended in error, whatever
+                        // its last message said.
+                        let stop = if result.is_err() {
+                            Some(StopReason::Error)
+                        } else {
+                            self.turn_stop_reason
+                        };
+                        let outcome = if stop == Some(StopReason::Stop) {
                             ChainState::Done
                         } else {
                             ChainState::Interrupted
                         };
                         self.close_open_chain(outcome);
-                        self.show_turn_cost();
+                        self.show_turn_cost(stop);
                         self.settle_dangling_plan_items();
                         let run_ok =
                             result.is_ok() && self.turn_stop_reason == Some(StopReason::Stop);

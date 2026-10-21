@@ -10,10 +10,12 @@ use std::rc::Rc;
 use crate::support::{assistant, lock, strip};
 use hoocode_ai_types::Content;
 use hoocode_code_tui_widgets::radar::{
-    agent_live_row, hit_row, live_row, mission_row, prose_row, satellite_row, sub_hit_row,
-    sub_live_row, think_row, waiting_row, FlightMark, FlightStats, HIT_INDENT, STEP_INDENT,
+    agent_live_row, chain_rows, hit_row, live_row, mission_rows, prose_rows, satellite_row,
+    sub_hit_row, sub_live_row, think_rows, waiting_row, FlightMark, FlightStats, HIT_INDENT,
+    STEP_INDENT,
 };
 use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
+use hoocode_code_tui_widgets::tool_chain_summary::ChainEntry;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Radar;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
@@ -51,6 +53,7 @@ fn landed(steps: usize, hits: usize) -> FlightStats {
         landed_time: Some("0.8s".to_string()),
         started: None,
         cost: Some("$0.003".to_string()),
+        chain: Vec::new(),
     }
 }
 
@@ -101,7 +104,7 @@ fn hit_row_indents_twelve_and_keeps_the_chip_inline() {
 #[test]
 fn two_digit_hits_grow_leftward_and_keep_the_columns() {
     let palette = Palette::default();
-    let row = strip(&mission_row(1, "wrap", &landed(12, 12), &palette, 80));
+    let row = strip(&mission_rows(1, "wrap", &landed(12, 12), &palette, 80)[0]);
     assert!(
         row.trim_end().ends_with("12 steps 12✕   0.8s  $0.003"),
         "{row:?}"
@@ -117,33 +120,192 @@ fn stepless_mission_leaves_the_steps_columns_blank() {
         cost: Some("$0.000".to_string()),
         ..landed(0, 0)
     };
-    let row = strip(&mission_row(3, "just talking", &stats, &palette, 80));
+    let row = strip(&mission_rows(3, "just talking", &stats, &palette, 80)[0]);
     assert_eq!(
         row.trim_end(),
         " M3 ●  just talking                                                      $0.000"
     );
 }
 
+fn plain(text: &str) -> Vec<String> {
+    vec![text.to_string()]
+}
+
 #[test]
 fn prose_indents_eight_under_a_mission_and_twelve_under_a_hit() {
     let palette = Palette::default();
-    let under_mission = strip(&prose_row("It wraps text.", STEP_INDENT, &palette, 80));
+    let ink = palette.ink();
+    let under_mission = strip(&prose_rows(&plain("It wraps text."), STEP_INDENT, ink, 80)[0]);
     assert_eq!(under_mission.trim_end(), "        It wraps text.");
-    let under_hit = strip(&prose_row("It wraps text.", HIT_INDENT, &palette, 80));
+    let under_hit = strip(&prose_rows(&plain("It wraps text."), HIT_INDENT, ink, 80)[0]);
     assert_eq!(under_hit.trim_end(), "            It wraps text.");
 }
 
 #[test]
-fn prose_is_cut_with_an_ellipsis_before_the_last_column() {
+fn prose_wraps_before_the_last_column_and_never_cuts() {
     let palette = Palette::default();
-    let row = strip(&prose_row(
-        "one long line of prose that keeps going past the edge",
-        STEP_INDENT,
-        &palette,
-        24,
-    ));
-    assert!(row.contains('…'), "{row:?}");
-    assert!(row.chars().count() <= 23, "{row:?}");
+    let text = "one long line of prose that keeps going past the edge";
+    let rows = prose_rows(&plain(text), STEP_INDENT, palette.ink(), 24);
+    assert!(rows.len() >= 3, "{rows:?}");
+    let mut words = Vec::new();
+    for row in &rows {
+        let row = strip(row);
+        assert!(!row.contains('…'), "{row:?}");
+        assert!(row.starts_with(&" ".repeat(STEP_INDENT)), "{row:?}");
+        assert!(row.chars().count() <= 23, "{row:?}");
+        words.extend(row.split_whitespace().map(str::to_string));
+    }
+    assert_eq!(words.join(" "), text);
+}
+
+#[test]
+fn a_long_prompt_wraps_under_its_first_word_and_the_stats_stay_on_the_first_row() {
+    let palette = Palette::default();
+    let prompt = "fix the overflow bug in the wrap helper so long mission prompts never get cut\nthen run the whole suite";
+    let rows: Vec<String> = mission_rows(1, prompt, &landed(3, 0), &palette, 60)
+        .iter()
+        .map(|row| strip(row))
+        .collect();
+    assert!(rows.len() >= 3, "{rows:#?}");
+    // Stats on the first row only.
+    assert!(
+        rows[0].trim_end().ends_with("3 steps  0✕   0.8s  $0.003"),
+        "{rows:#?}"
+    );
+    assert!(rows[0].starts_with(" M1 ●  fix the"), "{rows:#?}");
+    for row in &rows[1..] {
+        assert!(!row.contains("steps"), "{rows:#?}");
+        // Hung under the prompt text, which starts at column 7.
+        assert!(row.starts_with("       "), "{row:?}");
+        assert!(!row.starts_with("        "), "{row:?}");
+    }
+    for row in &rows {
+        assert!(!row.contains('…'), "{rows:#?}");
+        assert!(row.chars().count() <= 59, "{row:?}");
+    }
+    let flat = rows
+        .iter()
+        .map(|row| row.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for word in prompt.split_whitespace() {
+        assert!(flat.contains(word), "{word}: {flat}");
+    }
+    assert!(
+        rows.last().unwrap().contains("the whole suite"),
+        "{rows:#?}"
+    );
+}
+
+fn entry(tool: &str, subject: &str, is_error: bool, is_partial: bool) -> ChainEntry {
+    ChainEntry {
+        tool: tool.to_string(),
+        subject: subject.to_string(),
+        is_error,
+        is_partial,
+        output_lines: 2,
+        outcome: None,
+    }
+}
+
+#[test]
+fn the_chain_row_shows_the_shape_while_flying_and_the_summary_once_landed() {
+    let palette = Palette::default();
+    let mut stats = FlightStats {
+        mark: FlightMark::InFlight,
+        steps: 4,
+        chain: vec![
+            entry("Read", "a.rs", false, false),
+            entry("Read", "b.rs", false, false),
+            entry("Edit", "a.rs", false, false),
+            entry("Shell", "cargo test", true, false),
+            entry("Shell", "cargo test", false, true),
+        ],
+        ..Default::default()
+    };
+    let live = chain_rows(&stats, &palette, 80);
+    assert_eq!(live.len(), 1, "{live:?}");
+    assert_eq!(
+        strip(&live[0]).trim_end(),
+        "        ◐ Read ×2 › Edit › Shell✗ › Shell …"
+    );
+
+    stats.mark = FlightMark::Landed;
+    stats.chain = vec![
+        entry("Edit", "a.rs", false, false),
+        entry("Edit", "b.rs", false, false),
+        entry("Edit", "c.rs", false, false),
+        entry("Shell", "cargo fmt", false, false),
+        entry("Shell", "cargo test", false, false),
+    ];
+    let settled = chain_rows(&stats, &palette, 80);
+    assert_eq!(settled.len(), 1, "{settled:?}");
+    let text = strip(&settled[0]);
+    assert!(
+        text.starts_with("        ● Edited 3 files · ran 2 commands"),
+        "{text:?}"
+    );
+    assert!(text.trim_end().ends_with("5 calls · 10 lines"), "{text:?}");
+    // No calls, no row.
+    stats.chain.clear();
+    assert!(chain_rows(&stats, &palette, 80).is_empty());
+}
+
+#[test]
+fn a_wide_chain_row_wraps_instead_of_cutting() {
+    let palette = Palette::default();
+    let tools = ["Read", "Edit", "Shell", "CodeSearch", "WebFetch", "Write"];
+    let stats = FlightStats {
+        mark: FlightMark::InFlight,
+        chain: tools
+            .iter()
+            .map(|tool| entry(tool, "x", false, false))
+            .collect(),
+        ..Default::default()
+    };
+    let rows: Vec<String> = chain_rows(&stats, &palette, 30)
+        .iter()
+        .map(|row| strip(row))
+        .collect();
+    assert!(rows.len() >= 2, "{rows:#?}");
+    for row in &rows {
+        assert!(row.chars().count() <= 29, "{row:?}");
+        assert!(!row.contains("… "), "{row:?}");
+    }
+    let flat = rows.join(" ");
+    for tool in tools {
+        assert!(flat.contains(tool), "{tool}: {rows:#?}");
+    }
+    assert!(rows.last().unwrap().trim_end().ends_with('…'), "{rows:#?}");
+}
+
+#[test]
+fn thinking_wraps_under_its_gist() {
+    let palette = Palette::default();
+    let gist = "The helper is 13 lines and wraps at the word boundary every time";
+    let rows: Vec<String> = think_rows(3, Some(gist), &palette, 40)
+        .iter()
+        .map(|row| strip(row))
+        .collect();
+    assert!(rows.len() >= 2, "{rows:#?}");
+    assert!(
+        rows[0].starts_with("        ✻ thought 3s · The helper"),
+        "{rows:#?}"
+    );
+    let hang = "        ✻ thought 3s · ".chars().count();
+    for row in &rows[1..] {
+        assert!(row.starts_with(&" ".repeat(hang)), "{row:?}");
+    }
+    for row in &rows {
+        assert!(!row.contains('…'), "{row:?}");
+    }
+    let flat = rows
+        .iter()
+        .map(|row| row.trim_start_matches("        ✻ thought 3s · "))
+        .map(|row| row.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert_eq!(flat, gist);
 }
 
 #[test]
@@ -202,11 +364,14 @@ fn narrow_rows_keep_the_last_column_blank_and_never_overflow() {
         landed_time: None,
         started: None,
         cost: None,
+        chain: vec![entry("Read", "a.rs", false, false)],
     };
     for width in [1usize, 10, 12, 20, 24, 40] {
-        let rows = [
-            mission_row(12, "a long prompt that goes on", &stats, &palette, width),
-            mission_row(1, "wrap", &live, &palette, width),
+        let mut rows = mission_rows(12, "a long prompt that goes on", &stats, &palette, width);
+        rows.extend(mission_rows(1, "wrap", &live, &palette, width));
+        rows.extend(chain_rows(&live, &palette, width));
+        rows.extend(chain_rows(&stats, &palette, width));
+        rows.extend([
             hit_row(4, "Shell", "echo boom; exit 3", "boom", &palette, width),
             live_row(
                 1,
@@ -227,9 +392,19 @@ fn narrow_rows_keep_the_last_column_blank_and_never_overflow() {
                 width,
             ),
             satellite_row(1, "Shell", "sleep 60", "job-1", 4, &palette, width),
-            think_row(3, Some("The helper is 13 lines"), &palette, width),
-            prose_row("It wraps text and goes on", HIT_INDENT, &palette, width),
-        ];
+        ]);
+        rows.extend(think_rows(
+            3,
+            Some("The helper is 13 lines"),
+            &palette,
+            width,
+        ));
+        rows.extend(prose_rows(
+            &plain("It wraps text and goes on"),
+            HIT_INDENT,
+            palette.ink(),
+            width,
+        ));
         for row in rows {
             let text = strip(&row);
             assert!(
@@ -354,13 +529,8 @@ fn a_flying_mission_clock_reads_elapsed_without_a_refresh() {
         landed_time: None,
         started: Some(std::time::Instant::now() - std::time::Duration::from_secs(13)),
         cost: None,
+        chain: Vec::new(),
     };
-    let row = strip(&mission_row(
-        9,
-        "start a background job",
-        &flight,
-        &palette,
-        80,
-    ));
+    let row = strip(&mission_rows(9, "start a background job", &flight, &palette, 80)[0]);
     assert!(row.contains("13s"), "{row:?}");
 }

@@ -37,51 +37,66 @@ pub enum ThinkingDisplay {
 /// update re-parses only the growing tail.
 const SEGMENT_MIN_CHARS: usize = 2048;
 
-/// The radar prose of a message (M5): its last text paragraph, joined into
-/// one line of single spaces. A failed message with no text reads its
-/// error instead.
-fn radar_prose(message: &AssistantMessage) -> Option<String> {
-    let text = message
-        .content
-        .iter()
-        .rev()
-        .find_map(|content| match content {
-            Content::Text(t) => last_paragraph(&t.text),
-            _ => None,
-        });
-    text.or_else(|| {
-        let error = message.error_message.as_deref()?;
-        if !matches!(message.stop_reason, StopReason::Error) {
-            return None;
+/// Why a message ended badly, in the words every layer prints: the abort
+/// line (`Operation aborted`, or the reason it carries) or `Error: …`. `None`
+/// for a message that ended any other way. Peek and radar read this one text,
+/// whether or not the message has tool calls.
+pub fn end_reason(message: &AssistantMessage) -> Option<String> {
+    match message.stop_reason {
+        StopReason::Aborted => Some(match message.error_message.as_deref() {
+            Some(m) if !m.is_empty() && m != ABORTED_MESSAGE => m.to_string(),
+            _ => "Operation aborted".to_string(),
+        }),
+        StopReason::Error => {
+            let error = message
+                .error_message
+                .as_deref()
+                .filter(|m| !m.is_empty())
+                .unwrap_or("Unknown error");
+            Some(format!("Error: {error}"))
         }
-        last_paragraph(&format!("Error: {error}"))
-    })
+        _ => None,
+    }
 }
 
-/// The last paragraph of `text` (blank-line separated), as plain text on
-/// one line. `None` when every line is blank.
-fn last_paragraph(text: &str) -> Option<String> {
-    let mut last: Option<String> = None;
-    let mut current: Vec<&str> = Vec::new();
-    for line in text.lines().chain(std::iter::once("")) {
-        // A rule (`---`) leaves no text, so it ends the paragraph too.
-        let line = strip_block_marker(line.trim());
-        if line.trim().is_empty() {
-            if !current.is_empty() {
-                last = Some(current.join(" "));
-                current.clear();
-            }
+/// The radar prose of a message (M5): all of its text, as plain lines. Block
+/// markers (`#`, `>`, bullets, numbers) and inline marks (`**`, backticks,
+/// link targets) drop, blank lines and fences go, and each remaining line
+/// stands whole: radar wraps it, never cuts it. Empty when the message has no
+/// text.
+fn radar_prose(message: &AssistantMessage) -> Vec<String> {
+    let mut out = Vec::new();
+    for content in &message.content {
+        let Content::Text(t) = content else {
+            continue;
+        };
+        out.extend(plain_lines(&t.text));
+    }
+    out
+}
+
+/// `text` as plain lines (see [`radar_prose`]). Lines inside a code fence are
+/// kept as they are, trimmed.
+fn plain_lines(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut fenced = false;
+    for line in text.lines() {
+        if is_fence(line) {
+            fenced = !fenced;
+            continue;
+        }
+        let line = line.trim();
+        let plain = if fenced {
+            line.to_string()
         } else {
-            current.push(line.trim());
+            plain_inline(strip_block_marker(line).trim())
+        };
+        let plain = plain.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !plain.is_empty() {
+            out.push(plain);
         }
     }
-    last.map(|paragraph| {
-        plain_inline(&paragraph)
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-    })
-    .filter(|paragraph| !paragraph.is_empty())
+    out
 }
 
 /// Drops a line's block marker: quote `>`, ATX heading `#`, bullet `-`,
@@ -542,7 +557,13 @@ impl AssistantMessageComponent {
 
     /// Radar (M5): whether the message has prose a radar line can show.
     pub fn has_radar_prose(&self) -> bool {
-        self.last_message.as_deref().and_then(radar_prose).is_some()
+        // Cheap: the transcript asks for every message on every refresh.
+        self.last_message.as_deref().is_some_and(|m| {
+            end_reason(m).is_some()
+                || m.content.iter().any(|content| {
+                    matches!(content, Content::Text(t) if t.text.chars().any(char::is_alphanumeric))
+                })
+        })
     }
 
     /// Radar (M5): shows or hides the message's prose line. Thinking's
@@ -571,18 +592,15 @@ impl AssistantMessageComponent {
     ///
     /// The radar flight log reads the same clock for its `✻ thought Ns`
     /// line (M5), with the same gist.
-    pub(crate) fn radar_think_line(&self, width: usize, palette: &Palette) -> Option<String> {
-        let secs = self.think_secs(self.streaming)?;
+    pub(crate) fn radar_think_lines(&self, width: usize, palette: &Palette) -> Vec<String> {
+        let Some(secs) = self.think_secs(self.streaming) else {
+            return Vec::new();
+        };
         let gist = self
             .last_message
             .as_ref()
             .and_then(|message| think_gist(message));
-        Some(crate::radar::think_row(
-            secs,
-            gist.as_deref(),
-            palette,
-            width,
-        ))
+        crate::radar::think_rows(secs, gist.as_deref(), palette, width)
     }
 
     fn think_secs(&self, streaming: bool) -> Option<u64> {
@@ -681,65 +699,44 @@ impl AssistantMessageComponent {
             }
         }
 
-        // The abort/error line, unless tool blocks will show it.
+        // The abort/error line: shown whether or not the message has tool
+        // calls, so the turn's end is never lost behind its blocks.
         self.has_tool_calls = message
             .content
             .iter()
             .any(|c| matches!(c, Content::ToolCall(_)));
-        if !self.has_tool_calls {
-            let t = theme();
-            match message.stop_reason {
-                StopReason::Aborted => {
-                    let abort_message = match message.error_message.as_deref() {
-                        Some(m) if !m.is_empty() && m != ABORTED_MESSAGE => m.to_string(),
-                        _ => "Operation aborted".to_string(),
-                    };
-                    self.content.add_child(handle(Spacer::new(1)));
-                    self.content
-                        .add_child(handle(Text::new(t.fg("error", &abort_message), 1, 0)));
-                }
-                StopReason::Error => {
-                    let error = message
-                        .error_message
-                        .as_deref()
-                        .filter(|m| !m.is_empty())
-                        .unwrap_or("Unknown error");
-                    self.content.add_child(handle(Spacer::new(1)));
-                    self.content.add_child(handle(Text::new(
-                        t.fg("error", &format!("Error: {error}")),
-                        1,
-                        0,
-                    )));
-                }
-                _ => {}
-            }
+        if let Some(reason) = end_reason(&message) {
+            self.content.add_child(handle(Spacer::new(1)));
+            self.content
+                .add_child(handle(Text::new(theme().fg("error", &reason), 1, 0)));
         }
     }
 }
 
 impl AssistantMessageComponent {
-    /// The radar flight log (M5): the message's last paragraph on one line,
-    /// when the transcript shows it (`set_radar_prose_shown`), then its
-    /// `✻ thought Ns` line with no gist. A message with neither renders
-    /// nothing. A failed message reads its error as the prose.
+    /// The radar flight log (M5): the message's whole text as plain wrapped
+    /// rows, when the transcript shows it (`set_radar_prose_shown`), the abort
+    /// or error reason after it, then its `✻ thought Ns` rows. A message with
+    /// none of these renders nothing.
     fn render_radar(&mut self, width: u16, palette: &Palette) -> Vec<String> {
         let width = width as usize;
-        let prose = self
-            .radar_prose_shown
-            .then(|| self.last_message.as_deref().and_then(radar_prose))
-            .flatten();
         let mut out = Vec::new();
-        if let Some(prose) = prose {
-            out.push(radar::prose_row(
-                &prose,
-                self.radar_indent(),
-                palette,
-                width,
-            ));
+        if self.radar_prose_shown {
+            if let Some(message) = self.last_message.as_deref() {
+                let indent = self.radar_indent();
+                out.extend(radar::prose_rows(
+                    &radar_prose(message),
+                    indent,
+                    palette.ink(),
+                    width,
+                ));
+                if let Some(reason) = end_reason(message) {
+                    let lines: Vec<String> = reason.lines().map(str::to_string).collect();
+                    out.extend(radar::prose_rows(&lines, indent, palette.err(), width));
+                }
+            }
         }
-        if let Some(line) = self.radar_think_line(width, palette) {
-            out.push(line);
-        }
+        out.extend(self.radar_think_lines(width, palette));
         if out.is_empty() {
             return out;
         }
@@ -1045,26 +1042,33 @@ mod tests {
     fn radar_prose_reads_plain_text() {
         let text = "# Title\n\nIt is **bold**, `code` and [a link](https://x.y/z).\n- one _em_ and snake_case\n- two 2. three";
         assert_eq!(
-            last_paragraph(text).as_deref(),
-            Some("It is bold, code and a link. one em and snake_case two 2. three")
+            plain_lines(text),
+            vec![
+                "Title",
+                "It is bold, code and a link.",
+                "one em and snake_case",
+                "two 2. three"
+            ]
+        );
+        assert_eq!(plain_lines("1) first\n2) second"), vec!["first", "second"]);
+        assert_eq!(
+            plain_lines("> quoted\n> text\n\n---\n"),
+            vec!["quoted", "text"]
+        );
+        assert_eq!(plain_lines("see [open"), vec!["see [open"]);
+        assert_eq!(
+            plain_lines("![alt text](img.png) done"),
+            vec!["alt text done"]
         );
         assert_eq!(
-            last_paragraph("1) first\n2) second").as_deref(),
-            Some("first second")
+            plain_lines("#tag and 2024. year"),
+            vec!["#tag and 2024. year"]
         );
+        assert!(plain_lines("   \n\n").is_empty());
+        // A fence's lines stay as written, the fence marks go.
         assert_eq!(
-            last_paragraph("> quoted\n> text\n\n---\n").as_deref(),
-            Some("quoted text")
+            plain_lines("run:\n```sh\nls *.rs\n```\ndone"),
+            vec!["run:", "ls *.rs", "done"]
         );
-        assert_eq!(last_paragraph("see [open").as_deref(), Some("see [open"));
-        assert_eq!(
-            last_paragraph("![alt text](img.png) done").as_deref(),
-            Some("alt text done")
-        );
-        assert_eq!(
-            last_paragraph("#tag and 2024. year").as_deref(),
-            Some("#tag and 2024. year")
-        );
-        assert_eq!(last_paragraph("   \n\n"), None);
     }
 }

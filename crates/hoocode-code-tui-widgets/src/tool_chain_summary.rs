@@ -537,3 +537,57 @@ pub fn chain_phrase(entries: &[ChainEntry]) -> String {
     }
     phrase
 }
+
+/// Most families a turn's phrase names before the rest fold into
+/// `N other calls`.
+const MAX_TURN_FAMILIES: usize = 3;
+
+/// A whole turn's phrase: what every call in it amounted to, one clause per
+/// tool family in report order (`Edited 3 files · ran 2 commands`). A turn
+/// that touched one family, or none, reads as [`chain_phrase`] does. On a long
+/// turn a family far below the turn's own size is left out, and calls outside
+/// every family (MCP, unknown tools) fold into `N other calls`.
+pub fn turn_phrase(entries: &[ChainEntry]) -> String {
+    let long = entries.len() >= LONG_CHAIN_CALLS;
+    let clauses: Vec<(String, usize)> = FAMILIES
+        .iter()
+        .filter_map(|family| {
+            let matched = family_matches(entries, family);
+            let incidental =
+                long && (matched.len() as f64 / entries.len() as f64) < INCIDENTAL_SHARE;
+            (!matched.is_empty() && !incidental)
+                .then(|| (family_phrase(family, &matched, long), matched.len()))
+        })
+        .collect();
+    if clauses.len() < 2 {
+        return chain_phrase(entries);
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for (i, (clause, _)) in clauses.iter().take(MAX_TURN_FAMILIES).enumerate() {
+        if i == 0 {
+            parts.push(clause.clone());
+            continue;
+        }
+        // The clauses after the first continue the sentence: lower-case.
+        let mut chars = clause.chars();
+        let lowered = match chars.next() {
+            Some(first) => first.to_lowercase().chain(chars).collect(),
+            None => String::new(),
+        };
+        parts.push(lowered);
+    }
+    let unnamed: usize = clauses
+        .iter()
+        .skip(MAX_TURN_FAMILIES)
+        .map(|(_, calls)| calls)
+        .sum();
+    let others = unnamed
+        + entries
+            .iter()
+            .filter(|e| !FAMILIES.iter().any(|f| f.tools.contains(&e.tool.as_str())))
+            .count();
+    if others > 0 {
+        parts.push(plural(others, "other call"));
+    }
+    parts.join(" · ")
+}

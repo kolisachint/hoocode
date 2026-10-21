@@ -1,0 +1,21 @@
+ M1 ◐  fix the overflow bug in the wrap helper so    4 steps  1✕         $0.004
+       long mission prompts never get cut, then run the suite
+        ◐ Read ×2 › Edit › Shell✗ › Shell …
+--- styles ---
+r0 c1-2 fg=#9b8cff
+r0 c4 fg=#5cc8bb
+r0 c7-48 fg=#e5e5e7 bold
+r0 c53 fg=#5cc8bb
+r0 c54-59 fg=#989898
+r0 c62-63 fg=#a8a8a8
+r0 c73-78 fg=#989898
+r1 c7-60 fg=#e5e5e7 bold
+r2 c8 fg=#5cc8bb
+r2 c10-16 fg=#e5e5e7
+r2 c17-18 fg=#989898
+r2 c20-23 fg=#e5e5e7
+r2 c24-25 fg=#989898
+r2 c27-32 fg=#d58181
+r2 c33-34 fg=#989898
+r2 c36-40 fg=#ffff00
+r2 c41-42 fg=#989898

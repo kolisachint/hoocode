@@ -260,6 +260,49 @@ struct CallRuns {
 
 static CALL_RUNS: LazyLock<Mutex<CallRuns>> = LazyLock::new(Mutex::default);
 
+/// Most runs whose failed-call totals are remembered.
+const FAILED_RUNS_KEPT: usize = 256;
+
+/// How many of its own tool calls each run saw fail. The tail goes when a run
+/// settles; the total stays, so the mission that dispatched the run keeps
+/// counting those failures. Oldest runs first for eviction.
+#[derive(Default)]
+struct FailedTotals {
+    by_run: HashMap<String, usize>,
+    order: VecDeque<String>,
+}
+
+static FAILED: LazyLock<Mutex<FailedTotals>> = LazyLock::new(Mutex::default);
+
+fn failed_totals() -> MutexGuard<'static, FailedTotals> {
+    FAILED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Counts one more failed call for the run.
+fn count_failure(task_id: &str) {
+    let mut totals = failed_totals();
+    let FailedTotals { by_run, order } = &mut *totals;
+    match by_run.get_mut(task_id) {
+        Some(count) => *count += 1,
+        None => {
+            by_run.insert(task_id.to_string(), 1);
+            order.push_back(task_id.to_string());
+        }
+    }
+    while order.len() > FAILED_RUNS_KEPT {
+        if let Some(old) = order.pop_front() {
+            by_run.remove(&old);
+        }
+    }
+}
+
+/// How many of its own tool calls the run saw fail. It survives the run's
+/// settle (the tail does not), so a mission can count a finished subagent's
+/// failures as its own hits. Zero for an unknown run.
+pub fn failed_total(task_id: &str) -> usize {
+    failed_totals().by_run.get(task_id).copied().unwrap_or(0)
+}
+
 fn tails() -> MutexGuard<'static, HashMap<String, RunTail>> {
     TAILS.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -270,6 +313,11 @@ pub fn apply(task_id: &str, event: &Value) {
     let kind = event.get("type").and_then(Value::as_str).unwrap_or("");
     if kind == "task_started" {
         tails().insert(task_id.to_string(), RunTail::default());
+        // A run that starts again (a resume) counts from nothing.
+        let mut totals = failed_totals();
+        if totals.by_run.remove(task_id).is_some() {
+            totals.order.retain(|id| id != task_id);
+        }
         return;
     }
     if kind.starts_with("task_") {
@@ -307,6 +355,7 @@ pub fn apply(task_id: &str, event: &Value) {
             };
             if event.get("isError").and_then(Value::as_bool) == Some(true) {
                 run.steps[at].failure = Some(end_snippet(event));
+                count_failure(task_id);
             } else {
                 run.steps.remove(at);
             }

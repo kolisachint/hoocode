@@ -25,6 +25,7 @@ use hoocode_tui_ratatui::{
 };
 use hoocode_tui_render::Component;
 
+use crate::radar::FlightMark;
 use crate::tool_output_view::ToolOutputView;
 #[cfg(test)]
 use hoocode_tui_util::visible_width;
@@ -399,16 +400,6 @@ pub fn files_text(total: usize) -> String {
     }
 }
 
-/// The prompt's first line, flattened: what a header row carries.
-pub(crate) fn first_line(text: &str) -> String {
-    text.lines()
-        .next()
-        .unwrap_or_default()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 /// A header row split into its flush-left and flush-right runs:
 /// ` {number} {prefix}{left}` left, `right` (the stats) right. The label is
 /// cut with `…` first and the stats stay whole; the stats are cut only when
@@ -565,10 +556,13 @@ pub fn hits_text(hits: usize) -> String {
     }
 }
 
-/// The landing line ending every mission: steps, hits, time, tokens, cost.
 /// The landing line's spans: `● LANDED · 2 steps · 1 hit · …`, muted with
-/// dim separators, as the row joins them.
+/// dim separators, as the row joins them. The mark is the mission's outcome,
+/// the one the radar row and the comms title read: `● LANDED` (ok),
+/// `⊗ DID NOT LAND` (err) or `⊘ ABORTED` (dim). A stepless mission (no steps,
+/// no hits) leaves those counts out.
 pub fn landing_spans(
+    mark: FlightMark,
     steps: usize,
     hits: usize,
     secs: &str,
@@ -576,18 +570,22 @@ pub fn landing_spans(
     cost: &str,
     palette: &Palette,
 ) -> Vec<Span<'static>> {
+    let word_style = match mark {
+        FlightMark::Aborted => mark.style(palette),
+        _ => bold(mark.style(palette)),
+    };
     let mut out = vec![
-        Span::styled(status::DONE_STR.to_string(), palette.ok()),
+        Span::styled(mark.glyph().to_string(), mark.style(palette)),
         Span::styled(" ".to_string(), Style::default()),
-        Span::styled("LANDED".to_string(), bold(palette.ok())),
+        Span::styled(mark.word().to_string(), word_style),
     ];
-    for piece in [
-        steps_text(steps),
-        hits_text(hits),
-        secs.to_string(),
-        tokens.to_string(),
-        cost.to_string(),
-    ] {
+    let mut pieces = Vec::new();
+    if steps > 0 || hits > 0 {
+        pieces.push(steps_text(steps));
+        pieces.push(hits_text(hits));
+    }
+    pieces.extend([secs.to_string(), tokens.to_string(), cost.to_string()]);
+    for piece in pieces {
         out.push(Span::styled(" · ".to_string(), palette.dim()));
         out.push(Span::styled(piece, palette.faint()));
     }
@@ -596,6 +594,7 @@ pub fn landing_spans(
 
 /// The landing line ending every mission: steps, hits, time, tokens, cost.
 pub fn landing_line(
+    mark: FlightMark,
     steps: usize,
     hits: usize,
     secs: &str,
@@ -606,35 +605,46 @@ pub fn landing_line(
     // Unbounded: the row below (`LandingLine`) lays the spans out at the
     // render width. The spans carry no truncation, so this matches the
     // laid-out row cell for cell whenever it fits.
-    let width = spans_width(&landing_spans(steps, hits, secs, tokens, cost, palette));
-    row(
-        landing_spans(steps, hits, secs, tokens, cost, palette),
-        width.max(1),
-    )
+    let spans = landing_spans(mark, steps, hits, secs, tokens, cost, palette);
+    let width = spans_width(&spans);
+    row(spans, width.max(1))
 }
 
 /// A mission's landing line as a component (M5): the peek row the
 /// transcript refreshes when a landed mission's counts change, so peek
 /// and radar agree. The spans render at the render width; overlong rows
-/// wrap exactly the way the old padded `Text` did.
+/// wrap exactly the way the old padded `Text` did. A mission that did
+/// something also gets one dim line right after, saying what the turn
+/// amounted to (`Edited 3 files · ran 2 commands`).
 #[derive(Debug)]
 pub struct LandingLine {
+    mark: FlightMark,
     steps: usize,
     hits: usize,
     secs: String,
     tokens: String,
     cost: String,
+    summary: Option<String>,
     cache: RefCell<RowCache>,
 }
 
 impl LandingLine {
-    pub fn new(steps: usize, hits: usize, secs: &str, tokens: &str, cost: &str) -> Self {
+    pub fn new(
+        mark: FlightMark,
+        steps: usize,
+        hits: usize,
+        secs: &str,
+        tokens: &str,
+        cost: &str,
+    ) -> Self {
         Self {
+            mark,
             steps,
             hits,
             secs: secs.to_string(),
             tokens: tokens.to_string(),
             cost: cost.to_string(),
+            summary: None,
             cache: RefCell::new(RowCache::default()),
         }
     }
@@ -649,9 +659,29 @@ impl LandingLine {
         }
     }
 
+    /// What the turn amounted to, the line after the landing row. `None`
+    /// (or blank) draws no line.
+    pub fn set_summary(&mut self, summary: Option<String>) {
+        let summary = summary.filter(|text| !text.trim().is_empty());
+        if self.summary != summary {
+            self.summary = summary;
+            self.cache.borrow_mut().clear();
+        }
+    }
+
     /// The counts the row reads, for the peek/radar agreement check.
     pub fn counts(&self) -> (usize, usize) {
         (self.steps, self.hits)
+    }
+
+    /// The outcome the row shows.
+    pub fn mark(&self) -> FlightMark {
+        self.mark
+    }
+
+    /// The summary line, when there is one.
+    pub fn summary(&self) -> Option<&str> {
+        self.summary.as_deref()
     }
 }
 
@@ -665,6 +695,7 @@ impl Component for LandingLine {
         // One leading cell, as the old padded `Text` drew.
         let mut spans = vec![Span::styled(" ".to_string(), Style::default())];
         spans.extend(landing_spans(
+            self.mark,
             self.steps,
             self.hits,
             &self.secs,
@@ -675,10 +706,22 @@ impl Component for LandingLine {
         let room = spans_width(&spans).max(1);
         let full = draw_line(spans, room);
         let content_width = (width as usize).saturating_sub(2).max(1);
-        let lines: Vec<String> = hoocode_tui_util::wrap_text_with_ansi(&full, content_width)
+        let mut lines: Vec<String> = hoocode_tui_util::wrap_text_with_ansi(&full, content_width)
             .into_iter()
             .map(|line| format!(" {line} "))
             .collect();
+        if let Some(summary) = &self.summary {
+            // Dim, under the word the mark makes; wrapped, never cut.
+            let styled = paint(palette.dim(), summary);
+            lines.extend(
+                hoocode_tui_util::wrap_text_with_ansi(
+                    &styled,
+                    content_width.saturating_sub(2).max(1),
+                )
+                .into_iter()
+                .map(|line| format!("   {line} ")),
+            );
+        }
         self.cache.borrow_mut().set(width, theme, lines.clone());
         lines
     }
@@ -809,13 +852,11 @@ impl Component for MissionHeader {
             if let Some(flight) = &self.flight {
                 let stats = flight.borrow();
                 // Live data behind shared state: redraw every tick.
-                return vec![crate::radar::mission_row(
-                    self.seq,
-                    &self.prompt,
-                    &stats,
-                    &palette,
-                    width,
-                )];
+                let mut rows =
+                    crate::radar::mission_rows(self.seq, &self.prompt, &stats, &palette, width);
+                // The turn's progress row sits under the whole prompt.
+                rows.extend(crate::radar::chain_rows(&stats, &palette, width));
+                return rows;
             }
         } else if let Some(cached) = self
             .cache
@@ -878,7 +919,15 @@ mod tests {
     fn landing_line_counts_read_right() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let palette = Palette::current();
-        let line = landing_line(2, 1, "0.5s", "0.8k tokens", "$0.002", &palette);
+        let line = landing_line(
+            FlightMark::Landed,
+            2,
+            1,
+            "0.5s",
+            "0.8k tokens",
+            "$0.002",
+            &palette,
+        );
         let bare = strip_vt_control_characters(&line);
         assert!(bare.contains("LANDED"), "{bare}");
         assert!(bare.contains("2 steps"), "{bare}");
