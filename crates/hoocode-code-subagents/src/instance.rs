@@ -5,11 +5,12 @@
 //! session. Created lazily on first use (inside a tokio runtime).
 
 use std::path::Path;
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::Instant;
 
 use hoocode_ai_types::Model;
 use hoocode_code_models::{resolve_scoped_models, ResolvedScoped};
+use hoocode_code_permissions::ClearanceRelay;
 use hoocode_code_settings::{deep_merge_settings, ScopedModel, SettingsManager};
 use hoocode_code_task_store::{task_store, TaskAgentPatch};
 use serde_json::Value;
@@ -36,6 +37,12 @@ static INSTANCE: LazyLock<Mutex<Instance>> = LazyLock::new(Mutex::default);
 /// Where the UI receives live run events (set by the TUI; `None` elsewhere).
 static LIVE_SINK: LazyLock<Mutex<Option<LiveSink>>> = LazyLock::new(Mutex::default);
 
+/// Who decides the gated calls subagents ask about: the TUI's card, or, in a
+/// subagent that has subagents of its own, its parent (`None` elsewhere, and
+/// then every such call is denied).
+static CLEARANCE_RELAY: LazyLock<Mutex<Option<Arc<dyn ClearanceRelay>>>> =
+    LazyLock::new(Mutex::default);
+
 fn instance() -> MutexGuard<'static, Instance> {
     INSTANCE.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -44,6 +51,23 @@ fn instance() -> MutexGuard<'static, Instance> {
 /// set before or after the pool exists.
 pub fn set_live_sink(sink: Option<LiveSink>) {
     *LIVE_SINK.lock().unwrap_or_else(|e| e.into_inner()) = sink;
+}
+
+/// Sets (or clears) who decides the gated calls subagents ask about. Applies to
+/// the shared pool too, if it exists.
+pub fn set_clearance_relay(relay: Option<Arc<dyn ClearanceRelay>>) {
+    *CLEARANCE_RELAY.lock().unwrap_or_else(|e| e.into_inner()) = relay.clone();
+    if let Some(pool) = &instance().pool {
+        pool.set_clearance_relay(relay);
+    }
+}
+
+/// The relay set by [`set_clearance_relay`], if any.
+pub fn clearance_relay() -> Option<Arc<dyn ClearanceRelay>> {
+    CLEARANCE_RELAY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
 }
 
 /// `getSubagentSpawnCommand`: this executable, no prefix args.
@@ -148,6 +172,7 @@ fn create_pool(
         settings: Some(CategorySettings::from_settings(&settings)),
         available_models: available_models.to_vec(),
         scope,
+        clearance: clearance_relay(),
         ..Default::default()
     });
     wire_progress_to_task_store(&pool);
@@ -222,6 +247,17 @@ fn wire_progress_to_task_store(pool: &SubagentPool) {
                     ..Default::default()
                 }
             }
+            // A child parked on a person: shown, not a terminal event.
+            "task_clearance" => TaskAgentPatch {
+                activity: Some(
+                    if event.data.get("held").and_then(Value::as_bool) == Some(true) {
+                        "holding for clearance".to_string()
+                    } else {
+                        String::new()
+                    },
+                ),
+                ..Default::default()
+            },
             name if name.starts_with("task_") && name != "task_progress" => {
                 // Every terminal event: record how it ended so the row keeps
                 // saying something useful after the run is gone.

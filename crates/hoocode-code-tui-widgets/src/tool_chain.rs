@@ -18,7 +18,8 @@ use hoocode_tui_ratatui::{ansi_spans, spans_width, truncate_spans, with_base_sty
 
 use crate::assistant_message::AssistantMessageComponent;
 use crate::radar::{
-    agent_live_row, hit_row, live_row, satellite_row, sub_hit_row, sub_live_row, waiting_row,
+    agent_live_row, hit_row, live_row, satellite_row, sub_hit_row, sub_live_row, sub_waiting_row,
+    waiting_row,
 };
 use crate::tool_chain_summary::{
     chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
@@ -348,6 +349,14 @@ impl ToolChainComponent {
                                     &sub.tool,
                                     &sub.subject,
                                     snippet,
+                                    palette,
+                                    width,
+                                )),
+                                None if sub.held => out.push(sub_waiting_row(
+                                    step,
+                                    index,
+                                    &sub.tool,
+                                    &sub.subject,
                                     palette,
                                     width,
                                 )),

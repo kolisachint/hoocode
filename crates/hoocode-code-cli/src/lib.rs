@@ -321,7 +321,10 @@ pub fn run(
 
     // `readPipedStdin`: RPC mode owns stdin; otherwise a non-TTY stdin is read
     // whole and becomes the start of the initial message.
-    let stdin_content = if app_mode != AppMode::Rpc && !env.stdin_is_tty {
+    // A subagent child (json + task id) keeps stdin for its parent's answers to
+    // its clearance requests; its prompt is on the command line.
+    let subagent_child = app_mode == AppMode::Json && parsed.task_id.is_some();
+    let stdin_content = if app_mode != AppMode::Rpc && !subagent_child && !env.stdin_is_tty {
         let mut data = String::new();
         let _ = std::io::stdin().read_to_string(&mut data);
         initial_message::normalize_piped_stdin(&data)

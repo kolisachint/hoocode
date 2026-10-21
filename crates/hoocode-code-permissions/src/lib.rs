@@ -6,6 +6,7 @@ use hoocode_code_modes::config::{self, HooConfig};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 /// `GATED_TOOLS`: prompted in interactive sessions. `ShellKill` stops a background
@@ -311,6 +312,9 @@ pub struct ClearanceInfo {
     pub step: Option<usize>,
     /// What the call can reach, from the call's real data.
     pub reach: Reach,
+    /// The subagent the call comes from, when the gate that asks is not the
+    /// one that holds the call (`explore`). `None` for the host's own calls.
+    pub from: Option<String>,
 }
 
 /// The clearance card's answer.
@@ -356,6 +360,29 @@ pub trait PermissionUi: Send + Sync {
             None => ClearanceChoice::Deny { reason: None },
         }
     }
+}
+
+/// A gated call that a subagent child could not ask about itself and hands to
+/// whoever started it. See [`ClearanceRelay`].
+#[derive(Debug, Clone, Default)]
+pub struct RelayRequest {
+    /// The subagent the call comes from (`explore`), when it did not
+    /// start in the asking process. `None` for the process's own calls.
+    pub via: Option<String>,
+    pub tool: String,
+    pub input: Value,
+    /// Set once nobody waits for the answer any more (the subagent ended or
+    /// was cancelled). The asker then stops waiting and the call stays denied.
+    pub cancelled: Arc<AtomicBool>,
+}
+
+/// Where a gate that cannot prompt sends a call that needs approval: a
+/// subagent child sends it up to its parent, and the parent's own gate (its
+/// config rules, its session grants, its card) decides.
+pub trait ClearanceRelay: Send + Sync {
+    /// Blocks until the call is decided. `None` lets it run, `Some(reason)`
+    /// blocks it. Any failure to ask (no UI, a closed pipe) is a denial.
+    fn ask(&self, request: &RelayRequest) -> Option<String>;
 }
 
 /// `matchesAllowedPath`: exact or `*`-glob match of the path (and, for an
@@ -767,11 +794,26 @@ pub struct HooPermissionGate {
     /// The prompt for [`ApprovalChannel::Ui`]. A `Ui` gate without one denies
     /// what would have been prompted (never a silent allow).
     ui: Option<Arc<dyn PermissionUi>>,
+    /// Where a call that needs approval goes when this process cannot prompt
+    /// (a subagent child). Takes precedence over `ui`.
+    relay: Option<Arc<dyn ClearanceRelay>>,
 }
 
 impl HooPermissionGate {
     pub fn new(cwd: PathBuf, channel: ApprovalChannel, ui: Option<Arc<dyn PermissionUi>>) -> Self {
-        Self { cwd, channel, ui }
+        Self {
+            cwd,
+            channel,
+            ui,
+            relay: None,
+        }
+    }
+
+    /// A gate that hands every call needing approval to `relay`. Use it with
+    /// [`ApprovalChannel::Ui`], so such calls reach the prompt step.
+    pub fn with_relay(mut self, relay: Arc<dyn ClearanceRelay>) -> Self {
+        self.relay = Some(relay);
+        self
     }
 
     /// The handler: `None` lets the call run, `Some(reason)` blocks it.
@@ -781,6 +823,13 @@ impl HooPermissionGate {
             Verdict::Allow => None,
             Verdict::Block(reason) => Some(reason),
             Verdict::Prompt => {
+                if let Some(relay) = self.relay.as_ref() {
+                    return relay.ask(&RelayRequest {
+                        tool: tool_name.to_string(),
+                        input: input.clone(),
+                        ..Default::default()
+                    });
+                }
                 let Some(ui) = self.ui.as_ref() else {
                     return Some("Denied by permission gate".into());
                 };
@@ -790,6 +839,7 @@ impl HooPermissionGate {
                     mode: config::active_mode(&merged).unwrap_or_else(|| "build".into()),
                     step: None,
                     reach: reach_for(tool_name, input),
+                    from: None,
                 };
                 match ui.select_clearance(&info) {
                     ClearanceChoice::Once => None,

@@ -125,6 +125,12 @@ impl LiveForwarder {
             out.push((task_id, inner.clone()));
             return out;
         }
+        if event.name == "task_clearance" {
+            // Not a lifecycle event: the run goes on, parked on a person.
+            let mut value = event.data.clone();
+            value["type"] = json!("task_clearance");
+            return vec![(task_id, value)];
+        }
         if event.name.starts_with("task_") {
             // A lifecycle event: started, or a settle. The run's held text goes first.
             let mut out = self.flush_task(&task_id);
@@ -236,6 +242,8 @@ pub struct SubStep {
     pub started: Instant,
     /// The first line of the failure's output, once the call failed.
     pub failure: Option<String>,
+    /// The call waits for the parent's clearance (`◉ holding for clearance`).
+    pub held: bool,
 }
 
 /// One run's activity: its last rows, the line being streamed, and its
@@ -272,6 +280,12 @@ pub fn apply(task_id: &str, event: &Value) {
         tails().insert(task_id.to_string(), RunTail::default());
         return;
     }
+    if kind == "task_clearance" {
+        if let Some(run) = tails().get_mut(task_id) {
+            hold(run, event);
+        }
+        return;
+    }
     if kind.starts_with("task_") {
         tails().remove(task_id);
         return;
@@ -295,6 +309,7 @@ pub fn apply(task_id: &str, event: &Value) {
                 subject: subject.trim().to_string(),
                 started: Instant::now(),
                 failure: None,
+                held: false,
             });
             while run.steps.len() > SUB_STEPS_KEPT {
                 run.steps.remove(0);
@@ -328,6 +343,38 @@ pub fn apply(task_id: &str, event: &Value) {
         }
         "message_end" | "turn_end" => flush_partial(run),
         _ => {}
+    }
+}
+
+/// A call of the run starts or stops waiting for clearance. The call's own
+/// step is marked when the run already shows it, else a step of its own stands
+/// in until the answer.
+fn hold(run: &mut RunTail, event: &Value) {
+    let tool = str_of(event, "tool");
+    let subject = str_of(event, "subject");
+    let stand_in = format!("clearance:{}", event.get("call").unwrap_or(&Value::Null));
+    let same =
+        |step: &SubStep| step.failure.is_none() && step.tool == tool && step.subject == subject;
+    if event.get("held").and_then(Value::as_bool) == Some(true) {
+        match run.steps.iter_mut().find(|step| same(step) && !step.held) {
+            Some(step) => step.held = true,
+            None => run.steps.push(SubStep {
+                id: stand_in,
+                tool: tool.clone(),
+                subject: subject.clone(),
+                started: Instant::now(),
+                failure: None,
+                held: true,
+            }),
+        }
+        while run.steps.len() > SUB_STEPS_KEPT {
+            run.steps.remove(0);
+        }
+        push_row(run, &format!("◉ {tool} {subject} holding for clearance"));
+    } else if let Some(at) = run.steps.iter().position(|step| step.id == stand_in) {
+        run.steps.remove(at);
+    } else if let Some(step) = run.steps.iter_mut().find(|step| same(step) && step.held) {
+        step.held = false;
     }
 }
 
@@ -420,6 +467,11 @@ fn printable(text: &str) -> String {
 
 fn clip_line(row: &str) -> String {
     row.chars().take(LINE_CHARS).collect()
+}
+
+/// The subject of a call, trimmed (`tool_subject` without its leading space).
+pub fn subject_of(args: &Value) -> String {
+    tool_subject(Some(args)).trim().to_string()
 }
 
 /// The argument a tool line names: its path, command or pattern.
