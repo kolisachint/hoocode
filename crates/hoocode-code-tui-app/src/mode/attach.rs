@@ -638,9 +638,7 @@ impl Mode {
                     self.markdown_theme(),
                     DEFAULT_HIDDEN_THINKING_LABEL,
                 ));
-                component
-                    .borrow_mut()
-                    .set_rail(self.tool_output_view != ToolOutputView::Radar);
+                component.borrow_mut().set_view(self.tool_output_view);
                 component
                     .borrow_mut()
                     .set_radar_above(self.transcript.radar_chain_above());

@@ -1,6 +1,7 @@
 //! The one place a transcript row says "there is more": the `… N more lines`
-//! hint every renderer folds with, the `…` ellipsis glyph, and the fold of a
-//! block's body rows that the peek rail and the trajectory share.
+//! hint every renderer folds with (`… N earlier lines` where the tail of the
+//! output is what shows), the `…` ellipsis glyph, and the fold of a block's
+//! body rows that the peek rail and the trajectory share.
 //!
 //! Every renderer that leaves lines out builds its hint here, so the text,
 //! the colour and the glyph read the same at every site. A reader that must
@@ -21,6 +22,13 @@ pub fn more_lines_text(hidden: usize) -> String {
     format!("{ELLIPSIS} {hidden} more {noun}")
 }
 
+/// `… N earlier lines` (`… 1 earlier line`), plain text: the hint above an
+/// output that shows its last lines.
+pub fn earlier_lines_text(hidden: usize) -> String {
+    let noun = if hidden == 1 { "line" } else { "lines" };
+    format!("{ELLIPSIS} {hidden} earlier {noun}")
+}
+
 /// The hint as a themed string (dim): `… N more lines`.
 pub fn more_lines_hint(hidden: usize) -> String {
     theme().fg("dim", &more_lines_text(hidden))
@@ -31,8 +39,18 @@ pub fn more_lines_span(hidden: usize, palette: &Palette) -> Span<'static> {
     Span::styled(more_lines_text(hidden), palette.dim())
 }
 
-/// The count in a `… N more lines` row (styling, padding and a gutter ignored), or
-/// `None` when the row is anything else.
+/// The earlier-lines hint as a themed string (dim): `… N earlier lines`.
+pub fn earlier_lines_hint(hidden: usize) -> String {
+    theme().fg("dim", &earlier_lines_text(hidden))
+}
+
+/// The earlier-lines hint as a ratatui span (dim), for rows drawn from spans.
+pub fn earlier_lines_span(hidden: usize, palette: &Palette) -> Span<'static> {
+    Span::styled(earlier_lines_text(hidden), palette.dim())
+}
+
+/// The count in a `… N more lines` or `… N earlier lines` row (styling,
+/// padding and a gutter ignored), or `None` when the row is anything else.
 pub fn parse_more_lines(row: &str) -> Option<usize> {
     let plain = strip_vt_control_characters(row);
     // A hint may sit behind a gutter (`  │ `) or a rail.
@@ -40,15 +58,16 @@ pub fn parse_more_lines(row: &str) -> Option<usize> {
         .trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '│' | '┃' | '┊'))
         .strip_prefix(ELLIPSIS)?
         .trim();
-    rest.strip_suffix("more lines")
-        .or_else(|| rest.strip_suffix("more line"))?
+    ["more lines", "more line", "earlier lines", "earlier line"]
+        .iter()
+        .find_map(|noun| rest.strip_suffix(noun))?
         .trim()
         .parse()
         .ok()
 }
 
 /// Whether a row is the placeholder a result shows in place of an image
-/// the terminal cannot draw (`[Image: [image/png] 100x100]`).
+/// the terminal cannot draw (`[Image: image/png 100×100]`).
 pub fn is_image_placeholder(row: &str) -> bool {
     strip_vt_control_characters(row)
         .trim_start()
@@ -110,5 +129,42 @@ pub fn fold_rows(rows: Vec<String>, budget: Option<usize>) -> Folded {
             hidden += 1;
         }
     }
+    Folded { shown, hidden }
+}
+
+/// [`fold_rows`] for a body that shows its last rows: the first rows go and
+/// the last `budget` stay, so the hint belongs above them. Same counting: the
+/// renderer's own hint joins the count and image placeholders stay.
+pub fn fold_rows_tail(rows: Vec<String>, budget: Option<usize>) -> Folded {
+    let Some(budget) = budget else {
+        return Folded {
+            shown: rows,
+            hidden: 0,
+        };
+    };
+    let mut hidden = 0;
+    let mut content = Vec::with_capacity(rows.len());
+    for row in rows {
+        match parse_more_lines(&row) {
+            Some(n) => hidden += n,
+            None => content.push(row),
+        }
+    }
+    let counted = content.iter().filter(|r| !is_image_placeholder(r)).count();
+    let mut skip = counted.saturating_sub(budget);
+    hidden += skip;
+    let shown = content
+        .into_iter()
+        .filter(|row| {
+            if is_image_placeholder(row) {
+                return true;
+            }
+            if skip > 0 {
+                skip -= 1;
+                return false;
+            }
+            true
+        })
+        .collect();
     Folded { shown, hidden }
 }

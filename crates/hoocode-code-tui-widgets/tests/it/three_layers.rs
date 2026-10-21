@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::{Content, ImageContent};
-use hoocode_code_tui_widgets::fold::{fold_rows, parse_more_lines};
+use hoocode_code_tui_widgets::fold::{fold_rows, fold_rows_tail, parse_more_lines};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -293,10 +293,14 @@ fn a_frozen_block_keeps_the_whole_output_for_the_full_stop() {
     shell.borrow_mut().freeze();
     let mut chain = chain_with(Peek, vec![shell.clone()]);
     let peek = render(&mut chain, 100).join("\n");
-    assert!(peek.contains("more line"), "{peek}");
+    assert!(peek.contains("27 earlier lines"), "{peek}");
+    assert!(
+        peek.contains("row-30"),
+        "peek shows the end of the output: {peek}"
+    );
     assert!(
         !peek.contains("row-01"),
-        "peek shows the tail's head only: {peek}"
+        "peek shows the end of the output only: {peek}"
     );
     chain.set_view(Full);
     let full = render(&mut chain, 100).join("\n");
@@ -371,4 +375,170 @@ fn a_frozen_block_wraps_at_a_narrower_terminal_in_full() {
     let narrow = render(&mut chain, 50);
     assert_eq!(narrow.join("").matches('Q').count(), 120, "{narrow:?}");
     assert!(!narrow.iter().any(|r| r.contains('…')), "{narrow:?}");
+}
+
+/// A Shell block with a stored duration, as a rebuilt session carries it.
+fn shell_block(view: ToolOutputView, output: &str, is_error: bool) -> ToolBlock {
+    let mut component = ToolExecutionComponent::new(
+        "Shell",
+        "t-0",
+        json!({"command": "cargo test"}),
+        ToolExecutionOptions {
+            view,
+            ..Default::default()
+        },
+        Some(registered_tool_definition("Shell")),
+        &cwd(),
+    );
+    component.update_result(
+        ToolResult {
+            content: vec![Content::text(output)],
+            details: json!({"durationMs": 8200}),
+            is_error,
+        },
+        false,
+    );
+    Rc::new(RefCell::new(component))
+}
+
+#[test]
+fn a_shell_step_shows_the_end_of_its_output_and_counts_only_hidden_output_lines() {
+    let _g = lock();
+    let mut chain = chain_with(Peek, vec![shell_block(Peek, &rows_of(40), false)]);
+    let rows = render(&mut chain, 100);
+    let hint = rows
+        .iter()
+        .position(|r| r.contains("earlier lines"))
+        .unwrap_or_else(|| panic!("no fold hint: {rows:?}"));
+    // 40 lines, the last three shown: 37 hidden, the footer not among them.
+    assert_eq!(
+        parse_more_lines(rows[hint].trim_start_matches(['┊', ' '])),
+        Some(37)
+    );
+    let shown: Vec<&String> = rows.iter().filter(|r| r.contains("row-")).collect();
+    assert_eq!(shown.len(), 3, "{rows:?}");
+    assert!(
+        rows[hint + 1].contains("row-38"),
+        "the hint sits above: {rows:?}"
+    );
+    assert!(rows.last().unwrap().contains("Took 8.2s"), "{rows:?}");
+    assert!(!rows.iter().any(|r| r.contains("more line")), "{rows:?}");
+}
+
+#[test]
+fn a_failed_shell_step_names_its_exit_status_and_keeps_the_last_lines() {
+    let _g = lock();
+    let output = "error[E0308]: mismatched types\n   --> src/lex.rs:88:21\n    |\n\
+                  88  |     return Ok(Token::Str(text));\n    |\n\
+                  error: could not compile `parser`\n\nCommand exited with code 1";
+    let mut chain = chain_with(Peek, vec![shell_block(Peek, output, true)]);
+    let rows = render(&mut chain, 100);
+    assert!(
+        rows[0].contains("HIT") && rows[0].contains("exit 1"),
+        "{rows:?}"
+    );
+    let joined = rows.join("\n");
+    assert!(joined.contains("earlier lines"), "{joined}");
+    assert!(joined.contains("error: could not compile"), "{joined}");
+    assert!(joined.contains("Command exited with code 1"), "{joined}");
+    assert!(!joined.contains("mismatched types"), "{joined}");
+}
+
+#[test]
+fn an_interrupted_step_is_no_hit_and_leaves_the_reason_to_the_message() {
+    let _g = lock();
+    let shell = shell_block(Peek, "Operation aborted", true);
+    shell.borrow_mut().set_interrupted();
+    assert!(!shell.borrow().is_error());
+    assert!(!shell.borrow().chain_entry().is_error);
+    let mut chain = chain_with(Peek, vec![shell]);
+    let rows = render(&mut chain, 100);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(
+        rows[0].contains('⊘') && rows[0].contains("interrupted"),
+        "{rows:?}"
+    );
+    assert!(!rows[0].contains("HIT"), "{rows:?}");
+}
+
+#[test]
+fn fold_rows_tail_keeps_the_last_rows_and_adds_the_renderers_hint() {
+    let rows: Vec<String> = ["… 7 earlier lines", "a", "b", "c", "d"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let folded = fold_rows_tail(rows.clone(), Some(3));
+    assert_eq!(folded.shown, ["b", "c", "d"]);
+    assert_eq!(folded.hidden, 8);
+    let whole = fold_rows_tail(rows, None);
+    assert_eq!(whole.hidden, 0);
+    assert_eq!(parse_more_lines("… 1 earlier line"), Some(1));
+}
+
+/// An Agent block whose run (`run`) settled, with two calls of its own, the
+/// second failed.
+fn settled_agent(view: ToolOutputView, run: &str) -> ToolBlock {
+    use hoocode_code_subagents::live::apply;
+    apply(run, &json!({"type": "task_started"}));
+    for (id, tool, fails) in [("s1", "Read", false), ("s2", "Grep", true)] {
+        apply(
+            run,
+            &json!({"type": "tool_execution_start", "toolCallId": id, "toolName": tool, "args": {"pattern": "x"}}),
+        );
+        apply(
+            run,
+            &json!({"type": "tool_execution_end", "toolCallId": id, "isError": fails,
+                    "result": {"content": [{"type": "text", "text": "bad regex"}]}}),
+        );
+    }
+    apply(run, &json!({"type": "task_done"}));
+    let mut component = ToolExecutionComponent::new(
+        "Agent",
+        "t-agent",
+        json!({"subagent_type": "explore", "description": "look around"}),
+        ToolExecutionOptions {
+            view,
+            ..Default::default()
+        },
+        Some(registered_tool_definition("Agent")),
+        &cwd(),
+    );
+    component.update_result(
+        ToolResult {
+            content: vec![Content::text("Found it.")],
+            details: json!({ "poolTaskId": run }),
+            is_error: false,
+        },
+        false,
+    );
+    Rc::new(RefCell::new(component))
+}
+
+#[test]
+fn a_settled_agent_keeps_its_failed_calls_in_peek_and_every_call_in_full() {
+    let _g = lock();
+    let mut peek = chain_with(Peek, vec![settled_agent(Peek, "it-agent-peek")]);
+    let rows = render(&mut peek, 100).join("\n");
+    assert!(rows.contains("⊗ 01.2 Grep"), "{rows}");
+    assert!(rows.contains("→ bad regex"), "{rows}");
+    assert!(rows.contains("HIT"), "{rows}");
+    assert!(
+        !rows.contains("01.1 Read"),
+        "peek shows problems only: {rows}"
+    );
+
+    let mut full = chain_with(Full, vec![settled_agent(Full, "it-agent-full")]);
+    let rows = render(&mut full, 100).join("\n");
+    assert!(rows.contains("● 01.1 Read"), "{rows}");
+    assert!(rows.contains("⊗ 01.2 Grep"), "{rows}");
+
+    // Radar: the problem row only, under the agent step's number.
+    let mut radar = chain_with(Radar, vec![settled_agent(Radar, "it-agent-radar")]);
+    radar.set_orphan(false);
+    let rows = render(&mut radar, 100);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(
+        rows[0].contains("⊗ 01.2 Grep") && rows[0].contains("HIT"),
+        "{rows:?}"
+    );
 }

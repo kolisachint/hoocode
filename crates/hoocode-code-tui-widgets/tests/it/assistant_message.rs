@@ -2,6 +2,7 @@
 
 use crate::support::{assistant, lock};
 use hoocode_ai_types::{Content, ThinkingContent, ToolCallContent};
+use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::{
     AssistantMessageComponent, ThinkingDisplay, OSC133_ZONE_END, OSC133_ZONE_FINAL,
     OSC133_ZONE_START,
@@ -106,4 +107,43 @@ fn label_shows_the_header_with_the_trace_gist() {
     let rendered = c.render(60).join("\n");
     assert!(rendered.contains("Think"));
     assert!(rendered.contains("weighing the options"));
+}
+
+#[test]
+fn the_full_stop_wraps_the_think_row_where_peek_cuts_it() {
+    let _g = lock();
+    let gist = "weighing the options one by one because the first idea hides a trap \
+                in the second step of the plan";
+    let build = |view| {
+        let mut c = AssistantMessageComponent::new(
+            Some(&assistant(vec![thinking(gist), tool_call()])),
+            ThinkingDisplay::Full,
+        );
+        c.set_view(view);
+        crate::support::strip(&c.render(50).join("\n"))
+    };
+    let peek = build(ToolOutputView::Peek);
+    assert!(peek.contains('…'), "{peek}");
+    let full = build(ToolOutputView::Full);
+    assert!(!full.contains('…'), "{full}");
+    let flat = full.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(flat.contains(gist), "{full}");
+    assert!(full.contains("✻ thought · ctrl+t"), "{full}");
+}
+
+#[test]
+fn a_message_on_the_rail_opens_with_a_plain_blank_unless_a_step_is_above_it() {
+    let _g = lock();
+    let mut c = AssistantMessageComponent::new(
+        Some(&assistant(vec![Content::text("The answer.")])),
+        ThinkingDisplay::Full,
+    );
+    c.set_view(ToolOutputView::Peek);
+    let rows: Vec<String> = c
+        .render(60)
+        .iter()
+        .map(|l| crate::support::strip(l))
+        .collect();
+    assert_eq!(rows[0], "", "{rows:?}");
+    assert!(rows[1].contains('┊'), "{rows:?}");
 }

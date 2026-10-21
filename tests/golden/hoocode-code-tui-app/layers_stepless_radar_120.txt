@@ -1,0 +1,11 @@
+ M1 ●  What does CONTRIBUTING say about commit messages?                                                   1.5s  $0.003
+        Commit messages use a short imperative subject line of about 50 characters, a blank line, then a body that
+        explains why the change was made.
+--- styles ---
+r0 c1-2 fg=#9b8cff
+r0 c4 fg=#b5bd68
+r0 c7-55 fg=#e5e5e7 bold
+r0 c107-110 fg=#989898
+r0 c113-118 fg=#989898
+r1 c8-113 fg=#e5e5e7
+r2 c8-40 fg=#e5e5e7

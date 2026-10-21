@@ -579,6 +579,41 @@ pub fn sub_hit_row(
     )
 }
 
+/// A settled subagent call as one line, uncut, for the peek and full rails
+/// (`⊗ 01.2 Grep  pattern  → snippet  HIT`, or `● 01.1 Read  path`): the
+/// caller cuts it or wraps it. `parent` is the Agent step's number.
+pub fn sub_step_line(
+    parent: usize,
+    step: &hoocode_code_subagents::live::SettledStep,
+    palette: &Palette,
+) -> String {
+    let failed = step.failure.is_some();
+    let (glyph, style) = if failed {
+        ("⊗", palette.err())
+    } else {
+        (status::DONE_STR, palette.ok())
+    };
+    let mut spans = step_lead(
+        0,
+        glyph,
+        style,
+        &sub_label(parent, step.index),
+        &step.tool,
+        palette,
+    );
+    spans.extend(with_ink(ansi_spans(&step.subject), palette));
+    if let Some(snippet) = step.failure.as_deref().filter(|s| !s.trim().is_empty()) {
+        spans.push(span("  → ", palette.dim()));
+        spans.extend(with_ink(ansi_spans(snippet), palette));
+    }
+    if failed {
+        spans.push(blank(2));
+        spans.push(span("HIT", reversed(bold(palette.err()))));
+    }
+    let width = spans_width(&spans).max(1);
+    crate::trajectory::draw_line(spans, width)
+}
+
 fn hit_line(
     indent: usize,
     label: &str,

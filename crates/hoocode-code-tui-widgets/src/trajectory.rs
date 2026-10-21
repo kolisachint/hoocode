@@ -231,6 +231,34 @@ pub fn fold_line(hidden: usize, width: usize, agent: bool, palette: &Palette) ->
     row(spans, width)
 }
 
+/// The fold above a step that shows its last lines: `   ┊  … N earlier lines`.
+pub fn earlier_fold_line(hidden: usize, width: usize, agent: bool, palette: &Palette) -> String {
+    let mut spans = rail_prefix_spans(agent, palette);
+    spans.push(crate::fold::earlier_lines_span(hidden, palette));
+    row(spans, width)
+}
+
+/// A line under a step on its rail, in the agent's violet when the step is an
+/// Agent: cut to the width with `…`, or wrapped at the full stop, where
+/// nothing is cut.
+pub fn sub_step_rows(line: &str, width: usize, full: bool, palette: &Palette) -> Vec<String> {
+    // The rail takes six cells.
+    let inner = width.saturating_sub(6).max(1);
+    if full {
+        wrap_text_with_ansi(line, inner)
+            .iter()
+            .map(|piece| rail_line(piece, width, true, palette))
+            .collect()
+    } else {
+        vec![rail_line(
+            &hoocode_tui_util::truncate_to_width(line, inner, "…", false),
+            width,
+            true,
+            palette,
+        )]
+    }
+}
+
 /// The chip replacing a failed step's success stats: the inverted
 /// ` HIT ` block (Mission Control spec b2: err fill, bold).
 pub fn hit_chip(palette: &Palette) -> String {
@@ -275,6 +303,8 @@ pub struct ThinkHeader {
     running: bool,
     secs: Option<u64>,
     gist: Option<String>,
+    /// The full stop: the gist wraps under itself instead of ending in `…`.
+    wrap: bool,
     cache: RefCell<RowCache>,
 }
 
@@ -284,8 +314,60 @@ impl ThinkHeader {
             running,
             secs,
             gist: None,
+            wrap: false,
             cache: RefCell::new(RowCache::default()),
         }
+    }
+
+    /// Whether the gist wraps (the full stop never cuts) or is cut to one row.
+    pub fn set_wrap(&mut self, wrap: bool) {
+        if self.wrap != wrap {
+            self.wrap = wrap;
+            self.cache.borrow_mut().clear();
+        }
+    }
+
+    /// The header laid out without a cut: the gist wraps under its first word,
+    /// and the end of the row (`✻ thought 4s · ctrl+t`, or the running time
+    /// flush right) closes the last row that has room, else a row of its own.
+    fn wrapped_rows(
+        head: Vec<Span<'static>>,
+        gist: &str,
+        tail: Vec<Span<'static>>,
+        flush_right: bool,
+        palette: &Palette,
+        width: usize,
+    ) -> Vec<String> {
+        let hang = spans_width(&head) + 2;
+        let pieces = wrap_text_with_ansi(gist, width.saturating_sub(hang).max(1));
+        let tail_width = spans_width(&tail);
+        let last = pieces.len().saturating_sub(1);
+        let mut rows = Vec::with_capacity(pieces.len() + 1);
+        for (index, piece) in pieces.iter().enumerate() {
+            let mut spans = if index == 0 {
+                let mut spans = head.clone();
+                spans.push(Span::styled("  ".to_string(), Style::default()));
+                spans
+            } else {
+                vec![Span::styled(" ".repeat(hang), Style::default())]
+            };
+            spans.push(Span::styled(piece.clone(), italic(palette.faint())));
+            if index == last && spans_width(&spans) + 2 + tail_width <= width {
+                if flush_right {
+                    rows.push(two_part_row(spans, tail.clone(), width));
+                } else {
+                    spans.push(Span::styled("  ".to_string(), Style::default()));
+                    spans.extend(tail.clone());
+                    rows.push(row(spans, width));
+                }
+                return rows;
+            }
+            rows.push(row(spans, width));
+        }
+        let mut spans = vec![Span::styled(" ".repeat(hang), Style::default())];
+        spans.extend(tail);
+        rows.push(row(spans, width));
+        rows
     }
 
     /// The trace's gist (its first line): faint italic after `Think`.
@@ -323,6 +405,20 @@ impl Component for ThinkHeader {
             ]
         });
         if self.running {
+            if let (true, Some(gist), Some(secs)) = (self.wrap, self.gist.as_deref(), self.secs) {
+                let head = vec![
+                    slot,
+                    Span::styled(" ".to_string(), Style::default()),
+                    Span::styled(status::RUNNING_STR.to_string(), palette.style("warning")),
+                    Span::styled(" ".to_string(), Style::default()),
+                    Span::styled("Think".to_string(), bold(palette.ink())),
+                ];
+                let tail = vec![Span::styled(
+                    format!("✻ {}", short_dur(secs)),
+                    palette.vio(),
+                )];
+                return Self::wrapped_rows(head, gist, tail, true, &palette, width);
+            }
             let mut left = vec![
                 slot,
                 Span::styled(" ".to_string(), Style::default()),
@@ -348,6 +444,26 @@ impl Component for ThinkHeader {
             Some(s) => format!("✻ thought {}", short_dur(s)),
             None => "✻ thought".to_string(),
         };
+        if let (true, Some(gist)) = (self.wrap, self.gist.as_deref()) {
+            let head = vec![
+                slot,
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled(status::DONE_STR.to_string(), palette.ok()),
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled("Think".to_string(), bold(palette.ink())),
+            ];
+            let tail = vec![
+                Span::styled(thought, palette.style("thinkingText")),
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled("·".to_string(), palette.dim()),
+                Span::styled(" ".to_string(), Style::default()),
+                Span::styled("ctrl+t".to_string(), Style::default()),
+            ];
+            let lines = Self::wrapped_rows(head, gist, tail, false, &palette, width);
+            let key = u16::try_from(width).unwrap_or(u16::MAX);
+            self.cache.borrow_mut().set(key, theme, lines.clone());
+            return lines;
+        }
         let mut spans = vec![
             slot,
             Span::styled(" ".to_string(), Style::default()),
@@ -380,6 +496,11 @@ impl Component for ThinkHeader {
 /// Only the leading dot is swapped; its error styling stays.
 pub fn failure_dot(content: &str) -> String {
     content.replacen('●', "⊗", 1)
+}
+
+/// The `⊘` an interrupted step carries in place of its status dot.
+pub fn interrupted_dot(content: &str) -> String {
+    content.replacen('●', "⊘", 1)
 }
 
 /// `N lines`.

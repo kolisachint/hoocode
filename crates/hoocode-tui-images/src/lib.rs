@@ -291,9 +291,9 @@ pub fn image_fallback(
     if let Some(name) = filename {
         parts.push(name.to_string());
     }
-    parts.push(format!("[{mime_type}]"));
+    parts.push(mime_type.to_string());
     if let Some(d) = dimensions {
-        parts.push(format!("{}x{}", d.width_px, d.height_px));
+        parts.push(format!("{}\u{d7}{}", d.width_px, d.height_px));
     }
     format!("[Image: {}]", parts.join(" "))
 }
@@ -563,7 +563,7 @@ mod tests {
             }),
             Some("cat.png"),
         );
-        assert_eq!(result, "[Image: cat.png [image/png] 100x50]");
+        assert_eq!(result, "[Image: cat.png image/png 100\u{d7}50]");
     }
 
     #[test]

@@ -16,9 +16,9 @@ use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{ansi_spans, spans_width, truncate_spans, with_base_style, Palette};
 
 use crate::assistant_message::AssistantMessageComponent;
-use crate::fold::{fold_rows, more_lines_span};
+use crate::fold::{fold_rows, fold_rows_tail, more_lines_span};
 use crate::radar::{
-    agent_live_row, hit_row, live_row, satellite_row, sub_hit_row, sub_live_row, waiting_row,
+    self, agent_live_row, hit_row, live_row, satellite_row, sub_hit_row, sub_live_row, waiting_row,
 };
 use crate::tool_chain_summary::{
     chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
@@ -198,7 +198,9 @@ impl ToolChainComponent {
     /// never cut. Up to [`trajectory::TRAJECTORY_BODY_LINES`] body lines show,
     /// then one `… N more lines` fold that counts every hidden output line,
     /// the ones the renderer already left out included; images are never
-    /// folded. The full stop shows every body line and no fold. A failed
+    /// folded; a Shell step shows its last lines instead, under a
+    /// `… N earlier lines` fold, and its footer (`Took 8.2s`) stays whole. The
+    /// full stop shows every body line and no fold. A failed
     /// step shows the `HIT` chip in place of its success stats; an Edit step
     /// its `+a −b` counts and a Write step the `NEW` chip; a live background
     /// job shows its satellite row.
@@ -223,7 +225,9 @@ impl ToolChainComponent {
             let (prefix, content) = trajectory::split_padding(&header);
             // A failed step carries `⊗` in place of its dot, and the `HIT`
             // chip replaces its success stats (never appends to them).
-            let content = if block.borrow().is_error() {
+            let content = if block.borrow().is_interrupted() {
+                trajectory::interrupted_dot(&content)
+            } else if block.borrow().is_error() {
                 trajectory::failure_dot(&content)
             } else {
                 content
@@ -239,12 +243,41 @@ impl ToolChainComponent {
                     .then(|| palette.bg_color("toolBandBg"))
                     .flatten(),
             ));
-            let folded = fold_rows(parts.body, budget);
+            // A body that shows the end of the output folds its first rows,
+            // with the hint above; any other folds its last, hint below.
+            let folded = if parts.tail {
+                fold_rows_tail(parts.body, budget)
+            } else {
+                fold_rows(parts.body, budget)
+            };
+            if parts.tail && folded.hidden > 0 {
+                out.push(trajectory::earlier_fold_line(
+                    folded.hidden,
+                    width,
+                    agent,
+                    palette,
+                ));
+            }
             for line in &folded.shown {
                 out.push(trajectory::rail_line(line, width, agent, palette));
             }
-            if folded.hidden > 0 {
+            if !parts.tail && folded.hidden > 0 {
                 out.push(trajectory::fold_line(folded.hidden, width, agent, palette));
+            }
+            // A settled agent's own calls: the failed ones in peek, every one
+            // at the full stop, on the agent's rail.
+            if agent {
+                let full = self.view == ToolOutputView::Full;
+                for sub in block.borrow().settled_sub_steps() {
+                    if full || sub.failure.is_some() {
+                        let line = radar::sub_step_line(step, &sub, palette);
+                        out.extend(trajectory::sub_step_rows(&line, width, full, palette));
+                    }
+                }
+            }
+            // The rows that are not output close the step, never folded.
+            for line in &parts.footer {
+                out.push(trajectory::rail_line(line, width, agent, palette));
             }
             out.extend(parts.images);
         }
@@ -341,8 +374,8 @@ impl ToolChainComponent {
                     // The agent's own calls still running or failed sit under its row.
                     if let Some(run) = body.agent_run_id() {
                         let subs = hoocode_code_subagents::live::sub_steps(&run);
-                        for (n, sub) in subs.iter().enumerate() {
-                            let index = n + 1;
+                        for sub in &subs {
+                            let index = sub.index;
                             match &sub.failure {
                                 Some(snippet) => out.push(sub_hit_row(
                                     step,
@@ -372,6 +405,25 @@ impl ToolChainComponent {
                         &entry.subject,
                         secs,
                         body.estimated_secs(),
+                        palette,
+                        width,
+                    ));
+                }
+            }
+            // A settled run keeps the calls of its own that failed: problem
+            // rows only, under the agent step that made them.
+            if !entry.is_partial {
+                for sub in body
+                    .settled_sub_steps()
+                    .iter()
+                    .filter(|s| s.failure.is_some())
+                {
+                    out.push(sub_hit_row(
+                        step,
+                        sub.index,
+                        &sub.tool,
+                        &sub.subject,
+                        sub.failure.as_deref().unwrap_or_default(),
                         palette,
                         width,
                     ));

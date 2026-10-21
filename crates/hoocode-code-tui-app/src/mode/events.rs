@@ -331,9 +331,10 @@ impl Mode {
                         self.markdown_theme(),
                         DEFAULT_HIDDEN_THINKING_LABEL,
                     ));
+                    component.borrow_mut().set_view(self.tool_output_view);
                     component
                         .borrow_mut()
-                        .set_rail(self.tool_output_view != ToolOutputView::Radar);
+                        .set_radar_above(self.transcript.radar_chain_above());
                     component
                         .borrow_mut()
                         .set_radar_mission(self.transcript.current_mission());
@@ -430,9 +431,13 @@ impl Mode {
                                 },
                                 false,
                             );
+                            // The user's abort is not the call's own failure.
+                            if assistant.stop_reason == StopReason::Aborted {
+                                block.borrow_mut().set_interrupted();
+                            }
                         }
                         self.transcript.pending_tools.clear();
-                        // Aborted and errored turns flip hits at once.
+                        // Aborted and errored turns settle their steps at once.
                         self.refresh_flight_stats();
                     } else {
                         // Args are complete: edit blocks compute their diffs.

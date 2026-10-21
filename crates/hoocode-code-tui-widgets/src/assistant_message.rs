@@ -16,6 +16,7 @@ use hoocode_tui_util::js_regex::is_js_space;
 
 use crate::radar::{self, HIT_INDENT, STEP_INDENT};
 use crate::tool_chain::ToolChainComponent;
+use crate::tool_output_view::ToolOutputView;
 use crate::trajectory;
 use crate::wrap_zone;
 
@@ -380,6 +381,8 @@ pub struct AssistantMessageComponent {
     /// Mission Control peek (M4): prose lines sit on the `┊` rail. Think
     /// headers (`·· …`) keep their own slot and skip the rail.
     rail: bool,
+    /// The full stop: the Think row wraps its gist instead of cutting it.
+    full: bool,
     /// Radar (M5): the chain whose rows sit right above this message's
     /// prose line. The prose reads that chain's last row when it renders,
     /// so a row that turns into a hit later still moves the prose to 12.
@@ -449,6 +452,7 @@ impl AssistantMessageComponent {
             thinking_display,
             markdown_theme,
             rail: false,
+            full: false,
             radar_above: None,
             radar_mission: None,
             radar_prose_shown: false,
@@ -533,9 +537,15 @@ impl AssistantMessageComponent {
         self.refresh();
     }
 
-    /// Mission Control peek (M4): prose lines sit on the `┊` rail.
-    pub fn set_rail(&mut self, rail: bool) {
-        self.rail = rail;
+    /// The view dial's stop: peek and full put prose on the `┊` rail (M4);
+    /// full also wraps the Think row's gist where the others cut it.
+    pub fn set_view(&mut self, view: ToolOutputView) {
+        self.rail = view != ToolOutputView::Radar;
+        let full = view == ToolOutputView::Full;
+        if self.full != full {
+            self.full = full;
+            self.refresh();
+        }
     }
 
     /// Radar (M5): links the prose line to the chain above it (`None` when
@@ -686,6 +696,7 @@ impl AssistantMessageComponent {
                     let mut header =
                         trajectory::ThinkHeader::new(streaming, self.think_secs(streaming));
                     header.set_gist(think_gist(&message));
+                    header.set_wrap(self.full);
                     self.content.add_child(handle(header));
                     if self.thinking_display == ThinkingDisplay::Full {
                         let text = format!("✻ {}", js_trim(&t.thinking));
@@ -836,14 +847,23 @@ impl AssistantMessageComponent {
         // Mission Control peek: prose sits on the `┊` rail, so the inner
         // content wraps six cells narrower and every line takes the rail.
         // Think headers keep their own `··` slot.
+        // The blank row that opens a message is a plain blank, as it is
+        // anywhere else on the screen, unless a step of the mission sits right
+        // above it: then the rail runs on through it.
+        let after_step = self
+            .radar_above
+            .as_ref()
+            .is_some_and(|chain| chain.upgrade().is_some());
         let width = width as usize;
         let inner = width.saturating_sub(6).max(1) as u16;
         let lines: Vec<String> = self
             .content
             .render(inner)
             .into_iter()
-            .map(|line| {
-                if trajectory::is_think_header(&line) {
+            .enumerate()
+            .map(|(index, line)| {
+                let opening_blank = index == 0 && !after_step && is_blank(&line);
+                if opening_blank || trajectory::is_think_header(&line) {
                     line
                 } else {
                     trajectory::rail_line(&line, width, false, &palette)

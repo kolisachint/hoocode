@@ -256,6 +256,9 @@ struct ToolFamily {
     tools: &'static [&'static str],
     subject_is_path: bool,
     act: Option<fn(&str) -> String>,
+    /// How a turn's summary names the one thing the family did, when it is
+    /// shorter than the subject (a command by its program and subcommand).
+    brief: Option<fn(&str) -> String>,
 }
 
 /// Leading `cd <dir> &&` runs, however many are chained.
@@ -274,6 +277,46 @@ fn command_act(subject: &str) -> String {
     }
 }
 
+/// Splits a command into the words of its first simple command: the pipe,
+/// chain, redirect or list after it is left out.
+fn first_command_words(command: &str) -> Vec<&str> {
+    let end = command
+        .find(['|', '&', ';', '>', '<', '\n'])
+        .unwrap_or(command.len());
+    hoocode_tui_util::text_slice::prefix(command, end)
+        .split_whitespace()
+        .collect()
+}
+
+/// A command named briefly, as a turn's summary says it: the program and its
+/// first subcommand word (`cargo test -p x 2>&1 | tail -40` is `cargo test`).
+/// A flag, a path or a number after the program is no subcommand.
+fn command_name(act: &str) -> String {
+    let words = first_command_words(act);
+    // Leading `NAME=value` assignments are not the program.
+    let mut words = words.into_iter().skip_while(|w| {
+        w.split_once('=').is_some_and(|(name, _)| {
+            !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        })
+    });
+    let Some(program) = words.next() else {
+        return act.to_string();
+    };
+    match words.next().filter(|w| is_subcommand(w)) {
+        Some(sub) => format!("{program} {sub}"),
+        None => program.to_string(),
+    }
+}
+
+/// Whether a word reads as a subcommand: letters, digits, `-`, `_` and `:`,
+/// starting with a letter.
+fn is_subcommand(word: &str) -> bool {
+    word.starts_with(|c: char| c.is_ascii_alphabetic())
+        && word
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':'))
+}
+
 /// Tool families, in the order a settled chain reports them.
 const FAMILIES: [ToolFamily; 7] = [
     ToolFamily {
@@ -285,6 +328,7 @@ const FAMILIES: [ToolFamily; 7] = [
         tools: &["Edit", "Write", "MultiEdit", "NotebookEdit"],
         subject_is_path: true,
         act: None,
+        brief: None,
     },
     ToolFamily {
         verb: "Ran",
@@ -295,6 +339,7 @@ const FAMILIES: [ToolFamily; 7] = [
         tools: &["Shell"],
         subject_is_path: false,
         act: Some(command_act),
+        brief: Some(command_name),
     },
     ToolFamily {
         verb: "Delegated",
@@ -305,6 +350,7 @@ const FAMILIES: [ToolFamily; 7] = [
         tools: &SUBAGENT_TOOLS,
         subject_is_path: false,
         act: None,
+        brief: None,
     },
     ToolFamily {
         verb: "Fetched",
@@ -315,6 +361,7 @@ const FAMILIES: [ToolFamily; 7] = [
         tools: &["WebFetch"],
         subject_is_path: false,
         act: None,
+        brief: None,
     },
     ToolFamily {
         verb: "Searched",
@@ -325,6 +372,7 @@ const FAMILIES: [ToolFamily; 7] = [
         tools: &["WebSearch"],
         subject_is_path: false,
         act: None,
+        brief: None,
     },
     ToolFamily {
         verb: "Read",
@@ -335,6 +383,7 @@ const FAMILIES: [ToolFamily; 7] = [
         tools: &["Read"],
         subject_is_path: true,
         act: None,
+        brief: None,
     },
     ToolFamily {
         verb: "Searched",
@@ -345,6 +394,7 @@ const FAMILIES: [ToolFamily; 7] = [
         tools: &["CodeSearch"],
         subject_is_path: true,
         act: None,
+        brief: None,
     },
 ];
 
@@ -401,7 +451,9 @@ fn usable_as_target(subject: &str) -> bool {
     }
 }
 
-fn family_phrase(family: &ToolFamily, matched: &[&ChainEntry], long: bool) -> String {
+/// `brief` names what a family did by its short name (a command by its
+/// program and subcommand); the count still tells distinct things apart.
+fn family_phrase(family: &ToolFamily, matched: &[&ChainEntry], long: bool, brief: bool) -> String {
     // Delegated work counts tasks, as the stats do, not calls: a poll is no task.
     let units = if family.noun == "task" {
         task_states(matched.iter().copied()).len()
@@ -428,7 +480,11 @@ fn family_phrase(family: &ToolFamily, matched: &[&ChainEntry], long: bool) -> St
     };
     // A task group counts its tasks even when the calls share a subject.
     if units == 0 && subjects.len() == matched.len() && distinct.len() == 1 {
-        return format!("{} {}", family.verb, subjects[0]);
+        let name = match family.brief.filter(|_| brief) {
+            Some(name) => name(&subjects[0]),
+            None => subjects[0].clone(),
+        };
+        return format!("{} {name}", family.verb);
     }
     let target = if family.subject_is_path {
         let usable: Vec<String> = subjects
@@ -477,6 +533,12 @@ fn largest_other_family(entries: &[ChainEntry], chosen: usize) -> Option<(usize,
 
 /// The settled chain's phrase: what this run amounted to.
 pub fn chain_phrase(entries: &[ChainEntry]) -> String {
+    phrase(entries, false)
+}
+
+/// [`chain_phrase`], and with `brief` the commands in it named by their
+/// program and subcommand.
+fn phrase(entries: &[ChainEntry], brief: bool) -> String {
     if entries.is_empty() {
         return "No calls".into();
     }
@@ -515,7 +577,7 @@ pub fn chain_phrase(entries: &[ChainEntry]) -> String {
     };
 
     let matched = per_family.swap_remove(chosen);
-    let head = family_phrase(&FAMILIES[chosen], &matched, long);
+    let head = family_phrase(&FAMILIES[chosen], &matched, long, brief);
     let mut phrase = if !long || matched.len() as f64 / entries.len() as f64 >= 0.5 {
         head
     } else {
@@ -544,7 +606,9 @@ const MAX_TURN_FAMILIES: usize = 3;
 
 /// A whole turn's phrase: what every call in it amounted to, one clause per
 /// tool family in report order (`Edited 3 files · ran 2 commands`). A turn
-/// that touched one family, or none, reads as [`chain_phrase`] does. On a long
+/// that touched one family, or none, reads as [`chain_phrase`] does. A command
+/// is named by its program and first subcommand word (`ran cargo test`), never
+/// by the whole line, so the phrase stays short. On a long
 /// turn a family far below the turn's own size is left out, and calls outside
 /// every family (MCP, unknown tools) fold into `N other calls`.
 pub fn turn_phrase(entries: &[ChainEntry]) -> String {
@@ -556,11 +620,11 @@ pub fn turn_phrase(entries: &[ChainEntry]) -> String {
             let incidental =
                 long && (matched.len() as f64 / entries.len() as f64) < INCIDENTAL_SHARE;
             (!matched.is_empty() && !incidental)
-                .then(|| (family_phrase(family, &matched, long), matched.len()))
+                .then(|| (family_phrase(family, &matched, long, true), matched.len()))
         })
         .collect();
     if clauses.len() < 2 {
-        return chain_phrase(entries);
+        return phrase(entries, true);
     }
     let mut parts: Vec<String> = Vec::new();
     for (i, (clause, _)) in clauses.iter().take(MAX_TURN_FAMILIES).enumerate() {

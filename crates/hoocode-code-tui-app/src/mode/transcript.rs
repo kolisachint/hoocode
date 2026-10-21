@@ -222,13 +222,13 @@ fn rebuilt_details(result: &hoocode_ai_types::ToolResultMessage) -> serde_json::
 
 /// The mission's outcome once its turn has ended: the chains' own reading
 /// (`mission_mark`), overridden by how the turn's last message ended. A turn
-/// that errored did not land, whatever its steps did; one that was aborted
-/// keeps `⊗` when a step failed and reads `⊘` otherwise. A turn with no steps
-/// has no chain to read, so its end is all there is.
+/// that errored did not land, whatever its steps did; one the user aborted
+/// reads `⊘`, whatever its steps did (the abort is the end of it). A turn with
+/// no steps has no chain to read, so its end is all there is.
 fn settle_mark(chain_mark: FlightMark, stop: Option<StopReason>) -> FlightMark {
     match stop {
         Some(StopReason::Error) => FlightMark::DidNotLand,
-        Some(StopReason::Aborted) if chain_mark != FlightMark::DidNotLand => FlightMark::Aborted,
+        Some(StopReason::Aborted) => FlightMark::Aborted,
         // A mission that is landing is over: a chain still open reads landed.
         _ if chain_mark == FlightMark::InFlight => FlightMark::Landed,
         _ => chain_mark,
@@ -834,9 +834,7 @@ impl Mode {
                     DEFAULT_HIDDEN_THINKING_LABEL,
                 ));
                 // Mission Control peek: prose sits on the `┊` rail.
-                component
-                    .borrow_mut()
-                    .set_rail(self.tool_output_view != ToolOutputView::Radar);
+                component.borrow_mut().set_view(self.tool_output_view);
                 component
                     .borrow_mut()
                     .set_radar_above(self.transcript.radar_chain_above());
@@ -1027,6 +1025,9 @@ impl Mode {
                                 },
                                 false,
                             );
+                            if assistant.stop_reason == StopReason::Aborted {
+                                block.borrow_mut().set_interrupted();
+                            }
                         } else {
                             block.borrow_mut().set_args_complete();
                             rendered_pending.push((call.id.clone(), block));
@@ -1498,7 +1499,7 @@ impl Mode {
         let full = view == ToolOutputView::Full;
         // Mission Control peek: prose sits on the `┊` rail; radar has none.
         for component in &self.transcript.assistant_components {
-            component.borrow_mut().set_rail(peek);
+            component.borrow_mut().set_view(view);
         }
         for component in &self.transcript.custom_messages {
             component.borrow_mut().set_expanded(peek);
@@ -2023,6 +2024,50 @@ mod tests {
         }
     }
 
+    /// The user's abort ends the mission: it reads aborted even when a step
+    /// failed on the way, and the step the abort cut short is no hit.
+    #[test]
+    fn an_abort_wins_over_a_failed_step_and_is_no_hit() {
+        use hoocode_code_tui_widgets::radar::FlightMark;
+
+        let mut t = fresh_transcript();
+        t.begin_mission("run it", None, ToolOutputView::Peek);
+        let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
+        for (id, interrupted) in [("failed", false), ("cut", true)] {
+            let mut block = ToolExecutionComponent::new(
+                "Shell",
+                id,
+                json!({"command": "make"}),
+                ToolExecutionOptions {
+                    view: ToolOutputView::Peek,
+                    ..Default::default()
+                },
+                None,
+                "/",
+            );
+            block.update_result(
+                ToolResult {
+                    content: vec![Content::text("Operation aborted")],
+                    details: json!({}),
+                    is_error: true,
+                },
+                false,
+            );
+            if interrupted {
+                block.set_interrupted();
+            }
+            chain.borrow_mut().add(Rc::new(RefCell::new(block)));
+        }
+        chain.borrow_mut().close(ChainState::Interrupted);
+        t.chains.push(chain);
+        assert_eq!(t.mission_tally(), (2, 1), "only the real failure is a hit");
+        assert!(t.land_mission(1, 10, 20, 0.01, 0.5, Some(StopReason::Aborted)));
+        assert_eq!(t.missions[0].flight.borrow().mark, FlightMark::Aborted);
+        let text = chat_text(&t.chat);
+        assert!(text.contains("⊘ ABORTED"), "{text}");
+        assert!(text.contains("2 steps · 1 hit"), "{text}");
+    }
+
     /// The landing line sums the turn up on one line after it, and the radar
     /// row reads the same calls.
     #[test]
@@ -2187,3 +2232,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod layer_goldens;

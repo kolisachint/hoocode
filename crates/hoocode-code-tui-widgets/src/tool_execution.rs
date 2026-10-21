@@ -7,7 +7,7 @@
 //! registered definition, slot by slot, as in the pin.
 
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Instant;
@@ -108,6 +108,40 @@ pub struct ToolRenderContext<'a> {
     /// A result (final, or a partial one) is in: the result renderer shows
     /// it, so a call renderer keeps to its header.
     pub has_result: bool,
+}
+
+/// The key a result renderer files its [`BodyLayout`] under in the block's
+/// renderer objects.
+const BODY_LAYOUT_KEY: &str = "bodyLayout";
+
+/// What a result renderer says about its rows beyond the rows themselves, for
+/// the chain that folds them: whether the body shows the last lines of the
+/// output (a fold hint above it), and how many rows at its end are not output
+/// (a `Took` line, a truncation note). The chain folds the output and leaves
+/// those rows whole.
+#[derive(Debug, Default)]
+pub struct BodyLayout {
+    /// The body shows the end of the output; its fold hint reads `earlier`.
+    pub tail: bool,
+    /// Rows at the end of the body that are not output.
+    pub footer_rows: Cell<usize>,
+}
+
+/// The block's [`BodyLayout`], made on first use: a renderer takes it from its
+/// context's objects and keeps it up to date as it renders.
+pub fn body_layout(objects: &mut HashMap<String, Rc<dyn Any>>, tail: bool) -> Rc<BodyLayout> {
+    if let Some(layout) = objects
+        .get(BODY_LAYOUT_KEY)
+        .and_then(|o| o.clone().downcast::<BodyLayout>().ok())
+    {
+        return layout;
+    }
+    let layout = Rc::new(BodyLayout {
+        tail,
+        footer_rows: Cell::new(0),
+    });
+    objects.insert(BODY_LAYOUT_KEY.into(), layout.clone());
+    layout
 }
 
 /// `ToolRenderResultOptions`.
@@ -292,6 +326,12 @@ pub struct StepParts {
     pub header_band: bool,
     /// The rows under the header: renderer output, at the block's width.
     pub body: Vec<String>,
+    /// Whether the body shows the last lines of the output (its fold hint,
+    /// when it has one, sits above the rows).
+    pub tail: bool,
+    /// Rows closing the body that are not output (`Took 8.2s`, a truncation
+    /// note): never folded or counted.
+    pub footer: Vec<String>,
     /// Image rows (or none): drawn as they are, after the body.
     pub images: Vec<String>,
 }
@@ -391,6 +431,9 @@ pub struct ToolExecutionComponent {
     waiting_for_clearance: bool,
     args_complete: bool,
     result: Option<Rc<ResultHolder>>,
+    /// The user's abort cut this call short: it is not a failure of its own
+    /// (no hit), and the abort reason is printed once, by the message.
+    interrupted: bool,
     hide_component: bool,
     is_latest: bool,
     frozen: bool,
@@ -445,6 +488,7 @@ impl ToolExecutionComponent {
             waiting_for_clearance: false,
             args_complete: false,
             result: None,
+            interrupted: false,
             hide_component: false,
             is_latest: false,
             frozen: false,
@@ -593,6 +637,19 @@ impl ToolExecutionComponent {
         self.update_display();
     }
 
+    /// Marks the call as cut short by the user's abort. Its result stays an
+    /// error to the renderer, but the step is not a hit and shows no body: the
+    /// message that was aborted says so once.
+    pub fn set_interrupted(&mut self) {
+        self.interrupted = true;
+        self.update_display();
+    }
+
+    /// Whether the user's abort cut this call short.
+    pub fn is_interrupted(&self) -> bool {
+        self.interrupted
+    }
+
     /// This call's contribution to its chain's summary line.
     pub fn chain_entry(&self) -> ChainEntry {
         if let Some(entry) = &self.frozen_entry {
@@ -606,7 +663,7 @@ impl ToolExecutionComponent {
         ChainEntry {
             tool: self.tool_name.clone(),
             subject: chain_subject(&self.tool_name, &self.args, &self.cwd),
-            is_error: self.result.as_ref().is_some_and(|r| r.is_error),
+            is_error: self.is_error(),
             is_partial: self.result.is_none() || self.is_partial || self.is_live_background_job(),
             output_lines: if crate::is_blank(&output) {
                 0
@@ -644,9 +701,10 @@ impl ToolExecutionComponent {
     }
 
     /// Whether the settled result is an error (M4: the step shows the HIT
-    /// chip in place of its success stats).
+    /// chip in place of its success stats). A call the user's abort cut short
+    /// is no failure of its own.
     pub fn is_error(&self) -> bool {
-        self.result.as_ref().is_some_and(|r| r.is_error)
+        !self.interrupted && self.result.as_ref().is_some_and(|r| r.is_error)
     }
 
     /// Whether this block is an Agent call (M4: its body keeps the violet
@@ -668,6 +726,15 @@ impl ToolExecutionComponent {
             .and_then(Value::as_str)
             .map(str::to_string)
             .or_else(|| hoocode_code_subagents::live::run_for_tool_call(&self.tool_call_id))
+    }
+
+    /// The own tool calls of the subagent run this Agent call dispatched, once
+    /// the run has settled (see [`hoocode_code_subagents::live::settled_steps`]).
+    /// Empty for other tools and while the run is going.
+    pub fn settled_sub_steps(&self) -> Vec<hoocode_code_subagents::live::SettledStep> {
+        self.agent_run_id()
+            .map(|run| hoocode_code_subagents::live::settled_steps(&run))
+            .unwrap_or_default()
     }
 
     /// The background job id, while its job is still live (M4: the step
@@ -747,6 +814,9 @@ impl ToolExecutionComponent {
     pub fn peek_right(&self, palette: &hoocode_tui_ratatui::Palette) -> String {
         let t = theme();
         let dim = |s: &str| t.fg("muted", s);
+        if self.interrupted {
+            return dim("interrupted");
+        }
         if self.is_error() {
             let mut stats = crate::trajectory::hit_chip(palette);
             if self.tool_name == "Shell" {
@@ -888,7 +958,7 @@ impl ToolExecutionComponent {
 
     /// The failure text, for a collapsed chain to print under its line.
     pub fn error_text(&self) -> String {
-        if self.result.as_ref().is_some_and(|r| r.is_error) {
+        if self.is_error() {
             self.text_output()
         } else {
             String::new()
@@ -902,7 +972,7 @@ impl ToolExecutionComponent {
 
     /// A failure always shows its reason, in every view.
     fn should_show_body(&self) -> bool {
-        self.view != ToolOutputView::Radar || self.result.as_ref().is_some_and(|r| r.is_error)
+        !self.interrupted && (self.view != ToolOutputView::Radar || self.is_error())
     }
 
     fn should_show_signal_line(&self) -> bool {
@@ -1085,7 +1155,9 @@ impl ToolExecutionComponent {
             self.content_box.borrow_mut().clear();
 
             let t = theme();
-            let dot_color = if self.result.as_ref().is_some_and(|r| r.is_error) {
+            let dot_color = if self.interrupted {
+                "dim"
+            } else if self.result.as_ref().is_some_and(|r| r.is_error) {
                 "error"
             } else if self.is_partial {
                 "warning"
@@ -1238,7 +1310,9 @@ impl ToolExecutionComponent {
     /// The whole block as text, for a tool with no definition at all.
     fn format_tool_execution(&self) -> String {
         let t = theme();
-        let dot_color = if self.result.as_ref().is_some_and(|r| r.is_error) {
+        let dot_color = if self.interrupted {
+            "dim"
+        } else if self.result.as_ref().is_some_and(|r| r.is_error) {
             "error"
         } else if self.is_partial {
             "warning"
@@ -1445,11 +1519,13 @@ impl ToolExecutionComponent {
         }
         let wrap = view == ToolOutputView::Full;
         let mut fitted = parts.clone();
-        fitted.body = parts
-            .body
-            .iter()
-            .flat_map(|line| fit_frozen_line(line, target, wrap, false))
-            .collect();
+        let fit = |rows: &[String]| -> Vec<String> {
+            rows.iter()
+                .flat_map(|line| fit_frozen_line(line, target, wrap, false))
+                .collect()
+        };
+        fitted.body = fit(&parts.body);
+        fitted.footer = fit(&parts.footer);
         self.frozen_parts_fit = Some((target, view, fitted.clone()));
         fitted
     }
@@ -1476,6 +1552,8 @@ impl ToolExecutionComponent {
                 header: None,
                 header_band: false,
                 body: Vec::new(),
+                tail: false,
+                footer: Vec::new(),
                 images,
             };
         };
@@ -1503,14 +1581,22 @@ impl ToolExecutionComponent {
             seen += glyph_count(row);
             taken += 1;
         }
-        let body = main.split_off(first + taken);
+        let mut body = main.split_off(first + taken);
         main.truncate(first);
         lead.extend(main);
+        let layout = self
+            .renderer_objects
+            .get(BODY_LAYOUT_KEY)
+            .and_then(|o| o.clone().downcast::<BodyLayout>().ok());
+        let (tail, footer_rows) = layout.map_or((false, 0), |l| (l.tail, l.footer_rows.get()));
+        let footer = body.split_off(body.len() - footer_rows.min(body.len()));
         StepParts {
             lead,
             header: Some(header),
             header_band: is_file_tool(&self.tool_name) && !self.should_show_signal_line(),
             body,
+            tail,
+            footer,
             images,
         }
     }

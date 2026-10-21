@@ -1,0 +1,67 @@
+▲ M1  Find where the parser handles escaped quotes in string literals.
+
+·· ● Think  A subagent can trace the string-literal path while I wait.  ✻ thoug…
+ ✻ A subagent can trace the string-literal path while I wait.
+
+ 01 ● Agent explore · Trace escaped quotes
+   ┃      │ Escaped quotes are handled in read_string() in src/parser/lex.rs.
+   ┃      │ The token type is in src/parser/token.rs.
+   ┃  ⊗ 01.2 Grep  \\"  → rg: regex parse error: unclosed group  HIT
+   ┊
+   ┊  The escaped-quote handling lives in read_string() in src/parser/lex.rs.
+   ┊  The subagent's search with the first pattern failed, but the read of the
+   ┊  lexer and the token type answered the question.
+
+  ● LANDED · 1 step · 1 hit · 8.5s · 7.1k tokens · $0.019
+   Delegated 1 task
+--- styles ---
+r0 c0 fg=#9b8cff bg=#1c1c26 bold
+r0 c1 bg=#1c1c26
+r0 c2-3 fg=#9b8cff bg=#1c1c26 bold
+r0 c4-5 bg=#1c1c26
+r0 c6-69 fg=#e5e5e7 bg=#1c1c26 bold
+r0 c70-79 bg=#1c1c26
+r2 c0-1 fg=#f0c674
+r2 c3 fg=#b5bd68
+r2 c5-9 fg=#e5e5e7 bold
+r2 c12-69 fg=#a8a8a8 italic
+r2 c72-78 fg=#a8a8a8
+r3 c1-60 fg=#a8a8a8 italic
+r5 c1-2 fg=#f0c674 bold
+r5 c4-5 fg=#b5bd68
+r5 c6-11 bold
+r5 c12-18 fg=#56b6c2
+r5 c20-41 fg=#989898
+r6 c3 fg=#9b8cff
+r6 c10 fg=#757575
+r6 c12-76 fg=#a8a8a8
+r7 c3 fg=#9b8cff
+r7 c10 fg=#757575
+r7 c12-52 fg=#a8a8a8
+r8 c3 fg=#9b8cff
+r8 c6 fg=#d58181
+r8 c8-12 fg=#f0c674 bold
+r8 c13-16 fg=#e5e5e7 bold
+r8 c19-21 fg=#e5e5e7
+r8 c22-25 fg=#989898
+r8 c26-62 fg=#e5e5e7
+r8 c65-67 fg=#d58181 bold inverse
+r9 c3 fg=#a8a8a8
+r10 c3 fg=#a8a8a8
+r10 c42-54 fg=#5cc8bb
+r10 c59-75 fg=#5cc8bb
+r11 c3 fg=#a8a8a8
+r12 c3 fg=#a8a8a8
+r14 c2 fg=#b5bd68
+r14 c4-9 fg=#b5bd68 bold
+r14 c10-12 fg=#989898
+r14 c13-18 fg=#a8a8a8
+r14 c19-21 fg=#989898
+r14 c22-26 fg=#a8a8a8
+r14 c27-29 fg=#989898
+r14 c30-33 fg=#a8a8a8
+r14 c34-36 fg=#989898
+r14 c37-47 fg=#a8a8a8
+r14 c48-50 fg=#989898
+r14 c51-56 fg=#a8a8a8
+r15 c3-18 fg=#989898

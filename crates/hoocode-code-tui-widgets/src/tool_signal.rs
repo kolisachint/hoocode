@@ -367,8 +367,11 @@ line two
         let drawn = shared.text(true).to_string();
         let placeholder = shared.text(false).to_string();
         reset_capabilities_cache();
-        assert!(!drawn.contains("[image/png]"), "{drawn:?}");
-        assert!(placeholder.contains("[image/png]"), "{placeholder:?}");
+        assert!(!drawn.contains("[Image: image/png]"), "{drawn:?}");
+        assert!(
+            placeholder.contains("[Image: image/png]"),
+            "{placeholder:?}"
+        );
         assert_eq!(shared.text(true), drawn);
         assert_eq!(shared.text(false), placeholder);
     }

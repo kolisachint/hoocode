@@ -469,3 +469,73 @@ fn failed_total_counts_failed_calls_and_outlives_the_run() {
     apply(task, &json!({"type": "task_started"}));
     assert_eq!(hoocode_code_subagents::live::failed_total(task), 0);
 }
+
+#[test]
+fn a_settled_run_keeps_a_capped_copy_of_its_own_calls() {
+    use hoocode_code_subagents::live::{settled_steps, sub_steps};
+
+    let task = "live-settled-steps";
+    assert!(settled_steps(task).is_empty());
+    apply(task, &json!({"type": "task_started"}));
+    for (id, fails) in [("a", false), ("b", true), ("c", false)] {
+        apply(
+            task,
+            &json!({"type": "tool_execution_start", "toolCallId": id, "toolName": "Grep", "args": {"pattern": id}}),
+        );
+        apply(
+            task,
+            &json!({"type": "tool_execution_end", "toolCallId": id, "isError": fails,
+                    "result": {"content": [{"type": "text", "text": "bad pattern"}]}}),
+        );
+    }
+    // While it runs, the live view holds the failed call; nothing is settled.
+    assert_eq!(sub_steps(task).len(), 1);
+    assert_eq!(sub_steps(task)[0].index, 2);
+    assert!(settled_steps(task).is_empty());
+
+    apply(task, &json!({"type": "task_done"}));
+    assert!(sub_steps(task).is_empty());
+    let steps = settled_steps(task);
+    let seen: Vec<_> = steps
+        .iter()
+        .map(|s| (s.index, s.subject.as_str(), s.failure.as_deref()))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            (1, "a", None),
+            (2, "b", Some("bad pattern")),
+            (3, "c", None)
+        ]
+    );
+
+    // A restart counts anew.
+    apply(task, &json!({"type": "task_started"}));
+    assert!(settled_steps(task).is_empty());
+}
+
+#[test]
+fn a_settled_run_drops_clean_calls_first_when_the_cap_is_reached() {
+    use hoocode_code_subagents::live::settled_steps;
+
+    let task = "live-settled-cap";
+    apply(task, &json!({"type": "task_started"}));
+    for n in 1..=40 {
+        let id = format!("c{n}");
+        apply(
+            task,
+            &json!({"type": "tool_execution_start", "toolCallId": id, "toolName": "Read", "args": {"path": id}}),
+        );
+        apply(
+            task,
+            &json!({"type": "tool_execution_end", "toolCallId": id, "isError": n == 2,
+                    "result": {"content": [{"type": "text", "text": "no"}]}}),
+        );
+    }
+    apply(task, &json!({"type": "task_done"}));
+    let steps = settled_steps(task);
+    assert_eq!(steps.len(), 32);
+    // The early failure outlives the clean calls around it, numbering intact.
+    assert!(steps.iter().any(|s| s.index == 2 && s.failure.is_some()));
+    assert_eq!(steps.last().map(|s| s.index), Some(40));
+}

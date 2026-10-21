@@ -425,6 +425,47 @@ mod turn_phrase_the_whole_turn {
     }
 
     #[test]
+    fn names_a_command_by_its_program_and_first_subcommand() {
+        let cases = [
+            ("cargo test -p hoocode-config 2>&1 | tail -40", "cargo test"),
+            ("cd /repo && npm run check", "npm run"),
+            ("./scripts/integration.sh --all", "./scripts/integration.sh"),
+            ("RUST_LOG=debug cargo build --release", "cargo build"),
+            ("git commit -m 'x' && git push", "git commit"),
+            ("sleep 6", "sleep"),
+            ("ls", "ls"),
+        ];
+        for (command, name) in cases {
+            let entries = [c("Edit", "a/x.rs"), c("Shell", command)];
+            assert_eq!(
+                turn_phrase(&entries),
+                format!("Edited a/x.rs · ran {name}"),
+                "{command}"
+            );
+        }
+        // A turn of commands alone names it the same way.
+        assert_eq!(
+            turn_phrase(&[c("Shell", "cargo test -p a 2>&1 | tail")]),
+            "Ran cargo test"
+        );
+    }
+
+    #[test]
+    fn counts_distinct_commands_instead_of_naming_them() {
+        let entries = [
+            c("Edit", "a/x.rs"),
+            c("Shell", "cargo test -p a"),
+            c("Shell", "cargo test -p b"),
+        ];
+        assert_eq!(turn_phrase(&entries), "Edited a/x.rs · ran 2 commands");
+        // The chain line keeps the whole command.
+        assert_eq!(
+            chain_phrase(&[c("Shell", "cargo test -p a 2>&1 | tail")]),
+            "Ran cargo test -p a 2>&1 | tail"
+        );
+    }
+
+    #[test]
     fn one_family_reads_as_the_chain_phrase() {
         let entries = [c("Edit", "src/keys.ts")];
         assert_eq!(turn_phrase(&entries), chain_phrase(&entries));
