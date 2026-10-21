@@ -8,16 +8,19 @@
 //!
 //! Events (`PoolEvent::name`): `task_done`, `task_failed`, `task_stalled`,
 //! `task_timeout`, `task_cancelled`, `budget_warning`, `budget_exceeded`
-//! (advisory, never kills) and `task_progress` (coarse lifecycle events for
-//! the UI).
+//! (advisory, never kills), `task_progress` (coarse lifecycle events for the
+//! UI) and `task_clearance` (a child waits, or stopped waiting, for its parent
+//! to approve a gated call; see [`crate::clearance`]).
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use hoocode_ai_types::Model;
 use hoocode_code_models::ResolvedScoped;
+use hoocode_code_permissions::{ClearanceRelay, RelayRequest};
 use hoocode_code_resources::{
     load_agent_registry, AgentDefinition, AgentRegistry, AgentSource, LoadAgentRegistryOptions,
     MODEL_INHERIT,
@@ -26,9 +29,10 @@ use hoocode_code_rpc::JsonlLineReader;
 use hoocode_code_session::{append_custom_entry_to_file, subagents_dir, SUBAGENT_RUN_ENTRY};
 use regex::Regex;
 use serde_json::{json, Map, Value};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::agent_log::agent_log;
+use crate::clearance::{response_line, NO_UI_REASON};
 use crate::depth::{
     current_subagent_depth, resolve_max_subagent_depth, tool_allowlist_needs_mcp,
     DEFER_MCP_SCHEMAS_ENV, SUBAGENT_DEPTH_ENV, SUBAGENT_SKIP_MCP_ENV,
@@ -37,7 +41,7 @@ use crate::dispatch::DispatchEvaluator;
 use crate::events::{classify_subagent_line, SubagentStdoutLine};
 use crate::ledger;
 use crate::lifeguard::{
-    kill_process_tree, tool_limit_from_start, LifeguardEvent, SubagentLifeguard,
+    kill_process_tree, tool_limit_from_start, LifeguardEvent, SubagentLifeguard, ToolLimit,
     SHELL_DEFAULT_TIMEOUT_ENV,
 };
 use crate::limits::{SubagentLimitSettings, SubagentLimits};
@@ -289,6 +293,10 @@ pub struct SubagentPoolOptions {
     /// The scoped models subagents may use (`scopedModels`, resolved). Empty:
     /// no scope, and every available model is allowed.
     pub scope: Vec<ResolvedScoped>,
+    /// Decides the gated calls a child asks about (see [`crate::clearance`]):
+    /// the TUI's card, or this process's own parent. `None`: nobody can be
+    /// asked, and every such call is denied.
+    pub clearance: Option<Arc<dyn ClearanceRelay>>,
 }
 
 /// `get_status`.
@@ -425,6 +433,16 @@ struct PoolInner {
     lifeguard: Arc<SubagentLifeguard>,
     state: Mutex<PoolState>,
     listeners: Mutex<Vec<Listener>>,
+    clearance: Mutex<Option<Arc<dyn ClearanceRelay>>>,
+}
+
+/// What the stdout reader of one child needs to answer it.
+#[derive(Clone)]
+struct ChildLink {
+    /// Lines for the child's stdin; `None` when the runner has no stdin.
+    stdin: Option<mpsc::Sender<String>>,
+    /// Set once the child has exited: its pending requests stop waiting.
+    gone: Arc<AtomicBool>,
 }
 
 /// `SubagentPool`. Cheap to clone; must be created inside a tokio runtime.
@@ -582,6 +600,7 @@ impl SubagentPool {
                 ..Default::default()
             }),
             listeners: Mutex::new(Vec::new()),
+            clearance: Mutex::new(options.clearance),
         });
         let weak: Weak<PoolInner> = Arc::downgrade(&inner);
         lifeguard.on_event(move |event| {
@@ -598,6 +617,15 @@ impl SubagentPool {
             inner.emit(name, json!({"task_id": task_id, "pid": pid}));
         });
         Self { inner }
+    }
+
+    /// Sets (or clears) who decides the gated calls children ask about.
+    pub fn set_clearance_relay(&self, relay: Option<Arc<dyn ClearanceRelay>>) {
+        *self
+            .inner
+            .clearance
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = relay;
     }
 
     /// A process-unique id for this pool.
@@ -1572,6 +1600,11 @@ impl PoolInner {
         );
 
         let (mut stdout_rx, mut stderr_rx) = handle.take_streams();
+        let link = ChildLink {
+            stdin: handle.take_stdin(),
+            gone: Arc::new(AtomicBool::new(false)),
+        };
+        let gone = link.gone.clone();
         let captured = Arc::new(Mutex::new((String::new(), String::new())));
 
         let out_task = {
@@ -1593,11 +1626,11 @@ impl PoolInner {
                     );
                     inner.lifeguard.record_heartbeat(&task_id);
                     for line in reader.push(&chunk[..n]) {
-                        inner.handle_stdout_line(&task_id, &agent_type, &budget, &line);
+                        inner.handle_stdout_line(&task_id, &agent_type, &budget, &line, &link);
                     }
                 }
                 if let Some(line) = reader.finish() {
-                    inner.handle_stdout_line(&task_id, &agent_type, &budget, &line);
+                    inner.handle_stdout_line(&task_id, &agent_type, &budget, &line, &link);
                 }
             })
         };
@@ -1618,6 +1651,8 @@ impl PoolInner {
         let inner = self.clone();
         tokio::spawn(async move {
             let status = handle.wait().await;
+            // Requests the child left unanswered stop waiting (and are denied).
+            gone.store(true, Ordering::SeqCst);
             // Stdio may stay open in grandchildren: wait briefly for it.
             let _ = tokio::time::timeout(EXIT_STDIO_GRACE, async {
                 let _ = out_task.await;
@@ -1640,11 +1675,12 @@ impl PoolInner {
     }
 
     fn handle_stdout_line(
-        &self,
+        self: &Arc<Self>,
         task_id: &str,
         agent_type: &str,
         budget: &Arc<Mutex<TokenBudget>>,
         line: &str,
+        link: &ChildLink,
     ) {
         budget
             .lock()
@@ -1682,6 +1718,9 @@ impl PoolInner {
                     json!({"task_id": task_id, "agent_type": agent_type, "event": event}),
                 );
             }
+            SubagentStdoutLine::Clearance(request) => {
+                self.relay_clearance(task_id, agent_type, &request, link)
+            }
             SubagentStdoutLine::Ignore => {
                 // Not forwarded to the UI, but a model turn ending (message_end)
                 // or streaming is progress: a long turn must not be reaped as stalled.
@@ -1692,6 +1731,77 @@ impl PoolInner {
                     self.lifeguard.record_progress(task_id);
                 }
             }
+        }
+    }
+
+    /// A child asks for a gated call to be decided. The relay (the TUI's card,
+    /// or this process's own parent) answers on a thread of its own, because a
+    /// person may take minutes; the answer goes back on the child's stdin. With
+    /// nobody to ask, the call is denied at once. While the question is open
+    /// the child is not stalled: it waits on a human, not on a model.
+    fn relay_clearance(
+        self: &Arc<Self>,
+        task_id: &str,
+        agent_type: &str,
+        request: &Map<String, Value>,
+        link: &ChildLink,
+    ) {
+        let Some(id) = request.get("id").and_then(Value::as_u64) else {
+            return;
+        };
+        let deny = |reason: &str| {
+            if let Some(stdin) = &link.stdin {
+                let _ = stdin.try_send(response_line(id, &Some(reason.to_string())));
+            }
+        };
+        let tool = request
+            .get("tool")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let relay = self
+            .clearance
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let (Some(relay), false) = (relay, tool.is_empty()) else {
+            return deny(NO_UI_REASON);
+        };
+        let input = request.get("input").cloned().unwrap_or(Value::Null);
+        let label = agent_type.to_string();
+        let via = match request.get("via").and_then(Value::as_str) {
+            Some(deeper) => format!("{label} › {deeper}"),
+            None => label,
+        };
+        let subject = crate::live::subject_of(&input);
+        let (inner, link_for_thread, task) = (self.clone(), link.clone(), task_id.to_string());
+        let agent = agent_type.to_string();
+        let started = hoocode_runtime::spawn_named_thread("hoocode-clearance", move || {
+            let key = format!("clearance:{id}");
+            let held = |held: bool| {
+                json!({
+                    "task_id": task, "agent_type": agent, "call": id,
+                    "tool": tool, "subject": subject, "held": held,
+                })
+            };
+            inner
+                .lifeguard
+                .record_tool_start(&task, &key, ToolLimit::Unlimited);
+            inner.emit("task_clearance", held(true));
+            let verdict = relay.ask(&RelayRequest {
+                via: Some(via),
+                tool: tool.clone(),
+                input,
+                cancelled: link_for_thread.gone.clone(),
+            });
+            inner.lifeguard.record_tool_end(&task, &key);
+            inner.emit("task_clearance", held(false));
+            if let Some(stdin) = &link_for_thread.stdin {
+                let _ = stdin.blocking_send(response_line(id, &verdict));
+            }
+        });
+        if started.is_err() {
+            deny("Could not start the clearance relay.");
         }
     }
 

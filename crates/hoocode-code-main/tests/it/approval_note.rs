@@ -78,7 +78,7 @@ fn print_names_the_gated_tool_that_ran() {
     );
     assert_eq!(
         approval_notes(&stderr),
-        ["Note: --print does not ask for tool approval; these tools ran without it: Write."],
+        ["Note: --print does not ask for tool approval; these tools ran without it: Write. Its subagents cannot ask either: their tools that need approval are denied."],
         "{stderr}"
     );
 }

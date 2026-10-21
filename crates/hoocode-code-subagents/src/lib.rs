@@ -13,6 +13,7 @@
 //! reconstructed from whatever dispatch dirs happened to survive on disk.
 
 pub mod agent_log;
+pub mod clearance;
 pub mod depth;
 pub mod dispatch;
 pub mod events;

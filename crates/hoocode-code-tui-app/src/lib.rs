@@ -7,6 +7,7 @@ pub mod changelog;
 pub mod chime;
 pub mod chrome_layout;
 pub mod clearance_card;
+pub mod clearance_queue;
 pub mod comms_frame;
 pub mod dialog_bridge;
 pub mod embsearch_progress;

@@ -661,6 +661,16 @@ fn build_permission_gate(
     interactive: bool,
     cwd: &std::path::Path,
 ) -> Arc<dyn PermissionGate> {
+    if !interactive && relays_clearance(args) {
+        // A subagent child has no screen, so it asks its parent. Without the
+        // relay (it is installed at startup) the headless channel decides.
+        if let Some(relay) = hoocode_code_subagents::instance::clearance_relay() {
+            return Arc::new(
+                HooPermissionGate::new(cwd.to_path_buf(), ApprovalChannel::Ui, None)
+                    .with_relay(relay),
+            );
+        }
+    }
     let (channel, ui) = if interactive {
         (
             ApprovalChannel::Ui,
@@ -670,6 +680,32 @@ fn build_permission_gate(
         (headless_approval_channel_for(args), None)
     };
     Arc::new(HooPermissionGate::new(cwd.to_path_buf(), channel, ui))
+}
+
+/// Whether this process is a subagent child that asks its parent about the
+/// calls that need approval (see `hoocode_code_subagents::clearance`): a json
+/// run with a task id. Under a fail-closed rpc ancestor it asks nobody and
+/// stays fail-closed, as the parent would deny it anyway.
+fn relays_clearance(args: &Args) -> bool {
+    args.mode == Some(Mode::Json)
+        && args.task_id.as_deref().is_some_and(|id| !id.is_empty())
+        && !env_flag(hoocode_code_permissions::FAIL_CLOSED_ENV)
+}
+
+/// Sets up a subagent child's end of the clearance relay: requests go out on
+/// stdout, answers come in on stdin. It is also the relay of the child's own
+/// subagents, so a grandchild's request reaches the screen through every
+/// level. Must run before the session is built (its gate picks the relay up).
+fn install_clearance_relay(args: &Args) {
+    if !relays_clearance(args) {
+        return;
+    }
+    let relay = hoocode_code_subagents::clearance::ChildRelay::new(
+        Box::new(std::io::stdout()),
+        SUBAGENT_HEARTBEAT,
+    );
+    relay.serve(std::io::BufReader::new(std::io::stdin()));
+    hoocode_code_subagents::instance::set_clearance_relay(Some(relay));
 }
 
 /// Build the session for a CLI run: the initial session manager, then the
@@ -1064,7 +1100,12 @@ pub fn run_print_mode(
     let ran = Arc::new(Mutex::new(std::collections::BTreeSet::new()));
     let code = run_print_body(args, mode, stdin_content, color, output, err, &ran);
     // After the run, so the note names only the tools that actually ran.
-    if let ApprovalChannel::Headless { fail_closed: false } = headless_approval_channel_for(args) {
+    // A subagent child asks its parent instead, so the note is not true of it.
+    let asked =
+        relays_clearance(args) && hoocode_code_subagents::instance::clearance_relay().is_some();
+    if let (false, ApprovalChannel::Headless { fail_closed: false }) =
+        (asked, headless_approval_channel_for(args))
+    {
         let names = ran.lock().map(|set| set.clone()).unwrap_or_default();
         if let Some(note) = ungated_run_note(print_mode_label(mode), &names) {
             writeln!(err, "{note}")?;
@@ -1082,8 +1123,9 @@ fn print_mode_label(mode: PrintMode) -> &'static str {
 }
 
 /// The one stderr line for a print or json run that asked nobody for approval:
-/// it names the tools that ran and would have needed approval in rpc. `None`
-/// when no such tool ran.
+/// it names the tools that ran and would have needed approval in rpc, and says
+/// that its subagents, which relay such calls to a parent with no UI to ask,
+/// are denied them. `None` when no such tool ran.
 fn ungated_run_note(mode_label: &str, ran: &std::collections::BTreeSet<String>) -> Option<String> {
     let names: Vec<&str> = ran
         .iter()
@@ -1092,7 +1134,8 @@ fn ungated_run_note(mode_label: &str, ran: &std::collections::BTreeSet<String>) 
         .collect();
     (!names.is_empty()).then(|| {
         format!(
-            "Note: {mode_label} does not ask for tool approval; these tools ran without it: {}.",
+            "Note: {mode_label} does not ask for tool approval; these tools ran without it: {}. \
+             Its subagents cannot ask either: their tools that need approval are denied.",
             names.join(", ")
         )
     })
@@ -1110,6 +1153,7 @@ fn run_print_body(
 ) -> std::io::Result<i32> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let home = hoocode_home::home_dir();
+    install_clearance_relay(args);
     let (session, diagnostics) = build_session(args, false);
     let ran_tools = Arc::clone(ran);
     let _ran_subscription = session.subscribe(move |event| {
@@ -2039,7 +2083,7 @@ mod tests {
             .collect();
         assert_eq!(
             ungated_run_note("--print", &ran).as_deref(),
-            Some("Note: --print does not ask for tool approval; these tools ran without it: Shell, Write, mcp_fs_list.")
+            Some("Note: --print does not ask for tool approval; these tools ran without it: Shell, Write, mcp_fs_list. Its subagents cannot ask either: their tools that need approval are denied.")
         );
         let read_only: std::collections::BTreeSet<String> =
             ["Read", "Grep"].iter().map(|t| t.to_string()).collect();

@@ -763,6 +763,37 @@ pub fn waiting_row(
     palette: &Palette,
     width: usize,
 ) -> String {
+    waiting_line(&step_label(step), tool, subject, head, palette, width)
+}
+
+/// A subagent step parked for its parent's clearance, under its agent row:
+/// `        ◉ 01.1 Shell  wc -l src/wrap.rs      holding for clearance`.
+pub fn sub_waiting_row(
+    parent: usize,
+    index: usize,
+    tool: &str,
+    subject: &str,
+    palette: &Palette,
+    width: usize,
+) -> String {
+    waiting_line(
+        &sub_label(parent, index),
+        tool,
+        subject,
+        true,
+        palette,
+        width,
+    )
+}
+
+fn waiting_line(
+    label: &str,
+    tool: &str,
+    subject: &str,
+    head: bool,
+    palette: &Palette,
+    width: usize,
+) -> String {
     if width == 0 {
         return String::new();
     }
@@ -771,14 +802,7 @@ pub fn waiting_row(
     } else {
         (status::TODO_STR, "next", palette.dim())
     };
-    let mut stem = step_lead(
-        STEP_INDENT,
-        glyph,
-        palette.warn(),
-        &step_label(step),
-        tool,
-        palette,
-    );
+    let mut stem = step_lead(STEP_INDENT, glyph, palette.warn(), label, tool, palette);
     stem.extend(with_ink(ansi_spans(subject), palette));
     let run = vec![span(right_text, right_style), blank(1)];
     let (stem, run) = split_stem(stem, run, width);

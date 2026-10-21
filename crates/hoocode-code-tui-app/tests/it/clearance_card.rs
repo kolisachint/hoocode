@@ -24,6 +24,7 @@ fn shell_info(detail: &str) -> ClearanceInfo {
         mode: "build".to_string(),
         step: None,
         reach: reach_for("Shell", &input),
+        from: None,
     }
 }
 
@@ -44,6 +45,21 @@ fn rows(card: &mut ClearanceCard, width: u16) -> Vec<String> {
         .take_while(|line| *line != "--- styles ---")
         .map(str::to_string)
         .collect()
+}
+
+#[test]
+fn a_subagents_card_names_the_subagent() {
+    let _g = lock(Some("dark"));
+    let mut info = shell_info("$ ls");
+    info.from = Some("explore task-3".to_string());
+    let (mut card, _) = card(info);
+    let rows = rows(&mut card, 100);
+    assert!(
+        rows[0].contains("BUILD · explore task-3 asks for Shell"),
+        "row 0: {:?}",
+        rows[0]
+    );
+    assert!(rows[1].contains("$ ls"), "row 1: {:?}", rows[1]);
 }
 
 #[test]
@@ -116,6 +132,7 @@ fn edit_card_names_the_real_path() {
         mode: "build".to_string(),
         step: None,
         reach: reach_for("Edit", &input),
+        from: None,
     });
     let rows = rows(&mut card, 100);
     assert!(

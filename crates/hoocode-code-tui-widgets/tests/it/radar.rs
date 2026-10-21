@@ -11,8 +11,8 @@ use crate::support::{assistant, lock, strip};
 use hoocode_ai_types::Content;
 use hoocode_code_tui_widgets::radar::{
     agent_live_row, chain_rows, hit_row, live_row, mission_rows, prose_rows, satellite_row,
-    sub_hit_row, sub_live_row, think_rows, waiting_row, FlightMark, FlightStats, HIT_INDENT,
-    STEP_INDENT,
+    sub_hit_row, sub_live_row, sub_waiting_row, think_rows, waiting_row, FlightMark, FlightStats,
+    HIT_INDENT, STEP_INDENT,
 };
 use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
 use hoocode_code_tui_widgets::tool_chain_summary::ChainEntry;
@@ -433,6 +433,15 @@ fn sub_step_rows_read_under_their_agent_at_the_step_indent() {
     assert!(hit.starts_with(&" ".repeat(STEP_INDENT)), "{hit:?}");
     assert!(hit.contains("⊗ 01.2 Read  missing.rs"), "{hit:?}");
     assert!(hit.contains("HIT"), "{hit:?}");
+}
+
+#[test]
+fn a_sub_step_held_for_clearance_reads_as_a_hold_under_its_agent() {
+    let palette = Palette::default();
+    let held = strip(&sub_waiting_row(1, 1, "Shell", "rm -rf x", &palette, 80));
+    assert!(held.starts_with(&" ".repeat(STEP_INDENT)), "{held:?}");
+    assert!(held.contains("◉ 01.1 Shell  rm -rf x"), "{held:?}");
+    assert!(held.contains("holding for clearance"), "{held:?}");
 }
 
 #[test]

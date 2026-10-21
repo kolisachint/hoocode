@@ -55,6 +55,7 @@ use crate::chime::{ChimeDebounce, TurnTimer, BELL};
 use crate::chrome_layout::{
     ChromeLayoutController, ChromeSurfaces, FooterLayout, TasksLayout, SMALL_TERMINAL_ROWS,
 };
+use crate::clearance_queue::ClearanceQueue;
 use crate::comms_frame::{CommsFrame, CommsState, InputStyle, MissionOutcome};
 use crate::dialog_bridge::{set_dialog_sink, DialogRequest};
 use crate::expandable_text::ExpandableText;
@@ -519,6 +520,8 @@ struct Mode {
     login: Option<LoginStep>,
     ask_options: Option<OpenAskOptions>,
     clearance: Option<OpenClearance>,
+    /// The clearance requests waiting behind the card that is up.
+    clearance_queue: ClearanceQueue,
     end_shift_card: Option<OpenEndShift>,
     end_shift_jobs_card: Option<OpenEndShiftJobs>,
     anthropic_warning_shown: bool,
@@ -1087,6 +1090,7 @@ impl Mode {
             picker: None,
             ask_options: None,
             clearance: None,
+            clearance_queue: ClearanceQueue::default(),
             end_shift_card: None,
             end_shift_jobs_card: None,
             anthropic_warning_shown: false,
@@ -1332,6 +1336,11 @@ impl Mode {
                     .send(AppEvent::Subagent(task_id, event));
             }),
         }));
+        // Subagents cannot ask for clearance themselves (they run without a
+        // screen): their gated calls come here, to this session's gate and card.
+        hoocode_code_subagents::instance::set_clearance_relay(Some(Arc::new(
+            crate::dialog_bridge::TuiClearanceRelay::new(self.session.cwd().to_path_buf()),
+        )));
         self.ask_mcp_trust();
         let tx = self.tx.clone();
         on_theme_change(move || {
@@ -1512,9 +1521,10 @@ impl Mode {
                         self.show_ask_options(questions, reply, esc_answers_first)
                     }
                     AppEvent::Dialog(DialogRequest::HideAskOptions) => self.hide_ask_options(None),
-                    AppEvent::Dialog(DialogRequest::Clearance { info, reply }) => {
-                        self.show_clearance_card(info, reply)
+                    AppEvent::Dialog(DialogRequest::Clearance { id, info, reply }) => {
+                        self.show_clearance_card(id, info, reply)
                     }
+                    AppEvent::Dialog(DialogRequest::HideClearance(id)) => self.hide_clearance(id),
                     AppEvent::Login(update) => self.handle_login_update(update),
                     AppEvent::BashChunk(chunk) => {
                         if let Some(component) = &self.bash_component {
@@ -1664,6 +1674,7 @@ impl Mode {
         hoocode_runtime::watchdog::ui_stopped();
         set_dialog_sink(None);
         hoocode_code_subagents::instance::set_live_sink(None);
+        hoocode_code_subagents::instance::set_clearance_relay(None);
         if let Some(picker) = self.picker.take() {
             picker.dispose();
         }
@@ -1673,6 +1684,7 @@ impl Mode {
         if let Some((_, reply)) = self.clearance.take() {
             let _ = reply.send(ClearanceChoice::Deny { reason: None });
         }
+        self.deny_queued_clearances();
         if let Some((_, answer)) = self.editor_dialog.take() {
             answer(None);
         }
