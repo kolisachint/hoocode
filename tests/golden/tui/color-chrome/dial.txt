@@ -1,7 +1,7 @@
 «bg=#142c29» «bg=#142c29;bold;fg=#5cc8bb»◭«bg=#142c29» «bg=#142c29;bold;fg=#e5e5e7»HOOCODE«bg=#142c29»  «bg=#5cc8bb;bold;fg=#000000» BUILD «bg=#142c29»  «bg=#142c29;fg=#989898»<WORK>«bg=#142c29»  «bg=#142c29;bold;fg=#5cc8bb»cyan«bg=#142c29»  «bg=#142c29;fg=#a8a8a8»SHIP «bg=#142c29;fg=#e5e5e7»mock-model«bg=#142c29»  «bg=#142c29;fg=#a8a8a8»FUEL ▱▱▱▱▱▱▱▱«bg=#142c29» «bg=#142c29;fg=#989898»0%«bg=#142c29»  «bg=#142c29;fg=#a8a8a8»CR «bg=#142c29;fg=#e5e5e7»$0.000
 
 «»                                                     «fg=#a8a8a8»╭ «fg=#5cc8bb»●«bold;fg=#e5e5e7» TRANSMISSION«»  «fg=#989898»shift+<alt>+c steps back«»     «fg=#a8a8a8»╮
-«»                                                     «fg=#a8a8a8»│ «fg=#e5e5e7»Session color: <colour>«»                       «fg=#a8a8a8» │
+«»                                                     «fg=#a8a8a8»│ «fg=#e5e5e7»Session color: <colour> «fg=#a8a8a8»│
 «»                                                     «fg=#a8a8a8»│ «fg=#5cc8bb»▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔«fg=#a8a8a8» │
 «»                                                     «fg=#a8a8a8»╰────────────────────────────────────────────╯
 
