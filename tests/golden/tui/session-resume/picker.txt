@@ -2,5 +2,5 @@
 «fg=#9b8cff»┃«fg=#5cc8bb»◉ Current Folder«fg=#a8a8a8» | ○ All  Name: «fg=#5cc8bb»All«fg=#a8a8a8»  Sort: «fg=#5cc8bb»Threaded«»                                               «fg=#9b8cff»┃
 «fg=#9b8cff»┃«fg=#989898»tab«fg=#a8a8a8» scope · re:<pattern> regex · "phrase" exact«»                                                   «fg=#9b8cff»┃
 «fg=#9b8cff»┃«fg=#5cc8bb»▸«» «fg=#ffff00»▏«»                                                                                               «fg=#9b8cff»┃
-«fg=#9b8cff»┃«bg=#2a2a36;fg=#5cc8bb»› «bg=#2a2a36»  «bg=#2a2a36;bold»remember the word apple«<masked: session chip>»  <session-chip>«bg=#2a2a36» mock-model «bg=#2a2a36;fg=#989898»2«bg=#2a2a36» «bg=#2a2a36;fg=#989898»0«bg=#2a2a36» «bg=#2a2a36;fg=#989898»…«fg=#9b8cff»┃
+«fg=#9b8cff»┃«bg=#2a2a36;fg=#5cc8bb»› «bg=#2a2a36»  «bg=#2a2a36;bold»remember the word apple«<masked: session chip>»  <session-chip> mock-model«bg=#2a2a36» «bg=#2a2a36;fg=#989898»2«bg=#2a2a36» «bg=#2a2a36;fg=#989898»0«bg=#2a2a36» «bg=#2a2a36;fg=#989898»…«fg=#9b8cff»┃
 «fg=#9b8cff»┗━«» «fg=#989898»↑↓«fg=#a8a8a8» move · «fg=#989898»tab«fg=#a8a8a8» scope · «fg=#989898»<alt>+o«fg=#a8a8a8» sort · «fg=#989898»<alt>+x«fg=#a8a8a8» delete · «fg=#989898»enter«fg=#a8a8a8» jump there · «fg=#989898»esc«fg=#a8a8a8» close«» «fg=#9b8cff»━━━━━━━━━━━━━━«»  «fg=#9b8cff»━┛

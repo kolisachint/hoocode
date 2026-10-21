@@ -3,7 +3,7 @@
   "rules": [
     {"pattern": "^┌─+ [a-z]+-[a-z]+ ──┐([┃░]?)$", "replace": "┌<editor-top-border: session-name badge, color derived from random session id>┐\\1", "style": "<masked>"},
     {"pattern": "━+  [a-z]+-[a-z]+  ━┓", "replace": "━ <session-chip> ━┓", "style": "<masked: session chip>", "why": "The comms frame names the random session id in its top border, and the colour derives from the same id."},
-    {"pattern": "\\s+[a-z]+-[a-z]+(?= mock-model)", "replace": "  <session-chip>", "style": "<masked: session chip>", "why": "The resume picker lists each session under its random chip name."},
+    {"pattern": "\\s+[a-z]+-[a-z]+ mock-model", "replace": "  <session-chip> mock-model", "style": "<masked: session chip>", "why": "The resume picker lists each session under its random chip name."},
     {"pattern": "Session color: [a-z]+", "replace": "Session color: <colour>", "why": "The dial starts from the session colour slot, which derives from the random session id."},
     {"pattern": "dispatch-[0-9]+", "replace": "dispatch-<id>", "why": "The dispatch id is a counter in each run."},
     {"pattern": "{WORK}", "replace": "<WORK>"},
