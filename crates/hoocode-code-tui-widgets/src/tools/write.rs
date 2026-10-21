@@ -205,7 +205,9 @@ fn format_write_call(
                     }
                 })
                 .collect();
-            text.push_str(&format!("\n\n{}", shown.join("\n")));
+            // No blank row ahead of the content: the chain's fold counts every
+            // body row, so a gap here would take one of the peek's rows.
+            text.push_str(&format!("\n{}", shown.join("\n")));
             if total > max {
                 text.push_str(&format!("\n{}", more_lines_hint(total - max)));
             }
