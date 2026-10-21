@@ -356,6 +356,20 @@ fn foot_shows_the_radar_dial_and_plan_note() {
 }
 
 #[test]
+fn foot_names_each_layer_of_the_dial() {
+    let _g = lock(Some("dark"));
+    for (view, label) in [
+        (ToolOutputView::Radar, "radar · flight log"),
+        (ToolOutputView::Peek, "peek"),
+        (ToolOutputView::Full, "full"),
+    ] {
+        let mut frame = frame(CommsState::Ready, view, "build");
+        let rows = rows(&mut frame, 100);
+        assert!(rows[2].contains(label), "{view:?}: {:?}", rows[2]);
+    }
+}
+
+#[test]
 fn stubbed_states_render_a_plausible_title() {
     let _g = lock(Some("dark"));
     for (state, title) in [

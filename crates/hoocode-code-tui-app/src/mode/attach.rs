@@ -640,7 +640,7 @@ impl Mode {
                 ));
                 component
                     .borrow_mut()
-                    .set_rail(self.tool_output_view == ToolOutputView::Peek);
+                    .set_rail(self.tool_output_view != ToolOutputView::Radar);
                 component
                     .borrow_mut()
                     .set_radar_above(self.transcript.radar_chain_above());

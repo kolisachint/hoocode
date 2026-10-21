@@ -398,7 +398,7 @@ fn expanded_instructions() -> String {
             "app.tasks.cycleBackward",
             "task panel view",
         ),
-        hint("app.tools.expand", "to toggle radar and peek"),
+        hint("app.tools.expand", "to cycle radar, peek and full"),
         hint("app.thinking.toggle", "to show or hide thinking"),
         group("Go — sessions and places"),
         hint("app.session.resume", "to resume a session"),
@@ -996,6 +996,7 @@ impl Mode {
             Rc::new(|child: &ComponentHandle| {
                 child.borrow().as_any().is_some_and(|any| {
                     any.is::<UserMessageComponent>()
+                        || any.is::<hoocode_code_tui_widgets::trajectory::MissionHeader>()
                         || any.is::<SkillBlockComponent>()
                         || any.is::<BackgroundNoticeComponent>()
                 })
@@ -1113,6 +1114,9 @@ impl Mode {
         mode.transcript
             .radar_active
             .set(mode.tool_output_view == ToolOutputView::Radar);
+        mode.transcript
+            .full_active
+            .set(mode.tool_output_view == ToolOutputView::Full);
         mode
     }
 

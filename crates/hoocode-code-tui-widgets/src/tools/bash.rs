@@ -10,14 +10,14 @@ use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::Text;
 use hoocode_tui_render::Component;
-use hoocode_tui_util::truncate_to_width;
 use serde_json::{json, Value};
 
 use super::search::js_number;
 use super::text;
+use crate::fold::more_lines_hint;
 use crate::render_utils::{invalid_arg_text, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolRenderResultOptions, ToolResultView};
-use crate::tool_output_view::PEEK_LINES;
+use crate::tool_output_view::line_budget;
 use crate::visual_truncate::truncate_to_visual_lines;
 
 /// State key: the block needs re-rendering every second (a live `Elapsed`).
@@ -51,7 +51,7 @@ pub fn format_bash_call(args: &Value) -> String {
     let display = match command {
         None => invalid_arg_text(),
         Some(c) if !c.is_empty() => c,
-        Some(_) => t.fg("toolOutput", "..."),
+        Some(_) => t.fg("toolOutput", "…"),
     };
     format!("{}  {display}{suffix}", t.fg("toolTitle", &t.bold("Shell")))
 }
@@ -59,6 +59,8 @@ pub fn format_bash_call(args: &Value) -> String {
 /// The result body (`BashResultRenderComponent`), laid out at render width.
 pub struct BashResult {
     styled_output: Option<String>,
+    /// The full stop: every line of the output, wrapped, nothing folded.
+    expanded: bool,
     warning: Option<String>,
     timing: Option<String>,
 }
@@ -67,13 +69,9 @@ impl Component for BashResult {
     fn render(&mut self, width: u16) -> Vec<String> {
         let mut lines = Vec::new();
         if let Some(output) = &self.styled_output {
-            let preview = truncate_to_visual_lines(output, PEEK_LINES, width, 0);
+            let preview = truncate_to_visual_lines(output, line_budget(self.expanded), width, 0);
             if preview.skipped_count > 0 {
-                let hint = theme().fg(
-                    "muted",
-                    &format!("... ({} earlier lines)", preview.skipped_count),
-                );
-                lines.push(truncate_to_width(&hint, width as usize, "...", false));
+                lines.push(more_lines_hint(preview.skipped_count));
             }
             lines.extend(preview.visual_lines);
         }
@@ -168,6 +166,7 @@ fn build_result(
 
     BashResult {
         styled_output,
+        expanded: options.expanded,
         warning,
         timing,
     }

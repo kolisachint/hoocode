@@ -2726,7 +2726,7 @@ mod tests {
     }
 
     /// The Ctrl+O (`app.tools.expand`) toggle and the footer's view stop, on
-    /// the real interactive mode. Ctrl+O flips radar and peek.
+    /// the real interactive mode. Ctrl+O steps radar, peek, full, radar.
     mod interactive_mode_status {
         use super::*;
         use serde_json::json;
@@ -2798,43 +2798,42 @@ mod tests {
         const CTRL_O: &str = "\x0f";
 
         #[test]
-        fn ctrl_o_toggles_between_radar_and_peek() {
-            let (drawn, _) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O, CTRL_O]);
+        fn ctrl_o_cycles_radar_peek_full_and_back() {
+            let radar = "━ radar · flight log ━";
+            let (drawn, _) = run(
+                json!({ "toolOutputView": "radar" }),
+                &[CTRL_O, CTRL_O, CTRL_O],
+            );
             assert!(
-                in_order(
-                    &drawn,
-                    &[
-                        "━ radar · flight log ━",
-                        "━ peek ━",
-                        "━ radar · flight log ━"
-                    ]
-                ),
+                in_order(&drawn, &[radar, "━ peek ━", "━ full ━", radar]),
                 "{drawn}"
             );
             let (drawn, _) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O, CTRL_O]);
             assert!(
-                in_order(&drawn, &["━ peek ━", "━ radar · flight log ━", "━ peek ━"]),
+                in_order(&drawn, &["━ peek ━", "━ full ━", radar]),
                 "{drawn}"
             );
         }
 
         #[test]
-        fn a_stored_full_setting_loads_as_peek_and_toggles_to_radar() {
+        fn a_stored_full_setting_loads_as_full_and_cycles_to_radar() {
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[]);
-            assert!(drawn.contains("━ peek ━"), "{drawn}");
+            assert!(drawn.contains("━ full ━"), "{drawn}");
             assert!(!drawn.contains("━ radar · flight log ━"), "{drawn}");
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
             assert!(
-                in_order(&drawn, &["━ peek ━", "━ radar · flight log ━"]),
+                in_order(&drawn, &["━ full ━", "━ radar · flight log ━"]),
                 "{drawn}"
             );
         }
 
         #[test]
-        fn the_toggled_choice_is_saved() {
+        fn the_cycled_choice_is_saved() {
             let (_, session) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O]);
             assert_eq!(session.settings().tool_output_view().as_str(), "peek");
             let (_, session) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O]);
+            assert_eq!(session.settings().tool_output_view().as_str(), "full");
+            let (_, session) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
             assert_eq!(session.settings().tool_output_view().as_str(), "radar");
         }
 

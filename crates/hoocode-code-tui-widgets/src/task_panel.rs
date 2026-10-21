@@ -1259,19 +1259,14 @@ fn describe_run(owner: &TaskAgent, now: u64) -> String {
         }
         if let Some(cause) = owner.cause.as_deref().filter(|c| !c.is_empty()) {
             let one_line: String = cause.split_whitespace().collect::<Vec<_>>().join(" ");
-            line.push_str(&format!(" · {}", truncate_to(&one_line, 48)));
+            line.push_str(&format!(
+                " · {}",
+                truncate_to_width(&one_line, 48, "…", false)
+            ));
         }
         parts.push(line);
     }
     parts.join(" · ")
-}
-
-fn truncate_to(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        return text.to_string();
-    }
-    let head: String = text.chars().take(max.saturating_sub(1)).collect();
-    format!("{head}…")
 }
 
 #[cfg(test)]

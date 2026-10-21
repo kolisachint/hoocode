@@ -146,7 +146,7 @@ fn rail_prefix_spans(agent: bool, palette: &Palette) -> Vec<Span<'static>> {
 /// spaces go, and the SGR resets around them are re-attached after, so the
 /// line still resets its colours. Byte-safe: the scan only walks ASCII
 /// (`m`, digits, `;`, `\x1b[`).
-fn trim_end_styled(line: &str) -> String {
+pub(crate) fn trim_end_styled(line: &str) -> String {
     use hoocode_tui_util::text_slice as ts;
     let mut s = line.trim_end_matches(' ');
     let mut tail = String::new();
@@ -223,14 +223,10 @@ pub fn is_think_header(line: &str) -> bool {
         .starts_with(THINK_SLOT)
 }
 
-/// The fold under a step with more output: `   ┊  +N more`.
+/// The fold under a step with more output: `   ┊  … N more lines`.
 pub fn fold_line(hidden: usize, width: usize, agent: bool, palette: &Palette) -> String {
-    let noun = if hidden == 1 { "line" } else { "lines" };
     let mut spans = rail_prefix_spans(agent, palette);
-    spans.push(Span::styled(
-        format!("+{hidden} more {noun}"),
-        palette.faint(),
-    ));
+    spans.push(crate::fold::more_lines_span(hidden, palette));
     row(spans, width)
 }
 
@@ -469,6 +465,88 @@ pub fn step_header(
     two_part_row(left, right, width)
 }
 
+/// Columns a wrapped header row hangs in under its first row: past the
+/// status dot.
+const HEADER_HANG: usize = 2;
+/// Room the label keeps beside the stats before the stats move to a row of
+/// their own.
+const MIN_LABEL_BESIDE_STATS: usize = 16;
+
+/// A step header as rows, never cut: ` NN {label}` with `right` (the stats)
+/// flush right on the first row. The label wraps (a continuation row hangs
+/// under the text, past the status dot) instead of ending in `…`. When the
+/// stats leave the label too little room beside them, the label takes the
+/// full row and the stats close the header on the last row that has room,
+/// or on a row of their own. `label_bg` paints the label (a file tool's band).
+pub fn step_header_rows(
+    number: &str,
+    left_prefix: &str,
+    left: &str,
+    right: &str,
+    width: usize,
+    label_bg: Option<Color>,
+) -> Vec<String> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let number = ansi_spans(number);
+    let stem = 1 + spans_width(&number) + 1;
+    let stats = ansi_spans(right);
+    let stats_width = spans_width(&stats);
+    let label = format!("{left_prefix}{left}");
+    let full = width.saturating_sub(stem).max(1);
+    let beside = (stats_width > 0 && full >= stats_width + 2 + MIN_LABEL_BESIDE_STATS)
+        .then(|| full - stats_width - 2);
+    let avail = beside.unwrap_or(full);
+    let mut wrapped = wrap_text_with_ansi(&label, avail);
+    if wrapped.len() > 1 {
+        // Continuation rows hang in; wrap again at the width they have.
+        wrapped = wrap_text_with_ansi(&label, avail.saturating_sub(HEADER_HANG).max(1));
+    }
+    let count = wrapped.len();
+    // The row the stats sit on: the first when they fit beside the label,
+    // else the last row with room for them, else a row of their own.
+    let stats_row = if stats_width == 0 {
+        None
+    } else if beside.is_some() {
+        Some(0)
+    } else if hoocode_tui_util::visible_width(&wrapped[count - 1]) + 2 + stats_width <= full {
+        Some(count - 1)
+    } else {
+        Some(count)
+    };
+    let mut rows = Vec::with_capacity(count + 1);
+    for (index, piece) in wrapped.into_iter().enumerate() {
+        let mut left_spans = if index == 0 {
+            let mut spans = vec![Span::styled(" ".to_string(), Style::default())];
+            spans.extend(number.clone());
+            spans.push(Span::styled(" ".to_string(), Style::default()));
+            spans
+        } else {
+            vec![Span::styled(
+                " ".repeat(stem + HEADER_HANG),
+                Style::default(),
+            )]
+        };
+        let mut label = ansi_spans(&piece);
+        if let Some(bg) = label_bg {
+            for span in &mut label {
+                span.style.bg = Some(bg);
+            }
+        }
+        left_spans.extend(label);
+        rows.push(if stats_row == Some(index) {
+            two_part_row(left_spans, stats.clone(), width)
+        } else {
+            row(left_spans, width)
+        });
+    }
+    if stats_row == Some(count) {
+        rows.push(two_part_row(Vec::new(), stats, width));
+    }
+    rows
+}
+
 /// `1 step`, `N steps`.
 pub fn steps_text(steps: usize) -> String {
     if steps == 1 {
@@ -633,6 +711,50 @@ pub fn diff_counts_text(added: usize, removed: usize) -> String {
     format!("+{added} \u{2212}{removed}")
 }
 
+/// A band whose text is never cut: `prefix` and the first piece of `text`
+/// share the first row with `right` flush right; the rest of `text` wraps
+/// across continuation band rows (same `bg`, indented to the prefix width,
+/// text only). Every `\n` in `text` starts a row. No room beside the prefix
+/// (or empty text) keeps one row.
+pub(crate) fn wrapped_band_rows(
+    prefix: Vec<Span<'static>>,
+    text: &str,
+    text_style: Style,
+    right: Vec<Span<'static>>,
+    width: usize,
+    bg: Option<Color>,
+) -> Vec<String> {
+    let budget = width.saturating_sub(
+        spans_width(&prefix) + spans_width(&right) + usize::from(!right.is_empty()),
+    );
+    if budget == 0 || text.is_empty() {
+        let mut spans = prefix;
+        spans.push(Span::styled(text.to_string(), text_style));
+        return vec![band_row(spans, right, width, bg)];
+    }
+    let mut wrapped: Vec<String> = Vec::new();
+    for source in text.split('\n') {
+        wrapped.extend(wrap_text_with_ansi(source, budget));
+    }
+    let indent = " ".repeat(spans_width(&prefix));
+    let mut lines = Vec::with_capacity(wrapped.len());
+    for (index, piece) in wrapped.into_iter().enumerate() {
+        let mut row = if index == 0 {
+            prefix.clone()
+        } else {
+            vec![Span::styled(indent.clone(), Style::default())]
+        };
+        row.push(Span::styled(piece, text_style));
+        let right = if index == 0 {
+            right.clone()
+        } else {
+            Vec::new()
+        };
+        lines.push(band_row(row, right, width, bg));
+    }
+    lines
+}
+
 /// The mission header: `▲ M1  prompt`, the `▲` and `M1` in the `you` colour.
 /// A skill chip (`✦ name`) sits right-aligned. The prompt is never cut: it
 /// wraps across continuation band rows so the whole mission stays visible.
@@ -706,7 +828,7 @@ impl Component for MissionHeader {
         // Mission Control (spec a2–a4): the full-width `bU` band, `▲ M1`
         // in the `you` token, the prompt in bold ink.
         let bg = palette.bg_color("userMessageBg");
-        let mut spans = vec![
+        let spans = vec![
             Span::styled("▲".to_string(), bold(palette.you())),
             Span::styled(" ".to_string(), Style::default()),
             Span::styled(format!("M{}", self.seq), bold(palette.you())),
@@ -723,37 +845,7 @@ impl Component for MissionHeader {
                 ]
             })
             .unwrap_or_default();
-        let prompt_budget = width.saturating_sub(
-            spans_width(&spans) + spans_width(&chip) + usize::from(!chip.is_empty()),
-        );
-        // The prompt is never cut: it wraps across continuation band rows
-        // (same `bg`, indented to the prefix width, prompt text only) so
-        // the whole mission stays visible. No room (or an empty prompt)
-        // keeps today's single row.
-        if prompt_budget == 0 || self.prompt.is_empty() {
-            spans.push(Span::styled(self.prompt.clone(), bold(palette.ink())));
-            let line = band_row(spans, chip, width, bg);
-            let lines = vec![line];
-            let key = u16::try_from(width).unwrap_or(u16::MAX);
-            self.cache.borrow_mut().set(key, theme, lines.clone());
-            return lines;
-        }
-        let mut wrapped: Vec<String> = Vec::new();
-        for source in self.prompt.split('\n') {
-            wrapped.extend(wrap_text_with_ansi(source, prompt_budget));
-        }
-        let indent = " ".repeat(spans_width(&spans));
-        let mut lines = Vec::with_capacity(wrapped.len());
-        for (index, piece) in wrapped.into_iter().enumerate() {
-            let mut row = if index == 0 {
-                spans.clone()
-            } else {
-                vec![Span::styled(indent.clone(), Style::default())]
-            };
-            row.push(Span::styled(piece, bold(palette.ink())));
-            let right = if index == 0 { chip.clone() } else { Vec::new() };
-            lines.push(band_row(row, right, width, bg));
-        }
+        let lines = wrapped_band_rows(spans, &self.prompt, bold(palette.ink()), chip, width, bg);
         let key = u16::try_from(width).unwrap_or(u16::MAX);
         self.cache.borrow_mut().set(key, theme, lines.clone());
         lines

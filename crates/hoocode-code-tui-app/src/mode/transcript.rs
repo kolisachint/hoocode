@@ -38,7 +38,7 @@ use hoocode_code_tui_widgets::tool_output_view::cycle_tool_output_view;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::registered_tool_definition;
 use hoocode_code_tui_widgets::trajectory::{self, MissionHeader};
-use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
+use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay};
 use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
@@ -95,6 +95,9 @@ pub(super) struct Transcript {
     /// while set. Shared with the wrappers, so rows added in either view
     /// follow later flips.
     pub(super) radar_active: Rc<Cell<bool>>,
+    /// Whether the full stop is showing: rows that fold at peek (the `!`
+    /// command output) show whole while set. Shared like `radar_active`.
+    pub(super) full_active: Rc<Cell<bool>>,
 }
 
 /// The last prompt actually sent, text plus images: empty enter hails it
@@ -163,18 +166,21 @@ impl Transcript {
             last_prompt: None,
             missions: Vec::new(),
             radar_active: Rc::new(Cell::new(false)),
+            full_active: Rc::new(Cell::new(false)),
         }
     }
 
     /// The view over a cleared chat. A retry still in progress keeps its
-    /// streak, so its end still reports how the streak went. The radar flag
-    /// survives too, so peek-only rows stay hidden across a rebuild.
+    /// streak, so its end still reports how the streak went. The radar and
+    /// full flags survive too, so peek-only rows stay hidden across a rebuild.
     pub(super) fn reset_view(&mut self) {
         let streak = self.retry_streak.take();
         let radar_active = self.radar_active.clone();
+        let full_active = self.full_active.clone();
         *self = Transcript::new(self.chat.clone());
         self.retry_streak = streak;
         self.radar_active = radar_active;
+        self.full_active = full_active;
     }
 
     /// The missions a compaction folds, first to last (`M1–M3`), for the
@@ -219,15 +225,6 @@ pub(super) fn truncated_marker(content: &str) -> TruncationResult {
     TruncationResult {
         truncated: true,
         ..truncate_tail(content, TruncationOptions::default())
-    }
-}
-
-/// The user message under an M4 mission header: everything after the first
-/// line, which the header already carries. Empty for a one-line prompt.
-fn mission_body(text: &str) -> String {
-    match text.split_once('\n') {
-        Some((_, rest)) => rest.to_string(),
-        None => String::new(),
     }
 }
 
@@ -719,31 +716,18 @@ impl Mode {
                     return;
                 }
                 // Every user turn opens a mission (M4): the `▲ M{n}` header
-                // carries the first line, the rest stays in the message.
+                // carries the whole prompt, wrapped across band rows.
                 match parse_skill_block(&text) {
                     Some(skill) => {
                         let prompt = skill.user_message.as_deref().unwrap_or(&text);
                         self.add_mission_header(prompt, Some(&skill.name));
-                        // The message the user typed comes first; the skill it
-                        // invoked is drawn under it.
-                        if let Some(message) = skill.user_message {
-                            let body = mission_body(&message);
-                            if !body.is_empty() {
-                                let component = UserMessageComponent::with_theme(
-                                    &body,
-                                    (self.markdown_theme())(),
-                                );
-                                // Radar hides the body: the flight-log row
-                                // carries the first line.
-                                let child = as_component(&handle(component));
-                                self.add_to_chat(self.transcript.peek_child(child));
-                            }
-                        }
                         let component =
                             handle(SkillBlockComponent::new(&skill.name, &skill.content));
-                        component
-                            .borrow_mut()
-                            .set_expanded(self.tool_output_view == ToolOutputView::Peek);
+                        {
+                            let mut block = component.borrow_mut();
+                            block.set_expanded(self.tool_output_view != ToolOutputView::Radar);
+                            block.set_full(self.tool_output_view == ToolOutputView::Full);
+                        }
                         self.transcript.skill_blocks.push(component.clone());
                         self.add_to_chat(as_component(&component));
                     }
@@ -751,25 +735,16 @@ impl Mode {
                         Some(notice) => {
                             self.add_mission_header(&text, None);
                             let component = handle(BackgroundNoticeComponent::new(notice));
-                            component
-                                .borrow_mut()
-                                .set_expanded(self.tool_output_view == ToolOutputView::Peek);
+                            {
+                                let mut notice = component.borrow_mut();
+                                notice.set_expanded(self.tool_output_view != ToolOutputView::Radar);
+                                notice.set_full(self.tool_output_view == ToolOutputView::Full);
+                            }
                             self.transcript.background_notices.push(component.clone());
                             self.add_to_chat(as_component(&component));
                         }
                         None => {
                             self.add_mission_header(&text, None);
-                            let body = mission_body(&text);
-                            if !body.is_empty() {
-                                let component = UserMessageComponent::with_theme(
-                                    &body,
-                                    (self.markdown_theme())(),
-                                );
-                                // Radar hides the body: the flight-log row
-                                // carries the first line.
-                                let child = as_component(&handle(component));
-                                self.add_to_chat(self.transcript.peek_child(child));
-                            }
                         }
                     },
                 }
@@ -787,7 +762,7 @@ impl Mode {
                 // Mission Control peek: prose sits on the `┊` rail.
                 component
                     .borrow_mut()
-                    .set_rail(self.tool_output_view == ToolOutputView::Peek);
+                    .set_rail(self.tool_output_view != ToolOutputView::Radar);
                 component
                     .borrow_mut()
                     .set_radar_above(self.transcript.radar_chain_above());
@@ -807,7 +782,7 @@ impl Mode {
                     ));
                     component
                         .borrow_mut()
-                        .set_expanded(self.tool_output_view == ToolOutputView::Peek);
+                        .set_expanded(self.tool_output_view != ToolOutputView::Radar);
                     self.transcript.custom_messages.push(component.clone());
                     self.add_to_chat(as_component(&component));
                 }
@@ -820,7 +795,7 @@ impl Mode {
                 ));
                 component
                     .borrow_mut()
-                    .set_expanded(self.tool_output_view == ToolOutputView::Peek);
+                    .set_expanded(self.tool_output_view != ToolOutputView::Radar);
                 self.transcript.compaction_summaries.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
@@ -832,7 +807,7 @@ impl Mode {
                 ));
                 component
                     .borrow_mut()
-                    .set_expanded(self.tool_output_view == ToolOutputView::Peek);
+                    .set_expanded(self.tool_output_view != ToolOutputView::Radar);
                 self.transcript.branch_summaries.push(component.clone());
                 self.add_to_chat(as_component(&component));
             }
@@ -840,6 +815,7 @@ impl Mode {
                 let exclude = bash.exclude_from_context.unwrap_or(false);
                 let mut component = BashExecutionComponent::new(&bash.command, exclude);
                 component.set_radar_flag(self.transcript.radar_active.clone());
+                component.set_full_flag(self.transcript.full_active.clone());
                 if !bash.output.is_empty() {
                     component.append_output(&bash.output);
                 }
@@ -1425,6 +1401,10 @@ impl Mode {
         self.transcript
             .radar_active
             .set(view == ToolOutputView::Radar);
+        // The full stop opens what peek folds: `!` output, tool bodies.
+        self.transcript
+            .full_active
+            .set(view == ToolOutputView::Full);
         for mission in &self.transcript.missions {
             mission.header.borrow_mut().set_view(view);
         }
@@ -1440,7 +1420,8 @@ impl Mode {
         }
         // Peek opens each message's body; radar folds it to a row. The startup
         // header and resource listing stay compact (they open under `verbose`).
-        let peek = view == ToolOutputView::Peek;
+        let peek = view != ToolOutputView::Radar;
+        let full = view == ToolOutputView::Full;
         // Mission Control peek: prose sits on the `┊` rail; radar has none.
         for component in &self.transcript.assistant_components {
             component.borrow_mut().set_rail(peek);
@@ -1449,10 +1430,14 @@ impl Mode {
             component.borrow_mut().set_expanded(peek);
         }
         for component in &self.transcript.skill_blocks {
-            component.borrow_mut().set_expanded(peek);
+            let mut block = component.borrow_mut();
+            block.set_expanded(peek);
+            block.set_full(full);
         }
         for component in &self.transcript.background_notices {
-            component.borrow_mut().set_expanded(peek);
+            let mut notice = component.borrow_mut();
+            notice.set_expanded(peek);
+            notice.set_full(full);
         }
         for component in &self.transcript.branch_summaries {
             component.borrow_mut().set_expanded(peek);
@@ -1469,14 +1454,12 @@ impl Mode {
         self.dirty.set(true);
     }
 
-    /// `app.tools.expand` (Ctrl+O): flip between radar and peek, and save it.
+    /// `app.tools.expand` (Ctrl+O): one stop forward, radar → peek → full →
+    /// radar, and save it.
     pub(super) fn toggle_tool_output_view(&mut self) {
-        let next = match self.tool_output_view {
-            ToolOutputView::Radar => ToolOutputView::Peek,
-            ToolOutputView::Peek => ToolOutputView::Radar,
-        };
+        let next = cycle_tool_output_view(self.tool_output_view, true);
         self.apply_tool_output_view(next, true);
-        // A toggle has no direction, so the notice carries no "steps back" note.
+        // Ctrl+O has no direction, so the notice carries no "steps back" note.
         self.notifications.borrow_mut().notify(
             NotificationKind::Info,
             &format!("Tool output: {next}"),

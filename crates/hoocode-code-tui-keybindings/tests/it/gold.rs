@@ -12,22 +12,17 @@ fn gold() -> Value {
 #[cfg(not(windows))]
 #[test]
 fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() {
-    /// Declared divergence from the pin (2026-10-09, user decision: dial is
-    /// radar/peek only, ctrl+o toggles; 2026-10-10: the chrome dial has two
+    /// Declared divergence from the pin (2026-10-09, user decision: ctrl+o steps
+    /// the tool output dial like alt+o; 2026-10-10: the chrome dial has two
     /// stops, full and compact, `bare` is retired). The pinned descriptions
     /// below describe the old dials; ours describe the new ones. An expected
     /// row is rewritten only when its pinned text matches exactly, and every
     /// entry must match, so a stale entry fails instead of rotting.
     const DECLARED: &[(&str, &str, &str)] = &[
         (
-            "app.view.cycleForward",
-            "Cycle tool output view (radar → peek → full)",
-            "Cycle tool output view (radar ↔ peek)",
-        ),
-        (
             "app.tools.expand",
             "Jump to the full view from wherever you are, and back again",
-            "Toggle tool output between radar and peek",
+            "Step tool output: radar → peek → full → radar",
         ),
         (
             "app.chrome.cycleForward",

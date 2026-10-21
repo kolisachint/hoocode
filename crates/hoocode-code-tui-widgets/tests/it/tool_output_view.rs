@@ -12,27 +12,30 @@ use hoocode_code_tui_widgets::tool_signal::{
 use serde_json::json;
 use std::rc::Rc;
 
-use ToolOutputView::{Peek, Radar};
+use ToolOutputView::{Full, Peek, Radar};
 
 mod tool_output_view_dial {
     use super::*;
 
     #[test]
-    fn has_two_stops_radar_then_peek() {
-        assert_eq!(TOOL_OUTPUT_VIEWS, [Radar, Peek]);
+    fn has_three_stops_radar_peek_full() {
+        assert_eq!(TOOL_OUTPUT_VIEWS, [Radar, Peek, Full]);
     }
 
     #[test]
     fn cycles_forward_and_backward_wrapping_at_both_ends() {
         assert_eq!(cycle_tool_output_view(Radar, true), Peek);
-        assert_eq!(cycle_tool_output_view(Peek, true), Radar);
-        assert_eq!(cycle_tool_output_view(Radar, false), Peek);
+        assert_eq!(cycle_tool_output_view(Peek, true), Full);
+        assert_eq!(cycle_tool_output_view(Full, true), Radar);
+        assert_eq!(cycle_tool_output_view(Radar, false), Full);
+        assert_eq!(cycle_tool_output_view(Full, false), Peek);
         assert_eq!(cycle_tool_output_view(Peek, false), Radar);
     }
 
     #[test]
     fn recognises_its_own_values_and_nothing_else() {
         assert!(is_tool_output_view(Some("peek")));
+        assert!(is_tool_output_view(Some("full")));
         assert!(!is_tool_output_view(Some("glance")));
         assert!(!is_tool_output_view(None));
     }
@@ -41,18 +44,13 @@ mod tool_output_view_dial {
     fn maps_every_retired_value_and_leaves_the_live_ones_alone() {
         assert_eq!(
             LEGACY_TOOL_OUTPUT_VIEWS,
-            [
-                ("collapsed", Radar),
-                ("glance", Peek),
-                ("standard", Peek),
-                ("full", Peek),
-            ]
+            [("collapsed", Radar), ("glance", Peek), ("standard", Peek),]
         );
         assert!(!LEGACY_TOOL_OUTPUT_VIEWS.iter().any(|(k, _)| *k == "peek"));
     }
 
     #[test]
-    fn the_default_is_one_of_the_two_stops() {
+    fn the_default_is_one_of_the_stops() {
         assert_eq!(DEFAULT_TOOL_OUTPUT_VIEW, Peek);
         assert!(TOOL_OUTPUT_VIEWS.contains(&DEFAULT_TOOL_OUTPUT_VIEW));
     }
@@ -208,17 +206,17 @@ mod peek_block {
     #[test]
     fn shows_every_line_without_a_hint_when_they_fit_the_peek_budget() {
         let _g = lock();
-        let block = peek_block(&lines(PEEK_LINES), plain);
+        let block = peek_block(false, &lines(PEEK_LINES), plain);
         assert_eq!(block, lines(PEEK_LINES).join("\n"));
     }
 
     #[test]
     fn shows_the_first_peek_lines_and_counts_the_rest() {
         let _g = lock();
-        let block = strip(&peek_block(&lines(PEEK_LINES + 3), plain));
+        let block = strip(&peek_block(false, &lines(PEEK_LINES + 3), plain));
         let want_head = lines(PEEK_LINES).join("\n");
         assert!(block.starts_with(&want_head), "{block:?}");
-        assert!(block.contains("... (3 more lines)"), "{block:?}");
+        assert!(block.contains("… 3 more lines"), "{block:?}");
         assert!(!block.contains("to expand"), "{block:?}");
         assert!(!block.contains("line 6"), "{block:?}");
     }
@@ -227,7 +225,7 @@ mod peek_block {
     fn the_style_closure_sees_only_the_shown_lines() {
         let _g = lock();
         let mut seen = 0usize;
-        let _ = peek_block(&lines(12), |shown| {
+        let _ = peek_block(false, &lines(12), |shown| {
             seen = shown.len();
             shown.to_vec()
         });
@@ -235,8 +233,16 @@ mod peek_block {
     }
 
     #[test]
+    fn the_full_stop_shows_every_line_and_no_hint() {
+        let _g = lock();
+        let block = strip(&peek_block(true, &lines(40), plain));
+        assert_eq!(block, lines(40).join("\n"));
+        assert!(!block.contains("more lines"), "{block:?}");
+    }
+
+    #[test]
     fn an_empty_output_is_an_empty_block() {
         let _g = lock();
-        assert_eq!(peek_block(&[], plain), "");
+        assert_eq!(peek_block(false, &[], plain), "");
     }
 }

@@ -413,6 +413,7 @@ impl ChromeData {
         let mut foot = match view {
             ToolOutputView::Peek => vec![Seg::new(palette.dim(), "peek")],
             ToolOutputView::Radar => vec![Seg::new(palette.dim(), "radar · flight log")],
+            ToolOutputView::Full => vec![Seg::new(palette.dim(), "full")],
         };
         if plan_mode {
             foot.push(Seg::new(palette.faint(), "·"));

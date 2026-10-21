@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use crate::diff::render_diff;
 use crate::render_utils::{arg_or, invalid_arg_text, str_arg};
 use crate::tool_execution::ToolRenderDefinition;
-use crate::tool_output_view::{peek_block, peek_window, PEEK_LINES};
+use crate::tool_output_view::{line_budget, peek_block, peek_window};
 use hoocode_home::shorten_path;
 
 /// `EditPreview`: the diff, or why the edit cannot apply.
@@ -39,12 +39,14 @@ struct CallState {
     /// The last diff, its body and the theme it was coloured with, so a
     /// repaint does not render it again.
     diff_body: Option<DiffBodyMemo>,
+    /// The full stop: the diff and its errors show whole.
+    expanded: bool,
 }
 
 /// The diff at the peek stop: the rendered diff, then the muted hint when
 /// lines were left out. `render_diff` pairs removed and added lines, so it
 /// renders the whole diff first and only then trims the rendered lines.
-fn diff_body(diff: &str) -> String {
+fn diff_body(diff: &str, expanded: bool) -> String {
     let lines: Vec<String> = render_diff(diff).split('\n').map(str::to_string).collect();
     // The peek window shows the first lines: start at the first change
     // (keeping one context line above it), so a mid-file edit shows the
@@ -60,7 +62,7 @@ fn diff_body(diff: &str) -> String {
         .unwrap_or(0);
     let start = first.saturating_sub(1).min(lines.len());
     let window = &lines[start..];
-    let shown = &window[..window.len().min(PEEK_LINES)];
+    let shown = &window[..window.len().min(line_budget(expanded))];
     peek_window(lines.len() - start, shown, |shown| shown.to_vec())
 }
 
@@ -69,24 +71,31 @@ fn diff_body(diff: &str) -> String {
 type DiffBodyMemo = (Arc<Theme>, String, String);
 
 /// [`diff_body`], reused while the diff and the theme are the ones last rendered.
-fn cached_diff_body(memo: &mut Option<DiffBodyMemo>, diff: &str) -> String {
+fn cached_diff_body(memo: &mut Option<DiffBodyMemo>, diff: &str, expanded: bool) -> String {
     let current = theme();
+    // The full stop draws a different body from the same diff: a marker in
+    // the key keeps the two apart.
+    let key = if expanded {
+        format!("\u{1}full\u{1}{diff}")
+    } else {
+        diff.to_string()
+    };
     if let Some((_, _, body)) = memo
         .as_ref()
-        .filter(|(th, key, _)| Arc::ptr_eq(th, &current) && key == diff)
+        .filter(|(th, k, _)| Arc::ptr_eq(th, &current) && *k == key)
     {
         return body.clone();
     }
-    let body = diff_body(diff);
-    *memo = Some((current, diff.to_string(), body.clone()));
+    let body = diff_body(diff, expanded);
+    *memo = Some((current, key, body.clone()));
     body
 }
 
 /// An error at the peek stop, each shown line in the error style.
-fn error_body(error: &str) -> String {
+fn error_body(error: &str, expanded: bool) -> String {
     let t = theme();
     let lines: Vec<String> = error.split('\n').map(str::to_string).collect();
-    peek_block(&lines, |shown| {
+    peek_block(expanded, &lines, |shown| {
         shown.iter().map(|l| t.fg("error", l)).collect()
     })
 }
@@ -148,7 +157,7 @@ fn format_edit_call(args: &Value) -> String {
     let display = match path {
         None => invalid_arg_text(),
         Some(p) if !p.is_empty() => t.fg("accent", &p),
-        Some(_) => t.fg("toolOutput", "..."),
+        Some(_) => t.fg("toolOutput", "…"),
     };
     format!("{} {display}", t.fg("toolTitle", &t.bold("Edit")))
 }
@@ -184,8 +193,10 @@ impl Component for EditCall {
         ))));
         if let Some(preview) = &state.preview {
             let body = match preview {
-                Preview::Error(e) => error_body(e),
-                Preview::Diff { diff, .. } => cached_diff_body(&mut state.diff_body, diff),
+                Preview::Error(e) => error_body(e, state.expanded),
+                Preview::Diff { diff, .. } => {
+                    cached_diff_body(&mut state.diff_body, diff, state.expanded)
+                }
             };
             b.add_child(Rc::new(RefCell::new(Text::new(body, 0, 0))));
         }
@@ -213,6 +224,7 @@ pub fn definition() -> ToolRenderDefinition {
             {
                 let mut s = state.borrow_mut();
                 s.args = args.clone();
+                s.expanded = ctx.expanded;
                 let input = preview_input(args);
                 let key = input.as_ref().map(|(p, _, raw)| args_key(p, raw));
                 if s.preview_args_key != key {
@@ -240,6 +252,7 @@ pub fn definition() -> ToolRenderDefinition {
             Ok(call)
         })),
         render_result: Some(Rc::new(|result, _, ctx| {
+            let expanded = ctx.expanded;
             let existing = ctx.objects.contains_key(CALL_KEY);
             let result_diff = if ctx.is_error {
                 None
@@ -287,14 +300,14 @@ pub fn definition() -> ToolRenderDefinition {
                     .collect::<Vec<_>>()
                     .join("\n");
                 (!error.is_empty() && Some(&error) != preview_error.as_ref())
-                    .then(|| error_body(&error))
+                    .then(|| error_body(&error, expanded))
             } else {
                 result
                     .details
                     .get("diff")
                     .and_then(Value::as_str)
                     .filter(|d| !d.is_empty() && Some(d.to_string()) != preview_diff)
-                    .map(diff_body)
+                    .map(|d| diff_body(d, expanded))
             };
             let mut container = Container::new();
             if let Some(output) = output {
@@ -316,9 +329,12 @@ mod tests {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let diff = "-old\n+new\n";
         let mut memo = Some((theme(), diff.to_string(), "SENTINEL".to_string()));
-        assert_eq!(cached_diff_body(&mut memo, diff), "SENTINEL");
+        assert_eq!(cached_diff_body(&mut memo, diff, false), "SENTINEL");
         let other = "-a\n+b\n";
-        assert_eq!(cached_diff_body(&mut memo, other), diff_body(other));
+        assert_eq!(
+            cached_diff_body(&mut memo, other, false),
+            diff_body(other, false)
+        );
         assert_eq!(memo.as_ref().map(|(_, k, _)| k.as_str()), Some(other));
     }
 
@@ -329,6 +345,9 @@ mod tests {
         // Same colours, another theme instance: the memo must not be used.
         let other_instance = Arc::new((*theme()).clone());
         let mut memo = Some((other_instance, diff.to_string(), "SENTINEL".to_string()));
-        assert_eq!(cached_diff_body(&mut memo, diff), diff_body(diff));
+        assert_eq!(
+            cached_diff_body(&mut memo, diff, false),
+            diff_body(diff, false)
+        );
     }
 }

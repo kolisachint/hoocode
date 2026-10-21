@@ -856,8 +856,7 @@ impl SettingsManager {
         self.set("disabledTools", Some(strings(names)));
     }
 
-    /// `getToolOutputView`, reading the retired `toolOutputDisplay` values and
-    /// the retired `full` stop (read as peek).
+    /// `getToolOutputView`, reading the retired `toolOutputDisplay` values.
     pub fn tool_output_view(&self) -> ToolOutputView {
         if let Some(view) = self
             .get("toolOutputView")
@@ -868,7 +867,7 @@ impl SettingsManager {
         }
         self.get("toolOutputDisplay")
             .and_then(Value::as_str)
-            .and_then(ToolOutputView::from_legacy)
+            .and_then(|v| ToolOutputView::parse(v).or_else(|| ToolOutputView::from_legacy(v)))
             .unwrap_or(ToolOutputView::Peek)
     }
 
