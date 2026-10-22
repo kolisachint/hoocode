@@ -1,170 +1,177 @@
-# hoocode
+<h1 align="center">hoocode</h1>
 
-hoocode is a coding agent in Rust. It fully replaces the earlier TypeScript build, hoocode-ts (retired 2026-10-10).
+<p align="center">A terminal coding agent, written in Rust. One static binary, any model provider, nothing applied without your say-so.</p>
 
-This is a multi-crate workspace that mirrors the structure of the [pycortex](https://github.com/kolisachint/pycortex) Python migration. Each namespace (`ai`, `agent`, `code`, `tui`) is split into focused, version-locked crates published to crates.io.
+<p align="center">
+  <a href="https://github.com/kolisachint/hoocode/actions/workflows/ci.yml"><img src="https://github.com/kolisachint/hoocode/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/kolisachint/hoocode/releases/latest"><img src="https://img.shields.io/github/v/release/kolisachint/hoocode?sort=semver" alt="Latest release"></a>
+  <a href="https://www.npmjs.com/package/@kolisachint/hoocode"><img src="https://img.shields.io/npm/v/@kolisachint/hoocode?label=npm" alt="npm"></a>
+  <a href="https://pypi.org/project/hoocode/"><img src="https://img.shields.io/pypi/v/hoocode?label=PyPI" alt="PyPI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
 
-## Workspace structure
+---
 
-```
-crates/
-  hoocode-ai-types/
-  hoocode-ai-models/
-  ...
-  hoocode-agent-core/
-  ...
-  ...
-  ...
-```
+hoocode reads your code, runs commands, edits files and talks to the model of your
+choice, from a full-screen terminal UI or as a one-shot command. It is a single native
+binary: no Node, no Python, no runtime to install.
 
-All crates share a single lockstep version defined in the workspace `Cargo.toml`.
+- **Any provider.** Anthropic, OpenAI, Google, OpenRouter, Groq, DeepSeek, xAI, Fireworks
+  and more, by API key or by `/login` (Anthropic, GitHub Copilot, OpenAI Codex, Google).
+- **You stay in control.** Shell, Edit and Write ask first (Yes / No / Always). Four
+  agent modes (ask, plan, build, debug) scope what the agent may do.
+- **Subagents.** The agent can hand work to background subagents and keep going; their
+  tool calls go through the same approval gate as the main agent.
+- **Sessions you can come back to.** `--continue`, `/resume`, `/fork`, `/tree`, and
+  automatic compaction of long conversations.
+- **Extensible with open formats.** `AGENTS.md` / `CLAUDE.md` context files, skills,
+  prompt templates and slash commands, MCP servers, plugins, themes and keybindings.
+- **Scriptable.** Print mode (`-p`) with text or JSON output, and a JSON-RPC mode
+  (`--mode rpc`) for driving hoocode from another program.
 
-## Installation
+## Install
 
-**macOS / Linux** (no root, no Node):
+hoocode runs on **macOS and Linux, on x64 and arm64**. The Linux builds are static
+(musl), so one binary runs on any distro. There is no Windows build yet.
+
+**Install script** (no root, no Node):
 
 ```bash
 curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh
 ```
 
-It installs `~/.hoocode/bin/hoocode` (and `hoo`), checks the download against the
-release's `SHA256SUMS`, and adds `~/.hoocode/bin` to `PATH`. `--help` lists the
-options (`--version`, `--dir`, `--no-modify-path`).
+It downloads the release archive for your platform, checks it against the release's
+`SHA256SUMS`, installs `~/.hoocode/bin/hoocode` (plus a `hoo` alias) and adds
+`~/.hoocode/bin` to your `PATH`. Pass `--help` for the options (`--version`, `--dir`,
+`--no-modify-path`). The script is [`install/install.sh`](install/install.sh) in this repo.
 
-**npm / bun:**
+**npm or bun** (Node 18 or newer):
 
 ```bash
 npm install -g @kolisachint/hoocode     # or: bun add -g @kolisachint/hoocode
 ```
 
-The package pulls in only the binary for your platform (macOS or Linux, x64 or
-arm64). There is no Windows build yet.
+The package pulls in only the native binary for your platform. It installs `hoocode`
+and `hoo`.
 
-### From source
+**pip** (Python 3.8 or newer):
 
-The command is **`hoocode`** (alias `hoo`).
+```bash
+pip install hoocode        # or: pipx install hoocode
+```
+
+A thin launcher: on first run it downloads the release binary for your platform,
+checks its sha256 against `SHA256SUMS` and caches it under `~/.cache/hoocode/`.
+
+**Prebuilt binaries.** Every [GitHub release](https://github.com/kolisachint/hoocode/releases)
+has `hoocode-<target>.tar.gz` for `x86_64-unknown-linux-musl`,
+`aarch64-unknown-linux-musl`, `x86_64-apple-darwin` and `aarch64-apple-darwin`, and a
+`SHA256SUMS` file. Unpack it and put `hoocode` on your `PATH`:
+
+```bash
+tar xzf hoocode-aarch64-apple-darwin.tar.gz
+install -m 755 hoocode-aarch64-apple-darwin/hoocode ~/.local/bin/hoocode
+```
+
+**From source** (Rust 1.88 or newer; the repo pins its dev toolchain in
+[`rust-toolchain.toml`](rust-toolchain.toml), which rustup picks up by itself):
 
 ```bash
 git clone https://github.com/kolisachint/hoocode
 cd hoocode
-scripts/install.sh                     # → updates ~/.hoocode/bin/hoocode if installed, else ~/.local/bin
-scripts/install.sh --prefix /usr/local/bin --also-hoocode   # also keep a `hoocode` link
+cargo install --locked --path crates/hoocode-code-main --bin hoocode
 ```
 
-Plain cargo still works and installs the binary as `hoocode`:
-`cargo install --path crates/hoocode-code-main --bin hoocode`.
+Or run `scripts/install.sh`, which builds a release binary and installs it as
+`hoocode` and `hoo` into `~/.hoocode/bin` (if the install script was used before) or
+`~/.local/bin`. `--prefix DIR` picks another directory.
 
-### Pre-built binaries
+hoocode is not on crates.io or Homebrew.
 
-Download `hoocode-<target>.tar.gz` from the
-[GitHub Releases](https://github.com/kolisachint/hoocode/releases) page and check it
-against `SHA256SUMS`. It holds the `hoocode` binary; put it on your `PATH`. Linux builds are static (musl) and run on any distro.
-
-## Usage
-
-```bash
-# Single-shot print mode (text or JSON)
-hoocode -p "Explain this codebase"
-hoocode -p --mode json "Explain this codebase"
-
-# Interactive TUI mode
-hoocode
-
-# JSON-RPC server mode
-hoocode --mode rpc
-
-# Subagent mode (used internally by the Agent tool)
-hoocode --mode subagent --task-id <id>
-```
-
-## Development
-
-```bash
-# Build the entire workspace
-cargo build
-
-# Run checks for all crates
-cargo check --workspace
-
-# Run all tests (CI uses nextest; `cargo test --workspace` works too)
-cargo nextest run --workspace
-```
-
-### Releases
-
-Label a PR `rust:patch`, `rust:minor` or `rust:major`; merging it runs the release:
-CI gates (parallel) → version bump, tag and GitHub release → binaries for 4 targets in
-parallel, each uploaded as soon as it is built. Optional labels: `release:skip-gates`
-(skip the gates, the PR's CI already passed) and `release:crates` (also publish to
-crates.io, off by default). Manual runs: Actions → Release.
-
-## Migration status (paused 2026-10-01, ready to use)
-
-The port of hoocode **v0.6.0** (commit `2223437c`) is paused, and `hoocode` is usable as a
-daily coding agent. Phases 7, 8 and 11 are complete. Phase 10 is complete apart from the
-deferred items listed below. Every remaining task is **deferred** by user decision; none is
-in progress. Status per task: `python3 archive/migration/ledger.py status`.
-
-What works (the pinned hoocode behavior, checked against hoocode itself):
-
-- **Modes:** interactive TUI, print mode (`-p`, text and `--mode json`), and `--mode rpc`
-  (with a Rust `RpcClient`).
-- **Providers:** every catalog provider, plus OAuth logins (`/login`) and `models.json`.
-- **Sessions:** AgentSession with compaction, `/new`, `/resume`, `/fork`, `/tree`,
-  `--continue`, `--session`, and `/export <file>.jsonl`.
-- **Tools:** Read, Shell, Edit, Write, lexical CodeSearch, TodoWrite, AskUserQuestion, and the
-  Yes/No/Always permission prompt.
-- **Agent modes:** ask/plan/build/debug (`/mode`, `/plan`, `/grill`, `/approve`, alt+a).
-- **Subagents:** the Agent/AgentOutput tools, the task panel, and the subagent roster.
-- **Resources:** skills, prompt templates and slash commands, AGENTS.md/CLAUDE.md context
-  files, themes, settings (`/settings`) and keybindings.
-
-Deferred (not available yet, even though `--help` still lists some of them):
-
-| Area | Ledger task |
-|---|---|
-| MCP servers (`mcp.json`, stdio/HTTP/SSE, OAuth) | 9.1, 10.11 |
-| `WebFetch` / `WebSearch` (`--enable-webtools`) | 10.2e |
-| Plugins and marketplace (`--enable-plugintools`) | 12.1 |
-| `hoocode install/remove/update/list` package manager | 12.2 |
-| Code extensions (`-e`, extension flags) | 12.3 |
-| Semantic and hybrid search (`embsearch`). Search is lexical-only. | 12.4 |
-| `/loop`, `/goal` autonomous loop, cron/scheduler | 12.5 |
-| Warm subagent pool (`--warm-subagents`) | 12.6 |
-| HTML export and `/share`, `/learn`, canvas, `--team`, voice, telemetry, version check | 12.7 |
-
-Known parity gaps: tasks 10.2a/b/c/d/f/g, 10.4c and 10.5 pass Level 1 but not Level 2. The
-default-bundle system prompt in hoocode also advertises the DocSearch self-knowledge tool
-from 12.4, so model requests differ in that one block.
-
-The plan and its rationale are in
-[`archive/docs/ts-to-rust-migration.md`](archive/docs/ts-to-rust-migration.md)
-(§0 status, §9 phases), and the handoff log is in `archive/migration/PROGRESS.md`. To resume, take a
-deferred task out of `deferred` and say "continue migration" (see `CLAUDE.md`).
+**Updating.** `hoocode update` prints the right update command for how you installed it.
 
 ## Quick start
 
 ```bash
-cargo install --path crates/hoocode-code-main --bin hoocode   # puts `hoocode` on PATH
-export ANTHROPIC_API_KEY=...        # or any provider key from `hoocode --help`, or /login
-hoocode                              # interactive TUI
-hoocode -p "Summarize this repo"     # one-shot
+export ANTHROPIC_API_KEY=...          # or any provider key, see `hoocode --help`
+cd your-project
+hoocode                               # full-screen interactive session
 ```
 
-- Config, auth, sessions and settings live in `~/.hoocode` (override with
-  `HOOCODE_CODING_AGENT_DIR`). Project overrides go in `./.hoocode/`.
-  Data from the pre-1.2 home and project folders is merged in once, with backups
-  (`hoocode migrate --dry-run` shows what would change).
-- The settings, `models.json`, `auth.json`, session JSONL and `hoo-config.json` formats match
-  hoocode's, so an existing hoocode setup can be copied over.
+No API key? Start `hoocode` and run `/login` to sign in with a subscription instead.
 
-## Publishing
+A few things to try in the interactive session:
 
-Publishing is driven from GitHub Actions:
+| Type | What it does |
+|---|---|
+| `/model` | Pick a model (Ctrl+P cycles through your favourites) |
+| `/mode` | Switch between ask, plan, build and debug |
+| `/resume` | Reopen an earlier session in this folder |
+| `@path/to/file` | Attach a file to your message |
+| `/hotkeys` | Show the keyboard shortcuts |
+| `/settings` | Change settings |
 
-- `Reserve crates.io names` — one-off workflow that publishes `0.0.1` placeholder crates.
-- `Release` — bump, build, publish, and create a GitHub release.
-- `Merge Release` — auto-releases PRs labeled `rust:patch`, `rust:minor`, or `rust:major`.
-- `Build binaries` — cross-compiles the `hoocode` binary for Linux, macOS (Intel/Apple Silicon), and Windows.
+One-shot and scripted use:
 
-Crates marked with `[package.metadata.hoocode] publish = true` are included in automated releases.
+```bash
+hoocode -p "Summarize this repo"                        # print the answer and exit
+hoocode -p --mode json "List the TODOs in src/"         # JSON event stream
+hoocode --model anthropic/claude-sonnet-4-5 "Review the last commit"
+hoocode --continue "And now fix the first one"          # continue the last session
+hoocode --tools Read,CodeSearch -p "Review src/"        # read-only run
+hoocode --mode rpc                                      # JSON-RPC over stdin/stdout
+```
+
+`hoocode --help` lists every flag and the provider environment variables;
+`hoocode --list-models [search]` lists the models it knows.
+
+## Configuration
+
+Everything hoocode keeps lives in **`~/.hoocode`**. Set `HOOCODE_CODING_AGENT_DIR` to
+move it.
+
+| File or folder | What it holds |
+|---|---|
+| `~/.hoocode/settings.json` | Global settings (`/settings` edits it) |
+| `.hoocode/settings.json` | Per-project settings, merged over the global ones |
+| `~/.hoocode/auth.json` | Logins and keys saved by `/login` |
+| `~/.hoocode/models.json` | Your own providers and models (for example a local OpenAI-compatible server) |
+| `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules (`auto_allow`) |
+| `~/.hoocode/skills/`, `.hoocode/skills/` | Skills, global and per project |
+| `~/.hoocode/themes/` | Custom themes |
+| `~/.agents/mcp.json`, `.agents/mcp.json` | MCP servers, global and per project (`/mcp` shows their state) |
+| `AGENTS.md` or `CLAUDE.md` | Project instructions, read from the working folder and its parents |
+
+Sessions are saved as JSONL files under `~/.hoocode`, so you can resume, fork or export
+them (`/export <file>.jsonl`). `--no-session` keeps a run ephemeral, and `--offline`
+turns off startup network calls such as the version check.
+
+## Documentation
+
+- [`docs/maps/ui.md`](docs/maps/ui.md): the screen, pickers, slash commands and keys,
+  and where each lives in the code
+- [`docs/maps/packages.md`](docs/maps/packages.md): every crate in the workspace and
+  what it does
+- [`docs/design/`](docs/design/README.md): design notes and the plan for what is built next
+- [`docs/design/distribution.md`](docs/design/distribution.md): how releases reach users
+- [`CHANGELOG.md`](CHANGELOG.md): what changed (also `/changelog` inside hoocode)
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md): it covers the dev loop (fmt, clippy, nextest),
+where tests go and how releases work. Please read the
+[code of conduct](CODE_OF_CONDUCT.md), and report security problems privately as
+described in [SECURITY.md](SECURITY.md).
+
+If hoocode is useful to you, a star on the repo helps other people find it.
+
+## Credits
+
+hoocode began as a fork of [`pi-mono`](https://github.com/badlogic/pi-mono) by
+Mario Zechner, which is MIT-licensed. Its copyright notice is kept in [LICENSE](LICENSE).
+Thanks to Mario and the upstream contributors.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
