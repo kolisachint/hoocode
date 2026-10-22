@@ -148,11 +148,12 @@ move it.
 | `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules (`auto_allow`) |
 | `~/.hoocode/skills/`, `.hoocode/skills/` | Skills, global and per project |
 | `~/.hoocode/themes/` | Custom themes |
+| `~/.hoocode/sessions/` | Saved sessions, one JSONL file each, in a folder per project (`HOOCODE_CODING_AGENT_SESSION_DIR` or `--session-dir` moves them) |
 | `~/.agents/mcp.json`, `.agents/mcp.json` | MCP servers, global and per project (`/mcp` shows their state) |
 | `~/.agents/plugins/`, `.agents/plugins/` | Plugins, user and per project (`hoocode install`, `hoocode list`, or `/plugin` in a session) |
 | `AGENTS.md` or `CLAUDE.md` | Project instructions, read from the working folder and its parents |
 
-Sessions are saved as JSONL files under `~/.hoocode`, so you can resume, fork or export
+Because sessions are saved as files, you can resume, fork or export
 them (`/export <file>.jsonl`). `--no-session` keeps a run ephemeral, and `--offline`
 turns off startup network calls such as the version check.
 
