@@ -1,11 +1,30 @@
 # Changelog
 
-All notable changes to HooCode will be documented in this file.
+All notable changes to hoocode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+The first release for people outside the project: plugins can be managed from the shell, `--help` describes only what this build does, and the repo has a README, contributing guide, security policy and templates written for new users and contributors.
+
+### Added: plugin commands in the shell (2026-10-22)
+- **`hoocode install <name[@marketplace]>`, `hoocode remove <name>` (or `uninstall`) and `hoocode list`** install, remove and list plugins without starting a session. `--scope user|project` picks where a plugin goes; user scope (`~/.agents/plugins`) is the default.
+- **`hoocode plugin <command>`** runs every `/plugin` command from the shell: `marketplace add <source> [--trust]`, `marketplace list`, `marketplace refresh`, `update`, `trust`. `hoocode plugin --help` lists them. A running session picks up a change on `/reload`.
+- These replace the old `install`/`remove`/`list` entries in `--help`, which only printed "not yet supported".
+
+### Changed: `--help` lists only what works (2026-10-22)
+- **Config directory:** `HOOCODE_CODING_AGENT_DIR` defaults to `~/.hoocode`, as it always has in this build. The help said `~/.hoocode/agent`.
+- **Commands:** adds `plugin`, `migrate` and `app-server`. `hoocode resources` is gone from the help and now says to use `hoocode config`.
+- **Flags that are not implemented are no longer listed:** `--export`, `--extension`/`-e`, `--no-extensions`, `--agent`, `--theme`, `--no-themes`, `--verbose`, `--platform`, `--enable-webtools`, `--enable-todowrite`, `--enable-semantic-index` and `--print-token-surface`. Each still fails with a clear "not yet supported" error if you pass it.
+- **Examples and variables:** examples use Rust files; `HOOCODE_USER_AGENTS_DIR`, `HOOCODE_FULLSCREEN` and `HF_TOKEN` are listed; `HOOCODE_SHARE_VIEWER_URL` and the two `HOOCODE_WEBTOOLS_*` variables, which nothing reads, are gone.
+
+### Changed: in-app text matches what ships (2026-10-22)
+- **Slash commands:** `/share` is no longer offered (it only said "not available yet"). `/export` says it writes JSONL. `/reload` no longer mentions extensions.
+- **Tips:** the `/plugin` and `hoo` alias tips are back in the rotation; the export tip no longer promises HTML or `/share`. A test checks that every tip names only commands that exist.
+- **Built-in skills:** `canvas-design` is removed, and `artifact-design` no longer points at `/canvas` or `/new-canvas`. hoocode has no canvases.
+- **`DocSearch`:** its description now says what it searches, the loaded skills, subagents and plugins, instead of promising documentation it does not index and a `ResolveMcpTools` tool that does not exist.
 
 ### Added: docs and templates for contributors (2026-10-22)
 - **New:** `CONTRIBUTING.md` (setup, the dev loop, tests and goldens, code style, releases), `SECURITY.md` (private reporting, what counts), `CODE_OF_CONDUCT.md`, issue templates (bug, feature, question) and a pull request template.
