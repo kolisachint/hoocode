@@ -96,12 +96,12 @@ index 00000000..acaaa1ef
 +      id-token: write
 +    secrets: inherit
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 7a4df69c..a18ec482 100644
+index 3732cea4..4b9835cb 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -26,9 +26,10 @@ The first release for people outside the project: plugins can be managed from th
- - **Built-in skills:** `canvas-design` is removed, and `artifact-design` no longer points at `/canvas` or `/new-canvas`. hoocode has no canvases.
- - **`DocSearch`:** its description now says what it searches, the loaded skills, subagents and plugins, instead of promising documentation it does not index and a `ResolveMcpTools` tool that does not exist.
+@@ -31,9 +31,10 @@ The first release for people outside the project: plugins can be managed from th
+ ### Added: a demo in the README (2026-10-22)
+ - **`docs/assets/demo.gif`** shows the real binary fixing a bug in a small Rust crate: Read, then Edit and `cargo test` after approval, then the slash-command menu. Only the model is scripted (the mock LLM of the screen goldens); `scripts/demo/record.sh` records it again for each release.
  
 -### Added: docs and templates for contributors (2026-10-22)
 +### Added: docs and templates for contributors, releases from a tag (2026-10-22)
@@ -112,7 +112,7 @@ index 7a4df69c..a18ec482 100644
  ## [0.1.41] - 2026-10-21
  
 diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
-index e987169d..a4358e69 100644
+index 99f4fed4..fecae474 100644
 --- a/CONTRIBUTING.md
 +++ b/CONTRIBUTING.md
 @@ -175,7 +175,13 @@ Maintainers release by merging a PR labelled `rust:patch`, `rust:minor` or
@@ -128,13 +128,13 @@ index e987169d..a4358e69 100644
 +workspace version, runs the CI gates, creates the GitHub release and builds the same
 +artifacts. All crates share one version, set in the workspace `Cargo.toml`.
  
- ## Code of conduct
- 
+ Before a release, re-record the README demo so it shows the current screens:
+ `scripts/demo/record.sh` builds a release binary, runs it in tmux against the scripted
 diff --git a/docs/design/distribution.md b/docs/design/distribution.md
-index e4dedcde..a2213f61 100644
+index ee40ff7f..b5cca6f0 100644
 --- a/docs/design/distribution.md
 +++ b/docs/design/distribution.md
-@@ -12,7 +12,9 @@ the work deliberately left for later, so the scope of each step stays small.
+@@ -14,7 +14,9 @@ The TypeScript build (`hoocode-ts`, `hoo-ts`) was retired on 2026-10-10; hoocode
  
  ## Shipped
  
