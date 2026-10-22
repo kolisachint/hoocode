@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
 The first release for people outside the project: plugins can be managed from the shell, `--help` describes only what this build does, and the repo has a README, contributing guide, security policy and templates written for new users and contributors.
 
 ### Added: plugin commands in the shell (2026-10-22)
@@ -25,6 +27,9 @@ The first release for people outside the project: plugins can be managed from th
 - **Tips:** the `/plugin` and `hoo` alias tips are back in the rotation; the export tip no longer promises HTML or `/share`. A test checks that every tip names only commands that exist.
 - **Built-in skills:** `canvas-design` is removed, and `artifact-design` no longer points at `/canvas` or `/new-canvas`. hoocode has no canvases.
 - **`DocSearch`:** its description now says what it searches, the loaded skills, subagents and plugins, instead of promising documentation it does not index and a `ResolveMcpTools` tool that does not exist.
+
+### Added: a demo in the README (2026-10-22)
+- **`docs/assets/demo.gif`** shows the real binary fixing a bug in a small Rust crate: Read, then Edit and `cargo test` after approval, then the slash-command menu. Only the model is scripted (the mock LLM of the screen goldens); `scripts/demo/record.sh` records it again for each release.
 
 ### Added: docs and templates for contributors (2026-10-22)
 - **New:** `CONTRIBUTING.md` (setup, the dev loop, tests and goldens, code style, releases), `SECURITY.md` (private reporting, what counts), `CODE_OF_CONDUCT.md`, issue templates (bug, feature, question) and a pull request template.
