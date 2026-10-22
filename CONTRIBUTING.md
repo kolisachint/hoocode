@@ -177,6 +177,13 @@ Add the label `release:run-gates` to re-run CI before tagging.
 
 All crates share one version, set in the workspace `Cargo.toml`.
 
+Before a release, re-record the README demo so it shows the current screens:
+`scripts/demo/record.sh` builds a release binary, runs it in tmux against the scripted
+mock model ([`scripts/demo/demo.json`](scripts/demo/demo.json)), and writes
+`docs/assets/demo.gif`. It needs tmux, ffmpeg, node with Playwright and a Chromium
+(see [`scripts/demo/record.py`](scripts/demo/record.py)). Look at the GIF before you
+commit it.
+
 ## Code of conduct
 
 Everyone taking part is expected to follow the [code of conduct](CODE_OF_CONDUCT.md).

@@ -10,6 +10,12 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="hoocode in a terminal: asked to make mean() return an Option, it reads src/lib.rs, shows the edit as a diff and waits for approval, runs cargo test after a second approval (1 passed), sums up, and then opens the slash-command menu" width="800">
+</p>
+
+<p align="center"><sub>The real binary; only the model is scripted, so the demo can be recorded again for each release (<code>scripts/demo/record.sh</code>).</sub></p>
+
 ---
 
 hoocode reads your code, runs commands, edits files and talks to the model of your
