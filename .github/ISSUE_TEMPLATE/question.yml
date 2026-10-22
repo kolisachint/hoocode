@@ -1,0 +1,33 @@
+name: Question
+description: How do I...? Is this supposed to...?
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions are welcome here; there is no separate forum. If the answer turns out
+        to be hard to find, that is worth fixing too.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What would you like to know?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What have you tried?
+      description: Commands, settings, or docs that didn't answer it.
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: hoocode version
+      description: Output of `hoocode --version`.
+      placeholder: "0.1.41"
+    validations:
+      required: false

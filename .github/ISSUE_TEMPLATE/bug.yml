@@ -1,0 +1,98 @@
+name: Bug report
+description: Something does not work the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for writing this down. Fill in what you can: a partial report is better
+        than none. If you can't reproduce it reliably, say so and file it anyway.
+
+        **Security problem?** Don't file it here. See [SECURITY.md](https://github.com/kolisachint/hoocode/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what you got instead.
+      placeholder: |
+        I ran /compact on a long session and the transcript came back empty.
+        I expected a summary and the conversation to continue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How can we reproduce it?
+      description: Steps, as precisely as you can. If it is intermittent, say what makes it more likely.
+      placeholder: |
+        1. Start `hoocode` in any repo
+        2. Send about 20 messages
+        3. Run /compact
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: hoocode version
+      description: Output of `hoocode --version`.
+      placeholder: "0.1.41"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Install script (install.sh)
+        - npm or bun
+        - pip or pipx
+        - Release archive from GitHub
+        - Built from source
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS and terminal
+      description: Many rendering bugs happen in one terminal only, so the terminal (and tmux, if any) matters.
+      placeholder: "macOS 15, Ghostty / Ubuntu 24.04, tmux 3.5 in Alacritty"
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+      description: If the bug involves the model at all.
+      placeholder: "anthropic / claude-sonnet-4-5"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: >
+        The error as printed, or the relevant part of `~/.hoocode/hoocode-debug.log`.
+        Remove API keys, tokens and anything private first. Rendered as a code block.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched [existing issues](https://github.com/kolisachint/hoocode/issues?q=is%3Aissue) for this.
+          required: false
+        - label: I am on the latest release, or I checked the [changelog](https://github.com/kolisachint/hoocode/blob/main/CHANGELOG.md) and it is not fixed there.
+          required: false
+        - label: I'd be up for fixing this myself, with a pointer to where to start.
+          required: false
