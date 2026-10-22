@@ -96,12 +96,12 @@ index 00000000..acaaa1ef
 +      id-token: write
 +    secrets: inherit
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 523d7b50..419bf673 100644
+index 7a4df69c..a18ec482 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -7,9 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
- 
- ## [Unreleased]
+@@ -26,9 +26,10 @@ The first release for people outside the project: plugins can be managed from th
+ - **Built-in skills:** `canvas-design` is removed, and `artifact-design` no longer points at `/canvas` or `/new-canvas`. hoocode has no canvases.
+ - **`DocSearch`:** its description now says what it searches, the loaded skills, subagents and plugins, instead of promising documentation it does not index and a `ResolveMcpTools` tool that does not exist.
  
 -### Added: docs and templates for contributors (2026-10-22)
 +### Added: docs and templates for contributors, releases from a tag (2026-10-22)
