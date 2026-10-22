@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: docs and templates for contributors (2026-10-22)
+- **New:** `CONTRIBUTING.md` (setup, the dev loop, tests and goldens, code style, releases), `SECURITY.md` (private reporting, what counts), `CODE_OF_CONDUCT.md`, issue templates (bug, feature, question) and a pull request template.
+- **README rewritten for users:** what hoocode is, every install route that exists (install script, npm, pip, release archives, source), quick start, where configuration lives, and links to the docs.
+
+## [0.1.41] - 2026-10-21
+
+Versions 0.1.1 to 0.1.41 were released from `main` as PRs merged. The entries below were written as the changes landed, newest first, and are not split by version. Per-version notes are on the [GitHub releases](https://github.com/kolisachint/hoocode/releases) page.
+
 ### Fixed: subagents ran gated tools without asking (2026-10-21)
 - **A subagent's Shell, Edit, Write, WebFetch and WebSearch calls now go through clearance.** They used to run unasked because the child (`--mode json`) has no screen. The child now asks its parent over its pipes: `{"type":"clearance_request","id","tool","input"}` on stdout, `{"type":"clearance_response","id","allow","reason"?}` on stdin.
 - **In the TUI the parent's own gate decides,** so config rules and a session `always` apply once for the main agent and every subagent. The card names the subagent; the Agent block shows `◉ … holding for clearance` while it waits. Requests that arrive together queue instead of denying the card that is up. A child waiting on a person is not reaped as stalled.
@@ -332,91 +340,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | Google | Gemini 2.5 | ✅ |
 | Azure | GPT-4, GPT-4o | ✅ |
 | Faux | Test models | ✅ |
-
----
-
-## Release Notes
-
-### v0.1.0 - Initial Release
-
-HooCode is a Rust migration of the HooCode TypeScript coding-agent framework. This release includes:
-
-**Core Features:**
-- Full LLM runtime with streaming support
-- Tool execution and permission gates
-- Session management and persistence
-- MCP (Model Context Protocol) support
-- Interactive TUI with vim-style editing
-
-**Providers:**
-- Anthropic (Claude 3.5, Claude 4)
-- OpenAI (GPT-4, GPT-4o)
-- OpenCode (MiMo, DeepSeek, Claude, Gemini)
-- Google (Gemini 2.5)
-- Azure OpenAI
-- Faux (testing)
-
-**CLI Modes:**
-- Print mode (text/JSON output)
-- Interactive TUI mode
-- JSON-RPC server mode
-- Subagent mode
-
-**Development:**
-- 43 crates in workspace structure
-- 640 tests passing
-- Zero clippy warnings
-- CI/CD with GitHub Actions
-- Cross-platform binary builds
-
-**Installation:**
-```bash
-# From source
-cargo install --path crates/hoocode-code-main --bin hoocode
-
-# Pre-built binaries
-# Download from GitHub Releases
-```
-
-**Usage:**
-```bash
-# Single-shot mode
-hoocode -p "Explain this codebase"
-
-# Interactive mode
-hoocode
-
-# With specific provider
-hoocode --provider opencode --model mimo-v2.5-free -p "Hello"
-```
-
----
-
-## Migration Status
-
-The migration from HooCode TypeScript to HooCode Rust is **98% complete**.
-
-**Completed:**
-- ✅ TUI Namespace (120 tests)
-- ✅ AI Namespace (155 tests)
-- ✅ Agent Namespace (57 tests)
-- ✅ Code Namespace (88 tests)
-- ✅ OpenCode API Provider (22+ tests)
-- ✅ All 6 Providers Working
-- ✅ 640 Tests Passing
-- ✅ Zero Clippy Warnings
-- ✅ CI/CD Pipeline Working
-
-**Remaining (Deferred):**
-- ⏳ Full parity testing with scripted hoocode scenarios
-- ⏳ Release notes and changelog (this document)
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to HooCode.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
