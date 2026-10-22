@@ -14,10 +14,6 @@ pub const EMBEDDED_SKILLS: &[(&str, &str)] = &[
         include_str!("../templates/skills/artifact-design/SKILL.md"),
     ),
     (
-        "canvas-design/SKILL.md",
-        include_str!("../templates/skills/canvas-design/SKILL.md"),
-    ),
-    (
         "plugin-authoring/SKILL.md",
         include_str!("../templates/skills/plugin-authoring/SKILL.md"),
     ),
@@ -44,11 +40,6 @@ pub const BUILTIN_SKILLS: &[BuiltinSkill] = &[
     BuiltinSkill {
         name: "artifact-design",
         summary: "Craft for a self-contained HTML visual: read the treatment the request calls for, write the color/type/layout plan before the markup, and avoid the looks generated design keeps landing on.",
-        gate: None,
-    },
-    BuiltinSkill {
-        name: "canvas-design",
-        summary: "The canvas half of design craft: template-string markup, no dependencies and no build, owning the theme outright, rendering state two operators both mutate, and what actions cost while an instance is open.",
         gate: None,
     },
     BuiltinSkill {
@@ -109,17 +100,6 @@ pub fn materialize_builtin_skills(agent_dir: &str) -> Option<String> {
             None
         }
     }
-}
-
-/// `canvasDesignGuidePath`.
-pub fn canvas_design_guide_path(agent_dir: &str) -> Option<String> {
-    materialize_builtin_skills(agent_dir)?;
-    let guide = node_path::join(&[
-        &builtin_skills_cache_dir(agent_dir),
-        "canvas-design",
-        "SKILL.md",
-    ]);
-    std::path::Path::new(&guide).exists().then_some(guide)
 }
 
 /// `builtinSkillPaths`: the enabled skills' directories (after gating).

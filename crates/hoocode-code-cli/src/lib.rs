@@ -13,6 +13,7 @@ mod help;
 mod help_text;
 pub mod initial_message;
 mod list_models;
+mod plugin_command;
 mod runtime;
 mod session_flags;
 
@@ -29,10 +30,11 @@ use std::io::{IsTerminal, Read, Write};
 /// `VERSION` printed by `--version`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Package-manager subcommands that hoocode handles before `parseArgs`
-/// (`handlePackageCommand`, `handleResourcesCommand`). Not ported yet;
-/// `config` (`handleConfigCommand`) and `update` (see `hoocode-code-update`) are.
-const SUBCOMMANDS: [&str; 5] = ["install", "remove", "uninstall", "list", "resources"];
+/// What `hoocode resources` says. It is not a command: the startup listing of an
+/// interactive session and `hoocode config` show the same resources.
+const RESOURCES_UNAVAILABLE: &str = "Error: `hoocode resources` is not available. \
+Start hoocode to see the skills, slash commands, subagents and MCP servers it found, \
+or run `hoocode config` to list them.";
 
 /// `resolveAppMode` in `main.ts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,15 +184,14 @@ pub fn main(argv: &[String]) -> i32 {
     if argv.first().is_some_and(|a| a == "update") {
         return hoocode_code_update::run_update_command(&mut stdout);
     }
-    if let Some(cmd) = argv.first().filter(|a| SUBCOMMANDS.contains(&a.as_str())) {
-        let _ = writeln!(
-            stderr,
-            "{}",
-            red(
-                env.color,
-                &format!("Error: `hoocode {cmd}` is not yet supported by hoocode")
-            )
-        );
+    if argv
+        .first()
+        .is_some_and(|a| plugin_command::PLUGIN_SUBCOMMANDS.contains(&a.as_str()))
+    {
+        return plugin_command::run(argv, &cwd, &mut stdout, &mut stderr, env.color);
+    }
+    if argv.first().is_some_and(|a| a == "resources") {
+        let _ = writeln!(stderr, "{}", red(env.color, RESOURCES_UNAVAILABLE));
         return 1;
     }
 

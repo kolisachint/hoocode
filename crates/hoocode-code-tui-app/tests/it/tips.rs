@@ -383,3 +383,38 @@ fn tip_ttl_grows_with_the_body_and_caps_at_twelve_seconds() {
     assert_eq!(tip_ttl(2), Duration::from_millis(9_000));
     assert_eq!(tip_ttl(5), Duration::from_millis(12_000));
 }
+
+#[test]
+fn rotation_tips_name_only_commands_that_run() {
+    // Every `/word` in a tip that is in the rotation must be a built-in slash command
+    // or a mode command (code-modes), so a tip never teaches a command that is missing.
+    let mut known: Vec<&str> = hoocode_code_resources::BUILTIN_SLASH_COMMANDS
+        .iter()
+        .map(|c| c.name)
+        .collect();
+    known.extend(["mode", "plan", "grill", "goal", "approve"]);
+    for tip in available_tips() {
+        let mut text = tip.note.clone().unwrap_or_default();
+        if let Some(TipBody::Static(rows)) = &tip.body {
+            text.push(' ');
+            text.push_str(&rows.join(" "));
+        }
+        for word in text.split_whitespace() {
+            let Some(name) = word.strip_prefix('/') else {
+                continue;
+            };
+            let name: String = name
+                .chars()
+                .take_while(|c| c.is_ascii_lowercase() || *c == '-')
+                .collect();
+            if name.is_empty() {
+                continue;
+            }
+            assert!(
+                known.contains(&name.as_str()),
+                "tip {} names /{name}, which is not a command",
+                tip.id
+            );
+        }
+    }
+}

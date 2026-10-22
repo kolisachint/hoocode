@@ -122,6 +122,15 @@ hoocode --tools Read,CodeSearch -p "Review src/"        # read-only run
 hoocode --mode rpc                                      # JSON-RPC over stdin/stdout
 ```
 
+Plugins add skills, subagents and MCP servers. Add a git marketplace, then install
+from it, from the shell or with `/plugin` in a session:
+
+```bash
+hoocode plugin marketplace add <git-url-or-owner/repo>
+hoocode install <plugin>@<marketplace>     # --scope project for this repo only
+hoocode list
+```
+
 `hoocode --help` lists every flag and the provider environment variables;
 `hoocode --list-models [search]` lists the models it knows.
 
@@ -140,6 +149,7 @@ move it.
 | `~/.hoocode/skills/`, `.hoocode/skills/` | Skills, global and per project |
 | `~/.hoocode/themes/` | Custom themes |
 | `~/.agents/mcp.json`, `.agents/mcp.json` | MCP servers, global and per project (`/mcp` shows their state) |
+| `~/.agents/plugins/`, `.agents/plugins/` | Plugins, user and per project (`hoocode install`, `hoocode list`, or `/plugin` in a session) |
 | `AGENTS.md` or `CLAUDE.md` | Project instructions, read from the working folder and its parents |
 
 Sessions are saved as JSONL files under `~/.hoocode`, so you can resume, fork or export

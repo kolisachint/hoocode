@@ -15,12 +15,14 @@
 //! [`PluginSet::mcp_servers`] for the MCP config. Hooks, commands, themes and providers are
 //! skipped with a warning.
 //!
+//! [`command`] is the plugin command shared by `/plugin` and the CLI subcommands.
 //! [`install`] copies plugins from [`marketplace`]s (Claude's `marketplace.json`, read only) into the
 //! user or project plugin folder and records where each came from. [`model`] and [`propose`] back
 //! the model's plugin tools: a trusted-only install and search, and writing a plugin the model
 //! authored (an Agent Plugins package, untrusted until the user grants its MCP servers).
 
 pub mod agent_mcp;
+pub mod command;
 pub mod install;
 mod load;
 pub mod manifest;
