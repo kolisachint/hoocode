@@ -316,6 +316,7 @@ frame build p50 / p99, then key p50 / p99.
 |---|---|---|---|---|
 | Before (de07817, same machine) | 10.8 / 31.2 | 10.1 / 39.9 | 7.7 / 25.4 | 9.1 / 41.0 |
 | 1. Incremental streaming render | 3.8 / 10.3 | 3.6 / 8.8 | 1.2 / 3.1 | 1.4 / 5.0 |
+| 2. One reply copy less per delta (agent loop) | 3.8 / 10.4 | 3.9 / 11.0 | 1.2 / 4.6 | 1.5 / 5.1 |
 
 - **Where the 8 ms went.** Not the markdown (a tail re-lex plus the cached segments cost about
   0.3 ms). The peek/full view puts every prose line on the `┊` rail (`rail_line`, an ANSI parse and
@@ -324,6 +325,14 @@ frame build p50 / p99, then key p50 / p99.
 - **Rail cache.** `AssistantMessageComponent::render_railed` keeps each stamped content child's
   railed lines by the child's address, under (stamp, width, render epoch). Debug builds draw every hit
   again and assert equality. Block gaps share one `Spacer` handle, so its stamp stays stable.
+- **Reply copies per delta.** The agent loop wrote each partial into its local context as well as
+  into the event's shared message; the context copy is gone (`finish_response` still sets the
+  final message, and nothing reads the loop's context mid-stream). `AssistantMessageEvent::partial`
+  stays an owned `AssistantMessage`: an `Arc` there touches 17 files outside ai-stream, agent-loop,
+  agent-core and the TUI (ai-types, 7 provider crates with their tests, faux, print, agent-types),
+  and a provider that keeps an `Arc` and appends with `Arc::make_mut` copies anyway while a
+  listener still holds the previous event. No frame change (the loop runs off the UI thread);
+  the saving is CPU in the loop task. Still one copy in the provider and one in the loop per delta.
 - **Segments.** The 2,048-char threshold is gone: a streaming block is segmented at every stable boundary.
   A later segment is a `GappedSegment` (its markdown behind the blank row the full text has there),
   so a chunk that draws nothing yet (a lone `>`) matches the full render. Test:

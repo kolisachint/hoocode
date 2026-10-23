@@ -414,12 +414,11 @@ async fn stream_assistant_response(
             }
             event => {
                 if added_partial {
-                    // One copy for the context, one shared by the event and its
-                    // listeners.
+                    // One copy, shared by the event and its listeners. The
+                    // context is borrowed by this loop for the whole stream and
+                    // `finish_response` puts the final message in its place, so
+                    // it does not follow each delta.
                     let message = Arc::new(AgentMessage::Assistant(partial_of(&event).clone()));
-                    if let Some(last) = context.messages.last_mut() {
-                        *last = (*message).clone();
-                    }
                     emit(AgentEvent::MessageUpdate {
                         assistant_message_event: Arc::new(event),
                         message,
