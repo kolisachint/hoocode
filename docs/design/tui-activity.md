@@ -248,6 +248,112 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
 - Parallel only where files don't overlap: T0.1/T0.3 together, Phase S rows by crate, T4.2/T4.3 together, T5.1/T5.2 with T3. T1.1 → T1.2 → T3.3 are serial.
 - Before starting any step, the orchestrator asks the user which plan (core or TUI) and step.
 
+### Perf: event wake + Arc deltas
+
+- The UI loop used to learn about agent events only when it woke for a key or a
+  timer, so streamed text showed in bursts of 120 to 640 ms. App events now go
+  through `AppSender` (`mode/mod.rs`), which sends a `TuiEvent::Wake` into the
+  input channel. `WakeHandle` (hoocode-tui-render) coalesces wakes with an atomic
+  flag. A pass takes at most 256 app events and wakes itself if it hit the cap.
+  A wake alone does not repaint within 16 ms of the last pass; a key ends that
+  wait at once. The 100 ms markdown stream throttle is unchanged.
+- `AgentEvent::MessageUpdate` carries `Arc<AssistantMessageEvent>` and
+  `Arc<AgentMessage>` (and `AgentState::streaming_message` is an `Arc`), so the
+  session's `event.clone()` and the core state no longer copy the partial
+  message. The UI keeps only the last of consecutive updates in a batch.
+- Measure with `scripts/perf/load_scenario.py --scenario stream`.
+
+### Perf phase 2: frame cost independent of transcript length
+
+Measured with `load_scenario.py --scenario long-transcript` (a resumed, generated
+200-turn session: markdown, a code block, a table and a Shell call per turn, then the
+same streamed reply and typing as `stream`) against `--scenario stream` (empty
+transcript). Release build, 120x40, 20 keys/s, 3000 paced deltas. Times in ms.
+
+| | long-transcript | | stream (small) | |
+|---|---|---|---|---|
+| | frame build p50 / p99 | key p50 / p99 | frame build p50 / p99 | key p50 / p99 |
+| Before (phase 1, bb530f1) | 43.2 / 77.0 | 44.9 / 107.8 | 7.8-8.0 / 20-25 | 9.3-9.5 / 26-38 |
+| 1. Per-child line cache | 14.7 / 38.2 | 14.9 / 58.7 | 8.1 / 26.3 | 9.4 / 42.8 |
+| 2. Viewport-only compose | 13.1 / 31.2 | 13.4 / 48.9 | 8.0 / 29.6 | 9.4 / 46.0 |
+| 3. Markdown version counter | 12.6 / 31.1 | 12.9 / 42.4 | 7.8-8.7 / 26-29 | 9.1-9.7 / 27-38 |
+| Context gauge read in place (final, 2 runs) | 10.9-12.0 / 31 | 11.1-12.3 / 43 | 7.6-7.7 / 27 | 8.6-8.9 / 29 |
+
+(One run in four shows a single 1-2 s stall as the key p99 on either scenario; it is
+not tied to a change. p99 over 335 keys is one or two samples.)
+
+- **Component stamps.** `Component::render_stamp` returns `Some(u64)` while the output is a
+  function of state that only `&mut` methods change; every such method takes a
+  `fresh_stamp()`. A `Container` keeps `Rc<[String]>` per child under (stamp, width, render
+  epoch) and renders only children whose key changed. `None` (default) means "draw every
+  frame", which is what anything reading a clock, the job registry or the subagent registry
+  returns: a streaming message, a chain still collecting calls, a running or Agent block, a
+  mission header while flying. Theme changes bump `bump_render_epoch` (`code-tui-theme`).
+- **Why it is safe to cache.** Builds with debug assertions (so nextest) re-render every cache
+  hit and assert the lines are equal; a stamp that misses a change fails the test that
+  touches it. `HOOCODE_RENDER_CACHE_CHECK=0` turns it off for a debug binary.
+- **Frozen history.** A resumed session now freezes all but the newest `LIVE_TOOL_WINDOW`
+  tool blocks when its history is rebuilt (`render_session_context`). Before, a resumed
+  session kept every block live until its first new tool call ended.
+- **Full-screen compose.** The body renders into `Rendered` pieces (shared lines for cached
+  children) and `compose_fullscreen` copies only the window on screen. The whole body is
+  copied while pinned (the search reads every row) and in inline mode.
+- **Markdown.** `Markdown` compares a version, not its text, on a cache hit and returns the
+  kept `Rc<[String]>`; `set_text` with the same text keeps the cache.
+- **Context gauge.** `get_context_usage` (HUD and comms frame, every frame) copied every
+  message; it now reads them in place.
+- **Still O(transcript).** Walking the container's children for stamps (about 0.6 ms at
+  1,400 children), `branch()` and `sum_assistant_usage` in the HUD and comms frame (about
+  1 ms at 200 turns), pinned frames, and inline mode (`build_live_frame` renders twice and
+  copies the frame into `flat_lines`). The turn being streamed is drawn in full every frame.
+
+### Perf phase 3: the streaming turn
+
+Same scenarios and settings as phase 2 (release, 120x40, 20 keys/s, 3000 paced deltas). Times in ms,
+frame build p50 / p99, then key p50 / p99.
+
+| | long-transcript | | stream (small) | |
+|---|---|---|---|---|
+| Before (de07817, same machine) | 10.8 / 31.2 | 10.1 / 39.9 | 7.7 / 25.4 | 9.1 / 41.0 |
+| 1. Incremental streaming render | 3.8 / 10.3 | 3.6 / 8.8 | 1.2 / 3.1 | 1.4 / 5.0 |
+| 2. One reply copy less per delta (agent loop) | 3.8 / 10.4 | 3.9 / 11.0 | 1.2 / 4.6 | 1.5 / 5.1 |
+| 3. Inline frame keeps no flat copy (fullscreen, re-measured) | 3.9 / 7.9 | 3.9 / 8.8 | 1.2 / 3.3 | 1.4 / 3.9 |
+| *Inline (`stream-inline`, `long-transcript-inline`), before 3* | 7.9 / 15.6 | 9.9 / 23.5 | 1.1 / 3.7 | 1.4 / 4.0 |
+| *Inline, after 3* | 5.8 / 11.1 | 7.4 / 17.1 | 1.0 / 3.4 | 1.3 / 4.0 |
+
+- **Where the 8 ms went.** Not the markdown (a tail re-lex plus the cached segments cost about
+  0.3 ms). The peek/full view puts every prose line on the `┊` rail (`rail_line`, an ANSI parse and
+  rebuild per line) and did so for the whole streaming reply every frame: about 1,200 lines
+  and 8 to 20 ms late in the stream.
+- **Rail cache.** `AssistantMessageComponent::render_railed` keeps each stamped content child's
+  railed lines by the child's address, under (stamp, width, render epoch). Debug builds draw every hit
+  again and assert equality. Block gaps share one `Spacer` handle, so its stamp stays stable.
+- **Reply copies per delta.** The agent loop wrote each partial into its local context as well as
+  into the event's shared message; the context copy is gone (`finish_response` still sets the
+  final message, and nothing reads the loop's context mid-stream). `AssistantMessageEvent::partial`
+  stays an owned `AssistantMessage`: an `Arc` there touches 17 files outside ai-stream, agent-loop,
+  agent-core and the TUI (ai-types, 7 provider crates with their tests, faux, print, agent-types),
+  and a provider that keeps an `Arc` and appends with `Arc::make_mut` copies anyway while a
+  listener still holds the previous event. No frame change (the loop runs off the UI thread);
+  the saving is CPU in the loop task. Still one copy in the provider and one in the loop per delta.
+- **Inline frame.** `build_live_frame` no longer clones the frame into `flat_lines` (about 1.4 ms at
+  10,000 rows): the search reads the last painted frame (`previous_lines`, the same rows without the
+  cursor marker), and a live frame only drops the copy a pinned view left. The second render was
+  already conditional (`fit_flex_spacer` reports whether the spacer height moved); it happens only
+  while the transcript is shorter than the screen, where it is cheap. The rest of the inline cost
+  at 10,000 rows is the stamp walk (about 3.7 ms: the container visits about 1,400 children) and
+  `into_lines` (1.6 ms: the frame is a `Vec<String>`), which would need a piece-based diff.
+  `load_scenario.py` has `stream-inline` and `long-transcript-inline` (`"fullscreen": false`).
+- **HUD walk, not done.** `branch()` is no longer on the per-frame path (the context gauge reads in
+  place); what is left is `sum_assistant_usage`, a pass over about 1,000 entries (microseconds), not
+  worth a cache with its invalidation rules.
+- **Segments.** The 2,048-char threshold is gone: a streaming block is segmented at every stable boundary.
+  A later segment is a `GappedSegment` (its markdown behind the blank row the full text has there),
+  so a chunk that draws nothing yet (a lone `>`) matches the full render. Test:
+  `streaming_segmentation::streamed_*_matches_fresh_render_at_every_char` streams a document with
+  headings, lists, a fenced code block with a blank line, a table and a quote char by char in
+  peek, full and radar views and compares each step byte for byte with a settled render.
+
 ## Not doing
 
 - Prompting or steering a subagent while attached (read-only by decision; T1.2 keeps it

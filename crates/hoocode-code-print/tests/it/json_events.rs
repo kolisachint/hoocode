@@ -93,8 +93,8 @@ fn message_update_carries_content_index_and_end_payloads() {
     );
     let update = |event: AssistantMessageEvent| {
         let value = AgentEvent::MessageUpdate {
-            assistant_message_event: Box::new(event),
-            message: AgentMessage::Assistant(partial.clone()),
+            assistant_message_event: std::sync::Arc::new(event),
+            message: std::sync::Arc::new(AgentMessage::Assistant(partial.clone())),
         }
         .to_json();
         assert_eq!(keys(&value), ["type", "assistantMessageEvent", "message"]);

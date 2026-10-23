@@ -25,7 +25,7 @@ Decide which of hoocode-ts's smaller features `hoocode` gets.
 1. **Version check.**
    - At most once a day, and never in print, json or rpc modes.
    - Off with `HOOCODE_OFFLINE=1` or `checkForUpdates: false`.
-   - Asks npm for `@kolisachint/hoocode`'s latest version.
+   - Asks npm for the latest version of `@kolisachint/hoocode` (the scoped alias of `hoocode`, same version; the code's registry URL is unchanged).
    - If newer, shows a startup notice with the right update command for how
      `hoocode` was installed: under `~/.hoocode/bin` means curl; inside
      `node_modules` means npm or bun; anything else gets no command.

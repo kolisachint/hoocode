@@ -18,7 +18,7 @@ use hoocode_tui_components::{
     BoxComponent, ColorFn, Image, ImageOptions, ImageTheme, Spacer, Text,
 };
 use hoocode_tui_images::{get_capabilities, is_image_line, ImageProtocol};
-use hoocode_tui_render::{Component, ComponentHandle};
+use hoocode_tui_render::{fresh_stamp, Component, ComponentHandle};
 use hoocode_tui_util::{
     strip_vt_control_characters, truncate_to_width, visible_width, wrap_text_with_ansi,
 };
@@ -451,6 +451,9 @@ pub struct ToolExecutionComponent {
     /// stops it. Rebuilt history settles at once, so its span reads ~0.
     started: Instant,
     settled_at: Option<Instant>,
+    /// New whenever the block's state changes: every mutator goes through
+    /// `update_display`, `freeze` or `capture_frozen` (the render stamp).
+    rev: u64,
 }
 
 impl ToolExecutionComponent {
@@ -500,6 +503,7 @@ impl ToolExecutionComponent {
             frozen_entry: None,
             started: Instant::now(),
             settled_at: None,
+            rev: fresh_stamp(),
         };
         if this.has_renderer_definition() {
             this.children.push(this.content_box.clone());
@@ -1042,6 +1046,22 @@ impl ToolExecutionComponent {
             .contains_key(crate::tools::bash::TICKING_KEY)
     }
 
+    /// Settled, and drawn from the result alone: nothing it shows changes with
+    /// the clock, a job or a subagent run.
+    fn is_settled(&self) -> bool {
+        let Some(result) = self.result.as_ref() else {
+            return false;
+        };
+        let has_job = self.tool_name == "Shell" && result.result().details.get("jobId").is_some();
+        !self.is_partial
+            && self.settled_at.is_some()
+            && !has_job
+            && !self.is_ticking()
+            && !self
+                .renderer_state
+                .contains_key(crate::tools::subagent::LIVE_KEY)
+    }
+
     /// A finished, visible result still holding its payloads. A block whose
     /// renderer shows a live run stays unfrozen until the run settles.
     pub fn is_freezable(&self) -> bool {
@@ -1063,6 +1083,7 @@ impl ToolExecutionComponent {
     /// Freeze on the next render: capture the lines, release the payloads.
     pub fn freeze(&mut self) {
         if self.is_freezable() {
+            self.rev = fresh_stamp();
             self.frozen_entry = Some(self.chain_entry());
             self.frozen = true;
         }
@@ -1124,6 +1145,7 @@ impl ToolExecutionComponent {
     }
 
     fn update_display(&mut self) {
+        self.rev = fresh_stamp();
         // A frozen block's lines are captured; nothing it shows changes now.
         if self.frozen {
             return;
@@ -1393,6 +1415,22 @@ impl ToolRenderContextOwned {
 }
 
 impl Component for ToolExecutionComponent {
+    /// A frozen block whose lines are captured draws from the capture and its
+    /// view alone; a settled block draws from the components its renderers built
+    /// (the renderers are all in this crate). A live block reads clocks and the
+    /// job registry, an Agent block the subagent registry.
+    fn render_stamp(&self) -> Option<u64> {
+        if self.is_agent() {
+            return None;
+        }
+        let stable = if self.frozen {
+            self.frozen_lines.is_some()
+        } else {
+            self.is_settled()
+        };
+        stable.then_some(self.rev)
+    }
+
     fn render(&mut self, width: u16) -> Vec<String> {
         if self.frozen {
             return self.render_frozen(width);
@@ -1412,6 +1450,7 @@ impl Component for ToolExecutionComponent {
         if self.frozen {
             return;
         }
+        self.rev = fresh_stamp();
         for child in &self.children {
             child.borrow_mut().invalidate();
         }
@@ -1453,6 +1492,7 @@ impl ToolExecutionComponent {
 
     /// Draws the block at every stop, keeps them, and releases the payloads.
     fn capture_frozen(&mut self, width: u16) {
+        self.rev = fresh_stamp();
         let current = self.view;
         let radar = self.draw_at(ToolOutputView::Radar, width);
         let (peek, peek_parts) = self.draw_with_parts(ToolOutputView::Peek, width);

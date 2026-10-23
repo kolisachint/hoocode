@@ -26,7 +26,7 @@ use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::core::style::Style;
 use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{ansi_spans, bold, reversed, spans_width, truncate_spans, Palette};
-use hoocode_tui_render::{Component, ComponentHandle};
+use hoocode_tui_render::{mix_stamps, Component, ComponentHandle};
 use hoocode_tui_util::visible_width;
 
 use crate::tool_chain_summary::{
@@ -134,6 +134,31 @@ pub struct FlightStats {
 }
 
 impl FlightStats {
+    /// A key for what the rows read, so a holder can tell when they change:
+    /// `None` while the row runs a live clock (`started` without a landed time).
+    pub fn render_key(&self) -> Option<u64> {
+        if self.started.is_some() && self.landed_time.is_none() {
+            return None;
+        }
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        format!("{:?}", self.mark).hash(&mut hasher);
+        self.steps.hash(&mut hasher);
+        self.hits.hash(&mut hasher);
+        self.landed_time.hash(&mut hasher);
+        self.cost.hash(&mut hasher);
+        self.chain.len().hash(&mut hasher);
+        for entry in &self.chain {
+            entry.tool.hash(&mut hasher);
+            entry.subject.hash(&mut hasher);
+            entry.is_error.hash(&mut hasher);
+            entry.is_partial.hash(&mut hasher);
+            entry.output_lines.hash(&mut hasher);
+            format!("{:?}", entry.outcome).hash(&mut hasher);
+        }
+        Some(hasher.finish())
+    }
+
     /// The row's time: the landed span, else live elapsed off the start.
     fn time_text(&self) -> Option<String> {
         if let Some(landed) = &self.landed_time {
@@ -955,6 +980,17 @@ impl PeekOnly {
 }
 
 impl Component for PeekOnly {
+    /// Hidden, it draws nothing; shown, it draws its children.
+    fn render_stamp(&self) -> Option<u64> {
+        let mut parts = vec![u64::from(self.hidden.get()), self.children.len() as u64];
+        if !self.hidden.get() {
+            for child in &self.children {
+                parts.push(child.borrow().render_stamp()?);
+            }
+        }
+        Some(mix_stamps(parts))
+    }
+
     fn render(&mut self, width: u16) -> Vec<String> {
         if self.hidden.get() {
             return Vec::new();

@@ -14,9 +14,10 @@ pub use js_regex::js_trim;
 pub use render::{DefaultTextStyle, HeadingFn, HighlightCodeFn, MarkdownTheme};
 
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 use hoocode_tui_images::is_image_line;
-use hoocode_tui_render::Component;
+use hoocode_tui_render::{fresh_stamp, Component};
 use hoocode_tui_util::{
     apply_background_with_opener, band_opener, visible_width, wrap_text_with_ansi,
 };
@@ -33,9 +34,16 @@ pub struct Markdown {
     padding_y: usize,
     default_text_style: Option<DefaultTextStyle>,
     theme: MarkdownTheme,
-    line_cache: VecDeque<(usize, Vec<String>)>,
-    line_cache_text: Option<String>,
-    cached_tokens: Option<(String, Vec<Token>)>,
+    /// Rendered lines per width, for the text version in `line_cache_rev`.
+    line_cache: VecDeque<(usize, Rc<[String]>)>,
+    line_cache_rev: Option<u64>,
+    /// The tokens of the text version `text_rev`.
+    cached_tokens: Option<(u64, Vec<Token>)>,
+    /// New whenever the text changes: the lexed tokens are for one of these.
+    text_rev: u64,
+    /// New whenever the text changes or the cache is invalidated: the lines
+    /// kept for one of these are exact, and it is the render stamp.
+    rev: u64,
 }
 
 impl Markdown {
@@ -53,13 +61,21 @@ impl Markdown {
             default_text_style,
             theme,
             line_cache: VecDeque::new(),
-            line_cache_text: None,
+            line_cache_rev: None,
             cached_tokens: None,
+            text_rev: fresh_stamp(),
+            rev: fresh_stamp(),
         }
     }
 
+    /// Replace the text. The same text again keeps the lines and tokens.
     pub fn set_text(&mut self, text: impl Into<String>) {
-        self.text = text.into();
+        let text = text.into();
+        if text == self.text {
+            return;
+        }
+        self.text = text;
+        self.text_rev = fresh_stamp();
         self.invalidate_lines();
     }
 
@@ -67,14 +83,17 @@ impl Markdown {
     /// tokens, which depend on the text alone.
     fn invalidate_lines(&mut self) {
         self.line_cache.clear();
-        self.line_cache_text = None;
+        self.line_cache_rev = None;
+        self.rev = fresh_stamp();
     }
 
-    fn store_lines(&mut self, width: usize, lines: &[String]) {
+    fn store_lines(&mut self, width: usize, lines: Vec<String>) -> Rc<[String]> {
+        let lines: Rc<[String]> = lines.into();
         if self.line_cache.len() >= LINE_CACHE_WIDTHS {
             self.line_cache.pop_front();
         }
-        self.line_cache.push_back((width, lines.to_vec()));
+        self.line_cache.push_back((width, lines.clone()));
+        lines
     }
 }
 
@@ -83,32 +102,44 @@ impl Component for Markdown {
         self.invalidate_lines();
     }
 
+    /// The output is a function of the text, the padding, the theme and the
+    /// width: the version below changes with the first two (a theme switch
+    /// goes through `invalidate`, or the container's render epoch).
+    fn render_stamp(&self) -> Option<u64> {
+        Some(self.rev)
+    }
+
     fn render(&mut self, width: u16) -> Vec<String> {
+        self.render_shared(width).to_vec()
+    }
+
+    fn render_shared(&mut self, width: u16) -> Rc<[String]> {
         let width = width as usize;
-        if self.line_cache_text.as_deref() == Some(self.text.as_str()) {
+        // A version compare, not a compare of the text: a hit costs nothing
+        // and hands out the kept lines as they are.
+        if self.line_cache_rev == Some(self.rev) {
             if let Some((_, lines)) = self.line_cache.iter().find(|(w, _)| *w == width) {
                 return lines.clone();
             }
         } else {
             self.line_cache.clear();
-            self.line_cache_text = Some(self.text.clone());
+            self.line_cache_rev = Some(self.rev);
         }
 
         let content_width = width.saturating_sub(self.padding_x * 2).max(1);
 
         if js_regex::js_trim(&self.text).is_empty() {
-            self.store_lines(width, &[]);
-            return Vec::new();
+            return self.store_lines(width, Vec::new());
         }
 
-        if self.cached_tokens.as_ref().map(|(t, _)| t) != Some(&self.text) {
+        if self.cached_tokens.as_ref().map(|(rev, _)| rev) != Some(&self.text_rev) {
             let tokens = lexer::lex(
                 &self
                     .text
                     .replace('\t', &" ".repeat(hoocode_tui_util::RENDER_TAB_WIDTH)),
             )
             .tokens;
-            self.cached_tokens = Some((self.text.clone(), tokens));
+            self.cached_tokens = Some((self.text_rev, tokens));
         }
         let tokens = &self.cached_tokens.as_ref().unwrap().1;
 
@@ -181,8 +212,7 @@ impl Component for Markdown {
         } else {
             result
         };
-        self.store_lines(width, &result);
-        result
+        self.store_lines(width, result)
     }
 }
 
@@ -303,6 +333,52 @@ mod tests {
         for line in &lines {
             assert!(visible_width(line) <= 20);
         }
+    }
+
+    #[test]
+    fn a_cache_hit_hands_out_the_kept_lines() {
+        let mut md = Markdown::new("hello **world**", 0, 0, theme(), None);
+        let first = md.render_shared(40);
+        let second = md.render_shared(40);
+        assert!(Rc::ptr_eq(&first, &second));
+        assert_eq!(md.render(40), first.to_vec());
+        // Another width is a separate entry; the first stays.
+        let narrow = md.render_shared(10);
+        assert!(!Rc::ptr_eq(&first, &narrow));
+        assert!(Rc::ptr_eq(&first, &md.render_shared(40)));
+    }
+
+    #[test]
+    fn set_text_changes_the_stamp_and_the_lines() {
+        let mut md = Markdown::new("one", 0, 0, theme(), None);
+        let stamp = md.render_stamp();
+        let before = md.render_shared(20);
+        md.set_text("two");
+        assert_ne!(md.render_stamp(), stamp);
+        let after = md.render_shared(20);
+        assert!(after[0].contains("two") && before[0].contains("one"));
+    }
+
+    #[test]
+    fn the_same_text_again_keeps_the_stamp_and_the_lines() {
+        let mut md = Markdown::new("same", 0, 0, theme(), None);
+        let stamp = md.render_stamp();
+        let before = md.render_shared(20);
+        md.set_text("same");
+        assert_eq!(md.render_stamp(), stamp);
+        assert!(Rc::ptr_eq(&before, &md.render_shared(20)));
+    }
+
+    #[test]
+    fn invalidate_draws_again_under_a_new_stamp() {
+        let mut md = Markdown::new("text", 0, 0, theme(), None);
+        let stamp = md.render_stamp();
+        let before = md.render_shared(20);
+        md.invalidate();
+        assert_ne!(md.render_stamp(), stamp);
+        let after = md.render_shared(20);
+        assert!(!Rc::ptr_eq(&before, &after));
+        assert_eq!(before[..], after[..]);
     }
 
     #[test]

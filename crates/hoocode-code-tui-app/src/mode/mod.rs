@@ -47,7 +47,9 @@ use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity}
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::UserMessageComponent;
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle, Loader, Spacer};
-use hoocode_tui_render::{Component, ComponentHandle, Container, FlexSpacer, Slot, Tui, TuiEvent};
+use hoocode_tui_render::{
+    Component, ComponentHandle, Container, FlexSpacer, Slot, Tui, TuiEvent, WakeHandle,
+};
 use hoocode_tui_terminal::Terminal;
 
 use crate::changelog::changelog_for_display;
@@ -153,6 +155,52 @@ const STREAM_RENDER_THROTTLE: Duration = Duration::from_millis(100);
 /// Most keys taken from the input channel in one loop pass. The rest wait for the
 /// next pass, so AppEvents and ticks run between batches (concurrency.md, Phase 2).
 const MAX_INPUT_PER_ITERATION: usize = 64;
+
+/// Least time between the end of a pass and a repaint that only an app event
+/// asked for (about 60 frames a second while text streams).
+const MIN_WAKE_FRAME_GAP: Duration = Duration::from_millis(16);
+
+/// Most AppEvents taken from the channel in one loop pass. Leftovers wake the
+/// loop again, so keys and ticks run between batches.
+const MAX_APP_EVENTS_PER_ITERATION: usize = 256;
+
+/// A streamed update of the assistant message.
+fn is_message_update(event: &AppEvent) -> bool {
+    matches!(
+        event,
+        AppEvent::Session(session_event, _)
+            if matches!(
+                **session_event,
+                AgentSessionEvent::Agent(hoocode_agent_types::AgentEvent::MessageUpdate { .. })
+            )
+    )
+}
+
+/// The UI loop has dropped its receiver.
+struct LoopGone;
+
+/// Sends [`AppEvent`]s to the UI loop and wakes it, so an event is handled at
+/// once and not at the next tick. Wakes are coalesced (see `WakeHandle`).
+#[derive(Clone)]
+struct AppSender {
+    tx: Sender<AppEvent>,
+    wake: WakeHandle,
+}
+
+impl AppSender {
+    /// Queues the event, then wakes the loop. The event goes first, so a loop
+    /// woken by it always finds it.
+    fn send(&self, event: AppEvent) -> Result<(), LoopGone> {
+        self.tx.send(event).map_err(|_| LoopGone)?;
+        self.wake.wake();
+        Ok(())
+    }
+
+    /// Wakes the loop without an event (events were left in the channel).
+    fn wake(&self) {
+        self.wake.wake();
+    }
+}
 
 /// Events from outside the UI thread.
 enum AppEvent {
@@ -502,7 +550,7 @@ struct Mode {
     footer_data: FooterDataProvider,
     chrome: ChromeLayoutController,
     last_sigint: Option<Instant>,
-    tx: Sender<AppEvent>,
+    tx: AppSender,
     rx: Receiver<AppEvent>,
     exit_requested: bool,
     /// A user-initiated quit (`/quit`, ctrl+c twice, ctrl+d): it shows the
@@ -1022,6 +1070,10 @@ impl Mode {
         }));
 
         let (tx, rx) = mpsc::channel();
+        let tx = AppSender {
+            tx,
+            wake: tui.wake_handle(),
+        };
         let mode = Self {
             session,
             runtime: options.runtime,
@@ -1396,9 +1448,20 @@ impl Mode {
 
         self.tui.request_render(false);
         self.dirty.set(false);
+        let mut last_pass_end = Instant::now();
         loop {
             hoocode_runtime::watchdog::ui_beat("ui-loop:wait");
-            let received = input.recv_timeout(self.next_wakeup());
+            let mut received = input.recv_timeout(self.next_wakeup());
+            // A wake from an app event does not repaint sooner than the frame
+            // gap after the last pass. A key ends the wait at once.
+            if matches!(received, Ok(TuiEvent::Wake)) {
+                if let Some(rest) = MIN_WAKE_FRAME_GAP.checked_sub(last_pass_end.elapsed()) {
+                    if let Ok(event) = input.recv_timeout(rest) {
+                        self.tui.wake_handle().clear();
+                        received = Ok(event);
+                    }
+                }
+            }
             // Phase 0 timing: an iteration starts when its input has arrived,
             // not while the loop sleeps.
             let iteration_started = Instant::now();
@@ -1440,7 +1503,21 @@ impl Mode {
             if let Some(restarted) = self.restarted_input.take() {
                 input = restarted;
             }
-            while let Ok(event) = self.rx.try_recv() {
+            let mut batch = Vec::new();
+            while batch.len() < MAX_APP_EVENTS_PER_ITERATION {
+                let Ok(event) = self.rx.try_recv() else {
+                    break;
+                };
+                batch.push(event);
+            }
+            let taken = batch.len();
+            let mut batch = batch.into_iter().peekable();
+            while let Some(event) = batch.next() {
+                // Each update holds the whole message so far: when the next
+                // event is another update, this one is already out of date.
+                if is_message_update(&event) && batch.peek().is_some_and(is_message_update) {
+                    continue;
+                }
                 match event {
                     AppEvent::Session(event, anchor) => {
                         if self.turn_cost_anchor.is_none() {
@@ -1586,6 +1663,10 @@ impl Mode {
                     }
                 }
             }
+            if taken == MAX_APP_EVENTS_PER_ITERATION {
+                // Maybe more waiting: run another pass after this one's frame.
+                self.tx.wake();
+            }
             if self.notifications.borrow_mut().poll() {
                 self.dirty.set(true);
             }
@@ -1669,6 +1750,7 @@ impl Mode {
             self.tui.flush_scheduled_render();
             self.show_main();
             self.perf.end_iteration(iteration_started);
+            last_pass_end = Instant::now();
         }
 
         hoocode_runtime::watchdog::ui_stopped();

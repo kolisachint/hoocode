@@ -552,11 +552,18 @@ pub fn init_theme(theme_name: Option<&str>, enable_watcher: bool) {
         }
     }
     // A fresh load is a new theme even under the same name.
+    bump_theme_generation();
+}
+
+/// The theme changed: caches keyed on its generation, and the lines containers
+/// keep for their children, are stale.
+fn bump_theme_generation() {
     THEME_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    hoocode_tui_render::bump_render_epoch();
 }
 
 fn notify_change() {
-    THEME_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    bump_theme_generation();
     let callback = state().on_change.clone();
     if let Some(callback) = callback {
         callback();
@@ -584,6 +591,8 @@ pub fn set_theme(requested: &str, enable_watcher: bool) -> Result<(), String> {
             let mut s = state();
             s.current_name = Some("dark".to_string());
             s.theme = Some(dark);
+            drop(s);
+            bump_theme_generation();
             Err(error)
         }
     }

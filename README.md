@@ -1,11 +1,17 @@
-<h1 align="center">hoocode</h1>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/hoocode.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/hoocode-light.svg">
+    <img alt="hoocode" width="360" src="docs/assets/brand/hoocode.svg">
+  </picture>
+</p>
 
 <p align="center">A terminal coding agent, written in Rust. One static binary, any model provider, nothing applied without your say-so.</p>
 
 <p align="center">
   <a href="https://github.com/kolisachint/hoocode/actions/workflows/ci.yml"><img src="https://github.com/kolisachint/hoocode/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="https://github.com/kolisachint/hoocode/releases/latest"><img src="https://img.shields.io/github/v/release/kolisachint/hoocode?sort=semver" alt="Latest release"></a>
-  <a href="https://www.npmjs.com/package/@kolisachint/hoocode"><img src="https://img.shields.io/npm/v/@kolisachint/hoocode?label=npm" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/hoocode"><img src="https://img.shields.io/npm/v/hoocode?label=npm" alt="npm"></a>
   <a href="https://pypi.org/project/hoocode/"><img src="https://img.shields.io/pypi/v/hoocode?label=PyPI" alt="PyPI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
@@ -54,7 +60,7 @@ It downloads the release archive for your platform, checks it against the releas
 **npm or bun** (Node 18 or newer):
 
 ```bash
-npm install -g @kolisachint/hoocode     # or: bun add -g @kolisachint/hoocode
+npm install -g hoocode     # or: bun add -g hoocode
 ```
 
 The package pulls in only the native binary for your platform. It installs `hoocode`
