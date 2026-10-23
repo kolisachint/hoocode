@@ -2,7 +2,7 @@
 
 «»                                                     «fg=#a8a8a8»╭ «fg=#5cc8bb»●«bold;fg=#e5e5e7» TRANSMISSION«»                             «fg=#a8a8a8»╮
 «»                                                     «fg=#a8a8a8»│ «fg=#e5e5e7»Usage: /color [none|parity|cyan|violet|li[0m
-«»                                                     «fg=#a8a8a8»│ «<masked: toast countdown>»<toast-countdown>                          «fg=#a8a8a8»│
+«»                                                     «<masked: toast countdown>»│ <toast-countdown>                          «fg=#a8a8a8»│
 «»                                                     «fg=#a8a8a8»╰────────────────────────────────────────────╯
 
 

@@ -2180,8 +2180,9 @@ mod tests {
         let output = Arc::new(Mutex::new(String::new()));
         let title = Arc::new(Mutex::new(String::new()));
         let terminal = ScriptedTerminal {
-            // Type, clear with ctrl+c, then leave with ctrl+d on the empty prompt.
-            script: vec![(300, "hi"), (100, "\x03"), (600, "\x04")],
+            // Type, clear with ctrl+c, then leave with ctrl+d on the empty prompt
+            // and end the shift on the card that quit raises.
+            script: vec![(300, "hi"), (100, "\x03"), (600, "\x04"), (150, "\r")],
             output: output.clone(),
             title: title.clone(),
         };
@@ -2557,7 +2558,8 @@ mod tests {
             );
             let output = Arc::new(Mutex::new(String::new()));
             let terminal = ScriptedTerminal {
-                script: vec![(400, "\x04")],
+                // ctrl+d raises the end-of-shift card; enter ends the shift.
+                script: vec![(400, "\x04"), (150, "\r")],
                 output: output.clone(),
                 title: Arc::new(Mutex::new(String::new())),
             };
@@ -2798,6 +2800,8 @@ mod tests {
             let mut script: Vec<(u64, &'static str)> = vec![(300, "")];
             script.extend(keys.iter().map(|k| (150, *k)));
             script.push((300, "\x04"));
+            // The end-of-shift card that quit raises: enter ends the shift.
+            script.push((150, "\r"));
             let terminal = ScriptedTerminal {
                 script,
                 output: output.clone(),

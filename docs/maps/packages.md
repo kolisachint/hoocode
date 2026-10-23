@@ -134,7 +134,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 7820 / 6613 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 864 / 822 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 574 / 0 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 6341 / 0 | keep |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 6345 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1640 | the `hoocode` binary |
 | `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 2 | 2059 / 0 | keep |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1582 / 608 | keep |
