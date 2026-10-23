@@ -95,7 +95,7 @@ def build(version: str, archives: Path, out: Path) -> None:
         {
             "name": f"{SCOPE}/hoocode",
             "version": version,
-            "description": "HooCode, the terminal coding agent (Rust build)",
+            "description": "hoocode, the terminal coding agent",
             "bin": {"hoocode": "bin/hoocode.js", "hoo": "bin/hoocode.js"},
             "files": ["bin/hoocode.js"],
             "engines": {"node": ">=18"},

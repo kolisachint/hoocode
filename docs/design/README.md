@@ -1,6 +1,6 @@
 # Design docs
 
-Start here. The migration from hoocode-ts is finished. hoocode fully replaces it (decided
+Start here. hoocode is the product; it replaces the earlier TypeScript build (decided
 2026-10-10), and no TS pin or parity check remains. Everything
 still to build is planned in the cards below. Each card was agreed with the user on
 2026-10-07 or later. The dated decision pages win if a card disagrees:
