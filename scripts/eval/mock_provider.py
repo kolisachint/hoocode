@@ -19,6 +19,8 @@ Turn keys (all optional):
     tool_calls       [{"name": …, "arguments": {…}}]
     usage            {"prompt_tokens": n, "completion_tokens": n}
     delay_s          sleep before the first byte of the stream
+    text_chunks      list of strings sent as separate content deltas (instead of text)
+    chunk_delay_s    sleep between SSE chunks (paces a streamed reply)
     hang             never answer: the caller's own timeout/lifeguard must fire
     abort_after      send this many bytes of SSE, then close the connection
     corrupt_after    send this many bytes of SSE, then a half-written line
@@ -274,9 +276,12 @@ class MockProvider:
         handler.send_header("Cache-Control", "no-cache")
         handler.end_headers()
         try:
+            pace = float(turn.get("chunk_delay_s") or 0)
             for chunk in chunks:
                 handler.wfile.write(chunk.encode("utf-8"))
                 handler.wfile.flush()
+                if pace:
+                    time.sleep(pace)
         except (BrokenPipeError, ConnectionResetError):
             # The client hung up mid-stream. That is a scenario, not an error.
             return
@@ -300,7 +305,12 @@ class MockProvider:
                 )
             )
         text = turn.get("text", "")
-        if text:
+        if turn.get("text_chunks"):
+            for piece in turn["text_chunks"]:
+                out.append(
+                    event({"choices": [{"index": 0, "delta": {"role": "assistant", "content": piece}}]})
+                )
+        elif text:
             out.append(
                 event({"choices": [{"index": 0, "delta": {"role": "assistant", "content": text}}]})
             )

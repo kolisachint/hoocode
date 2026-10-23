@@ -10,6 +10,9 @@ The real `hoocode` runs against the mock model, with `--perf-log`. Scenarios:
               one call to a stdio MCP server that accepts the request and never answers
               (scripts/perf/mcp_stall_server.py). Keys are typed for longer than the
               MCP call's 60 s deadline, so the stall happens under typing.
+  stream      One long streamed reply (STREAM_CHUNKS deltas, paced), keys typed
+              while it streams. Measures keystroke-to-frame and frame build with a
+              growing message, and how long the reply takes to show on screen.
   paused-pty  A terminal that stops reading. The app runs in a pty; after a bash
               turn the pty is not read for N seconds (its output blocks), then Ctrl+C
               is sent. The turn must abort within 500 ms: the mock sees the client
@@ -74,7 +77,10 @@ MODEL = "mock-model"
 SESSION = "perf-load"
 PROMPT_TEXT = "run the eight load commands"
 TURN_DONE = "All eight commands finished."
+STREAM_CHUNKS = 3000
+STREAM_DELAY_S = 0.005
 PERF_MARKER = "Performance (the last"
+START_MARKER = "name your mission"
 PROMPT_GLYPH = "❯"
 PROMPT_BYTES = PROMPT_GLYPH.encode("utf-8")
 CHILD_MARKER = "Task: "
@@ -286,7 +292,7 @@ def start_tmux(socket: str, args: argparse.Namespace, binary: Path, home: Path, 
     env_args = ["env", "-i", *[f"{k}={v}" for k, v in sorted(env.items())]]
     wrapped = ["sh", "-c", '"$@"; exit $?', "sh", *env_args, *hoo_argv(binary, log, extra_args)]
     tmux(socket, "new-session", "-d", "-s", SESSION, "-x", str(args.cols), "-y", str(args.rows), "-c", str(work), *wrapped)
-    if not wait_for(socket, PROMPT_GLYPH, timeout=60):
+    if not wait_for(socket, START_MARKER, timeout=60):
         raise RuntimeError("the prompt never appeared; pane:\n" + pane(socket))
     time.sleep(1.0)
 
@@ -699,7 +705,7 @@ def run_memory_scenario(args: argparse.Namespace, binary: Path, out: Path) -> di
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--scenario", choices=["bash", "load", "paused-pty", "memory", "all"], default="all")
+    parser.add_argument("--scenario", choices=["bash", "load", "stream", "paused-pty", "memory", "all"], default="all")
     parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY, help="hoocode binary (default: $CARGO_TARGET_DIR/release/hoocode)")
     parser.add_argument("--calls", type=int, default=8, help="parallel bash calls in the turn (default 8)")
     parser.add_argument("--lines", type=int, default=5000, help="lines each bash call prints (default 5000)")
@@ -726,7 +732,7 @@ def main() -> int:
     out_root = (args.out or OUT_ROOT / f"load-{stamp}").resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    wanted = ["bash", "load", "paused-pty", "memory"] if args.scenario == "all" else [args.scenario]
+    wanted = ["bash", "load", "stream", "paused-pty", "memory"] if args.scenario == "all" else [args.scenario]
     # Each scenario starts from the user's rate (or its own default), not the last one's.
     user_keys_per_second = args.keys_per_second
     results: dict[str, Any] = {"binary": str(binary), "started": stamp}
@@ -749,6 +755,13 @@ def main() -> int:
             args.keys_per_second = user_keys_per_second or LOAD_KEYS_PER_SECOND
             typing = args.typing_seconds or 75.0
             results[name] = run_turn_scenario(name, args, routes, typing, ["--enable-subagents"], True, out, binary)
+        elif name == "stream":
+            pieces = [f"word{i} " + ("lorem ipsum " if i % 7 else "\n\n") for i in range(STREAM_CHUNKS)]
+            body = {"text_chunks": pieces[:-1] + [TURN_DONE], "chunk_delay_s": STREAM_DELAY_S, "usage": usage()}
+            routes = {"parent": Route("parent", [body, done_turn(), done_turn()])}
+            args.keys_per_second = user_keys_per_second or 20.0
+            typing = args.typing_seconds or 15.0
+            results[name] = run_turn_scenario(name, args, routes, typing, [], False, out, binary)
         elif name == "paused-pty":
             results[name] = run_paused_scenario(args, binary, out)
         elif name == "memory":
