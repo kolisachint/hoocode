@@ -118,12 +118,12 @@ in those tables; the generator keeps each crate's Status by name.
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
 | `agent-compaction` | Session compaction for hoocode agents | 3 | 1447 / 1315 | keep |
-| `agent-core` | Core agent runtime for hoocode agents | 2 | 1977 / 0 | keep |
+| `agent-core` | Core agent runtime for hoocode agents | 2 | 1979 / 0 | keep |
 | `agent-harness` | Agent harness for hoocode agents | 6 | 3313 / 1042 | keep |
-| `agent-loop` | Agent loop for hoocode agents | 1 | 2996 / 0 | keep |
+| `agent-loop` | Agent loop for hoocode agents | 1 | 2998 / 0 | keep |
 | `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 1 | 1860 / 1666 | keep |
 | `agent-session` | Session trees for hoocode agents: entry format, storage, repositories | 2 | 2411 / 0 | keep |
-| `agent-types` | Shared types for hoocode agents | 21 | 949 / 0 | keep |
+| `agent-types` | Shared types for hoocode agents | 21 | 951 / 0 | keep |
 
 ### Coding agent (`code-*`, `app-server*`)
 
@@ -131,7 +131,7 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2758 / 1568 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1204 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 7803 / 6613 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 7821 / 6613 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 865 / 822 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 574 / 0 | keep |
 | `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 6341 / 0 | keep |
@@ -165,17 +165,17 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 23533 / 7394 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 23621 / 7394 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 786 / 888 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8929 / 4789 | keep |
-| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2516 / 2142 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14075 / 9188 | keep |
+| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2525 / 2142 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14234 / 9430 | keep |
 
 ### TUI library (`tui-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 10162 / 7428 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 10255 / 7428 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 307 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 367 / 0 | keep |
 | `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 92 / 0 | keep |
@@ -183,7 +183,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1050 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1959 / 583 | keep |
 | `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1510 / 172 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 5 | 4496 / 2274 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4832 / 2638 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3256 / 343 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 15 | 2353 / 682 | keep |
 
