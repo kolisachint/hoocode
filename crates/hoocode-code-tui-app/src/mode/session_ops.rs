@@ -259,10 +259,7 @@ impl Mode {
             |s: &str| theme().fg("border", s),
         ))))));
         reload_box.add_child(as_component(&handle(Text::new(
-            t.fg(
-                "muted",
-                "Reloading keybindings, extensions, skills, prompts, themes…",
-            ),
+            t.fg("muted", "Reloading keybindings, skills, prompts, themes…"),
             1,
             0,
         ))));
@@ -305,7 +302,7 @@ impl Mode {
         if let Some(error) = self.session.model_registry().error() {
             self.show_error(&format!("models.json error: {error}"));
         }
-        self.show_status("Reloaded keybindings, extensions, skills, prompts, themes");
+        self.show_status("Reloaded keybindings, skills, prompts, themes");
     }
 
     /// `handleExport`: `/export <path.jsonl>` writes the branch as JSONL.

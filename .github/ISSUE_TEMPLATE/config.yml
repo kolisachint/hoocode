@@ -1,0 +1,15 @@
+# Keep blank issues open: a template that doesn't fit should not stop a real report.
+blank_issues_enabled: true
+
+contact_links:
+  - name: Security problem
+    url: https://github.com/kolisachint/hoocode/security
+    about: Report vulnerabilities privately, not as an issue. See SECURITY.md.
+
+  - name: Contributing guide
+    url: https://github.com/kolisachint/hoocode/blob/main/CONTRIBUTING.md
+    about: How to build, test and send a change.
+
+  - name: Everything else
+    url: https://x.com/kolisachint
+    about: Tag @kolisachint on X for anything that doesn't fit an issue.

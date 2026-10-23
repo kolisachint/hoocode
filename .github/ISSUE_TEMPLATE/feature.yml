@@ -1,0 +1,56 @@
+name: Feature or idea
+description: Something hoocode should be able to do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Half-formed ideas are welcome. Describe **the problem** before the solution:
+        sometimes the answer is a setting that already exists, and sometimes the problem
+        leads somewhere better than the feature you had in mind.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation, not the feature. What is awkward today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: Your idea, if you have one. "I don't know, but this hurts" is a fine answer.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried?
+      description: Workarounds, other tools, settings you looked for and could not find.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: shape
+    attributes:
+      label: Where do you think this belongs?
+      description: The core stays small on purpose; many features fit better as a skill, plugin or MCP server. Guessing wrong costs nothing.
+      options:
+        - In the core
+        - As a skill, plugin or MCP server
+        - Not sure
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched [existing issues](https://github.com/kolisachint/hoocode/issues?q=is%3Aissue) for this.
+          required: false
+        - label: I'd be interested in building this myself.
+          required: false

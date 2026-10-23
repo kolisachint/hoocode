@@ -11,10 +11,6 @@ host, no CSP, and no gallery: fonts and libraries may come from a CDN or from
 local files, and the page is yours to lay out however the subject demands. The
 constraint that remains is the only one that ever mattered — it has to be good.
 
-Not for a canvas extension. A canvas serves a live page from its own loopback
-server, under constraints that contradict half of this file, and `/new-canvas`
-points at `../canvas-design/SKILL.md` for it.
-
 ## First, read the request
 
 Decide the treatment, not whether to design. Every visual gets real typographic
@@ -184,8 +180,3 @@ terminal supports one, so it is clickable in kitty, iTerm2, WezTerm and others,
 and still readable as plain text everywhere else. Offer to open it rather than
 opening it unasked.
 
-Canvas is not a viewer for this. `/canvas` hosts canvas extensions — a directory
-with an `extension.mjs` speaking the canvas JSON-RPC protocol — and `/canvas
-open` takes an extension id, not a file path. A page you can hand someone is a
-file; reach for `/new-canvas` only when the user wants a live surface the agent
-can call typed actions on, which is a different and larger job than a visual.

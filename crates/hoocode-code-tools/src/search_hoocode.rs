@@ -1,9 +1,7 @@
-//! The `DocSearch` tool (`extensions/core/self-knowledge.ts` in hoocode-ts).
-//!
-//! It searches what this session can do: loaded skills and subagents, and
-//! installed plugins once they load. Docs are not indexed here yet (the Rust
-//! build ships none), so the description's doc wording is the TS text kept
-//! verbatim for the side-by-side check. See docs/design/semantic-search.md.
+//! The `DocSearch` tool: it searches what this session can do, meaning the loaded
+//! skills, subagents and installed plugins (`hoocode-code-capabilities`). No docs are
+//! indexed (the binary ships none), so the description promises only capabilities.
+//! See docs/design/semantic-search.md.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,28 +14,27 @@ use serde_json::{json, Value};
 
 use crate::text_result;
 
-/// The tool's name, as hoocode-ts registers it.
+/// The tool's name.
 pub const DOC_SEARCH_TOOL_NAME: &str = "DocSearch";
 
 const DEFAULT_LIMIT: f64 = 8.0;
 const MAX_LIMIT: f64 = 25.0;
 
-/// The description hoocode-ts sends (`self-knowledge.ts`), verbatim.
-pub const SEARCH_HOOCODE_DESCRIPTION: &str = "Search hoocode's own documentation and the capabilities loaded in this session (skills, slash commands, subagents, installed plugins). Use it when the user asks what hoocode can do, how one of its features works, or how to configure or extend it. Doc results come back as a file path and line number — read that range for the answer rather than replying from the excerpt alone. MCP tools are not covered here; find those with ResolveMcpTools.";
+/// The tool description the model sees.
+pub const SEARCH_HOOCODE_DESCRIPTION: &str = "Search the capabilities loaded in this session: skills, subagents and installed plugins. Use it when the user asks what hoocode can do here, or to find the skill, subagent or plugin that fits a task. Each result names its kind, name and description; load or call the one that fits. MCP tools are not covered here.";
 
 /// The one-line summary for the system prompt's tool list (`promptSnippet`).
 pub const SEARCH_HOOCODE_PROMPT_SNIPPET: &str =
-    "Search hoocode's own docs and this session's capabilities by describing what you need.";
+    "Search this session's skills, subagents and plugins by describing what you need.";
 
 /// The guideline added to the system prompt (`promptGuidelines`).
-pub const SEARCH_HOOCODE_PROMPT_GUIDELINE: &str = "For questions about hoocode itself — its features, configuration, or how to extend it — use DocSearch and read the section it points at instead of answering from memory.";
+pub const SEARCH_HOOCODE_PROMPT_GUIDELINE: &str = "To find which loaded skill, subagent or plugin fits a task, use DocSearch instead of guessing from memory.";
 
-const QUERY_DESCRIPTION: &str = "What you want to know about hoocode, in your own words — 'how do I write an extension', 'where are sessions stored', 'can it run subagents'.";
+const QUERY_DESCRIPTION: &str = "What you need, in your own words — 'review a pull request', 'write release notes', 'explore an unfamiliar codebase'.";
 const LIMIT_DESCRIPTION: &str = "Maximum results. Default 8.";
 const LEXICAL_ONLY_NOTE: &str = "(Lexical match only — try naming the feature if this missed.)";
 
-/// The TypeBox schema hoocode-ts sends: `query` (required), `limit` (optional),
-/// no extra keys.
+/// The parameters: `query` (required), `limit` (optional), no extra keys.
 pub fn search_hoocode_parameters_schema() -> Value {
     json!({
         "type": "object",
@@ -172,25 +169,29 @@ mod tests {
     }
 
     #[test]
-    fn name_description_and_prompt_text_match_hoocode_ts() {
+    fn name_description_and_prompt_text() {
         let tool = create_search_hoocode_tool_definition(".", SearchHooCodeOptions::default());
         assert_eq!(tool.name, "DocSearch");
         assert_eq!(tool.label, "DocSearch");
         assert_eq!(tool.description, SEARCH_HOOCODE_DESCRIPTION);
-        assert!(tool.description.starts_with("Search hoocode's own documentation and the capabilities loaded in this session (skills, slash commands, subagents, installed plugins)."));
-        assert!(tool
-            .description
-            .ends_with("MCP tools are not covered here; find those with ResolveMcpTools."));
+        assert!(tool.description.starts_with(
+            "Search the capabilities loaded in this session: skills, subagents and installed plugins."
+        ));
+        // It indexes no docs, and names no tool that does not exist.
+        assert!(!tool.description.contains("documentation"));
+        assert!(!tool.description.contains("ResolveMcpTools"));
         assert_eq!(
             tool.prompt_snippet.as_deref(),
-            Some("Search hoocode's own docs and this session's capabilities by describing what you need.")
+            Some(
+                "Search this session's skills, subagents and plugins by describing what you need."
+            )
         );
         assert_eq!(tool.prompt_guidelines, [SEARCH_HOOCODE_PROMPT_GUIDELINE]);
         assert_eq!(tool.execution_mode, Some(ToolExecutionMode::Parallel));
     }
 
     #[test]
-    fn schema_matches_the_typebox_schema_in_hoocode_ts() {
+    fn schema_has_query_and_limit() {
         let schema = search_hoocode_parameters_schema();
         assert_eq!(
             schema,
@@ -199,7 +200,7 @@ mod tests {
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "What you want to know about hoocode, in your own words — 'how do I write an extension', 'where are sessions stored', 'can it run subagents'."
+                        "description": "What you need, in your own words — 'review a pull request', 'write release notes', 'explore an unfamiliar codebase'."
                     },
                     "limit": {"type": "number", "description": "Maximum results. Default 8."}
                 },

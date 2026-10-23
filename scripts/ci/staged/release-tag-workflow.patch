@@ -1,0 +1,147 @@
+diff --git a/.github/workflows/release-tag.yml b/.github/workflows/release-tag.yml
+new file mode 100644
+index 00000000..acaaa1ef
+--- /dev/null
++++ b/.github/workflows/release-tag.yml
+@@ -0,0 +1,91 @@
++name: Release from tag
++
++# Pushing a version tag (vX.Y.Z) by hand releases that commit: CI gates (ci.yml)
++# → GitHub release → binaries for 4 targets, SHA256SUMS, npm and PyPI
++# (binaries.yml). The usual path is still a labelled PR (merge-release.yml →
++# release.yml), which bumps the version itself; this one is for a version that
++# was bumped and committed by hand (scripts/bump_versions.py, CONTRIBUTING.md).
++#
++# No double runs:
++# - release.yml pushes its tag with GITHUB_TOKEN, and pushes made with that
++#   token do not start workflows, so its tags never reach this file.
++# - A release created by hand in the GitHub UI is built by binaries.yml's own
++#   `release: published` trigger. If the release for the tag already exists when
++#   this workflow gets to it, it leaves the build to that trigger.
++
++on:
++  push:
++    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
++
++concurrency:
++  group: release-tag-${{ github.ref_name }}
++  cancel-in-progress: false
++
++permissions:
++  contents: read
++
++jobs:
++  check:
++    # Cheap checks first, so a wrong tag fails in seconds, not after the gates.
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++      - name: Tag matches the workspace version
++        env:
++          TAG: ${{ github.ref_name }}
++        run: |
++          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
++          if [ "v$version" != "$TAG" ]; then
++            echo "::error::Tag $TAG does not match the workspace version $version in Cargo.toml. Bump it first (scripts/bump_versions.py) and tag that commit."
++            exit 1
++          fi
++      - name: Tagged commit is on main
++        run: |
++          git fetch -q origin main
++          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
++            echo "::error::$GITHUB_REF_NAME points at a commit that is not on main. Release from main only."
++            exit 1
++          fi
++
++  gates:
++    needs: check
++    uses: ./.github/workflows/ci.yml
++    permissions:
++      contents: read
++
++  release:
++    needs: gates
++    runs-on: ubuntu-latest
++    permissions:
++      contents: write
++    outputs:
++      build: ${{ steps.create.outputs.build }}
++    steps:
++      - name: GitHub release
++        id: create
++        # Created before the binaries so each target uploads as soon as it is built.
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          GH_REPO: ${{ github.repository }}
++          TAG: ${{ github.ref_name }}
++        run: |
++          if gh release view "$TAG" >/dev/null 2>&1; then
++            echo "::notice::Release $TAG already exists (made by hand); binaries.yml's release trigger builds it."
++            echo "build=false" >> "$GITHUB_OUTPUT"
++          else
++            gh release create "$TAG" --verify-tag --generate-notes
++            echo "build=true" >> "$GITHUB_OUTPUT"
++          fi
++
++  binaries:
++    needs: release
++    if: needs.release.outputs.build == 'true'
++    uses: ./.github/workflows/binaries.yml
++    with:
++      tag: ${{ github.ref_name }}
++    permissions:
++      contents: write
++      id-token: write
++    secrets: inherit
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 3732cea4..4b9835cb 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -31,9 +31,10 @@ The first release for people outside the project: plugins can be managed from th
+ ### Added: a demo in the README (2026-10-22)
+ - **`docs/assets/demo.gif`** shows the real binary fixing a bug in a small Rust crate: Read, then Edit and `cargo test` after approval, then the slash-command menu. Only the model is scripted (the mock LLM of the screen goldens); `scripts/demo/record.sh` records it again for each release.
+ 
+-### Added: docs and templates for contributors (2026-10-22)
++### Added: docs and templates for contributors, releases from a tag (2026-10-22)
+ - **New:** `CONTRIBUTING.md` (setup, the dev loop, tests and goldens, code style, releases), `SECURITY.md` (private reporting, what counts), `CODE_OF_CONDUCT.md`, issue templates (bug, feature, question) and a pull request template.
+ - **README rewritten for users:** what hoocode is, every install route that exists (install script, npm, pip, release archives, source), quick start, where configuration lives, and links to the docs.
++- **Pushing a `vX.Y.Z` tag releases it.** `release-tag.yml` checks the tag against the workspace version and that the commit is on `main`, runs the CI gates, creates the GitHub release and builds the same archives, `SHA256SUMS`, npm and PyPI packages as a labelled-PR release.
+ 
+ ## [0.1.41] - 2026-10-21
+ 
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 99f4fed4..fecae474 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -175,7 +175,13 @@ Maintainers release by merging a PR labelled `rust:patch`, `rust:minor` or
+ builds the four platform archives, `SHA256SUMS`, and the npm and PyPI packages.
+ Add the label `release:run-gates` to re-run CI before tagging.
+ 
+-All crates share one version, set in the workspace `Cargo.toml`.
++A release can also start from a tag. Bump the version on `main` first
++(`python3 scripts/bump_versions.py <patch|minor|major>`, then `cargo update --workspace`
++so `Cargo.lock` matches), commit, and push a tag that matches it
++(`git tag v0.2.0 && git push origin v0.2.0`).
++[`release-tag.yml`](.github/workflows/release-tag.yml) checks the tag against the
++workspace version, runs the CI gates, creates the GitHub release and builds the same
++artifacts. All crates share one version, set in the workspace `Cargo.toml`.
+ 
+ Before a release, re-record the README demo so it shows the current screens:
+ `scripts/demo/record.sh` builds a release binary, runs it in tmux against the scripted
+diff --git a/docs/design/distribution.md b/docs/design/distribution.md
+index ee40ff7f..b5cca6f0 100644
+--- a/docs/design/distribution.md
++++ b/docs/design/distribution.md
+@@ -14,7 +14,9 @@ The TypeScript build (`hoocode-ts`, `hoo-ts`) was retired on 2026-10-10; hoocode
+ 
+ ## Shipped
+ 
+-Every release made by `release.yml` (a merged PR with a `rust:*` label):
++Every release made by `release.yml` (a merged PR with a `rust:*` label), or by
++`release-tag.yml` (a `vX.Y.Z` tag pushed by hand on a commit of `main` whose
++workspace version matches the tag):
+ 
+ 1. **Archives**, built by `binaries.yml`: `hoocode-<rust-target>.tar.gz` for
+    `x86_64`/`aarch64` × `apple-darwin`/`unknown-linux-musl`. Linux builds are

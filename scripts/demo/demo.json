@@ -1,0 +1,170 @@
+{
+  "description": "README demo: hoocode in a small Rust crate. The user asks for a fix; the model reads the file (no approval needed), edits it and runs cargo test, each after a 'go, once' approval, then answers. The model is the scripted mock LLM (scripts/tui/mockllm.py); every tool call runs for real, then opens the slash-command menu.",
+  "terminal": {
+    "cols": 96,
+    "rows": 44
+  },
+  "model": {
+    "provider": "demo",
+    "id": "scripted-demo",
+    "name": "Scripted demo model"
+  },
+  "files": {
+    "Cargo.toml": "[package]\nname = \"stats\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n",
+    "src/lib.rs": "/// The arithmetic mean of `xs`.\npub fn mean(xs: &[f64]) -> f64 {\n    xs.iter().sum::<f64>() / xs.len() as f64\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn mean_of_two() {\n        assert_eq!(mean(&[1.0, 3.0]), 2.0);\n    }\n}\n"
+  },
+  "git": true,
+  "llm": [
+    {
+      "text": "Let me look at `mean` first.",
+      "tool_calls": [
+        {
+          "id": "call_read_1",
+          "name": "Read",
+          "arguments": {
+            "path": "src/lib.rs"
+          }
+        }
+      ]
+    },
+    {
+      "text": "An empty slice divides 0.0 by 0, which is NaN. I'll return `Option<f64>` and `None` for an empty slice, and cover that in the test.",
+      "tool_calls": [
+        {
+          "id": "call_edit_1",
+          "name": "Edit",
+          "arguments": {
+            "path": "src/lib.rs",
+            "edits": [
+              {
+                "oldText": "pub fn mean(xs: &[f64]) -> f64 {\n    xs.iter().sum::<f64>() / xs.len() as f64\n}",
+                "newText": "pub fn mean(xs: &[f64]) -> Option<f64> {\n    if xs.is_empty() {\n        return None;\n    }\n    Some(xs.iter().sum::<f64>() / xs.len() as f64)\n}"
+              },
+              {
+                "oldText": "        assert_eq!(mean(&[1.0, 3.0]), 2.0);",
+                "newText": "        assert_eq!(mean(&[1.0, 3.0]), Some(2.0));\n        assert_eq!(mean(&[]), None);"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "text": "Now the tests.",
+      "tool_calls": [
+        {
+          "id": "call_shell_1",
+          "name": "Shell",
+          "arguments": {
+            "command": "cargo test --quiet --lib"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Done. `mean` now returns `None` for an empty slice instead of NaN, and `Some(mean)` otherwise. The test covers both cases and passes."
+    }
+  ],
+  "steps": [
+    {
+      "wait_for": "▸ name your mission",
+      "timeout": 30
+    },
+    {
+      "wait_stable": 0.8,
+      "timeout": 20
+    },
+    {
+      "keys": [
+        "C-o"
+      ]
+    },
+    {
+      "pause": 1.2
+    },
+    {
+      "type_slowly": "mean() returns NaN for an empty slice. Make it return an Option.",
+      "cps": 28
+    },
+    {
+      "pause": 0.6
+    },
+    {
+      "keys": [
+        "Enter"
+      ]
+    },
+    {
+      "wait_for": "CLEARANCE NEEDED",
+      "timeout": 30
+    },
+    {
+      "wait_stable": 0.5,
+      "timeout": 20
+    },
+    {
+      "pause": 2.5
+    },
+    {
+      "keys": [
+        "Enter"
+      ]
+    },
+    {
+      "wait_for": "CLEARANCE NEEDED",
+      "timeout": 30
+    },
+    {
+      "wait_stable": 0.5,
+      "timeout": 20
+    },
+    {
+      "pause": 1.8
+    },
+    {
+      "keys": [
+        "Enter"
+      ]
+    },
+    {
+      "wait_for": "LANDED",
+      "timeout": 120
+    },
+    {
+      "wait_stable": 0.8,
+      "timeout": 20
+    },
+    {
+      "pause": 2.5
+    },
+    {
+      "type_slowly": "/",
+      "cps": 10
+    },
+    {
+      "wait_for": "\\(1/[0-9]+\\)",
+      "timeout": 10
+    },
+    {
+      "pause": 3.0
+    },
+    {
+      "keys": [
+        "BSpace"
+      ]
+    },
+    {
+      "pause": 1.5
+    }
+  ],
+  "workspace": "stats",
+  "prepare": [
+    [
+      "cargo",
+      "test",
+      "--quiet",
+      "--lib",
+      "--no-run"
+    ]
+  ]
+}

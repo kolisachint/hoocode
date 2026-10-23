@@ -2266,7 +2266,7 @@ mod tests {
         assert!(prompt.starts_with("You are an expert coding assistant operating inside hoocode"));
         for line in [
             "Agent: delegate a self-contained task to a specialized subagent (choose via subagent_type)",
-            "DocSearch: Search hoocode's own docs and this session's capabilities by describing what you need.",
+            "DocSearch: Search this session's skills, subagents and plugins by describing what you need.",
             "AgentOutput: check status / list / collect the results of background subagents",
             "TodoWrite: Plan and track multi-step work as a live todo list (use proactively; replaces the whole list each call)",
         ] {

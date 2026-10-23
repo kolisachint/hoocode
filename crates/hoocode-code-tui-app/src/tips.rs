@@ -15,11 +15,10 @@
 //! [`TipsController::deadline`] says when to poll next. The clock is
 //! injectable for tests.
 //!
-//! Branding: the rows name hoocode where hoocode names itself. Rows for
-//! features hoocode does not ship yet (the phase-12 core extensions `/learn`,
-//! `/plugin`, `/new-skill`, `/canvas`, `/cost`) and the `hoo` alias (hoocode has
-//! no short binary) stay in [`tips`] with their hoocode ids but are left out of
-//! the rotation by [`available_tips`].
+//! Rows for features hoocode does not ship (`/learn`, `/new-skill`, `/canvas`,
+//! `/cost`) stay in [`tips`] with their ids, so "seen" records stay valid, but are
+//! left out of the rotation by [`available_tips`]. A tip names only commands that
+//! run.
 
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -180,7 +179,8 @@ pub fn tips() -> Vec<Tip> {
             .note("/learn"),
         Tip::new("plugins", "One-click plugins")
             .rows(&[
-                "/plugin browses the marketplaces and installs into this project or your user config.",
+                "/plugin installs from marketplaces into this project or your user config.",
+                "From the shell: hoocode install <name>@<marketplace>.",
             ])
             .note("/plugin"),
         Tip::new("skills", "Skills are just a folder and a SKILL.md")
@@ -193,7 +193,7 @@ pub fn tips() -> Vec<Tip> {
             .rows(&["/canvas opens one. /new-canvas starts your own."])
             .note("/canvas"),
         Tip::new("export", "Take the session with you")
-            .rows(&["/export writes styled HTML (or .jsonl). /share puts it in a secret gist."])
+            .rows(&["/export <file>.jsonl writes the session to a file. /import opens one again."])
             .note("/export"),
         Tip::new("copy", "Copy the reply, not a picture of it")
             .rows(&["/copy gives you real markdown — /copy all, or /copy <turns>."])
@@ -211,7 +211,7 @@ pub fn tips() -> Vec<Tip> {
             "HOOCODE_OFFLINE=1 skips every startup fetch; search and completion fall back to built-ins.",
         ]),
         Tip::new("reload", "No need to restart")
-            .rows(&["/reload re-reads keybindings, extensions, skills, prompts and themes."])
+            .rows(&["/reload re-reads keybindings, skills, prompts and themes."])
             .note("/reload"),
         Tip::new("cost", "Know what a turn cost")
             .rows(&["/cost breaks down tokens and spend for this session."])
@@ -226,8 +226,7 @@ pub fn tips() -> Vec<Tip> {
 }
 
 /// Tip ids whose feature hoocode does not ship yet; see the module docs.
-pub const UNAVAILABLE_TIP_IDS: &[&str] =
-    &["hoo-alias", "learn", "plugins", "skills", "canvas", "cost"];
+pub const UNAVAILABLE_TIP_IDS: &[&str] = &["learn", "skills", "canvas", "cost"];
 
 /// [`tips`] without [`UNAVAILABLE_TIP_IDS`]: the default rotation.
 pub fn available_tips() -> Vec<Tip> {

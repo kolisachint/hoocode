@@ -1,12 +1,11 @@
-//! Port of hoocode `packages/coding-agent/test/builtin-skills.test.ts` (v0.5.89).
-//! The `/new-canvas` brief case (canvasBuildBrief) belongs to the canvas port
-//! (ledger 12.7); only the guide path it names is checked here.
+//! The built-in skills: the catalog, materializing it, and gating. hoocode has no
+//! canvases, so there is no canvas-design skill.
 
 use hoocode_code_resources::builtin_skills::{
-    builtin_skill_paths, builtin_skills_cache_dir, canvas_design_guide_path,
-    materialize_builtin_skills, BuiltinSkillGate, BUILTIN_SKILLS, EMBEDDED_SKILLS,
+    builtin_skill_paths, builtin_skills_cache_dir, materialize_builtin_skills, BuiltinSkillGate,
+    BUILTIN_SKILLS, EMBEDDED_SKILLS,
 };
-use hoocode_code_resources::{format_skills_for_prompt, load_skills_from_dir, DiagnosticType};
+use hoocode_code_resources::{load_skills_from_dir, DiagnosticType};
 
 const ON: BuiltinSkillGate = BuiltinSkillGate {
     enable_plugin_tools: true,
@@ -110,8 +109,11 @@ fn writes_the_embedded_content_to_a_content_addressed_cache_dir() {
             *content
         );
     }
-    // Same content as hoocode's templates, so the same cache directory name.
-    assert!(root.ends_with("/cache/builtin-skills/1130d668fa39"));
+    // The name is a hash of the content: a changed skill gets a new directory.
+    assert!(
+        root.ends_with("/cache/builtin-skills/4587010f7c59"),
+        "{root}"
+    );
 }
 
 #[test]
@@ -144,34 +146,21 @@ fn withholds_a_gated_skill_when_its_feature_is_off() {
     let cache = builtin_skills_cache_dir(&agent);
     assert_eq!(
         builtin_skill_paths(OFF, &agent),
-        [
-            format!("{cache}/artifact-design"),
-            format!("{cache}/canvas-design")
-        ]
+        [format!("{cache}/artifact-design")]
     );
 }
 
 #[test]
-fn keeps_canvas_design_out_of_the_per_turn_skill_list() {
-    let (_d, agent) = agent_dir();
-    let root = materialize_builtin_skills(&agent).unwrap();
-    let skill = load_skills_from_dir(&format!("{root}/canvas-design"), "user")
-        .skills
-        .remove(0);
-    assert!(skill.disable_model_invocation);
-    assert_eq!(format_skills_for_prompt(&[skill]), "");
-}
-
-#[test]
-fn points_new_canvas_at_the_guide() {
-    let (_d, agent) = agent_dir();
-    assert_eq!(
-        canvas_design_guide_path(&agent),
-        Some(format!(
-            "{}/canvas-design/SKILL.md",
-            builtin_skills_cache_dir(&agent)
-        ))
-    );
+fn ships_no_canvas_skill() {
+    // Canvases are not part of hoocode; no built-in skill may point at /canvas.
+    assert!(BUILTIN_SKILLS.iter().all(|s| s.name != "canvas-design"));
+    for (path, content) in EMBEDDED_SKILLS {
+        assert!(!content.contains("/canvas"), "{path} mentions /canvas");
+        assert!(
+            !content.contains("/new-canvas"),
+            "{path} mentions /new-canvas"
+        );
+    }
 }
 
 #[test]

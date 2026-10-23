@@ -42,15 +42,11 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
     },
     BuiltinSlashCommand {
         name: "export",
-        description: "Export session (HTML default, or specify path: .html/.jsonl)",
+        description: "Export the session to a JSONL file: /export <file.jsonl>",
     },
     BuiltinSlashCommand {
         name: "import",
         description: "Import and resume a session from a JSONL file",
-    },
-    BuiltinSlashCommand {
-        name: "share",
-        description: "Share session as a secret GitHub gist",
     },
     BuiltinSlashCommand {
         name: "copy",
@@ -126,7 +122,7 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
     },
     BuiltinSlashCommand {
         name: "reload",
-        description: "Reload keybindings, extensions, skills, prompts, and themes",
+        description: "Reload keybindings, skills, prompts, and themes",
     },
     BuiltinSlashCommand {
         name: "quit",

@@ -1,5 +1,5 @@
-//! `printHelp` from hoocode `cli/args.ts`. The text itself is generated into
-//! `help_text.rs` by `archive/migration/tools/gen_help_text.py`.
+//! `hoocode --help`. The text is in `help_text.rs`, written by hand: it lists only the
+//! commands, flags and variables this build handles.
 
 use crate::help_text::HELP_SEGMENTS;
 use std::io::Write;
@@ -42,9 +42,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn help_lists_pinned_flags_with_hoocode_branding() {
+    fn help_lists_the_supported_flags() {
         let help = render_help(false);
-        assert!(help.starts_with("hoocode - AI coding assistant with Read, Shell, Edit, Write tools\n\nUsage:\n  hoocode [options] [@files...] [messages...]\n"));
+        assert!(help.starts_with("hoocode - AI coding agent with Read, Shell, Edit, Write and CodeSearch tools\n\nUsage:\n  hoocode [options] [@files...] [messages...]\n"));
         for flag in [
             "--provider <name>",
             "--no-tools, -nt",
@@ -52,16 +52,99 @@ mod tests {
             "--list-models [search]",
             "--offline",
             "--use-system-ca",
+            "--enable-plugintools",
         ] {
             assert!(help.contains(flag), "missing {flag}");
         }
-        assert!(!help.contains("hoocode-ts"));
-        assert!(help.contains(
-            "HOOCODE_CODING_AGENT_DIR          - Config directory (default: ~/.hoocode/agent)"
-        ));
         assert!(
-            help.ends_with("  CodeSearch - Ranked code search, keyword + semantic (read-only)\n")
+            help.ends_with("  CodeSearch - Ranked code search (read-only)\n"),
+            "{help}"
         );
+    }
+
+    #[test]
+    fn help_leaves_out_flags_that_are_not_implemented() {
+        // Each of these fails with "not yet supported" (`unsupported_flags`, `--export`).
+        let help = render_help(false);
+        for flag in [
+            "--export",
+            "--extension",
+            "--no-extensions",
+            "--agent <",
+            "--theme",
+            "--no-themes",
+            "--verbose",
+            "--platform",
+            "--enable-webtools",
+            "--enable-todowrite",
+            "--enable-semantic-index",
+            "--print-token-surface",
+        ] {
+            assert!(!help.contains(flag), "help lists unimplemented {flag}");
+        }
+    }
+
+    #[test]
+    fn help_names_the_real_config_dir_and_commands() {
+        let help = render_help(false);
+        assert!(help.contains(
+            "HOOCODE_CODING_AGENT_DIR         - Config directory (default: ~/.hoocode)\n"
+        ));
+        assert!(!help.contains("~/.hoocode/agent"));
+        assert!(!help.contains(".ts"), "TypeScript-era text in help");
+        assert!(!help.contains("hoocode-ts"));
+        assert!(!help.to_lowercase().contains("extension"));
+        // The commands that run.
+        for command in [
+            "hoocode install <name[@marketplace]>",
+            "hoocode remove <name>",
+            "hoocode list ",
+            "hoocode plugin <command>",
+            "hoocode config ",
+            "hoocode update ",
+            "hoocode migrate [--dry-run]",
+            "hoocode app-server [--listen URL]",
+        ] {
+            assert!(help.contains(command), "missing {command}");
+        }
+        // `resources` is not a command.
+        assert!(!help.contains("hoocode resources"));
+    }
+
+    #[test]
+    fn every_listed_command_is_dispatched() {
+        // A word after `hoocode ` in the Commands block must be one `main` handles.
+        let help = render_help(false);
+        let block = help
+            .split("Commands:\n")
+            .nth(1)
+            .and_then(|rest| rest.split("\n\nOptions:").next())
+            .unwrap();
+        let handled = [
+            "install",
+            "remove",
+            "list",
+            "plugin",
+            "config",
+            "update",
+            "migrate",
+            "app-server",
+            "<command>",
+        ];
+        for line in block.lines() {
+            if let Some(rest) = line.trim_start().strip_prefix("hoocode ") {
+                let word = rest.split_whitespace().next().unwrap();
+                assert!(
+                    handled.contains(&word),
+                    "help lists unhandled `hoocode {word}`"
+                );
+            }
+        }
+        for word in crate::plugin_command::PLUGIN_SUBCOMMANDS {
+            if word != "uninstall" {
+                assert!(block.contains(&format!("hoocode {word} ")), "{word}");
+            }
+        }
     }
 
     #[test]
