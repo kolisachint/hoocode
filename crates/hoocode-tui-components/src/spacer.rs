@@ -1,18 +1,23 @@
 //! Spacer component that renders empty lines, ported from `components/spacer.ts`.
 
-use hoocode_tui_render::Component;
+use hoocode_tui_render::{fresh_stamp, Component};
 
 pub struct Spacer {
     lines: usize,
+    rev: u64,
 }
 
 impl Spacer {
     pub fn new(lines: usize) -> Self {
-        Self { lines }
+        Self {
+            lines,
+            rev: fresh_stamp(),
+        }
     }
 
     pub fn set_lines(&mut self, lines: usize) {
         self.lines = lines;
+        self.rev = fresh_stamp();
     }
 }
 
@@ -25,6 +30,10 @@ impl Default for Spacer {
 impl Component for Spacer {
     fn render(&mut self, _width: u16) -> Vec<String> {
         vec![String::new(); self.lines]
+    }
+
+    fn render_stamp(&self) -> Option<u64> {
+        Some(self.rev)
     }
 }
 

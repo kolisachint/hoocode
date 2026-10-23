@@ -2,6 +2,7 @@
 #![allow(clippy::string_slice)]
 
 mod cell_size_input;
+mod container_cache;
 mod cursor_parking;
 mod flatcache_stress;
 mod fullscreen_body_gap;

@@ -12,7 +12,10 @@ pub mod golden;
 mod scrollbar;
 mod tui;
 
-pub use component::{Component, ComponentHandle, Container, FlexSpacer, Slot};
+pub use component::{
+    bump_render_epoch, fresh_stamp, mix_stamps, Component, ComponentHandle, Container, FlexSpacer,
+    Piece, Rendered, Slot,
+};
 pub use scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB, SCROLLBAR_TRACK};
 pub use tui::{
     default_scroll_status, CanPinScroll, FrameObserver, FrameTiming, HyperlinkHandler,

@@ -1070,6 +1070,9 @@ impl Mode {
             });
         }
         self.transcript.pending_tools.extend(rendered_pending);
+        // A rebuilt history is as old as the live one after its next tool call:
+        // freeze all but the newest blocks now, not at that call.
+        self.trim_transcript_memory();
         self.dirty.set(true);
     }
 

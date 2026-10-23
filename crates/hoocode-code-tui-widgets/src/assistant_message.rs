@@ -11,7 +11,7 @@ use hoocode_code_tui_theme::{get_markdown_theme, theme};
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::{DefaultTextStyle, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_ratatui::Palette;
-use hoocode_tui_render::{Component, ComponentHandle, Container};
+use hoocode_tui_render::{fresh_stamp, mix_stamps, Component, ComponentHandle, Container};
 use hoocode_tui_util::js_regex::is_js_space;
 
 use crate::radar::{self, HIT_INDENT, STEP_INDENT};
@@ -414,6 +414,10 @@ pub struct AssistantMessageComponent {
     /// The last `(width, source chars, longest source line)` logged, so a
     /// steady frame does not append a line per render.
     last_width_log: Option<(u16, usize, usize)>,
+    /// Changes whenever something that shows in the output does: every
+    /// `&mut self` method that sets the message, the view or the radar links
+    /// takes a new one (the render stamp).
+    rev: u64,
 }
 
 /// The width-diagnosis log file: `HOOCODE_WIDTH_DEBUG` set to a path.
@@ -465,6 +469,7 @@ impl AssistantMessageComponent {
             think_end: None,
             width_log: width_log_path(),
             last_width_log: None,
+            rev: fresh_stamp(),
         };
         if let Some(message) = message {
             this.update_content(message, false);
@@ -533,6 +538,7 @@ impl AssistantMessageComponent {
     }
 
     pub fn set_thinking_display(&mut self, display: ThinkingDisplay) {
+        self.rev = fresh_stamp();
         self.thinking_display = display;
         self.refresh();
     }
@@ -540,6 +546,7 @@ impl AssistantMessageComponent {
     /// The view dial's stop: peek and full put prose on the `┊` rail (M4);
     /// full also wraps the Think row's gist where the others cut it.
     pub fn set_view(&mut self, view: ToolOutputView) {
+        self.rev = fresh_stamp();
         self.rail = view != ToolOutputView::Radar;
         let full = view == ToolOutputView::Full;
         if self.full != full {
@@ -551,6 +558,7 @@ impl AssistantMessageComponent {
     /// Radar (M5): links the prose line to the chain above it (`None` when
     /// no mission chain precedes it).
     pub fn set_radar_above(&mut self, chain: Option<Weak<RefCell<ToolChainComponent>>>) {
+        self.rev = fresh_stamp();
         self.radar_above = chain;
     }
 
@@ -562,6 +570,7 @@ impl AssistantMessageComponent {
 
     /// Radar (M5): tags the message with its mission.
     pub fn set_radar_mission(&mut self, mission: Option<usize>) {
+        self.rev = fresh_stamp();
         self.radar_mission = mission;
     }
 
@@ -579,6 +588,7 @@ impl AssistantMessageComponent {
     /// Radar (M5): shows or hides the message's prose line. Thinking's
     /// `✻ thought` line is not affected.
     pub fn set_radar_prose_shown(&mut self, shown: bool) {
+        self.rev = fresh_stamp();
         self.radar_prose_shown = shown;
     }
 
@@ -647,6 +657,7 @@ impl AssistantMessageComponent {
     /// [`Self::update_content`] for a message the caller already holds in an
     /// `Rc`: each streaming delta then shares it instead of copying it.
     pub fn update_shared(&mut self, message: Rc<AssistantMessage>, streaming: bool) {
+        self.rev = fresh_stamp();
         self.last_message = Some(message.clone());
         self.streaming = streaming;
         // The Think row's clock: the first streaming update carrying
@@ -816,7 +827,23 @@ impl Component for AssistantMessageComponent {
         lines
     }
 
+    /// A streaming message reads a live clock and changes with every delta:
+    /// no stamp. A settled one is drawn from its own state and, for the
+    /// radar and peek prose, from whether the chain above it still exists and
+    /// ends in a hit.
+    fn render_stamp(&self) -> Option<u64> {
+        if self.streaming {
+            return None;
+        }
+        let above = match self.radar_above.as_ref().and_then(Weak::upgrade) {
+            None => 0,
+            Some(chain) => 1 + u64::from(chain.try_borrow().ok()?.ends_in_hit()),
+        };
+        Some(mix_stamps([self.rev, above]))
+    }
+
     fn invalidate(&mut self) {
+        self.rev = fresh_stamp();
         // Cached blocks may be detached right now; drop their caches too.
         for entry in self.markdown_cache.values() {
             entry.md.borrow_mut().invalidate();

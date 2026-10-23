@@ -5,9 +5,10 @@
 //! performance optimizations that do not change what gets written to the
 //! terminal:
 //!
-//! 1. No reference-identity flatten memoization ([`crate::Container`] always
-//!    re-renders and re-concatenates children; the differential writer
-//!    below still only rewrites lines whose *content* changed).
+//! 1. No reference-identity flatten memoization. The differential writer
+//!    below only rewrites lines whose *content* changed, and
+//!    [`crate::Container`] keeps the lines of children that report a
+//!    [`crate::Component::render_stamp`] instead, drawing only what changed.
 //! 2. No `requestAnimationFrame`-style 16ms render coalescing. Input and
 //!    resizes passed to [`Tui::accept_event`] only schedule a frame, which
 //!    [`Tui::flush_scheduled_render`] paints once per loop iteration. Other
@@ -1621,8 +1622,8 @@ impl Tui {
         None
     }
 
-    /// Flatten the component tree. Simplified relative to the TypeScript
-    /// original: always fully re-renders (see module docs on flatten memoization).
+    /// Flatten the component tree. Containers draw again only the children
+    /// whose render stamp changed (see module docs on flatten memoization).
     pub fn render(&mut self, width: u16) -> Vec<String> {
         self.root.render(width)
     }
