@@ -1528,10 +1528,29 @@ async fn parallel_cap_refills_slots_in_order_and_keeps_result_order() {
     ))
     .await;
 
+    // Slots are taken in call order, but v0 and v1 take the two free slots at once
+    // and each body runs on its own blocking thread, so which body records its start
+    // first is up to the OS scheduler (macOS CI saw v1 first). The refill order is
+    // what the cap promises: v0 holds its slot throughout, so the other slot passes
+    // v1 -> v2 -> v3 -> v4, and each of those is admitted only after the one before
+    // it settled.
+    let started = probe.started.lock().unwrap().clone();
+    let mut sorted = started.clone();
+    sorted.sort();
     assert_eq!(
-        *probe.started.lock().unwrap(),
+        sorted,
         ["v0", "v1", "v2", "v3", "v4"],
-        "calls start in call order"
+        "every call ran once"
+    );
+    let refills: Vec<&str> = started
+        .iter()
+        .map(String::as_str)
+        .filter(|v| *v != "v0")
+        .collect();
+    assert_eq!(
+        refills,
+        ["v1", "v2", "v3", "v4"],
+        "the freed slot is refilled in call order"
     );
     assert_eq!(
         end_ids(&events),
