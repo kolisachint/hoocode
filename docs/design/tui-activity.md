@@ -410,6 +410,24 @@ each, frame build p50 / p99 in ms. The table grows by one row per step; "base" i
   `long-transcript` 3.7 to 2.7-2.9 ms (two runs each), key p50 3.6-3.8 to 2.8-3.0 ms; `stream` has few
   children and does not move. Inline gains less (5.4 to 5.0 ms): there the frame is dominated by
   `into_lines` and the diff (step 3).
+- **Inline `into_lines` (step 3): not done, design only.** The frame crosses `Tui::render` as a
+  `Vec<String>`, so `Container::render` turns its pieces into owned rows (`Rendered::into_lines`, 1.6 ms
+  at 10,000 rows: one allocation and copy per row), and then four passes read all of it:
+  `changed_rows` (a compare per row), `collect_kitty_image_ids`, the cursor-marker scan, and the move
+  into `previous_lines`. A piece-based diff is possible but not small: `previous_lines` is read at 20
+  places in `tui.rs`; the paint paths (`paint_differential`, `paint_deleted_lines`,
+  `paint_window_in_place`, `full_render`) take `Vec<String>` and index it; the search reads it; the
+  cursor marker is cut out of a row in place. Estimated change 400 to 600 lines in one crate, in the
+  code that decides what reaches the terminal, so it was not done here. *Design:* (1) keep the last
+  frame as `Rendered` (`previous: Rendered`) next to a cheap `rows()` view; (2) `changed_rows` walks
+  both piece lists and skips a pair of `Piece::Shared` that are `Rc::ptr_eq` (the common case: a
+  cached child) in O(1), comparing rows only inside pieces that differ, so the cost is O(pieces +
+  changed rows); (3) the paint paths read rows through `Rendered::row(i)` (a cursor, as `window` does),
+  which only materialises the rows it writes; (4) the cursor marker lives in the bottom, `Owned`
+  pieces (the editor); a row in a `Shared` piece is copied out first; (5) kitty image ids are collected
+  per piece when it is created (a flag on `Piece`), not by scanning rows. Expected gain: about 3 ms
+  of the 5.0 ms inline `long-transcript` frame, and the stamp-skipped frame becomes O(pieces).
+  Do it as its own change with `tui_render_ts` and the screen goldens as the guard.
 - **The 1 to 2 s stall (step 4).** *Found.* It is not tmux or the mock: it happens once per run, on the
   first frame after the turn ends, in all four scenarios (the base runs show `stalls: 1` each, and a 1.5 s
   key p99 on `long-transcript-inline`). `--perf-log` showed one loop iteration over 500 ms with the
