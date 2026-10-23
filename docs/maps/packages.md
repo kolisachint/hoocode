@@ -175,7 +175,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 10255 / 7428 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 10255 / 7501 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 307 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 367 / 0 | keep |
 | `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 92 / 0 | keep |
@@ -185,7 +185,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1510 / 172 | keep |
 | `tui-render` | Differential rendering for the hoocode TUI | 6 | 4851 / 2638 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3256 / 343 | keep |
-| `tui-util` | Shared utilities for the hoocode TUI | 15 | 2353 / 682 | keep |
+| `tui-util` | Shared utilities for the hoocode TUI | 15 | 2497 / 682 | keep |
 
 ### Other
 

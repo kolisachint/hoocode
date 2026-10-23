@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Streamed text shows up as it arrives.** The screen used to wake on a timer (up to 250 ms), so replies and tool output appeared in bursts. Repaints asked for only by the agent are capped at about 60 a second, so typing stays responsive.
 - **Frame cost no longer grows with the transcript.** Messages that have not changed keep their drawn lines between frames, and full-screen mode copies only the rows on screen. In a 200-turn session the median frame went from about 43 ms to about 12 ms.
 - Streaming no longer copies the whole reply several times per token.
+- **No freeze when a long reply ends.** Drawing a finished reply of about 57 KB took 1.8 s on the UI thread (the Markdown lexer tried each block rule against the rest of the text); it now takes about 50 ms.
 
 ### Changed: install with `npm install -g hoocode` (2026-10-23)
 - The unscoped `hoocode` package is the install name in the README, docs and the update notice. `@kolisachint/hoocode` is still published as an alias.

@@ -354,6 +354,33 @@ frame build p50 / p99, then key p50 / p99.
   headings, lists, a fenced code block with a blank line, a table and a quote char by char in
   peek, full and radar views and compares each step byte for byte with a settled render.
 
+### Perf phase 4
+
+Same scenarios and settings as phase 3 (release, 120x40, 20 keys/s, 3000 paced deltas), one run
+each, frame build p50 / p99 in ms. The table grows by one row per step; "base" is main at v0.2.1.
+
+| | stream | long-transcript | stream-inline | long-transcript-inline |
+|---|---|---|---|---|
+| base (v0.2.1) | 1.03 / 3.16 | 3.29 / 8.58 | 1.00 / 3.58 | 5.50 / 11.12 |
+| 4. Lexer prefilter (stall) | 1.13 / 3.07 | 3.42 / 9.69 | 0.86 / 2.52 | 4.91 / 10.90 |
+
+- **The 1 to 2 s stall (step 4).** *Found.* It is not tmux or the mock: it happens once per run, on the
+  first frame after the turn ends, in all four scenarios (the base runs show `stalls: 1` each, and a 1.5 s
+  key p99 on `long-transcript-inline`). `--perf-log` showed one loop iteration over 500 ms with the
+  watchdog phase `ui-loop:input-done`; timing the iteration's steps put 1.8 s inside `Tui::do_render`
+  (build 1.835 s, write 0.03 ms); a stack sample (gdb, every 0.3 s) showed the UI thread in
+  `Markdown::render_shared` -> `lexer::lex` -> `Lexer::block_tokens` -> `JsRegex::exec` ->
+  `fancy_regex::vm::run`. While streaming, the markdown is drawn in stable segments; when the turn ends
+  the settled message is lexed whole, once. `lex` tried each rule at each block against the rest of the
+  text (`src`), and the rules that use look-arounds or back-references (fences, heading, blockquote, html, def,
+  table, lheading) run in `fancy-regex`'s backtracking VM, whose failed search walks the whole
+  haystack even for a `^` rule: linear per call, quadratic per document (57 KB: 1.65 s, 230 ms
+  in each of seven rules). `JsRegex` now keeps a loosened copy (look-arounds removed,
+  back-references made "anything") on the fast engine, built on first use for a haystack of 2 KB or
+  more, and a miss there is a miss for the real rule. The 57 KB reply lexes in 46 ms (was 1.65 s);
+  runs show `stalls: 0` in all four scenarios. Test: `lexer_prefilter` (same tokens with the filter
+  on and off at every 211th cut point of a mixed document; linear scaling).
+
 ## Not doing
 
 - Prompting or steering a subagent while attached (read-only by decision; T1.2 keeps it
