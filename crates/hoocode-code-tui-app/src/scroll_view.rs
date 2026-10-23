@@ -68,7 +68,7 @@ pub fn jump_to_user_message(
         Some(body) => {
             let body = body.borrow();
             let Some(index) = body
-                .children
+                .children()
                 .iter()
                 .position(|c| Rc::ptr_eq(c, &chat_handle))
             else {
@@ -101,7 +101,7 @@ pub fn jump_to_user_message(
     };
     let rows: Vec<i64> = chat
         .borrow()
-        .children
+        .children()
         .iter()
         .zip(&chat_offsets)
         .filter(|(child, _)| is_user_message(child))
@@ -592,7 +592,7 @@ pub fn capture_top(
     let chat_handle: ComponentHandle = chat.clone();
     let body = body.borrow();
     let index = body
-        .children
+        .children()
         .iter()
         .position(|c| Rc::ptr_eq(c, &chat_handle))?;
     let chat_base = body.child_row_offsets(width)?[index] as i64;
@@ -607,7 +607,7 @@ pub fn capture_top(
     let offsets = chat.child_row_offsets(width)?;
     let i = offsets.iter().rposition(|o| (*o as i64) <= rel)?;
     Some(TopAnchor {
-        child: Some(chat.children[i].clone()),
+        child: Some(chat.children()[i].clone()),
         rows_in: rel - offsets[i] as i64,
     })
 }
@@ -651,7 +651,7 @@ fn place_top(
     let chat_handle: ComponentHandle = chat.clone();
     let body = body.borrow();
     let index = body
-        .children
+        .children()
         .iter()
         .position(|c| Rc::ptr_eq(c, &chat_handle))?;
     let chat_base = body.child_row_offsets(width)?[index] as i64;
@@ -659,7 +659,7 @@ fn place_top(
     let rel = match &anchor.child {
         None => anchor.rows_in,
         Some(child) => {
-            let i = chat.children.iter().position(|c| Rc::ptr_eq(c, child))?;
+            let i = chat.children().iter().position(|c| Rc::ptr_eq(c, child))?;
             let offsets = chat.child_row_offsets(width)?;
             let start = offsets[i] as i64;
             // Stay inside the message: a fold can make it shorter than it was.

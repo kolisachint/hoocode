@@ -13,7 +13,8 @@ use hoocode_ai_stream::{
 use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     AbortSignal, AssistantMessage, AssistantMessageEvent, Content, Context, Message, Model,
-    OnPayload, OnResponse, StopReason, TextContent, ThinkingContent, Tool, ToolCallContent, Usage,
+    OnPayload, OnResponse, SharedMessage, StopReason, TextContent, ThinkingContent, Tool,
+    ToolCallContent, Usage,
 };
 use hoocode_ai_util::{
     describe_provider_error, openai_api_error_message, parse_streaming_json,
@@ -323,7 +324,7 @@ pub type ResolveServiceTier = fn(Option<&str>, Option<&str>) -> Option<String>;
 /// State of `processResponsesStream`: the message being built, the current
 /// output item (kept up to date with summary/content parts) and block.
 pub struct ResponsesStreamState {
-    pub output: AssistantMessage,
+    pub output: SharedMessage,
     current_item: Option<Value>,
     /// Content index of the open block.
     current_block: Option<usize>,
@@ -336,7 +337,7 @@ impl ResponsesStreamState {
         let mut output = AssistantMessage::for_model(model);
         output.stop_reason = StopReason::Stop;
         Self {
-            output,
+            output: output.into(),
             current_item: None,
             current_block: None,
             partial_json: String::new(),
@@ -372,7 +373,7 @@ impl ResponsesStreamState {
         sender.push(AssistantMessageEvent::ThinkingDelta {
             index: self.last_index(),
             delta: delta.to_string(),
-            partial: self.output.clone(),
+            partial: self.output.share(),
         });
     }
 
@@ -445,7 +446,7 @@ impl ResponsesStreamState {
                         self.current_block = Some(self.last_index());
                         sender.push(AssistantMessageEvent::ThinkingStart {
                             index: self.last_index(),
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     Some("message") => {
@@ -456,7 +457,7 @@ impl ResponsesStreamState {
                         self.current_block = Some(self.last_index());
                         sender.push(AssistantMessageEvent::TextStart {
                             index: self.last_index(),
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     Some("function_call") => {
@@ -476,7 +477,7 @@ impl ResponsesStreamState {
                         self.current_block = Some(self.last_index());
                         sender.push(AssistantMessageEvent::ToolCallStart {
                             index: self.last_index(),
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     _ => {}
@@ -543,7 +544,7 @@ impl ResponsesStreamState {
                         sender.push(AssistantMessageEvent::TextDelta {
                             index: self.last_index(),
                             delta,
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                 }
@@ -559,7 +560,7 @@ impl ResponsesStreamState {
                     sender.push(AssistantMessageEvent::ToolCallDelta {
                         index: self.last_index(),
                         delta: delta.to_string(),
-                        partial: self.output.clone(),
+                        partial: self.output.share(),
                     });
                 }
             }
@@ -576,7 +577,7 @@ impl ResponsesStreamState {
                             sender.push(AssistantMessageEvent::ToolCallDelta {
                                 index: self.last_index(),
                                 delta: delta.to_string(),
-                                partial: self.output.clone(),
+                                partial: self.output.share(),
                             });
                         }
                     }
@@ -611,7 +612,7 @@ impl ResponsesStreamState {
                         }
                         sender.push(AssistantMessageEvent::ThinkingEnd {
                             index: self.last_index(),
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                         self.current_block = None;
                     }
@@ -641,7 +642,7 @@ impl ResponsesStreamState {
                         }
                         sender.push(AssistantMessageEvent::TextEnd {
                             index: self.last_index(),
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                         self.current_block = None;
                     }
@@ -660,7 +661,7 @@ impl ResponsesStreamState {
                         self.current_block = None;
                         sender.push(AssistantMessageEvent::ToolCallEnd {
                             index: self.last_index(),
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     _ => {}
@@ -823,7 +824,7 @@ pub fn run_responses_stream(
             }
             Ok(())
         });
-        let mut output = state.output;
+        let mut output = state.output.into_message();
         match outcome {
             Ok(()) => {
                 sender.push(AssistantMessageEvent::Done {
@@ -890,7 +891,7 @@ async fn drive(
     )
     .await;
     sender.push(AssistantMessageEvent::Start {
-        partial: state.output.clone(),
+        partial: state.output.share(),
     });
 
     let mut events = hoocode_ai_sse::sse_events(response.bytes_stream());

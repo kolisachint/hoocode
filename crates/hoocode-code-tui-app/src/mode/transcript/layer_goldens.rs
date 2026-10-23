@@ -84,6 +84,7 @@ impl Replay {
         // landing line and its summary); the full stop opens `!` output.
         t.radar_active.set(view == ToolOutputView::Radar);
         t.full_active.set(view == ToolOutputView::Full);
+        hoocode_tui_render::note_change();
         Self {
             t,
             chat,
@@ -102,6 +103,7 @@ impl Replay {
         if let Some(mission) = self.t.missions.last() {
             if !mission.landed {
                 let mut flight = mission.flight.borrow_mut();
+                hoocode_tui_render::note_change();
                 flight.started = None;
                 flight.cost = None;
             }

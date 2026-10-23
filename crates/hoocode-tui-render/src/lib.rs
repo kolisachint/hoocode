@@ -10,8 +10,8 @@ mod scrollbar;
 mod tui;
 
 pub use component::{
-    bump_render_epoch, fresh_stamp, mix_stamps, render_epoch, Component, ComponentHandle,
-    Container, FlexSpacer, Piece, Rendered, Slot,
+    bump_render_epoch, change_counter, fresh_stamp, mix_stamps, note_change, render_epoch,
+    Component, ComponentHandle, Container, FlexSpacer, Piece, Rendered, Slot,
 };
 pub use scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB, SCROLLBAR_TRACK};
 pub use tui::{

@@ -293,7 +293,7 @@ mod tests {
     /// The chat as plain text, 100 columns.
     fn chat_text(chat: &Rc<RefCell<Container>>) -> String {
         let mut lines = Vec::new();
-        for child in chat.borrow().children.iter() {
+        for child in chat.borrow().children().iter() {
             lines.extend(child.borrow_mut().render(100));
         }
         strip_vt_control_characters(&lines.join("\n"))
@@ -465,7 +465,7 @@ mod tests {
         assert!(t.chains.is_empty());
         assert!(t.open_chain.is_none());
         assert!(t.attempt_tools.is_empty());
-        assert!(t.chat.borrow().children.is_empty());
+        assert!(t.chat.borrow().children().is_empty());
     }
 
     #[test]

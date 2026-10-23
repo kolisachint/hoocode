@@ -534,7 +534,7 @@ pub(crate) async fn process_websocket_stream(
                 let allowed: HashSet<&str> = crate::CODEX_TOOL_CALL_PROVIDERS.into_iter().collect();
                 let context = Context::new(
                     String::new(),
-                    vec![Message::Assistant(state.output.clone())],
+                    vec![Message::Assistant((*state.output).clone())],
                     vec![],
                 );
                 let items = convert_responses_messages(model, &context, &allowed, false)
@@ -618,7 +618,7 @@ async fn exchange(
         if !*started {
             *started = true;
             sender.push(AssistantMessageEvent::Start {
-                partial: state.output.clone(),
+                partial: state.output.share(),
             });
         }
         let terminal = event["type"] == "response.completed";

@@ -442,6 +442,8 @@ impl Transcript {
                 }
             }
             let mut flight = self.missions[i].flight.borrow_mut();
+            // The mission header's stamp reads this data (hoocode_tui_render::note_change).
+            hoocode_tui_render::note_change();
             flight.steps = steps;
             flight.hits = hits;
             flight.mark = mark;
@@ -485,7 +487,7 @@ impl Transcript {
             flight,
             landing: None,
         });
-        if !self.chat.borrow().children.is_empty() {
+        if !self.chat.borrow().children().is_empty() {
             self.chat
                 .borrow_mut()
                 .add_child(self.peek_child(as_component(&handle(Spacer::new(1)))));
@@ -553,6 +555,8 @@ impl Transcript {
         let shown = landing.is_some();
         self.missions[i].landing = landing;
         let mut flight = self.missions[i].flight.borrow_mut();
+        // The mission header's stamp reads this data (hoocode_tui_render::note_change).
+        hoocode_tui_render::note_change();
         flight.steps = steps;
         flight.hits = hits;
         flight.mark = mark;
@@ -758,6 +762,8 @@ impl Mode {
         }
         let now = sum_assistant_usage(self.session.session_manager().entries());
         let mut flight = mission.flight.borrow_mut();
+        // The mission header's stamp reads this data (hoocode_tui_render::note_change).
+        hoocode_tui_render::note_change();
         match &self.turn_cost_anchor {
             Some((anchor, at)) => {
                 flight.started = Some(*at);
@@ -1486,6 +1492,8 @@ impl Mode {
         self.transcript
             .full_active
             .set(view == ToolOutputView::Full);
+        // The peek-only rows' stamps read the radar flag.
+        hoocode_tui_render::note_change();
         for mission in &self.transcript.missions {
             mission.header.borrow_mut().set_view(view);
         }
@@ -1801,7 +1809,7 @@ mod tests {
     /// The chat as plain text, 100 columns.
     fn chat_text(chat: &Rc<RefCell<Container>>) -> String {
         let mut lines = Vec::new();
-        for child in chat.borrow().children.iter() {
+        for child in chat.borrow().children().iter() {
             lines.extend(child.borrow_mut().render(100));
         }
         strip_vt_control_characters(&lines.join("\n"))

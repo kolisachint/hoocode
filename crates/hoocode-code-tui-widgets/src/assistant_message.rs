@@ -940,7 +940,7 @@ impl AssistantMessageComponent {
         let epoch = render_epoch();
         let mut kept = HashMap::new();
         let mut out = Vec::new();
-        for (index, child) in self.content.children.iter().enumerate() {
+        for (index, child) in self.content.children().iter().enumerate() {
             let stamp = child.borrow().render_stamp();
             // The first child holds the opening row, which has its own rule.
             let Some(stamp) = stamp.filter(|_| index > 0) else {

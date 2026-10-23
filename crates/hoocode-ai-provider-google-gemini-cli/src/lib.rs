@@ -21,8 +21,8 @@ use hoocode_ai_stream::{
 use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     AbortSignal, AssistantMessage, AssistantMessageEvent, Content, Context, Model, OnPayload,
-    SimpleStreamOptions, StopReason, TextContent, ThinkingBudgets, ThinkingContent, ThinkingLevel,
-    ToolCallContent, Usage,
+    SharedMessage, SimpleStreamOptions, StopReason, TextContent, ThinkingBudgets, ThinkingContent,
+    ThinkingLevel, ToolCallContent, Usage,
 };
 use regex::Regex;
 use reqwest::header::HeaderMap;
@@ -598,14 +598,14 @@ async fn run(
     };
     match outcome {
         Ok(()) => {
-            let message = state.output;
+            let message = state.output.into_message();
             sender.push(AssistantMessageEvent::Done {
                 message: message.clone(),
             });
             sender.end(Some(message));
         }
         Err(message) => {
-            let mut output = state.output;
+            let mut output = state.output.into_message();
             output.stop_reason = if signal.as_ref().is_some_and(AbortSignal::aborted) {
                 StopReason::Aborted
             } else {
@@ -832,7 +832,7 @@ async fn try_request(
 // ---------------------------------------------------------------------------
 
 struct StreamState {
-    output: AssistantMessage,
+    output: SharedMessage,
     /// Whether `start` was pushed (`ensureStarted`).
     started: bool,
 }
@@ -842,7 +842,7 @@ impl StreamState {
         let mut output = AssistantMessage::for_model(model);
         output.api = "google-gemini-cli".to_string();
         Self {
-            output,
+            output: output.into(),
             started: false,
         }
     }
@@ -860,7 +860,7 @@ impl StreamState {
     fn ensure_started(&mut self, sender: &AssistantMessageEventStream) {
         if !self.started {
             sender.push(AssistantMessageEvent::Start {
-                partial: self.output.clone(),
+                partial: self.output.share(),
             });
             self.started = true;
         }
@@ -908,7 +908,7 @@ impl StreamState {
         let Some(index) = current.take() else {
             return;
         };
-        let partial = self.output.clone();
+        let partial = self.output.share();
         match &self.output.content[index] {
             Content::Thinking(_) => {
                 sender.push(AssistantMessageEvent::ThinkingEnd { index, partial })
@@ -994,7 +994,7 @@ impl StreamState {
             let index = self.output.content.len() - 1;
             *current = Some(index);
             self.ensure_started(sender);
-            let partial = self.output.clone();
+            let partial = self.output.share();
             sender.push(if thinking {
                 AssistantMessageEvent::ThinkingStart { index, partial }
             } else {
@@ -1015,7 +1015,7 @@ impl StreamState {
             }
             _ => {}
         }
-        let partial = self.output.clone();
+        let partial = self.output.share();
         let delta = text.to_string();
         sender.push(if thinking {
             AssistantMessageEvent::ThinkingDelta {
@@ -1074,16 +1074,16 @@ impl StreamState {
         self.ensure_started(sender);
         sender.push(AssistantMessageEvent::ToolCallStart {
             index,
-            partial: self.output.clone(),
+            partial: self.output.share(),
         });
         sender.push(AssistantMessageEvent::ToolCallDelta {
             index,
             delta: arguments.to_string(),
-            partial: self.output.clone(),
+            partial: self.output.share(),
         });
         sender.push(AssistantMessageEvent::ToolCallEnd {
             index,
-            partial: self.output.clone(),
+            partial: self.output.share(),
         });
     }
 }

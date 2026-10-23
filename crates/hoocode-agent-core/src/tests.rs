@@ -65,7 +65,7 @@ fn done_stream(message: AssistantMessage) -> AssistantMessageEventStream {
 fn stream_until_aborted(options: &SimpleStreamOptions) -> AssistantMessageEventStream {
     let stream = create_assistant_message_event_stream();
     stream.push(AssistantMessageEvent::Start {
-        partial: assistant_text(""),
+        partial: Arc::new(assistant_text("")),
     });
     let signal = options.signal.clone().expect("the agent passes its signal");
     let producer = stream.clone();

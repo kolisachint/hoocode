@@ -92,7 +92,7 @@ impl InputFrame {
             Some(row) => row.clone(),
             None => {
                 let row = Rc::new(RefCell::new(Text::new("", 0, 0)));
-                self.frame.container.children.insert(0, handle(&row));
+                self.frame.container.insert_child(0, handle(&row));
                 self.title_row = Some(row.clone());
                 row
             }
@@ -131,7 +131,7 @@ impl InputFrame {
 
     /// Remove every row (the hints and a title row with them).
     pub fn clear(&mut self) {
-        self.frame.container.children.clear();
+        self.frame.container.clear();
         self.hint_row = None;
         self.title_row = None;
     }

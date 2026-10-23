@@ -101,16 +101,16 @@ in those tables; the generator keeps each crate's Status by name.
 | `ai-oauth-google` | Google Cloud Code Assist OAuth flows (Gemini CLI, Antigravity) for hoocode AI | 1 | 1448 / 0 | keep |
 | `ai-oauth-openai-codex` | OpenAI Codex (ChatGPT Plus/Pro) OAuth flow for hoocode AI | 1 | 599 / 0 | keep |
 | `ai-provider-anthropic` | Anthropic provider for hoocode AI | 1 | 2770 / 518 | keep |
-| `ai-provider-faux` | Faux / test provider for hoocode AI | 0 | 931 / 762 | test provider (dev-dep only) |
+| `ai-provider-faux` | Faux / test provider for hoocode AI | 0 | 931 / 816 | test provider (dev-dep only) |
 | `ai-provider-google` | Google Gemini provider for hoocode AI | 2 | 3160 / 110 | keep |
 | `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for hoocode AI | 1 | 1720 / 0 | keep |
 | `ai-provider-openai` | OpenAI provider for hoocode AI | 1 | 3404 / 808 | keep |
 | `ai-provider-openai-codex` | OpenAI Codex (ChatGPT subscription) Responses provider for hoocode AI: SSE and WebSocket transports | 1 | 2556 / 0 | keep |
-| `ai-provider-openai-responses` | OpenAI Responses API provider for hoocode AI | 2 | 2259 / 0 | keep |
+| `ai-provider-openai-responses` | OpenAI Responses API provider for hoocode AI | 2 | 2260 / 0 | keep |
 | `ai-registry` | API provider registry for hoocode AI: dispatches streams on model.api | 4 | 308 / 3007 | keep |
 | `ai-sse` | Server-Sent Events decoder shared by the hoocode AI providers | 2 | 216 / 12 | keep |
 | `ai-stream` | Streaming response utilities for hoocode AI | 12 | 600 / 0 | keep |
-| `ai-types` | Shared types for hoocode AI | 40 | 1098 / 0 | keep |
+| `ai-types` | Shared types for hoocode AI | 40 | 1261 / 0 | keep |
 | `ai-util` | Shared utilities for hoocode AI: JSON repair, hash, headers, sanitization, overflow detection | 13 | 3844 / 163 | keep |
 
 ### Agent runtime (`agent-*`)
@@ -120,10 +120,10 @@ in those tables; the generator keeps each crate's Status by name.
 | `agent-compaction` | Session compaction for hoocode agents | 3 | 1447 / 1315 | keep |
 | `agent-core` | Core agent runtime for hoocode agents | 2 | 1977 / 0 | keep |
 | `agent-harness` | Agent harness for hoocode agents | 6 | 3310 / 1042 | keep |
-| `agent-loop` | Agent loop for hoocode agents | 1 | 2995 / 0 | keep |
+| `agent-loop` | Agent loop for hoocode agents | 1 | 3046 / 0 | keep |
 | `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 1 | 1860 / 1666 | keep |
 | `agent-session` | Session trees for hoocode agents: entry format, storage, repositories | 2 | 2409 / 0 | keep |
-| `agent-types` | Shared types for hoocode agents | 21 | 950 / 0 | keep |
+| `agent-types` | Shared types for hoocode agents | 21 | 956 / 0 | keep |
 
 ### Coding agent (`code-*`, `app-server*`)
 
@@ -165,17 +165,17 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 23620 / 7394 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 23685 / 7394 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 786 / 888 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8929 / 4789 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2524 / 2142 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14348 / 9478 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14348 / 9482 | keep |
 
 ### TUI library (`tui-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 10254 / 7428 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 10254 / 7501 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 303 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 365 / 0 | keep |
 | `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 92 / 0 | keep |
@@ -183,9 +183,9 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1048 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1956 / 583 | keep |
 | `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1510 / 172 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4848 / 2638 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4917 / 2787 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3253 / 343 | keep |
-| `tui-util` | Shared utilities for the hoocode TUI | 15 | 2351 / 682 | keep |
+| `tui-util` | Shared utilities for the hoocode TUI | 15 | 2495 / 682 | keep |
 
 ### Other
 

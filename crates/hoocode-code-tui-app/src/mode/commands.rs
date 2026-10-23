@@ -249,7 +249,7 @@ impl Mode {
         let Some(markdown) = changelog.filter(|m| !m.trim().is_empty()) else {
             return;
         };
-        let has_rows = !self.transcript.chat.borrow().children.is_empty();
+        let has_rows = !self.transcript.chat.borrow().children().is_empty();
         if has_rows {
             self.add_to_chat(as_component(&handle(Spacer::new(1))));
         }
