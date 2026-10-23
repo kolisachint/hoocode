@@ -19,6 +19,8 @@
     {"pattern": "\\bhoocode_", "replace": "<WORDMARK>"},
     {"pattern": "\\bHooCode\\b", "replace": "<APP>"},
     {"pattern": "\\bhoocode\\b", "replace": "<app>"},
+    {"pattern": "(?<=│ )▔+ *(?=│)", "replace": "<toast-countdown>", "style": "<masked: toast countdown>", "keep_width": true, "why": "A toast draws a bar that drains while it shows, so a snapshot caught mid-countdown has a shorter bar (message-queue/dequeued, scroll-view). Mask the bar and its gap together and keep their width."},
+    {"pattern": "\\bv\\d+\\.\\d+\\.\\d+ {3,}", "replace": "v<VERSION>", "keep_width": true, "why": "The banner pads the version row out to a fixed column, so the padding changes with the version string length (0.1.40 vs 0.2.1). Mask the version and the padding together and keep their total width."},
     {"pattern": "\\bv\\d+\\.\\d+\\.\\d+\\b", "replace": "v<VERSION>"},
     {"pattern": "\\b\\d+(\\.\\d+)?(ms|s)\\b", "replace": "<DUR>"},
     {"pattern": "^Pane is dead \\(status (\\d+), .*\\)$", "replace": "<exited status=\\1>"},
