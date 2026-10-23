@@ -248,6 +248,21 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
 - Parallel only where files don't overlap: T0.1/T0.3 together, Phase S rows by crate, T4.2/T4.3 together, T5.1/T5.2 with T3. T1.1 → T1.2 → T3.3 are serial.
 - Before starting any step, the orchestrator asks the user which plan (core or TUI) and step.
 
+### Perf: event wake + Arc deltas
+
+- The UI loop used to learn about agent events only when it woke for a key or a
+  timer, so streamed text showed in bursts of 120 to 640 ms. App events now go
+  through `AppSender` (`mode/mod.rs`), which sends a `TuiEvent::Wake` into the
+  input channel. `WakeHandle` (hoocode-tui-render) coalesces wakes with an atomic
+  flag. A pass takes at most 256 app events and wakes itself if it hit the cap.
+  A wake alone does not repaint within 16 ms of the last pass; a key ends that
+  wait at once. The 100 ms markdown stream throttle is unchanged.
+- `AgentEvent::MessageUpdate` carries `Arc<AssistantMessageEvent>` and
+  `Arc<AgentMessage>` (and `AgentState::streaming_message` is an `Arc`), so the
+  session's `event.clone()` and the core state no longer copy the partial
+  message. The UI keeps only the last of consecutive updates in a batch.
+- Measure with `scripts/perf/load_scenario.py --scenario stream`.
+
 ## Not doing
 
 - Prompting or steering a subagent while attached (read-only by decision; T1.2 keeps it

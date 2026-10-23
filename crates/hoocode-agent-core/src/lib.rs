@@ -206,8 +206,10 @@ impl Shared {
         {
             let mut state = self.state.lock().unwrap();
             match &event {
-                AgentEvent::MessageStart { message }
-                | AgentEvent::MessageUpdate { message, .. } => {
+                AgentEvent::MessageStart { message } => {
+                    state.streaming_message = Some(Arc::new(message.clone()));
+                }
+                AgentEvent::MessageUpdate { message, .. } => {
                     state.streaming_message = Some(message.clone());
                 }
                 AgentEvent::MessageEnd { message } => {

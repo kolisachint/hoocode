@@ -348,6 +348,9 @@ impl Mode {
                 _ => {}
             },
             AgentEvent::MessageUpdate { message, .. } => {
+                // The session's own copy is usually gone by now, so this takes
+                // the message out of its Arc without a copy.
+                let message = Arc::try_unwrap(message).unwrap_or_else(|shared| (*shared).clone());
                 if let (Some(_), AgentMessage::Assistant(assistant)) =
                     (&self.transcript.streaming, message)
                 {
