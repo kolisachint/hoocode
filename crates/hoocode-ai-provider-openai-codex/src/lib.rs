@@ -184,7 +184,7 @@ pub fn stream_codex_responses(
     spawn_producer(&stream, async move {
         let mut state = ResponsesStreamState::new(&model);
         let outcome = run(&model, &context, &options, &mut state, &sender).await;
-        let mut output = state.output;
+        let mut output = state.output.into_message();
         match outcome {
             Ok(()) => {
                 sender.push(AssistantMessageEvent::Done {
@@ -326,7 +326,7 @@ async fn run(
     )
     .await?;
     sender.push(AssistantMessageEvent::Start {
-        partial: state.output.clone(),
+        partial: state.output.share(),
     });
     process_sse(response, state, sender, model, options).await?;
     if aborted(signal) {

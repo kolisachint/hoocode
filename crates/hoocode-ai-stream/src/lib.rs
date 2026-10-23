@@ -335,7 +335,7 @@ mod tests {
     fn assistant_stream_completes_on_done_and_error() {
         let s = create_assistant_message_event_stream();
         s.push(AssistantMessageEvent::Start {
-            partial: message("partial"),
+            partial: Arc::new(message("partial")),
         });
         s.push(AssistantMessageEvent::Done {
             message: message("final"),

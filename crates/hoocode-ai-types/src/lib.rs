@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Wire format
@@ -779,57 +781,122 @@ pub struct ProviderStreamOptions {
 // Stream events
 // ---------------------------------------------------------------------------
 
+/// An assistant message a provider builds up while it streams, and hands out
+/// by reference count.
+///
+/// Every event carries the message so far as an `Arc<AssistantMessage>`
+/// ([`share`](Self::share)), which costs a counter bump, not a copy. Writing
+/// through the `DerefMut` goes through [`Arc::make_mut`]: it appends in place
+/// when no listener still holds the message of an earlier event, and copies the
+/// message once when one does (a slow listener pays for its own delay).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SharedMessage(Arc<AssistantMessage>);
+
+impl SharedMessage {
+    pub fn new(message: AssistantMessage) -> Self {
+        Self(Arc::new(message))
+    }
+
+    /// The message so far, to put in an event.
+    pub fn share(&self) -> Arc<AssistantMessage> {
+        self.0.clone()
+    }
+
+    /// The finished message: moved out when no listener holds it, else copied.
+    pub fn into_message(self) -> AssistantMessage {
+        Arc::try_unwrap(self.0).unwrap_or_else(|shared| (*shared).clone())
+    }
+}
+
+impl From<AssistantMessage> for SharedMessage {
+    fn from(message: AssistantMessage) -> Self {
+        Self::new(message)
+    }
+}
+
+impl Deref for SharedMessage {
+    type Target = AssistantMessage;
+
+    fn deref(&self) -> &AssistantMessage {
+        &self.0
+    }
+}
+
+impl DerefMut for SharedMessage {
+    fn deref_mut(&mut self) -> &mut AssistantMessage {
+        if Arc::strong_count(&self.0) > 1 {
+            COPIES.with(|copies| copies.set(copies.get() + 1));
+        }
+        Arc::make_mut(&mut self.0)
+    }
+}
+
+thread_local! {
+    static COPIES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times a write to a [`SharedMessage`] on this thread had to copy the
+/// message because a listener still held an earlier event's `partial`. A
+/// provider that streams to a keeping-up listener leaves this at zero.
+pub fn shared_message_copies() -> u64 {
+    COPIES.with(std::cell::Cell::get)
+}
+
 /// Events emitted during streaming of an assistant message.
+///
+/// `partial` is the message so far, shared: a listener that keeps it keeps one
+/// reference, and the provider's next write copies only if that reference is
+/// still alive.
 #[derive(Debug, Clone)]
 pub enum AssistantMessageEvent {
     /// Streaming has started; `partial` contains the initial message.
-    Start { partial: AssistantMessage },
+    Start { partial: Arc<AssistantMessage> },
     /// A text content block has started.
     TextStart {
-        partial: AssistantMessage,
+        partial: Arc<AssistantMessage>,
         index: usize,
     },
     /// Delta for a text content block.
     TextDelta {
-        partial: AssistantMessage,
+        partial: Arc<AssistantMessage>,
         index: usize,
         delta: String,
     },
     /// A text content block has ended.
     TextEnd {
-        partial: AssistantMessage,
+        partial: Arc<AssistantMessage>,
         index: usize,
     },
     /// A thinking content block has started.
     ThinkingStart {
-        partial: AssistantMessage,
+        partial: Arc<AssistantMessage>,
         index: usize,
     },
     /// Delta for a thinking content block.
     ThinkingDelta {
-        partial: AssistantMessage,
+        partial: Arc<AssistantMessage>,
         index: usize,
         delta: String,
     },
     /// A thinking content block has ended.
     ThinkingEnd {
-        partial: AssistantMessage,
+        partial: Arc<AssistantMessage>,
         index: usize,
     },
     /// A tool-call content block has started.
     ToolCallStart {
-        partial: AssistantMessage,
+        partial: Arc<AssistantMessage>,
         index: usize,
     },
     /// Delta for a tool-call block.
     ToolCallDelta {
-        partial: AssistantMessage,
+        partial: Arc<AssistantMessage>,
         index: usize,
         delta: String,
     },
     /// A tool-call content block has ended.
     ToolCallEnd {
-        partial: AssistantMessage,
+        partial: Arc<AssistantMessage>,
         index: usize,
     },
     /// Streaming completed successfully.
@@ -839,12 +906,72 @@ pub enum AssistantMessageEvent {
 }
 
 impl AssistantMessageEvent {
+    /// The message so far, for every event that carries one.
+    pub fn partial(&self) -> Option<&AssistantMessage> {
+        self.partial_arc().map(|partial| &**partial)
+    }
+
+    fn partial_arc(&self) -> Option<&Arc<AssistantMessage>> {
+        match self {
+            Self::Start { partial }
+            | Self::TextStart { partial, .. }
+            | Self::TextDelta { partial, .. }
+            | Self::TextEnd { partial, .. }
+            | Self::ThinkingStart { partial, .. }
+            | Self::ThinkingDelta { partial, .. }
+            | Self::ThinkingEnd { partial, .. }
+            | Self::ToolCallStart { partial, .. }
+            | Self::ToolCallDelta { partial, .. }
+            | Self::ToolCallEnd { partial, .. } => Some(partial),
+            Self::Done { .. } | Self::Error { .. } => None,
+        }
+    }
+
+    /// The same event with an empty `partial`, so that whoever keeps it does
+    /// not keep the provider's message alive (a provider appends in place only
+    /// while nobody holds the message of an earlier event).
+    pub fn without_partial(mut self) -> Self {
+        let slot = match &mut self {
+            Self::Start { partial }
+            | Self::TextStart { partial, .. }
+            | Self::TextDelta { partial, .. }
+            | Self::TextEnd { partial, .. }
+            | Self::ThinkingStart { partial, .. }
+            | Self::ThinkingDelta { partial, .. }
+            | Self::ThinkingEnd { partial, .. }
+            | Self::ToolCallStart { partial, .. }
+            | Self::ToolCallDelta { partial, .. }
+            | Self::ToolCallEnd { partial, .. } => Some(partial),
+            Self::Done { .. } | Self::Error { .. } => None,
+        };
+        if let Some(partial) = slot {
+            static EMPTY: std::sync::OnceLock<Arc<AssistantMessage>> = std::sync::OnceLock::new();
+            *partial = EMPTY.get_or_init(Default::default).clone();
+        }
+        self
+    }
+
     /// The event as hoocode serializes it (`JSON.stringify` of the TS
     /// `AssistantMessageEvent`): `{"type":"text_delta","contentIndex":0,"delta":…,"partial":…}`.
     /// `content` (on `*_end`), `toolCall` (on `toolcall_end`) and `reason` (on
     /// `done`/`error`) are read from the message, which holds them at that point.
     pub fn to_json(&self) -> serde_json::Value {
+        self.to_json_with(None)
+    }
+
+    /// [`to_json`](Self::to_json) with `message` standing in for the event's
+    /// `partial` (the listeners of an agent update get the event without its
+    /// partial and the message so far beside it).
+    pub fn to_json_with(&self, message: Option<&AssistantMessage>) -> serde_json::Value {
         use serde_json::{json, Value};
+        let shown: AssistantMessage;
+        let shown: &AssistantMessage = match message.or_else(|| self.partial()) {
+            Some(m) => m,
+            None => {
+                shown = AssistantMessage::default();
+                &shown
+            }
+        };
         let msg = assistant_message_json;
         let block = |partial: &AssistantMessage, index: usize| partial.content.get(index).cloned();
         let with =
@@ -859,38 +986,30 @@ impl AssistantMessageEvent {
                 Value::Object(map)
             };
         match self {
-            Self::Start { partial } => json!({"type": "start", "partial": msg(partial)}),
-            Self::TextStart { partial, index } => with("text_start", *index, None, partial),
-            Self::TextDelta {
-                partial,
-                index,
-                delta,
-            } => with(
+            Self::Start { .. } => json!({"type": "start", "partial": msg(shown)}),
+            Self::TextStart { index, .. } => with("text_start", *index, None, shown),
+            Self::TextDelta { index, delta, .. } => with(
                 "text_delta",
                 *index,
                 Some(("delta", delta.as_str().into())),
-                partial,
+                shown,
             ),
-            Self::TextEnd { partial, index } => {
-                let text = match block(partial, *index) {
+            Self::TextEnd { index, .. } => {
+                let text = match block(shown, *index) {
                     Some(Content::Text(t)) => t.text,
                     _ => String::new(),
                 };
-                with("text_end", *index, Some(("content", text.into())), partial)
+                with("text_end", *index, Some(("content", text.into())), shown)
             }
-            Self::ThinkingStart { partial, index } => with("thinking_start", *index, None, partial),
-            Self::ThinkingDelta {
-                partial,
-                index,
-                delta,
-            } => with(
+            Self::ThinkingStart { index, .. } => with("thinking_start", *index, None, shown),
+            Self::ThinkingDelta { index, delta, .. } => with(
                 "thinking_delta",
                 *index,
                 Some(("delta", delta.as_str().into())),
-                partial,
+                shown,
             ),
-            Self::ThinkingEnd { partial, index } => {
-                let text = match block(partial, *index) {
+            Self::ThinkingEnd { index, .. } => {
+                let text = match block(shown, *index) {
                     Some(Content::Thinking(t)) => t.thinking,
                     _ => String::new(),
                 };
@@ -898,25 +1017,21 @@ impl AssistantMessageEvent {
                     "thinking_end",
                     *index,
                     Some(("content", text.into())),
-                    partial,
+                    shown,
                 )
             }
-            Self::ToolCallStart { partial, index } => with("toolcall_start", *index, None, partial),
-            Self::ToolCallDelta {
-                partial,
-                index,
-                delta,
-            } => with(
+            Self::ToolCallStart { index, .. } => with("toolcall_start", *index, None, shown),
+            Self::ToolCallDelta { index, delta, .. } => with(
                 "toolcall_delta",
                 *index,
                 Some(("delta", delta.as_str().into())),
-                partial,
+                shown,
             ),
-            Self::ToolCallEnd { partial, index } => {
-                let call = block(partial, *index)
+            Self::ToolCallEnd { index, .. } => {
+                let call = block(shown, *index)
                     .and_then(|c| serde_json::to_value(c).ok())
                     .unwrap_or(Value::Null);
-                with("toolcall_end", *index, Some(("toolCall", call)), partial)
+                with("toolcall_end", *index, Some(("toolCall", call)), shown)
             }
             Self::Done { message } => json!({
                 "type": "done",
@@ -1096,5 +1211,53 @@ mod wire_tests {
         );
         assert_eq!(a.stop_reason, StopReason::Stop);
         assert!(a.timestamp > 0);
+    }
+}
+
+#[cfg(test)]
+mod event_json_tests {
+    use super::*;
+
+    fn message() -> AssistantMessage {
+        AssistantMessage {
+            api: "anthropic-messages".into(),
+            provider: "anthropic".into(),
+            model: "m".into(),
+            content: vec![Content::Text(TextContent::new("hi"))],
+            ..Default::default()
+        }
+    }
+
+    /// The event's wire form does not depend on how the partial is held.
+    #[test]
+    fn event_json_is_byte_stable() {
+        let event = AssistantMessageEvent::TextDelta {
+            partial: Arc::new(message()),
+            index: 0,
+            delta: "hi".into(),
+        };
+        assert_eq!(
+            event.to_json().to_string(),
+            r#"{"type":"text_delta","contentIndex":0,"delta":"hi","partial":{"role":"assistant","content":[{"type":"text","text":"hi"}],"api":"anthropic-messages","provider":"anthropic","model":"m","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":0}}"#
+        );
+    }
+
+    #[test]
+    fn shared_message_copies_only_while_an_event_holds_it() {
+        let mut shared = SharedMessage::new(message());
+        let held = shared.share();
+        shared.content.clear();
+        // The holder keeps the old message; the builder has its own copy now.
+        assert_eq!(held.content.len(), 1);
+        assert!(shared.content.is_empty());
+        assert_eq!(shared_message_copies(), 1);
+        drop(held);
+        let before = shared.share();
+        drop(before);
+        let ptr = Arc::as_ptr(&shared.0);
+        shared.content.push(Content::Text(TextContent::new("x")));
+        assert_eq!(ptr, Arc::as_ptr(&shared.0), "no copy when nobody holds it");
+        assert_eq!(shared_message_copies(), 1);
+        assert_eq!(shared.into_message().content.len(), 1);
     }
 }

@@ -87,14 +87,14 @@ fn assistant_messages_keep_hoocode_key_order_and_integral_costs() {
 
 #[test]
 fn message_update_carries_content_index_and_end_payloads() {
-    let partial = assistant(
+    let partial = std::sync::Arc::new(assistant(
         vec![text("Let me read it."), read_call()],
         StopReason::ToolUse,
-    );
+    ));
     let update = |event: AssistantMessageEvent| {
         let value = AgentEvent::MessageUpdate {
             assistant_message_event: std::sync::Arc::new(event),
-            message: std::sync::Arc::new(AgentMessage::Assistant(partial.clone())),
+            message: std::sync::Arc::new(AgentMessage::Assistant((*partial).clone())),
         }
         .to_json();
         assert_eq!(keys(&value), ["type", "assistantMessageEvent", "message"]);
@@ -152,13 +152,13 @@ fn message_update_carries_content_index_and_end_payloads() {
 
 #[test]
 fn thinking_events_carry_the_thinking_text_on_end() {
-    let partial = assistant(
+    let partial = std::sync::Arc::new(assistant(
         vec![Content::Thinking(ThinkingContent {
             thinking: "hmm".into(),
             ..Default::default()
         })],
         StopReason::Stop,
-    );
+    ));
     let start = AssistantMessageEvent::ThinkingStart {
         partial: partial.clone(),
         index: 0,

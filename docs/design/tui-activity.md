@@ -363,7 +363,30 @@ each, frame build p50 / p99 in ms. The table grows by one row per step; "base" i
 |---|---|---|---|---|
 | base (v0.2.1) | 1.03 / 3.16 | 3.29 / 8.58 | 1.00 / 3.58 | 5.50 / 11.12 |
 | 4. Lexer prefilter (stall) | 1.13 / 3.07 | 3.42 / 9.69 | 0.86 / 2.52 | 4.91 / 10.90 |
+| 1. Provider-side partial (`Arc`) | 1.09 / 2.89 | 3.72 / 9.45 | 0.88 / 2.82 | 5.37 / 9.48 |
 
+- **Provider-side partial copy (step 1).** `AssistantMessageEvent::*{partial}` is an
+  `Arc<AssistantMessage>`. Providers keep their message in a `SharedMessage` (hoocode-ai-types): `share()`
+  gives the event its `Arc`, and a write goes through `Arc::make_mut`, so it appends in place unless a
+  listener still holds the message of an earlier event. The frame numbers do not move (the provider and
+  the loop run off the UI thread); the saving is CPU in the loop task: a 57 KB reply of 14,454 events
+  through the faux provider and the event stream takes 10 ms (best of 5, release) instead of 22 ms.
+  *Who holds the previous `Arc`.* The ai-stream queue holds an event until the loop takes it, and the
+  loop is quicker than a provider. The listeners after the loop (app channel, UI batch, session) do not:
+  they queue events for a frame, and any one of them keeping the provider's `Arc` would bring the copy
+  back for every delta. So the loop sends `AgentEvent::MessageUpdate` with the event's `partial`
+  emptied (`without_partial`; `message` is the message so far, and it is the loop's one remaining
+  copy). The JSON form puts `message` where the event's partial was (`to_json_with`), so
+  `message_update` lines are byte-identical; session files hold `AgentMessage` and are untouched; the
+  app server reads only `delta`. Counter: `shared_message_copies()` (per thread). Tests: faux
+  `a_listener_that_keeps_up_leaves_the_partial_uncopied` (at most 2 copies in 50 deltas: the first write
+  after `start` and `text_start`, which the producer queues before the listener runs) and
+  `..._keeps_every_event_makes_the_provider_copy` (a copy per event); agent-loop
+  `updates_do_not_hand_listeners_the_providers_partial`; ai-types `event_json_is_byte_stable`.
+  *Serde:* the events never derive `Serialize` (`to_json` builds the value), so the `rc` feature is not
+  needed and no dependency changed. *Still one copy per delta:* `AgentMessage::Assistant` owns its
+  message; sharing it needs `Arc` there (all of agent-core, session and the UI read it) and is the next
+  step if the loop copy shows up.
 - **The 1 to 2 s stall (step 4).** *Found.* It is not tmux or the mock: it happens once per run, on the
   first frame after the turn ends, in all four scenarios (the base runs show `stalls: 1` each, and a 1.5 s
   key p99 on `long-transcript-inline`). `--perf-log` showed one loop iteration over 500 ms with the

@@ -19,8 +19,8 @@ use hoocode_ai_stream::{
 use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     AbortSignal, AssistantMessage, AssistantMessageEvent, Content, Context, Model, OnPayload,
-    OnResponse, SimpleStreamOptions, StopReason, TextContent, ThinkingContent, ToolCallContent,
-    Usage,
+    OnResponse, SharedMessage, SimpleStreamOptions, StopReason, TextContent, ThinkingContent,
+    ToolCallContent, Usage,
 };
 use hoocode_ai_util::{droppable_params_named_by, note_rejected_params, DROPPABLE_PARAMS};
 use request::CompletionsOptions;
@@ -81,7 +81,7 @@ async fn run(
         outcome.map_err(|error| error.unwrap_or_else(|| RequestError::plain(ABORTED_MESSAGE)));
     match outcome {
         Ok(()) => {
-            let message = state.output.clone();
+            let message = state.output.clone().into_message();
             sender.push(AssistantMessageEvent::Done {
                 message: message.clone(),
             });
@@ -89,7 +89,7 @@ async fn run(
         }
         Err(error) => {
             let aborted = signal.as_ref().is_some_and(AbortSignal::aborted);
-            let mut output = state.output;
+            let mut output = state.output.into_message();
             output.stop_reason = if aborted {
                 StopReason::Aborted
             } else {
@@ -183,7 +183,7 @@ async fn drive(
     )
     .await;
     sender.push(AssistantMessageEvent::Start {
-        partial: state.output.clone(),
+        partial: state.output.share(),
     });
 
     let mut events = hoocode_ai_sse::sse_events(response.bytes_stream());
@@ -291,7 +291,7 @@ struct ToolCallScratch {
 }
 
 struct StreamState {
-    output: AssistantMessage,
+    output: SharedMessage,
     text_block: Option<usize>,
     thinking_block: Option<usize>,
     tool_calls_by_index: HashMap<i64, usize>,
@@ -309,7 +309,7 @@ impl StreamState {
         output.usage = Usage::default();
         output.timestamp = now_millis();
         Self {
-            output,
+            output: output.into(),
             text_block: None,
             thinking_block: None,
             tool_calls_by_index: HashMap::new(),
@@ -330,7 +330,7 @@ impl StreamState {
         self.text_block = Some(idx);
         sender.push(AssistantMessageEvent::TextStart {
             index: idx,
-            partial: self.output.clone(),
+            partial: self.output.share(),
         });
         idx
     }
@@ -352,7 +352,7 @@ impl StreamState {
         self.thinking_block = Some(idx);
         sender.push(AssistantMessageEvent::ThinkingStart {
             index: idx,
-            partial: self.output.clone(),
+            partial: self.output.share(),
         });
         idx
     }
@@ -398,7 +398,7 @@ impl StreamState {
                 }
                 sender.push(AssistantMessageEvent::ToolCallStart {
                     index: idx,
-                    partial: self.output.clone(),
+                    partial: self.output.share(),
                 });
                 idx
             }
@@ -473,7 +473,7 @@ impl StreamState {
             sender.push(AssistantMessageEvent::TextDelta {
                 index: idx,
                 delta: text.to_string(),
-                partial: self.output.clone(),
+                partial: self.output.share(),
             });
         }
 
@@ -495,7 +495,7 @@ impl StreamState {
             sender.push(AssistantMessageEvent::ThinkingDelta {
                 index: idx,
                 delta: text.to_string(),
-                partial: self.output.clone(),
+                partial: self.output.share(),
             });
         }
 
@@ -534,7 +534,7 @@ impl StreamState {
                 sender.push(AssistantMessageEvent::ToolCallDelta {
                     index: idx,
                     delta: args.unwrap_or_default().to_string(),
-                    partial: self.output.clone(),
+                    partial: self.output.share(),
                 });
             }
         }
@@ -567,11 +567,11 @@ impl StreamState {
             match &mut self.output.content[idx] {
                 Content::Text(_) => sender.push(AssistantMessageEvent::TextEnd {
                     index: idx,
-                    partial: self.output.clone(),
+                    partial: self.output.share(),
                 }),
                 Content::Thinking(_) => sender.push(AssistantMessageEvent::ThinkingEnd {
                     index: idx,
-                    partial: self.output.clone(),
+                    partial: self.output.share(),
                 }),
                 Content::ToolCall(block) => {
                     let partial = self
@@ -584,7 +584,7 @@ impl StreamState {
                     >(Some(&partial)));
                     sender.push(AssistantMessageEvent::ToolCallEnd {
                         index: idx,
-                        partial: self.output.clone(),
+                        partial: self.output.share(),
                     });
                 }
                 Content::Image(_) => {}

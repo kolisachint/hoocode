@@ -302,13 +302,13 @@ fn process(
             break;
         }
     }
-    sender.end(Some(state.output.clone()));
+    sender.end(Some(state.output.clone().into_message()));
     let mut s = sender;
     let mut out = Vec::new();
     while let Some(e) = s.next_blocking() {
         out.push(e);
     }
-    (out, state.output, result)
+    (out, state.output.into_message(), result)
 }
 
 fn responses_model() -> Model {

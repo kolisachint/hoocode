@@ -18,7 +18,7 @@ use hoocode_ai_stream::{
 };
 use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
-    AbortSignal, AssistantMessage, AssistantMessageEvent, Content, Context, Model,
+    AbortSignal, AssistantMessage, AssistantMessageEvent, Content, Context, Model, SharedMessage,
     SimpleStreamOptions, StopReason, TextContent, ThinkingContent, ToolCallContent,
 };
 use serde_json::Value;
@@ -114,14 +114,14 @@ async fn run(
     };
     match outcome {
         Ok(()) => {
-            let message = state.output;
+            let message = state.output.into_message();
             sender.push(AssistantMessageEvent::Done {
                 message: message.clone(),
             });
             sender.end(Some(message));
         }
         Err(message) => {
-            let mut output = state.output;
+            let mut output = state.output.into_message();
             output.stop_reason = if signal.as_ref().is_some_and(AbortSignal::aborted) {
                 StopReason::Aborted
             } else {
@@ -184,7 +184,7 @@ async fn drive(
     }
 
     sender.push(AssistantMessageEvent::Start {
-        partial: state.output.clone(),
+        partial: state.output.share(),
     });
     let mut decoder = ChunkDecoder::default();
     let mut body = response.bytes_stream();
@@ -303,7 +303,7 @@ impl ChunkDecoder {
 // ---------------------------------------------------------------------------
 
 struct StreamState {
-    output: AssistantMessage,
+    output: SharedMessage,
     /// Index of the open text/thinking block (`currentBlock`).
     current: Option<usize>,
 }
@@ -318,7 +318,7 @@ impl StreamState {
         }
         .to_string();
         Self {
-            output,
+            output: output.into(),
             current: None,
         }
     }
@@ -328,7 +328,7 @@ impl StreamState {
         let Some(index) = self.current.take() else {
             return;
         };
-        let partial = self.output.clone();
+        let partial = self.output.share();
         match &self.output.content[index] {
             Content::Thinking(_) => {
                 sender.push(AssistantMessageEvent::ThinkingEnd { index, partial })
@@ -400,7 +400,7 @@ impl StreamState {
             self.output.content.push(block);
             let index = self.output.content.len() - 1;
             self.current = Some(index);
-            let partial = self.output.clone();
+            let partial = self.output.share();
             sender.push(if thinking {
                 AssistantMessageEvent::ThinkingStart { index, partial }
             } else {
@@ -421,7 +421,7 @@ impl StreamState {
             }
             _ => {}
         }
-        let partial = self.output.clone();
+        let partial = self.output.share();
         sender.push(if thinking {
             AssistantMessageEvent::ThinkingDelta {
                 index,
@@ -478,16 +478,16 @@ impl StreamState {
         let index = self.output.content.len() - 1;
         sender.push(AssistantMessageEvent::ToolCallStart {
             index,
-            partial: self.output.clone(),
+            partial: self.output.share(),
         });
         sender.push(AssistantMessageEvent::ToolCallDelta {
             index,
             delta: arguments.to_string(),
-            partial: self.output.clone(),
+            partial: self.output.share(),
         });
         sender.push(AssistantMessageEvent::ToolCallEnd {
             index,
-            partial: self.output.clone(),
+            partial: self.output.share(),
         });
     }
 }

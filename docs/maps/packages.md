@@ -101,16 +101,16 @@ in those tables; the generator keeps each crate's Status by name.
 | `ai-oauth-google` | Google Cloud Code Assist OAuth flows (Gemini CLI, Antigravity) for hoocode AI | 1 | 1450 / 0 | keep |
 | `ai-oauth-openai-codex` | OpenAI Codex (ChatGPT Plus/Pro) OAuth flow for hoocode AI | 1 | 600 / 0 | keep |
 | `ai-provider-anthropic` | Anthropic provider for hoocode AI | 1 | 2771 / 518 | keep |
-| `ai-provider-faux` | Faux / test provider for hoocode AI | 0 | 931 / 762 | test provider (dev-dep only) |
+| `ai-provider-faux` | Faux / test provider for hoocode AI | 0 | 931 / 812 | test provider (dev-dep only) |
 | `ai-provider-google` | Google Gemini provider for hoocode AI | 2 | 3162 / 110 | keep |
 | `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for hoocode AI | 1 | 1721 / 0 | keep |
 | `ai-provider-openai` | OpenAI provider for hoocode AI | 1 | 3405 / 808 | keep |
 | `ai-provider-openai-codex` | OpenAI Codex (ChatGPT subscription) Responses provider for hoocode AI: SSE and WebSocket transports | 1 | 2557 / 0 | keep |
-| `ai-provider-openai-responses` | OpenAI Responses API provider for hoocode AI | 2 | 2262 / 0 | keep |
+| `ai-provider-openai-responses` | OpenAI Responses API provider for hoocode AI | 2 | 2263 / 0 | keep |
 | `ai-registry` | API provider registry for hoocode AI: dispatches streams on model.api | 4 | 309 / 3007 | keep |
 | `ai-sse` | Server-Sent Events decoder shared by the hoocode AI providers | 2 | 218 / 12 | keep |
 | `ai-stream` | Streaming response utilities for hoocode AI | 12 | 600 / 0 | keep |
-| `ai-types` | Shared types for hoocode AI | 40 | 1100 / 0 | keep |
+| `ai-types` | Shared types for hoocode AI | 40 | 1263 / 0 | keep |
 | `ai-util` | Shared utilities for hoocode AI: JSON repair, hash, headers, sanitization, overflow detection | 13 | 3857 / 163 | keep |
 
 ### Agent runtime (`agent-*`)
@@ -120,10 +120,10 @@ in those tables; the generator keeps each crate's Status by name.
 | `agent-compaction` | Session compaction for hoocode agents | 3 | 1447 / 1315 | keep |
 | `agent-core` | Core agent runtime for hoocode agents | 2 | 1979 / 0 | keep |
 | `agent-harness` | Agent harness for hoocode agents | 6 | 3313 / 1042 | keep |
-| `agent-loop` | Agent loop for hoocode agents | 1 | 2997 / 0 | keep |
+| `agent-loop` | Agent loop for hoocode agents | 1 | 3043 / 0 | keep |
 | `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 1 | 1860 / 1666 | keep |
 | `agent-session` | Session trees for hoocode agents: entry format, storage, repositories | 2 | 2411 / 0 | keep |
-| `agent-types` | Shared types for hoocode agents | 21 | 951 / 0 | keep |
+| `agent-types` | Shared types for hoocode agents | 21 | 957 / 0 | keep |
 
 ### Coding agent (`code-*`, `app-server*`)
 
