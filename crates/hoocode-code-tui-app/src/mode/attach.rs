@@ -67,6 +67,14 @@ pub(super) struct Attached {
     job: Option<JobTail>,
 }
 
+impl Attached {
+    /// True while the run's transcript, not the session's, is the one on
+    /// screen and being drawn into.
+    pub(super) fn shows_run(&self) -> bool {
+        !self.main_in
+    }
+}
+
 /// A run's transcript and listing row, read off the UI thread.
 pub(super) struct LoadedRun {
     agent_type: String,
@@ -938,6 +946,35 @@ mod tests {
         swap_halves(&mut shown, &mut parked, &mut parked_children);
         assert_eq!(labels(&chat), vec!["child answer".to_string()]);
         assert!(Rc::ptr_eq(&shown.chat, &chat));
+    }
+
+    #[test]
+    fn a_run_is_shown_only_while_its_half_is_swapped_in() {
+        // `record_mission_outcome` skips the session's last-mission title while
+        // this is true, so reading a run's history cannot overwrite it.
+        let chat = handle(Container::new());
+        let mut attached = Attached {
+            run_id: "task-1".to_string(),
+            shown: None,
+            header: Rc::new(RefCell::new(AttachHeader::new("a", "b", "loading"))),
+            prompt: Rc::new(RefCell::new(AttachPrompt::new())),
+            loaded: false,
+            queued: Vec::new(),
+            child_text: String::new(),
+            main_in: true,
+            parked: Transcript::new(chat.clone()),
+            parked_children: Vec::new(),
+            main_scroll: None,
+            job: None,
+        };
+        assert!(!attached.shows_run(), "the session is on screen at attach");
+        swap_halves(
+            &mut Transcript::new(chat.clone()),
+            &mut attached.parked,
+            &mut attached.parked_children,
+        );
+        attached.main_in = false;
+        assert!(attached.shows_run());
     }
 
     #[test]

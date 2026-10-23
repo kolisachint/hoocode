@@ -711,8 +711,11 @@ impl Mode {
         }
         self.transcript
             .begin_mission(text, skill, self.tool_output_view);
-        // The comms title reads the new mission until it settles.
-        self.mission_outcome.borrow_mut().take();
+        // The comms title reads the new mission until it settles. An attached
+        // run's missions are not the session's, so they leave it alone.
+        if !self.drawing_run_view() {
+            self.mission_outcome.borrow_mut().take();
+        }
         self.refresh_flight_stats();
     }
 
@@ -1579,9 +1582,24 @@ impl Mode {
         );
     }
 
+    /// True while an attached run's transcript, not the session's, is the one
+    /// being drawn into.
+    fn drawing_run_view(&self) -> bool {
+        self.attached
+            .as_ref()
+            .is_some_and(super::attach::Attached::shows_run)
+    }
+
     /// Records how the mission that just settled ended, for the comms title
     /// (LANDED, DID NOT LAND, ABORTED) until the next mission opens.
     fn record_mission_outcome(&self, secs: f64) {
+        // An attached run's history is drawn through the same turn rows. Its
+        // missions are the run's, not the session's: they must not replace how
+        // the session's own last mission ended (the title lost its "1 step"
+        // whenever a run's history was read after the session had landed).
+        if self.drawing_run_view() {
+            return;
+        }
         let Some(mission) = self.transcript.missions.last() else {
             return;
         };
