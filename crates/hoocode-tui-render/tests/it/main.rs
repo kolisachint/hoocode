@@ -12,3 +12,4 @@ mod scroll_viewport;
 mod support;
 mod toast_overlay;
 mod tui_render_ts;
+mod wake_handle;

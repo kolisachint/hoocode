@@ -17,5 +17,5 @@ pub use scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB, SCROLLBAR_TRACK};
 pub use tui::{
     default_scroll_status, CanPinScroll, FrameObserver, FrameTiming, HyperlinkHandler,
     InputInterceptor, InputListener, InputListenerResult, ScrollSearchStatus, ScrollStatus,
-    ScrollStatusFormatter, Tui, TuiEvent, CURSOR_MARKER,
+    ScrollStatusFormatter, Tui, TuiEvent, WakeHandle, CURSOR_MARKER,
 };

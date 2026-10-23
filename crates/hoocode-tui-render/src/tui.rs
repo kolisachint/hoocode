@@ -31,7 +31,9 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use hoocode_tui_images::{
@@ -280,6 +282,48 @@ pub enum TuiEvent {
     /// The output thread wrote the frame the TUI was waiting to paint its
     /// next one after (see [`Tui::flush_scheduled_render`]).
     OutputDrained,
+    /// Something outside the terminal (an agent event) is waiting for the loop;
+    /// see [`WakeHandle`].
+    Wake,
+}
+
+/// Wakes the loop that reads the [`Tui::start`] channel from any thread.
+///
+/// A wake is sent only when none is pending, so a flood of callers puts one
+/// [`TuiEvent::Wake`] in the channel. The loop calls [`WakeHandle::clear`] when
+/// it takes the event, before it reads whatever the wake was for. The handle
+/// follows [`Tui::start`] when it opens a new channel.
+#[derive(Clone)]
+pub struct WakeHandle {
+    pending: Arc<AtomicBool>,
+    sender: Arc<Mutex<Option<Sender<TuiEvent>>>>,
+}
+
+impl WakeHandle {
+    fn new() -> Self {
+        Self {
+            pending: Arc::new(AtomicBool::new(false)),
+            sender: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Asks the loop to run a pass. Cheap when a wake is already pending.
+    pub fn wake(&self) {
+        if self.pending.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let sender = self.sender.lock().unwrap_or_else(|e| e.into_inner());
+        match sender.as_ref() {
+            Some(tx) if tx.send(TuiEvent::Wake).is_ok() => {}
+            // No loop is listening (not started, or the channel is gone).
+            _ => self.pending.store(false, Ordering::Release),
+        }
+    }
+
+    /// The loop took a [`TuiEvent::Wake`]: the next `wake` sends a new one.
+    pub fn clear(&self) {
+        self.pending.store(false, Ordering::Release);
+    }
 }
 
 impl TuiEvent {
@@ -358,6 +402,7 @@ pub struct Tui {
     previous_viewport_top: i64,
     full_redraw_count: u64,
     stopped: bool,
+    wake: WakeHandle,
 
     last_cursor_pos: Option<CursorPos>,
 
@@ -460,6 +505,7 @@ impl Tui {
             previous_viewport_top: 0,
             full_redraw_count: 0,
             stopped: false,
+            wake: WakeHandle::new(),
             last_cursor_pos: None,
             flex_spacer: None,
             flat_lines: Vec::new(),
@@ -1087,6 +1133,8 @@ impl Tui {
             self.terminal.set_alternate_screen(true);
         }
         let (tx, rx) = mpsc::channel();
+        *self.wake.sender.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx.clone());
+        self.wake.clear();
         let tx_drained = tx.clone();
         self.terminal.on_output_drained(Box::new(move || {
             let _ = tx_drained.send(TuiEvent::OutputDrained);
@@ -1104,6 +1152,11 @@ impl Tui {
         self.query_cell_size();
         self.request_render(false);
         rx
+    }
+
+    /// A handle other threads use to wake the loop reading [`Tui::start`]'s channel.
+    pub fn wake_handle(&self) -> WakeHandle {
+        self.wake.clone()
     }
 
     /// Handles one event and paints if it asked for a frame.
@@ -1124,6 +1177,7 @@ impl Tui {
             }
             TuiEvent::Resize => self.schedule_render(),
             TuiEvent::OutputDrained => {}
+            TuiEvent::Wake => self.wake.clear(),
         }
     }
 
