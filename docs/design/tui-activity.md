@@ -317,6 +317,9 @@ frame build p50 / p99, then key p50 / p99.
 | Before (de07817, same machine) | 10.8 / 31.2 | 10.1 / 39.9 | 7.7 / 25.4 | 9.1 / 41.0 |
 | 1. Incremental streaming render | 3.8 / 10.3 | 3.6 / 8.8 | 1.2 / 3.1 | 1.4 / 5.0 |
 | 2. One reply copy less per delta (agent loop) | 3.8 / 10.4 | 3.9 / 11.0 | 1.2 / 4.6 | 1.5 / 5.1 |
+| 3. Inline frame keeps no flat copy (fullscreen, re-measured) | 3.9 / 7.9 | 3.9 / 8.8 | 1.2 / 3.3 | 1.4 / 3.9 |
+| *Inline (`stream-inline`, `long-transcript-inline`), before 3* | 7.9 / 15.6 | 9.9 / 23.5 | 1.1 / 3.7 | 1.4 / 4.0 |
+| *Inline, after 3* | 5.8 / 11.1 | 7.4 / 17.1 | 1.0 / 3.4 | 1.3 / 4.0 |
 
 - **Where the 8 ms went.** Not the markdown (a tail re-lex plus the cached segments cost about
   0.3 ms). The peek/full view puts every prose line on the `┊` rail (`rail_line`, an ANSI parse and
@@ -333,6 +336,17 @@ frame build p50 / p99, then key p50 / p99.
   and a provider that keeps an `Arc` and appends with `Arc::make_mut` copies anyway while a
   listener still holds the previous event. No frame change (the loop runs off the UI thread);
   the saving is CPU in the loop task. Still one copy in the provider and one in the loop per delta.
+- **Inline frame.** `build_live_frame` no longer clones the frame into `flat_lines` (about 1.4 ms at
+  10,000 rows): the search reads the last painted frame (`previous_lines`, the same rows without the
+  cursor marker), and a live frame only drops the copy a pinned view left. The second render was
+  already conditional (`fit_flex_spacer` reports whether the spacer height moved); it happens only
+  while the transcript is shorter than the screen, where it is cheap. The rest of the inline cost
+  at 10,000 rows is the stamp walk (about 3.7 ms: the container visits about 1,400 children) and
+  `into_lines` (1.6 ms: the frame is a `Vec<String>`), which would need a piece-based diff.
+  `load_scenario.py` has `stream-inline` and `long-transcript-inline` (`"fullscreen": false`).
+- **HUD walk, not done.** `branch()` is no longer on the per-frame path (the context gauge reads in
+  place); what is left is `sum_assistant_usage`, a pass over about 1,000 entries (microseconds), not
+  worth a cache with its invalidation rules.
 - **Segments.** The 2,048-char threshold is gone: a streaming block is segmented at every stable boundary.
   A later segment is a `GappedSegment` (its markdown behind the blank row the full text has there),
   so a chunk that draws nothing yet (a lone `>`) matches the full render. Test:

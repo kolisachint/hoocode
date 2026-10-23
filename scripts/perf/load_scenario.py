@@ -17,6 +17,9 @@ The real `hoocode` runs against the mock model, with `--perf-log`. Scenarios:
               The stream scenario on top of a resumed session of TRANSCRIPT_TURNS (200)
               generated turns: markdown, code blocks and bash output (`--session`). Frame
               cost should not depend on transcript length; compare with `stream`.
+  stream-inline, long-transcript-inline
+              The same two with `"fullscreen": false` in settings: the inline (scrollback)
+              frame path.
   paused-pty  A terminal that stops reading. The app runs in a pty; after a bash
               turn the pty is not read for N seconds (its output blocks), then Ctrl+C
               is sent. The turn must abort within 500 ms: the mock sees the client
@@ -196,7 +199,8 @@ class WatchedProvider(MockProvider):
 # Project files
 # --------------------------------------------------------------------------
 
-def write_project(root: Path, port: int, performance: dict[str, Any] | None = None, mcp: bool = False) -> tuple[Path, Path]:
+def write_project(root: Path, port: int, performance: dict[str, Any] | None = None, mcp: bool = False,
+                  inline: bool = False) -> tuple[Path, Path]:
     home = root / "home"
     work = root / "work"
     (home / ".hoocode").mkdir(parents=True)
@@ -215,6 +219,8 @@ def write_project(root: Path, port: int, performance: dict[str, Any] | None = No
     settings: dict[str, Any] = {"defaultProvider": "mock", "defaultModel": MODEL}
     if performance is not None:
         settings["performance"] = performance
+    if inline:
+        settings["fullscreen"] = False
     (home / ".hoocode" / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
     if mcp:
         # User-level MCP servers are always trusted (config.rs), so no prompt.
@@ -665,13 +671,13 @@ def print_turn_summary(name: str, summary: dict[str, Any], out: Path) -> None:
 
 def run_turn_scenario(name: str, args: argparse.Namespace, routes: dict[str, Route], typing_seconds: float,
                       extra_args: list[str], mcp: bool, out: Path, binary: Path,
-                      session_turns: int = 0) -> dict[str, Any]:
+                      session_turns: int = 0, inline: bool = False) -> dict[str, Any]:
     root = Path(tempfile.mkdtemp(prefix=f"perf-{name}-"))
     provider = MockProvider(routes, log_path=str(root / "requests.jsonl"))
     port = provider.start()
     socket = f"perf-{name}-{os.getpid()}"
     try:
-        home, work = write_project(root, port, mcp=mcp)
+        home, work = write_project(root, port, mcp=mcp, inline=inline)
         if session_turns:
             session_file = root / "history.jsonl"
             write_session(session_file, work, session_turns)
@@ -779,7 +785,7 @@ def run_memory_scenario(args: argparse.Namespace, binary: Path, out: Path) -> di
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--scenario", choices=["bash", "load", "stream", "long-transcript", "paused-pty", "memory", "all"], default="all")
+    parser.add_argument("--scenario", choices=["bash", "load", "stream", "long-transcript", "stream-inline", "long-transcript-inline", "paused-pty", "memory", "all"], default="all")
     parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY, help="hoocode binary (default: $CARGO_TARGET_DIR/release/hoocode)")
     parser.add_argument("--calls", type=int, default=8, help="parallel bash calls in the turn (default 8)")
     parser.add_argument("--lines", type=int, default=5000, help="lines each bash call prints (default 5000)")
@@ -830,14 +836,15 @@ def main() -> int:
             args.keys_per_second = user_keys_per_second or LOAD_KEYS_PER_SECOND
             typing = args.typing_seconds or 75.0
             results[name] = run_turn_scenario(name, args, routes, typing, ["--enable-subagents"], True, out, binary)
-        elif name in ("stream", "long-transcript"):
+        elif name in ("stream", "long-transcript", "stream-inline", "long-transcript-inline"):
             pieces = [f"word{i} " + ("lorem ipsum " if i % 7 else "\n\n") for i in range(STREAM_CHUNKS)]
             body = {"text_chunks": pieces[:-1] + [TURN_DONE], "chunk_delay_s": STREAM_DELAY_S, "usage": usage()}
             routes = {"parent": Route("parent", [body, done_turn(), done_turn()])}
             args.keys_per_second = user_keys_per_second or 20.0
             typing = args.typing_seconds or 15.0
-            turns = args.transcript_turns if name == "long-transcript" else 0
-            results[name] = run_turn_scenario(name, args, routes, typing, [], False, out, binary, session_turns=turns)
+            turns = args.transcript_turns if name.startswith("long-transcript") else 0
+            results[name] = run_turn_scenario(name, args, routes, typing, [], False, out, binary, session_turns=turns,
+                                              inline=name.endswith("-inline"))
         elif name == "paused-pty":
             results[name] = run_paused_scenario(args, binary, out)
         elif name == "memory":

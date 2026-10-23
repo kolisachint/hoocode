@@ -1773,7 +1773,11 @@ impl Tui {
         if self.fit_flex_spacer(&new_lines, height) {
             new_lines = self.render(width.max(0) as u16);
         }
-        self.flat_lines = new_lines.clone();
+        // The search reads the last painted frame (`search_buffer`), so a live
+        // frame keeps no copy of its own; only drop what a pinned view left.
+        if !self.flat_lines.is_empty() {
+            self.flat_lines = Vec::new();
+        }
 
         let cursor_pos = self.extract_cursor_position(&mut new_lines, height);
         self.last_cursor_pos = cursor_pos;
@@ -3617,5 +3621,19 @@ mod tests {
         ];
         tui.refresh_scroll_search(6, true);
         assert_eq!(tui.scroll_search.as_ref().unwrap().matches, vec![5]);
+    }
+
+    #[test]
+    fn live_frames_keep_no_search_copy_and_the_search_reads_the_painted_frame() {
+        let (mut tui, _handles) = new_tui(40, 10);
+        let component = TestComponent::new();
+        component.borrow_mut().lines = (0..30).map(|n| format!("row {n} needle")).collect();
+        tui.add_child(component.clone());
+        // A pinned view leaves its copy behind; the next live frame drops it.
+        tui.flat_lines = vec!["stale".to_string()];
+        tui.request_render(false);
+        assert!(tui.flat_lines.is_empty(), "a live frame keeps no copy");
+        assert_eq!(tui.find_scroll_matches("needle").len(), 30);
+        assert!(tui.find_scroll_matches("stale").is_empty());
     }
 }
