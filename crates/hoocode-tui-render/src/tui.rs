@@ -47,7 +47,7 @@ use hoocode_tui_util::{
     strip_vt_control_characters, truncate_to_width, visible_width,
 };
 
-use crate::component::{Component, ComponentHandle, Container, FlexSpacer};
+use crate::component::{Component, ComponentHandle, Container, FlexSpacer, Rendered};
 use crate::fullscreen;
 use crate::scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB};
 
@@ -725,9 +725,10 @@ impl Tui {
         let top_natural = render_children(&top, width as u16).len();
         let bottom_natural = render_children(&bottom, width as u16).len();
         let total = body.map_or(0, |body| {
+            let mut rendered = Rendered::default();
             body.borrow_mut()
-                .render(fullscreen::body_width(width) as u16)
-                .len()
+                .render_into(fullscreen::body_width(width) as u16, &mut rendered);
+            rendered.len()
         });
         let rows = fullscreen::split_rows(
             height,
@@ -2264,14 +2265,14 @@ impl Tui {
             .collect();
         // The cursor marker is stripped where a line is drawn (the window), or on
         // every line while pinned, where the search reads the whole body. A live
-        // frame does not copy the whole transcript a second time.
-        let mut body_lines: Vec<String> = match &body {
-            Some(body) => body
-                .borrow_mut()
-                .render(fullscreen::body_width(width) as u16),
-            None => Vec::new(),
-        };
-        let total = body_lines.len();
+        // frame copies only the rows on screen: the body hands back the lines it
+        // kept for children that did not change as they are.
+        let mut rendered = Rendered::default();
+        if let Some(body) = &body {
+            body.borrow_mut()
+                .render_into(fullscreen::body_width(width) as u16, &mut rendered);
+        }
+        let total = rendered.len();
         let pinned = self.scroll_offset.is_some();
         // While pinned a picker takes the bottom; the prompt keeps its place.
         let pane = if pinned {
@@ -2311,10 +2312,11 @@ impl Tui {
         self.fullscreen_seen_total = self.fullscreen_seen_total.min(total as i64);
         // The search runs over the body lines, as the pinned painter's does.
         let query = if pinned {
+            let mut body_lines = rendered.window(0, total);
             for line in &mut body_lines {
                 *line = strip_cursor_marker(line);
             }
-            self.flat_lines = body_lines.clone();
+            self.flat_lines = body_lines;
             self.refresh_scroll_search(total as i64, rebuilt);
             self.scroll_search
                 .as_ref()
@@ -2340,10 +2342,9 @@ impl Tui {
                 (row, (c.col.max(0) as usize).min(width.saturating_sub(1)))
             });
 
-        let mut window_lines: Vec<String> = body_lines
+        let mut window_lines: Vec<String> = rendered
+            .window(start, rows.body)
             .iter()
-            .skip(start)
-            .take(rows.body)
             .map(|line| strip_cursor_marker(line))
             .collect();
         // Live with a short transcript: bottom-anchor the tail just above the

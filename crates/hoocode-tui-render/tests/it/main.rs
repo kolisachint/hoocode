@@ -6,6 +6,7 @@ mod container_cache;
 mod cursor_parking;
 mod flatcache_stress;
 mod fullscreen_body_gap;
+mod fullscreen_window;
 mod golden;
 mod hyperlink_click;
 mod screen_fill;
