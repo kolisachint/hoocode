@@ -11,7 +11,9 @@ use hoocode_code_tui_theme::{get_markdown_theme, theme};
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::{DefaultTextStyle, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_ratatui::Palette;
-use hoocode_tui_render::{fresh_stamp, mix_stamps, Component, ComponentHandle, Container};
+use hoocode_tui_render::{
+    fresh_stamp, mix_stamps, render_epoch, Component, ComponentHandle, Container,
+};
 use hoocode_tui_util::js_regex::is_js_space;
 
 use crate::radar::{self, HIT_INDENT, STEP_INDENT};
@@ -32,11 +34,6 @@ pub enum ThinkingDisplay {
     Label,
     Omit,
 }
-
-/// Streaming messages below this size (UTF-16 units) render as a single
-/// Markdown; above it the text is segmented at stable block boundaries so each
-/// update re-parses only the growing tail.
-const SEGMENT_MIN_CHARS: usize = 2048;
 
 /// Why a message ended badly, in the words every layer prints: the abort
 /// line (`Operation aborted`, or the reason it carries) or `Error: …`. `None`
@@ -367,9 +364,58 @@ enum BlockKey {
     Segment { of: Box<BlockKey>, index: usize },
 }
 
+/// A content child's lines already on the rail, for the stamp, width and
+/// render epoch they were drawn at.
+struct RailedChild {
+    stamp: u64,
+    width: u16,
+    epoch: u64,
+    lines: Rc<[String]>,
+}
+
 struct CachedMarkdown {
     md: Rc<RefCell<Markdown>>,
+    /// What goes in the container: the markdown, or for a later segment the
+    /// markdown behind its leading gap.
+    child: ComponentHandle,
     text: String,
+}
+
+/// A later segment of a streaming block: its markdown after the blank row
+/// the full text has between blocks, drawn the way the markdown draws a blank
+/// row (the width in spaces). A chunk that draws nothing yet (a lone `>`; the
+/// markdown then answers one empty row) is only that blank row, as in the
+/// full render.
+struct GappedSegment {
+    md: Rc<RefCell<Markdown>>,
+}
+
+impl Component for GappedSegment {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        self.render_shared(width).to_vec()
+    }
+
+    fn render_shared(&mut self, width: u16) -> Rc<[String]> {
+        let body = self.md.borrow_mut().render_shared(width);
+        let gap = " ".repeat(usize::from(width));
+        // A drawn row always holds the margins, so an empty one is the
+        // markdown's answer for "nothing".
+        if body.iter().all(String::is_empty) {
+            return vec![gap].into();
+        }
+        std::iter::once(gap)
+            .chain(body.iter().cloned())
+            .collect::<Vec<_>>()
+            .into()
+    }
+
+    fn render_stamp(&self) -> Option<u64> {
+        self.md.borrow().render_stamp()
+    }
+
+    fn invalidate(&mut self) {
+        self.md.borrow_mut().invalidate();
+    }
 }
 
 /// A complete (or streaming) assistant message: its text and thinking blocks,
@@ -400,6 +446,12 @@ pub struct AssistantMessageComponent {
     /// index and kind, so finished blocks keep their render caches.
     markdown_cache: HashMap<BlockKey, CachedMarkdown>,
     has_segmented_blocks: bool,
+    /// The one-row gap every block boundary uses, shared so its stamp is
+    /// stable across updates.
+    gap: ComponentHandle,
+    /// Peek: each content child's rail lines, by the child's address. Only
+    /// children with a render stamp are kept.
+    rail_cache: HashMap<usize, RailedChild>,
     /// Whether the last `update_content` was a streaming update, so a
     /// `refresh` (e.g. a thinking toggle mid-stream) keeps the same form.
     streaming: bool,
@@ -464,6 +516,8 @@ impl AssistantMessageComponent {
             has_tool_calls: false,
             markdown_cache: HashMap::new(),
             has_segmented_blocks: false,
+            gap: handle(Spacer::new(1)),
+            rail_cache: HashMap::new(),
             streaming: false,
             think_start: None,
             think_end: None,
@@ -482,13 +536,14 @@ impl AssistantMessageComponent {
         key: BlockKey,
         text: &str,
         thinking: bool,
-    ) -> Rc<RefCell<Markdown>> {
+        gap_above: bool,
+    ) -> ComponentHandle {
         if let Some(entry) = self.markdown_cache.get_mut(&key) {
             if entry.text != text {
                 entry.md.borrow_mut().set_text(text);
                 entry.text = text.to_string();
             }
-            return entry.md.clone();
+            return entry.child.clone();
         }
         let style = thinking.then(|| DefaultTextStyle {
             color: Some(Box::new(|s: &str| theme().fg("thinkingText", s))),
@@ -502,39 +557,42 @@ impl AssistantMessageComponent {
             (self.markdown_theme)(),
             style,
         )));
+        let child: ComponentHandle = if gap_above {
+            handle(GappedSegment { md: md.clone() })
+        } else {
+            md.clone()
+        };
         self.markdown_cache.insert(
             key,
             CachedMarkdown {
-                md: md.clone(),
+                md,
+                child: child.clone(),
                 text: text.to_string(),
             },
         );
-        md
+        child
     }
 
-    /// Add one markdown block; large blocks still streaming are segmented so
-    /// only the tail chunk re-parses per update.
+    /// Add one markdown block; a block still streaming is segmented at stable
+    /// boundaries so only the tail chunk re-parses per update.
     fn add_markdown_block(&mut self, key: BlockKey, text: &str, streaming: bool, thinking: bool) {
-        if streaming && text.encode_utf16().count() >= SEGMENT_MIN_CHARS {
+        if streaming {
             let chunks = segment_streaming_markdown(text);
             if chunks.len() > 1 {
                 for (index, chunk) in chunks.iter().enumerate() {
-                    if index > 0 {
-                        self.content.add_child(handle(Spacer::new(1)));
-                    }
                     let segment = BlockKey::Segment {
                         of: Box::new(key.clone()),
                         index,
                     };
-                    let md = self.reuse_markdown(segment, chunk, thinking);
-                    self.content.add_child(md);
+                    let child = self.reuse_markdown(segment.clone(), chunk, thinking, index > 0);
+                    self.content.add_child(child);
                 }
                 self.has_segmented_blocks = true;
                 return;
             }
         }
-        let md = self.reuse_markdown(key, text, thinking);
-        self.content.add_child(md);
+        let child = self.reuse_markdown(key, text, thinking, false);
+        self.content.add_child(child);
     }
 
     pub fn set_thinking_display(&mut self, display: ThinkingDisplay) {
@@ -686,7 +744,7 @@ impl AssistantMessageComponent {
 
         let has_visible_content = message.content.iter().any(|c| self.is_visible_block(c));
         if has_visible_content {
-            self.content.add_child(handle(Spacer::new(1)));
+            self.content.add_child(self.gap.clone());
         }
 
         for (i, content) in message.content.iter().enumerate() {
@@ -714,7 +772,7 @@ impl AssistantMessageComponent {
                         self.add_markdown_block(BlockKey::Thinking(i), &text, streaming, true);
                     }
                     if visible_after {
-                        self.content.add_child(handle(Spacer::new(1)));
+                        self.content.add_child(self.gap.clone());
                     }
                 }
                 _ => {}
@@ -728,7 +786,7 @@ impl AssistantMessageComponent {
             .iter()
             .any(|c| matches!(c, Content::ToolCall(_)));
         if let Some(reason) = end_reason(&message) {
-            self.content.add_child(handle(Spacer::new(1)));
+            self.content.add_child(self.gap.clone());
             self.content
                 .add_child(handle(Text::new(theme().fg("error", &reason), 1, 0)));
         }
@@ -849,11 +907,81 @@ impl Component for AssistantMessageComponent {
             entry.md.borrow_mut().invalidate();
         }
         self.content.invalidate();
+        self.rail_cache.clear();
         self.refresh();
     }
 }
 
 impl AssistantMessageComponent {
+    /// The peek form of the content: every line on the `┊` rail. A child with
+    /// a stamp keeps its railed lines between frames, so a streaming message
+    /// puts only its changed tail on the rail again.
+    fn render_railed(
+        &mut self,
+        inner: u16,
+        width: usize,
+        after_step: bool,
+        palette: &Palette,
+    ) -> Vec<String> {
+        let rail = |lines: &[String], first: bool| -> Vec<String> {
+            lines
+                .iter()
+                .enumerate()
+                .map(|(index, line)| {
+                    let opening_blank = first && index == 0 && !after_step && is_blank(line);
+                    if opening_blank || trajectory::is_think_header(line) {
+                        line.clone()
+                    } else {
+                        trajectory::rail_line(line, width, false, palette)
+                    }
+                })
+                .collect()
+        };
+        let epoch = render_epoch();
+        let mut kept = HashMap::new();
+        let mut out = Vec::new();
+        for (index, child) in self.content.children.iter().enumerate() {
+            let stamp = child.borrow().render_stamp();
+            // The first child holds the opening row, which has its own rule.
+            let Some(stamp) = stamp.filter(|_| index > 0) else {
+                let lines = child.borrow_mut().render(inner);
+                out.extend(rail(&lines, index == 0));
+                continue;
+            };
+            let key = Rc::as_ptr(child) as *const () as usize;
+            let hit = self
+                .rail_cache
+                .remove(&key)
+                .or_else(|| kept.remove(&key))
+                .filter(|e| e.stamp == stamp && e.width == inner && e.epoch == epoch);
+            let entry = match hit {
+                Some(entry) => {
+                    // Builds with debug assertions draw every hit again, as the
+                    // container does, so a stale entry fails the test that
+                    // touches it.
+                    if cfg!(debug_assertions) {
+                        let fresh = rail(&child.borrow_mut().render(inner), false);
+                        assert!(fresh[..] == entry.lines[..], "peek rail cache is stale");
+                    }
+                    entry
+                }
+                None => {
+                    let lines = child.borrow_mut().render(inner);
+                    RailedChild {
+                        stamp,
+                        width: inner,
+                        epoch,
+                        lines: rail(&lines, false).into(),
+                    }
+                }
+            };
+            out.extend(entry.lines.iter().cloned());
+            kept.insert(key, entry);
+        }
+        self.rail_cache = kept;
+        out
+    }
+
     /// The render body, without the width-diagnosis logging.
     fn render_inner(&mut self, width: u16) -> Vec<String> {
         // One palette per render pass, passed down to every row.
@@ -883,20 +1011,7 @@ impl AssistantMessageComponent {
             .is_some_and(|chain| chain.upgrade().is_some());
         let width = width as usize;
         let inner = width.saturating_sub(6).max(1) as u16;
-        let lines: Vec<String> = self
-            .content
-            .render(inner)
-            .into_iter()
-            .enumerate()
-            .map(|(index, line)| {
-                let opening_blank = index == 0 && !after_step && is_blank(&line);
-                if opening_blank || trajectory::is_think_header(&line) {
-                    line
-                } else {
-                    trajectory::rail_line(&line, width, false, &palette)
-                }
-            })
-            .collect();
+        let lines = self.render_railed(inner, width, after_step, &palette);
         if lines.is_empty() {
             return lines;
         }
@@ -909,7 +1024,7 @@ mod tests {
     use super::*;
 
     fn long_streaming_text() -> String {
-        // Well above SEGMENT_MIN_CHARS, with blank lines so it segments.
+        // Long, with blank lines so it segments.
         (0..60)
             .map(|n| format!("Paragraph {n} with enough words to make the text long."))
             .collect::<Vec<_>>()

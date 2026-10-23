@@ -307,6 +307,30 @@ not tied to a change. p99 over 335 keys is one or two samples.)
   1 ms at 200 turns), pinned frames, and inline mode (`build_live_frame` renders twice and
   copies the frame into `flat_lines`). The turn being streamed is drawn in full every frame.
 
+### Perf phase 3: the streaming turn
+
+Same scenarios and settings as phase 2 (release, 120x40, 20 keys/s, 3000 paced deltas). Times in ms,
+frame build p50 / p99, then key p50 / p99.
+
+| | long-transcript | | stream (small) | |
+|---|---|---|---|---|
+| Before (de07817, same machine) | 10.8 / 31.2 | 10.1 / 39.9 | 7.7 / 25.4 | 9.1 / 41.0 |
+| 1. Incremental streaming render | 3.8 / 10.3 | 3.6 / 8.8 | 1.2 / 3.1 | 1.4 / 5.0 |
+
+- **Where the 8 ms went.** Not the markdown (a tail re-lex plus the cached segments cost about
+  0.3 ms). The peek/full view puts every prose line on the `┊` rail (`rail_line`, an ANSI parse and
+  rebuild per line) and did so for the whole streaming reply every frame: about 1,200 lines
+  and 8 to 20 ms late in the stream.
+- **Rail cache.** `AssistantMessageComponent::render_railed` keeps each stamped content child's
+  railed lines by the child's address, under (stamp, width, render epoch). Debug builds draw every hit
+  again and assert equality. Block gaps share one `Spacer` handle, so its stamp stays stable.
+- **Segments.** The 2,048-char threshold is gone: a streaming block is segmented at every stable boundary.
+  A later segment is a `GappedSegment` (its markdown behind the blank row the full text has there),
+  so a chunk that draws nothing yet (a lone `>`) matches the full render. Test:
+  `streaming_segmentation::streamed_*_matches_fresh_render_at_every_char` streams a document with
+  headings, lists, a fenced code block with a blank line, a table and a quote char by char in
+  peek, full and radar views and compares each step byte for byte with a settled render.
+
 ## Not doing
 
 - Prompting or steering a subagent while attached (read-only by decision; T1.2 keeps it

@@ -22,7 +22,8 @@ pub fn bump_render_epoch() {
     RENDER_EPOCH.fetch_add(1, Ordering::Relaxed);
 }
 
-fn render_epoch() -> u64 {
+/// The current render epoch, for caches that keep lines the way a [`Container`] does.
+pub fn render_epoch() -> u64 {
     RENDER_EPOCH.load(Ordering::Relaxed)
 }
 
