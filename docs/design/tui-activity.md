@@ -263,6 +263,50 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
   message. The UI keeps only the last of consecutive updates in a batch.
 - Measure with `scripts/perf/load_scenario.py --scenario stream`.
 
+### Perf phase 2: frame cost independent of transcript length
+
+Measured with `load_scenario.py --scenario long-transcript` (a resumed, generated
+200-turn session: markdown, a code block, a table and a Shell call per turn, then the
+same streamed reply and typing as `stream`) against `--scenario stream` (empty
+transcript). Release build, 120x40, 20 keys/s, 3000 paced deltas. Times in ms.
+
+| | long-transcript | | stream (small) | |
+|---|---|---|---|---|
+| | frame build p50 / p99 | key p50 / p99 | frame build p50 / p99 | key p50 / p99 |
+| Before (phase 1, bb530f1) | 43.2 / 77.0 | 44.9 / 107.8 | 7.8-8.0 / 20-25 | 9.3-9.5 / 26-38 |
+| 1. Per-child line cache | 14.7 / 38.2 | 14.9 / 58.7 | 8.1 / 26.3 | 9.4 / 42.8 |
+| 2. Viewport-only compose | 13.1 / 31.2 | 13.4 / 48.9 | 8.0 / 29.6 | 9.4 / 46.0 |
+| 3. Markdown version counter | 12.6 / 31.1 | 12.9 / 42.4 | 7.8-8.7 / 26-29 | 9.1-9.7 / 27-38 |
+| Context gauge read in place (final, 2 runs) | 10.9-12.0 / 31 | 11.1-12.3 / 43 | 7.6-7.7 / 27 | 8.6-8.9 / 29 |
+
+(One run in four shows a single 1-2 s stall as the key p99 on either scenario; it is
+not tied to a change. p99 over 335 keys is one or two samples.)
+
+- **Component stamps.** `Component::render_stamp` returns `Some(u64)` while the output is a
+  function of state that only `&mut` methods change; every such method takes a
+  `fresh_stamp()`. A `Container` keeps `Rc<[String]>` per child under (stamp, width, render
+  epoch) and renders only children whose key changed. `None` (default) means "draw every
+  frame", which is what anything reading a clock, the job registry or the subagent registry
+  returns: a streaming message, a chain still collecting calls, a running or Agent block, a
+  mission header while flying. Theme changes bump `bump_render_epoch` (`code-tui-theme`).
+- **Why it is safe to cache.** Builds with debug assertions (so nextest) re-render every cache
+  hit and assert the lines are equal; a stamp that misses a change fails the test that
+  touches it. `HOOCODE_RENDER_CACHE_CHECK=0` turns it off for a debug binary.
+- **Frozen history.** A resumed session now freezes all but the newest `LIVE_TOOL_WINDOW`
+  tool blocks when its history is rebuilt (`render_session_context`). Before, a resumed
+  session kept every block live until its first new tool call ended.
+- **Full-screen compose.** The body renders into `Rendered` pieces (shared lines for cached
+  children) and `compose_fullscreen` copies only the window on screen. The whole body is
+  copied while pinned (the search reads every row) and in inline mode.
+- **Markdown.** `Markdown` compares a version, not its text, on a cache hit and returns the
+  kept `Rc<[String]>`; `set_text` with the same text keeps the cache.
+- **Context gauge.** `get_context_usage` (HUD and comms frame, every frame) copied every
+  message; it now reads them in place.
+- **Still O(transcript).** Walking the container's children for stamps (about 0.6 ms at
+  1,400 children), `branch()` and `sum_assistant_usage` in the HUD and comms frame (about
+  1 ms at 200 turns), pinned frames, and inline mode (`build_live_frame` renders twice and
+  copies the frame into `flat_lines`). The turn being streamed is drawn in full every frame.
+
 ## Not doing
 
 - Prompting or steering a subagent while attached (read-only by decision; T1.2 keeps it
