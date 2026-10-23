@@ -1,8 +1,5 @@
 //! Agent harness: message conversion, skills, prompt templates, system
 //! prompts and output utilities.
-//!
-//! Mirrors the `harness/` directory from the TypeScript
-//! `@kolisachint/hoocode-agent-core` package.
 
 pub mod env;
 pub mod frontmatter;

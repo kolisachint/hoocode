@@ -1,9 +1,8 @@
 //! LLM model registry for hoocode AI.
 //!
-//! Port of hoocode `packages/ai/src/models.ts`. The catalog itself is data in
-//! `hoocode-ai-models-catalog` (`models.generated.ts` at the pin); this
-//! crate keeps the lookup logic. Providers and each provider's models keep
-//! hoocode's order (`getProviders()` / `getModels()` iterate insertion order).
+//! The catalog itself is data in `hoocode-ai-models-catalog`; this crate keeps the
+//! lookup logic. Providers and each provider's models keep the catalog's order
+//! (`getProviders()` / `getModels()` iterate insertion order).
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

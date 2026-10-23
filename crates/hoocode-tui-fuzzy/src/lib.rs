@@ -2,8 +2,6 @@
 //!
 //! Matches if all query characters appear in order (not necessarily
 //! consecutive). Lower score = better match.
-//!
-//! Ported from TypeScript `@kolisachint/hoocode-tui` → `fuzzy.ts`.
 
 /// Result of a fuzzy-match attempt.
 #[derive(Debug, Clone, Copy, PartialEq)]

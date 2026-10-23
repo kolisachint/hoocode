@@ -1,7 +1,6 @@
 //! Shared types for hoocode agents.
 //!
-//! These types mirror the TypeScript types in `@kolisachint/hoocode-agent-core` and
-//! are used by the agent runtime, harness, and tool crates.
+//! Used by the agent runtime, harness, and tool crates.
 
 use hoocode_ai_types::{
     AssistantMessage, AssistantMessageEvent, Content, Message, Model, SimpleStreamOptions,

@@ -1,7 +1,6 @@
-//! OAuth core for hoocode AI: port of hoocode `utils/oauth/{types,index,pkce,
-//! oauth-page}.ts` (v0.5.89) plus the shared callback server and the HTTP
-//! seam. The vendor flows are `hoocode-ai-oauth-anthropic` and
-//! `hoocode-ai-oauth-github-copilot`.
+//! OAuth core for hoocode AI: the shared types, PKCE, the OAuth result page,
+//! the shared callback server and the HTTP seam. The vendor flows are
+//! `hoocode-ai-oauth-anthropic` and `hoocode-ai-oauth-github-copilot`.
 
 pub mod callback;
 pub mod fetch;

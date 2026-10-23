@@ -1,7 +1,7 @@
-//! Capability index for `DocSearch` (`core/capabilities/` in hoocode-ts).
+//! Capability index for `DocSearch`.
 //!
 //! The index holds what the session can do: loaded skills, subagent definitions
-//! and (later) installed plugins. Lookup is in-process BM25 over code-aware
+//! and installed plugins. Lookup is in-process BM25 over code-aware
 //! tokens, and an exact name match always ranks first. Docs are not indexed
 //! here; see docs/design/semantic-search.md.
 

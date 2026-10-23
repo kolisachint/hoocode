@@ -1,4 +1,4 @@
-//! MCP server discovery and trust for the hoocode coding agent (milestone 4 step 2 of
+//! MCP server discovery and trust for the hoocode coding agent (see
 //! `docs/design/mcp.md`).
 //!
 //! This crate reads `mcp.json` files, applies name precedence (user, then project, then

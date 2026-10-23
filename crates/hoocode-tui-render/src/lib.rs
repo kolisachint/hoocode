@@ -1,9 +1,6 @@
-//! Differential rendering for the hoocode TUI.
-//!
-//! Ported from TypeScript `@kolisachint/hoocode-tui` -> `tui.ts`: the
-//! component tree (`Component`/`Container`) and the `TUI` differential
-//! terminal writer. See [`tui`] module docs for the (documented, deliberate)
-//! simplifications made relative to the original.
+//! Differential rendering for the hoocode TUI: the component tree
+//! (`Component`/`Container`) and the `TUI` differential terminal writer. See the
+//! `tui` module docs for the deliberate design choices.
 
 mod component;
 pub mod fullscreen;

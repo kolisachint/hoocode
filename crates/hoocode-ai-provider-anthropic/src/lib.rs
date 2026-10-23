@@ -1,5 +1,4 @@
-//! Anthropic provider for hoocode AI: port of hoocode
-//! `packages/ai/src/providers/anthropic.ts` (v0.5.89).
+//! Anthropic provider for hoocode AI.
 //!
 //! [`stream`] is `streamSimpleAnthropic` (API key, option mapping, thinking
 //! mode); [`stream_anthropic`] is `streamAnthropic`, which reports every

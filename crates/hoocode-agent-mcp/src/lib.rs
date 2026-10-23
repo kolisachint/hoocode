@@ -1,6 +1,6 @@
 //! MCP client for hoocode agents, built on the `rmcp` crate.
 //!
-//! Only this crate depends on `rmcp` (`migration/dep-firewall.json`). It speaks
+//! Only this crate depends on `rmcp` (`scripts/ci/dep-firewall.json`). It speaks
 //! stdio and Streamable HTTP, not the legacy HTTP+SSE transport.
 //!
 //! - [`McpServerConfig`]: how to reach a server.

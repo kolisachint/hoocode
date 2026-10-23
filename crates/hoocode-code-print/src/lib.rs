@@ -1,7 +1,6 @@
 //! Output formatting for the hoocode coding agent.
 //!
-//! Mirrors the output-formatting side of `modes/print-mode.ts` from the
-//! TypeScript `packages/coding-agent` package. It provides two render targets:
+//! It provides two render targets:
 //!
 //! * **Text mode** — prints the final assistant response as plain text.
 //! * **JSON mode** — the session header, then every session event as one JSON

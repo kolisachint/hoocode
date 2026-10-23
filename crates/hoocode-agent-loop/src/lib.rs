@@ -1,17 +1,15 @@
 //! Agent loop that works with `AgentMessage` throughout and converts to LLM
 //! `Message`s only at the provider call.
 //!
-//! Port of hoocode `packages/agent/src/agent-loop.ts`. Differences forced by
-//! Rust, all invisible in the event sequence:
+//! Rust-specific design choices, all invisible in the event sequence:
 //! - Hooks are synchronous closures; tools keep a synchronous `execute`, run
 //!   on tokio's blocking pool, and stream `onUpdate` results through a channel.
-//! - `beforeToolCall` gets `&mut` context and may rewrite `args` in place, as
-//!   the TypeScript hook mutates its `args` object.
+//! - `beforeToolCall` gets `&mut` context and may rewrite `args` in place.
 //! - A background tool's `afterToolCall` hook and result message run when the
 //!   loop collects the result (the next turn boundary), not the instant the
 //!   tool settles, because the detached task cannot borrow the config.
-//! - Tool-argument validation (`validateToolArguments`) is ledger 8.5; until
-//!   then prepared arguments pass through unchanged.
+//! - Tool-argument validation (`validateToolArguments`) is not implemented;
+//!   prepared arguments pass through unchanged.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};

@@ -1,7 +1,5 @@
-//! Google Gemini / Vertex AI provider for hoocode AI: port of hoocode
-//! `providers/google.ts`, `providers/google-vertex.ts` and
-//! `providers/google-shared.ts` (v0.5.89), with the `@google/genai` 1.52
-//! client's REST mapping (`request`) in place of the SDK.
+//! Google Gemini / Vertex AI provider for hoocode AI, with the REST mapping
+//! (`request`) of the Google client in place of an SDK.
 //!
 //! [`stream`] / [`stream_vertex`] are the `streamSimple*` functions;
 //! [`stream_google`] / [`stream_google_vertex`] take [`GoogleOptions`].

@@ -1,6 +1,5 @@
 //! OpenAI Chat Completions provider (`openai-completions` API) for hoocode AI.
 //!
-//! Port of hoocode `providers/openai-completions.ts` (v0.5.89):
 //! `streamSimpleOpenAICompletions` / `streamOpenAICompletions`. Serves every
 //! OpenAI-compatible provider; per-provider quirks come from the resolved
 //! compat ([`request::get_compat`]).

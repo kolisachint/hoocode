@@ -1,11 +1,10 @@
-//! App identity and paths: hoocode `packages/coding-agent/src/config.ts`
-//! (v0.5.89; the install-method / self-update half is ledger 12.7) and
-//! `src/utils/paths.ts`.
+//! App identity and paths for the hoocode coding agent.
 //!
-//! hoocode keeps its data in `~/.hoocode` (project: `<repo>/.hoocode/`), shared
-//! with hoocode-ts. Env overrides take the `HOOCODE_` prefix only.
+//! hoocode keeps its data in `~/.hoocode` (project: `<repo>/.hoocode/`).
+//! Env overrides take the `HOOCODE_` prefix only.
 //! The one-time merge of the pre-1.2 folders lives in
-//! `hoocode-code-migrate`.
+//! `hoocode-code-migrate`. The install-method / self-update part of the app
+//! configuration is not implemented yet.
 
 pub mod git;
 pub mod git_branch;

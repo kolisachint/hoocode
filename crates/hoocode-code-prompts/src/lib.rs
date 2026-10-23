@@ -1,8 +1,8 @@
-//! System and mode prompts for the hoocode coding agent.
+//! System prompts for the hoocode coding agent.
 //!
-//! Mirrors `core/system-prompt.ts` (with the skills/agents/self-docs sections
-//! it appends) from the TypeScript `packages/coding-agent` package. Mode prompts
-//! arrive with 10.5b, prompt templates with 10.5.
+//! Builds the system prompt (with the skills/agents/self-docs sections
+//! it appends) and renders simple prompt templates. Mode prompts live in
+//! `hoocode-code-modes`.
 
 use std::collections::HashMap;
 

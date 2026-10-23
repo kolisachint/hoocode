@@ -1,7 +1,5 @@
-//! File tools for the hoocode coding agent.
-//!
-//! Ports hoocode's `core/tools/read.ts`, `read-dedup.ts`, `edit.ts`,
-//! `edit-diff.ts`, `write.ts`, `file-mutation-queue.ts` and `core/context-gc.ts`.
+//! File tools for the hoocode coding agent: `read`, `read_dedup`, `edit` (with
+//! `edit_diff`), `write`, the file mutation queue and context garbage collection.
 
 mod access;
 pub mod context_gc;

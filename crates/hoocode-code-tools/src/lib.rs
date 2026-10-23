@@ -1,13 +1,10 @@
 //! Core CLI tools: read, bash, edit, write, grep, find, ls.
 //!
-//! The default bundle is hoocode's: `read`, `edit`, `write` from
-//! `hoocode-code-tools-fs` (10.2a, 10.2c), `bash` from
-//! `hoocode-code-tool-bash` (10.2b) and `CodeSearch` from
-//! `hoocode-code-tool-search` (10.2d). The free functions below (grep, find,
-//! ls, webfetch, websearch, todo) predate the ports and are not tools; they go
-//! when 10.2e/10.2f land.
-//!
-//! Mirrors `core/tools/` from the TypeScript `packages/coding-agent` package.
+//! The default bundle: `read`, `edit`, `write` from
+//! `hoocode-code-tools-fs`, `bash` from
+//! `hoocode-code-tool-bash` and `CodeSearch` from
+//! `hoocode-code-tool-search`. The free functions below (grep, find,
+//! ls, webfetch, websearch, todo) are plain helpers, not tools.
 
 use hoocode_agent_types::{AgentTool, AgentToolResult};
 use hoocode_ai_types::{Content, TextContent};

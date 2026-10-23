@@ -1,11 +1,7 @@
 //! Resources for the hoocode coding agent: skills, prompt templates, slash
-//! commands and agent definitions.
-//!
-//! Ports of hoocode `packages/coding-agent/src/core/{skills,prompt-templates,
-//! slash-commands,agent-frontmatter,agent-registry,context-files,source-info,
-//! diagnostics}.ts` and
-//! `utils/frontmatter.ts` (pinned v0.5.89). Paths are strings, as in hoocode,
-//! so they appear in prompts and diagnostics exactly as hoocode prints them.
+//! commands and agent definitions, plus agent registry, context files, source
+//! info, diagnostics and frontmatter parsing. Paths are strings, so they appear
+//! in prompts and diagnostics exactly as the user wrote them.
 
 pub mod agent_frontmatter;
 pub mod agent_registry;

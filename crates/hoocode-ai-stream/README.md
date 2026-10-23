@@ -4,4 +4,6 @@ Streaming response utilities for hoocode AI
 
 Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 
-This crate is currently a placeholder reserved for the Rust migration from HooCode.
+`EventStream` is a queue that a producer pushes into and a consumer reads as a
+`futures::Stream`, plus a `final_result` future that resolves with the terminal event's
+result. `AssistantMessageEventStream` is the instance every provider returns.

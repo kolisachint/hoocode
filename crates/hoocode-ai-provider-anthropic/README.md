@@ -11,5 +11,3 @@ Streams completions from the Anthropic Messages API (`POST /v1/messages`,
 Supports text, extended thinking, tool use, image input, prompt caching
 (`cache_control`), and both API-key (`ANTHROPIC_API_KEY`) and OAuth
 (`ANTHROPIC_OAUTH_TOKEN`) credentials.
-
-Ported from TypeScript `@kolisachint/hoocode-ai` → `providers/anthropic.ts`.

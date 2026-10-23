@@ -1,6 +1,5 @@
-//! Subagent orchestration for the hoocode coding agent (hoocode's
-//! `core/subagent-*.ts`, `lifeguard.ts`, `dispatch-evaluator.ts`,
-//! `token-budget.ts`, `output-verifier.ts`, `model-categories.ts`).
+//! Subagent orchestration for the hoocode coding agent: the pool, lifeguard,
+//! dispatch evaluator, token budgets, output verifier and model categories.
 //!
 //! [`pool::SubagentPool`] runs each subagent as a child process
 //! (`hoocode --mode json --task-id <id> ...`): progress events and

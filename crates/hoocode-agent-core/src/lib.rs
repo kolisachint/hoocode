@@ -1,14 +1,12 @@
 //! Core agent runtime for hoocode agents.
 //!
-//! Port of hoocode `packages/agent/src/agent.ts`: [`Agent`] is the stateful
-//! wrapper around the agent loop. It owns the transcript (reduced from loop
-//! events), runs one prompt at a time with its own abort signal, notifies
-//! listeners, and queues steering and follow-up messages.
+//! [`Agent`] is the stateful wrapper around the agent loop. It owns the transcript
+//! (reduced from loop events), runs one prompt at a time with its own abort signal,
+//! notifies listeners, and queues steering and follow-up messages.
 //!
-//! Differences from TypeScript: listeners are synchronous closures (a run
-//! cannot finish before they return, which is what awaiting them guarantees),
-//! and state is read through [`Agent::state`] snapshots and changed through
-//! setters instead of property assignment.
+//! Listeners are synchronous closures (a run cannot finish before they return,
+//! which is what awaiting them guarantees), and state is read through
+//! [`Agent::state`] snapshots and changed through setters.
 
 pub mod types;
 

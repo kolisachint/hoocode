@@ -1,9 +1,8 @@
 # hoocode-code-models
 
-Model registry for the `hoocode` CLI. Port of hoocode
-`packages/coding-agent/src/core/model-registry.ts` (pinned v0.5.89): built-in models
+Model registry for the `hoocode` CLI: built-in models
 from `hoocode-ai-models`, plus custom providers, provider overrides and per-model
 overrides from `models.json`, and request auth (`apiKey` / `headers` / `authHeader`)
-resolved like `resolve-config-value.ts` (`!command`, environment variable, or literal).
+resolved from a `!command`, an environment variable, or a literal.
 
-Volatility tier V (see the migration plan §5.5): the models.json schema follows upstream.
+The models.json schema is kept stable across releases.

@@ -1,7 +1,6 @@
 //! API provider registry: `model.api` → stream function.
 //!
-//! Port of hoocode `api-registry.ts` + `stream.ts` + `register-builtins.ts` (v0.5.89),
-//! and `session-resources.ts` ([`session_resources`]).
+//! Also holds the per-session resources ([`session_resources`]).
 
 pub mod session_resources;
 

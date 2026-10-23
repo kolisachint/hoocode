@@ -1,13 +1,12 @@
 //! OpenAI Codex Responses provider (`openai-codex-responses`, the ChatGPT
 //! subscription backend) for hoocode AI.
 //!
-//! Port of hoocode `providers/openai-codex-responses.ts` (v0.5.89): the
-//! request body and headers, the WebSocket transport with its per-session
-//! connection cache and `previous_response_id` continuation ([`websocket`]),
+//! The request body and headers, the WebSocket transport with its per-session
+//! connection cache and `previous_response_id` continuation (`websocket`),
 //! and the SSE fallback with its own retry loop. Events go through the shared
 //! Responses stream processor of `hoocode-ai-provider-openai-responses`.
 //!
-//! Known deviations: errors carry no JS stack in their diagnostics, and a
+//! Known limits: errors carry no JS stack in their diagnostics, and a
 //! JSON parse failure reads with serde's message instead of V8's.
 
 mod websocket;

@@ -1,12 +1,12 @@
 //! Faux / test provider for hoocode AI.
 //!
-//! Port of hoocode `packages/ai/src/providers/faux.ts` (v0.5.89): queue canned
+//! Queue canned
 //! assistant messages (or factories producing them) and stream them back as
 //! if they came from a model, with estimated usage, simulated prompt caching
 //! per `sessionId`, optional `tokensPerSecond` pacing and abort handling.
 //!
-//! [`register_faux_provider`] registers the provider on the API registry like
-//! `registerFauxProvider()`. [`FauxProvider::stream_fn`] exposes the same
+//! [`register_faux_provider`] registers the provider on the API registry.
+//! [`FauxProvider::stream_fn`] exposes the same
 //! stream function for callers that inject a stream function directly.
 
 use std::collections::hash_map::RandomState;

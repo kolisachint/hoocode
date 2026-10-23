@@ -1,10 +1,9 @@
-//! Color themes for the interactive mode: port of hoocode
-//! `modes/interactive/theme/theme.ts` and its bundled JSON themes.
+//! Color themes for the interactive mode, with the bundled JSON themes.
 //!
 //! - [`color`]: color-mode detection and the color math (256-color
 //!   quantization, WCAG contrast, chip fills).
 //! - [`schema`]: the theme JSON schema and validation.
-//! - [`theme`]: [`Theme`], tokens resolved to ANSI.
+//! - `theme`: [`Theme`], tokens resolved to ANSI.
 //! - [`registry`]: loading (built-in, custom, registered, retired names), the
 //!   process-wide current theme, the custom-theme watcher, export colors.
 //! - [`tui`]: theme hooks for library components, highlighting, paper sheets.

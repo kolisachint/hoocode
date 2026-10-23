@@ -1,9 +1,7 @@
 //! Server-Sent Events decoder shared by every hoocode AI provider.
 //!
-//! hoocode reads provider streams with the vendor SDKs (and, for Anthropic,
-//! with its own `iterateSseMessages` in `providers/anthropic.ts`). All of them
-//! follow the WHATWG event-stream rules, which `eventsource-stream` implements.
-//! One difference is kept from hoocode: a final event that is not followed by a
+//! Provider streams follow the WHATWG event-stream rules, which `eventsource-stream`
+//! implements. One deliberate difference: a final event that is not followed by a
 //! blank line is still delivered when the body ends (`flushSseEvent`), where the
 //! spec would drop it.
 

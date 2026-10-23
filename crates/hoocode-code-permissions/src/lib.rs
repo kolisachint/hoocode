@@ -1,5 +1,4 @@
-//! `extensions/core/permission-gate.ts`: the per-mode tool policy and the
-//! approval prompt, as a [`PermissionGate`].
+//! The per-mode tool policy and the approval prompt, as a [`PermissionGate`].
 
 use hoocode_agent_types::{AgentToolCall, PermissionDecision, PermissionGate};
 use hoocode_code_modes::config::{self, HooConfig};

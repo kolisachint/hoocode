@@ -1,5 +1,4 @@
-//! Anthropic OAuth (Claude Pro/Max): port of hoocode
-//! `utils/oauth/anthropic.ts` (v0.5.89). Authorization code + PKCE with a
+//! Anthropic OAuth (Claude Pro/Max). Authorization code + PKCE with a
 //! local callback server on port 53692 and an optional pasted redirect URL.
 
 use hoocode_ai_oauth::{

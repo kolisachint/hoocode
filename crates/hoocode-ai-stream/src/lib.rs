@@ -1,6 +1,6 @@
 //! Event streams for hoocode AI.
 //!
-//! Port of hoocode `packages/ai/src/utils/event-stream.ts`: an [`EventStream`]
+//! An [`EventStream`]
 //! is a queue that a producer `push`es into and a consumer reads as a
 //! `futures::Stream`, plus a [`EventStream::final_result`] future that resolves
 //! with the terminal event's result. [`AssistantMessageEventStream`] is the

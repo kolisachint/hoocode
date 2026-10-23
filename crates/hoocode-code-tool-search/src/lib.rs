@@ -1,6 +1,5 @@
-//! `CodeSearch`: hoocode `core/tools/search.ts` and the runtime half of
-//! `core/search/` (v0.5.89). The eval harness (`search/eval*.ts`) and the
-//! embsearch daemon client belong to ledger 12.4.
+//! `CodeSearch`: the tool and the runtime half of the search pipeline. The
+//! embsearch daemon client is not implemented yet.
 
 pub mod adapter;
 pub mod assembler;

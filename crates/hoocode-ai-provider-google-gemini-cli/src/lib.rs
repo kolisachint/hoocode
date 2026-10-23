@@ -1,6 +1,5 @@
 //! Google Cloud Code Assist provider (`google-gemini-cli` API), shared by the
-//! `google-gemini-cli` and `google-antigravity` providers: port of hoocode
-//! `providers/google-gemini-cli.ts` (v0.5.89).
+//! `google-gemini-cli` and `google-antigravity` providers.
 //!
 //! [`stream`] is `streamSimpleGoogleGeminiCli`; [`stream_google_gemini_cli`]
 //! takes [`GeminiCliOptions`]. The API key is the JSON `{token, projectId}`

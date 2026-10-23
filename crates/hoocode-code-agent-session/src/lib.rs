@@ -1,9 +1,8 @@
 //! `AgentSession`: the agent lifecycle shared by the hoocode run modes.
 //!
-//! Ports hoocode's `core/agent-session.ts` (core), `agent-session-stats.ts`
-//! and `agent-session-services.ts` with the session-building part of `sdk.ts`,
-//! plus `agent-session-{retry,compaction,tree-navigation,runtime}.ts` and
-//! `session-cwd.ts`.
+//! It covers the session core, session statistics and services, building a
+//! session, retry, compaction, tree navigation, the runtime, and the session
+//! working directory.
 
 pub use hoocode_code_auth::auth_guidance;
 pub mod compaction;

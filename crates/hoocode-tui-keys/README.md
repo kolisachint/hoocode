@@ -13,10 +13,5 @@ keys, key press/repeat/release events, and non-Latin keyboard layouts (base
 layout key fallback).
 
 Also includes a `KeybindingsManager` registry: default keybindings, user
-overrides, and conflict detection.
-
-Simplification vs. the TypeScript source: the global `getKeybindings()` /
-`setKeybindings()` singleton isn't ported — callers hold their own
-`KeybindingsManager` instance instead.
-
-Ported from TypeScript `@kolisachint/hoocode-tui` → `keys.ts`, `keybindings.ts`.
+overrides, and conflict detection. There is no global keybindings singleton:
+callers hold their own `KeybindingsManager` instance.

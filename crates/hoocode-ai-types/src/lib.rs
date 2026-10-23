@@ -1,7 +1,6 @@
 //! Core types for the hoocode AI namespace.
 //!
-//! These types mirror the TypeScript types in `@kolisachint/hoocode-ai` and are used
-//! by all AI providers, the agent runtime, and tooling crates.
+//! Used by all AI providers, the agent runtime, and tooling crates.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -10,8 +9,7 @@ use std::collections::HashMap;
 // Wire format
 // ---------------------------------------------------------------------------
 //
-// Every type in this section serializes exactly like its TypeScript counterpart in
-// hoocode `packages/ai/src/types.ts` (pinned v0.5.89): internally tagged on `type`
+// Every type in this section has a stable wire format: internally tagged on `type`
 // (content) / `role` (messages), camelCase field names, optional fields omitted when
 // absent. Session files, the RPC protocol and `--mode json` output depend on this.
 // Fields marked "not on the wire" are Rust-side request-building hints.

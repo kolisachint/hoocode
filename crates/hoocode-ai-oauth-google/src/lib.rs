@@ -1,6 +1,4 @@
-//! Google Cloud Code Assist OAuth: port of hoocode
-//! `utils/oauth/google-gemini-cli.ts`, `google-antigravity.ts` and
-//! `google-oauth-client.ts` (v0.5.89).
+//! Google Cloud Code Assist OAuth (`google-gemini-cli` and `google-antigravity`).
 //!
 //! Both logins are authorization code + PKCE (the verifier doubles as the
 //! state) with a local callback server racing a pasted redirect URL, then
