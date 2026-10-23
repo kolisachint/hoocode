@@ -19,6 +19,7 @@ mod file_search;
 mod frame;
 mod fuzz_smoke;
 mod image_component;
+mod lexer_prefilter;
 mod lists_and_input;
 mod markdown;
 mod markdown_gold;

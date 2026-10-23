@@ -14,6 +14,21 @@ pub fn fresh_stamp() -> u64 {
     NEXT_STAMP.fetch_add(1, Ordering::Relaxed)
 }
 
+/// How many stamps have been handed out, and changes noted, so far. While it
+/// has not moved, no stamped component has been mutated: a [`Container`] uses it
+/// to skip walking its children. Other threads' stamps move it too, which only
+/// costs a walk.
+pub fn change_counter() -> u64 {
+    NEXT_STAMP.load(Ordering::Relaxed)
+}
+
+/// Record a change that no component stamp shows: state a `render_stamp` reads
+/// but does not own (a flag or data shared with the code that mutates it). A
+/// mutator of such state calls this after it writes.
+pub fn note_change() {
+    NEXT_STAMP.fetch_add(1, Ordering::Relaxed);
+}
+
 static RENDER_EPOCH: AtomicU64 = AtomicU64::new(1);
 
 /// A change to something every component draws from but none owns (the
@@ -203,13 +218,18 @@ pub type ComponentHandle = Rc<RefCell<dyn Component>>;
 /// without a stamp is rendered every frame, as before.
 #[derive(Default)]
 pub struct Container {
-    pub children: Vec<ComponentHandle>,
+    children: Vec<ComponentHandle>,
     /// Where each child's output started in the last render, and at what width.
     last_offsets: Option<(u16, Vec<usize>)>,
     /// Per child (by position): the lines it drew, the width and the stamp they are for.
     cache: Vec<Option<ChildCache>>,
     /// Overrides [`verify_cache_hits`] (tests that count renders turn it off).
     verify: Option<bool>,
+    /// The width, epoch and [`change_counter`] of the last render, when nothing
+    /// was stamped while it ran: if all three are the same at the next render,
+    /// no stamped child can have changed, and the walk over the children's
+    /// stamps is skipped (children without a cache entry still draw).
+    settled: Option<(u16, u64, u64)>,
 }
 
 struct ChildCache {
@@ -225,15 +245,42 @@ impl Container {
     }
 
     pub fn add_child(&mut self, component: ComponentHandle) {
+        self.settled = None;
         self.children.push(component);
     }
 
     pub fn remove_child(&mut self, component: &ComponentHandle) {
+        self.settled = None;
         self.children.retain(|c| !Rc::ptr_eq(c, component));
     }
 
     pub fn clear(&mut self) {
+        self.settled = None;
         self.children.clear();
+    }
+
+    /// Put `component` at `index`, before the child that was there.
+    pub fn insert_child(&mut self, index: usize, component: ComponentHandle) {
+        self.settled = None;
+        self.children.insert(index, component);
+    }
+
+    /// Put `component` in place of the child at `index`.
+    pub fn replace_child(&mut self, index: usize, component: ComponentHandle) {
+        self.settled = None;
+        self.children[index] = component;
+    }
+
+    /// Swap the children with `other` (a view parks its rows this way).
+    pub fn swap_children(&mut self, other: &mut Vec<ComponentHandle>) {
+        self.settled = None;
+        self.cache.clear();
+        std::mem::swap(&mut self.children, other);
+    }
+
+    /// The children, in order.
+    pub fn children(&self) -> &Vec<ComponentHandle> {
+        &self.children
     }
 
     /// Whether a cache hit is drawn again and compared with the kept lines
@@ -269,8 +316,21 @@ impl Component for Container {
         let base = out.len();
         let mut offsets = Vec::with_capacity(child_count);
         let epoch = render_epoch();
+        let counter = change_counter();
+        let verify = self.verify.unwrap_or_else(verify_cache_hits);
+        // Nothing stamped since the last render, at the same width and epoch:
+        // every kept entry is current. Builds that verify still walk the stamps
+        // and fail when one moved, which would be a mutator that took no stamp.
+        let unchanged = self.settled == Some((width, epoch, counter));
+        let skip_walk = unchanged && !verify;
         for (index, child) in self.children.iter().enumerate() {
             offsets.push(out.len() - base);
+            if skip_walk {
+                if let Some(entry) = &self.cache[index] {
+                    out.push(Piece::Shared(entry.lines.clone()));
+                    continue;
+                }
+            }
             if child.borrow().is_container() {
                 self.cache[index] = None;
                 child.borrow_mut().render_into(width, out);
@@ -287,9 +347,15 @@ impl Component for Container {
                     entry.width == width && entry.stamp == stamp && entry.epoch == epoch
                 })
                 .map(|entry| entry.lines.clone());
+            assert!(
+                !(verify && unchanged) || hit.is_some() || self.cache[index].is_none(),
+                "render cache is stale: nothing was stamped since the last frame, but child \
+                 {index} of {child_count} has a new stamp (state a stamp reads changed without \
+                 a fresh stamp or note_change)"
+            );
             let lines = match hit {
                 Some(lines) => {
-                    if self.verify.unwrap_or_else(verify_cache_hits) {
+                    if verify {
                         let fresh = child.borrow_mut().render(width);
                         assert!(
                             fresh[..] == lines[..],
@@ -315,6 +381,8 @@ impl Component for Container {
             };
             out.push(Piece::Shared(lines));
         }
+        // Settled only if nothing was stamped while this render ran.
+        self.settled = (change_counter() == counter).then_some((width, epoch, counter));
         self.last_offsets = Some((width, offsets));
     }
 
@@ -334,6 +402,7 @@ impl Component for Container {
 
     fn invalidate(&mut self) {
         self.cache.clear();
+        self.settled = None;
         for child in &self.children {
             child.borrow_mut().invalidate();
         }

@@ -1,5 +1,4 @@
-//! Anthropic provider for hoocode AI: port of hoocode
-//! `packages/ai/src/providers/anthropic.ts` (v0.5.89).
+//! Anthropic provider for hoocode AI.
 //!
 //! [`stream`] is `streamSimpleAnthropic` (API key, option mapping, thinking
 //! mode); [`stream_anthropic`] is `streamAnthropic`, which reports every
@@ -15,7 +14,7 @@ use hoocode_ai_stream::{
 use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     AbortSignal, AssistantMessage, AssistantMessageEvent, Content, Context, Model, OnPayload,
-    OnResponse, SimpleStreamOptions, StopReason, TextContent, ThinkingContent, Tool,
+    OnResponse, SharedMessage, SimpleStreamOptions, StopReason, TextContent, ThinkingContent, Tool,
     ToolCallContent,
 };
 use serde_json::Value;
@@ -75,14 +74,14 @@ async fn run(
     };
     match outcome {
         Ok(()) => {
-            let message = state.output;
+            let message = state.output.into_message();
             sender.push(AssistantMessageEvent::Done {
                 message: message.clone(),
             });
             sender.end(Some(message));
         }
         Err(message) => {
-            let mut output = state.output;
+            let mut output = state.output.into_message();
             output.stop_reason = if signal.as_ref().is_some_and(AbortSignal::aborted) {
                 StopReason::Aborted
             } else {
@@ -156,7 +155,7 @@ async fn drive(
     .await;
 
     sender.push(AssistantMessageEvent::Start {
-        partial: state.output.clone(),
+        partial: state.output.share(),
     });
 
     let mut decoder = sse::SseDecoder::default();
@@ -196,7 +195,7 @@ async fn drive(
 /// `output` of `streamAnthropic` plus the per-block scratch fields (`index`,
 /// `partialJson`) that TS keeps on the blocks and strips at the end.
 struct StreamState {
-    output: AssistantMessage,
+    output: SharedMessage,
     /// The Anthropic block index of each content block, until it stops.
     indexes: Vec<Option<u64>>,
     partial_json: Vec<String>,
@@ -206,7 +205,7 @@ struct StreamState {
 impl StreamState {
     fn new(model: &Model) -> Self {
         Self {
-            output: AssistantMessage::for_model(model),
+            output: SharedMessage::new(AssistantMessage::for_model(model)),
             indexes: Vec::new(),
             partial_json: Vec::new(),
             is_oauth: false,
@@ -263,7 +262,7 @@ impl StreamState {
                         let at = self.push_block(Content::Text(TextContent::new("")), index);
                         sender.push(AssistantMessageEvent::TextStart {
                             index: at,
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     "thinking" => {
@@ -277,7 +276,7 @@ impl StreamState {
                         );
                         sender.push(AssistantMessageEvent::ThinkingStart {
                             index: at,
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     "redacted_thinking" => {
@@ -291,7 +290,7 @@ impl StreamState {
                         );
                         sender.push(AssistantMessageEvent::ThinkingStart {
                             index: at,
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     "tool_use" => {
@@ -316,7 +315,7 @@ impl StreamState {
                         );
                         sender.push(AssistantMessageEvent::ToolCallStart {
                             index: at,
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     _ => {}
@@ -338,7 +337,7 @@ impl StreamState {
                         sender.push(AssistantMessageEvent::TextDelta {
                             index: at,
                             delta: chunk,
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     ("thinking_delta", Content::Thinking(block)) => {
@@ -347,7 +346,7 @@ impl StreamState {
                         sender.push(AssistantMessageEvent::ThinkingDelta {
                             index: at,
                             delta: chunk,
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     ("input_json_delta", Content::ToolCall(block)) => {
@@ -359,7 +358,7 @@ impl StreamState {
                         sender.push(AssistantMessageEvent::ToolCallDelta {
                             index: at,
                             delta: chunk,
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     ("signature_delta", Content::Thinking(block)) => {
@@ -379,11 +378,11 @@ impl StreamState {
                 match &mut self.output.content[at] {
                     Content::Text(_) => sender.push(AssistantMessageEvent::TextEnd {
                         index: at,
-                        partial: self.output.clone(),
+                        partial: self.output.share(),
                     }),
                     Content::Thinking(_) => sender.push(AssistantMessageEvent::ThinkingEnd {
                         index: at,
-                        partial: self.output.clone(),
+                        partial: self.output.share(),
                     }),
                     Content::ToolCall(block) => {
                         block.arguments = hoocode_ai_util::parse_streaming_json::<Value>(Some(
@@ -391,7 +390,7 @@ impl StreamState {
                         ));
                         sender.push(AssistantMessageEvent::ToolCallEnd {
                             index: at,
-                            partial: self.output.clone(),
+                            partial: self.output.share(),
                         });
                     }
                     Content::Image(_) => {}

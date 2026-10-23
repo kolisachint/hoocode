@@ -4,4 +4,5 @@ Agent harness for hoocode agents
 
 Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 
-This crate is currently a placeholder reserved for the Rust migration from HooCode.
+The pieces around the agent loop: message conversion, skills, prompt templates, system
+prompts and output utilities.

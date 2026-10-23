@@ -5,7 +5,6 @@ and a generic clone-on-push undo stack.
 
 Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 
-Ported from `@kolisachint/hoocode-tui`'s `kill-ring.ts` and `undo-stack.ts`.
-`editor-component.ts` (a pure type interface) is ported alongside the
+The `EditorComponent` interface (a pure type interface) lives alongside the
 `Editor` component in `hoocode-tui-components` instead, since it
-depends on that phase's `AutocompleteProvider` type.
+depends on that crate's `AutocompleteProvider` type.

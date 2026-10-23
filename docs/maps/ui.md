@@ -274,8 +274,8 @@ A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs
 | Key parsing (Kitty, modifyOtherKeys), matching | `tui-keys` |
 | App key map, `keybindings.json`, hint text | `code-tui-keybindings` |
 | Components: text, input, select list, picker cursor, loader, box, image | `tui-components/src/` |
-| Markdown (port of `marked` v15) | `tui-components/src/markdown/` |
-| Syntax highlighting (port of highlight.js 10.7.3) | `tui-highlight` |
+| Markdown (`marked` v15 rules) | `tui-components/src/markdown/` |
+| Syntax highlighting (highlight.js 10.7.3 grammars) | `tui-highlight` |
 | Images (Kitty, iTerm2) | `tui-images` |
 | ANSI-aware width, wrap, truncate | `tui-util` |
 | Kill ring, undo | `tui-editing` |
@@ -289,7 +289,7 @@ A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs
   `tests/golden/tui/<scenario>/`. Scenarios are in `scripts/tui/scenarios/`. A deliberate
   change is accepted with `goldens.py update <scenario>` and shows in the diff. Component goldens
   (`tests/golden/<crate>/`) run in nextest; accept them with `UPDATE_GOLDENS=1`. The screens
-  are hoocode's own (there is no TS reference).
+  are hoocode's own.
 - Concurrency ([concurrency.md](../design/concurrency.md)): the UI thread never does
   file or network I/O. Work off the UI thread reports back through `AppEvent`.
 - Attached view: code that writes to the transcript (`self.transcript`, `add_to_chat`) runs

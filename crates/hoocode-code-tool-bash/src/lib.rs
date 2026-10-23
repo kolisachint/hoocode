@@ -1,5 +1,4 @@
-//! The `bash` tool: hoocode `core/tools/bash.ts`, `core/bash-executor.ts`,
-//! `core/tools/output-accumulator.ts` and `utils/shell.ts` (v0.5.89).
+//! The `bash` tool, the bash executor, the output accumulator and shell resolution.
 
 pub mod accumulator;
 pub mod executor;

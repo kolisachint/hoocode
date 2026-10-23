@@ -1,12 +1,12 @@
 //! Faux / test provider for hoocode AI.
 //!
-//! Port of hoocode `packages/ai/src/providers/faux.ts` (v0.5.89): queue canned
+//! Queue canned
 //! assistant messages (or factories producing them) and stream them back as
 //! if they came from a model, with estimated usage, simulated prompt caching
 //! per `sessionId`, optional `tokensPerSecond` pacing and abort handling.
 //!
-//! [`register_faux_provider`] registers the provider on the API registry like
-//! `registerFauxProvider()`. [`FauxProvider::stream_fn`] exposes the same
+//! [`register_faux_provider`] registers the provider on the API registry.
+//! [`FauxProvider::stream_fn`] exposes the same
 //! stream function for callers that inject a stream function directly.
 
 use std::collections::hash_map::RandomState;
@@ -26,8 +26,8 @@ use hoocode_ai_stream::{
 use hoocode_ai_types::ABORTED_MESSAGE;
 use hoocode_ai_types::{
     now_ms, AbortSignal, AssistantMessage, AssistantMessageEvent, CacheRetention, Content, Context,
-    Cost, Message, Model, ModelCost, SimpleStreamOptions, StopReason, TextContent, ThinkingContent,
-    ToolCallContent, ToolResultMessage, Usage,
+    Cost, Message, Model, ModelCost, SharedMessage, SimpleStreamOptions, StopReason, TextContent,
+    ThinkingContent, ToolCallContent, ToolResultMessage, Usage,
 };
 
 // ---------------------------------------------------------------------------
@@ -571,15 +571,15 @@ impl FauxProvider {
             stream.end(Some(error));
         };
 
-        let mut partial = AssistantMessage {
+        let mut partial = SharedMessage::new(AssistantMessage {
             content: vec![],
             ..message.clone()
-        };
+        });
         if let Some(error) = aborted(&partial) {
             return fail(error);
         }
         stream.push(AssistantMessageEvent::Start {
-            partial: partial.clone(),
+            partial: partial.share(),
         });
 
         for (index, block) in message.content.iter().enumerate() {
@@ -591,7 +591,7 @@ impl FauxProvider {
                     partial.content.push(faux_thinking(""));
                     stream.push(AssistantMessageEvent::ThinkingStart {
                         index,
-                        partial: partial.clone(),
+                        partial: partial.share(),
                     });
                     for chunk in self.split(&thinking.thinking) {
                         self.schedule_chunk(&chunk).await;
@@ -604,19 +604,19 @@ impl FauxProvider {
                         stream.push(AssistantMessageEvent::ThinkingDelta {
                             index,
                             delta: chunk,
-                            partial: partial.clone(),
+                            partial: partial.share(),
                         });
                     }
                     stream.push(AssistantMessageEvent::ThinkingEnd {
                         index,
-                        partial: partial.clone(),
+                        partial: partial.share(),
                     });
                 }
                 Content::Text(text) => {
                     partial.content.push(faux_text(""));
                     stream.push(AssistantMessageEvent::TextStart {
                         index,
-                        partial: partial.clone(),
+                        partial: partial.share(),
                     });
                     for chunk in self.split(&text.text) {
                         self.schedule_chunk(&chunk).await;
@@ -629,12 +629,12 @@ impl FauxProvider {
                         stream.push(AssistantMessageEvent::TextDelta {
                             index,
                             delta: chunk,
-                            partial: partial.clone(),
+                            partial: partial.share(),
                         });
                     }
                     stream.push(AssistantMessageEvent::TextEnd {
                         index,
-                        partial: partial.clone(),
+                        partial: partial.share(),
                     });
                 }
                 Content::ToolCall(call) => {
@@ -646,7 +646,7 @@ impl FauxProvider {
                     }));
                     stream.push(AssistantMessageEvent::ToolCallStart {
                         index,
-                        partial: partial.clone(),
+                        partial: partial.share(),
                     });
                     for chunk in self.split(&call.arguments.to_string()) {
                         self.schedule_chunk(&chunk).await;
@@ -656,7 +656,7 @@ impl FauxProvider {
                         stream.push(AssistantMessageEvent::ToolCallDelta {
                             index,
                             delta: chunk,
-                            partial: partial.clone(),
+                            partial: partial.share(),
                         });
                     }
                     if let Some(Content::ToolCall(c)) = partial.content.get_mut(index) {
@@ -664,7 +664,7 @@ impl FauxProvider {
                     }
                     stream.push(AssistantMessageEvent::ToolCallEnd {
                         index,
-                        partial: partial.clone(),
+                        partial: partial.share(),
                     });
                 }
                 // Not a FauxContentBlock; carried through without events.

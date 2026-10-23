@@ -11,9 +11,5 @@ agent loop.
 
 Supports text, tool calls, image input, `reasoning_effort` for reasoning
 models, and `OPENAI_API_KEY` credentials. Provider-specific `compat` quirks
-(zai/together/moonshot/openrouter/deepseek-specific request shaping) are not
-yet ported — see the migration design doc's stated non-goal of full parity
-in the initial pass.
-
-Ported from TypeScript `@kolisachint/hoocode-ai` →
-`providers/openai-completions.ts`.
+(openrouter, deepseek, together, zai, qwen request shaping) are resolved per
+provider in `request::get_compat`.

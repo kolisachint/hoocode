@@ -748,7 +748,7 @@ impl Tui {
         Option<ComponentHandle>,
         Vec<ComponentHandle>,
     ) {
-        let children = &self.root.children;
+        let children = self.root.children();
         let index = self
             .fullscreen_body
             .as_ref()
@@ -1209,7 +1209,7 @@ impl Tui {
 
     /// The root's children, in order (`ui.children`).
     pub fn children(&self) -> &[ComponentHandle] {
-        &self.root.children
+        self.root.children()
     }
 
     pub fn add_input_listener(&mut self, listener: InputListener) {

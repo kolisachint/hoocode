@@ -1,5 +1,5 @@
-//! The coding agent's keyboard map: port of hoocode `core/keybindings.ts`
-//! and `modes/interactive/components/keybinding-hints.ts`.
+//! The coding agent's keyboard map: app keybindings, `keybindings.json` loading
+//! and legacy-name migration, and key text for hint lines.
 
 pub mod hints;
 pub mod keybindings;

@@ -2,7 +2,7 @@
 
 «»                                                     «fg=#a8a8a8»╭ «fg=#5cc8bb»●«bold;fg=#e5e5e7» TRANSMISSION«»                             «fg=#a8a8a8»╮
 «»                                                     «fg=#a8a8a8»│ «fg=#e5e5e7»Usage: /color [none|parity|cyan|violet|li[0m
-«»                                                     «fg=#a8a8a8»│ «fg=#5cc8bb»▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔«fg=#a8a8a8» │
+«»                                                     «<masked: toast countdown>»│ <toast-countdown>                          «fg=#a8a8a8»│
 «»                                                     «fg=#a8a8a8»╰────────────────────────────────────────────╯
 
 
@@ -24,7 +24,7 @@
 
 
 «fg=#5cc8bb»▟«fg=#66bec6»▀«fg=#71b4d1»▀«fg=#7baadd»▀«fg=#86a0e8»▀«fg=#9096f3»▀«fg=#9b8cff»▙«»  «bold»<app>«»                                  «fg=#a8a8a8»✦«»                                     «fg=#a8a8a8»·
-«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>«»                                         «fg=#a8a8a8»·
+«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERS«»ION>                                      «fg=#a8a8a8»·
 «fg=#5cc8bb»▜«fg=#66bec6»▄«fg=#71b4d1»▄«fg=#7baadd»▄«fg=#86a0e8»▄«fg=#9096f3»▄«fg=#9b8cff»▛«»  «fg=#989898»<WORK>«»                                       «fg=#a8a8a8»⋆
 
 «fg=#989898»no project resources loaded

@@ -1,8 +1,6 @@
-//! Terminal image rendering for the hoocode TUI.
-//!
-//! Ported from TypeScript `@kolisachint/hoocode-tui` -> `terminal-image.ts`:
-//! terminal capability detection, Kitty/iTerm2 inline image protocol
-//! encoding, and lightweight image-dimension sniffing for PNG/JPEG/GIF/WebP.
+//! Terminal image rendering for the hoocode TUI: terminal capability detection,
+//! Kitty/iTerm2 inline image protocol encoding, and lightweight
+//! image-dimension sniffing for PNG/JPEG/GIF/WebP.
 
 mod dimensions;
 mod iterm2;

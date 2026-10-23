@@ -1,9 +1,6 @@
-//! Differential rendering for the hoocode TUI.
-//!
-//! Ported from TypeScript `@kolisachint/hoocode-tui` -> `tui.ts`: the
-//! component tree (`Component`/`Container`) and the `TUI` differential
-//! terminal writer. See [`tui`] module docs for the (documented, deliberate)
-//! simplifications made relative to the original.
+//! Differential rendering for the hoocode TUI: the component tree
+//! (`Component`/`Container`) and the `TUI` differential terminal writer. See the
+//! `tui` module docs for the deliberate design choices.
 
 mod component;
 pub mod fullscreen;
@@ -13,8 +10,8 @@ mod scrollbar;
 mod tui;
 
 pub use component::{
-    bump_render_epoch, fresh_stamp, mix_stamps, render_epoch, Component, ComponentHandle,
-    Container, FlexSpacer, Piece, Rendered, Slot,
+    bump_render_epoch, change_counter, fresh_stamp, mix_stamps, note_change, render_epoch,
+    Component, ComponentHandle, Container, FlexSpacer, Piece, Rendered, Slot,
 };
 pub use scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB, SCROLLBAR_TRACK};
 pub use tui::{

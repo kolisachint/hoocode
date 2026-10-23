@@ -1,5 +1,5 @@
 #!/bin/sh
-# HooCode one-click installer (macOS / Linux). Installs the Rust build.
+# hoocode one-click installer (macOS / Linux).
 #
 #   curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh
 #
@@ -124,7 +124,7 @@ case "$UNAME_S" in
         fi
         TARGET="$ARCH-apple-darwin"
         ;;
-    *) die "unsupported OS: $UNAME_S. The Rust build ships for macOS and Linux." ;;
+    *) die "unsupported OS: $UNAME_S. hoocode ships for macOS and Linux." ;;
 esac
 
 step "Platform: ${C_B}$TARGET${C_0}"

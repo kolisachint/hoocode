@@ -1,7 +1,6 @@
 //! Shared types for hoocode agents.
 //!
-//! These types mirror the TypeScript types in `@kolisachint/hoocode-agent-core` and
-//! are used by the agent runtime, harness, and tool crates.
+//! Used by the agent runtime, harness, and tool crates.
 
 use hoocode_ai_types::{
     AssistantMessage, AssistantMessageEvent, Content, Message, Model, SimpleStreamOptions,
@@ -123,8 +122,9 @@ pub enum AgentEvent {
     },
     /// A streaming update of the assistant message; carries the provider event.
     MessageUpdate {
-        /// Shared: it carries a whole partial message, and every listener and
-        /// queue gets the event, so a clone must not copy the message.
+        /// The provider event, shared by every listener and queue. Its `partial`
+        /// is empty (listeners that kept it would force the provider to copy the
+        /// message on its next write); the message so far is `message`.
         assistant_message_event: Arc<AssistantMessageEvent>,
         message: Arc<AgentMessage>,
     },
@@ -174,7 +174,12 @@ impl AgentEvent {
                 message,
             } => json!({
                 "type": "message_update",
-                "assistantMessageEvent": assistant_message_event.to_json(),
+                "assistantMessageEvent": match message.as_ref() {
+                    AgentMessage::Assistant(partial) => {
+                        assistant_message_event.to_json_with(Some(partial))
+                    }
+                    _ => assistant_message_event.to_json(),
+                },
                 "message": json_value(message),
             }),
             AgentEvent::MessageEnd { message } => {

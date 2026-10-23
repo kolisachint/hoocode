@@ -1,7 +1,5 @@
 //! Shared utilities for the hoocode TUI: ANSI-aware string width, wrapping,
 //! truncation, and column slicing.
-//!
-//! Ported from TypeScript `@kolisachint/hoocode-tui` → `utils.ts`.
 
 mod ansi;
 pub mod js_math;

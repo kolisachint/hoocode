@@ -1,4 +1,4 @@
-//! Startup version check and the `hoocode update` command (extras.md, item 1).
+//! Startup version check and the `hoocode update` command.
 //!
 //! At most once a day the interactive mode asks the npm registry for the latest
 //! `hoocode` (the scoped `@kolisachint/hoocode` is the same release). The

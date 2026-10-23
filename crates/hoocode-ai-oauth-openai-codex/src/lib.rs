@@ -1,5 +1,4 @@
-//! OpenAI Codex OAuth (ChatGPT Plus/Pro subscription): port of hoocode
-//! `utils/oauth/openai-codex.ts` (v0.5.89). Authorization code + PKCE with a
+//! OpenAI Codex OAuth (ChatGPT Plus/Pro subscription). Authorization code + PKCE with a
 //! local callback server on port 1455 racing an optional pasted code; the
 //! credentials carry the `accountId` claim of the access token.
 

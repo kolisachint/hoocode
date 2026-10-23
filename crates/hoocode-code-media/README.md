@@ -1,17 +1,16 @@
 # hoocode-code-media
 
 Image handling for the hoocode coding agent. This is the adapter crate for the `image`
-dependency (see `migration/dep-firewall.json`); other crates use its own types.
+dependency (see `scripts/ci/dep-firewall.json`); other crates use its own types.
 
 Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 
-Ports from hoocode `packages/coding-agent/src/utils/`:
-
-- `mime.ts`: `detect_supported_image_mime_type` (magic bytes, like `file-type`, limited to
+- MIME sniffing: `detect_supported_image_mime_type` (magic bytes, limited to
   jpeg/png/gif/webp).
-- `image-resize.ts`: `resize_image` (fit within 2000x2000 and 4.5MB of base64, PNG vs JPEG,
-  lower JPEG quality, then shrink by 0.75 steps) and `format_dimension_note`.
-- `exif-orientation.ts`: EXIF orientation is applied before measuring (via `image`).
+- `resize_image`: fit within 2000x2000 and 4.5MB of base64, PNG vs JPEG,
+  lower JPEG quality, then shrink by 0.75 steps; `format_dimension_note` describes the result.
+- EXIF orientation is applied before measuring (via `image`).
+- Clipboard support: `clipboard`, `clipboard_image`, `rich_clipboard` and
+  `markdown_to_html`.
 
-Clipboard images and the rest of the media utilities arrive with ledger task 11.4.
-Encoded bytes differ from hoocode's Photon output; dimensions, formats and notes match.
+Encoded bytes depend on the `image` crate's encoders; dimensions, formats and notes are stable.

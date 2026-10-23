@@ -13,10 +13,9 @@ Supports text, thinking (including Gemini 3 `thinkingLevel` and budget-based
 models), tool calls, tool-result images (inlined for Gemini 3+, separate turn
 for older models), and `GEMINI_API_KEY` credentials.
 
-Vertex AI credential support in this pass is limited to an already-minted
-OAuth2 access token (`GOOGLE_VERTEX_ACCESS_TOKEN` or an explicit `api_key`).
-Full Application Default Credentials (service-account JSON key parsing, RS256
-JWT signing, and token exchange) is not yet ported.
-
-Ported from TypeScript `@kolisachint/hoocode-ai` → `providers/google.ts`,
-`providers/google-vertex.ts`, `providers/google-shared.ts`.
+Vertex AI credentials are an already-minted OAuth2 access token
+(`GOOGLE_VERTEX_ACCESS_TOKEN` or an explicit `api_key`), or Application Default
+Credentials: the `GOOGLE_APPLICATION_CREDENTIALS` file, gcloud's well-known
+credentials file, then the GCE/GKE metadata server. Service-account and
+authorized-user files are supported; external-account (workload identity
+federation) files are not.

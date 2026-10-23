@@ -1,8 +1,7 @@
 # hoocode-ai-oauth-google
 
 The two Google Cloud Code Assist logins: `google-gemini-cli` (Gemini CLI) and
-`google-antigravity` (Antigravity). Port of hoocode `utils/oauth/google-gemini-cli.ts`,
-`google-antigravity.ts` and `google-oauth-client.ts` (v0.5.89).
+`google-antigravity` (Antigravity).
 
 Both are authorization-code + PKCE flows with a local callback server (ports 8085 and 51121)
 racing a pasted redirect URL, followed by Cloud project discovery or provisioning

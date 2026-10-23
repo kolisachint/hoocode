@@ -1,17 +1,15 @@
 //! Agent loop that works with `AgentMessage` throughout and converts to LLM
 //! `Message`s only at the provider call.
 //!
-//! Port of hoocode `packages/agent/src/agent-loop.ts`. Differences forced by
-//! Rust, all invisible in the event sequence:
+//! Rust-specific design choices, all invisible in the event sequence:
 //! - Hooks are synchronous closures; tools keep a synchronous `execute`, run
 //!   on tokio's blocking pool, and stream `onUpdate` results through a channel.
-//! - `beforeToolCall` gets `&mut` context and may rewrite `args` in place, as
-//!   the TypeScript hook mutates its `args` object.
+//! - `beforeToolCall` gets `&mut` context and may rewrite `args` in place.
 //! - A background tool's `afterToolCall` hook and result message run when the
 //!   loop collects the result (the next turn boundary), not the instant the
 //!   tool settles, because the detached task cannot borrow the config.
-//! - Tool-argument validation (`validateToolArguments`) is ledger 8.5; until
-//!   then prepared arguments pass through unchanged.
+//! - Tool-argument validation (`validateToolArguments`) is not implemented;
+//!   prepared arguments pass through unchanged.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -401,26 +399,25 @@ async fn stream_assistant_response(
     while let Some(event) = response.next().await {
         match event {
             AssistantMessageEvent::Start { partial } => {
-                context
-                    .messages
-                    .push(AgentMessage::Assistant(partial.clone()));
+                let message = AgentMessage::Assistant((*partial).clone());
+                context.messages.push(message.clone());
                 added_partial = true;
-                emit(AgentEvent::MessageStart {
-                    message: AgentMessage::Assistant(partial),
-                });
+                emit(AgentEvent::MessageStart { message });
             }
             AssistantMessageEvent::Done { .. } | AssistantMessageEvent::Error { .. } => {
                 return Ok(finish_response(&response, context, added_partial, emit).await);
             }
             event => {
                 if added_partial {
-                    // One copy, shared by the event and its listeners. The
-                    // context is borrowed by this loop for the whole stream and
-                    // `finish_response` puts the final message in its place, so
-                    // it does not follow each delta.
+                    // One copy, shared by the listeners. The context is borrowed
+                    // by this loop for the whole stream and `finish_response`
+                    // puts the final message in its place, so it does not follow
+                    // each delta. The listeners get the event without its partial:
+                    // a listener that kept the provider's `Arc` would make the
+                    // provider copy the whole message on its next write.
                     let message = Arc::new(AgentMessage::Assistant(partial_of(&event).clone()));
                     emit(AgentEvent::MessageUpdate {
-                        assistant_message_event: Arc::new(event),
+                        assistant_message_event: Arc::new(event.without_partial()),
                         message,
                     });
                 }

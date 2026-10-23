@@ -1,8 +1,7 @@
 //! Credential storage for API keys and OAuth tokens (`auth.json`).
 //!
-//! Port of hoocode `packages/coding-agent/src/core/auth-storage.ts` (pinned v0.5.89).
 //! Writes and token refreshes run under the backend lock, so several processes
-//! (hoocode-ts or hoocode) refreshing the same expired token do it once.
+//! refreshing the same expired token do it once.
 
 pub mod auth_guidance;
 mod backend;

@@ -1,10 +1,8 @@
 //! Session trees for hoocode agents.
 //!
-//! Port of hoocode `packages/agent/src/harness/session/` and the session types
-//! in `harness/types.ts`: the JSONL entry format ([`entry`]),
-//! `buildSessionContext` ([`context`]), the storage trait with in-memory and
-//! JSONL backends ([`storage`]), `Session` ([`session`]) and the repositories
-//! ([`repo`]). `hoocode-code-session` (hoocode `session-manager.ts`) builds
+//! The JSONL entry format ([`entry`]), `buildSessionContext` ([`context`]), the
+//! storage trait with in-memory and JSONL backends ([`storage`]), `Session`
+//! ([`session`]) and the repositories ([`repo`]). `hoocode-code-session` builds
 //! on these types.
 
 pub mod context;

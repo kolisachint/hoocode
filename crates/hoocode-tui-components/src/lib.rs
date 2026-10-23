@@ -1,8 +1,7 @@
 //! UI components for the hoocode TUI.
 //!
-//! Ported from TypeScript `@kolisachint/hoocode-tui`'s `components/*.ts`
-//! (plus `autocomplete.ts` and `editor-component.ts`, which live at the
-//! package root but are tightly coupled to the `Editor` component).
+//! The autocomplete provider and the editor component interface live at the
+//! crate root, tightly coupled to the `Editor` component.
 
 mod autocomplete;
 mod box_component;

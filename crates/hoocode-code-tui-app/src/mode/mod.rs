@@ -1242,7 +1242,7 @@ impl Mode {
     /// Whether the header cursor should blink now (see `cursor_should_blink`).
     fn cursor_blink_running(&self) -> bool {
         cursor_should_blink(
-            self.transcript.chat.borrow().children.is_empty(),
+            self.transcript.chat.borrow().children().is_empty(),
             self.tui.scroll_pinned(),
         )
     }

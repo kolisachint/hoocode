@@ -1,4 +1,4 @@
-//! `core/task-store.ts`: a minimal in-process task store.
+//! A minimal in-process task store.
 //!
 //! Tasks (TodoWrite plan items, subagent delegations, MCP calls) and the
 //! agents that own them, with change listeners for the task panel. Mutations

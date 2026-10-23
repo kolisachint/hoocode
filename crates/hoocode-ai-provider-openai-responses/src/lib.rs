@@ -1,9 +1,6 @@
 //! OpenAI Responses API provider (`openai-responses`) for hoocode AI, plus the
 //! Responses plumbing in [`shared`].
 //!
-//! Port of hoocode `providers/openai-responses.ts` and
-//! `providers/openai-responses-shared.ts` (v0.5.89).
-//!
 //! Client retries follow the `openai` SDK (see
 //! `hoocode_ai_util::send_with_sdk_retries`).
 

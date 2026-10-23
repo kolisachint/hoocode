@@ -310,10 +310,138 @@ fn push_literal(out: &mut String, c: char, in_class: bool) {
     }
 }
 
+/// `translated` with look-arounds removed and back-references made "anything":
+/// a regex that accepts at least what `translated` accepts, built on the fast
+/// engine. `None` when there is nothing to loosen (the pattern is not fancy) or
+/// the pattern uses something this does not model.
+fn loosen(translated: &str) -> Option<String> {
+    let chars: Vec<char> = translated.chars().collect();
+    let mut out = String::with_capacity(translated.len());
+    let mut changed = false;
+    let mut in_class = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' {
+            let n = *chars.get(i + 1)?;
+            if matches!(n, 'K' | 'G' | 'k') {
+                return None;
+            }
+            if !in_class && n.is_ascii_digit() && n != '0' {
+                i += 1;
+                while chars.get(i).is_some_and(char::is_ascii_digit) {
+                    i += 1;
+                }
+                out.push_str(r"[\s\S]*");
+                changed = true;
+                continue;
+            }
+            out.push(c);
+            out.push(n);
+            i += 2;
+            continue;
+        }
+        if in_class {
+            in_class = c != ']';
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        if c == '[' {
+            in_class = true;
+            out.push(c);
+            i += 1;
+            // A leading `^` and `]` are part of the class, not its end.
+            if chars.get(i) == Some(&'^') {
+                out.push('^');
+                i += 1;
+            }
+            if chars.get(i) == Some(&']') {
+                out.push(']');
+                i += 1;
+            }
+            continue;
+        }
+        if c == '(' && chars.get(i + 1) == Some(&'?') {
+            let rest: String = chars[i + 2..].iter().take(2).collect();
+            let look =
+                rest.starts_with('=') || rest.starts_with('!') || rest == "<=" || rest == "<!";
+            if rest.starts_with('>') || rest.starts_with('(') || rest.starts_with("P=") {
+                return None;
+            }
+            if look {
+                i = skip_group(&chars, i)?;
+                changed = true;
+                continue;
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    changed.then_some(out)
+}
+
+/// The index just past the group that opens at `open` (a `(`).
+fn skip_group(chars: &[char], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut in_class = false;
+    let mut i = open;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i += 1,
+            ']' if in_class => in_class = false,
+            '[' if !in_class => {
+                in_class = true;
+                if chars.get(i + 1) == Some(&'^') {
+                    i += 1;
+                }
+                if chars.get(i + 1) == Some(&']') {
+                    i += 1;
+                }
+            }
+            '(' if !in_class => depth += 1,
+            ')' if !in_class => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i + 1);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
 /// A compiled JavaScript regex.
 #[derive(Debug)]
 pub struct JsRegex {
     re: Regex,
+    /// A cheaper regex that matches wherever `re` does (and maybe more): `re` with
+    /// its look-arounds and back-references loosened. Present only when `re` has
+    /// any, which makes `fancy-regex` run its backtracking VM, whose failed search
+    /// walks the whole haystack (a `^` rule tried on the rest of a document is
+    /// then linear per call). A miss here is a miss for `re`.
+    prefilter: Box<Prefilter>,
+}
+
+/// The translated source and, once a long haystack asks for it, the loosened regex.
+#[derive(Debug)]
+struct Prefilter {
+    translated: String,
+    regex: std::sync::OnceLock<Option<Regex>>,
+}
+
+/// Haystacks shorter than this are searched by the VM directly: the scan is
+/// cheap, and building the prefilter is not.
+const PREFILTER_MIN_HAYSTACK: usize = 2048;
+
+static PREFILTER_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Turn the prefilter off or on for the whole process. It changes speed, never
+/// results; tests switch it to compare the two.
+pub fn set_prefilter(on: bool) {
+    PREFILTER_ON.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// The captures of one match, as byte ranges into the haystack.
@@ -381,7 +509,11 @@ impl JsRegex {
             .backtrack_limit(50_000_000)
             .build()
             .map_err(|e| format!("bad regex {source:?} -> {translated:?}: {e}"))?;
-        Ok(Self { re })
+        let prefilter = Box::new(Prefilter {
+            translated,
+            regex: std::sync::OnceLock::new(),
+        });
+        Ok(Self { re, prefilter })
     }
 
     /// `regex.exec(hay)` for a non-global regex.
@@ -395,6 +527,18 @@ impl JsRegex {
         // character walks past the end (and panics in regex-automata). Round up to the
         // next boundary; past the end there is no match (JS `lastIndex > length`).
         let pos = (pos..=hay.len()).find(|&i| hay.is_char_boundary(i))?;
+        if hay.len() - pos >= PREFILTER_MIN_HAYSTACK
+            && PREFILTER_ON.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            let filter = self.prefilter.regex.get_or_init(|| {
+                loosen(&self.prefilter.translated).and_then(|loose| Regex::new(&loose).ok())
+            });
+            if let Some(filter) = filter {
+                if matches!(filter.find_from_pos(hay, pos), Ok(None)) {
+                    return None;
+                }
+            }
+        }
         // A backtracking-limit error counts as no match, where JavaScript
         // would keep going: only pathological input gets here.
         let caps = self.re.captures_from_pos(hay, pos).ok().flatten()?;

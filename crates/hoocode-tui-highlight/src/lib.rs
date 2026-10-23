@@ -1,13 +1,12 @@
-//! Syntax highlighting as the pinned hoocode does it: `cli-highlight` over
-//! highlight.js 10.7.3.
+//! Syntax highlighting in the style of `cli-highlight` over highlight.js 10.7.3.
 //!
-//! - [`engine`]: the highlight.js engine (mode compiler, scanner, keywords,
+//! - `engine`: the highlight.js engine (mode compiler, scanner, keywords,
 //!   sub-languages, auto-detection), run against highlight.js's own grammars
-//!   (`data/hljs-grammars.json`, dumped from the pin).
+//!   (`data/hljs-grammars.json`).
 //! - [`highlight`]: `cli-highlight`'s `highlight`, which colors the token tree
 //!   with a caller theme and falls back to its `DEFAULT_THEME`.
 //!
-//! Grammars load on demand: [`grammar_index`] names every language and alias
+//! Grammars load on demand: `grammar_index` names every language and alias
 //! (generated from the dump), and each language's chunk in `data/grammars/`
 //! holds only the nodes it reaches. Grammars are compiled by mutating them in
 //! place (as highlight.js does), so each thread keeps its own copy.

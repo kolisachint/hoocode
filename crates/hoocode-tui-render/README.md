@@ -6,10 +6,8 @@ terminal writer that only rewrites changed lines.
 
 Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 
-Ported from `@kolisachint/hoocode-tui`'s `tui.ts`. Two performance-only
-optimizations from the original were deliberately dropped (documented in
-`src/tui.rs`): reference-identity flatten memoization (this port diffs by
-line content instead, so the *output* is identical) and the 16ms render
+Design choices (documented in `src/tui.rs`): no reference-identity flatten
+memoization (the writer diffs by line content instead) and no 16ms render
 coalescing timer (every `request_render()` renders immediately).
 
 Threading model: `Tui`'s component tree uses `Rc<RefCell<dyn Component>>`

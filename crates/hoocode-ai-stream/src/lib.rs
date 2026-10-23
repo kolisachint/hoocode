@@ -1,6 +1,6 @@
 //! Event streams for hoocode AI.
 //!
-//! Port of hoocode `packages/ai/src/utils/event-stream.ts`: an [`EventStream`]
+//! An [`EventStream`]
 //! is a queue that a producer `push`es into and a consumer reads as a
 //! `futures::Stream`, plus a [`EventStream::final_result`] future that resolves
 //! with the terminal event's result. [`AssistantMessageEventStream`] is the
@@ -335,7 +335,7 @@ mod tests {
     fn assistant_stream_completes_on_done_and_error() {
         let s = create_assistant_message_event_stream();
         s.push(AssistantMessageEvent::Start {
-            partial: message("partial"),
+            partial: Arc::new(message("partial")),
         });
         s.push(AssistantMessageEvent::Done {
             message: message("final"),

@@ -1,5 +1,4 @@
-//! The coding agent's chat transcript widgets, ported from hoocode's
-//! `modes/interactive/components/`.
+//! The coding agent's chat transcript widgets.
 
 mod assistant_message;
 pub mod attach_view;

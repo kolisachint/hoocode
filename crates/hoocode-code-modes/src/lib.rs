@@ -1,9 +1,6 @@
-//! The mode system of hoocode's built-in `hoo-core` extension, ported natively:
+//! The mode system of hoocode's built-in `hoo-core` extension, implemented natively:
 //! ask / plan / build / debug prompts, `hoo-config.json`, and the `/mode`,
 //! `/plan`, `/grill`, `/goal`, `/approve` commands.
-//!
-//! Ports `extensions/core/{modes,config}.ts` and `core/mode-prompts.ts`
-//! (hoocode v0.5.89).
 
 pub mod config;
 pub mod extension;
