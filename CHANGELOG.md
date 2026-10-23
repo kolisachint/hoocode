@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Frame cost no longer grows with the transcript.** Messages that have not changed keep their drawn lines between frames, and full-screen mode copies only the rows on screen. In a 200-turn session the median frame went from about 43 ms to about 12 ms.
 - Streaming no longer copies the whole reply several times per token.
 - **Provider events share the reply so far.** `AssistantMessageEvent::partial` is an `Arc<AssistantMessage>`; providers append in place while the agent loop keeps up, instead of copying the whole reply for every token (a 57 KB reply through the faux provider: 22 ms of provider and stream CPU down to 10 ms). The `message_update` JSON of `--mode json` and RPC is byte-identical.
+- **Idle frames skip the walk over the transcript.** A frame in which no component changed no longer visits every message in the transcript. In a 200-turn session the median frame went from about 3.7 ms to about 2.8 ms.
 - **No freeze when a long reply ends.** Drawing a finished reply of about 57 KB took 1.8 s on the UI thread (the Markdown lexer tried each block rule against the rest of the text); it now takes about 50 ms.
 
 ### Changed: install with `npm install -g hoocode` (2026-10-23)

@@ -364,6 +364,7 @@ each, frame build p50 / p99 in ms. The table grows by one row per step; "base" i
 | base (v0.2.1) | 1.03 / 3.16 | 3.29 / 8.58 | 1.00 / 3.58 | 5.50 / 11.12 |
 | 4. Lexer prefilter (stall) | 1.13 / 3.07 | 3.42 / 9.69 | 0.86 / 2.52 | 4.91 / 10.90 |
 | 1. Provider-side partial (`Arc`) | 1.09 / 2.89 | 3.72 / 9.45 | 0.88 / 2.82 | 5.37 / 9.48 |
+| 2. Container skips the stamp walk | 1.11 / 3.42 | 2.69 / 7.55 (rerun 2.88 / 7.62; step 1 rerun 3.70 / 9.04) | 0.97 / 3.66 | 5.00 / 10.53 |
 
 - **Provider-side partial copy (step 1).** `AssistantMessageEvent::*{partial}` is an
   `Arc<AssistantMessage>`. Providers keep their message in a `SharedMessage` (hoocode-ai-types): `share()`
@@ -387,6 +388,28 @@ each, frame build p50 / p99 in ms. The table grows by one row per step; "base" i
   needed and no dependency changed. *Still one copy per delta:* `AgentMessage::Assistant` owns its
   message; sharing it needs `Arc` there (all of agent-core, session and the UI read it) and is the next
   step if the loop copy shows up.
+- **Stamp walk (step 2).** `change_counter()` (hoocode-tui-render) is the number of stamps handed out
+  so far (`fresh_stamp` bumps it; `note_change()` bumps it too). A `Container` remembers
+  (width, render epoch, counter) when a render ends with the counter where it began. If the next
+  render sees the same three, no stamped component has been mutated, every kept entry is current, and
+  the container pushes its kept `Rc<[String]>` per child without calling `is_container` or
+  `render_stamp` on it; children with no entry (a streaming message, a running chain, a nested
+  container) are handled as before. Adding, removing, replacing or swapping children and `invalidate`
+  reset it (`children` is private now: `children()`, `replace_child`, `insert_child`,
+  `swap_children`). Rendering that stamps something (a lazy settle) is not recorded, so the next frame
+  walks.
+  *The soundness gap, and how it is closed.* Two stamps read state they do not own: `PeekOnly` reads
+  the shared radar flag and `MissionHeader` reads `FlightStats`. Writers of those call `note_change()`
+  (the view switch, the three flight-data updates in `mode/transcript.rs`, the layer goldens). Builds with
+  debug assertions still walk every frame when the container would have skipped, and fail with
+  "render cache is stale" if a stamp moved with the counter still: that is how the two writers above
+  were found (`render_stamps` tests). Rule for new stamps: state a `render_stamp` reads must change
+  through a `&mut` method that takes `fresh_stamp()`, or its writer calls `note_change()`.
+  Effect: the skip needs a frame in which nothing is stamped, so it pays on key-only frames and frames
+  between deltas; a streamed delta stamps its message and takes the walk. Median frame of
+  `long-transcript` 3.7 to 2.7-2.9 ms (two runs each), key p50 3.6-3.8 to 2.8-3.0 ms; `stream` has few
+  children and does not move. Inline gains less (5.4 to 5.0 ms): there the frame is dominated by
+  `into_lines` and the diff (step 3).
 - **The 1 to 2 s stall (step 4).** *Found.* It is not tmux or the mock: it happens once per run, on the
   first frame after the turn ends, in all four scenarios (the base runs show `stalls: 1` each, and a 1.5 s
   key p99 on `long-transcript-inline`). `--perf-log` showed one loop iteration over 500 ms with the

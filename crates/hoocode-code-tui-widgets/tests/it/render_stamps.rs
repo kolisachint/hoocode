@@ -19,7 +19,7 @@ use hoocode_code_tui_widgets::trajectory::{LandingLine, MissionHeader};
 use hoocode_code_tui_widgets::AssistantMessageComponent;
 use hoocode_code_tui_widgets::ThinkingDisplay;
 use hoocode_tui_components::{Spacer, Text};
-use hoocode_tui_render::{Component, ComponentHandle, Container};
+use hoocode_tui_render::{note_change, Component, ComponentHandle, Container};
 use serde_json::json;
 
 fn joined(container: &mut Container, width: u16) -> String {
@@ -188,6 +188,8 @@ fn a_mission_header_follows_the_view_and_its_flight_data() {
     assert_eq!(joined(&mut container, 100), one);
     flight.borrow_mut().steps = 4;
     flight.borrow_mut().hits = 2;
+    // Shared data the stamp reads: its writer says so.
+    note_change();
     let two = joined(&mut container, 100);
     assert_ne!(two, one);
     header.borrow_mut().set_view(ToolOutputView::Peek);
@@ -235,7 +237,9 @@ fn a_landing_line_follows_its_counts_and_the_peek_flag() {
     assert_ne!(counted, before);
     // Radar hides the row; flipping the shared flag must show.
     hidden.set(true);
+    note_change();
     assert_eq!(joined(&mut container, 100).trim(), "");
     hidden.set(false);
+    note_change();
     assert_eq!(joined(&mut container, 100), counted);
 }

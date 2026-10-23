@@ -1,7 +1,9 @@
 //! A container keeps the lines of children that report a render stamp, and
 //! draws again only what changed.
 
-use hoocode_tui_render::{fresh_stamp, Component, ComponentHandle, Container, Rendered};
+use hoocode_tui_render::{
+    fresh_stamp, note_change, Component, ComponentHandle, Container, Rendered,
+};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -131,7 +133,7 @@ fn children_swapped_in_place_are_not_confused() {
     let mut container = container();
     container.add_child(handle(&a));
     container.render(10);
-    container.children[0] = handle(&b);
+    container.replace_child(0, handle(&b));
     assert_eq!(container.render(10), vec!["b@10"]);
 }
 
@@ -205,5 +207,152 @@ fn a_stamp_that_misses_a_change_is_caught_in_debug_builds() {
     let mut container = Container::new();
     container.add_child(handle(&liar));
     container.render(10);
+    container.render(10);
+}
+
+// ---- the walk over the stamps is skipped while nothing was stamped ----------
+//
+// These count stamp reads, and the stamp counter is process-wide: they assume a
+// test process of their own (nextest), where no other test stamps meanwhile.
+
+/// A child whose stamp comes from a cell, and which counts stamp reads.
+struct Probe {
+    text: String,
+    stamp: Rc<Cell<u64>>,
+    reads: Rc<Cell<usize>>,
+}
+
+/// The probe, its stamp cell and its stamp-read counter.
+type Probed = (Rc<RefCell<Probe>>, Rc<Cell<u64>>, Rc<Cell<usize>>);
+
+impl Probe {
+    fn new(text: &str) -> Probed {
+        let stamp = Rc::new(Cell::new(fresh_stamp()));
+        let reads = Rc::new(Cell::new(0));
+        let this = Rc::new(RefCell::new(Self {
+            text: text.to_string(),
+            stamp: stamp.clone(),
+            reads: reads.clone(),
+        }));
+        (this, stamp, reads)
+    }
+}
+
+impl Component for Probe {
+    fn render(&mut self, _width: u16) -> Vec<String> {
+        vec![self.text.clone()]
+    }
+
+    fn render_stamp(&self) -> Option<u64> {
+        self.reads.set(self.reads.get() + 1);
+        Some(self.stamp.get())
+    }
+}
+
+#[test]
+fn a_frame_with_nothing_stamped_does_not_read_the_stamps() {
+    let (a, _, a_reads) = Probe::new("a");
+    let (b, _, b_reads) = Probe::new("b");
+    let mut container = container();
+    container.add_child(handle(&a));
+    container.add_child(handle(&b));
+    assert_eq!(container.render(10), vec!["a", "b"]);
+    let after_first = (a_reads.get(), b_reads.get());
+    for _ in 0..5 {
+        assert_eq!(container.render(10), vec!["a", "b"]);
+    }
+    assert_eq!((a_reads.get(), b_reads.get()), after_first);
+}
+
+#[test]
+fn a_stamp_after_skipped_frames_is_seen() {
+    let (a, a_renders) = Stamped::new("a");
+    let (b, b_renders) = Stamped::new("b");
+    let mut container = container();
+    container.add_child(handle(&a));
+    container.add_child(handle(&b));
+    container.render(10);
+    container.render(10);
+    container.render(10);
+    assert_eq!((a_renders.get(), b_renders.get()), (1, 1));
+    b.borrow_mut().set("b2");
+    assert_eq!(container.render(10), vec!["a@10", "b2@10"]);
+    assert_eq!((a_renders.get(), b_renders.get()), (1, 2));
+    // And the frame after that skips again.
+    assert_eq!(container.render(10), vec!["a@10", "b2@10"]);
+    assert_eq!((a_renders.get(), b_renders.get()), (1, 2));
+}
+
+#[test]
+fn a_noted_change_walks_the_stamps_again() {
+    let (a, stamp, reads) = Probe::new("a");
+    let mut container = container();
+    container.add_child(handle(&a));
+    container.render(10);
+    container.render(10);
+    let before = reads.get();
+    // State the stamp reads changed outside any mutator: the writer says so.
+    stamp.set(fresh_stamp());
+    a.borrow_mut().text = "a2".to_string();
+    note_change();
+    assert_eq!(container.render(10), vec!["a2"]);
+    assert!(reads.get() > before);
+}
+
+#[test]
+fn children_without_a_cache_entry_still_draw_on_skipped_frames() {
+    let (a, _, a_reads) = Probe::new("a");
+    let counter = Rc::new(Cell::new(0));
+    let plain = Rc::new(RefCell::new(Plain(counter.clone())));
+    let mut container = container();
+    container.add_child(handle(&a));
+    container.add_child(handle(&plain));
+    container.render(10);
+    container.render(10);
+    let reads = a_reads.get();
+    container.render(10);
+    container.render(10);
+    assert_eq!(a_reads.get(), reads, "the stamped child was not read");
+    assert_eq!(counter.get(), 4, "the plain child drew every frame");
+}
+
+#[test]
+fn adding_a_child_after_a_settled_frame_draws_it() {
+    let (a, _, _) = Probe::new("a");
+    let (b, _, _) = Probe::new("b");
+    let mut container = container();
+    container.add_child(handle(&a));
+    container.render(10);
+    container.render(10);
+    container.add_child(handle(&b));
+    assert_eq!(container.render(10), vec!["a", "b"]);
+    container.remove_child(&handle(&a));
+    assert_eq!(container.render(10), vec!["b"]);
+}
+
+#[test]
+fn a_new_width_after_a_settled_frame_draws() {
+    let (a, renders) = Stamped::new("a");
+    let mut container = container();
+    container.add_child(handle(&a));
+    container.render(10);
+    container.render(10);
+    assert_eq!(container.render(30), vec!["a@30"]);
+    assert_eq!(renders.get(), 2);
+}
+
+/// With the check on (debug builds, tests), a change nobody stamped is an error
+/// even when the frame would have skipped the walk.
+#[test]
+#[should_panic(expected = "render cache is stale")]
+fn the_check_catches_a_change_that_took_no_stamp() {
+    let (a, stamp, _) = Probe::new("a");
+    let mut container = Container::new();
+    container.set_cache_check(true);
+    container.add_child(handle(&a));
+    container.render(10);
+    container.render(10);
+    stamp.set(u64::MAX);
+    a.borrow_mut().text = "a2".to_string();
     container.render(10);
 }

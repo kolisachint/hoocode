@@ -90,7 +90,7 @@ fn swap_halves(
     parked_children: &mut Vec<ComponentHandle>,
 ) {
     std::mem::swap(shown, parked);
-    std::mem::swap(&mut shown.chat.borrow_mut().children, parked_children);
+    shown.chat.borrow_mut().swap_children(parked_children);
 }
 
 /// The run's state as the header and `/agents` word it.
@@ -909,7 +909,7 @@ mod tests {
     /// The chat container's children, each as its rendered text.
     fn labels(chat: &Rc<RefCell<Container>>) -> Vec<String> {
         chat.borrow_mut()
-            .children
+            .children()
             .iter()
             .map(|c| c.borrow_mut().render(40).join("").trim_end().to_string())
             .collect()
