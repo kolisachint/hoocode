@@ -1,11 +1,11 @@
 //! Startup version check and the `hoocode update` command (extras.md, item 1).
 //!
 //! At most once a day the interactive mode asks the npm registry for the latest
-//! `@kolisachint/hoocode`. The request runs on the IO runtime and its result
-//! reaches the TUI over a channel, so startup never waits for the network. The
-//! last check time and the latest version seen are kept in
-//! `<agent dir>/version-check.json`: a newer release is still announced on later
-//! starts without another request.
+//! `hoocode` (the scoped `@kolisachint/hoocode` is the same release). The
+//! request runs on the IO runtime and its result reaches the TUI over a
+//! channel, so startup never waits for the network. The last check time and the
+//! latest version seen are kept in `<agent dir>/version-check.json`: a newer
+//! release is still announced on later starts without another request.
 //!
 //! Print, json and rpc modes never check. `hoocode update` only prints the command
 //! for how hoocode was installed; it never replaces the binary.
@@ -18,12 +18,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 /// The npm registry's `latest` document for the package.
-pub const REGISTRY_LATEST_URL: &str = "https://registry.npmjs.org/@kolisachint/hoocode/latest";
+pub const REGISTRY_LATEST_URL: &str = "https://registry.npmjs.org/hoocode/latest";
 /// The curl installer (`docs/design/distribution.md`, channel 4).
 pub const CURL_UPDATE_COMMAND: &str =
     "curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh";
-pub const NPM_UPDATE_COMMAND: &str = "npm install -g @kolisachint/hoocode@latest";
-pub const BUN_UPDATE_COMMAND: &str = "bun add -g @kolisachint/hoocode@latest";
+pub const NPM_UPDATE_COMMAND: &str = "npm install -g hoocode@latest";
+pub const BUN_UPDATE_COMMAND: &str = "bun add -g hoocode@latest";
 /// One check a day.
 pub const CHECK_INTERVAL_SECS: u64 = 24 * 60 * 60;
 /// The whole request, body included. Errors are silent, so this only bounds the wait.

@@ -34,8 +34,8 @@ and `gh`. Arguments: `$ARGUMENTS`
      - newest tag: `git fetch --tags origin`, `gh release list --limit 1`
      - release assets: `gh release view <tag> --json assets -q '.assets[].name'` —
        expect 4 `.tar.gz` (linux x86_64 + aarch64 musl, macOS x86_64 + aarch64) and `SHA256SUMS`.
-     - npm: `npm view @kolisachint/hoocode version` equals the tag (also the 4
-       `@kolisachint/hoocode-<os>-<cpu>` packages).
+     - npm: `npm view hoocode version` equals the tag (also `npm view @kolisachint/hoocode version`,
+       the alias, and the 4 `@kolisachint/hoocode-<os>-<cpu>` platform packages).
      - curl: `curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh -s -- --dir "$(mktemp -d)" --no-modify-path`
        installs the new version.
      - version bumped: `Release <tag>` commit is on `origin/<base>`.
