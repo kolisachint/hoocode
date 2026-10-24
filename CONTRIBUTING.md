@@ -1,12 +1,56 @@
 # Contributing to hoocode
 
-Thanks for helping. Bug reports, ideas, doc fixes and pull requests are all welcome,
-and you don't need permission before opening a PR.
+Welcome, and thanks for being here.
 
-If you only want to report a bug or suggest something, you can stop here and
-[open an issue](https://github.com/kolisachint/hoocode/issues/new/choose). The
-templates ask for what a maintainer needs and nothing more. Security problems go
-through [SECURITY.md](SECURITY.md), not a public issue.
+Trying hoocode and telling us what breaks is a real contribution.
+You don't need to write any code to help.
+
+- **Found a bug or have an idea?**
+  [Open an issue](https://github.com/kolisachint/hoocode/issues/new/choose).
+  The templates ask for what a maintainer needs and nothing more.
+- **Have a question?** Ask in
+  [Discussions](https://github.com/kolisachint/hoocode/discussions).
+- **Want to send code or docs?** Read on. You don't need permission to open a PR.
+
+Security problems go through [SECURITY.md](SECURITY.md), not a public issue.
+
+## Your first pull request
+
+New to the repo? Here is the whole path.
+
+1. **Fork** the repo on GitHub, or run
+   `gh repo fork kolisachint/hoocode --clone`.
+2. **Create a branch:** `git switch -c fix-short-name`.
+3. **Make your change.** See [Setting up](#setting-up) to build it.
+4. **Run the three checks** (details in [Before you push](#before-you-push)):
+
+   ```bash
+   cargo fmt --all
+   cargo clippy --workspace --all-targets -- -D warnings
+   cargo nextest run -p <each crate you touched>
+   ```
+
+5. **Push** the branch to your fork.
+6. **Open a pull request** against `main`.
+
+Good to know:
+
+- On a first PR, CI waits for a maintainer to approve the run.
+  That is normal. It is not a sign something is wrong.
+- Keep PRs small. One change per PR reviews fastest.
+- For a bigger change, open an issue first so we can agree on the idea.
+- Don't add `rust:*` or `release:*` labels. Those are maintainer-only.
+
+## Good first issues
+
+Looking for a place to start?
+
+- [good first issue](https://github.com/kolisachint/hoocode/labels/good%20first%20issue):
+  small, well-scoped tasks
+- [help wanted](https://github.com/kolisachint/hoocode/labels/help%20wanted):
+  bigger tasks where a hand is welcome
+
+Comment on an issue before you start, so two people don't do the same work.
 
 ## Reporting a bug
 
@@ -22,7 +66,7 @@ A report without exact steps is still worth filing. Say what you saw and how oft
 
 Describe the problem before the solution. Sometimes the answer is a setting that
 already exists, and sometimes the problem points at something better than the feature
-you had in mind. The plan for what gets built next is in
+you had in mind. The maintainer's roadmap is in
 [`docs/design/README.md`](docs/design/README.md); new features are designed there
 first, as a short card, before any code is written.
 
@@ -128,8 +172,7 @@ If you fix a bug, add a test that fails without the fix.
   `python3 scripts/ci/check_dep_firewall.py`; it enforces which crates may depend on
   what.
 - Everything is named `hoocode`: crates `hoocode-*`, data in `~/.hoocode`, environment
-  variables `HOOCODE_*`. `scripts/ci/no_cortex.sh` checks that the project's old name
-  doesn't come back.
+  variables `HOOCODE_*`. `scripts/ci/no_cortex.sh` is a naming check.
 
 ### Keep the maps current
 
@@ -163,10 +206,14 @@ a test.
   it solves and how you checked it.
 - **Big changes: open an issue first.** A new provider, a change to the agent loop or
   a new top-level command is worth a quick discussion before you spend a weekend on it.
-- **Using a coding agent is fine** (this is one). The repo's agent instructions are in
-  [`CLAUDE.md`](CLAUDE.md). You should still be able to explain every line of your PR.
+- **AI-assisted contributions are welcome**, as long as you have reviewed and tested
+  the change yourself. You should be able to explain every line of your PR.
+  (`CLAUDE.md` is the instructions file for coding agents working in this repo.)
 
-## Releases
+## Releases (maintainers only)
+
+You don't need this section to contribute. Contributors shouldn't add the labels
+`rust:patch`, `rust:minor`, `rust:major` or any `release:*` label.
 
 Maintainers release by merging a PR labelled `rust:patch`, `rust:minor` or
 `rust:major`. [`merge-release.yml`](.github/workflows/merge-release.yml) then runs
@@ -193,12 +240,17 @@ To rehearse, run `Release from tag` by hand (Actions → Run workflow, on `main`
 the tag you plan to push and `dry_run` left on. It runs the checks, the gates and the
 four builds (kept as artifacts) and publishes nothing. All crates share one version, set in the workspace `Cargo.toml`.
 
+<details>
+<summary>Re-recording the README demo (maintainers only)</summary>
+
 Before a release, re-record the README demo so it shows the current screens:
 `scripts/demo/record.sh` builds a release binary, runs it in tmux against the scripted
 mock model ([`scripts/demo/demo.json`](scripts/demo/demo.json)), and writes
 `docs/assets/demo.gif`. It needs tmux, ffmpeg, node with Playwright and a Chromium
 (see [`scripts/demo/record.py`](scripts/demo/record.py)). Look at the GIF before you
 commit it.
+
+</details>
 
 ## Code of conduct
 
