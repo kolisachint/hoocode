@@ -67,7 +67,7 @@ jobs:
     outputs:
       tag: ${{ steps.bump.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
