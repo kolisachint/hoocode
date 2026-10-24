@@ -16,10 +16,12 @@ jobs:
   npm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+          # Publish job (NPM_TOKEN): no npm auto-cache.
+          package-manager-cache: false
       - name: Build placeholder
         run: |
           mkdir -p pkg/bin && cd pkg
