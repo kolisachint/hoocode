@@ -14,7 +14,9 @@ The TypeScript build (`hoocode-ts`, `hoo-ts`) was retired on 2026-10-10; hoocode
 
 ## Shipped
 
-Every release made by `release.yml` (a merged PR with a `rust:*` label):
+Every release made by `release.yml` (a merged PR with a `rust:*` label), or by
+`release-tag.yml` (a `vX.Y.Z` tag pushed by hand on a commit of `main` whose
+workspace version matches the tag):
 
 1. **Archives**, built by `binaries.yml`: `hoocode-<rust-target>.tar.gz` for
    `x86_64`/`aarch64` × `apple-darwin`/`unknown-linux-musl`. Linux builds are
