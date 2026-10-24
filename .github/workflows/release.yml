@@ -21,11 +21,19 @@ on:
         description: "Deferred: crates.io publishing is off; this does nothing"
         type: boolean
         default: false
+      expected_sha:
+        description: "Optional: fail unless main HEAD is exactly this commit"
+        type: string
+        default: ""
   workflow_call:
     inputs:
       level:
         required: true
         type: string
+      expected_sha:
+        description: "The PR merge commit; fail unless main HEAD is exactly this"
+        type: string
+        default: ""
       skip_gates:
         type: boolean
         default: false
@@ -33,6 +41,11 @@ on:
         type: boolean
         default: false
 
+# Shared with release-tag.yml (same group name) so the two can never run at once
+# and race on the version or on pushes to main. cancel-in-progress is false, so
+# a running release is never cut short, but GitHub keeps only ONE pending run
+# per group: a third arrival cancels the second. A run shown as "cancelled"
+# while waiting did not release; dispatch it again once the group is free.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -58,6 +71,19 @@ jobs:
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Main is the merged commit
+        # A label-triggered release must ship the PR that was merged. If main
+        # moved on (another merge landed while gates ran or the group was busy),
+        # HEAD would carry unreviewed-by-this-release commits: stop instead.
+        env:
+          EXPECTED: ${{ inputs.expected_sha }}
+        run: |
+          [ -n "$EXPECTED" ] || exit 0
+          head=$(git rev-parse HEAD)
+          if [ "$head" != "$EXPECTED" ]; then
+            echo "::error::main is at $head, but this release was requested for merge commit $EXPECTED. main moved on; nothing was released. Dispatch Release manually (workflow_dispatch) to ship the current main."
+            exit 1
+          fi
       - name: Toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - name: Bump versions
