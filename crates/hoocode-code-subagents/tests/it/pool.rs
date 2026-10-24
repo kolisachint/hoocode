@@ -646,6 +646,9 @@ async fn resume_keeps_the_session_it_continues_from_being_pruned() {
     let dir = setup();
     let cwd = dir.path();
     let p = pool(result_writer(cwd, 0), 1, cwd);
+    // `pool()` queues a startup sweep of old dispatch dirs on the single bg
+    // thread. Let it finish first, or it can delete the aged dirs made below.
+    hoocode_runtime::spawn_bg(async {}).await.unwrap();
     let original = aged_dispatch_dir(cwd, "dispatch-orig", 3 * DAY);
     let session = original.join("session.jsonl");
     std::fs::write(&session, "{\"type\":\"session\"}\n").unwrap();
