@@ -1,12 +1,13 @@
 name: Question
-description: How do I...? Is this supposed to...?
+description: How do I...? Prefer GitHub Discussions for questions; use this if it does not fit there.
 labels: ["question"]
 body:
   - type: markdown
     attributes:
       value: |
-        Questions are welcome here; there is no separate forum. If the answer turns out
-        to be hard to find, that is worth fixing too.
+        Questions are welcome. The best place for them is
+        [Discussions](https://github.com/kolisachint/hoocode/discussions); you can
+        also ask here. If the answer turns out to be hard to find, that is worth fixing too.
 
   - type: textarea
     id: question
