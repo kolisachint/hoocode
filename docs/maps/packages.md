@@ -102,7 +102,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `ai-oauth-openai-codex` | OpenAI Codex (ChatGPT Plus/Pro) OAuth flow for hoocode AI | 1 | 599 / 0 | keep |
 | `ai-provider-anthropic` | Anthropic provider for hoocode AI | 1 | 2770 / 518 | keep |
 | `ai-provider-faux` | Faux / test provider for hoocode AI | 0 | 931 / 816 | test provider (dev-dep only) |
-| `ai-provider-google` | Google Gemini provider for hoocode AI | 2 | 3160 / 110 | keep |
+| `ai-provider-google` | Google Gemini provider for hoocode AI | 2 | 3248 / 110 | keep |
 | `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for hoocode AI | 1 | 1720 / 0 | keep |
 | `ai-provider-openai` | OpenAI provider for hoocode AI | 1 | 3404 / 808 | keep |
 | `ai-provider-openai-codex` | OpenAI Codex (ChatGPT subscription) Responses provider for hoocode AI: SSE and WebSocket transports | 1 | 2556 / 0 | keep |
@@ -121,7 +121,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `agent-core` | Core agent runtime for hoocode agents | 2 | 1977 / 0 | keep |
 | `agent-harness` | Agent harness for hoocode agents | 6 | 3310 / 1042 | keep |
 | `agent-loop` | Agent loop for hoocode agents | 1 | 3065 / 0 | keep |
-| `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 1 | 1860 / 1666 | keep |
+| `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 1 | 1864 / 1666 | keep |
 | `agent-session` | Session trees for hoocode agents: entry format, storage, repositories | 2 | 2409 / 0 | keep |
 | `agent-types` | Shared types for hoocode agents | 21 | 956 / 0 | keep |
 
@@ -154,7 +154,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 10864 / 11187 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1112 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1072 / 125 | keep |
-| `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 3027 / 1463 | keep |
+| `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 3033 / 1463 | keep |
 | `code-tool-search` | CodeSearch for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking | 1 | 1956 / 1185 | keep |
 | `code-tools` | Coding tools for the hoocode coding agent | 4 | 1701 / 0 | keep |
 | `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3352 / 2478 | keep |

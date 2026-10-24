@@ -48,9 +48,9 @@ dependencies = [
 
 [[package]]
 name = "arboard"
-version = "3.6.1"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0348a1c054491f4bfe6ab86a7b6ab1e44e45d899005de92f58b3df180b36ddaf"
+checksum = "aeb9553e62312c8756a5979254fc6d7da8bbeb5986a1e17037fab932f7037917"
 dependencies = [
  "clipboard-win",
  "image",
@@ -62,7 +62,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
  "x11rb",
 ]
 
@@ -102,6 +102,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e"
 dependencies = [
  "aws-lc-sys",
+ "untrusted 0.7.1",
  "zeroize",
 ]
 
@@ -715,6 +716,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fancy-regex"
+version = "0.19.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d301f5bf187b3c295fce6468d3875037a0bccc5f6b151c63cac2f85babf21912"
+dependencies = [
+ "bit-set",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1037,7 +1049,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hoocode-agent-compaction"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "futures-util",
  "hoocode-agent-harness",
@@ -1055,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-core"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-agent-loop",
  "hoocode-agent-types",
@@ -1070,7 +1082,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-harness"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "chrono",
  "futures-util",
@@ -1088,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-loop"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "futures-util",
  "hoocode-agent-types",
@@ -1103,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-mcp"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -1123,7 +1135,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-session"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "chrono",
  "hoocode-agent-types",
@@ -1135,7 +1147,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-types"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-ai-stream",
  "hoocode-ai-types",
@@ -1145,14 +1157,14 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-env"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-home",
 ]
 
 [[package]]
 name = "hoocode-ai-models"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-ai-models-catalog",
  "hoocode-ai-types",
@@ -1162,11 +1174,11 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-models-catalog"
-version = "0.2.15"
+version = "0.2.19"
 
 [[package]]
 name = "hoocode-ai-oauth"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "base64 0.23.1",
  "hoocode-ai-types",
@@ -1182,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-oauth-anthropic"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-ai-oauth",
  "hoocode-ai-types",
@@ -1194,7 +1206,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-oauth-github-copilot"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "futures-util",
  "hoocode-ai-models",
@@ -1208,7 +1220,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-oauth-google"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-ai-oauth",
  "serde_json",
@@ -1218,7 +1230,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-oauth-openai-codex"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "base64 0.23.1",
  "hoocode-ai-oauth",
@@ -1230,7 +1242,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-anthropic"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -1245,7 +1257,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-faux"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "futures-util",
  "hoocode-ai-registry",
@@ -1257,7 +1269,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-google"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -1275,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-google-gemini-cli"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "chrono",
  "futures-util",
@@ -1293,7 +1305,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-openai"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -1309,7 +1321,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-openai-codex"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -1329,7 +1341,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-openai-responses"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -1345,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-registry"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -1367,7 +1379,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-sse"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "eventsource-stream",
  "futures-executor",
@@ -1376,7 +1388,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-stream"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "futures-executor",
  "futures-util",
@@ -1388,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-types"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "serde",
  "serde_json",
@@ -1397,7 +1409,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-util"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "chrono",
  "hoocode-ai-types",
@@ -1413,7 +1425,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-app-server"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "futures-util",
  "hoocode-agent-core",
@@ -1440,7 +1452,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-app-server-protocol"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "serde",
  "serde_json",
@@ -1448,7 +1460,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-agent-session"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "chrono",
  "hoocode-agent-compaction",
@@ -1488,7 +1500,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-auth"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-ai-env",
  "hoocode-ai-oauth",
@@ -1505,7 +1517,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-capabilities"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-code-paths",
  "hoocode-code-plugins",
@@ -1514,7 +1526,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-cli"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1571,7 +1583,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-main"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-code-cli",
  "insta",
@@ -1583,7 +1595,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-mcp"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-code-paths",
  "serde",
@@ -1594,10 +1606,10 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-media"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "base64 0.23.1",
- "fancy-regex",
+ "fancy-regex 0.19.2",
  "hoocode-runtime",
  "hoocode-tui-util",
  "image",
@@ -1606,7 +1618,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-migrate"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-code-auth",
  "hoocode-code-paths",
@@ -1616,7 +1628,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-models"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "glob",
  "hoocode-ai-models",
@@ -1630,7 +1642,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-modes"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-code-agent-session",
  "hoocode-code-paths",
@@ -1641,7 +1653,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-paths"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-home",
  "serde_json",
@@ -1651,7 +1663,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-permissions"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-code-modes",
@@ -1662,7 +1674,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-plugins"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-code-mcp",
  "hoocode-code-paths",
@@ -1675,7 +1687,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-print"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
@@ -1685,7 +1697,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-prompts"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "chrono",
  "hoocode-agent-harness",
@@ -1695,7 +1707,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-resources"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "glob",
  "hoocode-agent-harness",
@@ -1712,7 +1724,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-rpc"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-agent-core",
  "hoocode-agent-harness",
@@ -1736,7 +1748,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-scheduler"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "chrono",
  "hoocode-agent-types",
@@ -1750,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-session"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "chrono",
  "hoocode-agent-session",
@@ -1764,7 +1776,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-settings"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-ai-types",
  "hoocode-code-paths",
@@ -1776,7 +1788,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-subagents"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "chrono",
  "hoocode-agent-types",
@@ -1802,11 +1814,11 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-task-store"
-version = "0.2.15"
+version = "0.2.19"
 
 [[package]]
 name = "hoocode-code-tool-api"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
@@ -1820,7 +1832,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tool-bash"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-agent-harness",
  "hoocode-agent-types",
@@ -1838,7 +1850,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tool-search"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "grep-matcher",
  "grep-regex",
@@ -1858,7 +1870,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tools"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "glob",
  "hoocode-agent-types",
@@ -1882,7 +1894,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tools-fs"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "base64 0.23.1",
  "hoocode-agent-types",
@@ -1903,7 +1915,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tools-optin"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
@@ -1916,7 +1928,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tui-app"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "arboard",
  "chrono",
@@ -1968,7 +1980,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tui-keybindings"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-code-paths",
  "hoocode-code-tui-theme",
@@ -1980,7 +1992,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tui-selectors"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "chrono",
  "hoocode-ai-models",
@@ -2010,7 +2022,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tui-theme"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-code-paths",
  "hoocode-code-session",
@@ -2025,7 +2037,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tui-widgets"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
@@ -2056,7 +2068,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-update"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-ai-util",
  "hoocode-code-paths",
@@ -2069,14 +2081,14 @@ dependencies = [
 
 [[package]]
 name = "hoocode-home"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "dirs",
 ]
 
 [[package]]
 name = "hoocode-models-sync"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "reqwest 0.12.28",
  "serde",
@@ -2085,7 +2097,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-runtime"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "libc",
  "memory-stats",
@@ -2096,7 +2108,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-components"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-home",
  "hoocode-runtime",
@@ -2115,19 +2127,19 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-editing"
-version = "0.2.15"
+version = "0.2.19"
 
 [[package]]
 name = "hoocode-tui-fuzzy"
-version = "0.2.15"
+version = "0.2.19"
 
 [[package]]
 name = "hoocode-tui-glyphs"
-version = "0.2.15"
+version = "0.2.19"
 
 [[package]]
 name = "hoocode-tui-highlight"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-tui-util",
  "serde_json",
@@ -2135,7 +2147,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-images"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "base64 0.23.1",
  "hoocode-tui-util",
@@ -2145,7 +2157,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-keys"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "once_cell",
  "regex",
@@ -2153,7 +2165,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-ratatui"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-code-tui-theme",
  "hoocode-tui-render",
@@ -2164,7 +2176,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-render"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "hoocode-tui-images",
  "hoocode-tui-keys",
@@ -2176,7 +2188,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-terminal"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
  "crossterm",
  "hoocode-runtime",
@@ -2188,9 +2200,9 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-util"
-version = "0.2.15"
+version = "0.2.19"
 dependencies = [
- "fancy-regex",
+ "fancy-regex 0.19.2",
  "unicode-segmentation",
  "unicode-width",
 ]
@@ -2251,13 +2263,12 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.11.1"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27b501faa50e7a26c3d3560ca625132f4078a17771f4810baf70475ae48cbe43"
+checksum = "2c3e324da4c95177d6291d4c8730197c0d1822f8a9766814a4a44fa5ab797c9c"
 dependencies = [
  "atomic-waker",
  "bytes",
- "futures-channel",
  "futures-core",
  "http",
  "http-body",
@@ -2512,9 +2523,9 @@ dependencies = [
 
 [[package]]
 name = "insta"
-version = "1.48.0"
+version = "1.49.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f0f8fee8c926415c58d6ae43a08523a26faccb2323f5e6b644fe7dd4ef6b82"
+checksum = "b67d3d2e287e4b86c10b3f3b641033d1f89b74bdb39d05f34952e2b9a6fe21cd"
 dependencies = [
  "console",
  "once_cell",
@@ -2636,7 +2647,7 @@ dependencies = [
  "base64 0.22.1",
  "bytecount",
  "email_address",
- "fancy-regex",
+ "fancy-regex 0.14.0",
  "fraction",
  "idna",
  "itoa",
@@ -2654,16 +2665,18 @@ dependencies = [
 
 [[package]]
 name = "jsonwebtoken"
-version = "9.3.1"
+version = "10.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a87cc7a48537badeae96744432de36f4be2b4a34a05a5ef32e9dd8a1c169dde"
+checksum = "0529410abe238729a60b108898784df8984c87f6054c9c4fcacc47e4803c1ce1"
 dependencies = [
+ "aws-lc-rs",
  "base64 0.22.1",
+ "getrandom 0.2.17",
  "js-sys",
  "pem",
- "ring",
  "serde",
  "serde_json",
+ "signature",
  "simple_asn1",
 ]
 
@@ -2685,9 +2698,9 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "libc"
-version = "0.2.189"
+version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
+checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "libredox"
@@ -3537,15 +3550,15 @@ dependencies = [
  "cfg-if",
  "getrandom 0.2.17",
  "libc",
- "untrusted",
+ "untrusted 0.9.0",
  "windows-sys 0.52.0",
 ]
 
 [[package]]
 name = "rmcp"
-version = "3.5.1"
+version = "3.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab5023804cbe0304cbe06197ac16e645a0a0d0ffa2953bf735c15c2fa0213350"
+checksum = "ceb42e9e47443cd83a834dea57b5816d35481417bae72ade5dc5615c59122e26"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -3556,6 +3569,7 @@ dependencies = [
  "http-body",
  "http-body-util",
  "indexmap",
+ "libc",
  "oauth2",
  "pastey",
  "pin-project-lite",
@@ -3621,9 +3635,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-native-certs"
-version = "0.8.4"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dab5152771c58876a2146916e53e35057e1a4dfa2b9df0f0305b07f611fdea4d"
+checksum = "4a073f5dc7469f984c52ad2752b63b0807745133b6de880b7b64c1ac4c48aec4"
 dependencies = [
  "openssl-probe",
  "rustls-pki-types",
@@ -3677,7 +3691,7 @@ dependencies = [
  "aws-lc-rs",
  "ring",
  "rustls-pki-types",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -3814,10 +3828,11 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.151"
+version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
+ "foldhash",
  "indexmap",
  "itoa",
  "memchr",
@@ -3925,6 +3940,15 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
+]
+
+[[package]]
+name = "signature"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
+dependencies = [
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -4218,9 +4242,9 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tokio"
-version = "1.53.1"
+version = "1.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "202caea871b69668250d242070849eb495be178ed697a3e98aebce5bc81a0bed"
+checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
  "libc",
@@ -4282,9 +4306,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.19"
+version = "0.7.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "494815d09bf52b5548659851081238f0ca39ff638363907596da739561c62c52"
+checksum = "e464cf451ba96ebfc6f9b6542f17ee8b8956e33f1e40d9690624e59d7a7f8a4b"
 dependencies = [
  "bytes",
  "futures-core",
@@ -4408,9 +4432,9 @@ checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
 
 [[package]]
 name = "unicode-normalization"
-version = "0.1.25"
+version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
 dependencies = [
  "tinyvec",
 ]
@@ -4446,6 +4470,12 @@ checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
+
+[[package]]
+name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
@@ -4477,9 +4507,9 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "uuid"
-version = "1.26.1"
+version = "1.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
+checksum = "7cc1186384beb7dd8eedea376413fd654937285ea6c9cfbb928dc3043ea4b606"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
@@ -4542,9 +4572,9 @@ dependencies = [
 
 [[package]]
 name = "want"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa7760aed19e106de2c7c0b581b509f2f25d3dacaf737cb82ac61bc6d760b0e"
+checksum = "ec4cdd0dd910afe868b7ef477227d8d538b46b3075031afee8a9f2acb0a2ed0b"
 dependencies = [
  "try-lock",
 ]

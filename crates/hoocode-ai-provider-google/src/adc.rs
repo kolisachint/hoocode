@@ -108,8 +108,6 @@ async fn post_token_form(uri: &str, form: &[(&str, &str)]) -> Result<String, Str
 
 /// Service account: an RS256 JWT exchanged for an access token.
 async fn service_account_token(file: &CredentialsFile) -> Result<String, String> {
-    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-
     let (Some(private_key), Some(client_email)) = (&file.private_key, &file.client_email) else {
         return Err("The service account file is missing private_key or client_email".into());
     };
@@ -118,17 +116,7 @@ async fn service_account_token(file: &CredentialsFile) -> Result<String, String>
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or_default();
-    let claims = JwtClaims {
-        iss: client_email.clone(),
-        scope: CLOUD_PLATFORM_SCOPE.to_string(),
-        aud: token_uri.to_string(),
-        exp: now + 3600,
-        iat: now,
-    };
-    let key = EncodingKey::from_rsa_pem(private_key.as_bytes())
-        .map_err(|e| format!("Failed to parse private key: {e}"))?;
-    let jwt = encode(&Header::new(Algorithm::RS256), &claims, &key)
-        .map_err(|e| format!("Failed to create JWT: {e}"))?;
+    let jwt = service_account_jwt(private_key, client_email, token_uri, now)?;
     post_token_form(
         token_uri,
         &[
@@ -137,6 +125,28 @@ async fn service_account_token(file: &CredentialsFile) -> Result<String, String>
         ],
     )
     .await
+}
+
+/// The RS256-signed assertion for the JWT-bearer grant.
+fn service_account_jwt(
+    private_key: &str,
+    client_email: &str,
+    token_uri: &str,
+    now: i64,
+) -> Result<String, String> {
+    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+
+    let claims = JwtClaims {
+        iss: client_email.to_string(),
+        scope: CLOUD_PLATFORM_SCOPE.to_string(),
+        aud: token_uri.to_string(),
+        exp: now + 3600,
+        iat: now,
+    };
+    let key = EncodingKey::from_rsa_pem(private_key.as_bytes())
+        .map_err(|e| format!("Failed to parse private key: {e}"))?;
+    encode(&Header::new(Algorithm::RS256), &claims, &key)
+        .map_err(|e| format!("Failed to create JWT: {e}"))
 }
 
 /// Authorized user (`gcloud auth application-default login`): refresh token.
@@ -181,3 +191,7 @@ async fn metadata_server_token() -> Result<String, String> {
         .map(str::to_string)
         .ok_or_else(|| "No access_token in metadata response".to_string())
 }
+
+#[cfg(test)]
+#[path = "adc_tests.rs"]
+mod tests;
