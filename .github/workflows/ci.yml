@@ -142,7 +142,7 @@ jobs:
       - run: cargo build --locked -p hoocode-code-main
       - name: Subagent evals (fast suite)
         run: scripts/eval/subagent_evals.py --min-success 0.8
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: subagent-evals-report
@@ -169,7 +169,7 @@ jobs:
         run: scripts/eval/subagent_evals.py --matrix
       - name: Soak (10 minutes, randomised faults, leak check)
         run: scripts/eval/subagent_evals.py --soak 600
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: subagent-evals-nightly
