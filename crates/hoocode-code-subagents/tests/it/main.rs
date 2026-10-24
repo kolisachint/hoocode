@@ -14,6 +14,7 @@ mod model_selection;
 mod output_verifier;
 mod pool;
 mod pool_admission;
+mod pool_cancel_starting;
 mod process_pipes;
 mod result;
 mod runner;

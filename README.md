@@ -171,6 +171,8 @@ turns off startup network calls such as the version check.
 
 ## Documentation
 
+- [`docs/user/`](docs/user/): the user docs, published at
+  <https://kolisachint.github.io/hoocode> with each release
 - [`docs/maps/ui.md`](docs/maps/ui.md): the screen, pickers, slash commands and keys,
   and where each lives in the code
 - [`docs/maps/packages.md`](docs/maps/packages.md): every crate in the workspace and
