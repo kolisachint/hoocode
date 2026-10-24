@@ -47,10 +47,10 @@ body:
     attributes:
       label: How did you install it?
       options:
-        - Install script (install.sh)
-        - npm or bun
-        - pip or pipx
-        - Release archive from GitHub
+        - Install script
+        - npm
+        - pip
+        - Binary from GitHub releases
         - Built from source
         - Not sure
     validations:

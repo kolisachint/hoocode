@@ -6,9 +6,17 @@ name: Release from tag
 # release.yml), which bumps the version itself; this one is for a version that
 # was bumped and committed by hand (scripts/bump_versions.py, CONTRIBUTING.md).
 #
+# Rehearsal: run it by hand (workflow_dispatch, dry_run on by default) from
+# main with the tag you intend to push. It runs the checks, the CI gates and the
+# 4 builds (kept as workflow artifacts), and publishes nothing: no GitHub
+# release, no SHA256SUMS, no npm, no PyPI.
+#
 # No double runs:
 # - release.yml pushes its tag with GITHUB_TOKEN, and pushes made with that
-#   token do not start workflows, so its tags never reach this file.
+#   token do not start workflows, so its tags never reach this file. That is an
+#   assumption about the token, not a guarantee: a PAT or GitHub App token would
+#   start this workflow. So `check` also refuses a tag whose commit is the
+#   "Release vX" commit made by github-actions[bot] (what release.yml makes).
 # - A release created by hand in the GitHub UI is built by binaries.yml's own
 #   `release: published` trigger. If the release for the tag already exists when
 #   this workflow gets to it, it leaves the build to that trigger.
@@ -16,9 +24,27 @@ name: Release from tag
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to rehearse or release (vX.Y.Z); run from the commit it will point at"
+        required: true
+        type: string
+      dry_run:
+        description: "Rehearsal: checks, gates and builds only; publish nothing"
+        type: boolean
+        default: true
 
+env:
+  # The tag from the push, or the one typed into the dispatch form.
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+# Real runs share release.yml's group so a tag release and a label release can
+# never race on the version or on main (GitHub keeps one pending run per group;
+# a replaced run shows as cancelled and must be re-run). Rehearsals publish
+# nothing, so they get their own group and never block a release.
 concurrency:
-  group: release-tag-${{ github.ref_name }}
+  group: ${{ inputs.dry_run && format('release-rehearsal-{0}', inputs.tag) || 'release' }}
   cancel-in-progress: false
 
 permissions:
@@ -28,14 +54,21 @@ jobs:
   check:
     # Cheap checks first, so a wrong tag fails in seconds, not after the gates.
     runs-on: ubuntu-latest
+    # Needed so the guard can see draft releases; the job writes nothing.
+    permissions:
+      contents: write
+    outputs:
+      proceed: ${{ steps.guard.outputs.proceed }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Tag matches the workspace version
-        env:
-          TAG: ${{ github.ref_name }}
         run: |
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::Tag '$TAG' is not of the form vX.Y.Z."; exit 1 ;;
+          esac
           version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
           if [ "v$version" != "$TAG" ]; then
             echo "::error::Tag $TAG does not match the workspace version $version in Cargo.toml. Bump it first (scripts/bump_versions.py) and tag that commit."
@@ -45,18 +78,69 @@ jobs:
         run: |
           git fetch -q origin main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::$GITHUB_REF_NAME points at a commit that is not on main. Release from main only."
+            echo "::error::$TAG points at a commit that is not on main. Release from main only."
             exit 1
           fi
+      - name: Tag (if it exists) points at this commit
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          git fetch -q --tags origin
+          if sha=$(git rev-parse -q --verify "refs/tags/$TAG^{commit}"); then
+            if [ "$sha" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag $TAG points at $sha, but this run is on $GITHUB_SHA. Run from the tag's commit."
+              exit 1
+            fi
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "::error::Tag $TAG not found after the push."; exit 1
+          elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$DRY_RUN" != true ]; then
+            echo "::error::Tag $TAG does not exist on the remote. Push the tag first, or run with dry_run=true."; exit 1
+          fi
+      - name: PyPI version is stamped from the tag
+        # build_pypi.py replaces this marker with the tag version; a missing
+        # marker would make it exit late (inside the pypi job, after the
+        # GitHub release already exists).
+        run: grep -q 'version = "0.0.0"' pypi/pyproject.toml || { echo "::error::pypi/pyproject.toml has no 'version = \"0.0.0\"' for build_pypi.py to stamp."; exit 1; }
+      - name: Not a release.yml release; not already released
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          proceed=true
+          author=$(git log -1 --format=%an "$GITHUB_SHA")
+          subject=$(git log -1 --format=%s "$GITHUB_SHA")
+          if [ "$author" = "github-actions[bot]" ] && [ "$subject" = "Release $TAG" ]; then
+            echo "::warning::$TAG is the commit release.yml made; it publishes by itself, so this workflow stands down."
+            proceed=false
+          elif is_draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$is_draft" = true ]; then
+              echo "::warning::A DRAFT release for $TAG exists, so this run stands down and builds nothing. Publish the draft (binaries.yml then builds it) or delete it, then re-run."
+            else
+              echo "::warning::A GitHub release for $TAG already exists; nothing to do here."
+            fi
+            proceed=false
+          fi
+          # A rehearsal publishes nothing, so it carries on and reports the guard only.
+          if [ "$proceed" = false ] && [ "$DRY_RUN" = true ]; then
+            echo "::notice::Rehearsal: a real run would stop here."
+            proceed=true
+          fi
+          echo "proceed=$proceed" >> "$GITHUB_OUTPUT"
 
   gates:
     needs: check
+    if: needs.check.outputs.proceed == 'true'
     uses: ./.github/workflows/ci.yml
+    # ci.yml's own permissions are contents: read at workflow level and no job
+    # asks for more, so this is exactly enough (a caller must grant >= callee).
     permissions:
       contents: read
 
   release:
-    needs: gates
+    needs: [check, gates]
+    if: needs.check.outputs.proceed == 'true' && !inputs.dry_run
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -69,7 +153,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::notice::Release $TAG already exists (made by hand); binaries.yml's release trigger builds it."
@@ -84,7 +167,23 @@ jobs:
     if: needs.release.outputs.build == 'true'
     uses: ./.github/workflows/binaries.yml
     with:
-      tag: ${{ github.ref_name }}
+      tag: ${{ inputs.tag || github.ref_name }}
+    permissions:
+      contents: write
+      id-token: write
+    secrets: inherit
+
+  rehearsal-builds:
+    # Dry run: build all 4 targets from this commit (the tag may not exist yet)
+    # and keep them as artifacts. upload: false skips the release upload,
+    # SHA256SUMS, npm and PyPI.
+    needs: [check, gates]
+    if: needs.check.outputs.proceed == 'true' && inputs.dry_run
+    uses: ./.github/workflows/binaries.yml
+    with:
+      tag: ${{ inputs.tag }}
+      ref: ${{ github.sha }}
+      upload: false
     permissions:
       contents: write
       id-token: write

@@ -34,6 +34,8 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       level: ${{ needs.level.outputs.level }}
+      # release.yml fails if main HEAD is not this commit (main moved on).
+      expected_sha: ${{ github.event.pull_request.merge_commit_sha }}
       # Gates (ci.yml, re-run) are skipped by default: the PR's CI already ran.
       # Add label release:run-gates to re-run them. Manual dispatch of
       # release.yml runs them (its skip_gates input defaults to false).

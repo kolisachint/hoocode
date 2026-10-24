@@ -7,10 +7,9 @@ issue.
 
 ## How to report
 
-Use GitHub's private vulnerability reporting: open the
-[Security tab](https://github.com/kolisachint/hoocode/security) and choose
-**Report a vulnerability**. Only the maintainers see the report. If that option is not
-there, send a direct message to [@kolisachint on X](https://x.com/kolisachint) asking
+Use GitHub's private vulnerability reporting: use
+[Report a vulnerability](https://github.com/kolisachint/hoocode/security/advisories/new).
+Only the maintainers see the report. If that link does not work for you, send a direct message to [@kolisachint on X](https://x.com/kolisachint) asking
 for a private channel, without the details.
 
 Please include:
