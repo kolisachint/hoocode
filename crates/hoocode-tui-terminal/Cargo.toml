@@ -17,7 +17,7 @@ publish = true
 doctest = false
 
 [dependencies]
-crossterm = "0.28"
+crossterm = "0.29"
 hoocode-runtime = { workspace = true }
 hoocode-tui-util = { workspace = true }
 hoocode-tui-keys = { workspace = true }
