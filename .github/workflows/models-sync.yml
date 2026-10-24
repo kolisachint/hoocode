@@ -45,7 +45,7 @@ jobs:
         # without checks. Set GH_TOKEN to a fine-grained PAT with contents and
         # pull-requests write access to get CI on the PR. Without it, the PR is
         # still opened, but it needs a manual push or re-run.
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           branch: bot/models-sync
