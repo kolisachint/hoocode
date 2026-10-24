@@ -54,6 +54,9 @@ jobs:
   check:
     # Cheap checks first, so a wrong tag fails in seconds, not after the gates.
     runs-on: ubuntu-latest
+    # Needed so the guard can see draft releases; the job writes nothing.
+    permissions:
+      contents: write
     outputs:
       proceed: ${{ steps.guard.outputs.proceed }}
     steps:
@@ -79,6 +82,8 @@ jobs:
             exit 1
           fi
       - name: Tag (if it exists) points at this commit
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           git fetch -q --tags origin
           if sha=$(git rev-parse -q --verify "refs/tags/$TAG^{commit}"); then
@@ -88,6 +93,8 @@ jobs:
             fi
           elif [ "$GITHUB_EVENT_NAME" = push ]; then
             echo "::error::Tag $TAG not found after the push."; exit 1
+          elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$DRY_RUN" != true ]; then
+            echo "::error::Tag $TAG does not exist on the remote. Push the tag first, or run with dry_run=true."; exit 1
           fi
       - name: PyPI version is stamped from the tag
         # build_pypi.py replaces this marker with the tag version; a missing
@@ -107,8 +114,12 @@ jobs:
           if [ "$author" = "github-actions[bot]" ] && [ "$subject" = "Release $TAG" ]; then
             echo "::warning::$TAG is the commit release.yml made; it publishes by itself, so this workflow stands down."
             proceed=false
-          elif gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::warning::A GitHub release for $TAG already exists; nothing to do here."
+          elif is_draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$is_draft" = true ]; then
+              echo "::warning::A DRAFT release for $TAG exists, so this run stands down and builds nothing. Publish the draft (binaries.yml then builds it) or delete it, then re-run."
+            else
+              echo "::warning::A GitHub release for $TAG already exists; nothing to do here."
+            fi
             proceed=false
           fi
           # A rehearsal publishes nothing, so it carries on and reports the guard only.
