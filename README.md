@@ -171,18 +171,30 @@ turns off startup network calls such as the version check.
 
 ## Documentation
 
+- [`docs/user/`](docs/user/): the user docs, published at
+  <https://kolisachint.github.io/hoocode> with each release
 - [`docs/maps/ui.md`](docs/maps/ui.md): the screen, pickers, slash commands and keys,
   and where each lives in the code
 - [`docs/maps/packages.md`](docs/maps/packages.md): every crate in the workspace and
   what it does
-- [`docs/design/`](docs/design/README.md): design notes and the plan for what is built next
+- [`docs/design/`](docs/design/README.md): design notes and the roadmap
 - [`docs/design/distribution.md`](docs/design/distribution.md): how releases reach users
 - [`CHANGELOG.md`](CHANGELOG.md): what changed (also `/changelog` inside hoocode)
 
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome. Start with
-[CONTRIBUTING.md](CONTRIBUTING.md): it covers the dev loop (fmt, clippy, nextest),
+### Try it and tell us
+
+The most useful thing you can do is try hoocode and tell us how it went.
+
+- **Bug or idea?**
+  [Open an issue](https://github.com/kolisachint/hoocode/issues/new/choose).
+- **Question?** Ask in [Discussions](https://github.com/kolisachint/hoocode/discussions).
+- **Want to send a PR?** Pull requests are welcome. Start with
+  [Your first pull request](CONTRIBUTING.md#your-first-pull-request) and the
+  [good first issues](https://github.com/kolisachint/hoocode/labels/good%20first%20issue).
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the dev loop (fmt, clippy, nextest),
 where tests go and how releases work. Please read the
 [code of conduct](CODE_OF_CONDUCT.md), and report security problems privately as
 described in [SECURITY.md](SECURITY.md).

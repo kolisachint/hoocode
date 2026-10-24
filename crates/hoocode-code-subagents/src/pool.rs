@@ -48,7 +48,7 @@ use crate::limits::{SubagentLimitSettings, SubagentLimits};
 use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
 use crate::output_verifier::OutputVerifier;
 use crate::result::write_file_atomic;
-use crate::runner::{ProcessRunner, RunSpec, Runner};
+use crate::runner::{ProcessRunner, RunSpec, Runner, RunnerHandle};
 use crate::token_budget::{TokenBudget, TokenBudgetOptions};
 
 /// Provider/model failures where retrying with the parent's model can recover.
@@ -800,7 +800,8 @@ impl SubagentPool {
         }
     }
 
-    /// Cancel on the user's behalf. A queued task settles at once; a running
+    /// Cancel on the user's behalf. A queued task settles at once; a task still
+    /// starting settles as soon as its spawn returns; a running
     /// task's process tree is killed and it settles `cancelled` on exit
     /// (unless it already wrote a valid result.json). False for unknown ids.
     pub fn cancel(&self, task_id: &str) -> bool {
@@ -821,6 +822,15 @@ impl SubagentPool {
             self.inner
                 .record_attempt(&task, &result, 0, 0, 0, None, false);
             self.inner.resolve_waiter(task_id, result);
+            return true;
+        }
+        if state.starting.contains(task_id) {
+            // Between admission and the child existing there is nothing to
+            // kill yet: leave the flag for `start_task`, which checks it before
+            // and after the spawn and settles the task there, once.
+            state
+                .kill_reasons
+                .insert(task_id.to_string(), KillReason::Cancelled);
             return true;
         }
         let Some(pid) = state.slots.get(task_id).map(|s| s.pid) else {
@@ -1530,8 +1540,47 @@ impl PoolInner {
         budget
     }
 
+    /// Consume a cancel recorded for a task that is still `starting`.
+    fn take_starting_cancel(&self, task_id: &str) -> bool {
+        let mut state = self.state();
+        state.starting.contains(task_id)
+            && matches!(state.kill_reasons.get(task_id), Some(KillReason::Cancelled))
+            && state.kill_reasons.remove(task_id).is_some()
+    }
+
+    /// Settle a cancelled task that never reached a slot: kill its child if
+    /// one was spawned, release the `starting` count, then let the queue move.
+    fn settle_cancelled_starting(
+        self: &Arc<Self>,
+        task: &SubagentPoolTask,
+        handle: Option<Box<dyn RunnerHandle>>,
+    ) {
+        let task_id = task.task_id.as_str();
+        if let Some(mut handle) = handle {
+            handle.kill();
+        }
+        let result = SubagentResult {
+            task_id: task_id.to_string(),
+            error: Some("cancelled before start".into()),
+            status: Some(ResultStatus::Cancelled),
+            ..Default::default()
+        };
+        self.emit("task_cancelled", json!({"task_id": task_id}));
+        self.record_attempt(task, &result, 0, 0, 0, None, false);
+        self.resolve_waiter(task_id, result);
+        {
+            let mut state = self.state();
+            state.starting.remove(task_id);
+            state.budgets.remove(task_id);
+        }
+        self.pull();
+    }
+
     /// Start a task in a child process (one retry on a spawn failure).
     fn start_task(self: &Arc<Self>, task: SubagentPoolTask, is_retry: bool) {
+        if self.take_starting_cancel(&task.task_id) {
+            return self.settle_cancelled_starting(&task, None);
+        }
         let budget = self.budget_for(&task);
         let spec = self.run_spec(&task);
         let mut handle = match self.runner.spawn(spec) {
@@ -1559,6 +1608,11 @@ impl PoolInner {
                 return;
             }
         };
+        // A cancel that arrived while the spawn was running: the child exists
+        // now, so end it and settle without ever entering a slot.
+        if self.take_starting_cancel(&task.task_id) {
+            return self.settle_cancelled_starting(&task, Some(handle));
+        }
         let pid = handle.pid();
         let spawned_at = now_ms();
         // The sweep decides a dispatch dir is dead by reading this file. It has

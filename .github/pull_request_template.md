@@ -23,8 +23,9 @@ will say so:
 
   - One change per PR reviews much faster than two.
   - Don't bump versions; the release workflow does that.
+  - Don't add release labels (`rust:*`, `release:*`). Maintainers do that.
   - Only copy code from MIT-licensed sources.
   - Integration tests go in crates/<crate>/tests/it/<name>.rs.
 
-Full guide: CONTRIBUTING.md
+Full guide: https://github.com/kolisachint/hoocode/blob/main/CONTRIBUTING.md
 -->

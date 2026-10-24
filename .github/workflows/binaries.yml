@@ -13,6 +13,10 @@ on:
         description: "Attach the archives to the release named by tag"
         type: boolean
         default: true
+      ref:
+        description: "Commit to build instead of the tag (rehearsals before the tag exists)"
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       tag:
@@ -51,9 +55,9 @@ jobs:
           # No Windows build: it was the slowest leg of every release.
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ inputs.ref || env.TAG }}
 
       - name: Toolchain (rust-toolchain.toml)
         shell: bash
@@ -101,6 +105,8 @@ jobs:
           name="hoocode-$TARGET"
           mkdir -p "dist/$name"
           cp README.md LICENSE "dist/$name/"
+          # Tags older than NOTICE have none.
+          if [ -f NOTICE ]; then cp NOTICE "dist/$name/"; fi
           cp "target/$TARGET/release/hoocode" "dist/$name/hoocode"
           chmod +x "dist/$name/hoocode"
           tar czf "dist/$name.tar.gz" -C dist "$name"
@@ -116,7 +122,7 @@ jobs:
 
       - name: Upload artifact
         if: github.event_name != 'release' && !inputs.upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: hoocode-${{ matrix.target }}
           path: ${{ steps.pkg.outputs.file }}
@@ -141,18 +147,19 @@ jobs:
 
   npm:
     # @kolisachint/hoocode + one package per platform, built from the archives
-    # just uploaded. Only for releases that uploaded (not artifact-only runs).
-    needs: build
-    if: ${{ !cancelled() && needs.build.result == 'success' && (github.event_name == 'release' || inputs.upload) }}
+    # just uploaded. Only for releases that uploaded (not artifact-only runs),
+    # and only once SHA256SUMS is on the release.
+    needs: [build, checksums]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.checksums.result == 'success' && (github.event_name == 'release' || inputs.upload) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write # npm provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
@@ -179,17 +186,17 @@ jobs:
     # holds only the launcher, so no archives are downloaded here). Only for
     # releases that uploaded, and after build so the release attachments the
     # launcher fetches exist. Called with secrets: inherit from release.yml,
-    # so PYPI_TOKEN / PYPI_API_TOKEN is available.
-    needs: build
-    if: ${{ !cancelled() && needs.build.result == 'success' && (github.event_name == 'release' || inputs.upload) }}
+    # so PYPI_TOKEN / PYPI_API_TOKEN is available. Waits for SHA256SUMS too.
+    needs: [build, checksums]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.checksums.result == 'success' && (github.event_name == 'release' || inputs.upload) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Build wheel

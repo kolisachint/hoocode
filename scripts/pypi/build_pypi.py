@@ -41,6 +41,8 @@ def build(version: str, out: Path) -> None:
         stage = Path(tmp) / "pkg"
         shutil.copytree(SRC, stage)
         shutil.copy(ROOT / "LICENSE", stage / "LICENSE")
+        if (ROOT / "NOTICE").exists():  # tags older than NOTICE have none
+            shutil.copy(ROOT / "NOTICE", stage / "NOTICE")
         text = (stage / "pyproject.toml").read_text()
         if VERSION_MARKER not in text:
             sys.exit(f"{SRC}/pyproject.toml has no {VERSION_MARKER!r} to stamp")
