@@ -27,7 +27,7 @@ jobs:
         run: python3 scripts/tui/goldens.py check "${{ inputs.scenario || 'all' }}"
       - name: Upload screens on failure
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: tui-goldens
           path: target/tui-goldens/
