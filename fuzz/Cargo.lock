@@ -62,6 +62,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faac5829c2b74c28f830747e7818ccfb684261b5f48a1118b1e2a13d36dfab13"
 dependencies = [
  "aws-lc-sys",
+ "untrusted 0.7.1",
  "zeroize",
 ]
 
@@ -118,6 +119,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
 dependencies = [
  "generic-array",
+]
+
+[[package]]
+name = "block-buffer"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
+dependencies = [
+ "hybrid-array",
 ]
 
 [[package]]
@@ -228,6 +238,12 @@ dependencies = [
  "bytes",
  "memchr",
 ]
+
+[[package]]
+name = "const-oid"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "convert_case"
@@ -350,6 +366,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto-common"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -389,8 +414,19 @@ version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
- "block-buffer",
- "crypto-common",
+ "block-buffer 0.10.4",
+ "crypto-common 0.1.7",
+]
+
+[[package]]
+name = "digest"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
+dependencies = [
+ "block-buffer 0.12.1",
+ "const-oid",
+ "crypto-common 0.2.2",
 ]
 
 [[package]]
@@ -661,18 +697,6 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
-dependencies = [
- "cfg-if",
- "libc",
- "r-efi 5.3.0",
- "wasip2",
-]
-
-[[package]]
-name = "getrandom"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
@@ -680,7 +704,7 @@ dependencies = [
  "cfg-if",
  "js-sys",
  "libc",
- "r-efi 6.0.0",
+ "r-efi",
  "rand_core 0.10.1",
  "wasm-bindgen",
 ]
@@ -759,7 +783,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hoocode-agent-compaction"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "futures-util",
  "hoocode-agent-harness",
@@ -773,7 +797,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-core"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-agent-loop",
  "hoocode-agent-types",
@@ -786,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-harness"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "chrono",
  "futures-util",
@@ -804,7 +828,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-loop"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "futures-util",
  "hoocode-agent-types",
@@ -819,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-mcp"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "async-trait",
  "http",
@@ -832,7 +856,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-session"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "chrono",
  "hoocode-agent-types",
@@ -844,7 +868,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-agent-types"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-ai-stream",
  "hoocode-ai-types",
@@ -854,14 +878,14 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-env"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-home",
 ]
 
 [[package]]
 name = "hoocode-ai-models"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-ai-models-catalog",
  "hoocode-ai-types",
@@ -871,11 +895,11 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-models-catalog"
-version = "0.2.13"
+version = "0.2.20"
 
 [[package]]
 name = "hoocode-ai-oauth"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "base64 0.23.1",
  "hoocode-ai-types",
@@ -891,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-anthropic"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -906,7 +930,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-google"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -924,7 +948,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-google-gemini-cli"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "chrono",
  "futures-util",
@@ -942,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-openai"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -958,7 +982,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-openai-codex"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -978,7 +1002,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-provider-openai-responses"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "futures-util",
  "hoocode-ai-env",
@@ -994,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-registry"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-ai-provider-anthropic",
  "hoocode-ai-provider-google",
@@ -1008,7 +1032,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-sse"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "eventsource-stream",
  "futures-util",
@@ -1016,7 +1040,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-stream"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "futures-executor",
  "futures-util",
@@ -1027,7 +1051,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-types"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "serde",
  "serde_json",
@@ -1036,7 +1060,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-ai-util"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "chrono",
  "hoocode-ai-types",
@@ -1051,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-agent-session"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "chrono",
  "hoocode-agent-compaction",
@@ -1089,7 +1113,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-auth"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-ai-env",
  "hoocode-ai-oauth",
@@ -1105,7 +1129,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-capabilities"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-code-paths",
  "hoocode-code-plugins",
@@ -1114,7 +1138,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-mcp"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-code-paths",
  "serde",
@@ -1125,7 +1149,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-media"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "base64 0.23.1",
  "fancy-regex",
@@ -1137,7 +1161,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-models"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "glob",
  "hoocode-ai-models",
@@ -1150,7 +1174,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-paths"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-home",
  "url",
@@ -1158,7 +1182,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-plugins"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-code-mcp",
  "hoocode-code-paths",
@@ -1169,7 +1193,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-prompts"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "chrono",
  "hoocode-agent-harness",
@@ -1179,7 +1203,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-resources"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "glob",
  "hoocode-agent-harness",
@@ -1195,7 +1219,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-rpc"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-ai-types",
  "hoocode-code-agent-session",
@@ -1209,7 +1233,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-session"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "chrono",
  "hoocode-agent-session",
@@ -1223,7 +1247,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-settings"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-ai-types",
  "hoocode-code-paths",
@@ -1235,11 +1259,11 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-task-store"
-version = "0.2.13"
+version = "0.2.20"
 
 [[package]]
 name = "hoocode-code-tool-api"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
@@ -1253,7 +1277,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tool-bash"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-agent-harness",
  "hoocode-agent-types",
@@ -1271,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tool-search"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "grep-matcher",
  "grep-regex",
@@ -1291,7 +1315,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tools"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "glob",
  "hoocode-agent-types",
@@ -1314,7 +1338,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-code-tools-fs"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "base64 0.23.1",
  "hoocode-agent-types",
@@ -1353,14 +1377,14 @@ dependencies = [
 
 [[package]]
 name = "hoocode-home"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "dirs",
 ]
 
 [[package]]
 name = "hoocode-runtime"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "libc",
  "memory-stats",
@@ -1371,7 +1395,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-components"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-home",
  "hoocode-runtime",
@@ -1387,15 +1411,15 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-editing"
-version = "0.2.13"
+version = "0.2.20"
 
 [[package]]
 name = "hoocode-tui-fuzzy"
-version = "0.2.13"
+version = "0.2.20"
 
 [[package]]
 name = "hoocode-tui-images"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "base64 0.23.1",
  "hoocode-tui-util",
@@ -1405,7 +1429,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-keys"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "once_cell",
  "regex",
@@ -1413,7 +1437,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-render"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "hoocode-tui-images",
  "hoocode-tui-keys",
@@ -1423,7 +1447,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-terminal"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "crossterm",
  "hoocode-runtime",
@@ -1435,7 +1459,7 @@ dependencies = [
 
 [[package]]
 name = "hoocode-tui-util"
-version = "0.2.13"
+version = "0.2.20"
 dependencies = [
  "fancy-regex",
  "unicode-segmentation",
@@ -1480,6 +1504,15 @@ name = "httparse"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
+
+[[package]]
+name = "hybrid-array"
+version = "0.4.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17"
+dependencies = [
+ "typenum",
+]
 
 [[package]]
 name = "hyper"
@@ -1808,17 +1841,20 @@ dependencies = [
 
 [[package]]
 name = "jsonwebtoken"
-version = "9.3.1"
+version = "10.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a87cc7a48537badeae96744432de36f4be2b4a34a05a5ef32e9dd8a1c169dde"
+checksum = "eba32bfb4ffdeaca3e34431072faf01745c9b26d25504aa7a6cf5684334fc4fc"
 dependencies = [
+ "aws-lc-rs",
  "base64 0.22.1",
+ "getrandom 0.2.17",
  "js-sys",
  "pem",
- "ring",
  "serde",
  "serde_json",
+ "signature",
  "simple_asn1",
+ "zeroize",
 ]
 
 [[package]]
@@ -2247,12 +2283,6 @@ dependencies = [
 
 [[package]]
 name = "r-efi"
-version = "5.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
-
-[[package]]
-name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
@@ -2264,18 +2294,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
 dependencies = [
  "libc",
- "rand_chacha 0.3.1",
+ "rand_chacha",
  "rand_core 0.6.4",
-]
-
-[[package]]
-name = "rand"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
-dependencies = [
- "rand_chacha 0.9.0",
- "rand_core 0.9.5",
 ]
 
 [[package]]
@@ -2300,31 +2320,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand_chacha"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb"
-dependencies = [
- "ppv-lite86",
- "rand_core 0.9.5",
-]
-
-[[package]]
 name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom 0.2.17",
-]
-
-[[package]]
-name = "rand_core"
-version = "0.9.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
-dependencies = [
- "getrandom 0.3.4",
 ]
 
 [[package]]
@@ -2488,7 +2489,7 @@ dependencies = [
  "cfg-if",
  "getrandom 0.2.17",
  "libc",
- "untrusted",
+ "untrusted 0.9.0",
  "windows-sys 0.52.0",
 ]
 
@@ -2621,7 +2622,7 @@ dependencies = [
  "aws-lc-rs",
  "ring",
  "rustls-pki-types",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -2771,13 +2772,13 @@ dependencies = [
 
 [[package]]
 name = "sha1"
-version = "0.10.7"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
 dependencies = [
  "cfg-if",
- "cpufeatures 0.2.17",
- "digest",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -2794,7 +2795,7 @@ checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
- "digest",
+ "digest 0.10.7",
 ]
 
 [[package]]
@@ -2832,6 +2833,15 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
+]
+
+[[package]]
+name = "signature"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
+dependencies = [
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -3120,9 +3130,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.26.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a9daff607c6d2bf6c16fd681ccb7eecc83e4e2cdc1ca067ffaadfca5de7f084"
+checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
 dependencies = [
  "futures-util",
  "log",
@@ -3232,21 +3242,20 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tungstenite"
-version = "0.26.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4793cb5e56680ecbb1d843515b23b6de9a75eb04b66643e256a396d43be33c13"
+checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
 dependencies = [
  "bytes",
  "data-encoding",
  "http",
  "httparse",
  "log",
- "rand 0.9.5",
+ "rand 0.10.3",
  "rustls",
  "rustls-pki-types",
  "sha1",
  "thiserror 2.0.21",
- "utf-8",
 ]
 
 [[package]]
@@ -3290,6 +3299,12 @@ checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
+
+[[package]]
+name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
@@ -3312,12 +3327,6 @@ name = "urlencoding"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
-
-[[package]]
-name = "utf-8"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8_iter"
@@ -3366,15 +3375,6 @@ name = "wasi"
 version = "0.11.1+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
-
-[[package]]
-name = "wasip2"
-version = "1.0.4+wasi-0.2.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487"
-dependencies = [
- "wit-bindgen",
-]
 
 [[package]]
 name = "wasm-bindgen"
@@ -3810,12 +3810,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
-name = "wit-bindgen"
-version = "0.57.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
-
-[[package]]
 name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3890,6 +3884,20 @@ name = "zeroize"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13084392c5e4bc371903e2935a5eaeed24905a7511356b883835e18a78f6879"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "zerotrie"
