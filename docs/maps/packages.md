@@ -175,7 +175,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 10263 / 7531 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 10319 / 7579 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 303 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 365 / 0 | keep |
 | `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 92 / 0 | keep |

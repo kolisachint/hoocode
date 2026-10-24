@@ -251,7 +251,17 @@ struct State {
     top: bool,
 }
 
+/// Deepest block (blockquote/list) or inline (emphasis/link/strike) nesting
+/// the lexer follows. Deeper markers stay literal text. Stack: 32 levels (block
+/// plus inline) already fit a 2 MB thread, so 16 leaves a wide margin. Time:
+/// render re-wraps every line at each quote level, so cost grows with depth
+/// squared times the text, and 16 keeps 20 KB of `> ` near 2 s even in debug.
+/// Real text rarely nests past 5; markdown-it allows 100.
+pub(crate) const MAX_NESTING: usize = 16;
+
 struct Lexer {
+    depth: usize,
+    inline_depth: usize,
     state: State,
     links: Vec<(String, LinkDef)>,
     inline_queue: Vec<(String, usize)>,
@@ -261,6 +271,8 @@ struct Lexer {
 impl Default for Lexer {
     fn default() -> Self {
         Self {
+            depth: 0,
+            inline_depth: 0,
             state: State {
                 in_link: false,
                 in_raw_block: false,
@@ -509,6 +521,17 @@ impl Lexer {
     }
 
     fn blockquote(&mut self, src: &str) -> Option<Token> {
+        if self.depth >= MAX_NESTING {
+            let cap = RULES.block.blockquote.exec(src)?;
+            return Some(self.literal_block(cap.whole()));
+        }
+        self.depth += 1;
+        let token = self.blockquote_inner(src);
+        self.depth -= 1;
+        token
+    }
+
+    fn blockquote_inner(&mut self, src: &str) -> Option<Token> {
         let cap = RULES.block.blockquote.exec(src)?;
         let mut lines: Vec<String> = rtrim(cap.whole(), '\n', false)
             .split('\n')
@@ -566,7 +589,9 @@ impl Lexer {
                     let old_raw = last.raw.clone();
                     let old_text = last.text().to_string();
                     let new_text = format!("{old_raw}\n{}", lines.join("\n"));
-                    let new_token = self.blockquote(&new_text).unwrap();
+                    let Some(new_token) = self.blockquote(&new_text) else {
+                        break;
+                    };
                     raw = format!("{}{}", cut_end(&raw, old_raw.len()), new_token.raw);
                     text = format!("{}{}", cut_end(&text, old_text.len()), new_token.text());
                     *tokens.last_mut().unwrap() = new_token;
@@ -575,7 +600,9 @@ impl Lexer {
                 TokenType::List => {
                     let old_raw = last.raw.clone();
                     let new_text = format!("{old_raw}\n{}", lines.join("\n"));
-                    let new_token = self.list(&new_text).unwrap();
+                    let Some(new_token) = self.list(&new_text) else {
+                        break;
+                    };
                     raw = format!("{}{}", cut_end(&raw, old_raw.len()), new_token.raw);
                     text = format!("{}{}", cut_end(&text, old_raw.len()), new_token.raw);
                     lines =
@@ -597,6 +624,17 @@ impl Lexer {
     }
 
     fn list(&mut self, src: &str) -> Option<Token> {
+        if self.depth >= MAX_NESTING {
+            let cap = RULES.block.list.exec(src)?;
+            return Some(self.literal_block(cap.whole()));
+        }
+        self.depth += 1;
+        let token = self.list_inner(src);
+        self.depth -= 1;
+        token
+    }
+
+    fn list_inner(&mut self, src: &str) -> Option<Token> {
         let cap = RULES.block.list.exec(src)?;
         let mut src = src.to_string();
         let bull = js_trim(cap.get(1).unwrap()).to_string();
@@ -897,6 +935,14 @@ impl Lexer {
         let mut t = Token::new(TokenType::Paragraph, cap.whole()).with_text(text);
         t.slot = Some(self.queue_inline(text));
         Some(t)
+    }
+
+    /// Past `MAX_NESTING`: keep the block's markers as literal paragraph text.
+    fn literal_block(&mut self, raw: &str) -> Token {
+        let text = raw.trim_end_matches('\n');
+        let mut t = Token::new(TokenType::Paragraph, raw).with_text(text);
+        t.slot = Some(self.queue_inline(text));
+        t
     }
 
     fn block_text(&mut self, src: &str) -> Option<Token> {
@@ -1335,6 +1381,16 @@ impl Lexer {
     }
 
     fn inline_tokens(&mut self, src: &str) -> Vec<Token> {
+        if self.inline_depth >= MAX_NESTING {
+            return vec![Token::new(TokenType::Text, src).with_text(src)];
+        }
+        self.inline_depth += 1;
+        let tokens = self.inline_tokens_inner(src);
+        self.inline_depth -= 1;
+        tokens
+    }
+
+    fn inline_tokens_inner(&mut self, src: &str) -> Vec<Token> {
         let mut tokens: Vec<Token> = Vec::new();
         let mut masked = src.to_string();
         if !self.links.is_empty() {
