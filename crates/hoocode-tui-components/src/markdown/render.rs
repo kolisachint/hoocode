@@ -235,7 +235,12 @@ impl Renderer<'_> {
                         quote_style(&line.replace("\x1b[0m", &format!("\x1b[0m{quote_prefix}")))
                     }
                 };
-                let quote_width = width.saturating_sub(2).max(1);
+                // Below 3 columns there is no room for the "│ " border plus one
+                // content column. Drop the border there: otherwise every nested
+                // level re-wraps the lines of the level below (its borders alone
+                // overflow), and the line count doubles per `>`.
+                let bordered = width >= 3;
+                let quote_width = if bordered { width - 2 } else { width.max(1) };
                 let quote_ctx = StyleContext {
                     apply: ApplyText::Identity,
                     prefix: quote_prefix.clone(),
@@ -257,7 +262,11 @@ impl Renderer<'_> {
                 for line in &rendered {
                     let styled = apply_quote_style(line);
                     for wrapped in wrap_text_with_ansi(&styled, quote_width) {
-                        lines.push(format!("{}{wrapped}", (self.theme.quote_border)("│ ")));
+                        if bordered {
+                            lines.push(format!("{}{wrapped}", (self.theme.quote_border)("│ ")));
+                        } else {
+                            lines.push(wrapped);
+                        }
                     }
                 }
                 if spaced {
