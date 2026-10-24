@@ -950,3 +950,51 @@ fn blockquote_keeps_border_when_it_fits() {
     let lines = render_trimmed("> hi\n", 3);
     assert!(lines.iter().any(|l| l.starts_with("│ ")), "{lines:?}");
 }
+
+/// Render on a 2 MB-stack thread; returns the lines and the elapsed time.
+#[allow(clippy::disallowed_methods)] // needs a fixed 2 MB stack
+fn render_small_stack(text: String) -> (Vec<String>, std::time::Duration) {
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(move || {
+            let _guard = lock();
+            md("warm *up*").render(80);
+            let start = std::time::Instant::now();
+            let lines = md(&text).render(80);
+            (lines, start.elapsed())
+        })
+        .unwrap()
+        .join()
+        .expect("deep nesting must not overflow the stack")
+}
+
+#[test]
+fn deep_blockquote_nesting_is_capped() {
+    for n in [200, 1000, 10_000] {
+        let (lines, took) = render_small_stack(format!("{}x", "> ".repeat(n)));
+        assert!(took.as_secs_f64() < 5.0, "{n} levels took {took:?}");
+        assert!(lines.len() < 1000, "{n} levels gave {} lines", lines.len());
+    }
+}
+
+#[test]
+fn deep_list_nesting_is_capped() {
+    let staircase: String = (0..200)
+        .map(|i| format!("{}- x\n", "  ".repeat(i)))
+        .collect();
+    for text in [staircase, "- ".repeat(1000) + "x", "1. ".repeat(1000) + "x"] {
+        let (lines, took) = render_small_stack(text);
+        assert!(took.as_secs_f64() < 5.0, "took {took:?}");
+        assert!(lines.len() < 1000, "gave {} lines", lines.len());
+    }
+}
+
+#[test]
+fn deep_inline_nesting_is_capped() {
+    let text = format!("{}x{}", "*a _b ".repeat(300), "_ a*".repeat(300));
+    let (_, took) = render_small_stack(text);
+    assert!(took.as_secs_f64() < 5.0, "took {took:?}");
+    let text = format!("{}x{}", "[a ".repeat(300), "](u)".repeat(300));
+    render_small_stack(text);
+    render_small_stack(format!("{}x{}", "~~a ".repeat(300), " b~~".repeat(300)));
+}
