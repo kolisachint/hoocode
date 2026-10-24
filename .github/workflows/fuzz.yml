@@ -44,7 +44,7 @@ jobs:
           - ansi_wrap
           - markdown
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Nightly toolchain
         run: rustup toolchain install nightly --profile minimal
       - uses: Swatinem/rust-cache@v2
@@ -62,7 +62,7 @@ jobs:
           -max_total_time=${{ github.event.inputs.seconds || 300 }}
       - name: Upload crashes
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fuzz-${{ matrix.target }}
           path: fuzz/artifacts/${{ matrix.target }}/
