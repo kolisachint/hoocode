@@ -1183,7 +1183,7 @@ dependencies = [
  "base64 0.23.1",
  "hoocode-ai-types",
  "hoocode-ai-util",
- "rand 0.8.8",
+ "rand 0.10.3",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -1508,7 +1508,7 @@ dependencies = [
  "hoocode-code-models",
  "hoocode-code-paths",
  "hoocode-runtime",
- "rand 0.8.8",
+ "rand 0.10.3",
  "serde",
  "serde_json",
  "tempfile",
@@ -2152,7 +2152,7 @@ dependencies = [
  "base64 0.23.1",
  "hoocode-tui-util",
  "once_cell",
- "rand 0.8.8",
+ "rand 0.10.3",
 ]
 
 [[package]]
