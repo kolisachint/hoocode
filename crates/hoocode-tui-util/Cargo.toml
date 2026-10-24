@@ -17,7 +17,7 @@ publish = true
 doctest = false
 
 [dependencies]
-fancy-regex = "0.14"
+fancy-regex = "0.19"
 unicode-width = "0.2"
 unicode-segmentation = "1"
 
