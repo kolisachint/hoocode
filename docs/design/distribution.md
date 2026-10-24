@@ -66,6 +66,6 @@ workspace version matches the tag):
 | Item | Why deferred | What it needs |
 |---|---|---|
 | **Windows** | The Windows leg was the slowest part of every release. There is no Windows build; the site offers none. | Add `x86_64-pc-windows-msvc` back to `binaries.yml`, a `.zip`, an `install.ps1`, a `win32-x64` npm package. |
-| **crates.io** — **dropped 2026-10-08** | Not needed: users get archives, npm and curl. The umbrella crates are deleted. Was: 34 of 42 crates are unpublished; a first publish hits crates.io rate limits (run 29692981384). `release:crates` only leaves a notice. | A paced, resumable `scripts/publish_packages.py` run, then re-enable the `crates` job in `release.yml`. |
+| **crates.io** — **dropped 2026-10-08** | Not needed: users get archives, npm and curl. The umbrella crates are deleted. Was: 34 of 42 crates are unpublished; a first publish hits crates.io rate limits (run 29692981384). `release:crates` only leaves a notice. | A new paced, resumable publish script (the old `scripts/publish_packages.py` was deleted unused), then re-enable the `crates` job in `release.yml`. |
 | **macOS signing** | Binaries carry only the linker's ad-hoc signature. curl, npm and `gh` downloads are not quarantined, so they run; a browser download triggers "Apple could not verify". | An Apple Developer ID, `codesign` + `notarytool` in `binaries.yml`. |
 | **Self-update** | `hoocode update` does not know which of curl or npm installed it. | Detect the install method (path under `~/.hoocode/bin` vs `node_modules`) and print the matching command. |

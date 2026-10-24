@@ -174,6 +174,11 @@ Maintainers release by merging a PR labelled `rust:patch`, `rust:minor` or
 `vX.Y.Z`, creates the GitHub release, and [`binaries.yml`](.github/workflows/binaries.yml)
 builds the four platform archives, `SHA256SUMS`, and the npm and PyPI packages.
 Add the label `release:run-gates` to re-run CI before tagging.
+The release ships the merged PR: `release.yml` fails, and releases nothing, if `main`
+has moved past the PR's merge commit. Dispatch `Release` by hand to ship the current
+`main`. npm and PyPI publish only after `SHA256SUMS` is on the release. Releases share
+one concurrency group; GitHub keeps one waiting run, so a run shown as cancelled
+while queued did not release and needs dispatching again.
 
 A release can also start from a tag. Bump the version on `main` first
 (`python3 scripts/bump_versions.py <patch|minor|major>`, then `cargo update --workspace`
@@ -181,7 +186,12 @@ so `Cargo.lock` matches), commit, and push a tag that matches it
 (`git tag v0.2.0 && git push origin v0.2.0`).
 [`release-tag.yml`](.github/workflows/release-tag.yml) checks the tag against the
 workspace version, runs the CI gates, creates the GitHub release and builds the same
-artifacts. All crates share one version, set in the workspace `Cargo.toml`.
+artifacts. It stands down if a release for the tag already exists or the commit is the
+`Release vX` commit made by `release.yml`, so nothing is published twice.
+
+To rehearse, run `Release from tag` by hand (Actions → Run workflow, on `main`) with
+the tag you plan to push and `dry_run` left on. It runs the checks, the gates and the
+four builds (kept as artifacts) and publishes nothing. All crates share one version, set in the workspace `Cargo.toml`.
 
 Before a release, re-record the README demo so it shows the current screens:
 `scripts/demo/record.sh` builds a release binary, runs it in tmux against the scripted
