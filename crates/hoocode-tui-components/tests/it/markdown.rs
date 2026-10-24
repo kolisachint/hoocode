@@ -920,3 +920,33 @@ mod html_like_tags_in_text {
         assert!(joined.contains("<div>") && joined.contains("</div>"));
     }
 }
+
+/// Fuzz OOM: below 3 columns each `>` level re-wrapped the one below, so the
+/// line count doubled per level. Output must stay linear in the nesting depth.
+#[test]
+fn deep_blockquote_nesting_stays_bounded_at_narrow_widths() {
+    let _g = lock();
+    for width in 1..=4u16 {
+        for depth in [8usize, 60] {
+            let text = format!("{} deep\n", ">".repeat(depth));
+            let lines = render_plain(&text, width);
+            let bytes: usize = lines.iter().map(|l| l.len()).sum();
+            assert!(
+                lines.len() <= 64 * (depth + 4),
+                "w={width} d={depth}: {} lines",
+                lines.len()
+            );
+            assert!(
+                bytes <= 4096 * (depth + 4),
+                "w={width} d={depth}: {bytes} bytes"
+            );
+        }
+    }
+}
+
+#[test]
+fn blockquote_keeps_border_when_it_fits() {
+    let _g = lock();
+    let lines = render_trimmed("> hi\n", 3);
+    assert!(lines.iter().any(|l| l.starts_with("│ ")), "{lines:?}");
+}
