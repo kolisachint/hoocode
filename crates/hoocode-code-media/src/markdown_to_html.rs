@@ -64,11 +64,11 @@ fn is_match(regex: &Regex, text: &str) -> bool {
     regex.is_match(text).unwrap_or(false)
 }
 
-fn captures<'t>(regex: &Regex, text: &'t str) -> Option<Captures<'t>> {
+fn captures<'t>(regex: &Regex, text: &'t str) -> Option<Captures<'t, str>> {
     regex.captures(text).ok().flatten()
 }
 
-fn group<'t>(caps: &Captures<'t>, i: usize) -> &'t str {
+fn group<'t>(caps: &Captures<'t, str>, i: usize) -> &'t str {
     caps.get(i).map_or("", |m| m.as_str())
 }
 
@@ -77,7 +77,7 @@ fn group<'t>(caps: &Captures<'t>, i: usize) -> &'t str {
 /// inside one is read as markup.
 fn render_inline(markdown: &str) -> String {
     let mut code_spans: Vec<String> = Vec::new();
-    let text = CODE_SPAN.replace_all(markdown, |caps: &Captures| {
+    let text = CODE_SPAN.replace_all(markdown, |caps: &Captures<str>| {
         code_spans.push(format!(
             "<code {STYLE_CODE}>{}</code>",
             escape_html(group(caps, 2).trim())
@@ -87,13 +87,13 @@ fn render_inline(markdown: &str) -> String {
 
     let text = escape_html(&text);
     // Images before links: the link pattern would eat the `[...]`.
-    let text = IMAGE.replace_all(&text, |caps: &Captures| {
+    let text = IMAGE.replace_all(&text, |caps: &Captures<str>| {
         format!(r#"<img src="{}" alt="{}">"#, group(caps, 2), group(caps, 1))
     });
-    let text = LINK.replace_all(&text, |caps: &Captures| {
+    let text = LINK.replace_all(&text, |caps: &Captures<str>| {
         format!(r#"<a href="{}">{}</a>"#, group(caps, 2), group(caps, 1))
     });
-    let text = BARE_URL.replace_all(&text, |caps: &Captures| {
+    let text = BARE_URL.replace_all(&text, |caps: &Captures<str>| {
         let url = group(caps, 2);
         let trailing = captures(&URL_TRAILING, url)
             .map(|c| group(&c, 0).to_string())
@@ -108,7 +108,7 @@ fn render_inline(markdown: &str) -> String {
     let text = STRIKE.replace_all(&text, "<del>$1</del>");
 
     STASHED
-        .replace_all(&text, |caps: &Captures| {
+        .replace_all(&text, |caps: &Captures<str>| {
             group(caps, 1)
                 .parse::<usize>()
                 .ok()

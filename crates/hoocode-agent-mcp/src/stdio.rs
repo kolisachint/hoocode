@@ -112,7 +112,11 @@ pub fn spawn(
         .take()
         .ok_or_else(|| io::Error::other("the child's stdout was not piped"))?;
     Ok(StdioTransport {
-        inner: AsyncRwTransport::new_client(LineLimit::new(stdout, MAX_STDIO_LINE_BYTES), stdin),
+        // rmcp 3.6 drops lines over its own 16 MiB cap and keeps the connection
+        // open, so the caller would wait forever. Turn that cap off: `LineLimit`
+        // is the limit, and it ends the connection.
+        inner: AsyncRwTransport::new_client(LineLimit::new(stdout, MAX_STDIO_LINE_BYTES), stdin)
+            .with_max_line_length(usize::MAX),
         child: Some(child),
     })
 }
