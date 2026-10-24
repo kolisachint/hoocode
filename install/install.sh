@@ -1,5 +1,5 @@
 #!/bin/sh
-# HooCode one-click installer (macOS / Linux). Installs the Rust build.
+# hoocode one-click installer (macOS / Linux).
 #
 #   curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh
 #
@@ -107,7 +107,7 @@ UNAME_M="$(uname -m)"
 case "$UNAME_M" in
     x86_64|amd64) ARCH="x86_64" ;;
     arm64|aarch64) ARCH="aarch64" ;;
-    *) die "unsupported CPU: $UNAME_M. HooCode ships x86_64 and arm64 builds." ;;
+    *) die "unsupported CPU: $UNAME_M. hoocode ships x86_64 and arm64 builds." ;;
 esac
 
 case "$UNAME_S" in
@@ -124,7 +124,7 @@ case "$UNAME_S" in
         fi
         TARGET="$ARCH-apple-darwin"
         ;;
-    *) die "unsupported OS: $UNAME_S. The Rust build ships for macOS and Linux." ;;
+    *) die "unsupported OS: $UNAME_S. hoocode ships for macOS and Linux." ;;
 esac
 
 step "Platform: ${C_B}$TARGET${C_0}"
@@ -232,13 +232,13 @@ add_to_path() {
         [ -f "$rc" ] || continue
         grep -qF "$BIN_DIR" "$rc" 2>/dev/null && continue
         grep -qF '.hoocode/bin' "$rc" 2>/dev/null && continue
-        printf '\n# Added by the HooCode installer\n%s\n' "$_line" >> "$rc"
+        printf '\n# Added by the hoocode installer\n%s\n' "$_line" >> "$rc"
         _touched="$_touched $rc"
     done
 
     _fish="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
     if [ -f "$_fish" ] && ! grep -qF "$BIN_DIR" "$_fish" 2>/dev/null; then
-        printf '\n# Added by the HooCode installer\nfish_add_path %s\n' "$BIN_DIR" >> "$_fish"
+        printf '\n# Added by the hoocode installer\nfish_add_path %s\n' "$BIN_DIR" >> "$_fish"
         _touched="$_touched $_fish"
     fi
 
@@ -276,7 +276,7 @@ fi
 
 # ------------------------------------------------------------------ done ----
 say ""
-say "${C_OK}${C_B}HooCode is installed.${C_0}"
+say "${C_OK}${C_B}hoocode is installed.${C_0}"
 say ""
 say "  ${C_B}hoocode${C_0}          start in build mode ${C_DIM}(or ${C_B}hoo${C_0}${C_DIM}, same thing)${C_0}"
 say "  ${C_B}hoocode --help${C_0}   every flag"

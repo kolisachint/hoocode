@@ -10,6 +10,16 @@ The real `hoocode` runs against the mock model, with `--perf-log`. Scenarios:
               one call to a stdio MCP server that accepts the request and never answers
               (scripts/perf/mcp_stall_server.py). Keys are typed for longer than the
               MCP call's 60 s deadline, so the stall happens under typing.
+  stream      One long streamed reply (STREAM_CHUNKS deltas, paced), keys typed
+              while it streams. Measures keystroke-to-frame and frame build with a
+              growing message, and how long the reply takes to show on screen.
+  long-transcript
+              The stream scenario on top of a resumed session of TRANSCRIPT_TURNS (200)
+              generated turns: markdown, code blocks and bash output (`--session`). Frame
+              cost should not depend on transcript length; compare with `stream`.
+  stream-inline, long-transcript-inline
+              The same two with `"fullscreen": false` in settings: the inline (scrollback)
+              frame path.
   paused-pty  A terminal that stops reading. The app runs in a pty; after a bash
               turn the pty is not read for N seconds (its output blocks), then Ctrl+C
               is sent. The turn must abort within 500 ms: the mock sees the client
@@ -74,7 +84,11 @@ MODEL = "mock-model"
 SESSION = "perf-load"
 PROMPT_TEXT = "run the eight load commands"
 TURN_DONE = "All eight commands finished."
+STREAM_CHUNKS = 3000
+STREAM_DELAY_S = 0.005
+TRANSCRIPT_TURNS = 200
 PERF_MARKER = "Performance (the last"
+START_MARKER = "name your mission"
 PROMPT_GLYPH = "❯"
 PROMPT_BYTES = PROMPT_GLYPH.encode("utf-8")
 CHILD_MARKER = "Task: "
@@ -185,7 +199,8 @@ class WatchedProvider(MockProvider):
 # Project files
 # --------------------------------------------------------------------------
 
-def write_project(root: Path, port: int, performance: dict[str, Any] | None = None, mcp: bool = False) -> tuple[Path, Path]:
+def write_project(root: Path, port: int, performance: dict[str, Any] | None = None, mcp: bool = False,
+                  inline: bool = False) -> tuple[Path, Path]:
     home = root / "home"
     work = root / "work"
     (home / ".hoocode").mkdir(parents=True)
@@ -204,6 +219,8 @@ def write_project(root: Path, port: int, performance: dict[str, Any] | None = No
     settings: dict[str, Any] = {"defaultProvider": "mock", "defaultModel": MODEL}
     if performance is not None:
         settings["performance"] = performance
+    if inline:
+        settings["fullscreen"] = False
     (home / ".hoocode" / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
     if mcp:
         # User-level MCP servers are always trusted (config.rs), so no prompt.
@@ -241,6 +258,70 @@ def base_env(home: Path, extra: dict[str, str]) -> dict[str, str]:
 
 def hoo_argv(binary: Path, log: Path, extra_args: list[str]) -> list[str]:
     return [str(binary), "--offline", "--provider", "mock", "--model", MODEL, "--perf-log", str(log), *extra_args]
+
+
+# --------------------------------------------------------------------------
+# Generated session (long-transcript)
+# --------------------------------------------------------------------------
+
+def _entry_id(n: int) -> str:
+    return f"{n:08x}"
+
+
+def write_session(path: Path, cwd: Path, turns: int) -> None:
+    """A session file of `turns` turns: markdown, a code block, a bash call and its output.
+
+    Format: agent-session entries (version 3), a chain of parentId links.
+    """
+    stamp = "2026-10-01T00:00:00.000Z"
+    ms = 1790000000000
+    entries: list[dict[str, Any]] = [
+        {"type": "session", "version": 3, "id": "01a1675d-e33c-7279-863b-0f8f5fefbd00", "timestamp": stamp, "cwd": str(cwd)},
+    ]
+    counter = 0
+    parent: str | None = None
+
+    def add(kind: str, **fields: Any) -> None:
+        nonlocal counter, parent
+        counter += 1
+        eid = _entry_id(counter)
+        entries.append({"type": kind, "id": eid, "parentId": parent, "timestamp": stamp, **fields})
+        parent = eid
+
+    add("model_change", provider="mock", modelId=MODEL)
+    add("thinking_level_change", thinkingLevel="off")
+    cost = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0}
+    use = {"input": 1200, "output": 300, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 1500, "cost": cost}
+
+    def assistant(content: list[dict[str, Any]], stop: str) -> dict[str, Any]:
+        return {"role": "assistant", "content": content, "api": "openai-completions", "provider": "mock",
+                "model": MODEL, "usage": use, "stopReason": stop, "timestamp": ms, "responseId": "mock"}
+
+    for i in range(1, turns + 1):
+        add("message", message={"role": "user", "timestamp": ms,
+                                "content": [{"type": "text", "text": f"Turn {i}: explain how module {i} handles retries and show the code."}]})
+        explain = (
+            f"## Module {i}\n\n"
+            f"Module {i} retries **three times** with *exponential* backoff. See `retry_{i}()` below; "
+            "the delay doubles each attempt and is capped at 30 s.\n\n"
+            f"```rust\nfn retry_{i}(mut attempt: u32) -> Result<(), Error> {{\n"
+            "    loop {\n        match call() {\n            Ok(v) => return Ok(v),\n"
+            "            Err(e) if attempt < 3 => { attempt += 1; sleep(backoff(attempt)); }\n"
+            "            Err(e) => return Err(e),\n        }\n    }\n}\n```\n\n"
+            "- the first failure is logged at `warn`\n- later failures are logged at `error`\n"
+            "- the final error carries the attempt count\n\n"
+            "| attempt | delay |\n|---|---|\n| 1 | 1 s |\n| 2 | 2 s |\n| 3 | 4 s |\n"
+        )
+        call_id = f"call_hist_{i}"
+        command = f"seq 1 12 | awk '{{ print \"turn {i} line \" $0 }}'"
+        add("message", message=assistant([{"type": "text", "text": explain},
+                                          {"type": "toolCall", "id": call_id, "name": "bash", "arguments": {"command": command}}], "toolUse"))
+        output = "\n".join(f"turn {i} line {n}" for n in range(1, 13))
+        add("message", message={"role": "toolResult", "toolCallId": call_id, "toolName": "bash", "isError": False, "details": {},
+                                "content": [{"type": "text", "text": output}], "timestamp": ms})
+        add("message", message=assistant([{"type": "text", "text": f"Done with module {i}. The output above shows twelve lines; "
+                                                                  "nothing else needs to change."}], "stop"))
+    path.write_text("\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8")
 
 
 # --------------------------------------------------------------------------
@@ -286,7 +367,7 @@ def start_tmux(socket: str, args: argparse.Namespace, binary: Path, home: Path, 
     env_args = ["env", "-i", *[f"{k}={v}" for k, v in sorted(env.items())]]
     wrapped = ["sh", "-c", '"$@"; exit $?', "sh", *env_args, *hoo_argv(binary, log, extra_args)]
     tmux(socket, "new-session", "-d", "-s", SESSION, "-x", str(args.cols), "-y", str(args.rows), "-c", str(work), *wrapped)
-    if not wait_for(socket, PROMPT_GLYPH, timeout=60):
+    if not wait_for(socket, START_MARKER, timeout=60):
         raise RuntimeError("the prompt never appeared; pane:\n" + pane(socket))
     time.sleep(1.0)
 
@@ -589,13 +670,18 @@ def print_turn_summary(name: str, summary: dict[str, Any], out: Path) -> None:
 
 
 def run_turn_scenario(name: str, args: argparse.Namespace, routes: dict[str, Route], typing_seconds: float,
-                      extra_args: list[str], mcp: bool, out: Path, binary: Path) -> dict[str, Any]:
+                      extra_args: list[str], mcp: bool, out: Path, binary: Path,
+                      session_turns: int = 0, inline: bool = False) -> dict[str, Any]:
     root = Path(tempfile.mkdtemp(prefix=f"perf-{name}-"))
     provider = MockProvider(routes, log_path=str(root / "requests.jsonl"))
     port = provider.start()
     socket = f"perf-{name}-{os.getpid()}"
     try:
-        home, work = write_project(root, port, mcp=mcp)
+        home, work = write_project(root, port, mcp=mcp, inline=inline)
+        if session_turns:
+            session_file = root / "history.jsonl"
+            write_session(session_file, work, session_turns)
+            extra_args = [*extra_args, "--session", str(session_file)]
         drive_info = drive_tmux(socket, args, out, typing_seconds, extra_args, binary, home, work)
         summary = summarize(read_log(out / "perf.jsonl"))
         summary.update(drive_info)
@@ -699,7 +785,7 @@ def run_memory_scenario(args: argparse.Namespace, binary: Path, out: Path) -> di
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--scenario", choices=["bash", "load", "paused-pty", "memory", "all"], default="all")
+    parser.add_argument("--scenario", choices=["bash", "load", "stream", "long-transcript", "stream-inline", "long-transcript-inline", "paused-pty", "memory", "all"], default="all")
     parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY, help="hoocode binary (default: $CARGO_TARGET_DIR/release/hoocode)")
     parser.add_argument("--calls", type=int, default=8, help="parallel bash calls in the turn (default 8)")
     parser.add_argument("--lines", type=int, default=5000, help="lines each bash call prints (default 5000)")
@@ -712,6 +798,7 @@ def main() -> int:
     parser.add_argument("--memory-settle", type=float, default=3.0, help="memory: seconds before the allocation trigger (default 3)")
     parser.add_argument("--memory-hold", type=float, default=6.0, help="memory: seconds the memory stays resident (default 6)")
     parser.add_argument("--memory-timeout", type=float, default=60.0, help="memory: seconds to wait for the notice to appear or lift")
+    parser.add_argument("--transcript-turns", type=int, default=TRANSCRIPT_TURNS, help="long-transcript: generated turns in the resumed session (default 200)")
     parser.add_argument("--cols", type=int, default=120)
     parser.add_argument("--rows", type=int, default=40)
     parser.add_argument("--out", type=Path, default=None, help="artifact directory (default $CARGO_TARGET_DIR/perf/load-<time>)")
@@ -726,7 +813,7 @@ def main() -> int:
     out_root = (args.out or OUT_ROOT / f"load-{stamp}").resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    wanted = ["bash", "load", "paused-pty", "memory"] if args.scenario == "all" else [args.scenario]
+    wanted = ["bash", "load", "stream", "long-transcript", "paused-pty", "memory"] if args.scenario == "all" else [args.scenario]
     # Each scenario starts from the user's rate (or its own default), not the last one's.
     user_keys_per_second = args.keys_per_second
     results: dict[str, Any] = {"binary": str(binary), "started": stamp}
@@ -749,6 +836,15 @@ def main() -> int:
             args.keys_per_second = user_keys_per_second or LOAD_KEYS_PER_SECOND
             typing = args.typing_seconds or 75.0
             results[name] = run_turn_scenario(name, args, routes, typing, ["--enable-subagents"], True, out, binary)
+        elif name in ("stream", "long-transcript", "stream-inline", "long-transcript-inline"):
+            pieces = [f"word{i} " + ("lorem ipsum " if i % 7 else "\n\n") for i in range(STREAM_CHUNKS)]
+            body = {"text_chunks": pieces[:-1] + [TURN_DONE], "chunk_delay_s": STREAM_DELAY_S, "usage": usage()}
+            routes = {"parent": Route("parent", [body, done_turn(), done_turn()])}
+            args.keys_per_second = user_keys_per_second or 20.0
+            typing = args.typing_seconds or 15.0
+            turns = args.transcript_turns if name.startswith("long-transcript") else 0
+            results[name] = run_turn_scenario(name, args, routes, typing, [], False, out, binary, session_turns=turns,
+                                              inline=name.endswith("-inline"))
         elif name == "paused-pty":
             results[name] = run_paused_scenario(args, binary, out)
         elif name == "memory":

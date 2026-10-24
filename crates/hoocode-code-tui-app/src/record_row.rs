@@ -24,11 +24,11 @@ impl RecordRows {
     /// still the last thing there.
     pub fn show(&mut self, chat: &mut Container, styled: String) {
         if let Some((spacer, text)) = &self.last {
-            let n = chat.children.len();
+            let n = chat.children().len();
             let text_handle: ComponentHandle = text.clone();
             if n >= 2
-                && Rc::ptr_eq(&chat.children[n - 1], &text_handle)
-                && Rc::ptr_eq(&chat.children[n - 2], spacer)
+                && Rc::ptr_eq(&chat.children()[n - 1], &text_handle)
+                && Rc::ptr_eq(&chat.children()[n - 2], spacer)
             {
                 text.borrow_mut().set_text(styled);
                 return;
@@ -50,7 +50,7 @@ mod tests {
     use super::*;
 
     fn last_line(chat: &Container) -> String {
-        chat.children
+        chat.children()
             .last()
             .map(|c| c.borrow_mut().render(120).join("\n"))
             .unwrap_or_default()
@@ -61,11 +61,11 @@ mod tests {
         let mut chat = Container::new();
         let mut rows = RecordRows::default();
         rows.show(&mut chat, "STATUS_ONE".into());
-        assert_eq!(chat.children.len(), 2);
+        assert_eq!(chat.children().len(), 2);
         assert!(last_line(&chat).contains("STATUS_ONE"));
         rows.show(&mut chat, "STATUS_TWO".into());
         // The second updates the previous line instead of appending.
-        assert_eq!(chat.children.len(), 2);
+        assert_eq!(chat.children().len(), 2);
         assert!(last_line(&chat).contains("STATUS_TWO"));
         assert!(!last_line(&chat).contains("STATUS_ONE"));
     }
@@ -75,12 +75,12 @@ mod tests {
         let mut chat = Container::new();
         let mut rows = RecordRows::default();
         rows.show(&mut chat, "STATUS_ONE".into());
-        assert_eq!(chat.children.len(), 2);
+        assert_eq!(chat.children().len(), 2);
         chat.add_child(Rc::new(RefCell::new(Text::new("OTHER", 0, 0))));
-        assert_eq!(chat.children.len(), 3);
+        assert_eq!(chat.children().len(), 3);
         rows.show(&mut chat, "STATUS_TWO".into());
         // A spacer and the text.
-        assert_eq!(chat.children.len(), 5);
+        assert_eq!(chat.children().len(), 5);
         assert!(last_line(&chat).contains("STATUS_TWO"));
     }
 }

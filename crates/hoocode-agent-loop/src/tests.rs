@@ -185,6 +185,58 @@ async fn emits_events_with_agent_message_types() {
     }
 }
 
+/// Listeners get each update without the provider's `partial` (keeping it would make the
+/// provider copy the message on every write); the JSON form still carries it, as before.
+#[tokio::test]
+async fn updates_do_not_hand_listeners_the_providers_partial() {
+    let mut config = identity_config();
+    config.stream_fn = Some(Box::new(|_model, _context, _options| {
+        let stream = create_assistant_message_event_stream();
+        let start = std::sync::Arc::new(assistant(vec![], StopReason::Stop));
+        let partial = std::sync::Arc::new(text("Hi"));
+        stream.push(AssistantMessageEvent::Start { partial: start });
+        stream.push(AssistantMessageEvent::TextDelta {
+            partial: partial.clone(),
+            index: 0,
+            delta: "Hi".into(),
+        });
+        stream.push(AssistantMessageEvent::Done {
+            message: (*partial).clone(),
+        });
+        Ok(stream)
+    }));
+    let (events, _) = collect(agent_loop(
+        vec![user("Hello")],
+        context_with(vec![]),
+        config,
+    ))
+    .await;
+    let update = events
+        .iter()
+        .find(|e| matches!(e, AgentEvent::MessageUpdate { .. }))
+        .expect("an update");
+    let AgentEvent::MessageUpdate {
+        assistant_message_event,
+        message,
+    } = update
+    else {
+        unreachable!()
+    };
+    assert!(assistant_message_event
+        .partial()
+        .is_some_and(|p| p.content.is_empty()));
+    let AgentMessage::Assistant(shown) = message.as_ref() else {
+        panic!("an assistant message");
+    };
+    assert_eq!(text_of(&shown.content), "Hi");
+    let json = update.to_json();
+    assert_eq!(
+        json["assistantMessageEvent"]["partial"], json["message"],
+        "the wire form still carries the message so far"
+    );
+    assert_eq!(json["assistantMessageEvent"]["delta"], "Hi");
+}
+
 #[tokio::test]
 async fn handles_custom_message_types_via_convert_to_llm() {
     let converted = Arc::new(Mutex::new(Vec::<Message>::new()));

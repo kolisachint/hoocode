@@ -4,4 +4,6 @@ Prompt templates for the hoocode coding agent
 
 Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 
-This crate is currently a placeholder reserved for the Rust migration from HooCode.
+System prompt building for the coding agent, including the skills, agents and self-docs
+sections it appends, plus simple prompt-template rendering. Mode prompts live in
+`hoocode-code-modes`.

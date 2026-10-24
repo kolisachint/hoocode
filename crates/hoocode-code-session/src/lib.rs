@@ -1,7 +1,6 @@
 //! Session CRUD, directory layout, and lifecycle for the hoocode coding agent.
 //!
-//! This crate ports the JSONL session tree from the TypeScript
-//! `packages/coding-agent/src/core/session-manager.ts`. Sessions are stored as
+//! The JSONL session tree: sessions are stored as
 //! append-only `.jsonl` files where each line is a typed entry. Entries form a
 //! tree via `id`/`parent_id`, and the leaf pointer tracks the current branch.
 

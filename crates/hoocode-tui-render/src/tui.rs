@@ -5,9 +5,10 @@
 //! performance optimizations that do not change what gets written to the
 //! terminal:
 //!
-//! 1. No reference-identity flatten memoization ([`crate::Container`] always
-//!    re-renders and re-concatenates children; the differential writer
-//!    below still only rewrites lines whose *content* changed).
+//! 1. No reference-identity flatten memoization. The differential writer
+//!    below only rewrites lines whose *content* changed, and
+//!    [`crate::Container`] keeps the lines of children that report a
+//!    [`crate::Component::render_stamp`] instead, drawing only what changed.
 //! 2. No `requestAnimationFrame`-style 16ms render coalescing. Input and
 //!    resizes passed to [`Tui::accept_event`] only schedule a frame, which
 //!    [`Tui::flush_scheduled_render`] paints once per loop iteration. Other
@@ -31,7 +32,9 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use hoocode_tui_images::{
@@ -44,7 +47,7 @@ use hoocode_tui_util::{
     strip_vt_control_characters, truncate_to_width, visible_width,
 };
 
-use crate::component::{Component, ComponentHandle, Container, FlexSpacer};
+use crate::component::{Component, ComponentHandle, Container, FlexSpacer, Rendered};
 use crate::fullscreen;
 use crate::scrollbar::{scrollbar_glyphs, SCROLLBAR_THUMB};
 
@@ -280,6 +283,48 @@ pub enum TuiEvent {
     /// The output thread wrote the frame the TUI was waiting to paint its
     /// next one after (see [`Tui::flush_scheduled_render`]).
     OutputDrained,
+    /// Something outside the terminal (an agent event) is waiting for the loop;
+    /// see [`WakeHandle`].
+    Wake,
+}
+
+/// Wakes the loop that reads the [`Tui::start`] channel from any thread.
+///
+/// A wake is sent only when none is pending, so a flood of callers puts one
+/// [`TuiEvent::Wake`] in the channel. The loop calls [`WakeHandle::clear`] when
+/// it takes the event, before it reads whatever the wake was for. The handle
+/// follows [`Tui::start`] when it opens a new channel.
+#[derive(Clone)]
+pub struct WakeHandle {
+    pending: Arc<AtomicBool>,
+    sender: Arc<Mutex<Option<Sender<TuiEvent>>>>,
+}
+
+impl WakeHandle {
+    fn new() -> Self {
+        Self {
+            pending: Arc::new(AtomicBool::new(false)),
+            sender: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Asks the loop to run a pass. Cheap when a wake is already pending.
+    pub fn wake(&self) {
+        if self.pending.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let sender = self.sender.lock().unwrap_or_else(|e| e.into_inner());
+        match sender.as_ref() {
+            Some(tx) if tx.send(TuiEvent::Wake).is_ok() => {}
+            // No loop is listening (not started, or the channel is gone).
+            _ => self.pending.store(false, Ordering::Release),
+        }
+    }
+
+    /// The loop took a [`TuiEvent::Wake`]: the next `wake` sends a new one.
+    pub fn clear(&self) {
+        self.pending.store(false, Ordering::Release);
+    }
 }
 
 impl TuiEvent {
@@ -358,6 +403,7 @@ pub struct Tui {
     previous_viewport_top: i64,
     full_redraw_count: u64,
     stopped: bool,
+    wake: WakeHandle,
 
     last_cursor_pos: Option<CursorPos>,
 
@@ -460,6 +506,7 @@ impl Tui {
             previous_viewport_top: 0,
             full_redraw_count: 0,
             stopped: false,
+            wake: WakeHandle::new(),
             last_cursor_pos: None,
             flex_spacer: None,
             flat_lines: Vec::new(),
@@ -678,9 +725,10 @@ impl Tui {
         let top_natural = render_children(&top, width as u16).len();
         let bottom_natural = render_children(&bottom, width as u16).len();
         let total = body.map_or(0, |body| {
+            let mut rendered = Rendered::default();
             body.borrow_mut()
-                .render(fullscreen::body_width(width) as u16)
-                .len()
+                .render_into(fullscreen::body_width(width) as u16, &mut rendered);
+            rendered.len()
         });
         let rows = fullscreen::split_rows(
             height,
@@ -700,7 +748,7 @@ impl Tui {
         Option<ComponentHandle>,
         Vec<ComponentHandle>,
     ) {
-        let children = &self.root.children;
+        let children = self.root.children();
         let index = self
             .fullscreen_body
             .as_ref()
@@ -1087,6 +1135,8 @@ impl Tui {
             self.terminal.set_alternate_screen(true);
         }
         let (tx, rx) = mpsc::channel();
+        *self.wake.sender.lock().unwrap_or_else(|e| e.into_inner()) = Some(tx.clone());
+        self.wake.clear();
         let tx_drained = tx.clone();
         self.terminal.on_output_drained(Box::new(move || {
             let _ = tx_drained.send(TuiEvent::OutputDrained);
@@ -1104,6 +1154,11 @@ impl Tui {
         self.query_cell_size();
         self.request_render(false);
         rx
+    }
+
+    /// A handle other threads use to wake the loop reading [`Tui::start`]'s channel.
+    pub fn wake_handle(&self) -> WakeHandle {
+        self.wake.clone()
     }
 
     /// Handles one event and paints if it asked for a frame.
@@ -1124,6 +1179,7 @@ impl Tui {
             }
             TuiEvent::Resize => self.schedule_render(),
             TuiEvent::OutputDrained => {}
+            TuiEvent::Wake => self.wake.clear(),
         }
     }
 
@@ -1153,7 +1209,7 @@ impl Tui {
 
     /// The root's children, in order (`ui.children`).
     pub fn children(&self) -> &[ComponentHandle] {
-        &self.root.children
+        self.root.children()
     }
 
     pub fn add_input_listener(&mut self, listener: InputListener) {
@@ -1567,8 +1623,8 @@ impl Tui {
         None
     }
 
-    /// Flatten the component tree. Simplified relative to the TypeScript
-    /// original: always fully re-renders (see module docs on flatten memoization).
+    /// Flatten the component tree. Containers draw again only the children
+    /// whose render stamp changed (see module docs on flatten memoization).
     pub fn render(&mut self, width: u16) -> Vec<String> {
         self.root.render(width)
     }
@@ -1717,7 +1773,11 @@ impl Tui {
         if self.fit_flex_spacer(&new_lines, height) {
             new_lines = self.render(width.max(0) as u16);
         }
-        self.flat_lines = new_lines.clone();
+        // The search reads the last painted frame (`search_buffer`), so a live
+        // frame keeps no copy of its own; only drop what a pinned view left.
+        if !self.flat_lines.is_empty() {
+            self.flat_lines = Vec::new();
+        }
 
         let cursor_pos = self.extract_cursor_position(&mut new_lines, height);
         self.last_cursor_pos = cursor_pos;
@@ -2209,14 +2269,14 @@ impl Tui {
             .collect();
         // The cursor marker is stripped where a line is drawn (the window), or on
         // every line while pinned, where the search reads the whole body. A live
-        // frame does not copy the whole transcript a second time.
-        let mut body_lines: Vec<String> = match &body {
-            Some(body) => body
-                .borrow_mut()
-                .render(fullscreen::body_width(width) as u16),
-            None => Vec::new(),
-        };
-        let total = body_lines.len();
+        // frame copies only the rows on screen: the body hands back the lines it
+        // kept for children that did not change as they are.
+        let mut rendered = Rendered::default();
+        if let Some(body) = &body {
+            body.borrow_mut()
+                .render_into(fullscreen::body_width(width) as u16, &mut rendered);
+        }
+        let total = rendered.len();
         let pinned = self.scroll_offset.is_some();
         // While pinned a picker takes the bottom; the prompt keeps its place.
         let pane = if pinned {
@@ -2256,10 +2316,11 @@ impl Tui {
         self.fullscreen_seen_total = self.fullscreen_seen_total.min(total as i64);
         // The search runs over the body lines, as the pinned painter's does.
         let query = if pinned {
+            let mut body_lines = rendered.window(0, total);
             for line in &mut body_lines {
                 *line = strip_cursor_marker(line);
             }
-            self.flat_lines = body_lines.clone();
+            self.flat_lines = body_lines;
             self.refresh_scroll_search(total as i64, rebuilt);
             self.scroll_search
                 .as_ref()
@@ -2285,10 +2346,9 @@ impl Tui {
                 (row, (c.col.max(0) as usize).min(width.saturating_sub(1)))
             });
 
-        let mut window_lines: Vec<String> = body_lines
+        let mut window_lines: Vec<String> = rendered
+            .window(start, rows.body)
             .iter()
-            .skip(start)
-            .take(rows.body)
             .map(|line| strip_cursor_marker(line))
             .collect();
         // Live with a short transcript: bottom-anchor the tail just above the
@@ -3561,5 +3621,19 @@ mod tests {
         ];
         tui.refresh_scroll_search(6, true);
         assert_eq!(tui.scroll_search.as_ref().unwrap().matches, vec![5]);
+    }
+
+    #[test]
+    fn live_frames_keep_no_search_copy_and_the_search_reads_the_painted_frame() {
+        let (mut tui, _handles) = new_tui(40, 10);
+        let component = TestComponent::new();
+        component.borrow_mut().lines = (0..30).map(|n| format!("row {n} needle")).collect();
+        tui.add_child(component.clone());
+        // A pinned view leaves its copy behind; the next live frame drops it.
+        tui.flat_lines = vec!["stale".to_string()];
+        tui.request_render(false);
+        assert!(tui.flat_lines.is_empty(), "a live frame keeps no copy");
+        assert_eq!(tui.find_scroll_matches("needle").len(), 30);
+        assert!(tui.find_scroll_matches("stale").is_empty());
     }
 }

@@ -1,10 +1,9 @@
 //! Cron scheduling for the hoocode coding agent: the CronCreate, CronList and
-//! CronDelete tools and the task store they share with hoocode-ts.
+//! CronDelete tools and the task store they share.
 //!
 //! The store is `<cwd>/.agents/scheduled_tasks.json`. The interactive loop
 //! calls [`claim_due`] every [`TICK_INTERVAL`] while the agent is idle, and
-//! submits each returned prompt as a user message, as `TaskScheduler` does in
-//! hoocode-ts (`core/scheduler.ts`).
+//! submits each returned prompt as a user message.
 //!
 //! `/loop` is parsed by [`loop_command`]; the TUI runs it. A task due while the
 //! agent is busy fires on the next idle tick if that tick is within

@@ -7,25 +7,20 @@ UI widgets for the hoocode TUI: `Spacer`, `Text`, `TruncatedText`,
 
 Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 
-Ported from `@kolisachint/hoocode-tui`'s `components/*.ts` (plus
-`autocomplete.ts` and `editor-component.ts`, which live at the package
-root in the original but are tightly coupled to the `Editor` component).
+The autocomplete provider and the editor component interface live next to the
+`Editor`, which they are tightly coupled to.
 
 `Loader`'s animation timing and `Tui`'s render coalescing share the same
-adaptation: TypeScript calls back into shared mutable state from a
-`setInterval`/timer, which doesn't translate to Rust's `Rc<RefCell<...>>`
-component tree across threads. `Loader::tick()` is a plain method the
-owning event loop calls periodically instead.
+design: the component tree is `Rc<RefCell<...>>` and not shared across threads, so
+there are no background timers. `Loader::tick()` is a plain method the
+owning event loop calls periodically.
 
-`Markdown` parses with `pulldown-cmark` instead of `marked` (a different
-parser model — flat events vs. a token tree), via a small intermediate
+`Markdown` parses with `pulldown-cmark` (flat events), via a small intermediate
 AST; see `src/markdown/mod.rs` for the resulting fidelity trade-offs
 (table column sizing, nested-style ANSI-reset recovery, no footnotes/
 definition lists/inline images).
 
-`Editor` (the multi-line text editor, ~2300 lines in the original) is
-ported at reduced scope: the buffer, word-wrap-aware layout, vertical
-cursor movement (including the sticky preferred-column algorithm),
-undo/kill-ring, prompt history, and synchronous autocomplete are ported;
-large-paste-to-marker compression, vim-style character-jump mode, and
-internal viewport scrolling are not — see `src/editor/editor.rs`.
+`Editor` (the multi-line text editor) provides the buffer, word-wrap-aware layout,
+vertical cursor movement (including the sticky preferred-column algorithm),
+undo/kill-ring, prompt history, synchronous autocomplete, paste markers and a
+character-jump mode; see `src/editor/editor.rs`.

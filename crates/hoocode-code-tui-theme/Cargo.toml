@@ -21,12 +21,12 @@ hoocode-runtime = { workspace = true }
 hoocode-code-paths = { workspace = true }
 hoocode-tui-components = { workspace = true }
 hoocode-tui-highlight = { workspace = true }
+hoocode-tui-render = { workspace = true }
 hoocode-tui-util = { workspace = true }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
 hoocode-code-session = { workspace = true }
-hoocode-tui-render = { workspace = true }
 tempfile = "3"
 
 # Byte-index slices of text are a panic risk on multi-byte input (see docs/design/reliability.md, 1.5).

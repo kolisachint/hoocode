@@ -8,13 +8,15 @@ for later, so the scope of each step stays small.
 
 | Command | Build | Repo | npm |
 |---|---|---|---|
-| `hoocode`, `hoo` | Rust (this repo, cargo binary `hoocode`) | kolisachint/hoocode | `hoocode`, `@kolisachint/hoocode` |
+| `hoocode`, `hoo` | Rust (this repo, cargo binary `hoocode`) | kolisachint/hoocode | `hoocode` (primary), `@kolisachint/hoocode` (alias) |
 
 The TypeScript build (`hoocode-ts`, `hoo-ts`) was retired on 2026-10-10; hoocode replaces it.
 
 ## Shipped
 
-Every release made by `release.yml` (a merged PR with a `rust:*` label):
+Every release made by `release.yml` (a merged PR with a `rust:*` label), or by
+`release-tag.yml` (a `vX.Y.Z` tag pushed by hand on a commit of `main` whose
+workspace version matches the tag):
 
 1. **Archives**, built by `binaries.yml`: `hoocode-<rust-target>.tar.gz` for
    `x86_64`/`aarch64` × `apple-darwin`/`unknown-linux-musl`. Linux builds are
@@ -31,7 +33,7 @@ Every release made by `release.yml` (a merged PR with a `rust:*` label):
    it has not turned up: a successful upload is installable only after
    index propagation, and without this a partial publish looks identical
    to a successful one.
-4. **npm**: `@kolisachint/hoocode` plus `@kolisachint/hoocode-{darwin,linux}-{arm64,x64}`.
+4. **npm**: `hoocode` (primary install name; `@kolisachint/hoocode` is published too, as an alias with the same version) plus `@kolisachint/hoocode-{darwin,linux}-{arm64,x64}`.
    The main package is a small Node launcher (`npm/hoocode/bin/hoocode.js`);
    the platform packages are `optionalDependencies` gated by `os`/`cpu`, so
    npm and bun fetch only the one for the machine. No postinstall script.

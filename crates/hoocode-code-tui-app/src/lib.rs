@@ -1,5 +1,4 @@
-//! The coding agent's interactive mode on the hoocode TUI: port of hoocode
-//! `modes/interactive/`.
+//! The coding agent's interactive mode on the hoocode TUI.
 
 pub use hoocode_code_tui_widgets::brand;
 pub mod auto_loop;

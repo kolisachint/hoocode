@@ -1,5 +1,4 @@
-//! Opt-in tools: TodoWrite (`core/tools/todo.ts`) and ask_options
-//! (`extensions/core/ask-options.ts`), hoocode v0.5.89.
+//! Opt-in tools: TodoWrite, ask_options and the plugin tools.
 
 pub mod ask_options;
 pub mod plugins;

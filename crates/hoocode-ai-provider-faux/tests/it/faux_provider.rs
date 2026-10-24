@@ -759,3 +759,57 @@ async fn awaits_on_response_with_a_synthetic_200_before_responding() {
     assert!(seen[0].0.headers.is_empty());
     assert_eq!(seen[0].1, registration.get_model().id);
 }
+
+#[tokio::test]
+async fn a_listener_that_keeps_up_leaves_the_partial_uncopied() {
+    let registration = register(sized(1, 1, None));
+    registration.set_responses(vec![msg(&"x".repeat(200))]);
+    let before = hoocode_ai_types::shared_message_copies();
+    let mut stream = stream_simple(
+        registration.get_model(),
+        hi(),
+        SimpleStreamOptions::default(),
+    )
+    .unwrap();
+    let mut deltas = 0;
+    while let Some(event) = stream.next().await {
+        if matches!(event, AssistantMessageEvent::TextDelta { .. }) {
+            deltas += 1;
+        }
+        // The event is dropped here, before the provider writes the next delta.
+    }
+    assert!(deltas >= 40, "deltas: {deltas}");
+    // The producer queues `start` and `text_start` before the listener runs, so
+    // the first block write may copy; the deltas after it do not.
+    let copies = hoocode_ai_types::shared_message_copies() - before;
+    assert!(copies <= 2, "{copies} copies for {deltas} deltas");
+}
+
+#[tokio::test]
+async fn a_listener_that_keeps_every_event_makes_the_provider_copy() {
+    let registration = register(sized(1, 1, None));
+    registration.set_responses(vec![msg(&"x".repeat(200))]);
+    let before = hoocode_ai_types::shared_message_copies();
+    let events = stream_simple(
+        registration.get_model(),
+        hi(),
+        SimpleStreamOptions::default(),
+    )
+    .unwrap()
+    .collect::<Vec<_>>()
+    .await;
+    let lengths: Vec<usize> = events
+        .iter()
+        .filter_map(|e| match e {
+            AssistantMessageEvent::TextDelta { partial, .. } => match &partial.content[0] {
+                Content::Text(t) => Some(t.text.len()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    // Every event kept: each write finds the earlier events' partial alive...
+    assert!(hoocode_ai_types::shared_message_copies() - before >= lengths.len() as u64);
+    // ...and each kept partial is the message as of its own event.
+    assert!(lengths.windows(2).all(|w| w[0] < w[1]), "{lengths:?}");
+}

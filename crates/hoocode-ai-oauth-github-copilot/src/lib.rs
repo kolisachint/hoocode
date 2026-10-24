@@ -1,5 +1,4 @@
-//! GitHub Copilot OAuth: port of hoocode `utils/oauth/github-copilot.ts`
-//! (v0.5.89). Device-code login against github.com (or a GitHub Enterprise
+//! GitHub Copilot OAuth. Device-code login against github.com (or a GitHub Enterprise
 //! domain), then a Copilot token from `copilot_internal/v2/token`.
 
 use hoocode_ai_oauth::{

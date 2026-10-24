@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crate::support::lock;
 use hoocode_code_tui_theme::get_markdown_theme;
 use hoocode_code_tui_widgets::segment_streaming_markdown;
+use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_tui_components::{Markdown, Spacer};
 use hoocode_tui_render::{Component, Container};
 use hoocode_tui_util::strip_vt_control_characters;
@@ -126,4 +127,51 @@ fn multibyte_line_starts_do_not_panic() {
     let _ = segment_streaming_markdown(text);
     let chunks = segment_streaming_markdown("✻ a\n\n✻ b\n\n— c");
     assert_eq!(chunks.len(), 3);
+}
+
+const STREAMED_DOC: &str = "# Plan\n\nIntro with **bold** and `code` words.\n\n- one\n- two\n  - nested\n\n1. first\n2. second\n\n```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n## Next\n\n> quote line\n> more\n\nClosing paragraph that is long enough to wrap around the narrow test width we use here.\n";
+
+/// A message streamed one char at a time draws, at every step, exactly what a
+/// fresh settled render of the same text draws.
+fn stream_matches_fresh_render(view: ToolOutputView) {
+    use hoocode_ai_types::{AssistantMessage, Content};
+    use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay};
+
+    let width = 48;
+    let message = |text: &str| AssistantMessage {
+        content: vec![Content::text(text)],
+        ..Default::default()
+    };
+    let mut streamed = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
+    streamed.set_view(view);
+    let mut text = String::new();
+    for ch in STREAMED_DOC.chars() {
+        text.push(ch);
+        streamed.update_content(&message(&text), true);
+        // Draw every step, as frames do: this fills the per-block caches.
+        let got = streamed.render(width);
+        let mut fresh = AssistantMessageComponent::new(None, ThinkingDisplay::Full);
+        fresh.set_view(view);
+        fresh.update_content(&message(&text), false);
+        let want = fresh.render(width);
+        assert_eq!(got, want, "after {} chars: {:?}", text.len(), text);
+    }
+}
+
+#[test]
+fn streamed_peek_matches_fresh_render_at_every_char() {
+    let _g = lock();
+    stream_matches_fresh_render(ToolOutputView::Peek);
+}
+
+#[test]
+fn streamed_full_view_matches_fresh_render_at_every_char() {
+    let _g = lock();
+    stream_matches_fresh_render(ToolOutputView::Full);
+}
+
+#[test]
+fn streamed_radar_view_matches_fresh_render_at_every_char() {
+    let _g = lock();
+    stream_matches_fresh_render(ToolOutputView::Radar);
 }

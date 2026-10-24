@@ -1,9 +1,6 @@
 //! Keyboard handling for the hoocode TUI: terminal key-sequence parsing
 //! (legacy escape codes, Kitty keyboard protocol, xterm `modifyOtherKeys`)
 //! and a keybinding registry.
-//!
-//! Ported from TypeScript `@kolisachint/hoocode-tui` → `keys.ts`,
-//! `keybindings.ts`.
 
 mod constants;
 mod keybindings;

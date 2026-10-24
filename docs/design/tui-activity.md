@@ -248,6 +248,203 @@ Needs: T4.1 for the tab and T3.3 for attach. The registry and tools (T5.1, T5.2)
 - Parallel only where files don't overlap: T0.1/T0.3 together, Phase S rows by crate, T4.2/T4.3 together, T5.1/T5.2 with T3. T1.1 → T1.2 → T3.3 are serial.
 - Before starting any step, the orchestrator asks the user which plan (core or TUI) and step.
 
+### Perf: event wake + Arc deltas
+
+- The UI loop used to learn about agent events only when it woke for a key or a
+  timer, so streamed text showed in bursts of 120 to 640 ms. App events now go
+  through `AppSender` (`mode/mod.rs`), which sends a `TuiEvent::Wake` into the
+  input channel. `WakeHandle` (hoocode-tui-render) coalesces wakes with an atomic
+  flag. A pass takes at most 256 app events and wakes itself if it hit the cap.
+  A wake alone does not repaint within 16 ms of the last pass; a key ends that
+  wait at once. The 100 ms markdown stream throttle is unchanged.
+- `AgentEvent::MessageUpdate` carries `Arc<AssistantMessageEvent>` and
+  `Arc<AgentMessage>` (and `AgentState::streaming_message` is an `Arc`), so the
+  session's `event.clone()` and the core state no longer copy the partial
+  message. The UI keeps only the last of consecutive updates in a batch.
+- Measure with `scripts/perf/load_scenario.py --scenario stream`.
+
+### Perf phase 2: frame cost independent of transcript length
+
+Measured with `load_scenario.py --scenario long-transcript` (a resumed, generated
+200-turn session: markdown, a code block, a table and a Shell call per turn, then the
+same streamed reply and typing as `stream`) against `--scenario stream` (empty
+transcript). Release build, 120x40, 20 keys/s, 3000 paced deltas. Times in ms.
+
+| | long-transcript | | stream (small) | |
+|---|---|---|---|---|
+| | frame build p50 / p99 | key p50 / p99 | frame build p50 / p99 | key p50 / p99 |
+| Before (phase 1, bb530f1) | 43.2 / 77.0 | 44.9 / 107.8 | 7.8-8.0 / 20-25 | 9.3-9.5 / 26-38 |
+| 1. Per-child line cache | 14.7 / 38.2 | 14.9 / 58.7 | 8.1 / 26.3 | 9.4 / 42.8 |
+| 2. Viewport-only compose | 13.1 / 31.2 | 13.4 / 48.9 | 8.0 / 29.6 | 9.4 / 46.0 |
+| 3. Markdown version counter | 12.6 / 31.1 | 12.9 / 42.4 | 7.8-8.7 / 26-29 | 9.1-9.7 / 27-38 |
+| Context gauge read in place (final, 2 runs) | 10.9-12.0 / 31 | 11.1-12.3 / 43 | 7.6-7.7 / 27 | 8.6-8.9 / 29 |
+
+(One run in four shows a single 1-2 s stall as the key p99 on either scenario; it is
+not tied to a change. p99 over 335 keys is one or two samples.)
+
+- **Component stamps.** `Component::render_stamp` returns `Some(u64)` while the output is a
+  function of state that only `&mut` methods change; every such method takes a
+  `fresh_stamp()`. A `Container` keeps `Rc<[String]>` per child under (stamp, width, render
+  epoch) and renders only children whose key changed. `None` (default) means "draw every
+  frame", which is what anything reading a clock, the job registry or the subagent registry
+  returns: a streaming message, a chain still collecting calls, a running or Agent block, a
+  mission header while flying. Theme changes bump `bump_render_epoch` (`code-tui-theme`).
+- **Why it is safe to cache.** Builds with debug assertions (so nextest) re-render every cache
+  hit and assert the lines are equal; a stamp that misses a change fails the test that
+  touches it. `HOOCODE_RENDER_CACHE_CHECK=0` turns it off for a debug binary.
+- **Frozen history.** A resumed session now freezes all but the newest `LIVE_TOOL_WINDOW`
+  tool blocks when its history is rebuilt (`render_session_context`). Before, a resumed
+  session kept every block live until its first new tool call ended.
+- **Full-screen compose.** The body renders into `Rendered` pieces (shared lines for cached
+  children) and `compose_fullscreen` copies only the window on screen. The whole body is
+  copied while pinned (the search reads every row) and in inline mode.
+- **Markdown.** `Markdown` compares a version, not its text, on a cache hit and returns the
+  kept `Rc<[String]>`; `set_text` with the same text keeps the cache.
+- **Context gauge.** `get_context_usage` (HUD and comms frame, every frame) copied every
+  message; it now reads them in place.
+- **Still O(transcript).** Walking the container's children for stamps (about 0.6 ms at
+  1,400 children), `branch()` and `sum_assistant_usage` in the HUD and comms frame (about
+  1 ms at 200 turns), pinned frames, and inline mode (`build_live_frame` renders twice and
+  copies the frame into `flat_lines`). The turn being streamed is drawn in full every frame.
+
+### Perf phase 3: the streaming turn
+
+Same scenarios and settings as phase 2 (release, 120x40, 20 keys/s, 3000 paced deltas). Times in ms,
+frame build p50 / p99, then key p50 / p99.
+
+| | long-transcript | | stream (small) | |
+|---|---|---|---|---|
+| Before (de07817, same machine) | 10.8 / 31.2 | 10.1 / 39.9 | 7.7 / 25.4 | 9.1 / 41.0 |
+| 1. Incremental streaming render | 3.8 / 10.3 | 3.6 / 8.8 | 1.2 / 3.1 | 1.4 / 5.0 |
+| 2. One reply copy less per delta (agent loop) | 3.8 / 10.4 | 3.9 / 11.0 | 1.2 / 4.6 | 1.5 / 5.1 |
+| 3. Inline frame keeps no flat copy (fullscreen, re-measured) | 3.9 / 7.9 | 3.9 / 8.8 | 1.2 / 3.3 | 1.4 / 3.9 |
+| *Inline (`stream-inline`, `long-transcript-inline`), before 3* | 7.9 / 15.6 | 9.9 / 23.5 | 1.1 / 3.7 | 1.4 / 4.0 |
+| *Inline, after 3* | 5.8 / 11.1 | 7.4 / 17.1 | 1.0 / 3.4 | 1.3 / 4.0 |
+
+- **Where the 8 ms went.** Not the markdown (a tail re-lex plus the cached segments cost about
+  0.3 ms). The peek/full view puts every prose line on the `┊` rail (`rail_line`, an ANSI parse and
+  rebuild per line) and did so for the whole streaming reply every frame: about 1,200 lines
+  and 8 to 20 ms late in the stream.
+- **Rail cache.** `AssistantMessageComponent::render_railed` keeps each stamped content child's
+  railed lines by the child's address, under (stamp, width, render epoch). Debug builds draw every hit
+  again and assert equality. Block gaps share one `Spacer` handle, so its stamp stays stable.
+- **Reply copies per delta.** The agent loop wrote each partial into its local context as well as
+  into the event's shared message; the context copy is gone (`finish_response` still sets the
+  final message, and nothing reads the loop's context mid-stream). `AssistantMessageEvent::partial`
+  stays an owned `AssistantMessage`: an `Arc` there touches 17 files outside ai-stream, agent-loop,
+  agent-core and the TUI (ai-types, 7 provider crates with their tests, faux, print, agent-types),
+  and a provider that keeps an `Arc` and appends with `Arc::make_mut` copies anyway while a
+  listener still holds the previous event. No frame change (the loop runs off the UI thread);
+  the saving is CPU in the loop task. Still one copy in the provider and one in the loop per delta.
+- **Inline frame.** `build_live_frame` no longer clones the frame into `flat_lines` (about 1.4 ms at
+  10,000 rows): the search reads the last painted frame (`previous_lines`, the same rows without the
+  cursor marker), and a live frame only drops the copy a pinned view left. The second render was
+  already conditional (`fit_flex_spacer` reports whether the spacer height moved); it happens only
+  while the transcript is shorter than the screen, where it is cheap. The rest of the inline cost
+  at 10,000 rows is the stamp walk (about 3.7 ms: the container visits about 1,400 children) and
+  `into_lines` (1.6 ms: the frame is a `Vec<String>`), which would need a piece-based diff.
+  `load_scenario.py` has `stream-inline` and `long-transcript-inline` (`"fullscreen": false`).
+- **HUD walk, not done.** `branch()` is no longer on the per-frame path (the context gauge reads in
+  place); what is left is `sum_assistant_usage`, a pass over about 1,000 entries (microseconds), not
+  worth a cache with its invalidation rules.
+- **Segments.** The 2,048-char threshold is gone: a streaming block is segmented at every stable boundary.
+  A later segment is a `GappedSegment` (its markdown behind the blank row the full text has there),
+  so a chunk that draws nothing yet (a lone `>`) matches the full render. Test:
+  `streaming_segmentation::streamed_*_matches_fresh_render_at_every_char` streams a document with
+  headings, lists, a fenced code block with a blank line, a table and a quote char by char in
+  peek, full and radar views and compares each step byte for byte with a settled render.
+
+### Perf phase 4
+
+Same scenarios and settings as phase 3 (release, 120x40, 20 keys/s, 3000 paced deltas), one run
+each, frame build p50 / p99 in ms. The table grows by one row per step; "base" is main at v0.2.1.
+
+| | stream | long-transcript | stream-inline | long-transcript-inline |
+|---|---|---|---|---|
+| base (v0.2.1) | 1.03 / 3.16 | 3.29 / 8.58 | 1.00 / 3.58 | 5.50 / 11.12 |
+| 4. Lexer prefilter (stall) | 1.13 / 3.07 | 3.42 / 9.69 | 0.86 / 2.52 | 4.91 / 10.90 |
+| 1. Provider-side partial (`Arc`) | 1.09 / 2.89 | 3.72 / 9.45 | 0.88 / 2.82 | 5.37 / 9.48 |
+| 2. Container skips the stamp walk | 1.11 / 3.42 | 2.69 / 7.55 (rerun 2.88 / 7.62; step 1 rerun 3.70 / 9.04) | 0.97 / 3.66 | 5.00 / 10.53 |
+
+- **Provider-side partial copy (step 1).** `AssistantMessageEvent::*{partial}` is an
+  `Arc<AssistantMessage>`. Providers keep their message in a `SharedMessage` (hoocode-ai-types): `share()`
+  gives the event its `Arc`, and a write goes through `Arc::make_mut`, so it appends in place unless a
+  listener still holds the message of an earlier event. The frame numbers do not move (the provider and
+  the loop run off the UI thread); the saving is CPU in the loop task: a 57 KB reply of 14,454 events
+  through the faux provider and the event stream takes 10 ms (best of 5, release) instead of 22 ms.
+  *Who holds the previous `Arc`.* The ai-stream queue holds an event until the loop takes it, and the
+  loop is quicker than a provider. The listeners after the loop (app channel, UI batch, session) do not:
+  they queue events for a frame, and any one of them keeping the provider's `Arc` would bring the copy
+  back for every delta. So the loop sends `AgentEvent::MessageUpdate` with the event's `partial`
+  emptied (`without_partial`; `message` is the message so far, and it is the loop's one remaining
+  copy). The JSON form puts `message` where the event's partial was (`to_json_with`), so
+  `message_update` lines are byte-identical; session files hold `AgentMessage` and are untouched; the
+  app server reads only `delta`. Counter: `shared_message_copies()` (per thread). Tests: faux
+  `a_listener_that_keeps_up_leaves_the_partial_uncopied` (at most 2 copies in 50 deltas: the first write
+  after `start` and `text_start`, which the producer queues before the listener runs) and
+  `..._keeps_every_event_makes_the_provider_copy` (a copy per event); agent-loop
+  `updates_do_not_hand_listeners_the_providers_partial`; ai-types `event_json_is_byte_stable`.
+  *Serde:* the events never derive `Serialize` (`to_json` builds the value), so the `rc` feature is not
+  needed and no dependency changed. *Still one copy per delta:* `AgentMessage::Assistant` owns its
+  message; sharing it needs `Arc` there (all of agent-core, session and the UI read it) and is the next
+  step if the loop copy shows up.
+- **Stamp walk (step 2).** `change_counter()` (hoocode-tui-render) is the number of stamps handed out
+  so far (`fresh_stamp` bumps it; `note_change()` bumps it too). A `Container` remembers
+  (width, render epoch, counter) when a render ends with the counter where it began. If the next
+  render sees the same three, no stamped component has been mutated, every kept entry is current, and
+  the container pushes its kept `Rc<[String]>` per child without calling `is_container` or
+  `render_stamp` on it; children with no entry (a streaming message, a running chain, a nested
+  container) are handled as before. Adding, removing, replacing or swapping children and `invalidate`
+  reset it (`children` is private now: `children()`, `replace_child`, `insert_child`,
+  `swap_children`). Rendering that stamps something (a lazy settle) is not recorded, so the next frame
+  walks.
+  *The soundness gap, and how it is closed.* Two stamps read state they do not own: `PeekOnly` reads
+  the shared radar flag and `MissionHeader` reads `FlightStats`. Writers of those call `note_change()`
+  (the view switch, the three flight-data updates in `mode/transcript.rs`, the layer goldens). Builds with
+  debug assertions still walk every frame when the container would have skipped, and fail with
+  "render cache is stale" if a stamp moved with the counter still: that is how the two writers above
+  were found (`render_stamps` tests). Rule for new stamps: state a `render_stamp` reads must change
+  through a `&mut` method that takes `fresh_stamp()`, or its writer calls `note_change()`.
+  Effect: the skip needs a frame in which nothing is stamped, so it pays on key-only frames and frames
+  between deltas; a streamed delta stamps its message and takes the walk. Median frame of
+  `long-transcript` 3.7 to 2.7-2.9 ms (two runs each), key p50 3.6-3.8 to 2.8-3.0 ms; `stream` has few
+  children and does not move. Inline gains less (5.4 to 5.0 ms): there the frame is dominated by
+  `into_lines` and the diff (step 3).
+- **Inline `into_lines` (step 3): not done, design only.** The frame crosses `Tui::render` as a
+  `Vec<String>`, so `Container::render` turns its pieces into owned rows (`Rendered::into_lines`, 1.6 ms
+  at 10,000 rows: one allocation and copy per row), and then four passes read all of it:
+  `changed_rows` (a compare per row), `collect_kitty_image_ids`, the cursor-marker scan, and the move
+  into `previous_lines`. A piece-based diff is possible but not small: `previous_lines` is read at 20
+  places in `tui.rs`; the paint paths (`paint_differential`, `paint_deleted_lines`,
+  `paint_window_in_place`, `full_render`) take `Vec<String>` and index it; the search reads it; the
+  cursor marker is cut out of a row in place. Estimated change 400 to 600 lines in one crate, in the
+  code that decides what reaches the terminal, so it was not done here. *Design:* (1) keep the last
+  frame as `Rendered` (`previous: Rendered`) next to a cheap `rows()` view; (2) `changed_rows` walks
+  both piece lists and skips a pair of `Piece::Shared` that are `Rc::ptr_eq` (the common case: a
+  cached child) in O(1), comparing rows only inside pieces that differ, so the cost is O(pieces +
+  changed rows); (3) the paint paths read rows through `Rendered::row(i)` (a cursor, as `window` does),
+  which only materialises the rows it writes; (4) the cursor marker lives in the bottom, `Owned`
+  pieces (the editor); a row in a `Shared` piece is copied out first; (5) kitty image ids are collected
+  per piece when it is created (a flag on `Piece`), not by scanning rows. Expected gain: about 3 ms
+  of the 5.0 ms inline `long-transcript` frame, and the stamp-skipped frame becomes O(pieces).
+  Do it as its own change with `tui_render_ts` and the screen goldens as the guard.
+- **The 1 to 2 s stall (step 4).** *Found.* It is not tmux or the mock: it happens once per run, on the
+  first frame after the turn ends, in all four scenarios (the base runs show `stalls: 1` each, and a 1.5 s
+  key p99 on `long-transcript-inline`). `--perf-log` showed one loop iteration over 500 ms with the
+  watchdog phase `ui-loop:input-done`; timing the iteration's steps put 1.8 s inside `Tui::do_render`
+  (build 1.835 s, write 0.03 ms); a stack sample (gdb, every 0.3 s) showed the UI thread in
+  `Markdown::render_shared` -> `lexer::lex` -> `Lexer::block_tokens` -> `JsRegex::exec` ->
+  `fancy_regex::vm::run`. While streaming, the markdown is drawn in stable segments; when the turn ends
+  the settled message is lexed whole, once. `lex` tried each rule at each block against the rest of the
+  text (`src`), and the rules that use look-arounds or back-references (fences, heading, blockquote, html, def,
+  table, lheading) run in `fancy-regex`'s backtracking VM, whose failed search walks the whole
+  haystack even for a `^` rule: linear per call, quadratic per document (57 KB: 1.65 s, 230 ms
+  in each of seven rules). `JsRegex` now keeps a loosened copy (look-arounds removed,
+  back-references made "anything") on the fast engine, built on first use for a haystack of 2 KB or
+  more, and a miss there is a miss for the real rule. The 57 KB reply lexes in 46 ms (was 1.65 s);
+  runs show `stalls: 0` in all four scenarios. Test: `lexer_prefilter` (same tokens with the filter
+  on and off at every 211th cut point of a mixed document; linear scaling).
+
 ## Not doing
 
 - Prompting or steering a subagent while attached (read-only by decision; T1.2 keeps it

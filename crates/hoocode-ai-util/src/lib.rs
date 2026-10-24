@@ -1,8 +1,7 @@
 //! Shared utilities for hoocode AI.
 //!
 //! Provides JSON repair, hashing, header conversion, and context-overflow
-//! detection functions ported from TypeScript `@kolisachint/hoocode-ai` →
-//! `utils/`.
+//! detection functions.
 
 mod copilot_headers;
 mod diagnostics;
@@ -43,8 +42,6 @@ pub use validation::{
 // ---------------------------------------------------------------------------
 
 /// A fast, deterministic hash used to shorten long strings.
-///
-/// Ported from TypeScript `utils/hash.ts` → `shortHash()`.
 pub fn short_hash(input: &str) -> String {
     let mut h1: u32 = 0xdeadbeef;
     let mut h2: u32 = 0x41c6ce57;
@@ -66,8 +63,6 @@ pub fn short_hash(input: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// Convert a `Vec<(String, String)>` of HTTP headers to a `HashMap`.
-///
-/// Ported from TypeScript `utils/headers.ts` → `headersToRecord()`.
 pub fn headers_to_record(
     headers: &[(String, String)],
 ) -> std::collections::HashMap<String, String> {
@@ -107,8 +102,6 @@ fn escape_control_char(c: char) -> String {
 
 /// Repair malformed JSON by escaping raw control characters inside strings
 /// and doubling backslashes before invalid escape characters.
-///
-/// Ported from TypeScript `utils/json-parse.ts` → `repairJson()`.
 pub fn repair_json(json: &str) -> String {
     let escapes = valid_json_escapes();
     let mut repaired = String::with_capacity(json.len());
@@ -183,8 +176,6 @@ pub fn repair_json(json: &str) -> String {
 }
 
 /// Parse JSON, repairing common malformations first if the initial parse fails.
-///
-/// Ported from TypeScript `utils/json-parse.ts` → `parseJsonWithRepair()`.
 pub fn parse_json_with_repair<T: serde::de::DeserializeOwned>(
     json: &str,
 ) -> Result<T, serde_json::Error> {
@@ -205,8 +196,6 @@ pub fn parse_json_with_repair<T: serde::de::DeserializeOwned>(
 ///
 /// Falls back progressively: full JSON parse → with repair → partial-json
 /// tolerant parse → empty object.
-///
-/// Ported from TypeScript `utils/json-parse.ts` → `parseStreamingJson()`.
 pub fn parse_streaming_json<T: serde::de::DeserializeOwned + Default>(partial: Option<&str>) -> T {
     let empty = || serde_json::from_str("{}").unwrap_or_default();
     let Some(input) = partial.filter(|p| !p.trim().is_empty()) else {
@@ -241,8 +230,6 @@ pub fn parse_streaming_json<T: serde::de::DeserializeOwned + Default>(partial: O
 use hoocode_ai_types::{AssistantMessage, StopReason};
 
 /// Check if an assistant message represents a context overflow error.
-///
-/// Ported from TypeScript `utils/overflow.ts` → `isContextOverflow()`.
 ///
 /// Two detection modes:
 /// 1. **Error-based**: Most providers return `stopReason == Error` with a

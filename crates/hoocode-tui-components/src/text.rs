@@ -5,7 +5,7 @@
 //! (content is identical either way — see `hoocode-tui-render`'s docs
 //! on the same simplification).
 
-use hoocode_tui_render::Component;
+use hoocode_tui_render::{fresh_stamp, Component};
 use hoocode_tui_util::{
     apply_background_with_opener, band_opener, visible_width, wrap_text_with_ansi,
 };
@@ -17,6 +17,7 @@ pub struct Text {
     padding_x: usize,
     padding_y: usize,
     custom_bg_fn: Option<ColorFn>,
+    rev: u64,
 }
 
 impl Text {
@@ -26,15 +27,18 @@ impl Text {
             padding_x,
             padding_y,
             custom_bg_fn: None,
+            rev: fresh_stamp(),
         }
     }
 
     pub fn set_text(&mut self, text: impl Into<String>) {
         self.text = text.into();
+        self.rev = fresh_stamp();
     }
 
     pub fn set_custom_bg_fn(&mut self, bg_fn: Option<ColorFn>) {
         self.custom_bg_fn = bg_fn;
+        self.rev = fresh_stamp();
     }
 
     pub fn text(&self) -> &str {
@@ -49,6 +53,10 @@ impl Default for Text {
 }
 
 impl Component for Text {
+    fn render_stamp(&self) -> Option<u64> {
+        Some(self.rev)
+    }
+
     fn render(&mut self, width: u16) -> Vec<String> {
         let width = width as usize;
 

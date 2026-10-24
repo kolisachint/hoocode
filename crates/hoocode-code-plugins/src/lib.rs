@@ -1,4 +1,4 @@
-//! Plugins for the hoocode coding agent: loading (part 1 of `docs/design/plugins.md`).
+//! Plugins for the hoocode coding agent: loading (see `docs/design/plugins.md`).
 //!
 //! A plugin is a folder with a manifest. Two layouts are read:
 //!

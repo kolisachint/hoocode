@@ -4,4 +4,6 @@ Core agent runtime for hoocode agents
 
 Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 
-This crate is currently a placeholder reserved for the Rust migration from HooCode.
+`Agent` is the stateful wrapper around the agent loop. It owns the transcript, runs one
+prompt at a time with its own abort signal, notifies listeners, and queues steering and
+follow-up messages.

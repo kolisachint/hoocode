@@ -2131,8 +2131,14 @@ impl AgentSession {
 
     pub fn get_context_usage(&self) -> Option<ContextUsage> {
         let model = self.model();
-        let messages = self.messages();
-        stats::compute_context_usage(model.as_ref(), &self.session_manager(), &messages)
+        // Read in place: this runs every frame, and a copy of the whole
+        // conversation grows with it. No `with_state` closure takes another
+        // lock, so holding the session manager across it cannot deadlock.
+        stats::compute_context_usage_with(model.as_ref(), &self.session_manager(), || {
+            self.inner.agent.with_state(|s| {
+                hoocode_agent_compaction::estimate_context_tokens(&s.messages).tokens
+            })
+        })
     }
 
     /// Export the current branch as JSONL; returns the written path.

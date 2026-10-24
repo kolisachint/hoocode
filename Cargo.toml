@@ -94,8 +94,8 @@ resolver = "2"
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.2.0"
-authors = ["Mario Zechner (original author)", "Sachin Koli (HooCode fork)"]
+version = "0.2.3"
+authors = ["Mario Zechner (original author)", "Sachin Koli"]
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/kolisachint/hoocode"
@@ -184,9 +184,9 @@ hoocode-tui-util = { path = "crates/hoocode-tui-util" }
 
 hoocode-runtime = { path = "crates/hoocode-runtime" }
 
-# No debuginfo in dev builds (build-speed.md D1, changed 2026-10-10). The TS
-# migration is over. target/ reached 61 GB, mostly ~647k .o files kept for macOS
-# debug info. Panic file:line still comes from Location::caller. To get line
+# No debuginfo in dev builds (build-speed.md D1, changed 2026-10-10). target/
+# reached 61 GB, mostly ~647k .o files kept for macOS debug info. Panic
+# file:line still comes from Location::caller. To get line
 # tables back for one hot-path crate, add:
 #   [profile.dev.package.<crate>]
 #   debug = "line-tables-only"

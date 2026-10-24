@@ -1,8 +1,7 @@
-//! Settings for the hoocode coding agent: hoocode
-//! `core/settings-{types,defaults,storage,manager}.ts` (v0.5.89).
+//! Settings for the hoocode coding agent: types, defaults, storage and the manager.
 //!
 //! Settings stay the raw `settings.json` object, so keys this version does not
-//! know (newer hoocode-ts or hoocode releases, the webtools binary's own block)
+//! know (newer releases, the webtools binary's own block)
 //! pass through reads and writes unchanged. [`SettingsManager`]'s getters
 //! apply the defaults and the range checks and return typed values.
 

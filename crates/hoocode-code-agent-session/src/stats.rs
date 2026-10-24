@@ -157,6 +157,18 @@ pub fn compute_context_usage(
     session_manager: &SessionManager,
     messages: &[AgentMessage],
 ) -> Option<ContextUsage> {
+    compute_context_usage_with(model, session_manager, || {
+        hoocode_agent_compaction::estimate_context_tokens(messages).tokens
+    })
+}
+
+/// [`compute_context_usage`] for a caller that holds the messages behind a
+/// lock: `estimate_tokens` reads them in place, only when the usage is known.
+pub fn compute_context_usage_with(
+    model: Option<&Model>,
+    session_manager: &SessionManager,
+    estimate_tokens: impl FnOnce() -> u64,
+) -> Option<ContextUsage> {
     let context_window = model?.context_window;
     if context_window == 0 {
         return None;
@@ -192,7 +204,7 @@ pub fn compute_context_usage(
             });
         }
     }
-    let tokens = hoocode_agent_compaction::estimate_context_tokens(messages).tokens;
+    let tokens = estimate_tokens();
     Some(ContextUsage {
         tokens: Some(tokens),
         context_window,

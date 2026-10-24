@@ -1,10 +1,7 @@
-//! Terminal abstraction for the hoocode TUI.
-//!
-//! Ported from TypeScript `@kolisachint/hoocode-tui` -> `terminal.ts` /
-//! `stdin-buffer.ts`. Raw-mode toggling and dimension queries are delegated
+//! Terminal abstraction for the hoocode TUI, with the stdin buffer. Raw-mode toggling and dimension queries are delegated
 //! to `crossterm`; escape sequences that `crossterm` has no dedicated API
 //! for (bracketed paste, Kitty keyboard protocol negotiation, OSC progress /
-//! title) are written directly, matching the byte sequences hoocode used.
+//! title) are written directly.
 
 pub mod interrupt;
 pub mod mouse;
@@ -703,7 +700,7 @@ mod tests {
         assert_eq!(resolve_dimension(Some(120), Some("999"), 80), 120);
     }
 
-    // Port of `packages/tui/test/terminal.test.ts`: COLUMNS/LINES are used when stdout has no size.
+    // COLUMNS/LINES are used when stdout has no size.
     #[test]
     fn resolve_dimension_falls_back_to_env_var() {
         assert_eq!(resolve_dimension(None, Some("123"), 80), 123);

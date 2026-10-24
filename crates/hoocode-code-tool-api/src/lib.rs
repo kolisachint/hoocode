@@ -1,7 +1,5 @@
-//! Shared plumbing for the built-in tools of the hoocode coding agent.
-//!
-//! Ports `truncate.ts`, `path-utils.ts` and `tool-definition-wrapper.ts` from
-//! hoocode's `packages/coding-agent/src/core/tools/`.
+//! Shared plumbing for the built-in tools of the hoocode coding agent: output
+//! truncation, path helpers, and the tool-definition wrapper.
 
 pub mod definition;
 pub mod fs_error;

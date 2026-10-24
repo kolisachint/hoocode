@@ -1,8 +1,7 @@
 # hoocode-code-tool-bash
 
-Port of hoocode `core/tools/bash.ts`, `core/bash-executor.ts`,
-`core/tools/output-accumulator.ts` and `utils/shell.ts` (v0.5.89): the `bash` tool the model
-calls, and the executor behind user `!` commands.
+The `bash` tool the model calls, and the executor behind user `!` commands (including the
+output accumulator and shell resolution).
 
 Commands run through the resolved shell (`shellPath` setting, else `/bin/bash`, bash on
 `PATH`, `sh`) in their own process group, so a timeout or abort kills the whole tree.

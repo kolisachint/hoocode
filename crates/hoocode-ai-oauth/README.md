@@ -18,5 +18,3 @@ Interactive concerns — running a local HTTP callback server, opening a
 browser, prompting the user — are left to the caller (an interactive CLI/TUI
 layer); this crate only implements the network calls and pure parsing those
 flows need.
-
-Ported from TypeScript `@kolisachint/hoocode-ai` → `utils/oauth/*`.

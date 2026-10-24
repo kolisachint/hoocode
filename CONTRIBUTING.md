@@ -175,7 +175,13 @@ Maintainers release by merging a PR labelled `rust:patch`, `rust:minor` or
 builds the four platform archives, `SHA256SUMS`, and the npm and PyPI packages.
 Add the label `release:run-gates` to re-run CI before tagging.
 
-All crates share one version, set in the workspace `Cargo.toml`.
+A release can also start from a tag. Bump the version on `main` first
+(`python3 scripts/bump_versions.py <patch|minor|major>`, then `cargo update --workspace`
+so `Cargo.lock` matches), commit, and push a tag that matches it
+(`git tag v0.2.0 && git push origin v0.2.0`).
+[`release-tag.yml`](.github/workflows/release-tag.yml) checks the tag against the
+workspace version, runs the CI gates, creates the GitHub release and builds the same
+artifacts. All crates share one version, set in the workspace `Cargo.toml`.
 
 Before a release, re-record the README demo so it shows the current screens:
 `scripts/demo/record.sh` builds a release binary, runs it in tmux against the scripted

@@ -2,8 +2,6 @@
 //!
 //! Provides functions to discover API keys for various LLM providers
 //! from environment variables and Application Default Credentials (ADC).
-//!
-//! Ported from TypeScript `@kolisachint/hoocode-ai` → `env-api-keys.ts`.
 
 // ---------------------------------------------------------------------------
 // Env-var mapping

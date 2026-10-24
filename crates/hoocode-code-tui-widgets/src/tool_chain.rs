@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use hoocode_ai_types::Content;
 use hoocode_tui_glyphs::status;
-use hoocode_tui_render::Component;
+use hoocode_tui_render::{fresh_stamp, mix_stamps, Component};
 
 use hoocode_tui_ratatui::core::style::Style;
 use hoocode_tui_ratatui::core::text::Span;
@@ -66,6 +66,8 @@ pub struct ToolChainComponent {
     /// per mission, so a chain opened after prose keeps counting). The
     /// transcript sets it when the chain opens.
     base_step: usize,
+    /// New whenever one of the fields above changes (the render stamp).
+    rev: u64,
 }
 
 impl ToolChainComponent {
@@ -78,12 +80,14 @@ impl ToolChainComponent {
             latest: false,
             orphan: false,
             base_step: 0,
+            rev: fresh_stamp(),
         }
     }
 
     /// Whether this chain stands outside every mission (M5): radar keeps
     /// its summary line, since no flight-log row covers it.
     pub fn set_orphan(&mut self, orphan: bool) {
+        self.rev = fresh_stamp();
         self.orphan = orphan;
     }
 
@@ -94,10 +98,12 @@ impl ToolChainComponent {
     }
 
     pub fn set_base_step(&mut self, base: usize) {
+        self.rev = fresh_stamp();
         self.base_step = base;
     }
 
     pub fn add(&mut self, block: ToolBlock) {
+        self.rev = fresh_stamp();
         self.blocks.push(block);
     }
 
@@ -106,6 +112,7 @@ impl ToolChainComponent {
         let Some(index) = self.blocks.iter().position(|b| Rc::ptr_eq(b, block)) else {
             return;
         };
+        self.rev = fresh_stamp();
         self.blocks.remove(index);
         for lead in &mut self.lead_ins {
             if lead.before > index {
@@ -116,6 +123,7 @@ impl ToolChainComponent {
 
     /// Draws a message's trace above the calls added from now on.
     pub fn add_lead_in(&mut self, component: Rc<RefCell<AssistantMessageComponent>>) {
+        self.rev = fresh_stamp();
         self.lead_ins.push(LeadIn {
             before: self.blocks.len(),
             component,
@@ -130,6 +138,7 @@ impl ToolChainComponent {
 
     /// Gives a trace back to the caller; true when it was in this chain.
     pub fn take_lead_in(&mut self, component: &Rc<RefCell<AssistantMessageComponent>>) -> bool {
+        self.rev = fresh_stamp();
         let before = self.lead_ins.len();
         self.lead_ins
             .retain(|l| !Rc::ptr_eq(&l.component, component));
@@ -156,10 +165,12 @@ impl ToolChainComponent {
 
     /// Settle the chain. An interrupted chain reads `⊘ interrupted`.
     pub fn close(&mut self, outcome: ChainState) {
+        self.rev = fresh_stamp();
         self.state = outcome;
     }
 
     pub fn set_view(&mut self, view: ToolOutputView) {
+        self.rev = fresh_stamp();
         self.view = view;
         for block in &self.blocks {
             block.borrow_mut().set_view(view);
@@ -167,6 +178,7 @@ impl ToolChainComponent {
     }
 
     pub fn set_latest(&mut self, latest: bool) {
+        self.rev = fresh_stamp();
         self.latest = latest;
     }
 
@@ -627,7 +639,26 @@ impl Component for ToolChainComponent {
         out
     }
 
+    /// A chain that has settled, whose calls are all frozen blocks and whose
+    /// traces are settled messages, draws from its own fields and theirs. One
+    /// still collecting calls shows live clocks and the job registry: no stamp.
+    fn render_stamp(&self) -> Option<u64> {
+        if self.state == ChainState::Running {
+            return None;
+        }
+        let mut parts = vec![self.rev, self.blocks.len() as u64];
+        for block in &self.blocks {
+            parts.push(block.try_borrow().ok()?.render_stamp()?);
+        }
+        for lead in &self.lead_ins {
+            parts.push(lead.before as u64);
+            parts.push(lead.component.try_borrow().ok()?.render_stamp()?);
+        }
+        Some(mix_stamps(parts))
+    }
+
     fn invalidate(&mut self) {
+        self.rev = fresh_stamp();
         for block in &self.blocks {
             block.borrow_mut().invalidate();
         }

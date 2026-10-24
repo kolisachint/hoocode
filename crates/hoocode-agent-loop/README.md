@@ -4,4 +4,6 @@ Agent loop for hoocode agents
 
 Part of the [hoocode](https://github.com/kolisachint/hoocode) Rust workspace.
 
-This crate is currently a placeholder reserved for the Rust migration from HooCode.
+The agent loop works with `AgentMessage` throughout and converts to LLM `Message`s only
+at the provider call. Hooks are synchronous closures, and tools keep a synchronous
+`execute` that runs on tokio's blocking pool.

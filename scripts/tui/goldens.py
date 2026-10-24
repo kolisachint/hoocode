@@ -258,7 +258,7 @@ class Normalizer:
     rule's explicit ``style`` (masks a style that is itself random, such as a
     session-colour badge)."""
 
-    rules: list[tuple[re.Pattern, str, str | None]] = field(default_factory=list)
+    rules: list[tuple[re.Pattern, str, str | None, bool]] = field(default_factory=list)
 
     @classmethod
     def load(cls, extra: list[dict] | None, subs: dict[str, str]) -> "Normalizer":
@@ -270,7 +270,7 @@ class Normalizer:
             pattern = r["pattern"]
             for key, value in subs.items():
                 pattern = pattern.replace("{" + key + "}", re.escape(value))
-            rules.append((re.compile(pattern), r["replace"], r.get("style")))
+            rules.append((re.compile(pattern), r["replace"], r.get("style"), bool(r.get("keep_width"))))
         return cls(rules)
 
     def apply(self, grid: list[list[Cell]]) -> list[list[Cell]]:
@@ -288,13 +288,17 @@ class Normalizer:
                 tail_pending = True
                 out.append([])
                 continue
-            for pattern, repl, forced in self.rules:
+            for pattern, repl, forced, keep_width in self.rules:
                 text = "".join(ch for ch, _ in cells)
                 new: list[Cell] = []
                 last = 0
                 for m in pattern.finditer(text):
                     new.extend(cells[last : m.start()])
                     replaced = m.expand(repl)
+                    if keep_width:
+                        # Pad with spaces to the matched width, so text after the match
+                        # (a right-aligned column) does not move with the masked text.
+                        replaced = replaced.ljust(m.end() - m.start())
                     matched = cells[m.start() : m.end()]
                     if forced is None and len(replaced) == len(matched):
                         # A same-length rewrite keeps each cell's own style.

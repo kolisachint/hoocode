@@ -1,9 +1,9 @@
 //! CLI for the `hoocode` coding agent: argument parsing and mode dispatch.
 //!
-//! Port of hoocode `packages/coding-agent/src/cli/args.ts` (in [`args`]) and
-//! the argument-handling half of `main.ts` (in [`run`]). Flags that parse but
-//! whose behavior is not ported yet fail with a clear "not yet supported"
-//! error instead of being silently ignored.
+//! Argument parsing lives in [`args`] and the argument-handling half of the
+//! entry point in [`run`]. Flags that parse but whose behavior is not
+//! implemented yet fail with a clear "not yet supported" error instead of
+//! being silently ignored.
 
 mod app_server;
 pub mod args;

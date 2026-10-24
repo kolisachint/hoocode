@@ -23,7 +23,7 @@ use hoocode_tui_ratatui::{
     ansi_spans, bold, italic, paint, reversed, row, spans_width, truncate_spans, Palette,
     RatatuiComponent, RowCache,
 };
-use hoocode_tui_render::Component;
+use hoocode_tui_render::{fresh_stamp, mix_stamps, Component};
 
 use crate::radar::FlightMark;
 use crate::tool_output_view::ToolOutputView;
@@ -747,6 +747,7 @@ pub struct LandingLine {
     cost: String,
     summary: Option<String>,
     cache: RefCell<RowCache>,
+    rev: u64,
 }
 
 impl LandingLine {
@@ -767,6 +768,7 @@ impl LandingLine {
             cost: cost.to_string(),
             summary: None,
             cache: RefCell::new(RowCache::default()),
+            rev: fresh_stamp(),
         }
     }
 
@@ -776,6 +778,7 @@ impl LandingLine {
         if self.steps != steps || self.hits != hits {
             self.steps = steps;
             self.hits = hits;
+            self.rev = fresh_stamp();
             self.cache.borrow_mut().clear();
         }
     }
@@ -786,6 +789,7 @@ impl LandingLine {
         let summary = summary.filter(|text| !text.trim().is_empty());
         if self.summary != summary {
             self.summary = summary;
+            self.rev = fresh_stamp();
             self.cache.borrow_mut().clear();
         }
     }
@@ -807,6 +811,10 @@ impl LandingLine {
 }
 
 impl Component for LandingLine {
+    fn render_stamp(&self) -> Option<u64> {
+        Some(self.rev)
+    }
+
     fn render(&mut self, width: u16) -> Vec<String> {
         let theme = hoocode_tui_ratatui::current_theme_key();
         if let Some(cached) = self.cache.borrow().get(width, &theme) {
@@ -932,6 +940,7 @@ pub struct MissionHeader {
     view: ToolOutputView,
     flight: Option<Rc<RefCell<crate::radar::FlightStats>>>,
     cache: RefCell<RowCache>,
+    rev: u64,
 }
 
 impl MissionHeader {
@@ -944,6 +953,7 @@ impl MissionHeader {
             view: ToolOutputView::Peek,
             flight: None,
             cache: RefCell::new(RowCache::default()),
+            rev: fresh_stamp(),
         }
     }
 
@@ -951,6 +961,7 @@ impl MissionHeader {
     /// the flight-log row.
     pub fn set_view(&mut self, view: ToolOutputView) {
         self.view = view;
+        self.rev = fresh_stamp();
         self.cache.borrow_mut().clear();
     }
 
@@ -958,10 +969,24 @@ impl MissionHeader {
     /// mission runs and lands; the header reads it on every render.
     pub fn set_flight(&mut self, flight: Rc<RefCell<crate::radar::FlightStats>>) {
         self.flight = Some(flight);
+        self.rev = fresh_stamp();
     }
 }
 
 impl Component for MissionHeader {
+    /// Peek draws what the header was built with. Radar reads the shared
+    /// flight data too, so its key goes in (none while the clock runs).
+    fn render_stamp(&self) -> Option<u64> {
+        if self.view != ToolOutputView::Radar {
+            return Some(self.rev);
+        }
+        let Some(flight) = &self.flight else {
+            return Some(self.rev);
+        };
+        let key = flight.try_borrow().ok()?.render_key()?;
+        Some(mix_stamps([self.rev, key]))
+    }
+
     fn render(&mut self, width: u16) -> Vec<String> {
         if width == 0 {
             return Vec::new();

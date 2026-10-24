@@ -1,11 +1,10 @@
 //! Model registry: built-in models plus `models.json` custom providers and overrides.
 //!
-//! Port of hoocode `packages/coding-agent/src/core/model-registry.ts` (pinned v0.5.89).
-//! Not yet ported: dynamic provider registration by extensions (`registerProvider`).
+//! Dynamic provider registration by extensions (`registerProvider`) is not supported yet.
 //! Credentials come through [`AuthLookup`] (implemented by `hoocode-code-auth`'s
 //! `AuthStorage`); OAuth `modifyModels` through [`ModelRegistry::set_model_modifier`].
 //!
-//! [`resolver`] ports `model-resolver.ts` (`--model` / `--models` patterns and
+//! [`resolver`] holds the model resolver (`--model` / `--models` patterns and
 //! initial model selection).
 
 pub mod config_value;
@@ -684,7 +683,7 @@ fn merge_custom_models(mut built_in: Vec<Model>, custom: Vec<Model>) -> Vec<Mode
 }
 
 /// Default `models.json` location: `$HOOCODE_CODING_AGENT_DIR/models.json`,
-/// else `~/.hoocode/models.json`. Moves to `code-paths` in ledger 10.1.
+/// else `~/.hoocode/models.json`.
 pub fn default_models_json_path() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("HOOCODE_CODING_AGENT_DIR") {
         if !dir.is_empty() {

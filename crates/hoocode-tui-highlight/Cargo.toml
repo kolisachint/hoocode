@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars"
+description = "Syntax highlighting for the hoocode TUI, using the highlight.js 10.7.3 engine and grammars"
 readme = "README.md"
 
 [package.metadata.hoocode]
