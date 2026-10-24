@@ -684,7 +684,13 @@ async fn run_job(
             killed = true;
         }
         match child.try_wait() {
-            Ok(Some(status)) => break status.code(),
+            Ok(Some(status)) => {
+                // The flag was read above, before this exit was seen. A kill that
+                // landed in between set the flag before it signalled the shell, so
+                // reading it again catches an exit that the kill caused.
+                killed |= kill.load(Ordering::SeqCst);
+                break status.code();
+            }
             Ok(None) => {}
             Err(_) => break None,
         }
