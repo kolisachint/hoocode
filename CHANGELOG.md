@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: releases from a tag (2026-10-24)
+- **Pushing a `vX.Y.Z` tag releases it.** `release-tag.yml` checks the tag against the workspace version and that the commit is on `main`, runs the CI gates, creates the GitHub release and builds the same archives, `SHA256SUMS`, npm and PyPI packages as a labelled-PR release.
+
 ### Changed: smoother TUI in long sessions (2026-10-23)
 - **Streamed text shows up as it arrives.** The screen used to wake on a timer (up to 250 ms), so replies and tool output appeared in bursts. Repaints asked for only by the agent are capped at about 60 a second, so typing stays responsive.
 - **Frame cost no longer grows with the transcript.** Messages that have not changed keep their drawn lines between frames, and full-screen mode copies only the rows on screen. In a 200-turn session the median frame went from about 43 ms to about 12 ms.
