@@ -34,8 +34,18 @@ jobs:
         run: |
           # Merged PR(s) whose merge/squash/rebase commit is this push. Works for
           # fork PRs too. A direct push to main has no PR: nothing to release.
-          labels=$(gh api "repos/$REPO/commits/$SHA/pulls" \
-            --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first | [.labels[].name] | .[]?')
+          # The commit-to-PR link can lag a few seconds after a merge: retry.
+          labels=""
+          for attempt in 1 2 3 4 5 6; do
+            found=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | length')
+            [ "$found" -gt 0 ] && break
+            [ "$attempt" -lt 6 ] && sleep 10
+          done
+          if [ "$found" -gt 0 ]; then
+            labels=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first | .labels[]?.name')
+          fi
           echo "labels:"; echo "$labels"
           level=""
           for l in major minor patch; do
