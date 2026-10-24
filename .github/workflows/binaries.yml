@@ -104,7 +104,7 @@ jobs:
         run: |
           name="hoocode-$TARGET"
           mkdir -p "dist/$name"
-          cp README.md LICENSE "dist/$name/"
+          cp README.md LICENSE NOTICE "dist/$name/"
           cp "target/$TARGET/release/hoocode" "dist/$name/hoocode"
           chmod +x "dist/$name/hoocode"
           tar czf "dist/$name.tar.gz" -C dist "$name"

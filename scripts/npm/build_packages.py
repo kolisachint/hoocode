@@ -68,6 +68,7 @@ def build(version: str, archives: Path, out: Path) -> None:
             dest.write_bytes(src.read())
             dest.chmod(0o755)
         shutil.copy(ROOT / "LICENSE", pkg / "LICENSE")
+        shutil.copy(ROOT / "NOTICE", pkg / "NOTICE")
         (pkg / "README.md").write_text(
             f"# {SCOPE}/{name}\n\nThe `hoocode` binary for {os_}-{cpu}. "
             f"Install [`{SCOPE}/hoocode`](https://www.npmjs.com/package/{SCOPE}/hoocode) instead.\n"
@@ -89,6 +90,7 @@ def build(version: str, archives: Path, out: Path) -> None:
     main = out / "hoocode"
     shutil.copytree(ROOT / "npm" / "hoocode", main)
     shutil.copy(ROOT / "LICENSE", main / "LICENSE")
+    shutil.copy(ROOT / "NOTICE", main / "NOTICE")
     shutil.copy(ROOT / "README.md", main / "README.md")
     write_json(
         main / "package.json",
