@@ -51,7 +51,7 @@ jobs:
           # No Windows build: it was the slowest leg of every release.
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
 
@@ -116,7 +116,7 @@ jobs:
 
       - name: Upload artifact
         if: github.event_name != 'release' && !inputs.upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: hoocode-${{ matrix.target }}
           path: ${{ steps.pkg.outputs.file }}
@@ -149,10 +149,10 @@ jobs:
       contents: read
       id-token: write # npm provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
@@ -186,10 +186,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ env.TAG }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Build wheel
