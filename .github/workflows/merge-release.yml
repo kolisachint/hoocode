@@ -2,27 +2,54 @@ name: Merge Release
 
 # Auto-release when a merged PR carries a rust:patch / rust:minor / rust:major
 # label (port of hoocode's npm:* labels and pycortex's pypi:* labels).
+#
+# Triggered by the push to main, not by pull_request:closed. A pull_request run
+# for a fork PR gets a read-only token and no secrets, so the release could not
+# push the tag. A push run always has the base repo's token and secrets, and it
+# runs the workflow file and code already on main, never code from the PR.
+# Labels are read from the API at merge time (not from an event payload).
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
 
 jobs:
   level:
-    if: github.event.pull_request.merged == true
+    # Skip the release bot's own "Release vX" commits.
+    if: ${{ !startsWith(github.event.head_commit.message, 'Release v') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       level: ${{ steps.pick.outputs.level }}
+      skip_gates: ${{ steps.pick.outputs.skip_gates }}
+      publish_crates: ${{ steps.pick.outputs.publish_crates }}
     steps:
       - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
         run: |
-          labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
+          # Merged PR(s) whose merge/squash/rebase commit is this push. Works for
+          # fork PRs too. A direct push to main has no PR: nothing to release.
+          labels=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+            --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first | [.labels[].name] | .[]?')
+          echo "labels:"; echo "$labels"
           level=""
           for l in major minor patch; do
-            echo "$labels" | grep -q "\"rust:$l\"" && { level="$l"; break; }
+            echo "$labels" | grep -qx "rust:$l" && { level="$l"; break; }
           done
-          echo "level=$level" >> "$GITHUB_OUTPUT"
+          skip_gates=true
+          echo "$labels" | grep -qx "release:run-gates" && skip_gates=false
+          publish_crates=false
+          echo "$labels" | grep -qx "release:crates" && publish_crates=true
+          {
+            echo "level=$level"
+            echo "skip_gates=$skip_gates"
+            echo "publish_crates=$publish_crates"
+          } >> "$GITHUB_OUTPUT"
 
   release:
     needs: level
@@ -35,11 +62,11 @@ jobs:
     with:
       level: ${{ needs.level.outputs.level }}
       # release.yml fails if main HEAD is not this commit (main moved on).
-      expected_sha: ${{ github.event.pull_request.merge_commit_sha }}
+      expected_sha: ${{ github.sha }}
       # Gates (ci.yml, re-run) are skipped by default: the PR's CI already ran.
       # Add label release:run-gates to re-run them. Manual dispatch of
       # release.yml runs them (its skip_gates input defaults to false).
       # release:crates (deferred: does nothing yet).
-      skip_gates: ${{ !contains(github.event.pull_request.labels.*.name, 'release:run-gates') }}
-      publish_crates: ${{ contains(github.event.pull_request.labels.*.name, 'release:crates') }}
+      skip_gates: ${{ needs.level.outputs.skip_gates == 'true' }}
+      publish_crates: ${{ needs.level.outputs.publish_crates == 'true' }}
     secrets: inherit
