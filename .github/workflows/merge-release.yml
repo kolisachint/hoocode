@@ -21,6 +21,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      issues: read
     outputs:
       level: ${{ steps.pick.outputs.level }}
       skip_gates: ${{ steps.pick.outputs.skip_gates }}
@@ -34,18 +35,21 @@ jobs:
         run: |
           # Merged PR(s) whose merge/squash/rebase commit is this push. Works for
           # fork PRs too. A direct push to main has no PR: nothing to release.
-          # The commit-to-PR link can lag a few seconds after a merge: retry.
-          labels=""
+          # The commit-to-PR link can lag (and its embedded labels can be
+          # stale) right after a merge: retry for the PR number, then read the
+          # labels from the PR itself.
+          pr=""
           for attempt in 1 2 3 4 5 6; do
-            found=$(gh api "repos/$REPO/commits/$SHA/pulls" \
-              --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | length')
-            [ "$found" -gt 0 ] && break
+            pr=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first | .number // empty')
+            [ -n "$pr" ] && break
             [ "$attempt" -lt 6 ] && sleep 10
           done
-          if [ "$found" -gt 0 ]; then
-            labels=$(gh api "repos/$REPO/commits/$SHA/pulls" \
-              --jq '[.[] | select(.merged_at != null and .base.ref == "main")] | first | .labels[]?.name')
+          labels=""
+          if [ -n "$pr" ]; then
+            labels=$(gh api "repos/$REPO/issues/$pr/labels" --jq '.[].name')
           fi
+          echo "PR: ${pr:-none}"
           echo "labels:"; echo "$labels"
           level=""
           for l in major minor patch; do
