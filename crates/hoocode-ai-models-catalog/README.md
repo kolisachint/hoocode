@@ -38,7 +38,7 @@ on demand. If the output changed, it opens a PR on branch `bot/models-sync` with
 the report as the PR body. Review the report, check the zero prices and the
 price changes, then merge.
 
-The PR needs the `MODELS_SYNC_TOKEN` secret (a fine-grained PAT). A PR opened
+The PR needs the `GH_TOKEN` secret (a fine-grained PAT). A PR opened
 with the default `GITHUB_TOKEN` does not trigger CI.
 
 ## Overrides

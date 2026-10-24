@@ -42,12 +42,12 @@ jobs:
       - name: Open the sync PR
         # A PR opened with the default GITHUB_TOKEN does not trigger the CI
         # workflows (GitHub's rule against recursive runs), so the PR would sit
-        # without checks. Set MODELS_SYNC_TOKEN to a fine-grained PAT with
-        # contents and pull-requests write access to get CI on the PR. Without
-        # it, the PR is still opened, but it needs a manual push or re-run.
+        # without checks. Set GH_TOKEN to a fine-grained PAT with contents and
+        # pull-requests write access to get CI on the PR. Without it, the PR is
+        # still opened, but it needs a manual push or re-run.
         uses: peter-evans/create-pull-request@v7
         with:
-          token: ${{ secrets.MODELS_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           branch: bot/models-sync
           title: "chore(models): sync catalog from models.dev"
           body-path: ${{ runner.temp }}/report.md
