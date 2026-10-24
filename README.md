@@ -95,8 +95,10 @@ cargo install --locked --path crates/hoocode-code-main --bin hoocode
 ```
 
 Or run `scripts/install.sh`, which builds a release binary and installs it as
-`hoocode` and `hoo` into `~/.hoocode/bin` (if the install script was used before) or
-`~/.local/bin`. `--prefix DIR` picks another directory.
+`hoocode` and `hoo`. By default, it updates `$HOOCODE_INSTALL_DIR/bin` when that
+directory already contains an executable `hoocode`; if `HOOCODE_INSTALL_DIR` is
+unset, it checks `~/.hoocode/bin` instead. Otherwise, it installs into
+`~/.local/bin`. Pass `--prefix DIR` to override the destination.
 
 hoocode is not on crates.io or Homebrew.
 
