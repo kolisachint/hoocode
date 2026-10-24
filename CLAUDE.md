@@ -23,6 +23,9 @@ reference, pin, shim or parity checks remain; don't ask about TS parity.
 - **TUI work is done by Haiku subagents** (user, 2026-10-09): review, implement and test.
   The main session orchestrates, briefs and merges. In the TUI plan, simplification
   (Phase S of `docs/design/tui-activity.md`) comes before the feature phases.
+- **User docs:** `docs/user/` is the website's /hoocode pages, copied from each release
+  tag. When a change alters a flag, command, path or install route, update the page in
+  the same commit.
 - **Maps:** `docs/maps/packages.md` (crates) and `docs/maps/ui.md` (screen, pickers, slash
   commands). Read them to find code; update them in the same commit as any crate, screen
   or command change.
