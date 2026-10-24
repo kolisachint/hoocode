@@ -216,7 +216,8 @@ You don't need this section to contribute. Contributors shouldn't add the labels
 `rust:patch`, `rust:minor`, `rust:major` or any `release:*` label.
 
 Maintainers release by merging a PR labelled `rust:patch`, `rust:minor` or
-`rust:major`. [`merge-release.yml`](.github/workflows/merge-release.yml) then runs
+`rust:major`. [`merge-release.yml`](.github/workflows/merge-release.yml) then runs (on the push to
+`main`, so it works for fork PRs; it reads the labels from the merged PR via the API)
 [`release.yml`](.github/workflows/release.yml): it bumps the workspace version, tags
 `vX.Y.Z`, creates the GitHub release, and [`binaries.yml`](.github/workflows/binaries.yml)
 builds the four platform archives, `SHA256SUMS`, and the npm and PyPI packages.
