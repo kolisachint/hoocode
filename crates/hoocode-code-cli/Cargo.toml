@@ -41,7 +41,7 @@ hoocode-code-subagents = { workspace = true }
 hoocode-code-scheduler = { workspace = true }
 hoocode-code-task-store = { workspace = true }
 hoocode-code-media = { workspace = true }
-base64 = "0.22"
+base64 = "0.23"
 hoocode-code-tool-api = { workspace = true }
 hoocode-code-tools = { workspace = true }
 hoocode-code-tools-fs = { workspace = true }

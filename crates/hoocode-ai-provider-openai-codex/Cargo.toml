@@ -23,7 +23,7 @@ hoocode-ai-provider-openai-responses = { workspace = true }
 hoocode-ai-stream = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-ai-util = { workspace = true }
-base64 = "0.22"
+base64 = "0.23"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 serde_json = "1"

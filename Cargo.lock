@@ -1029,7 +1029,7 @@ name = "hoocode-agent-mcp"
 version = "0.2.11"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "http",
  "http-body-util",
@@ -1091,7 +1091,7 @@ version = "0.2.11"
 name = "hoocode-ai-oauth"
 version = "0.2.11"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "hoocode-ai-types",
  "hoocode-ai-util",
  "rand 0.8.8",
@@ -1143,7 +1143,7 @@ dependencies = [
 name = "hoocode-ai-oauth-openai-codex"
 version = "0.2.11"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "hoocode-ai-oauth",
  "serde_json",
  "tokio",
@@ -1234,7 +1234,7 @@ dependencies = [
 name = "hoocode-ai-provider-openai-codex"
 version = "0.2.11"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "futures-util",
  "hoocode-ai-env",
  "hoocode-ai-models",
@@ -1270,7 +1270,7 @@ dependencies = [
 name = "hoocode-ai-registry"
 version = "0.2.11"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "futures-util",
  "hoocode-ai-env",
  "hoocode-ai-models",
@@ -1439,7 +1439,7 @@ dependencies = [
 name = "hoocode-code-cli"
 version = "0.2.11"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "hoocode-agent-compaction",
  "hoocode-agent-core",
@@ -1519,7 +1519,7 @@ dependencies = [
 name = "hoocode-code-media"
 version = "0.2.11"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "fancy-regex",
  "hoocode-runtime",
  "hoocode-tui-util",
@@ -1807,7 +1807,7 @@ dependencies = [
 name = "hoocode-code-tools-fs"
 version = "0.2.11"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "hoocode-agent-types",
  "hoocode-ai-types",
  "hoocode-code-media",
@@ -2060,7 +2060,7 @@ dependencies = [
 name = "hoocode-tui-images"
 version = "0.2.11"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "hoocode-tui-util",
  "once_cell",
  "rand 0.8.8",
