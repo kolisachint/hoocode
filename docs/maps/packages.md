@@ -102,7 +102,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `ai-oauth-openai-codex` | OpenAI Codex (ChatGPT Plus/Pro) OAuth flow for hoocode AI | 1 | 599 / 0 | keep |
 | `ai-provider-anthropic` | Anthropic provider for hoocode AI | 1 | 2770 / 518 | keep |
 | `ai-provider-faux` | Faux / test provider for hoocode AI | 0 | 931 / 816 | test provider (dev-dep only) |
-| `ai-provider-google` | Google Gemini provider for hoocode AI | 2 | 3160 / 110 | keep |
+| `ai-provider-google` | Google Gemini provider for hoocode AI | 2 | 3248 / 110 | keep |
 | `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for hoocode AI | 1 | 1720 / 0 | keep |
 | `ai-provider-openai` | OpenAI provider for hoocode AI | 1 | 3404 / 808 | keep |
 | `ai-provider-openai-codex` | OpenAI Codex (ChatGPT subscription) Responses provider for hoocode AI: SSE and WebSocket transports | 1 | 2556 / 0 | keep |
