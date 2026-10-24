@@ -32,7 +32,7 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - run: cargo fmt --all -- --check
@@ -40,7 +40,7 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -54,7 +54,7 @@ jobs:
     # Longest green run ~3 min. A hung test is killed by nextest (-P ci) at 5 min.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -74,7 +74,7 @@ jobs:
     # Longest green run ~7 min (2026-10-24). Hung-test kill at 5 min via nextest.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -89,7 +89,7 @@ jobs:
   doc:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -103,7 +103,7 @@ jobs:
     # (one `it` binary per crate), not as one binary per file.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: |
           stray=$(find crates -path '*/tests/*.rs' -not -path '*/tests/it/*')
           if [ -n "$stray" ]; then
@@ -117,7 +117,7 @@ jobs:
     # checkout must be a normal one) and the crate map matches the workspace.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: scripts/ci/no_cortex.sh
       - run: python3 scripts/maps/packages.py --check
 
@@ -133,7 +133,7 @@ jobs:
     timeout-minutes: 30
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -158,7 +158,7 @@ jobs:
     timeout-minutes: 60
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -179,7 +179,7 @@ jobs:
   firewall:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: python3 scripts/ci/check_dep_firewall.py
       # The curl installer runs under any /bin/sh; check it parses under dash too.
       - name: install.sh syntax

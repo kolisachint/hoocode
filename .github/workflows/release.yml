@@ -67,10 +67,13 @@ jobs:
     outputs:
       tag: ${{ steps.bump.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
+          # The "git push origin HEAD:main" step below uses these persisted
+          # credentials (v7 keeps them in an includeIf file, removed post-job).
+          persist-credentials: true
       - name: Main is the merged commit
         # A label-triggered release must ship the PR that was merged. If main
         # moved on (another merge landed while gates ran or the group was busy),
