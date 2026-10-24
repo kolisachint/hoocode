@@ -26,6 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCOPE = "@kolisachint"
+NOTICE = ROOT / "NOTICE"
 REPO_URL = "git+https://github.com/kolisachint/hoocode.git"
 
 # npm os/cpu -> Rust target of the release archive.
@@ -68,7 +69,10 @@ def build(version: str, archives: Path, out: Path) -> None:
             dest.write_bytes(src.read())
             dest.chmod(0o755)
         shutil.copy(ROOT / "LICENSE", pkg / "LICENSE")
-        shutil.copy(ROOT / "NOTICE", pkg / "NOTICE")
+        files = ["bin/hoocode"]
+        if NOTICE.exists():  # tags older than NOTICE have none
+            shutil.copy(NOTICE, pkg / "NOTICE")
+            files.append("NOTICE")
         (pkg / "README.md").write_text(
             f"# {SCOPE}/{name}\n\nThe `hoocode` binary for {os_}-{cpu}. "
             f"Install [`{SCOPE}/hoocode`](https://www.npmjs.com/package/{SCOPE}/hoocode) instead.\n"
@@ -81,7 +85,7 @@ def build(version: str, archives: Path, out: Path) -> None:
                 "description": f"hoocode binary for {os_}-{cpu}",
                 "os": [os_],
                 "cpu": [cpu],
-                "files": ["bin/hoocode"],
+                "files": files,
                 **COMMON,
             },
         )
@@ -90,7 +94,10 @@ def build(version: str, archives: Path, out: Path) -> None:
     main = out / "hoocode"
     shutil.copytree(ROOT / "npm" / "hoocode", main)
     shutil.copy(ROOT / "LICENSE", main / "LICENSE")
-    shutil.copy(ROOT / "NOTICE", main / "NOTICE")
+    main_files = ["bin/hoocode.js"]
+    if NOTICE.exists():
+        shutil.copy(NOTICE, main / "NOTICE")
+        main_files.append("NOTICE")
     shutil.copy(ROOT / "README.md", main / "README.md")
     write_json(
         main / "package.json",
@@ -99,7 +106,7 @@ def build(version: str, archives: Path, out: Path) -> None:
             "version": version,
             "description": "hoocode, the terminal coding agent",
             "bin": {"hoocode": "bin/hoocode.js", "hoo": "bin/hoocode.js"},
-            "files": ["bin/hoocode.js"],
+            "files": main_files,
             "engines": {"node": ">=18"},
             "optionalDependencies": optional,
             **COMMON,
