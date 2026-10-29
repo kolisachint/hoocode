@@ -22,6 +22,10 @@
 
 <p align="center"><sub>The real binary; only the model is scripted, so the demo can be recorded again for each release (<code>scripts/demo/record.sh</code>).</sub></p>
 
+<p align="center"><a href="https://github.com/kolisachint/hoocode-demo/blob/main/out/v2/hoocode-trailer-60s.mp4"><img src="docs/assets/trailer-60s.jpg" alt="hoocode 60-second trailer (click to play)" width="800"></a></p>
+
+<p align="center"><sub>▶ Watch the 60-second trailer</sub></p>
+
 ---
 
 hoocode reads your code, runs commands, edits files and talks to the model of your
