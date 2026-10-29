@@ -95,7 +95,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `ai-env` | Environment and API key handling for hoocode AI | 8 | 343 / 0 | keep |
 | `ai-models` | LLM model registry and discovery for hoocode AI | 11 | 344 / 247 | keep |
 | `ai-models-catalog` | Model catalog data (LLM and image models) for hoocode AI, generated from models.dev | 1 | 24 / 0 | keep |
-| `ai-oauth` | OAuth core for hoocode AI: types, PKCE, callback server, provider registry | 7 | 1085 / 0 | keep |
+| `ai-oauth` | OAuth core for hoocode AI: types, PKCE, callback server, provider registry | 7 | 1084 / 0 | keep |
 | `ai-oauth-anthropic` | Anthropic (Claude Pro/Max) OAuth flow for hoocode AI | 1 | 544 / 0 | keep |
 | `ai-oauth-github-copilot` | GitHub Copilot OAuth device flow for hoocode AI | 1 | 675 / 0 | keep |
 | `ai-oauth-google` | Google Cloud Code Assist OAuth flows (Gemini CLI, Antigravity) for hoocode AI | 1 | 1448 / 0 | keep |
@@ -183,7 +183,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1048 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1956 / 583 | keep |
 | `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1510 / 172 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4917 / 2787 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4922 / 2796 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3253 / 343 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 15 | 2495 / 682 | keep |
 

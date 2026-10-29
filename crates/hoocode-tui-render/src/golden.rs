@@ -23,12 +23,17 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// vt100 takes non-zero dimensions; callers clamp to at least 1 first.
+fn nonzero(n: u16) -> std::num::NonZeroU16 {
+    std::num::NonZeroU16::new(n).expect("terminal dimension must be non-zero")
+}
+
 /// Renders `component` at `width` columns and returns its golden text form.
 pub fn render_golden(component: &mut dyn Component, width: u16) -> String {
     let lines = component.render(width);
     let cols = width.max(1);
     let rows = u16::try_from(lines.len()).unwrap_or(u16::MAX).max(1);
-    let mut parser = vt100::Parser::new(rows, cols, 0);
+    let mut parser = vt100::Parser::new(nonzero(rows), nonzero(cols), 0);
     parser.process(lines.join("\r\n").as_bytes());
     let screen = parser.screen();
 
