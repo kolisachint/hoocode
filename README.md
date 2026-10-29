@@ -17,14 +17,10 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="hoocode in a terminal: asked to make mean() return an Option, it reads src/lib.rs, shows the edit as a diff and waits for approval, runs cargo test after a second approval (1 passed), sums up, and then opens the slash-command menu" width="800">
+  <img src="docs/assets/demo.gif" alt="hoocode in a terminal: asked to make mean() return an Option, it reads src/lib.rs, shows the edit as a diff and waits for approval, runs cargo test after a second approval (1 passed), sums up, and then opens the slash-command menu" width="800" height="507">
 </p>
 
 <p align="center"><sub>The real binary; only the model is scripted, so the demo can be recorded again for each release (<code>scripts/demo/record.sh</code>).</sub></p>
-
-<p align="center"><a href="https://github.com/kolisachint/hoocode-demo/blob/main/out/v2/hoocode-trailer-60s.mp4"><img src="docs/assets/trailer-60s.jpg" alt="hoocode 60-second trailer (click to play)" width="800"></a></p>
-
-<p align="center"><sub>▶ Watch the 60-second trailer</sub></p>
 
 ---
 

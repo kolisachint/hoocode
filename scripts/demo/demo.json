@@ -1,8 +1,8 @@
 {
   "description": "README demo: hoocode in a small Rust crate. The user asks for a fix; the model reads the file (no approval needed), edits it and runs cargo test, each after a 'go, once' approval, then answers. The model is the scripted mock LLM (scripts/tui/mockllm.py); every tool call runs for real, then opens the slash-command menu.",
   "terminal": {
-    "cols": 96,
-    "rows": 44
+    "cols": 120,
+    "rows": 34
   },
   "model": {
     "provider": "demo",
