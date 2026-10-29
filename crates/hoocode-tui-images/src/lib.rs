@@ -192,7 +192,7 @@ pub fn is_image_line(line: &str) -> bool {
         .any(|p| line.contains(p))
 }
 
-/// Generate a random image ID for the Kitty graphics protocol, in range [1, 0xffffffff].
+/// Generate a random image ID for the Kitty graphics protocol, in range [1, 0xffff_fffe].
 pub fn allocate_image_id() -> u32 {
     let id: u32 = rand::random_range(0..0xffff_fffe);
     id + 1

@@ -183,7 +183,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1048 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1956 / 583 | keep |
 | `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1510 / 172 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4922 / 2796 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4922 / 2801 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3253 / 343 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 15 | 2495 / 682 | keep |
 

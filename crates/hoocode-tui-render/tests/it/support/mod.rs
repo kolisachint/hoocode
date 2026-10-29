@@ -111,12 +111,17 @@ impl Handle {
         self.parser.lock().unwrap().screen().alternate_screen()
     }
 
-    /// Resize like xterm.js (`Buffer.resize`), which the pin's tests run on:
-    /// a height change on the normal screen keeps the cursor row's content
-    /// in view. Shrinking first drops blank rows below the cursor, then
-    /// scrolls the top rows into scrollback; growing pulls rows back out of
-    /// scrollback. vt100's `set_size` would instead cut rows off the bottom.
-    /// Cell styles are not carried across such a resize.
+    /// Resize like xterm.js (`Buffer.resize`): a height change on the normal
+    /// screen keeps the cursor row's content in view. Shrinking first drops
+    /// blank rows below the cursor, then scrolls the top rows into scrollback;
+    /// growing pulls rows back out of scrollback.
+    ///
+    /// vt100 0.18.1's `Screen::set_size` does the same trim, push and pull
+    /// (`grid.rs`), and also resets the scroll region and scrollback offset,
+    /// so this is no longer a workaround for cut-off rows. The helper is kept
+    /// as is for the resize tests (`screen_fill`, `scroll_viewport`): it
+    /// rebuilds the screen through a fresh parser, and cell styles are not
+    /// carried across such a resize, which `set_size` does keep.
     pub fn resize(&self, cols: u16, rows: u16) {
         let (old_cols, old_rows) = *self.size.lock().unwrap();
         *self.size.lock().unwrap() = (cols, rows);
