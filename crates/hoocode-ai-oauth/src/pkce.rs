@@ -3,7 +3,6 @@
 //! Ported from TypeScript `@kolisachint/hoocode-ai` → `utils/oauth/pkce.ts`.
 
 use base64::Engine;
-use rand::RngCore;
 use sha2::{Digest, Sha256};
 
 fn base64url_encode(bytes: &[u8]) -> String {
@@ -19,7 +18,7 @@ pub struct Pkce {
 /// Generate a PKCE code verifier and its S256 challenge.
 pub fn generate_pkce() -> Pkce {
     let mut verifier_bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut verifier_bytes);
+    rand::fill(&mut verifier_bytes);
     let verifier = base64url_encode(&verifier_bytes);
 
     let mut hasher = Sha256::new();
