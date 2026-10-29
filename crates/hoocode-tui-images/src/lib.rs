@@ -14,7 +14,6 @@ pub use iterm2::{encode_iterm2, ITerm2EncodeOptions};
 pub use kitty::{delete_kitty_image, encode_kitty, KittyEncodeOptions};
 
 use once_cell::sync::Lazy;
-use rand::Rng;
 use std::env;
 use std::sync::Mutex;
 
@@ -195,7 +194,8 @@ pub fn is_image_line(line: &str) -> bool {
 
 /// Generate a random image ID for the Kitty graphics protocol, in range [1, 0xffffffff].
 pub fn allocate_image_id() -> u32 {
-    rand::thread_rng().gen_range(0..0xffff_fffe) + 1
+    let id: u32 = rand::random_range(0..0xffff_fffe);
+    id + 1
 }
 
 pub fn calculate_image_rows(
