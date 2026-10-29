@@ -22,7 +22,7 @@ hoocode-tui-keys = { workspace = true }
 hoocode-tui-terminal = { workspace = true }
 hoocode-tui-util = { workspace = true }
 # Only for the `golden` module (screen snapshots in tests).
-vt100 = { version = "0.16", optional = true }
+vt100 = { version = "0.18", optional = true }
 
 [features]
 # Golden snapshots (`golden` module, `assert_golden!`). Other crates enable it as a dev-dependency feature.

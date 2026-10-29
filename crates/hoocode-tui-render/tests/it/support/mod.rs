@@ -10,6 +10,11 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// vt100 takes non-zero dimensions; a zero size is a test bug.
+fn nonzero(n: u16) -> std::num::NonZeroU16 {
+    std::num::NonZeroU16::new(n).expect("terminal dimension must be non-zero")
+}
+
 #[derive(Clone)]
 pub struct Handle {
     parser: Arc<Mutex<vt100::Parser>>,
@@ -24,7 +29,11 @@ pub struct VirtualTerminal {
 
 pub fn virtual_terminal(cols: u16, rows: u16) -> (Box<dyn Terminal>, Handle) {
     let handle = Handle {
-        parser: Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 10_000))),
+        parser: Arc::new(Mutex::new(vt100::Parser::new(
+            nonzero(rows),
+            nonzero(cols),
+            10_000,
+        ))),
         size: Arc::new(Mutex::new((cols, rows))),
         writes: Arc::default(),
         mouse: true,
@@ -113,7 +122,7 @@ impl Handle {
         *self.size.lock().unwrap() = (cols, rows);
         let mut parser = self.parser.lock().unwrap();
         if cols != old_cols || rows == old_rows || parser.screen().alternate_screen() {
-            parser.screen_mut().set_size(rows, cols);
+            parser.screen_mut().set_size(nonzero(rows), nonzero(cols));
             return;
         }
 
@@ -139,9 +148,9 @@ impl Handle {
             (depth + h, cur + (r - h).min(depth))
         };
 
-        let mut fresh = vt100::Parser::new(rows, cols, 10_000);
+        let mut fresh = vt100::Parser::new(nonzero(rows), nonzero(cols), 10_000);
         fresh.process(lines[..end].join("\r\n").as_bytes());
-        fresh.process(&input_modes);
+        fresh.process(input_modes.as_bytes());
         fresh.process(
             format!(
                 "\x1b[{};{}H{}",
