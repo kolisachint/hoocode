@@ -61,6 +61,8 @@ Mockup (approved; the text is the design):
    ╰ ◐ IN FLIGHT · 25 steps · 1m 12s
 ```
 
+M1 is drawn folded to show the folded form, as if it were an older mission; with only two missions, M1 is the latest finished mission and stays open (rule 7), showing its ⊗ batch and HIT row.
+
 Other turn ends (same row):
 
 ```
@@ -102,7 +104,7 @@ Other turn ends (same row):
    Faint for the rail and borders. Mark colours as today: green `●`, red `⊗`, accent `◐`,
    dim `⊘`. The `HIT` chip is red. One text column after the rail.
 9. **Mark decision.** A mission that had a hit but landed keeps `●`, as peek and full do.
-   Red is only for `DID NOT LAND`.
+   For the mission mark, red is only for `DID NOT LAND`.
 
 ## Waiting state (verified 2026-10-29)
 
@@ -124,7 +126,7 @@ does `◆ WAITING` need a new `FlightMark` variant?
 | Queue of requests behind the open card | `hoocode-code-tui-app/src/clearance_queue.rs:19` `PendingClearance`, `:37` `ClearanceQueue`, `:85` `waiting()` |
 | Mode state: open card and queue | `hoocode-code-tui-app/src/mode/mod.rs:570`, `:572` |
 | Block flag: a call with no result that is not frozen | `hoocode-code-tui-widgets/src/tool_execution.rs:431` field, `:618` setter, `:609` `is_held_by`, `:761` `is_waiting_for_clearance` |
-| Today's rendering of a held step: `◉ NN Tool … holding for clearance`, the head `◉`, queued steps `○ next` | `hoocode-code-tui-widgets/src/radar.rs:783` `waiting_row`, `:814` `waiting_line`; used at `tool_chain.rs:361` |
+| Today's rendering of a held step: `◉ NN Tool … holding for clearance`, the head `◉`, queued steps `○ next` | `hoocode-code-tui-widgets/src/radar.rs:783` `waiting_row`, `:814` `waiting_line`; used at `tool_chain.rs:365` |
 | Subagent held step under its agent | `radar.rs:796` `sub_waiting_row`; imported at `tool_chain.rs:22` |
 | Mission mark today: an open chain is `InFlight`, so a held mission reads `◐ IN FLIGHT` | `hoocode-code-tui-app/src/mode/transcript.rs:337` `mission_mark` (`:342`) |
 
@@ -156,14 +158,14 @@ does `◆ WAITING` need a new `FlightMark` variant?
 
 - A subagent's hold does not sit on the parent's block. It shows under the subagent's
   Agent row (`sub_waiting_row`). Whether the parent's turn-end row should read WAITING for
-  it was not traced end to end. See open question 4.
+  it was not traced end to end. See open question 3.
 - The queue (`ClearanceQueue::waiting()`) lives in the mode, not the transcript. The row
   names the head only.
 - The turn's elapsed clock keeps running while the call is held. That matches today's
   `IN FLIGHT` clock and is intended.
 - The glyph `◆` is not in the status module (`hoocode-tui-glyphs`). Its glyph notes say
   some geometric glyphs (`◐◑◒◓`) are missing from the bundled font, yet the radar already
-  uses `◐`. Check `◆` in the font before the build (open question 5).
+  uses `◐`. Check `◆` in the font before the build (open question 4).
 
 ## Implementation notes
 
@@ -175,11 +177,11 @@ file. Per [tui-activity.md](tui-activity.md), a Haiku subagent does the work.
 | `hoocode-code-tui-widgets/src/radar.rs` | Mission header `▲ Mn  prompt` (mark moves to the turn end). New batch row (settled and live), hit rows as `└` nested two columns, thinking as one dim line with no duration (`think_rows` wraps today), summary row for folded missions, turn-end row (reuse `landing_spans`, add the reason piece for `DID NOT LAND` and the `awaiting` text for WAITING). `FlightStats` gains ordered flight items and `awaiting`. `render_key` covers both. `chain_rows` and the row builders it uses are replaced. |
 | `hoocode-code-tui-widgets/src/trajectory.rs` | Reuse `landing_spans` (`:685`), `landing_line` (`:717`), `short_dur` (`:290`), `steps_text`, `hits_text`. No change to peek or full. |
 | `hoocode-code-tui-widgets/src/tool_chain_summary.rs` | Reuse `turn_phrase`. Do **not** change `chain_stats` in place: it writes `N failed` and line counts that peek may still use. Add a radar-only call-count formatter. Check callers first. |
-| `hoocode-code-tui-widgets/src/tool_chain.rs` | A chain closes only on assistant text (`speaking_ends_chain`, `:37`). Thinking is a lead-in to the next chain (`transcript.rs:1223`, `place_trace_in_chain`). R3 needs thinking to be a batch boundary in radar. Keep the chain model for peek. Radar reads the batch boundaries from the flight items below. `ends_in_hit` (`:311`) and the `waiting_row` use (`:361`) stay. |
-| `hoocode-code-tui-app/src/mode/transcript.rs` | Per mission, an ordered list of flight items: `Batch` (a range of chain entries), `Thinking` (seconds and gist), and the final answer. Built as blocks arrive, refreshed in `refresh_flight_marks` (`:409`). `MissionRange` (`:130-140`) holds it. `awaiting` comes from the mission's open chain's held block (`mission_mark` area, `:337`). `sync_radar_prose` (`:376`) already shows only the final answer once a mission ends (rule 6 holds today); R3 changes how it renders, not when. |
+| `hoocode-code-tui-widgets/src/tool_chain.rs` | A chain closes only on assistant text (`speaking_ends_chain`, `:37`). Thinking is a lead-in to the next chain (`transcript.rs:1225`, `place_trace_in_chain`). R3 needs thinking to be a batch boundary in radar. Keep the chain model for peek. Radar reads the batch boundaries from the flight items below. `ends_in_hit` (`:303`) and the `waiting_row` use (`:365`) stay. |
+| `hoocode-code-tui-app/src/mode/transcript.rs` | Per mission, an ordered list of flight items: `Batch` (a range of chain entries), `Thinking` (gist; seconds stay for peek/full only), and the final answer. Built as blocks arrive, refreshed in `refresh_flight_marks` (`:409`). `MissionRange` (`:135-142`) holds it. `awaiting` comes from the mission's open chain's held block (`mission_mark` area, `:337`). `sync_radar_prose` (`:376`) already shows only the final answer once a mission ends (rule 6 holds today); R3 changes how it renders, not when. |
 | `hoocode-code-tui-app/src/comms_frame.rs` | No change. The foot label and the `CommsState` match stay as they are. |
 | `hoocode-code-tui-widgets/tests/it/radar.rs` | Rewrite the tests that assert the old one-row-per-mission chain: `:212` (chain row, flying and landed), `:255` (wide chain row wraps; becomes "a batch line never wraps"), `:283` (thinking wraps; becomes one line), `:312` (prose moves to the hit text). Keep the prompt-wrap, hit-indent, stepless and sub-step tests, adjusting their expected text. Add: batch split at thinking, folded summary, WAITING row, DID NOT LAND reason. |
-| `hoocode-code-tui-app/src/mode/transcript.rs` tests (`:1853-2094`) | Update the flight-stats tests for the new items. |
+| `hoocode-code-tui-app/src/mode/transcript.rs` tests (`:1853-2179`) | Update the flight-stats tests for the new items. |
 | Goldens | `tests/golden/hoocode-code-tui-app/layers_{aborted,agent,failed,landed,stepless}_radar_{80,120}.txt` (10 files, at the repo root). Regenerate with `UPDATE_GOLDENS=1` under nextest. Screen goldens (`scripts/tui/goldens.py`) are a pre-release check only. |
 | `docs/maps/ui.md` | Update the radar rows (the flight log row at line 68 and the trajectory row at line 67 if its wording changes) in the implementing commit. |
 | `docs/user/` | Grep for radar. Change any page that describes the radar rows in the same commit. |
@@ -224,13 +226,10 @@ Each has the recommended answer first.
    the hit total appears on the turn-end row, and the live row is that row. Recommended: show
    the count live as well (the row updates in place). Alternative: as the mockup, count only on
    landing.
-3. **Step number on hit rows.** Rule 1 says no step-number gutter; rule 4 keeps `NN` on hit
-   rows (`05 Shell`). Recommended: keep `NN` on hit rows only, as the mockup shows, since a
-   hit row names its step. Alternative: drop it.
-4. **Subagent holds.** Should the parent's turn end read `◆ WAITING` when a subagent's child
+3. **Subagent holds.** Should the parent's turn end read `◆ WAITING` when a subagent's child
    is held? Recommended: yes, read from the Agent row's held child. Alternative: the Agent row
    shows the hold and the turn end reads `◐ IN FLIGHT`. Needs an end-to-end trace before build.
-5. **Glyph `◆`.** Check font coverage for `◆` before the build. If it is missing, the
+4. **Glyph `◆`.** Check font coverage for `◆` before the build. If it is missing, the
    candidates are `◉` (used for the held step today) or `◇`. Recommended: `◆` only if the font
    has it.
 

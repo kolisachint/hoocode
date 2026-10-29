@@ -117,11 +117,10 @@ impl Handle {
     /// growing pulls rows back out of scrollback.
     ///
     /// vt100 0.18.1's `Screen::set_size` does the same trim, push and pull
-    /// (`grid.rs`), and also resets the scroll region and scrollback offset,
-    /// so this is no longer a workaround for cut-off rows. The helper is kept
-    /// as is for the resize tests (`screen_fill`, `scroll_viewport`): it
-    /// rebuilds the screen through a fresh parser, and cell styles are not
-    /// carried across such a resize, which `set_size` does keep.
+    /// (`grid.rs`), resets the scroll region and scrollback offset, and keeps
+    /// cell styles. The rebuild below is no longer needed: every resize test
+    /// (`screen_fill`, `scroll_viewport`, `tui_render_ts`) also passes with a
+    /// plain `set_size`. It can be replaced by that call in a follow-up.
     pub fn resize(&self, cols: u16, rows: u16) {
         let (old_cols, old_rows) = *self.size.lock().unwrap();
         *self.size.lock().unwrap() = (cols, rows);

@@ -28,6 +28,6 @@ The design is [radar-r3.md](radar-r3.md). Where an earlier radar page disagrees,
 | 5 | Folded missions | **Full answer shown.** A folded mission is header, one summary line, the full answer and the turn-end row. |
 | 6 | WAITING | **Shown.** Recommended (not yet answered by the user): derive it from the held block, not a new `FlightMark` variant (radar-r3.md, Waiting state). |
 | 7 | Open vs folded | **Live and latest finished missions are open.** Older finished ones fold. |
-| 8 | Mark for a landed mission with a hit | **`●`,** as in peek and full. Red is only for `DID NOT LAND`. |
+| 8 | Mark for a landed mission with a hit | **`●`,** as in peek and full. For the mission mark, red is only for `DID NOT LAND`. |
 | 9 | Step gutter | **None.** A step number appears only on a hit row. |
 | 10 | Build | **Not yet** (no user answer on build order).  The card is Phase R in [tui-activity.md](tui-activity.md), after Phase S. Open questions in radar-r3.md (time format, hits on the live row, `◆` glyph, subagent holds) are for the user. |

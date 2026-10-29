@@ -75,7 +75,7 @@ Acceptance:
 | # | Source | Now | Change | Where |
 |---|---|---|---|---|
 | a | Perf sampler thread | Always started: `Perf::new` calls `Sampler::start` at startup, 1 Hz `/proc` read | Start the thread only with `--perf-log`, or on the first `/perf` open (then read once at once) | `crates/hoocode-code-tui-app/src/perf.rs:238` (spawn), `:303-306` (`Perf::new`), `mode/mod.rs:701` (caller) |
-| b | Watchdog tick | 100 ms | 250 ms. Stall log stays at 500 ms (`UI_LOG_STALL`), so a stall is seen 0 to 250 ms late. RSS sampling must move from every 10 ticks to every 4 ticks, or it drops to every 1.25 s | `crates/hoocode-runtime/src/watchdog.rs:27` (`TICK`), `:29` (`SAMPLE_EVERY_TICKS`), `:18` (`UI_LOG_STALL`) |
+| b | Watchdog tick | 100 ms | 250 ms. Stall log stays at 500 ms (`UI_LOG_STALL`), so a stall is seen 0 to 250 ms late. RSS sampling must move from every 10 ticks to every 4 ticks, or it drops to every 2.5 s | `crates/hoocode-runtime/src/watchdog.rs:27` (`TICK`), `:29` (`SAMPLE_EVERY_TICKS`), `:18` (`UI_LOG_STALL`) |
 | c | Git HEAD poll | 100 ms, in a git repo | 1 s. File events would need a new crate (dependency firewall applies), so they are not in this step | `crates/hoocode-code-tui-app/src/footer_data.rs:237` (sleep), `:19` (`WATCH_POLL`) |
 | d | UI loop cap | 250 ms cap on the wait | 1 s cap. Every other wake already has its own deadline (notifications, tips, autocomplete, cursor blink, loaders, picker, auto theme, stream render). Check that nothing relies on the cap | `crates/hoocode-code-tui-app/src/mode/mod.rs:1252` (cap), `:1283` (final `max`) |
 
@@ -101,7 +101,7 @@ Acceptance:
 ### M3. Subagent child footprint
 
 Facts: each subagent is a full process, spawned from `current_exe()`
-(`crates/hoocode-code-subagents/src/instance.rs:75`; `runner.rs:117`, `env_clear` then the
+(`crates/hoocode-code-subagents/src/instance.rs:75`; `runner.rs:117` (spawn) and `:121` (`env_clear`), then the
 spec's env). Up to 12 run at once (`pool.rs:457`, `DEFAULT_MAX_CONCURRENCY = 12`). Each is
 22 to 34 MiB. The eval peak was 288 MB summed across 13 processes (measured).
 
