@@ -17,4 +17,4 @@ doctest = false
 
 [dependencies]
 # Only for the passwd fallback: dirs 5 (already in the workspace) reads $HOME and then getpwuid_r.
-dirs = "5"
+dirs = "7"
