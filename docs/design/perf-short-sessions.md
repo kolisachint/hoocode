@@ -24,6 +24,19 @@ Not doing).
 
 ## What we build
 
+### Step 0. Measured 10 to 15 turn baseline (before P1 and P2)
+
+Do this first, in the build session. The short-session figures in this card are derived from
+the 300-turn run (Details, Baseline). Record a real 10-turn and a 15-turn run with the mock
+before P1 and P2 are judged.
+
+| Item | Work |
+|---|---|
+| Runs | One TUI session each of 10 and 15 turns, on the mock (`scripts/tui/mockllm.py`, the same settings as Method), on the release binary built as today (plain profile). Five runs each for the acceptance numbers |
+| Metrics | RSS (VmRSS, every 0.5 s from `/proc`), CPU (`/proc/<pid>/stat`), frame p50 and p99 (`--perf-log`), idle wakeups per thread (`/proc/<pid>/task/<tid>/status`) |
+| Record | A table in the Details baseline: turns, RSS at the end, CPU per turn, frame p50 and p99, wakeups per second. Replace the derived 33 to 36 MiB and frame 0.7 ms figures with the measured ones, and note any difference |
+| Gate | P1 and P2 are judged against these numbers, not the 300-turn run |
+
 ### P1. Release profile (approved, not built)
 
 Add to `Cargo.toml` (there is no `[profile.release]` today; `[profile.dev]` is at line 193):

@@ -3,6 +3,7 @@
 Date: 2026-10-10
 Status: **design agreed, implementation in progress.**
 Partly superseded 2026-10-17 by [tui-surfaces.md](tui-surfaces.md): the radar row (one row per chain, verb phrases) and the `◍ ◌` dial glyphs. Radar is peek's headers, with a run of calls folded into one row of counts; the dial says `peek` or `radar`.
+Superseded by [radar-r3.md](radar-r3.md) (2026-10-29) for the radar parts (the radar row, the chain line, and the radar rows of the Decisions table and From / To (radar)). Peek parts stand.
 Scope: transcript tool blocks. Ctrl+O toggles radar / peek (setting `toolOutputView`).
 
 ## Current state (facts, with file refs)
@@ -108,6 +109,8 @@ To:
 `▒` marks the band. In the real UI the band also covers the call line.
 
 ## From / To (radar)
+
+Superseded by [radar-r3.md](radar-r3.md) (2026-10-29). The examples below are the old radar row.
 
 From:
 
