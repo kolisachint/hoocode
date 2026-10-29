@@ -87,6 +87,7 @@ pass the done bar (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 7 | **Done 2026-10-14.** Scheduler and `/loop`: the `/loop` forms, `/loop auto`, the 10-minute late-fire rule | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
 | 8 | **Done 2026-10-14.** Version check (`hoocode-code-update`, `hoocode update`) and completion chime (`chime.rs`). Open: the live registry request is not in tests (no network there) | [extras.md](extras.md) | S | 0c | Small polish |
 | 9 | **Done 2026-10-15.** Subagent orchestration: background by default, subagent brief, worktree protocol by instruction, child prompt fixes, evals | [subagent-orchestration.md](subagent-orchestration.md) | M | — | Parent stops waiting on subagents; writers stop sharing one tree |
+| 10 | **Approved 2026-10-29, not built.** Short-session performance, for sessions of 10 to 15 turns. **P1** release profile (`lto`, one codegen unit, strip) and **P2** idle wakeups, to build in a separate session. **M3** subagent child footprint and **M4** streaming markdown re-lex are measure first, with decision gates. Long-session items are deferred | [perf-short-sessions.md](perf-short-sessions.md) | S | — | Cheap, measured, and nothing else waits on it. Placed last so no other card moves |
 
 **Status (2026-10-08):** milestone 2 (concurrency phases 0-1) is done. Milestone 3 (DocSearch;
 the 8 `l1_done` tasks) is done. Milestones 4 (MCP client) and 5 (concurrency phases 2-5) are

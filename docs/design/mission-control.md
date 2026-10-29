@@ -137,6 +137,8 @@ Right, in order: `◈ N agent` (violet, while agents run), `⌁ N sat` (accent, 
 
 ### Flight log (radar, spec §4 r1 to r11)
 
+Superseded by [radar-r3.md](radar-r3.md) (2026-10-29): grouped missions with a turn-end row. The bullets below are the old radar design.
+
 - One row per mission: mark, prompt, steps, hits (`0✕`), time, cost.
 - A hit gets its own line under the mission: `⊗ 04 Shell  echo boom; exit 3  → boom  HIT`.
 - A mission in flight shows `◐` and its live step.

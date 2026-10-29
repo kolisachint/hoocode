@@ -173,6 +173,20 @@ used); PK2 as first stated (`/login`, `/logout` and `/resume` already agree; the
 across pickers → X6); PK3 as first stated (those lists use `SelectedRowList` → X6); HI6 as
 first stated (only one `highlight_code` → X3).
 
+### Phase R: radar redesign (R3, approved 2026-10-29)
+
+Needs: Phase S tier **Now** (simplification comes first). Design: [radar-r3.md](radar-r3.md).
+Radar only: peek and full do not change. Done bar: L1 plus the radar component goldens (`UPDATE_GOLDENS=1`).
+
+| Step | Work | Size |
+|---|---|---|
+| R.1 | Flight-log data in `transcript.rs`: per mission, an ordered list of batches (tool calls between two thinking blocks or assistant messages), thinking gists and the final answer; `FlightStats.awaiting` from the held block. No change to chains or peek. | S |
+| R.2 | Rows in `radar.rs`: `▲ Mn` header, settled and live batch lines, `└` hit rows, one-line thinking, folded summary, turn-end row (reuse `trajectory.rs` `landing_spans`; `◆ WAITING` from `awaiting`). Radar-only call-count text; `chain_stats` untouched. | M |
+| R.3 | Tests and goldens: rewrite the chain-row tests in `tests/it/radar.rs`; add batch-split, fold, WAITING and DID NOT LAND cases; `UPDATE_GOLDENS=1` for the 10 `layers_*_radar_*` goldens. Update `docs/maps/ui.md` in the same commit. | S |
+
+Open before R.2: the time format, hits on the live row, the `◆` glyph and subagent holds
+(see radar-r3.md, Open questions). Build by a Haiku subagent per step; the main session merges.
+
 ### Phase T1: prerequisites (refactors, no visible change; goldens must stay identical)
 
 Done in Phase S: T1.1 and T1.2 = N10 (T1.2 except the handler signature, see its row), T1.4 = N12 (footer). T1.3 = X11 was only partly done (until T4.2 and T5.3): the row model, `kind` for Plan, Subagent and Mcp, and the teams removal are in. The Schedule kind landed with T4.2 (2026-10-15) and the Shell kind with T5.3 (2026-10-15), so T1.3 is done.
