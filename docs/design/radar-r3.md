@@ -273,6 +273,36 @@ Deviations from the plan above, for the reviewer:
   moves.
 - `landing_spans` skips an empty secs, tokens or cost piece. Peek always passes all three,
   so its output is unchanged.
+- Review round (2026-10-30, R1 to R5):
+  - A flying mission has no render key, with or without a turn anchor. A subagent run
+    attached while the parent is idle has no `started`, so the old test missed it. A mission
+    ends for the answer only when it lands, or when a later one opens (a stepless mission
+    never lands before the next). `sync_radar_prose` takes no `flying` flag.
+  - A frozen call (past the live window, `trim_transcript_memory`) releases its result. It
+    keys on its revision (`frozen_rev`), and an agent call that is frozen still has no key.
+    `call_failed` reads `chain_entry().is_error`, the same as `call_rows`. Freezing keeps the
+    first error line (`frozen_error`), so `error_text` and the HIT snippet survive.
+  - The DID NOT LAND reason has two sources. `FlightStats.failure` holds the turn's final
+    error: `end_retry` sets it from the streak's last error (not on a cancel, cleared on a
+    success), and `PromptDone` with `Err` sets it from the error text
+    (`Transcript::set_mission_failure`). It outranks `FlightStats.reason`, which the message
+    gives and which goes when a retried attempt leaves the chat. Either reads as its first
+    non-empty line (`did_not_land_reason`, `radar_reason`).
+  - A message whose last content is a tool call is never the mission's answer
+    (`ends_in_tool_call`). Its prose came before the call.
+  - Toggling thinking re-adds the streaming message as `MessageStart` does: its mission and
+    its thinking mark are set, and it joins `assistant_components` once (guarded).
+    `toggle_thinking_block_visibility` has no unit test, because it needs a full session.
+  - Tests: `a_flying_mission_without_a_turn_anchor_has_no_key`,
+    `a_frozen_failed_call_keeps_its_hit_its_mark_and_its_key`, and in the transcript module
+    `a_did_not_land_reason_survives_its_failed_attempt_leaving_the_chat`,
+    `a_failed_turn_with_no_error_message_still_names_its_reason`,
+    `a_message_that_ends_on_a_call_is_not_the_answer`,
+    `the_answer_is_read_again_after_its_message_changes`,
+    `a_retry_drops_the_thinking_mark_of_the_attempt_it_takes_out`,
+    `the_opening_messages_thinking_comes_first`, and
+    `a_thinking_message_with_calls_and_no_text_splits_the_open_chain`.
+    `radar_reason_is_the_first_line_of_the_failure_trimmed` covers the one-line reason.
 
 ## Before and after
 

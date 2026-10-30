@@ -1578,6 +1578,12 @@ impl Mode {
                         } else {
                             self.turn_stop_reason
                         };
+                        // The error the turn ended with is the mission's reason. It
+                        // may come with no error message on the last reply, so the
+                        // flight data keeps it (`set_mission_failure`).
+                        if let Err(error) = &result {
+                            self.transcript.set_mission_failure(Some(error.clone()));
+                        }
                         let outcome = if stop == Some(StopReason::Stop) {
                             ChainState::Done
                         } else {

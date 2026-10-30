@@ -675,17 +675,25 @@ impl AssistantMessageComponent {
     }
 
     /// Radar (R3): why the message ended badly, without the `Error: ` prefix
-    /// (the DID NOT LAND row's reason). `None` for any other end.
+    /// (the DID NOT LAND row's reason): its first non-empty line, trimmed.
+    /// `None` for any other end.
     pub fn radar_reason(&self) -> Option<String> {
         self.last_message
             .as_deref()
             .and_then(end_reason)
-            .map(|reason| {
-                reason
-                    .strip_prefix("Error: ")
-                    .unwrap_or(&reason)
-                    .to_string()
+            .and_then(|reason| {
+                let reason = reason.strip_prefix("Error: ").unwrap_or(&reason);
+                crate::radar::first_line(reason)
             })
+    }
+
+    /// Radar (R3): whether the message's last content is a tool call. Its prose
+    /// came before the call, so it is not the mission's answer.
+    pub fn ends_in_tool_call(&self) -> bool {
+        self.last_message
+            .as_deref()
+            .and_then(|message| message.content.last())
+            .is_some_and(|content| matches!(content, Content::ToolCall(_)))
     }
 
     /// The Think row's seconds: elapsed since the trace started while it

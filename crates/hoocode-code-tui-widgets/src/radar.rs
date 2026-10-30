@@ -133,6 +133,10 @@ pub struct FlightStats {
     pub answer: Vec<String>,
     /// Why the turn did not land: the error it ended with, without `Error: `.
     pub reason: Option<String>,
+    /// The final error of a turn that failed, set when its auto-retries ran out
+    /// or the turn itself failed. It outranks `reason`, which the message that
+    /// carried it may no longer hold (a retried attempt leaves the chat).
+    pub failure: Option<String>,
     /// An older finished mission: the log folds it to one summary line.
     pub folded: bool,
 }
@@ -180,9 +184,14 @@ impl FlightStats {
     /// mission, a call still running or held, a live background job (read off
     /// the task store), or a call whose state cannot be read right now. The
     /// key hashes only settled calls' stamps and flags and the mission's own
-    /// numbers, so no output is cloned per frame.
+    /// numbers, so no output is cloned per frame. A frozen call keys on its
+    /// revision: its capture is fixed, and it has no result left to read.
     pub fn render_key(&self) -> Option<u64> {
-        if self.started.is_some() && self.landed_time.is_none() {
+        // A flying mission reads its clock and its awaited call on every
+        // render. That holds with or without a turn anchor (`started`).
+        if self.mark == FlightMark::InFlight
+            || (self.started.is_some() && self.landed_time.is_none())
+        {
             return None;
         }
         use std::hash::{Hash, Hasher};
@@ -195,6 +204,7 @@ impl FlightStats {
         self.tokens.hash(&mut hasher);
         self.answer.hash(&mut hasher);
         self.reason.hash(&mut hasher);
+        self.failure.hash(&mut hasher);
         self.folded.hash(&mut hasher);
         self.items.len().hash(&mut hasher);
         for item in &self.items {
@@ -204,6 +214,15 @@ impl FlightStats {
                     blocks.len().hash(&mut hasher);
                     for block in blocks {
                         let body = block.try_borrow().ok()?;
+                        if let Some(rev) = body.frozen_rev() {
+                            // An agent's rows read the subagent registry live.
+                            if body.is_agent() {
+                                return None;
+                            }
+                            2u8.hash(&mut hasher);
+                            rev.hash(&mut hasher);
+                            continue;
+                        }
                         if !body.is_settled() || body.background_job_id().is_some() {
                             return None;
                         }
@@ -221,6 +240,15 @@ impl FlightStats {
         Some(hasher.finish())
     }
 
+    /// The reason a DID NOT LAND row names: the turn's failure, else the reason
+    /// its message carried. One line, trimmed.
+    pub fn did_not_land_reason(&self) -> Option<String> {
+        self.failure
+            .as_deref()
+            .and_then(first_line)
+            .or_else(|| self.reason.as_deref().and_then(first_line))
+    }
+
     /// The row's time: the landed span, else live elapsed off the start.
     fn time_text(&self) -> Option<String> {
         if let Some(landed) = &self.landed_time {
@@ -228,6 +256,15 @@ impl FlightStats {
         }
         self.started.map(|at| duration_text(at.elapsed().as_secs()))
     }
+}
+
+/// The first non-empty line of `text`, trimmed: a reason reads on one line.
+/// `None` when the text is blank.
+pub fn first_line(text: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
 }
 
 /// A duration in the landing line's format (`0.8s`, `42s`, `1m12s`).
@@ -497,7 +534,8 @@ fn tool_lead(label: Option<&str>, tool: &str, palette: &Palette) -> Vec<Span<'st
 /// made failed (settled, or still running into a failure).
 fn call_failed(block: &ToolBlock) -> bool {
     let body = block.borrow();
-    if body.is_error() {
+    // The chain entry, as `call_rows` reads it: a frozen call keeps its failure there.
+    if body.chain_entry().is_error {
         return true;
     }
     if body
@@ -746,6 +784,9 @@ fn turn_end_rows(stats: &FlightStats, palette: &Palette, width: usize) -> Vec<St
     let mut spans = turn_lead(palette);
     let flying = stats.mark == FlightMark::InFlight;
     let mut reason = None;
+    let did_not_land = (stats.mark == FlightMark::DidNotLand)
+        .then(|| stats.did_not_land_reason())
+        .flatten();
     match flying.then(|| stats.awaiting()).flatten() {
         Some((tool, subject)) => {
             spans.push(span(status::WAITING_STR, palette.warn()));
@@ -763,7 +804,7 @@ fn turn_end_rows(stats: &FlightStats, palette: &Palette, width: usize) -> Vec<St
             // A failed turn shows its reason in place of the tokens and cost,
             // as the approved mockup does, so the reason fits the row. A flying
             // row shows no cost: it is the mission's running cost.
-            let failed = stats.mark == FlightMark::DidNotLand && stats.reason.is_some();
+            let failed = did_not_land.is_some();
             let (tokens, cost) = if flying || failed {
                 (String::new(), String::new())
             } else {
@@ -781,9 +822,7 @@ fn turn_end_rows(stats: &FlightStats, palette: &Palette, width: usize) -> Vec<St
                 &cost,
                 palette,
             ));
-            if failed {
-                reason = stats.reason.clone();
-            }
+            reason = did_not_land;
         }
     }
     let Some(reason) = reason else {

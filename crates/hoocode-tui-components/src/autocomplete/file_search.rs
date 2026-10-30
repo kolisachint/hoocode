@@ -92,9 +92,14 @@ impl FileSearch {
                 generation: state.generation,
                 key,
             };
-            // The worker outlives the provider's requests; a send error only
-            // means the worker is gone, and then there is nothing to wait for.
-            let _ = self.requests.send(request);
+            // A send error means the worker is gone: no walk will settle this
+            // query, so it reads as no matches now, not pending forever.
+            if self.requests.send(request).is_err() {
+                if let Some(wanted) = state.wanted.as_mut() {
+                    wanted.ready = Some(Vec::new());
+                }
+                state.completed = true;
+            }
         }
         match &state.last {
             Some((last_base, matches)) if last_base == base => matches.clone(),
@@ -122,6 +127,30 @@ impl FileSearch {
     }
 }
 
+/// Settles the wanted walk when the worker stops inside it (a panicking finder
+/// unwinds through here). The query then reads as no matches, so
+/// `walk_pending` cannot stay true and the editor cannot poll forever.
+struct WalkGuard<'a> {
+    state: &'a Mutex<State>,
+    generation: u64,
+    finished: bool,
+}
+
+impl Drop for WalkGuard<'_> {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        let mut state = lock(self.state);
+        if self.generation == state.generation {
+            if let Some(wanted) = &mut state.wanted {
+                wanted.ready.get_or_insert_with(Vec::new);
+            }
+            state.completed = true;
+        }
+    }
+}
+
 fn run_worker(finder: &FileFinder, inbox: &Receiver<Request>, state: &Mutex<State>) {
     while let Ok(mut request) = inbox.recv() {
         // Only the newest query matters: skip the ones typed past meanwhile.
@@ -129,7 +158,13 @@ fn run_worker(finder: &FileFinder, inbox: &Receiver<Request>, state: &Mutex<Stat
             request = newer;
         }
         let (base, query) = &request.key;
+        let mut guard = WalkGuard {
+            state,
+            generation: request.generation,
+            finished: false,
+        };
         let found = finder(base, query, MAX_RESULTS);
+        guard.finished = true;
         let mut state = lock(state);
         if request.generation == state.generation {
             state.last = Some((base.clone(), found.clone()));
@@ -138,5 +173,69 @@ fn run_worker(finder: &FileFinder, inbox: &Receiver<Request>, state: &Mutex<Stat
             }
             state.completed = true;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    fn search_with(state: Arc<Mutex<State>>, requests: Sender<Request>) -> FileSearch {
+        FileSearch { state, requests }
+    }
+
+    #[test]
+    fn a_worker_that_dies_mid_walk_settles_its_query() {
+        let finder: FileFinder = Box::new(|_, _, _| -> Vec<FileMatch> { panic!("walk died") });
+        let (requests, inbox) = mpsc::channel();
+        let state = Arc::new(Mutex::new(State::default()));
+        let search = search_with(Arc::clone(&state), requests);
+        assert!(search.results(Path::new("base"), "q").is_empty());
+        assert!(search.walk_pending());
+
+        let died = catch_unwind(AssertUnwindSafe(|| run_worker(&finder, &inbox, &state)));
+        assert!(died.is_err());
+        // The walk never finished, but its query now reads settled: no matches.
+        assert!(!search.walk_pending());
+        assert!(search.take_completed());
+        assert!(search.results(Path::new("base"), "q").is_empty());
+    }
+
+    #[test]
+    fn a_query_sent_to_a_dead_worker_does_not_wait_forever() {
+        let (requests, inbox) = mpsc::channel::<Request>();
+        drop(inbox);
+        let search = search_with(Arc::new(Mutex::new(State::default())), requests);
+        assert!(search.results(Path::new("base"), "q").is_empty());
+        assert!(!search.walk_pending());
+    }
+
+    #[test]
+    fn a_finished_walk_keeps_its_own_matches() {
+        let finder: FileFinder = Box::new(|_, _, _| {
+            vec![FileMatch {
+                path: "src/lib.rs".to_string(),
+                is_directory: false,
+            }]
+        });
+        let (requests, inbox) = mpsc::channel();
+        let state = Arc::new(Mutex::new(State::default()));
+        let search = search_with(Arc::clone(&state), requests);
+        assert!(search.results(Path::new("base"), "lib").is_empty());
+        // One request, then the channel closes and the worker's loop ends.
+        let request = inbox.recv().expect("the query was sent");
+        run_worker_once(&finder, request, &state);
+        let guard = lock(&state);
+        let wanted = guard.wanted.as_ref().expect("a wanted query");
+        assert_eq!(wanted.ready.as_ref().map(Vec::len), Some(1));
+    }
+
+    /// One request through the worker's own loop: the channel holds only it.
+    fn run_worker_once(finder: &FileFinder, request: Request, state: &Mutex<State>) {
+        let (tx, rx) = mpsc::channel();
+        let _ = tx.send(request);
+        drop(tx);
+        run_worker(finder, &rx, state);
     }
 }

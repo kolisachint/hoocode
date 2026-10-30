@@ -76,9 +76,10 @@ The parts already run in parallel, but nothing bounds or orders them.
 | Subagents | child processes, 12 (6 nested) by default, set by `subagentConcurrency` and `nestedSubagentConcurrency` | Low | Unchanged pool; children start with 2 workers and lowered priority. |
 | `Shell` commands | child processes | Medium | Pipes read by async tasks on `hoocode-io`, not by 3 threads each. |
 
-Steady state is about 13 threads per process: the 10 steady threads above, plus
-`hoocode-perf`, `hoocode-resize` and `autocomplete-files`, which the rows above list.
-The ceiling under load is about 26. Today it is unbounded.
+Steady state is about 12 threads per process (13 with `--perf-log`): the 10 steady threads
+above, plus `hoocode-resize` and `autocomplete-files`, which the rows above list.
+`hoocode-perf` runs only with `--perf-log`. The ceiling under load is about 26. Today it is
+unbounded.
 
 ### 2. Lanes and OS priority
 

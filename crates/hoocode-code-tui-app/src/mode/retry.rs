@@ -200,6 +200,7 @@ impl Transcript {
         self.drop_attempt_error();
         let streak = self.retry_streak.take();
         if success {
+            self.set_mission_failure(None);
             return;
         }
         let cancelled = final_error == Some(RETRY_CANCELLED);
@@ -208,6 +209,9 @@ impl Transcript {
             (_, Some(error)) if !cancelled => sanitize_status_text(error),
             _ => "Error".to_string(),
         };
+        // The streak's last error is the mission's reason: the failed attempt
+        // that carried it has left the chat. A cancellation is no failure.
+        self.set_mission_failure((!cancelled).then(|| title.clone()));
         let elapsed = streak.map_or(Duration::ZERO, |s| s.started.elapsed());
         // Hails only when the streak actually retried: a lone unretried
         // error is not a lost mission.

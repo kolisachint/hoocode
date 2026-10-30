@@ -16,7 +16,9 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
@@ -1030,12 +1032,18 @@ enum LoadMsg {
 
 /// Where a loader reports: progress, then one result. It may finish on
 /// another thread; the picker applies it in [`SessionSelectorComponent::poll`].
+///
+/// A load settles once: by [`LoadSink::finish`], or, when the last clone goes
+/// with no result sent, with `Err("loader stopped")`. So a loader that stops
+/// (a panic, a dropped task) cannot leave the picker loading forever.
 #[derive(Clone)]
 pub struct LoadSink {
     tx: Sender<LoadMsg>,
     scope: SessionScope,
     seq: Option<u64>,
     reason: LoadReason,
+    /// Shared by the clones: set once the load's result has been sent.
+    settled: Arc<AtomicBool>,
 }
 
 impl LoadSink {
@@ -1049,14 +1057,32 @@ impl LoadSink {
         });
     }
 
-    /// The loaded sessions, or why loading failed.
+    /// The loaded sessions, or why loading failed. Only the first call sends.
     pub fn finish(&self, result: Result<Vec<SessionInfo>, String>) {
+        if self.settled.swap(true, Ordering::SeqCst) {
+            return;
+        }
         let _ = self.tx.send(LoadMsg::Done {
             scope: self.scope,
             seq: self.seq,
             reason: self.reason,
             result,
         });
+    }
+}
+
+impl Drop for LoadSink {
+    /// The last clone to go settles the load, if nothing settled it yet. With
+    /// other clones alive the load is still the loader's to finish.
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.settled) == 1 && !self.settled.swap(true, Ordering::SeqCst) {
+            let _ = self.tx.send(LoadMsg::Done {
+                scope: self.scope,
+                seq: self.seq,
+                reason: self.reason,
+                result: Err("loader stopped".to_string()),
+            });
+        }
     }
 }
 
@@ -1309,6 +1335,7 @@ impl SessionSelectorComponent {
             scope,
             seq,
             reason,
+            settled: Arc::new(AtomicBool::new(false)),
         };
         match scope {
             SessionScope::Current => (self.current_loader)(sink),
@@ -1563,5 +1590,66 @@ impl Component for SessionSelectorComponent {
         self.focused = focused;
         self.session_list.borrow_mut().set_focused(focused);
         self.rename_input.borrow_mut().set_focused(focused);
+    }
+}
+
+#[cfg(test)]
+mod load_sink_tests {
+    use super::*;
+
+    fn sink() -> (LoadSink, Receiver<LoadMsg>) {
+        let (tx, rx) = channel();
+        let sink = LoadSink {
+            tx,
+            scope: SessionScope::Current,
+            seq: None,
+            reason: LoadReason::Initial,
+            settled: Arc::new(AtomicBool::new(false)),
+        };
+        (sink, rx)
+    }
+
+    /// The results of every `Done` message sent so far.
+    fn done_results(rx: &Receiver<LoadMsg>) -> Vec<Result<Vec<SessionInfo>, String>> {
+        rx.try_iter()
+            .filter_map(|msg| match msg {
+                LoadMsg::Done { result, .. } => Some(result),
+                LoadMsg::Progress { .. } => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_dropped_sink_settles_its_load_with_an_error() {
+        let (sink, rx) = sink();
+        drop(sink);
+        let results = done_results(&rx);
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].as_ref().err().map(String::as_str),
+            Some("loader stopped")
+        );
+    }
+
+    #[test]
+    fn finishing_sends_one_result_and_the_drop_adds_none() {
+        let (sink, rx) = sink();
+        sink.finish(Ok(Vec::new()));
+        sink.finish(Err("second".to_string()));
+        drop(sink);
+        let results = done_results(&rx);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_ok());
+    }
+
+    #[test]
+    fn a_clone_dropping_does_not_settle_the_load() {
+        let (sink, rx) = sink();
+        let other = sink.clone();
+        drop(sink);
+        assert!(done_results(&rx).is_empty());
+        other.finish(Ok(Vec::new()));
+        drop(other);
+        assert_eq!(done_results(&rx).len(), 1);
     }
 }

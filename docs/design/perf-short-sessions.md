@@ -83,7 +83,7 @@ Expected wakeups, from the baseline (17.2 per second, idle, non-git directory): 
 goes to 0; watchdog 9.9 goes to about 4; UI loop 4.0 goes to about 1; `hoocode-io-2` 2.3
 is unchanged. Total about 7 per second, plus 1 per second for the git poll in a git repo.
 
-**Built 2026-10-30.** The four changes are in. Four things were added beyond the table:
+**Built 2026-10-30.** The four changes are in. Six things were added beyond the table:
 
 - The UI loop's idle wait is now a beat that counts from the end of the wait (`watchdog::ui_beat_waiting`, `interrupt::ui_beat_waiting`). Without it, the 1 s cap would make an idle loop look silent for up to 1 s, past the 500 ms `UI_LOG_STALL` (a "UI loop silent" line each idle second) and past the 500 ms Ctrl+C emergency threshold (a double Ctrl+C at idle would exit without a clean shutdown).
 - The bash execution spinner advances in the loop, but its frame was not in `next_wakeup`. It now has a deadline (`BashExecutionComponent::next_deadline`), so it keeps its frame rate at the cap.
@@ -101,6 +101,13 @@ Loop cap check (`crates/hoocode-code-tui-app/src/mode/mod.rs`, `next_wakeup` and
 - Checked each pass with no wake of their own, so they are now up to 1 s late when idle (was up to 250 ms): extension UI requests (`drain_extension_ui_requests`), the update notice (`poll_update_notice`), and the memory and stall flags (`sync_runtime_health`). None is a correctness issue; these idle-only notices can appear up to 1 s late.
 - Checked each pass and fine at 1 s: `poll_attached_prompt` and `drain_task_panel_events` (fed by input handled in the same pass), `advance_auto_loop` (driven by `PromptDone`, which wakes), `poll_auto_theme` (its 60 s deadline is in `next_wakeup`), `tick_scheduler` (30 s interval, at most 1 s late), `poll_tree_selector` and `poll_fork_selector` (their picker deadlines are already in `ActivePicker::deadline`), and `poll_model_selectors` (its events come from keys handled in the same pass).
 - Footer HEAD poll at 1 s with a 500 ms debounce: a branch change now shows in about 1 to 2 s (was about 0.6 s).
+
+Robustness of the two 40 ms steps (review, 2026-10-30). Both steps stop when their work
+ends, so a worker that dies cannot keep the loop polling. The `@file` worker's guard
+(`WalkGuard` in `tui-components` `autocomplete/file_search.rs`) settles a walk that panics,
+and a query sent to a dead worker settles at once. The session list's `LoadSink`
+(`code-tui-selectors` `session_selector.rs`) reports `Err("loader stopped")` when its last
+clone is dropped without a result, and sends one result at most.
 
 The target of about 5 per second is **not reached by these four changes alone** (they give
 about 7). The `hoocode-io-2` wakeups (2.3 per second) have no known source. Either find them
@@ -237,7 +244,7 @@ TUI in a fixed 100x30 tmux pane with a mock provider config that is never called
 | Idle wakeups, one io worker | 2.3 (`hoocode-io-2`) | **2.0 to 2.2** | Which worker wakes changes between runs; baseline named `io-2` only |
 | Idle wakeups, `hoocode-perf` | 1.0 | **0** | No sampler thread without `--perf-log` |
 | Idle wakeups, `hoocode-bg` (repo only) | not in baseline | **2.0 to 2.1** in a repo | The 1 s git poll explains 1 per s; the other is not traced |
-| Idle CPU over 25 s | 0.20% (10 s), 0.24% (25 s) | **0.16 to 0.2%** | Acceptance "near 0.1%" not met. One sample set, no error bars |
+| Idle CPU over 25 s | 0.20% (10 s), 0.24% (25 s) | **0.16 to 0.2%** | Below 0.2%: not clearly met (the upper bound equals it). Near 0.1%: not met. Like for like, the baseline is 0.24% over 25 s (0.20% is its 10 s figure). One sample set, no error bars |
 | Release build wall, first build on this tree | 10m16s wall, 18m31s user (clean, plain) | **10m17s** wall (617 s), user not recorded | The release cache was empty, so dependencies compiled. Close to a clean build. Not an A/B: the plain profile was not rebuilt, so the LTO cost is not isolated |
 | Release build wall, incremental after the review fixes | (none) | 2m55s (176 s) | Changed crates and link only |
 

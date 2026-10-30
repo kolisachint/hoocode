@@ -211,7 +211,11 @@ fn a_flying_mission_header_has_no_stamp() {
     header.set_flight(flight.clone());
     header.set_view(ToolOutputView::Radar);
     assert_eq!(header.render_stamp(), None);
-    flight.borrow_mut().landed_time = Some("1s".into());
+    // Landing sets the mark and the landed time together.
+    let mut landed = flight.borrow_mut();
+    landed.mark = FlightMark::Landed;
+    landed.landed_time = Some("1s".into());
+    drop(landed);
     assert!(header.render_stamp().is_some());
 }
 

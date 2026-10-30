@@ -147,3 +147,18 @@ fn a_message_on_the_rail_opens_with_a_plain_blank_unless_a_step_is_above_it() {
     assert_eq!(rows[0], "", "{rows:?}");
     assert!(rows[1].contains('┊'), "{rows:?}");
 }
+
+#[test]
+fn radar_reason_is_the_first_line_of_the_failure_trimmed() {
+    let _g = lock();
+    let message = hoocode_ai_types::AssistantMessage {
+        stop_reason: hoocode_ai_types::StopReason::Error,
+        error_message: Some("\n  Request failed: boom  \nstack line two".into()),
+        ..Default::default()
+    };
+    let component = AssistantMessageComponent::new(Some(&message), ThinkingDisplay::Omit);
+    assert_eq!(
+        component.radar_reason().as_deref(),
+        Some("Request failed: boom")
+    );
+}

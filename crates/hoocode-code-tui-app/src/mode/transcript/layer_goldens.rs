@@ -100,7 +100,7 @@ impl Replay {
     /// transcript, and an unlanded mission has no clock or cost yet.
     fn refresh(&mut self) {
         self.t.refresh_flight_marks();
-        self.t.sync_radar_prose(false);
+        self.t.sync_radar_prose();
         if let Some(mission) = self.t.missions.last() {
             if !mission.landed {
                 let mut flight = mission.flight.borrow_mut();
@@ -159,7 +159,7 @@ impl Replay {
         self.t.note_assistant(&component);
         self.t.assistant_components.push(component.clone());
         self.t.chat.borrow_mut().add_child(as_component(&component));
-        self.t.sync_radar_prose(false);
+        self.t.sync_radar_prose();
         if message
             .content
             .iter()

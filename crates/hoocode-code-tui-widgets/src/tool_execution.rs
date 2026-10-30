@@ -447,6 +447,9 @@ pub struct ToolExecutionComponent {
     frozen_parts_fit: Option<(usize, ToolOutputView, StepParts)>,
     /// The call's summary, taken when it freezes: its payloads are released then.
     frozen_entry: Option<ChainEntry>,
+    /// A failed call's first error line, kept when it freezes: the result is
+    /// released then, and the radar's HIT row still reads its snippet.
+    frozen_error: String,
     /// The step's clock (M4): block creation starts it, `update_result`
     /// stops it. Rebuilt history settles at once, so its span reads ~0.
     started: Instant,
@@ -501,6 +504,7 @@ impl ToolExecutionComponent {
             header_source: None,
             frozen_parts_fit: None,
             frozen_entry: None,
+            frozen_error: String::new(),
             started: Instant::now(),
             settled_at: None,
             rev: fresh_stamp(),
@@ -965,8 +969,12 @@ impl ToolExecutionComponent {
         end.duration_since(self.started).as_secs().into()
     }
 
-    /// The failure text, for a collapsed chain to print under its line.
+    /// The failure text, for a collapsed chain to print under its line. A frozen
+    /// call has released its result: it reads the first line kept at freeze.
     pub fn error_text(&self) -> String {
+        if self.frozen {
+            return self.frozen_error.clone();
+        }
         if self.is_error() {
             self.text_output()
         } else {
@@ -1090,8 +1098,21 @@ impl ToolExecutionComponent {
         if self.is_freezable() {
             self.rev = fresh_stamp();
             self.frozen_entry = Some(self.chain_entry());
+            self.frozen_error = self
+                .error_text()
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+                .unwrap_or_default()
+                .to_string();
             self.frozen = true;
         }
+    }
+
+    /// The revision of a frozen block, which keys it for a holder that reads
+    /// its rows. `None` while the block is not frozen.
+    pub(crate) fn frozen_rev(&self) -> Option<u64> {
+        self.frozen.then_some(self.rev)
     }
 
     fn release_heavy_state(&mut self) {

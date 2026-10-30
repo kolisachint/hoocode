@@ -17,6 +17,7 @@ use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecu
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Radar;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_tui_ratatui::Palette;
+use hoocode_tui_render::Component;
 use serde_json::{json, Value};
 use std::time::Instant;
 
@@ -671,4 +672,56 @@ fn a_live_background_job_keeps_a_landed_missions_key_off() {
     task_store().remove_keyed(&key);
     assert!(first.iter().any(|row| row.contains("⌁")), "{first:#?}");
     assert!(second.iter().any(|row| row.contains("⌁")), "{second:#?}");
+}
+
+#[test]
+fn a_flying_mission_without_a_turn_anchor_has_no_key() {
+    // A subagent run attached while the parent is idle: no turn anchor, but
+    // the mission still flies, so its rows read live state.
+    let _g = lock();
+    let stats = FlightStats {
+        mark: FlightMark::InFlight,
+        steps: 1,
+        items: vec![batch(vec![ok("Read", json!({"file_path": "a.rs"}))])],
+        ..Default::default()
+    };
+    assert!(stats.started.is_none());
+    assert!(stats.render_key().is_none());
+}
+
+#[test]
+fn a_frozen_failed_call_keeps_its_hit_its_mark_and_its_key() {
+    // The call is drawn, then frozen: freezing releases its result, so the
+    // failure, its snippet and the batch's mark must come from the summary kept.
+    let _g = lock();
+    let failed = call(
+        "Shell",
+        json!({"command": "exit 3"}),
+        Some(("boom\nsecond line", true)),
+    );
+    let stats = landed(1, 1, vec![batch(vec![failed.clone()])]);
+    let live = rows("run it", &stats, 80);
+    assert!(
+        live.iter()
+            .any(|row| row.contains("boom") && row.contains("HIT")),
+        "{live:#?}"
+    );
+    failed.borrow_mut().render(80);
+    failed.borrow_mut().freeze();
+    failed.borrow_mut().render(80);
+    let frozen = rows("run it", &stats, 80);
+    assert!(
+        frozen
+            .iter()
+            .any(|row| row.contains("boom") && row.contains("HIT")),
+        "{frozen:#?}"
+    );
+    assert!(
+        frozen
+            .iter()
+            .any(|row| row.contains('⊗') && row.contains("1 call")),
+        "the batch takes the failure mark: {frozen:#?}"
+    );
+    assert_eq!(frozen, live);
+    assert!(stats.render_key().is_some());
 }
