@@ -186,7 +186,7 @@ fn repeated_or_missing_tool_call_ids_are_made_unique_within_a_message() {
             call(2, "", "{\"path\":\"c\"}"),
         ]}, "finish_reason": "tool_calls"}], "usage": usage(10, 5)})]);
     let model = at(completions("openai", "gpt-4o-mini"), &server);
-    let (_, message) = run(
+    let (events, message) = run(
         model,
         Context::new(
             String::new(),
@@ -194,6 +194,18 @@ fn repeated_or_missing_tool_call_ids_are_made_unique_within_a_message() {
             vec![read_tool("Read")],
         ),
     );
+    // The id a call keeps is the id its partials carried from its start.
+    for event in &events {
+        if let AssistantMessageEvent::ToolCallStart { partial, index }
+        | AssistantMessageEvent::ToolCallDelta { partial, index, .. } = event
+        {
+            assert_eq!(
+                tool_call(&partial.content[*index]).id,
+                tool_call(&message.content[*index]).id,
+                "the partial at {index} carries the final id"
+            );
+        }
+    }
     assert_eq!(message.content.len(), 3);
     let calls: Vec<&ToolCallContent> = message.content.iter().map(tool_call).collect();
     assert_eq!(calls[0].id, "call_0");
@@ -207,6 +219,10 @@ fn repeated_or_missing_tool_call_ids_are_made_unique_within_a_message() {
     );
     assert!(!calls[2].id.is_empty(), "{}", calls[2].id);
     assert_ne!(calls[1].id, calls[2].id);
+    // Short, counter first: unique within the 40 characters a request keeps.
+    for id in [&calls[1].id, &calls[2].id] {
+        assert!(id.starts_with("call_") && id.len() <= 40, "{id}");
+    }
 }
 
 #[test]

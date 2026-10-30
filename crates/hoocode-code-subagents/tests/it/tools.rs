@@ -2119,15 +2119,16 @@ async fn a_cancel_asked_before_the_pool_holds_the_run_stops_it() {
     let inbox = subagent_inbox();
     inbox.clear();
     inbox.start("late-run", "explore#1", "explore", "audit");
-    assert!(matches!(
-        inbox.request_cancel(None, "explore#1"),
-        Some(hoocode_code_subagents::inbox::CancelAsk::Running(_))
-    ));
-    assert!(!pool.cancel("late-run"), "the pool does not hold it yet");
+    // The cancel lands after the execute began awaiting the run, and before
+    // the pool holds it (the dispatch registers it 80 ms in).
+    let asker = tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        subagent_inbox().request_cancel(None, "explore#1")
+    });
     let dispatch = {
         let pool = pool.clone();
         async move {
-            tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
             pool.dispatch(
                 "audit",
                 DispatchOptions {
@@ -2147,6 +2148,10 @@ async fn a_cancel_asked_before_the_pool_holds_the_run_stops_it() {
     .await
     .expect("the run was stopped, not left to sleep")
     .unwrap();
+    assert!(matches!(
+        asker.await.unwrap(),
+        Some(hoocode_code_subagents::inbox::CancelAsk::Running(_))
+    ));
     assert_eq!(
         result.result.and_then(|r| r.status),
         Some(ResultStatus::Cancelled)
@@ -2210,6 +2215,19 @@ async fn an_old_handle_after_resume_is_named_as_an_earlier_run() {
         err.starts_with("explore#1 ran in an earlier process"),
         "{err}"
     );
+    // A run of this process held for another session (e.g. before a /fork).
+    let other = execute(
+        output.clone(),
+        json!({"task_id": "explore#7"}),
+        resumed.clone(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        text(&other).starts_with("explore#7 belongs to another session or an earlier process"),
+        "{}",
+        text(&other)
+    );
     let roster = execute(output, json!({"list": true}), resumed.clone())
         .await
         .unwrap();
@@ -2228,4 +2246,105 @@ async fn an_old_handle_after_resume_is_named_as_an_earlier_run() {
     pool.dispose();
     set_subagent_pool_for_testing(None);
     inbox.clear();
+}
+
+/// A run asked to stop before its execute awaits it is not dispatched at all,
+/// and an abort before the pool holds the run is retried like a cancel.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stop_asked_before_the_dispatch_never_starts_it() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let pool = install_pool(&cwd, per_task_sleeper(&cwd));
+    let inbox = subagent_inbox();
+    inbox.clear();
+    inbox.start("early-run", "explore#1", "explore", "audit");
+    inbox.request_cancel(None, "explore#1");
+    let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let seen = polled.clone();
+    let result = cancel_on_abort(&pool, "early-run", None, async move {
+        seen.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(TaskResult::default())
+    })
+    .await
+    .unwrap();
+    assert!(
+        !polled.load(std::sync::atomic::Ordering::SeqCst),
+        "never started"
+    );
+    assert_eq!(
+        result.result.and_then(|r| r.status),
+        Some(ResultStatus::Cancelled)
+    );
+
+    // An abort landing before the pool holds the run.
+    let signal = hoocode_ai_types::AbortSignal::new();
+    let aborter = signal.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        aborter.abort();
+    });
+    let dispatch = {
+        let pool = pool.clone();
+        async move {
+            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            pool.dispatch(
+                "audit",
+                DispatchOptions {
+                    force_agent: Some("explore".into()),
+                    task_id: Some("aborted-run".into()),
+                    background: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+        }
+    };
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        cancel_on_abort(&pool, "aborted-run", Some(signal), dispatch),
+    )
+    .await
+    .expect("the aborted run was stopped once the pool held it")
+    .unwrap();
+    assert_eq!(
+        result.result.and_then(|r| r.status),
+        Some(ResultStatus::Cancelled)
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    inbox.clear();
+}
+
+/// The execute sees other arguments than the placeholder did (validated or
+/// rewritten): it still runs under the handle the model was told, and no
+/// second, never-started run is left listed as running.
+#[tokio::test(flavor = "multi_thread")]
+async fn changed_arguments_keep_the_reserved_handle_and_leave_no_ghost() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    let pool = install_pool(&cwd, mock_child(&cwd, "Audited.", "complete", 0));
+    let told = agent_call("call_0", "audit the auth module");
+    (tool.background_placeholder.clone().unwrap())(&told, None).unwrap();
+    let mut ran = told.clone();
+    ran.arguments["description"] = json!("audit the auth module (rewritten)");
+    let result = execute_call(&tool, &ran, ctx(&cwd)).await.unwrap();
+    assert!(
+        text(&result).starts_with("explore#1 (\"audit the auth module (rewritten)\") finished ✓"),
+        "{}",
+        text(&result)
+    );
+    let all = subagent_inbox().list();
+    assert_eq!(all.len(), 1, "{all:?}");
+    assert!(subagent_inbox().outstanding().is_empty());
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
 }

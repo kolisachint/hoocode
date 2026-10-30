@@ -50,12 +50,25 @@ pub struct WarmUsage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct WarmRunResult {
     pub ok: bool,
-    /// `complete` or `failed`.
+    /// `complete`, `failed` or `cancelled`.
     pub status: &'static str,
     /// The subagent's final assistant text.
     pub summary: String,
     pub usage: Option<WarmUsage>,
     pub error: Option<String>,
+}
+
+impl WarmRunResult {
+    /// A run stopped by its caller (`AgentOutput(cancel: true)` or an abort).
+    pub fn cancelled() -> Self {
+        Self {
+            ok: false,
+            status: "cancelled",
+            summary: String::new(),
+            usage: None,
+            error: Some("cancelled".into()),
+        }
+    }
 }
 
 /// What selects and configures a worker.
@@ -582,6 +595,22 @@ impl WarmSubagentPool {
         options: &WarmDispatchOptions,
         on_activity: Option<WarmProgressCallback>,
     ) -> Result<WarmRunResult, WarmWorkerError> {
+        self.dispatch_cancellable(prompt, options, on_activity, std::future::pending())
+            .await
+    }
+
+    /// [`Self::dispatch`] that stops when `cancel` resolves: a dispatch still
+    /// waiting for a slot gives up, and a running task is dropped and its
+    /// worker discarded (disposing it stops the child). Either way the result
+    /// is `cancelled`, never a late `complete`.
+    pub async fn dispatch_cancellable(
+        &self,
+        prompt: &str,
+        options: &WarmDispatchOptions,
+        on_activity: Option<WarmProgressCallback>,
+        cancel: impl std::future::Future<Output = ()>,
+    ) -> Result<WarmRunResult, WarmWorkerError> {
+        tokio::pin!(cancel);
         // The same admission control the cold pool has: a burst of background
         // runs is queued up to `max_waiting`, then refused, never turned into a
         // burst of processes. The slot is taken under the same lock as the
@@ -613,12 +642,20 @@ impl WarmSubagentPool {
         let slot = match slot {
             Some(permit) => permit,
             None => {
-                let admitted = Arc::clone(&self.inner.slots).acquire_owned().await;
+                let admitted = tokio::select! {
+                    admitted = Arc::clone(&self.inner.slots).acquire_owned() => Some(admitted),
+                    _ = &mut cancel => None,
+                };
                 {
                     let mut state = self.state();
                     state.waiting = state.waiting.saturating_sub(1);
                 }
-                admitted.map_err(|_| WarmWorkerError("warm pool disposed".into()))?
+                match admitted {
+                    Some(admitted) => {
+                        admitted.map_err(|_| WarmWorkerError("warm pool disposed".into()))?
+                    }
+                    None => return Ok(WarmRunResult::cancelled()),
+                }
             }
         };
         // Held to the end of the dispatch, on every return path below.
@@ -629,7 +666,19 @@ impl WarmSubagentPool {
         let timeout = Duration::from_millis(self.inner.limits.deadline_ms);
         // The same child prompt the cold paths build (card 9, 4i).
         let task = crate::pool::child_prompt(prompt);
-        let outcome = worker.run(&task, on_activity, timeout).await;
+        let outcome = {
+            let run = worker.run(&task, on_activity, timeout);
+            tokio::pin!(run);
+            tokio::select! {
+                outcome = &mut run => Some(outcome),
+                _ = &mut cancel => None,
+            }
+        };
+        let Some(outcome) = outcome else {
+            // The task is dropped mid-run; the worker is in an unknown state.
+            self.discard(worker).await;
+            return Ok(WarmRunResult::cancelled());
+        };
         match outcome {
             Ok(result) => {
                 self.release(worker).await;

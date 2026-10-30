@@ -35,6 +35,12 @@ pub enum NoticeVerdict {
 pub struct BackgroundNotice {
     /// The task's `type#n` label, e.g. `explore#4`.
     pub label: String,
+    /// What the run was for, from `explore#4 ("…")`; empty when not given.
+    pub description: String,
+    /// The Agent call's tool call id, from the header. It finds the run (see
+    /// `live::run_for_tool_call`), which a label alone cannot: labels are per
+    /// session.
+    pub call_id: Option<String>,
     pub verdict: NoticeVerdict,
     /// The task stopped early and can be resumed.
     pub partial: bool,
@@ -50,13 +56,14 @@ pub struct BackgroundNotice {
 
 /// `Background tool "Agent" (id …) finished:` and the body after it.
 static HEADER_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"(?s)^Background tool "[^"]+" \(id [^)]*\) (?:finished|failed):\s*(.*)$"#)
+    Regex::new(r#"(?s)^Background tool "[^"]+" \(id ([^)]*)\) (?:finished|failed):\s*(.*)$"#)
         .expect("background header")
 });
 
-/// `explore#4 finished ✓ (partial …) — summary`, with the summary optional.
+/// `explore#4 ("what it was for") finished ✓ (partial …) — summary`, with the
+/// description and the summary optional.
 static FIRST_LINE_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\S+#\S+) (finished ✓|failed ✗|cancelled ⊘)( \(partial[^)]*\))?(?: — (.*))?$")
+    Regex::new(r#"^(\S+#\S+)(?: \("([^"]*)"\))? (finished ✓|failed ✗|cancelled ⊘)( \(partial[^)]*\))?(?: — (.*))?$"#)
         .expect("background first line")
 });
 
@@ -80,7 +87,12 @@ fn short_model(id: &str) -> String {
 /// carry a `type#n` label. The "Read the full result" line is dropped here,
 /// and so is the model marker, which moves to the peek's own line.
 pub fn parse_background_notice(text: &str) -> Option<BackgroundNotice> {
-    let body = HEADER_RE.captures(text)?.get(1)?.as_str();
+    let header = HEADER_RE.captures(text)?;
+    let call_id = header
+        .get(1)
+        .map(|m| m.as_str().trim().to_string())
+        .filter(|id| !id.is_empty());
+    let body = header.get(2)?.as_str();
 
     let (model, effort) = match MODEL_RE.captures(body) {
         Some(caps) => (
@@ -93,12 +105,12 @@ pub fn parse_background_notice(text: &str) -> Option<BackgroundNotice> {
 
     let first = body.split('\n').next()?.trim();
     let caps = FIRST_LINE_RE.captures(first)?;
-    let verdict = match &caps[2] {
+    let verdict = match &caps[3] {
         "finished ✓" => NoticeVerdict::Finished,
         "failed ✗" => NoticeVerdict::Failed,
         _ => NoticeVerdict::Cancelled,
     };
-    let rest = caps.get(4).map_or("", |m| m.as_str()).trim();
+    let rest = caps.get(5).map_or("", |m| m.as_str()).trim();
     let (rest, still_running) = match STILL_RE.captures(rest) {
         Some(caps) => (
             STILL_RE.replace(rest, "").into_owned(),
@@ -111,8 +123,10 @@ pub fn parse_background_notice(text: &str) -> Option<BackgroundNotice> {
 
     Some(BackgroundNotice {
         label: caps[1].to_string(),
+        description: caps.get(2).map_or("", |m| m.as_str()).to_string(),
+        call_id,
         verdict,
-        partial: caps.get(3).is_some(),
+        partial: caps.get(4).is_some(),
         summary: summary.to_string(),
         still_running,
         model,
@@ -133,7 +147,10 @@ impl BackgroundNoticeComponent {
     /// The elapsed time comes from the subagent inbox, when it still knows
     /// the task.
     pub fn new(notice: BackgroundNotice) -> Self {
-        let elapsed = elapsed_text(&notice.label);
+        let elapsed = notice
+            .call_id
+            .as_deref()
+            .and_then(|call_id| elapsed_text(call_id, &notice.label));
         Self::with_elapsed(notice, elapsed)
     }
 

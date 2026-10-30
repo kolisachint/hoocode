@@ -228,8 +228,23 @@ fn status_tone(status: &str) -> &'static str {
 }
 
 /// How long a task has run, in the panel's format, once the inbox knows it.
-pub(crate) fn elapsed_text(label: &str) -> Option<String> {
-    let record = subagent_inbox().get(label)?;
+/// The run is found by its id (the Agent call's run), not by label: labels
+/// are per session, and another session's `explore#1` is another run. A call
+/// id reused since (some providers number calls per turn) names another run,
+/// so the label must match too.
+pub(crate) fn elapsed_text(call_id: &str, label: &str) -> Option<String> {
+    let run = hoocode_code_subagents::live::run_for_tool_call(call_id)?;
+    subagent_inbox()
+        .get(&run)
+        .filter(|r| r.label == label)
+        .and_then(|_| elapsed_for_run(&run))
+}
+
+/// How long the run with this id (its pool task id) has run.
+pub(crate) fn elapsed_for_run(run_id: &str) -> Option<String> {
+    let record = subagent_inbox()
+        .get(run_id)
+        .filter(|r| r.task_id == run_id)?;
     let ms = record
         .ended_at
         .unwrap_or_else(now_ms)
@@ -534,11 +549,13 @@ pub fn task_output_definition() -> ToolRenderDefinition {
             {
                 let mut s = state.borrow_mut();
                 s.status = Some(status);
+                // By the run's id, which AgentOutput reports as `runId`: the
+                // handle the model passed is a label, and labels are per session.
                 s.elapsed = result
                     .details
-                    .get("task_id")
+                    .get("runId")
                     .and_then(Value::as_str)
-                    .and_then(elapsed_text);
+                    .and_then(elapsed_for_run);
             }
             Ok(peek_body(result_text(result.content), options.expanded))
         })),

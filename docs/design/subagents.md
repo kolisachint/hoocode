@@ -474,10 +474,48 @@ take, `a_reserved_run_is_listed_and_bound_in_place`, `a_run_cancelled_while_star
 binary before the fix and passes now, repeated (see `subagent-evals.md`). Its needles no
 longer match the example in `task-main.md`.
 
+**Fix, third round (review of 25367f1).**
+
+- **Warm runs cancel for real.** `WarmSubagentPool::dispatch_cancellable` selects the
+  worker's run (and the wait for a slot) against a cancel future. On cancel the task is
+  dropped, the worker discarded (its child disposed) and the result is `cancelled`. The
+  Agent tool passes `stop_asked`: the inbox's cancel flag or the call's abort signal,
+  foreground and background. Before, a cancel of a warm run answered "Cancelled" while
+  the run went on to report "finished ✓".
+- **A cancel reports what happened.** When the cold pool kills the run, the answer is
+  "Cancelled". Otherwise (a warm run, or a cold run the pool does not hold yet) the
+  answer waits up to 10 s for the run to settle and reports what it settled as:
+  cancelled, already finished, or "Asked … to stop; it has not stopped yet". The 60 s
+  guess is gone. A run listed as running always has an execute awaiting it, because:
+- **No ghosts.** A reservation is always taken by its call id, even when the execute sees
+  other arguments than the placeholder (its description is updated). An `AbandonGuard`
+  in `execute_task` settles the call's run `failed` ("not started: …") if the call
+  returns or panics while it is still listed as running.
+- `cancel_on_abort` does not start a run already asked to stop, and treats an abort like
+  a cancel request, retried until the pool holds the run.
+- Counter seeding reads the session file line by line as bytes, only lines with a `#`,
+  and does not remember a session whose file could not be read (a file that does not
+  exist yet is a new session, with nothing to continue after).
+- The OpenAI provider assigns a missing or repeated id when the call's block starts, so
+  every partial carries the id the call keeps: `call_<n>_<ms>`, counter first, short of
+  the 40 characters a request keeps.
+- A run cancelled while starting whose call then refused is reported cancelled, not
+  failed; a background resume's pool error names the run. A handle held for another
+  session of this process answers "belongs to another session or an earlier process".
+- The TUI's background notice parses `label ("description")` (it had stopped parsing the
+  notices since the first round) and finds the run's elapsed time by the call's run id;
+  AgentOutput results carry `runId` for the same reason.
+
+Tests added in this round: `a_cancelled_warm_dispatch_stops_its_worker_and_reports_cancelled`
+and `a_warm_background_run_reports_its_status_and_cancels_truthfully` (`tests/it/warm.rs`),
+`a_stop_asked_before_the_dispatch_never_starts_it` and
+`changed_arguments_keep_the_reserved_handle_and_leave_no_ghost` (`tests/it/tools.rs`), the
+abandon cases in `subagent_inbox_lifecycle`, `parses_a_notice_that_names_its_description`
+(`hoocode-code-tui-widgets`), and the partial-id check in the OpenAI provider test.
+
 **Not proven.** We have no transcript of the user's session. The eval shows that the
 model could not tell its runs apart from anything it was shown. It does not show that a
-real model makes this mistake, or that it stops making it now. The warm pool (opt-in) is
-not reached by a cancel, before or after this change.
+real model makes this mistake, or that it stops making it now.
 
 ## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 

@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use hoocode_code_subagents::warm::*;
 
-const FAKE_CHILD: &str = r#"fail=0; exit_on_prompt=0; slow_prompt=0; earlier=false
+const FAKE_CHILD: &str = r#"fail=0; exit_on_prompt=0; slow_prompt=0; hang_prompt=0; earlier=false
 for a in "$@"; do
-  case "$a" in --fail-prompt) fail=1;; --exit-on-prompt) exit_on_prompt=1;; --slow-prompt) slow_prompt=1;; --earlier-text) earlier=true;; esac
+  case "$a" in --fail-prompt) fail=1;; --exit-on-prompt) exit_on_prompt=1;; --slow-prompt) slow_prompt=1;; --hang-prompt) hang_prompt=1;; --earlier-text) earlier=true;; esac
 done
 gen=0; n=0; last=
 field() { printf '%s' "$line" | sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"; }
@@ -24,6 +24,7 @@ while IFS= read -r line; do
     prompt)
       [ "$exit_on_prompt" = 1 ] && exit 1
       [ "$slow_prompt" = 1 ] && sleep 1
+      [ "$hang_prompt" = 1 ] && sleep 30
       n=$((n + 1)); last=$(field message)
       respond prompt ""
       echo '{"type":"agent_start"}'
@@ -421,4 +422,133 @@ async fn a_burst_of_dispatches_never_runs_more_than_max_in_flight() {
     );
     assert_eq!(pool.load(), (0, 0), "every slot must be released");
     pool.dispose().await;
+}
+
+/// A warm run asked to stop is stopped: its task is dropped, its worker
+/// discarded (its child disposed) and the result is `cancelled`, not a late
+/// `complete`. The slot comes back.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_warm_dispatch_stops_its_worker_and_reports_cancelled() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = make(dir.path(), &["--hang-prompt"]);
+    let started = std::time::Instant::now();
+    let result = pool
+        .dispatch_cancellable(
+            "never finishes",
+            &opts(),
+            None,
+            tokio::time::sleep(Duration::from_millis(500)),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result, WarmRunResult::cancelled());
+    assert!(
+        started.elapsed() < Duration::from_secs(15),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(pool.load(), (0, 0), "the slot must be released");
+    pool.dispose().await;
+}
+
+/// The same through the Agent and AgentOutput tools, with warm subagents on:
+/// while the warm run works, its status says running; a cancel stops it and
+/// says so only once it has stopped, and the call reports `cancelled`.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_warm_background_run_reports_its_status_and_cancels_truthfully() {
+    use hoocode_ai_types::Content;
+    use hoocode_code_subagents::inbox::{subagent_inbox, TaskLifecycle};
+    use hoocode_code_subagents::instance::set_subagent_pool_for_testing;
+    use hoocode_code_subagents::pool::{SubagentPool, SubagentPoolOptions};
+    use hoocode_code_subagents::tools::{
+        create_task_output_tool_definition, create_task_tool_definition,
+    };
+    use hoocode_code_tool_api::ToolContext;
+    use serde_json::json;
+
+    let _serial = crate::SERIAL.lock().await;
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    std::env::set_var("HOOCODE_WARM_SUBAGENTS", "1");
+    let warm = make(&cwd, &["--hang-prompt"]);
+    set_warm_subagent_pool_for_testing(Some(warm.clone()));
+    // A cold pool the cancel asks first; it does not hold warm runs.
+    let cold = SubagentPool::new(SubagentPoolOptions {
+        executable: PathBuf::from("/bin/false"),
+        cwd: Some(cwd.clone()),
+        ..Default::default()
+    });
+    set_subagent_pool_for_testing(Some(cold.clone()));
+    let inbox = subagent_inbox();
+    inbox.clear();
+    let ctx = ToolContext {
+        cwd: Some(cwd.clone()),
+        ..Default::default()
+    };
+    let text = |r: &hoocode_agent_types::AgentToolResult| match &r.content[0] {
+        Content::Text(t) => t.text.clone(),
+        other => panic!("{other:?}"),
+    };
+
+    let tool = create_task_tool_definition(&cwd);
+    let call = hoocode_agent_types::AgentToolCall {
+        id: "call_0".into(),
+        name: "Agent".into(),
+        arguments: json!({"description": "map it", "prompt": "Map it.", "subagent_type": "explore", "background": true}),
+    };
+    (tool.background_placeholder.clone().unwrap())(&call, Some(&ctx)).unwrap();
+    let running = {
+        let (execute, ctx, args) = (tool.execute.clone(), ctx.clone(), call.arguments.clone());
+        tokio::task::spawn_blocking(move || {
+            execute("call_0".into(), args, None, None, Some(&ctx)).map_err(|e| e.to_string())
+        })
+    };
+    // Bound and working on its warm worker.
+    for _ in 0..500 {
+        if warm.load().0 == 1 && inbox.get("explore#1").is_some_and(|r| !r.starting) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(warm.load().0, 1, "the warm run is working");
+
+    let output = create_task_output_tool_definition();
+    let ask = |args: serde_json::Value| {
+        let (execute, ctx) = (output.execute.clone(), ctx.clone());
+        tokio::task::spawn_blocking(move || {
+            execute("o".into(), args, None, None, Some(&ctx)).map_err(|e| e.to_string())
+        })
+    };
+    let status = ask(json!({"task_id": "explore#1"})).await.unwrap().unwrap();
+    assert!(
+        text(&status).starts_with("explore#1 (\"map it\") is still running"),
+        "{}",
+        text(&status)
+    );
+    let cancel = ask(json!({"task_id": "explore#1", "cancel": true}))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        text(&cancel),
+        "Cancelled explore#1 (\"map it\"). Only this run was stopped."
+    );
+    let result = running.await.unwrap().unwrap();
+    assert!(
+        text(&result).starts_with("explore#1 (\"map it\") cancelled ⊘"),
+        "{}",
+        text(&result)
+    );
+    assert_eq!(
+        inbox.get("explore#1").unwrap().lifecycle,
+        TaskLifecycle::Cancelled
+    );
+    assert_eq!(warm.load(), (0, 0));
+
+    std::env::remove_var("HOOCODE_WARM_SUBAGENTS");
+    set_warm_subagent_pool_for_testing(None);
+    set_subagent_pool_for_testing(None);
+    cold.dispose();
+    warm.dispose().await;
+    inbox.clear();
 }

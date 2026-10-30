@@ -139,6 +139,10 @@ record and said no subagent existed. Records are made at the placeholder now
 `--only parent_tells_parallel_runs_apart --repeat 30`: **30 of 30, 60 attempts, 60 usable.**
 `--include-slow`: **22 of 22, 33 attempts, 32 usable (97%), 180s.**
 
+Third round (review of 25367f1, warm cancel and orphaned reservations):
+`--only parent_tells_parallel_runs_apart --repeat 20`: **20 of 20, 40 attempts, 40
+usable.** `--include-slow`: **22 of 22, 33 attempts, 32 usable (97%), 180s.**
+
 The writer scenario checks the mechanics only: the mock child runs the git
 commands. It does not show that a real model follows the brief
 (`subagent-orchestration.md` §5).

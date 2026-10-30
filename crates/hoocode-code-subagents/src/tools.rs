@@ -36,7 +36,8 @@ use crate::limits::DEFAULT_WAIT_TIMEOUT_MS;
 use crate::model_categories::{ModelRequest, ModelSelection};
 use crate::pool::TaskStatus as PoolTaskStatus;
 use crate::pool::{
-    run_transcript, DispatchOptions, ResultStatus, SubagentPool, SubagentResult, TaskResult,
+    run_transcript, DispatchOptions, PoolError, ResultStatus, SubagentPool, SubagentResult,
+    TaskResult,
 };
 use crate::warm::{
     get_warm_subagent_pool, warm_subagents_enabled, WarmDispatchOptions, WarmProgressCallback,
@@ -387,6 +388,8 @@ fn warm_result_to_task_result(warm: &WarmRunResult, agent_type: &str, task_id: u
             exit_code: Some(if warm.ok { 0 } else { 1 }),
             status: Some(if warm.ok {
                 ResultStatus::Complete
+            } else if warm.status == "cancelled" {
+                ResultStatus::Cancelled
             } else {
                 ResultStatus::Failed
             }),
@@ -696,28 +699,69 @@ fn start_background(
 /// holds it (the moments between `start_in` and the dispatch registering it).
 const CANCEL_RETRY: Duration = Duration::from_millis(25);
 
+/// The result of a run stopped before the pool ever held it.
+fn cancelled_before_start(run_id: &str) -> TaskResult {
+    TaskResult {
+        task_id: Some(run_id.to_string()),
+        result: Some(SubagentResult {
+            task_id: run_id.to_string(),
+            error: Some("cancelled before it started".into()),
+            status: Some(ResultStatus::Cancelled),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// Resolves once the run is asked to stop: `AgentOutput(cancel: true)` (the
+/// inbox flag) or the call's abort signal. What the warm path selects against.
+async fn stop_asked(run_id: &str, signal: Option<AbortSignal>) {
+    let inbox = subagent_inbox();
+    loop {
+        let asked = inbox.cancel_notified();
+        tokio::pin!(asked);
+        asked.as_mut().enable();
+        if inbox.cancel_requested(run_id) {
+            return;
+        }
+        tokio::select! {
+            _ = &mut asked => {}
+            _ = async {
+                match &signal {
+                    Some(signal) => signal.cancelled().await,
+                    None => std::future::pending().await,
+                }
+            } => return,
+        }
+    }
+}
+
 /// Run a dispatch, cancelling its run (process tree) when the call aborts, or
-/// when `AgentOutput(cancel: true)` asks for it in the inbox. That ask can
-/// land before the pool holds the run, where `pool.cancel` misses; it is
-/// offered again until the pool takes it or the run ends.
+/// when `AgentOutput(cancel: true)` asks for it in the inbox. Either can land
+/// before the pool holds the run, where `pool.cancel` misses; the cancel is
+/// offered again until the pool takes it or the run ends. A run asked to stop
+/// before this is called is not started at all.
 pub async fn cancel_on_abort<F>(
     pool: &SubagentPool,
     run_id: &str,
     signal: Option<AbortSignal>,
     run: F,
-) -> F::Output
+) -> Result<TaskResult, PoolError>
 where
-    F: std::future::Future,
+    F: std::future::Future<Output = Result<TaskResult, PoolError>>,
 {
-    tokio::pin!(run);
     let inbox = subagent_inbox();
+    if inbox.cancel_requested(run_id) || signal.as_ref().is_some_and(AbortSignal::aborted) {
+        return Ok(cancelled_before_start(run_id));
+    }
+    tokio::pin!(run);
     let mut aborted = false;
     let mut cancelled = false;
     loop {
         let asked = inbox.cancel_notified();
         tokio::pin!(asked);
         asked.as_mut().enable();
-        let pending = !cancelled && inbox.cancel_requested(run_id);
+        let pending = !cancelled && (aborted || inbox.cancel_requested(run_id));
         if pending && pool.cancel(run_id) {
             cancelled = true;
         }
@@ -730,10 +774,7 @@ where
         };
         tokio::select! {
             output = &mut run => return output,
-            _ = abort, if !aborted => {
-                aborted = true;
-                pool.cancel(run_id);
-            }
+            _ = abort, if !aborted => aborted = true,
             _ = &mut asked, if !cancelled && !retry => {}
             _ = tokio::time::sleep(CANCEL_RETRY), if retry => {}
         }
@@ -859,6 +900,12 @@ async fn execute_task(
     let summary = call_summary(&params);
     let session = session_key(ctx.as_ref());
     let label = subagent_inbox().take_label(&call_id, &subagent_type, &summary, session.as_deref());
+    // Whatever happens below (a return, an error, a panic), the run this call
+    // was given a handle for does not stay `running` without anyone awaiting it.
+    let _guard = AbandonGuard {
+        session: session.clone(),
+        label: label.clone(),
+    };
     let outcome = execute_task_inner(
         params,
         signal,
@@ -871,14 +918,22 @@ async fn execute_task(
         session.clone(),
     )
     .await;
-    if subagent_inbox()
-        .reserved(session.as_deref(), &label)
-        .is_none()
-    {
+    let Some(reserved) = subagent_inbox().reserved(session.as_deref(), &label) else {
         return outcome;
-    }
+    };
     // Still reserved: the call returned before it started its run.
-    let name = named(&label, Some(&summary));
+    let name = named(&label, reserved.description.as_deref());
+    if reserved.lifecycle != TaskLifecycle::Running {
+        // Cancelled while starting: say so, not that it failed.
+        let reason = reserved
+            .error
+            .clone()
+            .unwrap_or_else(|| "cancelled before it started".into());
+        return Ok(text_result(
+            format!("{name} {} ⊘ — {reason}", reserved.lifecycle.as_str()),
+            details(&subagent_type, false, Some(&reason), 0, None, true),
+        ));
+    }
     match outcome {
         Err(error) => {
             let reason = error.to_string();
@@ -898,6 +953,23 @@ async fn execute_task(
             result.content = vec![Content::text(format!("{name} failed ✗ — {reason}"))];
             Ok(result)
         }
+    }
+}
+
+/// Settles a call's run as failed if the call ends (or panics) while the run
+/// is still listed as running: nobody is awaiting it any more.
+struct AbandonGuard {
+    session: Option<String>,
+    label: String,
+}
+
+impl Drop for AbandonGuard {
+    fn drop(&mut self) {
+        subagent_inbox().settle_abandoned(
+            self.session.as_deref(),
+            &self.label,
+            "not started: the Agent call ended without starting or settling this run",
+        );
     }
 }
 
@@ -1078,6 +1150,10 @@ async fn execute_task_inner(
             Err(error) => {
                 mark_dispatch_failed(task_id, &run_id);
                 subagent_inbox().fail(&run_id, &error.0, TaskLifecycle::Failed);
+                if is_background {
+                    let name = named(&label, Some(&summary));
+                    return Err(format!("{name} failed ✗ — {}", error.0).into());
+                }
                 Err(error.0.into())
             }
         };
@@ -1179,7 +1255,12 @@ async fn execute_task_inner(
             let warm = get_warm_subagent_pool(&cwd, &available);
             if warm.is_poolable(&subagent_type) {
                 match warm
-                    .dispatch(&prompt, &warm_options, Some(progress.clone()))
+                    .dispatch_cancellable(
+                        &prompt,
+                        &warm_options,
+                        Some(progress.clone()),
+                        stop_asked(&pool_task_id, signal.clone()),
+                    )
                     .await
                 {
                     Ok(warm_result) => {
@@ -1248,7 +1329,15 @@ async fn execute_task_inner(
     if use_warm {
         let warm = get_warm_subagent_pool(&cwd, &available);
         if warm.is_poolable(&subagent_type) {
-            match warm.dispatch(&prompt, &warm_options, Some(progress)).await {
+            match warm
+                .dispatch_cancellable(
+                    &prompt,
+                    &warm_options,
+                    Some(progress),
+                    stop_asked(&pool_task_id, signal.clone()),
+                )
+                .await
+            {
                 Ok(warm_result) => {
                     let dispatch =
                         warm_result_to_task_result(&warm_result, &subagent_type, task_id);
@@ -1434,7 +1523,7 @@ async fn execute_task_output(
         .filter(|s| !s.is_empty())
         .map(String::from);
     if params.get("cancel").and_then(Value::as_bool) == Some(true) {
-        return cancel_background_task(handle.as_deref(), &params, ctx.as_ref());
+        return cancel_background_task(handle.as_deref(), &params, ctx.as_ref()).await;
     }
     Ok(read_background_task(params, ctx, handle).await)
 }
@@ -1442,7 +1531,11 @@ async fn execute_task_output(
 /// The answer for a handle the inbox does not hold: a run of an earlier
 /// process (a resumed session), or an unknown handle.
 fn unknown_handle(session: Option<&str>, handle: &str) -> String {
-    if subagent_inbox().is_earlier_run(session, handle) {
+    if subagent_inbox().is_other_sessions_run(session, handle) {
+        format!(
+            "{handle} belongs to another session or an earlier process, not this conversation; it cannot be read or cancelled from here."
+        )
+    } else if subagent_inbox().is_earlier_run(session, handle) {
         format!(
             "{handle} ran in an earlier process and is not running now. Its result, if it finished, is earlier in this conversation; it cannot be cancelled or read from here."
         )
@@ -1453,18 +1546,19 @@ fn unknown_handle(session: Option<&str>, handle: &str) -> String {
     }
 }
 
-/// A cancelled run that never got a process again: `pool.cancel` missed it,
-/// and it is younger than this. The execute awaiting it stops it as soon as
-/// the pool holds it (see [`cancel_on_abort`]).
-const CANCEL_PENDING_MAX_AGE_MS: u64 = 60_000;
+/// How long a cancel the pool could not take at once waits for the run to
+/// settle, so the answer says what really happened to it.
+const CANCEL_SETTLE_WAIT: Duration = Duration::from_secs(10);
 
 /// `AgentOutput(task_id, cancel: true)`: stop a background subagent, by the
 /// exact handle (task id or label) of this session's run. A run still
-/// starting never starts; a running one has its process tree killed and
-/// settles `cancelled` when its dispatch returns. The answer names the run it
-/// stopped. Errors on a missing or unknown handle, and when combined with
-/// `wait` or `list`.
-fn cancel_background_task(
+/// starting never starts. A cold run's process tree is killed at once. A run
+/// the cold pool does not hold (a warm worker, or a cold run in the moments
+/// before the pool registered it) is stopped by the execute awaiting it,
+/// which watches the inbox's cancel flag; the answer waits for it to settle
+/// and reports what it settled as. Errors on a missing or unknown handle, and
+/// when combined with `wait` or `list`.
+async fn cancel_background_task(
     handle: Option<&str>,
     params: &Value,
     ctx: Option<&ToolContext>,
@@ -1484,17 +1578,18 @@ fn cancel_background_task(
     let Some(ask) = subagent_inbox().request_cancel(session.as_deref(), handle) else {
         return Err(unknown_handle(session.as_deref(), handle).into());
     };
+    let already = |rec: &InboxRecord| {
+        text_result(
+            format!(
+                "{} already finished ({}); nothing was cancelled.",
+                rec.named(),
+                rec.lifecycle.as_str()
+            ),
+            output_details(Some(handle), rec.lifecycle.as_str(), true, None),
+        )
+    };
     let rec = match ask {
-        CancelAsk::Settled(rec) => {
-            return Ok(text_result(
-                format!(
-                    "{} already finished ({}); nothing was cancelled.",
-                    rec.named(),
-                    rec.lifecycle.as_str()
-                ),
-                output_details(Some(handle), rec.lifecycle.as_str(), true, None),
-            ))
-        }
+        CancelAsk::Settled(rec) => return Ok(already(&rec)),
         CancelAsk::BeforeStart(rec) => {
             return Ok(text_result(
                 format!(
@@ -1506,39 +1601,35 @@ fn cancel_background_task(
         }
         CancelAsk::Running(rec) => rec,
     };
+    let cancelled = |rec: &InboxRecord| {
+        text_result(
+            format!("Cancelled {}. Only this run was stopped.", rec.named()),
+            output_details(Some(handle), "cancelled", true, None),
+        )
+    };
     let cwd = cwd.ok_or("AgentOutput with cancel:true needs a working directory.")?;
     let models = ctx.map(|c| c.available_models.clone()).unwrap_or_default();
-    let pool = get_subagent_pool(&cwd, &models);
-    let cancelled = format!("Cancelled {}. Only this run was stopped.", rec.named());
-    if pool.cancel(&rec.task_id) {
-        return Ok(text_result(
-            cancelled,
-            output_details(Some(handle), "cancelled", true, None),
-        ));
+    if get_subagent_pool(&cwd, &models).cancel(&rec.task_id) {
+        return Ok(cancelled(&rec));
     }
-    // The pool does not hold it. Either it has not registered the run yet (the
-    // moments after its execute bound it), and the execute stops it once it
-    // does, or the pool settled it before the inbox heard. A task the pool has
-    // forgotten without a settle is reported `failed`, as the reconcile would.
-    let status = match pool.get_status(&rec.task_id) {
-        PoolTaskStatus::Unknown
-            if now_ms().saturating_sub(rec.started_at) < CANCEL_PENDING_MAX_AGE_MS =>
-        {
-            return Ok(text_result(
-                cancelled,
-                output_details(Some(handle), "cancelled", true, None),
-            ));
-        }
-        PoolTaskStatus::Unknown | PoolTaskStatus::Running | PoolTaskStatus::Queued => "failed",
-        other => other.as_str(),
-    };
-    Ok(text_result(
-        format!(
-            "{} already finished ({status}); nothing was cancelled.",
-            rec.named()
+    // Not in the cold pool: its execute stops it on the flag. Report what it
+    // settles as, not what we hope.
+    let settled = subagent_inbox()
+        .wait_for_in(Some(session.as_deref()), &rec.task_id, CANCEL_SETTLE_WAIT)
+        .await
+        .unwrap_or(rec);
+    Ok(match settled.lifecycle {
+        TaskLifecycle::Cancelled => cancelled(&settled),
+        TaskLifecycle::Running => text_result(
+            format!(
+                "Asked {} to stop; it has not stopped yet. Check it with AgentOutput(\"{}\").",
+                settled.named(),
+                settled.label
+            ),
+            output_details(Some(handle), "running", true, None),
         ),
-        output_details(Some(handle), status, true, None),
-    ))
+        _ => already(&settled),
+    })
 }
 
 async fn read_background_task(
@@ -1616,6 +1707,22 @@ async fn read_background_task(
             output_details(Some(&handle), "unknown", false, None),
         );
     };
+    // The run's own id, so a UI can find this run (a label is per session).
+    let mut result = describe_record(&rec, &handle, inbox, scope);
+    if let Value::Object(details) = &mut result.details {
+        details.insert("runId".into(), Value::from(rec.task_id.clone()));
+    }
+    result
+}
+
+/// The answer about one run of this session.
+fn describe_record(
+    rec: &InboxRecord,
+    handle: &str,
+    inbox: &crate::inbox::SubagentInbox,
+    scope: Option<&str>,
+) -> AgentToolResult {
+    let handle = handle.to_string();
     match rec.lifecycle {
         TaskLifecycle::Running => {
             let activity = rec
@@ -1628,7 +1735,7 @@ async fn read_background_task(
                 format!(
                     "{} is still running — {} elapsed{activity}. Call AgentOutput again, or with wait:true to block until it finishes.",
                     rec.named(),
-                    record_elapsed(&rec)
+                    record_elapsed(rec)
                 ),
                 output_details(Some(&handle), "running", true, None),
             )

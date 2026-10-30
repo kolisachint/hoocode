@@ -89,21 +89,31 @@ async fn subagent_inbox_lifecycle() {
         Some("explore#4")
     );
     assert_eq!(inbox.reserve_label("call_2", "explore", "b", None), None);
-    // ... and the call it does not describe does not take the reservation
+    // A reservation is always taken by its call id, even with other
+    // arguments (the execute's validated ones): the model was told that
+    // handle. The changed description replaces the reserved one.
     assert_eq!(
         inbox.take_label("call_2", "explore", "b", None),
-        "explore#5"
+        "explore#4"
+    );
+    assert_eq!(
+        inbox.get("explore#4").unwrap().description.as_deref(),
+        Some("b")
     );
     assert_eq!(
         inbox.take_label("call_2", "explore", "a", None),
-        "explore#4"
+        "explore#5"
     );
-    // a reservation for another agent type is not this call's label
+    // a call that ends without starting its reserved run leaves no ghost
     inbox.reserve_label("call_3", "plan", "p", None);
+    assert!(inbox
+        .settle_abandoned(None, "plan#1", "not started")
+        .is_some());
     assert_eq!(
-        inbox.take_label("call_3", "explore", "p", None),
-        "explore#6"
+        inbox.get("plan#1").unwrap().lifecycle,
+        TaskLifecycle::Failed
     );
+    assert!(inbox.settle_abandoned(None, "plan#1", "again").is_none());
 
     // a run carries its description, shown next to its label
     inbox.clear();

@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::Duration;
 
-use regex::Regex;
+use regex::bytes::Regex;
 use serde_json::Value;
 use tokio::sync::Notify;
 
@@ -155,6 +155,41 @@ fn activity_from_event(event: &Value) -> Option<String> {
 static HANDLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"([A-Za-z0-9_.:-]+)#([0-9]+)").expect("handle regex"));
 
+/// The highest `type#N` per agent type in a session file, read line by line
+/// as bytes (a session file can be large, and is not guaranteed UTF-8 at
+/// every byte). Only lines with a `#` are searched. `None` when the file
+/// cannot be read: nothing is learned, and the caller tries again later.
+fn handles_in(path: &str) -> Option<HashMap<String, u64>> {
+    use std::io::BufRead;
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut seen: HashMap<String, u64> = HashMap::new();
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match reader.read_until(b'\n', &mut line) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(_) => return None,
+        }
+        if !line.contains(&b'#') {
+            continue;
+        }
+        for caps in HANDLE.captures_iter(&line) {
+            let (Ok(name), Ok(n)) = (
+                std::str::from_utf8(&caps[1]),
+                std::str::from_utf8(&caps[2]).map(str::parse::<u64>),
+            ) else {
+                continue;
+            };
+            let Ok(n) = n else { continue };
+            let max = seen.entry(name.to_string()).or_insert(0);
+            *max = (*max).max(n);
+        }
+    }
+    Some(seen)
+}
+
 type Scope = Option<String>;
 
 /// The record key of a run reserved at its placeholder, before its task id.
@@ -181,7 +216,6 @@ pub enum CancelAsk {
 
 /// A label given out at a placeholder, until the call's execute takes it.
 struct Reservation {
-    agent_type: String,
     description: String,
     session: Scope,
     label: String,
@@ -387,15 +421,17 @@ impl SubagentInbox {
         if self.state().seeded.contains_key(session) {
             return;
         }
-        let text = std::fs::read_to_string(session).unwrap_or_default();
-        let mut seen: HashMap<String, u64> = HashMap::new();
-        for caps in HANDLE.captures_iter(&text) {
-            let Ok(n) = caps[2].parse::<u64>() else {
-                continue;
-            };
-            let max = seen.entry(caps[1].to_string()).or_insert(0);
-            *max = (*max).max(n);
-        }
+        // No file yet: a new session, with no earlier handles to continue
+        // after. Unreadable: learn nothing and do not remember the session as
+        // read, so the next call tries again.
+        let seen = if std::path::Path::new(session).exists() {
+            match handles_in(session) {
+                Some(seen) => seen,
+                None => return,
+            }
+        } else {
+            HashMap::new()
+        };
         let mut state = self.state();
         if state.seeded.contains_key(session) {
             return;
@@ -469,7 +505,6 @@ impl SubagentInbox {
         state.reserved_labels.insert(
             call_id.to_string(),
             Reservation {
-                agent_type: agent_type.to_string(),
                 description: description.to_string(),
                 session: session.map(String::from),
                 label: label.clone(),
@@ -479,8 +514,11 @@ impl SubagentInbox {
     }
 
     /// The label reserved for `call_id` (and removed), or the next one when
-    /// the call had none: a foreground call, or a reservation made for another
-    /// call (another agent type, description or session) under the same id.
+    /// the call had none (a foreground call). A reservation is always taken by
+    /// its call, even when the execute sees other arguments than the
+    /// placeholder did (validated or rewritten ones): the model was told that
+    /// handle, and a second label would leave the reserved run listed as
+    /// running forever. A changed description replaces the reserved one.
     pub fn take_label(
         &self,
         call_id: &str,
@@ -489,18 +527,52 @@ impl SubagentInbox {
         session: Option<&str>,
     ) -> String {
         let mut state = self.state();
-        let matches = state.reserved_labels.get(call_id).is_some_and(|r| {
-            r.agent_type == agent_type
-                && r.description == description
-                && r.session.as_deref() == session
-        });
-        if matches {
-            if let Some(reservation) = state.reserved_labels.remove(call_id) {
-                return reservation.label;
+        if let Some(reservation) = state.reserved_labels.remove(call_id) {
+            let description = description.trim();
+            if reservation.description.trim() != description && !description.is_empty() {
+                let key = reserved_key(reservation.session.as_deref(), &reservation.label);
+                if let Some(rec) = state.records.get_mut(&key) {
+                    rec.description = Some(description.to_string());
+                }
             }
+            return reservation.label;
         }
         drop(state);
         self.next_label_in(session, agent_type)
+    }
+
+    /// Settle `label`'s run in `session` as failed if it is still running
+    /// (reserved or bound): its Agent call ended, or panicked, without
+    /// starting or settling it. `None` when there is nothing to settle.
+    pub fn settle_abandoned(
+        &self,
+        session: Option<&str>,
+        label: &str,
+        reason: &str,
+    ) -> Option<InboxRecord> {
+        let rec = {
+            let mut state = self.state();
+            let key = state.key_in(session, label)?;
+            let rec = state.records.get_mut(&key)?;
+            if rec.lifecycle != TaskLifecycle::Running {
+                return None;
+            }
+            InboxState::settle(rec, TaskLifecycle::Failed, reason);
+            rec.clone()
+        };
+        self.notify_settle();
+        Some(rec)
+    }
+
+    /// Whether `handle` names a run held for another session of this process
+    /// (e.g. one `/fork`ed or switched away from) and not for `session`.
+    pub fn is_other_sessions_run(&self, session: Option<&str>, handle: &str) -> bool {
+        let state = self.state();
+        state.key_in(session, handle).is_none()
+            && state
+                .records
+                .values()
+                .any(|r| r.label == handle && r.session.as_deref() != session)
     }
 
     /// Whether `handle` (`explore#3`) names a run of an earlier process: the
