@@ -571,6 +571,31 @@ else:
 - The table is read from `/proc` (or `/bin/ps` off Linux), once per dispose, inside
   `block_in_place` on a runtime worker; an empty table is logged once.
 
+**Sixth round (follow-ups to ec64982).**
+
+- **Spawn generations, not bare pids.** The registry gives each cold child a generation
+  at `child_spawned`; the pool's slot and the lifeguard's monitor keep it next to the pid,
+  and every kill passes a `ChildPid { pid, generation }`. A kill whose generation is not
+  the live one for that pid is refused and logged. This closes the ABA window: the slot
+  and the monitor keep a pid for about 500 ms after the reap, and if the pool's next child
+  got the same pid, a stale cancel or grace-timer kill used to see it as live and kill the
+  wrong subagent's tree. A pid-only `kill_process_tree` of a pid one of our children holds
+  is refused too. The `reaped` set is gone: the registry holds only live children, so it
+  is bounded by them.
+- **A `waitid` error no longer marks a live child exited.** Only an exit or `ECHILD`
+  does. Any other error is logged once, and the plain reaping wait runs with the pid
+  still live (kills keep working until the reap); the pid is marked exited after it.
+- **The warm walk runs before stdin is closed**, under the child lock (waited for at most
+  a second). A worker that exits at once on EOF used to be reaped by the exit watcher
+  before the walk, and its Shell groups survived. Nothing waits on the watcher while
+  holding the lock, so the two cannot deadlock.
+- **No process is left stopped.** A `StoppedGuard` SIGKILLs every root and descendant a
+  kill SIGSTOPped if the kill unwinds midway.
+
+Tests added: `a_stale_generation_never_kills_the_child_that_reused_its_pid`
+(`tests/it/tree_kill.rs`) and `disposing_a_worker_that_exits_on_eof_still_stops_its_commands`
+(`tests/it/warm.rs`; it fails with stdin closed before the walk).
+
 Tests: `tests/it/tree_kill.rs` (a direct child is walked; a pid whose parent is not us,
 a reused pid now held by another process, and a grandchild are not; a descendant in a
 foreign group or group 1 does not get that group killed; a reaped child's pid is never

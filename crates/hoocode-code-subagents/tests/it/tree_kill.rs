@@ -71,8 +71,8 @@ mod live {
     use std::time::Duration;
 
     use hoocode_code_subagents::lifeguard::{
-        child_exited, child_spawned, child_was_reaped, kill_process_tree, kill_trees,
-        plan_tree_kill, ProcTable, ProcessTable,
+        child_exited, child_spawned, is_live_child, kill_child_trees, kill_process_tree,
+        kill_trees, live_generation, plan_tree_kill, ChildPid, ProcTable, ProcessTable,
     };
     use hoocode_code_subagents::pool::{DispatchOptions, SubagentPool, SubagentPoolOptions};
 
@@ -141,29 +141,48 @@ mod live {
         let _ = parent.wait();
     }
 
-    /// A pid of a child of ours that was reaped is never signalled again,
-    /// though another process may hold it now. Here a fresh process stands in
-    /// for the one that reused the pid.
+    /// A stale (pid, generation) — a slot or monitor that still holds the pid
+    /// of a reaped child — never kills the newer child of ours that reused
+    /// the pid; the newer child's own generation does. A pid-only kill of a
+    /// pid our child holds is refused too. Here a fresh process stands in for
+    /// the newer child.
     #[test]
-    fn a_reaped_childs_pid_is_never_signalled() {
-        let mut reused = Command::new("sleep")
+    fn a_stale_generation_never_kills_the_child_that_reused_its_pid() {
+        let mut newer = Command::new("sleep")
             .arg("300")
             .process_group(0)
             .spawn()
             .unwrap();
-        let pid = reused.id();
-        child_spawned(pid);
-        child_exited(pid);
-        assert!(child_was_reaped(pid));
+        let pid = newer.id();
+        let old = child_spawned(pid);
+        child_exited(pid, old);
+        assert!(!is_live_child(ChildPid {
+            pid,
+            generation: old
+        }));
+        let new = child_spawned(pid);
+        assert_ne!(old, new);
+        assert_eq!(live_generation(pid), new);
+
+        kill_child_trees(&[ChildPid {
+            pid,
+            generation: old,
+        }]);
         kill_process_tree(pid);
         std::thread::sleep(Duration::from_millis(50));
         assert!(
-            reused.try_wait().unwrap().is_none(),
-            "the process now holding the pid was not killed"
+            newer.try_wait().unwrap().is_none(),
+            "the newer child was not killed by a stale kill"
         );
-        child_spawned(pid); // forget the stand-in
-        let _ = reused.kill();
-        let _ = reused.wait();
+
+        kill_child_trees(&[ChildPid {
+            pid,
+            generation: new,
+        }]);
+        let status = newer.wait().unwrap();
+        assert!(!status.success(), "its own generation kills it");
+        child_exited(pid, new);
+        assert_eq!(live_generation(pid), 0, "the entry goes with the child");
     }
 
     /// The pool marks its child exited before it reaps it: a cancel or
@@ -202,9 +221,10 @@ mod live {
             .trim()
             .parse()
             .unwrap();
-        assert!(
-            child_was_reaped(pid),
-            "exited and reaped: a later kill is refused"
+        assert_eq!(
+            live_generation(pid),
+            0,
+            "exited and reaped: no live generation, so a later kill is refused"
         );
         // A late cancel has nothing to do and signals nothing.
         assert!(!pool.cancel("quick-run"));

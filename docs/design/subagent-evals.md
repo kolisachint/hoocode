@@ -149,6 +149,9 @@ Fourth round (review of e1dbd81): `--repeat 10`: **10 of 10, 20 attempts, 20 usa
 Fifth round (safety review of 31eee91): `--include-slow`: **22 of 22, 33 attempts, 32
 usable (97%), 180s.**
 
+Sixth round (spawn generations): `--include-slow`: **22 of 22, 33 attempts, 32 usable
+(97%), 180s.**
+
 The writer scenario checks the mechanics only: the mock child runs the git
 commands. It does not show that a real model follows the brief
 (`subagent-orchestration.md` §5).

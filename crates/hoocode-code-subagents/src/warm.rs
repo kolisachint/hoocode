@@ -263,15 +263,16 @@ impl WarmSubagentWorker {
         // its SIGTERM; all while the client holds the worker unreaped.
         #[cfg(unix)]
         let before: Box<dyn FnOnce(u32) + Send> = Box::new(|pid| {
-            // SAFETY: kill(2) on our own unreaped worker (the client holds it).
-            unsafe {
-                libc::kill(pid as libc::pid_t, libc::SIGSTOP);
-            }
+            // Our own unreaped worker (the client holds it). If the walk
+            // unwinds, the guard kills the stopped worker rather than leave it.
+            let mut stopped = crate::lifeguard::StoppedGuard::new();
+            stopped.stop_pid(pid);
             crate::lifeguard::kill_trees(&[pid], &crate::lifeguard::ProcTable);
             // SAFETY: as above; it must run again to take its SIGTERM.
             unsafe {
                 libc::kill(pid as libc::pid_t, libc::SIGCONT);
             }
+            stopped.disarm();
         });
         #[cfg(unix)]
         self.client.stop_with(Some(before)).await;

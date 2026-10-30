@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use hoocode_code_subagents::warm::*;
 
-const FAKE_CHILD: &str = r#"fail=0; exit_on_prompt=0; slow_prompt=0; hang_prompt=0; command_prompt=0; earlier=false
+const FAKE_CHILD: &str = r#"fail=0; exit_on_prompt=0; slow_prompt=0; hang_prompt=0; command_prompt=0; command_answer=0; earlier=false
 for a in "$@"; do
-  case "$a" in --fail-prompt) fail=1;; --exit-on-prompt) exit_on_prompt=1;; --slow-prompt) slow_prompt=1;; --hang-prompt) hang_prompt=1;; --command-prompt) command_prompt=1;; --earlier-text) earlier=true;; esac
+  case "$a" in --fail-prompt) fail=1;; --exit-on-prompt) exit_on_prompt=1;; --slow-prompt) slow_prompt=1;; --hang-prompt) hang_prompt=1;; --command-prompt) command_prompt=1;; --command-then-answer) command_answer=1;; --earlier-text) earlier=true;; esac
 done
 gen=0; n=0; last=
 field() { printf '%s' "$line" | sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"; }
@@ -25,6 +25,10 @@ while IFS= read -r line; do
       [ "$exit_on_prompt" = 1 ] && exit 1
       [ "$slow_prompt" = 1 ] && sleep 1
       [ "$hang_prompt" = 1 ] && sleep 30
+      if [ "$command_answer" = 1 ]; then
+        setsid sleep 300 & echo $! > "$(dirname "$0")/command.pid.tmp"
+        mv "$(dirname "$0")/command.pid.tmp" "$(dirname "$0")/command.pid"
+      fi
       if [ "$command_prompt" = 1 ]; then
         setsid sleep 300 & echo $! > "$(dirname "$0")/command.pid.tmp"
         mv "$(dirname "$0")/command.pid.tmp" "$(dirname "$0")/command.pid"
@@ -623,4 +627,45 @@ async fn a_run_stopped_before_its_worker_never_boots_one() {
     assert_eq!(result, WarmRunResult::cancelled());
     assert_eq!(pool.load(), (0, 0));
     pool.dispose().await;
+}
+
+/// A worker that exits at once on stdin EOF still has its commands killed
+/// when it is disposed: the walk runs under the child lock before stdin is
+/// closed, so the exit watcher cannot reap it first.
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread")]
+async fn disposing_a_worker_that_exits_on_eof_still_stops_its_commands() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = make(dir.path(), &["--command-then-answer"]);
+    let result = pool
+        .dispatch("start a command and answer", &opts(), None)
+        .await
+        .unwrap();
+    assert!(result.ok, "{result:?}");
+    let pid: u32 = std::fs::read_to_string(dir.path().join("command.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let alive = |pid: u32| {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .ok()
+            .and_then(|s| {
+                s.rsplit_once(')')
+                    .and_then(|(_, r)| r.split_whitespace().next().map(String::from))
+            })
+            .is_some_and(|state| state != "Z" && state != "X")
+    };
+    assert!(
+        alive(pid),
+        "the command outlives its turn on an idle worker"
+    );
+    pool.dispose().await;
+    for _ in 0..200 {
+        if !alive(pid) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(!alive(pid), "disposing the worker stopped its command");
 }
