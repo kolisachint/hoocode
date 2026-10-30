@@ -53,6 +53,33 @@ async fn subagent_inbox_lifecycle() {
     assert_eq!(inbox.next_label("explore"), "explore#2");
     assert_eq!(inbox.next_label("plan"), "plan#1");
 
+    // a background call's label is reserved at its placeholder, in call order,
+    // and its execute takes that one back whatever order the executes start in
+    inbox.clear();
+    assert_eq!(inbox.reserve_label("call_0", "explore"), "explore#1");
+    assert_eq!(inbox.reserve_label("call_1", "explore"), "explore#2");
+    assert_eq!(inbox.take_label("call_1", "explore"), "explore#2");
+    assert_eq!(inbox.take_label("call_0", "explore"), "explore#1");
+    // taken once: a reused call id is a new run
+    assert_eq!(inbox.take_label("call_0", "explore"), "explore#3");
+    // a reused id at the placeholder replaces the old reservation
+    inbox.reserve_label("call_2", "explore");
+    assert_eq!(inbox.reserve_label("call_2", "explore"), "explore#5");
+    assert_eq!(inbox.take_label("call_2", "explore"), "explore#5");
+    // a reservation for another agent type is not this call's label
+    inbox.reserve_label("call_3", "plan");
+    assert_eq!(inbox.take_label("call_3", "explore"), "explore#6");
+
+    // a run carries its description, shown next to its label
+    inbox.clear();
+    inbox.start("t1", "explore#1", "explore");
+    assert_eq!(inbox.get("t1").unwrap().named(), "explore#1");
+    inbox.describe("t1", "  audit the db layer ");
+    assert_eq!(
+        inbox.get("explore#1").unwrap().named(),
+        "explore#1 (\"audit the db layer\")"
+    );
+
     // tracks a task from running to done and keeps the body until collected
     inbox.clear();
     inbox.start("t1", "explore#1", "explore");

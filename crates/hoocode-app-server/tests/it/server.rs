@@ -77,6 +77,7 @@ fn fake_bash() -> ToolDefinition {
     ToolDefinition {
         ordered_start: false,
         background_when: None,
+        background_placeholder: None,
         name: "Shell".into(),
         label: "Shell".into(),
         description: "bash tool".into(),

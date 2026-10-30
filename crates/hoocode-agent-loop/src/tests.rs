@@ -1152,6 +1152,50 @@ async fn background_tools_do_not_block_and_deliver_a_follow_up_message() {
     assert!(follow_up > still_working);
 }
 
+/// A background tool's own placeholder answers its call, once per call and in
+/// call order, ahead of the loop's hook; a tool that returns `None` gets the
+/// loop's. The subagent bug of 2026-10-30: every Agent call was answered with
+/// the same `Started "Agent"` line, so the model could not tell its runs apart.
+#[tokio::test]
+async fn a_tools_own_background_placeholder_names_each_call() {
+    let mut named = background_tool("named", |args| Ok(echo_result("ran:", &args)));
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let order = seen.clone();
+    named.background_placeholder = Some(Arc::new(move |call| {
+        order.lock().unwrap().push(call.id.clone());
+        let value = call.arguments["value"].as_str().unwrap_or("");
+        (value != "plain").then(|| format!("run {} for {value}", call.id))
+    }));
+    let mut config = identity_config();
+    config.create_background_placeholder = Some(Box::new(|_| Some("loop hook".into())));
+    mock_stream(&mut config, |n, _| match n {
+        0 => tool_calls(&[
+            ("c-1", "named", serde_json::json!({"value": "auth"})),
+            ("c-2", "named", serde_json::json!({"value": "db"})),
+            ("c-3", "named", serde_json::json!({"value": "plain"})),
+        ]),
+        _ => text("done"),
+    });
+    let (_, messages) = collect(agent_loop(
+        vec![user("go")],
+        context_with(vec![named]),
+        config,
+    ))
+    .await;
+    let placeholders: Vec<String> = messages
+        .iter()
+        .filter_map(|m| match m {
+            AgentMessage::ToolResult(r) => Some(text_of(&r.content)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        placeholders,
+        ["run c-1 for auth", "run c-2 for db", "loop hook"]
+    );
+    assert_eq!(*seen.lock().unwrap(), ["c-1", "c-2", "c-3"]);
+}
+
 /// `background: (toolCall) => boolean`: the per-call predicate decides, and
 /// wins over the static flag.
 #[tokio::test]

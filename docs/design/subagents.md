@@ -364,6 +364,74 @@ longer needs. (2026-10-15: there is one template now; see the note in
   the agent body, only in a subagent child (depth > 0). A user's `--system-prompt` and
   light mode still replace the default prompt.
 
+## 5g. Telling parallel runs apart (2026-10-30)
+
+**The report.** The model dispatched several subagents, took one for a duplicate,
+cancelled another one that was not a duplicate, and dispatched that one again.
+
+**What the model saw** (the eval `parent_tells_parallel_runs_apart`, run against the
+binary before the fix: two `explore` calls in one turn, then `AgentOutput(list: true)`):
+
+```text
+toolResult | Started "Agent" in the background. Its result will arrive as a follow-up message once it finishes — keep working in the meantime.
+toolResult | Started "Agent" in the background. Its result will arrive as a follow-up message once it finishes — keep working in the meantime.
+toolResult | 2 background subagents (2 running):
+- explore#1  running  0.0s
+- explore#2  running  0.0s
+```
+
+Three causes, all about run identity:
+
+1. **The placeholder named nothing.** A background call is answered by the agent loop
+   before the tool runs. No hook was wired, so every Agent call got the loop's generic
+   line, identical for every call: no label, no description. The guidance in
+   `task-main.md` told the model to poll and cancel by `explore#1`, a label it was never
+   given for a running run.
+2. **Labels followed execute order, not call order.** The label was taken inside the
+   detached execute, and the loop starts those concurrently. The fixed binary's first eval
+   run registered the second call's run first. Before the fix that run would have been
+   `explore#1`, the handle a model would take for its first call.
+3. **The roster and the notifications showed bare labels.** `explore#1  running` and
+   `explore#2  running` look like duplicates. A cancel answered `Cancelled explore#2.`,
+   which does not say which task stopped.
+
+**Ruled out.** Cancel resolves a handle by exact task id or exact label (`inbox.rs`
+`get`), and labels are unique per agent type, so a cancel never hit a different run
+than the one it named (b). Tool calls run only once the assistant message is complete,
+and a provider retry happens before that, so a call is never executed twice (d). There
+is no idempotency by tool call id, and there should not be: the mock provider (like some
+real ones) numbers calls per turn, so `call_0` comes back every turn as a new call. The
+inbox record is created moments after the placeholder, long before the model's next
+request, so a roster that misses a fresh run (c) was not seen.
+
+**Fix.**
+
+- A tool can give its own background placeholder (`AgentTool::background_placeholder`,
+  `ToolDefinition::background_placeholder`). It wins over the loop's hook and is called
+  once per call, in call order.
+- The Agent tool's placeholder reserves the run's label for the call id
+  (`SubagentInbox::reserve_label`) and says
+  `explore#2 ("audit the db layer") started in the background. Its handle is explore#2: …`.
+  The execute takes that label back (`take_label`), whatever order the executes start in.
+  A reservation is used once, so a reused call id is a new run.
+- Each inbox record keeps the call's description. The roster, the status line, the
+  finish and failure notifications, and the cancel result name the run as
+  `explore#2 ("audit the db layer")`. A cancel says `Only this run was stopped.`, and a
+  cancel on a settled run says `nothing was cancelled`.
+- The Agent and AgentOutput descriptions and `task-main.md` say that every call is its own
+  run, that two runs of one type with different descriptions are not duplicates, and to
+  check `AgentOutput(list: true)` before dispatching again or cancelling.
+
+Tests: `parallel_background_calls_keep_the_handles_their_placeholders_named` and
+`the_roster_and_a_cancel_name_each_run_by_handle_and_description` (`tests/it/tools.rs`),
+the reserve/take cases in `tests/it/inbox.rs`, and
+`a_tools_own_background_placeholder_names_each_call` in `hoocode-agent-loop`. The eval
+`parent_tells_parallel_runs_apart` fails on the old binary and passes now.
+
+**Not proven.** We have no transcript of the user's session. The eval shows that the
+model could not tell its runs apart from anything it was shown. It does not show that a
+real model makes this mistake, or that it stops making it now.
+
 ## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 
 §6 of this file used to be an open question. It is now an answer, and the

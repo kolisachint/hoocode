@@ -1084,7 +1084,7 @@ fn dispatch_background_tool_calls(
             Preparation::Prepared(prepared) => prepared,
         };
 
-        let placeholder = create_background_placeholder_outcome(&tool_call, config);
+        let placeholder = create_background_placeholder_outcome(&tool_call, &prepared.tool, config);
         emit_tool_execution_end(&placeholder, emit);
         let message = create_tool_result_message(&placeholder);
         emit_tool_result_message(&message, emit);
@@ -1095,15 +1095,25 @@ fn dispatch_background_tool_calls(
     messages
 }
 
-/// `createBackgroundPlaceholderOutcome`.
+/// `createBackgroundPlaceholderOutcome`. The tool's own placeholder wins: only
+/// the tool knows the handle it will give the run (an Agent call's
+/// `explore#2`), and a model told only "Started \"Agent\"" for each of several
+/// calls cannot tell its runs apart.
 fn create_background_placeholder_outcome(
     tool_call: &AgentToolCall,
+    tool: &AgentTool,
     config: &AgentLoopConfig,
 ) -> FinalizedOutcome {
-    let text = config
-        .create_background_placeholder
+    let text = tool
+        .background_placeholder
         .as_ref()
-        .and_then(|make| make(tool_call.clone()))
+        .and_then(|make| make(tool_call))
+        .or_else(|| {
+            config
+                .create_background_placeholder
+                .as_ref()
+                .and_then(|make| make(tool_call.clone()))
+        })
         .unwrap_or_else(|| {
             format!(
                 "Started \"{}\" in the background. Its result will arrive as a follow-up message once it finishes — keep working in the meantime.",

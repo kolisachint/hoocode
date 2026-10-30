@@ -8,8 +8,8 @@
 //! (`renderCall`/`renderResult`) arrives with the TUI (phase 11).
 
 use hoocode_agent_types::{
-    AgentTool, AgentToolResult, AgentToolUpdateCallback, BackgroundPredicate, PrepareArgumentsFn,
-    ToolExecutionMode,
+    AgentTool, AgentToolResult, AgentToolUpdateCallback, BackgroundPlaceholder,
+    BackgroundPredicate, PrepareArgumentsFn, ToolExecutionMode,
 };
 use hoocode_ai_types::{AbortSignal, Model};
 use std::sync::Arc;
@@ -80,6 +80,8 @@ pub struct ToolDefinition {
     pub background: bool,
     /// Per-call background decision; takes precedence over `background`.
     pub background_when: Option<BackgroundPredicate>,
+    /// A background call's own placeholder text (see [`BackgroundPlaceholder`]).
+    pub background_placeholder: Option<BackgroundPlaceholder>,
     /// See [`AgentTool::ordered_start`].
     pub ordered_start: bool,
     pub execute: DefinitionExecuteFn,
@@ -115,6 +117,7 @@ pub fn wrap_tool_definition(
         execution_mode: definition.execution_mode,
         background: definition.background,
         background_when: definition.background_when,
+        background_placeholder: definition.background_placeholder,
         ordered_start: definition.ordered_start,
         execute: Arc::new(move |id, params, signal, on_update| {
             let ctx = ctx_factory.as_ref().map(|f| f());
@@ -149,6 +152,7 @@ pub fn tool_definition_from_agent_tool(tool: AgentTool) -> ToolDefinition {
         execution_mode: tool.execution_mode,
         background: tool.background,
         background_when: tool.background_when,
+        background_placeholder: tool.background_placeholder,
         ordered_start: tool.ordered_start,
         execute: Arc::new(move |id, params, signal, on_update, _ctx| {
             execute(id, params, signal, on_update)
@@ -165,6 +169,7 @@ mod tests {
         ToolDefinition {
             ordered_start: false,
             background_when: None,
+            background_placeholder: None,
             name: "echo".into(),
             label: "Echo".into(),
             description: "Echo the model id".into(),

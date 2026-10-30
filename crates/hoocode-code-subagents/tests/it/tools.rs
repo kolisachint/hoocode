@@ -598,7 +598,7 @@ async fn task_tool_execute_paths() {
     .unwrap();
     assert!(
         text(&r).starts_with(
-            "explore#1 finished ✓ — Mapped the module.\nRead the full result with AgentOutput(\"explore#1\")."
+            "explore#1 (\"Map it\") finished ✓ — Mapped the module.\nRead the full result with AgentOutput(\"explore#1\")."
         ),
         "{}",
         text(&r)
@@ -1398,7 +1398,7 @@ async fn agent_output_cancel_stops_a_running_task() {
     )
     .await
     .unwrap();
-    assert_eq!(text(&r), "Cancelled explore#1.");
+    assert_eq!(text(&r), "Cancelled explore#1. Only this run was stopped.");
     assert_subset(&r.details, json!({"status": "cancelled", "ok": true}));
 
     let result = dispatch.await.unwrap().unwrap();
@@ -1431,7 +1431,10 @@ async fn agent_output_cancel_on_a_finished_task_says_so() {
     )
     .await
     .unwrap();
-    assert_eq!(text(&r), "explore#1 already finished (done).");
+    assert_eq!(
+        text(&r),
+        "explore#1 already finished (done); nothing was cancelled."
+    );
     assert_subset(&r.details, json!({"status": "done", "ok": true}));
     // The body is untouched: a cancel on a settled task does not eat it.
     assert_eq!(inbox.get("t1").unwrap().lifecycle, TaskLifecycle::Done);
@@ -1757,7 +1760,7 @@ async fn general_purpose_runs_in_the_background_when_the_call_says_nothing() {
     .unwrap();
     // A notification, not the answer: the body waits in the inbox for AgentOutput.
     assert!(
-        text(&r).starts_with("general-purpose#1 finished ✓"),
+        text(&r).starts_with("general-purpose#1 (\"Read it\") finished ✓"),
         "{}",
         text(&r)
     );
@@ -1766,4 +1769,222 @@ async fn general_purpose_runs_in_the_background_when_the_call_says_nothing() {
     set_subagent_pool_for_testing(None);
     task_store().clear();
     subagent_inbox().clear();
+}
+
+// Telling parallel runs apart (2026-10-30). The user's report: the model took
+// one of two subagents for a duplicate, cancelled the other one and dispatched
+// it again. Every background Agent call was answered with the same
+// `Started "Agent" in the background` line, labels were given out when each
+// detached execute happened to start (in any order), and the roster and the
+// notifications showed bare labels, so nothing told the model which
+// `explore#N` was which task.
+
+fn agent_call(id: &str, description: &str) -> AgentToolCall {
+    AgentToolCall {
+        id: id.into(),
+        name: "Agent".into(),
+        arguments: json!({
+            "description": description,
+            "prompt": format!("Please {description}."),
+            "subagent_type": "explore",
+            "background": true,
+        }),
+    }
+}
+
+async fn execute_call(
+    tool: &ToolDefinition,
+    call: &AgentToolCall,
+    ctx: ToolContext,
+) -> Result<AgentToolResult, String> {
+    let execute = tool.execute.clone();
+    let (id, args) = (call.id.clone(), call.arguments.clone());
+    tokio::task::spawn_blocking(move || {
+        execute(id, args, None, None, Some(&ctx)).map_err(|e| e.to_string())
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn parallel_background_calls_keep_the_handles_their_placeholders_named() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    let pool = install_pool(&cwd, mock_child(&cwd, "Audited.", "complete", 0));
+    let placeholder = tool
+        .background_placeholder
+        .clone()
+        .expect("the Agent tool names its background runs");
+
+    // The loop answers the calls one by one, in the order the model wrote them.
+    let auth = agent_call("call_0", "audit the auth module");
+    let db = agent_call("call_1", "audit the db layer");
+    let auth_placeholder = placeholder(&auth).unwrap();
+    let db_placeholder = placeholder(&db).unwrap();
+    assert!(
+        auth_placeholder.starts_with(
+            "explore#1 (\"audit the auth module\") started in the background. Its handle is explore#1:"
+        ),
+        "{auth_placeholder}"
+    );
+    assert!(
+        db_placeholder.starts_with(
+            "explore#2 (\"audit the db layer\") started in the background. Its handle is explore#2:"
+        ),
+        "{db_placeholder}"
+    );
+    assert!(db_placeholder.contains("AgentOutput(\"explore#2\", cancel: true)"));
+
+    // The detached executes start in any order. The second call starting first
+    // used to take `explore#1`, the handle the model would take for the first.
+    let db_result = execute_call(&tool, &db, ctx(&cwd)).await.unwrap();
+    let auth_result = execute_call(&tool, &auth, ctx(&cwd)).await.unwrap();
+    assert!(
+        text(&db_result).starts_with("explore#2 (\"audit the db layer\") finished ✓"),
+        "{}",
+        text(&db_result)
+    );
+    assert!(
+        text(&auth_result).starts_with("explore#1 (\"audit the auth module\") finished ✓"),
+        "{}",
+        text(&auth_result)
+    );
+    let inbox = subagent_inbox();
+    assert_eq!(
+        inbox.get("explore#2").unwrap().description.as_deref(),
+        Some("audit the db layer")
+    );
+    assert_eq!(
+        inbox.get("explore#1").unwrap().description.as_deref(),
+        Some("audit the auth module")
+    );
+
+    // A reservation is used once: a provider that numbers calls per turn sends
+    // `call_0` again next turn, and that call is a new run with a new handle.
+    let again = execute_call(
+        &tool,
+        &agent_call("call_0", "audit the auth module"),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    assert!(text(&again).starts_with("explore#3 "), "{}", text(&again));
+
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}
+
+/// A sleeper that touches `ready-<task id>` once it runs, so a test can wait
+/// for one particular run to hold a live process.
+fn per_task_sleeper(dir: &Path) -> PathBuf {
+    let path = dir.join("mock-task-sleeper.sh");
+    std::fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\ntid=unknown; prev=; for a in \"$@\"; do [ \"$prev\" = \"--task-id\" ] && tid=$a; prev=$a; done\ntouch \"{}/ready-$tid\"\nsleep 30\n",
+            dir.display()
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    path
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_roster_and_a_cancel_name_each_run_by_handle_and_description() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let pool = install_pool(&cwd, per_task_sleeper(&cwd));
+    let inbox = subagent_inbox();
+    inbox.clear();
+    let runs = [
+        ("run-auth", "explore#1", "audit the auth module"),
+        ("run-db", "explore#2", "audit the db layer"),
+    ];
+    let mut dispatches = Vec::new();
+    for (task_id, label, description) in runs {
+        inbox.start(task_id, label, "explore");
+        inbox.describe(task_id, description);
+        let pool = pool.clone();
+        dispatches.push(tokio::spawn(async move {
+            pool.dispatch(
+                "audit",
+                DispatchOptions {
+                    force_agent: Some("explore".into()),
+                    task_id: Some(task_id.into()),
+                    background: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+        }));
+    }
+    for (task_id, _, _) in runs {
+        wait_until_running(&pool, task_id).await;
+        wait_until_spawned(&cwd.join(format!("ready-{task_id}"))).await;
+    }
+
+    let output = create_task_output_tool_definition();
+    let roster = execute(output.clone(), json!({"list": true}), ctx(&cwd))
+        .await
+        .unwrap();
+    let roster = text(&roster);
+    for line in [
+        "- explore#1 (\"audit the auth module\")  running",
+        "- explore#2 (\"audit the db layer\")  running",
+    ] {
+        assert!(roster.contains(line), "{line} in {roster}");
+    }
+
+    // The cancel says exactly which run it stopped, and stops only that one.
+    let r = execute(
+        output.clone(),
+        json!({"task_id": "explore#2", "cancel": true}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        text(&r),
+        "Cancelled explore#2 (\"audit the db layer\"). Only this run was stopped."
+    );
+    let db = dispatches.pop().unwrap().await.unwrap().unwrap();
+    inbox.finish("run-db", &db);
+    assert_eq!(
+        pool.get_status("run-auth"),
+        hoocode_code_subagents::pool::TaskStatus::Running
+    );
+    let status = execute(output.clone(), json!({"task_id": "explore#1"}), ctx(&cwd))
+        .await
+        .unwrap();
+    assert!(
+        text(&status).starts_with("explore#1 (\"audit the auth module\") is still running"),
+        "{}",
+        text(&status)
+    );
+    let roster = execute(output, json!({"list": true}), ctx(&cwd))
+        .await
+        .unwrap();
+    assert!(
+        text(&roster).contains("- explore#2 (\"audit the db layer\")  cancelled ⊘"),
+        "{}",
+        text(&roster)
+    );
+
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    inbox.clear();
 }

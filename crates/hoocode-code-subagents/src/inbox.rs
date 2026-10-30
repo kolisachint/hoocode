@@ -57,6 +57,9 @@ pub struct InboxRecord {
     /// Friendly handle shown to the model, e.g. `explore#1`.
     pub label: String,
     pub agent_type: String,
+    /// The call's `description` (what this run is for), so two runs of one
+    /// agent type can be told apart wherever the model sees the label.
+    pub description: Option<String>,
     pub lifecycle: TaskLifecycle,
     /// Epoch ms.
     pub started_at: u64,
@@ -68,6 +71,22 @@ pub struct InboxRecord {
     /// The full summary, only while `done` and uncollected.
     pub body: Option<String>,
     pub error: Option<String>,
+}
+
+impl InboxRecord {
+    /// The label with what the run is for: `explore#2 ("audit the db layer")`,
+    /// or the bare label when the call had no description.
+    pub fn named(&self) -> String {
+        named(&self.label, self.description.as_deref())
+    }
+}
+
+/// `explore#2 ("audit the db layer")`: how a run is named to the model.
+pub fn named(label: &str, description: Option<&str>) -> String {
+    match description.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(description) => format!("{label} (\"{description}\")"),
+        None => label.to_string(),
+    }
 }
 
 /// Settled records kept for late pulls (running records are never pruned).
@@ -120,6 +139,9 @@ struct InboxState {
     /// Insertion order, for listing and pruning.
     order: Vec<String>,
     label_counters: HashMap<String, u64>,
+    /// Labels given out at a background call's placeholder, by tool call id,
+    /// until that call's execute takes them (see [`SubagentInbox::reserve_label`]).
+    reserved_labels: HashMap<String, (String, String)>,
     observed_pools: HashSet<u64>,
     /// Model-facing label (`explore#4`) -> the task id whose dispatch dir holds
     /// its `session.jsonl`. A resumed run is bound to the original session.
@@ -248,6 +270,44 @@ impl SubagentInbox {
         format!("{agent_type}#{n}")
     }
 
+    /// Give a background Agent call its label when the call is detached, so its
+    /// placeholder can name the run. The loop makes placeholders one at a time
+    /// in tool-call order, so labels follow the order the model wrote the
+    /// calls; the calls' executes then start concurrently, in any order, and
+    /// each takes its own label back with [`Self::take_label`].
+    ///
+    /// A call id seen again (providers that number calls per turn reuse ids)
+    /// gets a fresh label that replaces the old reservation.
+    pub fn reserve_label(&self, call_id: &str, agent_type: &str) -> String {
+        let label = self.next_label(agent_type);
+        self.state()
+            .reserved_labels
+            .insert(call_id.to_string(), (agent_type.to_string(), label.clone()));
+        label
+    }
+
+    /// The label reserved for `call_id` (and removed), or the next one for
+    /// `agent_type` when the call had none: a foreground call, or a call whose
+    /// placeholder was made for another agent type.
+    pub fn take_label(&self, call_id: &str, agent_type: &str) -> String {
+        let reserved = self.state().reserved_labels.remove(call_id);
+        match reserved {
+            Some((reserved_type, label)) if reserved_type == agent_type => label,
+            _ => self.next_label(agent_type),
+        }
+    }
+
+    /// Record what a run is for (the call's `description`).
+    pub fn describe(&self, task_id: &str, description: &str) {
+        let description = description.trim();
+        if description.is_empty() {
+            return;
+        }
+        if let Some(rec) = self.state().records.get_mut(task_id) {
+            rec.description = Some(description.to_string());
+        }
+    }
+
     /// Record that `label` (the handle the model sees) resumes the session
     /// stored under `session_id`. Called at every dispatch, foreground and
     /// background.
@@ -308,6 +368,7 @@ impl SubagentInbox {
             task_id: task_id.to_string(),
             label: label.to_string(),
             agent_type: agent_type.to_string(),
+            description: None,
             lifecycle: TaskLifecycle::Running,
             started_at: now_ms(),
             ended_at: None,
@@ -457,6 +518,7 @@ impl SubagentInbox {
         state.records.clear();
         state.order.clear();
         state.label_counters.clear();
+        state.reserved_labels.clear();
         state.session_ids.clear();
         state.session_order.clear();
     }

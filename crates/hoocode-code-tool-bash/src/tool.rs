@@ -487,6 +487,7 @@ fn build_bash_tool_definition(
     ToolDefinition {
         ordered_start: false,
         background_when: None,
+        background_placeholder: None,
         name: "Shell".into(),
         label: "Shell".into(),
         description,
