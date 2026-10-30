@@ -4,8 +4,9 @@
    ┊   └ 01 Shell  cargo test -p hoocode-par…  → error[E0308]: mismatched…  HIT
    ┊
    ┊ The escaped-quote case still fails. The lexer builds the token from a &str
-   ┊ slice, but the parser expects an owned String, so the fix has to change
+   ┊  slice, but the parser expects an owned String, so the fix has to change
    ┊ the token type in lex.rs before the test can compile.
+   ┊
    ┊ I have not changed any file yet.
    ╰ ⊗ DID NOT LAND · 2 steps · 1 hit · 5.0s
      Request failed: connection reset by peer
@@ -28,20 +29,26 @@ r3 c49-72 fg=#e5e5e7
 r3 c76-78 fg=#d58181 bold inverse
 r4 c3 fg=#a8a8a8
 r5 c3 fg=#a8a8a8
-r5 c5-78 fg=#e5e5e7
+r5 c5-74 fg=#e5e5e7
+r5 c75-78 fg=#5cc8bb
 r6 c3 fg=#a8a8a8
-r6 c5-75 fg=#e5e5e7
+r6 c5-44 fg=#e5e5e7
+r6 c45-50 fg=#5cc8bb
+r6 c51-76 fg=#e5e5e7
 r7 c3 fg=#a8a8a8
-r7 c5-57 fg=#e5e5e7
+r7 c5-22 fg=#e5e5e7
+r7 c23-28 fg=#5cc8bb
+r7 c29-57 fg=#e5e5e7
 r8 c3 fg=#a8a8a8
-r8 c5-36 fg=#e5e5e7
 r9 c3 fg=#a8a8a8
-r9 c5 fg=#d58181
-r9 c7-18 fg=#d58181 bold
-r9 c19-21 fg=#989898
-r9 c22-28 fg=#a8a8a8
-r9 c29-31 fg=#989898
-r9 c32-36 fg=#a8a8a8
-r9 c37-39 fg=#989898
-r9 c40-43 fg=#a8a8a8
-r10 c5-44 fg=#d58181
+r9 c5-36 fg=#e5e5e7
+r10 c3 fg=#a8a8a8
+r10 c5 fg=#d58181
+r10 c7-18 fg=#d58181 bold
+r10 c19-21 fg=#989898
+r10 c22-28 fg=#a8a8a8
+r10 c29-31 fg=#989898
+r10 c32-36 fg=#a8a8a8
+r10 c37-39 fg=#989898
+r10 c40-43 fg=#a8a8a8
+r11 c5-44 fg=#d58181

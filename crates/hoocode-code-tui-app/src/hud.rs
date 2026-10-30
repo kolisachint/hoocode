@@ -44,6 +44,9 @@ pub struct HudData {
     pub satellites: usize,
     /// The model id, or `none`.
     pub model: String,
+    /// The thinking level after the model (`high`, `thinking off`); `None`
+    /// for a model without reasoning.
+    pub effort: Option<String>,
     /// The context fill percent; `None` when unknown after a compaction.
     pub fuel: Option<f64>,
     /// The session cost, already formatted: `$1.23`.
@@ -199,6 +202,9 @@ fn right_runs(data: &HudData, with_ship: bool) -> Vec<HudRun> {
         }
         runs.push(run("SHIP ", "faint"));
         runs.push(run(data.model.clone(), "ink"));
+        if let Some(effort) = &data.effort {
+            runs.push(run(format!(" · {effort}"), "dim"));
+        }
     }
     push_token(&mut runs, "FUEL ".to_string(), "faint");
     runs.push(run(fuel_bar(data.fuel), fuel_token(data.fuel)));
@@ -359,13 +365,23 @@ pub fn read_hud(source: &dyn FooterSource, data: &FooterDataProvider) -> HudData
         None => Some(0.0),
         Some((_, percent)) => percent,
     };
+    let model = source.model();
+    // As the footer reads it: only a reasoning model has a level.
+    let effort = model
+        .as_ref()
+        .filter(|m| m.reasoning)
+        .map(|_| match source.thinking_level() {
+            level if level.is_empty() || level == "off" => "thinking off".to_string(),
+            level => level,
+        });
     HudData {
         paint: data.get_hull_paint(),
         mode: data.get_active_mode().to_uppercase(),
         folder,
         agents: running_agents(),
         satellites: source.satellite_count(),
-        model: source.model().map_or_else(|| "none".to_string(), |m| m.id),
+        model: model.map_or_else(|| "none".to_string(), |m| m.id),
+        effort,
         fuel,
         cost: format_cost(cost),
     }
@@ -507,6 +523,7 @@ mod tests {
             agents: 0,
             satellites: 0,
             model: "claude-haiku-5-5".into(),
+            effort: None,
             fuel: Some(42.0),
             cost: "$1.23".into(),
             paint: None,
@@ -545,6 +562,19 @@ mod tests {
         assert!(fullscreen_enabled(Some("maybe"), true));
         assert!(!fullscreen_enabled(Some(""), false));
         assert!(fullscreen_enabled(Some("2"), true));
+    }
+
+    #[test]
+    fn hud_shows_the_effort_after_the_model() {
+        let data = HudData {
+            effort: Some("high".into()),
+            ..data()
+        };
+        let text = hud_text(&data, 120);
+        assert!(
+            text.contains("SHIP claude-haiku-5-5 · high  FUEL"),
+            "{text}"
+        );
     }
 
     #[test]

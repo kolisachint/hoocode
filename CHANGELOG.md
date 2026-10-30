@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: radar answer and HUD effort (2026-10-31)
+- **The radar view renders a mission's final answer as Markdown**, as peek and full do: headings, lists, code and emphasis are drawn instead of flattened to plain text.
+- **The top bar shows the thinking level** after the model (`SHIP claude-opus-5-5 · medium`), for reasoning models. On a narrow screen the folder drops first.
+
 ### Fixed: subagent handles (2026-10-30)
 - **Each background subagent is named from the moment it starts.** An Agent call's first answer is now `explore#2 ("audit the db layer") started in the background` with its handle, instead of the same `Started "Agent" in the background` for every call. The model could not tell two runs of one agent apart, took one for a duplicate, cancelled the wrong one and started it again.
 - **`AgentOutput` lists every run with its handle and description**, including one dispatched a moment ago, and the finish, failure and cancel messages name the run the same way. A cancel says which run it stopped, and only says so once the run has stopped (warm subagents included); a cancel on a finished run says nothing was cancelled.

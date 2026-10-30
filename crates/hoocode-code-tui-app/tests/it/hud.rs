@@ -99,7 +99,7 @@ fn hud_row_shows_the_paint_name_before_the_ship() {
     let mut component = hud_component(Box::new(Stub), data);
     let rows = render_golden(&mut component, 100);
     assert!(
-        rows.contains("hoocode") && rows.contains("parity  SHIP"),
+        rows.contains("HOOCODE") && rows.contains("parity  SHIP"),
         "{rows}"
     );
 }
