@@ -43,9 +43,10 @@ use hoocode_tui_components::BoxComponent;
 use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
 
+use crate::expandable_text::{Expandable, ExpandableText};
 use crate::hull_paint::HullPaint;
 use crate::notification_panel::NotificationKind;
-use crate::resource_display::show_loaded_resources;
+use crate::resource_display::{show_loaded_resources_with_details, startup_details_open};
 use crate::scroll_view;
 
 use super::*;
@@ -101,6 +102,10 @@ pub(super) struct Transcript {
     /// Whether the full stop is showing: rows that fold at peek (the `!`
     /// command output) show whole while set. Shared like `radar_active`.
     pub(super) full_active: Rc<Cell<bool>>,
+    /// The startup listing's detail block (skills, commands, agents, MCP),
+    /// so the dial opens and folds it. `None` until a listing is shown; a
+    /// rebuilt transcript drops it with its rows.
+    pub(super) resource_details: Option<Rc<RefCell<ExpandableText>>>,
 }
 
 /// The last prompt actually sent, text plus images: empty enter hails it
@@ -188,6 +193,7 @@ impl Transcript {
             thinking: Vec::new(),
             radar_active: Rc::new(Cell::new(false)),
             full_active: Rc::new(Cell::new(false)),
+            resource_details: None,
         }
     }
 
@@ -816,9 +822,18 @@ impl Mode {
         let mut listing = (self.listing)(&self.session);
         listing.columns = Some(self.size.get().0 as usize);
         listing.verbose = self.verbose;
-        for component in show_loaded_resources(&listing, false, true) {
+        listing.expanded = self.tool_output_view == ToolOutputView::Full;
+        let loaded = show_loaded_resources_with_details(&listing, false, true);
+        for component in loaded.components {
             self.add_to_chat(component);
         }
+        self.transcript.resource_details = loaded.details;
+    }
+
+    /// Whether the startup header and the resource details are open: under
+    /// `verbose`, or at the full stop. Peek and radar fold them.
+    pub(super) fn startup_details_open(&self) -> bool {
+        startup_details_open(self.verbose, self.tool_output_view)
     }
 
     /// `getMarkdownThemeWithSettings`.
@@ -1720,6 +1735,12 @@ impl Mode {
         }
         for component in &self.transcript.compaction_summaries {
             component.borrow_mut().set_expanded(peek);
+        }
+        // The startup header and resource details open at full, fold at peek and radar.
+        let open = self.startup_details_open();
+        self.header.borrow_mut().set_expanded(open);
+        if let Some(details) = &self.transcript.resource_details {
+            details.borrow_mut().set_expanded(open);
         }
         scroll_view::reanchor_top(
             &mut self.tui,

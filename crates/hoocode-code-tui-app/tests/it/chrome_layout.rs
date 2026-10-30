@@ -18,20 +18,13 @@ fn quiet(density: ChromeDensity) -> ChromeInputs {
 #[test]
 fn resolves_each_stop() {
     use FooterLayout as F;
-    use TasksLayout as T;
     assert_eq!(
         resolve_chrome(quiet(ChromeDensity::Full)),
-        ChromeLayout {
-            footer: F::Full,
-            tasks: T::Full
-        }
+        ChromeLayout { footer: F::Full }
     );
     assert_eq!(
         resolve_chrome(quiet(ChromeDensity::Compact)),
-        ChromeLayout {
-            footer: F::Line,
-            tasks: T::Summary
-        }
+        ChromeLayout { footer: F::Line }
     );
 }
 
@@ -43,20 +36,6 @@ fn lends_the_footers_rows_to_an_open_completion_list_at_every_stop() {
             autocomplete_open: true,
         });
         assert_eq!(layout.footer, FooterLayout::Hidden, "{density}");
-    }
-}
-
-#[test]
-fn keeps_the_whole_ledger_at_full_whatever_else_is_happening() {
-    for autocomplete_open in [false, true] {
-        assert_eq!(
-            resolve_chrome(ChromeInputs {
-                density: ChromeDensity::Full,
-                autocomplete_open
-            })
-            .tasks,
-            TasksLayout::Full
-        );
     }
 }
 
@@ -81,7 +60,6 @@ fn has_two_stops_and_the_retired_bare_stop_is_gone() {
 struct Setup {
     controller: ChromeLayoutController,
     footer_slot: Rc<RefCell<Slot>>,
-    tasks_slot: Rc<RefCell<Slot>>,
     footer_densities: Rc<RefCell<Vec<FooterLayout>>>,
 }
 
@@ -92,15 +70,12 @@ fn setup(density: ChromeDensity) -> Setup {
         ))))))
     };
     let footer_slot = slot("footer");
-    let tasks_slot = slot("tasks");
     let footer_densities = Rc::new(RefCell::new(Vec::new()));
     let sink = footer_densities.clone();
     let mut controller = ChromeLayoutController::new(
         ChromeSurfaces {
             footer_slot: footer_slot.clone(),
-            tasks_slot: tasks_slot.clone(),
             set_footer_density: Box::new(move |d| sink.borrow_mut().push(d)),
-            set_tasks_density: Box::new(|_| {}),
         },
         density,
     );
@@ -108,26 +83,22 @@ fn setup(density: ChromeDensity) -> Setup {
     Setup {
         controller,
         footer_slot,
-        tasks_slot,
         footer_densities,
     }
 }
 
-fn visible(s: &Setup) -> [bool; 2] {
-    [
-        s.footer_slot.borrow().visible(),
-        s.tasks_slot.borrow().visible(),
-    ]
+fn visible(s: &Setup) -> bool {
+    s.footer_slot.borrow().visible()
 }
 
 #[test]
 fn moves_the_slots_to_match_the_stop() {
     let mut s = setup(ChromeDensity::Full);
-    assert_eq!(visible(&s), [true, true]);
+    assert!(visible(&s));
     s.controller.set_density(ChromeDensity::Compact);
-    assert_eq!(visible(&s), [true, true]);
+    assert!(visible(&s));
     s.controller.set_density(ChromeDensity::Full);
-    assert_eq!(visible(&s), [true, true]);
+    assert!(visible(&s));
 }
 
 #[test]
@@ -137,7 +108,7 @@ fn alt_z_and_shift_alt_z_both_toggle_between_the_two_stops() {
     assert_eq!(s.controller.cycle_density(true), ChromeDensity::Full);
     assert_eq!(s.controller.cycle_density(false), ChromeDensity::Compact);
     assert_eq!(s.controller.cycle_density(false), ChromeDensity::Full);
-    assert_eq!(visible(&s), [true, true]);
+    assert!(visible(&s));
 }
 
 #[test]
