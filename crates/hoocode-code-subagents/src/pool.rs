@@ -1094,9 +1094,9 @@ impl SubagentPool {
         };
         // The whole process group: a subagent's own children must not outlive
         // the pool.
-        for pid in pids.into_iter().filter(|p| *p > 0) {
-            kill_process_tree(pid);
-        }
+        // One read of the process table for all of them.
+        let pids: Vec<u32> = pids.into_iter().collect();
+        crate::lifeguard::kill_process_trees(&pids);
         for waiter in waiters {
             let _ = waiter.send(Err(PoolError("SubagentPool disposed".into())));
         }

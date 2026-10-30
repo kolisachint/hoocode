@@ -268,27 +268,37 @@ impl RpcClient {
         }
     }
 
-    /// The child's process id, while it runs.
-    pub async fn pid(&self) -> Option<u32> {
-        match &self.child {
-            Some(child) => child.lock().await.id(),
-            None => None,
-        }
-    }
-
     /// `stop()`: terminate the process (SIGKILL after a second).
     pub async fn stop(&mut self) {
+        self.stop_with(None).await;
+    }
+
+    /// [`Self::stop`], first running `before` on the child's pid on a
+    /// blocking thread, while the child is certainly not reaped: stdin is
+    /// closed first (a child that exits on EOF does so, and is then skipped),
+    /// and the child lock is held throughout, which the exit watcher needs to
+    /// reap. The lock is waited for at most a second, so a watcher already
+    /// in `wait()` cannot hold the stop up.
+    pub async fn stop_with(&mut self, before: Option<Box<dyn FnOnce(u32) + Send>>) {
         *self.stdin.lock().await = None;
         let Some(child) = self.child.take() else {
             return;
         };
         #[cfg(unix)]
-        if let Some(pid) = child.lock().await.id() {
-            // SAFETY: kill(2) on our own child's pid (hoocode sends SIGTERM).
-            unsafe {
-                libc::kill(pid as libc::pid_t, libc::SIGTERM);
+        if let Ok(guard) = tokio::time::timeout(Duration::from_secs(1), child.lock()).await {
+            if let Some(pid) = guard.id() {
+                if let Some(before) = before {
+                    let _ = tokio::task::spawn_blocking(move || before(pid)).await;
+                }
+                // SAFETY: kill(2) on our own unreaped child's pid (hoocode sends SIGTERM).
+                unsafe {
+                    libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                }
             }
+            drop(guard);
         }
+        #[cfg(not(unix))]
+        let _ = before;
         let exited = match self.exit_rx.as_mut() {
             Some(rx) => tokio::time::timeout(Duration::from_secs(1), rx.wait_for(|e| *e))
                 .await

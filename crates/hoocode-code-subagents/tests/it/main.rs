@@ -23,6 +23,7 @@ mod subagent_skills;
 mod subagent_spawn_audit_ts;
 mod token_budget;
 mod tools;
+mod tree_kill;
 mod warm;
 
 /// One test at a time touches the process-wide inbox, task store and pool slot.

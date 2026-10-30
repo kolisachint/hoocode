@@ -156,6 +156,30 @@ struct ProcessHandle {
     child: Option<std::process::Child>,
 }
 
+/// Block until `pid` (our child) has exited, without reaping it.
+#[cfg(unix)]
+fn wait_exited_unreaped(pid: u32) {
+    loop {
+        // SAFETY: waitid(2) with WNOWAIT on our own child: it only reports, and
+        // the zeroed siginfo is a valid out-parameter.
+        let rc = unsafe {
+            let mut info: libc::siginfo_t = std::mem::zeroed();
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        if rc == 0 || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+            return;
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn wait_exited_unreaped(_pid: u32) {}
+
 /// Feed lines from a channel into a child's stdin on the `hoocode-io` runtime.
 /// The task ends, and so closes the pipe, when every sender is dropped or a
 /// write fails (the child is gone).
@@ -254,6 +278,8 @@ impl ProcessHandle {
         pump(stdout, stdout_tx);
         pump(stderr, stderr_tx);
         let stdin = pump_stdin(stdin);
+        // From here a kill by this pid is safe until `wait` marks it exited.
+        crate::lifeguard::child_spawned(pid);
         Ok(Self {
             pid,
             stdout: Some(stdout_rx),
@@ -278,10 +304,20 @@ impl RunnerHandle for ProcessHandle {
 
     fn wait(&mut self) -> BoxFuture<'static, std::io::Result<Option<i32>>> {
         let child = self.child.take();
+        let pid = self.pid;
         Box::pin(async move {
             match child {
                 // Waiting on a child blocks; keep it off the runtime's threads.
-                Some(mut child) => match tokio::task::spawn_blocking(move || child.wait()).await {
+                // The exit is seen first without reaping (the zombie keeps
+                // the pid), then the pid is marked exited, which waits for any
+                // kill holding it, and only then is the child reaped.
+                Some(mut child) => match tokio::task::spawn_blocking(move || {
+                    wait_exited_unreaped(pid);
+                    crate::lifeguard::child_exited(pid);
+                    child.wait()
+                })
+                .await
+                {
                     Ok(status) => Ok(status.ok().and_then(|status| status.code())),
                     Err(error) => Err(std::io::Error::other(error.to_string())),
                 },

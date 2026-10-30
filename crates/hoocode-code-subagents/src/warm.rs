@@ -259,10 +259,23 @@ impl WarmSubagentWorker {
     /// first, while the worker still holds them.
     pub async fn dispose(&mut self) {
         self.alive = false;
+        // Freeze the worker, kill what it started, and let it go on to take
+        // its SIGTERM; all while the client holds the worker unreaped.
         #[cfg(unix)]
-        if let Some(pid) = self.client.pid().await {
-            crate::lifeguard::kill_descendants(pid);
-        }
+        let before: Box<dyn FnOnce(u32) + Send> = Box::new(|pid| {
+            // SAFETY: kill(2) on our own unreaped worker (the client holds it).
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGSTOP);
+            }
+            crate::lifeguard::kill_trees(&[pid], &crate::lifeguard::ProcTable);
+            // SAFETY: as above; it must run again to take its SIGTERM.
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGCONT);
+            }
+        });
+        #[cfg(unix)]
+        self.client.stop_with(Some(before)).await;
+        #[cfg(not(unix))]
         self.client.stop().await;
     }
 

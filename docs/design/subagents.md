@@ -539,6 +539,44 @@ Tests added in this round: `a_cancel_stops_the_subagents_own_commands`,
 two-session and abandon cases in `subagent_inbox_lifecycle`. Both command tests fail with
 the descendant kill removed.
 
+**Fix, fifth round (safety review of 31eee91).**
+
+Policy: **a subagent's descendants are SIGKILLed on cancel, deadline or dispose; jobs
+re-parented to init are not.** The rules that keep that kill from reaching anything
+else:
+
+- **Only our own, unreaped child is walked.** `plan_tree_kill` returns nothing unless the
+  process table lists the root with `ppid == getpid()` (the cold child and the warm
+  worker both are direct children). This process, its ancestors and the groups they are
+  in are never in the kill set.
+- **A reaped pid is never signalled.** The cold `ProcessHandle` registers its child at
+  spawn (`lifeguard::child_spawned`). In `wait`, `waitid(P_PID, pid, WEXITED|WNOWAIT)`
+  sees the exit without reaping (a zombie keeps its pid), `child_exited` marks the pid
+  under the registry lock, and only then is the child reaped. Every kill by pid
+  (`kill_process_tree(s)`, the reap signals in `reap_group`) holds that lock while it
+  signals and refuses a pid marked reaped, so the stale pids the pool and lifeguard keep
+  for `EXIT_STDIO_GRACE` cannot be walked or signalled after the reap. A pid never
+  registered (other runners, tests) gets the old group kill and no walk. The pool's and
+  lifeguard's own copies of the pid are not cleared: the registry is the one check every
+  kill path passes through, which is simpler than keeping three tables in step.
+- **Warm side:** the walk runs inside `RpcClient::stop_with` while it holds the child
+  lock, which the exit watcher needs to reap, so the worker cannot be reaped during it.
+  Stdin is dropped before the lock is taken, and the lock is waited for at most a
+  second, so a watcher already in `wait()` cannot deadlock the stop.
+- **Groups:** a group is killed only when a descendant leads it
+  (`pgid == pid && pgid > 1`) and it is not our group or an ancestor's.
+- **Freeze, then kill:** the cold child's group (or the warm worker) is SIGSTOPped, the
+  tree walked, every descendant found SIGSTOPped, the tree walked again, then the groups
+  and descendants SIGKILLed. The warm worker gets SIGCONT so it can take its SIGTERM.
+- The table is read from `/proc` (or `/bin/ps` off Linux), once per dispose, inside
+  `block_in_place` on a runtime worker; an empty table is logged once.
+
+Tests: `tests/it/tree_kill.rs` (a direct child is walked; a pid whose parent is not us,
+a reused pid now held by another process, and a grandchild are not; a descendant in a
+foreign group or group 1 does not get that group killed; a reaped child's pid is never
+signalled; the pool marks its child exited before the reap). The cold and warm "the
+`sleep` is gone after cancel" tests still pass.
+
 **Not proven.** We have no transcript of the user's session. The eval shows that the
 model could not tell its runs apart from anything it was shown. It does not show that a
 real model makes this mistake, or that it stops making it now. A command that left the

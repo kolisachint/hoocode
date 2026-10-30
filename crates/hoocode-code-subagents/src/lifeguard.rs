@@ -44,7 +44,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -171,36 +171,186 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// Process ids of our spawned children, by whether they are still unreaped.
+///
+/// A pid stays valid for signals until the child is reaped (a zombie keeps
+/// its pid), and may be reused by any process after that. The cold pool's
+/// `ProcessHandle` registers its child at spawn and, once the child has exited
+/// but before it is reaped, marks it exited under this lock
+/// ([`child_exited`]). Every kill by pid goes through [`with_live_child`],
+/// which holds the lock while it signals, so a pid is never signalled (or its
+/// tree walked) after the reap could have freed it for reuse.
+#[derive(Default)]
+struct Children {
+    live: HashSet<u32>,
+    /// Pids of ours that were reaped: a stale copy of one is never signalled.
+    reaped: HashSet<u32>,
+}
+
+static CHILDREN: LazyLock<Mutex<Children>> = LazyLock::new(Mutex::default);
+
+fn children() -> std::sync::MutexGuard<'static, Children> {
+    CHILDREN.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// What a kill by pid may do with `pid`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PidState {
+    /// Our child, not reaped: safe to signal and to walk.
+    Live,
+    /// Ours and already reaped (or about to be): never signal it.
+    Reaped,
+    /// Not spawned through the registry (another runner, a test).
+    Unknown,
+}
+
+/// Register a child spawned by the pool, right after the spawn.
+pub fn child_spawned(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    let mut children = children();
+    children.reaped.remove(&pid);
+    children.live.insert(pid);
+}
+
+/// The child has exited and is about to be reaped. Waits for a kill that is
+/// signalling it to finish.
+pub fn child_exited(pid: u32) {
+    let mut children = children();
+    if children.live.remove(&pid) {
+        children.reaped.insert(pid);
+    }
+}
+
+/// Whether `pid` is a child of ours that has exited (and is reaped, or about
+/// to be): a kill by that pid is refused.
+pub fn child_was_reaped(pid: u32) -> bool {
+    children().reaped.contains(&pid)
+}
+
+/// Run `kill` with `pid`'s state, holding the registry lock, so the child
+/// cannot be reaped while it runs.
+fn with_live_child<T>(pid: u32, kill: impl FnOnce(PidState) -> T) -> T {
+    let children = children();
+    let state = if children.live.contains(&pid) {
+        PidState::Live
+    } else if children.reaped.contains(&pid) {
+        PidState::Reaped
+    } else {
+        PidState::Unknown
+    };
+    let out = kill(state);
+    drop(children);
+    out
+}
+
+/// Run blocking process-table work off the async scheduler: inline when not
+/// on a runtime worker, else in `block_in_place` (it stays synchronous, so a
+/// dispose still finishes its kills before it returns).
+fn off_scheduler<T>(work: impl FnOnce() -> T) -> T {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(work)
+        }
+        _ => work(),
+    }
+}
+
 /// Kill a process group (the pool spawns children as group leaders), falling
 /// back to the single process (`killProcessTree`).
 ///
-/// The child's own commands are reached too: the Shell tool starts each
-/// command in a process group of its own, which the child's group kill does
-/// not touch. Every descendant of the child is found first (while the child
-/// still holds them) and its group and itself are killed.
+/// For a child of ours that is not reaped, its own commands are reached too:
+/// the Shell tool starts each command in a process group of its own, which the
+/// child's group kill does not touch. The tree is frozen and walked (see
+/// [`kill_trees`]) before anything is killed. A pid of ours that was already
+/// reaped is never signalled: it may belong to another process by now.
 pub fn kill_process_tree(pid: u32) {
+    kill_process_trees(&[pid]);
+}
+
+/// [`kill_process_tree`] for several children, reading the process table once.
+pub fn kill_process_trees(pids: &[u32]) {
     #[cfg(unix)]
     {
-        kill_descendants(pid);
-        let pid = pid as libc::pid_t;
-        // SAFETY: plain kill(2) calls.
-        unsafe {
-            if libc::kill(-pid, libc::SIGKILL) != 0 {
-                libc::kill(pid, libc::SIGKILL);
-            }
+        let pids: Vec<u32> = pids.iter().copied().filter(|p| *p > 0).collect();
+        if pids.is_empty() {
+            return;
         }
+        off_scheduler(|| {
+            let children = children();
+            let mut live = Vec::new();
+            for &pid in &pids {
+                if children.live.contains(&pid) {
+                    live.push(pid);
+                } else if !children.reaped.contains(&pid) {
+                    // Not ours to track (another runner): the group kill only.
+                    kill_group_or_pid(pid);
+                }
+            }
+            if !live.is_empty() {
+                // Freeze each child's group first, so nothing forks between
+                // the walk and the kill.
+                for &pid in &live {
+                    // SAFETY: kill(2) on the group of our unreaped child.
+                    unsafe {
+                        libc::kill(-(pid as libc::pid_t), libc::SIGSTOP);
+                    }
+                }
+                kill_trees(&live, &ProcTable);
+                for &pid in &live {
+                    kill_group_or_pid(pid);
+                }
+            }
+            drop(children);
+        });
     }
     #[cfg(not(unix))]
-    {
+    for pid in pids {
         let _ = std::process::Command::new("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .spawn();
     }
 }
 
+#[cfg(unix)]
+fn kill_group_or_pid(pid: u32) {
+    let pid = pid as libc::pid_t;
+    // SAFETY: plain kill(2) calls.
+    unsafe {
+        if libc::kill(-pid, libc::SIGKILL) != 0 {
+            libc::kill(pid, libc::SIGKILL);
+        }
+    }
+}
+
+/// One row of the process table: (pid, parent pid, process group).
+pub type ProcRow = (u32, u32, u32);
+
+/// Where the process table comes from (a stub in tests).
+pub trait ProcessTable {
+    fn rows(&self) -> Vec<ProcRow>;
+}
+
+/// The real process table.
+pub struct ProcTable;
+
+impl ProcessTable for ProcTable {
+    fn rows(&self) -> Vec<ProcRow> {
+        let rows = process_table();
+        if rows.is_empty() {
+            static WARNED: std::sync::Once = std::sync::Once::new();
+            WARNED.call_once(|| {
+                agent_log("[LIFEGUARD] the process table came back empty; a subagent's own commands cannot be found to stop");
+            });
+        }
+        rows
+    }
+}
+
 /// (pid, parent pid, process group) of every process, from /proc.
 #[cfg(target_os = "linux")]
-fn process_table() -> Vec<(u32, u32, u32)> {
+fn process_table() -> Vec<ProcRow> {
     let Ok(dir) = std::fs::read_dir("/proc") else {
         return Vec::new();
     };
@@ -217,10 +367,10 @@ fn process_table() -> Vec<(u32, u32, u32)> {
     .collect()
 }
 
-/// (pid, parent pid, process group) of every process, from `ps`.
+/// (pid, parent pid, process group) of every process, from `/bin/ps`.
 #[cfg(all(unix, not(target_os = "linux")))]
-fn process_table() -> Vec<(u32, u32, u32)> {
-    let Ok(out) = std::process::Command::new("ps")
+fn process_table() -> Vec<ProcRow> {
+    let Ok(out) = std::process::Command::new("/bin/ps")
         .args(["-A", "-o", "pid=", "-o", "ppid=", "-o", "pgid="])
         .output()
     else {
@@ -235,35 +385,99 @@ fn process_table() -> Vec<(u32, u32, u32)> {
         .collect()
 }
 
-/// SIGKILL every descendant of `pid`, and the process group of each one that
-/// leads a group of its own (a Shell command and whatever it started). Never
-/// this process's own group. Descendants are found before any is killed, so
-/// none is missed by being re-parented mid-walk.
-#[cfg(unix)]
-pub(crate) fn kill_descendants(pid: u32) {
-    if pid == 0 {
-        return;
+/// What to kill below `root`: its descendants, and the process groups that a
+/// descendant leads. Empty unless `root` is a direct child of `self_pid` (the
+/// cold child and the warm worker both are): a pid that is not ours (reused,
+/// or a grandchild) is never walked. Never `self_pid`, an ancestor of it, a
+/// group led by either, group 1, or group 0.
+pub fn plan_tree_kill(rows: &[ProcRow], root: u32, self_pid: u32) -> (Vec<u32>, Vec<u32>) {
+    if root == 0
+        || !rows
+            .iter()
+            .any(|&(p, ppid, _)| p == root && ppid == self_pid)
+    {
+        return (Vec::new(), Vec::new());
     }
-    let table = process_table();
-    let mut found = Vec::new();
-    let mut frontier = vec![pid];
+    // This process and its ancestors, and the groups they are in.
+    let mut protected = vec![self_pid];
+    let mut cursor = self_pid;
+    while let Some(&(_, ppid, _)) = rows.iter().find(|&&(p, _, _)| p == cursor) {
+        if ppid == 0 || protected.contains(&ppid) {
+            break;
+        }
+        protected.push(ppid);
+        cursor = ppid;
+    }
+    let protected_groups: Vec<u32> = rows
+        .iter()
+        .filter(|&&(p, _, _)| protected.contains(&p))
+        .map(|&(_, _, g)| g)
+        .collect();
+    let mut pids = Vec::new();
+    let mut groups = Vec::new();
+    let mut frontier = vec![root];
     while let Some(parent) = frontier.pop() {
-        for &(child, ppid, pgid) in &table {
-            if ppid == parent && child != pid && !found.iter().any(|&(p, _)| p == child) {
-                found.push((child, pgid));
-                frontier.push(child);
+        for &(child, ppid, pgid) in rows {
+            if ppid != parent || child == root || pids.contains(&child) {
+                continue;
+            }
+            if protected.contains(&child) {
+                continue;
+            }
+            pids.push(child);
+            frontier.push(child);
+            // Only a group the descendant leads, and never a protected one:
+            // one that joined a foreign group does not take that group down.
+            if pgid == child
+                && pgid > 1
+                && pgid != root
+                && !protected_groups.contains(&pgid)
+                && !groups.contains(&pgid)
+            {
+                groups.push(pgid);
             }
         }
     }
-    // SAFETY: getpgrp(2) has no failure mode or memory effects.
-    let own_group = unsafe { libc::getpgrp() } as u32;
-    for (child, pgid) in found {
-        // SAFETY: plain kill(2) calls on processes and groups below `pid`.
+    (pids, groups)
+}
+
+/// Freeze, walk and SIGKILL the descendants of each `root` (our unreaped
+/// children; the caller holds the registry lock or the child lock). The tree
+/// is walked twice: after the first walk every descendant found is stopped,
+/// so the second catches anything forked in between. Kills: every group a
+/// descendant leads, then every descendant.
+#[cfg(unix)]
+pub fn kill_trees(roots: &[u32], table: &dyn ProcessTable) {
+    let self_pid = std::process::id();
+    let plan = |rows: &[ProcRow]| {
+        let mut pids = Vec::new();
+        let mut groups = Vec::new();
+        for &root in roots {
+            let (p, g) = plan_tree_kill(rows, root, self_pid);
+            pids.extend(p);
+            groups.extend(g);
+        }
+        (pids, groups)
+    };
+    let (first, _) = plan(&table.rows());
+    if first.is_empty() {
+        return;
+    }
+    for &pid in &first {
+        // SAFETY: kill(2) on a descendant of our unreaped child.
         unsafe {
-            if pgid != pid && pgid != own_group && pgid != 0 {
-                libc::kill(-(pgid as libc::pid_t), libc::SIGKILL);
-            }
-            libc::kill(child as libc::pid_t, libc::SIGKILL);
+            libc::kill(pid as libc::pid_t, libc::SIGSTOP);
+        }
+    }
+    let (pids, groups) = plan(&table.rows());
+    // SAFETY: kill(2) on descendants of our unreaped child and the groups
+    // they lead (see `plan_tree_kill` for what is never included).
+    unsafe {
+        for group in groups {
+            libc::kill(-(group as libc::pid_t), libc::SIGKILL);
+        }
+        for pid in pids.into_iter().chain(first) {
+            libc::kill(pid as libc::pid_t, libc::SIGKILL);
         }
     }
 }
@@ -295,17 +509,23 @@ fn reap_group(pid: u32, reason: ReapReason) {
     if pid == 0 {
         return;
     }
-    // SAFETY: plain kill(2) calls.
-    unsafe {
-        match reason {
-            ReapReason::Stalled => {
-                libc::kill(pid as libc::pid_t, libc::SIGUSR1);
-            }
-            ReapReason::Deadline => {
-                libc::kill(-(pid as libc::pid_t), libc::SIGTERM);
+    // A child of ours already reaped may have its pid reused: leave it alone.
+    with_live_child(pid, |state| {
+        if state == PidState::Reaped {
+            return;
+        }
+        // SAFETY: plain kill(2) calls.
+        unsafe {
+            match reason {
+                ReapReason::Stalled => {
+                    libc::kill(pid as libc::pid_t, libc::SIGUSR1);
+                }
+                ReapReason::Deadline => {
+                    libc::kill(-(pid as libc::pid_t), libc::SIGTERM);
+                }
             }
         }
-    }
+    });
 }
 
 #[cfg(not(unix))]
