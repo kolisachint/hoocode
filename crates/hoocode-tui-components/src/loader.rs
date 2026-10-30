@@ -180,8 +180,12 @@ impl Loader {
 
 impl Component for Loader {
     /// Always a single line (after a blank one): the status line sits right
-    /// above the editor, so a wrapping message would move the prompt.
+    /// above the editor, so a wrapping message would move the prompt. A
+    /// silent loader (no frames, no message) draws no rows at all.
     fn render(&mut self, width: u16) -> Vec<String> {
+        if visible_width(&self.line) == 0 {
+            return Vec::new();
+        }
         // Mirrors Text's paddingX of 1 on both sides, minus the wrapping.
         let content_width = (width as usize).saturating_sub(2).max(1);
         let content = if visible_width(&self.line) > content_width {
@@ -247,6 +251,22 @@ mod tests {
         );
         let lines = loader.render(40);
         assert!(lines[1].trim_start().starts_with("msg"));
+    }
+
+    #[test]
+    fn silent_loader_draws_no_rows() {
+        // The working loader has no frames and no message: it must not
+        // leave two blank rows above the prompt while a turn runs.
+        let mut loader = Loader::new(
+            identity(),
+            identity(),
+            "",
+            Some(LoaderIndicatorOptions {
+                frames: Some(vec![]),
+                interval_ms: None,
+            }),
+        );
+        assert!(loader.render(40).is_empty());
     }
 
     #[test]

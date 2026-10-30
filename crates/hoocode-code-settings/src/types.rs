@@ -397,7 +397,7 @@ const DEFAULT_SETTINGS_JSON: &str = r#"{
     "maxOutputTokens": 64000,
     "enableTodoWrite": true,
     "enablePluginTools": false,
-    "enableBackgroundShell": false,
+    "enableBackgroundShell": true,
     "pluginInstallScope": "user",
     "deferMcpSchemas": true,
     "enableWebTools": false,

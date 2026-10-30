@@ -868,8 +868,14 @@ fn assemble_session(
     plugins: &hoocode_code_plugins::PluginSet,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
-    // Background shell jobs (`enableBackgroundShell`); the light preset has none.
-    let jobs = (!light && settings.enable_background_shell())
+    // Background shell jobs (`enableBackgroundShell`, on by default). The light
+    // preset has none, and neither has a subagent: its jobs would outlive it
+    // with no one to read them.
+    let in_subagent = args.task_id.is_some()
+        || hoocode_code_subagents::depth::current_subagent_depth(
+            &hoocode_code_subagents::depth::ProcessEnv,
+        ) > 0;
+    let jobs = (!light && !in_subagent && settings.enable_background_shell())
         .then(|| background_job_registry(&session_manager, &settings));
     // main.ts: the light preset is an allowlist of the four short-schema tools
     // (their order is the active order), which also keeps extension tools off.
@@ -2304,8 +2310,14 @@ mod tests {
                 "DocSearch",
                 "Agent",
                 "AgentOutput",
-                "TodoWrite"
+                "TodoWrite",
+                "ShellOutput",
+                "ShellKill"
             ]
+        );
+        assert!(
+            prompt.contains("run_in_background: true"),
+            "the Shell guideline should point at background jobs: {prompt}"
         );
     }
 
@@ -2951,7 +2963,7 @@ mod plugin_tool_gate_tests {
             JobRegistry, LocalBashOperations, SHELL_KILL_TOOL_NAME, SHELL_OUTPUT_TOOL_NAME,
         };
         let settings = SettingsManager::in_memory(Default::default());
-        assert!(!settings.enable_background_shell());
+        assert!(settings.enable_background_shell());
         let args = crate::args::parse_args(&[]);
         let cwd = std::path::Path::new("/w");
         let off: Vec<String> = custom_tools(&args, &settings, cwd, false, None)

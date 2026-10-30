@@ -492,7 +492,11 @@ fn build_bash_tool_definition(
         label: "Shell".into(),
         description,
         prompt_snippet: Some("Run builds, tests, linters, git, and package managers".into()),
-        prompt_guidelines: Vec::new(),
+        prompt_guidelines: if options.jobs.is_some() {
+            vec!["Run a command that takes more than about a minute (a full test suite, a release build, a server or watcher) with Shell run_in_background: true, keep working while it runs, and read it with ShellOutput when you need the result; a short check stays in the foreground".into()]
+        } else {
+            Vec::new()
+        },
         parameters,
         prepare_arguments: None,
         execution_mode: None,

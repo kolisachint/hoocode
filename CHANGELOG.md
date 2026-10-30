@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: background work (2026-10-31)
+- **No blank rows above the prompt while a mission runs.** The silent working indicator drew two empty rows between the transcript (or the REWIND bar) and the comms frame; it now draws none.
+- **Background shell jobs are on by default** (`enableBackgroundShell`, set it to `false` to turn them off). The model is told to run long commands (full test suites, release builds, servers) with `run_in_background` and keep working, and to keep subagents in the background unless its next step needs the answer. Subagents never get background shell jobs.
+
 ### Fixed: radar answer, HUD effort, clickable links (2026-10-31)
 - **A click on a link opens it in the browser.** Markdown links and bare `http(s)://` URLs in the transcript open on a plain left click (press and release on the same cell). Only http, https and mailto open. `HOOCODE_MOUSE=0` still hands the mouse back to the terminal.
 - **The radar view renders a mission's final answer as Markdown**, as peek and full do: headings, lists, code and emphasis are drawn instead of flattened to plain text, and links stay clickable.

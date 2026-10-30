@@ -1250,9 +1250,9 @@ impl SettingsManager {
     }
 
     /// Background shell jobs (`Shell` with `run_in_background`, `ShellOutput`,
-    /// `ShellKill`). Off by default: the schema is unchanged while it is off.
+    /// `ShellKill`). On by default; `false` keeps them out of the schema.
     pub fn enable_background_shell(&self) -> bool {
-        self.bool_or("enableBackgroundShell", false)
+        self.bool_or("enableBackgroundShell", true)
     }
 
     /// Where an autonomous InstallPlugin puts a plugin; anything but
