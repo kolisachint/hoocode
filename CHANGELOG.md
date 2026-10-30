@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed: radar answer and HUD effort (2026-10-31)
-- **The radar view renders a mission's final answer as Markdown**, as peek and full do: headings, lists, code and emphasis are drawn instead of flattened to plain text.
+### Fixed: radar answer, HUD effort, clickable links (2026-10-31)
+- **A click on a link opens it in the browser.** Markdown links and bare `http(s)://` URLs in the transcript open on a plain left click (press and release on the same cell). Only http, https and mailto open. `HOOCODE_MOUSE=0` still hands the mouse back to the terminal.
+- **The radar view renders a mission's final answer as Markdown**, as peek and full do: headings, lists, code and emphasis are drawn instead of flattened to plain text, and links stay clickable.
 - **The top bar shows the thinking level** after the model (`SHIP claude-opus-5-5 · medium`), for reasoning models. On a narrow screen the folder drops first.
 
 ### Fixed: subagent handles (2026-10-30)

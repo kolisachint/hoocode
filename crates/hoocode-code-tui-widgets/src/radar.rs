@@ -777,8 +777,21 @@ fn answer_rows(blocks: &[String], palette: &Palette, width: usize) -> Vec<String
         .render(room)
         .into_iter()
         .map(|line| {
+            let line = line.trim_end();
+            // A ratatui buffer drops OSC 8, so a row with a link keeps the
+            // Markdown line as it is after the drawn rail: the link stays
+            // clickable. The line already fits the room after the rail.
+            if line.contains("\x1b]8;") {
+                // The drawn row ends at its last glyph: the rail's blank
+                // goes back on by hand.
+                let lead = crate::trajectory::draw_line(rail(palette), RAIL_WIDTH);
+                let lead_width = visible_width(&lead);
+                let gap = " ".repeat(RAIL_WIDTH.saturating_sub(lead_width));
+                let pad = width.saturating_sub(RAIL_WIDTH + visible_width(line));
+                return format!("{lead}{gap}{line}\x1b[0m{}", " ".repeat(pad));
+            }
             let mut spans = rail(palette);
-            spans.extend(with_ink(ansi_spans(line.trim_end()), palette));
+            spans.extend(with_ink(ansi_spans(line), palette));
             cut_row(spans, width)
         })
         .collect()

@@ -707,6 +707,9 @@ impl Mode {
         let mut tui = Tui::new(terminal, Some(show_hardware_cursor));
         tui.set_clear_on_shrink(clear_on_shrink);
         tui.set_fullscreen(fullscreen);
+        // A plain click on a link (OSC 8 or a bare URL) opens it in the
+        // browser; `open_url` takes only http, https and mailto.
+        tui.on_hyperlink = Some(Box::new(crate::login_controller::open_url));
 
         let keybindings = AppKeybindingsManager::create(None);
         keybindings.install();

@@ -314,6 +314,38 @@ fn the_answer_sits_on_the_rail_after_a_blank_rail_line() {
 }
 
 #[test]
+fn a_link_in_the_answer_keeps_its_hyperlink() {
+    let _g = lock();
+    let mut stats = landed(
+        1,
+        0,
+        vec![batch(vec![ok("Read", json!({"file_path": "a.rs"}))])],
+    );
+    stats.answer = vec!["See [the docs](https://example.com/docs).".to_string()];
+    let caps = |hyperlinks| hoocode_tui_images::TerminalCapabilities {
+        images: None,
+        true_color: true,
+        hyperlinks,
+    };
+    hoocode_tui_images::set_capabilities(caps(true));
+    let rows = mission_rows(1, "fix it", &stats, &Palette::default(), 80);
+    hoocode_tui_images::set_capabilities(caps(false));
+    let row = rows
+        .iter()
+        .find(|row| row.contains("the docs"))
+        .expect("the link row");
+    assert!(row.contains("\x1b]8;;https://example.com/docs"), "{row:?}");
+    assert!(strip(row).starts_with("   ┊ See "), "{row:?}");
+    assert_eq!(hoocode_tui_util::visible_width(row), 80, "{row:?}");
+    // The click finds the link under its text.
+    let column = strip(row).find("the docs").unwrap() as i64;
+    assert_eq!(
+        hoocode_tui_util::hyperlink_at(row, column).as_deref(),
+        Some("https://example.com/docs")
+    );
+}
+
+#[test]
 fn the_answer_renders_as_markdown_like_peek() {
     let _g = lock();
     let mut stats = landed(
