@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: radar view reads like peek and full (2026-10-30)
+- **Each mission is grouped under its prompt.** Radar shows a `▲ Mn  prompt` header, one line per batch of tool calls (a batch ends at thinking), failed calls as nested `└ … HIT` rows, thinking as one dim `✻` line, the full answer, and an end row that always closes the mission: `● LANDED`, `⊗ DID NOT LAND` (with its reason), `⊘ ABORTED`, `◐ IN FLIGHT` or `◆ WAITING` (naming the approval it waits for, including a subagent's). Older finished missions fold to one summary line plus the answer. Peek and full are unchanged.
+
+### Changed: smaller binary, quieter when idle (2026-10-30)
+- **Release builds use thin LTO, one codegen unit and stripped symbols.** The Linux x86_64 binary went from 57.8 MiB to 34.9 MiB. Panic backtraces from release builds no longer carry function names.
+- **Fewer idle wakeups.** An idle TUI wakes about 7 times a second instead of about 17: the perf sampler thread runs only with `--perf-log` (`/perf` reads once), the watchdog ticks every 250 ms, the git branch poll runs every second, and the UI loop waits up to 1 s when nothing is due.
+
 ### Added: releases from a tag (2026-10-24)
 - **Pushing a `vX.Y.Z` tag releases it.** `release-tag.yml` checks the tag against the workspace version and that the commit is on `main`, runs the CI gates, creates the GitHub release and builds the same archives, `SHA256SUMS`, npm and PyPI packages as a labelled-PR release.
 
