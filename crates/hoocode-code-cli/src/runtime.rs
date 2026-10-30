@@ -2875,7 +2875,7 @@ mod tests {
 
         #[test]
         fn ctrl_o_cycles_radar_peek_full_and_back() {
-            let radar = "━ radar · flight log ━";
+            let radar = "━ radar ━";
             let (drawn, _) = run(
                 json!({ "toolOutputView": "radar" }),
                 &[CTRL_O, CTRL_O, CTRL_O],
@@ -2895,12 +2895,9 @@ mod tests {
         fn a_stored_full_setting_loads_as_full_and_cycles_to_radar() {
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[]);
             assert!(drawn.contains("━ full ━"), "{drawn}");
-            assert!(!drawn.contains("━ radar · flight log ━"), "{drawn}");
+            assert!(!drawn.contains("━ radar ━"), "{drawn}");
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
-            assert!(
-                in_order(&drawn, &["━ full ━", "━ radar · flight log ━"]),
-                "{drawn}"
-            );
+            assert!(in_order(&drawn, &["━ full ━", "━ radar ━"]), "{drawn}");
         }
 
         #[test]
