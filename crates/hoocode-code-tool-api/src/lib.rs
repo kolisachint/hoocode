@@ -9,7 +9,8 @@ pub mod truncate;
 
 pub use definition::{
     tool_definition_from_agent_tool, wrap_tool_definition, wrap_tool_definitions,
-    DefinitionExecuteFn, SessionBranch, ToolContext, ToolContextFactory, ToolDefinition, ToolError,
+    DefinitionExecuteFn, DefinitionPlaceholderFn, SessionBranch, ToolContext, ToolContextFactory,
+    ToolDefinition, ToolError,
 };
 pub use fs_error::{node_fs_error, NodeFsError};
 pub use path_utils::{expand_path, resolve_read_path, resolve_to_cwd};

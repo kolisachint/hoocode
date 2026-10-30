@@ -69,7 +69,8 @@ pub fn create_cron_create_tool_definition(store: Arc<TaskStore>) -> ToolDefiniti
         prepare_arguments: None,
         execution_mode: None,
         background: false,
-        background_when: None, background_placeholder: None,
+        background_when: None,
+        background_placeholder: None,
         ordered_start: false,
         execute: Arc::new(move |_id, args, _signal, _on_update, _ctx| {
             let cron_expr = string_arg(&args, "cron")?;

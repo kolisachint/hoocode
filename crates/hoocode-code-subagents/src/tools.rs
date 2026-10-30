@@ -30,7 +30,7 @@ use serde_json::{json, Map, Value};
 
 use crate::agent_log::agent_log;
 use crate::depth::{delegate_allow_list, is_delegate_allowed, ProcessEnv};
-use crate::inbox::{named, subagent_inbox, InboxRecord, TaskLifecycle};
+use crate::inbox::{named, subagent_inbox, CancelAsk, InboxRecord, TaskLifecycle};
 use crate::instance::get_subagent_pool;
 use crate::limits::DEFAULT_WAIT_TIMEOUT_MS;
 use crate::model_categories::{ModelRequest, ModelSelection};
@@ -113,17 +113,27 @@ fn summarize(task: &str) -> String {
     js_truncate(&name, 60)
 }
 
-/// What a call is for: its `description`, else a summary of its prompt. Shown
-/// in the task panel and next to the run's label wherever the model sees it.
+/// What a call is for: the first line of its `description` (at most 60
+/// characters), else a summary of its prompt. Shown in the task panel and next
+/// to the run's label wherever the model sees it, inside double quotes, so a
+/// `"` in it becomes `'`.
 fn call_summary(params: &Value) -> String {
     let description = str_param(params, "description")
-        .map(str::trim)
+        .map(|d| d.trim().lines().next().unwrap_or("").trim())
         .unwrap_or("");
-    if description.is_empty() {
+    let summary = if description.is_empty() {
         summarize(str_param(params, "prompt").unwrap_or(""))
     } else {
-        description.to_string()
-    }
+        js_truncate(description, 60)
+    };
+    summary.replace('"', "'")
+}
+
+/// The session a call belongs to: the dispatching session's file. Runs,
+/// labels and listings are per session (see [`crate::inbox`]).
+fn session_key(ctx: Option<&ToolContext>) -> Option<String> {
+    ctx.and_then(|c| c.session_file.as_ref())
+        .map(|f| f.to_string_lossy().into_owned())
 }
 
 /// The placeholder result of a background Agent call: the label its run will
@@ -135,12 +145,23 @@ fn call_summary(params: &Value) -> String {
 /// `Started "Agent" in the background` line: a model that dispatched two runs
 /// of one agent type could not tell which `explore#N` was which, took one for
 /// a duplicate, cancelled the wrong one and dispatched it again.
-fn background_placeholder_text(call: &AgentToolCall) -> Option<String> {
+///
+/// The run is listed (`starting`) from this moment, so a roster, status or
+/// cancel in the model's next turn finds it even if its execute has not
+/// started yet. `None` (the loop's generic line) when the call id is already
+/// reserved in this message.
+fn background_placeholder_text(call: &AgentToolCall, ctx: Option<&ToolContext>) -> Option<String> {
     let subagent_type = str_param(&call.arguments, "subagent_type")?;
     if subagent_type.trim().is_empty() {
         return None;
     }
-    let label = subagent_inbox().reserve_label(&call.id, subagent_type);
+    let session = session_key(ctx);
+    let label = subagent_inbox().reserve_label(
+        &call.id,
+        subagent_type,
+        &call_summary(&call.arguments),
+        session.as_deref(),
+    )?;
     let resumes = str_param(&call.arguments, "resume_task_id")
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -383,6 +404,8 @@ struct Background {
     label: String,
     /// The call's description, shown next to the label.
     description: String,
+    /// The dispatching session (its runs are counted in the notification).
+    session: Option<String>,
 }
 
 impl Background {
@@ -603,7 +626,9 @@ fn finalize_dispatch_result(
         } else {
             ""
         };
-        let outstanding = subagent_inbox().outstanding().len();
+        let outstanding = subagent_inbox()
+            .outstanding_in(background.session.as_deref())
+            .len();
         let tail = if outstanding > 0 {
             format!(" {outstanding} still running.")
         } else {
@@ -633,8 +658,49 @@ fn finalize_dispatch_result(
     ))
 }
 
-/// Run a dispatch, cancelling its run (process tree) when the call aborts.
-async fn cancel_on_abort<F>(
+/// Bind a background run's inbox record (reserved at its placeholder, or new).
+/// `Err` with the call's result when the run was cancelled while starting: it
+/// is not dispatched, and the task panel shows it cancelled.
+fn start_background(
+    session: Option<&str>,
+    run_id: &str,
+    label: &str,
+    subagent_type: &str,
+    summary: &str,
+    task_id: u64,
+) -> Result<(), AgentToolResult> {
+    let rec = subagent_inbox().start_in(session, run_id, label, subagent_type, summary);
+    if rec.lifecycle == TaskLifecycle::Running {
+        return Ok(());
+    }
+    set_status(task_id, TaskStatus::Cancelled);
+    patch_agent_state(run_id, TaskAgentState::Cancelled);
+    let reason = rec
+        .error
+        .clone()
+        .unwrap_or_else(|| "cancelled before it started".into());
+    Err(text_result(
+        format!("{} cancelled ⊘ — {reason}", rec.named()),
+        details(
+            subagent_type,
+            false,
+            Some(&reason),
+            task_id,
+            Some(run_id),
+            true,
+        ),
+    ))
+}
+
+/// How often a run asked to stop is offered to the pool again until the pool
+/// holds it (the moments between `start_in` and the dispatch registering it).
+const CANCEL_RETRY: Duration = Duration::from_millis(25);
+
+/// Run a dispatch, cancelling its run (process tree) when the call aborts, or
+/// when `AgentOutput(cancel: true)` asks for it in the inbox. That ask can
+/// land before the pool holds the run, where `pool.cancel` misses; it is
+/// offered again until the pool takes it or the run ends.
+pub async fn cancel_on_abort<F>(
     pool: &SubagentPool,
     run_id: &str,
     signal: Option<AbortSignal>,
@@ -643,18 +709,33 @@ async fn cancel_on_abort<F>(
 where
     F: std::future::Future,
 {
-    let Some(signal) = signal else {
-        return run.await;
-    };
     tokio::pin!(run);
+    let inbox = subagent_inbox();
+    let mut aborted = false;
     let mut cancelled = false;
     loop {
+        let asked = inbox.cancel_notified();
+        tokio::pin!(asked);
+        asked.as_mut().enable();
+        let pending = !cancelled && inbox.cancel_requested(run_id);
+        if pending && pool.cancel(run_id) {
+            cancelled = true;
+        }
+        let retry = pending && !cancelled;
+        let abort = async {
+            match &signal {
+                Some(signal) => signal.cancelled().await,
+                None => std::future::pending().await,
+            }
+        };
         tokio::select! {
             output = &mut run => return output,
-            _ = signal.cancelled(), if !cancelled => {
-                cancelled = true;
+            _ = abort, if !aborted => {
+                aborted = true;
                 pool.cancel(run_id);
             }
+            _ = &mut asked, if !cancelled && !retry => {}
+            _ = tokio::time::sleep(CANCEL_RETRY), if retry => {}
         }
     }
 }
@@ -721,7 +802,7 @@ pub fn create_task_tool_definition(cwd: &Path) -> ToolDefinition {
     ToolDefinition { ordered_start: false,
         name: TASK_TOOL_NAME.into(),
         label: TASK_TOOL_NAME.into(),
-        description: "Delegate a focused task to a specialized subagent that runs as a separate process with its own, fresh context (it cannot see this conversation). Choose one of the available agents (listed in the system prompt) via `subagent_type` and pass everything it needs via `prompt`; the subagent returns only its final answer. Every call starts its own run with its own handle (e.g. \"explore#2\"), named in the call's result next to its description; two runs of one agent type are different runs, not duplicates. Before dispatching a task again, check AgentOutput(list: true): it shows every run with its handle, description and status.".into(),
+        description: "Delegate a focused task to a specialized subagent that runs as a separate process with its own, fresh context (it cannot see this conversation). Choose one of the available agents (listed in the system prompt) via `subagent_type` and pass everything it needs via `prompt`; the subagent returns only its final answer. Every call starts its own run with its own handle (e.g. \"explore#2\"). A background call's result names that handle next to its description at once; a foreground call names it on its `resume_task_id:` line. Two runs of one agent type are different runs, not duplicates. Before dispatching a task again, check AgentOutput(list: true): it shows every background run with its handle, description and status.".into(),
         prompt_snippet: Some(
             "delegate a self-contained task to a specialized subagent (choose via subagent_type)"
                 .into(),
@@ -758,6 +839,11 @@ pub fn create_task_tool_definition(cwd: &Path) -> ToolDefinition {
     }
 }
 
+/// The Agent call. Takes the label the call's placeholder gave the model (a
+/// background call), else a new one. A reserved run that the call never
+/// started (refused: unknown agent, delegation, model, effort, provider
+/// exhaustion) is settled `failed` with the reason, and the reason names the
+/// run, so `AgentOutput("explore#1")` and the follow-up both say what happened.
 async fn execute_task(
     params: Value,
     signal: Option<AbortSignal>,
@@ -770,11 +856,68 @@ async fn execute_task(
     let subagent_type = str_param(&params, "subagent_type")
         .unwrap_or("")
         .to_string();
+    let summary = call_summary(&params);
+    let session = session_key(ctx.as_ref());
+    let label = subagent_inbox().take_label(&call_id, &subagent_type, &summary, session.as_deref());
+    let outcome = execute_task_inner(
+        params,
+        signal,
+        ctx,
+        cwd,
+        foreground_agents,
+        call_id,
+        on_update,
+        label.clone(),
+        session.clone(),
+    )
+    .await;
+    if subagent_inbox()
+        .reserved(session.as_deref(), &label)
+        .is_none()
+    {
+        return outcome;
+    }
+    // Still reserved: the call returned before it started its run.
+    let name = named(&label, Some(&summary));
+    match outcome {
+        Err(error) => {
+            let reason = error.to_string();
+            subagent_inbox().fail_reserved(session.as_deref(), &label, &reason);
+            Err(format!("{name} failed ✗ — {reason}").into())
+        }
+        Ok(mut result) => {
+            let reason = result
+                .content
+                .iter()
+                .find_map(|c| match c {
+                    Content::Text(t) => Some(t.text.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| "not dispatched".into());
+            subagent_inbox().fail_reserved(session.as_deref(), &label, &reason);
+            result.content = vec![Content::text(format!("{name} failed ✗ — {reason}"))];
+            Ok(result)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_task_inner(
+    params: Value,
+    signal: Option<AbortSignal>,
+    ctx: Option<ToolContext>,
+    cwd: PathBuf,
+    foreground_agents: Arc<HashSet<String>>,
+    call_id: String,
+    on_update: Option<AgentToolUpdateCallback>,
+    label: String,
+    session: Option<String>,
+) -> Result<AgentToolResult, ToolError> {
+    let subagent_type = str_param(&params, "subagent_type")
+        .unwrap_or("")
+        .to_string();
     let prompt = str_param(&params, "prompt").unwrap_or("").to_string();
     let summary = call_summary(&params);
-    // The label this call's placeholder already gave the model (a background
-    // call), else a new one. Taken first, so every path consumes it.
-    let label = subagent_inbox().take_label(&call_id, &subagent_type);
     let available: Vec<Model> = ctx
         .as_ref()
         .map(|c| c.available_models.clone())
@@ -869,12 +1012,17 @@ async fn execute_task(
     {
         // The model names a label (`explore#4`); the session lives under the
         // original pool task id. A raw task id is accepted too.
-        let session_id = subagent_inbox()
-            .session_id_for(resume_id)
-            .unwrap_or_else(|| resume_id.to_string());
+        let bound = subagent_inbox().session_id_for_in(session.as_deref(), resume_id);
+        if bound.is_none() && subagent_inbox().is_earlier_run(session.as_deref(), resume_id) {
+            return Err(format!(
+                "{resume_id} ran in an earlier process; its handle cannot be resumed from this one. Dispatch a new run with the context it needs."
+            )
+            .into());
+        }
+        let session_id = bound.unwrap_or_else(|| resume_id.to_string());
         let run_id = new_dispatch_task_id();
         // This run continues the same session, so its label resumes that session too.
-        subagent_inbox().bind_label(&label, &session_id);
+        subagent_inbox().bind_label_in(session.as_deref(), &label, &session_id);
         let task_id = create_dispatch_task(&summary, &subagent_type, &run_id);
         register_subagent_dispatch(&run_id, &label);
         set_status(task_id, TaskStatus::InProgress);
@@ -883,8 +1031,16 @@ async fn execute_task(
         let is_background = runs_in_background(&params, &subagent_type, &foreground_agents);
         if is_background {
             subagent_inbox().observe(&pool);
-            subagent_inbox().start(&run_id, &label, &subagent_type);
-            subagent_inbox().describe(&run_id, &summary);
+            if let Err(cancelled) = start_background(
+                session.as_deref(),
+                &run_id,
+                &label,
+                &subagent_type,
+                &summary,
+                task_id,
+            ) {
+                return Ok(cancelled);
+            }
         }
         let outcome = cancel_on_abort(
             &pool,
@@ -949,7 +1105,7 @@ async fn execute_task(
 
     let pool_task_id = new_dispatch_task_id();
     // The label is what the model sees; it resumes this run's session.
-    subagent_inbox().bind_label(&label, &pool_task_id);
+    subagent_inbox().bind_label_in(session.as_deref(), &label, &pool_task_id);
     let task_id = create_dispatch_task(&summary, &subagent_type, &pool_task_id);
     register_subagent_dispatch(&pool_task_id, &label);
     set_status(task_id, TaskStatus::InProgress);
@@ -1003,12 +1159,21 @@ async fn execute_task(
     if is_background {
         // Notify-and-pull: the body stays in the inbox.
         subagent_inbox().observe(&pool);
-        subagent_inbox().start(&pool_task_id, &label, &subagent_type);
-        subagent_inbox().describe(&pool_task_id, &summary);
+        if let Err(cancelled) = start_background(
+            session.as_deref(),
+            &pool_task_id,
+            &label,
+            &subagent_type,
+            &summary,
+            task_id,
+        ) {
+            return Ok(cancelled);
+        }
         let background = Background {
             task_id: pool_task_id.clone(),
             label: label.clone(),
             description: summary.clone(),
+            session: session.clone(),
         };
         if use_warm {
             let warm = get_warm_subagent_pool(&cwd, &available);
@@ -1159,10 +1324,10 @@ fn output_details(
 }
 
 /// Every known background subagent: status and activity, no bodies.
-fn format_task_roster() -> AgentToolResult {
+fn format_task_roster(session: Option<&str>) -> AgentToolResult {
     let inbox = subagent_inbox();
-    let all = inbox.list();
-    let outstanding = inbox.outstanding().len();
+    let all = inbox.list_in(session);
+    let outstanding = inbox.outstanding_in(session).len();
     if all.is_empty() {
         return text_result(
             "No background subagents have been dispatched.",
@@ -1251,7 +1416,8 @@ pub fn create_task_output_tool_definition() -> ToolDefinition {
         prepare_arguments: None,
         execution_mode: None,
         background: false,
-        background_when: None, background_placeholder: None,
+        background_when: None,
+        background_placeholder: None,
         execute: Arc::new(|_id, params, _signal, _on_update, ctx| {
             let ctx = ctx.cloned();
             block_on(execute_task_output(params, ctx))
@@ -1273,10 +1439,31 @@ async fn execute_task_output(
     Ok(read_background_task(params, ctx, handle).await)
 }
 
-/// `AgentOutput(task_id, cancel: true)`: stop a running background subagent.
-/// The pool kills its process tree; the task then settles `cancelled` in the
-/// inbox when its dispatch returns. Errors on a missing or unknown handle, and
-/// when combined with `wait` or `list`.
+/// The answer for a handle the inbox does not hold: a run of an earlier
+/// process (a resumed session), or an unknown handle.
+fn unknown_handle(session: Option<&str>, handle: &str) -> String {
+    if subagent_inbox().is_earlier_run(session, handle) {
+        format!(
+            "{handle} ran in an earlier process and is not running now. Its result, if it finished, is earlier in this conversation; it cannot be cancelled or read from here."
+        )
+    } else {
+        format!(
+            "No background task \"{handle}\". Call AgentOutput with list:true to see active tasks."
+        )
+    }
+}
+
+/// A cancelled run that never got a process again: `pool.cancel` missed it,
+/// and it is younger than this. The execute awaiting it stops it as soon as
+/// the pool holds it (see [`cancel_on_abort`]).
+const CANCEL_PENDING_MAX_AGE_MS: u64 = 60_000;
+
+/// `AgentOutput(task_id, cancel: true)`: stop a background subagent, by the
+/// exact handle (task id or label) of this session's run. A run still
+/// starting never starts; a running one has its process tree killed and
+/// settles `cancelled` when its dispatch returns. The answer names the run it
+/// stopped. Errors on a missing or unknown handle, and when combined with
+/// `wait` or `list`.
 fn cancel_background_task(
     handle: Option<&str>,
     params: &Value,
@@ -1292,36 +1479,56 @@ fn cancel_background_task(
             "AgentOutput with cancel:true needs a task_id, e.g. AgentOutput(\"explore#1\", cancel: true).".into(),
         );
     };
-    let Some(rec) = subagent_inbox().get(handle) else {
-        return Err(format!(
-            "No background task \"{handle}\". Call AgentOutput with list:true to see active tasks."
-        )
-        .into());
+    let session = session_key(ctx);
+    let cwd = ctx.and_then(|c| c.cwd.clone());
+    let Some(ask) = subagent_inbox().request_cancel(session.as_deref(), handle) else {
+        return Err(unknown_handle(session.as_deref(), handle).into());
     };
-    if rec.lifecycle != TaskLifecycle::Running {
-        return Ok(text_result(
-            format!(
-                "{} already finished ({}); nothing was cancelled.",
-                rec.named(),
-                rec.lifecycle.as_str()
-            ),
-            output_details(Some(handle), rec.lifecycle.as_str(), true, None),
-        ));
-    }
-    let cwd = ctx
-        .and_then(|c| c.cwd.clone())
-        .ok_or("AgentOutput with cancel:true needs a working directory.")?;
+    let rec = match ask {
+        CancelAsk::Settled(rec) => {
+            return Ok(text_result(
+                format!(
+                    "{} already finished ({}); nothing was cancelled.",
+                    rec.named(),
+                    rec.lifecycle.as_str()
+                ),
+                output_details(Some(handle), rec.lifecycle.as_str(), true, None),
+            ))
+        }
+        CancelAsk::BeforeStart(rec) => {
+            return Ok(text_result(
+                format!(
+                    "Cancelled {} before it started. Only this run was stopped.",
+                    rec.named()
+                ),
+                output_details(Some(handle), "cancelled", true, None),
+            ))
+        }
+        CancelAsk::Running(rec) => rec,
+    };
+    let cwd = cwd.ok_or("AgentOutput with cancel:true needs a working directory.")?;
     let models = ctx.map(|c| c.available_models.clone()).unwrap_or_default();
     let pool = get_subagent_pool(&cwd, &models);
+    let cancelled = format!("Cancelled {}. Only this run was stopped.", rec.named());
     if pool.cancel(&rec.task_id) {
         return Ok(text_result(
-            format!("Cancelled {}. Only this run was stopped.", rec.named()),
+            cancelled,
             output_details(Some(handle), "cancelled", true, None),
         ));
     }
-    // The pool settled it before the inbox heard. A task the pool has forgotten
-    // without a settle is reported `failed`, as the reconcile would.
+    // The pool does not hold it. Either it has not registered the run yet (the
+    // moments after its execute bound it), and the execute stops it once it
+    // does, or the pool settled it before the inbox heard. A task the pool has
+    // forgotten without a settle is reported `failed`, as the reconcile would.
     let status = match pool.get_status(&rec.task_id) {
+        PoolTaskStatus::Unknown
+            if now_ms().saturating_sub(rec.started_at) < CANCEL_PENDING_MAX_AGE_MS =>
+        {
+            return Ok(text_result(
+                cancelled,
+                output_details(Some(handle), "cancelled", true, None),
+            ));
+        }
         PoolTaskStatus::Unknown | PoolTaskStatus::Running | PoolTaskStatus::Queued => "failed",
         other => other.as_str(),
     };
@@ -1348,6 +1555,8 @@ async fn read_background_task(
         subagent_inbox().observe(&get_subagent_pool(&cwd, &models));
     }
     let inbox = subagent_inbox();
+    let session = session_key(ctx.as_ref());
+    let scope = session.as_deref();
     // Before answering anything about a handle: a record the pool has already
     // forgotten is reconciled here, so a lost settle event cannot leave the
     // model (or the task panel) looking at a run that finished or died long ago.
@@ -1390,20 +1599,20 @@ async fn read_background_task(
         );
         match &handle {
             Some(handle) => {
-                inbox.wait_for(handle, timeout).await;
+                inbox.wait_for_in(Some(scope), handle, timeout).await;
             }
-            None => inbox.wait_for_all(timeout).await,
+            None => inbox.wait_for_all_in(Some(scope), timeout).await,
         }
     }
 
     let Some(handle) = handle.filter(|_| params.get("list").and_then(Value::as_bool) != Some(true))
     else {
-        return format_task_roster();
+        return format_task_roster(scope);
     };
 
-    let Some(rec) = inbox.get(&handle) else {
+    let Some(rec) = inbox.get_in(scope, &handle) else {
         return text_result(
-            format!("No background task \"{handle}\". Call AgentOutput with list:true to see active tasks."),
+            unknown_handle(scope, &handle),
             output_details(Some(&handle), "unknown", false, None),
         );
     };
@@ -1426,7 +1635,7 @@ async fn read_background_task(
         }
         TaskLifecycle::Done => {
             let body = inbox
-                .collect(&handle)
+                .collect_in(scope, &handle)
                 .map(|(_, body)| body)
                 .or(rec.summary_line.clone())
                 .unwrap_or_else(|| "(subagent returned no output)".into());

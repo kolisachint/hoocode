@@ -126,6 +126,19 @@ its partial result on the way out. The KNOWN note was stale.
 33 attempts, 32 usable (97%), 181s.** Before it: 21 of 21 (the new scenario did not
 exist; run alone against that binary, it fails).
 
+**Second round (review of d767bd1).** The reviewer re-ran the scenario 13 times and it
+failed twice: the roster sometimes ran before the detached execute had made the run's
+record and said no subagent existed. Records are made at the placeholder now
+(`subagents.md` §5g). Two more corrections:
+
+- The needles matched the example in `task-main.md`, so they passed on any binary with the
+  new prompt. The example now uses another description.
+- `--repeat` reused each route's cursor, so every run after the first got "script
+  exhausted". `run_scenario` now resets the cursors.
+
+`--only parent_tells_parallel_runs_apart --repeat 30`: **30 of 30, 60 attempts, 60 usable.**
+`--include-slow`: **22 of 22, 33 attempts, 32 usable (97%), 180s.**
+
 The writer scenario checks the mechanics only: the mock child runs the git
 commands. It does not show that a real model follows the brief
 (`subagent-orchestration.md` §5).

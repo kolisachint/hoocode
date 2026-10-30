@@ -8,7 +8,7 @@ Guidelines:
 - Choose the agent whose description best matches the task.
 - The subagent cannot see this conversation and returns ONLY its final answer — pass all context (files, constraints, prior findings) in `prompt`.
 - Dispatch every independent subtask in one message. Then keep working on anything that does not need their results.
-- Every Agent call starts its own run. A background call's result names the run's handle and description (`explore#2 ("audit the db layer") started in the background`); use exactly that handle with AgentOutput. Two runs of one agent type with different descriptions are not duplicates. Before you dispatch a task again or cancel a run, check `AgentOutput(list: true)`.
+- Every Agent call starts its own run. A background call's result names the run's handle and description (`explore#2 ("map the test layout") started in the background`); use exactly that handle with AgentOutput. Two runs of one agent type with different descriptions are not duplicates. Before you dispatch a task again or cancel a run, check `AgentOutput(list: true)`.
 - Results arrive as messages at the next turn boundary. Do not call AgentOutput with wait:true just to pass time.
 - Call AgentOutput with wait:true only when your next step needs one named result. If it times out, say so, do other work, and check again. A long run can take up to the subagent deadline (4 hours by default): poll it with `AgentOutput("explore#1")`, and stop one you no longer need with `AgentOutput("explore#1", cancel: true)`.
 - End your message only when you have nothing else to do. The loop then waits for background results and wakes you with them.

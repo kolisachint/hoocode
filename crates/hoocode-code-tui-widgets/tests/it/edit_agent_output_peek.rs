@@ -58,6 +58,34 @@ mod agent_output {
         assert!(peek.contains("more lines"), "{peek}");
         let _ = (card_text(1), PEEK_LINES);
     }
+
+    /// A roster line names the run's description (2026-10-30): the label,
+    /// description and status still parse, the description is dim and the
+    /// status keeps its colour.
+    #[test]
+    fn roster_line_with_a_description_keeps_its_colours() {
+        let _g = lock();
+        let t = hoocode_code_tui_theme::theme();
+        let content = text_content(
+            "1 background subagent (1 running):\n- explore#2 (\"audit the db layer\")  running  3s",
+        );
+        let details = json!({"status": "list", "ok": true});
+        let view = ToolResultView {
+            content: &content,
+            details: &details,
+            text: &hoocode_code_tui_widgets::tool_signal::ResultText::default(),
+        };
+        let raw = format_task_output_result(&view, false);
+        assert!(
+            strip(&raw).contains("- explore#2 (\"audit the db layer\")  running  3s"),
+            "{raw}"
+        );
+        assert!(
+            raw.contains(&t.fg("dim", " (\"audit the db layer\")")),
+            "{raw}"
+        );
+        assert!(raw.contains(&t.fg("warning", "running")), "{raw}");
+    }
 }
 
 mod edit {

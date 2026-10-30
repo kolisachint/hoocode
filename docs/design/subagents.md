@@ -400,15 +400,20 @@ Three causes, all about run identity:
 than the one it named (b). Tool calls run only once the assistant message is complete,
 and a provider retry happens before that, so a call is never executed twice (d). There
 is no idempotency by tool call id, and there should not be: the mock provider (like some
-real ones) numbers calls per turn, so `call_0` comes back every turn as a new call. The
-inbox record is created moments after the placeholder, long before the model's next
-request, so a roster that misses a fresh run (c) was not seen.
+real ones) numbers calls per turn, so `call_0` comes back every turn as a new call.
 
-**Fix.**
+**Not ruled out: (c), a roster that misses a fresh run.** The first version of this fix
+(d767bd1) said it "was not seen". That was wrong. A review re-ran the eval 13 times and
+it failed twice: `AgentOutput(list: true)` right after a dispatch answered "No background
+subagents have been dispatched", and a cancel in that window answered "No background
+task". The record was made by the detached execute, after the placeholder had named the
+handle. That is a direct path back to a re-dispatch. Fixed in the second round below.
 
-- A tool can give its own background placeholder (`AgentTool::background_placeholder`,
-  `ToolDefinition::background_placeholder`). It wins over the loop's hook and is called
-  once per call, in call order.
+**Fix, first round.**
+
+- A tool can give its own background placeholder (`AgentTool::background_placeholder`;
+  on `ToolDefinition` it also gets the call's `ToolContext`). It wins over the loop's
+  hook and is called once per call, in call order.
 - The Agent tool's placeholder reserves the run's label for the call id
   (`SubagentInbox::reserve_label`) and says
   `explore#2 ("audit the db layer") started in the background. Its handle is explore#2: …`.
@@ -422,15 +427,57 @@ request, so a roster that misses a fresh run (c) was not seen.
   run, that two runs of one type with different descriptions are not duplicates, and to
   check `AgentOutput(list: true)` before dispatching again or cancelling.
 
-Tests: `parallel_background_calls_keep_the_handles_their_placeholders_named` and
-`the_roster_and_a_cancel_name_each_run_by_handle_and_description` (`tests/it/tools.rs`),
-the reserve/take cases in `tests/it/inbox.rs`, and
-`a_tools_own_background_placeholder_names_each_call` in `hoocode-agent-loop`. The eval
-`parent_tells_parallel_runs_apart` fails on the old binary and passes now.
+**Fix, second round (review of d767bd1).**
+
+- **The record exists from the placeholder on.** `reserve_label` makes the run's inbox
+  record at once, `starting` (lifecycle running), with its label, description and
+  session, keyed by the label until the execute's `start_in` binds the task id in the
+  same place in the listing. Roster, status, wait and cancel all see it.
+- **A cancel never misses.** On a starting run, `request_cancel` settles it `cancelled`
+  and its execute does not dispatch it (`Cancelled explore#2 ("…") before it started.`).
+  On a bound run it sets a flag, and the execute's `cancel_on_abort` offers the cancel to
+  the pool again every 25 ms until the pool holds the run (the moments between
+  `start_in` and the dispatch registering it). The answer to the model is the same.
+- **A refused call settles its handle.** When the execute returns before starting a
+  reserved run (unknown agent, delegation not allowed, a bad model or effort, provider
+  exhaustion), the record is settled `failed` with the reason, and the error reads
+  `explore#1 ("…") failed ✗ — <reason>`, so `AgentOutput("explore#1")` says what happened.
+- **Repeated call ids.** The OpenAI-compatible provider gives a tool call a new id when it
+  has none or repeats an earlier call's id in the same message (as the Google provider
+  does), and no longer merges two calls that share an id but not a stream index. A call
+  id still reserved in the message gets the loop's generic placeholder, and a reservation
+  is taken only by the call it describes (agent type, description, session).
+- **Per session, across restarts.** Records, label counters and label bindings are kept
+  per session (the session file), so `/new` and app-server sessions do not list each
+  other's runs. The first time a session is seen, its file is read for `type#N` handles
+  and the counters continue after them, so after `--resume` a new run never reuses
+  `explore#1`. An old handle answers `explore#1 ran in an earlier process and is not
+  running now`; as `resume_task_id` it is refused with the same reason.
+- **Descriptions** are the first line of the call's `description`, at most 60
+  characters, with `"` replaced by `'`.
+- The TUI's AgentOutput roster renders `- label ("description")  status` with the
+  description dim (`tools/subagent.rs`).
+
+Tests: `tests/it/tools.rs` (`parallel_background_calls_keep_the_handles_their_placeholders_named`,
+`the_roster_and_a_cancel_name_each_run_by_handle_and_description`,
+`a_run_is_listed_and_cancellable_from_its_placeholder_on`,
+`a_refused_call_fails_the_handle_its_placeholder_named`,
+`a_cancel_asked_before_the_pool_holds_the_run_stops_it`,
+`an_old_handle_after_resume_is_named_as_an_earlier_run`), `tests/it/inbox.rs` (reserve and
+take, `a_reserved_run_is_listed_and_bound_in_place`, `a_run_cancelled_while_starting_never_starts`,
+`a_reserved_run_that_never_started_fails_with_its_reason`,
+`runs_and_labels_are_scoped_to_their_session`, `a_resumed_session_continues_its_handles`),
+`a_tools_own_background_placeholder_names_each_call` (`hoocode-agent-loop`),
+`repeated_or_missing_tool_call_ids_are_made_unique_within_a_message`
+(`hoocode-ai-provider-openai`) and `roster_line_with_a_description_keeps_its_colours`
+(`hoocode-code-tui-widgets`). The eval `parent_tells_parallel_runs_apart` fails on the
+binary before the fix and passes now, repeated (see `subagent-evals.md`). Its needles no
+longer match the example in `task-main.md`.
 
 **Not proven.** We have no transcript of the user's session. The eval shows that the
 model could not tell its runs apart from anything it was shown. It does not show that a
-real model makes this mistake, or that it stops making it now.
+real model makes this mistake, or that it stops making it now. The warm pool (opt-in) is
+not reached by a cancel, before or after this change.
 
 ## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 

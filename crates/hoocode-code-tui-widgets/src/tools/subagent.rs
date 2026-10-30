@@ -147,15 +147,17 @@ pub fn format_task_output_call(args: &Value) -> String {
     )
 }
 
-/// One roster line, its label, status and rest coloured. Other lines pass through.
+/// One roster line, its label, description (dim), status and rest coloured.
+/// Other lines pass through.
 fn roster_line(line: &str) -> String {
     let t = theme();
     match ROSTER_LINE.captures(line) {
         None => t.fg("toolOutput", line),
         Some(caps) => {
             let label = &caps[1];
-            let status = &caps[2];
-            let rest = &caps[3];
+            let description = caps.get(2).map_or("", |m| m.as_str());
+            let status = &caps[3];
+            let rest = &caps[4];
             let status_color = if status == "running" {
                 "warning"
             } else if status.starts_with("done") {
@@ -166,8 +168,9 @@ fn roster_line(line: &str) -> String {
                 "error"
             };
             format!(
-                "- {}  {}{}",
+                "- {}{}  {}{}",
                 t.fg(label_color(label, "accent"), label),
+                t.fg("dim", description),
                 t.fg(status_color, status),
                 t.fg("dim", rest)
             )
@@ -176,7 +179,7 @@ fn roster_line(line: &str) -> String {
 }
 
 static ROSTER_LINE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^- (\S+)\s{2}(running|done \(uncollected\)|collected|failed|stalled|timeout|cancelled)(.*)$")
+    Regex::new(r#"^- (\S+)( \("[^"]*"\))?\s{2}(running|done \(uncollected\)|collected|failed|stalled|timeout|cancelled)(.*)$"#)
         .expect("roster line")
 });
 

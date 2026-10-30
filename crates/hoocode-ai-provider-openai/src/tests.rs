@@ -174,6 +174,41 @@ fn coalesces_tool_call_deltas_by_stable_index_when_ids_change() {
     assert!(serialized.get("streamIndex").is_none() && serialized.get("partialArgs").is_none());
 }
 
+/// Two calls that share an id (or have none) in one message stay two calls,
+/// each with an id of its own: the agent loop, the tool results and a
+/// background Agent call's handle are all keyed by tool call id.
+#[test]
+fn repeated_or_missing_tool_call_ids_are_made_unique_within_a_message() {
+    let call = |index: u64, id: &str, args: &str| json!({"index": index, "id": id, "type": "function", "function": {"name": "Read", "arguments": args}});
+    let server = serve_chunks(&[json!({"id": "c", "choices": [{"delta": {"tool_calls": [
+            call(0, "call_0", "{\"path\":\"a\"}"),
+            call(1, "call_0", "{\"path\":\"b\"}"),
+            call(2, "", "{\"path\":\"c\"}"),
+        ]}, "finish_reason": "tool_calls"}], "usage": usage(10, 5)})]);
+    let model = at(completions("openai", "gpt-4o-mini"), &server);
+    let (_, message) = run(
+        model,
+        Context::new(
+            String::new(),
+            vec![user("Read three")],
+            vec![read_tool("Read")],
+        ),
+    );
+    assert_eq!(message.content.len(), 3);
+    let calls: Vec<&ToolCallContent> = message.content.iter().map(tool_call).collect();
+    assert_eq!(calls[0].id, "call_0");
+    assert_eq!(calls[0].arguments, json!({"path": "a"}));
+    assert_eq!(calls[1].arguments, json!({"path": "b"}));
+    assert_eq!(calls[2].arguments, json!({"path": "c"}));
+    assert!(
+        !calls[1].id.is_empty() && calls[1].id != "call_0",
+        "{}",
+        calls[1].id
+    );
+    assert!(!calls[2].id.is_empty(), "{}", calls[2].id);
+    assert_ne!(calls[1].id, calls[2].id);
+}
+
 #[test]
 fn accumulates_mixed_content_reasoning_and_parallel_tool_calls() {
     let tc = |index: Option<u64>, id: Option<&str>, name: Option<&str>, args: &str| {

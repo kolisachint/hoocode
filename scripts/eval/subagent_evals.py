@@ -1131,6 +1131,10 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
     root = Path(tempfile.mkdtemp(prefix=f"subagent-eval-{scenario.name}-", dir=run_dir))
     log_path = root / "requests.jsonl"
     routes = bind_routes(scenario.routes, writer_paths(root)) if scenario.worktree else scenario.routes
+    # Every run starts its scripts from the first turn: `--repeat` reuses the
+    # scenario's routes, and a cursor left at the end answers "script exhausted".
+    for route in routes.values():
+        route.cursor = 0
     provider = ProbedProvider(
         routes, log_path=str(log_path), needles=NEEDLES
     )

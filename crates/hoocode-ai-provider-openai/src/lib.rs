@@ -10,6 +10,10 @@
 pub mod request;
 
 use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
+
+/// Makes tool call ids unique within a message (see `finish_blocks`).
+static TOOL_CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 use futures_util::StreamExt;
 use hoocode_ai_stream::{
@@ -367,7 +371,14 @@ impl StreamState {
         let id = delta["id"].as_str().filter(|s| !s.is_empty());
         let mut block = stream_index.and_then(|i| self.tool_calls_by_index.get(&i).copied());
         if block.is_none() {
-            block = id.and_then(|id| self.tool_calls_by_id.get(id).copied());
+            // By id, unless that id's block is another stream index: a
+            // provider that repeats an id within a message means two calls.
+            block = id
+                .and_then(|id| self.tool_calls_by_id.get(id).copied())
+                .filter(|found| match (stream_index, self.stream_index.get(found)) {
+                    (Some(i), Some(j)) => i == *j,
+                    _ => true,
+                });
         }
         let idx = match block {
             Some(idx) => idx,
@@ -393,7 +404,7 @@ impl StreamState {
                     self.stream_index.insert(idx, i);
                 }
                 if let Some(id) = id {
-                    self.tool_calls_by_id.insert(id.to_string(), idx);
+                    self.tool_calls_by_id.entry(id.to_string()).or_insert(idx);
                 }
                 sender.push(AssistantMessageEvent::ToolCallStart {
                     index: idx,
@@ -409,7 +420,7 @@ impl StreamState {
             }
         }
         if let Some(id) = id {
-            self.tool_calls_by_id.insert(id.to_string(), idx);
+            self.tool_calls_by_id.entry(id.to_string()).or_insert(idx);
         }
         idx
     }
@@ -560,8 +571,25 @@ impl StreamState {
         }
     }
 
-    /// `finishBlock` for every block, in content order.
+    /// `finishBlock` for every block, in content order. A tool call with no
+    /// id, or one that repeats an earlier call's id in this message, gets a
+    /// new one (as the Google provider does): the loop, its results and a
+    /// background call's handle are all keyed by tool call id.
     fn finish_blocks(&mut self, sender: &AssistantMessageEventStream) {
+        let mut seen_ids = std::collections::HashSet::new();
+        for block in &mut self.output.content {
+            if let Content::ToolCall(block) = block {
+                if block.id.is_empty() || !seen_ids.insert(block.id.clone()) {
+                    block.id = format!(
+                        "{}_{}_{}",
+                        block.name,
+                        hoocode_ai_types::now_ms(),
+                        TOOL_CALL_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+                    );
+                    seen_ids.insert(block.id.clone());
+                }
+            }
+        }
         for idx in 0..self.output.content.len() {
             match &mut self.output.content[idx] {
                 Content::Text(_) => sender.push(AssistantMessageEvent::TextEnd {

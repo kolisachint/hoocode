@@ -88,8 +88,8 @@ async fn task_output_tool() {
 
     // lists all background subagents with status, without bodies
     inbox.clear();
-    inbox.start("t1", "explore#1", "explore");
-    inbox.start("t2", "explore#2", "explore");
+    inbox.start("t1", "explore#1", "explore", "");
+    inbox.start("t2", "explore#2", "explore", "");
     inbox.finish(
         "t2",
         &ok_result(
@@ -110,7 +110,7 @@ async fn task_output_tool() {
 
     // returns the body once, then reports it as already delivered
     inbox.clear();
-    inbox.start("t1", "explore#1", "explore");
+    inbox.start("t1", "explore#1", "explore", "");
     inbox.finish("t1", &ok_result("t1", "the full result body"));
     let first = run(&tool, json!({"task_id": "explore#1"}), None).unwrap();
     assert_eq!(text(&first), "the full result body");
@@ -121,7 +121,7 @@ async fn task_output_tool() {
 
     // reports status (not an error) for a still-running task
     inbox.clear();
-    inbox.start("t1", "explore#1", "explore");
+    inbox.start("t1", "explore#1", "explore", "");
     let r = run(&tool, json!({"task_id": "explore#1"}), None).unwrap();
     assert!(text(&r).contains("still running"));
     assert_subset(&r.details, json!({"status": "running", "ok": true}));
@@ -133,7 +133,7 @@ async fn task_output_tool() {
 
     // reports a failed task without throwing
     inbox.clear();
-    inbox.start("t1", "explore#1", "explore");
+    inbox.start("t1", "explore#1", "explore", "");
     inbox.fail("t1", "no heartbeat", TaskLifecycle::Stalled);
     let r = run(&tool, json!({"task_id": "explore#1"}), None).unwrap();
     assert!(text(&r).contains("stalled"));
@@ -142,7 +142,7 @@ async fn task_output_tool() {
 
     // wait:true blocks until the task finishes, then returns its body
     inbox.clear();
-    inbox.start("t1", "explore#1", "explore");
+    inbox.start("t1", "explore#1", "explore", "");
     // The waiter is signalled by `finish`, not by a timer: a fixed sleep here
     // was a coin flip on a loaded machine.
     tokio::spawn(async {
@@ -165,8 +165,8 @@ async fn task_output_tool() {
 
     // wait:true with no task_id is a barrier for all outstanding tasks
     inbox.clear();
-    inbox.start("t1", "explore#1", "explore");
-    inbox.start("t2", "explore#2", "explore");
+    inbox.start("t1", "explore#1", "explore", "");
+    inbox.start("t2", "explore#2", "explore", "");
     tokio::spawn(async {
         tokio::task::yield_now().await;
         subagent_inbox().finish("t1", &ok_result("t1", "one"));
@@ -1368,7 +1368,7 @@ async fn agent_output_cancel_stops_a_running_task() {
     let inbox = subagent_inbox();
     inbox.clear();
     let task_id = "cancel-running";
-    inbox.start(task_id, "explore#1", "explore");
+    inbox.start(task_id, "explore#1", "explore", "");
     // The dispatch future is what the Agent tool awaits; its result settles the inbox.
     let dispatch = {
         let pool = pool.clone();
@@ -1421,7 +1421,7 @@ async fn agent_output_cancel_on_a_finished_task_says_so() {
     let _serial = SERIAL.lock().await;
     let inbox = subagent_inbox();
     inbox.clear();
-    inbox.start("t1", "explore#1", "explore");
+    inbox.start("t1", "explore#1", "explore", "");
     inbox.finish("t1", &ok_result("t1", "already done"));
     let tool = create_task_output_tool_definition();
     let r = execute(
@@ -1475,7 +1475,7 @@ async fn agent_output_cancel_cannot_combine_with_wait_or_list() {
     let _serial = SERIAL.lock().await;
     let inbox = subagent_inbox();
     inbox.clear();
-    inbox.start("t1", "explore#1", "explore");
+    inbox.start("t1", "explore#1", "explore", "");
     let tool = create_task_output_tool_definition();
 
     let err = execute(
@@ -1824,8 +1824,8 @@ async fn parallel_background_calls_keep_the_handles_their_placeholders_named() {
     // The loop answers the calls one by one, in the order the model wrote them.
     let auth = agent_call("call_0", "audit the auth module");
     let db = agent_call("call_1", "audit the db layer");
-    let auth_placeholder = placeholder(&auth).unwrap();
-    let db_placeholder = placeholder(&db).unwrap();
+    let auth_placeholder = placeholder(&auth, None).unwrap();
+    let db_placeholder = placeholder(&db, None).unwrap();
     assert!(
         auth_placeholder.starts_with(
             "explore#1 (\"audit the auth module\") started in the background. Its handle is explore#1:"
@@ -1916,8 +1916,7 @@ async fn the_roster_and_a_cancel_name_each_run_by_handle_and_description() {
     ];
     let mut dispatches = Vec::new();
     for (task_id, label, description) in runs {
-        inbox.start(task_id, label, "explore");
-        inbox.describe(task_id, description);
+        inbox.start(task_id, label, "explore", description);
         let pool = pool.clone();
         dispatches.push(tokio::spawn(async move {
             pool.dispatch(
@@ -1984,6 +1983,248 @@ async fn the_roster_and_a_cancel_name_each_run_by_handle_and_description() {
         text(&roster)
     );
 
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    inbox.clear();
+}
+
+/// The moments between a call's placeholder and its execute (2026-10-30
+/// review): the run is listed, and a cancel stops it before it starts.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_is_listed_and_cancellable_from_its_placeholder_on() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    let pool = install_pool(&cwd, mock_child(&cwd, "Audited.", "complete", 0));
+    let placeholder = tool.background_placeholder.clone().unwrap();
+    let auth = agent_call("call_0", "audit the auth module");
+    let db = agent_call("call_1", "audit the db layer");
+    placeholder(&auth, None).unwrap();
+    placeholder(&db, None).unwrap();
+
+    // Neither execute has started: the roster still lists both.
+    let output = create_task_output_tool_definition();
+    let roster = execute(output.clone(), json!({"list": true}), ctx(&cwd))
+        .await
+        .unwrap();
+    let roster = text(&roster);
+    assert!(
+        roster.starts_with("2 background subagents (2 running):"),
+        "{roster}"
+    );
+    assert!(
+        roster.contains("- explore#2 (\"audit the db layer\")  running"),
+        "{roster}"
+    );
+    let status = execute(output.clone(), json!({"task_id": "explore#1"}), ctx(&cwd))
+        .await
+        .unwrap();
+    assert!(
+        text(&status).contains("is still running"),
+        "{}",
+        text(&status)
+    );
+
+    // Cancelled while starting: it is never dispatched.
+    let r = execute(
+        output.clone(),
+        json!({"task_id": "explore#2", "cancel": true}),
+        ctx(&cwd),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        text(&r),
+        "Cancelled explore#2 (\"audit the db layer\") before it started. Only this run was stopped."
+    );
+    let db_result = execute_call(&tool, &db, ctx(&cwd)).await.unwrap();
+    assert!(
+        text(&db_result).starts_with("explore#2 (\"audit the db layer\") cancelled ⊘"),
+        "{}",
+        text(&db_result)
+    );
+    assert!(
+        !cwd.join(DIR).join("dispatch").exists()
+            || std::fs::read_dir(cwd.join(DIR).join("dispatch"))
+                .unwrap()
+                .count()
+                == 0,
+        "the cancelled run was never dispatched"
+    );
+    let auth_result = execute_call(&tool, &auth, ctx(&cwd)).await.unwrap();
+    assert!(
+        text(&auth_result).starts_with("explore#1 (\"audit the auth module\") finished ✓"),
+        "{}",
+        text(&auth_result)
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}
+
+/// A call the execute refuses after its placeholder named a handle settles
+/// that handle `failed` with the reason, and the reason names the run.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_call_fails_the_handle_its_placeholder_named() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let tool = create_task_tool_definition(&cwd);
+    task_store().clear();
+    subagent_inbox().clear();
+    let pool = install_pool(&cwd, mock_child(&cwd, "unused", "complete", 0));
+    let mut call = agent_call("call_0", "find the bug");
+    call.arguments["subagent_type"] = json!("nope");
+    let said = (tool.background_placeholder.clone().unwrap())(&call, None).unwrap();
+    assert!(
+        said.starts_with("nope#1 (\"find the bug\") started"),
+        "{said}"
+    );
+    let err = execute_call(&tool, &call, ctx(&cwd)).await.unwrap_err();
+    assert!(
+        err.starts_with("nope#1 (\"find the bug\") failed ✗ — Unknown subagent_type: \"nope\""),
+        "{err}"
+    );
+    let output = create_task_output_tool_definition();
+    let status = execute(output, json!({"task_id": "nope#1"}), ctx(&cwd))
+        .await
+        .unwrap();
+    assert!(
+        text(&status).starts_with("nope#1 (\"find the bug\") failed ✗ — Unknown subagent_type"),
+        "{}",
+        text(&status)
+    );
+    assert_subset(&status.details, json!({"status": "failed"}));
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    task_store().clear();
+    subagent_inbox().clear();
+}
+
+/// A cancel asked for after the execute bound the run but before the pool
+/// holds it (where `pool.cancel` misses) still stops the run once it lands.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancel_asked_before_the_pool_holds_the_run_stops_it() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let pool = install_pool(&cwd, per_task_sleeper(&cwd));
+    let inbox = subagent_inbox();
+    inbox.clear();
+    inbox.start("late-run", "explore#1", "explore", "audit");
+    assert!(matches!(
+        inbox.request_cancel(None, "explore#1"),
+        Some(hoocode_code_subagents::inbox::CancelAsk::Running(_))
+    ));
+    assert!(!pool.cancel("late-run"), "the pool does not hold it yet");
+    let dispatch = {
+        let pool = pool.clone();
+        async move {
+            tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+            pool.dispatch(
+                "audit",
+                DispatchOptions {
+                    force_agent: Some("explore".into()),
+                    task_id: Some("late-run".into()),
+                    background: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+        }
+    };
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        cancel_on_abort(&pool, "late-run", None, dispatch),
+    )
+    .await
+    .expect("the run was stopped, not left to sleep")
+    .unwrap();
+    assert_eq!(
+        result.result.and_then(|r| r.status),
+        Some(ResultStatus::Cancelled)
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    inbox.clear();
+}
+
+/// After `--resume` in a new process: an old handle says it belongs to an
+/// earlier process, a new run does not reuse it, and another session's runs
+/// are not listed.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_old_handle_after_resume_is_named_as_an_earlier_run() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let pool = install_pool(&cwd, mock_child(&cwd, "unused", "complete", 0));
+    let inbox = subagent_inbox();
+    inbox.clear();
+    let session_file = cwd.join("resumed.jsonl");
+    std::fs::write(
+        &session_file,
+        "{\"content\":\"explore#1 (\\\"audit\\\") finished\"}\n",
+    )
+    .unwrap();
+    let resumed = ToolContext {
+        session_file: Some(session_file.clone()),
+        ..ctx(&cwd)
+    };
+    inbox.start_in(
+        None,
+        "other-session-run",
+        "explore#7",
+        "explore",
+        "elsewhere",
+    );
+
+    let output = create_task_output_tool_definition();
+    let status = execute(
+        output.clone(),
+        json!({"task_id": "explore#1"}),
+        resumed.clone(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        text(&status).starts_with("explore#1 ran in an earlier process and is not running now."),
+        "{}",
+        text(&status)
+    );
+    let err = execute(
+        output.clone(),
+        json!({"task_id": "explore#1", "cancel": true}),
+        resumed.clone(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        err.starts_with("explore#1 ran in an earlier process"),
+        "{err}"
+    );
+    let roster = execute(output, json!({"list": true}), resumed.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        text(&roster),
+        "No background subagents have been dispatched."
+    );
+
+    let tool = create_task_tool_definition(&cwd);
+    let said = (tool.background_placeholder.clone().unwrap())(
+        &agent_call("call_0", "audit again"),
+        Some(&resumed),
+    )
+    .unwrap();
+    assert!(said.starts_with("explore#2 (\"audit again\")"), "{said}");
     pool.dispose();
     set_subagent_pool_for_testing(None);
     inbox.clear();
