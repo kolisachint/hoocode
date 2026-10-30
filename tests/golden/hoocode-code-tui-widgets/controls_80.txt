@@ -1,7 +1,9 @@
-┏━ CONTROLS · ?   plain   ctrl   alt  116 bindings ━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
+┏━ CONTROLS · ?   plain   ctrl   alt  118 bindings ━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
 ┃▸                                                                             ┃
 ┃  up  Move cursor up                                                          ┃
 ┃  down  Move cursor down                                                      ┃
+┃  shift+up  Previous prompt from history                                      ┃
+┃  shift+down  Next prompt from history                                        ┃
 ┃  left  Move cursor left                                                      ┃
 ┃  right  Move cursor right                                                    ┃
 ┃  alt+left  Move cursor word left                                             ┃
@@ -52,7 +54,7 @@
 ┃  ctrl+t  Toggle thinking blocks                                              ┃
 ┃  alt+l  Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty ta[┃
 ┃  shift+alt+l  Cycle task panel view backward                                 ┃
-┃  ctrl+g  Focus the task panel (again returns to the prompt)                  ┃
+┃  ctrl+g  Show or hide the task panel                                         ┃
 ┃  alt+z  Toggle chrome density (full ↔ compact)                               ┃
 ┃  shift+alt+z  Toggle chrome density (full ↔ compact), backward               ┃
 ┃  pageup  Scroll the transcript up a page (pins the view)                     ┃
@@ -62,7 +64,7 @@
 ┃  ctrl+r  Search the transcript                                               ┃
 ┃  ctrl+up  Jump to your previous message                                      ┃
 ┃  ctrl+down  Jump to your next message                                        ┃
-┃  shift+up  Scroll up a line; from the prompt, pins the view                  ┃
+┃  shift+up  Scroll up a line (pinned view)                                    ┃
 ┃  shift+down  Scroll down a line (pinned view)                                ┃
 ┃  alt+h  Resume a session from history                                        ┃
 ┃  alt+w  Change working directory (move to another repo without quitting)     ┃
@@ -76,8 +78,8 @@
 ┃  /  Search the transcript (pinned view)                                      ┃
 ┃  n  Next search match (pinned view)                                          ┃
 ┃  p  Previous search match (pinned view)                                      ┃
-┃  tab  Task panel: next tab                                                   ┃
-┃  shift+tab  Task panel: previous tab                                         ┃
+┃  right  Task panel: next tab                                                 ┃
+┃  left  Task panel: previous tab                                              ┃
 ┃  up  Task panel: pick the row above                                          ┃
 ┃  down  Task panel: pick the row below                                        ┃
 ┃  enter  Task panel: open the picked row                                      ┃
@@ -346,12 +348,16 @@ r110 c0 fg=#9b8cff
 r110 c79 fg=#9b8cff
 r111 c0 fg=#9b8cff
 r111 c79 fg=#9b8cff
-r112 c0-1 fg=#9b8cff
-r112 c3-5 fg=#989898
-r112 c6-14 fg=#a8a8a8
-r112 c15-18 fg=#989898
-r112 c19-28 fg=#a8a8a8
-r112 c29-31 fg=#989898
-r112 c32-37 fg=#a8a8a8
-r112 c39-75 fg=#9b8cff
-r112 c78-79 fg=#9b8cff
+r112 c0 fg=#9b8cff
+r112 c79 fg=#9b8cff
+r113 c0 fg=#9b8cff
+r113 c79 fg=#9b8cff
+r114 c0-1 fg=#9b8cff
+r114 c3-5 fg=#989898
+r114 c6-14 fg=#a8a8a8
+r114 c15-18 fg=#989898
+r114 c19-28 fg=#a8a8a8
+r114 c29-31 fg=#989898
+r114 c32-37 fg=#a8a8a8
+r114 c39-75 fg=#9b8cff
+r114 c78-79 fg=#9b8cff

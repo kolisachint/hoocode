@@ -159,6 +159,16 @@ pub const TUI_KEYBINDINGS: &[(&str, &[&str], &str)] = &[
     ("tui.editor.cursorUp", &["up"], "Move cursor up"),
     ("tui.editor.cursorDown", &["down"], "Move cursor down"),
     (
+        "tui.editor.historyPrevious",
+        &["shift+up"],
+        "Previous prompt from history",
+    ),
+    (
+        "tui.editor.historyNext",
+        &["shift+down"],
+        "Next prompt from history",
+    ),
+    (
         "tui.editor.cursorLeft",
         &["left", "ctrl+b"],
         "Move cursor left",

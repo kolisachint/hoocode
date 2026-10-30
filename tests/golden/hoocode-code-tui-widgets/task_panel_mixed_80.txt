@@ -1,24 +1,43 @@
-┊ ● Read the migration plan                                                 0.0s
-┊ ◉ Port the task panel renderer                                            0.0s
-┊ ○ Add golden snapshots
-┊ ⊗ Run the parity check                                                    0.0s
-┊ ⊘ Drop the old lens tabs
+┏━ FLIGHT PLAN  1/5  agents 0 · sats 0 ━━━━━━━━━━━━━━━━━━━━━━ /tasks · ctrl+g ━┓
+┃  [Plan 1/5]                                                                  ┃
+┃  ● Read the migration plan                                               0.0s┃
+┃  ◉ Port the task panel renderer                                          0.0s┃
+┃  ○ Add golden snapshots                                                      ┃
+┃  ⊗ Run the parity check                                                  0.0s┃
+┃  ⊘ Drop the old lens tabs                                                    ┃
+┗━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
-r0 c0 fg=#a8a8a8
-r0 c2 fg=#b5bd68
-r0 c4-26 fg=#a8a8a8
-r0 c76-79 fg=#a8a8a8
-r1 c0 fg=#a8a8a8
-r1 c2 fg=#5cc8bb
-r1 c4-31 bold
-r1 c76-79 fg=#a8a8a8
-r2 c0 fg=#a8a8a8
-r2 c2 fg=#a8a8a8
-r2 c4-23 fg=#989898
-r3 c0 fg=#a8a8a8
-r3 c2 fg=#d58181
-r3 c4-23 fg=#d58181
-r3 c76-79 fg=#a8a8a8
-r4 c0 fg=#a8a8a8
-r4 c2 fg=#989898
-r4 c4-25 fg=#989898
+r0 c0-1 fg=#9b8cff
+r0 c3-37 fg=#9b8cff bold
+r0 c39-60 fg=#9b8cff
+r0 c62-76 fg=#a8a8a8
+r0 c78-79 fg=#9b8cff
+r1 c0 fg=#9b8cff
+r1 c3-12 fg=#5cc8bb bold
+r1 c79 fg=#9b8cff
+r2 c0 fg=#9b8cff
+r2 c3 fg=#b5bd68
+r2 c5-27 fg=#a8a8a8
+r2 c75-78 fg=#a8a8a8
+r2 c79 fg=#9b8cff
+r3 c0 fg=#9b8cff
+r3 c3 fg=#5cc8bb
+r3 c5-32 bold
+r3 c75-78 fg=#a8a8a8
+r3 c79 fg=#9b8cff
+r4 c0 fg=#9b8cff
+r4 c3 fg=#a8a8a8
+r4 c5-24 fg=#989898
+r4 c79 fg=#9b8cff
+r5 c0 fg=#9b8cff
+r5 c3 fg=#d58181
+r5 c5-24 fg=#d58181
+r5 c75-78 fg=#a8a8a8
+r5 c79 fg=#9b8cff
+r6 c0 fg=#9b8cff
+r6 c3 fg=#989898
+r6 c5-26 fg=#989898
+r6 c79 fg=#9b8cff
+r7 c0-1 fg=#9b8cff
+r7 c4-75 fg=#9b8cff
+r7 c78-79 fg=#9b8cff

@@ -12,6 +12,8 @@ const GLOBAL_SCOPE: &[&str] = &[
     "app.subagent.attach",
     "tui.editor.cursorUp",
     "tui.editor.cursorDown",
+    "tui.editor.historyPrevious",
+    "tui.editor.historyNext",
     "tui.editor.cursorLeft",
     "tui.editor.cursorRight",
     "tui.editor.cursorWordLeft",

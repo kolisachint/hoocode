@@ -41,7 +41,7 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | HUD row: `◭ HOOCODE`, mode chip (`BUILD` accent, `PLAN` violet), folder dim · right, in order: `◈ N agent` (violet, while agents run), `⌁ N sat` (accent, while satellites are up), `SHIP` + model + ` · effort` (reasoning models only; `thinking off` when off), `FUEL` 8-cell bar + percent (acc below 70%, warn below 90%, err from 90%), `CR` + spend · hull paint name (`/color`, M8 e5) ahead of the ship, row background takes the hull tint, paint persisted per session (`SessionInfo` hull, restored on render) · narrow (80 cols): drops the folder first, then the ship; mode, fuel and credits stay · other cuts trim the left part first with `…` at its end, the right part from the right · the setting read, the tree plan | HUD | `hoocode-code-tui-app/src/hud.rs` (`hud_text`, `hud_runs`, `hud_component`, `read_hud`, `fuel_bar`, `fuel_token`, `fullscreen_enabled`, `tree_plan`, paint in `hull_paint.rs` over `footer_data.rs`); drawn with `hoocode-tui-ratatui` |
 | Startup banner | wordmark | `hoocode-code-tui-app/src/wordmark.rs` |
 | Startup resource listing (skills, commands, agents, MCP, context; no themes, extensions or canvases cells, N12) | resource display | `hoocode-code-tui-app/src/resource_display.rs`, `expandable_text.rs` |
-| Task panel: tabs Plan · Agents · Shell · Schedule · MCP (a tab shows while it has rows), a count per tab; focused (Ctrl+G) it is the FLIGHT PLAN console (M7, ratatui): `FLIGHT PLAN done/total`, agents/sats on the right, the waypoint track over the plan rows, the tab strip, spec hint foot; unfocused it draws nothing in radar (the flight log carries the work), keys and events unchanged in [Task panel](#task-panel) | task panel | `code-tui-widgets/src/task_panel.rs` (tabs, rows, keys, `render_flight_plan`); focus and events in `hoocode-code-tui-app/src/mode/task_panel.rs` |
+| Task panel: tabs Plan · Agents · Shell · Schedule · MCP (a tab shows while it has rows), a count per tab; always the FLIGHT PLAN console (M7, ratatui): `FLIGHT PLAN done/total`, agents/sats on the right, the tab strip, the waypoint rows, the hint foot while focused; shown in peek and full, hidden in radar, Ctrl+G toggles, Up from the prompt's first line takes the keyboard; see [Task panel](#task-panel) | task panel | `code-tui-widgets/src/task_panel.rs` (tabs, rows, keys, `render_flight_plan`); Ctrl+G, the Up hand-off and events in `hoocode-code-tui-app/src/mode/task_panel.rs` |
 | Notification band (inline) and transmission toasts (fullscreen, M8 e4) | notification panel, tips, startup update notice | `hoocode-code-tui-app/src/notification_panel.rs` (newest first; `set_overlay` quiets the band, `toast_lines` feeds the float), `tips.rs`; the update notice is polled by `poll_update_notice` in `mode/events.rs` from `hoocode-code-update`. The toast is a 46-wide round frame titled `● TRANSMISSION` with a `▔` drain row (`transmission.rs`, ratatui), floated top-right over the transcript by `tui-render/src/tui.rs` (`set_toast_provider`, `float_toast_line`) |
 | Completion bell (`chimeOnTurnComplete`): one `\x07` when a turn over 10 s ends (not after an abort) or when `AskUserQuestion` opens (not MCP elicitation forms); repeats within 5 s dropped | `hoocode-code-tui-app/src/chime.rs` (pure timing, `TurnTimer` set at prompt submit); rung by `ring_chime` and `finish_turn_chime` in `mode/events.rs`, and at the `AskOptions` dialog in `mode/mod.rs` when its request has `chime` set (`dialog_bridge.rs`) |
 | Progress bar | progress bar, startup progress | `hoocode-code-tui-app/src/progress_bar.rs`, `startup_progress.rs` |
@@ -195,8 +195,8 @@ The TUI owns the mechanism; the app owns which key does what.
 | Wheel | Scroll; wheel up pins | Same |
 | Scrollbar click | Pinned only: page toward the click | Same |
 | Click on a link | Opens it in the browser (an OSC 8 link or a bare `http(s)://` / `mailto:` URL; `Tui::on_hyperlink` set to `login_controller::open_url` in `mode/mod.rs`). `HOOCODE_MOUSE=0` hands clicks back to the terminal | Same |
-| ↑ / ↓ | Pinned: one line over an empty prompt; with text, the prompt. Live: the prompt | Picker |
-| Shift+↑ / Shift+↓ | Live: Shift+↑ pins one line up; Shift+↓ does nothing. Pinned: one line | Picker |
+| ↑ / ↓ | Pinned: one line over an empty prompt; with text, the prompt. Live: the prompt, which moves its cursor; ↑ on the first line goes to the task panel when it is shown and has rows | Picker |
+| Shift+↑ / Shift+↓ | Live: the prompt's history (older / newer). Pinned: one line | Picker |
 | Ctrl+↑ / Ctrl+↓ | Previous / next user message | Picker |
 | Ctrl+R | Pin at bottom, open search | Picker |
 | `/` | Pinned: search in view. Live: types `/` | Picker |
@@ -209,26 +209,30 @@ A key that is not a scroll key un-pins at the prompt, then does its usual job.
 
 ## Task panel
 
-One tab per kind of task: **Plan** (TodoWrite items, each linked run nested under its item), **Agents** (the subagent forest), **Schedule** (scheduled jobs, one row each, with `next in …`), **Shell** (background shell jobs, one row each: running with Abort, then done, failed with its exit status, or killed; the rows are `shell:<id>`, published by `hoocode-code-tool-bash` `jobs.rs`), **MCP** (MCP servers and calls). A tab shows only while it has rows. Unfocused, the panel shows the current tab's rows and one count per tab on the strip (`Plan 1/3  Agents 1/1`). In the compact density (`Summary`, one row) it shows the plan line on the left (`Plan 3/5  ◉ <running item>`, cut with `…`) and the other tabs' counts on the right; the plan is rebuilt from the session's last successful TodoWrite on resume, reload and tree navigation (`restore_plan` in `hoocode-code-tools-optin`, called from `render_initial_messages`). Adding a kind means a `TaskPanelView` variant, its label, and a rule in `lens_rows`.
+One tab per kind of task: **Plan** (TodoWrite items, each linked run nested under its item), **Agents** (the subagent forest; background runs too, each a row like a Shell job), **Schedule** (scheduled jobs, one row each, with `next in …`), **Shell** (background shell jobs, one row each: running with Abort, then done, failed with its exit status, or killed; the rows are `shell:<id>`, published by `hoocode-code-tool-bash` `jobs.rs`), **MCP** (MCP servers and calls). A tab shows only while it has rows. The panel is always the FLIGHT PLAN console (`render_flight_plan`): the title counts the plan and the live agents and satellites, the tab strip is its first row (the shown tab in brackets, `[Agents 1/3]`), and the rows follow. It draws the same at every density. The plan is rebuilt from the session's last successful TodoWrite on resume, reload and tree navigation (`restore_plan` in `hoocode-code-tools-optin`, called from `render_initial_messages`). Adding a kind means a `TaskPanelView` variant, its label, and a rule in `lens_rows`.
+
+**Shown or hidden.** Shown by default in peek and full, hidden in radar (the flight log carries the work there). Ctrl+G (`app.panel.focus`) toggles it in every view. The toggle is a per-session choice for the current view: a view switch (Ctrl+O, Alt+O, the settings) clears it, so the new view starts from its default (`TaskPanelComponent::set_radar`, `is_shown`, `toggle_shown`). With no rows the panel draws nothing either way. The `›` pick marker and the hint foot show only while the keyboard is in the panel.
+
+**Keyboard.** The prompt keeps the keyboard. Up on the prompt's first visual line (no autocomplete list open, not pinned) hands it to the panel on its bottom row (`enter_task_panel_from_prompt`, from `Action::PanelUp`); a hidden or empty panel leaves the key to the prompt. Shift+Up and Shift+Down are the prompt's history (`tui.editor.historyPrevious` / `historyNext`); the plain arrows only move the cursor.
 
 | Concern | Where |
 |---|---|
-| Tabs, rows, pick, strip, hint line, cancel arming, the tick (`ticking`, while any row in any tab is running) | `code-tui-widgets/src/task_panel.rs` (`TaskPanelComponent`, `RowModel`, `PanelEvent`) |
-| Focus (Ctrl+G), what the app does with events (`Open`, `Cancel`, `Exit`), the pool cancel | `hoocode-code-tui-app/src/mode/task_panel.rs`; events drained in `mode/mod.rs` `run` |
+| Tabs, rows, pick, tab strip, hint foot, cancel arming, shown/hidden, the tick (`ticking`, while any row in any tab is running) | `code-tui-widgets/src/task_panel.rs` (`TaskPanelComponent`, `RowModel`, `PanelEvent`, `render_flight_plan`) |
+| Ctrl+G, the Up hand-off, what the app does with events (`Open`, `Cancel`, `Exit`), the pool cancel | `hoocode-code-tui-app/src/mode/task_panel.rs`; `Action::PanelToggle` / `PanelUp` in `mode/input.rs`; events drained in `mode/mod.rs` `run` |
 | Keys (`app.panel.*`) | `hoocode-code-tui-keybindings/src/keybindings.rs`; listed on `/hotkeys` (`code-tui-widgets/src/controls.rs`) |
 
-**Keys.** Ctrl+G at the prompt focuses the panel (with no rows it does nothing and says so). Once focused, the panel takes the keyboard (`Tui::set_focus`).
+**Keys.** Once the panel has the keyboard (`Tui::set_focus`), its keys are:
 
 | Key | Focused panel |
 |---|---|
-| `app.panel.focus` (Ctrl+G) | Back to the prompt (a toggle) |
-| `app.panel.nextTab` (Tab) / `app.panel.prevTab` (Shift+Tab) | Next / previous tab with rows (wraps) |
-| `app.panel.up` / `app.panel.down` (arrows) | Pick the row above / below (ends clamp). The pick is kept by row id across rebuilds |
+| `app.panel.focus` (Ctrl+G) | Hides the panel and returns to the prompt |
+| `app.panel.up` / `app.panel.down` (arrows) | Pick the row above / below. Up clamps at the top; Down past the last row returns to the prompt. The pick is kept by row id across rebuilds |
+| `app.panel.prevTab` (Left, Shift+Tab) / `app.panel.nextTab` (Right, Tab) | Previous / next tab with rows (wraps) |
 | `app.panel.open` (Enter) | A row with an action (MCP server `Login`) queues `Perform`, which `TaskStore::perform` runs (`/mcp login` path). A subagent row queues `Open`, which attaches to its run (`attach_run`, T3.3). A shell row queues `Open`, which attaches to the job's output (`attach_job`, T5.3). Other rows do nothing on Enter |
 | `app.panel.cancel` (`x`) | First press arms the row (the right column says `press x again to cancel`). Second: an Abort row (MCP call, running shell job) queues `Perform(Abort)`; a running subagent run queues `Cancel`, through `SubagentPool::cancel`. Other rows ignore it. Any other key disarms |
 | `app.panel.exit` (Esc) | Disarms a pending cancel, else back to the prompt |
 
-**Scroll and density.** Focus shows the strip even with one tab, the pick marker `›`, and a hint line, and shows full rows even in the summary density.
+**Not yet covered by a test:** the pinned view keeping Up (`enter_task_panel_from_prompt` checks `scroll_pinned`), and the Up hand-off through the whole app (only the prompt's key decision is unit-tested, `mode/input.rs` tests).
 
 ## Attached view (subagent transcript or shell output)
 

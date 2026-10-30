@@ -404,7 +404,9 @@ impl Editor {
         self.state.lines.len() == 1 && self.state.lines[0].is_empty()
     }
 
-    fn is_on_first_visual_line(&self) -> bool {
+    /// The cursor is on the first visual line (the app's Up key leaves the
+    /// prompt from here).
+    pub fn is_on_first_visual_line(&self) -> bool {
         let visual_lines = self.build_visual_line_map(self.last_width);
         self.find_current_visual_line(&visual_lines) == 0
     }
@@ -1920,12 +1922,20 @@ impl Editor {
             return;
         }
 
-        // Arrow keys (with history).
+        // Prompt history: shift+up is older, shift+down newer. The plain arrows
+        // only move the cursor.
+        if kb.matches(&data, "tui.editor.historyPrevious") {
+            self.navigate_history(-1);
+            return;
+        }
+        if kb.matches(&data, "tui.editor.historyNext") {
+            self.navigate_history(1);
+            return;
+        }
+
+        // Arrow keys.
         if kb.matches(&data, "tui.editor.cursorUp") {
-            if self.is_editor_empty() || (self.history_index > -1 && self.is_on_first_visual_line())
-            {
-                self.navigate_history(-1);
-            } else if self.is_on_first_visual_line() {
+            if self.is_on_first_visual_line() {
                 self.move_to_line_start();
             } else {
                 self.move_cursor(-1, 0);
@@ -1933,9 +1943,7 @@ impl Editor {
             return;
         }
         if kb.matches(&data, "tui.editor.cursorDown") {
-            if self.history_index > -1 && self.is_on_last_visual_line() {
-                self.navigate_history(1);
-            } else if self.is_on_last_visual_line() {
+            if self.is_on_last_visual_line() {
                 self.move_to_line_end();
             } else {
                 self.move_cursor(1, 0);

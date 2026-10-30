@@ -43,7 +43,7 @@ use hoocode_code_tui_widgets::background_notice::BackgroundNoticeComponent;
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
 use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
-use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity};
+use hoocode_code_tui_widgets::task_panel::TaskPanelComponent;
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::UserMessageComponent;
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle, Loader, Spacer};
@@ -55,7 +55,7 @@ use hoocode_tui_terminal::Terminal;
 use crate::changelog::changelog_for_display;
 use crate::chime::{ChimeDebounce, TurnTimer, BELL};
 use crate::chrome_layout::{
-    ChromeLayoutController, ChromeSurfaces, FooterLayout, TasksLayout, SMALL_TERMINAL_ROWS,
+    ChromeLayoutController, ChromeSurfaces, FooterLayout, SMALL_TERMINAL_ROWS,
 };
 use crate::clearance_queue::ClearanceQueue;
 use crate::comms_frame::{CommsFrame, CommsState, InputStyle, MissionOutcome};
@@ -845,7 +845,6 @@ impl Mode {
         task_panel_component.set_radar(tool_output_view == ToolOutputView::Radar);
         let task_panel = handle(task_panel_component);
         let tasks_slot = handle(Slot::new(as_component(&task_panel)));
-        let panel_for_density = task_panel.clone();
         let footer_for_density = footer.clone();
         let density = chrome_density.unwrap_or(if size.get().1 < SMALL_TERMINAL_ROWS {
             ChromeDensity::Compact
@@ -865,15 +864,9 @@ impl Mode {
                             FooterDensity::Full
                         })
                 }),
-                set_tasks_density: Box::new(move |d| {
-                    panel_for_density
-                        .borrow_mut()
-                        .set_density(if d == TasksLayout::Summary {
-                            TaskPanelDensity::Summary
-                        } else {
-                            TaskPanelDensity::Full
-                        })
-                }),
+                // The panel draws the same console at every density, so the
+                // ledger's density has nothing to set.
+                set_tasks_density: Box::new(|_| {}),
             },
             density,
         );

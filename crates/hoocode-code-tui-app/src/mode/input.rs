@@ -94,8 +94,11 @@ pub(super) enum Action {
     /// `app.tasks.cycleForward` / `cycleBackward`: step the task panel tab.
     TasksForward,
     TasksBackward,
-    /// `app.panel.focus`: give the task panel the keyboard.
-    PanelFocus,
+    /// `app.panel.focus` (Ctrl+G): show or hide the task panel.
+    PanelToggle,
+    /// Up on the prompt's first line, with this raw input: the task panel takes
+    /// the keyboard when it is shown and has rows; else the prompt keeps the key.
+    PanelUp(String),
     /// `app.subagent.attach`: attach to the newest Agent block's run.
     SubagentAttach,
 }
@@ -104,7 +107,7 @@ pub(super) enum Action {
 const EDITOR_ACTIONS: [(&str, Action); 31] = [
     ("app.tasks.cycleForward", Action::TasksForward),
     ("app.tasks.cycleBackward", Action::TasksBackward),
-    ("app.panel.focus", Action::PanelFocus),
+    ("app.panel.focus", Action::PanelToggle),
     ("app.subagent.attach", Action::SubagentAttach),
     ("app.message.followUp", Action::FollowUp),
     ("app.message.dequeue", Action::Dequeue),
@@ -194,6 +197,17 @@ impl Component for CustomEditor {
         }
         if kb.matches(data, "app.exit") && self.editor.get_text().is_empty() {
             self.actions.borrow_mut().push(Action::Exit);
+            return;
+        }
+        // Up on the first visual line leaves the prompt for the task panel, unless
+        // the autocomplete list is open (Up moves through its items).
+        if kb.matches(data, "tui.editor.cursorUp")
+            && !self.editor.is_showing_autocomplete()
+            && self.editor.is_on_first_visual_line()
+        {
+            self.actions
+                .borrow_mut()
+                .push(Action::PanelUp(data.to_string()));
             return;
         }
         let extra = [("app.thinking.cycleBackward", Action::ThinkingBackward)];
@@ -882,7 +896,8 @@ impl Mode {
                     &format!("Task panel: {}", view.label()),
                 );
             }
-            Action::PanelFocus => self.focus_task_panel(),
+            Action::PanelToggle => self.toggle_task_panel(),
+            Action::PanelUp(data) => self.enter_task_panel_from_prompt(&data),
             Action::SubagentAttach => self.attach_newest_agent_block(),
             Action::AskOptionsDone(answers) => self.hide_ask_options(answers),
             Action::ClearanceDone(choice) => self.close_clearance(choice),
@@ -910,7 +925,65 @@ impl Mode {
 
 #[cfg(test)]
 mod tests {
-    use super::can_hail;
+    use super::*;
+    use hoocode_code_tui_theme::{get_editor_theme, init_theme};
+    use hoocode_tui_components::{EditorHost, EditorOptions};
+
+    const UP: &str = "\x1b[A";
+    const SHIFT_UP: &str = "\x1b[1;2A";
+    const SHIFT_DOWN: &str = "\x1b[1;2B";
+
+    fn prompt() -> CustomEditor {
+        init_theme(Some("dark"), false);
+        AppKeybindingsManager::default().install();
+        CustomEditor {
+            editor: Editor::new(
+                EditorHost::default(),
+                get_editor_theme(),
+                EditorOptions::default(),
+            ),
+            actions: Rc::new(RefCell::new(Vec::new())),
+        }
+    }
+
+    /// Renders once, so the editor knows its width (the cursor's visual line
+    /// needs it), then feeds `data`.
+    fn press(prompt: &mut CustomEditor, data: &str) {
+        prompt.render(80);
+        prompt.handle_input(data);
+    }
+
+    fn queued(prompt: &CustomEditor) -> Vec<Action> {
+        prompt.actions.borrow().clone()
+    }
+
+    #[test]
+    fn up_on_the_first_line_of_the_prompt_asks_for_the_task_panel() {
+        let mut prompt = prompt();
+        press(&mut prompt, UP);
+        assert_eq!(queued(&prompt), vec![Action::PanelUp(UP.to_string())]);
+    }
+
+    #[test]
+    fn up_inside_a_multi_line_prompt_moves_the_cursor_not_the_panel() {
+        let mut prompt = prompt();
+        prompt.editor.set_text("one\ntwo");
+        press(&mut prompt, UP);
+        assert!(queued(&prompt).is_empty(), "the cursor moves up a line");
+        press(&mut prompt, UP);
+        assert_eq!(queued(&prompt), vec![Action::PanelUp(UP.to_string())]);
+    }
+
+    #[test]
+    fn shift_up_is_prompt_history_not_the_task_panel() {
+        let mut prompt = prompt();
+        prompt.editor.add_to_history("an earlier prompt");
+        press(&mut prompt, SHIFT_UP);
+        assert!(queued(&prompt).is_empty());
+        assert_eq!(prompt.editor.get_text(), "an earlier prompt");
+        press(&mut prompt, SHIFT_DOWN);
+        assert_eq!(prompt.editor.get_text(), "");
+    }
 
     #[test]
     fn hail_needs_a_fully_idle_session() {
