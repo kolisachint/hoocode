@@ -26,8 +26,8 @@ The design is [radar-r3.md](radar-r3.md). Where an earlier radar page disagrees,
 | 3 | Thinking duration | **None.** Thinking is `✻ gist`, one dim line, no duration. |
 | 4 | `N failed` | **Not on lines.** The `⊗` mark and the `HIT` snippet say it. The hit total is on the turn-end row only. |
 | 5 | Folded missions | **Full answer shown.** A folded mission is header, one summary line, the full answer and the turn-end row. |
-| 6 | WAITING | **Shown.** Recommended (not yet answered by the user): derive it from the held block, not a new `FlightMark` variant (radar-r3.md, Waiting state). |
+| 6 | WAITING | **Shown, derived (as built, 2026-10-30).** The turn end reads `◆ WAITING · approve <tool> <subject>` while a call waits for approval, its own or a subagent's. It is derived at render from the held call (`FlightStats::awaiting`), not stored and not a `FlightMark` variant, so it is never stale. |
 | 7 | Open vs folded | **Live and latest finished missions are open.** Older finished ones fold. |
 | 8 | Mark for a landed mission with a hit | **`●`,** as in peek and full. For the mission mark, red is only for `DID NOT LAND`. |
 | 9 | Step gutter | **None.** A step number appears only on a hit row. |
-| 10 | Build | **Not yet** (no user answer on build order).  The card is Phase R in [tui-activity.md](tui-activity.md), after Phase S. Open questions in radar-r3.md (time format, hits on the live row, `◆` glyph, subagent holds) are for the user. |
+| 10 | Build | **Built 2026-10-30** (Phase R, steps R.1 to R.3, radar only). The four open questions of radar-r3.md are answered and built. |

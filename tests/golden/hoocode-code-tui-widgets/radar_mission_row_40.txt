@@ -1,13 +1,18 @@
- M2 ●        4 steps  1✕   0.6s  $0.006
-       review the wrap helper for
-       overflow bugs
+
+▲ M2  review the wrap helper for
+      overflow bugs
+   ╰ ● LANDED · 4 steps · 1 hit · 0.6s…
 --- styles ---
-r0 c1-2 fg=#9b8cff
-r0 c4 fg=#b5bd68
-r0 c13 fg=#e5e5e7
-r0 c14-19 fg=#989898
-r0 c22-23 fg=#a8a8a8
-r0 c27-30 fg=#989898
-r0 c33-38 fg=#989898
-r1 c7-32 fg=#e5e5e7 bold
-r2 c7-19 fg=#e5e5e7 bold
+r1 c0 fg=#9b8cff bold
+r1 c2-3 fg=#9b8cff bold
+r1 c6-31 fg=#e5e5e7 bold
+r2 c6-18 fg=#e5e5e7 bold
+r3 c3 fg=#a8a8a8
+r3 c5 fg=#b5bd68
+r3 c7-12 fg=#b5bd68 bold
+r3 c13-15 fg=#989898
+r3 c16-22 fg=#a8a8a8
+r3 c23-25 fg=#989898
+r3 c26-30 fg=#a8a8a8
+r3 c31-33 fg=#989898
+r3 c34-37 fg=#a8a8a8

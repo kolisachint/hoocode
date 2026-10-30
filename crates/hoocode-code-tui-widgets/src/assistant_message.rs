@@ -16,7 +16,7 @@ use hoocode_tui_render::{
 };
 use hoocode_tui_util::js_regex::is_js_space;
 
-use crate::radar::{self, HIT_INDENT, STEP_INDENT};
+use crate::radar::{self, STEP_INDENT};
 use crate::tool_chain::ToolChainComponent;
 use crate::tool_output_view::ToolOutputView;
 use crate::trajectory;
@@ -429,9 +429,8 @@ pub struct AssistantMessageComponent {
     rail: bool,
     /// The full stop: the Think row wraps its gist instead of cutting it.
     full: bool,
-    /// Radar (M5): the chain whose rows sit right above this message's
-    /// prose line. The prose reads that chain's last row when it renders,
-    /// so a row that turns into a hit later still moves the prose to 12.
+    /// The mission chain whose rows sit right above this message (M5). Peek
+    /// reads it for the blank row that opens the message.
     radar_above: Option<Weak<RefCell<ToolChainComponent>>>,
     /// Radar (M5): the mission (header number) this message belongs to; `None`
     /// before the first mission. The transcript groups prose by it.
@@ -613,8 +612,8 @@ impl AssistantMessageComponent {
         }
     }
 
-    /// Radar (M5): links the prose line to the chain above it (`None` when
-    /// no mission chain precedes it).
+    /// Links the message to the mission chain above it (`None` when no
+    /// mission chain precedes it). Peek reads the link for the rail.
     pub fn set_radar_above(&mut self, chain: Option<Weak<RefCell<ToolChainComponent>>>) {
         self.rev = fresh_stamp();
         self.radar_above = chain;
@@ -646,23 +645,47 @@ impl AssistantMessageComponent {
     /// Radar (M5): shows or hides the message's prose line. Thinking's
     /// `✻ thought` line is not affected.
     pub fn set_radar_prose_shown(&mut self, shown: bool) {
-        self.rev = fresh_stamp();
-        self.radar_prose_shown = shown;
+        // Only a change moves the revision: the transcript refreshes this on
+        // every event, and an unchanged flag must not drop the render cache.
+        if self.radar_prose_shown != shown {
+            self.rev = fresh_stamp();
+            self.radar_prose_shown = shown;
+        }
     }
 
-    /// The prose line's indent: `HIT_INDENT` (12) when the chain above ends
-    /// in a hit row, otherwise `STEP_INDENT` (8) under the mission row.
-    fn radar_indent(&self) -> usize {
-        let after_hit = self
-            .radar_above
-            .as_ref()
-            .and_then(Weak::upgrade)
-            .is_some_and(|chain| chain.try_borrow().is_ok_and(|chain| chain.ends_in_hit()));
-        if after_hit {
-            HIT_INDENT
-        } else {
-            STEP_INDENT
-        }
+    /// Radar (R3): the message's thinking gist, one line, for its flight-log
+    /// thought row. `None` when the message has no thinking text.
+    pub fn radar_gist(&self) -> Option<String> {
+        self.last_message.as_deref().and_then(think_gist)
+    }
+
+    /// Radar (R3): the revision of the message, new whenever its content
+    /// changes. The transcript re-reads the answer only when it moves.
+    pub fn radar_revision(&self) -> u64 {
+        self.rev
+    }
+
+    /// Radar (R3): the message's answer lines, plain text, for the mission's
+    /// flight log. Empty when the message has no text.
+    pub fn radar_answer(&self) -> Vec<String> {
+        self.last_message
+            .as_deref()
+            .map(radar_prose)
+            .unwrap_or_default()
+    }
+
+    /// Radar (R3): why the message ended badly, without the `Error: ` prefix
+    /// (the DID NOT LAND row's reason). `None` for any other end.
+    pub fn radar_reason(&self) -> Option<String> {
+        self.last_message
+            .as_deref()
+            .and_then(end_reason)
+            .map(|reason| {
+                reason
+                    .strip_prefix("Error: ")
+                    .unwrap_or(&reason)
+                    .to_string()
+            })
     }
 
     /// The Think row's seconds: elapsed since the trace started while it
@@ -799,20 +822,24 @@ impl AssistantMessageComponent {
     /// or error reason after it, then its `✻ thought Ns` rows. A message with
     /// none of these renders nothing.
     fn render_radar(&mut self, width: u16, palette: &Palette) -> Vec<String> {
+        // A mission's thinking, answer and reason are drawn by its header
+        // (`radar::mission_rows`), so a message in a mission draws nothing.
+        if self.radar_mission.is_some() {
+            return Vec::new();
+        }
         let width = width as usize;
         let mut out = Vec::new();
         if self.radar_prose_shown {
             if let Some(message) = self.last_message.as_deref() {
-                let indent = self.radar_indent();
                 out.extend(radar::prose_rows(
                     &radar_prose(message),
-                    indent,
+                    STEP_INDENT,
                     palette.ink(),
                     width,
                 ));
                 if let Some(reason) = end_reason(message) {
                     let lines: Vec<String> = reason.lines().map(str::to_string).collect();
-                    out.extend(radar::prose_rows(&lines, indent, palette.err(), width));
+                    out.extend(radar::prose_rows(&lines, STEP_INDENT, palette.err(), width));
                 }
             }
         }
@@ -886,17 +913,13 @@ impl Component for AssistantMessageComponent {
     }
 
     /// A streaming message reads a live clock and changes with every delta:
-    /// no stamp. A settled one is drawn from its own state and, for the
-    /// radar and peek prose, from whether the chain above it still exists and
-    /// ends in a hit.
+    /// no stamp. A settled one is drawn from its own state and, for peek's
+    /// rail, from whether the chain above it still exists.
     fn render_stamp(&self) -> Option<u64> {
         if self.streaming {
             return None;
         }
-        let above = match self.radar_above.as_ref().and_then(Weak::upgrade) {
-            None => 0,
-            Some(chain) => 1 + u64::from(chain.try_borrow().ok()?.ends_in_hit()),
-        };
+        let above = u64::from(self.radar_above.as_ref().and_then(Weak::upgrade).is_some());
         Some(mix_stamps([self.rev, above]))
     }
 

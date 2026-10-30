@@ -705,7 +705,13 @@ pub fn landing_spans(
         pieces.push(steps_text(steps));
         pieces.push(hits_text(hits));
     }
-    pieces.extend([secs.to_string(), tokens.to_string(), cost.to_string()]);
+    // An empty piece (a live turn has no tokens or cost yet) is left out.
+    pieces.extend(
+        [secs, tokens, cost]
+            .into_iter()
+            .filter(|piece| !piece.is_empty())
+            .map(str::to_string),
+    );
     for piece in pieces {
         out.push(Span::styled(" · ".to_string(), palette.dim()));
         out.push(Span::styled(piece, palette.faint()));
@@ -997,11 +1003,20 @@ impl Component for MissionHeader {
         if self.view == ToolOutputView::Radar {
             if let Some(flight) = &self.flight {
                 let stats = flight.borrow();
-                // Live data behind shared state: redraw every tick.
-                let mut rows =
-                    crate::radar::mission_rows(self.seq, &self.prompt, &stats, &palette, width);
-                // The turn's progress row sits under the whole prompt.
-                rows.extend(crate::radar::chain_rows(&stats, &palette, width));
+                // Live data behind shared state: redraw every tick. The whole
+                // mission block (header, body, turn end) is drawn here (R3); a
+                // blank row separates it from the mission before.
+                let mut rows = Vec::new();
+                if self.seq > 1 {
+                    rows.push(String::new());
+                }
+                rows.extend(crate::radar::mission_rows(
+                    self.seq,
+                    &self.prompt,
+                    &stats,
+                    &palette,
+                    width,
+                ));
                 return rows;
             }
         } else if let Some(cached) = self

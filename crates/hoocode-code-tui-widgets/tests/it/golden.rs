@@ -12,8 +12,7 @@ use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSour
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_widgets::session_chip::render_session_chip;
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity, TaskPanelView};
-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
-use hoocode_code_tui_widgets::tool_chain_summary::ChainEntry;
+use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
@@ -679,7 +678,38 @@ fn trajectory_steps_hit_80() {
 
 // ---- Mission Control flight log (M5, radar) ----
 
-use hoocode_code_tui_widgets::radar::{FlightMark, FlightStats};
+use hoocode_code_tui_widgets::radar::{FlightItem, FlightMark, FlightStats};
+
+/// One call of a mission's batch: finished (`Some(is_error)`) or still running.
+fn batch_call(name: &str, args: Value, outcome: Option<bool>) -> ToolBlock {
+    let mut block = tool(name, args, ToolOutputView::Radar);
+    if let Some(is_error) = outcome {
+        let text = if is_error { "boom" } else { "ok" };
+        block.update_result(result(text, is_error, json!({})), false);
+    }
+    Rc::new(RefCell::new(block))
+}
+
+/// The chain's calls as one mission batch (R3). A mission's chain draws
+/// nothing in radar, so its rows are read through the mission's flight data.
+fn radar_mission_of(
+    chain: &ToolChainComponent,
+    mark: FlightMark,
+    time: Option<&str>,
+) -> Rc<RefCell<FlightStats>> {
+    Rc::new(RefCell::new(FlightStats {
+        mark,
+        steps: chain.tool_blocks().len(),
+        hits: chain
+            .tool_blocks()
+            .iter()
+            .filter(|block| block.borrow().is_error())
+            .count(),
+        landed_time: time.map(str::to_string),
+        items: vec![FlightItem::Batch(chain.tool_blocks().to_vec())],
+        ..Default::default()
+    }))
+}
 
 fn flight_stats(
     mark: FlightMark,
@@ -695,7 +725,7 @@ fn flight_stats(
         landed_time: time.map(str::to_string),
         started: None,
         cost: cost.map(str::to_string),
-        chain: Vec::new(),
+        ..Default::default()
     }))
 }
 
@@ -792,7 +822,9 @@ fn radar_chain_hits_80() {
         false,
     );
     chain.add(Rc::new(RefCell::new(shell)));
-    assert_golden!("radar_chain_hits_80", render_golden(&mut chain, 80));
+    let stats = radar_mission_of(&chain, FlightMark::Landed, Some("2s"));
+    let mut header = radar_header(1, "run the checks", stats);
+    assert_golden!("radar_chain_hits_80", render_golden(&mut header, 80));
 }
 
 #[test]
@@ -811,7 +843,9 @@ fn radar_chain_hits_40() {
         false,
     );
     chain.add(Rc::new(RefCell::new(shell)));
-    assert_golden!("radar_chain_hits_40", render_golden(&mut chain, 40));
+    let stats = radar_mission_of(&chain, FlightMark::Landed, Some("2s"));
+    let mut header = radar_header(1, "run the checks", stats);
+    assert_golden!("radar_chain_hits_40", render_golden(&mut header, 40));
 }
 
 #[test]
@@ -826,7 +860,9 @@ fn radar_chain_live_80() {
         json!({ "command": "sleep 6; echo done", "timeout": 6 }),
         ToolOutputView::Radar,
     ))));
-    assert_golden!("radar_chain_live_80", render_golden(&mut chain, 80));
+    let stats = radar_mission_of(&chain, FlightMark::InFlight, None);
+    let mut header = radar_header(1, "run the checks", stats);
+    assert_golden!("radar_chain_live_80", render_golden(&mut header, 80));
 }
 
 #[test]
@@ -849,30 +885,19 @@ fn radar_think_80() {
 
 // ---- The turn's end and progress (radar chain row, landing outcomes) ----
 
-fn chain_entry(tool: &str, subject: &str, is_error: bool, is_partial: bool) -> ChainEntry {
-    ChainEntry {
-        tool: tool.to_string(),
-        subject: subject.to_string(),
-        is_error,
-        is_partial,
-        output_lines: 3,
-        outcome: None,
-    }
-}
-
 #[test]
 fn radar_mission_chain_live_80() {
     // A flying mission: the prompt wraps whole, the progress row names the
     // calls in order (`Tool ×N`, `Tool✗`), the last one still running.
     let _g = lock();
     let stats = flight_stats(FlightMark::InFlight, 4, 1, None, Some("$0.004"));
-    stats.borrow_mut().chain = vec![
-        chain_entry("Read", "src/wrap.rs", false, false),
-        chain_entry("Read", "src/lib.rs", false, false),
-        chain_entry("Edit", "src/wrap.rs", false, false),
-        chain_entry("Shell", "cargo test", true, false),
-        chain_entry("Shell", "cargo test", false, true),
-    ];
+    stats.borrow_mut().items = vec![FlightItem::Batch(vec![
+        batch_call("Read", json!({"path": "src/wrap.rs"}), Some(false)),
+        batch_call("Read", json!({"path": "src/lib.rs"}), Some(false)),
+        batch_call("Edit", json!({"path": "src/wrap.rs"}), Some(false)),
+        batch_call("Shell", json!({"command": "cargo test"}), Some(true)),
+        batch_call("Shell", json!({"command": "cargo test"}), None),
+    ])];
     let mut header = radar_header(
         1,
         "fix the overflow bug in the wrap helper so long mission prompts never get cut, then run the suite",
@@ -889,13 +914,13 @@ fn radar_mission_chain_landed_80() {
     // Landed: the progress row reads what the turn amounted to.
     let _g = lock();
     let stats = flight_stats(FlightMark::Landed, 5, 0, Some("4.2s"), Some("$0.012"));
-    stats.borrow_mut().chain = vec![
-        chain_entry("Edit", "src/a.rs", false, false),
-        chain_entry("Edit", "src/b.rs", false, false),
-        chain_entry("Write", "src/c.rs", false, false),
-        chain_entry("Shell", "cargo fmt", false, false),
-        chain_entry("Shell", "cargo test", false, false),
-    ];
+    stats.borrow_mut().items = vec![FlightItem::Batch(vec![
+        batch_call("Edit", json!({"path": "src/a.rs"}), Some(false)),
+        batch_call("Edit", json!({"path": "src/b.rs"}), Some(false)),
+        batch_call("Write", json!({"path": "src/c.rs"}), Some(false)),
+        batch_call("Shell", json!({"command": "cargo fmt"}), Some(false)),
+        batch_call("Shell", json!({"command": "cargo test"}), Some(false)),
+    ])];
     let mut header = radar_header(2, "split the wrap helper", stats);
     assert_golden!(
         "radar_mission_chain_landed_80",

@@ -1,30 +1,47 @@
- M1 ●  Make the config loader apply environment overrides before the file is parsed, so an   3 steps  0✕    11s  $0.067
-       override can set the parser's own options. Keep the public API the same for every caller in the workspace.
-       Update the configuration section of the README so the order of resolution matches the code.
-       Run the config tests afterwards and report anything that fails.
-        ● Edited src/config.rs · ran cargo test · read src/config.rs                                 3 calls · 71 lines
-        The overrides now apply before the file is parsed, so an override can set the parser's own options.
-        The public API is unchanged. Config::load keeps its signature, and the two callers in hoocode-cli need no
-        edits.
-        The config tests pass: 40 of 40. The README's resolution order now reads environment first, then the file, then
-        the defaults.
+▲ M1  Make the config loader apply environment overrides before the file is parsed, so an override can set the parser's
+      own options. Keep the public API the same for every caller in the workspace.
+      Update the configuration section of the README so the order of resolution matches the code.
+      Run the config tests afterwards and report anything that fails.
+   ┊ ✻ The loader parses the file first and reads the environment after, so an override arrives too late. The file has…
+   ┊ ● Edited src/config.rs · ran cargo test · read src/config.rs                                               3 calls
+   ┊
+   ┊ The overrides now apply before the file is parsed, so an override can set the parser's own options.
+   ┊ The public API is unchanged. Config::load keeps its signature, and the two callers in hoocode-cli need no edits.
+   ┊ The config tests pass: 40 of 40. The README's resolution order now reads environment first, then the file, then
+   ┊ the defaults.
+   ╰ ● LANDED · 3 steps · 0 hits · 11s · 23k tokens · $0.067
 --- styles ---
-r0 c1-2 fg=#9b8cff
-r0 c4 fg=#b5bd68
-r0 c7-89 fg=#e5e5e7 bold
-r0 c93 fg=#e5e5e7
-r0 c94-99 fg=#989898
-r0 c102-103 fg=#a8a8a8
-r0 c107-110 fg=#989898
-r0 c113-118 fg=#989898
-r1 c7-112 fg=#e5e5e7 bold
-r2 c7-97 fg=#e5e5e7 bold
-r3 c7-69 fg=#e5e5e7 bold
-r4 c8 fg=#b5bd68
-r4 c10-67 fg=#e5e5e7
-r4 c101-118 fg=#a8a8a8
-r5 c8-106 fg=#e5e5e7
-r6 c8-112 fg=#e5e5e7
-r7 c8-13 fg=#e5e5e7
-r8 c8-118 fg=#e5e5e7
-r9 c8-20 fg=#e5e5e7
+r0 c0 fg=#9b8cff bold
+r0 c2-3 fg=#9b8cff bold
+r0 c6-118 fg=#e5e5e7 bold
+r1 c6-81 fg=#e5e5e7 bold
+r2 c6-96 fg=#e5e5e7 bold
+r3 c6-68 fg=#e5e5e7 bold
+r4 c3 fg=#a8a8a8
+r4 c5-117 fg=#989898
+r5 c3 fg=#a8a8a8
+r5 c5 fg=#b5bd68
+r5 c7-64 fg=#e5e5e7
+r5 c112-118 fg=#989898
+r6 c3 fg=#a8a8a8
+r7 c3 fg=#a8a8a8
+r7 c5-103 fg=#e5e5e7
+r8 c3 fg=#a8a8a8
+r8 c5-116 fg=#e5e5e7
+r9 c3 fg=#a8a8a8
+r9 c5-115 fg=#e5e5e7
+r10 c3 fg=#a8a8a8
+r10 c5-17 fg=#e5e5e7
+r11 c3 fg=#a8a8a8
+r11 c5 fg=#b5bd68
+r11 c7-12 fg=#b5bd68 bold
+r11 c13-15 fg=#989898
+r11 c16-22 fg=#a8a8a8
+r11 c23-25 fg=#989898
+r11 c26-31 fg=#a8a8a8
+r11 c32-34 fg=#989898
+r11 c35-37 fg=#a8a8a8
+r11 c38-40 fg=#989898
+r11 c41-50 fg=#a8a8a8
+r11 c51-53 fg=#989898
+r11 c54-59 fg=#a8a8a8

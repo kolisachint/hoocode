@@ -1,189 +1,145 @@
-//! Direct Mission Control radar row checks (spec r5).
-//!
-//! Direct Mission Control radar row checks (spec r5, r7, r9). The clearance
-//! hold is set by the clearance card (`set_waiting_for_clearance`), so the
-//! chain shows the `waiting_row` for a held call.
+//! Direct Mission Control radar checks (R3): the mission block on the `┊` rail,
+//! its batches, nested hit rows, thinking lines, the answer, the folded
+//! summary and the turn end (LANDED, DID NOT LAND, IN FLIGHT, WAITING).
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::support::{assistant, lock, strip};
+use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
+use hoocode_code_subagents::live;
+use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
 use hoocode_code_tui_widgets::radar::{
-    agent_live_row, chain_rows, hit_row, live_row, mission_rows, prose_rows, satellite_row,
-    sub_hit_row, sub_live_row, sub_waiting_row, think_rows, waiting_row, FlightMark, FlightStats,
-    HIT_INDENT, STEP_INDENT,
+    mission_rows, prose_rows, think_rows, FlightItem, FlightMark, FlightStats, STEP_INDENT,
 };
-use hoocode_code_tui_widgets::tool_chain::ToolChainComponent;
-use hoocode_code_tui_widgets::tool_chain_summary::ChainEntry;
+use hoocode_code_tui_widgets::tool_chain::ToolBlock;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Radar;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
-use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay};
 use hoocode_tui_ratatui::Palette;
-use hoocode_tui_render::Component;
-use serde_json::json;
+use serde_json::{json, Value};
+use std::time::Instant;
 
-#[test]
-fn waiting_head_row_holds_for_clearance() {
-    let palette = Palette::default();
-    let row = strip(&waiting_row(1, "Shell", "sleep 6", true, &palette, 80));
-    assert!(row.contains("01"), "{row:?}");
-    assert!(row.contains("◉"), "{row:?}");
-    assert!(row.contains("Shell"), "{row:?}");
-    assert!(row.contains("sleep 6"), "{row:?}");
-    assert!(row.contains("holding for clearance"), "{row:?}");
+fn cwd() -> String {
+    std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
 }
 
-#[test]
-fn waiting_tail_row_reads_as_next() {
-    let palette = Palette::default();
-    let row = strip(&waiting_row(2, "Shell", "echo done", false, &palette, 80));
-    assert!(row.contains("02"), "{row:?}");
-    assert!(row.contains("○"), "{row:?}");
-    assert!(!row.contains("◉"), "{row:?}");
-    assert!(row.trim_end().ends_with("next"), "{row:?}");
+/// A call as the transcript holds it: `finished` with an ok result, `failed`
+/// with an error, or still running (no result).
+fn call(tool: &str, args: Value, outcome: Option<(&str, bool)>) -> ToolBlock {
+    let id = format!("{tool}-{args}");
+    call_with_id(tool, &id, args, outcome)
 }
 
-fn landed(steps: usize, hits: usize) -> FlightStats {
+fn call_with_id(tool: &str, id: &str, args: Value, outcome: Option<(&str, bool)>) -> ToolBlock {
+    let mut component = ToolExecutionComponent::new(
+        tool,
+        id,
+        args,
+        ToolExecutionOptions {
+            view: Radar,
+            ..Default::default()
+        },
+        None,
+        &cwd(),
+    );
+    if let Some((text, is_error)) = outcome {
+        component.update_result(
+            ToolResult {
+                content: vec![Content::text(text)],
+                details: json!({}),
+                is_error,
+            },
+            false,
+        );
+    }
+    Rc::new(RefCell::new(component))
+}
+
+fn ok(tool: &str, args: Value) -> ToolBlock {
+    call(tool, args, Some(("ok", false)))
+}
+
+fn running(tool: &str, args: Value) -> ToolBlock {
+    call(tool, args, None)
+}
+
+fn landed(steps: usize, hits: usize, items: Vec<FlightItem>) -> FlightStats {
     FlightStats {
         mark: FlightMark::Landed,
         steps,
         hits,
-        landed_time: Some("0.8s".to_string()),
+        landed_time: Some("42s".to_string()),
         started: None,
-        cost: Some("$0.003".to_string()),
-        chain: Vec::new(),
+        cost: Some("$0.031".to_string()),
+        tokens: Some("2.1k tokens".to_string()),
+        items,
+        ..Default::default()
     }
 }
 
-#[test]
-fn live_row_fills_its_bar_by_elapsed_share() {
-    // 3s of ~6s is half of the eight cells.
-    let palette = Palette::default();
-    let row = strip(&live_row(
-        1,
-        "Shell",
-        "sleep 6; echo done",
-        3,
-        Some(6),
-        &palette,
-        80,
-    ));
-    assert_eq!(
-        row.trim_end(),
-        "        ◐ 01 Shell  sleep 6; echo done  ████░░░░ 3s of ~6s"
-    );
-}
-
-#[test]
-fn live_row_without_an_estimate_reads_elapsed_only() {
-    let palette = Palette::default();
-    let row = strip(&live_row(1, "Shell", "sleep 6", 3, None, &palette, 80));
-    assert_eq!(row.trim_end(), "        ◐ 01 Shell  sleep 6  3s");
-}
-
-#[test]
-fn hit_row_indents_twelve_and_keeps_the_chip_inline() {
-    let palette = Palette::default();
-    let row = strip(&hit_row(
-        4,
-        "Shell",
-        "echo boom; exit 3",
-        "boom",
-        &palette,
-        80,
-    ));
-    assert_eq!(
-        row.trim_end(),
-        "            ⊗ 04 Shell  echo boom; exit 3  → boom  HIT"
-    );
-    assert!(row.trim_end().chars().count() <= 79, "{row:?}");
-}
-
-#[test]
-fn two_digit_hits_grow_leftward_and_keep_the_columns() {
-    let palette = Palette::default();
-    let row = strip(&mission_rows(1, "wrap", &landed(12, 12), &palette, 80)[0]);
-    assert!(
-        row.trim_end().ends_with("12 steps 12✕   0.8s  $0.003"),
-        "{row:?}"
-    );
-    assert_eq!(row.chars().count(), 79, "{row:?}");
-}
-
-#[test]
-fn stepless_mission_leaves_the_steps_columns_blank() {
-    let palette = Palette::default();
-    let stats = FlightStats {
-        landed_time: None,
-        cost: Some("$0.000".to_string()),
-        ..landed(0, 0)
-    };
-    let row = strip(&mission_rows(3, "just talking", &stats, &palette, 80)[0]);
-    assert_eq!(
-        row.trim_end(),
-        " M3 ●  just talking                                                      $0.000"
-    );
-}
-
-fn plain(text: &str) -> Vec<String> {
-    vec![text.to_string()]
-}
-
-#[test]
-fn prose_indents_eight_under_a_mission_and_twelve_under_a_hit() {
-    let palette = Palette::default();
-    let ink = palette.ink();
-    let under_mission = strip(&prose_rows(&plain("It wraps text."), STEP_INDENT, ink, 80)[0]);
-    assert_eq!(under_mission.trim_end(), "        It wraps text.");
-    let under_hit = strip(&prose_rows(&plain("It wraps text."), HIT_INDENT, ink, 80)[0]);
-    assert_eq!(under_hit.trim_end(), "            It wraps text.");
-}
-
-#[test]
-fn prose_wraps_before_the_last_column_and_never_cuts() {
-    let palette = Palette::default();
-    let text = "one long line of prose that keeps going past the edge";
-    let rows = prose_rows(&plain(text), STEP_INDENT, palette.ink(), 24);
-    assert!(rows.len() >= 3, "{rows:?}");
-    let mut words = Vec::new();
-    for row in &rows {
-        let row = strip(row);
-        assert!(!row.contains('…'), "{row:?}");
-        assert!(row.starts_with(&" ".repeat(STEP_INDENT)), "{row:?}");
-        assert!(row.chars().count() <= 23, "{row:?}");
-        words.extend(row.split_whitespace().map(str::to_string));
-    }
-    assert_eq!(words.join(" "), text);
-}
-
-#[test]
-fn a_long_prompt_wraps_under_its_first_word_and_the_stats_stay_on_the_first_row() {
-    let palette = Palette::default();
-    let prompt = "fix the overflow bug in the wrap helper so long mission prompts never get cut\nthen run the whole suite";
-    let rows: Vec<String> = mission_rows(1, prompt, &landed(3, 0), &palette, 60)
+/// The mission's rows at `width`, plain.
+fn rows(prompt: &str, stats: &FlightStats, width: usize) -> Vec<String> {
+    mission_rows(1, prompt, stats, &Palette::default(), width)
         .iter()
         .map(|row| strip(row))
-        .collect();
-    assert!(rows.len() >= 3, "{rows:#?}");
-    // Stats on the first row only.
-    assert!(
-        rows[0].trim_end().ends_with("3 steps  0✕   0.8s  $0.003"),
+        .collect()
+}
+
+fn batch(blocks: Vec<ToolBlock>) -> FlightItem {
+    FlightItem::Batch(blocks)
+}
+
+#[test]
+fn the_turn_end_closes_the_rail_with_the_landing_words_and_stats() {
+    let _g = lock();
+    let stats = landed(
+        9,
+        1,
+        vec![batch(vec![ok("Edit", json!({"file_path": "src/lex.rs"}))])],
+    );
+    let rows = rows("fix the escaped-quote test", &stats, 80);
+    assert_eq!(
+        rows.last().unwrap().trim_end(),
+        "   ╰ ● LANDED · 9 steps · 1 hit · 42s · 2.1k tokens · $0.031",
         "{rows:#?}"
     );
-    assert!(rows[0].starts_with(" M1 ●  fix the"), "{rows:#?}");
-    for row in &rows[1..] {
-        assert!(!row.contains("steps"), "{rows:#?}");
-        // Hung under the prompt text, which starts at column 7.
-        assert!(row.starts_with("       "), "{row:?}");
-        assert!(!row.starts_with("        "), "{row:?}");
+}
+
+#[test]
+fn the_header_reads_mission_and_prompt_with_no_stats() {
+    let _g = lock();
+    let stats = landed(3, 0, Vec::new());
+    let rows = rows("fix the escaped-quote test", &stats, 80);
+    assert_eq!(
+        rows[0].trim_end(),
+        "▲ M1  fix the escaped-quote test",
+        "{rows:#?}"
+    );
+}
+
+#[test]
+fn a_long_prompt_wraps_under_its_first_word_and_keeps_its_stats_off_the_header() {
+    let _g = lock();
+    let prompt = "fix the overflow bug in the wrap helper so long mission prompts never get cut\nthen run the whole suite";
+    let stats = landed(3, 0, Vec::new());
+    let header: Vec<String> = rows(prompt, &stats, 60);
+    assert!(header.len() >= 4, "{header:#?}");
+    assert!(header[0].starts_with("▲ M1  fix the"), "{header:#?}");
+    for row in &header[1..3] {
+        // Hung under the prompt text, which starts at column 6.
+        assert!(row.starts_with("      "), "{row:?}");
+        assert!(!row.starts_with("       "), "{row:?}");
     }
-    for row in &rows {
-        assert!(!row.contains('…'), "{rows:#?}");
+    // The header rows only: the turn end below is cut to its width.
+    for row in &header[..header.len() - 1] {
+        assert!(!row.contains('…'), "{header:#?}");
         assert!(row.chars().count() <= 59, "{row:?}");
     }
-    let flat = rows
+    let flat = header
         .iter()
         .map(|row| row.split_whitespace().collect::<Vec<_>>().join(" "))
         .collect::<Vec<_>>()
@@ -191,96 +147,255 @@ fn a_long_prompt_wraps_under_its_first_word_and_the_stats_stay_on_the_first_row(
     for word in prompt.split_whitespace() {
         assert!(flat.contains(word), "{word}: {flat}");
     }
+    assert!(!header[0].contains("steps"), "{header:#?}");
+}
+
+#[test]
+fn a_settled_batch_is_one_line_naming_the_change_with_its_call_count_flush_right() {
+    let _g = lock();
+    let stats = landed(
+        3,
+        0,
+        vec![batch(vec![
+            ok("Read", json!({"file_path": "src/lex.rs"})),
+            ok("Edit", json!({"file_path": "src/lex.rs"})),
+            ok("Shell", json!({"command": "cargo test"})),
+        ])],
+    );
+    let rows = rows("fix it", &stats, 80);
+    let line = &rows[1];
+    assert!(line.starts_with("   ┊ ● "), "{line:?}");
+    assert!(line.trim_end().ends_with("3 calls"), "{line:?}");
+    assert!(line.contains("cargo test"), "{line:?}");
+    assert_eq!(line.chars().count(), 79, "{line:?}");
+}
+
+#[test]
+fn a_batch_line_never_wraps_however_many_calls_it_holds() {
+    let _g = lock();
+    let tools = ["Read", "Grep", "Edit", "Shell", "Write", "WebFetch"];
+    let blocks = tools
+        .iter()
+        .map(|tool| {
+            running(
+                tool,
+                json!({"file_path": "a.rs", "pattern": "x", "command": "y"}),
+            )
+        })
+        .collect();
+    let stats = FlightStats {
+        mark: FlightMark::InFlight,
+        steps: 6,
+        started: Some(std::time::Instant::now()),
+        items: vec![batch(blocks)],
+        ..Default::default()
+    };
+    // Narrow: one row, cut with `…`, the call count kept.
+    let narrow = rows("wide", &stats, 40);
+    let live: Vec<&String> = narrow.iter().filter(|row| row.contains("◐ …")).collect();
+    assert_eq!(live.len(), 1, "{narrow:#?}");
+    assert!(live[0].chars().count() <= 39, "{:?}", live[0]);
+    assert!(live[0].contains("6 calls"), "{:?}", live[0]);
+    // Wide: the last four tools, and not the two before them.
+    let wide = rows("wide", &stats, 120);
+    let live: Vec<&String> = wide.iter().filter(|row| row.contains("◐ …")).collect();
+    assert_eq!(live.len(), 1, "{wide:#?}");
     assert!(
-        rows.last().unwrap().contains("the whole suite"),
+        live[0].contains("Edit › Shell › Write › WebFetch"),
+        "{:?}",
+        live[0]
+    );
+    assert!(!live[0].contains("Read"), "{:?}", live[0]);
+}
+
+#[test]
+fn a_batch_splits_at_a_thinking_block_and_the_thought_reads_on_one_line() {
+    let _g = lock();
+    let gist = "The helper is 13 lines and the wrap point is at the word boundary every time";
+    let stats = landed(
+        2,
+        0,
+        vec![
+            batch(vec![ok("Read", json!({"file_path": "a.rs"}))]),
+            FlightItem::Thinking(gist.to_string()),
+            batch(vec![ok("Edit", json!({"file_path": "a.rs"}))]),
+        ],
+    );
+    let rows = rows("fix it", &stats, 50);
+    let first = rows
+        .iter()
+        .position(|row| row.starts_with("   ┊ ●"))
+        .unwrap();
+    let thought = rows
+        .iter()
+        .position(|row| row.starts_with("   ┊ ✻"))
+        .unwrap();
+    let second = rows
+        .iter()
+        .rposition(|row| row.starts_with("   ┊ ●"))
+        .unwrap();
+    assert!(first < thought && thought < second, "{rows:#?}");
+    assert!(rows[thought].starts_with("   ┊ ✻ The helper"), "{rows:#?}");
+    assert!(rows[thought].chars().count() <= 49, "{rows:#?}");
+}
+
+#[test]
+fn a_failed_call_is_a_nested_hit_row_and_the_batch_takes_the_failure_mark() {
+    let _g = lock();
+    let stats = landed(
+        2,
+        1,
+        vec![batch(vec![
+            ok("Read", json!({"file_path": "a.rs"})),
+            call(
+                "Shell",
+                json!({"command": "cargo test -p hoocode-parser"}),
+                Some(("1 failed: raw_string_escape", true)),
+            ),
+        ])],
+    );
+    let rows = rows("fix it", &stats, 80);
+    assert!(rows[1].starts_with("   ┊ ⊗ "), "{rows:#?}");
+    let hit = rows
+        .iter()
+        .find(|row| row.contains("HIT"))
+        .expect("a hit row");
+    // Nested two columns under the batch mark: the `└` sits at column 7.
+    assert!(hit.starts_with("   ┊   └ 02 Shell  "), "{hit:?}");
+    assert!(hit.contains("→ 1 failed"), "{hit:?}");
+    assert!(hit.trim_end().ends_with("HIT"), "{hit:?}");
+}
+
+#[test]
+fn a_folded_mission_is_one_summary_line_then_the_answer_then_the_turn_end() {
+    let _g = lock();
+    let mut stats = landed(
+        2,
+        0,
+        vec![batch(vec![
+            ok("Edit", json!({"file_path": "a.rs"})),
+            ok("Edit", json!({"file_path": "b.rs"})),
+        ])],
+    );
+    stats.folded = true;
+    stats.answer = vec!["The lexer now owns its token text.".to_string()];
+    let rows = rows("older mission", &stats, 80);
+    assert!(rows[1].starts_with("   ┊ ● Edited"), "{rows:#?}");
+    assert!(rows[1].trim_end().ends_with("2 calls"), "{rows:#?}");
+    assert_eq!(rows[2], "   ┊", "{rows:#?}");
+    assert!(
+        rows[3].contains("The lexer now owns its token text."),
+        "{rows:#?}"
+    );
+    assert!(rows.iter().all(|row| !row.contains("HIT")), "{rows:#?}");
+    assert!(
+        rows.last().unwrap().starts_with("   ╰ ● LANDED"),
         "{rows:#?}"
     );
 }
 
-fn entry(tool: &str, subject: &str, is_error: bool, is_partial: bool) -> ChainEntry {
-    ChainEntry {
-        tool: tool.to_string(),
-        subject: subject.to_string(),
-        is_error,
-        is_partial,
-        output_lines: 2,
-        outcome: None,
-    }
+#[test]
+fn the_answer_sits_on_the_rail_after_a_blank_rail_line() {
+    let _g = lock();
+    let mut stats = landed(
+        1,
+        0,
+        vec![batch(vec![ok("Read", json!({"file_path": "a.rs"}))])],
+    );
+    stats.answer = vec!["It wraps text.".to_string()];
+    let rows = rows("fix it", &stats, 80);
+    let answer = rows
+        .iter()
+        .position(|row| row.contains("It wraps text."))
+        .expect("the answer row");
+    assert_eq!(rows[answer - 1], "   ┊", "{rows:#?}");
+    assert!(rows[answer].starts_with("   ┊ It wraps text."), "{rows:#?}");
 }
 
 #[test]
-fn the_chain_row_shows_the_shape_while_flying_and_the_summary_once_landed() {
-    let palette = Palette::default();
-    let mut stats = FlightStats {
-        mark: FlightMark::InFlight,
-        steps: 4,
-        chain: vec![
-            entry("Read", "a.rs", false, false),
-            entry("Read", "b.rs", false, false),
-            entry("Edit", "a.rs", false, false),
-            entry("Shell", "cargo test", true, false),
-            entry("Shell", "cargo test", false, true),
-        ],
-        ..Default::default()
-    };
-    let live = chain_rows(&stats, &palette, 80);
-    assert_eq!(live.len(), 1, "{live:?}");
-    assert_eq!(
-        strip(&live[0]).trim_end(),
-        "        ◐ Read ×2 › Edit › Shell✗ › Shell …"
-    );
-
-    stats.mark = FlightMark::Landed;
-    stats.chain = vec![
-        entry("Edit", "a.rs", false, false),
-        entry("Edit", "b.rs", false, false),
-        entry("Edit", "c.rs", false, false),
-        entry("Shell", "cargo fmt", false, false),
-        entry("Shell", "cargo test", false, false),
-    ];
-    let settled = chain_rows(&stats, &palette, 80);
-    assert_eq!(settled.len(), 1, "{settled:?}");
-    let text = strip(&settled[0]);
-    assert!(
-        text.starts_with("        ● Edited 3 files · ran 2 commands"),
-        "{text:?}"
-    );
-    assert!(text.trim_end().ends_with("5 calls · 10 lines"), "{text:?}");
-    // No calls, no row.
-    stats.chain.clear();
-    assert!(chain_rows(&stats, &palette, 80).is_empty());
-}
-
-#[test]
-fn a_wide_chain_row_wraps_instead_of_cutting() {
-    let palette = Palette::default();
-    let tools = ["Read", "Edit", "Shell", "CodeSearch", "WebFetch", "Write"];
+fn a_held_call_shows_its_hold_and_the_turn_end_reads_waiting() {
+    let _g = lock();
+    let held = running("Shell", json!({"command": "rm -rf target/"}));
+    held.borrow_mut().mark_execution_started();
+    held.borrow_mut().set_waiting_for_clearance(true);
     let stats = FlightStats {
         mark: FlightMark::InFlight,
-        chain: tools
-            .iter()
-            .map(|tool| entry(tool, "x", false, false))
-            .collect(),
+        steps: 1,
+        started: Some(std::time::Instant::now()),
+        items: vec![batch(vec![held])],
         ..Default::default()
     };
-    let rows: Vec<String> = chain_rows(&stats, &palette, 30)
+    let rows = rows("clean up", &stats, 80);
+    let nested = rows
         .iter()
-        .map(|row| strip(row))
-        .collect();
-    assert!(rows.len() >= 2, "{rows:#?}");
-    for row in &rows {
-        assert!(row.chars().count() <= 29, "{row:?}");
-        assert!(!row.contains("… "), "{row:?}");
-    }
-    let flat = rows.join(" ");
-    for tool in tools {
-        assert!(flat.contains(tool), "{tool}: {rows:#?}");
-    }
-    assert!(rows.last().unwrap().trim_end().ends_with('…'), "{rows:#?}");
+        .find(|row| row.contains("holding for clearance"))
+        .expect("a hold row");
+    assert!(nested.starts_with("   ┊   └ ◉ Shell"), "{nested:?}");
+    let turn_end = rows.last().unwrap();
+    assert!(
+        turn_end.starts_with("   ╰ ◆ WAITING · approve Shell"),
+        "{turn_end:?}"
+    );
+    assert!(!turn_end.contains("IN FLIGHT"), "{turn_end:?}");
 }
 
 #[test]
-fn thinking_wraps_under_its_gist() {
+fn a_flying_turn_end_reads_in_flight_with_its_steps_and_clock() {
+    let _g = lock();
+    let stats = FlightStats {
+        mark: FlightMark::InFlight,
+        steps: 25,
+        started: Some(std::time::Instant::now() - std::time::Duration::from_secs(72)),
+        items: vec![batch(vec![running("Shell", json!({"command": "make"}))])],
+        ..Default::default()
+    };
+    let rows = rows("long run", &stats, 80);
+    let turn_end = rows.last().unwrap();
+    assert!(
+        turn_end.starts_with("   ╰ ◐ IN FLIGHT · 25 steps · 0 hits · 1m12s"),
+        "{turn_end:?}"
+    );
+}
+
+#[test]
+fn a_did_not_land_turn_end_names_its_reason_at_the_end() {
+    let _g = lock();
+    let stats = FlightStats {
+        mark: FlightMark::DidNotLand,
+        steps: 2,
+        hits: 1,
+        landed_time: Some("5.0s".to_string()),
+        reason: Some("Request failed: connection reset by peer".to_string()),
+        items: vec![batch(vec![ok("Read", json!({"file_path": "a.rs"}))])],
+        ..Default::default()
+    };
+    let rows = rows("try it", &stats, 100);
+    assert_eq!(
+        rows.last().unwrap().trim_end(),
+        "   ╰ ⊗ DID NOT LAND · 2 steps · 1 hit · 5.0s · Request failed: connection reset by peer"
+    );
+}
+
+#[test]
+fn an_aborted_turn_end_reads_aborted_with_its_stats() {
+    let _g = lock();
+    let stats = FlightStats {
+        mark: FlightMark::Aborted,
+        steps: 12,
+        landed_time: Some("30s".to_string()),
+        items: Vec::new(),
+        ..Default::default()
+    };
+    let rows = rows("stop", &stats, 80);
+    assert_eq!(
+        rows.last().unwrap().trim_end(),
+        "   ╰ ⊘ ABORTED · 12 steps · 0 hits · 30s"
+    );
+}
+
+#[test]
+fn thinking_wraps_under_its_gist_outside_a_mission() {
+    // Thinking outside a mission keeps its own rows (`think_rows`).
     let palette = Palette::default();
     let gist = "The helper is 13 lines and wraps at the word boundary every time";
     let rows: Vec<String> = think_rows(3, Some(gist), &palette, 40)
@@ -292,13 +407,6 @@ fn thinking_wraps_under_its_gist() {
         rows[0].starts_with("        ✻ thought 3s · The helper"),
         "{rows:#?}"
     );
-    let hang = "        ✻ thought 3s · ".chars().count();
-    for row in &rows[1..] {
-        assert!(row.starts_with(&" ".repeat(hang)), "{row:?}");
-    }
-    for row in &rows {
-        assert!(!row.contains('…'), "{row:?}");
-    }
     let flat = rows
         .iter()
         .map(|row| row.trim_start_matches("        ✻ thought 3s · "))
@@ -309,103 +417,46 @@ fn thinking_wraps_under_its_gist() {
 }
 
 #[test]
-fn prose_moves_to_the_hit_text_when_the_chain_above_turns_into_a_hit() {
-    let _g = lock();
-    let cwd = std::env::current_dir()
-        .unwrap()
-        .to_string_lossy()
-        .into_owned();
-    let options = ToolExecutionOptions {
-        view: Radar,
-        ..Default::default()
-    };
-    // The chain above is still running when the prose message appears.
-    let call = Rc::new(RefCell::new(ToolExecutionComponent::new(
-        "Shell",
-        "live-1",
-        json!({"command": "bun test"}),
-        options,
-        None,
-        &cwd,
-    )));
-    let mut chain = ToolChainComponent::new(Radar);
-    chain.add(call.clone());
-    let chain = Rc::new(RefCell::new(chain));
-
-    let message = assistant(vec![Content::text("It wraps text.")]);
-    let mut prose = AssistantMessageComponent::new(Some(&message), ThinkingDisplay::Omit);
-    prose.set_radar_above(Some(Rc::downgrade(&chain)));
-    // The transcript shows the prose once the mission has ended.
-    prose.set_radar_prose_shown(true);
-    let before = strip(&prose.render(40).join("\n"));
-    assert!(before.starts_with("        It wraps text."), "{before:?}");
-
-    // The running call fails: the row above is now a hit.
-    call.borrow_mut().update_result(
-        ToolResult {
-            content: vec![Content::text("ASSERTION FAILED")],
-            details: json!({}),
-            is_error: true,
-        },
-        false,
-    );
-    let after = strip(&prose.render(40).join("\n"));
-    assert!(after.starts_with("            It wraps text."), "{after:?}");
+fn prose_indents_eight_under_a_mission() {
+    let palette = Palette::default();
+    let ink = palette.ink();
+    let plain = |text: &str| vec![text.to_string()];
+    let under_mission = strip(&prose_rows(&plain("It wraps text."), STEP_INDENT, ink, 80)[0]);
+    assert_eq!(under_mission.trim_end(), "        It wraps text.");
 }
 
 #[test]
-fn narrow_rows_keep_the_last_column_blank_and_never_overflow() {
-    let palette = Palette::default();
-    let stats = landed(12, 12);
-    let live = FlightStats {
-        mark: FlightMark::InFlight,
-        steps: 3,
-        hits: 1,
-        landed_time: None,
-        started: None,
-        cost: None,
-        chain: vec![entry("Read", "a.rs", false, false)],
-    };
+fn narrow_mission_rows_keep_the_last_column_blank_and_never_overflow() {
+    let _g = lock();
+    let blocks = vec![
+        ok("Read", json!({"file_path": "a.rs"})),
+        call(
+            "Shell",
+            json!({"command": "echo boom; exit 3"}),
+            Some(("boom", true)),
+        ),
+        running(
+            "Agent",
+            json!({"subagent_type": "general-purpose", "description": "Compute a product"}),
+        ),
+    ];
+    let mut stats = landed(12, 1, vec![batch(blocks)]);
+    stats
+        .items
+        .push(FlightItem::Thinking("The helper is 13 lines".into()));
+    stats.answer = vec!["It wraps text and goes on".to_string()];
+    let mut folded = stats.clone();
+    folded.folded = true;
     for width in [1usize, 10, 12, 20, 24, 40] {
-        let mut rows = mission_rows(12, "a long prompt that goes on", &stats, &palette, width);
-        rows.extend(mission_rows(1, "wrap", &live, &palette, width));
-        rows.extend(chain_rows(&live, &palette, width));
-        rows.extend(chain_rows(&stats, &palette, width));
-        rows.extend([
-            hit_row(4, "Shell", "echo boom; exit 3", "boom", &palette, width),
-            live_row(
-                1,
-                "Shell",
-                "sleep 6; echo done",
-                3,
-                Some(6),
-                &palette,
-                width,
-            ),
-            waiting_row(1, "Shell", "sleep 6", true, &palette, width),
-            agent_live_row(
-                1,
-                "general-purpose",
-                "Compute a product",
-                2,
-                &palette,
-                width,
-            ),
-            satellite_row(1, "Shell", "sleep 60", "job-1", 4, &palette, width),
-        ]);
-        rows.extend(think_rows(
-            3,
-            Some("The helper is 13 lines"),
-            &palette,
+        let mut lines = mission_rows(
+            12,
+            "a long prompt that goes on",
+            &stats,
+            &Palette::default(),
             width,
-        ));
-        rows.extend(prose_rows(
-            &plain("It wraps text and goes on"),
-            HIT_INDENT,
-            palette.ink(),
-            width,
-        ));
-        for row in rows {
+        );
+        lines.extend(mission_rows(1, "wrap", &folded, &Palette::default(), width));
+        for row in lines {
             let text = strip(&row);
             assert!(
                 text.chars().count() < width.max(1),
@@ -416,130 +467,208 @@ fn narrow_rows_keep_the_last_column_blank_and_never_overflow() {
 }
 
 #[test]
-fn sub_step_rows_read_under_their_agent_at_the_step_indent() {
-    let palette = Palette::default();
-    let live = strip(&sub_live_row(1, 1, "Read", "src/lib.rs", 2, &palette, 80));
-    assert!(live.starts_with(&" ".repeat(STEP_INDENT)), "{live:?}");
-    assert!(live.contains("◐ 01.1 Read  src/lib.rs"), "{live:?}");
-    let hit = strip(&sub_hit_row(
-        1,
-        2,
-        "Read",
-        "missing.rs",
-        "no such file",
-        &palette,
-        80,
-    ));
-    assert!(hit.starts_with(&" ".repeat(STEP_INDENT)), "{hit:?}");
-    assert!(hit.contains("⊗ 01.2 Read  missing.rs"), "{hit:?}");
-    assert!(hit.contains("HIT"), "{hit:?}");
-}
-
-#[test]
-fn a_sub_step_held_for_clearance_reads_as_a_hold_under_its_agent() {
-    let palette = Palette::default();
-    let held = strip(&sub_waiting_row(1, 1, "Shell", "rm -rf x", &palette, 80));
-    assert!(held.starts_with(&" ".repeat(STEP_INDENT)), "{held:?}");
-    assert!(held.contains("◉ 01.1 Shell  rm -rf x"), "{held:?}");
-    assert!(held.contains("holding for clearance"), "{held:?}");
-}
-
-#[test]
-fn a_call_held_for_clearance_reads_the_waiting_row() {
-    // The permission gate parks a call that already started: the chain shows
-    // the `◉ holding for clearance` row, not a live `◐` row.
+fn a_mission_block_carries_its_header_body_and_turn_end_in_order() {
     let _g = lock();
-    let cwd = std::env::current_dir()
-        .unwrap()
-        .to_string_lossy()
-        .into_owned();
-    let options = ToolExecutionOptions {
-        view: Radar,
+    let stats = landed(
+        2,
+        0,
+        vec![
+            batch(vec![ok("Read", json!({"file_path": "a.rs"}))]),
+            FlightItem::Thinking("check the second file".to_string()),
+            batch(vec![ok("Edit", json!({"file_path": "a.rs"}))]),
+        ],
+    );
+    let rows = rows("fix it", &stats, 80);
+    assert!(rows[0].starts_with("▲ M1  fix it"), "{rows:#?}");
+    assert!(rows.last().unwrap().starts_with("   ╰ "), "{rows:#?}");
+    // Every body row sits on the rail (the header and the turn end aside).
+    for row in &rows[1..rows.len() - 1] {
+        assert!(row.starts_with("   ┊"), "{row:?}");
+    }
+}
+
+#[test]
+fn a_subagent_hold_reads_waiting_on_the_turn_end() {
+    let _g = lock();
+    live::remember_run("radar-hold-agent-call", "radar-hold-run");
+    live::apply("radar-hold-run", &json!({"type": "task_started"}));
+    live::apply(
+        "radar-hold-run",
+        &json!({"type": "task_clearance", "tool": "Edit", "subject": "src/lex.rs", "held": true, "call": "k1"}),
+    );
+    let agent = call_with_id(
+        "Agent",
+        "radar-hold-agent-call",
+        json!({"subagent_type": "explore", "description": "Survey"}),
+        None,
+    );
+    let stats = FlightStats {
+        mark: FlightMark::InFlight,
+        steps: 1,
+        started: Some(Instant::now()),
+        items: vec![batch(vec![agent])],
         ..Default::default()
     };
-    let call = Rc::new(RefCell::new(ToolExecutionComponent::new(
-        "Shell",
-        "held-1",
-        json!({"command": "ls"}),
-        options,
-        None,
-        &cwd,
-    )));
-    call.borrow_mut().mark_execution_started();
-    assert!(!call.borrow().is_waiting_for_clearance());
-    assert!(call.borrow().is_held_by("Shell", "$ ls"));
-    assert!(!call.borrow().is_held_by("Shell", "$ rm -rf target/"));
-    call.borrow_mut().set_waiting_for_clearance(true);
-    assert!(call.borrow().is_waiting_for_clearance());
-
-    let mut chain = ToolChainComponent::new(Radar);
-    chain.add(call.clone());
-    let rows: Vec<String> = chain.render(80).iter().map(|row| strip(row)).collect();
-    let held = rows
-        .iter()
-        .find(|row| row.contains("01 Shell"))
-        .expect("a step row");
-    assert!(held.contains("◉"), "{held:?}");
-    assert!(held.contains("holding for clearance"), "{held:?}");
-    assert!(!held.contains("◐"), "{held:?}");
-
-    // Released (the card answered): the step is live again.
-    call.borrow_mut().set_waiting_for_clearance(false);
-    assert!(!call.borrow().is_waiting_for_clearance());
+    let rows = rows("survey", &stats, 80);
+    assert!(
+        rows.last()
+            .unwrap()
+            .starts_with("   ╰ ◆ WAITING · approve Edit src/lex.rs"),
+        "{rows:#?}"
+    );
+    live::apply("radar-hold-run", &json!({"type": "task_done"}));
 }
 
 #[test]
-fn a_bang_row_shows_its_header_only_in_radar() {
-    use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
-    use std::cell::Cell;
+fn a_failed_subagent_call_turns_its_settled_batch_red_and_nests_its_hit() {
     let _g = lock();
-    let radar = Rc::new(Cell::new(true));
-    let mut bang = BashExecutionComponent::new("ls", false);
-    bang.set_radar_flag(radar.clone());
-    bang.append_output("README.md\nsrc\n");
-    bang.set_complete(Some(0), false, None, None);
-    let radar_rows: Vec<String> = bang.render(80).iter().map(|row| strip(row)).collect();
-    assert_eq!(radar_rows.len(), 1, "{radar_rows:?}");
-    assert!(radar_rows[0].contains("ls"), "{radar_rows:?}");
-    assert!(!radar_rows.iter().any(|row| row.contains("README.md")));
-
-    // Peek keeps the output under the header.
-    radar.set(false);
-    let peek_rows: Vec<String> = bang.render(80).iter().map(|row| strip(row)).collect();
+    live::remember_run("radar-fail-agent-call", "radar-fail-run");
+    live::apply("radar-fail-run", &json!({"type": "task_started"}));
+    live::apply(
+        "radar-fail-run",
+        &json!({"type": "tool_execution_start", "toolCallId": "s1", "toolName": "Grep", "args": {"pattern": "x"}}),
+    );
+    live::apply(
+        "radar-fail-run",
+        &json!({"type": "tool_execution_end", "toolCallId": "s1", "isError": true}),
+    );
+    live::apply("radar-fail-run", &json!({"type": "task_done"}));
+    let agent = call_with_id(
+        "Agent",
+        "radar-fail-agent-call",
+        json!({"subagent_type": "explore", "description": "Survey"}),
+        Some(("done", false)),
+    );
+    let stats = landed(1, 1, vec![batch(vec![agent])]);
+    let rows = rows("survey", &stats, 80);
+    assert!(rows[1].starts_with("   ┊ ⊗ "), "{rows:#?}");
     assert!(
-        peek_rows.iter().any(|row| row.contains("README.md")),
-        "{peek_rows:?}"
+        rows.iter()
+            .any(|row| row.contains("01.1 Grep") && row.contains("HIT")),
+        "{rows:#?}"
     );
 }
 
 #[test]
-fn the_unfocused_task_panel_hides_in_radar() {
-    use hoocode_code_task_store::{task_store, CreateTaskOptions};
-    use hoocode_code_tui_widgets::task_panel::TaskPanelComponent;
+fn an_interrupted_batch_reads_dim_cancelled_never_green() {
     let _g = lock();
-    task_store().create("Read the migration plan", CreateTaskOptions::default());
-    let mut panel = TaskPanelComponent::new();
-    assert!(!panel.render(80).is_empty());
-    panel.set_radar(true);
-    assert!(panel.render(80).is_empty());
-    panel.set_radar(false);
-    assert!(!panel.render(80).is_empty());
+    let stopped = call(
+        "Shell",
+        json!({"command": "make"}),
+        Some(("cut short", false)),
+    );
+    stopped.borrow_mut().set_interrupted();
+    let stats = FlightStats {
+        mark: FlightMark::Aborted,
+        landed_time: Some("3s".to_string()),
+        items: vec![batch(vec![stopped])],
+        ..Default::default()
+    };
+    let rows = rows("stop", &stats, 80);
+    assert!(rows[1].starts_with("   ┊ ⊘ "), "{rows:#?}");
+    assert!(
+        rows.iter().all(|row| !row.starts_with("   ┊ ●")),
+        "{rows:#?}"
+    );
 }
 
 #[test]
-fn a_flying_mission_clock_reads_elapsed_without_a_refresh() {
-    // The mission row's time is read off the start on every render, so it
-    // reads the time at the moment of drawing (the redraw is the app's tick).
-    let palette = Palette::default();
-    let flight = FlightStats {
-        mark: FlightMark::InFlight,
-        steps: 1,
-        hits: 0,
-        landed_time: None,
-        started: Some(std::time::Instant::now() - std::time::Duration::from_secs(13)),
-        cost: None,
-        chain: Vec::new(),
+fn a_did_not_land_reason_that_does_not_fit_goes_on_its_own_line() {
+    let _g = lock();
+    let stats = FlightStats {
+        mark: FlightMark::DidNotLand,
+        steps: 2,
+        hits: 1,
+        landed_time: Some("5.0s".to_string()),
+        reason: Some("Request failed: connection reset by peer".to_string()),
+        items: vec![batch(vec![ok("Read", json!({"file_path": "a.rs"}))])],
+        ..Default::default()
     };
-    let row = strip(&mission_rows(9, "start a background job", &flight, &palette, 80)[0]);
-    assert!(row.contains("13s"), "{row:?}");
+    let rows = rows("try it", &stats, 60);
+    let turn = rows.len() - 2;
+    assert!(
+        rows[turn].starts_with("   ╰ ⊗ DID NOT LAND · 2 steps · 1 hit · 5.0s"),
+        "{rows:#?}"
+    );
+    assert_eq!(
+        rows.last().unwrap().trim_end(),
+        "     Request failed: connection reset by peer",
+        "{rows:#?}"
+    );
+}
+
+#[test]
+fn the_render_key_moves_with_folding_and_the_items() {
+    let _g = lock();
+    let mut stats = landed(
+        1,
+        0,
+        vec![batch(vec![ok("Read", json!({"file_path": "a.rs"}))])],
+    );
+    let before = stats.render_key().expect("a settled mission has a key");
+    stats.folded = true;
+    assert_ne!(stats.render_key(), Some(before));
+    stats.folded = false;
+    assert_eq!(stats.render_key(), Some(before));
+    stats.items.push(FlightItem::Thinking("more".to_string()));
+    assert_ne!(stats.render_key(), Some(before));
+}
+
+#[test]
+fn a_held_call_keeps_the_key_off_so_its_row_is_drawn_fresh() {
+    let _g = lock();
+    let held = running("Shell", json!({"command": "rm -rf target/"}));
+    held.borrow_mut().mark_execution_started();
+    held.borrow_mut().set_waiting_for_clearance(true);
+    let stats = landed(1, 0, vec![batch(vec![held])]);
+    assert!(stats.render_key().is_none());
+}
+
+#[test]
+fn a_live_background_job_keeps_a_landed_missions_key_off() {
+    let _g = lock();
+    let key = hoocode_code_tool_bash::jobs::row_key("j-radar");
+    task_store().upsert_keyed(
+        &key,
+        "npm run dev",
+        CreateTaskOptions {
+            source: Some(TaskSource::Shell),
+            key: Some(key.clone()),
+            ..Default::default()
+        },
+        TaskPatch {
+            status: Some(TaskStatus::InProgress),
+            ..Default::default()
+        },
+    );
+    let job = {
+        let mut component = ToolExecutionComponent::new(
+            "Shell",
+            "bg-radar",
+            json!({"command": "npm run dev", "run_in_background": true}),
+            ToolExecutionOptions {
+                view: Radar,
+                ..Default::default()
+            },
+            None,
+            &cwd(),
+        );
+        component.update_result(
+            ToolResult {
+                content: vec![Content::text("Started background job j-radar")],
+                details: json!({"jobId": "j-radar"}),
+                is_error: false,
+            },
+            false,
+        );
+        Rc::new(RefCell::new(component))
+    };
+    let stats = landed(1, 0, vec![batch(vec![job])]);
+    let first = rows("serve", &stats, 80);
+    // The job's row is read from the task store, so the key must not hold.
+    assert!(stats.render_key().is_none());
+    let second = rows("serve", &stats, 80);
+    task_store().remove_keyed(&key);
+    assert!(first.iter().any(|row| row.contains("⌁")), "{first:#?}");
+    assert!(second.iter().any(|row| row.contains("⌁")), "{second:#?}");
 }

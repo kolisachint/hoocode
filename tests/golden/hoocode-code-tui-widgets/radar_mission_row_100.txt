@@ -1,10 +1,17 @@
- M1 ●  what does the wrap crate do?                                       1 step  0✕   0.8s  $0.003
+▲ M1  what does the wrap crate do?
+   ╰ ● LANDED · 1 step · 0 hits · 0.8s · $0.003
 --- styles ---
-r0 c1-2 fg=#9b8cff
-r0 c4 fg=#b5bd68
-r0 c7-34 fg=#e5e5e7 bold
-r0 c74 fg=#e5e5e7
-r0 c75-79 fg=#989898
-r0 c82-83 fg=#a8a8a8
-r0 c87-90 fg=#989898
-r0 c93-98 fg=#989898
+r0 c0 fg=#9b8cff bold
+r0 c2-3 fg=#9b8cff bold
+r0 c6-33 fg=#e5e5e7 bold
+r1 c3 fg=#a8a8a8
+r1 c5 fg=#b5bd68
+r1 c7-12 fg=#b5bd68 bold
+r1 c13-15 fg=#989898
+r1 c16-21 fg=#a8a8a8
+r1 c22-24 fg=#989898
+r1 c25-30 fg=#a8a8a8
+r1 c31-33 fg=#989898
+r1 c34-37 fg=#a8a8a8
+r1 c38-40 fg=#989898
+r1 c41-46 fg=#a8a8a8

@@ -950,6 +950,11 @@ impl ToolExecutionComponent {
 
     /// Seconds since the block opened (settled at `update_result`).
     /// Rebuilt history settles at once, so its span reads ~0.
+    /// When the call started (radar's batch clock reads the earliest one).
+    pub(crate) fn started_at(&self) -> Instant {
+        self.started
+    }
+
     pub(crate) fn block_elapsed_secs(&self) -> Option<u64> {
         // A live background job outlives its start (which returns at once):
         // its satellite clock keeps running until the job exits.
@@ -1048,7 +1053,7 @@ impl ToolExecutionComponent {
 
     /// Settled, and drawn from the result alone: nothing it shows changes with
     /// the clock, a job or a subagent run.
-    fn is_settled(&self) -> bool {
+    pub(crate) fn is_settled(&self) -> bool {
         let Some(result) = self.result.as_ref() else {
             return false;
         };

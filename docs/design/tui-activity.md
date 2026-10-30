@@ -173,7 +173,7 @@ used); PK2 as first stated (`/login`, `/logout` and `/resume` already agree; the
 across pickers → X6); PK3 as first stated (those lists use `SelectedRowList` → X6); HI6 as
 first stated (only one `highlight_code` → X3).
 
-### Phase R: radar redesign (R3, approved 2026-10-29)
+### Phase R: radar redesign (R3, approved 2026-10-29, built 2026-10-30)
 
 Needs: Phase S tier **Now** (simplification comes first). Design: [radar-r3.md](radar-r3.md).
 Radar only: peek and full do not change. Done bar: L1 plus the radar component goldens (`UPDATE_GOLDENS=1`).
@@ -184,8 +184,10 @@ Radar only: peek and full do not change. Done bar: L1 plus the radar component g
 | R.2 | Rows in `radar.rs`: `▲ Mn` header, settled and live batch lines, `└` hit rows, one-line thinking, folded summary, turn-end row (reuse `trajectory.rs` `landing_spans`; `◆ WAITING` from `awaiting`). Radar-only call-count text; `chain_stats` untouched. | M |
 | R.3 | Tests and goldens: rewrite the chain-row tests in `tests/it/radar.rs`; add batch-split, fold, WAITING and DID NOT LAND cases; `UPDATE_GOLDENS=1` for the 10 `layers_*_radar_*` goldens. Update `docs/maps/ui.md` in the same commit. | S |
 
-Open before R.2: the time format, hits on the live row, the `◆` glyph and subagent holds
-(see radar-r3.md, Open questions). Build by a Haiku subagent per step; the main session merges.
+Built 2026-10-30 (R.1 to R.3). The four questions before R.2 are answered (radar-r3.md,
+Open questions): the time format is the landing line's (`format_duration_secs`); hits show
+on the live row; a subagent's hold reads `◆ WAITING`; `◆` is in the bundled font, so it is
+the glyph. Build by a Haiku subagent per step; the main session merges.
 
 ### Phase T1: prerequisites (refactors, no visible change; goldens must stay identical)
 

@@ -136,6 +136,8 @@ impl Transcript {
         if let Some(row) = self.attempt_error.take() {
             self.chat.borrow_mut().remove_child(&as_component(&row));
             self.assistant_components.retain(|c| !Rc::ptr_eq(c, &row));
+            self.thinking
+                .retain(|mark| !Rc::ptr_eq(&mark.message, &row));
         }
         for block in std::mem::take(&mut self.attempt_tools) {
             self.remove_tool_block(&block);

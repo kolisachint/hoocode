@@ -653,6 +653,7 @@ impl Mode {
                 component
                     .borrow_mut()
                     .set_radar_mission(self.transcript.current_mission());
+                self.transcript.note_assistant(&component);
                 self.add_to_chat(as_component(&component));
                 self.transcript.assistant_components.push(component.clone());
                 self.transcript.streaming = Some(component.clone());
