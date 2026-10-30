@@ -86,7 +86,7 @@ in those tables; the generator keeps each crate's Status by name.
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
 | `home` | The user's home directory and `~` display: one policy for every hoocode crate | 11 | 153 / 0 | keep |
-| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 17 | 2197 / 1279 | keep |
+| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 17 | 2197 / 1306 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
