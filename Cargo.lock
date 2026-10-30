@@ -1153,6 +1153,7 @@ dependencies = [
  "hoocode-ai-types",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

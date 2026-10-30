@@ -21,3 +21,4 @@ hoocode-ai-stream = { workspace = true }
 hoocode-ai-types = { workspace = true }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
+tokio = { version = "1", features = ["sync"] }

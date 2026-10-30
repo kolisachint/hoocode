@@ -868,14 +868,15 @@ fn assemble_session(
     plugins: &hoocode_code_plugins::PluginSet,
 ) -> (AgentSession, AgentSessionServices) {
     let light = args.light.unwrap_or_else(|| settings.light());
-    // Background shell jobs (`enableBackgroundShell`, on by default). The light
-    // preset has none, and neither has a subagent: its jobs would outlive it
-    // with no one to read them.
+    // Background shell jobs (`enableBackgroundShell`, on by default) in the
+    // interactive TUI only, which shows them and asks about them on quit.
+    // Print, json, rpc and app-server runs, the light preset and subagents
+    // have none: a job would outlive the process with no one to read it.
     let in_subagent = args.task_id.is_some()
         || hoocode_code_subagents::depth::current_subagent_depth(
             &hoocode_code_subagents::depth::ProcessEnv,
         ) > 0;
-    let jobs = (!light && !in_subagent && settings.enable_background_shell())
+    let jobs = (interactive && !light && !in_subagent && settings.enable_background_shell())
         .then(|| background_job_registry(&session_manager, &settings));
     // main.ts: the light preset is an allowlist of the four short-schema tools
     // (their order is the active order), which also keeps extension tools off.
@@ -2099,6 +2100,10 @@ mod tests {
 
     /// A session over in-memory settings, models and session, in `/w`.
     fn prompt_for(argv: &[&str]) -> (String, Vec<String>) {
+        prompt_for_mode(argv, false)
+    }
+
+    fn prompt_for_mode(argv: &[&str], interactive: bool) -> (String, Vec<String>) {
         let args = crate::args::parse_args(&argv.iter().map(|a| a.to_string()).collect::<Vec<_>>());
         let agent_dir = tempfile::tempdir().unwrap();
         let (session, _) = assemble_session(
@@ -2111,7 +2116,7 @@ mod tests {
             SessionManager::in_memory("/w"),
             ModelOptions::default(),
             None,
-            false,
+            interactive,
             None,
             &hoocode_code_plugins::PluginSet::default(),
         );
@@ -2310,11 +2315,22 @@ mod tests {
                 "DocSearch",
                 "Agent",
                 "AgentOutput",
-                "TodoWrite",
-                "ShellOutput",
-                "ShellKill"
+                "TodoWrite"
             ]
         );
+        // Not interactive: no background jobs, so no job tools and no hint.
+        assert!(!prompt.contains("run_in_background"), "{prompt}");
+    }
+
+    #[test]
+    fn an_interactive_session_gets_background_shell_jobs_by_default() {
+        // Inside a subagent (this suite run by one) jobs are off by design.
+        if std::env::var_os("HOOCODE_SUBAGENT_DEPTH").is_some() {
+            return;
+        }
+        let (prompt, tools) = prompt_for_mode(&[], true);
+        assert!(tools.iter().any(|t| t == "ShellOutput"), "{tools:?}");
+        assert!(tools.iter().any(|t| t == "ShellKill"), "{tools:?}");
         assert!(
             prompt.contains("run_in_background: true"),
             "the Shell guideline should point at background jobs: {prompt}"

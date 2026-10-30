@@ -1152,6 +1152,70 @@ async fn background_tools_do_not_block_and_deliver_a_follow_up_message() {
     assert!(follow_up > still_working);
 }
 
+/// A user message queued while the loop idles on a background tool starts a
+/// turn at once: the run does not wait for the background work (2026-10-31,
+/// "the next prompt is queued while a subagent runs").
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queued_message_does_not_wait_for_background_work() {
+    let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+    let g = gate.clone();
+    let bg = background_tool("bg", move |args| {
+        let (lock, cvar) = &*g;
+        let guard = lock.lock().unwrap();
+        let _ = cvar
+            .wait_timeout_while(guard, Duration::from_secs(10), |open| !*open)
+            .unwrap();
+        Ok(echo_result("bg-result: ", &args))
+    });
+    let mut config = identity_config();
+    let queued = Arc::new(tokio::sync::Notify::new());
+    config.message_queued = Some(queued.clone());
+    let inbox = Arc::new(Mutex::new(Vec::<AgentMessage>::new()));
+    let drain = inbox.clone();
+    config.get_steering_messages = Some(Box::new(move || {
+        Ok(std::mem::take(&mut *drain.lock().unwrap()))
+    }));
+    let replied_while_running = Arc::new(AtomicBool::new(false));
+    let replied = replied_while_running.clone();
+    let release = gate.clone();
+    mock_stream(&mut config, move |n, context| match n {
+        0 => tool_calls(&[("bg-1", "bg", serde_json::json!({"value": "hello"}))]),
+        1 => {
+            // The run now idles on the background tool. The user types.
+            let (inbox, queued) = (inbox.clone(), queued.clone());
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(50));
+                inbox.lock().unwrap().push(user("hi while it runs"));
+                queued.notify_one();
+            });
+            text("dispatched")
+        }
+        2 => {
+            let got_user = context.messages.iter().any(
+                |m| matches!(m, Message::User(u) if text_of(&u.content.blocks()) == "hi while it runs"),
+            );
+            let bg_done = context.messages.iter().any(
+                |m| matches!(m, Message::User(u) if text_of(&u.content.blocks()).contains("bg-result")),
+            );
+            replied.store(got_user && !bg_done, Ordering::SeqCst);
+            // Only now let the background tool finish.
+            *release.0.lock().unwrap() = true;
+            release.1.notify_all();
+            text("answered")
+        }
+        _ => text("done"),
+    });
+    let (_, messages) = collect(agent_loop(vec![user("go")], context_with(vec![bg]), config)).await;
+
+    assert!(
+        replied_while_running.load(Ordering::SeqCst),
+        "the queued message must be answered before the background tool settles"
+    );
+    assert!(messages.iter().any(
+        |m| matches!(m, AgentMessage::User(u) if text_of(&u.content.blocks()).contains("bg-result: hello"))
+    ));
+}
+
 /// A background tool's own placeholder answers its call, once per call and in
 /// call order, ahead of the loop's hook; a tool that returns `None` gets the
 /// loop's. The subagent bug of 2026-10-30: every Agent call was answered with
