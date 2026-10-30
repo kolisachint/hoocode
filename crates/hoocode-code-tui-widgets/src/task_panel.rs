@@ -689,11 +689,23 @@ fn flight_row(
     row
 }
 
+/// The most rows the console shows at once. A short terminal shows fewer:
+/// a quarter of its height, at least one row.
+pub const PANEL_MAX_ROWS: usize = 6;
+
+/// The row cap for a terminal `screen_rows` tall: [`PANEL_MAX_ROWS`], or a
+/// quarter of the height when that is less.
+fn row_cap(screen_rows: u16) -> usize {
+    (usize::from(screen_rows) / 4).clamp(1, PANEL_MAX_ROWS)
+}
+
 /// The FLIGHT PLAN console (M7, spec §4 c6): the plan's done/total with the
 /// live agent and satellite counts in the title, the tab strip on the top
 /// edge, one waypoint row per row of the shown lens, and the hint foot while
 /// the keyboard is in the panel. Shown at every density; the pick marker and
-/// the hint foot only while `focused`.
+/// the hint foot only while `focused`. Rows beyond `max_rows` are windowed
+/// around the pick, and a `N more` row says how many are hidden.
+#[allow(clippy::too_many_arguments)]
 fn render_flight_plan(
     model: &RowModel,
     view: TaskPanelView,
@@ -702,6 +714,7 @@ fn render_flight_plan(
     focused: bool,
     width: usize,
     now: u64,
+    max_rows: usize,
 ) -> Vec<String> {
     let pal = Palette::current();
     let mut done = 0;
@@ -748,6 +761,14 @@ fn render_flight_plan(
             )
         })
         .collect();
+    console.max_visible = Some(max_rows);
+    let hidden = console.rows.len().saturating_sub(max_rows);
+    if hidden > 0 {
+        console.bottom.push(Line::from(Span::styled(
+            format!("  {hidden} more"),
+            pal.faint(),
+        )));
+    }
     console.render(width)
 }
 
@@ -769,6 +790,8 @@ pub struct TaskPanelComponent {
     confirming: Option<u64>,
     /// Queued for the app; see [`PanelEvent`].
     events: Vec<PanelEvent>,
+    /// The terminal's height in rows, set by the app ([`TaskPanelComponent::set_screen_rows`]).
+    screen_rows: u16,
 }
 
 impl Default for TaskPanelComponent {
@@ -786,6 +809,9 @@ fn resolve_selection(model: &RowModel, view: TaskPanelView, selected: Option<u64
         _ => ids.first().copied(),
     }
 }
+
+/// The terminal height assumed until the app sets one.
+const DEFAULT_SCREEN_ROWS: u16 = 24;
 
 /// The keys the panel answers to, in the order they are tried.
 const PANEL_KEYS: [&str; 8] = [
@@ -812,7 +838,14 @@ impl TaskPanelComponent {
             selected: None,
             confirming: None,
             events: Vec::new(),
+            screen_rows: DEFAULT_SCREEN_ROWS,
         }
+    }
+
+    /// The terminal's height. The console shows at most [`PANEL_MAX_ROWS`]
+    /// rows, fewer on a short terminal.
+    pub fn set_screen_rows(&mut self, rows: u16) {
+        self.screen_rows = rows;
     }
 
     pub fn get_view(&self) -> TaskPanelView {
@@ -865,10 +898,23 @@ impl TaskPanelComponent {
         self.view
     }
 
+    /// Left or Right from inside the panel: the next tab, with the pick on its
+    /// last row, so Down returns to the prompt from there.
+    fn cycle_from_pick(&mut self, forward: bool) {
+        self.cycle_view(forward);
+        self.selected = self.model.row_ids(self.shown_view()).last().copied();
+    }
+
     /// Whether the panel has any rows to focus. Syncs the model first.
     pub fn can_focus(&mut self) -> bool {
         self.model.sync(task_store());
         !self.model.views().is_empty()
+    }
+
+    /// Whether Up on the prompt's first line may hand the keyboard to the panel:
+    /// shown and with rows. The app adds its own scroll check.
+    pub fn can_take_up(&mut self) -> bool {
+        self.is_shown() && self.can_focus()
     }
 
     /// Up on the prompt's first line: the keyboard goes to the panel, on its
@@ -899,6 +945,14 @@ impl TaskPanelComponent {
         let view = self.shown_view();
         let id = resolve_selection(&self.model, view, self.selected)?;
         Some((view, id))
+    }
+
+    /// Takes back a queued [`PanelEvent::Exit`], so the app can return the
+    /// keyboard at once, before the next key of the same input batch.
+    pub fn take_exit(&mut self) -> bool {
+        let before = self.events.len();
+        self.events.retain(|event| *event != PanelEvent::Exit);
+        self.events.len() != before
     }
 
     /// The events queued by key handling since the last call, in order.
@@ -1023,12 +1077,8 @@ impl TaskPanelComponent {
                     self.move_pick(1);
                 }
             }
-            "app.panel.prevTab" => {
-                self.cycle_view(false);
-            }
-            "app.panel.nextTab" => {
-                self.cycle_view(true);
-            }
+            "app.panel.prevTab" => self.cycle_from_pick(false),
+            "app.panel.nextTab" => self.cycle_from_pick(true),
             "app.panel.open" => self.open_pick(),
             "app.panel.cancel" => self.cancel_pick(armed),
             _ => {}
@@ -1061,6 +1111,7 @@ impl Component for TaskPanelComponent {
             self.focused,
             width as usize,
             now,
+            row_cap(self.screen_rows),
         )
     }
 

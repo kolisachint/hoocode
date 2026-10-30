@@ -1,7 +1,7 @@
 //! The prompt: the custom editor and its keys (`Action`), submit, the `!` bash prefix, and the
 //! autocomplete providers (`/` commands, `@file`, paths).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -152,6 +152,10 @@ const EDITOR_ACTIONS: [(&str, Action); 31] = [
 pub(super) struct CustomEditor {
     pub(super) editor: Editor,
     pub(super) actions: Rc<RefCell<Vec<Action>>>,
+    /// The app's answer to "can the task panel take Up now?" (shown, with
+    /// rows, not pinned). Up on the first line is handed over only when set;
+    /// otherwise the editor moves its cursor as usual.
+    pub(super) panel_takes_up: Rc<Cell<bool>>,
 }
 
 /// The `@file` finder: `hoocode_code_tools::file_finder` (fd's rules, in
@@ -199,9 +203,11 @@ impl Component for CustomEditor {
             self.actions.borrow_mut().push(Action::Exit);
             return;
         }
-        // Up on the first visual line leaves the prompt for the task panel, unless
-        // the autocomplete list is open (Up moves through its items).
+        // Up on the first visual line leaves the prompt for the task panel, when
+        // the panel can take it (`panel_takes_up`), unless the autocomplete list
+        // is open (Up moves through its items).
         if kb.matches(data, "tui.editor.cursorUp")
+            && self.panel_takes_up.get()
             && !self.editor.is_showing_autocomplete()
             && self.editor.is_on_first_visual_line()
         {
@@ -943,6 +949,7 @@ mod tests {
                 EditorOptions::default(),
             ),
             actions: Rc::new(RefCell::new(Vec::new())),
+            panel_takes_up: Rc::new(Cell::new(true)),
         }
     }
 
@@ -960,6 +967,20 @@ mod tests {
     #[test]
     fn up_on_the_first_line_of_the_prompt_asks_for_the_task_panel() {
         let mut prompt = prompt();
+        press(&mut prompt, UP);
+        assert_eq!(queued(&prompt), vec![Action::PanelUp(UP.to_string())]);
+    }
+
+    #[test]
+    fn up_goes_to_the_editor_while_the_panel_cannot_take_it() {
+        let mut prompt = prompt();
+        prompt.panel_takes_up.set(false);
+        press(&mut prompt, UP);
+        assert!(queued(&prompt).is_empty(), "no hand-off queued");
+        prompt.editor.set_text("one\ntwo");
+        press(&mut prompt, UP);
+        assert!(queued(&prompt).is_empty(), "the cursor moves up a line");
+        prompt.panel_takes_up.set(true);
         press(&mut prompt, UP);
         assert_eq!(queued(&prompt), vec![Action::PanelUp(UP.to_string())]);
     }

@@ -114,16 +114,73 @@ pub(super) fn superseded_quit() -> SupersededQuit {
     }
 }
 
+/// Whether the panel holds the keyboard but can show nothing to it: hidden,
+/// or with no rows left (its rows are removed as they finish). Keys sent
+/// to such a panel would be swallowed, so the keyboard goes back.
+fn panel_focus_is_stale(focused: bool, shown: bool, has_rows: bool) -> bool {
+    focused && !(shown && has_rows)
+}
+
 impl Mode {
     /// `app.panel.focus` (Ctrl+G): shows or hides the task panel in this view.
     /// The keyboard stays where it is; a hidden panel gives it back from inside.
-    /// Shown with no rows, it has nothing to draw, so it says so.
+    /// With no rows there is nothing to show, so the toggle stays as it is and
+    /// the status line says so.
     pub(super) fn toggle_task_panel(&mut self) {
-        let shown = self.task_panel.borrow_mut().toggle_shown();
-        if shown && !self.task_panel.borrow_mut().can_focus() {
+        if !self.task_panel.borrow_mut().can_focus() {
             self.show_status("No tasks to show.");
+            return;
         }
+        self.task_panel.borrow_mut().toggle_shown();
         self.dirty.set(true);
+    }
+
+    /// Keeps the prompt's "panel can take Up" flag current: the panel is shown
+    /// with rows, and the transcript is not pinned (a pinned view owns the
+    /// arrows). `CustomEditor` reads it on each key.
+    pub(super) fn refresh_panel_takes_up(&mut self) {
+        let takes_up = !self.tui.scroll_pinned() && self.task_panel.borrow_mut().can_take_up();
+        self.panel_takes_up.set(takes_up);
+    }
+
+    /// Up on the prompt's first line was handed over by the editor
+    /// (`Action::PanelUp`). Runs it now, not after the input batch, so the keys
+    /// after it in the same batch reach the panel.
+    pub(super) fn hand_off_panel_up(&mut self) {
+        let queued = {
+            let mut actions = self.actions.borrow_mut();
+            let at = actions
+                .iter()
+                .position(|action| matches!(action, Action::PanelUp(_)));
+            at.map(|at| actions.remove(at))
+        };
+        if let Some(Action::PanelUp(data)) = queued {
+            self.enter_task_panel_from_prompt(&data);
+        }
+    }
+
+    /// Returns the keyboard when the panel queued an exit (Down past its last
+    /// row, Esc, Ctrl+G) during the key just handled, so the next key of the
+    /// batch goes to the prompt.
+    pub(super) fn return_panel_focus_if_asked(&mut self) {
+        let asked = self.task_panel.borrow_mut().take_exit();
+        if asked {
+            self.leave_task_panel();
+        }
+    }
+
+    /// Gives the keyboard back when the panel has it but can no longer show
+    /// it: no rows left, or hidden (a view switch). Otherwise the keys would
+    /// go to a panel that draws nothing and swallow them.
+    pub(super) fn release_stale_panel_focus(&mut self) {
+        let stale = {
+            let mut panel = self.task_panel.borrow_mut();
+            let has_rows = panel.can_focus();
+            panel_focus_is_stale(panel.is_focused(), panel.is_shown(), has_rows)
+        };
+        if stale {
+            self.leave_task_panel();
+        }
     }
 
     /// Up on the prompt's first line: the task panel takes the keyboard on its
@@ -149,6 +206,7 @@ impl Mode {
     /// Runs the events the panel queued while it had the keyboard. Called
     /// after each input pass, before the queued actions.
     pub(super) fn drain_task_panel_events(&mut self) {
+        self.release_stale_panel_focus();
         let events = self.task_panel.borrow_mut().take_events();
         for event in events {
             match event {
@@ -327,6 +385,17 @@ impl Mode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_focused_panel_that_cannot_show_gives_the_keyboard_back() {
+        // Focus on a panel with rows and shown: it keeps the keyboard.
+        assert!(!panel_focus_is_stale(true, true, true));
+        // Not focused: nothing to give back.
+        assert!(!panel_focus_is_stale(false, false, false));
+        // Hidden while focused (a view switch), or emptied while focused.
+        assert!(panel_focus_is_stale(true, false, true));
+        assert!(panel_focus_is_stale(true, true, false));
+    }
 
     #[test]
     fn fatal_exit_leaves_at_once_with_jobs_running() {
