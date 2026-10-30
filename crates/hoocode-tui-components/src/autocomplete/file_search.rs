@@ -128,11 +128,12 @@ impl FileSearch {
 }
 
 /// Settles the wanted walk when the worker stops inside it (a panicking finder
-/// unwinds through here). The query then reads as no matches, so
+/// unwinds through here). The worker is dying, so no walk will settle the
+/// wanted query: it is settled whatever its generation, which may already be
+/// a newer query typed past the walk. The query then reads as no matches, so
 /// `walk_pending` cannot stay true and the editor cannot poll forever.
 struct WalkGuard<'a> {
     state: &'a Mutex<State>,
-    generation: u64,
     finished: bool,
 }
 
@@ -142,10 +143,8 @@ impl Drop for WalkGuard<'_> {
             return;
         }
         let mut state = lock(self.state);
-        if self.generation == state.generation {
-            if let Some(wanted) = &mut state.wanted {
-                wanted.ready.get_or_insert_with(Vec::new);
-            }
+        if let Some(wanted) = &mut state.wanted {
+            wanted.ready.get_or_insert_with(Vec::new);
             state.completed = true;
         }
     }
@@ -160,7 +159,6 @@ fn run_worker(finder: &FileFinder, inbox: &Receiver<Request>, state: &Mutex<Stat
         let (base, query) = &request.key;
         let mut guard = WalkGuard {
             state,
-            generation: request.generation,
             finished: false,
         };
         let found = finder(base, query, MAX_RESULTS);
@@ -200,6 +198,31 @@ mod tests {
         assert!(!search.walk_pending());
         assert!(search.take_completed());
         assert!(search.results(Path::new("base"), "q").is_empty());
+    }
+
+    #[test]
+    fn a_newer_query_sent_during_a_panicking_walk_settles() {
+        let (requests, inbox) = mpsc::channel();
+        let state = Arc::new(Mutex::new(State::default()));
+        // The finder for "old" is still running when the user types "new", then it dies.
+        let typed_past = search_with(Arc::clone(&state), requests.clone());
+        let finder: FileFinder = Box::new(move |_, query: &str, _| {
+            if query == "old" {
+                assert!(typed_past.results(Path::new("base"), "new").is_empty());
+                panic!("walk died");
+            }
+            Vec::new()
+        });
+        let search = search_with(Arc::clone(&state), requests);
+        assert!(search.results(Path::new("base"), "old").is_empty());
+
+        let died = catch_unwind(AssertUnwindSafe(|| run_worker(&finder, &inbox, &state)));
+        assert!(died.is_err());
+        // "new" was never walked, but the dying worker settles it: no pending forever.
+        assert!(!search.walk_pending());
+        assert!(search.take_completed());
+        assert!(search.results(Path::new("base"), "new").is_empty());
+        assert!(!search.walk_pending());
     }
 
     #[test]

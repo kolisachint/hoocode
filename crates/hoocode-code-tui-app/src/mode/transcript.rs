@@ -535,6 +535,12 @@ impl Transcript {
         let Some(mission) = self.missions.last() else {
             return;
         };
+        // A landed mission has ended: a failure with no mission of its own
+        // (a PromptDone error before any user message, such as "No model
+        // selected") must not rewrite how the last landed one ended.
+        if mission.landed {
+            return;
+        }
         let mut flight = mission.flight.borrow_mut();
         if flight.failure != reason {
             // The mission header's stamp reads this data (hoocode_tui_render::note_change).
@@ -1230,7 +1236,11 @@ impl Mode {
         // History has no live state: a chain still open is finished, unless
         // calls still wait for results (a resumed run in flight). A turn that
         // has settled gets its token row; one still in flight waits for it.
-        if rendered_pending.is_empty() {
+        // A turn live now (its anchor is set) keeps its chain open and its
+        // mission flying: the live stream lands both when the turn ends, so
+        // a rebuild mid-turn (a thinking toggle) must not land them early.
+        let turn_live = self.turn_cost_anchor.is_some();
+        if rendered_pending.is_empty() && !turn_live {
             if let Some(ended) = turn.take() {
                 self.show_rebuilt_turn_cost(ended);
             }
@@ -2134,6 +2144,10 @@ mod tests {
         let mut t = fresh_transcript();
         t.begin_mission("try it", None, ToolOutputView::Radar);
         mission_message(&mut t, Vec::new(), StopReason::Stop);
+        // A retry that succeeds clears a failure the open mission had recorded.
+        t.set_mission_failure(Some("529 upstream overloaded".into()));
+        t.set_mission_failure(None);
+        assert_eq!(t.missions[0].flight.borrow().did_not_land_reason(), None);
         t.set_mission_failure(Some("connection reset\nby peer".into()));
         t.land_mission(1, 0, 0, 0.0, 0.5, Some(StopReason::Error));
         t.sync_radar_prose();
@@ -2143,10 +2157,24 @@ mod tests {
             flight.did_not_land_reason().as_deref(),
             Some("connection reset")
         );
-        drop(flight);
-        // A retry that succeeds clears the failure.
-        t.set_mission_failure(None);
-        assert_eq!(t.missions[0].flight.borrow().did_not_land_reason(), None);
+    }
+
+    #[test]
+    fn a_failure_after_the_mission_landed_keeps_its_reason() {
+        // "No model selected" ends a turn before any user message opens a
+        // mission, so the last mission is the one that already landed.
+        let mut t = fresh_transcript();
+        t.begin_mission("try it", None, ToolOutputView::Radar);
+        mission_message(&mut t, Vec::new(), StopReason::Stop);
+        t.set_mission_failure(Some("529 upstream overloaded".into()));
+        t.land_mission(1, 0, 0, 0.0, 0.5, Some(StopReason::Error));
+        t.set_mission_failure(Some("No model selected".into()));
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!(flight.mark, FlightMark::DidNotLand);
+        assert_eq!(
+            flight.did_not_land_reason().as_deref(),
+            Some("529 upstream overloaded")
+        );
     }
 
     fn user_message(content: UserContent) -> UserMessage {
