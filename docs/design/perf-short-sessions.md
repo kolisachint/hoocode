@@ -142,6 +142,160 @@ Gate: a lean child (skips UI, highlighter and catalog init; keeps tools and the 
 saves **8 MiB or more per child** in both steady RSS and massif peak. Then propose it.
 Changing `DEFAULT_MAX_CONCURRENCY` is a separate decision for the user.
 
+#### Measured 2026-10-30
+
+**Result: gate not met.** A lean child saves about 2.6 MiB of steady RSS and 2.8 MiB of
+massif peak per child, well under 8 MiB. The gate cannot be met on this workload whatever is
+skipped: the child's whole heap peak is 4.4 to 4.6 MiB, and its whole private memory is
+about 7.5 MiB. The UI, the highlighter and MCP allocate nothing in a child already. The model
+catalog is the only unused subsystem that costs anything. So no lean child is proposed. Two
+cheaper levers are below, plus one follow-up.
+
+**How a child starts.** `ProcessRunner::spawn` (`runner.rs:117`) runs `current_exe()` with
+`--mode json --session <child.jsonl> --task-id <id> --parent-session <parent.jsonl>`, then
+`--system-prompt`, `--tools`, `--disallowed-tools`, `--model`, `--max-turns`, `--deadline-ms`,
+any `--skill`, and the prompt `Task: …` (`pool.rs` `build_args`). The env is the parent's env
+plus `HOOCODE_SUBAGENT_DEPTH=1`, `HOOCODE_BASH_DEFAULT_TIMEOUT_SECS`, and
+`HOOCODE_SKIP_MCP=1` when the tool allowlist has no `mcp*` tool (`pool.rs:1481` `child_env`).
+In `main`, the child runs `configure_global_tls`, `migrate::run_startup` and `parse_args`.
+Then `run_print_mode` runs (`hoocode-code-cli/src/lib.rs:337`), which does
+`install_clearance_relay`, `build_session` and `create_runtime`, so settings, auth,
+`load_registry`, plugins, the resource loader, modes and tools are all built. MCP is attached
+only when `mcp_wanted` is true (`runtime.rs:1009`). The child never builds a TUI, theme
+registry or highlighter: json mode doesn't reach them. Its tokio `hoocode-io` runtime already
+has 2 workers (`IO_CHILD_WORKERS`, `hoocode-runtime/src/runtime.rs:23`).
+
+**Per child (stock release binary, explore agent, N=4, 3 runs; spread within 0.3 MiB).**
+"Idle" means after startup, before the first tool call. "Late" means after 9 tool calls (a
+transcript of about 77 KB), held until exit. The RSS never falls back, so the late value is
+also the peak.
+
+| Phase | VmRSS | RssAnon | RssFile | Private (smaps) | PSS | Threads |
+|---|---|---|---|---|---|---|
+| Idle (startup done) | 20.8 MiB | 4.25 MiB | 16.5 MiB | about 4.5 MiB | n/a | 5 |
+| Late = peak | 25.7 MiB | 7.5 MiB | 18.2 MiB | 7.6 MiB | 11.1 MiB | 11 |
+| Late, heavy child (transcript 276 KB, N=1, 2 runs) | 29.2 MiB | 10.9 MiB | 18.3 MiB | 11.7 MiB | 19.5 MiB | 11 |
+
+The 5 threads are main, the clearance relay (`hoocode-clearan…`), `hoocode-io-0/1` and `hoocode-session`. The 6
+extra threads after tools are tokio blocking threads (also named `hoocode-io-N`). The agent
+loop runs each tool call with `spawn_blocking` on the io runtime
+(`hoocode-agent-loop/src/lib.rs:990`), so 6 parallel Reads make 6 threads. They exit after
+tokio's 10 s keep-alive, but the glibc arena each one made stays.
+
+**Massif heap peak per child** (`--trace-children=yes`, threshold 0.05%; 4 children at N=4,
+plus N=1):
+
+| Run | Peak (heap + extra) | Steady (median, 2nd half) |
+|---|---|---|
+| N=1 | 4.43 MiB | 3.91 MiB |
+| N=4, children 1 to 4 | 4.42 / 4.60 / 4.43 / 4.60 MiB | 3.9 MiB |
+| Heavy child (transcript 276 KB) | 8.17 MiB | 5.97 MiB |
+
+**Where the child's memory goes.** Private memory comes from smaps (N=1, late, KiB). Shared
+pages are mostly binary text that the parent and siblings also map, so they are not a cost of
+the child.
+
+| Mapping | RSS | Private | Shared |
+|---|---|---|---|
+| Binary text (`r-xp`) | 11 652 | 260 | 11 392 |
+| Binary `r--p` (rodata, relocated `.data.rel.ro`) | 4 008 | 816 | 3 192 |
+| Shared libs | 2 328 | 56 | 2 272 |
+| `[heap]` (main arena) | 3 852 | 3 852 | 0 |
+| glibc per-thread arenas (10 maps) | 2 172 | 2 172 | 0 |
+| Thread stacks, main stack, other anon | 680 | 680 | 0 |
+| **Total** | **24 716** | **7 856** | **16 860** |
+
+Heap at the massif peak, by subsystem (light child; the heavy child's figure is in brackets):
+
+| Subsystem | Heap at peak | Sites |
+|---|---|---|
+| Model catalog | 2.41 MiB (2.40) | Built-in `OnceLock<Registry>` about 1.3 MiB (`hoocode-ai-models/src/lib.rs:18`, the serde parse of `MODELS_JSON`). Merged copy about 1.1 MiB (`ModelRegistry::load_models`, `hoocode-code-models/src/lib.rs:387`, from `load_registry` at `runtime.rs:102`) |
+| Conversation (agent loop) | 1.0 MiB (3.9) | `AgentMessage` / `ToolResultMessage` clones in `run_loop_with_background` and `Shared::process_event`. Json event serialisation in `run_print_body` (`runtime.rs:1244`): 1.28 MiB at peak for the heavy child |
+| Session storage | 0.15 to 0.24 MiB (0.9) | `SessionManager::append`: a clone of the `FileEntry`, then a serialise |
+| TLS trust set | 0.13 MiB | `configure_global_tls` (`hoocode-code-cli/src/lib.rs:149`) |
+| tokio, tool registry and schemas, prompts and resources, serde | about 0.15 MiB together | |
+| TUI, theme, highlighter, MCP, plugins | **0** (no site at the 0.05% threshold) | Not reached in json mode. MCP is skipped (`HOOCODE_SKIP_MCP=1`) |
+
+At its peak the child heap is about 15 to 17 times the transcript size (1.25 MiB for 77 KB,
+4.8 MiB for 276 KB). For a real explore child that reads a few hundred KB, the transcript
+copies cost more than the catalog does.
+
+**Prototype (local hack, reverted, not committed).** `registry()` parses `[]` instead of the
+built-in catalog when `HOOCODE_M3_NO_CATALOG` is set. The A/B ran on the same binary, N=4,
+2 runs each. `MALLOC_ARENA_MAX` ran on the stock binary, N=4, 2 runs each. The env reaches the
+child through the parent's env.
+
+| Variant | Idle RSS | Late RSS | Late anon | Late private | Massif peak | Saving (late RSS / massif) |
+|---|---|---|---|---|---|---|
+| Baseline | 20.5 MiB | 25.4 MiB | 7.4 MiB | 7.5 MiB | 4.55 MiB | n/a |
+| No catalog (the "lean child") | 17.8 MiB | 22.8 MiB | 5.0 MiB | 5.2 MiB | 1.71 MiB | **2.6 / 2.8 MiB** |
+| `MALLOC_ARENA_MAX=2` | 20.5 MiB | 24.3 MiB | 6.3 MiB | 6.4 MiB | (malloc only) | 1.2 MiB / n/a |
+| `MALLOC_ARENA_MAX=1` | 20.4 MiB | 23.8 MiB | 5.8 MiB | 6.0 MiB | (malloc only) | 1.7 MiB / n/a |
+| No catalog + `MALLOC_ARENA_MAX=1` | 17.8 MiB | 21.2 MiB | 3.4 MiB | 3.7 MiB | 1.71 MiB | 4.2 MiB / 2.8 MiB |
+
+Even the two levers together save 4.2 MiB of steady RSS and 2.8 MiB of massif peak.
+
+**Concurrency data** (stock binary, late phase, 2 to 3 runs each). The sum of RSS counts the
+shared binary text once per process. PSS splits it, so the sum of PSS is the real memory.
+
+| Children | RSS per child | Parent RSS | Parent threads | Sum of RSS | Sum of PSS |
+|---|---|---|---|---|---|
+| 1 | 25.8 MiB | 24.6 MiB | 9 | 50.4 MiB | 31.7 MiB |
+| 4 | 25.7 MiB | 26.6 MiB | 15 | 129.4 MiB | 56.9 MiB |
+| 8 | 25.6 MiB | 30.3 MiB | 23 | 234.8 MiB | 90.1 MiB |
+| 12 | 25.6 MiB | 33.0 MiB | 31 | 339.6 MiB | 124.1 MiB |
+| 12, `MALLOC_ARENA_MAX=1` | 24.0 MiB | 30.7 MiB | 31 | 318.4 MiB | 101.9 MiB |
+
+Each added child costs about 8.4 MiB of real memory: 7.5 MiB in the child and about 0.7 MiB
+in the parent. A heavy child costs about 3.5 MiB more. The eval's "288 MB across 13
+processes" is a sum of RSS. Counted as PSS, the same fan-out is about 125 MiB. The parent
+gains about 2 threads per running child. One of them is a blocking thread parked in
+`child.wait()` (`runner.rs:284`), and the rest are lingering blocking threads.
+
+**Recommendation.**
+- Lean child: **not proposed.** The gate is not met (2.6 MiB steady RSS, 2.8 MiB massif
+  peak, against 8). If the catalog is ever made lazy (the deferred "Lazy model catalog" item),
+  a child saves about 2.6 MiB. At 12 children that is about 31 MiB, so that item is worth
+  more than its parent-only estimate of 1.5 MB.
+- `DEFAULT_MAX_CONCURRENCY` (data only; the user decides): memory doesn't argue for a change.
+  Twelve light children cost about 92 MiB of real memory over one child, 4 cost about 25 MiB
+  and 8 about 58 MiB. Recommended: **keep 12**. If it is lowered, do it for CPU or provider
+  rate limits, not memory.
+- Cheap win, not a lean child: set `MALLOC_ARENA_MAX=2` in `child_env` (`pool.rs:1481`).
+  That saves 1.2 MiB per child after its first parallel tool batch, and `=1` saves 1.7 MiB.
+  The risk is malloc contention when tool calls run in parallel. Test plan: the subagent evals
+  (`scripts/eval/subagent_evals.py`), plus a CPU-time A/B of a 6-way parallel Read child.
+  Another option is to run tool bodies on the capped `hoocode-tools` pool instead of the io
+  runtime's blocking pool (`hoocode-agent-loop/src/lib.rs:990`); that change is not measured.
+- Tokio worker threads in the child: already 2. Going to 1 would save one stack and maybe one
+  arena (under 0.3 MiB, not measured). Not worth it.
+- Follow-up (not measured further): the transcript copies (about 16 times the transcript at
+  peak) are the biggest per-child cost that grows. Look at the message clones in
+  `run_loop_with_background`, `SessionManager::append` (clone then serialise), and the full
+  `turn_end` / `tool_execution_end` / `message_end` JSON a child writes to its parent.
+
+**Method.** A scratch harness (`run.py`, outside the repo) uses `scripts/eval/mock_provider.py`
+with one route per child. It writes an isolated HOME (models.json, settings with
+`enableSubagent`) and runs `hoocode --offline --mode json --enable-subagents`, whose scripted
+turn makes N background `Agent` calls (`explore`, tools `Read,CodeSearch`). Each child holds
+4 s before its first reply and then calls Read ×2 and CodeSearch (lexical). Next it calls
+Read ×6 on 400-line files (2000-line files for the heavy child). Then it holds 8 s and
+answers. `/proc/<pid>/status` and `smaps_rollup` are sampled every 0.5 s for processes whose
+`argv[0]` is the test binary, and `smaps` is dumped twice per process. Massif ran as
+`valgrind --tool=massif --trace-children=yes --threshold=0.05` on the parent, with holds of
+3 s. The build was `cargo build --release --locked --bin hoocode` at 5449b3a with
+`CARGO_PROFILE_RELEASE_STRIP=none`, so massif has symbols. `.symtab` is not loaded, so RSS
+matches the stripped build.
+
+**Caveats.** The provider is a mock and the runs are short (about 12 s). The machine has 4
+cores, Linux 6.18 and glibc malloc. Massif counts malloc only, not arenas, stacks or text,
+and valgrind serialises threads. Only the explore agent was measured. A child whose allowlist
+has no `--tools` limit, or includes `mcp*`, attaches MCP. With MCP servers configured that
+adds their cost, which this run did not measure (the test HOME had none). Other agents were
+running on the same machine. The sampler matched the exact binary path, so their processes
+were not counted, but they may add timing noise. The no-catalog prototype also took the
+catalog out of the parent. Only the child figures are used above.
+
 ### M4. Streaming markdown re-lex
 
 Facts: `set_text` (`crates/hoocode-tui-components/src/markdown/mod.rs:72-80`) bumps

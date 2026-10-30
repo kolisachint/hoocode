@@ -741,6 +741,7 @@ fn definitions(
                 execution_mode: None,
                 background: false,
                 background_when: None,
+                background_placeholder: None,
                 ordered_start: false,
                 execute: Arc::new(move |_id, params, signal, on_update, _ctx| {
                     call_blocking(&handle, &client, &remote, params, signal, on_update, &site)

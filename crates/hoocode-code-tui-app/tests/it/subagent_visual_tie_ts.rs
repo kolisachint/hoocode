@@ -305,7 +305,7 @@ fn each_running_row_carries_its_own_live_timer_next_to_the_activity() {
 #[test]
 fn task_output_reports_elapsed_in_the_panels_format() {
     let _g = lock();
-    subagent_inbox().start("t1", "explore#1", "explore");
+    subagent_inbox().start("t1", "explore#1", "explore", "");
     advance_clock_for_tests(94_000);
     let dir = tempfile::tempdir().unwrap();
     let rt = runtime();

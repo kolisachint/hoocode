@@ -41,8 +41,7 @@ use crate::dispatch::DispatchEvaluator;
 use crate::events::{classify_subagent_line, SubagentStdoutLine};
 use crate::ledger;
 use crate::lifeguard::{
-    kill_process_tree, tool_limit_from_start, LifeguardEvent, SubagentLifeguard, ToolLimit,
-    SHELL_DEFAULT_TIMEOUT_ENV,
+    tool_limit_from_start, LifeguardEvent, SubagentLifeguard, ToolLimit, SHELL_DEFAULT_TIMEOUT_ENV,
 };
 use crate::limits::{SubagentLimitSettings, SubagentLimits};
 use crate::model_categories::{select_model, CategorySettings, ModelRequest, ModelSelection};
@@ -381,6 +380,10 @@ impl KillReason {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubagentSlot {
     pub pid: u32,
+    /// The child's spawn generation (see [`crate::lifeguard::ChildPid`]):
+    /// every kill of it names it, so a stale slot never kills a newer child
+    /// that reused the pid.
+    pub generation: u64,
     pub agent_type: String,
     pub task_id: String,
     /// Epoch ms.
@@ -833,15 +836,22 @@ impl SubagentPool {
                 .insert(task_id.to_string(), KillReason::Cancelled);
             return true;
         }
-        let Some(pid) = state.slots.get(task_id).map(|s| s.pid) else {
+        let Some(child) = state
+            .slots
+            .get(task_id)
+            .map(|s| crate::lifeguard::ChildPid {
+                pid: s.pid,
+                generation: s.generation,
+            })
+        else {
             return false;
         };
         state
             .kill_reasons
             .insert(task_id.to_string(), KillReason::Cancelled);
         drop(state);
-        if pid > 0 {
-            kill_process_tree(pid);
+        if child.pid > 0 {
+            crate::lifeguard::kill_child_trees(&[child]);
         }
         true
     }
@@ -1080,7 +1090,14 @@ impl SubagentPool {
                 return;
             }
             state.disposed = true;
-            let pids: Vec<u32> = state.slots.values().map(|s| s.pid).collect();
+            let pids: Vec<crate::lifeguard::ChildPid> = state
+                .slots
+                .values()
+                .map(|s| crate::lifeguard::ChildPid {
+                    pid: s.pid,
+                    generation: s.generation,
+                })
+                .collect();
             state.slots.clear();
             state.starting.clear();
             state.queue.clear();
@@ -1094,9 +1111,8 @@ impl SubagentPool {
         };
         // The whole process group: a subagent's own children must not outlive
         // the pool.
-        for pid in pids.into_iter().filter(|p| *p > 0) {
-            kill_process_tree(pid);
-        }
+        // One read of the process table for all of them.
+        crate::lifeguard::kill_child_trees(&pids);
         for waiter in waiters {
             let _ = waiter.send(Err(PoolError("SubagentPool disposed".into())));
         }
@@ -1629,6 +1645,7 @@ impl PoolInner {
                 task.task_id.clone(),
                 SubagentSlot {
                     pid,
+                    generation: crate::lifeguard::live_generation(pid),
                     agent_type: task.agent_type.clone(),
                     task_id: task.task_id.clone(),
                     spawned_at,

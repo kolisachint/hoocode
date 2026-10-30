@@ -56,6 +56,7 @@ fn recording_bash(ran: Arc<Mutex<Vec<String>>>) -> ToolDefinition {
     ToolDefinition {
         ordered_start: false,
         background_when: None,
+        background_placeholder: None,
         name: "Shell".into(),
         label: "Shell".into(),
         description: "bash tool".into(),

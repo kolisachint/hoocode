@@ -150,10 +150,54 @@ impl Runner for ProcessRunner {
 /// not apply there.
 struct ProcessHandle {
     pid: u32,
+    /// The registry generation of this child (see `lifeguard::ChildPid`).
+    generation: u64,
     stdout: Option<mpsc::Receiver<Vec<u8>>>,
     stderr: Option<mpsc::Receiver<Vec<u8>>>,
     stdin: Option<mpsc::Sender<String>>,
     child: Option<std::process::Child>,
+}
+
+/// Block until `pid` (our child) has exited, without reaping it. `true` when
+/// it has exited (or is already gone: `ECHILD`); `false` on any other error,
+/// logged once, after which the caller falls back to a plain reaping wait.
+#[cfg(unix)]
+fn wait_exited_unreaped(pid: u32) -> bool {
+    loop {
+        // SAFETY: waitid(2) with WNOWAIT on our own child: it only reports, and
+        // the zeroed siginfo is a valid out-parameter.
+        let rc = unsafe {
+            let mut info: libc::siginfo_t = std::mem::zeroed();
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        if rc == 0 {
+            return true;
+        }
+        let error = std::io::Error::last_os_error();
+        match error.raw_os_error() {
+            Some(libc::EINTR) => continue,
+            Some(libc::ECHILD) => return true,
+            _ => {
+                static WARNED: std::sync::Once = std::sync::Once::new();
+                WARNED.call_once(|| {
+                    crate::agent_log::agent_log(&format!(
+                        "[POOL] waitid(WNOWAIT) on child {pid} failed ({error}); falling back to a plain wait"
+                    ));
+                });
+                return false;
+            }
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn wait_exited_unreaped(_pid: u32) -> bool {
+    false
 }
 
 /// Feed lines from a channel into a child's stdin on the `hoocode-io` runtime.
@@ -254,8 +298,11 @@ impl ProcessHandle {
         pump(stdout, stdout_tx);
         pump(stderr, stderr_tx);
         let stdin = pump_stdin(stdin);
+        // From here a kill by this pid is safe until `wait` marks it exited.
+        let generation = crate::lifeguard::child_spawned(pid);
         Ok(Self {
             pid,
+            generation,
             stdout: Some(stdout_rx),
             stderr: Some(stderr_rx),
             stdin,
@@ -278,10 +325,27 @@ impl RunnerHandle for ProcessHandle {
 
     fn wait(&mut self) -> BoxFuture<'static, std::io::Result<Option<i32>>> {
         let child = self.child.take();
+        let (pid, generation) = (self.pid, self.generation);
         Box::pin(async move {
             match child {
                 // Waiting on a child blocks; keep it off the runtime's threads.
-                Some(mut child) => match tokio::task::spawn_blocking(move || child.wait()).await {
+                // The exit is seen first without reaping (the zombie keeps
+                // the pid), then the pid is marked exited, which waits for any
+                // kill holding it, and only then is the child reaped.
+                Some(mut child) => match tokio::task::spawn_blocking(move || {
+                    if wait_exited_unreaped(pid) {
+                        crate::lifeguard::child_exited(pid, generation);
+                        child.wait()
+                    } else {
+                        // Could not see the exit without reaping: the pid stays
+                        // live (kills keep working) until the plain wait reaps.
+                        let status = child.wait();
+                        crate::lifeguard::child_exited(pid, generation);
+                        status
+                    }
+                })
+                .await
+                {
                     Ok(status) => Ok(status.ok().and_then(|status| status.code())),
                     Err(error) => Err(std::io::Error::other(error.to_string())),
                 },

@@ -116,6 +116,42 @@ its partial result on the way out. The KNOWN note was stale.
 | `parent_works_while_background_runs` | the parent makes a Read between a background dispatch and the child's result | complete, 1 tool call in between | 3.6 |
 | `worktree_writer_commits_on_branch` | a general-purpose child commits on `agent/eval-writer` in a temp worktree (D5 layout); the branch holds 1 commit, the parent's status is unchanged, the origin has no new refs | complete | 1.0 |
 
+### Added 2026-10-30
+
+| scenario | what it pins down | result | s |
+| --- | --- | --- | --- |
+| `parent_tells_parallel_runs_apart` | two background `explore` runs dispatched in one turn, then `AgentOutput(list: true)`. Each placeholder names its run's handle and description in call order (`explore#2 ("audit the db layer") started in the background`), and the roster lists both runs with their descriptions. See `subagents.md` §5g | fails on the binary before the fix (every placeholder was `Started "Agent" in the background`, the roster showed bare labels); passes after | 3.8 |
+
+`scripts/eval/subagent_evals.py --include-slow` after the fix: **22 of 22 as declared,
+33 attempts, 32 usable (97%), 181s.** Before it: 21 of 21 (the new scenario did not
+exist; run alone against that binary, it fails).
+
+**Second round (review of d767bd1).** The reviewer re-ran the scenario 13 times and it
+failed twice: the roster sometimes ran before the detached execute had made the run's
+record and said no subagent existed. Records are made at the placeholder now
+(`subagents.md` §5g). Two more corrections:
+
+- The needles matched the example in `task-main.md`, so they passed on any binary with the
+  new prompt. The example now uses another description.
+- `--repeat` reused each route's cursor, so every run after the first got "script
+  exhausted". `run_scenario` now resets the cursors.
+
+`--only parent_tells_parallel_runs_apart --repeat 30`: **30 of 30, 60 attempts, 60 usable.**
+`--include-slow`: **22 of 22, 33 attempts, 32 usable (97%), 180s.**
+
+Third round (review of 25367f1, warm cancel and orphaned reservations):
+`--only parent_tells_parallel_runs_apart --repeat 20`: **20 of 20, 40 attempts, 40
+usable.** `--include-slow`: **22 of 22, 33 attempts, 32 usable (97%), 180s.**
+
+Fourth round (review of e1dbd81): `--repeat 10`: **10 of 10, 20 attempts, 20 usable.**
+`--include-slow`: **22 of 22, 33 attempts, 32 usable (97%), 180s.**
+
+Fifth round (safety review of 31eee91): `--include-slow`: **22 of 22, 33 attempts, 32
+usable (97%), 180s.**
+
+Sixth round (spawn generations): `--include-slow`: **22 of 22, 33 attempts, 32 usable
+(97%), 180s.**
+
 The writer scenario checks the mechanics only: the mock child runs the git
 commands. It does not show that a real model follows the brief
 (`subagent-orchestration.md` §5).

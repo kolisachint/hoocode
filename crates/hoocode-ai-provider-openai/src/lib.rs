@@ -10,6 +10,10 @@
 pub mod request;
 
 use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
+
+/// Makes tool call ids unique within a message (see `finish_blocks`).
+static TOOL_CALL_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 use futures_util::StreamExt;
 use hoocode_ai_stream::{
@@ -367,14 +371,35 @@ impl StreamState {
         let id = delta["id"].as_str().filter(|s| !s.is_empty());
         let mut block = stream_index.and_then(|i| self.tool_calls_by_index.get(&i).copied());
         if block.is_none() {
-            block = id.and_then(|id| self.tool_calls_by_id.get(id).copied());
+            // By id, unless that id's block is another stream index: a
+            // provider that repeats an id within a message means two calls.
+            block = id
+                .and_then(|id| self.tool_calls_by_id.get(id).copied())
+                .filter(|found| match (stream_index, self.stream_index.get(found)) {
+                    (Some(i), Some(j)) => i == *j,
+                    _ => true,
+                });
         }
         let idx = match block {
             Some(idx) => idx,
             None => {
                 let idx = self.output.content.len();
+                // A call with no id, or one repeating an earlier call's id in
+                // this message, gets its own id now (as the Google provider
+                // does), so every partial carries the id the call keeps: the
+                // loop, its results and a background call's handle are keyed
+                // by it. The counter comes first so the id stays unique within
+                // the 40 characters `normalize_tool_call_id` keeps.
+                let id = match id {
+                    Some(id) if !self.tool_calls_by_id.contains_key(id) => id.to_string(),
+                    _ => format!(
+                        "call_{}_{}",
+                        TOOL_CALL_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+                        hoocode_ai_types::now_ms()
+                    ),
+                };
                 self.output.content.push(Content::ToolCall(ToolCallContent {
-                    id: id.unwrap_or_default().to_string(),
+                    id: id.clone(),
                     name: delta["function"]["name"]
                         .as_str()
                         .unwrap_or_default()
@@ -392,9 +417,7 @@ impl StreamState {
                     self.tool_calls_by_index.insert(i, idx);
                     self.stream_index.insert(idx, i);
                 }
-                if let Some(id) = id {
-                    self.tool_calls_by_id.insert(id.to_string(), idx);
-                }
+                self.tool_calls_by_id.entry(id).or_insert(idx);
                 sender.push(AssistantMessageEvent::ToolCallStart {
                     index: idx,
                     partial: self.output.share(),
@@ -409,7 +432,7 @@ impl StreamState {
             }
         }
         if let Some(id) = id {
-            self.tool_calls_by_id.insert(id.to_string(), idx);
+            self.tool_calls_by_id.entry(id.to_string()).or_insert(idx);
         }
         idx
     }

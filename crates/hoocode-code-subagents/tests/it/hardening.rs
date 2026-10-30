@@ -259,7 +259,7 @@ async fn a_long_session_keeps_its_memory_flat() {
 fn a_record_the_pool_forgot_is_reconciled_instead_of_running_forever() {
     let inbox = subagent_inbox();
     inbox.clear();
-    let record = inbox.start("lost-1", "explore#1", "explore");
+    let record = inbox.start("lost-1", "explore#1", "explore", "");
     assert_eq!(record.lifecycle, TaskLifecycle::Running);
 
     // Still live: untouched.
@@ -294,7 +294,7 @@ fn a_record_the_pool_forgot_is_reconciled_instead_of_running_forever() {
 fn a_young_record_is_left_alone_even_when_the_pool_is_silent() {
     let inbox = subagent_inbox();
     inbox.clear();
-    inbox.start("fresh", "plan#1", "plan");
+    inbox.start("fresh", "plan#1", "plan", "");
     // A dispatch that has not reached the pool's queue yet is not lost.
     let reconciled = inbox.reconcile(|_| false, 60 * 60_000);
     assert!(reconciled.is_empty());

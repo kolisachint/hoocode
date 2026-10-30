@@ -364,6 +364,250 @@ longer needs. (2026-10-15: there is one template now; see the note in
   the agent body, only in a subagent child (depth > 0). A user's `--system-prompt` and
   light mode still replace the default prompt.
 
+## 5g. Telling parallel runs apart (2026-10-30)
+
+**The report.** The model dispatched several subagents, took one for a duplicate,
+cancelled another one that was not a duplicate, and dispatched that one again.
+
+**What the model saw** (the eval `parent_tells_parallel_runs_apart`, run against the
+binary before the fix: two `explore` calls in one turn, then `AgentOutput(list: true)`):
+
+```text
+toolResult | Started "Agent" in the background. Its result will arrive as a follow-up message once it finishes — keep working in the meantime.
+toolResult | Started "Agent" in the background. Its result will arrive as a follow-up message once it finishes — keep working in the meantime.
+toolResult | 2 background subagents (2 running):
+- explore#1  running  0.0s
+- explore#2  running  0.0s
+```
+
+Three causes, all about run identity:
+
+1. **The placeholder named nothing.** A background call is answered by the agent loop
+   before the tool runs. No hook was wired, so every Agent call got the loop's generic
+   line, identical for every call: no label, no description. The guidance in
+   `task-main.md` told the model to poll and cancel by `explore#1`, a label it was never
+   given for a running run.
+2. **Labels followed execute order, not call order.** The label was taken inside the
+   detached execute, and the loop starts those concurrently. The fixed binary's first eval
+   run registered the second call's run first. Before the fix that run would have been
+   `explore#1`, the handle a model would take for its first call.
+3. **The roster and the notifications showed bare labels.** `explore#1  running` and
+   `explore#2  running` look like duplicates. A cancel answered `Cancelled explore#2.`,
+   which does not say which task stopped.
+
+**Ruled out.** Cancel resolves a handle by exact task id or exact label (`inbox.rs`
+`get`), and labels are unique per agent type, so a cancel never hit a different run
+than the one it named (b). Tool calls run only once the assistant message is complete,
+and a provider retry happens before that, so a call is never executed twice (d). There
+is no idempotency by tool call id, and there should not be: the mock provider (like some
+real ones) numbers calls per turn, so `call_0` comes back every turn as a new call.
+
+**Not ruled out: (c), a roster that misses a fresh run.** The first version of this fix
+(d767bd1) said it "was not seen". That was wrong. A review re-ran the eval 13 times and
+it failed twice: `AgentOutput(list: true)` right after a dispatch answered "No background
+subagents have been dispatched", and a cancel in that window answered "No background
+task". The record was made by the detached execute, after the placeholder had named the
+handle. That is a direct path back to a re-dispatch. Fixed in the second round below.
+
+**Fix, first round.**
+
+- A tool can give its own background placeholder (`AgentTool::background_placeholder`;
+  on `ToolDefinition` it also gets the call's `ToolContext`). It wins over the loop's
+  hook and is called once per call, in call order.
+- The Agent tool's placeholder reserves the run's label for the call id
+  (`SubagentInbox::reserve_label`) and says
+  `explore#2 ("audit the db layer") started in the background. Its handle is explore#2: …`.
+  The execute takes that label back (`take_label`), whatever order the executes start in.
+  A reservation is used once, so a reused call id is a new run.
+- Each inbox record keeps the call's description. The roster, the status line, the
+  finish and failure notifications, and the cancel result name the run as
+  `explore#2 ("audit the db layer")`. A cancel says `Only this run was stopped.`, and a
+  cancel on a settled run says `nothing was cancelled`.
+- The Agent and AgentOutput descriptions and `task-main.md` say that every call is its own
+  run, that two runs of one type with different descriptions are not duplicates, and to
+  check `AgentOutput(list: true)` before dispatching again or cancelling.
+
+**Fix, second round (review of d767bd1).**
+
+- **The record exists from the placeholder on.** `reserve_label` makes the run's inbox
+  record at once, `starting` (lifecycle running), with its label, description and
+  session, keyed by the label until the execute's `start_in` binds the task id in the
+  same place in the listing. Roster, status, wait and cancel all see it.
+- **A cancel never misses.** On a starting run, `request_cancel` settles it `cancelled`
+  and its execute does not dispatch it (`Cancelled explore#2 ("…") before it started.`).
+  On a bound run it sets a flag, and the execute's `cancel_on_abort` offers the cancel to
+  the pool again every 25 ms until the pool holds the run (the moments between
+  `start_in` and the dispatch registering it). The answer to the model is the same.
+- **A refused call settles its handle.** When the execute returns before starting a
+  reserved run (unknown agent, delegation not allowed, a bad model or effort, provider
+  exhaustion), the record is settled `failed` with the reason, and the error reads
+  `explore#1 ("…") failed ✗ — <reason>`, so `AgentOutput("explore#1")` says what happened.
+- **Repeated call ids.** The OpenAI-compatible provider gives a tool call a new id when it
+  has none or repeats an earlier call's id in the same message (as the Google provider
+  does), and no longer merges two calls that share an id but not a stream index. A call
+  id still reserved in the message gets the loop's generic placeholder, and a reservation
+  is taken only by the call it describes (agent type, description, session).
+- **Per session, across restarts.** Records, label counters and label bindings are kept
+  per session (the session file), so `/new` and app-server sessions do not list each
+  other's runs. The first time a session is seen, its file is read for `type#N` handles
+  and the counters continue after them, so after `--resume` a new run never reuses
+  `explore#1`. An old handle answers `explore#1 ran in an earlier process and is not
+  running now`; as `resume_task_id` it is refused with the same reason.
+- **Descriptions** are the first line of the call's `description`, at most 60
+  characters, with `"` replaced by `'`.
+- The TUI's AgentOutput roster renders `- label ("description")  status` with the
+  description dim (`tools/subagent.rs`).
+
+Tests: `tests/it/tools.rs` (`parallel_background_calls_keep_the_handles_their_placeholders_named`,
+`the_roster_and_a_cancel_name_each_run_by_handle_and_description`,
+`a_run_is_listed_and_cancellable_from_its_placeholder_on`,
+`a_refused_call_fails_the_handle_its_placeholder_named`,
+`a_cancel_asked_before_the_pool_holds_the_run_stops_it`,
+`an_old_handle_after_resume_is_named_as_an_earlier_run`), `tests/it/inbox.rs` (reserve and
+take, `a_reserved_run_is_listed_and_bound_in_place`, `a_run_cancelled_while_starting_never_starts`,
+`a_reserved_run_that_never_started_fails_with_its_reason`,
+`runs_and_labels_are_scoped_to_their_session`, `a_resumed_session_continues_its_handles`),
+`a_tools_own_background_placeholder_names_each_call` (`hoocode-agent-loop`),
+`repeated_or_missing_tool_call_ids_are_made_unique_within_a_message`
+(`hoocode-ai-provider-openai`) and `roster_line_with_a_description_keeps_its_colours`
+(`hoocode-code-tui-widgets`). The eval `parent_tells_parallel_runs_apart` fails on the
+binary before the fix and passes now, repeated (see `subagent-evals.md`). Its needles no
+longer match the example in `task-main.md`.
+
+**Fix, third round (review of 25367f1).**
+
+- **Warm runs cancel for real.** `WarmSubagentPool::dispatch_cancellable` selects the
+  worker's run (and the wait for a slot) against a cancel future. On cancel the task is
+  dropped, the worker discarded (its child disposed) and the result is `cancelled`. The
+  Agent tool passes `stop_asked`: the inbox's cancel flag or the call's abort signal,
+  foreground and background. Before, a cancel of a warm run answered "Cancelled" while
+  the run went on to report "finished ✓".
+- **A cancel reports what happened.** When the cold pool kills the run, the answer is
+  "Cancelled". Otherwise (a warm run, or a cold run the pool does not hold yet) the
+  answer waits up to 10 s for the run to settle and reports what it settled as:
+  cancelled, already finished, or "Asked … to stop; it has not stopped yet". The 60 s
+  guess is gone. A run listed as running always has an execute awaiting it, because:
+- **No ghosts.** A reservation is always taken by its call id, even when the execute sees
+  other arguments than the placeholder (its description is updated). An `AbandonGuard`
+  in `execute_task` settles the call's run `failed` ("not started: …") if the call
+  returns or panics while it is still listed as running.
+- `cancel_on_abort` does not start a run already asked to stop, and treats an abort like
+  a cancel request, retried until the pool holds the run.
+- Counter seeding reads the session file line by line as bytes, only lines with a `#`,
+  and does not remember a session whose file could not be read (a file that does not
+  exist yet is a new session, with nothing to continue after).
+- The OpenAI provider assigns a missing or repeated id when the call's block starts, so
+  every partial carries the id the call keeps: `call_<n>_<ms>`, counter first, short of
+  the 40 characters a request keeps.
+- A run cancelled while starting whose call then refused is reported cancelled, not
+  failed; a background resume's pool error names the run. A handle held for another
+  session of this process answers "belongs to another session or an earlier process".
+- The TUI's background notice parses `label ("description")` (it had stopped parsing the
+  notices since the first round) and finds the run's elapsed time by the call's run id;
+  AgentOutput results carry `runId` for the same reason.
+
+Tests added in this round: `a_cancelled_warm_dispatch_stops_its_worker_and_reports_cancelled`
+and `a_warm_background_run_reports_its_status_and_cancels_truthfully` (`tests/it/warm.rs`),
+`a_stop_asked_before_the_dispatch_never_starts_it` and
+`changed_arguments_keep_the_reserved_handle_and_leave_no_ghost` (`tests/it/tools.rs`), the
+abandon cases in `subagent_inbox_lifecycle`, `parses_a_notice_that_names_its_description`
+(`hoocode-code-tui-widgets`), and the partial-id check in the OpenAI provider test.
+
+**Fix, fourth round (review of e1dbd81).**
+
+- Reservations are keyed by (session, call id): two sessions whose providers both
+  number calls `call_0` no longer take each other's handle.
+- **A cancel stops the subagent's own commands.** The Shell tool starts each command in
+  a process group of its own, which neither the cold pool's group kill nor the warm
+  client's stop reached: a cancelled run's `sleep 300` (or test suite) kept running.
+  `kill_process_tree` and the warm worker's `dispose` now first find every descendant of
+  the child (`/proc`, or `ps` off Linux) while the child still holds them, and SIGKILL
+  each one and the group it leads (never this process's own group). Chosen over a
+  SIGTERM handler in the child: the cold child's SIGTERM path writes a partial result,
+  which would settle a cancel as `partial`, and the RPC child has no handler at all.
+- Esc on the AgentOutput call ends a cancel's settle wait; the cancel itself stands.
+- A warm run asked to stop while waiting for its slot never boots a worker.
+- Seeding opens the session file and treats only `NotFound` as a new session; a
+  permission or I/O error is not remembered.
+- A run its Agent call abandoned says "not started" only if it never started, and
+  "stopped unexpectedly" otherwise.
+
+Tests added in this round: `a_cancel_stops_the_subagents_own_commands`,
+`esc_ends_a_cancels_wait_for_the_run_to_settle` (`tests/it/tools.rs`),
+`a_cancelled_warm_run_stops_the_workers_own_commands`,
+`a_run_stopped_before_its_worker_never_boots_one` (`tests/it/warm.rs`), and the
+two-session and abandon cases in `subagent_inbox_lifecycle`. Both command tests fail with
+the descendant kill removed.
+
+**Fix, fifth round (safety review of 31eee91).**
+
+Policy: **a subagent's descendants are SIGKILLed on cancel, deadline or dispose; jobs
+re-parented to init are not.** The rules that keep that kill from reaching anything
+else:
+
+- **Only our own, unreaped child is walked.** `plan_tree_kill` returns nothing unless the
+  process table lists the root with `ppid == getpid()` (the cold child and the warm
+  worker both are direct children). This process, its ancestors and the groups they are
+  in are never in the kill set.
+- **A reaped pid is never signalled.** The cold `ProcessHandle` registers its child at
+  spawn (`lifeguard::child_spawned`). In `wait`, `waitid(P_PID, pid, WEXITED|WNOWAIT)`
+  sees the exit without reaping (a zombie keeps its pid), `child_exited` marks the pid
+  under the registry lock, and only then is the child reaped. Every kill by pid
+  (`kill_process_tree(s)`, the reap signals in `reap_group`) holds that lock while it
+  signals and refuses a pid marked reaped, so the stale pids the pool and lifeguard keep
+  for `EXIT_STDIO_GRACE` cannot be walked or signalled after the reap. A pid never
+  registered (other runners, tests) gets the old group kill and no walk. The pool's and
+  lifeguard's own copies of the pid are not cleared: the registry is the one check every
+  kill path passes through, which is simpler than keeping three tables in step.
+- **Warm side:** the walk runs inside `RpcClient::stop_with` while it holds the child
+  lock, which the exit watcher needs to reap, so the worker cannot be reaped during it.
+  Stdin is dropped before the lock is taken, and the lock is waited for at most a
+  second, so a watcher already in `wait()` cannot deadlock the stop.
+- **Groups:** a group is killed only when a descendant leads it
+  (`pgid == pid && pgid > 1`) and it is not our group or an ancestor's.
+- **Freeze, then kill:** the cold child's group (or the warm worker) is SIGSTOPped, the
+  tree walked, every descendant found SIGSTOPped, the tree walked again, then the groups
+  and descendants SIGKILLed. The warm worker gets SIGCONT so it can take its SIGTERM.
+- The table is read from `/proc` (or `/bin/ps` off Linux), once per dispose, inside
+  `block_in_place` on a runtime worker; an empty table is logged once.
+
+**Sixth round (follow-ups to ec64982).**
+
+- **Spawn generations, not bare pids.** The registry gives each cold child a generation
+  at `child_spawned`; the pool's slot and the lifeguard's monitor keep it next to the pid,
+  and every kill passes a `ChildPid { pid, generation }`. A kill whose generation is not
+  the live one for that pid is refused and logged. This closes the ABA window: the slot
+  and the monitor keep a pid for about 500 ms after the reap, and if the pool's next child
+  got the same pid, a stale cancel or grace-timer kill used to see it as live and kill the
+  wrong subagent's tree. A pid-only `kill_process_tree` of a pid one of our children holds
+  is refused too. The `reaped` set is gone: the registry holds only live children, so it
+  is bounded by them.
+- **A `waitid` error no longer marks a live child exited.** Only an exit or `ECHILD`
+  does. Any other error is logged once, and the plain reaping wait runs with the pid
+  still live (kills keep working until the reap); the pid is marked exited after it.
+- **The warm walk runs before stdin is closed**, under the child lock (waited for at most
+  a second). A worker that exits at once on EOF used to be reaped by the exit watcher
+  before the walk, and its Shell groups survived. Nothing waits on the watcher while
+  holding the lock, so the two cannot deadlock.
+- **No process is left stopped.** A `StoppedGuard` SIGKILLs every root and descendant a
+  kill SIGSTOPped if the kill unwinds midway.
+
+Tests added: `a_stale_generation_never_kills_the_child_that_reused_its_pid`
+(`tests/it/tree_kill.rs`) and `disposing_a_worker_that_exits_on_eof_still_stops_its_commands`
+(`tests/it/warm.rs`; it fails with stdin closed before the walk).
+
+Tests: `tests/it/tree_kill.rs` (a direct child is walked; a pid whose parent is not us,
+a reused pid now held by another process, and a grandchild are not; a descendant in a
+foreign group or group 1 does not get that group killed; a reaped child's pid is never
+signalled; the pool marks its child exited before the reap). The cold and warm "the
+`sleep` is gone after cancel" tests still pass.
+
+**Not proven.** We have no transcript of the user's session. The eval shows that the
+model could not tell its runs apart from anything it was shown. It does not show that a
+real model makes this mistake, or that it stops making it now. A command that left the
+child's tree entirely (double-forked and re-parented to init) before the cancel is not
+found.
+
 ## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 
 §6 of this file used to be an open question. It is now an answer, and the

@@ -228,6 +228,7 @@ where
     ToolDefinition {
         ordered_start: false,
         background_when: None,
+        background_placeholder: None,
         name: name.into(),
         label: name.into(),
         description: format!("{name} tool"),

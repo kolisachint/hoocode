@@ -69,6 +69,14 @@ NEEDLES = {
     "child_result": CHILD_RESULT_NEEDLE,
     # The subagent's gated Shell call was denied: its parent has no UI to ask.
     "clearance_denied": "has no UI to ask",
+    # Two background runs of one agent type (`parent_tells_parallel_runs_apart`).
+    # Request bodies are JSON, so the quotes around a description arrive escaped.
+    # Each call's placeholder names the run's handle and description, in call order:
+    "placeholder_names_run_1": 'explore#1 (\\"audit the auth module\\") started in the background',
+    "placeholder_names_run_2": 'explore#2 (\\"audit the db layer\\") started in the background',
+    # and the roster lists both runs with their descriptions while they run.
+    "roster_names_run_1": '- explore#1 (\\"audit the auth module\\")  running',
+    "roster_names_run_2": '- explore#2 (\\"audit the db layer\\")  running',
 }
 
 # A global config that lets subagents run Shell without asking. A subagent whose
@@ -393,6 +401,59 @@ SCENARIOS: list[Scenario] = [
             parent_output_contains="crates/",
             parent_tool_calls_before_result=1,
             parent_requests=4,
+        ),
+    ),
+    Scenario(
+        name="parent_tells_parallel_runs_apart",
+        kind="parent",
+        doc=(
+            "Two background runs of one agent type, dispatched in one turn, then the roster. "
+            "The user's report (2026-10-30): the model took one of two subagents for a "
+            "duplicate, cancelled the other one and dispatched it again. Before the fix every "
+            "background call was answered with the same `Started \"Agent\" in the background` "
+            "line and the roster listed bare labels (`explore#1  running`, `explore#2  running`), "
+            "so nothing the model saw said which run was which task. The check: each call's "
+            "placeholder names its own handle and description in call order, and the roster "
+            "lists both runs with their descriptions."
+        ),
+        routes={
+            "child": child_route(
+                [{"text": CHILD_SUMMARY, "delay_s": 3}, {"text": CHILD_SUMMARY, "delay_s": 3}]
+            ),
+            "parent": parent_route(
+                [
+                    {
+                        "text": "",
+                        "tool_calls": [
+                            task_call(background=True, description="audit the auth module")[
+                                "tool_calls"
+                            ][0],
+                            task_call(background=True, description="audit the db layer")[
+                                "tool_calls"
+                            ][0],
+                        ],
+                    },
+                    {"tool_calls": [{"name": "AgentOutput", "arguments": {"list": True}}]},
+                    {"text": "Both subagents are running; I will report when they finish."},
+                    {"text": PARENT_SUMMARY},
+                    {"text": PARENT_SUMMARY},
+                    {"text": PARENT_SUMMARY},
+                ]
+            ),
+        },
+        prompt="Audit the auth module and the db layer with two background subagents.",
+        expect=Expect(
+            ledger_statuses=["complete", "complete"],
+            ledger_mode="background",
+            route_sees={
+                "parent": [
+                    "placeholder_names_run_1",
+                    "placeholder_names_run_2",
+                    "roster_names_run_1",
+                    "roster_names_run_2",
+                ]
+            },
+            results_flow=["parent"],
         ),
     ),
     Scenario(
@@ -1070,6 +1131,10 @@ def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
     root = Path(tempfile.mkdtemp(prefix=f"subagent-eval-{scenario.name}-", dir=run_dir))
     log_path = root / "requests.jsonl"
     routes = bind_routes(scenario.routes, writer_paths(root)) if scenario.worktree else scenario.routes
+    # Every run starts its scripts from the first turn: `--repeat` reuses the
+    # scenario's routes, and a cursor left at the end answers "script exhausted".
+    for route in routes.values():
+        route.cursor = 0
     provider = ProbedProvider(
         routes, log_path=str(log_path), needles=NEEDLES
     )

@@ -50,6 +50,8 @@ fn parses_a_done_notice() {
         notice,
         Some(BackgroundNotice {
             label: "explore#4".into(),
+            description: String::new(),
+            call_id: Some("toolu_01Hx7".into()),
             verdict: NoticeVerdict::Finished,
             partial: false,
             summary: SUMMARY.into(),
@@ -157,5 +159,26 @@ fn text_that_is_not_a_notice_falls_back() {
     assert_eq!(
         parse_background_notice("explore#4 finished ✓ — Mapped the module."),
         None
+    );
+}
+
+/// The notice the Agent tool writes since 2026-10-30 names the run's
+/// description after its label; it still parses, and keeps the description.
+#[test]
+fn parses_a_notice_that_names_its_description() {
+    let text = format!(
+        "{HEADER}explore#2 (\"audit the db layer\") finished ✓ — {SUMMARY}.\n\
+         Read the full result with AgentOutput(\"explore#2\")."
+    );
+    let notice = parse_background_notice(&text).expect("a notice with a description");
+    assert_eq!(notice.label, "explore#2");
+    assert_eq!(notice.description, "audit the db layer");
+    assert_eq!(notice.verdict, NoticeVerdict::Finished);
+    assert_eq!(notice.summary, SUMMARY);
+    assert_eq!(notice.call_id.as_deref(), Some("toolu_01Hx7"));
+    let cancelled = format!("{HEADER}explore#3 (\"x\") cancelled ⊘ — cancelled before it started");
+    assert_eq!(
+        parse_background_notice(&cancelled).map(|n| n.verdict),
+        Some(NoticeVerdict::Cancelled)
     );
 }

@@ -8,8 +8,8 @@
 //! (`renderCall`/`renderResult`) arrives with the TUI (phase 11).
 
 use hoocode_agent_types::{
-    AgentTool, AgentToolResult, AgentToolUpdateCallback, BackgroundPredicate, PrepareArgumentsFn,
-    ToolExecutionMode,
+    AgentTool, AgentToolCall, AgentToolResult, AgentToolUpdateCallback, BackgroundPlaceholder,
+    BackgroundPredicate, PrepareArgumentsFn, ToolExecutionMode,
 };
 use hoocode_ai_types::{AbortSignal, Model};
 use std::sync::Arc;
@@ -63,6 +63,11 @@ pub type DefinitionExecuteFn = Arc<
         + Sync,
 >;
 
+/// A definition's background placeholder: [`BackgroundPlaceholder`] with the
+/// call's [`ToolContext`] (the session it is dispatched from).
+pub type DefinitionPlaceholderFn =
+    Arc<dyn Fn(&AgentToolCall, Option<&ToolContext>) -> Option<String> + Send + Sync>;
+
 /// `ToolDefinition` (without the TUI renderers).
 #[derive(Clone)]
 pub struct ToolDefinition {
@@ -80,6 +85,8 @@ pub struct ToolDefinition {
     pub background: bool,
     /// Per-call background decision; takes precedence over `background`.
     pub background_when: Option<BackgroundPredicate>,
+    /// A background call's own placeholder text (see [`BackgroundPlaceholder`]).
+    pub background_placeholder: Option<DefinitionPlaceholderFn>,
     /// See [`AgentTool::ordered_start`].
     pub ordered_start: bool,
     pub execute: DefinitionExecuteFn,
@@ -115,6 +122,14 @@ pub fn wrap_tool_definition(
         execution_mode: definition.execution_mode,
         background: definition.background,
         background_when: definition.background_when,
+        background_placeholder: definition.background_placeholder.map(|make| {
+            let ctx_factory = ctx_factory.clone();
+            let wrapped: BackgroundPlaceholder = Arc::new(move |call: &AgentToolCall| {
+                let ctx = ctx_factory.as_ref().map(|f| f());
+                make(call, ctx.as_ref())
+            });
+            wrapped
+        }),
         ordered_start: definition.ordered_start,
         execute: Arc::new(move |id, params, signal, on_update| {
             let ctx = ctx_factory.as_ref().map(|f| f());
@@ -149,6 +164,11 @@ pub fn tool_definition_from_agent_tool(tool: AgentTool) -> ToolDefinition {
         execution_mode: tool.execution_mode,
         background: tool.background,
         background_when: tool.background_when,
+        background_placeholder: tool.background_placeholder.map(|make| {
+            let wrapped: DefinitionPlaceholderFn =
+                Arc::new(move |call: &AgentToolCall, _ctx: Option<&ToolContext>| make(call));
+            wrapped
+        }),
         ordered_start: tool.ordered_start,
         execute: Arc::new(move |id, params, signal, on_update, _ctx| {
             execute(id, params, signal, on_update)
@@ -165,6 +185,7 @@ mod tests {
         ToolDefinition {
             ordered_start: false,
             background_when: None,
+            background_placeholder: None,
             name: "echo".into(),
             label: "Echo".into(),
             description: "Echo the model id".into(),

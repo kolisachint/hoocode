@@ -545,6 +545,7 @@ pub fn create_read_tool_definition(
     ToolDefinition {
         ordered_start: false,
         background_when: None,
+        background_placeholder: None,
         name: "Read".into(),
         label: "Read".into(),
         description,

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: subagent handles (2026-10-30)
+- **Each background subagent is named from the moment it starts.** An Agent call's first answer is now `explore#2 ("audit the db layer") started in the background` with its handle, instead of the same `Started "Agent" in the background` for every call. The model could not tell two runs of one agent apart, took one for a duplicate, cancelled the wrong one and started it again.
+- **`AgentOutput` lists every run with its handle and description**, including one dispatched a moment ago, and the finish, failure and cancel messages name the run the same way. A cancel says which run it stopped, and only says so once the run has stopped (warm subagents included); a cancel on a finished run says nothing was cancelled.
+- **Cancelling a subagent stops the commands it started** (they run in process groups of their own and used to keep running).
+- A call refused after its handle was given (an unknown agent, a bad model) reports `explore#1 (…) failed ✗` with the reason.
+- **Handles are per session and survive `--resume`:** a resumed session continues after the handles it already used, and an old handle says it ran in an earlier process. `/new` and other sessions no longer list each other's runs.
+- OpenAI-compatible providers: a tool call with no id, or an id another call in the same reply already used, gets an id of its own.
+
 ### Changed: radar view reads like peek and full (2026-10-30)
 - **Each mission is grouped under its prompt.** Radar shows a `▲ Mn  prompt` header, one line per batch of tool calls (a batch ends at thinking), failed calls as nested `└ … HIT` rows, thinking as one dim `✻` line, the full answer, and an end row that always closes the mission: `● LANDED`, `⊗ DID NOT LAND` (with its reason), `⊘ ABORTED`, `◐ IN FLIGHT` or `◆ WAITING` (naming the approval it waits for, including a subagent's). Older finished missions fold to one summary line plus the answer. Peek and full are unchanged.
 

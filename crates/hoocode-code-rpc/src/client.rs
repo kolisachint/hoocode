@@ -270,17 +270,38 @@ impl RpcClient {
 
     /// `stop()`: terminate the process (SIGKILL after a second).
     pub async fn stop(&mut self) {
-        *self.stdin.lock().await = None;
+        self.stop_with(None).await;
+    }
+
+    /// [`Self::stop`], first running `before` on the child's pid on a
+    /// blocking thread, while the child is certainly not reaped: the child
+    /// lock is held throughout, and the exit watcher needs it to reap. This
+    /// happens before stdin is closed, so a child that would exit at once on
+    /// EOF is still there to walk. The lock is waited for at most a second: if
+    /// the exit watcher holds it, the child already closed its stdout and is
+    /// exiting, and the stop goes on without `before`. Nothing here waits on
+    /// the watcher while holding the lock, so the two cannot deadlock.
+    pub async fn stop_with(&mut self, before: Option<Box<dyn FnOnce(u32) + Send>>) {
         let Some(child) = self.child.take() else {
+            *self.stdin.lock().await = None;
             return;
         };
         #[cfg(unix)]
-        if let Some(pid) = child.lock().await.id() {
-            // SAFETY: kill(2) on our own child's pid (hoocode sends SIGTERM).
-            unsafe {
-                libc::kill(pid as libc::pid_t, libc::SIGTERM);
+        if let Ok(guard) = tokio::time::timeout(Duration::from_secs(1), child.lock()).await {
+            if let Some(pid) = guard.id() {
+                if let Some(before) = before {
+                    let _ = tokio::task::spawn_blocking(move || before(pid)).await;
+                }
+                // SAFETY: kill(2) on our own unreaped child's pid (hoocode sends SIGTERM).
+                unsafe {
+                    libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                }
             }
+            drop(guard);
         }
+        *self.stdin.lock().await = None;
+        #[cfg(not(unix))]
+        let _ = before;
         let exited = match self.exit_rx.as_mut() {
             Some(rx) => tokio::time::timeout(Duration::from_secs(1), rx.wait_for(|e| *e))
                 .await

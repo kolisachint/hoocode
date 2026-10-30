@@ -438,6 +438,12 @@ impl AgentToolResult {
 /// `background` as a function of the tool call.
 pub type BackgroundPredicate = std::sync::Arc<dyn Fn(&AgentToolCall) -> bool + Send + Sync>;
 
+/// A background tool's own placeholder text: what the model is told the
+/// moment the call is detached, before the tool has run. `None` falls back to
+/// the loop's placeholder. Called once per call, in tool-call order.
+pub type BackgroundPlaceholder =
+    std::sync::Arc<dyn Fn(&AgentToolCall) -> Option<String> + Send + Sync>;
+
 /// Tool definition used by the agent runtime. Its callbacks are `Arc`s, so
 /// clones share them. Use the tool-building helpers to create one.
 #[allow(clippy::type_complexity)]
@@ -453,6 +459,10 @@ pub struct AgentTool {
     /// for tools whose background-ness depends on their arguments. Takes
     /// precedence over `background`.
     pub background_when: Option<BackgroundPredicate>,
+    /// The placeholder result of a background call (see
+    /// [`BackgroundPlaceholder`]). Takes precedence over the loop's
+    /// `create_background_placeholder`.
+    pub background_placeholder: Option<BackgroundPlaceholder>,
     pub execution_mode: Option<ToolExecutionMode>,
     /// The parameters are a plain JSON schema (MCP tools) rather than one
     /// hoocode builds with TypeBox: validation then applies
@@ -579,6 +589,7 @@ impl AgentTool {
             execute: std::sync::Arc::from(execute),
             background: false,
             background_when: None,
+            background_placeholder: None,
             execution_mode: None,
             plain_json_schema: false,
         }
@@ -605,6 +616,7 @@ impl Clone for AgentTool {
             execute: std::sync::Arc::clone(&self.execute),
             background: self.background,
             background_when: self.background_when.clone(),
+            background_placeholder: self.background_placeholder.clone(),
             execution_mode: self.execution_mode.clone(),
             plain_json_schema: self.plain_json_schema,
         }
