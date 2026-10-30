@@ -295,13 +295,19 @@ fn title_column_stays_aligned_across_single_and_double_digit_ids() {
         let t = create(&format!("task-{i}"));
         set(t, TaskStatus::InProgress);
     }
-    let lines = plain(&mut TaskPanelComponent::new(), 120);
-    let row1 = lines
-        .iter()
-        .find(|l| l.contains("task-1") && !l.contains("task-10"))
-        .unwrap();
+    // The console shows six rows at a time: the pick on the last one windows
+    // task-5 to task-10 into view.
+    let mut panel = focused();
+    render(&mut panel, 120);
+    for _ in 0..9 {
+        press(&mut panel, DOWN);
+    }
+    let lines = plain(&mut panel, 120);
+    // Columns, not bytes: the pick's `›` is wider in bytes than the gutter.
+    let column = |row: &str, title: &str| visible_width(&row[..row.find(title).unwrap()]);
+    let row5 = find(&lines, "task-5");
     let row10 = find(&lines, "task-10");
-    assert_eq!(row1.find("task-1"), row10.find("task-10"));
+    assert_eq!(column(row5, "task-5"), column(row10, "task-10"));
 }
 
 #[test]
@@ -1520,4 +1526,105 @@ fn running_shell_rows_carry_the_satellite_detail() {
         lines.iter().any(|l| l.contains("⌁ sat job-1 · in orbit")),
         "{lines:#?}"
     );
+}
+
+#[test]
+fn the_console_shows_at_most_six_rows_and_says_how_many_are_hidden() {
+    let _g = lock();
+    for i in 0..12 {
+        create(&format!("Step {i:02}"));
+    }
+    let mut panel = TaskPanelComponent::new();
+    let lines = plain(&mut panel, 120);
+    // Frame, tab strip, six rows, the `N more` row, foot.
+    assert_eq!(lines.len(), 10, "{lines:#?}");
+    assert!(lines[2].contains("Step 00") && lines[7].contains("Step 05"));
+    assert!(lines[8].contains("6 more"), "{lines:#?}");
+}
+
+#[test]
+fn a_short_terminal_shows_a_quarter_of_its_rows() {
+    let _g = lock();
+    for i in 0..12 {
+        create(&format!("Step {i:02}"));
+    }
+    let mut panel = TaskPanelComponent::new();
+    panel.set_screen_rows(12);
+    let lines = plain(&mut panel, 120);
+    // Frame, tab strip, three rows, the `N more` row, foot.
+    assert_eq!(lines.len(), 7, "{lines:#?}");
+    assert!(lines[5].contains("9 more"), "{lines:#?}");
+}
+
+#[test]
+fn the_window_follows_the_pick_and_says_what_is_hidden() {
+    let _g = lock();
+    for i in 0..12 {
+        create(&format!("Step {i:02}"));
+    }
+    let mut panel = focused();
+    render(&mut panel, 120);
+    for _ in 0..11 {
+        press(&mut panel, DOWN);
+    }
+    let lines = plain(&mut panel, 120);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains('›') && l.contains("Step 11")),
+        "{lines:#?}"
+    );
+    assert!(lines.iter().any(|l| l.contains("Step 06")), "{lines:#?}");
+    assert!(!lines.iter().any(|l| l.contains("Step 05")), "{lines:#?}");
+    assert!(lines.iter().any(|l| l.contains("6 more")), "{lines:#?}");
+}
+
+#[test]
+fn left_and_right_land_the_pick_on_the_new_tabs_last_row() {
+    let _g = lock();
+    create("a plan item");
+    create_with("run a", sub("explore"));
+    create_with("run b", sub("explore"));
+    let last = create_with("run c", sub("explore"));
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, RIGHT);
+    assert_eq!(panel.picked(), Some((TaskPanelView::Subagents, last)));
+    assert!(
+        panel.take_events().is_empty(),
+        "the last row is not past it"
+    );
+    press(&mut panel, DOWN);
+    assert_eq!(panel.take_events(), vec![PanelEvent::Exit]);
+}
+
+#[test]
+fn a_queued_exit_can_be_taken_back_before_the_next_key() {
+    let _g = lock();
+    create("row a");
+    create("row b");
+    let mut panel = focused();
+    render(&mut panel, 120);
+    press(&mut panel, DOWN);
+    press(&mut panel, DOWN);
+    assert!(panel.take_exit());
+    assert!(
+        panel.take_events().is_empty(),
+        "the exit is taken, not kept"
+    );
+    assert!(!panel.take_exit());
+}
+
+#[test]
+fn up_is_handed_over_only_while_the_panel_is_shown_with_rows() {
+    let _g = lock();
+    let mut panel = TaskPanelComponent::new();
+    assert!(!panel.can_take_up(), "no rows");
+    create("row a");
+    assert!(panel.can_take_up());
+    panel.set_radar(true);
+    assert!(!panel.can_take_up(), "hidden in radar");
+    panel.set_radar(false);
+    panel.toggle_shown();
+    assert!(!panel.can_take_up(), "hidden by Ctrl+G");
 }

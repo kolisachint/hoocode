@@ -632,6 +632,10 @@ struct Mode {
     compaction_loader: Option<Rc<RefCell<Loader>>>,
     compaction_queue: Vec<(String, StreamingBehavior)>,
     task_panel: Rc<RefCell<TaskPanelComponent>>,
+    /// Whether Up on the prompt's first line may hand the keyboard to the task
+    /// panel (shown, with rows, not pinned). Kept current by
+    /// `refresh_panel_takes_up`, read by `CustomEditor`.
+    panel_takes_up: Rc<Cell<bool>>,
     task_store_subscription: Option<hoocode_code_task_store::Subscription<'static>>,
     previous_cwd: Rc<RefCell<Option<PathBuf>>>,
     restarted_input: Option<Receiver<TuiEvent>>,
@@ -798,9 +802,11 @@ impl Mode {
             sink.borrow_mut()
                 .push(Action::AutocompleteVisibility(visible))
         }));
+        let panel_takes_up = Rc::new(Cell::new(false));
         let editor = handle(CustomEditor {
             editor,
             actions: actions.clone(),
+            panel_takes_up: panel_takes_up.clone(),
         });
 
         let footer_data = FooterDataProvider::new(session.cwd());
@@ -1174,6 +1180,7 @@ impl Mode {
             compaction_loader: None,
             compaction_queue: Vec::new(),
             task_panel,
+            panel_takes_up,
             task_store_subscription: None,
             previous_cwd: Rc::new(RefCell::new(None)),
             restarted_input: None,
@@ -1207,7 +1214,13 @@ impl Mode {
         }
         // Keys reach the screen's components with the view they show on screen.
         self.show_attached();
+        // The keyboard owner is settled before this key and again after it, so
+        // a key in the same batch as an Up or a Down-exit reaches the right place.
+        self.refresh_panel_takes_up();
+        self.release_stale_panel_focus();
         self.tui.accept_event(event);
+        self.hand_off_panel_up();
+        self.return_panel_focus_if_asked();
         self.show_main();
     }
 
@@ -1795,6 +1808,9 @@ impl Mode {
                 break;
             }
             // Input and resizes this pass, and anything else that changed, render once here.
+            self.task_panel
+                .borrow_mut()
+                .set_screen_rows(self.size.get().1);
             self.show_attached();
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
