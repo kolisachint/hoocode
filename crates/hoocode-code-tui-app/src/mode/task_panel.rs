@@ -115,15 +115,29 @@ pub(super) fn superseded_quit() -> SupersededQuit {
 }
 
 impl Mode {
-    /// `app.panel.focus` (Ctrl+G): the task panel takes the keyboard. With no
-    /// rows there is nothing to pick, so the prompt keeps the keys.
-    pub(super) fn focus_task_panel(&mut self) {
-        if !self.task_panel.borrow_mut().can_focus() {
+    /// `app.panel.focus` (Ctrl+G): shows or hides the task panel in this view.
+    /// The keyboard stays where it is; a hidden panel gives it back from inside.
+    /// Shown with no rows, it has nothing to draw, so it says so.
+    pub(super) fn toggle_task_panel(&mut self) {
+        let shown = self.task_panel.borrow_mut().toggle_shown();
+        if shown && !self.task_panel.borrow_mut().can_focus() {
             self.show_status("No tasks to show.");
+        }
+        self.dirty.set(true);
+    }
+
+    /// Up on the prompt's first line: the task panel takes the keyboard on its
+    /// bottom row. The pinned scroll view owns the arrows, and a hidden or empty
+    /// panel has nothing to take them; then the prompt does what Up does
+    /// otherwise (the cursor to the line start).
+    pub(super) fn enter_task_panel_from_prompt(&mut self, data: &str) {
+        let entered = !self.tui.scroll_pinned() && self.task_panel.borrow_mut().enter_from_below();
+        if entered {
+            self.tui.set_focus(Some(as_component(&self.task_panel)));
+            self.dirty.set(true);
             return;
         }
-        self.tui.set_focus(Some(as_component(&self.task_panel)));
-        self.dirty.set(true);
+        self.editor.borrow_mut().editor.handle_input(data);
     }
 
     /// Back to the prompt. `set_focus` also clears the panel's focus state.

@@ -8,12 +8,13 @@
 //! jump by turn, search), none of which the prompt uses. Once the view is
 //! pinned it captures keys like a picker: line steps on the arrows, escape
 //! back to live. The plain arrows belong to the prompt while it holds text
-//! (cursor and history), so they step the view only over an empty prompt; the
-//! shifted arrows always step it. Escape goes back to live, and also reaches
-//! the prompt when an agent run is going, so it aborts the run as it does
-//! from the tail. Anything that is not a scroll key un-pins the view and then
-//! does what it always did, so typing never echoes into a prompt scrolled off
-//! screen.
+//! (cursor, and the task panel from the first line), so they step the view
+//! only over an empty prompt. The shifted arrows step the pinned view and are
+//! the prompt's history at the live prompt. Escape goes back to live, and also
+//! reaches the prompt when an agent run is going, so it aborts the run as it
+//! does from the tail. Anything that is not a scroll key un-pins the view and
+//! then does what it always did, so typing never echoes into a prompt scrolled
+//! off screen.
 //!
 //! hoocode installs editor actions for the prompt keys and an input listener
 //! for the pinned view. Both run here in one TUI input interceptor: an
@@ -447,11 +448,6 @@ impl ScrollView {
             self.jump(ui, TurnDirection::Previous);
         } else if matches(data, "app.scroll.nextMessage") {
             self.jump(ui, TurnDirection::Next);
-        } else if matches(data, "app.scroll.shiftLineUp") {
-            // From the tail, one line up pins the view just above the newest row.
-            ui.scroll_by_lines(-1);
-        } else if matches(data, "app.scroll.shiftLineDown") {
-            ui.scroll_by_lines(1);
         } else if matches(data, "app.scroll.search") {
             // Pin first, at the bottom, so the search works back from the
             // newest thing.

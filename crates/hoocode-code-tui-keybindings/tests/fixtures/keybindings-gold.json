@@ -16,6 +16,20 @@
    "Move cursor down"
   ],
   [
+   "tui.editor.historyPrevious",
+   [
+    "shift+up"
+   ],
+   "Previous prompt from history"
+  ],
+  [
+   "tui.editor.historyNext",
+   [
+    "shift+down"
+   ],
+   "Next prompt from history"
+  ],
+  [
    "tui.editor.cursorLeft",
    [
     "left",
@@ -398,7 +412,7 @@
    [
     "ctrl+g"
    ],
-   "Focus the task panel (again returns to the prompt)"
+   "Show or hide the task panel"
   ],
   [
    "app.chrome.cycleForward",
@@ -468,7 +482,7 @@
    [
     "shift+up"
    ],
-   "Scroll up a line; from the prompt, pins the view"
+   "Scroll up a line (pinned view)"
   ],
   [
    "app.scroll.shiftLineDown",
@@ -579,6 +593,7 @@
   [
    "app.panel.nextTab",
    [
+    "right",
     "tab"
    ],
    "Task panel: next tab"
@@ -586,6 +601,7 @@
   [
    "app.panel.prevTab",
    [
+    "left",
     "shift+tab"
    ],
    "Task panel: previous tab"

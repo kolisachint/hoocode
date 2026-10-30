@@ -175,12 +175,23 @@ fn pins_the_view_on_page_up() {
 }
 
 #[test]
-fn leaves_the_arrows_to_prompt_history() {
+fn shift_arrows_are_the_prompt_history_at_the_live_prompt() {
+    let mut h = setup();
+    h.editor.borrow_mut().add_to_history("an earlier message");
+    h.send(SHIFT_UP);
+    assert!(!h.ui.scroll_pinned());
+    assert_eq!(h.text(), "an earlier message");
+    h.send(SHIFT_DOWN);
+    assert_eq!(h.text(), "");
+}
+
+#[test]
+fn the_plain_up_arrow_leaves_prompt_history_alone() {
     let mut h = setup();
     h.editor.borrow_mut().add_to_history("an earlier message");
     h.send(UP);
     assert!(!h.ui.scroll_pinned());
-    assert_eq!(h.text(), "an earlier message");
+    assert_eq!(h.text(), "");
 }
 
 #[test]

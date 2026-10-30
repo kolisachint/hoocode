@@ -11,7 +11,7 @@ use hoocode_ai_types::{AssistantMessage, Content, ThinkingContent};
 use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_widgets::session_chip::render_session_chip;
-use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity, TaskPanelView};
+use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelView};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
@@ -156,16 +156,6 @@ fn task_panel_long_text_120() {
     add_task("Short follow-up", TaskStatus::Pending);
     let mut panel = TaskPanelComponent::new();
     assert_golden!("task_panel_long_text_120", render_golden(&mut panel, 120));
-}
-
-#[test]
-fn task_panel_summary_80() {
-    let _g = lock();
-    task_store().clear();
-    mixed_tasks();
-    let mut panel = TaskPanelComponent::new();
-    panel.set_density(TaskPanelDensity::Summary);
-    assert_golden!("task_panel_summary_80", render_golden(&mut panel, 80));
 }
 
 // ---- task panel tabs (T4.1) ----

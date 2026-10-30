@@ -13,6 +13,7 @@ use hoocode_code_resources::agent_registry::summarize_agent_description;
 use hoocode_code_resources::context_files::ContextFile;
 use hoocode_code_resources::diagnostics::{DiagnosticType, ResourceDiagnostic};
 use hoocode_code_resources::source_info::{SourceInfo, SourceScope};
+use hoocode_code_settings::ToolOutputView;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::{Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
@@ -216,10 +217,11 @@ fn build_scope_groups(items: &[ListedItem]) -> Vec<ScopeGroup<'_>> {
     groups
 }
 
+/// One row of a scope group: `row` gives the item's styled text (its name,
+/// its path) after the given indent, in columns.
 fn format_scope_groups(
     groups: &[ScopeGroup<'_>],
-    format_path: &dyn Fn(&ListedItem) -> String,
-    format_package_path: &dyn Fn(&ListedItem) -> String,
+    row: &dyn Fn(&ListedItem, usize) -> String,
 ) -> String {
     let t = theme();
     let mut lines = Vec::new();
@@ -228,7 +230,7 @@ fn format_scope_groups(
         let mut paths = group.paths.clone();
         paths.sort_by(|a, b| locale_cmp(&a.path, &b.path));
         for item in paths {
-            lines.push(t.fg("dim", &format!("    {}", format_path(item))));
+            lines.push(row(item, 4));
         }
         let mut packages: Vec<&(String, Vec<&ListedItem>)> = group.packages.iter().collect();
         packages.sort_by(|a, b| locale_cmp(&a.0, &b.0));
@@ -237,7 +239,7 @@ fn format_scope_groups(
             let mut items = items.clone();
             items.sort_by(|a, b| locale_cmp(&a.path, &b.path));
             for item in items {
-                lines.push(t.fg("dim", &format!("      {}", format_package_path(item))));
+                lines.push(row(item, 6));
             }
         }
     }
@@ -348,9 +350,24 @@ fn handle<C: hoocode_tui_render::Component + 'static>(c: C) -> ComponentHandle {
     Rc::new(RefCell::new(c))
 }
 
+/// Whether the startup header and the resource details are open: under
+/// `verbose`, or at the full stop. The dial moves them, so peek and radar
+/// fold them again (unless `verbose`).
+pub fn startup_details_open(verbose: bool, view: ToolOutputView) -> bool {
+    verbose || view == ToolOutputView::Full
+}
+
 /// `willShowResourceListing`.
 pub fn will_show_resource_listing(listing: &ResourceListing, force: bool) -> bool {
     force || listing.verbose || !listing.quiet_startup
+}
+
+/// What the listing put into the transcript: the components to append, and
+/// the detail block (skills, commands, agents, MCP) as a typed handle, so the
+/// tool output dial can open and fold it (`set_expanded`).
+pub struct LoadedResources {
+    pub components: Vec<ComponentHandle>,
+    pub details: Option<Rc<RefCell<ExpandableText>>>,
 }
 
 /// `showLoadedResources`: the components to append to the transcript.
@@ -359,11 +376,24 @@ pub fn show_loaded_resources(
     force: bool,
     show_diagnostics_when_quiet: bool,
 ) -> Vec<ComponentHandle> {
+    show_loaded_resources_with_details(listing, force, show_diagnostics_when_quiet).components
+}
+
+/// [`show_loaded_resources`], also returning the detail block's handle.
+pub fn show_loaded_resources_with_details(
+    listing: &ResourceListing,
+    force: bool,
+    show_diagnostics_when_quiet: bool,
+) -> LoadedResources {
     let show_listing = will_show_resource_listing(listing, force);
     let show_diagnostics = show_listing || show_diagnostics_when_quiet;
     let mut out: Vec<ComponentHandle> = Vec::new();
+    let mut details_handle = None;
     if !show_listing && !show_diagnostics {
-        return out;
+        return LoadedResources {
+            components: out,
+            details: details_handle,
+        };
     }
     let t = theme();
     let section_header = |name: &str| t.fg("mdHeading", &format!("[{name}]"));
@@ -489,9 +519,22 @@ pub fn show_loaded_resources(
         let mut detail_sections: Vec<String> = Vec::new();
         if !listing.skills.is_empty() {
             let groups = build_scope_groups(&listing.skills);
-            let list = format_scope_groups(&groups, &|i| format_display_path(&i.path), &|i| {
-                get_short_path(&i.path, i.source_info.as_ref())
-            });
+            // The row names the skill as it is typed (`/skill:name`), then
+            // where it lives.
+            let skill_row = |i: &ListedItem, indent: usize| {
+                let place = if indent > 4 {
+                    get_short_path(&i.path, i.source_info.as_ref())
+                } else {
+                    format_display_path(&i.path)
+                };
+                format!(
+                    "{}{} {}",
+                    " ".repeat(indent),
+                    t.fg("ink", &format!("/skill:{}", i.name)),
+                    t.fg("dim", &place)
+                )
+            };
+            let list = format_scope_groups(&groups, &skill_row);
             detail_sections.push(format!(
                 "{}\n{}\n{list}",
                 section_header("Skills"),
@@ -500,8 +543,10 @@ pub fn show_loaded_resources(
         }
         if !listing.templates.is_empty() {
             let groups = build_scope_groups(&listing.templates);
-            let format_template = |i: &ListedItem| format!("/{}", i.name);
-            let list = format_scope_groups(&groups, &format_template, &format_template);
+            let command_row = |i: &ListedItem, indent: usize| {
+                t.fg("dim", &format!("{}/{}", " ".repeat(indent), i.name))
+            };
+            let list = format_scope_groups(&groups, &command_row);
             detail_sections.push(format!(
                 "{}\n{}\n{list}",
                 section_header("Commands"),
@@ -578,7 +623,7 @@ pub fn show_loaded_resources(
         }
         if !detail_sections.is_empty() {
             let details = detail_sections.join("\n\n");
-            out.push(handle(ExpandableText::new(
+            let block = Rc::new(RefCell::new(ExpandableText::new(
                 String::new,
                 move || details.clone(),
                 // `getStartupExpansionState`: verbose, or the dial at full.
@@ -586,6 +631,9 @@ pub fn show_loaded_resources(
                 0,
                 0,
             )));
+            let component: ComponentHandle = block.clone();
+            out.push(component);
+            details_handle = Some(block);
         }
         for warning in &listing.context_warnings {
             out.push(handle(Text::new(t.fg("warning", warning), 0, 0)));
@@ -610,5 +658,8 @@ pub fn show_loaded_resources(
             out.push(handle(Spacer::new(1)));
         }
     }
-    out
+    LoadedResources {
+        components: out,
+        details: details_handle,
+    }
 }

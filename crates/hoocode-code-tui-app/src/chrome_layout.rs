@@ -1,7 +1,8 @@
 //! How much of the screen the chrome gets (`chrome-layout.ts`): one dial
 //! (`ChromeDensity`, stepped by `alt+z`) and one table (`resolve_chrome`) from
-//! (dial, what is happening) to what the footer and task ledger show. The
-//! prompt is deliberately not in the table: it can never be hidden.
+//! (dial, what is happening) to what the footer shows. The task panel and the
+//! prompt are not in the table: the panel draws the same console at every
+//! density, and the prompt can never be hidden.
 //!
 //! A hidden slot renders nothing (see `Slot`), and `apply` reports whether
 //! anything moved, so callers can push state on hot paths and render only
@@ -32,18 +33,10 @@ pub enum FooterLayout {
     Hidden,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TasksLayout {
-    Full,
-    Summary,
-    Hidden,
-}
-
 /// `ChromeLayout`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChromeLayout {
     pub footer: FooterLayout,
-    pub tasks: TasksLayout,
 }
 
 /// `resolveChrome`: the whole policy. The dial says what you asked for; a
@@ -57,21 +50,14 @@ pub fn resolve_chrome(inputs: ChromeInputs) -> ChromeLayout {
             ChromeDensity::Compact => FooterLayout::Line,
         }
     };
-    let tasks = match inputs.density {
-        ChromeDensity::Compact => TasksLayout::Summary,
-        ChromeDensity::Full => TasksLayout::Full,
-    };
-    ChromeLayout { footer, tasks }
+    ChromeLayout { footer }
 }
 
-/// What the controller needs of the footer and the ledger.
+/// What the controller needs of the footer.
 pub struct ChromeSurfaces {
     pub footer_slot: Rc<RefCell<Slot>>,
-    pub tasks_slot: Rc<RefCell<Slot>>,
     /// Called with `Full` or `Line`.
     pub set_footer_density: Box<dyn FnMut(FooterLayout)>,
-    /// Called with `Full` or `Summary`.
-    pub set_tasks_density: Box<dyn FnMut(TasksLayout)>,
 }
 
 /// Holds the dial, takes the transient inputs, and moves the slots.
@@ -141,17 +127,10 @@ impl ChromeLayoutController {
         if next.footer != FooterLayout::Hidden {
             (self.surfaces.set_footer_density)(next.footer);
         }
-        if next.tasks != TasksLayout::Hidden {
-            (self.surfaces.set_tasks_density)(next.tasks);
-        }
         self.surfaces
             .footer_slot
             .borrow_mut()
             .set_visible(next.footer != FooterLayout::Hidden);
-        self.surfaces
-            .tasks_slot
-            .borrow_mut()
-            .set_visible(next.tasks != TasksLayout::Hidden);
         true
     }
 }

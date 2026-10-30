@@ -194,16 +194,25 @@ const WHEEL_UP: &str = "\x1b[<64;1;1M";
 const PRESS_SCROLLBAR_TOP: &str = "\x1b[<0;100;3M";
 
 #[test]
-fn shift_arrows_move_one_line_and_pin_from_the_tail() {
+fn shift_arrows_step_a_pinned_view_one_line() {
     let mut s = screen();
-    assert!(s.ui.get_scroll_position().is_none(), "live to start");
-    s.send(SHIFT_UP);
+    s.send(PAGE_UP);
+    assert!(s.ui.scroll_pinned(), "page up pins");
     let pinned = s.top();
-    assert!(s.ui.scroll_pinned(), "shift+up pins from the tail");
     s.send(SHIFT_UP);
     assert_eq!(s.top(), pinned - 1, "one line up");
     s.send(SHIFT_DOWN);
     assert_eq!(s.top(), pinned, "one line down");
+}
+
+#[test]
+fn shift_up_at_the_live_prompt_is_history_and_does_not_pin() {
+    let mut s = screen();
+    s.send(SHIFT_UP);
+    assert!(
+        s.ui.get_scroll_position().is_none(),
+        "shift+up is the prompt's history, not a pin"
+    );
 }
 
 #[test]
@@ -238,7 +247,7 @@ fn ctrl_end_returns_to_live_and_page_up_pins() {
 #[test]
 fn the_bar_counts_lines_that_arrived_while_pinned() {
     let mut s = screen();
-    s.send(SHIFT_UP);
+    s.send(PAGE_UP);
     s.output.clear();
     s.chat.borrow_mut().add_child(block("n", 5, false));
     s.ui.request_render(true);

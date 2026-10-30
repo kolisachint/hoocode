@@ -207,11 +207,16 @@ mod editor_component {
     use super::*;
     mod prompt_history_navigation {
         use super::*;
+        /// Prompt history: shift+up is older, shift+down newer.
+        const SHIFT_UP: &str = "\x1b[1;2A";
+        const SHIFT_DOWN: &str = "\x1b[1;2B";
+        const UP: &str = "\x1b[A";
+        const DOWN: &str = "\x1b[B";
         #[test]
         fn does_nothing_on_up_arrow_when_history_is_empty() {
             let mut editor = ed();
 
-            editor.handle_input("\x1b[A"); // Up arrow
+            editor.handle_input(SHIFT_UP); // Up arrow
 
             assert_eq!(editor.get_text(), "");
         }
@@ -223,7 +228,7 @@ mod editor_component {
             editor.add_to_history("first prompt");
             editor.add_to_history("second prompt");
 
-            editor.handle_input("\x1b[A"); // Up arrow
+            editor.handle_input(SHIFT_UP); // Up arrow
 
             assert_eq!(editor.get_text(), "second prompt");
         }
@@ -236,16 +241,16 @@ mod editor_component {
             editor.add_to_history("second");
             editor.add_to_history("third");
 
-            editor.handle_input("\x1b[A"); // Up - shows "third"
+            editor.handle_input(SHIFT_UP); // Up - shows "third"
             assert_eq!(editor.get_text(), "third");
 
-            editor.handle_input("\x1b[A"); // Up - shows "second"
+            editor.handle_input(SHIFT_UP); // Up - shows "second"
             assert_eq!(editor.get_text(), "second");
 
-            editor.handle_input("\x1b[A"); // Up - shows "first"
+            editor.handle_input(SHIFT_UP); // Up - shows "first"
             assert_eq!(editor.get_text(), "first");
 
-            editor.handle_input("\x1b[A"); // Up - stays at "first" (oldest)
+            editor.handle_input(SHIFT_UP); // Up - stays at "first" (oldest)
             assert_eq!(editor.get_text(), "first");
         }
 
@@ -255,10 +260,10 @@ mod editor_component {
 
             editor.add_to_history("prompt");
 
-            editor.handle_input("\x1b[A"); // Up - shows "prompt"
+            editor.handle_input(SHIFT_UP); // Up - shows "prompt"
             assert_eq!(editor.get_text(), "prompt");
 
-            editor.handle_input("\x1b[B"); // Down - clears editor
+            editor.handle_input(SHIFT_DOWN); // Down - clears editor
             assert_eq!(editor.get_text(), "");
         }
 
@@ -271,18 +276,18 @@ mod editor_component {
             editor.add_to_history("third");
 
             // Go to oldest
-            editor.handle_input("\x1b[A"); // third
-            editor.handle_input("\x1b[A"); // second
-            editor.handle_input("\x1b[A"); // first
+            editor.handle_input(SHIFT_UP); // third
+            editor.handle_input(SHIFT_UP); // second
+            editor.handle_input(SHIFT_UP); // first
 
             // Navigate back
-            editor.handle_input("\x1b[B"); // second
+            editor.handle_input(SHIFT_DOWN); // second
             assert_eq!(editor.get_text(), "second");
 
-            editor.handle_input("\x1b[B"); // third
+            editor.handle_input(SHIFT_DOWN); // third
             assert_eq!(editor.get_text(), "third");
 
-            editor.handle_input("\x1b[B"); // empty
+            editor.handle_input(SHIFT_DOWN); // empty
             assert_eq!(editor.get_text(), "");
         }
 
@@ -292,7 +297,7 @@ mod editor_component {
 
             editor.add_to_history("old prompt");
 
-            editor.handle_input("\x1b[A"); // Up - shows "old prompt"
+            editor.handle_input(SHIFT_UP); // Up - shows "old prompt"
             editor.handle_input("x"); // Type a character - exits history mode
 
             assert_eq!(editor.get_text(), "old promptx");
@@ -305,11 +310,11 @@ mod editor_component {
             editor.add_to_history("first");
             editor.add_to_history("second");
 
-            editor.handle_input("\x1b[A"); // Up - shows "second"
+            editor.handle_input(SHIFT_UP); // Up - shows "second"
             editor.set_text(""); // External clear
 
             // Up should start fresh from most recent
-            editor.handle_input("\x1b[A");
+            editor.handle_input(SHIFT_UP);
             assert_eq!(editor.get_text(), "second");
         }
 
@@ -321,11 +326,11 @@ mod editor_component {
             editor.add_to_history("   ");
             editor.add_to_history("valid");
 
-            editor.handle_input("\x1b[A");
+            editor.handle_input(SHIFT_UP);
             assert_eq!(editor.get_text(), "valid");
 
             // Should not have more entries
-            editor.handle_input("\x1b[A");
+            editor.handle_input(SHIFT_UP);
             assert_eq!(editor.get_text(), "valid");
         }
 
@@ -337,10 +342,10 @@ mod editor_component {
             editor.add_to_history("same");
             editor.add_to_history("same");
 
-            editor.handle_input("\x1b[A"); // "same"
+            editor.handle_input(SHIFT_UP); // "same"
             assert_eq!(editor.get_text(), "same");
 
-            editor.handle_input("\x1b[A"); // stays at "same" (only one entry)
+            editor.handle_input(SHIFT_UP); // stays at "same" (only one entry)
             assert_eq!(editor.get_text(), "same");
         }
 
@@ -352,13 +357,13 @@ mod editor_component {
             editor.add_to_history("second");
             editor.add_to_history("first"); // Not consecutive, should be added
 
-            editor.handle_input("\x1b[A"); // "first"
+            editor.handle_input(SHIFT_UP); // "first"
             assert_eq!(editor.get_text(), "first");
 
-            editor.handle_input("\x1b[A"); // "second"
+            editor.handle_input(SHIFT_UP); // "second"
             assert_eq!(editor.get_text(), "second");
 
-            editor.handle_input("\x1b[A"); // "first" (older one)
+            editor.handle_input(SHIFT_UP); // "first" (older one)
             assert_eq!(editor.get_text(), "first");
         }
 
@@ -370,7 +375,7 @@ mod editor_component {
             editor.set_text("line1\nline2");
 
             // Cursor is at end of line2, Up should move to line1
-            editor.handle_input("\x1b[A"); // Up - cursor movement
+            editor.handle_input(UP); // Up - cursor movement
 
             // Insert character to verify cursor position
             editor.handle_input("X");
@@ -390,30 +395,32 @@ mod editor_component {
 
             // Navigate to oldest
             for _i in 0..100 {
-                editor.handle_input("\x1b[A");
+                editor.handle_input(SHIFT_UP);
             }
 
             // Should be at entry 5 (oldest kept), not entry 0
             assert_eq!(editor.get_text(), "prompt 5");
 
             // One more Up should not change anything
-            editor.handle_input("\x1b[A");
+            editor.handle_input(SHIFT_UP);
             assert_eq!(editor.get_text(), "prompt 5");
         }
 
         #[test]
-        fn allows_cursor_movement_within_multi_line_history_entry_with_down() {
+        fn plain_down_on_the_last_line_of_a_history_entry_keeps_the_entry() {
             let mut editor = ed();
 
             editor.add_to_history("line1\nline2\nline3");
 
-            // Browse to the multi-line entry
-            editor.handle_input("\x1b[A"); // Up - shows entry, cursor at end of line3
+            editor.handle_input(SHIFT_UP); // shows entry, cursor at end of line3
             assert_eq!(editor.get_text(), "line1\nline2\nline3");
 
-            // Down should exit history since cursor is on last line
-            editor.handle_input("\x1b[B"); // Down
-            assert_eq!(editor.get_text(), ""); // Exited to empty
+            // Plain Down moves the cursor, not history: the entry stays.
+            editor.handle_input(DOWN);
+            assert_eq!(editor.get_text(), "line1\nline2\nline3");
+
+            editor.handle_input(SHIFT_DOWN); // newer: back to empty
+            assert_eq!(editor.get_text(), "");
         }
 
         #[test]
@@ -424,40 +431,40 @@ mod editor_component {
             editor.add_to_history("line1\nline2\nline3");
 
             // Browse to the multi-line entry
-            editor.handle_input("\x1b[A"); // Up - shows multi-line, cursor at end of line3
+            editor.handle_input(SHIFT_UP); // shows multi-line, cursor at end of line3
 
-            // Up should move cursor within the entry (not on first line yet)
-            editor.handle_input("\x1b[A"); // Up - cursor moves to line2
+            // Plain Up moves the cursor within the entry
+            editor.handle_input(UP); // cursor moves to line2
             assert_eq!(editor.get_text(), "line1\nline2\nline3"); // Still same entry
 
-            editor.handle_input("\x1b[A"); // Up - cursor moves to line1 (now on first visual line)
+            editor.handle_input(UP); // cursor moves to line1 (now on first visual line)
             assert_eq!(editor.get_text(), "line1\nline2\nline3"); // Still same entry
 
-            // Now Up should navigate to older history entry
-            editor.handle_input("\x1b[A"); // Up - navigate to older
+            // Shift+Up navigates to the older history entry
+            editor.handle_input(SHIFT_UP);
             assert_eq!(editor.get_text(), "older entry");
         }
 
         #[test]
-        fn navigates_from_multi_line_entry_back_to_newer_via_down_after_cursor_movement() {
+        fn plain_arrows_move_the_cursor_through_a_history_entry_and_shift_arrows_step_it() {
             let mut editor = ed();
 
             editor.add_to_history("line1\nline2\nline3");
 
             // Browse to entry and move cursor up
-            editor.handle_input("\x1b[A"); // Up - shows entry, cursor at end
-            editor.handle_input("\x1b[A"); // Up - cursor to line2
-            editor.handle_input("\x1b[A"); // Up - cursor to line1
+            editor.handle_input(SHIFT_UP); // shows entry, cursor at end
+            editor.handle_input(UP); // cursor to line2
+            editor.handle_input(UP); // cursor to line1
 
-            // Now Down should move cursor down within the entry
-            editor.handle_input("\x1b[B"); // Down - cursor to line2
+            // Plain Down moves the cursor down within the entry
+            editor.handle_input(DOWN); // cursor to line2
             assert_eq!(editor.get_text(), "line1\nline2\nline3");
 
-            editor.handle_input("\x1b[B"); // Down - cursor to line3
+            editor.handle_input(DOWN); // cursor to line3
             assert_eq!(editor.get_text(), "line1\nline2\nline3");
 
-            // Now on last line, Down should exit history
-            editor.handle_input("\x1b[B"); // Down - exit to empty
+            // Shift+Down leaves history
+            editor.handle_input(SHIFT_DOWN);
             assert_eq!(editor.get_text(), "");
         }
     }
@@ -2216,8 +2223,8 @@ mod editor_component {
             editor.handle_input("\x17"); // Ctrl+W
             assert_eq!(editor.get_text(), "");
 
-            // Press Up - enter history browsing, shows "hello"
-            editor.handle_input("\x1b[A"); // Up arrow
+            // Press Shift+Up - enter history browsing, shows "hello"
+            editor.handle_input("\x1b[1;2A"); // Shift+Up
             assert_eq!(editor.get_text(), "hello");
 
             // Undo should restore to "" (state before entering history browsing)
@@ -2253,11 +2260,11 @@ mod editor_component {
             assert_eq!(editor.get_text(), "");
 
             // Navigate through history multiple times
-            editor.handle_input("\x1b[A"); // Up - "third"
+            editor.handle_input("\x1b[1;2A"); // Shift+Up - "third"
             assert_eq!(editor.get_text(), "third");
-            editor.handle_input("\x1b[A"); // Up - "second"
+            editor.handle_input("\x1b[1;2A"); // Shift+Up - "second"
             assert_eq!(editor.get_text(), "second");
-            editor.handle_input("\x1b[A"); // Up - "first"
+            editor.handle_input("\x1b[1;2A"); // Shift+Up - "first"
             assert_eq!(editor.get_text(), "first");
 
             // Undo should go back to "" (state before we started browsing), not intermediate states
