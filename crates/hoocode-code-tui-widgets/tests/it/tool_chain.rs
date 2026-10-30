@@ -6,11 +6,13 @@ use std::rc::Rc;
 use crate::support::{lock, strip};
 use hoocode_ai_types::{Content, ThinkingContent};
 use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
+use hoocode_code_tui_widgets::radar::{mission_rows, FlightItem, FlightMark, FlightStats};
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
+use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
 
@@ -71,6 +73,32 @@ fn chain_of(view: ToolOutputView, calls: Vec<Call>, id: &str) -> ToolChainCompon
     chain
 }
 
+/// The mission's flight-log block over the chain's calls, plain, one row per
+/// entry. A mission's chain draws nothing in radar: its header draws the calls
+/// (`radar::mission_rows`), so the chain's own rows are read through it here.
+fn mission(chain: &ToolChainComponent, width: usize) -> Vec<String> {
+    let open = chain.is_open();
+    let mark = if open {
+        FlightMark::InFlight
+    } else if chain.chain_state() == ChainState::Interrupted {
+        FlightMark::Aborted
+    } else {
+        FlightMark::Landed
+    };
+    let stats = FlightStats {
+        mark,
+        steps: chain.tool_blocks().len(),
+        landed_time: (!open).then(|| "1s".to_string()),
+        started: open.then(std::time::Instant::now),
+        items: vec![FlightItem::Batch(chain.tool_blocks().to_vec())],
+        ..Default::default()
+    };
+    mission_rows(1, "run it", &stats, &Palette::default(), width)
+        .iter()
+        .map(|row| strip(row))
+        .collect()
+}
+
 fn render(chain: &mut ToolChainComponent) -> String {
     strip(&chain.render(100).join("\n"))
 }
@@ -99,18 +127,16 @@ fn run() -> Vec<Call> {
 #[test]
 fn radar_shows_a_live_step_for_the_call_still_running() {
     let _g = lock();
-    // Settled clean calls get no row: the mission row above counts them.
-    // The call still running reads as its live step.
+    // The batch line reads live: the call still running is its last tool, and
+    // the settled calls before it name the batch.
     let mut calls = run();
     calls[2].pending = true;
-    let mut chain = chain_of(Radar, calls, "c");
-    let out = render(&mut chain);
-    let lines: Vec<&str> = out.split('\n').filter(|l| !l.trim().is_empty()).collect();
-    assert_eq!(lines.len(), 1, "{out}");
-    assert!(lines[0].contains("◐"), "{out}");
-    assert!(lines[0].contains("03"), "{out}");
-    assert!(lines[0].contains("Edit"), "{out}");
-    assert!(!out.contains("›"), "{out}");
+    let chain = chain_of(Radar, calls, "c");
+    let rows = mission(&chain, 100);
+    let live: Vec<&String> = rows.iter().filter(|r| r.starts_with("   ┊ ◐ … ")).collect();
+    assert_eq!(live.len(), 1, "{rows:?}");
+    assert!(live[0].contains("CodeSearch › Read › Edit"), "{rows:?}");
+    assert!(live[0].contains("3 calls"), "{rows:?}");
 }
 
 #[test]
@@ -121,15 +147,20 @@ fn shows_the_shape_while_running_and_what_it_amounted_to_once_done() {
         pending: true,
         ..call("Shell", json!({"command": "x"}), "")
     });
-    let mut running = chain_of(Radar, calls, "r");
-    let out = render(&mut running);
-    assert!(out.contains("◐"), "{out}");
-    assert!(out.contains("04"), "{out}");
-    assert!(out.contains("Shell"), "{out}");
+    let running = chain_of(Radar, calls, "r");
+    let rows = mission(&running, 100);
+    assert!(
+        rows.iter()
+            .any(|r| r.starts_with("   ┊ ◐ … ") && r.contains("Shell")),
+        "{rows:?}"
+    );
 
-    // Settled clean: nothing left for the chain to say.
+    // Settled clean: one batch line, no hit, and the chain itself draws nothing.
     let mut done = chain_of(Radar, run(), "d");
     done.close(ChainState::Done);
+    let rows = mission(&done, 100);
+    assert!(rows.iter().any(|r| r.starts_with("   ┊ ●")), "{rows:?}");
+    assert!(rows.iter().all(|r| !r.contains("HIT")), "{rows:?}");
     assert!(render(&mut done).trim().is_empty());
 }
 
@@ -157,9 +188,9 @@ fn a_collapsed_chain_still_shows_why_a_call_failed() {
         "e",
     );
     chain.close(ChainState::Done);
-    let out = render(&mut chain);
+    let out = mission(&chain, 100).join("\n");
     assert!(out.contains("⊗"), "{out}");
-    assert!(out.contains("02"), "{out}");
+    assert!(out.contains("└ 02 Shell"), "{out}");
     assert!(out.contains("HIT"), "{out}");
     assert!(out.contains("bun test"), "{out}");
     assert!(out.contains("ASSERTION FAILED"), "{out}");
@@ -171,7 +202,8 @@ fn the_dial_not_a_per_chain_toggle_is_what_turns_the_line_back_into_calls() {
     let _g = lock();
     let mut chain = chain_of(Radar, run(), "o");
     chain.close(ChainState::Done);
-    assert!(!render(&mut chain).contains("CodeSearch"));
+    // In radar a mission's chain draws nothing; its header draws the calls.
+    assert!(render(&mut chain).trim().is_empty());
     chain.set_view(Peek);
     let opened = render(&mut chain);
     assert!(opened.contains("CodeSearch"));
@@ -240,14 +272,13 @@ fn a_hit_row_carries_tool_subject_snippet_and_chip_on_one_line() {
         "indent",
     );
     chain.close(ChainState::Done);
-    let out = render(&mut chain);
-    let rows: Vec<&str> = out.split('\n').filter(|l| !l.trim().is_empty()).collect();
-    assert_eq!(rows.len(), 1, "{out}");
-    assert!(rows[0].contains("⊗"), "{out}");
-    assert!(rows[0].contains("Shell"), "{out}");
-    assert!(rows[0].contains("bun test"), "{out}");
-    assert!(rows[0].contains("ASSERTION FAILED"), "{out}");
-    assert!(rows[0].trim_end().ends_with("HIT"), "{out}");
+    let rows = mission(&chain, 100);
+    let hit: Vec<&String> = rows.iter().filter(|r| r.contains("HIT")).collect();
+    assert_eq!(hit.len(), 1, "{rows:?}");
+    assert!(hit[0].starts_with("   ┊   └ 01 Shell"), "{rows:?}");
+    assert!(hit[0].contains("bun test"), "{rows:?}");
+    assert!(hit[0].contains("ASSERTION FAILED"), "{rows:?}");
+    assert!(hit[0].trim_end().ends_with("HIT"), "{rows:?}");
 }
 
 #[test]
@@ -287,7 +318,7 @@ fn an_orphan_single_call_in_radar_keeps_the_group_summary_row() {
 #[test]
 fn a_running_single_call_in_radar_reads_as_a_live_step() {
     let _g = lock();
-    let mut chain = chain_of(
+    let chain = chain_of(
         Radar,
         vec![Call {
             pending: true,
@@ -295,10 +326,8 @@ fn a_running_single_call_in_radar_reads_as_a_live_step() {
         }],
         "running1",
     );
-    let out = render(&mut chain);
-    assert!(out.contains("◐"), "{out}");
-    assert!(out.contains("01"), "{out}");
-    assert!(out.contains("npm run check"), "{out}");
+    let out = mission(&chain, 100).join("\n");
+    assert!(out.contains("◐ … Shell"), "{out}");
     assert!(!out.contains("running"), "{out}");
 }
 
@@ -314,12 +343,11 @@ fn a_failed_single_call_in_radar_still_shows_its_reason() {
         "failed1",
     );
     chain.close(ChainState::Done);
-    let out = render(&mut chain);
+    let out = mission(&chain, 100).join("\n");
     assert!(out.contains("⊗"), "{out}");
     assert!(out.contains("bun test"), "{out}");
     assert!(out.contains("HIT"), "{out}");
     assert!(out.contains("ASSERTION FAILED"), "{out}");
-    assert!(!out.contains("1 call"), "{out}");
 }
 
 #[test]
@@ -356,12 +384,11 @@ fn two_calls_with_one_running_show_the_live_step_in_radar() {
     let mut calls = run();
     calls.truncate(2);
     calls[1].pending = true;
-    let mut chain = chain_of(Radar, calls, "two");
+    let chain = chain_of(Radar, calls, "two");
     assert!(chain.is_summarised());
-    let out = render(&mut chain);
-    assert!(out.contains("◐"), "{out}");
-    assert!(out.contains("02"), "{out}");
-    assert!(!out.contains("CodeSearch › Read"), "{out}");
+    let out = mission(&chain, 100).join("\n");
+    // The live batch names both calls, the settled one first.
+    assert!(out.contains("◐ … CodeSearch › Read"), "{out}");
 }
 
 #[test]
@@ -427,8 +454,18 @@ fn background_shell() -> ToolExecutionComponent {
 fn an_interrupted_chain_with_no_failure_is_cancelled_never_green() {
     let _g = lock();
     let mut chain = chain_of(Radar, run(), "cancel");
+    for block in chain.tool_blocks() {
+        block.borrow_mut().set_interrupted();
+    }
     chain.close(ChainState::Interrupted);
-    // The `⊘` reads on the mission row; the chain adds nothing.
+    // The mission's batch reads dim `⊘`, never green `●`.
+    let rows = mission(&chain, 100);
+    assert!(rows.iter().any(|row| row.starts_with("   ┊ ⊘")), "{rows:?}");
+    assert!(
+        rows.iter().all(|row| !row.starts_with("   ┊ ●")),
+        "{rows:?}"
+    );
+    // The chain itself draws nothing in radar: its mission's header does.
     assert!(render(&mut chain).trim().is_empty());
 }
 
@@ -465,11 +502,13 @@ fn chain_with_job(state: ChainState) -> ToolChainComponent {
 fn a_background_call_reads_running_while_its_job_runs() {
     let _g = lock();
     set_job_row("j1", Some(TaskStatus::InProgress));
-    let out = render(&mut chain_with_job(ChainState::Done));
+    let rows = mission(&chain_with_job(ChainState::Done), 100);
     set_job_row("j1", None);
-    assert!(out.contains("◐"), "{out}");
-    assert!(out.contains("npm run dev"), "{out}");
-    assert!(!out.contains('●'), "{out}");
+    let live: Vec<&String> = rows.iter().filter(|r| r.starts_with("   ┊ ◐")).collect();
+    assert!(!live.is_empty(), "{rows:?}");
+    assert!(rows.iter().any(|r| r.contains("npm run dev")), "{rows:?}");
+    assert!(rows.iter().any(|r| r.contains("⌁")), "{rows:?}");
+    assert!(rows.iter().all(|r| !r.starts_with("   ┊ ●")), "{rows:?}");
 }
 
 #[test]
@@ -484,13 +523,16 @@ fn a_replayed_background_call_with_no_live_job_reads_done() {
 #[test]
 fn an_aborted_chain_keeps_a_live_background_job_running() {
     let _g = lock();
-    // Aborting the turn does not stop a job: the chain still reads running.
+    // Aborting the turn does not stop a job: its batch still reads running.
     set_job_row("j1", Some(TaskStatus::InProgress));
-    let out = render(&mut chain_with_job(ChainState::Interrupted));
+    let rows = mission(&chain_with_job(ChainState::Interrupted), 100);
     set_job_row("j1", None);
-    assert!(out.contains("◐"), "{out}");
-    assert!(out.contains("npm run dev"), "{out}");
-    assert!(!out.contains('⊘'), "{out}");
+    assert!(
+        rows.iter()
+            .any(|r| r.contains("⌁") && r.contains("npm run dev")),
+        "{rows:?}"
+    );
+    assert!(rows.iter().all(|r| !r.starts_with("   ┊ ⊘")), "{rows:?}");
 }
 
 #[test]
@@ -526,11 +568,12 @@ fn a_hit_row_names_the_first_line_of_the_failure() {
         "cap",
     );
     chain.close(ChainState::Done);
-    let out = render(&mut chain);
-    let rows: Vec<&str> = out.split('\n').filter(|l| !l.trim().is_empty()).collect();
-    assert_eq!(rows.len(), 1, "{out}");
-    assert!(rows[0].contains("l1"), "{out}");
-    assert!(rows[0].trim_end().ends_with("HIT"), "{out}");
+    let rows = mission(&chain, 100);
+    let hit: Vec<&String> = rows.iter().filter(|r| r.contains("HIT")).collect();
+    assert_eq!(hit.len(), 1, "{rows:?}");
+    assert!(hit[0].contains("→ l1"), "{rows:?}");
+    assert!(hit[0].trim_end().ends_with("HIT"), "{rows:?}");
+    let out = rows.join("\n");
     assert!(!out.contains("l3"), "{out}");
     assert!(!out.contains("more line"), "{out}");
 }
@@ -547,14 +590,12 @@ fn a_failed_call_with_two_lines_or_fewer_shows_no_fold() {
         "short",
     );
     chain.close(ChainState::Done);
-    let out = render(&mut chain);
+    let out = mission(&chain, 100).join("\n");
     assert!(out.contains("l1"), "{out}");
     assert!(out.contains("HIT"), "{out}");
     assert!(!out.contains("more line"), "{out}");
 }
 
-/// The stats are whole. A label that does not fit beside them is dropped;
-/// the stats are cut only when they do not fit alone.
 #[test]
 fn a_hit_row_keeps_hit_whole_and_cuts_the_subject_first() {
     let _g = lock();
@@ -568,13 +609,12 @@ fn a_hit_row_keeps_hit_whole_and_cuts_the_subject_first() {
         "drop",
     );
     chain.close(ChainState::Done);
-    // The hit's line is indented 12, so a subject shows a cut at 36 columns.
-    let lines = chain.render(36);
-    assert_eq!(lines.len(), 1, "{lines:?}");
-    let row = strip(&lines[0]);
-    assert!(row.trim_end().ends_with("HIT"), "{row:?}");
-    assert!(row.contains('…'), "{row:?}");
-    assert!(hoocode_tui_util::visible_width(&lines[0]) <= 36, "{row:?}");
+    // The hit's line is nested under the batch, so its subject shows a cut at 36 columns.
+    let rows = mission(&chain, 36);
+    let hit = rows.iter().find(|r| r.contains("HIT")).expect("a hit row");
+    assert!(hit.trim_end().ends_with("HIT"), "{hit:?}");
+    assert!(hit.contains('…'), "{hit:?}");
+    assert!(hit.chars().count() <= 36, "{hit:?}");
 }
 
 #[test]
@@ -589,12 +629,10 @@ fn stats_that_do_not_fit_alone_are_cut_last() {
         "cut",
     );
     chain.close(ChainState::Done);
-    let lines = chain.render(12);
-    assert_eq!(lines.len(), 1, "{lines:?}");
-    let row = strip(&lines[0]);
-    assert!(hoocode_tui_util::visible_width(&lines[0]) <= 12, "{row:?}");
-    assert!(row.contains('…'), "{row:?}");
-    assert!(row.trim_end().ends_with("HIT"), "{row:?}");
+    let rows = mission(&chain, 12);
+    let hit = rows.iter().find(|r| r.contains("HIT")).expect("a hit row");
+    assert!(hit.chars().count() <= 12, "{hit:?}");
+    assert!(hit.trim_end().ends_with("HIT"), "{hit:?}");
 }
 
 #[test]
@@ -610,12 +648,11 @@ fn the_stats_stay_at_eighty_columns_and_the_label_gives_way() {
         "wide",
     );
     chain.close(ChainState::Done);
-    let lines = chain.render(80);
-    assert_eq!(lines.len(), 1, "{lines:?}");
-    let row = strip(&lines[0]);
-    assert!(hoocode_tui_util::visible_width(&lines[0]) <= 80, "{row:?}");
-    assert!(row.trim_end().ends_with("HIT"), "{row:?}");
-    assert!(row.contains('…'), "{row:?}");
+    let rows = mission(&chain, 80);
+    let hit = rows.iter().find(|r| r.contains("HIT")).expect("a hit row");
+    assert!(hit.chars().count() <= 80, "{hit:?}");
+    assert!(hit.trim_end().ends_with("HIT"), "{hit:?}");
+    assert!(hit.contains('…'), "{hit:?}");
 }
 
 #[test]
@@ -637,7 +674,7 @@ fn an_agent_failure_names_the_description_not_the_whole_prompt() {
         "agent",
     );
     chain.close(ChainState::Done);
-    let out = render(&mut chain);
+    let out = mission(&chain, 100).join("\n");
     assert!(out.contains("Survey repo"), "{out}");
     assert!(!out.contains("Read every file"), "{out}");
 }

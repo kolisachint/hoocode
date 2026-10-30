@@ -70,15 +70,16 @@ The parts already run in parallel, but nothing bounds or orders them.
 | `hoocode-tools` pool | up to 16 threads | Medium | Sync tool bodies (read, edit, write, grep, find, compaction token counting). |
 | `hoocode-bg` | 1 thread, own `current_thread` runtime | Low | Housekeeping: prune old dispatch dirs and temp files, session list index, version check, file watchers, future search indexing. |
 | `hoocode-watchdog` | 1, mostly asleep | High | Heartbeats, stall reports, RSS sampling, limit enforcement. |
-| `hoocode-perf` | 1, always in the interactive TUI | None: normal priority | Once a second reads `/proc` (RSS, threads) and takes the UI's latest counters, and appends a JSON line to `--perf-log` when set. Started by `Perf::new`, so it runs without `/perf` or the log. Stops when the UI drops it. (`code-tui-app` `perf.rs`) |
+| `hoocode-perf` | 0, or 1 with `--perf-log` | None: normal priority | Once a second reads `/proc` (RSS, threads) and takes the UI's latest counters, and appends a JSON line to `--perf-log`. Started by `Perf::new` only when `--perf-log` is given and the file opens. Without it, `/perf` reads `/proc` once, inline, and no thread runs. Stops when the UI drops it. (`code-tui-app` `perf.rs`) |
 | `hoocode-resize` | 1: a SIGWINCH listener on Unix; a size poll every 100 ms on Windows, or if the listener fails to start | None: normal priority | Calls the resize handler when the terminal size changes. Started and stopped with the terminal: the listener ends when its watch is dropped, the poll on the stop flag. (`tui-terminal` `lib.rs`; the listener is `hoocode-runtime` `watch_sigwinch`) |
 | `autocomplete-files` | 1 per `@`-completion provider, made at mode start and again on session switch and settings change | None: normal priority | Runs the in-process `@file` walk for the newest query; older queued queries are skipped. Idle between queries. Exits when its provider is replaced or dropped, after any walk in progress. (`tui-components` `autocomplete/file_search.rs`) |
 | Subagents | child processes, 12 (6 nested) by default, set by `subagentConcurrency` and `nestedSubagentConcurrency` | Low | Unchanged pool; children start with 2 workers and lowered priority. |
 | `Shell` commands | child processes | Medium | Pipes read by async tasks on `hoocode-io`, not by 3 threads each. |
 
-Steady state is about 13 threads per process: the 10 steady threads above, plus
-`hoocode-perf`, `hoocode-resize` and `autocomplete-files`, which the rows above list.
-The ceiling under load is about 26. Today it is unbounded.
+Steady state is about 12 threads per process (13 with `--perf-log`): the 10 steady threads
+above, plus `hoocode-resize` and `autocomplete-files`, which the rows above list.
+`hoocode-perf` runs only with `--perf-log`. The ceiling under load is about 26. Today it is
+unbounded.
 
 ### 2. Lanes and OS priority
 
@@ -255,8 +256,10 @@ server that never answers, and the paused-pty run.
   or modifyOtherKeys `CSI 27;5;99~`, but not inside a bracketed paste. Each press
   calls the hook, which `code-tui-app` `run` sets to `Agent::abort` of the session.
   The UI still gets the key. An abort is idempotent, so the second one changes nothing.
-- **Emergency exit.** The UI loop beats once per pass (at most 250 ms apart while idle).
-  Two presses within 1 s with no beat for 500 ms: the input thread writes the reset
+- **Emergency exit.** The UI loop beats once per pass. While it waits for input it
+  first posts a beat that counts from the end of the wait (`interrupt::ui_beat_waiting`,
+  and `watchdog::ui_beat_waiting` for the watchdog), so an idle loop of up to 1 s
+  (the wait cap) is not silent. Two presses within 1 s with no beat for 500 ms: the input thread writes the reset
   sequences straight to fd 1 (the output thread may be stuck), disables raw mode, runs
   `session_io().flush_blocking(1 s)` and exits 130.
 - **ESC timer without a thread on Unix** (`stdin_hub.rs`). The `hoocode-input` reader

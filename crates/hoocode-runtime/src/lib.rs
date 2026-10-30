@@ -49,8 +49,8 @@ pub use limits::{
 };
 pub use memory::{
     child_rss_bytes, configure_memory_limits, configured_memory_limits, default_memory_limits_mb,
-    last_rss_bytes, process_rss_bytes, shedding, take_memory_events, MemoryEvent, MemoryGuard,
-    MemoryMonitor, RssSource, Tick, CHILD_RSS_LIMIT_BYTES, MIB,
+    last_rss_bytes, process_rss_bytes, rss_samples, shedding, take_memory_events, MemoryEvent,
+    MemoryGuard, MemoryMonitor, RssSource, Tick, CHILD_RSS_LIMIT_BYTES, MIB,
 };
 pub use runtime::{
     block_on_current_thread, block_on_entry, block_on_isolated, io_handle, io_worker_count,

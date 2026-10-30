@@ -17,10 +17,7 @@ use hoocode_tui_ratatui::{ansi_spans, spans_width, truncate_spans, with_base_sty
 
 use crate::assistant_message::AssistantMessageComponent;
 use crate::fold::{fold_rows, fold_rows_tail, more_lines_span};
-use crate::radar::{
-    self, agent_live_row, hit_row, live_row, satellite_row, sub_hit_row, sub_live_row,
-    sub_waiting_row, waiting_row,
-};
+use crate::radar;
 use crate::tool_chain_summary::{
     chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
 };
@@ -297,163 +294,6 @@ impl ToolChainComponent {
         out
     }
 
-    /// Whether the chain's last flight row is a hit (radar): prose written
-    /// under it indents to the hit's text. Settled clean calls draw no row,
-    /// so they are skipped.
-    pub fn ends_in_hit(&self) -> bool {
-        self.blocks
-            .iter()
-            .rev()
-            .find_map(|block| {
-                let body = block.borrow();
-                if body.chain_entry().is_error {
-                    Some(true)
-                } else if body.is_waiting_for_clearance() || body.chain_entry().is_partial {
-                    Some(false)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(false)
-    }
-
-    /// The mission's flight-log rows for this chain (M5, radar): one line
-    /// per hit (`⊗ 04 … HIT`, indented 12), per live step (`◐ 01 … 3s`,
-    /// indented 8, with a progress bar when the call's estimate is known),
-    /// per waiting step (`◉ 01 … holding for clearance`, the queue's head
-    /// first), per live subagent (`◈ type · task`) with its own running and
-    /// failed calls under it (`01.1`), and per live background job (its
-    /// satellite row), numbered by mission step. Settled clean
-    /// calls get no row: the mission row above already counts them.
-    /// Lead-in traces keep their think line with its gist, so thinking
-    /// that led to a call still reads under its mission.
-    fn flight_rows(&self, width: usize, palette: &Palette) -> Vec<String> {
-        let mut out = Vec::new();
-        for component in &self.lead_ins {
-            out.extend(
-                component
-                    .component
-                    .borrow()
-                    .radar_think_lines(width, palette),
-            );
-        }
-        let mut waited = false;
-        for (i, block) in self.blocks.iter().enumerate() {
-            let step = self.base_step + i + 1;
-            let body = block.borrow();
-            let entry = body.chain_entry();
-            if entry.is_error {
-                let snippet = body
-                    .error_text()
-                    .lines()
-                    .map(str::trim)
-                    .find(|line| !line.is_empty())
-                    .unwrap_or_default()
-                    .to_string();
-                out.push(hit_row(
-                    step,
-                    &entry.tool,
-                    &entry.subject,
-                    &snippet,
-                    palette,
-                    width,
-                ));
-            } else if body.is_waiting_for_clearance() {
-                // The queue's head holds `◉`; steps behind it read `○ next`.
-                let head = !waited;
-                waited = true;
-                out.push(waiting_row(
-                    step,
-                    &entry.tool,
-                    &entry.subject,
-                    head,
-                    palette,
-                    width,
-                ));
-            } else if entry.is_partial {
-                let secs = body.block_elapsed_secs().unwrap_or(0);
-                if let Some(job) = body.background_job_id() {
-                    out.push(satellite_row(
-                        step,
-                        &entry.tool,
-                        &entry.subject,
-                        &job,
-                        secs,
-                        palette,
-                        width,
-                    ));
-                } else if let Some((subtype, task)) = body.agent_label() {
-                    out.push(agent_live_row(step, &subtype, &task, secs, palette, width));
-                    // The agent's own calls still running or failed sit under its row.
-                    if let Some(run) = body.agent_run_id() {
-                        let subs = hoocode_code_subagents::live::sub_steps(&run);
-                        for sub in &subs {
-                            let index = sub.index;
-                            match &sub.failure {
-                                Some(snippet) => out.push(sub_hit_row(
-                                    step,
-                                    index,
-                                    &sub.tool,
-                                    &sub.subject,
-                                    snippet,
-                                    palette,
-                                    width,
-                                )),
-                                None if sub.held => out.push(sub_waiting_row(
-                                    step,
-                                    index,
-                                    &sub.tool,
-                                    &sub.subject,
-                                    palette,
-                                    width,
-                                )),
-                                None => out.push(sub_live_row(
-                                    step,
-                                    index,
-                                    &sub.tool,
-                                    &sub.subject,
-                                    sub.started.elapsed().as_secs(),
-                                    palette,
-                                    width,
-                                )),
-                            }
-                        }
-                    }
-                } else {
-                    out.push(live_row(
-                        step,
-                        &entry.tool,
-                        &entry.subject,
-                        secs,
-                        body.estimated_secs(),
-                        palette,
-                        width,
-                    ));
-                }
-            }
-            // A settled run keeps the calls of its own that failed: problem
-            // rows only, under the agent step that made them.
-            if !entry.is_partial {
-                for sub in body
-                    .settled_sub_steps()
-                    .iter()
-                    .filter(|s| s.failure.is_some())
-                {
-                    out.push(sub_hit_row(
-                        step,
-                        sub.index,
-                        &sub.tool,
-                        &sub.subject,
-                        sub.failure.as_deref().unwrap_or_default(),
-                        palette,
-                        width,
-                    ));
-                }
-            }
-        }
-        out
-    }
-
     fn rows(&mut self, width: u16) -> Vec<String> {
         // One palette per render pass, passed down to every row.
         let palette = Palette::current();
@@ -461,7 +301,8 @@ impl ToolChainComponent {
             return self.peek_rows(width, &palette);
         }
         if !self.orphan {
-            return self.flight_rows(width as usize, &palette);
+            // A mission's calls are drawn by its header (radar, R3).
+            return Vec::new();
         }
         self.orphan_rows(width as usize, &palette)
     }

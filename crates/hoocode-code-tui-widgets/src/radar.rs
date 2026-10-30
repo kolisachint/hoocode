@@ -1,27 +1,25 @@
-//! Mission Control flight log (radar) rows (M5, spec §4 r1–r11).
-//! In radar view each mission collapses to one flight-log row: the mark
-//! (`●` landed, `◐` in flight, `⊗` did not land, `⊘` aborted), the prompt,
-//! and the stats (steps, `N✕` hits, time, cost). The stats sit in fixed
-//! columns counted back from the right edge; the prompt is never cut: it
-//! wraps onto rows aligned under its first word. Under it, the turn's
-//! progress row (`◐ Read › Edit › Shell …` while flying, the settled
-//! summary once over). Under that, each hit gets its own line
-//! (`⊗ 04 Shell  cmd  → snippet  HIT`, indented 12), a flying mission shows
-//! its live step (`◐` with an eight-cell progress bar and `3s of ~6s` when
-//! the call's estimate is known, indented 8), waiting steps read `◉ …
-//! holding for clearance`, subagent steps read `◈ type · task`, background
-//! jobs read their satellite row, and thinking shows `✻ thought Ns` with
-//! its gist. Every row ends one column short of the width, so the last
-//! column stays a blank margin.
+//! Mission Control flight log (radar) rows (R3, `docs/design/radar-r3.md`).
+//!
+//! A mission is one block on a `┊` rail, drawn by its header from the
+//! mission's [`FlightStats`]: the header `▲ Mn  prompt`; the body in story
+//! order (one line per tool batch, the calls that failed nested under it as
+//! `└ NN Tool  subject  → snippet  HIT`, each thinking block as one dim
+//! `✻ gist` line); the final answer on the rail; and the turn-end row closing
+//! the rail with `╰`. The turn end reads the landing line's words and stats
+//! (`● LANDED`, `⊗ DID NOT LAND`, `⊘ ABORTED`), `◐ IN FLIGHT` while the
+//! mission flies, or `◆ WAITING` while a call waits for the user's approval.
+//! An older finished mission folds to one summary line.
 //!
 //! Like the trajectory, every row draws through a ratatui buffer and the
-//! Mission Control palette. Colours keep the legacy theme tokens the peek
-//! view styled with, so both views stay in step.
+//! Mission Control palette. Thinking and prose outside a mission keep their
+//! own rows (`think_rows`, `prose_rows`).
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Instant;
 
+use hoocode_code_agent_session::format::format_duration_secs;
+use hoocode_code_subagents::live;
 use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::core::style::Style;
 use hoocode_tui_ratatui::core::text::Span;
@@ -29,43 +27,23 @@ use hoocode_tui_ratatui::{ansi_spans, bold, reversed, spans_width, truncate_span
 use hoocode_tui_render::{mix_stamps, Component, ComponentHandle};
 use hoocode_tui_util::visible_width;
 
-use crate::tool_chain_summary::{
-    chain_segments, chain_stats, turn_phrase, ChainEntry, ChainState, SegmentTone,
-};
-use crate::trajectory::{short_dur, two_part_row};
+use crate::tool_chain::ToolBlock;
+use crate::tool_chain_summary::{turn_phrase, ChainEntry};
+use crate::trajectory::{landing_spans, short_dur, two_part_row};
 
-/// The in-flight glyph: the mission mark, a live step, a live agent and a
-/// satellite job. Radar-local: the shared `status::RUNNING_STR` (`◉`) keeps
-/// the waiting row's glyph, and the peek and task views keep it too.
+/// The in-flight glyph: the mission mark, a live batch and a live agent. Radar-
+/// local: `status` has no half circle, and the radar keeps this one for its
+/// flying rows.
 const IN_FLIGHT_STR: &str = "◐";
 
-/// Indent of a step's own line (live, waiting, agent, satellite) and of
-/// prose or thinking that sits directly under a mission row.
+/// Indent of prose and thinking outside a mission (the orphan rows).
 pub const STEP_INDENT: usize = 8;
-
-/// Indent of a hit's line, and of prose that follows a hit row.
-pub const HIT_INDENT: usize = 12;
-
-/// Cells in a live step's progress bar.
-const BAR_CELLS: usize = 8;
-
-/// The stats' fixed columns, counted back from the width: a column is
-/// `width - END`. The step noun ends 21 back, the hits 17, the time 10 and
-/// the cost 2; the last column (0 back) stays blank.
-const STEPS_END: usize = 21;
-const HITS_END: usize = 17;
-const TIME_END: usize = 10;
-const COST_END: usize = 2;
-
-/// The time reads right-aligned in a field this wide.
-const TIME_FIELD: usize = 4;
 
 /// The blank columns a stem keeps before its right-hand run.
 const RUN_GAP: usize = 2;
 
-/// Room the prompt needs beside the stats on the mission row; with less, the
-/// prompt starts on the row below rather than break its first word.
-const MIN_BESIDE_STATS: usize = 12;
+/// Columns the rail takes before a mission row's content: `   ┊ `.
+const RAIL_WIDTH: usize = 5;
 
 /// A mission's mark in the flight log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -113,10 +91,29 @@ impl FlightMark {
     }
 }
 
-/// One mission's flight-log data. The transcript refreshes it as the
-/// mission runs (steps, hits, the mark) and lands (time, cost); a flying
-/// mission reads its elapsed time off `started` on every render, so the row
-/// stays live without a refresh.
+/// One item of a mission's flight log, in story order.
+#[derive(Clone)]
+pub enum FlightItem {
+    /// The tool calls between two thinking blocks or two assistant messages.
+    Batch(Vec<ToolBlock>),
+    /// A thinking block: its gist (its first line of text).
+    Thinking(String),
+}
+
+impl std::fmt::Debug for FlightItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FlightItem::Batch(blocks) => f.debug_tuple("Batch").field(&blocks.len()).finish(),
+            FlightItem::Thinking(gist) => f.debug_tuple("Thinking").field(gist).finish(),
+        }
+    }
+}
+
+/// One mission's flight-log data. The transcript refreshes it as the mission
+/// runs (items, steps, hits, the mark) and lands (time, cost, tokens, the
+/// answer). A flying mission reads its elapsed time off `started` on every
+/// render, and its batches read their calls on every render, so the log stays
+/// live without a refresh.
 #[derive(Debug, Clone, Default)]
 pub struct FlightStats {
     pub mark: FlightMark,
@@ -128,16 +125,73 @@ pub struct FlightStats {
     pub started: Option<Instant>,
     /// Cost, already formatted (`$0.003`); `None` when unknown.
     pub cost: Option<String>,
-    /// Every call of the mission, in order: the progress row under the
-    /// mission row reads its segments while flying and its phrase once over.
-    pub chain: Vec<ChainEntry>,
+    /// Tokens, already formatted (`2.1k tokens`); `None` while flying.
+    pub tokens: Option<String>,
+    /// The mission's batches and thinking blocks, in story order.
+    pub items: Vec<FlightItem>,
+    /// The final answer's plain lines; empty until the mission has ended.
+    pub answer: Vec<String>,
+    /// Why the turn did not land: the error it ended with, without `Error: `.
+    pub reason: Option<String>,
+    /// The final error of a turn that failed, set when its auto-retries ran out
+    /// or the turn itself failed. It outranks `reason`, which the message that
+    /// carried it may no longer hold (a retried attempt leaves the chat).
+    pub failure: Option<String>,
+    /// An older finished mission: the log folds it to one summary line.
+    pub folded: bool,
 }
 
 impl FlightStats {
-    /// A key for what the rows read, so a holder can tell when they change:
-    /// `None` while the row runs a live clock (`started` without a landed time).
+    /// Every call of the mission, in order.
+    pub fn calls(&self) -> Vec<ChainEntry> {
+        self.items
+            .iter()
+            .flat_map(|item| match item {
+                FlightItem::Batch(blocks) => batch_entries(blocks),
+                FlightItem::Thinking(_) => Vec::new(),
+            })
+            .collect()
+    }
+
+    /// The call the turn waits on: the first held call, or a held call of a
+    /// running subagent (its Agent row shows the hold). `None` while nothing
+    /// is held.
+    pub fn awaiting(&self) -> Option<(String, String)> {
+        for item in &self.items {
+            let FlightItem::Batch(blocks) = item else {
+                continue;
+            };
+            for block in blocks {
+                let body = block.borrow();
+                if body.is_waiting_for_clearance() {
+                    let entry = body.chain_entry();
+                    return Some((entry.tool, entry.subject));
+                }
+                if body.chain_entry().is_partial {
+                    if let Some(run) = body.agent_run_id() {
+                        if let Some(sub) = live::sub_steps(&run).into_iter().find(|s| s.held) {
+                            return Some((sub.tool, sub.subject));
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// A key for what the rows read, so a holder can tell when they change.
+    /// `None` while anything reads a live clock or live state: a flying
+    /// mission, a call still running or held, a live background job (read off
+    /// the task store), or a call whose state cannot be read right now. The
+    /// key hashes only settled calls' stamps and flags and the mission's own
+    /// numbers, so no output is cloned per frame. A frozen call keys on its
+    /// revision: its capture is fixed, and it has no result left to read.
     pub fn render_key(&self) -> Option<u64> {
-        if self.started.is_some() && self.landed_time.is_none() {
+        // A flying mission reads its clock and its awaited call on every
+        // render. That holds with or without a turn anchor (`started`).
+        if self.mark == FlightMark::InFlight
+            || (self.started.is_some() && self.landed_time.is_none())
+        {
             return None;
         }
         use std::hash::{Hash, Hasher};
@@ -147,16 +201,52 @@ impl FlightStats {
         self.hits.hash(&mut hasher);
         self.landed_time.hash(&mut hasher);
         self.cost.hash(&mut hasher);
-        self.chain.len().hash(&mut hasher);
-        for entry in &self.chain {
-            entry.tool.hash(&mut hasher);
-            entry.subject.hash(&mut hasher);
-            entry.is_error.hash(&mut hasher);
-            entry.is_partial.hash(&mut hasher);
-            entry.output_lines.hash(&mut hasher);
-            format!("{:?}", entry.outcome).hash(&mut hasher);
+        self.tokens.hash(&mut hasher);
+        self.answer.hash(&mut hasher);
+        self.reason.hash(&mut hasher);
+        self.failure.hash(&mut hasher);
+        self.folded.hash(&mut hasher);
+        self.items.len().hash(&mut hasher);
+        for item in &self.items {
+            match item {
+                FlightItem::Batch(blocks) => {
+                    0u8.hash(&mut hasher);
+                    blocks.len().hash(&mut hasher);
+                    for block in blocks {
+                        let body = block.try_borrow().ok()?;
+                        if let Some(rev) = body.frozen_rev() {
+                            // An agent's rows read the subagent registry live.
+                            if body.is_agent() {
+                                return None;
+                            }
+                            2u8.hash(&mut hasher);
+                            rev.hash(&mut hasher);
+                            continue;
+                        }
+                        if !body.is_settled() || body.background_job_id().is_some() {
+                            return None;
+                        }
+                        body.render_stamp()?.hash(&mut hasher);
+                        body.is_error().hash(&mut hasher);
+                        body.is_waiting_for_clearance().hash(&mut hasher);
+                    }
+                }
+                FlightItem::Thinking(gist) => {
+                    1u8.hash(&mut hasher);
+                    gist.hash(&mut hasher);
+                }
+            }
         }
         Some(hasher.finish())
+    }
+
+    /// The reason a DID NOT LAND row names: the turn's failure, else the reason
+    /// its message carried. One line, trimmed.
+    pub fn did_not_land_reason(&self) -> Option<String> {
+        self.failure
+            .as_deref()
+            .and_then(first_line)
+            .or_else(|| self.reason.as_deref().and_then(first_line))
     }
 
     /// The row's time: the landed span, else live elapsed off the start.
@@ -164,82 +254,40 @@ impl FlightStats {
         if let Some(landed) = &self.landed_time {
             return Some(landed.clone());
         }
-        self.started.map(|at| short_dur(at.elapsed().as_secs()))
+        self.started.map(|at| duration_text(at.elapsed().as_secs()))
     }
+}
 
-    /// The flush-right stats run (Mission Control spec r1) on fixed columns:
-    /// the step noun (`1 step`, `2 steps`) ends `STEPS_END` columns from the
-    /// right edge, the `N✕` hits end `HITS_END` back, the time (right-aligned
-    /// in a four-column field) ends `TIME_END` back, and the cost ends
-    /// `COST_END` back. Hits and times that are wider grow leftward. The run
-    /// reaches the width with its last column blank.
-    ///
-    /// A stepless mission (`steps == 0`) has no noun, so its steps columns
-    /// stay blank; its hits show only when it has any. A field the mission
-    /// lacks (no time yet, no cost) leaves its columns blank. The step noun
-    /// reads ink landed and accent while flying; hits faint; time dim (accent
-    /// flying); cost dim.
-    fn right_run(&self, width: usize, palette: &Palette) -> Vec<Span<'static>> {
-        let w = width as isize;
-        let flying = self.mark == FlightMark::InFlight;
-        // (column where the field's text ends, its spans)
-        let mut fields: Vec<(isize, Vec<Span<'static>>)> = Vec::new();
-        if self.steps > 0 {
-            let count = if flying { palette.acc() } else { palette.ink() };
-            let noun = if self.steps == 1 { "step" } else { "steps" };
-            fields.push((
-                w - STEPS_END as isize,
-                vec![
-                    span(self.steps.to_string(), count),
-                    span(format!(" {noun}"), palette.dim()),
-                ],
-            ));
-        }
-        if self.steps > 0 || self.hits > 0 {
-            fields.push((
-                w - HITS_END as isize,
-                vec![span(format!("{}✕", self.hits), palette.faint())],
-            ));
-        }
-        if let Some(time) = self.time_text() {
-            let time_style = if flying { palette.acc() } else { palette.dim() };
-            fields.push((
-                w - TIME_END as isize,
-                vec![span(
-                    format!("{time:>width$}", width = TIME_FIELD),
-                    time_style,
-                )],
-            ));
-        }
-        if let Some(cost) = &self.cost {
-            fields.push((
-                w - COST_END as isize,
-                vec![span(cost.clone(), palette.dim())],
-            ));
-        }
-        let Some(first_start) = fields
-            .first()
-            .map(|(end, spans)| end + 1 - spans_width(spans) as isize)
-        else {
-            return vec![blank(1)];
-        };
-        let mut out = Vec::new();
-        let mut cursor = first_start;
-        for (end, spans) in fields {
-            let field_width = spans_width(&spans) as isize;
-            let start = end + 1 - field_width;
-            if start > cursor {
-                out.push(blank((start - cursor) as usize));
-                cursor = start;
-            }
-            out.extend(spans);
-            cursor += field_width;
-        }
-        if cursor < w {
-            out.push(blank((w - cursor) as usize));
-        }
-        out
+/// The first non-empty line of `text`, trimmed: a reason reads on one line.
+/// `None` when the text is blank.
+pub fn first_line(text: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+/// A duration in the landing line's format (`0.8s`, `42s`, `1m12s`).
+fn duration_text(secs: u64) -> String {
+    format_duration_secs(secs as f64)
+}
+
+/// The radar's call count: `1 call`, `9 calls`. Radar-only: `chain_stats`
+/// keeps the peek and orphan wording.
+fn calls_text(count: usize) -> String {
+    if count == 1 {
+        "1 call".to_string()
+    } else {
+        format!("{count} calls")
     }
+}
+
+/// The chain entries of one batch's calls, in order.
+fn batch_entries(blocks: &[ToolBlock]) -> Vec<ChainEntry> {
+    blocks
+        .iter()
+        .map(|block| block.borrow().chain_entry())
+        .collect()
 }
 
 /// Plain spans read ink: chalk-less text arrives style-less, and the
@@ -408,11 +456,440 @@ fn wrap_words(text: &str, first: usize, rest: usize) -> Vec<String> {
     rows
 }
 
-/// The mission rows (Mission Control spec r1):
-/// `M1 ●  prompt                1 step  0✕   0.8s  $0.003`. `M1` reads `you`,
-/// the glyph its mark, the prompt bold ink. The stats stay whole on the first
-/// row; the prompt is never cut. It wraps (every line of it), and the
-/// continuation rows hang under the prompt's first word.
+/// A row cut to `width - 1` columns with `…`, its last column blank.
+fn cut_row(spans: Vec<Span<'static>>, width: usize) -> String {
+    finish(truncate_spans(spans, width.saturating_sub(1), "…"), width)
+}
+
+/// A mission row's lead: three blanks, the `┊`, a blank (the rail).
+fn rail(palette: &Palette) -> Vec<Span<'static>> {
+    vec![blank(3), span("┊", palette.faint()), blank(1)]
+}
+
+/// A nested row's lead: the rail, then `└` under the batch's mark. Level 1 is
+/// a call of the batch; level 2 is a call a subagent made under its agent row.
+fn nested(level: usize, palette: &Palette) -> Vec<Span<'static>> {
+    vec![
+        blank(3),
+        span("┊", palette.faint()),
+        blank(2 * level + 1),
+        span("└", palette.faint()),
+        blank(1),
+    ]
+}
+
+/// The turn-end row's lead: three blanks, the `╰` that closes the rail.
+fn turn_lead(palette: &Palette) -> Vec<Span<'static>> {
+    vec![blank(3), span("╰", palette.faint()), blank(1)]
+}
+
+/// The header row: `▲ M1  prompt`, the `▲` and `M1` in the `you` colour. The
+/// prompt is never cut: it wraps under its first word.
+fn header_rows(seq: usize, prompt: &str, palette: &Palette, width: usize) -> Vec<String> {
+    let lead = vec![
+        span("▲", bold(palette.you())),
+        blank(1),
+        span(format!("M{seq}"), bold(palette.you())),
+        blank(2),
+    ];
+    let hang = spans_width(&lead);
+    let room = width.saturating_sub(hang + 1).max(1);
+    let mut pieces: Vec<String> = prompt
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|line| !line.is_empty())
+        .flat_map(|line| wrap_words(&line, room, room))
+        .collect();
+    if pieces.is_empty() {
+        pieces.push(String::new());
+    }
+    pieces
+        .into_iter()
+        .enumerate()
+        .map(|(index, piece)| {
+            let mut spans = if index == 0 {
+                lead.clone()
+            } else {
+                vec![blank(hang)]
+            };
+            spans.push(span(piece, bold(palette.ink())));
+            cut_row(spans, width)
+        })
+        .collect()
+}
+
+/// A tool's name and the gap its subject follows, with the call number first
+/// when it has one: `05 Shell  `.
+fn tool_lead(label: Option<&str>, tool: &str, palette: &Palette) -> Vec<Span<'static>> {
+    let mut out = Vec::new();
+    if let Some(label) = label {
+        out.push(span(format!("{label} "), bold(palette.gold())));
+    }
+    out.push(span(tool, bold(palette.ink())));
+    out.push(blank(2));
+    out
+}
+
+/// Whether a call's row shows a hit: the call failed, or a call its subagent
+/// made failed (settled, or still running into a failure).
+fn call_failed(block: &ToolBlock) -> bool {
+    let body = block.borrow();
+    // The chain entry, as `call_rows` reads it: a frozen call keeps its failure there.
+    if body.chain_entry().is_error {
+        return true;
+    }
+    if body
+        .settled_sub_steps()
+        .iter()
+        .any(|sub| sub.failure.is_some())
+    {
+        return true;
+    }
+    body.agent_run_id().is_some_and(|run| {
+        live::sub_steps(&run)
+            .iter()
+            .any(|sub| sub.failure.is_some())
+    })
+}
+
+/// One tool batch's line (R3 rule 3). Settled: `● Edited lex.rs · ran cargo
+/// test` with `9 calls` flush right. The mark is `⊘` (dim) when the user cut a
+/// call short, else `⊗` when a call or a subagent's call failed (those calls
+/// keep their own rows under it). Live, when a call still runs or the batch is
+/// the last of a flying mission: `◐ … Edit › Shell › Edit › Shell` with `N
+/// calls · clock`, the last four tools and the clock off the batch's earliest
+/// start. It never wraps: the phrase is cut with `…`.
+fn batch_row(blocks: &[ToolBlock], live_tail: bool, palette: &Palette, width: usize) -> String {
+    let entries = batch_entries(blocks);
+    let live = live_tail || entries.iter().any(|entry| entry.is_partial);
+    let mut stem = rail(palette);
+    let right = if live {
+        stem.push(span(IN_FLIGHT_STR, palette.acc()));
+        stem.push(blank(1));
+        stem.push(span("…", palette.dim()));
+        stem.push(blank(1));
+        let names: Vec<&str> = entries
+            .iter()
+            .rev()
+            .take(4)
+            .rev()
+            .map(|entry| entry.tool.as_str())
+            .collect();
+        stem.push(span(names.join(" › "), palette.ink()));
+        let earliest = blocks.iter().map(|block| block.borrow().started_at()).min();
+        let secs = earliest.map_or(0, |at| at.elapsed().as_secs());
+        format!("{} · {}", calls_text(entries.len()), duration_text(secs))
+    } else {
+        let (glyph, style) = if blocks.iter().any(|block| block.borrow().is_interrupted()) {
+            ("⊘", palette.dim())
+        } else if blocks.iter().any(call_failed) {
+            ("⊗", palette.err())
+        } else {
+            (status::DONE_STR, palette.ok())
+        };
+        stem.push(span(glyph, style));
+        stem.push(blank(1));
+        stem.push(span(turn_phrase(&entries), palette.ink()));
+        calls_text(entries.len())
+    };
+    let run = vec![span(right, palette.dim()), blank(1)];
+    let (stem, run) = split_stem(stem, run, width);
+    two_part_row(stem, run, width)
+}
+
+/// The rows one call adds under its batch's line: a failed call's hit row
+/// (`└ 05 Shell  cmd  → snippet  HIT`), a held call's hold row, a background
+/// job's satellite row, a subagent's own row with its calls (failed, held or
+/// running, one level deeper), and a settled subagent's failed calls.
+fn call_rows(block: &ToolBlock, step: usize, palette: &Palette, width: usize) -> Vec<String> {
+    let body = block.borrow();
+    let entry = body.chain_entry();
+    let mut out = Vec::new();
+    if entry.is_error {
+        let snippet = body
+            .error_text()
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .unwrap_or_default()
+            .to_string();
+        out.push(hit_line(
+            nested(1, palette),
+            &step_label(step),
+            &entry.tool,
+            &entry.subject,
+            &snippet,
+            palette,
+            width,
+        ));
+    } else if body.is_waiting_for_clearance() {
+        out.push(hold_row(1, &entry.tool, &entry.subject, palette, width));
+    } else if entry.is_partial {
+        let secs = body.block_elapsed_secs().unwrap_or(0);
+        if let Some(job) = body.background_job_id() {
+            out.push(satellite_row(
+                &entry.tool,
+                &entry.subject,
+                &job,
+                secs,
+                palette,
+                width,
+            ));
+        } else if let Some((subtype, task)) = body.agent_label() {
+            out.push(agent_row(&subtype, &task, secs, palette, width));
+            if let Some(run) = body.agent_run_id() {
+                for sub in live::sub_steps(&run) {
+                    let label = sub_label(step, sub.index);
+                    match &sub.failure {
+                        Some(snippet) => out.push(hit_line(
+                            nested(2, palette),
+                            &label,
+                            &sub.tool,
+                            &sub.subject,
+                            snippet,
+                            palette,
+                            width,
+                        )),
+                        None if sub.held => {
+                            out.push(hold_row(2, &sub.tool, &sub.subject, palette, width));
+                        }
+                        None => out.push(sub_live_row(
+                            &sub.tool,
+                            &sub.subject,
+                            sub.started.elapsed().as_secs(),
+                            palette,
+                            width,
+                        )),
+                    }
+                }
+            }
+        }
+    }
+    if !entry.is_partial {
+        for sub in body
+            .settled_sub_steps()
+            .iter()
+            .filter(|sub| sub.failure.is_some())
+        {
+            out.push(hit_line(
+                nested(2, palette),
+                &sub_label(step, sub.index),
+                &sub.tool,
+                &sub.subject,
+                sub.failure.as_deref().unwrap_or_default(),
+                palette,
+                width,
+            ));
+        }
+    }
+    out
+}
+
+/// A held call, parked for the user's approval: `◉ Shell  rm -rf x   holding
+/// for clearance`, nested at `level`.
+fn hold_row(level: usize, tool: &str, subject: &str, palette: &Palette, width: usize) -> String {
+    let mut stem = nested(level, palette);
+    stem.push(span(status::RUNNING_STR, palette.warn()));
+    stem.push(blank(1));
+    stem.extend(tool_lead(None, tool, palette));
+    stem.extend(with_ink(ansi_spans(subject), palette));
+    let run = vec![span("holding for clearance", palette.warn()), blank(1)];
+    let (stem, run) = split_stem(stem, run, width);
+    two_part_row(stem, run, width)
+}
+
+/// A running subagent: `◐ Agent  ◈ general-purpose · Compute a product   2s`.
+fn agent_row(subtype: &str, task: &str, secs: u64, palette: &Palette, width: usize) -> String {
+    let mut stem = nested(1, palette);
+    stem.push(span(IN_FLIGHT_STR, palette.acc()));
+    stem.push(blank(1));
+    stem.extend(tool_lead(None, "Agent", palette));
+    stem.push(span("◈", bold(palette.vio())));
+    stem.push(blank(1));
+    stem.push(span(subtype.to_string(), palette.ink()));
+    stem.push(span(" · ", palette.dim()));
+    stem.extend(with_ink(ansi_spans(task), palette));
+    let run = vec![span(duration_text(secs), palette.acc()), blank(1)];
+    let (stem, run) = split_stem(stem, run, width);
+    two_part_row(stem, run, width)
+}
+
+/// A running call of a subagent, one level under its agent row:
+/// `◐ Read  src/lib.rs   2s`.
+fn sub_live_row(tool: &str, subject: &str, secs: u64, palette: &Palette, width: usize) -> String {
+    let mut stem = nested(2, palette);
+    stem.push(span(IN_FLIGHT_STR, palette.acc()));
+    stem.push(blank(1));
+    stem.extend(tool_lead(None, tool, palette));
+    stem.extend(with_ink(ansi_spans(subject), palette));
+    let run = vec![span(duration_text(secs), palette.dim()), blank(1)];
+    let (stem, run) = split_stem(stem, run, width);
+    two_part_row(stem, run, width)
+}
+
+/// A running background job: `◐ Shell  sleep 60   ⌁ sat job-1 · in orbit 4s`.
+fn satellite_row(
+    tool: &str,
+    subject: &str,
+    job: &str,
+    secs: u64,
+    palette: &Palette,
+    width: usize,
+) -> String {
+    let mut stem = nested(1, palette);
+    stem.push(span(IN_FLIGHT_STR, palette.acc()));
+    stem.push(blank(1));
+    stem.extend(tool_lead(None, tool, palette));
+    stem.extend(with_ink(ansi_spans(subject), palette));
+    let run = vec![
+        span("⌁", palette.acc()),
+        span(format!(" sat {job} "), palette.acc()),
+        span("·", palette.dim()),
+        span(format!(" in orbit {}", duration_text(secs)), palette.acc()),
+        blank(1),
+    ];
+    let (stem, run) = split_stem(stem, run, width);
+    two_part_row(stem, run, width)
+}
+
+/// A thinking block: one dim line, `✻ gist`, cut to the width. No duration.
+fn thought_row(gist: &str, palette: &Palette, width: usize) -> String {
+    let mut spans = rail(palette);
+    spans.push(span(format!("✻ {gist}"), palette.dim()));
+    cut_row(spans, width)
+}
+
+/// The final answer on the rail, whole: each line wraps, never cut.
+fn answer_rows(lines: &[String], palette: &Palette, width: usize) -> Vec<String> {
+    let room = width.saturating_sub(RAIL_WIDTH + 1).max(1);
+    lines
+        .iter()
+        .flat_map(|line| wrap_words(line, room, room))
+        .map(|piece| {
+            let mut spans = rail(palette);
+            spans.push(span(piece, palette.ink()));
+            cut_row(spans, width)
+        })
+        .collect()
+}
+
+/// The turn-end rows, always last (R3 rule 2). Landed, failed or aborted, the
+/// row reads the landing line (`landing_spans`, the stats of peek and full). A
+/// DID NOT LAND reason stays on the row when it fits; when it does not, it goes
+/// on one continuation line under the row, indented to the text after `╰ `
+/// with no rail, and is cut only if it is still wider than the row. Flying, the
+/// row reads `◐ IN FLIGHT` with its clock; while a call waits for approval,
+/// `◆ WAITING · approve Edit src/lex.rs`.
+fn turn_end_rows(stats: &FlightStats, palette: &Palette, width: usize) -> Vec<String> {
+    let mut spans = turn_lead(palette);
+    let flying = stats.mark == FlightMark::InFlight;
+    let mut reason = None;
+    let did_not_land = (stats.mark == FlightMark::DidNotLand)
+        .then(|| stats.did_not_land_reason())
+        .flatten();
+    match flying.then(|| stats.awaiting()).flatten() {
+        Some((tool, subject)) => {
+            spans.push(span(status::WAITING_STR, palette.warn()));
+            spans.push(blank(1));
+            spans.push(span("WAITING", bold(palette.warn())));
+            spans.push(span(" · ", palette.dim()));
+            spans.push(span(format!("approve {tool} {subject}"), palette.ink()));
+        }
+        None => {
+            let time = if flying {
+                stats.time_text().unwrap_or_default()
+            } else {
+                stats.landed_time.clone().unwrap_or_default()
+            };
+            // A failed turn shows its reason in place of the tokens and cost,
+            // as the approved mockup does, so the reason fits the row. A flying
+            // row shows no cost: it is the mission's running cost.
+            let failed = did_not_land.is_some();
+            let (tokens, cost) = if flying || failed {
+                (String::new(), String::new())
+            } else {
+                (
+                    stats.tokens.clone().unwrap_or_default(),
+                    stats.cost.clone().unwrap_or_default(),
+                )
+            };
+            spans.extend(landing_spans(
+                stats.mark,
+                stats.steps,
+                stats.hits,
+                &time,
+                &tokens,
+                &cost,
+                palette,
+            ));
+            reason = did_not_land;
+        }
+    }
+    let Some(reason) = reason else {
+        return vec![cut_row(spans, width)];
+    };
+    // ` · ` and the reason, inline, when they fit with the last column blank.
+    let inline = spans_width(&spans) + 3 + visible_width(&reason) < width;
+    if inline {
+        spans.push(span(" · ", palette.dim()));
+        spans.push(span(reason, palette.err()));
+        return vec![cut_row(spans, width)];
+    }
+    vec![
+        cut_row(spans, width),
+        cut_row(vec![blank(RAIL_WIDTH), span(reason, palette.err())], width),
+    ]
+}
+
+/// The mission's body rows, between its header and its turn end: the open
+/// items in story order, or for a folded mission one summary line, then a
+/// blank rail line and the answer. The last batch of a flying mission reads
+/// live, so the row does not flip between calls.
+fn body_rows(stats: &FlightStats, palette: &Palette, width: usize) -> Vec<String> {
+    let mut rows = Vec::new();
+    if stats.folded {
+        let calls = stats.calls();
+        if !calls.is_empty() {
+            let mut stem = rail(palette);
+            stem.push(span(stats.mark.glyph(), stats.mark.style(palette)));
+            stem.push(blank(1));
+            stem.push(span(turn_phrase(&calls), palette.ink()));
+            let run = vec![span(calls_text(calls.len()), palette.dim()), blank(1)];
+            let (stem, run) = split_stem(stem, run, width);
+            rows.push(two_part_row(stem, run, width));
+        }
+    } else {
+        let flying = stats.mark == FlightMark::InFlight;
+        let last_batch = stats
+            .items
+            .iter()
+            .rposition(|item| matches!(item, FlightItem::Batch(_)));
+        let mut step = 0;
+        for (index, item) in stats.items.iter().enumerate() {
+            match item {
+                FlightItem::Batch(blocks) => {
+                    let live_tail = flying && Some(index) == last_batch;
+                    rows.push(batch_row(blocks, live_tail, palette, width));
+                    for block in blocks {
+                        step += 1;
+                        rows.extend(call_rows(block, step, palette, width));
+                    }
+                }
+                FlightItem::Thinking(gist) => rows.push(thought_row(gist, palette, width)),
+            }
+        }
+    }
+    let answer = answer_rows(&stats.answer, palette, width);
+    if !rows.is_empty() && !answer.is_empty() {
+        rows.push(cut_row(vec![blank(3), span("┊", palette.faint())], width));
+    }
+    rows.extend(answer);
+    rows
+}
+
+/// The mission's whole flight-log block (R3): `▲ Mn  prompt`, the body on the
+/// `┊` rail, and the turn-end rows that close it. A flying mission's body
+/// reads its live batch, its clock and its held call.
 pub fn mission_rows(
     seq: usize,
     prompt: &str,
@@ -423,185 +900,10 @@ pub fn mission_rows(
     if width == 0 {
         return vec![String::new()];
     }
-    let lead = vec![
-        blank(1),
-        span(format!("M{seq}"), palette.you()),
-        blank(1),
-        span(stats.mark.glyph(), stats.mark.style(palette)),
-        blank(2),
-    ];
-    let hang = spans_width(&lead);
-    let run = stats.right_run(width, palette);
-    let first_room = width.saturating_sub(hang + spans_width(&run) + RUN_GAP);
-    let rest_room = width.saturating_sub(hang + 1).max(1);
-    // The prompt's lines, each whitespace-collapsed; blank lines go.
-    let lines: Vec<String> = prompt
-        .lines()
-        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
-        .filter(|line| !line.is_empty())
-        .collect();
-    let mut pieces: Vec<String> = Vec::new();
-    for (index, line) in lines.iter().enumerate() {
-        // The first row has the least room (the stats sit on it); with too
-        // little for a word, the whole prompt hangs on the rows below.
-        let first_word = line.split_whitespace().next().map_or(0, visible_width);
-        if index == 0 && (first_room < MIN_BESIDE_STATS || first_word > first_room) {
-            pieces.push(String::new());
-            pieces.extend(wrap_words(line, rest_room, rest_room));
-        } else if index == 0 {
-            pieces.extend(wrap_words(line, first_room, rest_room));
-        } else {
-            pieces.extend(wrap_words(line, rest_room, rest_room));
-        }
-    }
-    if pieces.is_empty() {
-        pieces.push(String::new());
-    }
-    let style = bold(palette.ink());
-    let mut out = Vec::with_capacity(pieces.len());
-    for (index, piece) in pieces.into_iter().enumerate() {
-        if index == 0 {
-            let mut stem = lead.clone();
-            stem.push(span(piece, style));
-            let (stem, run) = split_stem(stem, run.clone(), width);
-            out.push(two_part_row(stem, run, width));
-        } else {
-            out.push(finish(vec![blank(hang), span(piece, style)], width));
-        }
-    }
-    out
-}
-
-/// The mission's progress row (restored from the chain line): while the
-/// mission flies, `◐ Read › Edit › Shell …` (`Tool ×N` for a run of the same
-/// tool, `Tool✗` for a failed call, dim `›` between); once it is over, the
-/// settled summary (`● Edited 3 files · ran 2 commands`) with the call stats
-/// flush right when they fit. Indented like the live rows (`STEP_INDENT`).
-/// Wraps, never cuts. No calls, no row.
-pub fn chain_rows(stats: &FlightStats, palette: &Palette, width: usize) -> Vec<String> {
-    if width == 0 || stats.chain.is_empty() {
-        return Vec::new();
-    }
-    let flying = stats.mark == FlightMark::InFlight;
-    let (glyph, glyph_style) = if flying {
-        (IN_FLIGHT_STR, palette.acc())
-    } else {
-        (stats.mark.glyph(), stats.mark.style(palette))
-    };
-    let lead = vec![blank(STEP_INDENT), span(glyph, glyph_style), blank(1)];
-    let hang = spans_width(&lead);
-    let room = width.saturating_sub(hang + 1).max(1);
-    let hang_blank = || vec![blank(hang)];
-    let mut rows: Vec<Vec<Span<'static>>> = Vec::new();
-    if flying {
-        // One unit per segment, its separator trailing: a row ends on `›`
-        // rather than a next row opening on it.
-        let segments = chain_segments(&stats.chain);
-        let count = segments.len();
-        let mut line = lead.clone();
-        let mut used = 0;
-        for (index, segment) in segments.into_iter().enumerate() {
-            let style = match segment.tone {
-                SegmentTone::Error => palette.err(),
-                SegmentTone::Running => palette.style("warning"),
-                SegmentTone::Ok => palette.ink(),
-            };
-            let last = index + 1 == count;
-            // The label, ` ›` (or the closing ` …`), and the space after a `›`.
-            let unit_width = visible_width(&segment.label) + 2 + usize::from(!last);
-            if used > 0 && used + unit_width > room {
-                rows.push(std::mem::replace(&mut line, hang_blank()));
-                used = 0;
-            }
-            used += unit_width;
-            line.push(span(segment.label, style));
-            if last {
-                line.push(span(" …", palette.dim()));
-            } else {
-                line.push(span(" ›", palette.dim()));
-                line.push(blank(1));
-            }
-        }
-        rows.push(line);
-    } else {
-        let phrase = turn_phrase(&stats.chain);
-        for (index, piece) in wrap_words(&phrase, room, room).into_iter().enumerate() {
-            let mut line = if index == 0 {
-                lead.clone()
-            } else {
-                hang_blank()
-            };
-            line.push(span(piece, palette.ink()));
-            rows.push(line);
-        }
-    }
-    let state = if stats.mark == FlightMark::Aborted {
-        ChainState::Interrupted
-    } else {
-        ChainState::Done
-    };
-    // Settled, the call stats close the last row, flush right, when they fit.
-    let tally = (!flying).then(|| chain_stats(&stats.chain, state));
-    let count = rows.len();
-    rows.into_iter()
-        .enumerate()
-        .map(|(index, line)| match &tally {
-            Some(tally)
-                if index + 1 == count
-                    && spans_width(&line) + RUN_GAP + visible_width(tally) < width =>
-            {
-                let right = vec![span(tally.clone(), palette.faint()), blank(1)];
-                two_part_row(line, right, width)
-            }
-            _ => finish(line, width),
-        })
-        .collect()
-}
-
-/// A hit's own line (Mission Control spec r1/r3), indented 12:
-/// `            ⊗ 04 Shell  echo boom; exit 3  → boom  HIT`. `step` is the
-/// mission-relative step number. The `HIT` chip sits inline, two spaces
-/// after the snippet, and stays whole; the subject and snippet are cut with
-/// `…` first. An empty snippet drops the `→` part.
-pub fn hit_row(
-    step: usize,
-    tool: &str,
-    subject: &str,
-    snippet: &str,
-    palette: &Palette,
-    width: usize,
-) -> String {
-    hit_line(
-        HIT_INDENT,
-        &step_label(step),
-        tool,
-        subject,
-        snippet,
-        palette,
-        width,
-    )
-}
-
-/// A failed subagent step, indented 8 under its agent row (the simulator's
-/// walk of the agent's steps): `        ⊗ 01.1 Read  x.rs  → snippet  HIT`.
-pub fn sub_hit_row(
-    parent: usize,
-    index: usize,
-    tool: &str,
-    subject: &str,
-    snippet: &str,
-    palette: &Palette,
-    width: usize,
-) -> String {
-    hit_line(
-        STEP_INDENT,
-        &sub_label(parent, index),
-        tool,
-        subject,
-        snippet,
-        palette,
-        width,
-    )
+    let mut rows = header_rows(seq, prompt, palette, width);
+    rows.extend(body_rows(stats, palette, width));
+    rows.extend(turn_end_rows(stats, palette, width));
+    rows
 }
 
 /// A settled subagent call as one line, uncut, for the peek and full rails
@@ -639,8 +941,12 @@ pub fn sub_step_line(
     crate::trajectory::draw_line(spans, width)
 }
 
+/// A failed call's row under its batch (R3 rule 4), `└ 05 Shell  echo boom
+/// → boom  HIT`: `lead` is the nesting, the number bold gold. The `HIT` chip
+/// sits inline, two spaces after the snippet, and stays whole; the subject and
+/// snippet are cut with `…` first. An empty snippet drops the `→` part.
 fn hit_line(
-    indent: usize,
+    lead: Vec<Span<'static>>,
     label: &str,
     tool: &str,
     subject: &str,
@@ -651,7 +957,8 @@ fn hit_line(
     if width == 0 {
         return String::new();
     }
-    let lead = step_lead(indent, "⊗", palette.err(), label, tool, palette);
+    let mut lead = lead;
+    lead.extend(tool_lead(Some(label), tool, palette));
     // The subject and snippet keep whatever styling they arrived with (a
     // cut subject carries its resets); plain text stays ink.
     let snippet = if snippet.trim().is_empty() {
@@ -669,239 +976,6 @@ fn hit_line(
         palette,
     );
     finish(line, width)
-}
-
-/// A live step's own line (Mission Control spec r4), indented 8:
-/// `        ◐ 01 Shell  sleep 6; echo done  ████░░░░ 3s of ~6s`. `step` is
-/// the mission-relative step number. With an estimate the bar fills its
-/// eight cells by elapsed share; without one the row reads elapsed only.
-pub fn live_row(
-    step: usize,
-    tool: &str,
-    subject: &str,
-    elapsed_secs: u64,
-    estimate_secs: Option<u64>,
-    palette: &Palette,
-    width: usize,
-) -> String {
-    live_line(
-        &step_label(step),
-        tool,
-        subject,
-        elapsed_secs,
-        estimate_secs,
-        palette,
-        width,
-    )
-}
-
-/// A running subagent step under its agent row, indented 8 like its agent.
-pub fn sub_live_row(
-    parent: usize,
-    index: usize,
-    tool: &str,
-    subject: &str,
-    elapsed_secs: u64,
-    palette: &Palette,
-    width: usize,
-) -> String {
-    live_line(
-        &sub_label(parent, index),
-        tool,
-        subject,
-        elapsed_secs,
-        None,
-        palette,
-        width,
-    )
-}
-
-fn live_line(
-    label: &str,
-    tool: &str,
-    subject: &str,
-    elapsed_secs: u64,
-    estimate_secs: Option<u64>,
-    palette: &Palette,
-    width: usize,
-) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    let lead = step_lead(
-        STEP_INDENT,
-        IN_FLIGHT_STR,
-        palette.acc(),
-        label,
-        tool,
-        palette,
-    );
-    let mut tail = vec![blank(2)];
-    if let Some(estimate) = estimate_secs.filter(|estimate| *estimate > 0) {
-        tail.push(span(progress_bar(elapsed_secs, estimate), palette.acc()));
-        tail.push(span(
-            progress_track(elapsed_secs, estimate),
-            palette.faint(),
-        ));
-        tail.push(span(
-            format!(" {} of ~{}", short_dur(elapsed_secs), short_dur(estimate)),
-            palette.dim(),
-        ));
-    } else {
-        tail.push(span(short_dur(elapsed_secs), palette.dim()));
-    }
-    let line = inline_line(
-        lead,
-        with_ink(ansi_spans(subject), palette),
-        Vec::new(),
-        tail,
-        width,
-        palette,
-    );
-    finish(line, width)
-}
-
-/// The live bar's filled cells: `BAR_CELLS` blocks by elapsed share, capped.
-fn progress_bar(elapsed_secs: u64, estimate_secs: u64) -> String {
-    "█".repeat(progress_filled(elapsed_secs, estimate_secs))
-}
-
-/// The live bar's remaining cells.
-fn progress_track(elapsed_secs: u64, estimate_secs: u64) -> String {
-    "░".repeat(BAR_CELLS.saturating_sub(progress_filled(elapsed_secs, estimate_secs)))
-}
-
-fn progress_filled(elapsed_secs: u64, estimate_secs: u64) -> usize {
-    let share = elapsed_secs as f64 / estimate_secs.max(1) as f64;
-    ((share * BAR_CELLS as f64).round() as usize).min(BAR_CELLS)
-}
-
-/// A step parked for clearance (Mission Control spec r5), indented 8:
-/// `        ◉ 01 Shell  wc -l src/wrap.rs      holding for clearance`. The
-/// head of the queue reads `◉` warn; steps queued behind it read `○` with
-/// `next`. The right text ends one column short of the width.
-pub fn waiting_row(
-    step: usize,
-    tool: &str,
-    subject: &str,
-    head: bool,
-    palette: &Palette,
-    width: usize,
-) -> String {
-    waiting_line(&step_label(step), tool, subject, head, palette, width)
-}
-
-/// A subagent step parked for its parent's clearance, under its agent row:
-/// `        ◉ 01.1 Shell  wc -l src/wrap.rs      holding for clearance`.
-pub fn sub_waiting_row(
-    parent: usize,
-    index: usize,
-    tool: &str,
-    subject: &str,
-    palette: &Palette,
-    width: usize,
-) -> String {
-    waiting_line(
-        &sub_label(parent, index),
-        tool,
-        subject,
-        true,
-        palette,
-        width,
-    )
-}
-
-fn waiting_line(
-    label: &str,
-    tool: &str,
-    subject: &str,
-    head: bool,
-    palette: &Palette,
-    width: usize,
-) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    let (glyph, right_text, right_style) = if head {
-        (status::RUNNING_STR, "holding for clearance", palette.warn())
-    } else {
-        (status::TODO_STR, "next", palette.dim())
-    };
-    let mut stem = step_lead(STEP_INDENT, glyph, palette.warn(), label, tool, palette);
-    stem.extend(with_ink(ansi_spans(subject), palette));
-    let run = vec![span(right_text, right_style), blank(1)];
-    let (stem, run) = split_stem(stem, run, width);
-    two_part_row(stem, run, width)
-}
-
-/// A live subagent step (Mission Control spec r7), indented 8:
-/// `        ◐ 01 Agent  ◈ general-purpose · Compute a product        2s`.
-pub fn agent_live_row(
-    step: usize,
-    subtype: &str,
-    task: &str,
-    elapsed_secs: u64,
-    palette: &Palette,
-    width: usize,
-) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    let mut stem = step_lead(
-        STEP_INDENT,
-        IN_FLIGHT_STR,
-        palette.acc(),
-        &step_label(step),
-        "Agent",
-        palette,
-    );
-    stem.extend([
-        span("◈", bold(palette.vio())),
-        blank(1),
-        span(subtype.to_string(), palette.ink()),
-        span(" · ", palette.dim()),
-    ]);
-    stem.extend(with_ink(ansi_spans(task), palette));
-    let run = vec![span(short_dur(elapsed_secs), palette.acc()), blank(1)];
-    let (stem, run) = split_stem(stem, run, width);
-    two_part_row(stem, run, width)
-}
-
-/// A live background job (Mission Control spec r9), indented 8:
-/// `        ◐ 01 Shell  sleep 60                 ⌁ sat job-1 · in orbit 4s`.
-pub fn satellite_row(
-    step: usize,
-    tool: &str,
-    subject: &str,
-    job: &str,
-    elapsed_secs: u64,
-    palette: &Palette,
-    width: usize,
-) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    let mut stem = step_lead(
-        STEP_INDENT,
-        IN_FLIGHT_STR,
-        palette.acc(),
-        &step_label(step),
-        tool,
-        palette,
-    );
-    stem.extend(with_ink(ansi_spans(subject), palette));
-    let run = vec![
-        span("⌁", palette.acc()),
-        span(format!(" sat {job} "), palette.acc()),
-        span("·", palette.dim()),
-        span(
-            format!(" in orbit {}", short_dur(elapsed_secs)),
-            palette.acc(),
-        ),
-        blank(1),
-    ];
-    let (stem, run) = split_stem(stem, run, width);
-    two_part_row(stem, run, width)
 }
 
 /// Thinking's rows under their mission (Mission Control spec r11), indented

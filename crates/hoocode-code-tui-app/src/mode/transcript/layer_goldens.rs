@@ -21,6 +21,7 @@ use hoocode_code_agent_session::stats::{add_assistant_usage, AssistantUsageTotal
 use hoocode_code_settings::ToolOutputView;
 use hoocode_code_subagents::live;
 use hoocode_code_tui_theme::{get_markdown_theme, init_theme};
+use hoocode_code_tui_widgets::radar::FlightItem;
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -99,7 +100,7 @@ impl Replay {
     /// transcript, and an unlanded mission has no clock or cost yet.
     fn refresh(&mut self) {
         self.t.refresh_flight_marks();
-        self.t.sync_radar_prose(false);
+        self.t.sync_radar_prose();
         if let Some(mission) = self.t.missions.last() {
             if !mission.landed {
                 let mut flight = mission.flight.borrow_mut();
@@ -155,9 +156,10 @@ impl Replay {
             c.set_radar_above(self.t.radar_chain_above());
             c.set_radar_mission(self.t.current_mission());
         }
+        self.t.note_assistant(&component);
         self.t.assistant_components.push(component.clone());
         self.t.chat.borrow_mut().add_child(as_component(&component));
-        self.t.sync_radar_prose(false);
+        self.t.sync_radar_prose();
         if message
             .content
             .iter()
@@ -772,3 +774,214 @@ layer_golden!(layers_stepless_peek_80, stepless, Peek, 80);
 layer_golden!(layers_stepless_peek_120, stepless, Peek, 120);
 layer_golden!(layers_stepless_full_80, stepless, Full, 80);
 layer_golden!(layers_stepless_full_120, stepless, Full, 120);
+
+/// What a mission's flight items read as, one line each: `batch N` for a batch
+/// of N calls, `thinking <gist>` for a thinking item.
+#[cfg(test)]
+fn describe_items(items: &[FlightItem]) -> Vec<String> {
+    items
+        .iter()
+        .map(|item| match item {
+            FlightItem::Batch(blocks) => format!("batch {}", blocks.len()),
+            FlightItem::Thinking(gist) => format!("thinking {gist}"),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+fn mission_items(r: &mut Replay, seq: usize) -> Vec<String> {
+    r.refresh();
+    let mission =
+        r.t.missions
+            .iter()
+            .find(|m| m.seq == seq)
+            .expect("a mission");
+    let flight = mission.flight.borrow();
+    describe_items(&flight.items)
+}
+
+/// A tool call's turn in the feed: the call, its answer, then the next message.
+#[cfg(test)]
+fn call_message(id: &str, name: &str, args: Value, at: i64) -> AssistantMessage {
+    assistant(
+        vec![call(id, name, args)],
+        StopReason::ToolUse,
+        at,
+        (100, 10, 0.001),
+    )
+}
+
+#[cfg(test)]
+#[test]
+fn sequential_calls_without_thinking_make_one_batch() {
+    let _g = guard();
+    let mut r = Replay::new(ToolOutputView::Radar);
+    r.user("fix the wrap helper", 1_000);
+    r.assistant(&call_message(
+        "c1",
+        "Read",
+        json!({"file_path": "a.rs"}),
+        2_000,
+    ));
+    r.result("c1", vec![text("ok")], false, None, None, 2_100);
+    r.assistant(&call_message(
+        "c2",
+        "Read",
+        json!({"file_path": "b.rs"}),
+        2_200,
+    ));
+    r.result("c2", vec![text("ok")], false, None, None, 2_300);
+    r.assistant(&call_message(
+        "c3",
+        "Edit",
+        json!({"file_path": "c.rs"}),
+        2_400,
+    ));
+    r.result("c3", vec![text("ok")], false, None, None, 2_500);
+    assert_eq!(mission_items(&mut r, 1), vec!["batch 3"]);
+}
+
+#[cfg(test)]
+#[test]
+fn thinking_between_calls_splits_the_batch_at_its_gist() {
+    let _g = guard();
+    let mut r = Replay::new(ToolOutputView::Radar);
+    r.user("fix the wrap helper", 1_000);
+    r.assistant(&call_message(
+        "c1",
+        "Read",
+        json!({"file_path": "a.rs"}),
+        2_000,
+    ));
+    r.result("c1", vec![text("ok")], false, None, None, 2_100);
+    r.assistant(&assistant(
+        vec![
+            thinking("The loader parses the file first and reads the environment after."),
+            call("c2", "Edit", json!({"file_path": "a.rs"})),
+        ],
+        StopReason::ToolUse,
+        2_200,
+        (100, 10, 0.001),
+    ));
+    r.result("c2", vec![text("ok")], false, None, None, 2_300);
+    assert_eq!(
+        mission_items(&mut r, 1),
+        vec![
+            "batch 1",
+            "thinking The loader parses the file first and reads the environment after.",
+            "batch 1",
+        ]
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn thinking_on_the_opening_message_comes_before_the_first_batch() {
+    let _g = guard();
+    let mut r = Replay::new(ToolOutputView::Radar);
+    r.user("fix the wrap helper", 1_000);
+    r.assistant(&assistant(
+        vec![
+            thinking("Plan first: read the helper."),
+            call("c1", "Read", json!({"file_path": "a.rs"})),
+        ],
+        StopReason::ToolUse,
+        2_000,
+        (100, 10, 0.001),
+    ));
+    r.result("c1", vec![text("ok")], false, None, None, 2_100);
+    assert_eq!(
+        mission_items(&mut r, 1),
+        vec!["thinking Plan first: read the helper.", "batch 1"]
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn a_message_without_thinking_text_adds_no_item() {
+    let _g = guard();
+    let mut r = Replay::new(ToolOutputView::Radar);
+    r.user("fix the wrap helper", 1_000);
+    r.assistant(&assistant(
+        vec![
+            thinking("   "),
+            call("c1", "Read", json!({"file_path": "a.rs"})),
+        ],
+        StopReason::ToolUse,
+        2_000,
+        (100, 10, 0.001),
+    ));
+    r.result("c1", vec![text("ok")], false, None, None, 2_100);
+    assert_eq!(mission_items(&mut r, 1), vec!["batch 1"]);
+}
+
+#[cfg(test)]
+#[test]
+fn thinking_before_the_final_answer_follows_the_last_batch() {
+    let _g = guard();
+    let mut r = Replay::new(ToolOutputView::Radar);
+    r.user("fix the wrap helper", 1_000);
+    r.assistant(&call_message(
+        "c1",
+        "Read",
+        json!({"file_path": "a.rs"}),
+        2_000,
+    ));
+    r.result("c1", vec![text("ok")], false, None, None, 2_100);
+    r.assistant(&assistant(
+        vec![
+            thinking("Summing up what the helper does."),
+            text("The helper is fixed."),
+        ],
+        StopReason::Stop,
+        2_200,
+        (100, 10, 0.001),
+    ));
+    assert_eq!(
+        mission_items(&mut r, 1),
+        vec!["batch 1", "thinking Summing up what the helper does."]
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn an_older_finished_mission_folds_and_the_latest_finished_and_live_stay_open() {
+    let _g = guard();
+    let mut r = Replay::new(ToolOutputView::Radar);
+    let folded = |r: &mut Replay| -> Vec<bool> {
+        r.refresh();
+        r.t.missions
+            .iter()
+            .map(|m| m.flight.borrow().folded)
+            .collect()
+    };
+    // Two landed missions and a live one: the first folds, the rest stay open.
+    for prompt in ["first mission", "second mission"] {
+        r.user(prompt, 1_000);
+        r.assistant(&assistant(
+            vec![text("Done.")],
+            StopReason::Stop,
+            2_000,
+            (100, 10, 0.001),
+        ));
+    }
+    r.user("third mission", 3_000);
+    r.assistant(&call_message(
+        "c1",
+        "Read",
+        json!({"file_path": "a.rs"}),
+        3_100,
+    ));
+    assert_eq!(folded(&mut r), vec![true, false, false]);
+
+    // Once the third lands, the second is an older finished mission: it folds too.
+    r.result("c1", vec![text("ok")], false, None, None, 3_200);
+    r.assistant(&assistant(
+        vec![text("Read it.")],
+        StopReason::Stop,
+        3_300,
+        (100, 10, 0.001),
+    ));
+    r.finish();
+    assert_eq!(folded(&mut r), vec![true, true, false]);
+}

@@ -6,7 +6,6 @@ use std::rc::Rc;
 use crate::support::{assistant, lock, strip};
 use hoocode_ai_types::{Content, StopReason, ToolCallContent};
 use hoocode_code_tui_widgets::radar::{FlightMark, FlightStats};
-use hoocode_code_tui_widgets::tool_chain_summary::ChainEntry;
 use hoocode_code_tui_widgets::trajectory::{LandingLine, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay};
 use hoocode_tui_render::Component;
@@ -168,22 +167,50 @@ fn radar_shows_the_abort_and_error_reason_after_the_text() {
 }
 
 #[test]
-fn a_radar_mission_row_lists_its_progress_under_the_whole_prompt() {
+fn a_radar_mission_block_lists_its_batch_under_the_whole_prompt() {
+    use hoocode_code_tui_widgets::radar::FlightItem;
+    use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
+    use hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Radar;
+    use hoocode_code_tui_widgets::tool_signal::ToolResult;
+    use serde_json::json;
     let _g = lock();
-    let entry = |tool: &str, subject: &str, partial: bool| ChainEntry {
-        tool: tool.into(),
-        subject: subject.into(),
-        is_partial: partial,
-        ..Default::default()
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let block = |tool: &str, args: serde_json::Value, finished: bool| {
+        let mut component = ToolExecutionComponent::new(
+            tool,
+            &format!("{tool}-{args}"),
+            args,
+            ToolExecutionOptions {
+                view: Radar,
+                ..Default::default()
+            },
+            None,
+            &cwd,
+        );
+        if finished {
+            component.update_result(
+                ToolResult {
+                    content: vec![Content::text("ok")],
+                    details: json!({}),
+                    is_error: false,
+                },
+                false,
+            );
+        }
+        Rc::new(RefCell::new(component))
     };
+    let shell = block("Shell", json!({"command": "cargo test"}), false);
     let stats = Rc::new(RefCell::new(FlightStats {
         mark: FlightMark::InFlight,
         steps: 3,
-        chain: vec![
-            entry("Read", "a.rs", false),
-            entry("Edit", "a.rs", false),
-            entry("Shell", "cargo test", true),
-        ],
+        items: vec![FlightItem::Batch(vec![
+            block("Read", json!({"file_path": "a.rs"}), true),
+            block("Edit", json!({"file_path": "a.rs"}), true),
+            shell.clone(),
+        ])],
         ..Default::default()
     }));
     let mut header = MissionHeader::new(
@@ -194,36 +221,67 @@ fn a_radar_mission_row_lists_its_progress_under_the_whole_prompt() {
     header.set_view(hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Radar);
     header.set_flight(stats.clone());
     let rows: Vec<String> = header.render(50).iter().map(|row| strip(row)).collect();
-    assert!(rows.len() >= 3, "{rows:#?}");
+    assert!(rows.len() >= 4, "{rows:#?}");
+    assert!(rows[0].starts_with("▲ M1  fix the overflow"), "{rows:#?}");
     assert!(
-        rows.iter()
-            .all(|row| !row.contains('…') || row.contains(" …")),
+        rows.iter().any(|row| row.contains("suite still passes")),
         "{rows:#?}"
     );
-    // The progress row is last, after every prompt row.
-    assert_eq!(
-        rows.last().unwrap().trim_end(),
-        "        ◐ Read › Edit › Shell …"
+    // The live batch line, then the turn end that closes the rail.
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("◐ … Read › Edit › Shell")),
+        "{rows:#?}"
     );
-    assert!(rows[..rows.len() - 1]
-        .iter()
-        .any(|row| row.contains("suite still passes")));
-
-    // Landed, the same row reads the settled summary.
-    {
-        let mut flight = stats.borrow_mut();
-        flight.mark = FlightMark::Landed;
-        flight.chain = vec![
-            entry("Edit", "a.rs", false),
-            entry("Edit", "b.rs", false),
-            entry("Shell", "cargo test", false),
-        ];
-    }
-    let rows: Vec<String> = header.render(50).iter().map(|row| strip(row)).collect();
     assert!(
         rows.last()
             .unwrap()
-            .contains("● Edited 2 files · ran cargo test"),
+            .starts_with("   ╰ ◐ IN FLIGHT · 3 steps"),
+        "{rows:#?}"
+    );
+
+    // The shell finishes: the batch settles to one line, and the turn end reads LANDED.
+    shell.borrow_mut().update_result(
+        ToolResult {
+            content: vec![Content::text("ok")],
+            details: json!({}),
+            is_error: false,
+        },
+        false,
+    );
+    {
+        let mut flight = stats.borrow_mut();
+        flight.mark = FlightMark::Landed;
+        flight.landed_time = Some("2s".to_string());
+    }
+    let rows: Vec<String> = header.render(50).iter().map(|row| strip(row)).collect();
+    // The prompt is never cut: every word of it shows in the header rows.
+    let header_rows: Vec<&String> = rows
+        .iter()
+        .take_while(|row| !row.starts_with("   ┊"))
+        .collect();
+    assert!(
+        header_rows.iter().all(|row| !row.contains('…')),
+        "{rows:#?}"
+    );
+    let header_text = header_rows
+        .iter()
+        .map(|row| row.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for word in
+        "fix the overflow in the wrap helper and make sure that the whole suite still passes"
+            .split_whitespace()
+    {
+        assert!(header_text.contains(word), "{word}: {rows:#?}");
+    }
+    assert!(
+        rows.iter()
+            .any(|row| row.starts_with("   ┊ ●") && row.contains("ran cargo test")),
+        "{rows:#?}"
+    );
+    assert!(
+        rows.last().unwrap().starts_with("   ╰ ● LANDED · 3 steps"),
         "{rows:#?}"
     );
 }

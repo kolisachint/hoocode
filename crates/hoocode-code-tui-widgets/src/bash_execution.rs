@@ -172,6 +172,15 @@ impl BashExecutionComponent {
         self.status == Status::Running && self.loader.borrow_mut().tick()
     }
 
+    /// When the spinner's next frame falls due, or `None` when it is not running.
+    /// The UI loop waits no longer than this, so the frame is not late.
+    pub fn next_deadline(&self) -> Option<std::time::Instant> {
+        if self.status != Status::Running {
+            return None;
+        }
+        self.loader.borrow().next_deadline()
+    }
+
     pub fn append_output(&mut self, chunk: &str) {
         self.tail.append(chunk);
     }

@@ -86,7 +86,7 @@ in those tables; the generator keeps each crate's Status by name.
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
 | `home` | The user's home directory and `~` display: one policy for every hoocode crate | 11 | 153 / 0 | keep |
-| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 17 | 2176 / 1265 | keep |
+| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 17 | 2197 / 1306 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
@@ -165,26 +165,26 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 23685 / 7394 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 24412 / 7398 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 786 / 888 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8929 / 4789 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9033 / 4789 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2524 / 2142 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14348 / 9482 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14344 / 9826 | keep |
 
 ### TUI library (`tui-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 10319 / 7579 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 10466 / 7579 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 303 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 365 / 0 | keep |
-| `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 92 / 0 | keep |
+| `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 98 / 0 | keep |
 | `tui-highlight` | Syntax highlighting for the hoocode TUI, using the highlight.js 10.7.3 engine and grammars | 1 | 2327 / 291 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1048 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1956 / 583 | keep |
 | `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1510 / 172 | keep |
 | `tui-render` | Differential rendering for the hoocode TUI | 6 | 4922 / 2800 | keep |
-| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3253 / 343 | keep |
+| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3273 / 343 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 15 | 2495 / 682 | keep |
 
 ### Other

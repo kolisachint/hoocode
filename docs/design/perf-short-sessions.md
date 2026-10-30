@@ -17,8 +17,8 @@ Not doing).
 |---|---|---|
 | 1 | What to optimise for | **Sessions of 10 to 15 turns.** |
 | 2 | Long-session items | **Deferred.** Whole-transcript re-render, single copy of rendered lines, lazy catalog, regex LRU, allocator swap. Reasons in Not doing. |
-| 3 | P1 release profile | **Approved, not built.** Build in a separate session. |
-| 4 | P2 idle wakeups | **Approved, not built.** Build in a separate session. |
+| 3 | P1 release profile | **Approved, built 2026-10-30.** |
+| 4 | P2 idle wakeups | **Approved, built 2026-10-30.** |
 | 5 | M3 subagent child footprint | **Measure first.** Propose only if the gate in M3 is met. |
 | 6 | M4 streaming markdown re-lex | **Measure first.** Propose only if the gate in M4 is met. |
 
@@ -37,7 +37,7 @@ before P1 and P2 are judged.
 | Record | A table in the Details baseline: turns, RSS at the end, CPU per turn, frame p50 and p99, wakeups per second. Replace the derived 33 to 36 MiB and frame 0.7 ms figures with the measured ones, and note any difference |
 | Gate | P1 and P2 are judged against these numbers, not the 300-turn run |
 
-### P1. Release profile (approved, not built)
+### P1. Release profile (built 2026-10-30)
 
 Add to `Cargo.toml` (there is no `[profile.release]` today; `[profile.dev]` is at line 193):
 
@@ -56,8 +56,8 @@ line with no workflow change.
 
 | Item | Value |
 |---|---|
-| Evidence | Strip alone: 57.8 to 43.1 MiB (measured). CPU -5% to -15% (estimate, not built) |
-| Cost | Longer release build. Baseline: 10m16s wall, 18m31s user on 4 vCPU, clean target (measured, plain release). Thin LTO and one codegen unit will add time (not measured) |
+| Evidence | Strip alone: 57.8 to 43.1 MiB (measured). CPU -5% to -15% (estimate, not measured; the 100-turn A/B is not done) |
+| Cost | Longer release build. Baseline: 10m16s wall, 18m31s user on 4 vCPU, clean target (measured, plain release). Built 2026-10-30: 10m17s wall on a cold release cache, user time not recorded (see After table). The extra cost of thin LTO and one codegen unit over the plain profile is not measured |
 | Measure the cost | Time a clean `cargo build --release --locked --bin hoocode` before and after, on the same host. Compare the `binaries` job duration in CI before and after |
 | Risk | `strip` removes symbols, so panic backtraces from release builds lose function names. See open question 1 |
 
@@ -70,11 +70,11 @@ Acceptance:
   if median CPU falls and median RSS does not rise by more than 5%. The report's single-run
   baseline (9.23 s CPU, 47.9 MiB RSS, glibc) is not enough to judge a 5% change.
 
-### P2. Idle wakeups (approved, not built)
+### P2. Idle wakeups (built 2026-10-30)
 
 | # | Source | Now | Change | Where |
 |---|---|---|---|---|
-| a | Perf sampler thread | Always started: `Perf::new` calls `Sampler::start` at startup, 1 Hz `/proc` read | Start the thread only with `--perf-log`, or on the first `/perf` open (then read once at once) | `crates/hoocode-code-tui-app/src/perf.rs:238` (spawn), `:303-306` (`Perf::new`), `mode/mod.rs:701` (caller) |
+| a | Perf sampler thread | Always started: `Perf::new` calls `Sampler::start` at startup, 1 Hz `/proc` read | Start the thread only with `--perf-log`. Without it, `/perf` reads `/proc` once, inline, and starts no thread (built: stricter than the first-`/perf` option) | `crates/hoocode-code-tui-app/src/perf.rs:238` (spawn), `:303-306` (`Perf::new`), `mode/mod.rs:701` (caller) |
 | b | Watchdog tick | 100 ms | 250 ms. Stall log stays at 500 ms (`UI_LOG_STALL`), so a stall is seen 0 to 250 ms late. RSS sampling must move from every 10 ticks to every 4 ticks, or it drops to every 2.5 s | `crates/hoocode-runtime/src/watchdog.rs:27` (`TICK`), `:29` (`SAMPLE_EVERY_TICKS`), `:18` (`UI_LOG_STALL`) |
 | c | Git HEAD poll | 100 ms, in a git repo | 1 s. File events would need a new crate (dependency firewall applies), so they are not in this step | `crates/hoocode-code-tui-app/src/footer_data.rs:237` (sleep), `:19` (`WATCH_POLL`) |
 | d | UI loop cap | 250 ms cap on the wait | 1 s cap. Every other wake already has its own deadline (notifications, tips, autocomplete, cursor blink, loaders, picker, auto theme, stream render). Check that nothing relies on the cap | `crates/hoocode-code-tui-app/src/mode/mod.rs:1252` (cap), `:1283` (final `max`) |
@@ -82,6 +82,32 @@ Acceptance:
 Expected wakeups, from the baseline (17.2 per second, idle, non-git directory): perf 1.0
 goes to 0; watchdog 9.9 goes to about 4; UI loop 4.0 goes to about 1; `hoocode-io-2` 2.3
 is unchanged. Total about 7 per second, plus 1 per second for the git poll in a git repo.
+
+**Built 2026-10-30.** The four changes are in. Six things were added beyond the table:
+
+- The UI loop's idle wait is now a beat that counts from the end of the wait (`watchdog::ui_beat_waiting`, `interrupt::ui_beat_waiting`). Without it, the 1 s cap would make an idle loop look silent for up to 1 s, past the 500 ms `UI_LOG_STALL` (a "UI loop silent" line each idle second) and past the 500 ms Ctrl+C emergency threshold (a double Ctrl+C at idle would exit without a clean shutdown).
+- The bash execution spinner advances in the loop, but its frame was not in `next_wakeup`. It now has a deadline (`BashExecutionComponent::next_deadline`), so it keeps its frame rate at the cap.
+- The perf sampler (P2a) has no thread unless `--perf-log` is given and the file opens. Without it, `/perf` reads `/proc` once, inline (`Perf::snapshot`), and no thread runs. So one `/perf` leaves no 1 Hz thread behind. This is stricter than the table's "or on the first `/perf` open".
+- The RSS sample count is exposed as `hoocode_runtime::rss_samples()` so a test can check the cadence.
+- The footer HEAD poll takes its interval in `FooterDataProvider::with_poll_interval`. The footer tests use 100 ms, so they still check debounce and no-op updates. The app uses 1 s.
+- The loop beats `ui-loop:input` after each wait, so the watchdog's beat is back to real time once the wait ends.
+
+Loop cap check (`crates/hoocode-code-tui-app/src/mode/mod.rs`, `next_wakeup` and `run`), read on 2026-10-30:
+
+- Deadlines in `next_wakeup` (own timers, no wake needed): notifications, tips, autocomplete debounce, cursor blink, the header and compaction loaders, picker (`ActivePicker::deadline`, including the session list while it loads), auto theme (60 s), streaming render throttle, the bash spinner (added), the once-a-second tool tick when something ticks (added: attached view, task panel ticking, turn clock, a ticking tool block).
+- Autocomplete `@file` walk in flight: a 40 ms step (`Editor::autocomplete_deadline`, via `AutocompleteProvider::walk_pending`). Added, so a finished walk shows at once, not up to 1 s later.
+- Session list loading: a 40 ms step (`SessionSelectorComponent::deadline`). Its results arrive on a channel that does not wake the loop. Added.
+- Woken by events, so the cap does not delay them: every `AppSender::send` (session events, footer branch change as `Rerender`, the editor's walk result is polled as above), and key or resize input.
+- Checked each pass with no wake of their own, so they are now up to 1 s late when idle (was up to 250 ms): extension UI requests (`drain_extension_ui_requests`), the update notice (`poll_update_notice`), and the memory and stall flags (`sync_runtime_health`). None is a correctness issue; these idle-only notices can appear up to 1 s late.
+- Checked each pass and fine at 1 s: `poll_attached_prompt` and `drain_task_panel_events` (fed by input handled in the same pass), `advance_auto_loop` (driven by `PromptDone`, which wakes), `poll_auto_theme` (its 60 s deadline is in `next_wakeup`), `tick_scheduler` (30 s interval, at most 1 s late), `poll_tree_selector` and `poll_fork_selector` (their picker deadlines are already in `ActivePicker::deadline`), and `poll_model_selectors` (its events come from keys handled in the same pass).
+- Footer HEAD poll at 1 s with a 500 ms debounce: a branch change now shows in about 1 to 2 s (was about 0.6 s).
+
+Robustness of the two 40 ms steps (review, 2026-10-30). Both steps stop when their work
+ends, so a worker that dies cannot keep the loop polling. The `@file` worker's guard
+(`WalkGuard` in `tui-components` `autocomplete/file_search.rs`) settles a walk that panics,
+and a query sent to a dead worker settles at once. The session list's `LoadSink`
+(`code-tui-selectors` `session_selector.rs`) reports `Err("loader stopped")` when its last
+clone is dropped without a result, and sends one result at most.
 
 The target of about 5 per second is **not reached by these four changes alone** (they give
 about 7). The `hoocode-io-2` wakeups (2.3 per second) have no known source. Either find them
@@ -94,7 +120,7 @@ Acceptance:
 - Idle CPU is below 0.2% (baseline) and near 0.1%.
 - Stall detection still works: the existing watchdog tests (`crates/hoocode-runtime/tests/it/watchdog.rs`,
   `watchdog_forced.rs`) pass. Add one check that RSS is still sampled about once a second at 250 ms.
-- `/perf` shows numbers when opened after startup (lazy sampler).
+- `/perf` shows numbers when opened after startup (one inline `/proc` read; no thread without `--perf-log`).
 
 ## Measure first (investigations, not approved work)
 
@@ -157,10 +183,17 @@ These change disk size, not RSS.
    binary and upload an unstripped copy as a CI artifact, so a crash can still be
    symbolised. Alternative: ship the unstripped binary (about 14.7 MiB larger). Trade-off:
    the artifact costs CI storage and needs a step.
+   **Decided 2026-10-30: not in P1.** P1 ships the stripped binary. The CI unstripped-symbol
+   artifact is a follow-up (`binaries.yml`: upload an unstripped copy beside each binary).
 2. **The 5-per-second wakeup target.** After P2 the expected rate is about 7 per second.
    Recommended: accept about 7, and track `hoocode-io-2` (2.3 per second, unknown source) as a
    follow-up with its own measurement. Alternative: watchdog tick at 500 ms, which would
    double the stall log delay and is not recommended.
+   **Decided 2026-10-30: accept about 7** (measured 6.9 to 7.2 per second in a plain
+   directory, 8.9 to 9.3 in a repo). **Follow-up: trace the io-worker wakeups** (about
+   2 per second, which worker varies between runs, so the source is not one fixed thread).
+   In a repo, `hoocode-bg` also wakes about 2 per second, where the 1 s git poll explains 1;
+   that second source is not traced either.
 
 ## Details
 
@@ -190,6 +223,41 @@ Metrics for short sessions:
 
 Long-session context (300 turns): RSS 85.0 MiB at turn 299 (peak 85.7); slope 0.17 to 0.18 MiB
 per turn; CPU 0.119 CPU-s per turn; 13,142 frames; frame p50 2.37 ms and p99 12.5 ms at turn 300.
+
+### After P1/P2 (2026-10-30)
+
+Built on the card's branch from `d3869aa` (P1 profile plus P2a to P2d, and the review fixes).
+Host and conditions as the baseline (4 vCPU, Linux 6.18 VM), but other agents shared the
+host during the builds. Release binary, stripped by the new profile. Idle figures are one
+TUI in a fixed 100x30 tmux pane with a mock provider config that is never called.
+
+| Metric | Baseline (`a38731d`, card above) | After (2026-10-30) | Notes |
+|---|---|---|---|
+| Binary size | 57.8 MiB unstripped; 43.1 MiB stripped (strip only, plain profile) | **34.86 MiB** (36,556,240 bytes), release profile | Acceptance (at or below 43 MiB) met. Not like for like: the 43.1 figure is strip alone on the plain profile. LTO and one codegen unit also shrink it |
+| `hoocode --version` median wall | 3.8 ms (range 3.3 to 5.3) | **5.29 ms** (min 4.82, max 13.98), 20 runs | Above the 3.8 ms reference. Not an A/B on this host, so it may be host state. Needs an A/B against the old binary before the acceptance is judged |
+| `hoocode --help` median wall | 3.6 ms | **5.19 ms** (min 4.66, max 7.29), 20 runs | Same caveat as `--version` |
+| `--version` output | (not in the card) | `0.2.20` on **stderr**, exit 0 | Works. Observed only; not changed here |
+| TUI time to first prompt | 42 to 54 ms (5 runs) | **31 to 34 ms** (3 plain, 2 repo runs) | Harness polls the prompt text every 20 ms; the baseline harness is not recorded in detail, so only roughly comparable |
+| Idle wakeups per s, total (10 s) | 17.2 | **6.9 to 7.2** plain (3 runs); **8.9 to 9.3** in a repo (2 runs) | Acceptance target 5 was not reached; 7 is accepted (open question 2) |
+| Idle wakeups, `hoocode-watchdog` | 9.9 | **3.9 to 4.0** | 4 ticks a second |
+| Idle wakeups, UI loop thread (`hoocode`) | 4.0 | **1.0** | The cap; a wake each second |
+| Idle wakeups, one io worker | 2.3 (`hoocode-io-2`) | **2.0 to 2.2** | Which worker wakes changes between runs; baseline named `io-2` only |
+| Idle wakeups, `hoocode-perf` | 1.0 | **0** | No sampler thread without `--perf-log` |
+| Idle wakeups, `hoocode-bg` (repo only) | not in baseline | **2.0 to 2.1** in a repo | The 1 s git poll explains 1 per s; the other is not traced |
+| Idle CPU over 25 s | 0.20% (10 s), 0.24% (25 s) | **0.16 to 0.2%** | Below 0.2%: not clearly met (the upper bound equals it). Near 0.1%: not met. Like for like, the baseline is 0.24% over 25 s (0.20% is its 10 s figure). One sample set, no error bars |
+| Release build wall, first build on this tree | 10m16s wall, 18m31s user (clean, plain) | **10m17s** wall (617 s), user not recorded | The release cache was empty, so dependencies compiled. Close to a clean build. Not an A/B: the plain profile was not rebuilt, so the LTO cost is not isolated |
+| Release build wall, incremental after the review fixes | (none) | 2m55s (176 s) | Changed crates and link only |
+
+Not measured in this pass (so not judged): 10- and 15-turn mock runs (Step 0), the 100-turn
+mock CPU A/B (five runs each, acceptance), the subagent evals, frame p50 and p99, RSS at
+the first prompt and at 10 to 15 turns, and the idle wakeups for the 25 s window
+beyond the CPU figure. Stall detection was checked by tests (watchdog and forced-stall
+tests pass, plus the RSS cadence test), not by a live stall. The watchdog and Ctrl+C
+fixes were argued from the code and unit-tested, not observed as log output.
+
+Consequences to know about (not bugs; see the loop-cap check above): idle-only notices
+(extension UI requests, the update notice, memory and stall flags) can appear up to 1 s
+late. The git branch in the footer updates in about 1 to 2 s after a branch change.
 
 ### Method (to re-run)
 

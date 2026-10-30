@@ -29,7 +29,7 @@ use hoocode_code_tui_widgets::custom_message::{
     BranchSummaryMessageComponent, CompactionSummaryMessageComponent, CustomMessageComponent,
 };
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
-use hoocode_code_tui_widgets::radar::{FlightMark, FlightStats, PeekOnly};
+use hoocode_code_tui_widgets::radar::{FlightItem, FlightMark, FlightStats, PeekOnly};
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::{turn_phrase, ChainEntry, ChainState};
@@ -91,6 +91,9 @@ pub(super) struct Transcript {
     /// grow, and step numbers rebase from them after a retry takes blocks
     /// out.
     pub(super) missions: Vec<MissionRange>,
+    /// Where each assistant message's thinking sits in its mission's flight
+    /// log (R3), in arrival order. See `ThinkingMark`.
+    pub(super) thinking: Vec<ThinkingMark>,
     /// Whether the radar flight log is showing (M5): peek-only rows hide
     /// while set. Shared with the wrappers, so rows added in either view
     /// follow later flips.
@@ -139,6 +142,23 @@ pub(super) struct MissionRange {
     pub(super) header: Rc<RefCell<MissionHeader>>,
     pub(super) flight: Rc<RefCell<FlightStats>>,
     pub(super) landing: Option<Rc<RefCell<trajectory::LandingLine>>>,
+    /// The answer the flight data holds: the source message's identity and
+    /// revision, `None` while the mission has no answer to show. The answer is
+    /// re-read only when this moves.
+    pub(super) answer_key: Cell<Option<(usize, u64)>>,
+}
+
+/// Where an assistant message's thinking sits in its mission's flight log
+/// (R3): after `block` calls of `anchor`'s chain, or at the mission's start
+/// when it has no anchor (no chain yet). The gist is read off the message when
+/// the flight data refreshes, and a message with no thinking text adds no
+/// batch break.
+#[derive(Clone)]
+pub(super) struct ThinkingMark {
+    pub(super) mission: usize,
+    pub(super) anchor: Option<Rc<RefCell<ToolChainComponent>>>,
+    pub(super) block: usize,
+    pub(super) message: Rc<RefCell<AssistantMessageComponent>>,
 }
 
 impl Transcript {
@@ -165,6 +185,7 @@ impl Transcript {
             attempt_tools: Vec::new(),
             last_prompt: None,
             missions: Vec::new(),
+            thinking: Vec::new(),
             radar_active: Rc::new(Cell::new(false)),
             full_active: Rc::new(Cell::new(false)),
         }
@@ -331,6 +352,86 @@ impl Transcript {
         as_component(&PeekOnly::wrap(self.radar_active.clone(), child))
     }
 
+    /// Records where an assistant message sits in its mission's flight log
+    /// (R3), for its thinking: after the calls of the open chain, else after
+    /// the mission's last chain, else at the mission's start. Called as the
+    /// message enters the transcript, before its calls join the chain, so its
+    /// thinking reads above the calls it leads to.
+    pub(super) fn note_assistant(&mut self, component: &Rc<RefCell<AssistantMessageComponent>>) {
+        let Some(mission) = self.current_mission() else {
+            return;
+        };
+        let first_chain = self.missions.last().map_or(0, |m| m.start);
+        let anchor = self
+            .open_chain
+            .clone()
+            .filter(|chain| chain.borrow().is_open())
+            .or_else(|| {
+                (self.chains.len() > first_chain)
+                    .then(|| self.chains.last().cloned())
+                    .flatten()
+            });
+        let block = anchor
+            .as_ref()
+            .map_or(0, |chain| chain.borrow().tool_blocks().len());
+        self.thinking.push(ThinkingMark {
+            mission,
+            anchor,
+            block,
+            message: component.clone(),
+        });
+    }
+
+    /// The flight items of mission `seq` over `chains[start..end]` (R3), in
+    /// story order. Each chain's calls split at the thinking marks anchored to
+    /// it, a thinking mark with a gist becoming one item; a chain closes when
+    /// the agent speaks, so each chain is one batch at the least. Thinking with
+    /// no call before it (the opening message) comes first.
+    fn mission_items(&self, seq: usize, start: usize, end: usize) -> Vec<FlightItem> {
+        let end = end.min(self.chains.len());
+        let start = start.min(end);
+        let gist = |mark: &ThinkingMark| mark.message.borrow().radar_gist();
+        let mut by_chain: HashMap<usize, Vec<&ThinkingMark>> = HashMap::new();
+        let mut items: Vec<FlightItem> = Vec::new();
+        for mark in self.thinking.iter().filter(|mark| mark.mission == seq) {
+            match &mark.anchor {
+                Some(chain) => by_chain
+                    .entry(Rc::as_ptr(chain) as usize)
+                    .or_default()
+                    .push(mark),
+                None => {
+                    if let Some(gist) = gist(mark) {
+                        items.push(FlightItem::Thinking(gist));
+                    }
+                }
+            }
+        }
+        for chain in &self.chains[start..end] {
+            let chain_ref = chain.borrow();
+            let blocks = chain_ref.tool_blocks();
+            let mut marks = by_chain
+                .remove(&(Rc::as_ptr(chain) as usize))
+                .unwrap_or_default();
+            marks.sort_by_key(|mark| mark.block);
+            let mut cursor = 0;
+            for mark in marks {
+                let Some(gist) = gist(mark) else {
+                    continue;
+                };
+                let before = mark.block.min(blocks.len());
+                if before > cursor {
+                    items.push(FlightItem::Batch(blocks[cursor..before].to_vec()));
+                    cursor = before;
+                }
+                items.push(FlightItem::Thinking(gist));
+            }
+            if cursor < blocks.len() {
+                items.push(FlightItem::Batch(blocks[cursor..].to_vec()));
+            }
+        }
+        items
+    }
+
     /// The mission's mark from its chains (M5): an open chain still flies;
     /// else an interrupted chain did not land (`⊗` with failed steps) or
     /// was aborted (`⊘`); settled chains read landed.
@@ -368,12 +469,15 @@ impl Transcript {
         self.chains.last().map(Rc::downgrade)
     }
 
-    /// Radar prose (M5): a mission shows one prose line, from its last
-    /// assistant message with prose, and only once it has ended. A flying
-    /// mission shows none, and neither do its intermediate messages. A mission
-    /// ends when a later one opens, or when its turn settles (`flying` is
-    /// false). Messages before the first mission keep their prose.
-    pub(super) fn sync_radar_prose(&self, flying: bool) {
+    /// Radar prose (R3): a mission's answer, and the reason its message ended
+    /// badly, go into its flight data, which its header draws. The answer is
+    /// the last message with prose that does not end on a call, and it shows
+    /// only once the mission has ended. A mission ends when it lands, or when a
+    /// later one opens (a stepless mission never lands before the next one).
+    /// No turn anchor is needed: a flying mission never reads as ended. Messages
+    /// before the first mission keep their own prose line (`radar_mission` is
+    /// `None`).
+    pub(super) fn sync_radar_prose(&self) {
         let last_seq = self.missions.last().map(|m| m.seq);
         let mut last_with_prose: HashMap<usize, usize> = HashMap::new();
         for (i, component) in self.assistant_components.iter().enumerate() {
@@ -384,16 +488,64 @@ impl Transcript {
                 }
             }
         }
-        for (i, component) in self.assistant_components.iter().enumerate() {
+        for component in &self.assistant_components {
             let mut component = component.borrow_mut();
-            let shown = match component.radar_mission() {
-                None => component.has_radar_prose(),
-                Some(seq) => {
-                    let ended = Some(seq) != last_seq || !flying;
-                    ended && last_with_prose.get(&seq) == Some(&i)
-                }
-            };
+            let shown = component.radar_mission().is_none() && component.has_radar_prose();
             component.set_radar_prose_shown(shown);
+        }
+        for mission in &self.missions {
+            let ended = mission.landed || Some(mission.seq) != last_seq;
+            let source = last_with_prose.get(&mission.seq).copied().filter(|_| ended);
+            // The answer is re-read only when its source message changed.
+            let key = source.map(|i| {
+                let revision = self.assistant_components[i].borrow().radar_revision();
+                (Rc::as_ptr(&self.assistant_components[i]) as usize, revision)
+            });
+            if mission.answer_key.get() == key {
+                continue;
+            }
+            mission.answer_key.set(key);
+            let (answer, reason) = match source {
+                Some(i) => {
+                    let component = self.assistant_components[i].borrow();
+                    // A message that ends on a call is not the answer: its prose
+                    // came before the call, and the turn went on past it.
+                    let answer = if component.ends_in_tool_call() {
+                        Vec::new()
+                    } else {
+                        component.radar_answer()
+                    };
+                    (answer, component.radar_reason())
+                }
+                None => (Vec::new(), None),
+            };
+            let mut flight = mission.flight.borrow_mut();
+            // The mission header's stamp reads this data (hoocode_tui_render::note_change).
+            hoocode_tui_render::note_change();
+            flight.answer = answer;
+            flight.reason = reason;
+        }
+    }
+
+    /// Records why the open mission failed (R3): the final error of a streak
+    /// whose retries ran out, or of a turn that failed. `None` clears it, as a
+    /// retry that succeeds does. It lives in the flight data, so the DID NOT
+    /// LAND row keeps its reason after the failed message leaves the chat.
+    pub(super) fn set_mission_failure(&self, reason: Option<String>) {
+        let Some(mission) = self.missions.last() else {
+            return;
+        };
+        // A landed mission has ended: a failure with no mission of its own
+        // (a PromptDone error before any user message, such as "No model
+        // selected") must not rewrite how the last landed one ended.
+        if mission.landed {
+            return;
+        }
+        let mut flight = mission.flight.borrow_mut();
+        if flight.failure != reason {
+            // The mission header's stamp reads this data (hoocode_tui_render::note_change).
+            hoocode_tui_render::note_change();
+            flight.failure = reason;
         }
     }
 
@@ -408,6 +560,7 @@ impl Transcript {
     /// land with the mission; the flying mission's come from the mode.
     pub(super) fn refresh_flight_marks(&mut self) {
         let chain_count = self.chains.len();
+        let last_landed = self.missions.iter().rposition(|m| m.landed);
         for i in 0..self.missions.len() {
             let end = self
                 .missions
@@ -429,7 +582,11 @@ impl Transcript {
             // A landed mission's calls are read again only when its tally
             // moved (a retry took blocks out); a flying one's every time.
             let moved = steps != was_steps || hits != was_hits;
-            let entries = (!landed || moved).then(|| self.mission_entries(start, end));
+            let entries = (landed && moved).then(|| self.mission_entries(start, end));
+            let seq = self.missions[i].seq;
+            let items = (!landed || moved).then(|| self.mission_items(seq, start, end));
+            // An older finished mission folds to its summary once a later one landed.
+            let folded = landed && last_landed.is_some_and(|last| last > i);
             if landed && moved {
                 if let (Some(landing), Some(entries)) =
                     (self.missions[i].landing.clone(), entries.as_ref())
@@ -443,12 +600,21 @@ impl Transcript {
             }
             let mut flight = self.missions[i].flight.borrow_mut();
             // The mission header's stamp reads this data (hoocode_tui_render::note_change).
-            hoocode_tui_render::note_change();
+            // Only a change moves it: refresh runs on every event.
+            let changed = items.is_some()
+                || steps != flight.steps
+                || hits != flight.hits
+                || mark != flight.mark
+                || folded != flight.folded;
+            if changed {
+                hoocode_tui_render::note_change();
+            }
             flight.steps = steps;
             flight.hits = hits;
             flight.mark = mark;
-            if let Some(entries) = entries {
-                flight.chain = entries;
+            flight.folded = folded;
+            if let Some(items) = items {
+                flight.items = items;
             }
         }
         let first_start = self.missions.first().map(|m| m.start);
@@ -486,6 +652,7 @@ impl Transcript {
             header: header.clone(),
             flight,
             landing: None,
+            answer_key: Cell::new(None),
         });
         if !self.chat.borrow().children().is_empty() {
             self.chat
@@ -535,11 +702,12 @@ impl Transcript {
         let mark = settle_mark(self.mission_mark(start, end), stop);
         let entries = self.mission_entries(start, end);
         let used = input.max(0) + output.max(0);
+        let tokens = format!("{} tokens", format_tokens(used as u64));
+        let items = self.mission_items(seq, start, end);
         let mut landing = None;
         if steps > 0 || used > 0 || mark != FlightMark::Landed {
             // The landing row draws from spans (M5 review): the transcript
             // refreshes its counts when a landed mission's tally moves.
-            let tokens = format!("{} tokens", format_tokens(used as u64));
             let mut line =
                 trajectory::LandingLine::new(mark, steps, hits, &landed_time, &tokens, &cost_text);
             line.set_summary(summary_of(&entries));
@@ -560,7 +728,8 @@ impl Transcript {
         flight.steps = steps;
         flight.hits = hits;
         flight.mark = mark;
-        flight.chain = entries;
+        flight.items = items;
+        flight.tokens = Some(tokens);
         flight.landed_time = Some(landed_time);
         flight.cost = Some(cost_text);
         flight.started = None;
@@ -752,8 +921,7 @@ impl Mode {
     /// the anchor. Landed missions keep the time and cost they landed with.
     pub(super) fn refresh_flight_stats(&mut self) {
         self.transcript.refresh_flight_marks();
-        self.transcript
-            .sync_radar_prose(self.turn_cost_anchor.is_some());
+        self.transcript.sync_radar_prose();
         let Some(mission) = self.transcript.missions.last() else {
             return;
         };
@@ -850,10 +1018,10 @@ impl Mode {
                 component
                     .borrow_mut()
                     .set_radar_mission(self.transcript.current_mission());
+                self.transcript.note_assistant(&component);
                 self.transcript.assistant_components.push(component.clone());
                 self.add_to_chat(as_component(&component));
-                self.transcript
-                    .sync_radar_prose(self.turn_cost_anchor.is_some());
+                self.transcript.sync_radar_prose();
             }
             AgentMessage::Custom(custom) => {
                 if custom.display {
@@ -1068,7 +1236,11 @@ impl Mode {
         // History has no live state: a chain still open is finished, unless
         // calls still wait for results (a resumed run in flight). A turn that
         // has settled gets its token row; one still in flight waits for it.
-        if rendered_pending.is_empty() {
+        // A turn live now (its anchor is set) keeps its chain open and its
+        // mission flying: the live stream lands both when the turn ends, so
+        // a rebuild mid-turn (a thinking toggle) must not land them early.
+        let turn_live = self.turn_cost_anchor.is_some();
+        if rendered_pending.is_empty() && !turn_live {
             if let Some(ended) = turn.take() {
                 self.show_rebuilt_turn_cost(ended);
             }
@@ -1362,16 +1534,31 @@ impl Mode {
         self.reset_transcript_view();
         let messages = self.session.messages();
         self.render_session_context(&messages, false);
-        // A message still streaming goes back on with the new display.
+        // A message still streaming goes back on with the new display. The
+        // rebuild dropped its registration, so it registers as MessageStart
+        // does: its thinking marks its mission and its prose joins the radar
+        // rows. Guarded, so a component the rebuild still holds is not added twice.
         if let (Some(component), Some(message)) = (streaming, streaming_message) {
             {
                 let mut c = component.borrow_mut();
                 c.set_thinking_display(self.thinking_display());
                 c.update_shared(message.clone(), true);
+                c.set_radar_above(self.transcript.radar_chain_above());
+                c.set_radar_mission(self.transcript.current_mission());
+            }
+            let registered = self
+                .transcript
+                .assistant_components
+                .iter()
+                .any(|c| Rc::ptr_eq(c, &component));
+            if !registered {
+                self.transcript.note_assistant(&component);
+                self.transcript.assistant_components.push(component.clone());
             }
             self.add_to_chat(as_component(&component));
             self.transcript.streaming = Some(component);
             self.transcript.streaming_message = Some(message);
+            self.transcript.sync_radar_prose();
         }
         // Radar hides thinking whatever the setting, so the toggle has no
         // visible effect there: the notice says what was saved and why the
@@ -1704,6 +1891,7 @@ impl Mode {
 mod tests {
     use super::*;
     use hoocode_ai_types::{Content, ToolResultMessage};
+    use hoocode_code_tui_widgets::radar::FlightItem;
     use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
     use hoocode_code_tui_widgets::tool_signal::ToolResult;
     use hoocode_tui_util::strip_vt_control_characters;
@@ -1741,27 +1929,252 @@ mod tests {
 
     #[test]
     fn radar_prose_shows_one_line_once_the_mission_ends() {
+        // A mission's answer is drawn by its flight-log block (R3): the message
+        // itself draws nothing in radar, and the answer goes into the mission's
+        // flight data once the mission has ended.
+        let answer =
+            |t: &Transcript, seq: usize| t.missions[seq - 1].flight.borrow().answer.join(" ");
         let mut t = fresh_transcript();
         t.begin_mission("run alpha", None, ToolOutputView::Radar);
         let running = radar_prose_message(&mut t, "Running alpha.");
         let last = radar_prose_message(&mut t, "Alpha printed.");
 
-        // In flight: neither the intermediate message nor the last one reads.
-        t.sync_radar_prose(true);
+        // In flight: neither the intermediate message nor the last one is the answer.
+        t.sync_radar_prose();
+        assert!(answer(&t, 1).is_empty());
         assert!(!radar_text(&running).contains("Running alpha."));
         assert!(!radar_text(&last).contains("Alpha printed."));
 
-        // Ended: only the last message's prose shows.
-        t.sync_radar_prose(false);
+        // Ended (landed): only the last message's prose is the answer.
+        t.land_mission(1, 0, 0, 0.0, 0.1, None);
+        t.sync_radar_prose();
+        assert_eq!(answer(&t, 1), "Alpha printed.");
         assert!(!radar_text(&running).contains("Running alpha."));
-        assert!(radar_text(&last).contains("Alpha printed."));
+        assert!(!radar_text(&last).contains("Alpha printed."));
 
-        // A later mission opens: the ended one keeps its line, the open one has none.
+        // A later mission opens: the ended one keeps its answer, the open one has none.
         t.begin_mission("run beta", None, ToolOutputView::Radar);
         let beta = radar_prose_message(&mut t, "Beta is running.");
-        t.sync_radar_prose(true);
-        assert!(radar_text(&last).contains("Alpha printed."));
+        t.sync_radar_prose();
+        assert_eq!(answer(&t, 1), "Alpha printed.");
+        assert!(answer(&t, 2).is_empty());
         assert!(!radar_text(&beta).contains("Beta is running."));
+    }
+
+    /// The answer the flight data of mission `seq` holds, joined.
+    fn answer_of(t: &Transcript, seq: usize) -> String {
+        t.missions[seq - 1].flight.borrow().answer.join(" ")
+    }
+
+    /// An assistant message of the current mission with `content`, noted for
+    /// its thinking and listed as the transcript lists a message.
+    fn mission_message(
+        t: &mut Transcript,
+        content: Vec<Content>,
+        stop_reason: StopReason,
+    ) -> Rc<RefCell<AssistantMessageComponent>> {
+        let message = hoocode_ai_types::AssistantMessage {
+            content,
+            stop_reason,
+            ..Default::default()
+        };
+        let component = Rc::new(RefCell::new(AssistantMessageComponent::new(
+            Some(&message),
+            ThinkingDisplay::Omit,
+        )));
+        component
+            .borrow_mut()
+            .set_radar_mission(t.current_mission());
+        t.note_assistant(&component);
+        t.chat.borrow_mut().add_child(as_component(&component));
+        t.assistant_components.push(component.clone());
+        component
+    }
+
+    fn thinking(text: &str) -> Content {
+        Content::Thinking(hoocode_ai_types::ThinkingContent {
+            thinking: text.into(),
+            ..Default::default()
+        })
+    }
+
+    fn tool_call(name: &str) -> Content {
+        Content::ToolCall(hoocode_ai_types::ToolCallContent {
+            id: format!("{name}-1"),
+            name: name.into(),
+            arguments: json!({"command": "ls"}),
+            thought_signature: None,
+        })
+    }
+
+    /// The flight items of mission 1, as the transcript last refreshed them.
+    fn items_of(t: &Transcript) -> Vec<FlightItem> {
+        t.missions[0].flight.borrow().items.clone()
+    }
+
+    #[test]
+    fn a_thinking_message_with_calls_and_no_text_splits_the_open_chain() {
+        // Thinking and calls with no text open no new chain: the message's
+        // thinking sits between the calls it came before and the ones after.
+        let mut t = fresh_transcript();
+        t.begin_mission("do it", None, ToolOutputView::Radar);
+        let chain = chain_with(2);
+        t.chains.push(chain.clone());
+        t.open_chain = Some(chain.clone());
+        mission_message(
+            &mut t,
+            vec![thinking("Check the lexer first"), tool_call("Shell")],
+            StopReason::Stop,
+        );
+        chain.borrow_mut().add(shell_block("call-2"));
+        t.refresh_flight_marks();
+        let items = items_of(&t);
+        assert_eq!(items.len(), 3, "{items:?}");
+        assert!(
+            matches!(&items[0], FlightItem::Batch(blocks) if blocks.len() == 2),
+            "{items:?}"
+        );
+        assert!(
+            matches!(&items[1], FlightItem::Thinking(gist) if gist == "Check the lexer first"),
+            "{items:?}"
+        );
+        assert!(
+            matches!(&items[2], FlightItem::Batch(blocks) if blocks.len() == 1),
+            "{items:?}"
+        );
+    }
+
+    #[test]
+    fn a_retry_drops_the_thinking_mark_of_the_attempt_it_takes_out() {
+        let mut t = fresh_transcript();
+        t.begin_mission("try it", None, ToolOutputView::Radar);
+        let failed = mission_message(&mut t, vec![thinking("Try the build")], StopReason::Error);
+        t.keep_attempt_error(failed, Vec::new());
+        assert_eq!(t.thinking.len(), 1);
+        t.start_retry("529 upstream overloaded");
+        assert!(t.thinking.is_empty());
+    }
+
+    #[test]
+    fn the_opening_messages_thinking_comes_first() {
+        // Thinking before any call (no chain yet) leads the mission's items.
+        let mut t = fresh_transcript();
+        t.begin_mission("do it", None, ToolOutputView::Radar);
+        mission_message(&mut t, vec![thinking("Plan the change")], StopReason::Stop);
+        let chain = chain_with(2);
+        t.chains.push(chain.clone());
+        t.refresh_flight_marks();
+        let items = items_of(&t);
+        assert_eq!(items.len(), 2, "{items:?}");
+        assert!(
+            matches!(&items[0], FlightItem::Thinking(gist) if gist == "Plan the change"),
+            "{items:?}"
+        );
+        assert!(
+            matches!(&items[1], FlightItem::Batch(blocks) if blocks.len() == 2),
+            "{items:?}"
+        );
+    }
+
+    #[test]
+    fn the_answer_is_read_again_after_its_message_changes() {
+        let mut t = fresh_transcript();
+        t.begin_mission("run it", None, ToolOutputView::Radar);
+        let message = radar_prose_message(&mut t, "First draft.");
+        t.land_mission(1, 0, 0, 0.0, 0.1, None);
+        t.sync_radar_prose();
+        assert_eq!(answer_of(&t, 1), "First draft.");
+        // The message changes: its revision moves, and the answer follows.
+        let revised = hoocode_ai_types::AssistantMessage {
+            content: vec![Content::text("Final answer.")],
+            ..Default::default()
+        };
+        message.borrow_mut().update_content(&revised, false);
+        t.sync_radar_prose();
+        assert_eq!(answer_of(&t, 1), "Final answer.");
+    }
+
+    #[test]
+    fn a_message_that_ends_on_a_call_is_not_the_answer() {
+        let mut t = fresh_transcript();
+        t.begin_mission("run it", None, ToolOutputView::Radar);
+        mission_message(
+            &mut t,
+            vec![Content::text("Let me check the file."), tool_call("Read")],
+            StopReason::Stop,
+        );
+        t.land_mission(1, 0, 0, 0.0, 0.1, None);
+        t.sync_radar_prose();
+        assert!(answer_of(&t, 1).is_empty(), "{}", answer_of(&t, 1));
+    }
+
+    #[test]
+    fn a_did_not_land_reason_survives_its_failed_attempt_leaving_the_chat() {
+        use hoocode_code_tui_widgets::radar::FlightMark;
+
+        let mut t = fresh_transcript();
+        t.begin_mission("try it", None, ToolOutputView::Radar);
+        // The last attempt fails with no prose. The streak's retries run out,
+        // which takes the failed attempt out of the chat.
+        let failed = mission_message(&mut t, Vec::new(), StopReason::Error);
+        failed.borrow_mut().update_content(
+            &hoocode_ai_types::AssistantMessage {
+                stop_reason: StopReason::Error,
+                error_message: Some("529 upstream overloaded".into()),
+                ..Default::default()
+            },
+            false,
+        );
+        t.keep_attempt_error(failed, Vec::new());
+        t.end_retry(false, 7, Some("529 upstream overloaded"));
+        t.land_mission(1, 0, 0, 0.0, 0.5, Some(StopReason::Error));
+        t.sync_radar_prose();
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!(flight.mark, FlightMark::DidNotLand);
+        assert_eq!(
+            flight.did_not_land_reason().as_deref(),
+            Some("529 upstream overloaded")
+        );
+    }
+
+    #[test]
+    fn a_failed_turn_with_no_error_message_still_names_its_reason() {
+        // The turn's error arrives with PromptDone: the last message carries
+        // no error of its own (it stopped clean), so the failure is the reason.
+        let mut t = fresh_transcript();
+        t.begin_mission("try it", None, ToolOutputView::Radar);
+        mission_message(&mut t, Vec::new(), StopReason::Stop);
+        // A retry that succeeds clears a failure the open mission had recorded.
+        t.set_mission_failure(Some("529 upstream overloaded".into()));
+        t.set_mission_failure(None);
+        assert_eq!(t.missions[0].flight.borrow().did_not_land_reason(), None);
+        t.set_mission_failure(Some("connection reset\nby peer".into()));
+        t.land_mission(1, 0, 0, 0.0, 0.5, Some(StopReason::Error));
+        t.sync_radar_prose();
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!(flight.mark, FlightMark::DidNotLand);
+        assert_eq!(
+            flight.did_not_land_reason().as_deref(),
+            Some("connection reset")
+        );
+    }
+
+    #[test]
+    fn a_failure_after_the_mission_landed_keeps_its_reason() {
+        // "No model selected" ends a turn before any user message opens a
+        // mission, so the last mission is the one that already landed.
+        let mut t = fresh_transcript();
+        t.begin_mission("try it", None, ToolOutputView::Radar);
+        mission_message(&mut t, Vec::new(), StopReason::Stop);
+        t.set_mission_failure(Some("529 upstream overloaded".into()));
+        t.land_mission(1, 0, 0, 0.0, 0.5, Some(StopReason::Error));
+        t.set_mission_failure(Some("No model selected".into()));
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!(flight.mark, FlightMark::DidNotLand);
+        assert_eq!(
+            flight.did_not_land_reason().as_deref(),
+            Some("529 upstream overloaded")
+        );
     }
 
     fn user_message(content: UserContent) -> UserMessage {
@@ -2116,9 +2529,9 @@ mod tests {
         let summary = landing.summary().expect("a summary").to_string();
         drop(landing);
         let flight = t.missions[0].flight.borrow();
-        assert_eq!(flight.chain.len(), 2);
+        assert_eq!(flight.calls().len(), 2);
         assert_eq!(
-            hoocode_code_tui_widgets::tool_chain_summary::turn_phrase(&flight.chain),
+            hoocode_code_tui_widgets::tool_chain_summary::turn_phrase(&flight.calls()),
             summary
         );
     }

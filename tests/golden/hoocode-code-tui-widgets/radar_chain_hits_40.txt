@@ -1,9 +1,29 @@
-            ⊗ 04 Shell  ca…  → bo…  HIT
+▲ M1  run the checks
+   ┊ ⊗ Ran cargo test            1 call
+   ┊   └ 01 Shell  cargo …  → boom  HIT
+   ╰ ● LANDED · 1 step · 1 hit · 2s
 --- styles ---
-r0 c12 fg=#d58181
-r0 c14-16 fg=#f0c674 bold
-r0 c17-21 fg=#e5e5e7 bold
-r0 c24-25 fg=#e5e5e7
-r0 c27-30 fg=#989898
-r0 c31-32 fg=#e5e5e7
-r0 c36-38 fg=#d58181 bold inverse
+r0 c0 fg=#9b8cff bold
+r0 c2-3 fg=#9b8cff bold
+r0 c6-19 fg=#e5e5e7 bold
+r1 c3 fg=#a8a8a8
+r1 c5 fg=#d58181
+r1 c7-20 fg=#e5e5e7
+r1 c33-38 fg=#989898
+r2 c3 fg=#a8a8a8
+r2 c7 fg=#a8a8a8
+r2 c9-11 fg=#f0c674 bold
+r2 c12-16 fg=#e5e5e7 bold
+r2 c19-24 fg=#e5e5e7
+r2 c26-29 fg=#989898
+r2 c30-33 fg=#e5e5e7
+r2 c36-38 fg=#d58181 bold inverse
+r3 c3 fg=#a8a8a8
+r3 c5 fg=#b5bd68
+r3 c7-12 fg=#b5bd68 bold
+r3 c13-15 fg=#989898
+r3 c16-21 fg=#a8a8a8
+r3 c22-24 fg=#989898
+r3 c25-29 fg=#a8a8a8
+r3 c30-32 fg=#989898
+r3 c33-34 fg=#a8a8a8

@@ -63,11 +63,15 @@ fn is_none_outside_a_repo() {
     provider.dispose();
 }
 
+/// The git HEAD poll the tests use. The app polls once a second; the tests
+/// need quick checks, so they set their own.
+const TEST_POLL: Duration = Duration::from_millis(100);
+
 #[test]
 fn does_not_notify_listeners_when_an_update_keeps_the_same_branch() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = plain_repo(tmp.path());
-    let provider = FooterDataProvider::new(&repo);
+    let provider = FooterDataProvider::with_poll_interval(&repo, TEST_POLL);
     assert_eq!(provider.get_git_branch().as_deref(), Some("main"));
     let calls = Arc::new(AtomicUsize::new(0));
     let sink = calls.clone();
@@ -85,7 +89,7 @@ fn does_not_notify_listeners_when_an_update_keeps_the_same_branch() {
 fn debounces_rapid_updates_into_a_single_refresh_and_updates_the_cached_branch() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = plain_repo(tmp.path());
-    let provider = FooterDataProvider::new(&repo);
+    let provider = FooterDataProvider::with_poll_interval(&repo, TEST_POLL);
     assert_eq!(provider.get_git_branch().as_deref(), Some("main"));
     let calls = Arc::new(AtomicUsize::new(0));
     let sink = calls.clone();

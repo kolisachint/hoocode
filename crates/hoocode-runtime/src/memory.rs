@@ -178,6 +178,8 @@ impl MemoryGuard {
 static SHEDDING: AtomicBool = AtomicBool::new(false);
 /// Last RSS sample in bytes; 0 when none has been read yet.
 static LAST_RSS: AtomicU64 = AtomicU64::new(0);
+/// RSS readings published so far (the watchdog's sampling cadence).
+static RSS_SAMPLES: AtomicU64 = AtomicU64::new(0);
 static SOFT_LIMIT: AtomicU64 = AtomicU64::new(0);
 static HARD_LIMIT: AtomicU64 = AtomicU64::new(0);
 static EVENTS: Mutex<VecDeque<MemoryEvent>> = Mutex::new(VecDeque::new());
@@ -201,6 +203,12 @@ pub fn shedding() -> bool {
     SHEDDING.load(Ordering::Relaxed)
 }
 
+/// How many RSS readings the watchdog has published. Tests use it to check the
+/// sampling cadence.
+pub fn rss_samples() -> u64 {
+    RSS_SAMPLES.load(Ordering::Relaxed)
+}
+
 /// The last RSS the watchdog read, in bytes, or `None` before the first read.
 pub fn last_rss_bytes() -> Option<u64> {
     match LAST_RSS.load(Ordering::Relaxed) {
@@ -214,6 +222,7 @@ pub fn publish_tick(tick: &Tick) {
     SHEDDING.store(tick.shedding, Ordering::Relaxed);
     if let Some(rss) = tick.rss {
         LAST_RSS.store(rss.max(1), Ordering::Relaxed);
+        RSS_SAMPLES.fetch_add(1, Ordering::Relaxed);
     }
     if tick.events.is_empty() {
         return;

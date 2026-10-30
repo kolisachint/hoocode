@@ -1,6 +1,12 @@
- M3 ●  just talking                                                      $0.000
+
+▲ M3  just talking
+   ╰ ● LANDED · $0.000
 --- styles ---
-r0 c1-2 fg=#9b8cff
-r0 c4 fg=#b5bd68
-r0 c7-18 fg=#e5e5e7 bold
-r0 c73-78 fg=#989898
+r1 c0 fg=#9b8cff bold
+r1 c2-3 fg=#9b8cff bold
+r1 c6-17 fg=#e5e5e7 bold
+r2 c3 fg=#a8a8a8
+r2 c5 fg=#b5bd68
+r2 c7-12 fg=#b5bd68 bold
+r2 c13-15 fg=#989898
+r2 c16-21 fg=#a8a8a8

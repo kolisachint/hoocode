@@ -65,6 +65,14 @@ pub fn ui_beat() {
     LAST_BEAT.store(nanos.saturating_add(1), Ordering::SeqCst);
 }
 
+/// The UI loop is about to wait up to `wait` for input. Until that wait ends the
+/// UI counts as responsive, so an idle loop is not a stall (the emergency exit
+/// needs a stalled UI).
+pub fn ui_beat_waiting(wait: Duration) {
+    let nanos = (epoch().elapsed() + wait).as_nanos() as u64;
+    LAST_BEAT.store(nanos.saturating_add(1), Ordering::SeqCst);
+}
+
 /// Time since the UI last beat, or `None` if it never has.
 fn ui_silence(now: Instant) -> Option<Duration> {
     let beat = LAST_BEAT.load(Ordering::SeqCst);
@@ -237,6 +245,18 @@ mod tests {
             "a responsive UI handles it"
         );
         assert!(!emergency(Some(t0), late, true), "outside the 1 s window");
+    }
+
+    #[test]
+    fn a_ui_loop_inside_its_wait_is_not_stalled() {
+        let _guard = lock(&SERIAL);
+        ui_beat_waiting(Duration::from_secs(1));
+        let now = Instant::now();
+        assert_eq!(ui_silence(now), Some(Duration::ZERO), "inside the wait");
+        // Two seconds on, the wait is long over and the silence counts again.
+        let later = now + Duration::from_secs(2);
+        assert!(ui_silence(later).is_some_and(|s| s >= UI_STALL));
+        LAST_BEAT.store(0, Ordering::SeqCst);
     }
 
     /// The fast path: the hook fires from the input side while the UI thread is

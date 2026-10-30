@@ -26,6 +26,11 @@ pub mod status {
     pub const TODO: char = '○';
     /// Todo, as a string slice for span and row building.
     pub const TODO_STR: &str = "○";
+    /// Waiting for the user's approval: `◆` (amber). It ships in the font
+    /// (JetBrains Mono covers U+25C6), so the baseline holds.
+    pub const WAITING: char = '◆';
+    /// Waiting, as a string slice for span and row building.
+    pub const WAITING_STR: &str = "◆";
 }
 
 /// The running-mark animation: a pulse through the status set, driven by the
@@ -69,6 +74,7 @@ mod tests {
         assert_eq!(status::DONE_STR, "●");
         assert_eq!(status::RUNNING_STR, "◉");
         assert_eq!(status::TODO_STR, "○");
+        assert_eq!(status::WAITING_STR, "◆");
     }
 
     #[test]

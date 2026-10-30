@@ -1,35 +1,47 @@
- M1 ⊗  The parser test fails on the escaped-quote    2 steps  1✕   5.0s  $0.032
-       case. Find the cause, fix it, and check the screenshot of the failing
-       output too.
-        ⊗ Ran cargo test · read docs/screens/parser-failure.png
-            ⊗ 01 Shell  cargo test -p hoocode-…  → error[E0308]: mismatch…  HIT
-            The escaped-quote case still fails. The lexer builds the token from
-            a &str slice, but the parser expects an owned String, so the fix
-            has to change the token type in lex.rs before the test can compile.
-            I have not changed any file yet.
-            Error: Request failed: connection reset by peer
+▲ M1  The parser test fails on the escaped-quote case. Find the cause, fix it,
+      and check the screenshot of the failing output too.
+   ┊ ⊗ Ran cargo test · read docs/screens/parser-failure.png            2 calls
+   ┊   └ 01 Shell  cargo test -p hoocode-par…  → error[E0308]: mismatched…  HIT
+   ┊
+   ┊ The escaped-quote case still fails. The lexer builds the token from a &str
+   ┊ slice, but the parser expects an owned String, so the fix has to change
+   ┊ the token type in lex.rs before the test can compile.
+   ┊ I have not changed any file yet.
+   ╰ ⊗ DID NOT LAND · 2 steps · 1 hit · 5.0s
+     Request failed: connection reset by peer
 --- styles ---
-r0 c1-2 fg=#9b8cff
-r0 c4 fg=#d58181
-r0 c7-48 fg=#e5e5e7 bold
-r0 c53 fg=#e5e5e7
-r0 c54-59 fg=#989898
-r0 c62-63 fg=#a8a8a8
-r0 c67-70 fg=#989898
-r0 c73-78 fg=#989898
-r1 c7-75 fg=#e5e5e7 bold
-r2 c7-17 fg=#e5e5e7 bold
-r3 c8 fg=#d58181
-r3 c10-62 fg=#e5e5e7
-r4 c12 fg=#d58181
-r4 c14-16 fg=#f0c674 bold
-r4 c17-21 fg=#e5e5e7 bold
-r4 c24-45 fg=#e5e5e7
-r4 c47-50 fg=#989898
-r4 c51-72 fg=#e5e5e7
-r4 c76-78 fg=#d58181 bold inverse
-r5 c12-78 fg=#e5e5e7
-r6 c12-75 fg=#e5e5e7
-r7 c12-78 fg=#e5e5e7
-r8 c12-43 fg=#e5e5e7
-r9 c12-58 fg=#d58181
+r0 c0 fg=#9b8cff bold
+r0 c2-3 fg=#9b8cff bold
+r0 c6-77 fg=#e5e5e7 bold
+r1 c6-56 fg=#e5e5e7 bold
+r2 c3 fg=#a8a8a8
+r2 c5 fg=#d58181
+r2 c7-59 fg=#e5e5e7
+r2 c72-78 fg=#989898
+r3 c3 fg=#a8a8a8
+r3 c7 fg=#a8a8a8
+r3 c9-11 fg=#f0c674 bold
+r3 c12-16 fg=#e5e5e7 bold
+r3 c19-43 fg=#e5e5e7
+r3 c45-48 fg=#989898
+r3 c49-72 fg=#e5e5e7
+r3 c76-78 fg=#d58181 bold inverse
+r4 c3 fg=#a8a8a8
+r5 c3 fg=#a8a8a8
+r5 c5-78 fg=#e5e5e7
+r6 c3 fg=#a8a8a8
+r6 c5-75 fg=#e5e5e7
+r7 c3 fg=#a8a8a8
+r7 c5-57 fg=#e5e5e7
+r8 c3 fg=#a8a8a8
+r8 c5-36 fg=#e5e5e7
+r9 c3 fg=#a8a8a8
+r9 c5 fg=#d58181
+r9 c7-18 fg=#d58181 bold
+r9 c19-21 fg=#989898
+r9 c22-28 fg=#a8a8a8
+r9 c29-31 fg=#989898
+r9 c32-36 fg=#a8a8a8
+r9 c37-39 fg=#989898
+r9 c40-43 fg=#a8a8a8
+r10 c5-44 fg=#d58181

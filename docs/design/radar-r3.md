@@ -1,7 +1,7 @@
 # Radar R3: grouped flight log
 
 Date: 2026-10-29
-Status: **approved by the user (2026-10-29), not built.** Decisions are in
+Status: **built 2026-10-30** (approved by the user 2026-10-29). Decisions are in
 [decisions-2026-10-29.md](decisions-2026-10-29.md) (section "Radar (R3)").
 Supersedes the radar parts of [tool-calls-peek-radar.md](tool-calls-peek-radar.md) and
 [mission-control.md](mission-control.md) (flight log section).
@@ -177,7 +177,7 @@ file. Per [tui-activity.md](tui-activity.md), a Haiku subagent does the work.
 | `hoocode-code-tui-widgets/src/radar.rs` | Mission header `▲ Mn  prompt` (mark moves to the turn end). New batch row (settled and live), hit rows as `└` nested two columns, thinking as one dim line with no duration (`think_rows` wraps today), summary row for folded missions, turn-end row (reuse `landing_spans`, add the reason piece for `DID NOT LAND` and the `awaiting` text for WAITING). `FlightStats` gains ordered flight items and `awaiting`. `render_key` covers both. `chain_rows` and the row builders it uses are replaced. |
 | `hoocode-code-tui-widgets/src/trajectory.rs` | Reuse `landing_spans` (`:685`), `landing_line` (`:717`), `short_dur` (`:290`), `steps_text`, `hits_text`. No change to peek or full. |
 | `hoocode-code-tui-widgets/src/tool_chain_summary.rs` | Reuse `turn_phrase`. Do **not** change `chain_stats` in place: it writes `N failed` and line counts that peek may still use. Add a radar-only call-count formatter. Check callers first. |
-| `hoocode-code-tui-widgets/src/tool_chain.rs` | A chain closes only on assistant text (`speaking_ends_chain`, `:37`). Thinking is a lead-in to the next chain (`transcript.rs:1225`, `place_trace_in_chain`). R3 needs thinking to be a batch boundary in radar. Keep the chain model for peek. Radar reads the batch boundaries from the flight items below. `ends_in_hit` (`:303`) and the `waiting_row` use (`:365`) stay. |
+| `hoocode-code-tui-widgets/src/tool_chain.rs` | A chain closes only on assistant text (`speaking_ends_chain`, `:37`). Thinking is a lead-in to the next chain (`transcript.rs:1225`, `place_trace_in_chain`). R3 needs thinking to be a batch boundary in radar. Keep the chain model for peek. Radar reads the batch boundaries from the flight items below. `ends_in_hit` and the `waiting_row` use were removed in R3 (no mission chain draws rows now, and the mission header draws holds and hits). `radar_above` stays: peek reads it for the blank row before a message. |
 | `hoocode-code-tui-app/src/mode/transcript.rs` | Per mission, an ordered list of flight items: `Batch` (a range of chain entries), `Thinking` (gist; seconds stay for peek/full only), and the final answer. Built as blocks arrive, refreshed in `refresh_flight_marks` (`:409`). `MissionRange` (`:135-142`) holds it. `awaiting` comes from the mission's open chain's held block (`mission_mark` area, `:337`). `sync_radar_prose` (`:376`) already shows only the final answer once a mission ends (rule 6 holds today); R3 changes how it renders, not when. |
 | `hoocode-code-tui-app/src/comms_frame.rs` | No change. The foot label and the `CommsState` match stay as they are. |
 | `hoocode-code-tui-widgets/tests/it/radar.rs` | Rewrite the tests that assert the old one-row-per-mission chain: `:212` (chain row, flying and landed), `:255` (wide chain row wraps; becomes "a batch line never wraps"), `:283` (thinking wraps; becomes one line), `:312` (prose moves to the hit text). Keep the prompt-wrap, hit-indent, stepless and sub-step tests, adjusting their expected text. Add: batch split at thinking, folded summary, WAITING row, DID NOT LAND reason. |
@@ -216,22 +216,93 @@ R1 and R2 have no mockup file; they are described here from the design brief.
 
 ## Open questions
 
-Each has the recommended answer first.
+Each has the recommended answer first. **All four are answered (orchestrator,
+2026-10-30) and built.**
 
-1. **Time format on the turn-end row.** The mockup mixes `5.0s` and `42s`, `30s` and `1m 12s`.
-   Recommended: one rule, the same one the landing line uses in peek and full, so the two
-   views match. Alternative: a new radar format. The landing line is formatted by its caller,
-   so this is a formatter choice, not a layout one.
-2. **Hits on the live row.** The mockup's `◐ IN FLIGHT` row shows no hit count. Rule 4 says
-   the hit total appears on the turn-end row, and the live row is that row. Recommended: show
-   the count live as well (the row updates in place). Alternative: as the mockup, count only on
-   landing.
-3. **Subagent holds.** Should the parent's turn end read `◆ WAITING` when a subagent's child
-   is held? Recommended: yes, read from the Agent row's held child. Alternative: the Agent row
-   shows the hold and the turn end reads `◐ IN FLIGHT`. Needs an end-to-end trace before build.
-4. **Glyph `◆`.** Check font coverage for `◆` before the build. If it is missing, the
-   candidates are `◉` (used for the held step today) or `◇`. Recommended: `◆` only if the font
-   has it.
+1. **Time format on the turn-end row.** Answered: the landing line's formatter,
+   `format_duration_secs` (agent-session `format.rs`), for the live clock and the
+   landed time alike. So the mockup's `1m 12s` reads `1m12s`, and `5.0s` reads
+   `5.0s` under ten seconds, as the landing line prints it in peek and full.
+2. **Hits on the live row.** Answered: yes. The `◐ IN FLIGHT` row shows the hit count
+   as it climbs (the row updates in place).
+3. **Subagent holds.** Answered: yes. The turn end reads `◆ WAITING` when a subagent's
+   child is held. It is read from the Agent call's own sub-steps (`live::sub_steps`,
+   the same data `sub_waiting_row` read), so no plumbing beyond the widgets crate was
+   needed. The awaited call is that sub-step's tool and subject.
+4. **Glyph `◆`.** Answered: `◆` (U+25C6) is in the installed JetBrains Mono
+   (`fc-list ':charset=25c6'`), so it is used. `◇` (U+25C7) is covered too, but was not
+   needed. `◐` (U+25D0) is not covered there, which is why `◐` falls back. The radar keeps
+   `◐` for its flying rows as before (a separate issue, not changed here). The glyph is
+   `status::WAITING` in `hoocode-tui-glyphs`.
+
+## As built (2026-10-30)
+
+Deviations from the plan above, for the reviewer:
+
+- The mission header draws the whole block from `FlightStats` (`radar::mission_rows`).
+  Mission chains and the mission's message components draw nothing in radar, so the
+  rows no longer come from chain components.
+- `FlightStats.items` holds the batches' call handles, not snapshots, so a live batch and
+  its clock read the calls on every render. `FlightStats.awaiting` was not added:
+  WAITING is derived at render time from the same handles (`FlightStats::awaiting`), so
+  it can never be stale.
+- `FlightStats.chain` is gone; `FlightStats::calls()` gives the flat list.
+- Thinking outside a mission keeps its wrapped row (`think_rows`), as does prose outside
+  one. Only mission thinking is one truncated line.
+- DID NOT LAND shows the reason last, after the time, and drops tokens and cost, as the
+  mockup does, so the reason fits. Peek still shows all of them.
+- A stepless mission that landed clean still gets its turn-end row in radar (the rule is
+  mandatory). Peek keeps its silence (`land_mission` still returns false).
+- A held call that is not a subagent's shows as `◉ Tool subject  holding for clearance`
+  under its batch.
+- Thinking marks (2026-10-30): a message's thinking is a batch break only when it has text.
+  Each assistant message is recorded with its place (`ThinkingMark`): after the calls of the
+  open chain, else after the mission's last chain, else at the mission start. The flight
+  items are built from those marks, so the opening message's thinking comes first and the
+  final answer's thinking follows the last batch. The peek lead-in stays as it was.
+- An interrupted batch (a call the user cut short) reads dim `⊘`, never green `●`. A batch
+  with a failed call, or a failed call of a subagent under it, reads `⊗`.
+- The last batch of a flying mission reads live (`◐ … names`, clock from the batch's
+  earliest start) even between calls, so the row does not flip back and forth.
+- DID NOT LAND keeps its reason on the turn-end row when it fits. When it does not, the
+  reason goes on one continuation line under the row, indented to the text after `╰ `, with
+  no rail, and is cut only if still wider than the row.
+- `render_key` returns no key while anything reads live state (a flying mission, a call
+  still running or held, a live background job), and otherwise hashes only settled calls'
+  render stamps and flags. The answer is re-read only when its source message's revision
+  moves.
+- `landing_spans` skips an empty secs, tokens or cost piece. Peek always passes all three,
+  so its output is unchanged.
+- Review round (2026-10-30, R1 to R5):
+  - A flying mission has no render key, with or without a turn anchor. A subagent run
+    attached while the parent is idle has no `started`, so the old test missed it. A mission
+    ends for the answer only when it lands, or when a later one opens (a stepless mission
+    never lands before the next). `sync_radar_prose` takes no `flying` flag.
+  - A frozen call (past the live window, `trim_transcript_memory`) releases its result. It
+    keys on its revision (`frozen_rev`), and an agent call that is frozen still has no key.
+    `call_failed` reads `chain_entry().is_error`, the same as `call_rows`. Freezing keeps the
+    first error line (`frozen_error`), so `error_text` and the HIT snippet survive.
+  - The DID NOT LAND reason has two sources. `FlightStats.failure` holds the turn's final
+    error: `end_retry` sets it from the streak's last error (not on a cancel, cleared on a
+    success), and `PromptDone` with `Err` sets it from the error text
+    (`Transcript::set_mission_failure`). It outranks `FlightStats.reason`, which the message
+    gives and which goes when a retried attempt leaves the chat. Either reads as its first
+    non-empty line (`did_not_land_reason`, `radar_reason`).
+  - A message whose last content is a tool call is never the mission's answer
+    (`ends_in_tool_call`). Its prose came before the call.
+  - Toggling thinking re-adds the streaming message as `MessageStart` does: its mission and
+    its thinking mark are set, and it joins `assistant_components` once (guarded).
+    `toggle_thinking_block_visibility` has no unit test, because it needs a full session.
+  - Tests: `a_flying_mission_without_a_turn_anchor_has_no_key`,
+    `a_frozen_failed_call_keeps_its_hit_its_mark_and_its_key`, and in the transcript module
+    `a_did_not_land_reason_survives_its_failed_attempt_leaving_the_chat`,
+    `a_failed_turn_with_no_error_message_still_names_its_reason`,
+    `a_message_that_ends_on_a_call_is_not_the_answer`,
+    `the_answer_is_read_again_after_its_message_changes`,
+    `a_retry_drops_the_thinking_mark_of_the_attempt_it_takes_out`,
+    `the_opening_messages_thinking_comes_first`, and
+    `a_thinking_message_with_calls_and_no_text_splits_the_open_chain`.
+    `radar_reason_is_the_first_line_of_the_failure_trimmed` covers the one-line reason.
 
 ## Before and after
 
