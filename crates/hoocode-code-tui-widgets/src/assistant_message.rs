@@ -665,12 +665,22 @@ impl AssistantMessageComponent {
         self.rev
     }
 
-    /// Radar (R3): the message's answer lines, plain text, for the mission's
-    /// flight log. Empty when the message has no text.
+    /// Radar (R3): the message's answer for the mission's flight log, one
+    /// Markdown source per text block (radar renders it as peek and full do).
+    /// Empty when the message has no text.
     pub fn radar_answer(&self) -> Vec<String> {
         self.last_message
             .as_deref()
-            .map(radar_prose)
+            .map(|message| {
+                message
+                    .content
+                    .iter()
+                    .filter_map(|content| match content {
+                        Content::Text(t) if !t.text.trim().is_empty() => Some(t.text.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     }
 

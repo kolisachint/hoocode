@@ -314,6 +314,59 @@ fn the_answer_sits_on_the_rail_after_a_blank_rail_line() {
 }
 
 #[test]
+fn a_link_in_the_answer_keeps_its_hyperlink() {
+    let _g = lock();
+    let mut stats = landed(
+        1,
+        0,
+        vec![batch(vec![ok("Read", json!({"file_path": "a.rs"}))])],
+    );
+    stats.answer = vec!["See [the docs](https://example.com/docs).".to_string()];
+    let caps = |hyperlinks| hoocode_tui_images::TerminalCapabilities {
+        images: None,
+        true_color: true,
+        hyperlinks,
+    };
+    hoocode_tui_images::set_capabilities(caps(true));
+    let rows = mission_rows(1, "fix it", &stats, &Palette::default(), 80);
+    hoocode_tui_images::set_capabilities(caps(false));
+    let row = rows
+        .iter()
+        .find(|row| row.contains("the docs"))
+        .expect("the link row");
+    assert!(row.contains("\x1b]8;;https://example.com/docs"), "{row:?}");
+    assert!(strip(row).starts_with("   ┊ See "), "{row:?}");
+    assert_eq!(hoocode_tui_util::visible_width(row), 80, "{row:?}");
+    // The click finds the link under its text.
+    let column = strip(row).find("the docs").unwrap() as i64;
+    assert_eq!(
+        hoocode_tui_util::hyperlink_at(row, column).as_deref(),
+        Some("https://example.com/docs")
+    );
+}
+
+#[test]
+fn the_answer_renders_as_markdown_like_peek() {
+    let _g = lock();
+    let mut stats = landed(
+        1,
+        0,
+        vec![batch(vec![ok("Read", json!({"file_path": "a.rs"}))])],
+    );
+    stats.answer = vec!["It is **bold**.\n\n- one\n- two".to_string()];
+    let rows = rows("fix it", &stats, 80);
+    let text = rows.join("\n");
+    // The marks are drawn, not shown: no `**`, bullets as list items, and a
+    // blank rail row between the paragraph and the list.
+    assert!(text.contains("┊ It is bold."), "{rows:#?}");
+    assert!(!text.contains("**"), "{rows:#?}");
+    assert!(
+        text.contains("┊ - one") || text.contains("┊ • one"),
+        "{rows:#?}"
+    );
+}
+
+#[test]
 fn a_held_call_shows_its_hold_and_the_turn_end_reads_waiting() {
     let _g = lock();
     let held = running("Shell", json!({"command": "rm -rf target/"}));

@@ -6,7 +6,9 @@
    ┊ ● Edited src/config.rs · ran cargo test · read src/config.rs                                               3 calls
    ┊
    ┊ The overrides now apply before the file is parsed, so an override can set the parser's own options.
+   ┊
    ┊ The public API is unchanged. Config::load keeps its signature, and the two callers in hoocode-cli need no edits.
+   ┊
    ┊ The config tests pass: 40 of 40. The README's resolution order now reads environment first, then the file, then
    ┊ the defaults.
    ╰ ● LANDED · 3 steps · 0 hits · 11s · 23k tokens · $0.067
@@ -27,21 +29,27 @@ r6 c3 fg=#a8a8a8
 r7 c3 fg=#a8a8a8
 r7 c5-103 fg=#e5e5e7
 r8 c3 fg=#a8a8a8
-r8 c5-116 fg=#e5e5e7
 r9 c3 fg=#a8a8a8
-r9 c5-115 fg=#e5e5e7
+r9 c5-33 fg=#e5e5e7
+r9 c34-45 fg=#5cc8bb
+r9 c46-90 fg=#e5e5e7
+r9 c91-101 fg=#5cc8bb
+r9 c102-116 fg=#e5e5e7
 r10 c3 fg=#a8a8a8
-r10 c5-17 fg=#e5e5e7
 r11 c3 fg=#a8a8a8
-r11 c5 fg=#b5bd68
-r11 c7-12 fg=#b5bd68 bold
-r11 c13-15 fg=#989898
-r11 c16-22 fg=#a8a8a8
-r11 c23-25 fg=#989898
-r11 c26-31 fg=#a8a8a8
-r11 c32-34 fg=#989898
-r11 c35-37 fg=#a8a8a8
-r11 c38-40 fg=#989898
-r11 c41-50 fg=#a8a8a8
-r11 c51-53 fg=#989898
-r11 c54-59 fg=#a8a8a8
+r11 c5-115 fg=#e5e5e7
+r12 c3 fg=#a8a8a8
+r12 c5-17 fg=#e5e5e7
+r13 c3 fg=#a8a8a8
+r13 c5 fg=#b5bd68
+r13 c7-12 fg=#b5bd68 bold
+r13 c13-15 fg=#989898
+r13 c16-22 fg=#a8a8a8
+r13 c23-25 fg=#989898
+r13 c26-31 fg=#a8a8a8
+r13 c32-34 fg=#989898
+r13 c35-37 fg=#a8a8a8
+r13 c38-40 fg=#989898
+r13 c41-50 fg=#a8a8a8
+r13 c51-53 fg=#989898
+r13 c54-59 fg=#a8a8a8

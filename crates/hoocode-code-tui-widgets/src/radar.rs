@@ -20,6 +20,8 @@ use std::time::Instant;
 
 use hoocode_code_agent_session::format::format_duration_secs;
 use hoocode_code_subagents::live;
+use hoocode_code_tui_theme::get_markdown_theme;
+use hoocode_tui_components::Markdown;
 use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::core::style::Style;
 use hoocode_tui_ratatui::core::text::Span;
@@ -129,7 +131,8 @@ pub struct FlightStats {
     pub tokens: Option<String>,
     /// The mission's batches and thinking blocks, in story order.
     pub items: Vec<FlightItem>,
-    /// The final answer's plain lines; empty until the mission has ended.
+    /// The final answer's Markdown, one source per text block; empty until
+    /// the mission has ended.
     pub answer: Vec<String>,
     /// Why the turn did not land: the error it ended with, without `Error: `.
     pub reason: Option<String>,
@@ -759,15 +762,36 @@ fn thought_row(gist: &str, palette: &Palette, width: usize) -> String {
     cut_row(spans, width)
 }
 
-/// The final answer on the rail, whole: each line wraps, never cut.
-fn answer_rows(lines: &[String], palette: &Palette, width: usize) -> Vec<String> {
+/// The final answer on the rail, whole: its Markdown rendered as peek and
+/// full render it (headings, lists, code, emphasis), wrapped to the room
+/// after the rail, never cut.
+fn answer_rows(blocks: &[String], palette: &Palette, width: usize) -> Vec<String> {
+    if blocks.is_empty() {
+        return Vec::new();
+    }
     let room = width.saturating_sub(RAIL_WIDTH + 1).max(1);
-    lines
-        .iter()
-        .flat_map(|line| wrap_words(line, room, room))
-        .map(|piece| {
+    let text = blocks.join("\n\n");
+    let mut markdown = Markdown::new(text, 0, 0, get_markdown_theme(), None);
+    let room = u16::try_from(room).unwrap_or(u16::MAX);
+    markdown
+        .render(room)
+        .into_iter()
+        .map(|line| {
+            let line = line.trim_end();
+            // A ratatui buffer drops OSC 8, so a row with a link keeps the
+            // Markdown line as it is after the drawn rail: the link stays
+            // clickable. The line already fits the room after the rail.
+            if line.contains("\x1b]8;") {
+                // The drawn row ends at its last glyph: the rail's blank
+                // goes back on by hand.
+                let lead = crate::trajectory::draw_line(rail(palette), RAIL_WIDTH);
+                let lead_width = visible_width(&lead);
+                let gap = " ".repeat(RAIL_WIDTH.saturating_sub(lead_width));
+                let pad = width.saturating_sub(RAIL_WIDTH + visible_width(line));
+                return format!("{lead}{gap}{line}\x1b[0m{}", " ".repeat(pad));
+            }
             let mut spans = rail(palette);
-            spans.push(span(piece, palette.ink()));
+            spans.extend(with_ink(ansi_spans(line), palette));
             cut_row(spans, width)
         })
         .collect()
