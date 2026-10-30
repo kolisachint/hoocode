@@ -116,16 +116,43 @@ fn a_forced_io_starvation_fires_the_starvation_probe() {
     });
 }
 
-/// RSS is still read about once a second on the 250 ms tick. A sample every 10
-/// ticks (the old count, kept by mistake) would read it every 2.5 s: 1 in 4 s.
+/// RSS is sampled about once a second (every 4 ticks of 250 ms). This times how
+/// long four samples take, rather than counting samples in a fixed window. An
+/// oversleeping runner gets fewer samples in a fixed window, which would fail a
+/// count even when the cadence is right. Time to four samples still tells the
+/// 1 s cadence from the old 2.5 s one: four samples need about 3 s at 1 s each
+/// and at least 7.5 s at 2.5 s each.
 #[test]
 fn rss_is_sampled_about_once_a_second() {
+    const WANT: u64 = 4;
+    const POLL: Duration = Duration::from_millis(20);
+    const RSS_DEADLINE: Duration = Duration::from_secs(15);
+
     ensure_started();
     let before = hoocode_runtime::rss_samples();
-    std::thread::sleep(Duration::from_secs(4));
+    let start = Instant::now();
+    loop {
+        let taken = hoocode_runtime::rss_samples() - before;
+        if taken >= WANT {
+            break;
+        }
+        assert!(
+            start.elapsed() < RSS_DEADLINE,
+            "timed out after {:?} with only {taken} RSS samples; want {WANT}",
+            start.elapsed()
+        );
+        std::thread::sleep(POLL);
+    }
+    let elapsed = start.elapsed();
     let taken = hoocode_runtime::rss_samples() - before;
     assert!(
-        (3..=5).contains(&taken),
-        "{taken} RSS samples in 4 s; want about 4 (one a second)"
+        elapsed >= Duration::from_millis(2_500),
+        "{WANT} RSS samples took {elapsed:?} ({taken} taken); want at least 2.5 s, \
+         about 3 s at one a second"
+    );
+    assert!(
+        elapsed <= Duration::from_millis(7_000),
+        "{WANT} RSS samples took {elapsed:?} ({taken} taken); want at most 7 s, \
+         under the 7.5 s a 2.5 s cadence would need"
     );
 }

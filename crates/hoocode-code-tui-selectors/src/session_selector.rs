@@ -1038,20 +1038,38 @@ enum LoadMsg {
 /// (a panic, a dropped task) cannot leave the picker loading forever.
 #[derive(Clone)]
 pub struct LoadSink {
+    inner: Arc<LoadSinkInner>,
+}
+
+/// The state the clones share. It drops once, with the last clone, so the
+/// "loader stopped" result is sent exactly once and only then.
+struct LoadSinkInner {
     tx: Sender<LoadMsg>,
     scope: SessionScope,
     seq: Option<u64>,
     reason: LoadReason,
-    /// Shared by the clones: set once the load's result has been sent.
-    settled: Arc<AtomicBool>,
+    /// Set once the load's result has been sent.
+    settled: AtomicBool,
 }
 
 impl LoadSink {
+    fn new(tx: Sender<LoadMsg>, scope: SessionScope, seq: Option<u64>, reason: LoadReason) -> Self {
+        Self {
+            inner: Arc::new(LoadSinkInner {
+                tx,
+                scope,
+                seq,
+                reason,
+                settled: AtomicBool::new(false),
+            }),
+        }
+    }
+
     /// `onProgress(loaded, total)`.
     pub fn progress(&self, loaded: usize, total: usize) {
-        let _ = self.tx.send(LoadMsg::Progress {
-            scope: self.scope,
-            seq: self.seq,
+        let _ = self.inner.tx.send(LoadMsg::Progress {
+            scope: self.inner.scope,
+            seq: self.inner.seq,
             loaded,
             total,
         });
@@ -1059,23 +1077,22 @@ impl LoadSink {
 
     /// The loaded sessions, or why loading failed. Only the first call sends.
     pub fn finish(&self, result: Result<Vec<SessionInfo>, String>) {
-        if self.settled.swap(true, Ordering::SeqCst) {
+        if self.inner.settled.swap(true, Ordering::SeqCst) {
             return;
         }
-        let _ = self.tx.send(LoadMsg::Done {
-            scope: self.scope,
-            seq: self.seq,
-            reason: self.reason,
+        let _ = self.inner.tx.send(LoadMsg::Done {
+            scope: self.inner.scope,
+            seq: self.inner.seq,
+            reason: self.inner.reason,
             result,
         });
     }
 }
 
-impl Drop for LoadSink {
-    /// The last clone to go settles the load, if nothing settled it yet. With
-    /// other clones alive the load is still the loader's to finish.
+impl Drop for LoadSinkInner {
+    /// Runs once, when the last clone goes: settles the load if nothing did.
     fn drop(&mut self) {
-        if Arc::strong_count(&self.settled) == 1 && !self.settled.swap(true, Ordering::SeqCst) {
+        if !self.settled.swap(true, Ordering::SeqCst) {
             let _ = self.tx.send(LoadMsg::Done {
                 scope: self.scope,
                 seq: self.seq,
@@ -1330,13 +1347,7 @@ impl SessionSelectorComponent {
             header.scope = scope;
             header.set_loading(true);
         }
-        let sink = LoadSink {
-            tx: self.tx.clone(),
-            scope,
-            seq,
-            reason,
-            settled: Arc::new(AtomicBool::new(false)),
-        };
+        let sink = LoadSink::new(self.tx.clone(), scope, seq, reason);
         match scope {
             SessionScope::Current => (self.current_loader)(sink),
             SessionScope::All => (self.all_loader)(sink),
@@ -1599,13 +1610,7 @@ mod load_sink_tests {
 
     fn sink() -> (LoadSink, Receiver<LoadMsg>) {
         let (tx, rx) = channel();
-        let sink = LoadSink {
-            tx,
-            scope: SessionScope::Current,
-            seq: None,
-            reason: LoadReason::Initial,
-            settled: Arc::new(AtomicBool::new(false)),
-        };
+        let sink = LoadSink::new(tx, SessionScope::Current, None, LoadReason::Initial);
         (sink, rx)
     }
 

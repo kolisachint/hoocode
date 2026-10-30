@@ -54,11 +54,11 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | Ctrl+C fast path and emergency exit, the ESC timer (no thread on Unix), the UI heartbeat, the panic hook (restore, flush, log, chain) | `tui-terminal` (`interrupt.rs`, `stdin_hub.rs`, `panic_hook.rs`); the UI beats and sets the hook in `code-tui-app` `run`; the panic hook is installed in `code-tui-app` `mode/mod.rs` `install_panic_hook`; [concurrency.md](../design/concurrency.md) Phase 2 |
 | Shell pipes read by async tasks on `hoocode-io` (no thread per pipe) | `code-tool-bash` (`operations.rs`) |
 | Background shell jobs: `Shell` with `run_in_background`, the job registry and its logs, `ShellOutput`, `ShellKill` (opt-in, `enableBackgroundShell`) | `code-tool-bash` (`jobs.rs`, `job_tools.rs`; each job is a Shell-tab row, `set_task_rows`, T5.3; a job's stdout and stderr are its log file, with no pipe); the session's registry is built in `code-cli` `runtime.rs` (`background_job_registry`); completion notices reach the model in `code-agent-session` `services.rs` (`transform_context`) |
-| Turn logic, parallel tool calls, background placeholders (a tool's own `background_placeholder` first) | `agent-loop` |
+| Turn logic, parallel tool calls | `agent-loop` |
 | Session file format | `agent-session` (entries, storage), `code-session` (manager) |
 | Session file writes (queue caps, flush barriers, the `hoocode-session-io` thread) | `runtime` (`session_io.rs`); `code-session` `manager.rs` `persist` and `rewrite_file` queue the writes ([concurrency.md](../design/concurrency.md) Phase 3) |
 | Compaction | `agent-compaction` |
-| Subagents | `code-subagents` (see `docs/design/subagents.md`); a background Agent call's label and inbox record are made at its placeholder (`starting`) and bound by its execute, runs are named to the model as `explore#2 ("<description>")`, and records and labels are per session (continued after `--resume`) in `inbox.rs` (subagents.md §5g); a run's live activity for the UI (coalesced text deltas, the bounded tail, Agent call to run lookup) in `live.rs` ([tui-activity.md](../design/tui-activity.md) T3.1); a child with no screen asks its parent to clear a gated call over its pipes (`clearance_request` on stdout, `clearance_response` on stdin; the child's `ChildRelay`, the pool's relay hook, `instance::set_clearance_relay`) in `clearance.rs` |
+| Subagents | `code-subagents` (see `docs/design/subagents.md`); a run's live activity for the UI (coalesced text deltas, the bounded tail, Agent call to run lookup) in `live.rs` ([tui-activity.md](../design/tui-activity.md) T3.1); a child with no screen asks its parent to clear a gated call over its pipes (`clearance_request` on stdout, `clearance_response` on stdin; the child's `ChildRelay`, the pool's relay hook, `instance::set_clearance_relay`) in `clearance.rs` |
 | MCP client: connect to a server, list and call its tools, progress, caps, tool names, OAuth | `agent-mcp` (`hoocode-agent-mcp`; the only crate that depends on `rmcp`; `oauth.rs`; see [mcp.md](../design/mcp.md)) |
 | MCP servers in a session: start the trusted ones in the background, `mcp_<server>_<tool>` tool definitions, shutdown | `code-agent-session` `mcp.rs` (`McpHub`); attached in `code-cli` `runtime.rs` (`attach_mcp`, `mcp_wanted`); synced at each turn in `session.rs`; the MCP rows of the task panel (server state, in-flight calls, login and abort): `mcp_rows.rs` |
 | A model provider | `ai-provider-<name>`, registered in `ai-registry` |
@@ -86,7 +86,7 @@ in those tables; the generator keeps each crate's Status by name.
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
 | `home` | The user's home directory and `~` display: one policy for every hoocode crate | 11 | 153 / 0 | keep |
-| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 17 | 2197 / 1279 | keep |
+| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 17 | 2197 / 1306 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
@@ -165,9 +165,9 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 24384 / 7398 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 24412 / 7398 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 786 / 888 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9028 / 4789 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9033 / 4789 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2524 / 2142 | keep |
 | `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14381 / 9877 | keep |
 
@@ -175,7 +175,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 10443 / 7579 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 10466 / 7579 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 303 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 365 / 0 | keep |
 | `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 98 / 0 | keep |
