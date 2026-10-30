@@ -104,16 +104,71 @@ async fn subagent_inbox_lifecycle() {
         inbox.take_label("call_2", "explore", "a", None),
         "explore#5"
     );
-    // a call that ends without starting its reserved run leaves no ghost
+    // a call that ends without starting its reserved run leaves no ghost,
+    // and the reason says whether the run had started
     inbox.reserve_label("call_3", "plan", "p", None);
-    assert!(inbox
-        .settle_abandoned(None, "plan#1", "not started")
-        .is_some());
-    assert_eq!(
-        inbox.get("plan#1").unwrap().lifecycle,
-        TaskLifecycle::Failed
+    let rec = inbox.settle_abandoned(None, "plan#1").unwrap();
+    assert_eq!(rec.lifecycle, TaskLifecycle::Failed);
+    assert!(rec.error.as_deref().unwrap().starts_with("not started"));
+    assert!(inbox.settle_abandoned(None, "plan#1").is_none());
+    inbox.start("bound", "plan#2", "plan", "q");
+    let rec = inbox.settle_abandoned(None, "plan#2").unwrap();
+    assert!(
+        rec.error
+            .as_deref()
+            .unwrap()
+            .starts_with("stopped unexpectedly"),
+        "{rec:?}"
     );
-    assert!(inbox.settle_abandoned(None, "plan#1", "again").is_none());
+
+    // reservations are per session: the same call id in two sessions is two
+    // calls, and neither takes the other's handle
+    inbox.clear();
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.jsonl").to_string_lossy().into_owned();
+    let b = dir.path().join("b.jsonl").to_string_lossy().into_owned();
+    assert_eq!(
+        inbox
+            .reserve_label("call_0", "explore", "in a", Some(&a))
+            .as_deref(),
+        Some("explore#1")
+    );
+    assert_eq!(
+        inbox
+            .reserve_label("call_0", "explore", "in b", Some(&b))
+            .as_deref(),
+        Some("explore#1"),
+        "not refused as a repeat of a's call"
+    );
+    assert_eq!(
+        inbox.take_label("call_0", "explore", "in b", Some(&b)),
+        "explore#1"
+    );
+    assert_eq!(
+        inbox
+            .get_in(Some(&b), "explore#1")
+            .unwrap()
+            .description
+            .as_deref(),
+        Some("in b")
+    );
+    assert_eq!(
+        inbox
+            .get_in(Some(&a), "explore#1")
+            .unwrap()
+            .description
+            .as_deref(),
+        Some("in a"),
+        "a's reservation is untouched"
+    );
+    assert_eq!(
+        inbox.take_label("call_0", "explore", "in a", Some(&a)),
+        "explore#1"
+    );
+    assert_eq!(
+        inbox.take_label("call_0", "explore", "again", Some(&a)),
+        "explore#2"
+    );
 
     // a run carries its description, shown next to its label
     inbox.clear();

@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use hoocode_code_subagents::warm::*;
 
-const FAKE_CHILD: &str = r#"fail=0; exit_on_prompt=0; slow_prompt=0; hang_prompt=0; earlier=false
+const FAKE_CHILD: &str = r#"fail=0; exit_on_prompt=0; slow_prompt=0; hang_prompt=0; command_prompt=0; earlier=false
 for a in "$@"; do
-  case "$a" in --fail-prompt) fail=1;; --exit-on-prompt) exit_on_prompt=1;; --slow-prompt) slow_prompt=1;; --hang-prompt) hang_prompt=1;; --earlier-text) earlier=true;; esac
+  case "$a" in --fail-prompt) fail=1;; --exit-on-prompt) exit_on_prompt=1;; --slow-prompt) slow_prompt=1;; --hang-prompt) hang_prompt=1;; --command-prompt) command_prompt=1;; --earlier-text) earlier=true;; esac
 done
 gen=0; n=0; last=
 field() { printf '%s' "$line" | sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"; }
@@ -25,6 +25,11 @@ while IFS= read -r line; do
       [ "$exit_on_prompt" = 1 ] && exit 1
       [ "$slow_prompt" = 1 ] && sleep 1
       [ "$hang_prompt" = 1 ] && sleep 30
+      if [ "$command_prompt" = 1 ]; then
+        setsid sleep 300 & echo $! > "$(dirname "$0")/command.pid.tmp"
+        mv "$(dirname "$0")/command.pid.tmp" "$(dirname "$0")/command.pid"
+        sleep 30
+      fi
       n=$((n + 1)); last=$(field message)
       respond prompt ""
       echo '{"type":"agent_start"}'
@@ -551,4 +556,71 @@ async fn a_warm_background_run_reports_its_status_and_cancels_truthfully() {
     cold.dispose();
     warm.dispose().await;
     inbox.clear();
+}
+
+/// A warm worker's own commands (in process groups of their own) stop when
+/// its run is cancelled and the worker discarded.
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_warm_run_stops_the_workers_own_commands() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = make(dir.path(), &["--command-prompt"]);
+    let pid_file = dir.path().join("command.pid");
+    let watched = pid_file.clone();
+    let cancel = async move {
+        while !watched.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    };
+    let result = tokio::time::timeout(
+        Duration::from_secs(20),
+        pool.dispatch_cancellable("start a command", &opts(), None, cancel),
+    )
+    .await
+    .expect("cancelled, not left to run")
+    .unwrap();
+    assert_eq!(result, WarmRunResult::cancelled());
+    let sleep_pid: u32 = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let alive = |pid: u32| {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .ok()
+            .and_then(|s| {
+                s.rsplit_once(')')
+                    .and_then(|(_, r)| r.split_whitespace().next().map(String::from))
+            })
+            .is_some_and(|state| state != "Z" && state != "X")
+    };
+    for _ in 0..200 {
+        if !alive(sleep_pid) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(!alive(sleep_pid), "the worker's command was stopped");
+    pool.dispose().await;
+}
+
+/// A run asked to stop before it gets a worker never boots one: the spawn
+/// command here does not exist, so booting would fail the dispatch.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_stopped_before_its_worker_never_boots_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
+        spawn: Some(SpawnCommand {
+            executable: dir.path().join("no-such-worker"),
+            prefix_args: Vec::new(),
+        }),
+        ..WarmSubagentPoolOptions::new(dir.path())
+    });
+    let result = pool
+        .dispatch_cancellable("never runs", &opts(), None, std::future::ready(()))
+        .await
+        .expect("cancelled before booting, not a spawn error");
+    assert_eq!(result, WarmRunResult::cancelled());
+    assert_eq!(pool.load(), (0, 0));
+    pool.dispose().await;
 }

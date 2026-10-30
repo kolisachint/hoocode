@@ -513,9 +513,37 @@ and `a_warm_background_run_reports_its_status_and_cancels_truthfully` (`tests/it
 abandon cases in `subagent_inbox_lifecycle`, `parses_a_notice_that_names_its_description`
 (`hoocode-code-tui-widgets`), and the partial-id check in the OpenAI provider test.
 
+**Fix, fourth round (review of e1dbd81).**
+
+- Reservations are keyed by (session, call id): two sessions whose providers both
+  number calls `call_0` no longer take each other's handle.
+- **A cancel stops the subagent's own commands.** The Shell tool starts each command in
+  a process group of its own, which neither the cold pool's group kill nor the warm
+  client's stop reached: a cancelled run's `sleep 300` (or test suite) kept running.
+  `kill_process_tree` and the warm worker's `dispose` now first find every descendant of
+  the child (`/proc`, or `ps` off Linux) while the child still holds them, and SIGKILL
+  each one and the group it leads (never this process's own group). Chosen over a
+  SIGTERM handler in the child: the cold child's SIGTERM path writes a partial result,
+  which would settle a cancel as `partial`, and the RPC child has no handler at all.
+- Esc on the AgentOutput call ends a cancel's settle wait; the cancel itself stands.
+- A warm run asked to stop while waiting for its slot never boots a worker.
+- Seeding opens the session file and treats only `NotFound` as a new session; a
+  permission or I/O error is not remembered.
+- A run its Agent call abandoned says "not started" only if it never started, and
+  "stopped unexpectedly" otherwise.
+
+Tests added in this round: `a_cancel_stops_the_subagents_own_commands`,
+`esc_ends_a_cancels_wait_for_the_run_to_settle` (`tests/it/tools.rs`),
+`a_cancelled_warm_run_stops_the_workers_own_commands`,
+`a_run_stopped_before_its_worker_never_boots_one` (`tests/it/warm.rs`), and the
+two-session and abandon cases in `subagent_inbox_lifecycle`. Both command tests fail with
+the descendant kill removed.
+
 **Not proven.** We have no transcript of the user's session. The eval shows that the
 model could not tell its runs apart from anything it was shown. It does not show that a
-real model makes this mistake, or that it stops making it now.
+real model makes this mistake, or that it stops making it now. A command that left the
+child's tree entirely (double-forked and re-parented to init) before the cancel is not
+found.
 
 ## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 

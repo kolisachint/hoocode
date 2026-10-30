@@ -2348,3 +2348,134 @@ async fn changed_arguments_keep_the_reserved_handle_and_leave_no_ghost() {
     task_store().clear();
     subagent_inbox().clear();
 }
+
+/// Whether `pid` is a live (not zombie) process.
+#[cfg(target_os = "linux")]
+fn process_alive(pid: u32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| {
+            stat.rsplit_once(')')
+                .and_then(|(_, rest)| rest.split_whitespace().next().map(String::from))
+        })
+        .is_some_and(|state| state != "Z" && state != "X")
+}
+
+/// A cancelled subagent's own commands stop with it. The Shell tool runs each
+/// command in a process group of its own, which killing the child's group
+/// does not reach; the mock child starts such a command (`setsid sleep`).
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancel_stops_the_subagents_own_commands() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let script = cwd.join("mock-commander.sh");
+    let pid_file = cwd.join("command.pid");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nsetsid sleep 300 &\necho $! > \"{}.tmp\"\nmv \"{}.tmp\" \"{}\"\nsleep 30\n",
+            pid_file.display(),
+            pid_file.display(),
+            pid_file.display()
+        ),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let pool = install_pool(&cwd, script);
+    let dispatch = {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            pool.dispatch(
+                "audit",
+                DispatchOptions {
+                    force_agent: Some("explore".into()),
+                    task_id: Some("commander".into()),
+                    background: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+        })
+    };
+    wait_until_spawned(&pid_file).await;
+    let sleep_pid: u32 = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(process_alive(sleep_pid), "the command runs");
+    assert!(pool.cancel("commander"));
+    let result = dispatch.await.unwrap().unwrap();
+    assert_eq!(
+        result.result.and_then(|r| r.status),
+        Some(ResultStatus::Cancelled)
+    );
+    for _ in 0..200 {
+        if !process_alive(sleep_pid) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(
+        !process_alive(sleep_pid),
+        "the command was stopped with its subagent"
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+}
+
+/// Esc on the AgentOutput call ends a cancel's wait for the run to settle;
+/// the answer says the run has not stopped yet rather than guessing.
+#[tokio::test(flavor = "multi_thread")]
+async fn esc_ends_a_cancels_wait_for_the_run_to_settle() {
+    let _serial = SERIAL.lock().await;
+    isolate_agent_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().canonicalize().unwrap();
+    let pool = install_pool(&cwd, mock_child(&cwd, "unused", "complete", 0));
+    let inbox = subagent_inbox();
+    inbox.clear();
+    // Running in the inbox, not held by the cold pool, and nobody settles it.
+    inbox.start("stuck-run", "explore#1", "explore", "audit");
+    let signal = hoocode_ai_types::AbortSignal::new();
+    let esc = signal.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        esc.abort();
+    });
+    let output = create_task_output_tool_definition();
+    let (execute, tool_ctx) = (output.execute.clone(), ctx(&cwd));
+    let started = std::time::Instant::now();
+    let r = tokio::task::spawn_blocking(move || {
+        execute(
+            "o".into(),
+            json!({"task_id": "explore#1", "cancel": true}),
+            Some(signal),
+            None,
+            Some(&tool_ctx),
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(
+        text(&r).starts_with("Asked explore#1 (\"audit\") to stop; it has not stopped yet."),
+        "{}",
+        text(&r)
+    );
+    pool.dispose();
+    set_subagent_pool_for_testing(None);
+    inbox.clear();
+}

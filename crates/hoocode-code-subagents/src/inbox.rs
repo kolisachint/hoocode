@@ -157,11 +157,17 @@ static HANDLE: LazyLock<Regex> =
 
 /// The highest `type#N` per agent type in a session file, read line by line
 /// as bytes (a session file can be large, and is not guaranteed UTF-8 at
-/// every byte). Only lines with a `#` are searched. `None` when the file
-/// cannot be read: nothing is learned, and the caller tries again later.
+/// every byte). Only lines with a `#` are searched. A file that does not
+/// exist yet is a new session: no handles. `None` when the file exists but
+/// cannot be read (permissions, an I/O error): nothing is learned, and the
+/// caller tries again later.
 fn handles_in(path: &str) -> Option<HashMap<String, u64>> {
     use std::io::BufRead;
-    let file = std::fs::File::open(path).ok()?;
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Some(HashMap::new()),
+        Err(_) => return None,
+    };
     let mut reader = std::io::BufReader::new(file);
     let mut seen: HashMap<String, u64> = HashMap::new();
     let mut line = Vec::new();
@@ -231,9 +237,10 @@ struct InboxState {
     /// Sessions whose file was read for handles, and the highest number seen
     /// there per agent type: those handles belong to an earlier process.
     seeded: HashMap<String, HashMap<String, u64>>,
-    /// Labels given out at a background call's placeholder, by tool call id
-    /// (see [`SubagentInbox::reserve_label`]).
-    reserved_labels: HashMap<String, Reservation>,
+    /// Labels given out at a background call's placeholder, by (session, tool
+    /// call id): two sessions whose providers both number calls `call_0` must
+    /// not take each other's (see [`SubagentInbox::reserve_label`]).
+    reserved_labels: HashMap<(Scope, String), Reservation>,
     observed_pools: HashSet<u64>,
     /// (session, model-facing label `explore#4`) -> the task id whose dispatch
     /// dir holds its `session.jsonl`. A resumed run is bound to the original session.
@@ -421,16 +428,10 @@ impl SubagentInbox {
         if self.state().seeded.contains_key(session) {
             return;
         }
-        // No file yet: a new session, with no earlier handles to continue
-        // after. Unreadable: learn nothing and do not remember the session as
-        // read, so the next call tries again.
-        let seen = if std::path::Path::new(session).exists() {
-            match handles_in(session) {
-                Some(seen) => seen,
-                None => return,
-            }
-        } else {
-            HashMap::new()
+        // Unreadable: learn nothing and do not remember the session as read,
+        // so the next call tries again.
+        let Some(seen) = handles_in(session) else {
+            return;
         };
         let mut state = self.state();
         if state.seeded.contains_key(session) {
@@ -477,7 +478,8 @@ impl SubagentInbox {
     ) -> Option<String> {
         self.seed(session);
         let mut state = self.state();
-        if state.reserved_labels.contains_key(call_id) {
+        let call_key = (session.map(String::from), call_id.to_string());
+        if state.reserved_labels.contains_key(&call_key) {
             return None;
         }
         let label = state.next_label(session, agent_type);
@@ -503,7 +505,7 @@ impl SubagentInbox {
         );
         state.order.push(key);
         state.reserved_labels.insert(
-            call_id.to_string(),
+            call_key,
             Reservation {
                 description: description.to_string(),
                 session: session.map(String::from),
@@ -527,7 +529,8 @@ impl SubagentInbox {
         session: Option<&str>,
     ) -> String {
         let mut state = self.state();
-        if let Some(reservation) = state.reserved_labels.remove(call_id) {
+        let call_key = (session.map(String::from), call_id.to_string());
+        if let Some(reservation) = state.reserved_labels.remove(&call_key) {
             let description = description.trim();
             if reservation.description.trim() != description && !description.is_empty() {
                 let key = reserved_key(reservation.session.as_deref(), &reservation.label);
@@ -544,12 +547,10 @@ impl SubagentInbox {
     /// Settle `label`'s run in `session` as failed if it is still running
     /// (reserved or bound): its Agent call ended, or panicked, without
     /// starting or settling it. `None` when there is nothing to settle.
-    pub fn settle_abandoned(
-        &self,
-        session: Option<&str>,
-        label: &str,
-        reason: &str,
-    ) -> Option<InboxRecord> {
+    ///
+    /// The reason says which: "not started" for a run still reserved,
+    /// "stopped unexpectedly" for one its execute had started.
+    pub fn settle_abandoned(&self, session: Option<&str>, label: &str) -> Option<InboxRecord> {
         let rec = {
             let mut state = self.state();
             let key = state.key_in(session, label)?;
@@ -557,6 +558,11 @@ impl SubagentInbox {
             if rec.lifecycle != TaskLifecycle::Running {
                 return None;
             }
+            let reason = if rec.starting {
+                "not started: the Agent call ended before starting this run"
+            } else {
+                "stopped unexpectedly: the Agent call ended without a result for this run"
+            };
             InboxState::settle(rec, TaskLifecycle::Failed, reason);
             rec.clone()
         };

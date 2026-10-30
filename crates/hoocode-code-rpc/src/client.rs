@@ -268,6 +268,14 @@ impl RpcClient {
         }
     }
 
+    /// The child's process id, while it runs.
+    pub async fn pid(&self) -> Option<u32> {
+        match &self.child {
+            Some(child) => child.lock().await.id(),
+            None => None,
+        }
+    }
+
     /// `stop()`: terminate the process (SIGKILL after a second).
     pub async fn stop(&mut self) {
         *self.stdin.lock().await = None;

@@ -254,8 +254,15 @@ impl WarmSubagentWorker {
             })
     }
 
+    /// Stop the worker. Its Shell commands run in process groups of their
+    /// own, which stopping the worker does not reach, so they are killed
+    /// first, while the worker still holds them.
     pub async fn dispose(&mut self) {
         self.alive = false;
+        #[cfg(unix)]
+        if let Some(pid) = self.client.pid().await {
+            crate::lifeguard::kill_descendants(pid);
+        }
         self.client.stop().await;
     }
 
@@ -660,6 +667,15 @@ impl WarmSubagentPool {
         };
         // Held to the end of the dispatch, on every return path below.
         let _slot = slot;
+        // Asked to stop while waiting for the slot: never boot a worker for it.
+        let stopped = tokio::select! {
+            biased;
+            _ = &mut cancel => true,
+            _ = std::future::ready(()) => false,
+        };
+        if stopped {
+            return Ok(WarmRunResult::cancelled());
+        }
         let mut worker = self.acquire(options).await?;
         // The same base deadline the cold pool's lifeguard uses, for every type.
         // A flat 3 minutes killed `code-review` runs the cold pool allowed to run longer.

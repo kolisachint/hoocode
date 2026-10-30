@@ -173,9 +173,15 @@ fn now_ms() -> u64 {
 
 /// Kill a process group (the pool spawns children as group leaders), falling
 /// back to the single process (`killProcessTree`).
+///
+/// The child's own commands are reached too: the Shell tool starts each
+/// command in a process group of its own, which the child's group kill does
+/// not touch. Every descendant of the child is found first (while the child
+/// still holds them) and its group and itself are killed.
 pub fn kill_process_tree(pid: u32) {
     #[cfg(unix)]
     {
+        kill_descendants(pid);
         let pid = pid as libc::pid_t;
         // SAFETY: plain kill(2) calls.
         unsafe {
@@ -189,6 +195,76 @@ pub fn kill_process_tree(pid: u32) {
         let _ = std::process::Command::new("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .spawn();
+    }
+}
+
+/// (pid, parent pid, process group) of every process, from /proc.
+#[cfg(target_os = "linux")]
+fn process_table() -> Vec<(u32, u32, u32)> {
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    dir.filter_map(|entry| {
+        let pid: u32 = entry.ok()?.file_name().to_str()?.parse().ok()?;
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        // `pid (comm) state ppid pgrp …`; comm may hold spaces and parens.
+        let mut fields = stat.rsplit_once(')')?.1.split_whitespace();
+        let _state = fields.next()?;
+        let ppid = fields.next()?.parse().ok()?;
+        let pgid = fields.next()?.parse().ok()?;
+        Some((pid, ppid, pgid))
+    })
+    .collect()
+}
+
+/// (pid, parent pid, process group) of every process, from `ps`.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn process_table() -> Vec<(u32, u32, u32)> {
+    let Ok(out) = std::process::Command::new("ps")
+        .args(["-A", "-o", "pid=", "-o", "ppid=", "-o", "pgid="])
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut f = line.split_whitespace().map(|n| n.parse::<u32>().ok());
+            Some((f.next()??, f.next()??, f.next()??))
+        })
+        .collect()
+}
+
+/// SIGKILL every descendant of `pid`, and the process group of each one that
+/// leads a group of its own (a Shell command and whatever it started). Never
+/// this process's own group. Descendants are found before any is killed, so
+/// none is missed by being re-parented mid-walk.
+#[cfg(unix)]
+pub(crate) fn kill_descendants(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    let table = process_table();
+    let mut found = Vec::new();
+    let mut frontier = vec![pid];
+    while let Some(parent) = frontier.pop() {
+        for &(child, ppid, pgid) in &table {
+            if ppid == parent && child != pid && !found.iter().any(|&(p, _)| p == child) {
+                found.push((child, pgid));
+                frontier.push(child);
+            }
+        }
+    }
+    // SAFETY: getpgrp(2) has no failure mode or memory effects.
+    let own_group = unsafe { libc::getpgrp() } as u32;
+    for (child, pgid) in found {
+        // SAFETY: plain kill(2) calls on processes and groups below `pid`.
+        unsafe {
+            if pgid != pid && pgid != own_group && pgid != 0 {
+                libc::kill(-(pgid as libc::pid_t), libc::SIGKILL);
+            }
+            libc::kill(child as libc::pid_t, libc::SIGKILL);
+        }
     }
 }
 

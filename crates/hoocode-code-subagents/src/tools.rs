@@ -965,11 +965,7 @@ struct AbandonGuard {
 
 impl Drop for AbandonGuard {
     fn drop(&mut self) {
-        subagent_inbox().settle_abandoned(
-            self.session.as_deref(),
-            &self.label,
-            "not started: the Agent call ended without starting or settling this run",
-        );
+        subagent_inbox().settle_abandoned(self.session.as_deref(), &self.label);
     }
 }
 
@@ -1507,9 +1503,9 @@ pub fn create_task_output_tool_definition() -> ToolDefinition {
         background: false,
         background_when: None,
         background_placeholder: None,
-        execute: Arc::new(|_id, params, _signal, _on_update, ctx| {
+        execute: Arc::new(|_id, params, signal, _on_update, ctx| {
             let ctx = ctx.cloned();
-            block_on(execute_task_output(params, ctx))
+            block_on(execute_task_output(params, ctx, signal))
         }),
     }
 }
@@ -1517,13 +1513,14 @@ pub fn create_task_output_tool_definition() -> ToolDefinition {
 async fn execute_task_output(
     params: Value,
     ctx: Option<ToolContext>,
+    signal: Option<AbortSignal>,
 ) -> Result<AgentToolResult, ToolError> {
     let handle = str_param(&params, "task_id")
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(String::from);
     if params.get("cancel").and_then(Value::as_bool) == Some(true) {
-        return cancel_background_task(handle.as_deref(), &params, ctx.as_ref()).await;
+        return cancel_background_task(handle.as_deref(), &params, ctx.as_ref(), signal).await;
     }
     Ok(read_background_task(params, ctx, handle).await)
 }
@@ -1562,6 +1559,7 @@ async fn cancel_background_task(
     handle: Option<&str>,
     params: &Value,
     ctx: Option<&ToolContext>,
+    signal: Option<AbortSignal>,
 ) -> Result<AgentToolResult, ToolError> {
     if params.get("wait").and_then(Value::as_bool) == Some(true)
         || params.get("list").and_then(Value::as_bool) == Some(true)
@@ -1614,10 +1612,18 @@ async fn cancel_background_task(
     }
     // Not in the cold pool: its execute stops it on the flag. Report what it
     // settles as, not what we hope.
-    let settled = subagent_inbox()
-        .wait_for_in(Some(session.as_deref()), &rec.task_id, CANCEL_SETTLE_WAIT)
-        .await
-        .unwrap_or(rec);
+    // Esc on this AgentOutput call ends the wait (the cancel itself stands).
+    let run_id = rec.task_id.clone();
+    let wait = subagent_inbox().wait_for_in(Some(session.as_deref()), &run_id, CANCEL_SETTLE_WAIT);
+    let settled = tokio::select! {
+        settled = wait => settled.unwrap_or(rec),
+        _ = async {
+            match &signal {
+                Some(signal) => signal.cancelled().await,
+                None => std::future::pending().await,
+            }
+        } => subagent_inbox().get(&run_id).unwrap_or(rec),
+    };
     Ok(match settled.lifecycle {
         TaskLifecycle::Cancelled => cancelled(&settled),
         TaskLifecycle::Running => text_result(
