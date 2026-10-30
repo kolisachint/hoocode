@@ -232,7 +232,12 @@ impl Sampler {
             ),
             None => None,
         };
-        let shared = Arc::new(Mutex::new(Shared::default()));
+        // One read now, so the first `/perf` (or log line) has numbers at once;
+        // the thread then reads once a second.
+        let shared = Arc::new(Mutex::new(Shared {
+            proc: sample_process(),
+            stats: Stats::default(),
+        }));
         let (stop, stopped) = mpsc::channel();
         let thread_shared = Arc::clone(&shared);
         hoocode_runtime::spawn_named_thread("hoocode-perf", move || {
@@ -298,12 +303,17 @@ pub struct Perf {
 }
 
 impl Perf {
-    /// Start the sampler. If the log cannot be opened the sampler still runs
-    /// without it, and the error is left for [`Perf::take_startup_error`].
+    /// The sampler thread starts only with `--perf-log`. Without it, `/perf`
+    /// reads the process numbers once, inline ([`Perf::snapshot`]), and no thread
+    /// runs. If the log cannot be opened, the error is left for
+    /// [`Perf::take_startup_error`] and no thread starts.
     pub fn new(log: Option<&Path>) -> Self {
-        let (sampler, startup_error) = match Sampler::start(log) {
-            Ok(sampler) => (Some(sampler), None),
-            Err(error) => (Sampler::start(None).ok(), Some(error)),
+        let (sampler, startup_error) = match log {
+            None => (None, None),
+            Some(path) => match Sampler::start(Some(path)) {
+                Ok(sampler) => (Some(sampler), None),
+                Err(error) => (None, Some(error)),
+            },
         };
         Self {
             recorder: Rc::new(RefCell::new(Recorder::new())),
@@ -346,10 +356,15 @@ impl Perf {
         }
     }
 
-    /// The numbers `/perf` shows now.
+    /// The numbers `/perf` shows now. With `--perf-log` the sampler's last read;
+    /// otherwise one read taken here.
     pub fn snapshot(&self) -> Snapshot {
+        let proc = match &self.sampler {
+            Some(sampler) => sampler.proc(),
+            None => sample_process(),
+        };
         Snapshot {
-            proc: self.sampler.as_ref().map(Sampler::proc).unwrap_or_default(),
+            proc,
             stats: self.recorder.borrow().stats(),
         }
     }
@@ -608,12 +623,35 @@ mod tests {
     }
 
     #[test]
-    fn unopenable_log_is_reported_and_sampler_still_starts() {
+    fn no_log_means_no_sampler_thread_even_after_a_snapshot() {
+        let perf = Perf::new(None);
+        assert!(perf.sampler.is_none(), "no thread without --perf-log");
+        let snapshot = perf.snapshot();
+        assert!(
+            perf.sampler.is_none(),
+            "/perf reads inline and starts no thread"
+        );
+        // The one inline read gives process numbers.
+        assert!(
+            !cfg!(target_os = "linux") || snapshot.proc.threads.is_some_and(|count| count >= 1),
+            "{snapshot:?}"
+        );
+    }
+
+    #[test]
+    fn unopenable_log_is_reported_and_no_sampler_thread_starts() {
         let dir = tempfile::tempdir().expect("tempdir");
         let log = dir.path().join("missing-dir").join("perf.jsonl");
         let mut perf = Perf::new(Some(&log));
         let error = perf.take_startup_error().expect("error");
         assert!(error.contains("Failed to open perf log"), "{error}");
         assert_eq!(perf.take_startup_error(), None);
+        assert!(perf.sampler.is_none(), "no sampler after a failed log");
+        // /perf still shows numbers, read inline.
+        let snapshot = perf.snapshot();
+        assert!(
+            !cfg!(target_os = "linux") || snapshot.proc.threads.is_some_and(|count| count >= 1),
+            "{snapshot:?}"
+        );
     }
 }

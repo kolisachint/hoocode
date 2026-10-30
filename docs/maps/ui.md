@@ -262,7 +262,7 @@ A quit (Ctrl+D, Ctrl+C twice, `/quit`, or a fatal session error) with shell jobs
 | Submitting a prompt | `submit`, `prompt`, `prompt_with_images` |
 | Streaming render throttle | `schedule_streaming_render`, `run_streaming_render` |
 | Ctrl+Z | `hoocode-code-tui-app/src/suspend.rs` |
-| Perf counters (`/perf`, `--perf-log <file>`) | `hoocode-code-tui-app/src/perf.rs`. The loop calls `Perf::key_arrived` for each key (stamped by the terminal's reader thread: `TuiEvent::Input(data, arrived)`) and `Perf::end_iteration` after each frame. Frame build and write times come from `Tui::set_frame_observer`. The UI thread only records into fixed rings; a sampler thread (`hoocode-perf`) reads `/proc` and writes the log once a second. |
+| Perf counters (`/perf`, `--perf-log <file>`) | `hoocode-code-tui-app/src/perf.rs`. The loop calls `Perf::key_arrived` for each key (stamped by the terminal's reader thread: `TuiEvent::Input(data, arrived)`) and `Perf::end_iteration` after each frame. Frame build and write times come from `Tui::set_frame_observer`. The UI thread only records into fixed rings. A sampler thread (`hoocode-perf`) runs only with `--perf-log`: it reads `/proc` and writes the log once a second. Without the log, `/perf` reads `/proc` once, inline, and starts no thread. |
 
 ## TUI library (`tui-*`)
 

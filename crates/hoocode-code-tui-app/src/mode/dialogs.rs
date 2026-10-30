@@ -41,6 +41,7 @@ impl ActivePicker {
     pub(super) fn deadline(&self) -> Option<Instant> {
         match self {
             ActivePicker::Selector(s, _) => s.borrow().deadline(),
+            ActivePicker::Session(s) => s.borrow().deadline(),
             ActivePicker::Fork(s) => s.borrow().deadline(),
             ActivePicker::Tree(s, _) => s.borrow().deadline(),
             _ => None,

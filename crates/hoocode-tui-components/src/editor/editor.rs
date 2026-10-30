@@ -121,6 +121,8 @@ enum AutocompleteState {
 }
 
 const ATTACHMENT_AUTOCOMPLETE_DEBOUNCE: Duration = Duration::from_millis(20);
+/// How often the loop checks a background `@file` walk while one runs.
+const AUTOCOMPLETE_WALK_POLL: Duration = Duration::from_millis(40);
 
 /// `(?:^|[ \t])(?:@(?:"[^"]*|[^\s]*)|#[^\s]*)$`
 fn is_symbol_autocomplete_context(text: &str) -> bool {
@@ -1559,9 +1561,19 @@ impl Editor {
         self.run_autocomplete_request(force, explicit_tab);
     }
 
-    /// When a debounced autocomplete request is due, if one is waiting.
+    /// When a debounced autocomplete request is due, if one is waiting. While a
+    /// background `@file` walk runs, a short step, so its result is shown soon.
     pub fn autocomplete_deadline(&self) -> Option<Instant> {
-        self.pending_autocomplete.map(|(deadline, ..)| deadline)
+        let debounce = self.pending_autocomplete.map(|(deadline, ..)| deadline);
+        let walk = self
+            .autocomplete_provider
+            .as_ref()
+            .is_some_and(|provider| provider.walk_pending())
+            .then(|| Instant::now() + AUTOCOMPLETE_WALK_POLL);
+        match (debounce, walk) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     /// Run a debounced autocomplete request whose deadline has passed, or ask

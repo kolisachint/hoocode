@@ -160,6 +160,11 @@ const MAX_INPUT_PER_ITERATION: usize = 64;
 /// asked for (about 60 frames a second while text streams).
 const MIN_WAKE_FRAME_GAP: Duration = Duration::from_millis(16);
 
+/// The longest the loop sleeps with nothing due. Every wake that matters has its
+/// own deadline in `next_wakeup`. The rest are checked once per pass (extension
+/// requests, the update notice, the memory and stall flags) and can be this late.
+const IDLE_WAKE_CAP: Duration = Duration::from_secs(1);
+
 /// Most AppEvents taken from the channel in one loop pass. Leftovers wake the
 /// loop again, so keys and ticks run between batches.
 const MAX_APP_EVENTS_PER_ITERATION: usize = 256;
@@ -1249,7 +1254,7 @@ impl Mode {
 
     fn next_wakeup(&self) -> Duration {
         let now = Instant::now();
-        let mut wait = Duration::from_millis(250);
+        let mut wait = IDLE_WAKE_CAP;
         let deadlines = [
             self.notifications.borrow().deadline(),
             self.tips.deadline(),
@@ -1269,6 +1274,12 @@ impl Mode {
                 wait = wait.min(due.saturating_duration_since(now));
             }
         }
+        // The bash spinner advances in the pass too (its frame is not a loader above).
+        if let Some(bash) = &self.bash_component {
+            if let Some(due) = bash.borrow().next_deadline() {
+                wait = wait.min(due.saturating_duration_since(now));
+            }
+        }
         if let Some(deadline) = self.picker.as_ref().and_then(|p| p.deadline()) {
             wait = wait.min(deadline.saturating_duration_since(now));
         }
@@ -1280,7 +1291,25 @@ impl Mode {
                 wait = wait.min((at + STREAM_RENDER_THROTTLE).saturating_duration_since(now));
             }
         }
+        // The once-a-second tick in `run` (attached view, task panel, turn clock,
+        // ticking tool blocks): wake for it on time, not at the first pass after it.
+        if self.tool_tick_running() {
+            let due = self.last_tool_tick + Duration::from_secs(1);
+            wait = wait.min(due.saturating_duration_since(now));
+        }
         wait.max(Duration::from_millis(1))
+    }
+
+    /// Whether the once-a-second tick in `run` has anything to redraw.
+    fn tool_tick_running(&self) -> bool {
+        self.attached.is_some()
+            || self.task_panel.borrow().ticking()
+            || self.turn_cost_anchor.is_some()
+            || self
+                .transcript
+                .pending_tools
+                .values()
+                .any(|block| block.borrow().is_ticking())
     }
 
     /// `pollAutoTheme`: while the settings theme is `"auto"`, re-read the OS
@@ -1450,8 +1479,13 @@ impl Mode {
         self.dirty.set(false);
         let mut last_pass_end = Instant::now();
         loop {
-            hoocode_runtime::watchdog::ui_beat("ui-loop:wait");
-            let mut received = input.recv_timeout(self.next_wakeup());
+            let wait = self.next_wakeup();
+            // The wait may run up to `wait`, plus the frame-gap wait below. Silence
+            // inside it is not a stall, for the watchdog or the Ctrl+C emergency check.
+            let allowance = wait + MIN_WAKE_FRAME_GAP;
+            hoocode_runtime::watchdog::ui_beat_waiting("ui-loop:wait", allowance);
+            hoocode_tui_terminal::interrupt::ui_beat_waiting(allowance);
+            let mut received = input.recv_timeout(wait);
             // A wake from an app event does not repaint sooner than the frame
             // gap after the last pass. A key ends the wait at once.
             if matches!(received, Ok(TuiEvent::Wake)) {
@@ -1466,7 +1500,9 @@ impl Mode {
             // not while the loop sleeps.
             let iteration_started = Instant::now();
             // Heartbeat for the input thread's stall check (Ctrl+C twice = emergency exit).
+            // The wait is over, so the beat is back to real time for the watchdog too.
             hoocode_tui_terminal::interrupt::ui_beat();
+            hoocode_runtime::watchdog::ui_beat("ui-loop:input");
             match received {
                 Ok(event) => {
                     self.accept_terminal_event(event);

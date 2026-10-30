@@ -23,10 +23,12 @@ pub const UI_FOOTER_STALL: Duration = Duration::from_secs(2);
 pub const PROBE_PERIOD: Duration = Duration::from_secs(1);
 /// A probe that wakes this late means the io runtime is starved.
 pub const PROBE_LATE: Duration = Duration::from_millis(250);
-/// How often the watchdog thread checks the heartbeat.
-const TICK: Duration = Duration::from_millis(100);
-/// RSS is sampled every this many ticks (once a second).
-const SAMPLE_EVERY_TICKS: u32 = 10;
+/// How often the watchdog thread checks the heartbeat. A stall is seen 0 to
+/// this late (the log line still waits for [`UI_LOG_STALL`]).
+const TICK: Duration = Duration::from_millis(250);
+/// RSS is sampled every this many ticks: once a second at [`TICK`]. Keep
+/// `TICK * SAMPLE_EVERY_TICKS` at one second, or sampling gets slower.
+const SAMPLE_EVERY_TICKS: u32 = 4;
 
 /// The watchdog's timings as one value, so a test can run the real thread
 /// with short thresholds. [`Thresholds::default`] is the production set.
@@ -88,6 +90,16 @@ fn report(line: &str) {
 pub fn ui_beat(phase: &'static str) {
     *lock(&BEAT) = Some(Beat {
         at: Instant::now(),
+        phase,
+    });
+}
+
+/// The UI loop is about to wait up to `wait` for input. Silence inside that
+/// wait is not a stall, so the beat counts from the end of the wait. A stuck
+/// loop still shows: its silence starts from that point.
+pub fn ui_beat_waiting(phase: &'static str, wait: Duration) {
+    *lock(&BEAT) = Some(Beat {
+        at: Instant::now() + wait,
         phase,
     });
 }

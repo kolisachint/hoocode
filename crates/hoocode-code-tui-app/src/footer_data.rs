@@ -16,7 +16,9 @@ use hoocode_code_paths::git_branch::{find_git_paths, read_branch_from_head, GitP
 type Callback = Arc<dyn Fn() + Send + Sync>;
 
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(500);
-const WATCH_POLL: Duration = Duration::from_millis(100);
+/// Poll interval for the HEAD and ref files. Once a second keeps idle wakeups low
+/// (perf-short-sessions.md, P2c); a branch change shows up within about a second.
+const WATCH_POLL: Duration = Duration::from_secs(1);
 
 struct State {
     cwd: PathBuf,
@@ -31,6 +33,8 @@ struct State {
     subagent_enabled: bool,
     /// The hull paint (`/color`, M8e5); `None` is unpainted.
     hull_paint: Option<crate::hull_paint::HullPaint>,
+    /// How often the git HEAD watcher polls.
+    git_poll: Duration,
 }
 
 struct Inner {
@@ -47,6 +51,12 @@ pub struct FooterDataProvider {
 
 impl FooterDataProvider {
     pub fn new(cwd: impl Into<PathBuf>) -> Self {
+        Self::with_poll_interval(cwd, WATCH_POLL)
+    }
+
+    /// [`FooterDataProvider::new`] with the git HEAD poll interval given. Tests
+    /// use a short one; the app uses [`WATCH_POLL`].
+    pub fn with_poll_interval(cwd: impl Into<PathBuf>, poll: Duration) -> Self {
         let cwd = cwd.into();
         let provider = Self {
             inner: Arc::new(Inner {
@@ -61,6 +71,7 @@ impl FooterDataProvider {
                     active_mode: "build".into(),
                     subagent_enabled: false,
                     hull_paint: None,
+                    git_poll: poll,
                 }),
                 generation: AtomicU64::new(0),
             }),
@@ -210,6 +221,7 @@ impl FooterDataProvider {
     }
 
     fn setup_git_watcher(&self) {
+        let poll = self.state().git_poll;
         let generation = self.inner.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let Some(paths) = self.state().git_paths.clone() else {
             return;
@@ -234,7 +246,7 @@ impl FooterDataProvider {
         hoocode_runtime::spawn_bg(async move {
             let mut pending: Option<Instant> = None;
             loop {
-                tokio::time::sleep(WATCH_POLL).await;
+                tokio::time::sleep(poll).await;
                 let Some(inner) = weak.upgrade() else { return };
                 if inner.generation.load(Ordering::SeqCst) != generation {
                     return;

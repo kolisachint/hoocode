@@ -48,6 +48,8 @@ pub enum SessionScope {
 
 /// Branches that name no particular piece of work.
 const DEFAULT_BRANCHES: [&str; 4] = ["main", "master", "trunk", "develop"];
+/// How often the loop polls a session list that is still loading.
+const LOAD_POLL: Duration = Duration::from_millis(40);
 
 /// `formatSessionDate`: the age of `date` in one short unit.
 pub fn format_session_date(date: DateTime<Utc>, now: DateTime<Utc>) -> String {
@@ -1188,6 +1190,15 @@ impl SessionSelectorComponent {
     /// The list (tests drive it directly, as the pin's do).
     pub fn session_list(&self) -> Rc<RefCell<SessionList>> {
         self.session_list.clone()
+    }
+
+    /// When `poll` next has work: a short step while a load runs (its results
+    /// arrive on a channel that does not wake the loop), else the status expiry.
+    pub fn deadline(&self) -> Option<Instant> {
+        if self.current_loading || self.all_loading {
+            return Some(Instant::now() + LOAD_POLL);
+        }
+        self.header.borrow().status_deadline
     }
 
     /// Apply loads that finished and expire the timed status. `true` when

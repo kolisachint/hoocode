@@ -202,3 +202,13 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.fancy-regex]
 opt-level = 3
+
+# Shipped binaries (.github/workflows/binaries.yml builds --release). Short
+# sessions are the target (docs/design/perf-short-sessions.md, P1): strip is
+# about 14 MiB smaller; thin LTO and one codegen unit trade build time for CPU.
+# panic stays "unwind": run_blocking turns a panic into Err through JoinError
+# (crates/hoocode-runtime/src/runtime.rs), and a tool panic must not abort.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

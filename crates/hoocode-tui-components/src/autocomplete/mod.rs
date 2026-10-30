@@ -92,6 +92,13 @@ pub trait AutocompleteProvider {
         false
     }
 
+    /// Whether a background computation is running, so the editor must poll
+    /// [`take_ready`](Self::take_ready) soon. Providers with nothing in the
+    /// background say `false`.
+    fn walk_pending(&self) -> bool {
+        false
+    }
+
     /// Get autocomplete suggestions for the current text/cursor position.
     fn get_suggestions(
         &self,
@@ -504,6 +511,12 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
         self.file_search
             .as_ref()
             .is_some_and(FileSearch::take_completed)
+    }
+
+    fn walk_pending(&self) -> bool {
+        self.file_search
+            .as_ref()
+            .is_some_and(FileSearch::walk_pending)
     }
 
     fn get_suggestions(

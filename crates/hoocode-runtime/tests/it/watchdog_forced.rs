@@ -115,3 +115,17 @@ fn a_forced_io_starvation_fires_the_starvation_probe() {
         lines_containing("io runtime starved").len() > before
     });
 }
+
+/// RSS is still read about once a second on the 250 ms tick. A sample every 10
+/// ticks (the old count, kept by mistake) would read it every 2.5 s: 1 in 4 s.
+#[test]
+fn rss_is_sampled_about_once_a_second() {
+    ensure_started();
+    let before = hoocode_runtime::rss_samples();
+    std::thread::sleep(Duration::from_secs(4));
+    let taken = hoocode_runtime::rss_samples() - before;
+    assert!(
+        (3..=5).contains(&taken),
+        "{taken} RSS samples in 4 s; want about 4 (one a second)"
+    );
+}
