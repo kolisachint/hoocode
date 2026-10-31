@@ -4,7 +4,6 @@
       Update the configuration section of the README so the order of resolution
       matches the code.
       Run the config tests afterwards and report anything that fails.
-   ┊ ✻ The loader parses the file first and reads the environment after, so an…
    ┊ ● Edited src/config.rs · ran cargo test · read src/config.rs       3 calls
    ┊
    ┊ The overrides now apply before the file is parsed, so an override can set
@@ -26,40 +25,38 @@ r3 c6-78 fg=#e5e5e7 bold
 r4 c6-22 fg=#e5e5e7 bold
 r5 c6-68 fg=#e5e5e7 bold
 r6 c3 fg=#a8a8a8
-r6 c5-77 fg=#989898
+r6 c5 fg=#b5bd68
+r6 c7-64 fg=#e5e5e7
+r6 c72-78 fg=#989898
 r7 c3 fg=#a8a8a8
-r7 c5 fg=#b5bd68
-r7 c7-64 fg=#e5e5e7
-r7 c72-78 fg=#989898
 r8 c3 fg=#a8a8a8
+r8 c5-77 fg=#e5e5e7
 r9 c3 fg=#a8a8a8
-r9 c5-77 fg=#e5e5e7
+r9 c5-29 fg=#e5e5e7
 r10 c3 fg=#a8a8a8
-r10 c5-29 fg=#e5e5e7
 r11 c3 fg=#a8a8a8
+r11 c5-33 fg=#e5e5e7
+r11 c34-45 fg=#5cc8bb
+r11 c46-78 fg=#e5e5e7
 r12 c3 fg=#a8a8a8
-r12 c5-33 fg=#e5e5e7
-r12 c34-45 fg=#5cc8bb
-r12 c46-78 fg=#e5e5e7
+r12 c5-15 fg=#e5e5e7
+r12 c16-26 fg=#5cc8bb
+r12 c27-41 fg=#e5e5e7
 r13 c3 fg=#a8a8a8
-r13 c5-15 fg=#e5e5e7
-r13 c16-26 fg=#5cc8bb
-r13 c27-41 fg=#e5e5e7
 r14 c3 fg=#a8a8a8
+r14 c5-76 fg=#e5e5e7
 r15 c3 fg=#a8a8a8
-r15 c5-76 fg=#e5e5e7
+r15 c5-56 fg=#e5e5e7
 r16 c3 fg=#a8a8a8
-r16 c5-56 fg=#e5e5e7
-r17 c3 fg=#a8a8a8
-r17 c5 fg=#b5bd68
-r17 c7-12 fg=#b5bd68 bold
-r17 c13-15 fg=#989898
-r17 c16-22 fg=#a8a8a8
-r17 c23-25 fg=#989898
-r17 c26-31 fg=#a8a8a8
-r17 c32-34 fg=#989898
-r17 c35-37 fg=#a8a8a8
-r17 c38-40 fg=#989898
-r17 c41-50 fg=#a8a8a8
-r17 c51-53 fg=#989898
-r17 c54-59 fg=#a8a8a8
+r16 c5 fg=#b5bd68
+r16 c7-12 fg=#b5bd68 bold
+r16 c13-15 fg=#989898
+r16 c16-22 fg=#a8a8a8
+r16 c23-25 fg=#989898
+r16 c26-31 fg=#a8a8a8
+r16 c32-34 fg=#989898
+r16 c35-37 fg=#a8a8a8
+r16 c38-40 fg=#989898
+r16 c41-50 fg=#a8a8a8
+r16 c51-53 fg=#989898
+r16 c54-59 fg=#a8a8a8

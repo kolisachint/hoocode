@@ -210,7 +210,7 @@ fn a_batch_line_never_wraps_however_many_calls_it_holds() {
 }
 
 #[test]
-fn a_batch_splits_at_a_thinking_block_and_the_thought_reads_on_one_line() {
+fn a_batch_splits_at_a_thinking_block_and_radar_hides_the_thought() {
     let _g = lock();
     let gist = "The helper is 13 lines and the wrap point is at the word boundary every time";
     let stats = landed(
@@ -223,21 +223,14 @@ fn a_batch_splits_at_a_thinking_block_and_the_thought_reads_on_one_line() {
         ],
     );
     let rows = rows("fix it", &stats, 50);
-    let first = rows
-        .iter()
-        .position(|row| row.starts_with("   ┊ ●"))
-        .unwrap();
-    let thought = rows
-        .iter()
-        .position(|row| row.starts_with("   ┊ ✻"))
-        .unwrap();
-    let second = rows
-        .iter()
-        .rposition(|row| row.starts_with("   ┊ ●"))
-        .unwrap();
-    assert!(first < thought && thought < second, "{rows:#?}");
-    assert!(rows[thought].starts_with("   ┊ ✻ The helper"), "{rows:#?}");
-    assert!(rows[thought].chars().count() <= 49, "{rows:#?}");
+    let batches = rows.iter().filter(|row| row.starts_with("   ┊ ●")).count();
+    assert_eq!(batches, 2, "the thought still splits the batch: {rows:#?}");
+    assert!(
+        !rows
+            .iter()
+            .any(|row| row.contains('✻') || row.contains("The helper")),
+        "radar shows no thinking: {rows:#?}"
+    );
 }
 
 #[test]

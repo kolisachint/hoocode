@@ -37,6 +37,9 @@ pub enum Error {
     /// An entry of `scopedModels` that does not parse. It is skipped, and the
     /// message names its position.
     InvalidScopedModel(String),
+    /// A setting with a value it does not accept. The value is ignored, and
+    /// the message names the setting.
+    InvalidValue(String),
 }
 
 impl fmt::Display for Error {
@@ -46,7 +49,7 @@ impl fmt::Display for Error {
             Self::Json(e) => e.fmt(f),
             Self::NotAnObject => f.write_str("settings must be a JSON object"),
             Self::Locked(path) => write!(f, "Lock file is already being held: {}", path.display()),
-            Self::InvalidScopedModel(message) => f.write_str(message),
+            Self::InvalidScopedModel(message) | Self::InvalidValue(message) => f.write_str(message),
         }
     }
 }

@@ -797,6 +797,13 @@ fn create_runtime(
     }
     let registry = load_registry(auth);
     let mut diagnostics = Diagnostics::new();
+    // A bad setting value is ignored; say so at startup instead of silently.
+    for e in settings.drain_errors() {
+        diagnostics.push((
+            DiagnosticKind::Warning,
+            format!("{} settings: {}", e.scope.as_str(), e.error),
+        ));
+    }
     let scoped_models = resolve_run_scope(&settings, &registry, auth.as_ref(), &mut diagnostics);
     let has_existing_session = !session_manager.build_context().messages.is_empty();
     let options = model_options(

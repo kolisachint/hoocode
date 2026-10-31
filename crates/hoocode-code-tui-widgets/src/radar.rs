@@ -3,8 +3,8 @@
 //! A mission is one block on a `┊` rail, drawn by its header from the
 //! mission's [`FlightStats`]: the header `▲ Mn  prompt`; the body in story
 //! order (one line per tool batch, the calls that failed nested under it as
-//! `└ NN Tool  subject  → snippet  HIT`, each thinking block as one dim
-//! `✻ gist` line); the final answer on the rail; and the turn-end row closing
+//! `└ NN Tool  subject  → snippet  HIT`; a thinking block splits batches but
+//! draws nothing: radar hides thinking, peek and full show it); the final answer on the rail; and the turn-end row closing
 //! the rail with `╰`. The turn end reads the landing line's words and stats
 //! (`● LANDED`, `⊗ DID NOT LAND`, `⊘ ABORTED`), `◐ IN FLIGHT` while the
 //! mission flies, or `◆ WAITING` while a call waits for the user's approval.
@@ -755,13 +755,6 @@ fn satellite_row(
     two_part_row(stem, run, width)
 }
 
-/// A thinking block: one dim line, `✻ gist`, cut to the width. No duration.
-fn thought_row(gist: &str, palette: &Palette, width: usize) -> String {
-    let mut spans = rail(palette);
-    spans.push(span(format!("✻ {gist}"), palette.dim()));
-    cut_row(spans, width)
-}
-
 /// The final answer on the rail, whole: its Markdown rendered as peek and
 /// full render it (headings, lists, code, emphasis), wrapped to the room
 /// after the rail, never cut.
@@ -899,7 +892,8 @@ fn body_rows(stats: &FlightStats, palette: &Palette, width: usize) -> Vec<String
                         rows.extend(call_rows(block, step, palette, width));
                     }
                 }
-                FlightItem::Thinking(gist) => rows.push(thought_row(gist, palette, width)),
+                // Radar hides thinking (2026-10-31); the block still splits batches.
+                FlightItem::Thinking(_) => {}
             }
         }
     }

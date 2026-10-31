@@ -141,7 +141,7 @@ fn uses_adaptive_thinking_not_enabled_for_copilot_claude_opus_4_8() {
     );
     assert_eq!(
         params["thinking"],
-        json!({"type": "adaptive", "display": "omitted"})
+        json!({"type": "adaptive", "display": "summarized"})
     );
     assert_eq!(params["output_config"], json!({"effort": "high"}));
 }

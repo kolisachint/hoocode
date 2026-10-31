@@ -937,3 +937,32 @@ fn retry_max_retries_defaults_to_five() {
     let defaults = SettingsManager::in_memory(serde_json::Map::new());
     assert_eq!(defaults.retry_settings().max_retries, 5);
 }
+
+/// 2026-10-31: `"thinkingDisplay": "summarised"` was silently ignored, so
+/// Opus 5 fell back to `omitted` and every thinking block came back empty.
+#[test]
+fn thinking_display_reads_both_spellings_and_reports_a_bad_value() {
+    for (value, want) in [
+        ("summarized", Some(ThinkingDisplay::Summarized)),
+        ("summarised", Some(ThinkingDisplay::Summarized)),
+        ("omitted", Some(ThinkingDisplay::Omitted)),
+    ] {
+        let dirs = Dirs::new();
+        write(&dirs.global_path(), &json!({"thinkingDisplay": value}));
+        let mut manager = dirs.manager();
+        assert_eq!(manager.thinking_display(), want, "{value}");
+        assert!(manager.drain_errors().is_empty(), "{value}");
+    }
+
+    let dirs = Dirs::new();
+    write(&dirs.project_path(), &json!({"thinkingDisplay": "full"}));
+    let mut manager = dirs.manager();
+    assert_eq!(manager.thinking_display(), None);
+    let errors = manager.drain_errors();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].scope, SettingsScope::Project);
+    assert!(
+        matches!(&errors[0].error, Error::InvalidValue(m) if m.contains("thinkingDisplay \"full\"")),
+        "{errors:?}"
+    );
+}
