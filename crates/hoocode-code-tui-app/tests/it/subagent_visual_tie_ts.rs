@@ -280,7 +280,7 @@ fn the_header_shows_the_wall_clock_span_not_the_sum_of_concurrent_runs() {
         );
     }
     advance_clock_for_tests(30_000);
-    let header = strip(&render(&mut panel)[0]);
+    let header = strip(&render(&mut panel).join("\n"));
     // Two runs over 30s of wall time is 30s, not 1m00s.
     assert!(header.contains("30s"), "{header}");
     assert!(!header.contains("1m00s"), "{header}");
@@ -401,8 +401,8 @@ fn nests_a_linked_run_under_its_plan_item_in_the_flat_lens_and_counts_it() {
     assert!(lines[run_idx].contains("[explore]"));
     assert!(lines[run_idx].contains("⋯ CodeSearch"));
     assert!(!lines.iter().any(|l| l.contains("free-floating run")));
-    // The header counts what the lens shows: todo + linked run + pending todo.
-    assert!(lines[0].contains("0/3"), "{}", lines[0]);
+    // The tab strip (row 1) counts what the lens shows: todo + linked run + pending todo.
+    assert!(lines[1].contains("0/3"), "{}", lines[1]);
 
     // The run still appears in the subagents lens.
     panel.set_view(TaskPanelView::Subagents);

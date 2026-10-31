@@ -25,6 +25,7 @@ mod scroll_bar;
 mod scroll_view_keys;
 mod session_chip;
 mod stale_todo_settle_ts;
+mod startup_details;
 mod startup_progress;
 mod subagent_footer_indicator_ts;
 mod subagent_spawn_audit_ts;

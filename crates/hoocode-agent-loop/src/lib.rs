@@ -203,10 +203,18 @@ async fn run_loop_with_background(
         let mut has_more_tool_calls = true;
 
         while has_more_tool_calls || !pending.is_empty() || background.has_work() {
-            // Nothing to act on, but background work is in flight: wait for it.
+            // Nothing to act on, but background work is in flight: wait for
+            // it, or for the user. A steering or follow-up message queued
+            // meanwhile starts the next turn at once; the background work
+            // keeps running and its result arrives later.
             if !has_more_tool_calls && pending.is_empty() {
-                background.wait_for_next().await;
+                wait_for_background_or_message(config, background).await;
                 pending = collect_pending_messages(context, config, background)?;
+                if pending.is_empty() {
+                    if let Some(get) = &config.get_follow_up_messages {
+                        pending = get()?;
+                    }
+                }
                 if pending.is_empty() {
                     continue;
                 }
@@ -311,6 +319,26 @@ async fn run_loop_with_background(
     }
 
     Ok(())
+}
+
+/// Resolves when a background task settles, or when a message is queued
+/// (`message_queued`). Without the notify it waits for background work only.
+async fn wait_for_background_or_message(
+    config: &AgentLoopConfig,
+    background: &BackgroundTaskManager,
+) {
+    match &config.message_queued {
+        Some(queued) => {
+            let queued = queued.notified();
+            tokio::pin!(queued);
+            queued.as_mut().enable();
+            tokio::select! {
+                _ = background.wait_for_next() => {}
+                _ = queued => {}
+            }
+        }
+        None => background.wait_for_next().await,
+    }
 }
 
 /// Finished background results first, then app-provided steering messages.

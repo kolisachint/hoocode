@@ -1,4 +1,4 @@
-┏━ CONTROLS · ?   plain   ctrl   alt  116 bindings ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
+┏━ CONTROLS · ?   plain   ctrl   alt  118 bindings ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
 ┃▸                                                                                                 ┃
 ┃  esc    1 2 3 4 5 6 7 8 9 0   ctrl layer                                                         ┃
 ┃                               ctrl+a  Move to line start                                         ┃
@@ -7,7 +7,7 @@
 ┃   ctrl  a s d f g h j k l     ctrl+d  Exit when editor is empty                                  ┃
 ┃                               ctrl+e  Move to line end                                           ┃
 ┃  shift  z x c v b n m         ctrl+f  Move cursor right                                          ┃
-┃                               ctrl+g  Focus the task panel (again returns to the prompt)         ┃
+┃                               ctrl+g  Show or hide the task panel                                ┃
 ┃                               ctrl+k  Delete to line end                                         ┃
 ┃                               ctrl+n  Attach to the subagent run of the last Agent block (read-on┃
 ┃                               ctrl+o  Step tool output: radar → peek → full → radar              ┃
@@ -76,7 +76,7 @@ r8 c22-23 fg=#a8a8a8
 r8 c38-56 fg=#a8a8a8
 r8 c99 fg=#9b8cff
 r9 c0 fg=#9b8cff
-r9 c38-89 fg=#a8a8a8
+r9 c38-66 fg=#a8a8a8
 r9 c99 fg=#9b8cff
 r10 c0 fg=#9b8cff
 r10 c38-57 fg=#a8a8a8

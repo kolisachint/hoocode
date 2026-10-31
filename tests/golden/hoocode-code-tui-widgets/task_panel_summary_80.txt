@@ -1,8 +1,0 @@
-┊ FLIGHT PLAN  ●◉○○○ 1/5  Port the task panel renderer
---- styles ---
-r0 c0 fg=#a8a8a8
-r0 c2-14 fg=#e5e5e7 bold
-r0 c15 fg=#b5bd68
-r0 c16 fg=#5cc8bb
-r0 c17-23 fg=#a8a8a8
-r0 c26-53 bold

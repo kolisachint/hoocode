@@ -349,7 +349,7 @@ fn foot_shows_the_radar_dial_and_plan_note() {
     let mut frame = frame(CommsState::Ready, ToolOutputView::Radar, "plan");
     let rows = rows(&mut frame, 100);
     assert!(
-        rows[2].contains("radar · flight log · PLAN · nothing gets changed"),
+        rows[2].contains("radar · PLAN · nothing gets changed"),
         "row 2: {:?}",
         rows[2]
     );
@@ -359,7 +359,7 @@ fn foot_shows_the_radar_dial_and_plan_note() {
 fn foot_names_each_layer_of_the_dial() {
     let _g = lock(Some("dark"));
     for (view, label) in [
-        (ToolOutputView::Radar, "radar · flight log"),
+        (ToolOutputView::Radar, "radar"),
         (ToolOutputView::Peek, "peek"),
         (ToolOutputView::Full, "full"),
     ] {

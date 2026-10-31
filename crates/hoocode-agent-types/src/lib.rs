@@ -785,6 +785,10 @@ pub struct AgentLoopConfig {
         Option<Box<dyn Fn(AgentToolCall) -> Option<String> + Send + Sync>>,
     /// Shared so detached background tasks can report when they settle.
     pub on_background_task_count_change: Option<std::sync::Arc<dyn Fn(usize) + Send + Sync>>,
+    /// Woken when a steering or follow-up message is queued. A run idling on
+    /// background work wakes on it, so a user prompt does not wait for a
+    /// background subagent or job to finish.
+    pub message_queued: Option<std::sync::Arc<tokio::sync::Notify>>,
     pub before_tool_call: Option<
         Box<
             dyn Fn(
@@ -859,6 +863,7 @@ impl AgentLoopConfig {
             create_background_result_message: None,
             create_background_placeholder: None,
             on_background_task_count_change: None,
+            message_queued: None,
             before_tool_call: None,
             after_tool_call: None,
             permission_gate: None,

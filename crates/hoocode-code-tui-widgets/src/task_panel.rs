@@ -1,12 +1,15 @@
 //! `components/task-panel.ts`: the task ledger above the prompt.
 //!
-//! Mission Control chrome (spec §4 r6/c5/c6): closed, the panel is one
-//! trajectory row — the `FLIGHT PLAN ●●◉○○ 2/5` waypoint track with the
-//! running waypoint's title. Open (Ctrl+G, `app.panel.focus`), it is the
-//! single heavy FLIGHT PLAN console: the plan's done/total with the live
-//! agent and satellite counts in the title, one waypoint row per row of the
-//! shown lens, and the spec hint foot. There is no tab strip: the tabs only
-//! choose which lens the rows (and the pick) read.
+//! Mission Control chrome (spec §4 c6): when shown, the panel is the single
+//! FLIGHT PLAN console. The plan's done/total with the live agent and satellite
+//! counts sit in the title, the tab strip on the top edge (the shown tab in
+//! brackets), one row per row of the shown lens, and the hint foot while the
+//! keyboard is in the panel. It draws the same at every density.
+//!
+//! The panel is shown by default in the peek and full views and hidden in
+//! radar, where the flight log carries the work. Ctrl+G toggles it in every
+//! view. A view switch resets the toggle to that view's default
+//! ([`TaskPanelComponent::set_radar`]). With no rows it draws nothing.
 //!
 //! One tab per kind of task, in tab order (see [`TaskPanelView`]); a tab
 //! with no rows is hidden.
@@ -15,10 +18,12 @@
 //! - Agents: the subagent forest (`parentTaskId`), drawn with connectors;
 //! - MCP: the MCP calls, flat.
 //!
-//! Focused, the panel takes the keyboard: the pick moves, Enter opens it
-//! and `x` (twice) cancels a subagent run; alt+l switches the lens behind
-//! it. What the app
-//! must do about those is queued as [`PanelEvent`]s, read with
+//! The prompt keeps the keyboard. Up on the prompt's first line hands it to the
+//! panel on the bottom row ([`TaskPanelComponent::enter_from_below`]). Then the
+//! pick moves with Up and Down, Left and Right (or Tab) switch tabs, and Down
+//! past the last row, Esc or Ctrl+G returns to the prompt. Enter opens the
+//! pick, and `x` (twice) cancels a subagent run. What the app must do about
+//! those is queued as [`PanelEvent`]s, read with
 //! [`TaskPanelComponent::take_events`].
 //!
 //! The rows come from a [`RowModel`], rebuilt only when the store's
@@ -32,14 +37,13 @@ use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_task_store::{
     task_store, RowAction, Task, TaskAgent, TaskAgentKind, TaskKind, TaskStatus, TaskStore,
 };
-use hoocode_code_tui_keybindings::{app_key_label, format_key_text};
 use hoocode_code_tui_theme::agent_color_for;
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_tui_glyphs::status;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
-use hoocode_tui_ratatui::{bold, paint, row, truncate_line, Line, Modifier, Palette, Span, Style};
+use hoocode_tui_ratatui::{bold, truncate_line, Line, Modifier, Palette, Span, Style};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{truncate_at_word, truncate_to_width, visible_width};
+use hoocode_tui_util::truncate_to_width;
 
 use crate::console::{hints, Console};
 use crate::trajectory::short_dur;
@@ -59,8 +63,6 @@ fn task_status_icon(status: TaskStatus) -> &'static str {
 
 /// Marker for MCP-sourced rows, which have no owning agent.
 const MCP_SOURCE_GLYPH: &str = "⧉";
-/// The trajectory rail that groups the pane (spec §2: `┊`).
-const RAIL: &str = "┊";
 
 /// One tab of the panel: the rows of one [`TaskKind`]. Declared in tab order
 /// (the derived `Ord`), and [`TaskPanelView::ALL`] lists them, so [`RowModel`]
@@ -126,15 +128,9 @@ pub enum PanelEvent {
     /// `x` pressed twice on a running subagent. `run_id` is the pool's id for
     /// the run (the store task's `agent`).
     Cancel { run_id: String },
-    /// Back to the prompt: Esc, or the focus key again.
+    /// Back to the prompt: Esc, Down past the last row, or Ctrl+G (which also
+    /// hides the panel).
     Exit,
-}
-
-/// `TaskPanelDensity`: every row, or the counts alone on one row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskPanelDensity {
-    Full,
-    Summary,
 }
 
 /// A row with a run clock: every row that is not a plan item (a subagent run, an
@@ -147,13 +143,6 @@ fn is_delegated(task: &Task) -> bool {
 /// agent's rows carry none (`show_owner_glyph` is false for them), so it
 /// has no glyph.
 const SUBAGENT_GLYPH: &str = "◈";
-
-/// The rail is the trajectory's quiet `┊`: state already reads on the rows'
-/// circles, so the gutter stays faint in every lens.
-fn panel_gutter() -> String {
-    let pal = Palette::current();
-    format!("{} ", paint(pal.faint(), RAIL))
-}
 
 fn now_ms() -> u64 {
     hoocode_code_task_store::now_ms()
@@ -169,10 +158,6 @@ fn task_elapsed_secs(task: &Task, now: u64) -> f64 {
     end.saturating_sub(task.created_at) as f64 / 1000.0
 }
 
-fn pad(n: usize) -> String {
-    " ".repeat(n)
-}
-
 /// One row of a lens. Its identity is the task's store id, which survives a
 /// rebuild; the tree connector comes from the lens shape.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,12 +166,11 @@ pub struct PanelRow {
     pub tree_prefix: String,
 }
 
-/// Done, total and live counts of one lens (its tab).
+/// Done and total counts of one lens (its tab).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct LensStats {
     done: usize,
     total: usize,
-    live: bool,
 }
 
 /// The panel's rows for one store version: the store's tasks and agents, the
@@ -314,7 +298,6 @@ impl RowModel {
             .fold(LensStats::default(), |mut stats, (_, task)| {
                 stats.total += 1;
                 stats.done += usize::from(task.status == TaskStatus::Done);
-                stats.live |= task.status == TaskStatus::InProgress;
                 stats
             })
     }
@@ -352,152 +335,25 @@ fn flat_lens_rows(tasks: &[Task], kind: TaskKind) -> Vec<PanelRow> {
         .collect()
 }
 
-/// The closed panel's row (spec §4 r6/c5): the flight-plan track inside the
-/// trajectory — `FLIGHT PLAN  ●●◉○○  2/5` with the running waypoint's title
-/// where it fits. One row, no tabs, no hint; Ctrl+G opens the console.
-fn render_summary_track(model: &RowModel, width: usize) -> String {
+/// The tab strip, the console's first body row: one label per tab with its
+/// done/total, the shown tab in brackets (`[Agents 1/3]`), so the strip reads
+/// without colour. Indented to line up with the rows' `›` gutter.
+fn lens_tabs(model: &RowModel, view: TaskPanelView) -> Line<'static> {
     let pal = Palette::current();
-    let track = flight_track(model);
-    let track_width: usize = track.spans.iter().map(|s| s.width()).sum();
-    let mut spans = vec![Span::styled("FLIGHT PLAN  ", bold(pal.ink()))];
-    spans.extend(track.spans);
-    let running = model
-        .lens(TaskPanelView::Plan)
-        .find(|(_, task)| task.status == TaskStatus::InProgress)
-        .map(|(_, task)| task.title.clone());
-    if let Some(title) = running {
-        let budget = width.saturating_sub(visible_width("FLIGHT PLAN  ") + track_width + 2);
-        let title = truncate_at_word(&title, budget);
-        if !title.is_empty() {
-            spans.push(Span::raw("  "));
-            spans.push(Span::styled(title, bold(Style::default())));
+    let mut spans = vec![Span::raw("  ")];
+    for (i, &tab) in model.views().iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw(" "));
+        }
+        let stats = model.lens_stats(tab);
+        let label = format!("{} {}/{}", tab.label(), stats.done, stats.total);
+        if tab == view {
+            spans.push(Span::styled(format!("[{label}]"), bold(pal.acc())));
+        } else {
+            spans.push(Span::styled(label, pal.faint()));
         }
     }
-    let line = row(spans, width);
-    // The buffer clips but never pads: fill the row to its width.
-    let used = visible_width(&line);
-    line + &pad(width.saturating_sub(used))
-}
-
-/// `formatLensTabs`: one tab per lens with its done/total, plus key hints
-/// when they fit. The unfocused rail rows keep it; the FLIGHT PLAN console
-/// and the summary track do not.
-fn format_lens_tabs(
-    model: &RowModel,
-    width: usize,
-    view: TaskPanelView,
-    tab_views: &[TaskPanelView],
-    show_cycle_hint: bool,
-) -> String {
-    let pal = Palette::current();
-    let tabs: Vec<(String, String)> = tab_views
-        .iter()
-        .map(|&v| {
-            let stats = model.lens_stats(v);
-            let count = format!("{}/{}", stats.done, stats.total);
-            let plain = format!(" {} {count} ", v.label());
-            if v != view {
-                return (plain.clone(), paint(pal.dim(), &plain));
-            }
-            // The selection band tints the label and the count, not the
-            // painted row: painting over paint output would mangle the
-            // inner escapes.
-            let body = if stats.live {
-                let band = pal.band();
-                format!(
-                    " {} {} ",
-                    paint(bold(pal.acc()).patch(band), v.label()),
-                    paint(pal.faint().patch(band), &count)
-                )
-            } else {
-                format!(
-                    " {} {} ",
-                    paint(bold(pal.acc()), v.label()),
-                    paint(pal.faint(), &count)
-                )
-            };
-            (plain, body)
-        })
-        .collect();
-    let selected = tab_views
-        .iter()
-        .position(|&v| v == view)
-        .and_then(|i| tabs.get(i))
-        .or(tabs.first())
-        .cloned();
-    let strip = (
-        tabs.iter().map(|t| t.0.as_str()).collect::<String>(),
-        tabs.iter().map(|t| t.1.as_str()).collect::<String>(),
-    );
-
-    let mut parts: Vec<(String, String)> = Vec::new();
-    if show_cycle_hint {
-        let key = app_key_label("app.panel.focus");
-        parts.push((
-            format!("{} focus", format_key_text(&key, false)),
-            paint(pal.dim(), &format_key_text(&key, false)) + &paint(pal.faint(), " focus"),
-        ));
-    }
-    let sep = "  ";
-    let hint_plain = parts
-        .iter()
-        .map(|p| p.0.as_str())
-        .collect::<Vec<_>>()
-        .join(sep);
-    let hint_styled = parts
-        .iter()
-        .map(|p| p.1.as_str())
-        .collect::<Vec<_>>()
-        .join(&paint(pal.faint(), sep));
-
-    // Narrowing order: drop the hints, then the unselected tabs.
-    if !hint_plain.is_empty() && visible_width(&strip.0) + 2 + visible_width(&hint_plain) <= width {
-        let gap = width - visible_width(&strip.0) - visible_width(&hint_plain);
-        return format!("{}{}{hint_styled}", strip.1, pad(gap));
-    }
-    for (plain, styled) in std::iter::once(strip).chain(selected.clone()) {
-        if visible_width(&plain) <= width {
-            return format!("{styled}{}", pad(width - visible_width(&plain)));
-        }
-    }
-    truncate_to_width(
-        &selected.map(|s| s.0).unwrap_or_default(),
-        width,
-        "…",
-        false,
-    )
-}
-
-/// Row options (`formatTaskLine`'s third argument).
-#[derive(Default, Clone, Copy)]
-struct LineOptions<'a> {
-    owner: Option<&'a TaskAgent>,
-    tree_prefix: &'a str,
-    /// The row's cancel is armed: the right column asks for the second `x`.
-    confirm: bool,
-}
-
-/// `formatTaskLine`: status icon, owner glyph where it disambiguates, origin
-/// tag, title, and a right column (usage, live activity and run clock, or a
-/// warning note), padded to the pane width.
-/// `formatTaskLine`: the unfocused rail row. It reads the same [`flight_row`]
-/// helper as the focused console, so the circles, the `◈`/`⧉` marks and the
-/// right column match in both; [`row`](hoocode_tui_ratatui::row)
-/// draws it through a ratatui buffer exactly `width` wide. The caller adds
-/// the `┊` gutter.
-fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u64) -> String {
-    row(
-        flight_row(
-            task,
-            options.owner,
-            options.tree_prefix,
-            options.confirm,
-            width,
-            now,
-        )
-        .spans,
-        width,
-    )
+    Line::from(spans)
 }
 
 /// `flatLensRows`: the plan, each linked subagent run nested under its item.
@@ -610,34 +466,6 @@ fn flight_status_style(status: TaskStatus) -> Style {
         TaskStatus::Pending => pal.faint(),
         TaskStatus::Cancelled => pal.dim(),
     }
-}
-
-/// The waypoint track (spec §4 r6/c5): one circle per plan item — `●`
-/// done, `◉` running, `○` the rest — and the done/total count. The closed
-/// panel's summary row; the open console names the counts in its title and
-/// shows the circles on the waypoint rows instead.
-fn flight_track(model: &RowModel) -> Line<'static> {
-    let pal = Palette::current();
-    let mut spans = Vec::new();
-    let mut done = 0;
-    let mut total = 0;
-    for (_, task) in model
-        .lens(TaskPanelView::Plan)
-        .filter(|(_, task)| task.is_plan_item())
-    {
-        total += 1;
-        let (mark, style) = match task.status {
-            TaskStatus::Done => {
-                done += 1;
-                (status::DONE_STR, pal.ok())
-            }
-            TaskStatus::InProgress => (status::RUNNING_STR, pal.acc()),
-            _ => (status::TODO_STR, pal.faint()),
-        };
-        spans.push(Span::styled(mark, style));
-    }
-    spans.push(Span::styled(format!(" {done}/{total}"), pal.faint()));
-    Line::from(spans)
 }
 
 /// The right detail of a flight-plan row: the waypoint's elapsed time,
@@ -861,19 +689,32 @@ fn flight_row(
     row
 }
 
-/// The focused panel as the single FLIGHT PLAN console (M7, spec §4 c6):
-/// the plan's done/total with the live agent and satellite counts in the
-/// title, one waypoint row per row of the shown lens, and the spec hint
-/// foot. There is no tab strip and no counts row: the title carries them.
-/// Tabs, keys, filtering and events are unchanged; only the chrome moves
-/// to the console.
+/// The most rows the console shows at once. A short terminal shows fewer:
+/// a quarter of its height, at least one row.
+pub const PANEL_MAX_ROWS: usize = 6;
+
+/// The row cap for a terminal `screen_rows` tall: [`PANEL_MAX_ROWS`], or a
+/// quarter of the height when that is less.
+fn row_cap(screen_rows: u16) -> usize {
+    (usize::from(screen_rows) / 4).clamp(1, PANEL_MAX_ROWS)
+}
+
+/// The FLIGHT PLAN console (M7, spec §4 c6): the plan's done/total with the
+/// live agent and satellite counts in the title, the tab strip on the top
+/// edge, one waypoint row per row of the shown lens, and the hint foot while
+/// the keyboard is in the panel. Shown at every density; the pick marker and
+/// the hint foot only while `focused`. Rows beyond `max_rows` are windowed
+/// around the pick, and a `N more` row says how many are hidden.
+#[allow(clippy::too_many_arguments)]
 fn render_flight_plan(
     model: &RowModel,
     view: TaskPanelView,
     selected: Option<u64>,
     confirming: Option<u64>,
+    focused: bool,
     width: usize,
     now: u64,
+    max_rows: usize,
 ) -> Vec<String> {
     let pal = Palette::current();
     let mut done = 0;
@@ -891,12 +732,22 @@ fn render_flight_plan(
         "FLIGHT PLAN",
         format!("{done}/{total}  agents {agents} · sats {sats}"),
     );
+    console.top = vec![lens_tabs(model, view)];
     console.right = Line::from(vec![Span::styled("/tasks · ctrl+g", pal.faint())]);
     let ids = model.row_ids(view);
     // Rows sit behind the console's `› ` marker or gutter, so they get two
     // cells less than the frame's inner width.
     let row_inner = width.saturating_sub(4);
-    console.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
+    if focused {
+        console.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
+        console.hint = hints(&[
+            ("↑↓", "move"),
+            ("←→", "tab"),
+            ("enter", "jump to its steps"),
+            ("x", "drop"),
+            ("esc", "back"),
+        ]);
+    }
     console.rows = model
         .lens(view)
         .map(|(row, task)| {
@@ -910,25 +761,28 @@ fn render_flight_plan(
             )
         })
         .collect();
-    console.hint = hints(&[
-        ("↑↓", "move"),
-        ("enter", "jump to its steps"),
-        ("x", "drop"),
-        ("esc", "back"),
-    ]);
+    console.max_visible = Some(max_rows);
+    let hidden = console.rows.len().saturating_sub(max_rows);
+    if hidden > 0 {
+        console.bottom.push(Line::from(Span::styled(
+            format!("  {hidden} more"),
+            pal.faint(),
+        )));
+    }
     console.render(width)
 }
 
 /// `TaskPanelComponent`.
 pub struct TaskPanelComponent {
     view: TaskPanelView,
-    density: TaskPanelDensity,
-    /// Radar view: the unfocused panel draws nothing (see `render`).
+    /// Radar view: the panel starts hidden (see [`TaskPanelComponent::is_shown`]).
     radar: bool,
+    /// The user's Ctrl+G choice for the current view; `None` takes the view's default.
+    shown_override: Option<bool>,
     disposed: bool,
     ticking: bool,
     model: RowModel,
-    /// The panel has the keyboard (Ctrl+G).
+    /// The panel has the keyboard (handed over from the prompt).
     focused: bool,
     /// The picked row's id. Kept by id, so a rebuild keeps the pick.
     selected: Option<u64>,
@@ -936,6 +790,8 @@ pub struct TaskPanelComponent {
     confirming: Option<u64>,
     /// Queued for the app; see [`PanelEvent`].
     events: Vec<PanelEvent>,
+    /// The terminal's height in rows, set by the app ([`TaskPanelComponent::set_screen_rows`]).
+    screen_rows: u16,
 }
 
 impl Default for TaskPanelComponent {
@@ -954,9 +810,14 @@ fn resolve_selection(model: &RowModel, view: TaskPanelView, selected: Option<u64
     }
 }
 
+/// The terminal height assumed until the app sets one.
+const DEFAULT_SCREEN_ROWS: u16 = 24;
+
 /// The keys the panel answers to, in the order they are tried.
-const PANEL_KEYS: [&str; 6] = [
+const PANEL_KEYS: [&str; 8] = [
     "app.panel.focus",
+    "app.panel.nextTab",
+    "app.panel.prevTab",
     "app.panel.up",
     "app.panel.down",
     "app.panel.open",
@@ -968,8 +829,8 @@ impl TaskPanelComponent {
     pub fn new() -> Self {
         Self {
             view: TaskPanelView::Plan,
-            density: TaskPanelDensity::Full,
             radar: false,
+            shown_override: None,
             disposed: false,
             ticking: false,
             model: RowModel::default(),
@@ -977,7 +838,14 @@ impl TaskPanelComponent {
             selected: None,
             confirming: None,
             events: Vec::new(),
+            screen_rows: DEFAULT_SCREEN_ROWS,
         }
+    }
+
+    /// The terminal's height. The console shows at most [`PANEL_MAX_ROWS`]
+    /// rows, fewer on a short terminal.
+    pub fn set_screen_rows(&mut self, rows: u16) {
+        self.screen_rows = rows;
     }
 
     pub fn get_view(&self) -> TaskPanelView {
@@ -989,15 +857,25 @@ impl TaskPanelComponent {
         self.selected = None;
     }
 
-    /// `setDensity`: driven by the chrome, not by the pane.
-    pub fn set_density(&mut self, density: TaskPanelDensity) {
-        self.density = density;
-    }
-
-    /// Radar view (M5): the flight log carries the running work, so the
-    /// unfocused panel hides. Focus (Ctrl+G) still opens the console.
+    /// Radar view (M5): the flight log carries the running work, so the panel
+    /// starts hidden there. A view switch clears the Ctrl+G choice, so every
+    /// view starts from its own default.
     pub fn set_radar(&mut self, radar: bool) {
         self.radar = radar;
+        self.shown_override = None;
+    }
+
+    /// Whether the panel is drawn: the user's Ctrl+G choice for this view,
+    /// else shown in peek and full and hidden in radar.
+    pub fn is_shown(&self) -> bool {
+        self.shown_override.unwrap_or(!self.radar)
+    }
+
+    /// Ctrl+G: flips shown and hidden for this view. Returns the new state.
+    pub fn toggle_shown(&mut self) -> bool {
+        let shown = !self.is_shown();
+        self.shown_override = Some(shown);
+        shown
     }
 
     /// `cycleView`: the next tab with rows, wrapping; an emptied view snaps
@@ -1020,10 +898,40 @@ impl TaskPanelComponent {
         self.view
     }
 
+    /// Left or Right from inside the panel: the next tab, with the pick on its
+    /// last row, so Down returns to the prompt from there.
+    fn cycle_from_pick(&mut self, forward: bool) {
+        self.cycle_view(forward);
+        self.selected = self.model.row_ids(self.shown_view()).last().copied();
+    }
+
     /// Whether the panel has any rows to focus. Syncs the model first.
     pub fn can_focus(&mut self) -> bool {
         self.model.sync(task_store());
         !self.model.views().is_empty()
+    }
+
+    /// Whether Up on the prompt's first line may hand the keyboard to the panel:
+    /// shown and with rows. The app adds its own scroll check.
+    pub fn can_take_up(&mut self) -> bool {
+        self.is_shown() && self.can_focus()
+    }
+
+    /// Up on the prompt's first line: the keyboard goes to the panel, on its
+    /// bottom row. `false` when the panel is hidden or has no rows, so the
+    /// prompt keeps the key.
+    pub fn enter_from_below(&mut self) -> bool {
+        self.model.sync(task_store());
+        if !self.is_shown() {
+            return false;
+        }
+        let view = self.shown_view();
+        let Some(last) = self.model.row_ids(view).last().copied() else {
+            return false;
+        };
+        self.selected = Some(last);
+        self.confirming = None;
+        true
     }
 
     /// Whether the panel has the keyboard.
@@ -1037,6 +945,14 @@ impl TaskPanelComponent {
         let view = self.shown_view();
         let id = resolve_selection(&self.model, view, self.selected)?;
         Some((view, id))
+    }
+
+    /// Takes back a queued [`PanelEvent::Exit`], so the app can return the
+    /// keyboard at once, before the next key of the same input batch.
+    pub fn take_exit(&mut self) -> bool {
+        let before = self.events.len();
+        self.events.retain(|event| *event != PanelEvent::Exit);
+        self.events.len() != before
     }
 
     /// The events queued by key handling since the last call, in order.
@@ -1079,6 +995,14 @@ impl TaskPanelComponent {
             .unwrap_or(0) as isize;
         let next = (current + delta).clamp(0, ids.len() as isize - 1) as usize;
         self.selected = Some(ids[next]);
+    }
+
+    /// Whether the pick is on the shown tab's last row: Down there returns to
+    /// the prompt.
+    fn pick_is_last(&self) -> bool {
+        let view = self.shown_view();
+        let ids = self.model.row_ids(view);
+        resolve_selection(&self.model, view, self.selected).is_none_or(|id| ids.last() == Some(&id))
     }
 
     /// `x`: the first press arms the cancel of a running subagent row, the
@@ -1137,10 +1061,24 @@ impl TaskPanelComponent {
         // Any key but `x` disarms a pending cancel. Esc only disarms when one is pending.
         let armed = self.confirming.take();
         match id {
+            // Ctrl+G hides the panel, and a hidden panel gives the keyboard back.
+            "app.panel.focus" => {
+                if !self.toggle_shown() {
+                    self.events.push(PanelEvent::Exit);
+                }
+            }
             "app.panel.exit" if armed.is_some() => {}
-            "app.panel.focus" | "app.panel.exit" => self.events.push(PanelEvent::Exit),
+            "app.panel.exit" => self.events.push(PanelEvent::Exit),
             "app.panel.up" => self.move_pick(-1),
-            "app.panel.down" => self.move_pick(1),
+            "app.panel.down" => {
+                if self.pick_is_last() {
+                    self.events.push(PanelEvent::Exit);
+                } else {
+                    self.move_pick(1);
+                }
+            }
+            "app.panel.prevTab" => self.cycle_from_pick(false),
+            "app.panel.nextTab" => self.cycle_from_pick(true),
             "app.panel.open" => self.open_pick(),
             "app.panel.cancel" => self.cancel_pick(armed),
             _ => {}
@@ -1154,66 +1092,27 @@ impl Component for TaskPanelComponent {
             return Vec::new();
         }
         self.model.sync(task_store());
-        let width = width as usize;
-        let now = now_ms();
-        if self.model.is_empty() {
+        // No rows, or hidden: nothing to draw and no clock to run.
+        if self.model.views().is_empty() || !self.is_shown() {
             self.ticking = false;
             return Vec::new();
         }
-
+        let now = now_ms();
         // Keep the stored view while it has rows, else the first tab that does.
         let view = self.shown_view();
         let selected = resolve_selection(&self.model, view, self.selected);
         self.selected = selected;
         self.ticking = self.model.any_running();
-
-        let model = &self.model;
-        let available = model.views();
-        let gutter = panel_gutter();
-        // Focus shows the strip even with one tab, the pick marker, and a hint
-        // line. Focus also shows the rows in full, whatever the density.
-        let focused = self.focused;
-        let marker_width = if focused { 2 } else { 0 };
-        let inner = width.saturating_sub(visible_width(RAIL) + 1 + marker_width);
-        let tab_views: Vec<TaskPanelView> = if available.contains(&view) {
-            available.to_vec()
-        } else {
-            available
-                .iter()
-                .copied()
-                .chain(std::iter::once(view))
-                .collect()
-        };
-
-        // Radar draws the flight log instead: the unfocused ledger's rows (the
-        // subagents' rail rows included) would repeat it, so they hide. Focus
-        // still opens the console.
-        if self.radar && !focused {
-            return Vec::new();
-        }
-        if self.density == TaskPanelDensity::Summary && !focused {
-            return vec![gutter.clone() + &render_summary_track(model, inner)];
-        }
-
-        // Focused (Ctrl+G): the FLIGHT PLAN console. Unfocused keeps the
-        // rail rows, whatever the density.
-        if focused {
-            return render_flight_plan(model, view, selected, self.confirming, width, now);
-        }
-
-        let mut lines = Vec::new();
-        if available.len() >= 2 {
-            lines.push(gutter.clone() + &format_lens_tabs(model, inner, view, &tab_views, true));
-        }
-        for (row, task) in model.lens(view) {
-            let options = LineOptions {
-                owner: model.owner_of(task),
-                tree_prefix: &row.tree_prefix,
-                confirm: self.confirming == Some(row.id),
-            };
-            lines.push(gutter.clone() + &format_task_line(task, inner, options, now));
-        }
-        lines
+        render_flight_plan(
+            &self.model,
+            view,
+            selected,
+            self.confirming,
+            self.focused,
+            width as usize,
+            now,
+            row_cap(self.screen_rows),
+        )
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -1517,7 +1416,7 @@ mod row_model_tests {
     }
 
     #[test]
-    fn lens_stats_count_done_total_and_live_for_each_lens() {
+    fn lens_stats_count_done_and_total_for_each_lens() {
         let store = TaskStore::new();
         let p1 = plan(&store, "done item");
         plan(&store, "live item");
@@ -1540,15 +1439,9 @@ mod row_model_tests {
         model.sync(&store);
 
         let plan_stats = model.lens_stats(TaskPanelView::Plan);
-        assert_eq!(
-            (plan_stats.done, plan_stats.total, plan_stats.live),
-            (1, 2, false)
-        );
+        assert_eq!((plan_stats.done, plan_stats.total), (1, 2));
         let sub_stats = model.lens_stats(TaskPanelView::Subagents);
-        assert_eq!(
-            (sub_stats.done, sub_stats.total, sub_stats.live),
-            (1, 1, false)
-        );
+        assert_eq!((sub_stats.done, sub_stats.total), (1, 1));
     }
 
     #[test]

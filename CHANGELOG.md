@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: background work (2026-10-31)
+- **No blank rows above the prompt while a mission runs.** The silent working indicator drew two empty rows between the transcript (or the REWIND bar) and the comms frame; it now draws none.
+- **A prompt sent while a background subagent or shell job runs is answered at once.** The agent used to sit idle until the background work finished, and the prompt showed `queued · sends after this step`. Now it starts a turn right away; the background result arrives later as before.
+- **Background shell jobs are on by default in the TUI** (`enableBackgroundShell`, set it to `false` to turn them off). The model is told to run long commands (full test suites, release builds, servers) with `run_in_background` and keep working, and to keep subagents in the background unless its next step needs the answer. Print, json, rpc and app-server runs and subagents never get background shell jobs.
+
+### Changed: task panel and prompt keys (2026-10-31)
+- **The task panel is shown by default in peek and full**, as the FLIGHT PLAN console, and hidden in radar. **Ctrl+G shows or hides it** in any view; it no longer moves the keyboard.
+- **The prompt keeps the keyboard.** Up on the prompt's first line moves into the panel; Up and Down pick a row, Down past the last row comes back, Left and Right change tabs, Enter attaches to a subagent run or shell job's output, Esc goes back.
+- **Prompt history is Shift+Up / Shift+Down.** Plain Up and Down move the cursor (and into the panel). PgUp pins the transcript.
+- **The full view opens the startup keys and the Skills, Agents, Commands and MCP lists**; peek and radar fold them. Skill rows read `/skill:<name>`.
+- `/chrome compact` no longer shrinks the task panel to one line; the panel shows at most a few rows on a short terminal.
+- The comms frame foot reads `radar`, like `peek` and `full`.
+
 ### Fixed: radar answer, HUD effort, clickable links (2026-10-31)
 - **A click on a link opens it in the browser.** Markdown links and bare `http(s)://` URLs in the transcript open on a plain left click (press and release on the same cell). Only http, https and mailto open. `HOOCODE_MOUSE=0` still hands the mouse back to the terminal.
 - **The radar view renders a mission's final answer as Markdown**, as peek and full do: headings, lists, code and emphasis are drawn instead of flattened to plain text, and links stay clickable.

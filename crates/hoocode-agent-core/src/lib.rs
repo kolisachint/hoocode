@@ -269,6 +269,9 @@ pub struct Agent {
     next_listener_id: Arc<AtomicUsize>,
     steering_queue: Queue,
     follow_up_queue: Queue,
+    /// Woken (one stored permit) when a message is queued, so a run idling
+    /// on background work picks it up at once.
+    message_queued: Arc<tokio::sync::Notify>,
     settings: Mutex<RunSettings>,
 }
 
@@ -337,6 +340,7 @@ impl Agent {
             follow_up_queue: Arc::new(Mutex::new(PendingMessageQueue::new(
                 options.follow_up_mode.unwrap_or_default(),
             ))),
+            message_queued: Arc::new(tokio::sync::Notify::new()),
             settings: Mutex::new(RunSettings {
                 api_key: options.api_key,
                 session_id: options.session_id,
@@ -510,11 +514,13 @@ impl Agent {
     /// Queue a message to be injected after the current assistant turn finishes.
     pub fn steer(&self, message: AgentMessage) {
         self.steering_queue.lock().unwrap().messages.push(message);
+        self.message_queued.notify_one();
     }
 
     /// Queue a message to run only after the agent would otherwise stop.
     pub fn follow_up(&self, message: AgentMessage) {
         self.follow_up_queue.lock().unwrap().messages.push(message);
+        self.message_queued.notify_one();
     }
 
     pub fn clear_steering_queue(&self) {
@@ -755,6 +761,7 @@ impl Agent {
         config.signal = Some(signal);
         config.permission_gate = hooks.permission_gate;
         config.on_background_task_count_change = hooks.on_background_task_count_change;
+        config.message_queued = Some(self.message_queued.clone());
         if let Some(stream_fn) = hooks.stream_fn {
             config.stream_fn = Some(Box::new(move |m, c, o| stream_fn(m, c, o)));
         }

@@ -130,7 +130,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry(
             "app.panel.focus",
             &["ctrl+g"],
-            "Focus the task panel (again returns to the prompt)",
+            "Show or hide the task panel",
         ),
         // ── Screen — how much room there is
         entry(
@@ -178,7 +178,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry(
             "app.scroll.shiftLineUp",
             &["shift+up"],
-            "Scroll up a line; from the prompt, pins the view",
+            "Scroll up a line (pinned view)",
         ),
         entry(
             "app.scroll.shiftLineDown",
@@ -242,10 +242,14 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             &["p"],
             "Previous search match (pinned view)",
         ),
-        entry("app.panel.nextTab", &["tab"], "Task panel: next tab"),
+        entry(
+            "app.panel.nextTab",
+            &["right", "tab"],
+            "Task panel: next tab",
+        ),
         entry(
             "app.panel.prevTab",
-            &["shift+tab"],
+            &["left", "shift+tab"],
             "Task panel: previous tab",
         ),
         entry("app.panel.up", &["up"], "Task panel: pick the row above"),

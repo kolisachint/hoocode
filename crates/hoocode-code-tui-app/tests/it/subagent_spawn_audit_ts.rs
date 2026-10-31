@@ -301,7 +301,8 @@ fn renders_orphaned_children_as_roots_so_the_tab_count_matches_the_rows() {
         lines.iter().any(|l| l.contains("orphaned child")),
         "{lines:#?}"
     );
-    assert!(lines[0].contains("Agents 1/1"), "{}", lines[0]);
+    // The tab strip is the console's second row.
+    assert!(lines[1].contains("Agents 1/1"), "{}", lines[1]);
     panel.dispose();
 }
 

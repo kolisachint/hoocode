@@ -43,7 +43,7 @@ use hoocode_code_tui_widgets::background_notice::BackgroundNoticeComponent;
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
 use hoocode_code_tui_widgets::controls::ControlsComponent;
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
-use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelDensity};
+use hoocode_code_tui_widgets::task_panel::TaskPanelComponent;
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::UserMessageComponent;
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle, Loader, Spacer};
@@ -55,7 +55,7 @@ use hoocode_tui_terminal::Terminal;
 use crate::changelog::changelog_for_display;
 use crate::chime::{ChimeDebounce, TurnTimer, BELL};
 use crate::chrome_layout::{
-    ChromeLayoutController, ChromeSurfaces, FooterLayout, TasksLayout, SMALL_TERMINAL_ROWS,
+    ChromeLayoutController, ChromeSurfaces, FooterLayout, SMALL_TERMINAL_ROWS,
 };
 use crate::clearance_queue::ClearanceQueue;
 use crate::comms_frame::{CommsFrame, CommsState, InputStyle, MissionOutcome};
@@ -69,7 +69,7 @@ use crate::login_controller::LoginUpdate;
 use crate::notification_panel::{NotificationKind, NotificationPanel};
 use crate::perf::Perf;
 use crate::record_row::RecordRows;
-use crate::resource_display::{format_display_path, ResourceListing};
+use crate::resource_display::{format_display_path, startup_details_open, ResourceListing};
 use crate::scroll_view::install_scroll_view;
 use crate::startup_progress;
 use crate::tips::{
@@ -344,6 +344,41 @@ pub(crate) fn cursor_should_blink(chat_empty: bool, pinned: bool) -> bool {
     chat_empty && !pinned
 }
 
+/// The startup header: the logo, and under it the keys banner while
+/// `expanded` (under `verbose`, and at the full stop: the dial moves it).
+/// `cursor_on` is the header cursor's blink state, read on each render.
+pub fn startup_header(
+    columns: u16,
+    version: &str,
+    cwd: &str,
+    cursor_on: Rc<Cell<bool>>,
+    expanded: bool,
+) -> ExpandableText {
+    // The collapsed and the expanded form each own their copies.
+    let (v1, c1) = (version.to_string(), cwd.to_string());
+    let (v2, c2) = (version.to_string(), cwd.to_string());
+    let cursor_on2 = cursor_on.clone();
+    ExpandableText::new(
+        move || logo(columns, &v1, &c1, cursor_on.get()),
+        move || {
+            let onboarding = theme().fg(
+                "dim",
+                &format!(
+                    "{APP_NAME} can explain its own features and look up its docs. Ask it how to use or extend {APP_NAME}."
+                ),
+            );
+            format!(
+                "{}\n{}\n\n{onboarding}",
+                logo(columns, &v2, &c2, cursor_on2.get()),
+                expanded_instructions()
+            )
+        },
+        expanded,
+        0,
+        0,
+    )
+}
+
 /// The banner's logo (the compact wordmark, or the name on a narrow screen).
 /// `cursor_visible` is the app-driven blink state: a space when hidden, so the
 /// brand does not shift.
@@ -597,6 +632,10 @@ struct Mode {
     compaction_loader: Option<Rc<RefCell<Loader>>>,
     compaction_queue: Vec<(String, StreamingBehavior)>,
     task_panel: Rc<RefCell<TaskPanelComponent>>,
+    /// Whether Up on the prompt's first line may hand the keyboard to the task
+    /// panel (shown, with rows, not pinned). Kept current by
+    /// `refresh_panel_takes_up`, read by `CustomEditor`.
+    panel_takes_up: Rc<Cell<bool>>,
     task_store_subscription: Option<hoocode_code_task_store::Subscription<'static>>,
     previous_cwd: Rc<RefCell<Option<PathBuf>>>,
     restarted_input: Option<Receiver<TuiEvent>>,
@@ -763,9 +802,11 @@ impl Mode {
             sink.borrow_mut()
                 .push(Action::AutocompleteVisibility(visible))
         }));
+        let panel_takes_up = Rc::new(Cell::new(false));
         let editor = handle(CustomEditor {
             editor,
             actions: actions.clone(),
+            panel_takes_up: panel_takes_up.clone(),
         });
 
         let footer_data = FooterDataProvider::new(session.cwd());
@@ -845,7 +886,6 @@ impl Mode {
         task_panel_component.set_radar(tool_output_view == ToolOutputView::Radar);
         let task_panel = handle(task_panel_component);
         let tasks_slot = handle(Slot::new(as_component(&task_panel)));
-        let panel_for_density = task_panel.clone();
         let footer_for_density = footer.clone();
         let density = chrome_density.unwrap_or(if size.get().1 < SMALL_TERMINAL_ROWS {
             ChromeDensity::Compact
@@ -855,7 +895,6 @@ impl Mode {
         let mut chrome = ChromeLayoutController::new(
             ChromeSurfaces {
                 footer_slot: footer_slot.clone(),
-                tasks_slot: tasks_slot.clone(),
                 set_footer_density: Box::new(move |d| {
                     footer_for_density
                         .borrow_mut()
@@ -863,15 +902,6 @@ impl Mode {
                             FooterDensity::Line
                         } else {
                             FooterDensity::Full
-                        })
-                }),
-                set_tasks_density: Box::new(move |d| {
-                    panel_for_density
-                        .borrow_mut()
-                        .set_density(if d == TasksLayout::Summary {
-                            TaskPanelDensity::Summary
-                        } else {
-                            TaskPanelDensity::Full
                         })
                 }),
             },
@@ -925,36 +955,19 @@ impl Mode {
             ))
         };
 
-        // The startup header and resource listing open only under `verbose`.
-        let expanded = options.verbose;
-        let (version, cwd) = (
-            options.version.clone(),
-            format_display_path(&session.cwd().to_string_lossy()),
-        );
+        // The startup header and resource listing open under `verbose`, and at
+        // the full stop (the dial moves them after this).
+        let expanded = startup_details_open(options.verbose, tool_output_view);
+        let cwd = format_display_path(&session.cwd().to_string_lossy());
         let columns = size.get().0;
-        let (v1, c1, v2, c2) = (version.clone(), cwd.clone(), version.clone(), cwd.clone());
         // The header's cursor blinks by app clock (Ghostty ignores SGR 5).
         let cursor_blink = CursorBlink::new();
-        let cursor_on = cursor_blink.visible();
-        let cursor_on2 = cursor_on.clone();
-        let header = handle(ExpandableText::new(
-            move || logo(columns, &v1, &c1, cursor_on.get()),
-            move || {
-                let onboarding = theme().fg(
-                    "dim",
-                    &format!(
-                        "{APP_NAME} can explain its own features and look up its docs. Ask it how to use or extend {APP_NAME}."
-                    ),
-                );
-                format!(
-                    "{}\n{}\n\n{onboarding}",
-                    logo(columns, &v2, &c2, cursor_on2.get()),
-                    expanded_instructions()
-                )
-            },
+        let header = handle(startup_header(
+            columns,
+            &options.version,
+            &cwd,
+            cursor_blink.visible(),
             expanded,
-            0,
-            0,
         ));
 
         let chat = handle(Container::new());
@@ -1167,6 +1180,7 @@ impl Mode {
             compaction_loader: None,
             compaction_queue: Vec::new(),
             task_panel,
+            panel_takes_up,
             task_store_subscription: None,
             previous_cwd: Rc::new(RefCell::new(None)),
             restarted_input: None,
@@ -1200,7 +1214,13 @@ impl Mode {
         }
         // Keys reach the screen's components with the view they show on screen.
         self.show_attached();
+        // The keyboard owner is settled before this key and again after it, so
+        // a key in the same batch as an Up or a Down-exit reaches the right place.
+        self.refresh_panel_takes_up();
+        self.release_stale_panel_focus();
         self.tui.accept_event(event);
+        self.hand_off_panel_up();
+        self.return_panel_focus_if_asked();
         self.show_main();
     }
 
@@ -1788,6 +1808,9 @@ impl Mode {
                 break;
             }
             // Input and resizes this pass, and anything else that changed, render once here.
+            self.task_panel
+                .borrow_mut()
+                .set_screen_rows(self.size.get().1);
             self.show_attached();
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
