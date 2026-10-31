@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: dependencies (2026-10-31)
+- rustls 0.23.46 (was 0.23.45), in the main build and in `fuzz/`.
+
 ### Fixed: thinking on Opus 5 (2026-10-31)
 - **Thinking text shows again on Opus 4.8 and Opus 5.** hoocode now asks every model for summarized thinking. Before, these models defaulted to `omitted`, which returns empty thinking blocks. Set `"thinkingDisplay": "omitted"` to turn the text off.
 - **`thinkingDisplay` accepts `summarised`** as well as `summarized`. Any other value is ignored with a warning in the transcript at startup, where before it was ignored silently. A bad `scopedModels` entry and a settings file that fails to load now get the same warning.
