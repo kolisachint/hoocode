@@ -10,7 +10,7 @@ use hoocode_ai_types::Content;
 use hoocode_code_subagents::live;
 use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
 use hoocode_code_tui_widgets::radar::{
-    mission_rows, prose_rows, think_rows, FlightItem, FlightMark, FlightStats, STEP_INDENT,
+    mission_rows, prose_rows, FlightItem, FlightMark, FlightStats, STEP_INDENT,
 };
 use hoocode_code_tui_widgets::tool_chain::ToolBlock;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -438,29 +438,6 @@ fn an_aborted_turn_end_reads_aborted_with_its_stats() {
         rows.last().unwrap().trim_end(),
         "   ╰ ⊘ ABORTED · 12 steps · 0 hits · 30s"
     );
-}
-
-#[test]
-fn thinking_wraps_under_its_gist_outside_a_mission() {
-    // Thinking outside a mission keeps its own rows (`think_rows`).
-    let palette = Palette::default();
-    let gist = "The helper is 13 lines and wraps at the word boundary every time";
-    let rows: Vec<String> = think_rows(3, Some(gist), &palette, 40)
-        .iter()
-        .map(|row| strip(row))
-        .collect();
-    assert!(rows.len() >= 2, "{rows:#?}");
-    assert!(
-        rows[0].starts_with("        ✻ thought 3s · The helper"),
-        "{rows:#?}"
-    );
-    let flat = rows
-        .iter()
-        .map(|row| row.trim_start_matches("        ✻ thought 3s · "))
-        .map(|row| row.split_whitespace().collect::<Vec<_>>().join(" "))
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert_eq!(flat, gist);
 }
 
 #[test]

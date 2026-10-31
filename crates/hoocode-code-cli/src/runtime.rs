@@ -798,7 +798,13 @@ fn create_runtime(
     let registry = load_registry(auth);
     let mut diagnostics = Diagnostics::new();
     // A bad setting value is ignored; say so at startup instead of silently.
-    for e in settings.drain_errors() {
+    // A subagent child skips it: the parent already warned, and the line
+    // would land in the child's stderr tail and its failure text.
+    let settings_errors = settings.drain_errors();
+    for e in settings_errors
+        .into_iter()
+        .filter(|_| args.task_id.is_none())
+    {
         diagnostics.push((
             DiagnosticKind::Warning,
             format!("{} settings: {}", e.scope.as_str(), e.error),
@@ -2055,6 +2061,13 @@ pub fn run_interactive_mode(
         initial_message,
         initial_images,
         initial_messages: messages,
+        // The stderr lines above sit behind the alternate screen; the
+        // startup warnings (a bad setting value) show in the transcript too.
+        startup_warnings: diagnostics
+            .iter()
+            .filter(|(kind, _)| *kind == DiagnosticKind::Warning)
+            .map(|(_, message)| message.clone())
+            .collect(),
         model_fallback_message: None,
         terminal: None,
         perf_log: args.perf_log.as_ref().map(std::path::PathBuf::from),
@@ -2218,6 +2231,7 @@ mod tests {
                 initial_images: Vec::new(),
                 initial_messages: Vec::new(),
                 model_fallback_message: None,
+                startup_warnings: Vec::new(),
                 terminal: Some(Box::new(terminal)),
                 perf_log: None,
                 update_notice: None,
@@ -2612,6 +2626,7 @@ mod tests {
                     initial_images: Vec::new(),
                     initial_messages: Vec::new(),
                     model_fallback_message: None,
+                    startup_warnings: Vec::new(),
                     terminal: Some(Box::new(terminal)),
                     perf_log: None,
                     update_notice: None,
@@ -2856,6 +2871,7 @@ mod tests {
                     initial_images: Vec::new(),
                     initial_messages: Vec::new(),
                     model_fallback_message: None,
+                    startup_warnings: Vec::new(),
                     terminal: Some(Box::new(terminal)),
                     perf_log: None,
                     update_notice: None,

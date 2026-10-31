@@ -135,6 +135,9 @@ pub struct InteractiveOptions {
     pub initial_messages: Vec<String>,
     /// Shown as a notice (the only place the remedy is named).
     pub model_fallback_message: Option<String>,
+    /// Startup warnings (a setting value that was ignored), shown as warnings
+    /// in the transcript; stderr is behind the alternate screen.
+    pub startup_warnings: Vec<String>,
     pub terminal: Option<Box<dyn Terminal>>,
     /// `--perf-log`: one JSON line of the UI's counters a second is appended here.
     pub perf_log: Option<std::path::PathBuf>,
@@ -689,6 +692,16 @@ fn append_panic_log(report: &str) {
     }
 }
 
+/// What a run starts with: the initial message, its images, the queued
+/// messages, the model fallback notice and the startup warnings.
+type InitialInput = (
+    Option<String>,
+    Vec<ImageContent>,
+    Vec<String>,
+    Option<String>,
+    Vec<String>,
+);
+
 /// `InteractiveMode.run`: until the user exits.
 pub fn run_interactive(options: InteractiveOptions) -> Result<(), String> {
     let initial = (
@@ -696,6 +709,7 @@ pub fn run_interactive(options: InteractiveOptions) -> Result<(), String> {
         options.initial_images.clone(),
         options.initial_messages.clone(),
         options.model_fallback_message.clone(),
+        options.startup_warnings.clone(),
     );
     let mode = Mode::new(options);
     mode.run(initial)
@@ -1369,15 +1383,7 @@ impl Mode {
         })));
     }
 
-    fn run(
-        mut self,
-        options_initial: (
-            Option<String>,
-            Vec<ImageContent>,
-            Vec<String>,
-            Option<String>,
-        ),
-    ) -> Result<(), String> {
+    fn run(mut self, options_initial: InitialInput) -> Result<(), String> {
         self.tui
             .set_frame_observer(Some(self.perf.frame_observer()));
         // Before the terminal starts, so a panic from here on restores it. Stray
@@ -1459,9 +1465,13 @@ impl Mode {
             let _ = tx.send(AppEvent::Rerender);
         });
 
-        let (initial_message, initial_images, initial_messages, fallback) = options_initial;
+        let (initial_message, initial_images, initial_messages, fallback, warnings) =
+            options_initial;
         if let Some(message) = fallback {
             self.show_error(&message);
+        }
+        for warning in &warnings {
+            self.show_warning(warning);
         }
         if let Some(message) = self.perf.take_startup_error() {
             self.show_error(&message);

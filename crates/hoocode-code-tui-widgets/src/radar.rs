@@ -3,16 +3,16 @@
 //! A mission is one block on a `┊` rail, drawn by its header from the
 //! mission's [`FlightStats`]: the header `▲ Mn  prompt`; the body in story
 //! order (one line per tool batch, the calls that failed nested under it as
-//! `└ NN Tool  subject  → snippet  HIT`; a thinking block splits batches but
-//! draws nothing: radar hides thinking, peek and full show it); the final answer on the rail; and the turn-end row closing
+//! `└ NN Tool  subject  → snippet  HIT`; a thinking block splits batches
+//! but draws nothing, as radar hides thinking); the final answer on the rail; and the turn-end row closing
 //! the rail with `╰`. The turn end reads the landing line's words and stats
 //! (`● LANDED`, `⊗ DID NOT LAND`, `⊘ ABORTED`), `◐ IN FLIGHT` while the
 //! mission flies, or `◆ WAITING` while a call waits for the user's approval.
 //! An older finished mission folds to one summary line.
 //!
 //! Like the trajectory, every row draws through a ratatui buffer and the
-//! Mission Control palette. Thinking and prose outside a mission keep their
-//! own rows (`think_rows`, `prose_rows`).
+//! Mission Control palette. Prose outside a mission keeps its own rows
+//! (`prose_rows`); radar draws no thinking.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -31,7 +31,7 @@ use hoocode_tui_util::visible_width;
 
 use crate::tool_chain::ToolBlock;
 use crate::tool_chain_summary::{turn_phrase, ChainEntry};
-use crate::trajectory::{landing_spans, short_dur, two_part_row};
+use crate::trajectory::{landing_spans, two_part_row};
 
 /// The in-flight glyph: the mission mark, a live batch and a live agent. Radar-
 /// local: `status` has no half circle, and the radar keeps this one for its
@@ -994,39 +994,6 @@ fn hit_line(
         palette,
     );
     finish(line, width)
-}
-
-/// Thinking's rows under their mission (Mission Control spec r11), indented
-/// 8: `        ✻ thought 3s · The helper is 13 lines`. The gist reads dim after
-/// the violet thought; without one the row is the thought alone. The gist is
-/// never cut: it wraps onto rows hanging under its first word.
-pub fn think_rows(secs: u64, gist: Option<&str>, palette: &Palette, width: usize) -> Vec<String> {
-    if width == 0 {
-        return vec![String::new()];
-    }
-    let mut lead = vec![
-        blank(STEP_INDENT),
-        span(format!("✻ thought {}", short_dur(secs)), palette.vio()),
-    ];
-    let Some(gist) = gist.filter(|gist| !gist.trim().is_empty()) else {
-        return vec![finish(lead, width)];
-    };
-    lead.push(span(" · ", palette.faint()));
-    let hang = spans_width(&lead);
-    let room = width.saturating_sub(hang + 1).max(1);
-    wrap_words(gist, room, room)
-        .into_iter()
-        .enumerate()
-        .map(|(index, piece)| {
-            let mut line = if index == 0 {
-                lead.clone()
-            } else {
-                vec![blank(hang)]
-            };
-            line.push(span(piece, palette.dim()));
-            finish(line, width)
-        })
-        .collect()
 }
 
 /// The prose rows under a mission (Mission Control spec r1/r3): the final

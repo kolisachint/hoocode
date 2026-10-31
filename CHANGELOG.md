@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed: thinking on Opus 5 (2026-10-31)
 - **Thinking text shows again on Opus 4.8 and Opus 5.** hoocode now asks every model for summarized thinking. Before, these models defaulted to `omitted`, which returns empty thinking blocks. Set `"thinkingDisplay": "omitted"` to turn the text off.
-- **`thinkingDisplay` accepts `summarised`** as well as `summarized`. Any other value is ignored with a startup warning, where before it was ignored silently. Other ignored settings, such as a bad `scopedModels` entry, now show the same startup warning.
-- **Radar hides thinking.** Peek and full show it; radar no longer draws a `✻` line for it.
+- **`thinkingDisplay` accepts `summarised`** as well as `summarized`. Any other value is ignored with a warning in the transcript at startup, where before it was ignored silently. A bad `scopedModels` entry and a settings file that fails to load now get the same warning.
+- **Radar hides thinking.** Peek and full show it; radar no longer draws a `✻` line for it, in or out of a mission.
 
 ### Changed: task panel tabs (2026-10-31)
 - **The hint foot names only what Enter and `x` do on the picked row.** An agent run reads `enter open its log` (and `x cancel` while it runs), a shell job `enter open output` (and `x stop` while it runs), a Login row `enter log in`. A plan item or a schedule job shows only the moves and `esc back`. The old `enter jump to its steps · x drop` named keys that did nothing.
