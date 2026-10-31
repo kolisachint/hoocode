@@ -3,7 +3,7 @@
 ┃› ● Read the migration plan                                               0.0s┃
 ┃  ◉ Port the task panel renderer                                          0.0s┃
 ┃  ○ Add golden snapshots                                                      ┃
-┗━ ↑↓ move · ←→ tab · enter jump to its steps · x drop · esc back ━━━━━━━━━━  ━┛
+┗━ ↑↓ move · ←→ tab · esc back ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
 r0 c3-37 fg=#9b8cff bold
@@ -37,11 +37,7 @@ r5 c3-4 fg=#989898
 r5 c5-12 fg=#a8a8a8
 r5 c13-14 fg=#989898
 r5 c15-21 fg=#a8a8a8
-r5 c22-26 fg=#989898
-r5 c27-47 fg=#a8a8a8
-r5 c48 fg=#989898
-r5 c49-56 fg=#a8a8a8
-r5 c57-59 fg=#989898
-r5 c60-64 fg=#a8a8a8
-r5 c66-75 fg=#9b8cff
+r5 c22-24 fg=#989898
+r5 c25-29 fg=#a8a8a8
+r5 c31-75 fg=#9b8cff
 r5 c78-79 fg=#9b8cff

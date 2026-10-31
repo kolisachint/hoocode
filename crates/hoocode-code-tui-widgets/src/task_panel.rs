@@ -166,11 +166,24 @@ pub struct PanelRow {
     pub tree_prefix: String,
 }
 
-/// Done and total counts of one lens (its tab).
+/// Done and total counts of one lens (its tab), and how many of its rows run.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct LensStats {
     done: usize,
     total: usize,
+    running: usize,
+}
+
+impl LensStats {
+    /// A tab's count after its name. The plan shows done/total. A live tab shows
+    /// how many of its rows run while any does, else done/total.
+    fn label(self, view: TaskPanelView) -> String {
+        if view != TaskPanelView::Plan && self.running > 0 {
+            format!("{} {} running", view.label(), self.running)
+        } else {
+            format!("{} {}/{}", view.label(), self.done, self.total)
+        }
+    }
 }
 
 /// The panel's rows for one store version: the store's tasks and agents, the
@@ -295,9 +308,12 @@ impl RowModel {
 
     fn lens_stats(&self, view: TaskPanelView) -> LensStats {
         self.lens(view)
+            // The plan counts its items only; the runs nested under them are not.
+            .filter(|(_, task)| view != TaskPanelView::Plan || task.is_plan_item())
             .fold(LensStats::default(), |mut stats, (_, task)| {
                 stats.total += 1;
                 stats.done += usize::from(task.status == TaskStatus::Done);
+                stats.running += usize::from(task.status == TaskStatus::InProgress);
                 stats
             })
     }
@@ -335,9 +351,9 @@ fn flat_lens_rows(tasks: &[Task], kind: TaskKind) -> Vec<PanelRow> {
         .collect()
 }
 
-/// The tab strip, the console's first body row: one label per tab with its
-/// done/total, the shown tab in brackets (`[Agents 1/3]`), so the strip reads
-/// without colour. Indented to line up with the rows' `›` gutter.
+/// The tab strip, the console's first body row: one label per tab (its count
+/// is [`LensStats::label`]), the shown tab in brackets (`[Agents 1 running]`), so
+/// the strip reads without colour. Indented to line up with the rows' `›` gutter.
 fn lens_tabs(model: &RowModel, view: TaskPanelView) -> Line<'static> {
     let pal = Palette::current();
     let mut spans = vec![Span::raw("  ")];
@@ -345,8 +361,7 @@ fn lens_tabs(model: &RowModel, view: TaskPanelView) -> Line<'static> {
         if i > 0 {
             spans.push(Span::raw(" "));
         }
-        let stats = model.lens_stats(tab);
-        let label = format!("{} {}/{}", tab.label(), stats.done, stats.total);
+        let label = model.lens_stats(tab).label(tab);
         if tab == view {
             spans.push(Span::styled(format!("[{label}]"), bold(pal.acc())));
         } else {
@@ -609,12 +624,6 @@ fn flight_row(
         ),
         Span::raw(" "),
     ];
-    // A background shell job is a satellite (spec §2, §4 c7): the `⌁` mark
-    // tells it apart from a waypoint at a glance.
-    if task.kind() == TaskKind::Shell {
-        spans.insert(0, Span::raw(" "));
-        spans.insert(0, Span::styled("⌁", pal.acc()));
-    }
     if !tree_prefix.is_empty() {
         spans.push(Span::styled(tree_prefix.to_string(), pal.faint()));
     }
@@ -740,13 +749,7 @@ fn render_flight_plan(
     let row_inner = width.saturating_sub(4);
     if focused {
         console.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
-        console.hint = hints(&[
-            ("↑↓", "move"),
-            ("←→", "tab"),
-            ("enter", "jump to its steps"),
-            ("x", "drop"),
-            ("esc", "back"),
-        ]);
+        console.hint = hints(&pick_hints(model, selected));
     }
     console.rows = model
         .lens(view)
@@ -770,6 +773,37 @@ fn render_flight_plan(
         )));
     }
     console.render(width)
+}
+
+/// The hint foot's keys for the picked row: the moves, then only what Enter and
+/// `x` do on that row (the app's `open_task_panel_row`, the panel's `cancel_pick`).
+/// A plan item or a schedule job has neither, so its foot names none.
+fn pick_hints(model: &RowModel, picked: Option<u64>) -> Vec<(&'static str, &'static str)> {
+    let mut keys = vec![("↑↓", "move"), ("←→", "tab")];
+    if let Some(task) = picked.and_then(|id| model.task(id)) {
+        if task.action == Some(RowAction::Login) {
+            keys.push(("enter", "log in"));
+        } else if task.kind() == TaskKind::Subagent && task.agent.is_some() {
+            keys.push(("enter", "open its log"));
+        } else if task.kind() == TaskKind::Shell && task.key.is_some() {
+            keys.push(("enter", "open output"));
+        }
+        if task.action == Some(RowAction::Abort) {
+            let word = if task.kind() == TaskKind::Shell {
+                "stop"
+            } else {
+                "cancel"
+            };
+            keys.push(("x", word));
+        } else if task.kind() == TaskKind::Subagent
+            && task.status.is_active()
+            && task.agent.is_some()
+        {
+            keys.push(("x", "cancel"));
+        }
+    }
+    keys.push(("esc", "back"));
+    keys
 }
 
 /// `TaskPanelComponent`.

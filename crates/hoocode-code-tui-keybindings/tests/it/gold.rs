@@ -25,6 +25,11 @@ fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() 
             "Step tool output: radar → peek → full → radar",
         ),
         (
+            "app.tasks.cycleForward",
+            "Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty tabs)",
+            "Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)",
+        ),
+        (
             "app.chrome.cycleForward",
             "Cycle chrome density (full → compact → bare)",
             "Toggle chrome density (full ↔ compact)",

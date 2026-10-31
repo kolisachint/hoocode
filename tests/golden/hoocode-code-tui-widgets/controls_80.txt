@@ -52,7 +52,7 @@
 ┃  shift+alt+o  Cycle tool output view backward                                ┃
 ┃  ctrl+o  Step tool output: radar → peek → full → radar                       ┃
 ┃  ctrl+t  Toggle thinking blocks                                              ┃
-┃  alt+l  Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty ta[┃
+┃  alt+l  Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)        ┃
 ┃  shift+alt+l  Cycle task panel view backward                                 ┃
 ┃  ctrl+g  Show or hide the task panel                                         ┃
 ┃  alt+z  Toggle chrome density (full ↔ compact)                               ┃

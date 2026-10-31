@@ -120,7 +120,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry(
             "app.tasks.cycleForward",
             &["alt+l"],
-            "Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty tabs)",
+            "Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)",
         ),
         entry(
             "app.tasks.cycleBackward",
