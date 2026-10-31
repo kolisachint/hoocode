@@ -982,10 +982,10 @@ Width: 100 columns.
 ┃   ◐ Adding a word-wrap helper                                                     step 04 · 9s   ┃
 ┃   ○ Write unit tests for the helper                                                              ┃
 ┃   ○ Update the changelog                                                                         ┃
-┗ ↑↓ move · enter jump to its steps · x drop · esc back ┛
+┗ ↑↓ move · ←→ tab · esc back ┛
 ```
 
-Notes: Each waypoint lists the steps it used (`steps 02–03`).
+Notes: Each waypoint lists the steps it used (`steps 02–03`). The foot names only the keys that act on the picked row. Here the pick is a plan item, so it has only the moves, the tabs and `esc back`. An agent run reads `enter open its log · x cancel`, and a shell job `enter open output · x stop`.
 
 Differs from previous: Ctrl+g opens the flight plan as a heavy console. Each waypoint shows its steps (`steps 02–03`) and its time. The previous was a rounded `Plan 2/5` box.
 

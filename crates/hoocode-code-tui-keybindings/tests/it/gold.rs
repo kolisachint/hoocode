@@ -14,7 +14,8 @@ fn gold() -> Value {
 fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() {
     /// Declared divergence from the pin (2026-10-09, user decision: ctrl+o steps
     /// the tool output dial like alt+o; 2026-10-10: the chrome dial has two
-    /// stops, full and compact, `bare` is retired). The pinned descriptions
+    /// stops, full and compact, `bare` is retired; 2026-10-31: the tab order
+    /// lists Shell, and the tab entry drops "skips empty tabs"). The pinned descriptions
     /// below describe the old dials; ours describe the new ones. An expected
     /// row is rewritten only when its pinned text matches exactly, and every
     /// entry must match, so a stale entry fails instead of rotting.
@@ -23,6 +24,11 @@ fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() 
             "app.tools.expand",
             "Jump to the full view from wherever you are, and back again",
             "Step tool output: radar → peek → full → radar",
+        ),
+        (
+            "app.tasks.cycleForward",
+            "Cycle task panel tab (Plan → Agents → Schedule → MCP, skips empty tabs)",
+            "Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)",
         ),
         (
             "app.chrome.cycleForward",

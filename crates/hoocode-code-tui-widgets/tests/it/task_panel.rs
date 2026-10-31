@@ -672,9 +672,216 @@ fn each_tabs_count_is_scoped_to_its_own_kind() {
         panel.set_view(view);
         let header = strip(&render(&mut panel, 120).join("\n"));
         assert!(header.contains("Plan 0/1"), "{header}");
-        assert!(header.contains("Agents 0/1"), "{header}");
+        // A running run reads as a count of what runs, not done/total.
+        assert!(header.contains("Agents 1 running"), "{header}");
         assert!(header.contains("MCP 1/1"), "{header}");
     }
+}
+
+/// A panel whose tabs carry double-digit counts: Plan 3/12, twelve running
+/// agents, two running shell jobs, one running schedule, three running calls.
+fn crowded_tabs() {
+    for i in 0..12 {
+        let item = create(&format!("Step {i:02}"));
+        if i < 3 {
+            set(item, TaskStatus::Done);
+        }
+    }
+    for i in 0..12 {
+        let run = create_with(&format!("scan {i:02}"), sub("explore"));
+        set(run, TaskStatus::InProgress);
+    }
+    for i in 0..2 {
+        let job = create_with(&format!("sleep {i}"), shell());
+        set(job, TaskStatus::InProgress);
+    }
+    let schedule = create_with(
+        "nightly sweep",
+        CreateTaskOptions {
+            source: Some(TaskSource::Schedule),
+            ..Default::default()
+        },
+    );
+    set(schedule, TaskStatus::InProgress);
+    for i in 0..3 {
+        let call = create_with(&format!("fetch {i}"), mcp(Some("web")));
+        set(call, TaskStatus::InProgress);
+    }
+}
+
+#[test]
+fn the_shown_tab_keeps_its_brackets_at_80_columns_with_double_digit_counts() {
+    let _g = lock();
+    crowded_tabs();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Mcp);
+    let lines = plain(&mut panel, 80);
+    assert!(lines.iter().all(|l| visible_width(l) <= 80), "{lines:#?}");
+    // The full strip is 80 cells, past the body row's 78. The counts of the
+    // tabs not shown go first; the shown tab keeps its count and brackets.
+    let strip = &lines[1];
+    assert!(strip.contains("[MCP 3 running]"), "{strip}");
+    assert!(
+        !strip.contains("12") && !strip.contains("Agents 12"),
+        "{strip}"
+    );
+    for label in ["Plan", "Agents", "Shell", "Schedule"] {
+        assert!(strip.contains(label), "{strip}");
+    }
+    // Focused, the strip and the rows still fit and the bracket stays whole.
+    let mut keyboard = focused();
+    keyboard.set_view(TaskPanelView::Mcp);
+    let lines = plain(&mut keyboard, 80);
+    assert!(lines[1].contains("[MCP 3 running]"), "{lines:#?}");
+    assert!(lines.iter().all(|l| visible_width(l) <= 80), "{lines:#?}");
+}
+
+#[test]
+fn the_tab_strip_drops_counts_then_labels_before_it_cuts_the_shown_tab() {
+    let _g = lock();
+    crowded_tabs();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Mcp);
+    // At 40 columns the body row is 38 cells: the counts (44 cells) do not fit,
+    // the labels (34 cells) do.
+    let strip = plain(&mut panel, 40)[1].clone();
+    assert!(strip.contains("Schedule [MCP]"), "{strip}");
+    assert!(!strip.contains("running"), "{strip}");
+    // Only the shown tab fits 12 columns: its brackets stay whole.
+    let strip = plain(&mut panel, 12)[1].clone();
+    assert!(strip.contains("[MCP]"), "{strip}");
+    assert!(!strip.contains("Plan"), "{strip}");
+    assert!(visible_width(&strip) <= 12, "{strip}");
+}
+
+#[test]
+fn an_armed_shell_cancel_says_stop() {
+    let _g = lock();
+    let job = create_with("sleep 60", shell());
+    task_store().update(
+        job,
+        TaskPatch {
+            status: Some(TaskStatus::InProgress),
+            action: Some(Some(RowAction::Abort)),
+            ..Default::default()
+        },
+    );
+    let mut panel = focused();
+    panel.set_view(TaskPanelView::Shell);
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    let lines = plain(&mut panel, 120);
+    assert!(
+        lines.iter().any(|l| l.contains("press x again to stop")),
+        "{lines:#?}"
+    );
+    assert!(!lines.iter().any(|l| l.contains("to cancel")), "{lines:#?}");
+}
+
+#[test]
+fn an_armed_cancel_clears_when_its_run_finishes() {
+    let _g = lock();
+    let run = run_with_id("trace the auth flow", "run-1");
+    let mut panel = focused();
+    panel.set_view(TaskPanelView::Subagents);
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    assert!(plain(&mut panel, 120)
+        .join("\n")
+        .contains("press x again to cancel"));
+    set(run, TaskStatus::Done);
+    let text = plain(&mut panel, 120).join("\n");
+    assert!(!text.contains("press x again"), "{text}");
+    assert!(!text.contains("· x "), "{text}");
+}
+
+#[test]
+fn a_stale_arm_does_not_swallow_escape() {
+    let _g = lock();
+    let run = run_with_id("trace the auth flow", "run-1");
+    let mut panel = focused();
+    panel.set_view(TaskPanelView::Subagents);
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    // The run ends while armed: the arm is stale, so the first Esc leaves.
+    set(run, TaskStatus::Done);
+    press(&mut panel, ESC);
+    assert_eq!(panel.take_events(), vec![PanelEvent::Exit]);
+}
+
+#[test]
+fn a_narrow_strip_keeps_a_lone_shown_tab_whole_without_its_indent() {
+    let _g = lock();
+    create("a plan item");
+    let job = create_with(
+        "nightly sweep",
+        CreateTaskOptions {
+            source: Some(TaskSource::Schedule),
+            ..Default::default()
+        },
+    );
+    set(job, TaskStatus::InProgress);
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Schedule);
+    // The body row is 10 cells at width 12: `  [Schedule]` (12) does not fit,
+    // `[Schedule]` (10) does.
+    let strip = plain(&mut panel, 12)[1].clone();
+    assert!(strip.contains("[Schedule]"), "{strip}");
+    assert!(!strip.contains("Plan"), "{strip}");
+    assert!(visible_width(&strip) <= 12, "{strip}");
+}
+
+#[test]
+fn the_plan_tab_counts_its_items_not_the_runs_nested_under_them() {
+    let _g = lock();
+    let a = create("Read the spec");
+    let b = create("Write the port");
+    set(a, TaskStatus::Done);
+    // Two runs under the first item, one under the second: still two items.
+    for (title, item) in [("scan A", a), ("scan B", a), ("scan C", b)] {
+        let run = create_with(
+            title,
+            CreateTaskOptions {
+                linked_task_id: Some(item),
+                ..sub("explore")
+            },
+        );
+        set(run, TaskStatus::Done);
+    }
+    let mut panel = TaskPanelComponent::new();
+    let lines = plain(&mut panel, 120);
+    assert!(lines[0].contains("FLIGHT PLAN  1/2"), "{lines:#?}");
+    assert!(lines[1].contains("[Plan 1/2]"), "{lines:#?}");
+    assert!(lines[1].contains("Agents 3/3"), "{lines:#?}");
+}
+
+#[test]
+fn live_tabs_count_what_runs_and_the_plan_stays_done_of_total() {
+    let _g = lock();
+    let plan = create("Write the port");
+    set(plan, TaskStatus::InProgress);
+    let first = create_with("explore a", sub("explore"));
+    let second = create_with("explore b", sub("explore"));
+    set(first, TaskStatus::InProgress);
+    set(second, TaskStatus::InProgress);
+    let job = create_with("sleep 60", shell());
+    set(job, TaskStatus::InProgress);
+    let mut panel = TaskPanelComponent::new();
+    let strip_row = strip(&render(&mut panel, 120)[1]);
+    assert!(strip_row.contains("[Plan 0/1]"), "{strip_row}");
+    assert!(strip_row.contains("Agents 2 running"), "{strip_row}");
+    assert!(strip_row.contains("Shell 1 running"), "{strip_row}");
+    // The shown tab is bracketed, running count and all.
+    panel.set_view(TaskPanelView::Shell);
+    let strip_row = strip(&render(&mut panel, 120)[1]);
+    assert!(strip_row.contains("[Shell 1 running]"), "{strip_row}");
+    // Once nothing runs, the tab reads done/total again.
+    set(first, TaskStatus::Done);
+    set(second, TaskStatus::Done);
+    set(job, TaskStatus::Done);
+    let strip_row = strip(&render(&mut panel, 120)[1]);
+    assert!(strip_row.contains("[Shell 1/1]"), "{strip_row}");
+    assert!(strip_row.contains("Agents 2/2"), "{strip_row}");
 }
 
 #[test]
@@ -1157,6 +1364,122 @@ fn x_does_nothing_on_a_plan_item_or_a_finished_run() {
     );
 }
 
+/// The hint foot of a focused panel showing `view`, with its first row picked.
+fn foot_on(view: TaskPanelView) -> String {
+    let mut panel = focused();
+    panel.set_view(view);
+    plain(&mut panel, 120).last().unwrap().clone()
+}
+
+#[test]
+fn the_agents_hint_names_enter_and_x_only_while_the_run_is_active() {
+    let _g = lock();
+    let run = run_with_id("Map the auth module", "run-1");
+    let foot = foot_on(TaskPanelView::Subagents);
+    assert!(foot.contains("· enter open its log"), "{foot}");
+    assert!(foot.contains("· x cancel"), "{foot}");
+    assert!(!foot.contains("jump") && !foot.contains("drop"), "{foot}");
+    set(run, TaskStatus::Done);
+    let foot = foot_on(TaskPanelView::Subagents);
+    assert!(foot.contains("· enter open its log"), "{foot}");
+    assert!(
+        !foot.contains("· x "),
+        "a finished run has no cancel: {foot}"
+    );
+}
+
+#[test]
+fn the_shell_hint_names_open_output_and_stop_only_while_the_job_runs() {
+    let _g = lock();
+    let job = task_store().create(
+        "sleep 60",
+        CreateTaskOptions {
+            source: Some(TaskSource::Shell),
+            key: Some("shell:job-1".into()),
+            ..Default::default()
+        },
+    );
+    task_store().update(
+        job.id,
+        TaskPatch {
+            status: Some(TaskStatus::InProgress),
+            action: Some(Some(RowAction::Abort)),
+            ..Default::default()
+        },
+    );
+    let foot = foot_on(TaskPanelView::Shell);
+    assert!(foot.contains("· enter open output"), "{foot}");
+    assert!(foot.contains("· x stop"), "{foot}");
+    // A landed job keeps its row (its output still opens) but cannot be stopped.
+    task_store().update(
+        job.id,
+        TaskPatch {
+            status: Some(TaskStatus::Done),
+            action: Some(None),
+            ..Default::default()
+        },
+    );
+    let foot = foot_on(TaskPanelView::Shell);
+    assert!(foot.contains("· enter open output"), "{foot}");
+    assert!(!foot.contains("· x "), "{foot}");
+}
+
+#[test]
+fn the_hint_names_no_enter_or_x_where_they_do_nothing() {
+    let _g = lock();
+    create("a plan item");
+    let foot = foot_on(TaskPanelView::Plan);
+    assert!(
+        !foot.contains("· enter") && !foot.contains("· x "),
+        "{foot}"
+    );
+    assert!(foot.contains("↑↓ move · ←→ tab · esc back"), "{foot}");
+
+    create_with(
+        "a job",
+        CreateTaskOptions {
+            source: Some(TaskSource::Schedule),
+            ..Default::default()
+        },
+    );
+    let foot = foot_on(TaskPanelView::Schedule);
+    assert!(
+        !foot.contains("· enter") && !foot.contains("· x "),
+        "{foot}"
+    );
+
+    // A finished MCP call has no Abort, so `x` does nothing on it either.
+    let call = create_with("fetch the spec", mcp(Some("web")));
+    set(call, TaskStatus::Done);
+    let foot = foot_on(TaskPanelView::Mcp);
+    assert!(
+        !foot.contains("· enter") && !foot.contains("· x "),
+        "{foot}"
+    );
+}
+
+#[test]
+fn the_hint_names_the_login_row_action() {
+    let _g = lock();
+    with_action("web", TaskSource::Mcp, RowAction::Login);
+    let foot = foot_on(TaskPanelView::Mcp);
+    assert!(foot.contains("· enter log in"), "{foot}");
+    assert!(!foot.contains("· x "), "{foot}");
+}
+
+#[test]
+fn the_hint_names_the_running_call_cancel_and_no_enter() {
+    let _g = lock();
+    let call = with_action("fetch the spec", TaskSource::Mcp, RowAction::Abort);
+    set(call, TaskStatus::InProgress);
+    let foot = foot_on(TaskPanelView::Mcp);
+    assert!(foot.contains("· x cancel"), "{foot}");
+    assert!(
+        !foot.contains("· enter"),
+        "Enter opens nothing on a call: {foot}"
+    );
+}
+
 #[test]
 fn escape_first_disarms_a_pending_cancel_and_then_leaves() {
     let _g = lock();
@@ -1216,11 +1539,12 @@ fn focus_opens_the_flight_plan_console() {
         !lines.iter().any(|l| l.contains("agents in flight")),
         "{lines:#?}"
     );
+    // A plan item has no Enter and no `x`: the foot names only the moves.
     assert!(
         lines
             .last()
             .unwrap()
-            .contains("↑↓ move · ←→ tab · enter jump to its steps · x drop · esc back"),
+            .contains("↑↓ move · ←→ tab · esc back"),
         "{lines:#?}"
     );
 }
@@ -1282,7 +1606,7 @@ fn a_background_agent_run_is_an_agents_row_like_a_shell_job() {
     let lines = plain(&mut panel, 120);
     assert!(lines[0].contains("agents 1 · sats 1"), "{lines:#?}");
     assert!(
-        lines[1].contains("Agents 0/1") && lines[1].contains("Shell 0/1"),
+        lines[1].contains("Agents 1 running") && lines[1].contains("Shell 1 running"),
         "{lines:#?}"
     );
     panel.set_view(TaskPanelView::Subagents);
@@ -1467,7 +1791,7 @@ fn focused_title_counts_live_agents_and_satellites() {
 }
 
 #[test]
-fn focused_rows_mark_satellites_and_use_mission_circles() {
+fn focused_rows_use_mission_circles_and_one_status_glyph_per_shell_job() {
     let _g = lock();
     let done = create("read it");
     set(done, TaskStatus::Done);
@@ -1477,12 +1801,10 @@ fn focused_rows_mark_satellites_and_use_mission_circles() {
     let mut panel = focused();
     panel.set_view(TaskPanelView::Shell);
     let shell_lines = plain(&mut panel, 120);
-    assert!(
-        shell_lines
-            .iter()
-            .any(|l| l.contains('⌁') && l.contains("sleep 60")),
-        "{shell_lines:#?}"
-    );
+    // One status glyph, then the title; the satellite mark sits in the right detail.
+    let job_row = find(&shell_lines, "sleep 60");
+    assert!(job_row.contains("○ sleep 60"), "{job_row}");
+    assert!(!job_row.contains('⌁'), "{job_row}");
     panel.set_view(TaskPanelView::Plan);
     let lines = plain(&mut panel, 120);
     assert!(

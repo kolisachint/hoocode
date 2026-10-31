@@ -401,8 +401,8 @@ fn nests_a_linked_run_under_its_plan_item_in_the_flat_lens_and_counts_it() {
     assert!(lines[run_idx].contains("[explore]"));
     assert!(lines[run_idx].contains("⋯ CodeSearch"));
     assert!(!lines.iter().any(|l| l.contains("free-floating run")));
-    // The tab strip (row 1) counts what the lens shows: todo + linked run + pending todo.
-    assert!(lines[1].contains("0/3"), "{}", lines[1]);
+    // The tab strip (row 1) counts the plan items only: the todo and the pending one, not the nested run.
+    assert!(lines[1].contains("[Plan 0/2]"), "{}", lines[1]);
 
     // The run still appears in the subagents lens.
     panel.set_view(TaskPanelView::Subagents);

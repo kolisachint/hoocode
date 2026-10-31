@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: task panel tabs (2026-10-31)
+- **The hint foot names only what Enter and `x` do on the picked row.** An agent run reads `enter open its log` (and `x cancel` while it runs), a shell job `enter open output` (and `x stop` while it runs), a Login row `enter log in`. A plan item or a schedule job shows only the moves and `esc back`. The old `enter jump to its steps · x drop` named keys that did nothing.
+- **The Plan tab counts its items only.** `Plan 0/3` with two plan items and a nested run now reads `Plan 0/2`, as the title does.
+- **Live tabs count what runs.** Agents, Shell, Schedule and MCP show `Agents 2 running` or `Shell 1 running` while work runs, else `done/total` (`Agents 3/3`). The shown tab stays in brackets.
+- **A shell row has one status glyph.** The leading `⌁` is gone (`◉ sleep 60`); a running job keeps its satellite mark on the right (`⌁ sat job-1 · in orbit 4s`).
+- **The `alt+l` help text lists the tab order Plan → Agents → Shell → Schedule → MCP**, and no longer says "skips empty tabs".
+
 ### Changed: background work (2026-10-31)
 - **No blank rows above the prompt while a mission runs.** The silent working indicator drew two empty rows between the transcript (or the REWIND bar) and the comms frame; it now draws none.
 - **A prompt sent while a background subagent or shell job runs is answered at once.** The agent used to sit idle until the background work finished, and the prompt showed `queued · sends after this step`. Now it starts a turn right away; the background result arrives later as before.
