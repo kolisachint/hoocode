@@ -678,6 +678,123 @@ fn each_tabs_count_is_scoped_to_its_own_kind() {
     }
 }
 
+/// A panel whose tabs carry double-digit counts: Plan 3/12, twelve running
+/// agents, two running shell jobs, one running schedule, three running calls.
+fn crowded_tabs() {
+    for i in 0..12 {
+        let item = create(&format!("Step {i:02}"));
+        if i < 3 {
+            set(item, TaskStatus::Done);
+        }
+    }
+    for i in 0..12 {
+        let run = create_with(&format!("scan {i:02}"), sub("explore"));
+        set(run, TaskStatus::InProgress);
+    }
+    for i in 0..2 {
+        let job = create_with(&format!("sleep {i}"), shell());
+        set(job, TaskStatus::InProgress);
+    }
+    let schedule = create_with(
+        "nightly sweep",
+        CreateTaskOptions {
+            source: Some(TaskSource::Schedule),
+            ..Default::default()
+        },
+    );
+    set(schedule, TaskStatus::InProgress);
+    for i in 0..3 {
+        let call = create_with(&format!("fetch {i}"), mcp(Some("web")));
+        set(call, TaskStatus::InProgress);
+    }
+}
+
+#[test]
+fn the_shown_tab_keeps_its_brackets_at_80_columns_with_double_digit_counts() {
+    let _g = lock();
+    crowded_tabs();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Mcp);
+    let lines = plain(&mut panel, 80);
+    assert!(lines.iter().all(|l| visible_width(l) <= 80), "{lines:#?}");
+    // The full strip is 80 cells, past the body row's 78. The counts of the
+    // tabs not shown go first; the shown tab keeps its count and brackets.
+    let strip = &lines[1];
+    assert!(strip.contains("[MCP 3 running]"), "{strip}");
+    assert!(
+        !strip.contains("12") && !strip.contains("Agents 12"),
+        "{strip}"
+    );
+    for label in ["Plan", "Agents", "Shell", "Schedule"] {
+        assert!(strip.contains(label), "{strip}");
+    }
+    // Focused, the strip and the rows still fit and the bracket stays whole.
+    let mut keyboard = focused();
+    keyboard.set_view(TaskPanelView::Mcp);
+    let lines = plain(&mut keyboard, 80);
+    assert!(lines[1].contains("[MCP 3 running]"), "{lines:#?}");
+    assert!(lines.iter().all(|l| visible_width(l) <= 80), "{lines:#?}");
+}
+
+#[test]
+fn the_tab_strip_drops_counts_then_labels_before_it_cuts_the_shown_tab() {
+    let _g = lock();
+    crowded_tabs();
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Mcp);
+    // At 40 columns the body row is 38 cells: the counts (44 cells) do not fit,
+    // the labels (34 cells) do.
+    let strip = plain(&mut panel, 40)[1].clone();
+    assert!(strip.contains("Schedule [MCP]"), "{strip}");
+    assert!(!strip.contains("running"), "{strip}");
+    // Only the shown tab fits 12 columns: its brackets stay whole.
+    let strip = plain(&mut panel, 12)[1].clone();
+    assert!(strip.contains("[MCP]"), "{strip}");
+    assert!(!strip.contains("Plan"), "{strip}");
+    assert!(visible_width(&strip) <= 12, "{strip}");
+}
+
+#[test]
+fn an_armed_shell_cancel_says_stop() {
+    let _g = lock();
+    let job = create_with("sleep 60", shell());
+    task_store().update(
+        job,
+        TaskPatch {
+            status: Some(TaskStatus::InProgress),
+            action: Some(Some(RowAction::Abort)),
+            ..Default::default()
+        },
+    );
+    let mut panel = focused();
+    panel.set_view(TaskPanelView::Shell);
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    let lines = plain(&mut panel, 120);
+    assert!(
+        lines.iter().any(|l| l.contains("press x again to stop")),
+        "{lines:#?}"
+    );
+    assert!(!lines.iter().any(|l| l.contains("to cancel")), "{lines:#?}");
+}
+
+#[test]
+fn an_armed_cancel_clears_when_its_run_finishes() {
+    let _g = lock();
+    let run = run_with_id("trace the auth flow", "run-1");
+    let mut panel = focused();
+    panel.set_view(TaskPanelView::Subagents);
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    assert!(plain(&mut panel, 120)
+        .join("\n")
+        .contains("press x again to cancel"));
+    set(run, TaskStatus::Done);
+    let text = plain(&mut panel, 120).join("\n");
+    assert!(!text.contains("press x again"), "{text}");
+    assert!(!text.contains("· x "), "{text}");
+}
+
 #[test]
 fn the_plan_tab_counts_its_items_not_the_runs_nested_under_them() {
     let _g = lock();

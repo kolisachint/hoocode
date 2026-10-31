@@ -351,18 +351,59 @@ fn flat_lens_rows(tasks: &[Task], kind: TaskKind) -> Vec<PanelRow> {
         .collect()
 }
 
+/// How much of the tab strip is drawn, from the most to the least.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StripFit {
+    /// Every tab with its count.
+    Full,
+    /// Only the shown tab keeps its count.
+    ShownCount,
+    /// Labels only, no counts.
+    Labels,
+    /// The shown tab alone.
+    ShownOnly,
+}
+
 /// The tab strip, the console's first body row: one label per tab (its count
 /// is [`LensStats::label`]), the shown tab in brackets (`[Agents 1 running]`), so
 /// the strip reads without colour. Indented to line up with the rows' `›` gutter.
-fn lens_tabs(model: &RowModel, view: TaskPanelView) -> Line<'static> {
+/// When the strip is wider than the body row (`width` less the frame's two
+/// edges), the counts of the tabs not shown go first, then the shown tab's count,
+/// then the other tabs. The shown tab's brackets are never cut.
+fn lens_tabs(model: &RowModel, view: TaskPanelView, width: usize) -> Line<'static> {
+    let budget = width.saturating_sub(2);
+    let mut strip = tab_strip(model, view, StripFit::Full);
+    for fit in [StripFit::ShownCount, StripFit::Labels, StripFit::ShownOnly] {
+        if strip.spans.iter().map(|s| s.width()).sum::<usize>() <= budget {
+            break;
+        }
+        strip = tab_strip(model, view, fit);
+    }
+    strip
+}
+
+/// The tab strip drawn at `fit`. See [`lens_tabs`].
+fn tab_strip(model: &RowModel, view: TaskPanelView, fit: StripFit) -> Line<'static> {
     let pal = Palette::current();
     let mut spans = vec![Span::raw("  ")];
-    for (i, &tab) in model.views().iter().enumerate() {
-        if i > 0 {
+    let mut drawn = false;
+    for &tab in model.views() {
+        let shown = tab == view;
+        if fit == StripFit::ShownOnly && !shown {
+            continue;
+        }
+        let label = match fit {
+            StripFit::Full => model.lens_stats(tab).label(tab),
+            StripFit::ShownCount if shown => model.lens_stats(tab).label(tab),
+            StripFit::ShownCount | StripFit::Labels | StripFit::ShownOnly => {
+                tab.label().to_string()
+            }
+        };
+        if drawn {
             spans.push(Span::raw(" "));
         }
-        let label = model.lens_stats(tab).label(tab);
-        if tab == view {
+        drawn = true;
+        if shown {
             spans.push(Span::styled(format!("[{label}]"), bold(pal.acc())));
         } else {
             spans.push(Span::styled(label, pal.faint()));
@@ -495,7 +536,12 @@ fn flight_detail(
 ) -> Option<(String, Style)> {
     let pal = Palette::current();
     if confirm {
-        return Some(("press x again to cancel".to_string(), pal.warn()));
+        let word = if task.kind() == TaskKind::Shell {
+            "stop"
+        } else {
+            "cancel"
+        };
+        return Some((format!("press x again to {word}"), pal.warn()));
     }
     if let Some(note) = &task.note {
         return Some((format!("{WARNING_GLYPH} {note}"), pal.warn()));
@@ -726,27 +772,24 @@ fn render_flight_plan(
     max_rows: usize,
 ) -> Vec<String> {
     let pal = Palette::current();
-    let mut done = 0;
-    let mut total = 0;
-    for (_, task) in model
-        .lens(TaskPanelView::Plan)
-        .filter(|(_, task)| task.is_plan_item())
-    {
-        total += 1;
-        done += usize::from(task.status == TaskStatus::Done);
-    }
+    let plan = model.lens_stats(TaskPanelView::Plan);
     let agents = live_lens_count(model, TaskPanelView::Subagents);
     let sats = live_lens_count(model, TaskPanelView::Shell);
     let mut console = Console::new(
         "FLIGHT PLAN",
-        format!("{done}/{total}  agents {agents} · sats {sats}"),
+        format!(
+            "{}/{}  agents {agents} · sats {sats}",
+            plan.done, plan.total
+        ),
     );
-    console.top = vec![lens_tabs(model, view)];
+    console.top = vec![lens_tabs(model, view, width)];
     console.right = Line::from(vec![Span::styled("/tasks · ctrl+g", pal.faint())]);
     let ids = model.row_ids(view);
     // Rows sit behind the console's `› ` marker or gutter, so they get two
     // cells less than the frame's inner width.
     let row_inner = width.saturating_sub(4);
+    // A row that is no longer cancellable (its run ended) drops the armed `x`.
+    let confirming = confirming.filter(|id| model.task(*id).is_some_and(is_cancellable));
     if focused {
         console.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
         console.hint = hints(&pick_hints(model, selected));
@@ -775,6 +818,14 @@ fn render_flight_plan(
     console.render(width)
 }
 
+/// Whether `x` can cancel a row: an Abort row (a running shell job, an MCP call
+/// in flight), or an active subagent run. The panel's `cancel_pick` queues the
+/// cancel for the same rows.
+fn is_cancellable(task: &Task) -> bool {
+    task.action == Some(RowAction::Abort)
+        || (task.kind() == TaskKind::Subagent && task.status.is_active() && task.agent.is_some())
+}
+
 /// The hint foot's keys for the picked row: the moves, then only what Enter and
 /// `x` do on that row (the app's `open_task_panel_row`, the panel's `cancel_pick`).
 /// A plan item or a schedule job has neither, so its foot names none.
@@ -788,18 +839,13 @@ fn pick_hints(model: &RowModel, picked: Option<u64>) -> Vec<(&'static str, &'sta
         } else if task.kind() == TaskKind::Shell && task.key.is_some() {
             keys.push(("enter", "open output"));
         }
-        if task.action == Some(RowAction::Abort) {
+        if is_cancellable(task) {
             let word = if task.kind() == TaskKind::Shell {
                 "stop"
             } else {
                 "cancel"
             };
             keys.push(("x", word));
-        } else if task.kind() == TaskKind::Subagent
-            && task.status.is_active()
-            && task.agent.is_some()
-        {
-            keys.push(("x", "cancel"));
         }
     }
     keys.push(("esc", "back"));
