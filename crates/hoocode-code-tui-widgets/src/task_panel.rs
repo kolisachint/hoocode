@@ -372,20 +372,30 @@ enum StripFit {
 /// then the other tabs. The shown tab's brackets are never cut.
 fn lens_tabs(model: &RowModel, view: TaskPanelView, width: usize) -> Line<'static> {
     let budget = width.saturating_sub(2);
-    let mut strip = tab_strip(model, view, StripFit::Full);
-    for fit in [StripFit::ShownCount, StripFit::Labels, StripFit::ShownOnly] {
+    // Each candidate is tried in turn; the last one is kept even when it
+    // overflows, so the console cuts only what no candidate could save.
+    const INDENT: &str = "  ";
+    let candidates = [
+        (StripFit::Full, INDENT),
+        (StripFit::ShownCount, INDENT),
+        (StripFit::Labels, INDENT),
+        (StripFit::ShownOnly, INDENT),
+        (StripFit::ShownOnly, ""),
+    ];
+    let mut strip = Line::default();
+    for (fit, indent) in candidates {
+        strip = tab_strip(model, view, fit, indent);
         if strip.spans.iter().map(|s| s.width()).sum::<usize>() <= budget {
             break;
         }
-        strip = tab_strip(model, view, fit);
     }
     strip
 }
 
-/// The tab strip drawn at `fit`. See [`lens_tabs`].
-fn tab_strip(model: &RowModel, view: TaskPanelView, fit: StripFit) -> Line<'static> {
+/// The tab strip drawn at `fit`, after `indent`. See [`lens_tabs`].
+fn tab_strip(model: &RowModel, view: TaskPanelView, fit: StripFit, indent: &str) -> Line<'static> {
     let pal = Palette::current();
-    let mut spans = vec![Span::raw("  ")];
+    let mut spans = vec![Span::raw(indent.to_string())];
     let mut drawn = false;
     for &tab in model.views() {
         let shown = tab == view;
@@ -788,8 +798,6 @@ fn render_flight_plan(
     // Rows sit behind the console's `› ` marker or gutter, so they get two
     // cells less than the frame's inner width.
     let row_inner = width.saturating_sub(4);
-    // A row that is no longer cancellable (its run ended) drops the armed `x`.
-    let confirming = confirming.filter(|id| model.task(*id).is_some_and(is_cancellable));
     if focused {
         console.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
         console.hint = hints(&pick_hints(model, selected));
@@ -1131,6 +1139,11 @@ impl TaskPanelComponent {
         self.events.push(event);
     }
 
+    /// Whether row `id` is in the model and `x` can still cancel it.
+    fn is_cancellable_row(&self, id: u64) -> bool {
+        self.model.task(id).is_some_and(is_cancellable)
+    }
+
     /// Key handling while the panel has the keyboard.
     fn handle_key(&mut self, data: &str) {
         self.model.sync(task_store());
@@ -1139,7 +1152,11 @@ impl TaskPanelComponent {
             return;
         };
         // Any key but `x` disarms a pending cancel. Esc only disarms when one is pending.
-        let armed = self.confirming.take();
+        // An arm on a row that is no longer cancellable is stale: it does not count.
+        let armed = self
+            .confirming
+            .take()
+            .filter(|id| self.is_cancellable_row(*id));
         match id {
             // Ctrl+G hides the panel, and a hidden panel gives the keyboard back.
             "app.panel.focus" => {
@@ -1183,6 +1200,7 @@ impl Component for TaskPanelComponent {
         let selected = resolve_selection(&self.model, view, self.selected);
         self.selected = selected;
         self.ticking = self.model.any_running();
+        self.confirming = self.confirming.filter(|id| self.is_cancellable_row(*id));
         render_flight_plan(
             &self.model,
             view,

@@ -796,6 +796,42 @@ fn an_armed_cancel_clears_when_its_run_finishes() {
 }
 
 #[test]
+fn a_stale_arm_does_not_swallow_escape() {
+    let _g = lock();
+    let run = run_with_id("trace the auth flow", "run-1");
+    let mut panel = focused();
+    panel.set_view(TaskPanelView::Subagents);
+    render(&mut panel, 120);
+    press(&mut panel, "x");
+    // The run ends while armed: the arm is stale, so the first Esc leaves.
+    set(run, TaskStatus::Done);
+    press(&mut panel, ESC);
+    assert_eq!(panel.take_events(), vec![PanelEvent::Exit]);
+}
+
+#[test]
+fn a_narrow_strip_keeps_a_lone_shown_tab_whole_without_its_indent() {
+    let _g = lock();
+    create("a plan item");
+    let job = create_with(
+        "nightly sweep",
+        CreateTaskOptions {
+            source: Some(TaskSource::Schedule),
+            ..Default::default()
+        },
+    );
+    set(job, TaskStatus::InProgress);
+    let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Schedule);
+    // The body row is 10 cells at width 12: `  [Schedule]` (12) does not fit,
+    // `[Schedule]` (10) does.
+    let strip = plain(&mut panel, 12)[1].clone();
+    assert!(strip.contains("[Schedule]"), "{strip}");
+    assert!(!strip.contains("Plan"), "{strip}");
+    assert!(visible_width(&strip) <= 12, "{strip}");
+}
+
+#[test]
 fn the_plan_tab_counts_its_items_not_the_runs_nested_under_them() {
     let _g = lock();
     let a = create("Read the spec");
