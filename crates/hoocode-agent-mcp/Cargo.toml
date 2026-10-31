@@ -50,5 +50,5 @@ hyper-util = { version = "0.1", features = ["tokio", "service"] }
 http-body-util = "0.1"
 bytes = "1"
 url = "2"
-sha2 = "0.10"
+sha2 = "0.11"
 base64 = "0.23"
