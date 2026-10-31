@@ -246,6 +246,14 @@ fn defined(value: Option<&Value>) -> Option<&Value> {
     value.filter(|v| !v.is_null())
 }
 
+/// `thinkingDisplay` values, with `summarised` taken as `summarized`.
+fn parse_thinking_display(value: &str) -> Option<ThinkingDisplay> {
+    match value {
+        "summarised" => Some(ThinkingDisplay::Summarized),
+        other => ThinkingDisplay::parse(other),
+    }
+}
+
 fn finite(value: Option<&Value>) -> Option<f64> {
     defined(value)?.as_f64().filter(|v| v.is_finite())
 }
@@ -385,6 +393,7 @@ impl SettingsManager {
         };
         this.migrate_scoped_models();
         this.check_scoped_model_entries();
+        this.check_thinking_display();
         this
     }
 
@@ -443,6 +452,7 @@ impl SettingsManager {
         self.settings = deep_merge_settings(&self.global, &self.project);
         self.migrate_scoped_models();
         self.check_scoped_model_entries();
+        self.check_thinking_display();
     }
 
     /// `applyOverrides`: layer `overrides` on the merged view (until the
@@ -1325,10 +1335,35 @@ impl SettingsManager {
         })
     }
 
+    /// `thinkingDisplay`. The British `summarised` is read as `summarized`;
+    /// any other unknown value is unset (and reported at load, see
+    /// [`Self::check_thinking_display`]).
     pub fn thinking_display(&self) -> Option<ThinkingDisplay> {
         self.get("thinkingDisplay")
             .and_then(Value::as_str)
-            .and_then(ThinkingDisplay::parse)
+            .and_then(parse_thinking_display)
+    }
+
+    /// Records an error for a `thinkingDisplay` value that is not a known
+    /// spelling, so a typo does not silently fall back to the default.
+    fn check_thinking_display(&mut self) {
+        let scopes = [
+            (SettingsScope::Global, self.global.clone()),
+            (SettingsScope::Project, self.project.clone()),
+        ];
+        for (scope, settings) in scopes {
+            let Some(value) = defined(settings.get("thinkingDisplay")) else {
+                continue;
+            };
+            if value.as_str().and_then(parse_thinking_display).is_none() {
+                self.record_error(
+                    scope,
+                    Error::InvalidValue(format!(
+                        "thinkingDisplay {value} is not \"summarized\" or \"omitted\"; it was ignored"
+                    )),
+                );
+            }
+        }
     }
 
     pub fn show_images(&self) -> bool {

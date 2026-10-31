@@ -100,7 +100,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `ai-oauth-github-copilot` | GitHub Copilot OAuth device flow for hoocode AI | 1 | 675 / 0 | keep |
 | `ai-oauth-google` | Google Cloud Code Assist OAuth flows (Gemini CLI, Antigravity) for hoocode AI | 1 | 1448 / 0 | keep |
 | `ai-oauth-openai-codex` | OpenAI Codex (ChatGPT Plus/Pro) OAuth flow for hoocode AI | 1 | 599 / 0 | keep |
-| `ai-provider-anthropic` | Anthropic provider for hoocode AI | 1 | 2770 / 518 | keep |
+| `ai-provider-anthropic` | Anthropic provider for hoocode AI | 1 | 2771 / 518 | keep |
 | `ai-provider-faux` | Faux / test provider for hoocode AI | 0 | 931 / 816 | test provider (dev-dep only) |
 | `ai-provider-google` | Google Gemini provider for hoocode AI | 2 | 3248 / 110 | keep |
 | `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for hoocode AI | 1 | 1720 / 0 | keep |
@@ -134,7 +134,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 7821 / 6614 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 864 / 822 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 574 / 0 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 6370 / 0 | keep |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 6393 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1640 | the `hoocode` binary |
 | `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 2 | 2059 / 0 | keep |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1582 / 608 | keep |
@@ -150,7 +150,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1585 / 1047 | keep |
 | `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2293 / 0 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 2128 / 746 | keep |
-| `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2412 / 1829 | keep |
+| `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2450 / 1858 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 12305 / 12664 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1112 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1094 / 125 | keep |
@@ -165,11 +165,11 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 24694 / 7567 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 24704 / 7567 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 790 / 896 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9033 / 4789 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2524 / 2142 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14406 / 10350 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14352 / 10323 | keep |
 
 ### TUI library (`tui-*`)
 

@@ -2,7 +2,6 @@
       own options. Keep the public API the same for every caller in the workspace.
       Update the configuration section of the README so the order of resolution matches the code.
       Run the config tests afterwards and report anything that fails.
-   ┊ ✻ The loader parses the file first and reads the environment after, so an override arrives too late. The file has…
    ┊ ● Edited src/config.rs · ran cargo test · read src/config.rs                                               3 calls
    ┊
    ┊ The overrides now apply before the file is parsed, so an override can set the parser's own options.
@@ -20,36 +19,34 @@ r1 c6-81 fg=#e5e5e7 bold
 r2 c6-96 fg=#e5e5e7 bold
 r3 c6-68 fg=#e5e5e7 bold
 r4 c3 fg=#a8a8a8
-r4 c5-117 fg=#989898
+r4 c5 fg=#b5bd68
+r4 c7-64 fg=#e5e5e7
+r4 c112-118 fg=#989898
 r5 c3 fg=#a8a8a8
-r5 c5 fg=#b5bd68
-r5 c7-64 fg=#e5e5e7
-r5 c112-118 fg=#989898
 r6 c3 fg=#a8a8a8
+r6 c5-103 fg=#e5e5e7
 r7 c3 fg=#a8a8a8
-r7 c5-103 fg=#e5e5e7
 r8 c3 fg=#a8a8a8
+r8 c5-33 fg=#e5e5e7
+r8 c34-45 fg=#5cc8bb
+r8 c46-90 fg=#e5e5e7
+r8 c91-101 fg=#5cc8bb
+r8 c102-116 fg=#e5e5e7
 r9 c3 fg=#a8a8a8
-r9 c5-33 fg=#e5e5e7
-r9 c34-45 fg=#5cc8bb
-r9 c46-90 fg=#e5e5e7
-r9 c91-101 fg=#5cc8bb
-r9 c102-116 fg=#e5e5e7
 r10 c3 fg=#a8a8a8
+r10 c5-115 fg=#e5e5e7
 r11 c3 fg=#a8a8a8
-r11 c5-115 fg=#e5e5e7
+r11 c5-17 fg=#e5e5e7
 r12 c3 fg=#a8a8a8
-r12 c5-17 fg=#e5e5e7
-r13 c3 fg=#a8a8a8
-r13 c5 fg=#b5bd68
-r13 c7-12 fg=#b5bd68 bold
-r13 c13-15 fg=#989898
-r13 c16-22 fg=#a8a8a8
-r13 c23-25 fg=#989898
-r13 c26-31 fg=#a8a8a8
-r13 c32-34 fg=#989898
-r13 c35-37 fg=#a8a8a8
-r13 c38-40 fg=#989898
-r13 c41-50 fg=#a8a8a8
-r13 c51-53 fg=#989898
-r13 c54-59 fg=#a8a8a8
+r12 c5 fg=#b5bd68
+r12 c7-12 fg=#b5bd68 bold
+r12 c13-15 fg=#989898
+r12 c16-22 fg=#a8a8a8
+r12 c23-25 fg=#989898
+r12 c26-31 fg=#a8a8a8
+r12 c32-34 fg=#989898
+r12 c35-37 fg=#a8a8a8
+r12 c38-40 fg=#989898
+r12 c41-50 fg=#a8a8a8
+r12 c51-53 fg=#989898
+r12 c54-59 fg=#a8a8a8

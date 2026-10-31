@@ -1,5 +1,4 @@
 ▲ M1  Run the full integration suite and report the first failure.
-   ┊ ✻ The suite takes a few minutes. I will run it once and wait for the outp…
    ┊ ⊘ Ran scripts/integration.sh                                        1 call
    ╰ ⊘ ABORTED · 1 step · 0 hits · 1.0s · 2.4k tokens · $0.006
 --- styles ---
@@ -7,20 +6,18 @@ r0 c0 fg=#9b8cff bold
 r0 c2-3 fg=#9b8cff bold
 r0 c6-65 fg=#e5e5e7 bold
 r1 c3 fg=#a8a8a8
-r1 c5-77 fg=#989898
+r1 c5 fg=#989898
+r1 c7-32 fg=#e5e5e7
+r1 c73-78 fg=#989898
 r2 c3 fg=#a8a8a8
 r2 c5 fg=#989898
-r2 c7-32 fg=#e5e5e7
-r2 c73-78 fg=#989898
-r3 c3 fg=#a8a8a8
-r3 c5 fg=#989898
-r3 c7-16 fg=#989898
-r3 c17-22 fg=#a8a8a8
-r3 c23-25 fg=#989898
-r3 c26-31 fg=#a8a8a8
-r3 c32-34 fg=#989898
-r3 c35-38 fg=#a8a8a8
-r3 c39-41 fg=#989898
-r3 c42-52 fg=#a8a8a8
-r3 c53-55 fg=#989898
-r3 c56-61 fg=#a8a8a8
+r2 c7-16 fg=#989898
+r2 c17-22 fg=#a8a8a8
+r2 c23-25 fg=#989898
+r2 c26-31 fg=#a8a8a8
+r2 c32-34 fg=#989898
+r2 c35-38 fg=#a8a8a8
+r2 c39-41 fg=#989898
+r2 c42-52 fg=#a8a8a8
+r2 c53-55 fg=#989898
+r2 c56-61 fg=#a8a8a8

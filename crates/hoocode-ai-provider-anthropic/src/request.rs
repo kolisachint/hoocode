@@ -225,16 +225,12 @@ fn rejects_sampling_params(model_id: &str) -> bool {
         .any(|family| model_id.contains(family))
 }
 
-/// `defaultThinkingDisplay`: Opus 4.8 and Opus 5 default to omitted.
-fn default_thinking_display(model_id: &str) -> &'static str {
-    if ["opus-4-8", "opus-4.8", "opus-5"]
-        .iter()
-        .any(|family| model_id.contains(family))
-    {
-        "omitted"
-    } else {
-        "summarized"
-    }
+/// `defaultThinkingDisplay`: summarized for every model. The API's own
+/// default on Opus 4.8 and Opus 5 is `omitted`, which sends empty thinking
+/// blocks, so hoocode asks for the summary unless `thinkingDisplay` says
+/// `omitted` (2026-10-31).
+fn default_thinking_display(_model_id: &str) -> &'static str {
+    "summarized"
 }
 
 fn level_key(level: &ThinkingLevel) -> &'static str {

@@ -72,7 +72,7 @@ fn opus_5_uses_adaptive_thinking_instead_of_a_budget() {
     assert_eq!(params["model"], "claude-opus-5");
     assert_eq!(
         params["thinking"],
-        json!({"type": "adaptive", "display": "omitted"})
+        json!({"type": "adaptive", "display": "summarized"})
     );
     assert_eq!(params["output_config"], json!({"effort": "xhigh"}));
 }
@@ -101,7 +101,7 @@ fn opus_5_on_copilot_uses_adaptive_thinking_and_copilot_auth_headers() {
     assert_eq!(params["model"], "claude-opus-5");
     assert_eq!(
         params["thinking"],
-        json!({"type": "adaptive", "display": "omitted"})
+        json!({"type": "adaptive", "display": "summarized"})
     );
     assert_eq!(params["output_config"], json!({"effort": "high"}));
 }
@@ -206,7 +206,7 @@ fn thinking_off_omits_thinking_and_asks_for_low_effort_on_opus_5_5() {
 #[test]
 fn adaptive_thinking_display_and_effort_per_model() {
     let cases = [
-        ("claude-opus-5-5", ThinkingLevel::High, "omitted", "high"),
+        ("claude-opus-5-5", ThinkingLevel::High, "summarized", "high"),
         ("claude-opus-4-7", ThinkingLevel::High, "summarized", "high"),
         (
             "claude-opus-4-7",
@@ -214,8 +214,13 @@ fn adaptive_thinking_display_and_effort_per_model() {
             "summarized",
             "xhigh",
         ),
-        ("claude-opus-4-8", ThinkingLevel::High, "omitted", "high"),
-        ("claude-opus-4-8", ThinkingLevel::XHigh, "omitted", "xhigh"),
+        ("claude-opus-4-8", ThinkingLevel::High, "summarized", "high"),
+        (
+            "claude-opus-4-8",
+            ThinkingLevel::XHigh,
+            "summarized",
+            "xhigh",
+        ),
     ];
     for (id, level, display, effort) in cases {
         let payload = thinking_payload("anthropic", id, reasoning(level));
@@ -232,16 +237,16 @@ fn adaptive_thinking_display_and_effort_per_model() {
 fn explicit_thinking_display_overrides_the_default() {
     let payload = thinking_payload(
         "anthropic",
-        "claude-opus-4-8",
+        "claude-opus-5-5",
         SimpleStreamOptions {
             reasoning: Some(ThinkingLevel::High),
-            thinking_display: Some(ThinkingDisplay::Summarized),
+            thinking_display: Some(ThinkingDisplay::Omitted),
             ..Default::default()
         },
     );
     assert_eq!(
         payload["thinking"],
-        json!({"type": "adaptive", "display": "summarized"})
+        json!({"type": "adaptive", "display": "omitted"})
     );
     assert_eq!(payload["output_config"], json!({"effort": "high"}));
 }

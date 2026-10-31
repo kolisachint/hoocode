@@ -1,7 +1,0 @@
-        here is the answer
-        ✻ thought 0s · weighing the options
---- styles ---
-r0 c8-25 fg=#e5e5e7
-r1 c8-19 fg=#9b8cff
-r1 c20-22 fg=#a8a8a8
-r1 c23-42 fg=#989898

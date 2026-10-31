@@ -856,9 +856,8 @@ fn radar_chain_live_80() {
 }
 
 #[test]
-fn radar_think_80() {
-    // Thinking under its mission: the last prose line, then
-    // `✻ thought Ns` with no gist.
+fn radar_hides_thinking_outside_a_mission() {
+    // Radar draws no thinking, in or out of a mission (2026-10-31).
     let _g = lock();
     let mut msg = AssistantMessageComponent::new(None, ThinkingDisplay::Omit);
     msg.update_content(
@@ -868,9 +867,13 @@ fn radar_think_80() {
         ]),
         true,
     );
-    // The transcript shows the prose once the mission has ended.
     msg.set_radar_prose_shown(true);
-    assert_golden!("radar_think_80", render_golden(&mut msg, 80));
+    let drawn = hoocode_tui_render::Component::render(&mut msg, 80).join("\n");
+    assert!(
+        !drawn.contains('✻') && !drawn.contains("weighing"),
+        "{drawn}"
+    );
+    assert!(drawn.contains("here is the answer"), "{drawn}");
 }
 
 // ---- The turn's end and progress (radar chain row, landing outcomes) ----

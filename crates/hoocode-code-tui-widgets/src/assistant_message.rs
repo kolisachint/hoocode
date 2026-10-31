@@ -708,20 +708,6 @@ impl AssistantMessageComponent {
 
     /// The Think row's seconds: elapsed since the trace started while it
     /// runs, the settled span once done, `None` when never timed.
-    ///
-    /// The radar flight log reads the same clock for its `✻ thought Ns`
-    /// line (M5), with the same gist.
-    pub(crate) fn radar_think_lines(&self, width: usize, palette: &Palette) -> Vec<String> {
-        let Some(secs) = self.think_secs(self.streaming) else {
-            return Vec::new();
-        };
-        let gist = self
-            .last_message
-            .as_ref()
-            .and_then(|message| think_gist(message));
-        crate::radar::think_rows(secs, gist.as_deref(), palette, width)
-    }
-
     fn think_secs(&self, streaming: bool) -> Option<u64> {
         let start = self.think_start?;
         if streaming {
@@ -861,7 +847,6 @@ impl AssistantMessageComponent {
                 }
             }
         }
-        out.extend(self.radar_think_lines(width, palette));
         if out.is_empty() {
             return out;
         }
