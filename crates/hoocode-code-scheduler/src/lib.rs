@@ -3,7 +3,9 @@
 //!
 //! The store is `<cwd>/.agents/scheduled_tasks.json`. The interactive loop
 //! calls [`claim_due`] every [`TICK_INTERVAL`] while the agent is idle, and
-//! submits each returned prompt as a user message.
+//! submits each returned prompt as a user message. A task fires only in the
+//! process that owns it (the one that created it), unless that process has
+//! exited; see [`store`].
 //!
 //! `/loop` is parsed by [`loop_command`]; the TUI runs it. A task due while the
 //! agent is busy fires on the next idle tick if that tick is within
@@ -23,8 +25,8 @@ pub mod tools;
 pub use cron::{is_five_field, matches as cron_matches};
 pub use rows::Runs;
 pub use store::{
-    Claimed, ScheduledTask, TaskStore, Tick, LATE_FIRE_MINUTES, LEGACY_STORE_RELATIVE_PATH,
-    STORE_RELATIVE_PATH,
+    fire_message, process_alive, Adopted, Claimed, Fired, Owner, ScheduledTask, TaskStore, Tick,
+    LATE_FIRE_MINUTES, LEGACY_STORE_RELATIVE_PATH, STORE_RELATIVE_PATH,
 };
 pub use tools::{
     create_cron_create_tool_definition, create_cron_delete_tool_definition,
@@ -51,14 +53,16 @@ pub fn claim_due_now(cwd: &Path) -> Claimed {
 
 /// [`claim_due`] for a tick, with the store's tasks after the claim (for the
 /// task panel's Schedule rows; see [`rows`]). Nothing is read when the lock is
-/// not taken.
-pub fn tick(cwd: &Path, now: &DateTime<Local>) -> Tick {
+/// not taken. The claim is made for this process and the session `session_id`:
+/// it fires the tasks this process owns, and adopts the ones with no live owner.
+pub fn tick(cwd: &Path, session_id: Option<&str>, now: &DateTime<Local>) -> Tick {
     TaskStore::for_cwd(cwd)
+        .with_session_id(session_id.map(str::to_owned))
         .claim_due_tick(now)
         .unwrap_or_default()
 }
 
 /// [`tick`] at the current local time.
-pub fn tick_now(cwd: &Path) -> Tick {
-    tick(cwd, &Local::now())
+pub fn tick_now(cwd: &Path, session_id: Option<&str>) -> Tick {
+    tick(cwd, session_id, &Local::now())
 }

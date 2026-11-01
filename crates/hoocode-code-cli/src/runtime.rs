@@ -399,6 +399,7 @@ fn load_session_plugins(
 
 /// Extension-registered tools in hoocode, SDK tools here: AskUserQuestion always
 /// (the options pane in interactive mode; elsewhere it says there is no UI),
+/// the Cron tools in interactive mode only (the TUI is what fires them),
 /// TodoWrite with `--enable-todowrite` or the `enableTodoWrite` setting.
 fn custom_tools(
     args: &Args,
@@ -414,8 +415,13 @@ fn custom_tools(
     };
     let mut tools = vec![hoocode_code_tools_optin::create_ask_options_tool_definition(ask_host)];
     // hoocode-ts's `loop` extension registers the Cron tools after ask_options and
-    // before SearchHooCode, so the model sees them in that place.
-    tools.extend(hoocode_code_scheduler::create_cron_tool_definitions(cwd));
+    // before SearchHooCode, so the model sees them in that place. Only the
+    // interactive TUI fires scheduled tasks (print, json, rpc and subagent runs
+    // never tick the scheduler), so only it offers the tools: elsewhere a
+    // CronCreate would be accepted and then never run.
+    if interactive {
+        tools.extend(hoocode_code_scheduler::create_cron_tool_definitions(cwd));
+    }
     // After AskUserQuestion: the model sees DocSearch last among the built-ins.
     tools.push(
         hoocode_code_tools::search_hoocode::create_search_hoocode_tool_definition(
@@ -2252,8 +2258,9 @@ mod tests {
     #[test]
     fn no_builtin_tools_keeps_the_extension_tools() {
         const BUILTIN: [&str; 5] = ["Read", "Shell", "Edit", "Write", "CodeSearch"];
-        let (_, default) = prompt_for(&[]);
-        let (_, tools) = prompt_for(&["-nbt"]);
+        // Interactive, where the Cron tools exist.
+        let (_, default) = prompt_for_mode(&[], true);
+        let (_, tools) = prompt_for_mode(&["-nbt"], true);
         assert!(tools.contains(&"AskUserQuestion".to_string()), "{tools:?}");
         // The Cron tools are extension tools in hoocode-ts too (`loop`), so they stay on.
         for cron in ["CronCreate", "CronList", "CronDelete"] {
@@ -2330,9 +2337,6 @@ mod tests {
                 "Write",
                 "CodeSearch",
                 "AskUserQuestion",
-                "CronCreate",
-                "CronList",
-                "CronDelete",
                 "DocSearch",
                 "Agent",
                 "AgentOutput",
@@ -2341,6 +2345,24 @@ mod tests {
         );
         // Not interactive: no background jobs, so no job tools and no hint.
         assert!(!prompt.contains("run_in_background"), "{prompt}");
+    }
+
+    /// Only the interactive TUI ticks the scheduler. A print, json (subagent)
+    /// or rpc run has no tick, so a task the model created there would never
+    /// fire: the tools are not offered.
+    #[test]
+    fn the_cron_tools_exist_only_in_an_interactive_session() {
+        let cron = ["CronCreate", "CronList", "CronDelete"];
+        let (_, headless) = prompt_for_mode(&[], false);
+        for name in cron {
+            assert!(!headless.iter().any(|t| t == name), "{name}: {headless:?}");
+        }
+        let (_, interactive) = prompt_for_mode(&[], true);
+        let at = interactive
+            .iter()
+            .position(|t| t == "AskUserQuestion")
+            .unwrap();
+        assert_eq!(interactive[at + 1..at + 4], cron, "{interactive:?}");
     }
 
     #[test]
