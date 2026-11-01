@@ -6,7 +6,7 @@ use hoocode_ai_types::{Content, StopReason};
 use hoocode_code_scheduler::loop_command::{
     parse_loop_args, AutoEnd, AutoLoop, AutoNext, LoopCommand, Schedule, DONE_TOKEN,
 };
-use hoocode_code_scheduler::{Adopted, Claimed, TaskStore, LATE_FIRE_MINUTES};
+use hoocode_code_scheduler::{Adopted, Claimed, Fired, TaskStore, LATE_FIRE_MINUTES};
 
 use crate::auto_loop;
 
@@ -71,6 +71,21 @@ pub(super) fn preview(prompt: &str) -> String {
     } else {
         line.to_string()
     }
+}
+
+/// The transcript line for a fire whose prompt is a slash command. Such a
+/// prompt is sent as it is, so this line is what shows it was scheduled. Other
+/// fires carry their own task line in the message.
+pub(super) fn fire_notice(fired: &Fired) -> Option<String> {
+    fired.is_slash().then(|| {
+        format!(
+            "⏰ Scheduled task {} ({}, {}) fired: {}",
+            fired.id,
+            fired.cron,
+            kind(fired.recurring),
+            preview(fired.prompt.trim_start())
+        )
+    })
 }
 
 /// The notice for a task this session took over.
@@ -305,6 +320,11 @@ impl Mode {
         for adopted in &claimed.adopted {
             self.show_warning(&adoption_notice(adopted));
         }
+        for fired in &claimed.fired {
+            if let Some(notice) = fire_notice(fired) {
+                self.show_status(&notice);
+            }
+        }
         for prompt in &claimed.skipped {
             self.show_warning(&format!(
                 "Scheduled prompt skipped: it was due more than {LATE_FIRE_MINUTES} minutes ago, while the agent was busy: {}",
@@ -362,6 +382,26 @@ mod tests {
             AutoNext::Prompt(_)
         ));
         assert_eq!(run.turns(), 2);
+    }
+
+    #[test]
+    fn a_slash_fire_is_shown_by_a_line_and_a_plain_fire_is_not() {
+        let fired = |prompt: &str| Fired {
+            id: "task_1".into(),
+            cron: "*/5 * * * *".into(),
+            recurring: true,
+            prompt: prompt.into(),
+        };
+        let slash = fired("/review the diff\nand report");
+        assert_eq!(slash.message(), "/review the diff\nand report");
+        assert_eq!(
+            fire_notice(&slash).as_deref(),
+            Some("⏰ Scheduled task task_1 (*/5 * * * *, recurring) fired: /review the diff")
+        );
+        // A plain prompt carries the task line in the message, so no extra notice.
+        let plain = fired("check the build");
+        assert!(plain.message().starts_with("⏰ Scheduled task task_1 ("));
+        assert_eq!(fire_notice(&plain), None);
     }
 
     #[test]

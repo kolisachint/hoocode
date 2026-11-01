@@ -25,8 +25,8 @@ pub mod tools;
 pub use cron::{is_five_field, matches as cron_matches};
 pub use rows::Runs;
 pub use store::{
-    fire_message, process_alive, Adopted, Claimed, Fired, Owner, ScheduledTask, TaskStore, Tick,
-    LATE_FIRE_MINUTES, LEGACY_STORE_RELATIVE_PATH, STORE_RELATIVE_PATH,
+    fire_message, is_slash_prompt, process_alive, Adopted, Claimed, Fired, Owner, ScheduledTask,
+    TaskStore, Tick, LATE_FIRE_MINUTES, LEGACY_STORE_RELATIVE_PATH, STORE_RELATIVE_PATH,
 };
 pub use tools::{
     create_cron_create_tool_definition, create_cron_delete_tool_definition,

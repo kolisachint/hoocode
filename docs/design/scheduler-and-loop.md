@@ -65,8 +65,12 @@ the late-fire rule):
     which is a print run with `interactive = false`, so they never get the tools.
   - **Visible fires.** A fired prompt is sent as `⏰ Scheduled task <id> (<cron>,
     recurring|once)` on its own line, then the prompt (`fire_message`). The Schedule row
-    matches the turn that starts by that text. Because the text no longer starts with `/`,
-    a scheduled `/command` is no longer expanded. `CronList` prints, per task, the owner,
+    matches the turn that starts by that text. A prompt whose trimmed start is `/` (a slash
+    command or template) is sent unchanged, so it still expands; the TUI shows a status
+    line `⏰ Scheduled task <id> (<cron>, recurring) fired: <first line>` instead
+    (`fire_notice`). The row matches on that unchanged text. A template's user message is the
+    expanded text and an extension command starts no user message, so those rows stay
+    `queued` until the turn ends, as before. `CronList` prints, per task, the owner,
     `fireCount`, last and next fire in local time, and the prompt. The "last fired" time
     is the last handled minute, so it also moves when a late task is skipped.
   - **Same-minute fires.** All but the first prompt of a tick are queued with

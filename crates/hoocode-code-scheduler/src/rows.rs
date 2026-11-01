@@ -501,6 +501,24 @@ mod tests {
     }
 
     #[test]
+    fn a_slash_fire_starts_its_row_on_the_unchanged_prompt() {
+        let store = TaskStore::new();
+        let mut runs = Runs::default();
+        let a = job("task_a", "* * * * *", "/review", true);
+        runs.publish_tick(
+            &store,
+            Some(std::slice::from_ref(&a)),
+            std::slice::from_ref(&a),
+            &at(9, 0, 10),
+        );
+        runs.run_started(&store, "/review");
+        assert_eq!(
+            row(&store, "task_a").unwrap().note.as_deref(),
+            Some("running")
+        );
+    }
+
+    #[test]
     fn a_dropped_queued_prompt_is_pending_again_not_queued_forever() {
         let store = TaskStore::new();
         let mut runs = Runs::default();

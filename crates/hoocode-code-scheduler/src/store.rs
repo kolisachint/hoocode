@@ -131,9 +131,20 @@ pub fn process_alive(pid: u32) -> bool {
     }
 }
 
+/// Whether a prompt is a slash command or prompt template. Such a prompt must
+/// reach the session unchanged to expand, so it gets no scheduled-task line.
+pub fn is_slash_prompt(prompt: &str) -> bool {
+    prompt.trim_start().starts_with('/')
+}
+
 /// The text a fired task is sent as: a line naming the task, then its prompt,
-/// so the user and the model can see the message was scheduled.
+/// so the user and the model can see the message was scheduled. A slash prompt
+/// is sent as it is (see [`is_slash_prompt`]); the caller shows the fire in a
+/// notice instead.
 pub fn fire_message(id: &str, cron: &str, recurring: bool, prompt: &str) -> String {
+    if is_slash_prompt(prompt) {
+        return prompt.to_owned();
+    }
     format!(
         "⏰ Scheduled task {id} ({cron}, {})\n{prompt}",
         if recurring { "recurring" } else { "once" }
@@ -158,9 +169,15 @@ pub struct Fired {
 }
 
 impl Fired {
-    /// The text to submit: the prompt under its scheduled-task line.
+    /// The text to submit: the prompt under its scheduled-task line, or the
+    /// prompt alone when it is a slash command.
     pub fn message(&self) -> String {
         fire_message(&self.id, &self.cron, self.recurring, &self.prompt)
+    }
+
+    /// Whether the prompt is a slash command, sent without a task line.
+    pub fn is_slash(&self) -> bool {
+        is_slash_prompt(&self.prompt)
     }
 }
 
@@ -962,6 +979,19 @@ mod tests {
         );
         assert_eq!(claimed.fired_jobs[0].fire_message(), fired.message());
         assert_eq!(fired.prompt, "check the build");
+    }
+
+    #[test]
+    fn a_slash_prompt_is_sent_unchanged_and_still_pairs_with_its_row() {
+        let dir = tempfile::tempdir().unwrap();
+        put(&store_in(&dir), "30 9 * * *", "/review the diff", true, 0);
+        put(&store_in(&dir), "30 9 * * *", "  /loop 5m x", true, 0);
+        let claimed = store_in(&dir).claim_due(&at(9, 30, 10)).unwrap();
+        assert_eq!(claimed.fired[0].message(), "/review the diff");
+        assert_eq!(claimed.fired[1].message(), "  /loop 5m x");
+        assert!(claimed.fired.iter().all(Fired::is_slash));
+        // The row matches on the same text the tick sends.
+        assert_eq!(claimed.fired_jobs[0].fire_message(), "/review the diff");
     }
 
     #[test]
