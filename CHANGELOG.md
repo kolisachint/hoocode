@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: startup logo in narrow terminals (2026-11-01)
+- **The owl logo keeps its three rows in a narrow terminal.** The banner re-lays itself out on resize (a vertical split no longer wraps the star dots onto their own rows), the dots are placed for the fullscreen body's one-narrower width, and a dot that would land past a long working-directory row is skipped instead of wrapping.
+
 ### Fixed: thinking on Opus 5 (2026-10-31)
 - **Thinking text shows again on Opus 4.8 and Opus 5.** hoocode now asks every model for summarized thinking. Before, these models defaulted to `omitted`, which returns empty thinking blocks. Set `"thinkingDisplay": "omitted"` to turn the text off.
 - **`thinkingDisplay` accepts `summarised`** as well as `summarized`. Any other value is ignored with a warning in the transcript at startup, where before it was ignored silently. A bad `scopedModels` entry and a settings file that fails to load now get the same warning.

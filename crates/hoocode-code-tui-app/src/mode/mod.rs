@@ -350,8 +350,10 @@ pub(crate) fn cursor_should_blink(chat_empty: bool, pinned: bool) -> bool {
 /// The startup header: the logo, and under it the keys banner while
 /// `expanded` (under `verbose`, and at the full stop: the dial moves it).
 /// `cursor_on` is the header cursor's blink state, read on each render.
+/// `size` is the live terminal size, read on each rebuild: a resize rebuilds
+/// the logo for the new width instead of wrapping the old one (`refresh`).
 pub fn startup_header(
-    columns: u16,
+    size: Rc<Cell<(u16, u16)>>,
     version: &str,
     cwd: &str,
     cursor_on: Rc<Cell<bool>>,
@@ -361,8 +363,9 @@ pub fn startup_header(
     let (v1, c1) = (version.to_string(), cwd.to_string());
     let (v2, c2) = (version.to_string(), cwd.to_string());
     let cursor_on2 = cursor_on.clone();
+    let size2 = size.clone();
     ExpandableText::new(
-        move || logo(columns, &v1, &c1, cursor_on.get()),
+        move || logo(size.get().0, &v1, &c1, cursor_on.get()),
         move || {
             let onboarding = theme().fg(
                 "dim",
@@ -372,7 +375,7 @@ pub fn startup_header(
             );
             format!(
                 "{}\n{}\n\n{onboarding}",
-                logo(columns, &v2, &c2, cursor_on2.get()),
+                logo(size2.get().0, &v2, &c2, cursor_on2.get()),
                 expanded_instructions()
             )
         },
@@ -409,7 +412,12 @@ fn logo(columns: u16, version: &str, cwd: &str, _cursor_visible: bool) -> String
         brand: Some(&brand),
         gradient: true,
     });
-    starfield(&banner, columns, &muted)
+    // The body renders one column narrower than the terminal in fullscreen
+    // (`body_width` keeps the scrollbar's column), so the dots are placed
+    // for one less: an edge dot would otherwise wrap onto its own row and
+    // tear the owl apart. Inline gains one column of slack, unnoticeable.
+    let star_columns = columns.saturating_sub(1);
+    starfield(&banner, star_columns, &muted)
 }
 
 /// Starfield dots scattered right of the wordmark rows (design a1): faint
@@ -426,10 +434,13 @@ fn starfield(banner: &str, columns: u16, faint: &dyn Fn(&str) -> String) -> Stri
             };
             let mut line = line.to_string();
             for (col, dot) in dots.iter() {
-                if col + 1 > width {
+                let w = hoocode_tui_util::visible_width(&line);
+                // The dot lands where the line ends when the line already
+                // reaches past its column (a long cwd on row 2): skip it
+                // unless it truly fits, or it wraps onto its own row.
+                if (*col).max(w) + 1 > width {
                     continue;
                 }
-                let w = hoocode_tui_util::visible_width(&line);
                 if w < *col {
                     line.push_str(&" ".repeat(col - w));
                 }
@@ -973,11 +984,12 @@ impl Mode {
         // the full stop (the dial moves them after this).
         let expanded = startup_details_open(options.verbose, tool_output_view);
         let cwd = format_display_path(&session.cwd().to_string_lossy());
-        let columns = size.get().0;
         // The header's cursor blinks by app clock (Ghostty ignores SGR 5).
         let cursor_blink = CursorBlink::new();
+        // The header reads the live terminal size on each rebuild, so a
+        // resize re-lays the logo out instead of wrapping the old one.
         let header = handle(startup_header(
-            columns,
+            size.clone(),
             &options.version,
             &cwd,
             cursor_blink.visible(),
@@ -1225,6 +1237,9 @@ impl Mode {
         if let TuiEvent::Resize = event {
             let terminal = &self.tui.terminal;
             self.size.set((terminal.columns(), terminal.rows()));
+            // The logo is laid out for the terminal width: rebuild it for
+            // the new one, or its star dots wrap onto their own rows.
+            self.header.borrow_mut().refresh();
         }
         // Keys reach the screen's components with the view they show on screen.
         self.show_attached();
