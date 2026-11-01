@@ -143,7 +143,7 @@ fn the_listing_rows_name_each_skill_as_it_is_typed() {
 fn the_startup_header_folds_at_peek_and_opens_at_full() {
     let _g = lock(Some("dark"));
     let mut header = startup_header(
-        100,
+        Rc::new(Cell::new((100, 24))),
         "0.2.22",
         "~/w",
         Rc::new(Cell::new(false)),
@@ -166,11 +166,75 @@ fn the_startup_header_folds_at_peek_and_opens_at_full() {
 fn the_startup_header_opens_at_startup_when_the_saved_view_is_full() {
     let _g = lock(Some("dark"));
     let mut header = startup_header(
-        100,
+        Rc::new(Cell::new((100, 24))),
         "0.2.22",
         "~/w",
         Rc::new(Cell::new(false)),
         startup_details_open(false, ToolOutputView::Full),
     );
     assert!(plain(&header.render(100).join("\n")).contains(ONBOARDING));
+}
+
+#[test]
+fn the_logo_keeps_three_rows_at_the_fullscreen_body_width() {
+    // Fullscreen lays the body out one column narrower than the terminal
+    // (`body_width`), so an edge star dot built for the full width wraps
+    // onto its own row and tears the owl apart. A 51-wide terminal keeps the
+    // dot at column 50; the body renders at 50.
+    let _g = lock(Some("dark"));
+    let mut header = startup_header(
+        Rc::new(Cell::new((51, 24))),
+        "0.2.22",
+        "~/w",
+        Rc::new(Cell::new(false)),
+        startup_details_open(false, ToolOutputView::Peek),
+    );
+    let rows = header.render(50);
+    let text = plain(&rows.join("\n"));
+    assert_eq!(rows.len(), 3, "{text}");
+}
+
+#[test]
+fn the_logo_re_lays_itself_out_after_a_resize() {
+    // The header reads the live terminal size on each rebuild: narrowing the
+    // terminal (a vertical split) and refreshing must drop the dots that no
+    // longer fit instead of wrapping them onto their own rows.
+    let _g = lock(Some("dark"));
+    let size = Rc::new(Cell::new((100u16, 24u16)));
+    let mut header = startup_header(
+        size.clone(),
+        "0.2.22",
+        "~/w",
+        Rc::new(Cell::new(false)),
+        startup_details_open(false, ToolOutputView::Peek),
+    );
+    assert_eq!(header.render(99).len(), 3);
+    size.set((60, 24));
+    header.refresh();
+    let rows = header.render(59);
+    let text = plain(&rows.join("\n"));
+    assert_eq!(rows.len(), 3, "{text}");
+    assert!(text.contains('\u{2726}'), "{text}");
+    assert!(!text.contains('\u{22c6}'), "far dot no longer fits: {text}");
+}
+
+#[test]
+fn the_logo_skips_a_dot_that_would_land_past_the_edge() {
+    // Row 2 carries the cwd: with a long one the row already reaches past
+    // the dot's column, so appending the dot would push the row past the
+    // body width and wrap it onto its own row. 70 chars of cwd make row 2
+    // exactly 79 wide; the body renders at 79 on an 80-wide terminal.
+    let _g = lock(Some("dark"));
+    let cwd = format!("~/{}", "x".repeat(68));
+    assert_eq!(cwd.len(), 70);
+    let mut header = startup_header(
+        Rc::new(Cell::new((80, 24))),
+        "0.2.22",
+        &cwd,
+        Rc::new(Cell::new(false)),
+        startup_details_open(false, ToolOutputView::Peek),
+    );
+    let rows = header.render(79);
+    let text = plain(&rows.join("\n"));
+    assert_eq!(rows.len(), 3, "{text}");
 }

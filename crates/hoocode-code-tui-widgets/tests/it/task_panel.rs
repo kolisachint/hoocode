@@ -1667,6 +1667,63 @@ fn a_schedule_row_gets_its_own_tab_and_shows_when_it_next_fires() {
     assert!(!plain(&mut panel, 120).join("\n").contains("nightly sweep"));
 }
 
+/// A schedule row after its run is `Done` or `Failed`; it still says when the
+/// job fires next, and says nothing of the next fire while it runs.
+#[test]
+fn a_schedule_row_shows_its_next_fire_after_a_run_but_not_while_running() {
+    let _g = lock();
+    let job = create_with(
+        "check the build",
+        CreateTaskOptions {
+            source: Some(TaskSource::Schedule),
+            ..Default::default()
+        },
+    );
+    let set = |status: TaskStatus, note: Option<&str>, next_in_ms: Option<u64>| {
+        task_store().update(
+            job,
+            TaskPatch {
+                status: Some(status),
+                note: Some(note.map(str::to_owned)),
+                next_at: Some(next_in_ms.map(|ms| hoocode_code_task_store::now_ms() + ms)),
+                ..Default::default()
+            },
+        );
+    };
+    let row = || {
+        let mut panel = TaskPanelComponent::new();
+        plain(&mut panel, 120)[2].clone()
+    };
+
+    set(TaskStatus::Done, None, Some(4 * 60 * 1000 + 30_000));
+    let done = row();
+    assert!(done.contains("done · next in 4m"), "{done}");
+
+    set(
+        TaskStatus::Failed,
+        Some("run failed"),
+        Some(4 * 60 * 1000 + 30_000),
+    );
+    let failed = row();
+    assert!(failed.contains("run failed · next in 4m"), "{failed}");
+
+    set(
+        TaskStatus::InProgress,
+        Some("running"),
+        Some(4 * 60 * 1000 + 30_000),
+    );
+    let running = row();
+    assert!(!running.contains("next in"), "{running}");
+
+    // No next fire ahead (a passed time, or none): nothing to add.
+    set(TaskStatus::Done, None, None);
+    let spent = row();
+    assert!(
+        !spent.contains("next in") && !spent.contains("done ·"),
+        "{spent}"
+    );
+}
+
 #[test]
 fn schedule_tab_sits_between_agents_and_mcp() {
     let _g = lock();

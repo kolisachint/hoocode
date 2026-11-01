@@ -1,8 +1,19 @@
 //! Prompts queued while the agent streams or compacts, and follow-up / dequeue keys.
 
+use std::collections::VecDeque;
+
 use hoocode_code_agent_session::{AgentSession, PromptOptions, StreamingBehavior};
 
 use super::*;
+
+/// The next scheduled prompt to send: the oldest, and only when the agent is free.
+pub(super) fn next_scheduled(backlog: &mut VecDeque<String>, busy: bool) -> Option<String> {
+    if busy {
+        None
+    } else {
+        backlog.pop_front()
+    }
+}
 
 impl Mode {
     /// `sendUserMessage(text, { deliverAs: "followUp" })`: queued behind a
@@ -12,6 +23,18 @@ impl Mode {
             self.queue_prompt(text, StreamingBehavior::FollowUp);
         } else {
             self.prompt(text);
+        }
+    }
+
+    /// Sends the oldest scheduled prompt that fired and waits, when the agent is
+    /// free. One per pass: a slash or extension command runs at once without a
+    /// turn, and the next goes after its `PromptDone`; a plain prompt starts a
+    /// turn, and the rest wait behind it. Each goes through the normal send
+    /// path, so none is queued as a follow-up that could refuse it.
+    pub(super) fn send_next_scheduled(&mut self) {
+        let busy = self.agent_busy();
+        if let Some(text) = next_scheduled(&mut self.scheduled_backlog, busy) {
+            self.send_user_follow_up(text);
         }
     }
 
@@ -63,6 +86,16 @@ impl Mode {
 
     /// `restoreQueuedMessagesToEditor`: every queued message, oldest first,
     /// back into the prompt ahead of what is typed; `abort` then stops the run.
+    /// Runs the messages queued behind a prompt that ended without a turn: the
+    /// first starts one, and the rest queue behind it again, in order.
+    pub(super) fn run_gap_queued(&mut self) {
+        let (steering, follow_up) = self.session.clear_queue();
+        for text in steering.into_iter().chain(follow_up) {
+            self.prompt(text);
+        }
+        self.update_pending_messages_display();
+    }
+
     pub(super) fn restore_queued_messages_to_editor(&mut self, abort: bool) -> usize {
         let (steering, follow_up) = self.session.clear_queue();
         // The queue is gone: a scheduled prompt waiting in it will not run.

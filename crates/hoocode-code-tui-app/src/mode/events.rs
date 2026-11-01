@@ -7,7 +7,7 @@ use hoocode_agent_compaction::CompactionResult;
 use hoocode_agent_types::{AgentEvent, AgentMessage, CompactionSummaryMessage};
 use hoocode_ai_types::{Content, StopReason};
 use hoocode_code_agent_session::{
-    AgentSessionEvent, CompactionReason, ExtensionUiRequest, NotifyLevel, StreamingBehavior,
+    AgentSessionEvent, CompactionReason, ExtensionUiRequest, NotifyLevel,
 };
 use hoocode_code_task_store::{task_store, TaskStatus};
 use hoocode_code_tools_optin::todo::settle_dangling_main_tasks;
@@ -121,19 +121,32 @@ impl Mode {
     }
 
     /// `TaskScheduler.tick`: every [`hoocode_code_scheduler::TICK_INTERVAL`],
-    /// while the agent is idle, submit the prompts of the tasks due this minute
-    /// as follow-up messages (`fire` in `extensions/core/loop.ts`).
+    /// while the agent is free (`agent_busy`), claim the tasks due this minute
+    /// and queue their prompts in `scheduled_backlog`; one is sent per free
+    /// pass (`send_next_scheduled`), as a fresh prompt, so a slash or extension
+    /// command works and no fire is claimed while a start is in flight.
     pub(super) fn tick_scheduler(&mut self) {
+        self.send_next_scheduled();
         let now = Instant::now();
         if now < self.scheduler_tick_at {
             return;
         }
         self.scheduler_tick_at = now + hoocode_code_scheduler::TICK_INTERVAL;
-        if self.session.is_streaming() || self.session.is_compacting() {
+        // Nothing is claimed while busy: a claim moves the task's last-run
+        // minute (and deletes a one-shot), so a fire that could not be sent
+        // would be lost. The next free tick claims it, inside the late window.
+        if self.agent_busy() {
             return;
         }
         // The tick's store read also feeds the Schedule rows (no extra read here).
-        let tick = hoocode_code_scheduler::tick_now(self.session.cwd());
+        // The claim is for this session: it fires the tasks it owns and adopts
+        // the ones whose owner has exited. A task with no owner (older hoocode)
+        // is adopted only when this session's `/loop` created it.
+        let session_id = self.session.session_id();
+        let mine: Vec<String> = self.loop_tasks.iter().map(|(_, id)| id.clone()).collect();
+        let tick = hoocode_code_scheduler::tick_now(self.session.cwd(), Some(&session_id), &|id| {
+            mine.iter().any(|known| known == id)
+        });
         let claimed = tick.claimed;
         self.scheduled_runs.publish_tick(
             task_store(),
@@ -142,15 +155,40 @@ impl Mode {
             &chrono::Local::now(),
         );
         self.report_scheduled_prompts(&claimed);
-        // The first prompt starts a turn; the rest queue behind it, as the
-        // follow-up they would be in TS once the first has begun.
-        for (index, prompt) in claimed.fired.into_iter().enumerate() {
-            if index == 0 {
-                self.send_user_follow_up(prompt);
-            } else {
-                self.queue_prompt(prompt, StreamingBehavior::FollowUp);
-            }
+        self.scheduled_backlog
+            .extend(claimed.fired.iter().map(|fired| fired.message()));
+        self.send_next_scheduled();
+    }
+
+    /// Wakes an idle agent when a background shell job finished (the same as a
+    /// background subagent's result starting a turn). The wake is a short
+    /// generic prompt; its model call carries the notices (`JobNotices::for_call`),
+    /// so nothing is taken here: a completion reaches the model once, and a
+    /// wake that fails before a model call loses none. It waits while the agent
+    /// is busy, a `!` command runs, `/loop auto` runs or the user is typing: the
+    /// notices then ride on the next model call. It is not the user's prompt
+    /// (`start_prompt` with `typed = false`), and a wake that failed is not
+    /// retried until the notices are gone.
+    pub(super) fn tick_job_wake(&mut self) {
+        if self.agent_busy()
+            || self.session.is_bash_running()
+            || self.auto_loop.is_some()
+            || !self.editor.borrow().editor.get_text().trim().is_empty()
+        {
+            return;
         }
+        if !self.session.job_wake_pending() {
+            self.job_wake_failed = false;
+            return;
+        }
+        if self.job_wake_failed {
+            return;
+        }
+        self.start_prompt(
+            hoocode_code_agent_session::JOB_WAKE_MESSAGE.to_string(),
+            Vec::new(),
+            false,
+        );
     }
 
     pub(super) fn handle_session_event(&mut self, event: AgentSessionEvent) {

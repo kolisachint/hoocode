@@ -7,13 +7,15 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use chrono::{DateTime, Datelike, Local, TimeZone};
 use hoocode_agent_types::AgentToolResult;
 use hoocode_ai_types::{Content, TextContent};
 use hoocode_code_tool_api::{ToolDefinition, ToolError};
 use serde_json::{json, Value};
 
 use crate::cron;
-use crate::store::TaskStore;
+use crate::rows::next_run_ms;
+use crate::store::{process_alive, ScheduledTask, TaskStore};
 
 /// `CronCreate`.
 pub const CRON_CREATE_TOOL_NAME: &str = "CronCreate";
@@ -39,7 +41,10 @@ fn string_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, ToolError> {
         .ok_or_else(|| format!("{key} must be a string").into())
 }
 
-/// `CronCreate`, `CronList` and `CronDelete` for the store of `cwd`.
+/// `CronCreate`, `CronList` and `CronDelete` for the store of `cwd`. Tasks the
+/// tools create are owned by this process (the pid; the tools are built before
+/// the session exists and the session id changes on `/new`, so it is not
+/// recorded). The tools fire only in the interactive TUI, so register them there.
 pub fn create_cron_tool_definitions(cwd: &Path) -> Vec<ToolDefinition> {
     let store = Arc::new(TaskStore::for_cwd(cwd));
     vec![
@@ -114,21 +119,81 @@ pub fn create_cron_list_tool_definition(store: Arc<TaskStore>) -> ToolDefinition
             if tasks.is_empty() {
                 return Ok(text_result("No scheduled tasks.".into()));
             }
-            let lines: Vec<String> = tasks
-                .iter()
-                .map(|t| {
-                    format!(
-                        "{}  {}  {}  {}",
-                        t.id,
-                        t.cron,
-                        if t.recurring { "recurring" } else { "once" },
-                        serde_json::to_string(&t.prompt).unwrap_or_default()
-                    )
-                })
-                .collect();
-            Ok(text_result(lines.join("\n")))
+            Ok(text_result(format_task_list(
+                &tasks,
+                &Local::now(),
+                store.owner().pid,
+                &process_alive,
+            )))
         }),
     }
+}
+
+/// A local time for a list: `HH:MM` today, else with the weekday and date.
+fn clock(at: &DateTime<Local>, now: &DateTime<Local>) -> String {
+    if at.date_naive() == now.date_naive() {
+        at.format("%H:%M").to_string()
+    } else if at.year() == now.year() {
+        at.format("%a %d %b %H:%M").to_string()
+    } else {
+        at.format("%a %d %b %Y %H:%M").to_string()
+    }
+}
+
+/// Who owns a task, for a list: this session, a pid, or nobody.
+fn owner_label(task: &ScheduledTask, my_pid: u32, alive: &dyn Fn(u32) -> bool) -> String {
+    let Some(pid) = task.owner_pid else {
+        return "none — written by an older hoocode; it will not fire. Run CronDelete, then CronCreate, to re-create it here".into();
+    };
+    if pid == my_pid {
+        return "this session".into();
+    }
+    let mut label = format!("pid {pid}");
+    if let Some(session) = &task.owner_session_id {
+        label.push_str(&format!(
+            " (session {})",
+            session.chars().take(8).collect::<String>()
+        ));
+    }
+    if !alive(pid) {
+        label.push_str(", exited (the next session to find it due adopts it)");
+    }
+    label
+}
+
+/// `CronList`'s text: per task its id, cron and kind, the owner and fire count,
+/// the last and next fire in local time, and the prompt. `my_pid` is the
+/// listing process; `alive` says whether another owner is running.
+pub fn format_task_list(
+    tasks: &[ScheduledTask],
+    now: &DateTime<Local>,
+    my_pid: u32,
+    alive: &dyn Fn(u32) -> bool,
+) -> String {
+    let blocks: Vec<String> = tasks
+        .iter()
+        .map(|t| {
+            let last = t
+                .last_run_minute
+                .and_then(|minute| Local.timestamp_opt(minute.checked_mul(60)?, 0).single())
+                .map_or("never".to_string(), |at| clock(&at, now));
+            let next = next_run_ms(&t.cron, now)
+                .and_then(|ms| Local.timestamp_millis_opt(i64::try_from(ms).ok()?).single())
+                .map_or("none in the next 8 days".to_string(), |at| clock(&at, now));
+            format!(
+                "{}  {}  {}\n  owner: {} · fired {} time(s)\n  last fired: {} · next fire: {}\n  prompt: {}",
+                t.id,
+                t.cron,
+                if t.recurring { "recurring" } else { "once" },
+                owner_label(t, my_pid, alive),
+                t.fire_count,
+                last,
+                next,
+                serde_json::to_string(&t.prompt).unwrap_or_default()
+            )
+        })
+        .collect();
+    blocks.join("\n")
 }
 
 /// `createCronDeleteToolDefinition`.
@@ -169,6 +234,7 @@ pub fn create_cron_delete_tool_definition(store: Arc<TaskStore>) -> ToolDefiniti
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     fn run(def: &ToolDefinition, args: Value) -> Result<String, String> {
         match (def.execute)("call".into(), args, None, None, None) {
@@ -242,11 +308,14 @@ mod tests {
 
         let listed = run(&list, json!({})).unwrap();
         let lines: Vec<&str> = listed.lines().collect();
-        assert_eq!(lines.len(), 2);
-        assert_eq!(
-            lines[0],
-            format!("{id}  */5 * * * *  recurring  \"check the build\"")
+        assert_eq!(lines.len(), 8, "four lines per task: {listed}");
+        assert_eq!(lines[0], format!("{id}  */5 * * * *  recurring"));
+        assert_eq!(lines[1], "  owner: this session · fired 0 time(s)");
+        assert!(
+            lines[2].starts_with("  last fired: never · next fire: "),
+            "{listed}"
         );
+        assert_eq!(lines[3], "  prompt: \"check the build\"");
 
         assert_eq!(
             run(&delete, json!({"id": id})).unwrap(),
@@ -256,7 +325,68 @@ mod tests {
             run(&delete, json!({"id": "nope"})).unwrap(),
             "No task nope."
         );
-        assert_eq!(run(&list, json!({})).unwrap().lines().count(), 1);
+        assert_eq!(run(&list, json!({})).unwrap().lines().count(), 4);
+    }
+
+    fn listed_task() -> ScheduledTask {
+        ScheduledTask {
+            id: "task_x".into(),
+            cron: "30 9 * * *".into(),
+            prompt: "check the build".into(),
+            recurring: true,
+            created_at: 0,
+            last_run_minute: None,
+            owner_pid: None,
+            owner_session_id: None,
+            fire_count: 0,
+        }
+    }
+
+    fn list_at(task: ScheduledTask, my_pid: u32, alive: bool) -> String {
+        let now = Local
+            .with_ymd_and_hms(2026, 10, 8, 9, 40, 0)
+            .single()
+            .unwrap();
+        format_task_list(&[task], &now, my_pid, &|_| alive)
+    }
+
+    #[test]
+    fn the_list_shows_owner_last_and_next_fire_and_the_count() {
+        let mut task = listed_task();
+        task.owner_pid = Some(100);
+        task.owner_session_id = Some("abcdef0123456789".into());
+        task.fire_count = 3;
+        let last = Local
+            .with_ymd_and_hms(2026, 10, 8, 9, 30, 0)
+            .single()
+            .unwrap();
+        task.last_run_minute = Some(last.timestamp() / 60);
+        let text = list_at(task.clone(), 100, true);
+        assert_eq!(
+            text,
+            "task_x  30 9 * * *  recurring\n  owner: this session · fired 3 time(s)\n  last fired: 09:30 · next fire: Fri 09 Oct 09:30\n  prompt: \"check the build\""
+        );
+        // Another live process owns it.
+        let text = list_at(task.clone(), 200, true);
+        assert!(
+            text.contains("owner: pid 100 (session abcdef01) ·"),
+            "{text}"
+        );
+        // Its owner has exited.
+        let text = list_at(task.clone(), 200, false);
+        assert!(
+            text.contains("pid 100 (session abcdef01), exited (the next session"),
+            "{text}"
+        );
+        // No owner recorded.
+        task.owner_pid = None;
+        task.owner_session_id = None;
+        let text = list_at(task, 200, true);
+        assert!(
+            text.contains("owner: none — written by an older hoocode; it will not fire."),
+            "{text}"
+        );
+        assert!(text.contains("CronDelete, then CronCreate"), "{text}");
     }
 
     #[test]

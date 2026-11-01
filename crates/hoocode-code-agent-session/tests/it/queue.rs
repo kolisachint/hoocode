@@ -184,6 +184,23 @@ async fn delivers_multiple_follow_up_messages_in_order_one_at_a_time() {
     );
 }
 
+/// Several scheduled prompts due in one tick: the TUI queues all but the first
+/// as follow-ups on the idle session, then starts the first. They run in order,
+/// one turn each, and none is refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn follow_ups_queued_while_idle_run_after_the_prompt_that_starts_the_turn() {
+    let h = Harness::new(HarnessOptions::default());
+    h.set_responses(vec![text("one"), text("two"), text("three")]);
+    h.session.follow_up("second", &[]).unwrap();
+    h.session.follow_up("third", &[]).unwrap();
+    h.session
+        .prompt("first", PromptOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(h.user_texts(), ["first", "second", "third"]);
+    assert_eq!(h.assistant_texts(), ["one", "two", "three"]);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn delivers_all_steering_messages_in_one_batch_in_all_mode() {
     let batched = Arc::new(Mutex::new(Vec::new()));

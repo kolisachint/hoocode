@@ -1494,7 +1494,7 @@ pub fn create_task_output_tool_definition() -> ToolDefinition {
         ]
         .join("\n"),
         prompt_snippet: Some(
-            "check status / list / collect the results of background subagents".into(),
+            "check status / list / collect the results of background subagents (handles like explore#1)".into(),
         ),
         prompt_guidelines: Vec::new(),
         parameters: task_output_parameters(),
@@ -1510,6 +1510,13 @@ pub fn create_task_output_tool_definition() -> ToolDefinition {
     }
 }
 
+/// Whether `handle` is the id of a background Shell job (`job-3`).
+fn is_shell_job_id(handle: &str) -> bool {
+    handle
+        .strip_prefix("job-")
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
 async fn execute_task_output(
     params: Value,
     ctx: Option<ToolContext>,
@@ -1519,6 +1526,14 @@ async fn execute_task_output(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(String::from);
+    // `Shell` with run_in_background hands out job-N ids: those are read with
+    // ShellOutput, not here.
+    if let Some(id) = handle.as_deref().filter(|h| is_shell_job_id(h)) {
+        return Err(format!(
+            "{id} is a background Shell job, not a subagent. Use ShellOutput (or ShellKill to stop it)."
+        )
+        .into());
+    }
     if params.get("cancel").and_then(Value::as_bool) == Some(true) {
         return cancel_background_task(handle.as_deref(), &params, ctx.as_ref(), signal).await;
     }

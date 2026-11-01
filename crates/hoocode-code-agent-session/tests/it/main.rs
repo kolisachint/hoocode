@@ -8,6 +8,7 @@ mod core_utils;
 mod disabled_tools_ts;
 mod event_bus_errors;
 mod format;
+mod job_wake;
 mod json_events;
 mod mcp;
 mod mcp_auth;

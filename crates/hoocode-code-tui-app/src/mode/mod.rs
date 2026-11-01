@@ -2,7 +2,7 @@
 //! event loop (`run`). The rest of the mode is split by concern into the sibling modules.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -91,6 +91,8 @@ mod loop_command;
 mod mcp;
 mod models;
 mod plugin;
+#[cfg(test)]
+mod prompt_flight_tests;
 mod prompt_queue;
 mod retry;
 mod session_op;
@@ -99,6 +101,8 @@ mod settings;
 mod shutdown;
 mod subagents;
 mod task_panel;
+#[cfg(test)]
+mod test_support;
 mod transcript;
 mod tree;
 
@@ -207,6 +211,35 @@ impl AppSender {
     /// Wakes the loop without an event (events were left in the channel).
     fn wake(&self) {
         self.wake.wake();
+    }
+}
+
+/// Makes sure the spawned prompt task always reports `PromptDone`, so
+/// `prompt_pending` cannot stay set: if the task panics or is dropped before it
+/// sends, the drop sends an error result (a closed channel is ignored).
+struct PromptDoneGuard {
+    tx: AppSender,
+    sent: bool,
+}
+
+impl PromptDoneGuard {
+    fn new(tx: AppSender) -> Self {
+        Self { tx, sent: false }
+    }
+
+    fn send(&mut self, result: Result<(), String>) {
+        self.sent = true;
+        let _ = self.tx.send(AppEvent::PromptDone(result));
+    }
+}
+
+impl Drop for PromptDoneGuard {
+    fn drop(&mut self) {
+        if !self.sent {
+            let _ = self.tx.send(AppEvent::PromptDone(Err(
+                "The prompt ended without a result.".into(),
+            )));
+        }
     }
 }
 
@@ -350,8 +383,10 @@ pub(crate) fn cursor_should_blink(chat_empty: bool, pinned: bool) -> bool {
 /// The startup header: the logo, and under it the keys banner while
 /// `expanded` (under `verbose`, and at the full stop: the dial moves it).
 /// `cursor_on` is the header cursor's blink state, read on each render.
+/// `size` is the live terminal size, read on each rebuild: a resize rebuilds
+/// the logo for the new width instead of wrapping the old one (`refresh`).
 pub fn startup_header(
-    columns: u16,
+    size: Rc<Cell<(u16, u16)>>,
     version: &str,
     cwd: &str,
     cursor_on: Rc<Cell<bool>>,
@@ -361,8 +396,9 @@ pub fn startup_header(
     let (v1, c1) = (version.to_string(), cwd.to_string());
     let (v2, c2) = (version.to_string(), cwd.to_string());
     let cursor_on2 = cursor_on.clone();
+    let size2 = size.clone();
     ExpandableText::new(
-        move || logo(columns, &v1, &c1, cursor_on.get()),
+        move || logo(size.get().0, &v1, &c1, cursor_on.get()),
         move || {
             let onboarding = theme().fg(
                 "dim",
@@ -372,7 +408,7 @@ pub fn startup_header(
             );
             format!(
                 "{}\n{}\n\n{onboarding}",
-                logo(columns, &v2, &c2, cursor_on2.get()),
+                logo(size2.get().0, &v2, &c2, cursor_on2.get()),
                 expanded_instructions()
             )
         },
@@ -409,7 +445,12 @@ fn logo(columns: u16, version: &str, cwd: &str, _cursor_visible: bool) -> String
         brand: Some(&brand),
         gradient: true,
     });
-    starfield(&banner, columns, &muted)
+    // The body renders one column narrower than the terminal in fullscreen
+    // (`body_width` keeps the scrollbar's column), so the dots are placed
+    // for one less: an edge dot would otherwise wrap onto its own row and
+    // tear the owl apart. Inline gains one column of slack, unnoticeable.
+    let star_columns = columns.saturating_sub(1);
+    starfield(&banner, star_columns, &muted)
 }
 
 /// Starfield dots scattered right of the wordmark rows (design a1): faint
@@ -426,10 +467,13 @@ fn starfield(banner: &str, columns: u16, faint: &dyn Fn(&str) -> String) -> Stri
             };
             let mut line = line.to_string();
             for (col, dot) in dots.iter() {
-                if col + 1 > width {
+                let w = hoocode_tui_util::visible_width(&line);
+                // The dot lands where the line ends when the line already
+                // reaches past its column (a long cwd on row 2): skip it
+                // unless it truly fits, or it wraps onto its own row.
+                if (*col).max(w) + 1 > width {
                     continue;
                 }
-                let w = hoocode_tui_util::visible_width(&line);
                 if w < *col {
                     line.push_str(&" ".repeat(col - w));
                 }
@@ -531,6 +575,9 @@ struct Mode {
     dirty: Rc<Cell<bool>>,
     perf: Perf,
     header: Rc<RefCell<ExpandableText>>,
+    /// The startup header's container: the header is in it, except while the
+    /// attached view is up (`attach.rs` `set_start_header`).
+    header_container: Rc<RefCell<Container>>,
     /// The header cursor's app-driven blink. It stops once the transcript has
     /// content: the header is then off the top.
     cursor_blink: CursorBlink,
@@ -539,6 +586,23 @@ struct Mode {
     stream_render_at: Option<Instant>,
     stream_render_pending: bool,
     scheduler_tick_at: Instant,
+    /// A prompt was spawned and its `PromptDone` has not arrived. `session.is_streaming()`
+    /// flips only later (template expansion, the MCP sync and a compaction check come
+    /// first), so without this a second prompt started in that gap would race the first
+    /// and lose with "Agent is already processing a prompt". Set in `start_prompt`, cleared
+    /// first thing at `PromptDone`; see `agent_busy`.
+    prompt_pending: bool,
+    /// The pending prompt is the background-job wake (not typed, not a `/loop` turn).
+    wake_in_flight: bool,
+    /// The last job wake ended in an error before any model call: it is not retried
+    /// until the notices are gone (a new completion or a model call took them).
+    job_wake_failed: bool,
+    /// Messages queued behind the pending prompt with `session.follow_up` while it was
+    /// still starting: if it ends without a run they are returned to the editor.
+    gap_queued: bool,
+    /// Scheduled prompts that fired and wait for the agent to be free, oldest first.
+    /// One is sent per idle pass (`send_next_scheduled`).
+    scheduled_backlog: VecDeque<String>,
     /// The `/loop auto` run in progress, if any.
     auto_loop: Option<loop_command::LoopRun>,
     /// The scheduled prompts `/loop` created in this session (`/loop stop` removes them).
@@ -973,11 +1037,12 @@ impl Mode {
         // the full stop (the dial moves them after this).
         let expanded = startup_details_open(options.verbose, tool_output_view);
         let cwd = format_display_path(&session.cwd().to_string_lossy());
-        let columns = size.get().0;
         // The header's cursor blinks by app clock (Ghostty ignores SGR 5).
         let cursor_blink = CursorBlink::new();
+        // The header reads the live terminal size on each rebuild, so a
+        // resize re-lays the logo out instead of wrapping the old one.
         let header = handle(startup_header(
-            columns,
+            size.clone(),
             &options.version,
             &cwd,
             cursor_blink.visible(),
@@ -1118,6 +1183,7 @@ impl Mode {
             dirty,
             perf,
             header,
+            header_container,
             cursor_blink,
             scroll_body: fullscreen.then(|| body.clone()),
             transcript: Transcript::new(chat),
@@ -1128,6 +1194,11 @@ impl Mode {
             stream_render_at: None,
             stream_render_pending: false,
             scheduler_tick_at: Instant::now() + hoocode_code_scheduler::TICK_INTERVAL,
+            prompt_pending: false,
+            wake_in_flight: false,
+            job_wake_failed: false,
+            gap_queued: false,
+            scheduled_backlog: VecDeque::new(),
             auto_loop: None,
             loop_tasks: Vec::new(),
             scheduled_runs: Default::default(),
@@ -1225,6 +1296,9 @@ impl Mode {
         if let TuiEvent::Resize = event {
             let terminal = &self.tui.terminal;
             self.size.set((terminal.columns(), terminal.rows()));
+            // The logo is laid out for the terminal width: rebuild it for
+            // the new one, or its star dots wrap onto their own rows.
+            self.header.borrow_mut().refresh();
         }
         // Keys reach the screen's components with the view they show on screen.
         self.show_attached();
@@ -1287,6 +1361,79 @@ impl Mode {
             self.transcript.chat.borrow().children().is_empty(),
             self.tui.scroll_pinned(),
         )
+    }
+
+    /// `PromptDone`: the prompt in flight is over (its turn, if it ran one, has
+    /// ended). Settles the request, then starts the next queued start-up message,
+    /// the next `/loop auto` step or the next scheduled prompt.
+    fn on_prompt_done(&mut self, result: Result<(), String>, queued: &mut Vec<String>) {
+        // The prompt in flight is over, whatever it ended in.
+        self.prompt_pending = false;
+        // A wake whose notices are still pending lost none: they ride the
+        // next model call. Do not re-wake at once — an abort before the first
+        // model call ends `Ok` with the notices still due.
+        if std::mem::take(&mut self.wake_in_flight)
+            && (result.is_err() || self.session.job_wake_pending())
+        {
+            self.job_wake_failed = true;
+        }
+        // The request has ended (retries and continuations
+        // included): settle it (`settleRequestOnIdle`). The
+        // last chain has nothing after it to close it.
+        // A run that failed outright ended in error, whatever
+        // its last message said.
+        let stop = if result.is_err() {
+            Some(StopReason::Error)
+        } else {
+            self.turn_stop_reason
+        };
+        // The error the turn ended with is the mission's reason. It
+        // may come with no error message on the last reply, so the
+        // flight data keeps it (`set_mission_failure`).
+        if let Err(error) = &result {
+            self.transcript.set_mission_failure(Some(error.clone()));
+        }
+        let outcome = if stop == Some(StopReason::Stop) {
+            ChainState::Done
+        } else {
+            ChainState::Interrupted
+        };
+        self.close_open_chain(outcome);
+        self.show_turn_cost(stop);
+        self.settle_dangling_plan_items();
+        let run_ok = result.is_ok() && self.turn_stop_reason == Some(StopReason::Stop);
+        self.scheduled_runs
+            .run_finished(task_store(), run_ok, &chrono::Local::now());
+        self.tips.on_turn_end();
+        self.finish_turn_chime();
+        let failed = result.is_err();
+        if let Err(error) = result {
+            self.show_error(&error);
+        }
+        // A `/plugin` change waited for the turn to end: the next turn sees it.
+        if std::mem::take(&mut self.plugin_reload_pending) {
+            self.reload_plugins();
+        }
+        // Messages queued behind the prompt while it started, and left over
+        // because it ran no turn. A prompt that succeeded without a turn (an
+        // extension command, which may send its own follow-up, e.g. `/grill`)
+        // leaves them to run now. One that failed before its turn sends them
+        // back to the editor, so they are not sent to the same failure.
+        if std::mem::take(&mut self.gap_queued) && !self.session.is_streaming() {
+            if failed {
+                if self.restore_queued_messages_to_editor(false) > 0 {
+                    self.show_status("Queued message returned to the prompt");
+                }
+            } else {
+                self.run_gap_queued();
+            }
+        }
+        if let Some(next) = queued.pop() {
+            self.prompt(next);
+        } else {
+            self.auto_loop_turn_done(failed);
+        }
+        self.send_next_scheduled();
     }
 
     fn next_wakeup(&self) -> Duration {
@@ -1565,6 +1712,7 @@ impl Mode {
             hoocode_runtime::watchdog::ui_beat("ui-loop:input-done");
             self.drain_extension_ui_requests();
             self.tick_scheduler();
+            self.tick_job_wake();
             self.poll_update_notice();
             self.advance_auto_loop();
             self.poll_auto_theme();
@@ -1600,54 +1748,7 @@ impl Mode {
                             self.dirty.set(dirty);
                         }
                     }
-                    AppEvent::PromptDone(result) => {
-                        // The request has ended (retries and continuations
-                        // included): settle it (`settleRequestOnIdle`). The
-                        // last chain has nothing after it to close it.
-                        // A run that failed outright ended in error, whatever
-                        // its last message said.
-                        let stop = if result.is_err() {
-                            Some(StopReason::Error)
-                        } else {
-                            self.turn_stop_reason
-                        };
-                        // The error the turn ended with is the mission's reason. It
-                        // may come with no error message on the last reply, so the
-                        // flight data keeps it (`set_mission_failure`).
-                        if let Err(error) = &result {
-                            self.transcript.set_mission_failure(Some(error.clone()));
-                        }
-                        let outcome = if stop == Some(StopReason::Stop) {
-                            ChainState::Done
-                        } else {
-                            ChainState::Interrupted
-                        };
-                        self.close_open_chain(outcome);
-                        self.show_turn_cost(stop);
-                        self.settle_dangling_plan_items();
-                        let run_ok =
-                            result.is_ok() && self.turn_stop_reason == Some(StopReason::Stop);
-                        self.scheduled_runs.run_finished(
-                            task_store(),
-                            run_ok,
-                            &chrono::Local::now(),
-                        );
-                        self.tips.on_turn_end();
-                        self.finish_turn_chime();
-                        let failed = result.is_err();
-                        if let Err(error) = result {
-                            self.show_error(&error);
-                        }
-                        // A `/plugin` change waited for the turn to end: the next turn sees it.
-                        if std::mem::take(&mut self.plugin_reload_pending) {
-                            self.reload_plugins();
-                        }
-                        if let Some(next) = queued.pop() {
-                            self.prompt(next);
-                        } else {
-                            self.auto_loop_turn_done(failed);
-                        }
-                    }
+                    AppEvent::PromptDone(result) => self.on_prompt_done(result, &mut queued),
                     AppEvent::Rerender => self.dirty.set(true),
                     AppEvent::Dialog(DialogRequest::Select {
                         title,

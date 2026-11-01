@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use hoocode_agent_types::AgentToolResult;
-use hoocode_ai_types::Content;
+use hoocode_ai_types::{AbortSignal, Content};
 use hoocode_code_tool_api::ToolDefinition;
 use hoocode_code_tool_bash::jobs::OUTPUT_READ_MAX;
 use hoocode_code_tool_bash::{
@@ -479,4 +479,321 @@ fn a_tail_read_starts_on_a_character_boundary() {
     assert_eq!(read.from, 40002 - OUTPUT_READ_MAX as u64 + 1);
     assert!(!read.text.contains('\u{FFFD}'), "{:?}", read.text);
     assert_eq!(read.next, read.size);
+}
+
+// ---------------------------------------------------------------------------
+// Prompt text, routing errors, wait
+// ---------------------------------------------------------------------------
+
+fn run_with_signal(
+    tool: &ToolDefinition,
+    args: Value,
+    signal: Option<AbortSignal>,
+) -> Result<AgentToolResult, String> {
+    (tool.execute)("call".into(), args, signal, None, None).map_err(|e| e.to_string())
+}
+
+#[test]
+fn each_job_tool_has_its_own_snippet_without_the_name_prefix() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let output = create_shell_output_tool_definition(jobs.clone())
+        .prompt_snippet
+        .expect("ShellOutput snippet");
+    let kill = create_shell_kill_tool_definition(jobs)
+        .prompt_snippet
+        .expect("ShellKill snippet");
+
+    // The prompt renderer prefixes "<name>: " itself.
+    assert!(!output.starts_with("ShellOutput"), "{output}");
+    assert!(!kill.starts_with("ShellKill"), "{kill}");
+    assert_ne!(output, kill);
+    assert!(
+        output.contains("job-N") && output.contains("wait: true"),
+        "{output}"
+    );
+    assert!(kill.contains("stop") && kill.contains("job-N"), "{kill}");
+}
+
+#[test]
+fn shell_output_and_kill_refuse_a_subagent_handle() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let output = create_shell_output_tool_definition(jobs.clone());
+    let kill = create_shell_kill_tool_definition(jobs.clone());
+
+    for tool in [&output, &kill] {
+        let err = run(tool, json!({"id": "explore#1"})).expect_err("a handle is not a job");
+        assert_eq!(
+            err,
+            "explore#1 is a subagent handle, not a shell job. Use AgentOutput for subagents; ShellOutput reads job-N ids from Shell."
+        );
+    }
+}
+
+#[test]
+fn an_unknown_job_id_lists_the_running_jobs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let output = create_shell_output_tool_definition(jobs.clone());
+    let kill = create_shell_kill_tool_definition(jobs.clone());
+
+    // Nothing runs: the plain message.
+    let err = run(&output, json!({"id": "job-404"})).unwrap_err();
+    assert_eq!(err, "No background job with id job-404.");
+
+    let a = spawn(&jobs, tmp.path(), "sleep 30");
+    let b = spawn(&jobs, tmp.path(), "sleep 30");
+    for tool in [&output, &kill] {
+        let err = run(tool, json!({"id": "job-404"})).unwrap_err();
+        assert!(
+            err.starts_with("No background job with id job-404.")
+                && err.contains(&format!("Running jobs: {a}, {b}.")),
+            "{err}"
+        );
+    }
+    jobs.kill_all();
+}
+
+#[test]
+fn shell_output_schema_declares_wait_and_timeout() {
+    let tmp = tempfile::tempdir().unwrap();
+    let output = create_shell_output_tool_definition(registry(tmp.path()));
+    let props = &output.parameters["properties"];
+    assert_eq!(props["wait"]["type"], "boolean");
+    assert_eq!(props["timeout_ms"]["type"], "number");
+    let doc = props["timeout_ms"]["description"].as_str().unwrap();
+    assert!(doc.contains("300000") && doc.contains("1800000"), "{doc}");
+}
+
+#[test]
+fn shell_output_wait_returns_once_the_job_exits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let output = create_shell_output_tool_definition(jobs.clone());
+    let id = spawn(&jobs, tmp.path(), "sleep 0.4; echo finished-output");
+
+    let started = Instant::now();
+    let result = run(&output, json!({"id": id.clone(), "wait": true})).unwrap();
+    let text = text_of(&result);
+    assert!(
+        started.elapsed() >= Duration::from_millis(300),
+        "returned before the exit"
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(text.contains("finished-output"), "{text}");
+    assert!(text.contains("exited 0"), "{text}");
+    assert!(!text.contains("still running"), "{text}");
+    // The answer told the model the job ended: no notice repeats it.
+    assert!(jobs.take_completions().is_empty());
+}
+
+#[test]
+fn shell_output_without_wait_answers_at_once_and_keeps_the_notice() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let output = create_shell_output_tool_definition(jobs.clone());
+    let id = spawn(&jobs, tmp.path(), "sleep 30");
+
+    let started = Instant::now();
+    let text = text_of(&run(&output, json!({"id": id.clone()})).unwrap());
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(text.contains("running"), "{text}");
+    jobs.kill(&id).unwrap();
+}
+
+#[test]
+fn shell_output_wait_gives_up_at_the_timeout_and_says_so() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let output = create_shell_output_tool_definition(jobs.clone());
+    let id = spawn(&jobs, tmp.path(), "echo early; sleep 30");
+    assert!(wait_until(|| std::fs::read_to_string(
+        &jobs.info(&id).unwrap().log_path
+    )
+    .is_ok_and(|s| s.contains("early"))));
+
+    let started = Instant::now();
+    let result = run(
+        &output,
+        json!({"id": id.clone(), "wait": true, "timeout_ms": 600}),
+    )
+    .unwrap();
+    let text = text_of(&result);
+    assert!(
+        started.elapsed() >= Duration::from_millis(500),
+        "gave up early"
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(text.contains("early"), "{text}");
+    assert!(
+        text.contains("[still running after 1s; call again with wait: true or keep working]"),
+        "{text}"
+    );
+    // The job still runs, so its end has not been told.
+    assert!(jobs.info(&id).unwrap().state.is_running());
+    jobs.kill(&id).unwrap();
+}
+
+#[test]
+fn shell_output_wait_is_capped_and_rejects_a_bad_timeout() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let output = create_shell_output_tool_definition(jobs.clone());
+    let id = spawn(&jobs, tmp.path(), "sleep 30");
+    let err = run(
+        &output,
+        json!({"id": id.clone(), "wait": true, "timeout_ms": "soon"}),
+    )
+    .unwrap_err();
+    assert!(err.contains("timeout_ms"), "{err}");
+    // A zero timeout does not block.
+    let started = Instant::now();
+    let text = text_of(
+        &run(
+            &output,
+            json!({"id": id.clone(), "wait": true, "timeout_ms": 0}),
+        )
+        .unwrap(),
+    );
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(text.contains("still running after 0s"), "{text}");
+    jobs.kill(&id).unwrap();
+}
+
+#[test]
+fn shell_output_wait_returns_promptly_when_aborted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let output = create_shell_output_tool_definition(jobs.clone());
+    let id = spawn(&jobs, tmp.path(), "sleep 30");
+
+    let signal = AbortSignal::new();
+    let trigger = signal.clone();
+    hoocode_runtime::spawn_thread("test-abort", move || {
+        std::thread::sleep(Duration::from_millis(300));
+        trigger.abort();
+    });
+    let started = Instant::now();
+    let result = run_with_signal(
+        &output,
+        json!({"id": id.clone(), "wait": true, "timeout_ms": 600_000}),
+        Some(signal),
+    )
+    .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "ignored the abort"
+    );
+    let text = text_of(&result);
+    assert!(text.contains("wait cancelled"), "{text}");
+    assert!(jobs.info(&id).unwrap().state.is_running());
+    jobs.kill(&id).unwrap();
+}
+
+#[test]
+fn shell_describes_how_to_wait_for_a_job() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let tool = shell_with_jobs(tmp.path(), &jobs);
+    assert!(
+        tool.description
+            .contains("Never sleep in a foreground Shell")
+            && tool.description.contains("wait: true"),
+        "{}",
+        tool.description
+    );
+    let guideline = tool.prompt_guidelines.join("\n");
+    assert!(
+        guideline.contains("ShellOutput with wait: true") && guideline.contains("foreground sleep"),
+        "{guideline}"
+    );
+    // Without the job tools, none of this is mentioned.
+    let plain = create_bash_tool_definition(tmp.path(), BashToolOptions::default());
+    assert!(!plain.description.contains("wait: true"));
+}
+
+#[test]
+fn the_start_message_says_when_the_notice_arrives() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let tool = shell_with_jobs(tmp.path(), &jobs);
+    let result = run(
+        &tool,
+        json!({"command": "sleep 30", "run_in_background": true}),
+    )
+    .unwrap();
+    let text = text_of(&result);
+    assert!(
+        text.contains("with your next model call, or as a new message if you are idle"),
+        "{text}"
+    );
+    assert!(
+        text.contains("wait: true") && text.contains("Do not sleep"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("A notice arrives when it finishes."),
+        "{text}"
+    );
+    jobs.kill_all();
+}
+
+#[test]
+fn peek_completions_does_not_announce_and_acknowledge_ignores_running_jobs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let jobs = registry(tmp.path());
+    let running = spawn(&jobs, tmp.path(), "sleep 30");
+    let done = spawn(&jobs, tmp.path(), "true");
+    wait_for_exit(&jobs, &done);
+
+    jobs.acknowledge(&running);
+    let peeked = jobs.peek_completions();
+    assert_eq!(peeked.len(), 1);
+    assert_eq!(peeked[0].id, done);
+    assert_eq!(
+        jobs.peek_completions().len(),
+        1,
+        "peeking announces nothing"
+    );
+    assert_eq!(jobs.take_completions().len(), 1);
+    assert!(jobs.peek_completions().is_empty());
+    jobs.kill(&running).unwrap();
+}
+
+#[test]
+fn waiting_for_a_job_polls_coarsely_and_still_answers_an_abort_quickly() {
+    use hoocode_code_tool_bash::WaitEnd;
+    use std::cell::Cell;
+
+    let dir = tempfile::tempdir().unwrap();
+    let jobs = registry(dir.path());
+    let id = spawn(&jobs, dir.path(), "sleep 30");
+
+    // A wait that times out checks the abort signal once per poll: a 10 ms poll
+    // would check ~100 times in a second, a 100 ms poll about 10.
+    let checks = Cell::new(0u32);
+    let end = jobs
+        .wait_for_exit(&id, Duration::from_secs(1), || {
+            checks.set(checks.get() + 1);
+            false
+        })
+        .expect("wait");
+    assert_eq!(end, WaitEnd::TimedOut);
+    assert!(
+        checks.get() <= 15,
+        "wait polled {} times in 1 s; expected about 10",
+        checks.get()
+    );
+
+    // An abort is still seen within a poll or two.
+    let started = Instant::now();
+    let end = jobs
+        .wait_for_exit(&id, Duration::from_secs(30), || {
+            started.elapsed() >= Duration::from_millis(300)
+        })
+        .expect("wait");
+    assert_eq!(end, WaitEnd::Aborted);
+    assert!(started.elapsed() < Duration::from_millis(700));
+    jobs.kill(&id).unwrap();
 }

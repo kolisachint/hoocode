@@ -400,8 +400,14 @@ fn change_directory_completions(
 /// Whether empty enter may hail the last prompt again: only while idle,
 /// like a typed mission. Each flag mirrors a guard on the typed path of
 /// submit (M8e1).
-fn can_hail(session_op: bool, compacting: bool, streaming: bool, bash_running: bool) -> bool {
-    !session_op && !compacting && !streaming && !bash_running
+fn can_hail(
+    session_op: bool,
+    compacting: bool,
+    streaming: bool,
+    bash_running: bool,
+    prompt_pending: bool,
+) -> bool {
+    !session_op && !compacting && !streaming && !bash_running && !prompt_pending
 }
 
 /// `resolveVoiceSilenceMs`: `VOICETOOLS_SILENCE_MS` (clamped to
@@ -470,17 +476,49 @@ impl Mode {
     }
 
     pub(super) fn prompt_with_images(&mut self, text: String, images: Vec<ImageContent>) {
+        self.start_prompt(text, images, true);
+    }
+
+    /// Whether the agent cannot take a new prompt now: a turn or a compaction
+    /// runs, a prompt was started and its turn has not begun (`prompt_pending`),
+    /// or a session change runs. A scheduled fire, a job wake, a `/loop auto`
+    /// step and a typed submit all wait on this, so none races another.
+    pub(super) fn agent_busy(&self) -> bool {
+        self.session.is_streaming()
+            || self.session.is_compacting()
+            || self.prompt_pending
+            || self.session_op.is_some()
+    }
+
+    /// Starts a turn: spawns `session.prompt` and marks the prompt in flight
+    /// until its `PromptDone`. `typed` is false for the job wake, which is not
+    /// the user's prompt: it is not what an empty enter hails again and it
+    /// leaves COMMS LOST alone.
+    ///
+    /// When a prompt is already in flight a second spawn would race it (the
+    /// loser fails with "Agent is already processing a prompt" and its
+    /// `PromptDone` would settle the winner's turn), so the text is queued
+    /// behind it as a follow-up instead.
+    pub(super) fn start_prompt(&mut self, text: String, images: Vec<ImageContent>, typed: bool) {
         startup_progress::clear();
-        // A hail or a mission leaves COMMS LOST behind; the frame reads
-        // READY or IN FLIGHT again (M8e1).
-        self.comms_lost.set(false);
-        self.transcript.last_prompt = Some(LastPrompt {
-            text: text.clone(),
-            images: images.clone(),
-        });
+        if self.prompt_pending {
+            self.queue_behind_pending_prompt(text, images);
+            return;
+        }
+        if typed {
+            // A hail or a mission leaves COMMS LOST behind; the frame reads
+            // READY or IN FLIGHT again (M8e1).
+            self.comms_lost.set(false);
+            self.transcript.last_prompt = Some(LastPrompt {
+                text: text.clone(),
+                images: images.clone(),
+            });
+        }
+        self.prompt_pending = true;
+        self.wake_in_flight = !typed;
         self.turn_timer.borrow_mut().begin(Instant::now());
         let session = self.session.clone();
-        let tx = self.tx.clone();
+        let mut done = PromptDoneGuard::new(self.tx.clone());
         self.runtime.spawn(async move {
             let result = session
                 .prompt(
@@ -493,8 +531,34 @@ impl Mode {
                 )
                 .await
                 .map_err(|e| e.to_string());
-            let _ = tx.send(AppEvent::PromptDone(result));
+            done.send(result);
         });
+    }
+
+    /// Queues `text` behind the prompt in flight. An extension command cannot
+    /// be queued: the text goes back to the editor with a warning.
+    fn queue_behind_pending_prompt(&mut self, text: String, images: Vec<ImageContent>) {
+        match self.session.follow_up(&text, &images) {
+            Ok(()) => {
+                self.gap_queued = true;
+                self.update_pending_messages_display();
+            }
+            Err(error) => {
+                self.show_warning(&error.to_string());
+                self.return_to_editor(&text);
+            }
+        }
+    }
+
+    /// Puts `text` back in the prompt, ahead of what is typed.
+    pub(super) fn return_to_editor(&mut self, text: &str) {
+        let current = self.editor.borrow().editor.get_text();
+        let combined = [text.to_string(), current]
+            .into_iter()
+            .filter(|t| !t.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        self.editor.borrow_mut().editor.set_text(&combined);
     }
 
     /// Whether empty enter may hail the last prompt again: only while idle,
@@ -512,6 +576,7 @@ impl Mode {
                     self.session.is_compacting(),
                     self.session.is_streaming(),
                     self.session.is_bash_running(),
+                    self.prompt_pending,
                 )
             {
                 if let Some(last) = self.transcript.last_prompt.clone() {
@@ -571,6 +636,13 @@ impl Mode {
         if self.session.is_streaming() {
             self.editor.borrow_mut().editor.add_to_history(&text);
             self.queue_prompt(text, StreamingBehavior::Steer);
+            return;
+        }
+        // Typed in the gap before the prompt in flight begins its turn: queued
+        // behind it, not started beside it.
+        if self.prompt_pending {
+            self.editor.borrow_mut().editor.add_to_history(&text);
+            self.queue_behind_pending_prompt(text, Vec::new());
             return;
         }
         self.flush_pending_bash_components();
@@ -1008,12 +1080,14 @@ mod tests {
 
     #[test]
     fn hail_needs_a_fully_idle_session() {
-        assert!(can_hail(false, false, false, false));
-        assert!(!can_hail(true, false, false, false));
-        assert!(!can_hail(false, true, false, false));
-        assert!(!can_hail(false, false, true, false));
+        assert!(can_hail(false, false, false, false, false));
+        assert!(!can_hail(true, false, false, false, false));
+        assert!(!can_hail(false, true, false, false, false));
+        assert!(!can_hail(false, false, true, false, false));
         // A running bash holds the hail, like a typed mission waits for it.
-        assert!(!can_hail(false, false, false, true));
-        assert!(!can_hail(true, true, true, true));
+        assert!(!can_hail(false, false, false, true, false));
+        // A prompt in flight (its turn not begun) blocks a hail too.
+        assert!(!can_hail(false, false, false, false, true));
+        assert!(!can_hail(true, true, true, true, true));
     }
 }

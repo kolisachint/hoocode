@@ -1357,6 +1357,33 @@ fn agent_output_schema_declares_cancel() {
     assert_eq!(tool.parameters["properties"]["cancel"]["type"], "boolean");
 }
 
+#[test]
+fn agent_output_snippet_names_the_handle_form() {
+    let tool = create_task_output_tool_definition();
+    let snippet = tool.prompt_snippet.expect("AgentOutput has a snippet");
+    assert!(snippet.contains("explore#1"), "{snippet}");
+    assert!(!snippet.starts_with("AgentOutput"), "{snippet}");
+}
+
+#[test]
+fn agent_output_refuses_a_shell_job_id_and_points_at_shell_output() {
+    let tool = create_task_output_tool_definition();
+    for args in [
+        json!({"task_id": "job-3"}),
+        json!({"task_id": " job-12 ", "wait": true}),
+        json!({"task_id": "job-3", "cancel": true}),
+    ] {
+        let err = run(&tool, args, None).expect_err("a job id is not a subagent handle");
+        let message = err.to_string();
+        assert!(
+            message.contains("is a background Shell job, not a subagent")
+                && message.contains("ShellOutput")
+                && message.contains("ShellKill"),
+            "{message}"
+        );
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_output_cancel_stops_a_running_task() {
     let _serial = SERIAL.lock().await;

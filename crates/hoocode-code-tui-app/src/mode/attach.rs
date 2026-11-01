@@ -305,6 +305,7 @@ impl Mode {
         let main_scroll = self.tui.get_scroll_position().map(|(top, _, _)| top);
         // The run's view starts at its tail, as a new session does.
         self.tui.scroll_to_live();
+        self.set_start_header(false);
         {
             let mut slot = self.attach_slot.borrow_mut();
             slot.clear();
@@ -357,6 +358,9 @@ impl Mode {
                 return;
             }
         };
+        // COMMS LOST is the session's flag. The run's failed attempts and the
+        // re-read's reset are the run's own, so the session's value is kept.
+        let comms_lost = self.comms_lost.get();
         self.show_attached();
         if reread {
             self.reset_transcript_view();
@@ -380,6 +384,7 @@ impl Mode {
         for event in drop_covered(queued, &run.messages) {
             self.apply_child_event(event);
         }
+        self.comms_lost.set(comms_lost);
         self.show_main();
         self.dirty.set(true);
     }
@@ -409,6 +414,7 @@ impl Mode {
         let main_scroll = self.tui.get_scroll_position().map(|(top, _, _)| top);
         // The output starts at its tail, as a run's view does.
         self.tui.scroll_to_live();
+        self.set_start_header(false);
         {
             let mut slot = self.attach_slot.borrow_mut();
             slot.clear();
@@ -540,8 +546,20 @@ impl Mode {
         }
         self.tui.restore_scroll_top(attached.main_scroll);
         self.attach_slot.borrow_mut().clear();
+        self.set_start_header(true);
         self.restore_editor();
         self.dirty.set(true);
+    }
+
+    /// The startup header's place in the chat: in it while the session is
+    /// shown, out of it while the attached view is up. Clears first, so there
+    /// is never more than one header.
+    fn set_start_header(&mut self, shown: bool) {
+        let mut container = self.header_container.borrow_mut();
+        container.clear();
+        if shown {
+            container.add_child(as_component(&self.header));
+        }
     }
 
     /// Leaves the view when its hint took Esc. Called once per input pass.
@@ -891,13 +909,16 @@ fn drop_covered(queued: Vec<Value>, history: &[AgentMessage]) -> Vec<Value> {
 
 #[cfg(test)]
 mod tests {
+    use crate::expandable_text::Expandable;
     use hoocode_ai_types::{Message, StopReason, UserMessage};
     use hoocode_code_session::{
         append_custom_entry_to_file, flush_session_writes, subagents_dir, SessionManager,
         SESSION_FLUSH_DEADLINE, SUBAGENT_RUN_ENTRY,
     };
+    use hoocode_code_task_store::{CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
     use hoocode_tui_components::Text;
 
+    use super::super::test_support::test_mode;
     use super::*;
 
     fn user(text: &str) -> AgentMessage {
@@ -1170,6 +1191,149 @@ mod tests {
         assert!(read_run(&parent, cwd, "no-such-run", None).is_err());
         // A run with no transcript yet is attachable only while it is live.
         assert!(read_run(&parent, cwd, "not-started", None).is_err());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// How many times the startup header is in the header container.
+    fn header_count(mode: &Mode) -> usize {
+        let header = as_component(&mode.header);
+        mode.header_container
+            .borrow()
+            .children()
+            .iter()
+            .filter(|child| Rc::ptr_eq(child, &header))
+            .count()
+    }
+
+    /// A run's transcript as its read gives it.
+    fn loaded(messages: Vec<AgentMessage>) -> LoadedRun {
+        LoadedRun {
+            agent_type: "general-purpose".into(),
+            description: "Compute a product".into(),
+            state: "complete".into(),
+            messages,
+        }
+    }
+
+    /// A failed attempt with no content, as the provider reports it.
+    fn failed_attempt(timestamp: i64) -> AgentMessage {
+        AgentMessage::Assistant(AssistantMessage {
+            stop_reason: StopReason::Error,
+            error_message: Some("overloaded".into()),
+            timestamp,
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn the_start_header_leaves_the_view_while_a_job_is_attached() {
+        let mut mode = test_mode(None);
+        assert_eq!(header_count(&mode), 1, "the header shows at start");
+        let dir = temp_dir("logo-job");
+        let log = dir.join("job-1.log");
+        std::fs::write(&log, "hello\n").expect("log");
+        let key = format!("shell:attach-logo-{}", std::process::id());
+        let other = format!("{key}-2");
+        for row in [&key, &other] {
+            task_store().upsert_keyed(
+                row,
+                "sleep 9",
+                CreateTaskOptions {
+                    source: Some(TaskSource::Shell),
+                    key: Some(row.clone()),
+                    log_path: Some(log.clone()),
+                    ..Default::default()
+                },
+                TaskPatch {
+                    status: Some(TaskStatus::InProgress),
+                    ..Default::default()
+                },
+            );
+        }
+        mode.attach_job(key.clone());
+        assert!(mode.attached_to(&key));
+        assert_eq!(header_count(&mode), 0, "no logo above the job's output");
+        // Attaching to another row detaches first: still one view, no logo.
+        mode.attach_job(other.clone());
+        assert!(mode.attached_to(&other));
+        assert_eq!(header_count(&mode), 0);
+        mode.detach();
+        assert_eq!(header_count(&mode), 1, "back in the session, once");
+        mode.detach();
+        assert_eq!(header_count(&mode), 1, "a detach with nothing attached");
+        task_store().remove_keyed(&key);
+        task_store().remove_keyed(&other);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_start_header_leaves_the_view_while_a_run_is_attached() {
+        let dir = temp_dir("logo-run");
+        let mut mode = test_mode(Some(&dir));
+        let shown = Some(("general-purpose".to_string(), "Compute".to_string()));
+        mode.attach_run("task-1".into(), shown.clone());
+        assert!(mode.attached_to("task-1"));
+        assert_eq!(header_count(&mode), 0, "no logo above the run's transcript");
+        mode.attach_loaded("task-1".into(), Ok(loaded(vec![user("Compute a product")])));
+        // A header refresh while attached does not put the logo back.
+        mode.header.borrow_mut().refresh();
+        mode.header.borrow_mut().set_expanded(true);
+        assert_eq!(header_count(&mode), 0);
+        mode.attach_run("task-2".into(), shown);
+        assert_eq!(
+            header_count(&mode),
+            0,
+            "moving to another run keeps it hidden"
+        );
+        mode.detach();
+        assert_eq!(header_count(&mode), 1, "back in the session, once");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_run_read_keeps_the_sessions_comms_lost_on_a_reread() {
+        let dir = temp_dir("comms-lost-on");
+        let mut mode = test_mode(Some(&dir));
+        mode.comms_lost.set(true);
+        let shown = Some(("general-purpose".to_string(), "Compute".to_string()));
+        mode.attach_run("task-1".into(), shown);
+        let history = vec![user("Compute a product"), assistant("42")];
+        mode.attach_loaded("task-1".into(), Ok(loaded(history.clone())));
+        assert!(
+            mode.comms_lost.get(),
+            "the first read keeps the session's flag"
+        );
+        // The run settled: the second read resets the transcript view.
+        mode.attach_loaded("task-1".into(), Ok(loaded(history)));
+        assert!(
+            mode.comms_lost.get(),
+            "the re-read keeps the session's flag"
+        );
+        mode.detach();
+        assert!(mode.comms_lost.get(), "and so does the detach");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_runs_failed_attempts_do_not_set_the_sessions_comms_lost() {
+        let dir = temp_dir("comms-lost-off");
+        let mut mode = test_mode(Some(&dir));
+        assert!(!mode.comms_lost.get());
+        let shown = Some(("general-purpose".to_string(), "Compute".to_string()));
+        mode.attach_run("task-1".into(), shown);
+        // Two failed attempts in a row: COMMS LOST in the run's transcript.
+        let history = vec![
+            user("Compute a product"),
+            failed_attempt(1),
+            failed_attempt(2),
+        ];
+        mode.attach_loaded("task-1".into(), Ok(loaded(history)));
+        assert!(
+            !mode.comms_lost.get(),
+            "the run's streak does not light the session's COMMS LOST"
+        );
+        mode.detach();
+        assert!(!mode.comms_lost.get());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

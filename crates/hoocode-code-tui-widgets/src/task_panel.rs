@@ -554,7 +554,11 @@ fn flight_detail(
         return Some((format!("press x again to {word}"), pal.warn()));
     }
     if let Some(note) = &task.note {
-        return Some((format!("{WARNING_GLYPH} {note}"), pal.warn()));
+        // A schedule row's failed run still says when the job fires next.
+        let next = schedule_next_in(task, now)
+            .map(|next| format!(" · {next}"))
+            .unwrap_or_default();
+        return Some((format!("{WARNING_GLYPH} {note}{next}"), pal.warn()));
     }
     // A waypoint names the time it took (spec §4 c6): the plan has no step
     // linkage yet, so the wall-clock time stands in for `steps 02–03 ·
@@ -574,6 +578,16 @@ fn flight_detail(
     // `flight_row`, not painted here: painting over `paint` output would
     // mangle the inner escapes.
     match task.status {
+        // A schedule row keeps showing when its job fires next, after a run too.
+        TaskStatus::Done | TaskStatus::Failed if schedule_next_in(task, now).is_some() => {
+            let word = if task.status == TaskStatus::Done {
+                "done"
+            } else {
+                "failed"
+            };
+            let next = schedule_next_in(task, now).unwrap_or_default();
+            return Some((format!("{word} · {next}"), pal.dim()));
+        }
         TaskStatus::Done | TaskStatus::Failed => {
             let total: f64 = task
                 .usage
@@ -624,20 +638,27 @@ fn flight_detail(
                 return Some((plain, style));
             }
         }
-        TaskStatus::Pending if task.kind() == TaskKind::Schedule => {
-            if let Some(next) = task.next_at.filter(|next| *next > now) {
-                return Some((
-                    format!(
-                        "next in {}",
-                        format_duration_secs(((next - now) / 1000) as f64)
-                    ),
-                    pal.dim(),
-                ));
+        TaskStatus::Pending => {
+            if let Some(next) = schedule_next_in(task, now) {
+                return Some((next, pal.dim()));
             }
         }
         _ => {}
     }
     None
+}
+
+/// `next in 4m` for a schedule row that is not running and whose next fire is
+/// ahead; `None` for any other row.
+fn schedule_next_in(task: &Task, now: u64) -> Option<String> {
+    if task.kind() != TaskKind::Schedule || task.status == TaskStatus::InProgress {
+        return None;
+    }
+    let next = task.next_at.filter(|next| *next > now)?;
+    Some(format!(
+        "next in {}",
+        format_duration_secs(((next - now) / 1000) as f64)
+    ))
 }
 
 /// The row key of a shell job without its `shell:` store prefix.
