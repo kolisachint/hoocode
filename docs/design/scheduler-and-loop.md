@@ -10,7 +10,8 @@ the late-fire rule):
   file exists, write-temp-and-rename, lock file so a fire is claimed once), the three
   tools with hoocode-ts's names, labels, descriptions and schemas, in the default bundle
   after AskUserQuestion (13 tools in the print-basic request, as in TS), and firing in
-  the interactive loop: a 30-second tick, idle only, the due prompts sent as follow-ups.
+  the interactive loop: a 30-second tick, idle only, the due prompts sent one per free
+  moment (see the review fixes below).
 - Done 2026-10-14, item 3: `/loop` (`mode/loop_command.rs` in `hoocode-code-tui-app`; the
   arguments are parsed in `hoocode-code-scheduler/src/loop_command.rs`). Forms:
   `/loop "<cron>" <prompt>`, `/loop <N>m|<N>h|<N>d <prompt>` (an interval becomes
@@ -52,7 +53,11 @@ the late-fire rule):
     `ownerSessionId` (display only; `/loop` sets it, the Cron tools set the pid alone, since
     they are built before the session exists and the id changes on `/new`). Both are
     optional in the file, so old files load. A claim fires a due task only for its owner. A
-    task with no owner, or whose owner pid is not alive, is adopted by the claimer: the
+    task whose owner pid is not alive is adopted by the claimer. A task with no owner
+    (an old file) is adopted only when the claiming session vouches for it (the TUI passes
+    its `/loop` task ids, `claim_due_tick_adopting`), so an idle session in the same folder
+    does not run it: it stays unfired, `CronList` says to re-create it, and the old file's
+    tasks must be re-created to fire. Adoption rewrites the owner: the
     claim rewrites the owner under the lock and reports it (`Claimed.adopted`), and the TUI
     warns `Adopted scheduled task <id> from an exited session.` A process that does not own
     a due task, and sees its owner alive, leaves it entirely alone (no last-run minute, no
@@ -73,12 +78,33 @@ the late-fire rule):
     `queued` until the turn ends, as before. `CronList` prints, per task, the owner,
     `fireCount`, last and next fire in local time, and the prompt. The "last fired" time
     is the last handled minute, so it also moves when a late task is skipped.
-  - **Same-minute fires.** All but the first prompt of a tick are queued with
-    `session.follow_up` before the first is started with `session.prompt`. Follow-ups
-    queued while idle are drained when the first turn would stop (agent loop
-    `get_follow_up_messages`), one turn each, in order.
+  - **Same-minute fires (replaced, see review fixes).** First version: all but the first
+    prompt were queued with `session.follow_up`. That failed for a first fire that was an
+    extension command (no turn, so the rest stranded) and for a later one (follow-ups refuse
+    extension commands, after the claim).
   - **Schedule row.** A row that is not running shows `done · next in 4m` (or
     `failed ·`, or the failure note) when its next fire is ahead.
+- Done 2026-11-01, review fixes (PR #165):
+  - **Prompt in flight.** `Mode.prompt_pending` is set when a prompt is spawned
+    (`start_prompt`) and cleared first thing at `PromptDone` (`on_prompt_done`). A guard in
+    the spawned task sends `PromptDone(Err)` if the task ends without a result, so the flag
+    cannot stick. `Mode::agent_busy()` is `is_streaming || is_compacting || prompt_pending ||
+    session_op`. `session.is_streaming()` flips only after template expansion, the MCP sync
+    and a compaction check, which left a gap in which the scheduler, the job wake, `/loop
+    auto` or a typed submit could start a second prompt; the loser failed with "Agent is
+    already processing a prompt" after its fire was claimed, and its `PromptDone(Err)`
+    settled the winner's turn. Now `tick_scheduler` returns before it claims anything while
+    busy (the Schedule rows are fed by the claim's read, so they refresh on free ticks, as
+    they already did not while streaming), `tick_job_wake` and `advance_auto_loop` wait, and
+    `start_prompt` itself queues behind a pending prompt with `session.follow_up` (so a
+    third path cannot race either). A typed submit in the gap is queued the same way. If the
+    pending prompt then ends without a turn, the queued text goes back to the editor.
+  - **Scheduled backlog.** `tick_scheduler` pushes the fired messages to
+    `Mode.scheduled_backlog`; each UI pass and each `PromptDone` send the oldest one when the
+    agent is free, through `send_user_follow_up` (so a slash or extension command works).
+    A session switch (`rebind_current_session`) drops it with `N scheduled prompt(s)
+    dropped by the session switch`.
+  - **Ownerless tasks** are not adopted (see Owner and adoption).
   - Not done (batch 2): keeping a one-shot until delivered, busy-state guards (retry,
     session operation, attached view), the `/cd` store split, corrupt-store handling, DST.
 - Differences from hoocode-ts: `CronCreate` returns a tool error when the store cannot be
@@ -101,7 +127,7 @@ made in either hoocode is visible to the other.
 | Same file as hoocode-ts: `<cwd>/.agents/scheduled_tasks.json`, same shape | The two tools share schedules |
 | Port hoocode-ts's cron matcher (5 fields, local time) instead of a cron library | Both tools must read the same expression the same way |
 | Fires are claimed under a file lock, so a task fires once | Two sessions, or hoocode next to hoocode-ts, must not both fire it |
-| A task fires only in the process that created it, until that process exits; then the next session that finds it due adopts it | An idle hoocode in the same folder used to claim another session's fires and run them as if typed |
+| A task fires only in the process that created it, until that process exits; then the next session that finds it due adopts it (an ownerless old task is never adopted by an idle session) | An idle hoocode in the same folder used to claim another session's fires and run them as if typed |
 | A prompt due while the agent is busy **runs at the next idle moment, up to 10 minutes late**; after that it's skipped with a notice | hoocode-ts silently drops it |
 | Schedules run only while a session is open (no headless daemon runs in v1) | Nobody would be there to approve tools |
 
