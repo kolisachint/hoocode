@@ -1369,7 +1369,12 @@ impl Mode {
     fn on_prompt_done(&mut self, result: Result<(), String>, queued: &mut Vec<String>) {
         // The prompt in flight is over, whatever it ended in.
         self.prompt_pending = false;
-        if std::mem::take(&mut self.wake_in_flight) && result.is_err() {
+        // A wake whose notices are still pending lost none: they ride the
+        // next model call. Do not re-wake at once — an abort before the first
+        // model call ends `Ok` with the notices still due.
+        if std::mem::take(&mut self.wake_in_flight)
+            && (result.is_err() || self.session.job_wake_pending())
+        {
             self.job_wake_failed = true;
         }
         // The request has ended (retries and continuations
@@ -1409,13 +1414,19 @@ impl Mode {
         if std::mem::take(&mut self.plugin_reload_pending) {
             self.reload_plugins();
         }
-        // A message queued behind the prompt while it started, and
-        // left over because it never ran a turn, goes back to the editor.
-        if std::mem::take(&mut self.gap_queued)
-            && !self.session.is_streaming()
-            && self.restore_queued_messages_to_editor(false) > 0
-        {
-            self.show_status("Queued message returned to the prompt");
+        // Messages queued behind the prompt while it started, and left over
+        // because it ran no turn. A prompt that succeeded without a turn (an
+        // extension command, which may send its own follow-up, e.g. `/grill`)
+        // leaves them to run now. One that failed before its turn sends them
+        // back to the editor, so they are not sent to the same failure.
+        if std::mem::take(&mut self.gap_queued) && !self.session.is_streaming() {
+            if failed {
+                if self.restore_queued_messages_to_editor(false) > 0 {
+                    self.show_status("Queued message returned to the prompt");
+                }
+            } else {
+                self.run_gap_queued();
+            }
         }
         if let Some(next) = queued.pop() {
             self.prompt(next);

@@ -86,6 +86,16 @@ impl Mode {
 
     /// `restoreQueuedMessagesToEditor`: every queued message, oldest first,
     /// back into the prompt ahead of what is typed; `abort` then stops the run.
+    /// Runs the messages queued behind a prompt that ended without a turn: the
+    /// first starts one, and the rest queue behind it again, in order.
+    pub(super) fn run_gap_queued(&mut self) {
+        let (steering, follow_up) = self.session.clear_queue();
+        for text in steering.into_iter().chain(follow_up) {
+            self.prompt(text);
+        }
+        self.update_pending_messages_display();
+    }
+
     pub(super) fn restore_queued_messages_to_editor(&mut self, abort: bool) -> usize {
         let (steering, follow_up) = self.session.clear_queue();
         // The queue is gone: a scheduled prompt waiting in it will not run.

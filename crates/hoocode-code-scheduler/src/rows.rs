@@ -230,12 +230,17 @@ fn upsert_job(store: &TaskStore, job: &ScheduledTask, now: &DateTime<Local>) {
     if !stale {
         return;
     }
+    // A task with no owner was written by an older hoocode and never fires:
+    // its row says so instead of promising a next run. An adopted task gains
+    // an owner, so its next run shows again and the note clears.
+    let ownerless = job.owner_pid.is_none();
     store.upsert_keyed(
         &key,
         &job.prompt,
         options(&key),
         TaskPatch {
-            next_at: stale.then(|| next_run_ms(&job.cron, now)),
+            next_at: (!ownerless).then(|| next_run_ms(&job.cron, now)),
+            note: Some(ownerless.then(|| "not firing (older hoocode)".to_owned())),
             ..Default::default()
         },
     );
@@ -280,7 +285,8 @@ mod tests {
             recurring,
             created_at: 0,
             last_run_minute: None,
-            owner_pid: None,
+            // New tasks are always stamped; a `None` owner is a legacy file.
+            owner_pid: Some(1234),
             owner_session_id: None,
             fire_count: 0,
         }
@@ -578,6 +584,20 @@ mod tests {
         // No turn ever began with "b": the run ends and the row must not say queued.
         runs.run_finished(&store, true, &at(9, 31, 0));
         assert_eq!(row(&store, "task_b").unwrap().status, TaskStatus::Pending);
+    }
+
+    #[test]
+    fn an_ownerless_row_says_it_will_not_fire() {
+        // A task written before owners were recorded never fires: its row
+        // says so instead of promising a next run.
+        let store = TaskStore::new();
+        let mut runs = Runs::default();
+        let mut legacy = job("old", "* * * * *", "legacy", true);
+        legacy.owner_pid = None;
+        runs.publish_tick(&store, Some(&[legacy]), &[], &at(9, 0, 0));
+        let row = row(&store, "old").unwrap();
+        assert_eq!(row.note.as_deref(), Some("not firing (older hoocode)"));
+        assert_eq!(row.next_at, None, "no promised next run");
     }
 
     #[test]

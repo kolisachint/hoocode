@@ -56,7 +56,9 @@ pub fn claim_due_now(cwd: &Path) -> Claimed {
 /// not taken. The claim is made for this process and the session `session_id`:
 /// it fires the tasks this process owns, and adopts the ones whose owner has
 /// exited. A task with no owner (written before owners were recorded) is
-/// adopted only when `adopt_ownerless` accepts its id.
+/// adopted only when `adopt_ownerless` accepts its id (in practice only the
+/// session that created the task can vouch for it, so a file written before
+/// owners were recorded stays unfired until it is re-created).
 pub fn tick(
     cwd: &Path,
     session_id: Option<&str>,

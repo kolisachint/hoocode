@@ -312,3 +312,50 @@ fn an_ownerless_task_of_the_folder_is_not_fired_by_an_idle_session() {
     assert_eq!(store.list()[0].last_run_minute, None);
     assert!(!mode.prompt_pending);
 }
+
+#[test]
+fn a_prompt_that_ends_without_a_turn_runs_what_was_queued_behind_it() {
+    // An extension command (e.g. `/grill`) ends at once with no turn, and may
+    // send its own follow-up while the prompt still shows as in flight. That
+    // follow-up must run, not bounce back to the editor.
+    let mut mode = test_mode_in(None, temp_dir("gap-ok"));
+    mode.prompt("first".into());
+    // Queued behind the prompt while it starts, as `/grill`'s follow-up is.
+    mode.prompt("grill message".into());
+    assert_eq!(follow_ups(&mode), ["grill message"]);
+    // The spawned task's real result is replaced: the extension path ends
+    // `Ok` with no turn.
+    let AppEvent::PromptDone(_) = next_event(&mode) else {
+        panic!("expected PromptDone");
+    };
+    mode.on_prompt_done(Ok(()), &mut Vec::new());
+    assert!(mode.prompt_pending, "the queued text started a turn");
+    assert!(follow_ups(&mode).is_empty());
+    assert!(
+        mode.editor.borrow().editor.get_text().is_empty(),
+        "nothing bounced to the editor"
+    );
+    // The started prompt still fails preflight, as every test prompt does.
+    assert!(finish_prompt(&mut mode).is_err());
+    assert!(no_more_events(&mode));
+}
+
+#[test]
+fn a_wake_ended_before_its_first_model_call_does_not_rewake_at_once() {
+    // Esc before the wake's first model call ends `Ok` with the notices
+    // still pending: no immediate re-wake, the next call carries them.
+    let mut mode = mode_with_finished_job("wake-abort");
+    mode.tick_job_wake();
+    assert!(mode.prompt_pending && mode.wake_in_flight);
+    // Aborted before any model call: Ok, notices still pending. Drain the
+    // spawned task's real result first; the abort replaces it.
+    let AppEvent::PromptDone(_) = next_event(&mode) else {
+        panic!("expected PromptDone");
+    };
+    mode.on_prompt_done(Ok(()), &mut Vec::new());
+    assert!(mode.session.job_wake_pending());
+    assert!(mode.job_wake_failed, "no immediate re-wake");
+    mode.tick_job_wake();
+    assert!(!mode.prompt_pending);
+    assert!(no_more_events(&mode));
+}

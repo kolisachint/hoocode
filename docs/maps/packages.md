@@ -148,7 +148,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 829 / 0 | keep |
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 7 | 4471 / 3067 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1585 / 1047 | keep |
-| `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2973 / 0 | keep |
+| `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2995 / 0 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 2128 / 746 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2450 / 1858 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 12320 / 12691 | keep |
@@ -165,7 +165,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 25601 / 7631 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 25669 / 7631 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 790 / 896 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9033 / 4789 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2524 / 2142 | keep |
