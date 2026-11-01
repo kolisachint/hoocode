@@ -83,7 +83,7 @@ Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and S
 | Tool | File |
 |---|---|
 | `Shell` | `bash.rs` |
-| `ShellOutput`, `ShellKill` (opt-in) | none: the default block. Their jobs show in the Shell tab (T5.3) |
+| `ShellOutput`, `ShellKill` (opt-in) | none: the default block. Their jobs show in the Shell tab (T5.3). A job that ends while the agent is idle starts a turn: a prompt headed `[Notice from hoocode, not typed by the user]` with the job's notice (`mode/events.rs` `tick_job_wake`) |
 | `Read` (and skills) | `read.rs` |
 | `Edit` | `edit.rs` |
 | `Write` | `write.rs`: the content previews under the header while there is no result; the result (numbered content, or the error) is then the one copy |

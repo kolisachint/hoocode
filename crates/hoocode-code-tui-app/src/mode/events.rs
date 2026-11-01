@@ -149,6 +149,25 @@ impl Mode {
         self.deliver_scheduled_prompts(messages);
     }
 
+    /// Wakes an idle agent when a background shell job finished (the same as a
+    /// background subagent's result starting a turn). The notices go in as a
+    /// prompt and are taken from the session, so the next model call does not
+    /// announce them again. While a turn, a compaction, a session switch or a
+    /// `!` command runs, nothing is taken: the notices ride on the next model
+    /// call, as before.
+    pub(super) fn tick_job_wake(&mut self) {
+        if self.session.is_streaming()
+            || self.session.is_compacting()
+            || self.session.is_bash_running()
+            || self.session_op.is_some()
+        {
+            return;
+        }
+        if let Some(text) = self.session.take_job_wake() {
+            self.prompt(text);
+        }
+    }
+
     pub(super) fn handle_session_event(&mut self, event: AgentSessionEvent) {
         match event {
             AgentSessionEvent::Agent(event) => self.handle_agent_event(event),

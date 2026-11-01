@@ -190,7 +190,7 @@ fn start_background(
     let spawn = resolve_spawn(options, command, cwd);
     let info = jobs.spawn(&spawn.command, &spawn.cwd, spawn.env)?;
     let text = format!(
-        "Started background job {id}: `{command}`.\nIts output goes to {log}. Read it with ShellOutput (id \"{id}\") and stop it with ShellKill. A notice arrives when it finishes.",
+        "Started background job {id}: `{command}`.\nIts output goes to {log}. Read it with ShellOutput (id \"{id}\"; wait: true blocks until it ends) and stop it with ShellKill. Do not sleep in a foreground Shell to wait for it. When it finishes you get a notice with your next model call, or as a new message if you are idle (interactive app); until then keep working.",
         id = info.id,
         log = info.log_path.display()
     );
@@ -469,7 +469,7 @@ fn build_bash_tool_definition(
         None => "A timeout of 0 means no limit.".to_owned(),
     };
     let background_clause = if options.jobs.is_some() {
-        " Pass run_in_background true to start a long-running command (a server, a watcher, a long build) detached: it returns a job id at once. ShellOutput reads its output and ShellKill stops it."
+        " Pass run_in_background true to start a long-running command (a server, a watcher, a long build) detached: it returns a job id at once. ShellOutput reads its output (wait: true blocks until it ends) and ShellKill stops it. Never sleep in a foreground Shell to wait for a job: use ShellOutput with wait: true, or keep working and you will be notified."
     } else {
         ""
     };
@@ -493,7 +493,7 @@ fn build_bash_tool_definition(
         description,
         prompt_snippet: Some("Run builds, tests, linters, git, and package managers".into()),
         prompt_guidelines: if options.jobs.is_some() {
-            vec!["A command over about a minute (full test suite, release build, server): Shell run_in_background: true, then keep working; short checks stay in the foreground".into()]
+            vec!["A command over about a minute (full test suite, release build, server): Shell run_in_background: true, then keep working; short checks stay in the foreground. To wait for a job, use ShellOutput with wait: true (or keep working; a notice arrives), never a foreground sleep".into()]
         } else {
             Vec::new()
         },

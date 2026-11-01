@@ -1584,6 +1584,7 @@ impl Mode {
             hoocode_runtime::watchdog::ui_beat("ui-loop:input-done");
             self.drain_extension_ui_requests();
             self.tick_scheduler();
+            self.tick_job_wake();
             self.poll_update_notice();
             self.advance_auto_loop();
             self.poll_auto_theme();

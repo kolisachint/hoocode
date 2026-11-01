@@ -474,6 +474,8 @@ struct Inner {
     run_ended: std::sync::atomic::AtomicBool,
     compaction: Mutex<CompactionState>,
     mcp: Mutex<Option<Arc<McpHub>>>,
+    /// The completion notices of the session's background shell jobs, when it has any.
+    job_notices: Mutex<Option<Arc<crate::services::JobNotices>>>,
 }
 
 /// The session branch as tools see it (`ctx.sessionManager.getBranch()`).
@@ -610,6 +612,7 @@ impl AgentSession {
             run_ended: std::sync::atomic::AtomicBool::new(false),
             compaction: Mutex::new(CompactionState::default()),
             mcp: Mutex::new(None),
+            job_notices: Mutex::new(None),
         });
         let session = Self { inner };
         session.connect_to_agent();
@@ -1016,6 +1019,24 @@ impl AgentSession {
 
     pub fn thinking_level(&self) -> ThinkingLevel {
         self.inner.agent.with_state(|s| s.thinking_level.clone())
+    }
+
+    /// Hands the session the notices of its background shell jobs
+    /// ([`create_agent_session`](crate::services::create_agent_session) does).
+    pub fn set_job_notices(&self, notices: Arc<crate::services::JobNotices>) {
+        *lock(&self.inner.job_notices) = Some(notices);
+    }
+
+    /// The text that wakes an idle agent because background shell jobs finished,
+    /// or `None` when nothing is worth a turn. It takes the jobs' notices, so
+    /// each completion reaches the model once: in this message, or on a model
+    /// call that came first. The caller sends the text as a prompt and only
+    /// when the agent is idle; while a turn runs the notices ride on the next
+    /// model call as before. Only the interactive app calls it.
+    pub fn take_job_wake(&self) -> Option<String> {
+        let notices = lock(&self.inner.job_notices).clone()?;
+        let jobs = notices.take_wake();
+        (!jobs.is_empty()).then(|| crate::services::job_wake_message(&jobs))
     }
 
     pub fn is_streaming(&self) -> bool {
