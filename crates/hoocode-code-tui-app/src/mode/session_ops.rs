@@ -713,6 +713,16 @@ impl Mode {
         }
     }
 
+    /// The old session's fires that never got sent are dropped, visibly.
+    pub(super) fn drop_scheduled_backlog(&mut self) {
+        let dropped = std::mem::take(&mut self.scheduled_backlog).len();
+        if dropped > 0 {
+            self.show_warning(&format!(
+                "{dropped} scheduled prompt(s) dropped by the session switch"
+            ));
+        }
+    }
+
     /// `rebindCurrentSession`: point the mode at the runtime's session.
     pub(super) fn rebind_current_session(&mut self) {
         let Some(runtime) = &self.session_runtime else {
@@ -726,6 +736,7 @@ impl Mode {
         self.session.abort_retry();
         self.subscription = None;
         self.session = runtime.session().clone();
+        self.drop_scheduled_backlog();
         self.install_interrupt_hook();
         self.transcript.clear_retry();
         self.footer.borrow_mut().set_retry_notice(None);

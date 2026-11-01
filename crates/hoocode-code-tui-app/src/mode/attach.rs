@@ -911,7 +911,6 @@ fn drop_covered(queued: Vec<Value>, history: &[AgentMessage]) -> Vec<Value> {
 mod tests {
     use crate::expandable_text::Expandable;
     use hoocode_ai_types::{Message, StopReason, UserMessage};
-    use hoocode_code_agent_session::{AgentSessionConfig, BaseTools, StaticResourceLoader};
     use hoocode_code_session::{
         append_custom_entry_to_file, flush_session_writes, subagents_dir, SessionManager,
         SESSION_FLUSH_DEADLINE, SUBAGENT_RUN_ENTRY,
@@ -919,6 +918,7 @@ mod tests {
     use hoocode_code_task_store::{CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
     use hoocode_tui_components::Text;
 
+    use super::super::test_support::test_mode;
     use super::*;
 
     fn user(text: &str) -> AgentMessage {
@@ -1192,96 +1192,6 @@ mod tests {
         // A run with no transcript yet is attachable only while it is live.
         assert!(read_run(&parent, cwd, "not-started", None).is_err());
         let _ = std::fs::remove_dir_all(dir);
-    }
-
-    /// A terminal that draws nothing: the tests read the component tree.
-    struct NullTerminal;
-
-    impl hoocode_tui_terminal::Terminal for NullTerminal {
-        fn start(&mut self, _: Box<dyn FnMut(&str) + Send>, _: Box<dyn FnMut() + Send>) {}
-        fn stop(&mut self) {}
-        fn drain_input(&mut self, _: std::time::Duration, _: std::time::Duration) {}
-        fn write(&mut self, _: &str) {}
-        fn columns(&self) -> u16 {
-            100
-        }
-        fn rows(&self) -> u16 {
-            40
-        }
-        fn kitty_protocol_active(&self) -> bool {
-            false
-        }
-        fn move_by(&mut self, _: i32) {}
-        fn hide_cursor(&mut self) {}
-        fn show_cursor(&mut self) {}
-        fn clear_line(&mut self) {}
-        fn clear_from_cursor(&mut self) {}
-        fn clear_screen(&mut self) {}
-        fn set_title(&mut self, _: &str) {}
-        fn set_progress(&mut self, _: bool) {}
-    }
-
-    struct NoAuth;
-
-    impl hoocode_code_models::AuthLookup for NoAuth {
-        fn api_key(&self, _: &str) -> Option<String> {
-            None
-        }
-    }
-
-    /// A `Mode` over a session whose agent never runs. With `session_file`, the
-    /// session is persisted there, so its runs can be attached to.
-    fn test_mode(session_file: Option<&Path>) -> Mode {
-        let session_manager = match session_file {
-            Some(dir) => SessionManager::create("/work", Some(dir.into())),
-            None => SessionManager::in_memory("/work"),
-        };
-        let agent = Arc::new(hoocode_agent_core::Agent::with_options(
-            hoocode_agent_core::AgentOptions::default(),
-        ));
-        // The theme is `dark`, as the layer goldens load it: `Mode::new` loads
-        // the settings' theme into the process-wide state.
-        let settings = hoocode_code_settings::SettingsManager::in_memory(
-            serde_json::json!({"theme": "dark"})
-                .as_object()
-                .cloned()
-                .unwrap_or_default(),
-        );
-        let session = AgentSession::new(AgentSessionConfig {
-            agent,
-            session_manager,
-            settings: Arc::new(Mutex::new(settings)),
-            cwd: std::env::temp_dir(),
-            scoped_models: vec![],
-            resource_loader: Arc::new(StaticResourceLoader::default()),
-            custom_tools: vec![],
-            model_registry: Arc::new(hoocode_code_models::ModelRegistry::in_memory()),
-            auth: Arc::new(NoAuth),
-            initial_active_tool_names: None,
-            allowed_tool_names: None,
-            disallowed_tool_names: None,
-            base_tools: BaseTools::Override(vec![]),
-            extensions: None,
-            session_start_event: None,
-        });
-        Mode::new(InteractiveOptions {
-            session,
-            session_runtime: None,
-            runtime: hoocode_runtime::io_handle(),
-            listing: Box::new(|_| Default::default()),
-            is_oauth: Box::new(|_| false),
-            auth_storage: Arc::new(hoocode_code_auth::AuthStorage::in_memory([])),
-            version: "test".into(),
-            verbose: false,
-            initial_message: None,
-            initial_images: vec![],
-            initial_messages: vec![],
-            model_fallback_message: None,
-            startup_warnings: vec![],
-            terminal: Some(Box::new(NullTerminal)),
-            perf_log: None,
-            update_notice: None,
-        })
     }
 
     /// How many times the startup header is in the header container.

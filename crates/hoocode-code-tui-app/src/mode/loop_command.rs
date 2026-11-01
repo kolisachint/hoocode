@@ -15,10 +15,10 @@ use super::*;
 /// A `/loop auto` run in progress.
 #[derive(Debug)]
 pub(super) struct LoopRun {
-    state: AutoLoop,
+    pub(super) state: AutoLoop,
     /// The next prompt, held while the user is typing or the agent has queued
     /// messages. It goes out on the first idle tick after that.
-    next: Option<String>,
+    pub(super) next: Option<String>,
 }
 
 /// A scheduled prompt `/loop` created in this session, with the store it is in.
@@ -220,7 +220,7 @@ impl Mode {
             self.show_warning("/loop auto is already running. /loop stop ends it.");
             return;
         }
-        if self.session.is_streaming() || self.session.is_compacting() {
+        if self.agent_busy() {
             self.show_warning("Wait for the agent to finish, then run /loop auto.");
             return;
         }
@@ -273,11 +273,7 @@ impl Mode {
             return;
         }
         let typing = !self.editor.borrow().editor.get_text().trim().is_empty();
-        if typing
-            || self.session.is_streaming()
-            || self.session.is_compacting()
-            || self.session.pending_message_count() > 0
-        {
+        if typing || self.agent_busy() || self.session.pending_message_count() > 0 {
             return;
         }
         if let Some(text) = self.auto_loop.as_mut().and_then(|run| run.next.take()) {

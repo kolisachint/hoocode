@@ -1,32 +1,18 @@
 //! Prompts queued while the agent streams or compacts, and follow-up / dequeue keys.
 
+use std::collections::VecDeque;
+
 use hoocode_code_agent_session::{AgentSession, PromptOptions, StreamingBehavior};
 
 use super::*;
 
-/// Delivers `texts` in order. All but the first are queued as follow-ups first,
-/// then the first is started, so it begins a turn and the rest run after it,
-/// each as its own turn. Queueing the rest through a second `session.prompt`
-/// would race the first: both are spawned, and the loser fails with "Agent is
-/// already processing a prompt" after its fire was claimed. Returns the errors
-/// of the follow-ups that could not be queued.
-pub(super) fn deliver_in_order(
-    texts: Vec<String>,
-    mut queue_follow_up: impl FnMut(&str) -> Result<(), String>,
-    start: impl FnOnce(String),
-) -> Vec<String> {
-    let mut texts = texts.into_iter();
-    let Some(first) = texts.next() else {
-        return Vec::new();
-    };
-    let mut failures = Vec::new();
-    for text in texts {
-        if let Err(error) = queue_follow_up(&text) {
-            failures.push(error);
-        }
+/// The next scheduled prompt to send: the oldest, and only when the agent is free.
+pub(super) fn next_scheduled(backlog: &mut VecDeque<String>, busy: bool) -> Option<String> {
+    if busy {
+        None
+    } else {
+        backlog.pop_front()
     }
-    start(first);
-    failures
 }
 
 impl Mode {
@@ -40,23 +26,15 @@ impl Mode {
         }
     }
 
-    /// Delivers the prompts of the tasks that fired in one tick, in order, none
-    /// lost: see [`deliver_in_order`]. Each text is queued or sent as it is.
-    pub(super) fn deliver_scheduled_prompts(&mut self, texts: Vec<String>) {
-        if texts.is_empty() {
-            return;
-        }
-        let session = self.session.clone();
-        let failures = deliver_in_order(
-            texts,
-            |text| session.follow_up(text, &[]).map_err(|e| e.to_string()),
-            |first| self.send_user_follow_up(first),
-        );
-        self.update_pending_messages_display();
-        for failure in failures {
-            self.show_warning(&format!(
-                "A scheduled prompt could not be queued behind the first: {failure}"
-            ));
+    /// Sends the oldest scheduled prompt that fired and waits, when the agent is
+    /// free. One per pass: a slash or extension command runs at once without a
+    /// turn, and the next goes after its `PromptDone`; a plain prompt starts a
+    /// turn, and the rest wait behind it. Each goes through the normal send
+    /// path, so none is queued as a follow-up that could refuse it.
+    pub(super) fn send_next_scheduled(&mut self) {
+        let busy = self.agent_busy();
+        if let Some(text) = next_scheduled(&mut self.scheduled_backlog, busy) {
+            self.send_user_follow_up(text);
         }
     }
 
@@ -232,63 +210,5 @@ impl Mode {
             1 => self.show_status("Restored 1 queued message to editor"),
             n => self.show_status(&format!("Restored {n} queued messages to editor")),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::cell::RefCell;
-
-    #[test]
-    fn the_rest_are_queued_in_order_before_the_first_starts() {
-        let log = RefCell::new(Vec::new());
-        let failures = deliver_in_order(
-            vec!["a".into(), "b".into(), "c".into()],
-            |text| {
-                log.borrow_mut().push(format!("queue {text}"));
-                Ok(())
-            },
-            |first| log.borrow_mut().push(format!("start {first}")),
-        );
-        assert!(failures.is_empty());
-        assert_eq!(*log.borrow(), ["queue b", "queue c", "start a"]);
-    }
-
-    #[test]
-    fn a_single_prompt_just_starts_and_nothing_means_nothing() {
-        let log = RefCell::new(Vec::new());
-        deliver_in_order(
-            vec!["only".into()],
-            |text| {
-                log.borrow_mut().push(format!("queue {text}"));
-                Ok(())
-            },
-            |first| log.borrow_mut().push(format!("start {first}")),
-        );
-        assert_eq!(*log.borrow(), ["start only"]);
-        deliver_in_order(
-            Vec::new(),
-            |_| panic!("nothing to queue"),
-            |_| panic!("nothing to start"),
-        );
-    }
-
-    #[test]
-    fn a_follow_up_that_cannot_be_queued_is_reported_and_the_rest_still_go() {
-        let log = RefCell::new(Vec::new());
-        let failures = deliver_in_order(
-            vec!["a".into(), "b".into(), "c".into()],
-            |text| {
-                if text == "b" {
-                    return Err("nope".into());
-                }
-                log.borrow_mut().push(format!("queue {text}"));
-                Ok(())
-            },
-            |first| log.borrow_mut().push(format!("start {first}")),
-        );
-        assert_eq!(failures, ["nope"]);
-        assert_eq!(*log.borrow(), ["queue c", "start a"]);
     }
 }
