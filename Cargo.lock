@@ -1756,6 +1756,7 @@ dependencies = [
  "hoocode-ai-types",
  "hoocode-code-task-store",
  "hoocode-code-tool-api",
+ "libc",
  "serde",
  "serde_json",
  "tempfile",

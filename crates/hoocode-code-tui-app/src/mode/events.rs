@@ -7,7 +7,7 @@ use hoocode_agent_compaction::CompactionResult;
 use hoocode_agent_types::{AgentEvent, AgentMessage, CompactionSummaryMessage};
 use hoocode_ai_types::{Content, StopReason};
 use hoocode_code_agent_session::{
-    AgentSessionEvent, CompactionReason, ExtensionUiRequest, NotifyLevel, StreamingBehavior,
+    AgentSessionEvent, CompactionReason, ExtensionUiRequest, NotifyLevel,
 };
 use hoocode_code_task_store::{task_store, TaskStatus};
 use hoocode_code_tools_optin::todo::settle_dangling_main_tasks;
@@ -133,7 +133,10 @@ impl Mode {
             return;
         }
         // The tick's store read also feeds the Schedule rows (no extra read here).
-        let tick = hoocode_code_scheduler::tick_now(self.session.cwd());
+        // The claim is for this session: it fires the tasks it owns and adopts
+        // the ones whose owner has exited.
+        let session_id = self.session.session_id();
+        let tick = hoocode_code_scheduler::tick_now(self.session.cwd(), Some(&session_id));
         let claimed = tick.claimed;
         self.scheduled_runs.publish_tick(
             task_store(),
@@ -142,15 +145,8 @@ impl Mode {
             &chrono::Local::now(),
         );
         self.report_scheduled_prompts(&claimed);
-        // The first prompt starts a turn; the rest queue behind it, as the
-        // follow-up they would be in TS once the first has begun.
-        for (index, prompt) in claimed.fired.into_iter().enumerate() {
-            if index == 0 {
-                self.send_user_follow_up(prompt);
-            } else {
-                self.queue_prompt(prompt, StreamingBehavior::FollowUp);
-            }
-        }
+        let messages = claimed.fired.iter().map(|fired| fired.message()).collect();
+        self.deliver_scheduled_prompts(messages);
     }
 
     pub(super) fn handle_session_event(&mut self, event: AgentSessionEvent) {

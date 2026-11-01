@@ -6,7 +6,7 @@ use hoocode_ai_types::{Content, StopReason};
 use hoocode_code_scheduler::loop_command::{
     parse_loop_args, AutoEnd, AutoLoop, AutoNext, LoopCommand, Schedule, DONE_TOKEN,
 };
-use hoocode_code_scheduler::{Claimed, TaskStore, LATE_FIRE_MINUTES};
+use hoocode_code_scheduler::{Adopted, Claimed, Fired, TaskStore, LATE_FIRE_MINUTES};
 
 use crate::auto_loop;
 
@@ -73,6 +73,35 @@ pub(super) fn preview(prompt: &str) -> String {
     }
 }
 
+/// The transcript line for a fire whose prompt is a slash command. Such a
+/// prompt is sent as it is, so this line is what shows it was scheduled. Other
+/// fires carry their own task line in the message.
+pub(super) fn fire_notice(fired: &Fired) -> Option<String> {
+    fired.is_slash().then(|| {
+        format!(
+            "⏰ Scheduled task {} ({}, {}) fired: {}",
+            fired.id,
+            fired.cron,
+            kind(fired.recurring),
+            preview(fired.prompt.trim_start())
+        )
+    })
+}
+
+/// The notice for a task this session took over.
+pub(super) fn adoption_notice(adopted: &Adopted) -> String {
+    match adopted.previous_pid {
+        Some(_) => format!(
+            "Adopted scheduled task {} from an exited session.",
+            adopted.task_id
+        ),
+        None => format!(
+            "Adopted scheduled task {} (it had no owner recorded).",
+            adopted.task_id
+        ),
+    }
+}
+
 fn kind(recurring: bool) -> &'static str {
     if recurring {
         "recurring"
@@ -97,8 +126,9 @@ impl Mode {
     }
 
     /// The store the tick fires from: the session's current directory.
+    /// Tasks it creates are owned by this process and session.
     fn scheduled_prompts(&self) -> TaskStore {
-        TaskStore::for_cwd(self.session.cwd())
+        TaskStore::for_cwd(self.session.cwd()).with_session_id(Some(self.session.session_id()))
     }
 
     fn create_scheduled_prompt(&mut self, schedule: Schedule, prompt: &str) {
@@ -284,8 +314,17 @@ impl Mode {
         }
     }
 
-    /// `tick_scheduler`'s notices: the prompts that ran late and the ones skipped.
+    /// `tick_scheduler`'s notices: the tasks adopted, and the prompts that ran
+    /// late and the ones skipped.
     pub(super) fn report_scheduled_prompts(&mut self, claimed: &Claimed) {
+        for adopted in &claimed.adopted {
+            self.show_warning(&adoption_notice(adopted));
+        }
+        for fired in &claimed.fired {
+            if let Some(notice) = fire_notice(fired) {
+                self.show_status(&notice);
+            }
+        }
         for prompt in &claimed.skipped {
             self.show_warning(&format!(
                 "Scheduled prompt skipped: it was due more than {LATE_FIRE_MINUTES} minutes ago, while the agent was busy: {}",
@@ -343,6 +382,48 @@ mod tests {
             AutoNext::Prompt(_)
         ));
         assert_eq!(run.turns(), 2);
+    }
+
+    #[test]
+    fn a_slash_fire_is_shown_by_a_line_and_a_plain_fire_is_not() {
+        let fired = |prompt: &str| Fired {
+            id: "task_1".into(),
+            cron: "*/5 * * * *".into(),
+            recurring: true,
+            prompt: prompt.into(),
+        };
+        let slash = fired("/review the diff\nand report");
+        assert_eq!(slash.message(), "/review the diff\nand report");
+        assert_eq!(
+            fire_notice(&slash).as_deref(),
+            Some("⏰ Scheduled task task_1 (*/5 * * * *, recurring) fired: /review the diff")
+        );
+        // A plain prompt carries the task line in the message, so no extra notice.
+        let plain = fired("check the build");
+        assert!(plain.message().starts_with("⏰ Scheduled task task_1 ("));
+        assert_eq!(fire_notice(&plain), None);
+    }
+
+    #[test]
+    fn an_adopted_task_is_announced_by_id() {
+        let exited = Adopted {
+            task_id: "task_1".into(),
+            previous_pid: Some(42),
+            previous_session: Some("abc".into()),
+        };
+        assert_eq!(
+            adoption_notice(&exited),
+            "Adopted scheduled task task_1 from an exited session."
+        );
+        let legacy = Adopted {
+            task_id: "task_2".into(),
+            previous_pid: None,
+            previous_session: None,
+        };
+        assert_eq!(
+            adoption_notice(&legacy),
+            "Adopted scheduled task task_2 (it had no owner recorded)."
+        );
     }
 
     #[test]

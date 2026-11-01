@@ -7,6 +7,12 @@
 //! file (`<store>.lock`, created with `create_new`), so two processes that
 //! share a store fire a due task once. Writes go to a temporary file that is
 //! renamed over the store.
+//!
+//! Every task records its owner, the process that created it. Only the owner
+//! fires a due task, so an idle hoocode that happens to share the folder does
+//! not run another session's schedule. A task whose owner has exited, and a
+//! legacy task with no owner, is adopted by the first process that finds it
+//! due (see [`TaskStore::claim_due_tick_with`]).
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
@@ -59,19 +65,146 @@ pub struct ScheduledTask {
     /// Minute-bucket key (epoch minutes) of the last fire.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run_minute: Option<i64>,
+    /// Pid of the process that owns the task: only it fires the task, until it
+    /// exits. Absent on tasks written before owners were recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_pid: Option<u32>,
+    /// The owner's session id, for display. Absent when the creator did not
+    /// know it (the Cron tools record the pid only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_session_id: Option<String>,
+    /// How many times the task has fired.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub fire_count: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+/// The process (and, when known, the session) a store acts for: who a new task
+/// belongs to, and who a claim fires for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Owner {
+    pub pid: u32,
+    pub session_id: Option<String>,
+}
+
+impl Owner {
+    /// This process, with the session id if the caller has one.
+    pub fn this_process(session_id: Option<String>) -> Self {
+        Self {
+            pid: std::process::id(),
+            session_id,
+        }
+    }
+}
+
+/// Whether a process with this pid is running. Used to tell a task whose owner
+/// has exited (adopt it) from one whose owner is busy (leave it alone).
+///
+/// On unix this is `kill(pid, 0)`: alive when it succeeds, or fails with
+/// `EPERM` (the process exists but belongs to someone else). Elsewhere there is
+/// no cheap check, so the owner is assumed alive: the task then waits for its
+/// owner (or `CronDelete`) rather than risk two sessions running it. A pid
+/// that the system has reused for another process also reads as alive.
+pub fn process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        // 0 and negative values would signal a process group, not a process.
+        let Ok(pid) = i32::try_from(pid) else {
+            return false;
+        };
+        if pid == 0 {
+            return false;
+        }
+        // SAFETY: signal 0 only checks that the process can be signalled.
+        if unsafe { libc::kill(pid, 0) } == 0 {
+            return true;
+        }
+        io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        true
+    }
+}
+
+/// Whether a prompt is a slash command or prompt template. Such a prompt must
+/// reach the session unchanged to expand, so it gets no scheduled-task line.
+pub fn is_slash_prompt(prompt: &str) -> bool {
+    prompt.trim_start().starts_with('/')
+}
+
+/// The text a fired task is sent as: a line naming the task, then its prompt,
+/// so the user and the model can see the message was scheduled. A slash prompt
+/// is sent as it is (see [`is_slash_prompt`]); the caller shows the fire in a
+/// notice instead.
+pub fn fire_message(id: &str, cron: &str, recurring: bool, prompt: &str) -> String {
+    if is_slash_prompt(prompt) {
+        return prompt.to_owned();
+    }
+    format!(
+        "⏰ Scheduled task {id} ({cron}, {})\n{prompt}",
+        if recurring { "recurring" } else { "once" }
+    )
+}
+
+impl ScheduledTask {
+    /// The text this task is sent as when it fires (see [`fire_message`]).
+    pub fn fire_message(&self) -> String {
+        fire_message(&self.id, &self.cron, self.recurring, &self.prompt)
+    }
+}
+
+/// One task that fired in a tick.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fired {
+    pub id: String,
+    pub cron: String,
+    pub recurring: bool,
+    /// The stored prompt, without the scheduled-task line.
+    pub prompt: String,
+}
+
+impl Fired {
+    /// The text to submit: the prompt under its scheduled-task line, or the
+    /// prompt alone when it is a slash command.
+    pub fn message(&self) -> String {
+        fire_message(&self.id, &self.cron, self.recurring, &self.prompt)
+    }
+
+    /// Whether the prompt is a slash command, sent without a task line.
+    pub fn is_slash(&self) -> bool {
+        is_slash_prompt(&self.prompt)
+    }
+}
+
+/// A task this process took over in a tick.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Adopted {
+    pub task_id: String,
+    /// The previous owner's pid; `None` for a legacy task that had no owner.
+    pub previous_pid: Option<u32>,
+    /// The previous owner's session id, when it was recorded.
+    pub previous_session: Option<String>,
 }
 
 /// What one tick claimed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Claimed {
-    /// Prompts to submit now, in stored order.
-    pub fired: Vec<String>,
+    /// The tasks to submit now, in stored order.
+    pub fired: Vec<Fired>,
     /// The tasks behind `fired`, as they were when they fired (a one-shot is
     /// already gone from the store).
     pub fired_jobs: Vec<ScheduledTask>,
     /// Prompts whose due minute is more than [`LATE_FIRE_MINUTES`] old. They
     /// do not run; the caller says so.
     pub skipped: Vec<String>,
+    /// Tasks taken over from an owner that has exited, or from no owner. They
+    /// belong to this process now; the caller says so.
+    pub adopted: Vec<Adopted>,
 }
 
 /// One tick's claim and, when the store could be read under the lock, the
@@ -94,6 +227,8 @@ struct StoreFile {
 pub struct TaskStore {
     path: PathBuf,
     legacy_path: Option<PathBuf>,
+    /// Who new tasks belong to, and who claims fire for.
+    owner: Owner,
 }
 
 impl TaskStore {
@@ -102,6 +237,7 @@ impl TaskStore {
         Self {
             path: cwd.join(STORE_RELATIVE_PATH),
             legacy_path: Some(cwd.join(LEGACY_STORE_RELATIVE_PATH)),
+            owner: Owner::this_process(None),
         }
     }
 
@@ -110,7 +246,24 @@ impl TaskStore {
         Self {
             path: path.into(),
             legacy_path: None,
+            owner: Owner::this_process(None),
         }
+    }
+
+    /// The same store acting for `owner` instead of this process.
+    pub fn with_owner(mut self, owner: Owner) -> Self {
+        self.owner = owner;
+        self
+    }
+
+    /// The same store acting for this process and the session `session_id`.
+    pub fn with_session_id(self, session_id: Option<String>) -> Self {
+        self.with_owner(Owner::this_process(session_id))
+    }
+
+    /// Who new tasks belong to, and who claims fire for.
+    pub fn owner(&self) -> &Owner {
+        &self.owner
     }
 
     /// The file this store writes.
@@ -191,6 +344,9 @@ impl TaskStore {
             recurring,
             created_at: now_millis(),
             last_run_minute: None,
+            owner_pid: Some(self.owner.pid),
+            owner_session_id: self.owner.session_id.clone(),
+            fire_count: 0,
         };
         self.with_lock(|_| {
             let mut tasks = self.read();
@@ -221,6 +377,8 @@ impl TaskStore {
     /// minute fires it; a later tick skips it and reports it. Either way the
     /// due minute is recorded, so each due minute is handled once. A one-shot
     /// task is removed. Callers check that the agent is idle first.
+    ///
+    /// Only the owner claims a task; see [`claim_due_tick_with`](Self::claim_due_tick_with).
     pub fn claim_due(&self, now: &DateTime<Local>) -> io::Result<Claimed> {
         self.claim_due_tick(now).map(|tick| tick.claimed)
     }
@@ -229,6 +387,34 @@ impl TaskStore {
     /// (see [`Tick`]). The tasks are read under the same lock, so the panel
     /// costs no extra read.
     pub fn claim_due_tick(&self, now: &DateTime<Local>) -> io::Result<Tick> {
+        self.claim_due_tick_with(now, &process_alive)
+    }
+
+    /// [`claim_due`](Self::claim_due) with `alive` deciding whether an owner pid
+    /// is running (tests pass their own).
+    pub fn claim_due_with(
+        &self,
+        now: &DateTime<Local>,
+        alive: &dyn Fn(u32) -> bool,
+    ) -> io::Result<Claimed> {
+        self.claim_due_tick_with(now, alive)
+            .map(|tick| tick.claimed)
+    }
+
+    /// [`claim_due_tick`](Self::claim_due_tick) with `alive` deciding whether an
+    /// owner pid is running.
+    ///
+    /// This store's owner claims a due task when it owns it. It also claims,
+    /// and adopts (the task's owner becomes this one, and the claim reports it
+    /// in [`Claimed::adopted`]), a due task that has no owner or whose owner
+    /// pid is not alive. A due task of a live other owner is left untouched:
+    /// its last-run minute does not move and nothing is reported, so its owner
+    /// still fires it.
+    pub fn claim_due_tick_with(
+        &self,
+        now: &DateTime<Local>,
+        alive: &dyn Fn(u32) -> bool,
+    ) -> io::Result<Tick> {
         self.with_lock(|held| {
             // Without the lock file another process could claim the same minute
             // too, so this tick fires nothing; the next tick claims it, still
@@ -240,6 +426,7 @@ impl TaskStore {
             let mut tasks = self.read();
             let mut claimed = Claimed::default();
             let mut spent = Vec::new();
+            let mut changed = false;
             for task in tasks.iter_mut() {
                 let created_minute = i64::try_from(task.created_at / 60_000).unwrap_or(i64::MAX);
                 let floor = task
@@ -248,9 +435,36 @@ impl TaskStore {
                 let Some(due) = latest_due_minute(&task.cron, now, now_minute, floor) else {
                     continue;
                 };
+                match task.owner_pid {
+                    Some(pid) if pid == self.owner.pid => {
+                        // Ours; keep the session id current (it changes on /new).
+                        if self.owner.session_id.is_some()
+                            && task.owner_session_id != self.owner.session_id
+                        {
+                            task.owner_session_id = self.owner.session_id.clone();
+                        }
+                    }
+                    Some(pid) if alive(pid) => continue,
+                    previous => {
+                        claimed.adopted.push(Adopted {
+                            task_id: task.id.clone(),
+                            previous_pid: previous,
+                            previous_session: task.owner_session_id.take(),
+                        });
+                        task.owner_pid = Some(self.owner.pid);
+                        task.owner_session_id = self.owner.session_id.clone();
+                    }
+                }
+                changed = true;
                 task.last_run_minute = Some(due);
                 if now_minute - due <= LATE_FIRE_MINUTES {
-                    claimed.fired.push(task.prompt.clone());
+                    task.fire_count += 1;
+                    claimed.fired.push(Fired {
+                        id: task.id.clone(),
+                        cron: task.cron.clone(),
+                        recurring: task.recurring,
+                        prompt: task.prompt.clone(),
+                    });
                     claimed.fired_jobs.push(task.clone());
                 } else {
                     claimed.skipped.push(task.prompt.clone());
@@ -259,7 +473,7 @@ impl TaskStore {
                     spent.push(task.id.clone());
                 }
             }
-            if !claimed.fired.is_empty() || !claimed.skipped.is_empty() {
+            if changed {
                 tasks.retain(|t| !spent.contains(&t.id));
                 self.write(&tasks)?;
             }
@@ -435,8 +649,26 @@ mod tests {
             recurring,
             created_at,
             last_run_minute: None,
+            owner_pid: None,
+            owner_session_id: None,
+            fire_count: 0,
         });
         store.write(&tasks).unwrap();
+    }
+
+    /// Adds a task owned by process `pid`, created at the epoch.
+    fn put_owned(store: &TaskStore, cron: &str, prompt: &str, pid: u32, session: Option<&str>) {
+        put(store, cron, prompt, true, 0);
+        let mut tasks = store.read();
+        let last = tasks.last_mut().unwrap();
+        last.owner_pid = Some(pid);
+        last.owner_session_id = session.map(str::to_owned);
+        store.write(&tasks).unwrap();
+    }
+
+    /// The prompts of the tasks a claim fired, in order.
+    fn prompts(claimed: &Claimed) -> Vec<&str> {
+        claimed.fired.iter().map(|f| f.prompt.as_str()).collect()
     }
 
     fn at(hour: u32, minute: u32, second: u32) -> DateTime<Local> {
@@ -453,7 +685,7 @@ mod tests {
         put(&store, "30 9 * * *", "recurring", true, 0);
         put(&store, "30 9 * * *", "once", false, 0);
         let claimed = store.claim_due(&at(9, 30, 10)).unwrap();
-        assert_eq!(claimed.fired, vec!["recurring", "once"]);
+        assert_eq!(prompts(&claimed), vec!["recurring", "once"]);
         assert!(claimed.skipped.is_empty());
         // A second tick in the same minute fires nothing.
         assert_eq!(store.claim_due(&at(9, 30, 40)).unwrap(), Claimed::default());
@@ -471,7 +703,7 @@ mod tests {
         put(&store, "30 9 * * *", "once", false, 0);
         // Busy from 9:30; the first idle tick is at 9:39, nine minutes late.
         let claimed = store.claim_due(&at(9, 39, 5)).unwrap();
-        assert_eq!(claimed.fired, vec!["recurring", "once"]);
+        assert_eq!(prompts(&claimed), vec!["recurring", "once"]);
         assert!(claimed.skipped.is_empty());
         // It fired once: the rest of that tick and the next ones claim nothing.
         assert_eq!(store.claim_due(&at(9, 39, 35)).unwrap(), Claimed::default());
@@ -522,7 +754,7 @@ mod tests {
         put(&store, "30 9 * * *", "once", false, 0);
         put(&store, "0 3 * * *", "other", true, 0);
         let tick = store.claim_due_tick(&at(9, 30, 10)).unwrap();
-        assert_eq!(tick.claimed.fired, vec!["recurring", "once"]);
+        assert_eq!(prompts(&tick.claimed), vec!["recurring", "once"]);
         // The fired jobs are as they were when they fired, the one-shot included.
         let fired: Vec<(&str, bool)> = tick
             .claimed
@@ -550,7 +782,7 @@ mod tests {
         let first = store_in(&dir);
         let second = store_in(&dir);
         assert_eq!(
-            first.claim_due(&at(9, 30, 10)).unwrap().fired,
+            prompts(&first.claim_due(&at(9, 30, 10)).unwrap()),
             vec!["shared"]
         );
         assert_eq!(
@@ -572,9 +804,204 @@ mod tests {
         assert!(store.list()[0].last_run_minute.is_none());
         std::fs::remove_file(&lock).unwrap();
         assert_eq!(
-            store.claim_due(&at(9, 30, 40)).unwrap().fired,
+            prompts(&store.claim_due(&at(9, 30, 40)).unwrap()),
             vec!["recurring"]
         );
+    }
+
+    /// A store at `dir` acting for the process `pid` (a test stands in for several).
+    fn store_for(dir: &tempfile::TempDir, pid: u32, session: Option<&str>) -> TaskStore {
+        store_in(dir).with_owner(Owner {
+            pid,
+            session_id: session.map(str::to_owned),
+        })
+    }
+
+    /// Everyone but `dead` is running.
+    fn all_alive_but(dead: u32) -> impl Fn(u32) -> bool {
+        move |pid| pid != dead
+    }
+
+    #[test]
+    fn the_owner_fires_its_task_and_counts_the_fire() {
+        let dir = tempfile::tempdir().unwrap();
+        let owner = store_for(&dir, 100, Some("sess-a"));
+        let task = owner.create("30 9 * * *", "mine", true).unwrap();
+        assert_eq!(task.owner_pid, Some(100));
+        assert_eq!(task.owner_session_id.as_deref(), Some("sess-a"));
+        // Backdate it, so the 9:30 slot is after its creation.
+        let mut tasks = owner.read();
+        tasks[0].created_at = 0;
+        owner.write(&tasks).unwrap();
+
+        let claimed = owner.claim_due_with(&at(9, 30, 10), &|_| true).unwrap();
+        assert_eq!(prompts(&claimed), vec!["mine"]);
+        assert!(claimed.adopted.is_empty(), "its own task is not adopted");
+        let after = owner.list();
+        assert_eq!(after[0].fire_count, 1);
+        assert_eq!(after[0].owner_pid, Some(100));
+        // A later day fires it again and counts again.
+        let next = Local
+            .with_ymd_and_hms(2026, 10, 9, 9, 30, 5)
+            .single()
+            .unwrap();
+        owner.claim_due_with(&next, &|_| true).unwrap();
+        assert_eq!(owner.list()[0].fire_count, 2);
+    }
+
+    #[test]
+    fn a_process_does_not_fire_or_touch_a_task_whose_owner_is_alive() {
+        let dir = tempfile::tempdir().unwrap();
+        put_owned(&store_in(&dir), "30 9 * * *", "theirs", 100, Some("sess-a"));
+        let bystander = store_for(&dir, 200, Some("sess-b"));
+        // Pid 100 is alive: the bystander claims nothing, at 9:30 or when late.
+        let alive = |_: u32| true;
+        for when in [at(9, 30, 10), at(9, 41, 0)] {
+            let tick = bystander.claim_due_tick_with(&when, &alive).unwrap();
+            assert_eq!(tick.claimed, Claimed::default());
+        }
+        let task = &bystander.list()[0];
+        assert_eq!(task.last_run_minute, None, "the due minute is left alone");
+        assert_eq!(task.owner_pid, Some(100));
+        assert_eq!(task.fire_count, 0);
+        // The owner still fires it afterwards.
+        let owner = store_for(&dir, 100, Some("sess-a"));
+        assert_eq!(
+            prompts(&owner.claim_due_with(&at(9, 31, 0), &alive).unwrap()),
+            vec!["theirs"]
+        );
+    }
+
+    #[test]
+    fn a_task_whose_owner_has_exited_is_adopted_and_fired() {
+        let dir = tempfile::tempdir().unwrap();
+        put_owned(&store_in(&dir), "30 9 * * *", "orphan", 100, Some("sess-a"));
+        let adopter = store_for(&dir, 200, Some("sess-b"));
+        let claimed = adopter
+            .claim_due_with(&at(9, 30, 10), &all_alive_but(100))
+            .unwrap();
+        assert_eq!(prompts(&claimed), vec!["orphan"]);
+        assert_eq!(
+            claimed.adopted,
+            vec![Adopted {
+                task_id: claimed.fired[0].id.clone(),
+                previous_pid: Some(100),
+                previous_session: Some("sess-a".into()),
+            }]
+        );
+        let task = &adopter.list()[0];
+        assert_eq!(task.owner_pid, Some(200));
+        assert_eq!(task.owner_session_id.as_deref(), Some("sess-b"));
+        // It is theirs now: the old owner's pid, if it came back, would not fire it.
+        let next = Local
+            .with_ymd_and_hms(2026, 10, 9, 9, 30, 5)
+            .single()
+            .unwrap();
+        let back = store_for(&dir, 100, Some("sess-a"));
+        let alive = |_: u32| true;
+        assert_eq!(
+            back.claim_due_with(&next, &alive).unwrap(),
+            Claimed::default()
+        );
+        let claimed = adopter.claim_due_with(&next, &alive).unwrap();
+        assert_eq!(prompts(&claimed), vec!["orphan"]);
+        assert!(claimed.adopted.is_empty(), "adopted once");
+    }
+
+    #[test]
+    fn a_task_with_no_owner_is_adopted_by_the_first_claimer() {
+        let dir = tempfile::tempdir().unwrap();
+        put(&store_in(&dir), "30 9 * * *", "legacy", true, 0);
+        let adopter = store_for(&dir, 200, None);
+        let claimed = adopter.claim_due_with(&at(9, 30, 10), &|_| true).unwrap();
+        assert_eq!(prompts(&claimed), vec!["legacy"]);
+        assert_eq!(claimed.adopted.len(), 1);
+        assert_eq!(claimed.adopted[0].previous_pid, None);
+        assert_eq!(adopter.list()[0].owner_pid, Some(200));
+    }
+
+    #[test]
+    fn a_task_nobody_is_due_to_fire_is_not_adopted() {
+        let dir = tempfile::tempdir().unwrap();
+        put_owned(&store_in(&dir), "30 9 * * *", "later", 100, None);
+        let mut tasks = store_in(&dir).read();
+        tasks[0].created_at = u64::try_from(at(7, 0, 0).timestamp_millis()).unwrap();
+        store_in(&dir).write(&tasks).unwrap();
+        let other = store_for(&dir, 200, None);
+        let tick = other
+            .claim_due_tick_with(&at(8, 0, 0), &all_alive_but(100))
+            .unwrap();
+        assert_eq!(tick.claimed, Claimed::default());
+        assert_eq!(other.list()[0].owner_pid, Some(100));
+    }
+
+    #[test]
+    fn a_store_written_before_owners_loads_and_stays_without_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(STORE_RELATIVE_PATH);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"tasks":[{"id":"task_old","cron":"0 * * * *","prompt":"p","recurring":true,"createdAt":1}]}"#,
+        )
+        .unwrap();
+        let store = store_in(&dir);
+        let task = store.list().remove(0);
+        assert_eq!(
+            (task.owner_pid, task.owner_session_id, task.fire_count),
+            (None, None, 0)
+        );
+        store.write(&store.list()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !text.contains("ownerPid") && !text.contains("fireCount"),
+            "{text}"
+        );
+        let created = store.create("0 * * * *", "new", true).unwrap();
+        assert_eq!(created.owner_pid, Some(std::process::id()));
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"ownerPid\""), "{text}");
+        assert!(!text.contains("ownerSessionId"), "{text}");
+    }
+
+    #[test]
+    fn a_fire_is_sent_under_its_scheduled_task_line() {
+        let dir = tempfile::tempdir().unwrap();
+        put(&store_in(&dir), "30 9 * * *", "check the build", false, 0);
+        let claimed = store_in(&dir).claim_due(&at(9, 30, 10)).unwrap();
+        let fired = &claimed.fired[0];
+        assert_eq!(
+            fired.message(),
+            format!(
+                "⏰ Scheduled task {} (30 9 * * *, once)\ncheck the build",
+                fired.id
+            )
+        );
+        assert_eq!(claimed.fired_jobs[0].fire_message(), fired.message());
+        assert_eq!(fired.prompt, "check the build");
+    }
+
+    #[test]
+    fn a_slash_prompt_is_sent_unchanged_and_still_pairs_with_its_row() {
+        let dir = tempfile::tempdir().unwrap();
+        put(&store_in(&dir), "30 9 * * *", "/review the diff", true, 0);
+        put(&store_in(&dir), "30 9 * * *", "  /loop 5m x", true, 0);
+        let claimed = store_in(&dir).claim_due(&at(9, 30, 10)).unwrap();
+        assert_eq!(claimed.fired[0].message(), "/review the diff");
+        assert_eq!(claimed.fired[1].message(), "  /loop 5m x");
+        assert!(claimed.fired.iter().all(Fired::is_slash));
+        // The row matches on the same text the tick sends.
+        assert_eq!(claimed.fired_jobs[0].fire_message(), "/review the diff");
+    }
+
+    #[test]
+    fn process_alive_knows_this_process_and_rejects_impossible_pids() {
+        assert!(process_alive(std::process::id()));
+        #[cfg(unix)]
+        {
+            assert!(!process_alive(0));
+            assert!(!process_alive(u32::MAX));
+        }
     }
 
     #[test]

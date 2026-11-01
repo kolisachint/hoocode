@@ -47,6 +47,40 @@ the late-fire rule):
   the same tick as an auto-loop continuation can collide with it, and the session then
   refuses the second prompt, which ends `/loop auto` with an error notice.
 - Done 2026-10-15, T4.2: the jobs are rows in the task store (Schedule kind, `rows.rs`): fire, run, finish and next run. The Schedule tab's rendering is T4.1 ([tui-activity.md](tui-activity.md)).
+- Done 2026-11-01, trust fixes (cron-trust, batch 1):
+  - **Owner and adoption.** A task records `ownerPid` (the creating process) and
+    `ownerSessionId` (display only; `/loop` sets it, the Cron tools set the pid alone, since
+    they are built before the session exists and the id changes on `/new`). Both are
+    optional in the file, so old files load. A claim fires a due task only for its owner. A
+    task with no owner, or whose owner pid is not alive, is adopted by the claimer: the
+    claim rewrites the owner under the lock and reports it (`Claimed.adopted`), and the TUI
+    warns `Adopted scheduled task <id> from an exited session.` A process that does not own
+    a due task, and sees its owner alive, leaves it entirely alone (no last-run minute, no
+    skipped notice). Liveness is `kill(pid, 0)` on unix (alive on success or `EPERM`); on
+    other platforms the owner is assumed alive, so a dead owner's task waits for its
+    owner or a `CronDelete` rather than risk two sessions running it. A reused pid also
+    reads as alive. Tests inject the check (`claim_due_tick_with`).
+  - **Honest create.** The Cron tools are registered only when the run is interactive
+    (`custom_tools` in `runtime.rs`). Subagents run `--mode json` (`pool.rs build_args`),
+    which is a print run with `interactive = false`, so they never get the tools.
+  - **Visible fires.** A fired prompt is sent as `⏰ Scheduled task <id> (<cron>,
+    recurring|once)` on its own line, then the prompt (`fire_message`). The Schedule row
+    matches the turn that starts by that text. A prompt whose trimmed start is `/` (a slash
+    command or template) is sent unchanged, so it still expands; the TUI shows a status
+    line `⏰ Scheduled task <id> (<cron>, recurring) fired: <first line>` instead
+    (`fire_notice`). The row matches on that unchanged text. A template's user message is the
+    expanded text and an extension command starts no user message, so those rows stay
+    `queued` until the turn ends, as before. `CronList` prints, per task, the owner,
+    `fireCount`, last and next fire in local time, and the prompt. The "last fired" time
+    is the last handled minute, so it also moves when a late task is skipped.
+  - **Same-minute fires.** All but the first prompt of a tick are queued with
+    `session.follow_up` before the first is started with `session.prompt`. Follow-ups
+    queued while idle are drained when the first turn would stop (agent loop
+    `get_follow_up_messages`), one turn each, in order.
+  - **Schedule row.** A row that is not running shows `done · next in 4m` (or
+    `failed ·`, or the failure note) when its next fire is ahead.
+  - Not done (batch 2): keeping a one-shot until delivered, busy-state guards (retry,
+    session operation, attached view), the `/cd` store split, corrupt-store handling, DST.
 - Differences from hoocode-ts: `CronCreate` returns a tool error when the store cannot be
   written (TS ignores the write error); the store is re-read on every operation, so a
   task another process created is not lost.
@@ -67,6 +101,7 @@ made in either hoocode is visible to the other.
 | Same file as hoocode-ts: `<cwd>/.agents/scheduled_tasks.json`, same shape | The two tools share schedules |
 | Port hoocode-ts's cron matcher (5 fields, local time) instead of a cron library | Both tools must read the same expression the same way |
 | Fires are claimed under a file lock, so a task fires once | Two sessions, or hoocode next to hoocode-ts, must not both fire it |
+| A task fires only in the process that created it, until that process exits; then the next session that finds it due adopts it | An idle hoocode in the same folder used to claim another session's fires and run them as if typed |
 | A prompt due while the agent is busy **runs at the next idle moment, up to 10 minutes late**; after that it's skipped with a notice | hoocode-ts silently drops it |
 | Schedules run only while a session is open (no headless daemon runs in v1) | Nobody would be there to approve tools |
 

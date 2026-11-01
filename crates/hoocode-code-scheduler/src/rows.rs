@@ -117,12 +117,17 @@ impl Runs {
         });
     }
 
-    /// A user message with `prompt` as its text has begun a turn: the first
-    /// waiting job with that prompt is running, and its row shows `running`.
-    /// Other waiting jobs stay `queued` until their own prompt begins. A prompt
-    /// that matches no waiting job changes nothing.
-    pub fn run_started(&mut self, store: &TaskStore, prompt: &str) {
-        let Some(index) = self.waiting.iter().position(|job| job.prompt == prompt) else {
+    /// A user message with `message` as its text has begun a turn: the first
+    /// waiting job whose fire message (see [`ScheduledTask::fire_message`]) is
+    /// that text is running, and its row shows `running`. Other waiting jobs
+    /// stay `queued` until their own message begins. A message that matches no
+    /// waiting job changes nothing.
+    pub fn run_started(&mut self, store: &TaskStore, message: &str) {
+        let Some(index) = self
+            .waiting
+            .iter()
+            .position(|job| job.fire_message() == message)
+        else {
             return;
         };
         let job = self.waiting.remove(index);
@@ -275,6 +280,9 @@ mod tests {
             recurring,
             created_at: 0,
             last_run_minute: None,
+            owner_pid: None,
+            owner_session_id: None,
+            fire_count: 0,
         }
     }
 
@@ -352,7 +360,7 @@ mod tests {
         assert_eq!(fired.next_at, Some(tomorrow));
 
         // Run: the turn that carries the prompt starts.
-        runs.run_started(&store, "check");
+        runs.run_started(&store, &recurring.fire_message());
         let running = row(&store, "task_a").unwrap();
         assert_eq!(running.note.as_deref(), Some("running"));
         assert_eq!(running.status, TaskStatus::InProgress);
@@ -372,7 +380,7 @@ mod tests {
             std::slice::from_ref(&recurring),
             &at(9, 40, 0),
         );
-        runs.run_started(&store, "check");
+        runs.run_started(&store, &recurring.fire_message());
         runs.run_finished(&store, false, &at(9, 41, 0));
         let failed = row(&store, "task_a").unwrap();
         assert_eq!(failed.status, TaskStatus::Failed);
@@ -394,7 +402,7 @@ mod tests {
         let queued = row(&store, "task_once").unwrap();
         assert_eq!(queued.status, TaskStatus::InProgress);
         assert_eq!(queued.next_at, None, "a fired one-shot has no next run");
-        runs.run_started(&store, "once");
+        runs.run_started(&store, &once.fire_message());
         // Still there while it runs, although the store no longer lists it.
         runs.publish_tick(&store, Some(&[]), &[], &at(9, 31, 0));
         assert!(row(&store, "task_once").is_some());
@@ -419,7 +427,7 @@ mod tests {
         // A job deleted while it runs keeps its row until the run ends.
         runs.publish_tick(&store, Some(&[]), std::slice::from_ref(&a), &at(9, 2, 0));
         assert!(row(&store, "task_a").is_some());
-        runs.run_started(&store, "a");
+        runs.run_started(&store, &a.fire_message());
         runs.run_finished(&store, true, &at(9, 2, 30));
         // Its run is over and it is not listed: the next tick removes the row.
         runs.publish_tick(&store, Some(&[]), &[], &at(9, 3, 0));
@@ -445,7 +453,7 @@ mod tests {
         );
 
         // The first prompt's turn begins: b waits behind it, still queued.
-        runs.run_started(&store, "a");
+        runs.run_started(&store, &a.fire_message());
         assert_eq!(
             row(&store, "task_a").unwrap().note.as_deref(),
             Some("running")
@@ -456,13 +464,58 @@ mod tests {
         );
 
         // b's own message begins its turn later.
-        runs.run_started(&store, "b");
+        runs.run_started(&store, &b.fire_message());
         assert_eq!(
             row(&store, "task_b").unwrap().note.as_deref(),
             Some("running")
         );
         runs.run_finished(&store, true, &at(9, 1, 0));
         assert_eq!(row(&store, "task_b").unwrap().status, TaskStatus::Done);
+    }
+
+    #[test]
+    fn a_fired_row_starts_on_the_scheduled_line_message_not_the_bare_prompt() {
+        let store = TaskStore::new();
+        let mut runs = Runs::default();
+        let a = job("task_a", "* * * * *", "check", true);
+        runs.publish_tick(
+            &store,
+            Some(std::slice::from_ref(&a)),
+            std::slice::from_ref(&a),
+            &at(9, 0, 10),
+        );
+        // A message that is only the prompt (typed by hand) is not this fire.
+        runs.run_started(&store, "check");
+        assert_eq!(
+            row(&store, "task_a").unwrap().note.as_deref(),
+            Some("queued")
+        );
+        // The message the tick sent is.
+        let sent = "⏰ Scheduled task task_a (* * * * *, recurring)\ncheck";
+        assert_eq!(a.fire_message(), sent);
+        runs.run_started(&store, sent);
+        assert_eq!(
+            row(&store, "task_a").unwrap().note.as_deref(),
+            Some("running")
+        );
+    }
+
+    #[test]
+    fn a_slash_fire_starts_its_row_on_the_unchanged_prompt() {
+        let store = TaskStore::new();
+        let mut runs = Runs::default();
+        let a = job("task_a", "* * * * *", "/review", true);
+        runs.publish_tick(
+            &store,
+            Some(std::slice::from_ref(&a)),
+            std::slice::from_ref(&a),
+            &at(9, 0, 10),
+        );
+        runs.run_started(&store, "/review");
+        assert_eq!(
+            row(&store, "task_a").unwrap().note.as_deref(),
+            Some("running")
+        );
     }
 
     #[test]
@@ -477,7 +530,7 @@ mod tests {
             &[a.clone(), once.clone()],
             &at(9, 30, 5),
         );
-        runs.run_started(&store, "a");
+        runs.run_started(&store, &a.fire_message());
         // The queue was cleared before "once" ran: its row stops saying queued.
         runs.drop_waiting(&store, &at(9, 30, 40));
         let pending = row(&store, "task_once");

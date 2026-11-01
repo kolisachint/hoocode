@@ -45,7 +45,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | The home directory, and `~` in shown paths (one policy, decision 28) | `home` (`hoocode-home`): `home_dir`, `shorten_path` |
 | The system prompt | `code-prompts` (`system_prompt.rs`) |
 | A built-in tool | `code-tool-bash`, `code-tools-fs`, `code-tool-search`, `code-tools-optin`; registration in `code-tools` |
-| The Cron tools (CronCreate, CronList, CronDelete), the schedule store, the cron matcher | `code-scheduler`; registered in `code-cli` `runtime.rs` `custom_tools`; fired by `code-tui-app` `mode/events.rs` `tick_scheduler`; the Schedule rows of the task panel: `rows.rs` ([scheduler-and-loop.md](../design/scheduler-and-loop.md)) |
+| The Cron tools (CronCreate, CronList, CronDelete), the schedule store, the cron matcher | `code-scheduler`; registered in `code-cli` `runtime.rs` `custom_tools` (interactive runs only); fired by `code-tui-app` `mode/events.rs` `tick_scheduler` (delivery in `mode/prompt_queue.rs` `deliver_in_order`; each task has an owner pid, see `store.rs`); the Schedule rows of the task panel: `rows.rs` ([scheduler-and-loop.md](../design/scheduler-and-loop.md)) |
 | How a tool looks in the transcript | `code-tui-widgets/src/tools/` ([ui.md](ui.md)) |
 | A slash command | list: `code-resources/src/slash_commands.rs`; handler: `code-tui-app/src/mode/commands.rs` `run_builtin_command` |
 | Screen goldens: the scenarios, the mock LLM | `scripts/tui/` (`goldens.py`, `mockllm.py`, `scenarios/`); component goldens use the `tui-render` feature `golden` ([ui.md](ui.md)) |
@@ -131,10 +131,10 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2758 / 1569 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1204 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 7821 / 6614 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 7821 / 6631 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 864 / 822 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 574 / 0 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 6393 / 0 | keep |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 6415 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1640 | the `hoocode` binary |
 | `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 2 | 2059 / 0 | keep |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1582 / 608 | keep |
@@ -148,7 +148,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 829 / 0 | keep |
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 7 | 4471 / 3067 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1585 / 1047 | keep |
-| `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2293 / 0 | keep |
+| `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2903 / 0 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 2128 / 746 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2450 / 1858 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 12305 / 12664 | keep |
@@ -165,11 +165,11 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 24977 / 7631 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 25157 / 7631 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 790 / 896 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9033 / 4789 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2524 / 2142 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14352 / 10323 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14373 / 10380 | keep |
 
 ### TUI library (`tui-*`)
 

@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The startup logo is hidden while a subagent run or a shell job's output is attached.** It used to stay above the attached transcript. It comes back once on Esc, and a session switch leaves one logo, not two.
 - **COMMS LOST stays with the session while you read a run.** A run's failed attempts no longer light the main session's COMMS LOST, and a re-read of the run keeps the session's flag as it was.
 
+### Fixed: scheduled prompts (2026-11-01)
+- **A scheduled task now fires only in the session that created it.** Every task records its owner (`ownerPid`, and `ownerSessionId` for `/loop`). Another idle hoocode open in the same folder used to claim the fires and run them as if typed, while the creating session saw nothing. Now it leaves the task alone. A task whose owner has exited, or an old task with no owner, is adopted by the first session that finds it due, with a warning: `Adopted scheduled task <id> from an exited session.`
+- **The Cron tools exist only in the interactive TUI.** Print, json, rpc and subagent runs never tick the scheduler, so a `CronCreate` there was accepted and never ran. They no longer offer `CronCreate`, `CronList` or `CronDelete`.
+- **A fired prompt says it was scheduled.** The message starts with `⏰ Scheduled task <id> (<cron>, recurring|once)`, so you and the model can see where it came from. A prompt that starts with `/` (a slash command or prompt template) is sent unchanged so it still expands; a status line `⏰ Scheduled task <id> (<cron>, recurring) fired: <prompt>` shows the fire instead.
+- **`CronList` shows the state of each task.** Per task: id, cron, recurring or once, owner (this session, a pid, or none), how many times it fired, last fire, next fire, and the prompt.
+- **Prompts that fire in the same minute all run, in order.** The first started a turn and the rest were sent by a second call that raced it; one could fail with "Agent is already processing a prompt" after its fire was spent. The rest are now queued before the first starts.
+- **A Schedule row keeps its next fire after a run.** It reads `done · next in 4m` (or `⚠ run failed · next in 4m`) where the time used to vanish.
+
 ### Changed: dependencies (2026-10-31)
 - rustls 0.23.46 (was 0.23.45), in the main build and in `fuzz/`.
 
