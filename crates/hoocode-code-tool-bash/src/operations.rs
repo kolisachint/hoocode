@@ -13,7 +13,7 @@ use std::time::Duration;
 use hoocode_ai_types::AbortSignal;
 use hoocode_code_tool_api::{js_number, node_fs_error, ToolError};
 use hoocode_runtime::io_handle;
-use process_wrap::tokio::{CommandWrap, ProcessGroup};
+use process_wrap::tokio::CommandWrap;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::task::JoinHandle;
 
@@ -171,8 +171,8 @@ async fn run_launch(
 }
 
 /// The shell command for one run: the shell's args and the command as the last
-/// argument, in its own process group (a job object on Windows), with its
-/// stdin closed and its stdout and stderr piped.
+/// argument, in its own session and process group (a job object on Windows),
+/// with no controlling terminal, its stdin closed and its stdout and stderr piped.
 pub(crate) fn build_command(
     shell: &str,
     args: &[String],
@@ -215,8 +215,12 @@ pub(crate) fn build_command_with_output(
             .stderr(stderr);
         hoocode_runtime::lower_child_priority(cmd.as_std_mut(), nice);
     });
+    // A new session, not just a process group: the shell has no controlling
+    // terminal, so an interactive shell (`zsh -i`) cannot make itself the
+    // terminal's foreground group and leave the TUI stopped by SIGTTIN or
+    // SIGTTOU. The session's group id is the shell's pid, as before.
     #[cfg(unix)]
-    wrap.wrap(ProcessGroup::leader());
+    wrap.wrap(process_wrap::tokio::ProcessSession);
     #[cfg(windows)]
     wrap.wrap(process_wrap::tokio::JobObject);
     wrap

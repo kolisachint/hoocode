@@ -5,3 +5,4 @@ mod background;
 mod bash_tool;
 mod operations;
 mod shell_rows;
+mod tty;
