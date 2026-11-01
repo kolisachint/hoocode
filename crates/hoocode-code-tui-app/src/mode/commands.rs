@@ -336,38 +336,30 @@ impl Mode {
         ))));
     }
 
+    /// A stop hoocode did not ask for (SIGTTIN/SIGTTOU, an outside SIGTSTP)
+    /// ended by `fg`: put raw mode and the keyboard flags back and redraw.
+    /// The resume is taken only while the UI runs; when it is stopped (an
+    /// external editor) its own restart covers it.
+    pub(super) fn tick_external_resume(&mut self) {
+        if !crate::suspend::take_external_resume() || !self.tui.is_started() {
+            return;
+        }
+        let mut ops = SuspendUi {
+            tui: &mut self.tui,
+            input: &mut self.restarted_input,
+            #[cfg(unix)]
+            signals: Default::default(),
+        };
+        crate::suspend::resume_after_external_stop(&mut ops);
+        // The terminal may have been resized while stopped.
+        let terminal = &self.tui.terminal;
+        self.size.set((terminal.columns(), terminal.rows()));
+        self.dirty.set(true);
+    }
+
     /// `handleCtrlZ`: suspend to the background; the TUI comes back on `fg`.
     pub(super) fn handle_ctrl_z(&mut self) {
-        struct Ops<'a> {
-            tui: &'a mut Tui,
-            input: &'a mut Option<Receiver<TuiEvent>>,
-            #[cfg(unix)]
-            signals: crate::suspend::ProcessSignals,
-        }
-        impl SuspendOps for Ops<'_> {
-            fn stop_ui(&mut self) {
-                self.tui.stop();
-            }
-            fn restart_ui(&mut self) {
-                *self.input = Some(self.tui.start());
-                self.tui.request_render(true);
-            }
-            fn ignore_sigint(&mut self) {
-                #[cfg(unix)]
-                self.signals.ignore_sigint();
-            }
-            fn restore_sigint(&mut self) {
-                #[cfg(unix)]
-                self.signals.restore_sigint();
-            }
-            fn stop_process_group(&mut self) -> Result<(), String> {
-                #[cfg(unix)]
-                return self.signals.stop_process_group();
-                #[cfg(not(unix))]
-                Err("not supported".into())
-            }
-        }
-        let mut ops = Ops {
+        let mut ops = SuspendUi {
             tui: &mut self.tui,
             input: &mut self.restarted_input,
             #[cfg(unix)]
@@ -389,5 +381,37 @@ impl Mode {
                 self.show_error(&format!("Suspend failed: {error}"));
             }
         }
+    }
+}
+
+/// What suspending and resuming touch in the running app.
+struct SuspendUi<'a> {
+    tui: &'a mut Tui,
+    input: &'a mut Option<Receiver<TuiEvent>>,
+    #[cfg(unix)]
+    signals: crate::suspend::ProcessSignals,
+}
+
+impl SuspendOps for SuspendUi<'_> {
+    fn stop_ui(&mut self) {
+        self.tui.stop();
+    }
+    fn restart_ui(&mut self) {
+        *self.input = Some(self.tui.start());
+        self.tui.request_render(true);
+    }
+    fn ignore_sigint(&mut self) {
+        #[cfg(unix)]
+        self.signals.ignore_sigint();
+    }
+    fn restore_sigint(&mut self) {
+        #[cfg(unix)]
+        self.signals.restore_sigint();
+    }
+    fn stop_process_group(&mut self) -> Result<(), String> {
+        #[cfg(unix)]
+        return self.signals.stop_process_group();
+        #[cfg(not(unix))]
+        Err("not supported".into())
     }
 }

@@ -1236,6 +1236,12 @@ impl Tui {
         self.fullscreen = on;
     }
 
+    /// Whether the TUI owns the terminal: [`Tui::start`] ran and [`Tui::stop`]
+    /// has not since.
+    pub fn is_started(&self) -> bool {
+        self.started
+    }
+
     /// Whether the full-screen mode is on.
     pub fn fullscreen(&self) -> bool {
         self.fullscreen

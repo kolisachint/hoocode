@@ -8,6 +8,48 @@
 //!
 //! The steps go through [`SuspendOps`] so tests can run the sequence without
 //! stopping the test process.
+//!
+//! A stop hoocode did not ask for (SIGTTIN/SIGTTOU when it lost the terminal's
+//! foreground, a SIGTSTP from outside) leaves raw mode and the Kitty keyboard
+//! flags on while the shell has the terminal, and the screen stale after
+//! `fg`. A SIGCONT watch ([`note_sigcont`]) marks such a resume; the UI loop
+//! takes it ([`take_external_resume`]) and restarts the UI the way Ctrl+Z
+//! does ([`resume_after_external_stop`]).
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set just before our own SIGTSTP; the SIGCONT that ends that stop clears it.
+static SELF_SUSPEND: AtomicBool = AtomicBool::new(false);
+/// A SIGCONT arrived that our own Ctrl+Z did not cause.
+static EXTERNAL_RESUME: AtomicBool = AtomicBool::new(false);
+
+/// Called on each SIGCONT. The one that ends our own Ctrl+Z stop is ignored:
+/// [`suspend_to_background`] restarts the UI itself.
+pub fn note_sigcont() {
+    if !SELF_SUSPEND.swap(false, Ordering::SeqCst) {
+        EXTERNAL_RESUME.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Whether the process was continued after a stop it did not ask for, since
+/// the last call.
+pub fn take_external_resume() -> bool {
+    EXTERNAL_RESUME.swap(false, Ordering::SeqCst)
+}
+
+/// Forget a pending external resume: the UI was just restarted anyway (after
+/// an external editor, which may have been stopped and continued itself).
+pub fn clear_external_resume() {
+    EXTERNAL_RESUME.store(false, Ordering::SeqCst);
+}
+
+/// Bring the UI back after a stop it did not ask for: tear it down (the Kitty
+/// flags popped, raw mode off, so nothing is pushed twice) and start it again
+/// with a full redraw, as after Ctrl+Z.
+pub fn resume_after_external_stop(ops: &mut dyn SuspendOps) {
+    ops.stop_ui();
+    ops.restart_ui();
+}
 
 /// What suspending touches.
 pub trait SuspendOps {
@@ -81,10 +123,13 @@ impl ProcessSignals {
     }
 
     pub fn stop_process_group(&mut self) -> Result<(), String> {
+        // The SIGCONT that ends this stop is ours (see `note_sigcont`).
+        SELF_SUSPEND.store(true, Ordering::SeqCst);
         // SAFETY: kill(2) on our own process group.
         if unsafe { libc::kill(0, libc::SIGTSTP) } == 0 {
             Ok(())
         } else {
+            SELF_SUSPEND.store(false, Ordering::SeqCst);
             Err(std::io::Error::last_os_error().to_string())
         }
     }

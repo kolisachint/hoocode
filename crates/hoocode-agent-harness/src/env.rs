@@ -470,8 +470,10 @@ impl LocalExecutionEnv {
         for (k, v) in options.env.iter().flatten() {
             cmd.env(k, v);
         }
-        #[cfg(unix)]
-        cmd.process_group(0);
+        // A new session (group id = pid, so `kill_process_tree` still reaches
+        // the tree) with no controlling terminal: an interactive shell in the
+        // command cannot take the terminal's foreground from hoocode.
+        hoocode_runtime::spawn_in_new_session(cmd.as_std_mut());
         let mut child = cmd.spawn().map_err(|e| e.to_string())?;
         let pid = child.id();
         let stdout = tokio::spawn(read_stream(

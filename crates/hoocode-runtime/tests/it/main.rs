@@ -224,3 +224,22 @@ fn sigwinch_runs_the_callback_on_the_named_thread() {
     // Dropping the watch closes the iterator, so the thread ends.
     drop(watch);
 }
+
+/// SIGCONT to a running process only continues it (a no-op here) and reaches
+/// the watch, which is how the TUI learns it was continued after a stop.
+#[cfg(unix)]
+#[test]
+fn sigcont_runs_the_callback_on_the_named_thread() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let watch = hoocode_runtime::watch_sigcont("hoocode-test-sigcont", move || {
+        let name = std::thread::current().name().map(str::to_owned);
+        let _ = tx.send(name);
+    })
+    .expect("watch starts");
+    signal_hook::low_level::raise(signal_hook::consts::SIGCONT).expect("raise SIGCONT");
+    let name = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("callback runs after SIGCONT");
+    assert_eq!(name.as_deref(), Some("hoocode-test-sigcont"));
+    drop(watch);
+}

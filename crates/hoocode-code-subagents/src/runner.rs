@@ -128,13 +128,12 @@ impl Runner for ProcessRunner {
         for (key, value) in &spec.env {
             command.env(key, value);
         }
-        // Its own process group, so one kill reaches the whole tree (its bash
-        // commands, its nested subagents).
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
+        // Its own session (and so its own process group, id = pid), so one
+        // kill reaches the whole tree (its bash commands, its nested
+        // subagents), and nothing in that tree has the user's terminal as its
+        // controlling tty: an interactive shell it runs cannot take the
+        // terminal's foreground and leave the TUI stopped by SIGTTIN/SIGTTOU.
+        hoocode_runtime::spawn_in_new_session(&mut command);
         // Subagents run below normal priority, so the UI and the parent's own
         // work come first (concurrency.md section 2).
         hoocode_runtime::lower_child_priority(&mut command, hoocode_runtime::SUBAGENT_CHILD_NICE);

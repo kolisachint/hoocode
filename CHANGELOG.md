@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: the TUI froze after an interactive shell command (2026-11-01)
+- **A command can no longer take over hoocode's terminal.** `Shell` commands, background jobs and subagent processes now run in a session of their own, with no controlling terminal. Before, an interactive program in a command (for example `zsh -i -c '…'`) made itself the terminal's foreground job, and the next key you pressed stopped hoocode ("suspended (tty input)"). Such a command now runs without a terminal, so a program that needs one fails instead of freezing hoocode.
+- **The other helpers hoocode starts run without a terminal too.** MCP stdio servers, harness and extension commands, and `!cmd` config values (such as an API key read by a command) get the same treatment. The external editor still gets the terminal, as before. A `!cmd` credential helper that asks for a password on `/dev/tty` now fails instead of prompting. Use one that prompts through a desktop dialog or `pinentry`, or that needs no prompt.
+- **The TUI comes back whole after an outside stop.** When hoocode is stopped by something other than Ctrl+Z ("suspended (tty input)", or a `kill -TSTP`) and you resume it with `fg`, it now turns raw mode back on, pushes its Kitty keyboard flags again and redraws the screen. Before, the screen stayed stale and keys echoed as plain text. While hoocode is stopped, the shell can still show key-release codes such as `;9:3u`, because the stop leaves the Kitty flags on.
+
 ### Fixed: startup logo and attached views (2026-11-01)
 - **The owl logo keeps its three rows in a narrow terminal.** The banner re-lays itself out on resize (a vertical split no longer wraps the star dots onto their own rows), the dots are placed for the fullscreen body's one-narrower width, and a dot that would land past a long working-directory row is skipped instead of wrapping.
 - **The startup logo is hidden while a subagent run or a shell job's output is attached.** It used to stay above the attached transcript. It comes back once on Esc, and a session switch leaves one logo, not two.

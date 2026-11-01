@@ -57,6 +57,41 @@ pub fn lower_child_priority(command: &mut Command, nice: u64) {
     }
 }
 
+/// Runs the child that `command` will spawn in a new session (`setsid` in
+/// `pre_exec`), so it has no controlling terminal.
+///
+/// The child leads a new process group whose id is its pid, as with
+/// `process_group(0)`, so `kill(-pid, …)` still reaches its whole tree. Unlike
+/// a plain process group, the child and its descendants cannot open
+/// `/dev/tty` or move the terminal's foreground group: an interactive shell
+/// (`zsh -i`) run by a tool would otherwise make itself the foreground group
+/// and leave hoocode in the background, where the TUI's next tty read or
+/// termios write stops it with SIGTTIN or SIGTTOU.
+///
+/// Do not combine with `process_group(0)`: a session leader cannot change its
+/// group, so that `setpgid` would fail the spawn. A no-op off Unix.
+pub fn spawn_in_new_session(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        // SAFETY: the closure only calls setsid, which is async-signal-safe,
+        // between fork and exec. It touches no memory of the parent.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = command;
+    }
+}
+
 #[cfg(test)]
 mod unit {
     use super::SUBAGENT_CHILD_NICE;

@@ -102,6 +102,9 @@ pub fn spawn(
     if let Some(dir) = cwd {
         process.current_dir(dir);
     }
+    // No controlling terminal: a server (or a shell wrapper around it) cannot
+    // take the terminal's foreground from hoocode and stop the TUI.
+    hoocode_runtime::spawn_in_new_session(process.as_std_mut());
     let mut child = process.spawn()?;
     let stdin = child
         .stdin

@@ -72,14 +72,16 @@ pub async fn exec_command(
 ) -> ExecResult {
     let stdout_buf: Buf = Arc::default();
     let stderr_buf: Buf = Arc::default();
-    let mut child = match tokio::process::Command::new(command)
-        .args(args)
+    let mut cmd = tokio::process::Command::new(command);
+    cmd.args(args)
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+        .stderr(Stdio::piped());
+    // No controlling terminal: the command cannot take the terminal's
+    // foreground from hoocode (and so stop the TUI with SIGTTIN/SIGTTOU).
+    hoocode_runtime::spawn_in_new_session(cmd.as_std_mut());
+    let mut child = match cmd.spawn() {
         Ok(child) => child,
         Err(_) => {
             return ExecResult {

@@ -14,6 +14,7 @@
 //!   scheduling lanes and their OS priority (High normal, Medium and Low lowered).
 //! - [`spawn_bg`]: housekeeping on the one Low lane thread `hoocode-bg`.
 //! - [`lower_child_priority`]: niceness of a child process, set at spawn.
+//! - [`spawn_in_new_session`]: a child with no controlling terminal.
 //! - [`ParallelToolLimit`]: the per-turn cap on parallel tool calls.
 //! - [`session_io`]: the `hoocode-session-io` thread, the only writer of session
 //!   files, with a bounded queue and flush barriers.
@@ -41,7 +42,9 @@ mod threads;
 pub mod watchdog;
 
 pub use bg::{spawn_bg, BG_THREAD_NAME};
-pub use child::{lower_child_priority, BELOW_NORMAL_PRIORITY_CLASS, SUBAGENT_CHILD_NICE};
+pub use child::{
+    lower_child_priority, spawn_in_new_session, BELOW_NORMAL_PRIORITY_CLASS, SUBAGENT_CHILD_NICE,
+};
 pub use lanes::{apply_current_thread_lane, spawn_lane_thread, Lane};
 pub use limits::{
     total_memory_bytes, ParallelSlot, ParallelToolLimit, MAX_BASH_NICE, MAX_PARALLEL_TOOLS,
@@ -66,7 +69,7 @@ pub use shutdown::{
     SHUTDOWN_BUDGET, SHUTDOWN_THREAD,
 };
 #[cfg(unix)]
-pub use signals::watch_terminate;
+pub use signals::{watch_sigcont, watch_terminate};
 #[cfg(unix)]
 pub use signals::{watch_sigwinch, SignalWatch};
 pub use threads::{bounded_channel, spawn_named_thread, spawn_thread, sync_bounded_channel};

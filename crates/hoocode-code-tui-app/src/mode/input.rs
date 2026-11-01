@@ -859,6 +859,8 @@ impl Mode {
                 }
             }
             self.restarted_input = Some(self.tui.start());
+            // A stop and `fg` inside the editor is covered by this restart.
+            crate::suspend::clear_external_resume();
             // The editor used the alternate screen: redraw everything.
             self.tui.request_render(true);
         }
