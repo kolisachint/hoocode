@@ -1,18 +1,19 @@
 #![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Waking an idle agent for finished background shell jobs: the interactive app
-//! asks the session for the wake text (`take_job_wake`) and sends it as a prompt.
-//! A completion reaches the model once, in that prompt or on a model call that
-//! came first, never in both.
+//! asks the session whether a wake is due (`job_wake_pending`) and sends the
+//! generic wake message as a prompt. Nothing is taken at that point: the
+//! prompt's model call carries the notices, so a completion reaches the model
+//! once, and a wake that never reaches a model call loses nothing.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Once};
 use std::time::{Duration, Instant};
 
 use hoocode_ai_provider_faux::{
-    faux_assistant_message, register_faux_provider, FauxModelDefinition, FauxProvider,
-    FauxProviderRegistration, FauxResponseStep, RegisterFauxProviderOptions,
+    faux_assistant_message, register_faux_provider, FauxMessageOptions, FauxModelDefinition,
+    FauxProvider, FauxProviderRegistration, FauxResponseStep, RegisterFauxProviderOptions,
 };
-use hoocode_ai_types::{Content, Message};
+use hoocode_ai_types::{Content, Message, StopReason};
 use hoocode_code_agent_session::{
     create_agent_session, AgentSession, AgentSessionServices, BaseTools, CreateAgentSessionOptions,
     PromptOptions, StaticResourceLoader,
@@ -168,24 +169,45 @@ fn mentions(texts: &[String], id: &str) -> usize {
         .count()
 }
 
+const WAKE: &str = hoocode_code_agent_session::JOB_WAKE_MESSAGE;
+
 #[tokio::test(flavor = "multi_thread")]
-async fn a_finished_job_wakes_an_idle_agent_once_and_the_call_adds_no_second_notice() {
+async fn a_finished_job_wakes_an_idle_agent_and_the_wake_call_carries_the_notice_once() {
     let s = setup(true);
     let id = finished_job(&s, "echo done");
 
-    let wake = s
-        .session
-        .take_job_wake()
-        .expect("a finished job wakes the agent");
-    assert!(wake.contains("not typed by the user"), "{wake}");
-    assert!(
-        wake.contains(&format!("Background shell job {id} finished (exit 0)")),
-        "{wake}"
-    );
-    // Taken: asking again finds nothing, and neither does a model call.
-    assert_eq!(s.session.take_job_wake(), None);
+    assert!(WAKE.contains("not typed by the user"), "{WAKE}");
+    assert!(s.session.job_wake_pending());
+    // Asking takes nothing: still due until a model call carries the notice.
+    assert!(s.session.job_wake_pending());
 
-    let seen = prompt_and_see_context(&s, &wake).await;
+    let seen = prompt_and_see_context(&s, WAKE).await;
+    assert_eq!(mentions(&seen, &id), 1, "{seen:?}");
+    assert!(
+        seen.iter()
+            .any(|t| t.contains(&format!("Background shell job {id} finished (exit 0)"))),
+        "{seen:?}"
+    );
+    assert!(!s.session.job_wake_pending());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_wake_call_that_fails_does_not_use_up_the_notice() {
+    let s = setup(true);
+    let id = finished_job(&s, "true");
+
+    s.faux
+        .set_responses(vec![FauxResponseStep::Message(faux_assistant_message(
+            "boom",
+            FauxMessageOptions {
+                stop_reason: Some(StopReason::Error),
+                error_message: Some("boom".into()),
+                ..Default::default()
+            },
+        ))]);
+    let _ = s.session.prompt(WAKE, PromptOptions::default()).await;
+
+    let seen = prompt_and_see_context(&s, "try again").await;
     assert_eq!(mentions(&seen, &id), 1, "{seen:?}");
 }
 
@@ -197,7 +219,7 @@ async fn a_notice_a_model_call_already_took_does_not_wake_the_agent_later() {
     // The job finished during a turn: the next model call carries the notice.
     let seen = prompt_and_see_context(&s, "go on").await;
     assert_eq!(mentions(&seen, &id), 1, "{seen:?}");
-    assert_eq!(s.session.take_job_wake(), None);
+    assert!(!s.session.job_wake_pending());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -210,7 +232,7 @@ async fn a_killed_job_does_not_wake_the_agent_but_its_notice_still_reaches_the_n
         .id;
     s.jobs.kill(&id).expect("kill");
 
-    assert_eq!(s.session.take_job_wake(), None);
+    assert!(!s.session.job_wake_pending());
     let seen = prompt_and_see_context(&s, "next").await;
     assert_eq!(mentions(&seen, &id), 1, "{seen:?}");
 }
@@ -223,24 +245,26 @@ async fn a_running_job_and_a_session_without_jobs_never_wake() {
         .spawn("sleep 30", &s.dir, get_shell_env())
         .expect("spawn")
         .id;
-    assert_eq!(s.session.take_job_wake(), None);
+    assert!(!s.session.job_wake_pending());
     s.jobs.kill(&id).unwrap();
 
     let plain = setup(false);
-    assert_eq!(plain.session.take_job_wake(), None);
+    assert!(!plain.session.job_wake_pending());
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn two_jobs_finishing_before_the_wake_arrive_in_one_message_in_finish_order() {
+async fn two_jobs_finishing_before_the_wake_arrive_in_finish_order_in_one_call() {
     let s = setup(true);
     let a = finished_job(&s, "true");
     let b = finished_job(&s, "exit 3");
 
-    let wake = s.session.take_job_wake().expect("wakes");
+    assert!(s.session.job_wake_pending());
+    let seen = prompt_and_see_context(&s, WAKE).await;
+    let joined = seen.join("\n");
     let (at_a, at_b) = (
-        wake.find(&format!("job {a} ")).expect("a"),
-        wake.find(&format!("job {b} ")).expect("b"),
+        joined.find(&format!("job {a} ")).expect("a"),
+        joined.find(&format!("job {b} ")).expect("b"),
     );
-    assert!(at_a < at_b, "{wake}");
-    assert!(wake.contains("exit 3"), "{wake}");
+    assert!(at_a < at_b, "{joined}");
+    assert!(joined.contains("exit 3"), "{joined}");
 }

@@ -760,3 +760,40 @@ fn peek_completions_does_not_announce_and_acknowledge_ignores_running_jobs() {
     assert!(jobs.peek_completions().is_empty());
     jobs.kill(&running).unwrap();
 }
+
+#[test]
+fn waiting_for_a_job_polls_coarsely_and_still_answers_an_abort_quickly() {
+    use hoocode_code_tool_bash::WaitEnd;
+    use std::cell::Cell;
+
+    let dir = tempfile::tempdir().unwrap();
+    let jobs = registry(dir.path());
+    let id = spawn(&jobs, dir.path(), "sleep 30");
+
+    // A wait that times out checks the abort signal once per poll: a 10 ms poll
+    // would check ~100 times in a second, a 100 ms poll about 10.
+    let checks = Cell::new(0u32);
+    let end = jobs
+        .wait_for_exit(&id, Duration::from_secs(1), || {
+            checks.set(checks.get() + 1);
+            false
+        })
+        .expect("wait");
+    assert_eq!(end, WaitEnd::TimedOut);
+    assert!(
+        checks.get() <= 15,
+        "wait polled {} times in 1 s; expected about 10",
+        checks.get()
+    );
+
+    // An abort is still seen within a poll or two.
+    let started = Instant::now();
+    let end = jobs
+        .wait_for_exit(&id, Duration::from_secs(30), || {
+            started.elapsed() >= Duration::from_millis(300)
+        })
+        .expect("wait");
+    assert_eq!(end, WaitEnd::Aborted);
+    assert!(started.elapsed() < Duration::from_millis(700));
+    jobs.kill(&id).unwrap();
+}

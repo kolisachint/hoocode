@@ -36,6 +36,9 @@ use crate::shell::{
 
 /// Poll interval for exit and kill.
 const POLL: Duration = Duration::from_millis(10);
+/// Poll interval of [`JobRegistry::wait_for_exit`], which may wait up to 30 minutes:
+/// coarse enough to cost nothing, fine enough that the abort signal answers at once.
+const WAIT_POLL: Duration = Duration::from_millis(100);
 /// How long [`JobRegistry::kill`] waits for the exit to be recorded.
 const KILL_WAIT: Duration = Duration::from_secs(2);
 /// How often a finished job's group is checked for processes that are still running.
@@ -367,7 +370,7 @@ impl JobRegistry {
     }
 
     /// Waits until the job is no longer running, `timeout` has passed, or
-    /// `cancelled` returns true (the call's abort signal), polling. Blocks the
+    /// `cancelled` returns true (the call's abort signal), polling every 100 ms. Blocks the
     /// calling thread, so call it from a tool's `execute` (it runs on the
     /// blocking pool), never from async code or the UI thread.
     pub fn wait_for_exit(
@@ -388,7 +391,7 @@ impl JobRegistry {
             if Instant::now() >= deadline {
                 return Ok(WaitEnd::TimedOut);
             }
-            std::thread::sleep(POLL);
+            std::thread::sleep(WAIT_POLL);
         }
     }
 

@@ -557,7 +557,7 @@ pub fn create_agent_session(
         extensions: options.extensions,
         session_start_event: options.session_start_event,
     });
-    // The interactive app wakes an idle agent from the same notices (`take_job_wake`).
+    // The interactive app wakes an idle agent from the same notices (`job_wake_pending`).
     if let Some(notices) = job_notices {
         session.set_job_notices(notices);
     }
@@ -612,37 +612,26 @@ impl JobNotices {
         notices
     }
 
-    /// The finished jobs an idle agent should be woken for, taken so that no
-    /// model call announces them again. Empty (and nothing taken) unless one of
-    /// them ended on its own: a job the model or the user killed is not news
-    /// worth a turn, and its notice waits for the next call as before. A wake
-    /// message is a prompt, so it stays in the transcript and its call carries
-    /// no second notice for the same jobs.
-    pub fn take_wake(&self) -> Vec<JobInfo> {
-        let mut st = lock(&self.state);
-        let ended_on_its_own = st
-            .queued
+    /// Whether a finished job is worth waking an idle agent for: one that ended
+    /// on its own and is not yet announced. A job the model or the user killed
+    /// is not news worth a turn; its notice waits for the next call. Nothing is
+    /// taken: the wake prompt's own model call carries the notices
+    /// ([`for_call`](Self::for_call)), so a completion reaches the model once
+    /// and a wake that fails before any model call loses nothing.
+    pub fn wake_pending(&self) -> bool {
+        let st = lock(&self.state);
+        st.queued
             .iter()
             .chain(self.jobs.peek_completions().iter())
-            .any(|info| info.state != JobState::Killed);
-        if !ended_on_its_own {
-            return Vec::new();
-        }
-        let announced = self.jobs.take_completions();
-        st.queued.extend(announced);
-        std::mem::take(&mut st.queued)
+            .any(|info| info.state != JobState::Killed)
     }
 }
 
 /// The message that wakes an idle agent for finished jobs (see
-/// [`JobNotices::take_wake`]): the notices, marked as not typed by the user.
-pub fn job_wake_message(jobs: &[JobInfo]) -> String {
-    let lines: Vec<String> = jobs.iter().map(completion_notice).collect();
-    format!(
-        "[Notice from hoocode, not typed by the user]\n{}",
-        lines.join("\n")
-    )
-}
+/// [`JobNotices::wake_pending`]). It names no job: the model call it starts
+/// appends the notices, marked as not typed by the user.
+pub const JOB_WAKE_MESSAGE: &str =
+    "[Notice from hoocode, not typed by the user] Background shell job(s) finished.";
 
 /// Whether the transcript has a reply after index `from` that did not fail. A
 /// transcript shorter than `from` was rewritten (compaction) after the call, so

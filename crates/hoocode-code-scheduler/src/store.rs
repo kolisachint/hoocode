@@ -10,9 +10,11 @@
 //!
 //! Every task records its owner, the process that created it. Only the owner
 //! fires a due task, so an idle hoocode that happens to share the folder does
-//! not run another session's schedule. A task whose owner has exited, and a
-//! legacy task with no owner, is adopted by the first process that finds it
-//! due (see [`TaskStore::claim_due_tick_with`]).
+//! not run another session's schedule. A task whose owner has exited is
+//! adopted by the first process that finds it due. A legacy task with no owner
+//! is adopted only by a session that vouches for it (its `/loop` created it);
+//! otherwise it does not fire until it is re-created (see
+//! [`TaskStore::claim_due_tick_adopting`]).
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
@@ -402,18 +404,33 @@ impl TaskStore {
     }
 
     /// [`claim_due_tick`](Self::claim_due_tick) with `alive` deciding whether an
-    /// owner pid is running.
-    ///
-    /// This store's owner claims a due task when it owns it. It also claims,
-    /// and adopts (the task's owner becomes this one, and the claim reports it
-    /// in [`Claimed::adopted`]), a due task that has no owner or whose owner
-    /// pid is not alive. A due task of a live other owner is left untouched:
-    /// its last-run minute does not move and nothing is reported, so its owner
-    /// still fires it.
+    /// owner pid is running. A legacy task with no owner is not adopted (see
+    /// [`claim_due_tick_adopting`](Self::claim_due_tick_adopting)).
     pub fn claim_due_tick_with(
         &self,
         now: &DateTime<Local>,
         alive: &dyn Fn(u32) -> bool,
+    ) -> io::Result<Tick> {
+        self.claim_due_tick_adopting(now, alive, &|_| false)
+    }
+
+    /// [`claim_due_tick_with`](Self::claim_due_tick_with), with
+    /// `adopt_ownerless` saying whether this claimer vouches for a task that has
+    /// no owner (the argument is the task id).
+    ///
+    /// This store's owner claims a due task when it owns it. It also claims,
+    /// and adopts (the task's owner becomes this one, and the claim reports it
+    /// in [`Claimed::adopted`]), a due task whose owner pid is not alive. A due
+    /// task that has no owner (written before owners were recorded) is adopted
+    /// only when `adopt_ownerless` accepts its id; otherwise it is left alone,
+    /// as a task of a live other owner is, so an idle session that merely
+    /// shares the folder does not run it. A task left untouched keeps its
+    /// last-run minute and nothing is reported.
+    pub fn claim_due_tick_adopting(
+        &self,
+        now: &DateTime<Local>,
+        alive: &dyn Fn(u32) -> bool,
+        adopt_ownerless: &dyn Fn(&str) -> bool,
     ) -> io::Result<Tick> {
         self.with_lock(|held| {
             // Without the lock file another process could claim the same minute
@@ -445,6 +462,7 @@ impl TaskStore {
                         }
                     }
                     Some(pid) if alive(pid) => continue,
+                    None if !adopt_ownerless(&task.id) => continue,
                     previous => {
                         claimed.adopted.push(Adopted {
                             task_id: task.id.clone(),
@@ -649,7 +667,7 @@ mod tests {
             recurring,
             created_at,
             last_run_minute: None,
-            owner_pid: None,
+            owner_pid: Some(std::process::id()),
             owner_session_id: None,
             fire_count: 0,
         });
@@ -908,16 +926,53 @@ mod tests {
         assert!(claimed.adopted.is_empty(), "adopted once");
     }
 
+    /// A legacy task (no owner recorded) due at 09:30.
+    fn put_legacy(dir: &tempfile::TempDir, prompt: &str) -> String {
+        let store = store_in(dir);
+        put(&store, "30 9 * * *", prompt, true, 0);
+        let mut tasks = store.read();
+        let last = tasks.last_mut().unwrap();
+        last.owner_pid = None;
+        let id = last.id.clone();
+        store.write(&tasks).unwrap();
+        id
+    }
+
     #[test]
-    fn a_task_with_no_owner_is_adopted_by_the_first_claimer() {
+    fn a_task_with_no_owner_is_not_adopted_by_an_idle_session_that_did_not_create_it() {
         let dir = tempfile::tempdir().unwrap();
-        put(&store_in(&dir), "30 9 * * *", "legacy", true, 0);
+        put_legacy(&dir, "legacy");
+        let idle = store_for(&dir, 200, None);
+        let tick = idle
+            .claim_due_tick_adopting(&at(9, 30, 10), &|_| true, &|_| false)
+            .unwrap();
+        assert_eq!(tick.claimed, Claimed::default());
+        let after = idle.list();
+        assert_eq!(after[0].owner_pid, None, "still ownerless");
+        assert_eq!(after[0].last_run_minute, None, "its minute did not move");
+        // The plain claim does not vouch for it either.
+        let claimed = idle.claim_due_with(&at(9, 30, 20), &|_| true).unwrap();
+        assert!(claimed.fired.is_empty() && claimed.adopted.is_empty());
+    }
+
+    #[test]
+    fn a_task_with_no_owner_is_adopted_by_the_session_that_vouches_for_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = put_legacy(&dir, "legacy");
+        let other = put_legacy(&dir, "someone else's");
         let adopter = store_for(&dir, 200, None);
-        let claimed = adopter.claim_due_with(&at(9, 30, 10), &|_| true).unwrap();
+        let claimed = adopter
+            .claim_due_tick_adopting(&at(9, 30, 10), &|_| true, &|task| task == id)
+            .unwrap()
+            .claimed;
         assert_eq!(prompts(&claimed), vec!["legacy"]);
         assert_eq!(claimed.adopted.len(), 1);
         assert_eq!(claimed.adopted[0].previous_pid, None);
-        assert_eq!(adopter.list()[0].owner_pid, Some(200));
+        let after = adopter.list();
+        assert_eq!(after[0].owner_pid, Some(200));
+        let untouched = after.iter().find(|t| t.id == other).unwrap();
+        assert_eq!(untouched.owner_pid, None);
+        assert_eq!(untouched.last_run_minute, None);
     }
 
     #[test]

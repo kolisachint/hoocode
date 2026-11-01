@@ -143,7 +143,7 @@ fn clock(at: &DateTime<Local>, now: &DateTime<Local>) -> String {
 /// Who owns a task, for a list: this session, a pid, or nobody.
 fn owner_label(task: &ScheduledTask, my_pid: u32, alive: &dyn Fn(u32) -> bool) -> String {
     let Some(pid) = task.owner_pid else {
-        return "none (the next session to find it due adopts it)".into();
+        return "none — written by an older hoocode; it will not fire. Run CronDelete, then CronCreate, to re-create it here".into();
     };
     if pid == my_pid {
         return "this session".into();
@@ -382,7 +382,11 @@ mod tests {
         task.owner_pid = None;
         task.owner_session_id = None;
         let text = list_at(task, 200, true);
-        assert!(text.contains("owner: none ("), "{text}");
+        assert!(
+            text.contains("owner: none — written by an older hoocode; it will not fire."),
+            "{text}"
+        );
+        assert!(text.contains("CronDelete, then CronCreate"), "{text}");
     }
 
     #[test]

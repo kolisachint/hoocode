@@ -38,7 +38,7 @@ pub use runtime::{
 pub use services::{
     create_agent_session, create_agent_session_services, default_base_tools,
     AgentSessionRuntimeDiagnostic, AgentSessionServices, CreateAgentSessionOptions,
-    CreatedAgentSession, DiagnosticKind, NoTools,
+    CreatedAgentSession, DiagnosticKind, NoTools, JOB_WAKE_MESSAGE,
 };
 pub use session::{
     compaction_result_json, AgentSession, AgentSessionConfig, AgentSessionError, AgentSessionEvent,

@@ -54,15 +54,26 @@ pub fn claim_due_now(cwd: &Path) -> Claimed {
 /// [`claim_due`] for a tick, with the store's tasks after the claim (for the
 /// task panel's Schedule rows; see [`rows`]). Nothing is read when the lock is
 /// not taken. The claim is made for this process and the session `session_id`:
-/// it fires the tasks this process owns, and adopts the ones with no live owner.
-pub fn tick(cwd: &Path, session_id: Option<&str>, now: &DateTime<Local>) -> Tick {
+/// it fires the tasks this process owns, and adopts the ones whose owner has
+/// exited. A task with no owner (written before owners were recorded) is
+/// adopted only when `adopt_ownerless` accepts its id.
+pub fn tick(
+    cwd: &Path,
+    session_id: Option<&str>,
+    now: &DateTime<Local>,
+    adopt_ownerless: &dyn Fn(&str) -> bool,
+) -> Tick {
     TaskStore::for_cwd(cwd)
         .with_session_id(session_id.map(str::to_owned))
-        .claim_due_tick(now)
+        .claim_due_tick_adopting(now, &store::process_alive, adopt_ownerless)
         .unwrap_or_default()
 }
 
 /// [`tick`] at the current local time.
-pub fn tick_now(cwd: &Path, session_id: Option<&str>) -> Tick {
-    tick(cwd, session_id, &Local::now())
+pub fn tick_now(
+    cwd: &Path,
+    session_id: Option<&str>,
+    adopt_ownerless: &dyn Fn(&str) -> bool,
+) -> Tick {
+    tick(cwd, session_id, &Local::now(), adopt_ownerless)
 }

@@ -1027,16 +1027,16 @@ impl AgentSession {
         *lock(&self.inner.job_notices) = Some(notices);
     }
 
-    /// The text that wakes an idle agent because background shell jobs finished,
-    /// or `None` when nothing is worth a turn. It takes the jobs' notices, so
-    /// each completion reaches the model once: in this message, or on a model
-    /// call that came first. The caller sends the text as a prompt and only
-    /// when the agent is idle; while a turn runs the notices ride on the next
-    /// model call as before. Only the interactive app calls it.
-    pub fn take_job_wake(&self) -> Option<String> {
-        let notices = lock(&self.inner.job_notices).clone()?;
-        let jobs = notices.take_wake();
-        (!jobs.is_empty()).then(|| crate::services::job_wake_message(&jobs))
+    /// Whether finished background shell jobs are worth waking an idle agent
+    /// for. The caller sends [`JOB_WAKE_MESSAGE`](crate::JOB_WAKE_MESSAGE)
+    /// as a prompt, only when the agent is idle; that prompt's model call
+    /// carries the notices, so nothing is taken here and a wake that fails
+    /// before a model call loses none. While a turn runs the notices ride on
+    /// the next model call as before. Only the interactive app calls it.
+    pub fn job_wake_pending(&self) -> bool {
+        lock(&self.inner.job_notices)
+            .clone()
+            .is_some_and(|notices| notices.wake_pending())
     }
 
     pub fn is_streaming(&self) -> bool {
