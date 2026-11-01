@@ -1934,6 +1934,7 @@ dependencies = [
  "arboard",
  "chrono",
  "hoocode-agent-compaction",
+ "hoocode-agent-core",
  "hoocode-agent-types",
  "hoocode-ai-oauth",
  "hoocode-ai-types",

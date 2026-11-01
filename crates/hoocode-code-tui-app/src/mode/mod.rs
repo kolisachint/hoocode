@@ -542,6 +542,9 @@ struct Mode {
     dirty: Rc<Cell<bool>>,
     perf: Perf,
     header: Rc<RefCell<ExpandableText>>,
+    /// The startup header's container: the header is in it, except while the
+    /// attached view is up (`attach.rs` `set_start_header`).
+    header_container: Rc<RefCell<Container>>,
     /// The header cursor's app-driven blink. It stops once the transcript has
     /// content: the header is then off the top.
     cursor_blink: CursorBlink,
@@ -1130,6 +1133,7 @@ impl Mode {
             dirty,
             perf,
             header,
+            header_container,
             cursor_blink,
             scroll_body: fullscreen.then(|| body.clone()),
             transcript: Transcript::new(chat),
