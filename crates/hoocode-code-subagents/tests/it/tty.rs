@@ -22,7 +22,9 @@ const TEST_NAME: &str = "tty::a_subagent_child_cannot_take_the_terminal_foregrou
 
 /// The child under test: does it see a terminal, and an interactive zsh
 /// (when installed) that would otherwise grab the foreground and keep it.
-const SCRIPT: &str = "if : 2>/dev/null </dev/tty; then echo tty=yes; else echo tty=no; fi; \
+/// `true`, not `:`: a failed redirection on a special builtin makes a POSIX
+/// `sh` (dash on Linux) exit with status 2 instead of taking the else branch.
+const SCRIPT: &str = "if true 2>/dev/null </dev/tty; then echo tty=yes; else echo tty=no; fi; \
      if command -v zsh >/dev/null 2>&1; then zsh -f -i -c 'echo zsh=ran'; fi";
 
 #[test]

@@ -19,7 +19,7 @@ const TEST_NAME: &str = "tty::a_shell_command_cannot_take_the_terminal_foregroun
 
 /// The command under test: does it see a terminal, and an interactive zsh
 /// (when installed) that would otherwise grab the foreground and keep it.
-const COMMAND: &str = "if : 2>/dev/null </dev/tty; then echo tty=yes; else echo tty=no; fi; \
+const COMMAND: &str = "if true 2>/dev/null </dev/tty; then echo tty=yes; else echo tty=no; fi; \
      if command -v zsh >/dev/null 2>&1; then zsh -f -i -c 'echo zsh=ran'; fi";
 
 #[test]
