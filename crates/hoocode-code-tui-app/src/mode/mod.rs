@@ -1541,6 +1541,17 @@ impl Mode {
         })));
         let mut input = self.tui.start();
         self.install_interrupt_hook();
+        // A stop hoocode did not ask for, ended by `fg`: the loop restores the
+        // UI (`tick_external_resume`). Held until the loop ends.
+        #[cfg(unix)]
+        let _sigcont = {
+            let wake = self.tui.wake_handle();
+            hoocode_runtime::watch_sigcont("hoocode-sigcont", move || {
+                crate::suspend::note_sigcont();
+                wake.wake();
+            })
+            .ok()
+        };
         // From here the TUI owns the terminal: the agent's operational log
         // lines (dispatch, warm fallback, lifeguard) must not write to it.
         set_terminal_owned_by_tui(true);
@@ -1717,6 +1728,7 @@ impl Mode {
             self.advance_auto_loop();
             self.poll_auto_theme();
             self.sync_runtime_health();
+            self.tick_external_resume();
             if let Some(restarted) = self.restarted_input.take() {
                 input = restarted;
             }

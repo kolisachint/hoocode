@@ -69,7 +69,7 @@ pub use shutdown::{
     SHUTDOWN_BUDGET, SHUTDOWN_THREAD,
 };
 #[cfg(unix)]
-pub use signals::watch_terminate;
+pub use signals::{watch_sigcont, watch_terminate};
 #[cfg(unix)]
 pub use signals::{watch_sigwinch, SignalWatch};
 pub use threads::{bounded_channel, spawn_named_thread, spawn_thread, sync_bounded_channel};

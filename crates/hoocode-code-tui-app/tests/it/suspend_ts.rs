@@ -1,9 +1,13 @@
 //! Port of the pin's `test/interactive-mode-suspend.test.ts`
 //! (`InteractiveMode.handleCtrlZ`) over a recording [`SuspendOps`].
-//! hoocode's keep-alive interval and SIGCONT listener have no counterpart:
-//! `kill` returns once the process is continued, and the restore follows it.
+//! hoocode's keep-alive interval has no counterpart: `kill` returns once the
+//! process is continued, and the restore follows it. The SIGCONT watch covers
+//! stops hoocode did not ask for (`resume_after_external_stop`).
 
-use hoocode_code_tui_app::suspend::{suspend_to_background, SuspendOps, SuspendOutcome};
+use hoocode_code_tui_app::suspend::{
+    clear_external_resume, note_sigcont, resume_after_external_stop, suspend_to_background,
+    take_external_resume, SuspendOps, SuspendOutcome,
+};
 
 #[derive(Default)]
 struct Recorder {
@@ -77,4 +81,28 @@ fn cleans_up_the_temporary_handlers_if_suspension_fails() {
         ops.calls,
         ["ignore_sigint", "stop_ui", "SIGTSTP", "restore_sigint"]
     );
+}
+
+/// After a stop hoocode did not ask for, the UI is torn down and started
+/// again (Kitty flags popped and pushed once, raw mode back, full redraw);
+/// SIGINT and the process group are left alone.
+#[test]
+fn an_external_resume_restarts_the_ui() {
+    let mut ops = Recorder::default();
+    resume_after_external_stop(&mut ops);
+    assert_eq!(ops.calls, ["stop_ui", "restart_ui"]);
+}
+
+/// A SIGCONT hoocode did not cause is reported once to the UI loop; a
+/// restart that already happened (the external editor's) can drop it.
+#[test]
+fn a_sigcont_from_outside_is_taken_once() {
+    clear_external_resume();
+    assert!(!take_external_resume(), "nothing pending at first");
+    note_sigcont();
+    assert!(take_external_resume(), "an outside SIGCONT is reported");
+    assert!(!take_external_resume(), "and only once");
+    note_sigcont();
+    clear_external_resume();
+    assert!(!take_external_resume(), "cleared by a restart");
 }

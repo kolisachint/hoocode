@@ -66,12 +66,13 @@ fn execute_command(command: &str) -> Option<String> {
         c.args(["-c", command]);
         c
     };
-    let mut child = cmd
-        .stdin(Stdio::null())
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
+        .stderr(Stdio::null());
+    // No controlling terminal: the command cannot take the terminal's
+    // foreground from hoocode (and so stop the TUI with SIGTTIN/SIGTTOU).
+    hoocode_runtime::spawn_in_new_session(&mut cmd);
+    let mut child = cmd.spawn().ok()?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
         match child.try_wait() {

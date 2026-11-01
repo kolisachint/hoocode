@@ -16,6 +16,7 @@ publish = false
 doctest = false
 
 [dependencies]
+hoocode-runtime = { workspace = true }
 # Only this crate depends on rmcp (migration/dep-firewall.json).
 rmcp = { version = "3.5.1", default-features = false, features = [
     "client",
