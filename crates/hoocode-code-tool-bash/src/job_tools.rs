@@ -4,18 +4,24 @@
 //! `enableBackgroundShell`, so they cost no schema otherwise.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use hoocode_agent_types::AgentToolResult;
-use hoocode_ai_types::{Content, TextContent};
+use hoocode_ai_types::{AbortSignal, Content, TextContent};
 use hoocode_code_tool_api::{ToolDefinition, ToolError};
 use serde_json::{json, Value};
 
-use crate::jobs::JobRegistry;
+use crate::jobs::{JobRegistry, WaitEnd};
 
 /// `ShellOutput`.
 pub const SHELL_OUTPUT_TOOL_NAME: &str = "ShellOutput";
 /// `ShellKill`.
 pub const SHELL_KILL_TOOL_NAME: &str = "ShellKill";
+
+/// How long `ShellOutput` with `wait` blocks when `timeout_ms` is not given.
+pub const WAIT_DEFAULT_MS: u64 = 300_000;
+/// The most `timeout_ms` may ask for.
+pub const WAIT_MAX_MS: u64 = 1_800_000;
 
 fn text_result(text: String) -> AgentToolResult {
     AgentToolResult {
@@ -29,15 +35,58 @@ fn text_result(text: String) -> AgentToolResult {
 }
 
 fn job_id(args: &Value) -> Result<&str, ToolError> {
-    args.get("id")
+    let id = args
+        .get("id")
         .and_then(Value::as_str)
+        .map(str::trim)
         .filter(|id| !id.is_empty())
-        .ok_or_else(|| ToolError::from("The \"id\" argument must be a job id such as \"job-1\"."))
+        .ok_or_else(|| {
+            ToolError::from("The \"id\" argument must be a job id such as \"job-1\".")
+        })?;
+    // A subagent handle (`explore#1`) belongs to AgentOutput; say so rather than
+    // "no such job", which sends the model looking for a job it never started.
+    if id.contains('#') {
+        return Err(format!(
+            "{id} is a subagent handle, not a shell job. Use AgentOutput for subagents; ShellOutput reads job-N ids from Shell."
+        )
+        .into());
+    }
+    Ok(id)
+}
+
+/// A flag as the model sent it: a JSON bool, or the string "true" (models often
+/// quote booleans).
+fn flag(value: Option<&Value>) -> bool {
+    match value {
+        Some(Value::Bool(flag)) => *flag,
+        Some(Value::String(text)) => text.trim().eq_ignore_ascii_case("true"),
+        _ => false,
+    }
+}
+
+/// The `timeout_ms` of a wait: the default when absent, at most [`WAIT_MAX_MS`].
+fn wait_timeout(args: &Value) -> Result<Duration, ToolError> {
+    let ms = match args.get("timeout_ms") {
+        None | Some(Value::Null) => WAIT_DEFAULT_MS,
+        Some(value) => value
+            .as_f64()
+            .filter(|n| n.is_finite())
+            .map(|n| n.max(0.0) as u64)
+            .ok_or_else(|| {
+                ToolError::from("The \"timeout_ms\" argument must be a number of milliseconds.")
+            })?,
+    };
+    Ok(Duration::from_millis(ms.min(WAIT_MAX_MS)))
+}
+
+fn aborted(signal: &Option<AbortSignal>) -> bool {
+    signal.as_ref().is_some_and(AbortSignal::aborted)
 }
 
 fn definition(
     name: &str,
     description: &str,
+    prompt_snippet: &str,
     parameters: Value,
     execute: hoocode_code_tool_api::DefinitionExecuteFn,
 ) -> ToolDefinition {
@@ -48,7 +97,7 @@ fn definition(
         name: name.into(),
         label: name.into(),
         description: description.into(),
-        prompt_snippet: Some(format!("{name}: read or stop a background shell job")),
+        prompt_snippet: Some(prompt_snippet.into()),
         prompt_guidelines: Vec::new(),
         parameters,
         prepare_arguments: None,
@@ -58,23 +107,34 @@ fn definition(
     }
 }
 
-/// `ShellOutput(id, since?)`: the job's output from byte offset `since`, with
-/// the offset to pass next time. Without `since`, the last part of the log.
+/// `ShellOutput(id, since?, wait?, timeout_ms?)`: the job's output from byte
+/// offset `since`, with the offset to pass next time. Without `since`, the last
+/// part of the log. With `wait`, it first blocks until the job ends.
 pub fn create_shell_output_tool_definition(jobs: JobRegistry) -> ToolDefinition {
     let parameters = json!({
         "type": "object",
         "required": ["id"],
         "properties": {
-            "id": {"type": "string", "description": "The job id that Shell returned, e.g. job-1"},
-            "since": {"type": "number", "description": "Byte offset to read from: the next offset from the previous ShellOutput call (optional; without it the last part of the output is returned)"}
+            "id": {"type": "string", "description": "The job id that Shell returned, e.g. job-1 (not a subagent handle)"},
+            "since": {"type": "number", "description": "Byte offset to read from: the next offset from the previous ShellOutput call (optional; without it the last part of the output is returned)"},
+            "wait": {"type": "boolean", "description": "Block until the job has ended before reading (optional). Bounded by timeout_ms. Use this instead of sleeping in a foreground Shell to wait for a job."},
+            "timeout_ms": {"type": "number", "description": "Maximum time to block in wait mode, in milliseconds (default 300000, at most 1800000)."}
         }
     });
     definition(
         SHELL_OUTPUT_TOOL_NAME,
-        "Read the output of a background shell job started with Shell and run_in_background. Returns the output from the given byte offset, the job's state, and the offset to pass as `since` next time.",
+        "Read the output of a background shell job started with Shell and run_in_background (ids like job-1; subagents use AgentOutput). Returns the output from the given byte offset, the job's state, and the offset to pass as `since` next time. Set wait:true to block until the job has ended (up to timeout_ms) instead of polling; if it is still running then, the output so far is returned.",
+        "read a background Shell job's output (job-N ids); wait: true blocks until it ends",
         parameters,
-        Arc::new(move |_id, args, _signal, _on_update, _ctx| {
+        Arc::new(move |_id, args, signal, _on_update, _ctx| {
             let id = job_id(&args)?;
+            let waited = if flag(args.get("wait")) {
+                let timeout = wait_timeout(&args)?;
+                let end = jobs.wait_for_exit(id, timeout, || aborted(&signal))?;
+                Some((end, timeout))
+            } else {
+                None
+            };
             let since = match args.get("since") {
                 None | Some(Value::Null) => None,
                 Some(value) => Some(
@@ -97,7 +157,22 @@ pub fn create_shell_output_tool_definition(jobs: JobRegistry) -> ToolDefinition 
             } else {
                 read.text
             };
-            Ok(text_result(format!("{body}\n\n{status}")))
+            let note = match &waited {
+                Some((WaitEnd::TimedOut, timeout)) => format!(
+                    "\n[still running after {}s; call again with wait: true or keep working]",
+                    timeout.as_millis().div_ceil(1000)
+                ),
+                Some((WaitEnd::Aborted, _)) => {
+                    "\n[wait cancelled; the job is still running]".to_owned()
+                }
+                _ => String::new(),
+            };
+            // The model waited for this job and the answer shows how it ended, so
+            // no completion notice repeats it.
+            if matches!(waited, Some((WaitEnd::Exited, _))) {
+                jobs.acknowledge(id);
+            }
+            Ok(text_result(format!("{body}\n\n{status}{note}")))
         }),
     )
 }
@@ -108,12 +183,13 @@ pub fn create_shell_kill_tool_definition(jobs: JobRegistry) -> ToolDefinition {
         "type": "object",
         "required": ["id"],
         "properties": {
-            "id": {"type": "string", "description": "The job id that Shell returned, e.g. job-1"}
+            "id": {"type": "string", "description": "The job id that Shell returned, e.g. job-1 (not a subagent handle)"}
         }
     });
     definition(
         SHELL_KILL_TOOL_NAME,
-        "Stop a background shell job started with Shell and run_in_background. Kills the job's whole process group. A job that already finished is reported as it is, and the processes it left running are stopped.",
+        "Stop a background shell job started with Shell and run_in_background (ids like job-1; subagents are stopped with AgentOutput cancel). Kills the job's whole process group. A job that already finished is reported as it is, and the processes it left running are stopped.",
+        "stop a background Shell job (job-N ids)",
         parameters,
         Arc::new(move |_id, args, _signal, _on_update, _ctx| {
             let id = job_id(&args)?;

@@ -18,7 +18,7 @@ use hoocode_code_models::{
 use hoocode_code_session::{FileEntry, SessionManager};
 use hoocode_code_settings::SettingsManager;
 use hoocode_code_tool_api::ToolDefinition;
-use hoocode_code_tool_bash::{completion_notice, BashToolOptions, JobInfo, JobRegistry};
+use hoocode_code_tool_bash::{completion_notice, BashToolOptions, JobInfo, JobRegistry, JobState};
 use hoocode_code_tools_fs::ReadToolOptions;
 
 use crate::auth_guidance::{format_auth_failed_message, format_no_models_available_message};
@@ -411,11 +411,13 @@ pub fn create_agent_session(
     // A background shell job that finished is told to the model at the end of the
     // next model call's messages (not kept in the transcript). See `JobNotices`.
     let background_jobs = options.background_jobs.clone();
-    let transform_context: TransformContextFn = match background_jobs.clone() {
+    let job_notices = background_jobs
+        .clone()
+        .map(|jobs| Arc::new(JobNotices::new(jobs)));
+    let transform_context: TransformContextFn = match job_notices.clone() {
         None => transform_context,
-        Some(jobs) => {
+        Some(notices) => {
             let base = transform_context;
-            let notices = JobNotices::new(jobs);
             Arc::new(move |messages, signal| {
                 let mut messages = base(messages, signal)?;
                 for info in notices.for_call(&messages) {
@@ -555,6 +557,10 @@ pub fn create_agent_session(
         extensions: options.extensions,
         session_start_event: options.session_start_event,
     });
+    // The interactive app wakes an idle agent from the same notices (`take_job_wake`).
+    if let Some(notices) = job_notices {
+        session.set_job_notices(notices);
+    }
     CreatedAgentSession {
         session,
         model_fallback_message,
@@ -605,6 +611,37 @@ impl JobNotices {
         }
         notices
     }
+
+    /// The finished jobs an idle agent should be woken for, taken so that no
+    /// model call announces them again. Empty (and nothing taken) unless one of
+    /// them ended on its own: a job the model or the user killed is not news
+    /// worth a turn, and its notice waits for the next call as before. A wake
+    /// message is a prompt, so it stays in the transcript and its call carries
+    /// no second notice for the same jobs.
+    pub fn take_wake(&self) -> Vec<JobInfo> {
+        let mut st = lock(&self.state);
+        let ended_on_its_own = st
+            .queued
+            .iter()
+            .chain(self.jobs.peek_completions().iter())
+            .any(|info| info.state != JobState::Killed);
+        if !ended_on_its_own {
+            return Vec::new();
+        }
+        let announced = self.jobs.take_completions();
+        st.queued.extend(announced);
+        std::mem::take(&mut st.queued)
+    }
+}
+
+/// The message that wakes an idle agent for finished jobs (see
+/// [`JobNotices::take_wake`]): the notices, marked as not typed by the user.
+pub fn job_wake_message(jobs: &[JobInfo]) -> String {
+    let lines: Vec<String> = jobs.iter().map(completion_notice).collect();
+    format!(
+        "[Notice from hoocode, not typed by the user]\n{}",
+        lines.join("\n")
+    )
 }
 
 /// Whether the transcript has a reply after index `from` that did not fail. A

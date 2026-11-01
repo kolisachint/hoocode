@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: background shell jobs (2026-11-01)
+- **A finished background job wakes an idle agent.** In the interactive app, when a job started with `Shell` and `run_in_background` ends while the agent is idle, hoocode sends the model a prompt headed `[Notice from hoocode, not typed by the user]` with the job's notice, so it can act without you typing. Before, the notice waited for your next message. A job you or the model killed does not wake it. While a turn runs the notice still rides on the next model call, and each completion reaches the model once. Print and rpc modes are unchanged.
+- **`ShellOutput` can wait.** `wait: true` blocks until the job has ended (`timeout_ms`, default 300000, at most 1800000) and then reads as usual; if the job is still running at the timeout, the output ends with `[still running after Ns; call again with wait: true or keep working]`. Esc ends the wait at once. The model is told to use it instead of running `sleep` in a foreground `Shell`, which blocked the whole session.
+- **Wrong-tool ids give a clear error.** `ShellOutput` and `ShellKill` given a subagent handle (`explore#1`) say to use `AgentOutput`; `AgentOutput` given a `job-N` id says to use `ShellOutput` or `ShellKill`. An unknown job id lists the running jobs.
+- **The tool list is accurate.** It read `ShellOutput: ShellOutput: read or stop a background shell job` (the same text for `ShellKill`). Each tool now has its own line, and `AgentOutput`'s names its handle form.
+- **`Shell` tells the truth about the notice.** The start message said "A notice arrives when it finishes"; it now says it comes with the next model call, or as a new message when the agent is idle.
+
 ### Changed: dependencies (2026-10-31)
 - rustls 0.23.46 (was 0.23.45), in the main build and in `fuzz/`.
 

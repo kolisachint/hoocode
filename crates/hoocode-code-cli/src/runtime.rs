@@ -2300,7 +2300,7 @@ mod tests {
         for line in [
             "Agent: delegate a self-contained task to a specialized subagent (choose via subagent_type)",
             "DocSearch: Search this session's skills, subagents and plugins by describing what you need.",
-            "AgentOutput: check status / list / collect the results of background subagents",
+            "AgentOutput: check status / list / collect the results of background subagents (handles like explore#1)",
             "TodoWrite: Plan and track multi-step work as a live todo list (use proactively; replaces the whole list each call)",
         ] {
             assert!(
@@ -2355,6 +2355,26 @@ mod tests {
         assert!(
             prompt.contains("run_in_background: true"),
             "the Shell guideline should point at background jobs: {prompt}"
+        );
+        // Each job tool has its own line, and the name is not repeated in it.
+        for line in [
+            "ShellOutput: read a background Shell job's output (job-N ids); wait: true blocks until it ends",
+            "ShellKill: stop a background Shell job (job-N ids)",
+        ] {
+            assert!(
+                prompt.lines().any(|l| l.trim() == format!("- {line}")),
+                "missing {line:?} in the tool list: {prompt}"
+            );
+        }
+        assert!(
+            !prompt.contains("ShellOutput: ShellOutput")
+                && !prompt.contains("ShellKill: ShellKill"),
+            "{prompt}"
+        );
+        // The model is told not to sleep in a foreground Shell to wait.
+        assert!(
+            prompt.contains("ShellOutput with wait: true"),
+            "the Shell guideline should name the wait: {prompt}"
         );
     }
 

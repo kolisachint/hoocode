@@ -82,6 +82,17 @@ impl JobState {
     }
 }
 
+/// How [`JobRegistry::wait_for_exit`] ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitEnd {
+    /// The job is no longer running.
+    Exited,
+    /// The timeout passed with the job still running.
+    TimedOut,
+    /// The caller's cancel check fired (Esc).
+    Aborted,
+}
+
 /// A job as the registry reports it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobInfo {
@@ -302,24 +313,27 @@ impl JobRegistry {
     /// recorded. A job whose shell already exited is returned as it is, but
     /// the processes it left running in its group are signalled.
     pub fn kill(&self, id: &str) -> Result<JobInfo, ToolError> {
-        {
+        let found = {
             let st = lock(&self.shared.state);
-            let entry = st
-                .jobs
-                .iter()
-                .find(|e| e.info.id == id)
-                .ok_or_else(|| format!("No background job with id {id}."))?;
-            if entry.info.state.is_running() {
-                ask_stop(entry);
-            } else if let Some(group) = entry.group {
-                kill_group(group);
+            match st.jobs.iter().find(|e| e.info.id == id) {
+                Some(entry) => {
+                    if entry.info.state.is_running() {
+                        ask_stop(entry);
+                    } else if let Some(group) = entry.group {
+                        kill_group(group);
+                    }
+                    true
+                }
+                None => false,
             }
+        };
+        // The lock is released: the error reads the registry again.
+        if !found {
+            return Err(self.unknown_job(id));
         }
         let deadline = Instant::now() + KILL_WAIT;
         loop {
-            let info = self
-                .info(id)
-                .ok_or_else(|| format!("No background job with id {id}."))?;
+            let info = self.info(id).ok_or_else(|| self.unknown_job(id))?;
             if !info.state.is_running() || Instant::now() >= deadline {
                 return Ok(info);
             }
@@ -332,10 +346,75 @@ impl JobRegistry {
     /// At most [`OUTPUT_READ_MAX`] bytes are read, and a read never ends inside
     /// a UTF-8 character, so `next` is always a safe place to resume.
     pub fn read(&self, id: &str, since: Option<u64>) -> Result<JobRead, ToolError> {
-        let info = self
-            .info(id)
-            .ok_or_else(|| format!("No background job with id {id}."))?;
+        let info = self.info(id).ok_or_else(|| self.unknown_job(id))?;
         read_log(&info.log_path, info.state, since)
+    }
+
+    /// The error for an id this registry never started. It names the jobs that
+    /// run now, so a model that mistyped an id (or took a handle of another
+    /// tool for one) can pick the right one.
+    fn unknown_job(&self, id: &str) -> ToolError {
+        let running = self.running_jobs();
+        if running.is_empty() {
+            return format!("No background job with id {id}.").into();
+        }
+        let ids: Vec<&str> = running.iter().map(|j| j.id.as_str()).collect();
+        format!(
+            "No background job with id {id}. Running jobs: {}.",
+            ids.join(", ")
+        )
+        .into()
+    }
+
+    /// Waits until the job is no longer running, `timeout` has passed, or
+    /// `cancelled` returns true (the call's abort signal), polling. Blocks the
+    /// calling thread, so call it from a tool's `execute` (it runs on the
+    /// blocking pool), never from async code or the UI thread.
+    pub fn wait_for_exit(
+        &self,
+        id: &str,
+        timeout: Duration,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<WaitEnd, ToolError> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let info = self.info(id).ok_or_else(|| self.unknown_job(id))?;
+            if !info.state.is_running() {
+                return Ok(WaitEnd::Exited);
+            }
+            if cancelled() {
+                return Ok(WaitEnd::Aborted);
+            }
+            if Instant::now() >= deadline {
+                return Ok(WaitEnd::TimedOut);
+            }
+            std::thread::sleep(POLL);
+        }
+    }
+
+    /// Marks a finished job as told to the model (a `ShellOutput` with `wait`
+    /// answered with its end), so no completion notice repeats it. A job that
+    /// runs, or that is unknown, is left alone.
+    pub fn acknowledge(&self, id: &str) {
+        let mut st = lock(&self.shared.state);
+        let finished = st
+            .jobs
+            .iter()
+            .any(|e| e.info.id == id && !e.info.state.is_running());
+        if finished {
+            st.announce.retain(|announced| announced != id);
+        }
+    }
+
+    /// The jobs that finished and are not announced yet, in finish order,
+    /// without announcing them (see [`JobRegistry::take_completions`]).
+    pub fn peek_completions(&self) -> Vec<JobInfo> {
+        let st = lock(&self.shared.state);
+        st.announce
+            .iter()
+            .filter_map(|id| st.jobs.iter().find(|e| &e.info.id == id))
+            .map(|e| e.info.clone())
+            .collect()
     }
 
     /// The jobs that finished since the last call, in finish order. Each job

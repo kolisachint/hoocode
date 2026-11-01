@@ -14,7 +14,7 @@ pub use job_tools::{
     create_shell_kill_tool_definition, create_shell_output_tool_definition, SHELL_KILL_TOOL_NAME,
     SHELL_OUTPUT_TOOL_NAME,
 };
-pub use jobs::{completion_notice, JobInfo, JobRead, JobRegistry, JobState};
+pub use jobs::{completion_notice, JobInfo, JobRead, JobRegistry, JobState, WaitEnd};
 pub use operations::{BashExecOptions, BashOperations, LocalBashOperations};
 pub use shell::{
     get_shell_config, get_shell_env, kill_process_tree, kill_tracked_detached_children,
