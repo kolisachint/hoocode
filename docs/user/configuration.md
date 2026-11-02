@@ -58,3 +58,14 @@ anywhere else.
 - Herdr stores the command that reopens your session. After a Herdr restart, the
   pane opens the same session again (`hoocode --session <id>`).
 - When you quit hoocode, it releases the pane.
+
+To show the hoocode icon in Herdr desktop, save an icon (an SVG) as
+`~/.config/herdr-app/my-icons/hoocode.svg` and add this to
+`~/.config/herdr-app/programs.json`:
+
+```json
+{ "programs": {
+    "hoocode": { "name": "hoocode", "icon": "my-icons/hoocode.svg",
+                 "tint": false, "tile": "#09090B", "color": "#ffffff",
+                 "match": ["hoo"], "run": ["hoocode"] } } }
+```
