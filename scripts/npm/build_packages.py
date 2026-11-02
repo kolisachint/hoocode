@@ -110,6 +110,9 @@ def build(version: str, archives: Path, out: Path) -> None:
             "files": main_files,
             # No "engines": the launcher is sh and execs the binary, so
             # nothing needs Node at run time (bun installs without it).
+            # The sh launcher cannot run on Windows, and no Windows binary
+            # ships, so npm refuses the install there instead.
+            "os": ["darwin", "linux"],
             "optionalDependencies": optional,
             **COMMON,
         },
