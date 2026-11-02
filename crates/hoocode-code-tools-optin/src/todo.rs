@@ -217,6 +217,7 @@ fn parse_items(args: &Value) -> Result<Vec<TodoItem>, ToolError> {
 /// Reconcile the incoming list against the main plan tasks: by content
 /// first, then leftover slots in order; drop the rest; keep list order.
 fn reconcile(store: &TaskStore, todos: &[TodoItem]) {
+    store.note_plan_write();
     store.batch(|store| {
         let existing: Vec<Task> = store
             .list()

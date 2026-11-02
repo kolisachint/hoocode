@@ -466,8 +466,8 @@ fn the_console_keeps_the_tab_strip_and_drops_the_cycle_hint_when_narrow() {
     let lines = render(&mut TaskPanelComponent::new(), 20);
     assert!(lines.iter().all(|l| visible_width(l) <= 20), "{lines:#?}");
     assert!(!strip(&lines.join("\n")).contains("cycle"));
-    // Past the name the edge has no room: the title is cut, never the frame.
-    assert!(strip(&lines[0]).contains("FLIGHT"), "{lines:#?}");
+    // At 20 the edge keeps the bracketed tab and drops the name and the hint.
+    assert!(strip(&lines[0]).contains("[Plan"), "{lines:#?}");
     let lines = render(&mut TaskPanelComponent::new(), 34);
     assert!(lines.iter().all(|l| visible_width(l) <= 34), "{lines:#?}");
     assert!(strip(&lines[0]).contains("[Plan 1/1]"), "{lines:#?}");
@@ -744,32 +744,80 @@ fn the_shown_tab_keeps_its_brackets_at_80_columns_with_double_digit_counts() {
 }
 
 #[test]
-fn the_tab_strip_drops_counts_then_labels_before_it_cuts_the_shown_tab() {
+fn the_tab_strip_gives_up_the_other_tabs_the_hint_the_name_then_the_count() {
     let _g = lock();
     crowded_tabs();
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Mcp);
-    // At 80 columns the edge leaves the strip 42 cells: only the shown tab
-    // keeps its count.
-    let strip = plain(&mut panel, 80)[0].clone();
-    assert!(strip.contains("Schedule [MCP 3 running]"), "{strip}");
-    assert!(!strip.contains("12"), "{strip}");
-    // At 75 (37 cells) the labels alone fit.
-    let strip = plain(&mut panel, 75)[0].clone();
-    assert!(strip.contains("Schedule [MCP]"), "{strip}");
-    assert!(!strip.contains("running"), "{strip}");
-    // At 60 only the shown tab fits, with its count.
-    let strip = plain(&mut panel, 60)[0].clone();
-    assert!(strip.contains("━ [MCP 3 running] ━"), "{strip}");
-    assert!(!strip.contains("Plan"), "{strip}");
-    // At 40 the right label goes before the shown tab is cut.
-    let strip = plain(&mut panel, 40)[0].clone();
-    assert!(strip.contains("[MCP 3 running]"), "{strip}");
-    assert!(!strip.contains("ctrl+g"), "{strip}");
-    // At 30 the shown tab drops its count; its brackets stay whole.
-    let strip = plain(&mut panel, 30)[0].clone();
-    assert!(strip.contains("[MCP]"), "{strip}");
-    assert!(visible_width(&strip) <= 30, "{strip}");
+    let top = |panel: &mut TaskPanelComponent, width: u16| plain(panel, width)[0].clone();
+    // 80: only the shown tab keeps its count.
+    let edge = top(&mut panel, 80);
+    assert!(edge.contains("Schedule [MCP 3 running]"), "{edge}");
+    assert!(!edge.contains("12"), "{edge}");
+    // 75: the other tabs go, the count stays beside the hint, with the name.
+    let edge = top(&mut panel, 75);
+    assert!(edge.contains("FLIGHT PLAN ━ [MCP 3 running]"), "{edge}");
+    assert!(
+        edge.contains("/tasks · ctrl+g") && !edge.contains("Plan Agents"),
+        "{edge}"
+    );
+    // 52: the hint goes before the name or the count.
+    let edge = top(&mut panel, 52);
+    assert!(edge.contains("FLIGHT PLAN ━ [MCP 3 running]"), "{edge}");
+    assert!(!edge.contains("ctrl+g"), "{edge}");
+    // 37: the ` ━ ` join narrows to a space.
+    let edge = top(&mut panel, 37);
+    assert!(edge.contains("FLIGHT PLAN [MCP 3 running]"), "{edge}");
+    // 30: the name goes; the count stays.
+    let edge = top(&mut panel, 30);
+    assert!(edge.contains("┏━ [MCP 3 running] "), "{edge}");
+    assert!(!edge.contains("FLIGHT"), "{edge}");
+    // 20: the count goes last; the brackets stay whole.
+    let edge = top(&mut panel, 20);
+    assert!(edge.contains("[MCP]"), "{edge}");
+    assert!(!edge.contains("running"), "{edge}");
+}
+
+/// The shown tab's brackets are the marker that survives without colour: at
+/// every width where the bare tab physically fits (the edge less the frame's
+/// nine cells), the top edge holds it whole, and no row is wider than the
+/// width.
+#[test]
+fn the_bracketed_shown_tab_stays_whole_wherever_it_fits() {
+    let _g = lock();
+    crowded_tabs();
+    let mut panel = TaskPanelComponent::new();
+    for (view, label) in [
+        (TaskPanelView::Plan, "Plan"),
+        (TaskPanelView::Subagents, "Agents"),
+        (TaskPanelView::Shell, "Shell"),
+        (TaskPanelView::Schedule, "Schedule"),
+        (TaskPanelView::Mcp, "MCP"),
+    ] {
+        panel.set_view(view);
+        for width in 10..=60u16 {
+            let lines = plain(&mut panel, width);
+            assert!(
+                lines.iter().all(|l| visible_width(l) <= usize::from(width)),
+                "{label} at {width}: {lines:#?}"
+            );
+            let bare = format!("[{label}]").chars().count();
+            if usize::from(width) < 9 + bare {
+                continue;
+            }
+            let edge = &lines[0];
+            let open = edge
+                .find(&format!("[{label}"))
+                .unwrap_or_else(|| panic!("{label} at {width}: no bracketed tab: {edge}"));
+            let close = edge[open..]
+                .find(']')
+                .unwrap_or_else(|| panic!("{label} at {width}: bracket cut: {edge}"));
+            assert!(
+                !edge[open..open + close].contains('…'),
+                "{label} at {width}: {edge}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -828,7 +876,7 @@ fn a_stale_arm_does_not_swallow_escape() {
 }
 
 #[test]
-fn a_narrow_strip_keeps_a_lone_shown_tab_whole_and_drops_the_right_label_first() {
+fn a_narrow_strip_keeps_the_shown_tab_whole_and_drops_the_hint() {
     let _g = lock();
     create("a plan item");
     let job = create_with(
@@ -841,13 +889,11 @@ fn a_narrow_strip_keeps_a_lone_shown_tab_whole_and_drops_the_right_label_first()
     set(job, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Schedule);
-    // At 36 columns the edge leaves 12 cells with the right label (too few for
-    // `[Schedule 0/1]` with its count), then 27 without it: the shown tab's
-    // brackets stay whole and the frame never overflows.
+    // At 36 columns the hint and the name cannot stay beside the tab: the
+    // bracketed tab keeps its count and is never cut.
     let strip = plain(&mut panel, 36)[0].clone();
-    assert!(strip.contains("[Schedule"), "{strip}");
-    assert!(strip.contains(']'), "{strip}");
-    assert!(!strip.contains("Plan"), "{strip}");
+    assert!(strip.contains("[Schedule 1 running]"), "{strip}");
+    assert!(!strip.contains("ctrl+g") && !strip.contains('…'), "{strip}");
     assert!(visible_width(&strip) <= 36, "{strip}");
 }
 

@@ -1728,24 +1728,6 @@ impl Tui {
         };
         let (changed, append_start) = self.changed_rows(&new_lines);
 
-        // --- The window has to move *back* over the buffer. ---
-        // A buffer taller than the screen shrank, so rows the reader scrolled
-        // past come back at the top. Those rows are already in the terminal's
-        // scrollback, as they were when they scrolled off; painting the window
-        // in place would leave that copy above the screen (a stale stub of a
-        // panel that changed meanwhile, or the same chat rows twice). So the
-        // whole buffer is drawn again, scrollback cleared. Only trees with a
-        // flex spacer take this path; without one a shrink like this is a
-        // full redraw too (`paint_deleted_lines`).
-        let window_top = (line_count - height).max(0);
-        if self.flex_spacer.is_some()
-            && line_count < geo.prev_line_count
-            && window_top < prev_viewport_top
-        {
-            self.full_render(new_lines, width, height, true);
-            return;
-        }
-
         // --- No changes: still may need to move the hardware cursor. ---
         let Some(changed) = changed else {
             self.position_hardware_cursor(&cursor_pos, line_count);
@@ -1762,6 +1744,15 @@ impl Tui {
         }
 
         // --- Changes above the previous viewport require a full redraw. ---
+        // Those rows are in the terminal's scrollback, where a repaint cannot
+        // reach: a changed one (a panel row that was pushed up by a tall
+        // prompt, then the prompt folds) would stay there as a stale copy
+        // above the live one. The window is never moved back over the
+        // scrollback (a shrink holds `previous_viewport_top` and blanks the
+        // rows below, as `paint_deleted_lines` does), so the scrollback always
+        // holds each row once and only a change up there can make it stale.
+        // `clearOnShrink` (`full_redraw_clear`) opts in to a clean redraw on
+        // every shrink instead.
         if first_changed < prev_viewport_top {
             self.full_render(new_lines, width, height, true);
             return;

@@ -45,7 +45,7 @@ use hoocode_tui_ratatui::{bold, truncate_line, Line, Modifier, Palette, Span, St
 use hoocode_tui_render::Component;
 use hoocode_tui_util::truncate_to_width;
 
-use crate::console::{hints, Console};
+use crate::console::{hints, Console, TabsJoin};
 use crate::trajectory::short_dur;
 
 fn task_status_icon(status: TaskStatus) -> &'static str {
@@ -358,27 +358,58 @@ enum StripFit {
     ShownOnly,
 }
 
-/// The tab strip, on the console's top edge after `FLIGHT PLAN`: one label
-/// per tab (its count is [`LensStats::label`]), the shown tab in brackets and
-/// bold (`[Agents 1 running]`), so the strip reads without colour. When the
-/// strip is wider than `budget` (the cells the edge leaves it), the counts of
-/// the tabs not shown go first, then the shown tab's count (while the other
-/// labels are there), then the other tabs, then the shown tab's count.
-/// Returns `None` when even the shown tab alone does not fit.
-fn lens_tabs(model: &RowModel, view: TaskPanelView, budget: usize) -> Option<Line<'static>> {
-    [
+/// The top edge of the FLIGHT PLAN console: what to draw there at a width.
+/// Attempts run in order and the first that fits the edge wins. The shown
+/// tab's count is the only `done/total` on screen, so it goes last. First,
+/// with the count: each strip from every tab with its count down to the shown
+/// tab alone, beside the `/tasks · ctrl+g` hint; then without the hint; then
+/// with the ` ━ ` join narrowed to a space; then with no name. Then the same
+/// without the count (labels, the bare shown tab). The shown tab keeps its
+/// brackets in every attempt; if none fits, it is cut by the frame.
+fn flight_edge(model: &RowModel, view: TaskPanelView, width: usize) -> Console {
+    let pal = Palette::current();
+    let hint = Line::from(vec![Span::styled("/tasks · ctrl+g", pal.faint())]);
+    // The name, narrowing: ` ━ ` to a space, then no name at all.
+    let names = [
+        ("FLIGHT PLAN", TabsJoin::Edge),
+        ("FLIGHT PLAN", TabsJoin::Space),
+        ("", TabsJoin::Space),
+    ];
+    const COUNTED: [StripFit; 3] = [
         StripFit::Full,
         StripFit::ShownCount,
-        StripFit::Labels,
         StripFit::ShownOnlyCount,
-        StripFit::ShownOnly,
-    ]
-    .into_iter()
-    .map(|fit| tab_strip(model, view, fit))
-    .find(|strip| strip.width() <= budget)
+    ];
+    const BARE: [StripFit; 2] = [StripFit::Labels, StripFit::ShownOnly];
+    let mut attempts: Vec<(bool, usize, StripFit)> = Vec::new();
+    // With the count: the hint goes before the name narrows.
+    for (hint_on, name) in [(true, 0), (false, 0), (false, 1), (false, 2)] {
+        attempts.extend(COUNTED.map(|fit| (hint_on, name, fit)));
+    }
+    // The count goes last.
+    for (hint_on, name) in [(true, 0), (false, 0), (false, 1), (false, 2)] {
+        attempts.extend(BARE.map(|fit| (hint_on, name, fit)));
+    }
+    let build = |(hint_on, name, fit): (bool, usize, StripFit)| {
+        let (title, join) = names[name];
+        let mut console = Console::new(title, "");
+        console.tabs_join = join;
+        if hint_on {
+            console.right = hint.clone();
+        }
+        console.tabs = tab_strip(model, view, fit);
+        console
+    };
+    attempts
+        .into_iter()
+        .map(build)
+        .find(|console| console.tabs.width() <= console.tabs_budget(width))
+        // Nothing fits: the bare shown tab alone, cut by the frame.
+        .unwrap_or_else(|| build((false, 2, StripFit::ShownOnly)))
 }
 
-/// The tab strip drawn at `fit`. See [`lens_tabs`].
+/// The tab strip drawn at `fit`: the shown tab in brackets and bold (`[Agents 1 running]`), so
+/// the strip reads without colour. See [`flight_edge`].
 fn tab_strip(model: &RowModel, view: TaskPanelView, fit: StripFit) -> Line<'static> {
     let pal = Palette::current();
     let mut spans = Vec::new();
@@ -793,17 +824,7 @@ fn render_flight_plan(
     max_rows: usize,
 ) -> Vec<String> {
     let pal = Palette::current();
-    let mut console = Console::new("FLIGHT PLAN", "");
-    console.tabs_on_edge = true;
-    console.right = Line::from(vec![Span::styled("/tasks · ctrl+g", pal.faint())]);
-    // The strip shrinks before the right label goes; the label goes before
-    // the strip is cut.
-    let mut tabs = lens_tabs(model, view, console.tabs_budget(width));
-    if tabs.is_none() {
-        console.right = Line::default();
-        tabs = lens_tabs(model, view, console.tabs_budget(width));
-    }
-    console.tabs = tabs.unwrap_or_else(|| tab_strip(model, view, StripFit::ShownOnly));
+    let mut console = flight_edge(model, view, width);
     let ids = model.row_ids(view);
     // Rows sit behind the console's `› ` marker or gutter, so they get two
     // cells less than the frame's inner width.
