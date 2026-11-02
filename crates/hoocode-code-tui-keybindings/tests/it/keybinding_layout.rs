@@ -347,6 +347,7 @@ fn pins_which_actions_a_terminal_must_send_alt_to_reach() {
         "tui.editor.jumpBackward",
         "tui.editor.deleteWordForward",
         "tui.editor.yankPop",
+        "app.thinking.cycleForward",
         "app.thinking.cycleBackward",
         "app.model.cycleForward",
         "app.model.cycleBackward",
@@ -364,7 +365,6 @@ fn pins_which_actions_a_terminal_must_send_alt_to_reach() {
         "app.session.color.cycleBackward",
         "app.settings.open",
         "app.hotkeys.open",
-        "app.mode.cycleForward",
         "app.mode.cycleBackward",
         "app.tree.editLabel",
         "app.tree.toggleLabelTimestamp",
@@ -504,6 +504,11 @@ fn puts_every_dial_on_alt_letter_back_on_shift_alt_letter() {
     for (name, forward, backward) in DIALS {
         let forward_key = m.get_keys(forward).first().cloned().unwrap_or_default();
         let backward_key = m.get_keys(backward).first().cloned().unwrap_or_default();
+        // Agent mode's forward key is shift+tab (the Shift+Tab dial); its alt+a
+        // is the second key. Its backward key stays shift+alt+a.
+        if name == &"agent mode" && forward_key == "shift+tab" {
+            continue;
+        }
         if !re.is_match(&forward_key) {
             wrong.push(format!(
                 "{name}: forward is {forward_key}, expected alt+<letter>"
@@ -541,7 +546,11 @@ fn leaves_every_dial_reachable_on_a_terminal_that_does_not_send_alt() {
         })
         .map(|(name, _, _)| *name)
         .collect();
-    assert_eq!(stranded, vec!["tool output", "task ledger"]);
+    // Thinking's only forward key is alt+t now (shift+tab moved to agent mode).
+    assert_eq!(
+        stranded,
+        vec!["thinking level", "tool output", "task ledger"]
+    );
 }
 
 #[test]

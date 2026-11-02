@@ -264,6 +264,9 @@ fn format_cost(cost: f64) -> String {
 /// ends with the one-cell flag slot (`!` or a space), so both rows line up.
 const LEFT_COLUMN: usize = 22;
 
+/// The warning shown beside the mode chip while skip-permissions is on.
+pub(crate) const SKIP_PERMISSIONS_TEXT: &str = "SKIP PERMISSIONS";
+
 /// The mode chip is padded to this width: the longest mode name.
 const CHIP_WIDTH: usize = 5;
 
@@ -363,6 +366,8 @@ struct Line1Data {
     subagents: Option<Piece>,
     mode: String,
     dial: String,
+    /// Skip-permissions is on: `SKIP PERMISSIONS` after the dial, in error colour.
+    skip_permissions: bool,
 }
 
 /// Which optional parts of row 1 are on. The mode chip and the dial are
@@ -428,16 +433,17 @@ fn row1_parts(d: &Line1Data, p: &Line1Parts) -> (Piece, Option<Piece>) {
         identity.0 += &format!("  {path}");
         identity.1 += &format!("  {}", paint(pal.dim(), path));
     }
-    let head = pad_piece(
-        join_pieces(
-            &[
-                chip_piece(&d.mode),
-                (d.dial.clone(), paint(pal.dim(), &d.dial)),
-            ],
-            " · ",
-        ),
-        LEFT_COLUMN,
-    );
+    let mut head_parts = vec![
+        chip_piece(&d.mode),
+        (d.dial.clone(), paint(pal.dim(), &d.dial)),
+    ];
+    if d.skip_permissions {
+        head_parts.push((
+            SKIP_PERMISSIONS_TEXT.to_string(),
+            paint(bold(pal.err()), SKIP_PERMISSIONS_TEXT),
+        ));
+    }
+    let head = pad_piece(join_pieces(&head_parts, " · "), LEFT_COLUMN);
     let left = cat_pieces(&[head, identity]);
     let right = d.subagents.clone().filter(|_| p.subagents);
     (left, right)
@@ -887,6 +893,7 @@ impl FooterComponent {
                     subagents: has_subagents.then(|| subagent_piece(n_sub, n_queued)),
                     mode: mode.clone(),
                     dial: dial.clone(),
+                    skip_permissions: self.data.get_skip_permissions(),
                 };
                 let line1 = line1_candidates(&d1)
                     .iter()

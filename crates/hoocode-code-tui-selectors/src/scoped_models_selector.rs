@@ -23,7 +23,7 @@ use hoocode_tui_render::{Component, ComponentHandle};
 /// Handled by the picker itself (no `keybindings.rs` entry).
 pub const EFFORT_KEY: &str = "tab";
 /// Cycles the selected row's category: none, cheap, fast, standard, capable.
-/// `alt+j` is not bound elsewhere; `ctrl+t` and `shift+tab` are thinking keys.
+/// `alt+j` is not bound elsewhere; `alt+t` (thinking) and `shift+tab` (mode) are not it.
 pub const CATEGORY_KEY: &str = "alt+j";
 
 /// Width of the effort and category columns (`standard` and `minimal` fit).

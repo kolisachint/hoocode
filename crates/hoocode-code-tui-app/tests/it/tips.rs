@@ -73,14 +73,17 @@ fn key_tips_name_the_live_binding() {
     hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
     let modes = tips().into_iter().find(|t| t.id == "modes").unwrap();
     let body = render_tip(&modes).body;
-    // The binding is alt+a; the hint labels alt as Option on macOS only
-    // (`format_key_part`), so the expected text depends on the platform.
-    let key = if cfg!(target_os = "macos") {
+    // app.mode.cycleForward is shift+tab and alt+a; key_text joins them. The
+    // hint labels alt as Option on macOS only (`format_key_part`).
+    let alt_a = if cfg!(target_os = "macos") {
         "option+a"
     } else {
         "alt+a"
     };
-    assert_eq!(body[0], format!("{key} cycles ask → plan → build → debug."));
+    assert_eq!(
+        body[0],
+        format!("shift+tab/{alt_a} cycles ask → plan → build → debug.")
+    );
 }
 
 #[test]

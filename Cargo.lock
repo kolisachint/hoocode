@@ -1936,6 +1936,7 @@ dependencies = [
  "hoocode-code-auth",
  "hoocode-code-media",
  "hoocode-code-models",
+ "hoocode-code-modes",
  "hoocode-code-paths",
  "hoocode-code-permissions",
  "hoocode-code-plugins",

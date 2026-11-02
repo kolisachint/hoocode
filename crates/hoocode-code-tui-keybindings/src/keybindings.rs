@@ -75,7 +75,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         // ── Steer — what the agent is before it runs
         entry(
             "app.mode.cycleForward",
-            &["alt+a"],
+            &["shift+tab", "alt+a"],
             "Cycle agent mode (ask → plan → build → debug)",
         ),
         entry(
@@ -92,7 +92,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry("app.model.select", &[], "Open model selector"),
         entry(
             "app.thinking.cycleForward",
-            &["alt+t", "shift+tab"],
+            &["alt+t"],
             "Cycle thinking level (off → … → high)",
         ),
         entry(

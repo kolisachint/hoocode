@@ -812,6 +812,10 @@ impl Mode {
             footer.invalidate();
         }
         self.footer_data.set_cwd(self.session.cwd());
+        let skip = hoocode_code_modes::config::skip_permissions(
+            &hoocode_code_modes::config::read_merged_config(self.session.cwd()),
+        );
+        self.footer_data.set_skip_permissions(skip);
         self.footer_data.set_subagent_enabled(
             self.session
                 .get_active_tool_names()

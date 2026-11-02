@@ -16,7 +16,7 @@ coding session (see Upkeep).
 ```
 code-main (bin `hoocode`)
   └─ code-cli ── parses args, picks a mode, wires the session (runtime.rs)
-       ├─ interactive → code-tui-app ── code-tui-widgets, code-tui-selectors, code-tui-theme,
+       ├─ interactive → code-tui-app ── code-tui-widgets, code-tui-selectors, code-tui-theme, code-modes (skip-permissions flag),
        │                                code-tui-keybindings → tui-* library
        ├─ print / json → code-print
        ├─ rpc         → code-rpc (also how subagent children talk to the parent)

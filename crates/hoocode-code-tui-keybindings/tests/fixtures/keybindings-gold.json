@@ -320,6 +320,7 @@
   [
    "app.mode.cycleForward",
    [
+    "shift+tab",
     "alt+a"
    ],
    "Cycle agent mode (ask → plan → build → debug)"
@@ -353,8 +354,7 @@
   [
    "app.thinking.cycleForward",
    [
-    "alt+t",
-    "shift+tab"
+    "alt+t"
    ],
    "Cycle thinking level (off → … → high)"
   ],

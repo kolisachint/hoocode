@@ -166,6 +166,18 @@ fn hands_the_session_name_to_the_chip_once_the_box_is_wide_enough() {
 }
 
 #[test]
+fn names_skip_permissions_beside_the_mode_when_it_is_on() {
+    let _g = lock(None);
+    let data = FooterDataProvider::new(std::env::temp_dir().join("hoocode-footer-skip"));
+    data.set_skip_permissions(true);
+    let mut on = FooterComponent::new(Box::new(stub("")), data);
+    let row = plain(&on.render(120)[0]);
+    assert!(row.contains("BUILD · "), "{row}");
+    assert!(row.contains("SKIP PERMISSIONS"), "{row}");
+    assert!(!plain(&footer(stub(""), 1).render(120)[0]).contains("SKIP PERMISSIONS"));
+}
+
+#[test]
 fn shows_the_auto_assigned_name_when_no_chip_is_set() {
     let _g = lock(None);
     assert!(plain(&footer(stub(""), 1).render(120)[0]).contains("amber-harbor"));

@@ -53,6 +53,9 @@ pub struct HudData {
     pub cost: String,
     /// The hull paint (`/color`, M8e5); `None` is unpainted.
     pub paint: Option<HullPaint>,
+    /// Skip-permissions is on: `· SKIP PERMISSIONS` after the mode chip, in
+    /// error colour.
+    pub skip_permissions: bool,
 }
 
 /// One styled run of the HUD row: plain text plus the palette token styling
@@ -167,6 +170,10 @@ fn left_runs(data: &HudData, with_folder: bool) -> Vec<HudRun> {
         gap(),
         run_chip(format!(" {} ", data.mode), mark),
     ];
+    if data.skip_permissions {
+        runs.push(run(" · ", ""));
+        runs.push(run_bold("SKIP PERMISSIONS", "err"));
+    }
     if with_folder {
         runs.push(gap());
         runs.push(run(&data.folder, "dim"));
@@ -377,6 +384,7 @@ pub fn read_hud(source: &dyn FooterSource, data: &FooterDataProvider) -> HudData
     HudData {
         paint: data.get_hull_paint(),
         mode: data.get_active_mode().to_uppercase(),
+        skip_permissions: data.get_skip_permissions(),
         folder,
         agents: running_agents(),
         satellites: source.satellite_count(),
@@ -527,6 +535,7 @@ mod tests {
             fuel: Some(42.0),
             cost: "$1.23".into(),
             paint: None,
+            skip_permissions: false,
         }
     }
 
@@ -754,6 +763,20 @@ mod tests {
         assert_eq!(chip.token, "vio");
         assert!(chip.chip);
         assert!(hud_text(&plan, 110).contains("PLAN"));
+    }
+
+    #[test]
+    fn skip_permissions_is_named_after_the_mode_chip_in_error_colour() {
+        let mut skip = data();
+        skip.skip_permissions = true;
+        let runs = hud_runs(&skip, 110);
+        let chip = runs.iter().position(|r| r.text == " BUILD ").expect("chip");
+        let warn = &runs[chip + 2];
+        assert_eq!(warn.text, "SKIP PERMISSIONS");
+        assert_eq!(warn.token, "err");
+        assert!(warn.bold);
+        assert!(hud_text(&skip, 110).contains(" BUILD  · SKIP PERMISSIONS"));
+        assert!(!hud_text(&data(), 110).contains("SKIP"));
     }
 
     #[test]
