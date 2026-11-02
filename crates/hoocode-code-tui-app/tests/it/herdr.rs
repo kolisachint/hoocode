@@ -4,6 +4,8 @@
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hoocode_code_tui_app::herdr::{run_cli, AgentState, CliTransport, Reporter};
@@ -48,19 +50,26 @@ fn reports_states_then_releases_through_the_cli() {
     std::fs::create_dir_all(&sessions).unwrap();
     let file = sessions.join("s_abc.jsonl");
     std::fs::write(&file, "{}\n").unwrap();
+    let launch = sessions.clone();
     let mut seq = 0;
     let mut reporter = Reporter::new(
         "w1:p1".into(),
-        Box::new(CliTransport::start(bin)),
+        // Long timeouts: a loaded CI machine must not cut the release short.
+        Box::new(CliTransport::start_with(
+            bin,
+            Duration::from_secs(20),
+            Duration::from_secs(20),
+        )),
         Box::new(move || {
             seq += 10;
             seq
         }),
         Box::new(|path: &Path| path.is_file()),
+        Some(launch),
     );
-    reporter.update(AgentState::Idle, None, "abc", Some(&file), &sessions);
+    reporter.update(AgentState::Idle, None, "abc", Some(&file));
     wait_for_lines(&log, 1);
-    reporter.update(AgentState::Working, None, "abc", Some(&file), &sessions);
+    reporter.update(AgentState::Working, None, "abc", Some(&file));
     wait_for_lines(&log, 2);
     reporter.release();
     let lines = wait_for_lines(&log, 3);
@@ -86,9 +95,9 @@ fn reports_states_then_releases_through_the_cli() {
 fn a_hung_cli_is_killed_at_the_timeout() {
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("argv.log");
-    let bin = fake_herdr(dir.path(), &log, "sleep 30");
+    let bin = fake_herdr(dir.path(), &log, "exec sleep 30");
     let started = Instant::now();
-    run_cli(&bin, &["x".to_string()], Duration::from_millis(200));
+    run_cli(&bin, &["x".to_string()], Duration::from_millis(200), None);
     assert!(started.elapsed() < Duration::from_secs(5));
     assert!(read_lines(&log).is_empty());
 }
@@ -99,5 +108,64 @@ fn a_missing_cli_is_ignored() {
         Path::new("/nonexistent/herdr"),
         &["x".to_string()],
         Duration::from_millis(200),
+        None,
+    );
+}
+
+#[test]
+fn a_cancelled_cli_is_killed_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("argv.log");
+    let bin = fake_herdr(dir.path(), &log, "exec sleep 30");
+    let cancel = Arc::new(AtomicBool::new(false));
+    let flag = cancel.clone();
+    let setter = hoocode_runtime::spawn_thread("herdr-test-cancel", move || {
+        std::thread::sleep(Duration::from_millis(100));
+        flag.store(true, Ordering::SeqCst);
+    });
+    let started = Instant::now();
+    run_cli(
+        &bin,
+        &["x".to_string()],
+        Duration::from_secs(20),
+        Some(&cancel),
+    );
+    let _ = setter.join();
+    assert!(started.elapsed() < Duration::from_secs(5));
+}
+
+/// The release does not run beside a report in flight: it cuts the report
+/// short, and it is the only call that logs.
+#[test]
+fn the_release_comes_after_a_report_in_flight() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("argv.log");
+    let body = "case \"$*\" in *report-agent*) exec sleep 30;; esac";
+    let bin = fake_herdr(dir.path(), &log, body);
+    let mut seq = 0;
+    let mut reporter = Reporter::new(
+        "w1:p1".into(),
+        Box::new(CliTransport::start_with(
+            bin,
+            Duration::from_secs(20),
+            Duration::from_secs(20),
+        )),
+        Box::new(move || {
+            seq += 1;
+            seq
+        }),
+        Box::new(|_: &Path| false),
+        None,
+    );
+    reporter.update(AgentState::Working, None, "abc", None);
+    // Let the worker start the report that hangs.
+    std::thread::sleep(Duration::from_millis(200));
+    reporter.update(AgentState::Idle, None, "abc", None);
+    let started = Instant::now();
+    reporter.finish(true);
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert_eq!(
+        read_lines(&log),
+        vec!["pane release-agent w1:p1 --source hoocode --agent hoocode --seq 3".to_string()]
     );
 }

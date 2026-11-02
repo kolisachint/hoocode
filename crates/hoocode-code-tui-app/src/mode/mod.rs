@@ -623,8 +623,9 @@ struct Mode {
     chime: ChimeDebounce,
     /// Reports state to Herdr when hoocode runs in a Herdr pane (set in `run`).
     herdr: Option<crate::herdr::Reporter>,
-    /// Set while a selector asked for by `DialogRequest::Select` waits for its answer.
-    dialog_select: Rc<Cell<bool>>,
+    /// How many selectors asked for by `DialogRequest::Select` (the permission
+    /// gate's questions) wait for their answer.
+    dialog_select: Rc<Cell<u32>>,
     update_notice: Option<std::sync::mpsc::Receiver<hoocode_code_update::UpdateAvailable>>,
     tool_output_view: ToolOutputView,
     hide_thinking_block: bool,
@@ -1214,7 +1215,7 @@ impl Mode {
             turn_timer,
             chime: ChimeDebounce::default(),
             herdr: None,
-            dialog_select: Rc::new(Cell::new(false)),
+            dialog_select: Rc::new(Cell::new(0)),
             update_notice: options.update_notice,
             tool_output_view,
             hide_thinking_block,
@@ -1775,19 +1776,7 @@ impl Mode {
                         title,
                         options,
                         reply,
-                    }) => {
-                        // A question from the permission gate: Herdr shows it as blocked.
-                        self.dialog_select.set(true);
-                        let open = self.dialog_select.clone();
-                        self.show_selector(
-                            &title,
-                            options,
-                            Box::new(move |choice| {
-                                open.set(false);
-                                let _ = reply.send(choice);
-                            }),
-                        )
-                    }
+                    }) => self.show_gate_selector(&title, options, reply),
                     AppEvent::Dialog(DialogRequest::Notify(message)) => self.show_record(&message),
                     AppEvent::Dialog(DialogRequest::AskOptions {
                         questions,
@@ -1961,9 +1950,10 @@ impl Mode {
         }
 
         hoocode_runtime::watchdog::ui_stopped();
-        // The user quit: Herdr drops the agent and its resume command.
+        // The user quit (not a fatal exit): Herdr drops the agent and its
+        // resume command.
         if let Some(herdr) = self.herdr.as_mut() {
-            herdr.release();
+            herdr.finish(self.user_quit);
         }
         set_dialog_sink(None);
         hoocode_code_subagents::instance::set_live_sink(None);

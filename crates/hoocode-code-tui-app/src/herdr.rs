@@ -7,8 +7,9 @@
 //! [`report_argv`] / [`release_argv`] / [`resume_argv`] build the argv, and
 //! [`Reporter`] keeps the sequence number rising and drops repeated states.
 //! Reports go out on one background thread ([`Transport`]); a report that
-//! queues behind one in flight replaces any older one still waiting. Only
-//! the release on quit is sent from the UI thread, with a short timeout.
+//! queues behind one in flight replaces any older one still waiting. The
+//! release on quit goes through the same thread, after (and cancelling) any
+//! report in flight, and the UI thread waits for it only briefly.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -107,11 +108,17 @@ pub fn resume_argv_ok(argv: &[String]) -> bool {
         && argv.iter().all(|a| resume_arg_ok(a))
 }
 
-/// The command that reopens the saved session `id` at `file`: by id when the
-/// file is in this project's default session dir (where `--session <id>`
-/// finds it), else by path. `None` when neither follows the rules.
-pub fn resume_argv(id: &str, file: &Path, default_dir: &Path) -> Option<Vec<String>> {
-    let target = if file.parent() == Some(default_dir) && !id.is_empty() {
+/// The command that reopens the saved session `id` at `file`. Herdr runs it in
+/// the pane's directory, where hoocode started: `--session <id>` looks the id
+/// up in that directory's default session dir, and asks to fork a session it
+/// finds in another project. So the id form is for a file in `launch_dir`
+/// (the default session dir of the launch cwd); any other file (a session
+/// resumed from another project, a custom session dir) goes by absolute path,
+/// which `--session` opens as it is, with no question. `None` when neither
+/// follows Herdr's rules.
+pub fn resume_argv(id: &str, file: &Path, launch_dir: Option<&Path>) -> Option<Vec<String>> {
+    let file = std::path::absolute(file).ok()?;
+    let target = if !id.is_empty() && launch_dir.is_some() && file.parent() == launch_dir {
         id.to_string()
     } else {
         file.to_str()?.to_string()
@@ -207,17 +214,17 @@ pub fn unix_millis() -> u64 {
 pub trait Transport {
     /// Queues a report; never blocks.
     fn send(&self, argv: Vec<String>);
-    /// Sends the release and waits for it (bounded); no report goes after it.
+    /// Sends the release, after any report in flight, and waits for it
+    /// (bounded). Reports still queued are dropped.
     fn release(&self, argv: Vec<String>);
 }
 
-/// What the mode sees now, before the session file is checked.
+/// What the last report said.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Seen {
+struct Last {
     state: AgentState,
     message: Option<String>,
     session_id: String,
-    resumable: bool,
 }
 
 /// Turns the mode's state into reports: one per change, never a repeat.
@@ -226,8 +233,10 @@ pub struct Reporter {
     transport: Box<dyn Transport>,
     clock: Box<dyn FnMut() -> u64>,
     exists: Box<dyn Fn(&Path) -> bool>,
+    /// The default session dir of the cwd hoocode started in (see [`resume_argv`]).
+    launch_dir: Option<PathBuf>,
     seq: SeqClock,
-    last: Option<Seen>,
+    last: Option<Last>,
     /// The session id whose file was seen on disk (so it is not checked again).
     saved: Option<String>,
     released: bool,
@@ -239,12 +248,14 @@ impl Reporter {
         transport: Box<dyn Transport>,
         clock: Box<dyn FnMut() -> u64>,
         exists: Box<dyn Fn(&Path) -> bool>,
+        launch_dir: Option<PathBuf>,
     ) -> Self {
         Self {
             pane_id,
             transport,
             clock,
             exists,
+            launch_dir,
             seq: SeqClock::default(),
             last: None,
             saved: None,
@@ -252,63 +263,56 @@ impl Reporter {
         }
     }
 
-    /// The reporter for this process: `None` outside Herdr.
+    /// The reporter for this process: `None` outside Herdr. The launch cwd is
+    /// read once, here.
     pub fn from_process_env() -> Option<Self> {
         let env = HerdrEnv::from_process_env()?;
+        let launch_dir = std::env::current_dir()
+            .ok()
+            .map(|cwd| hoocode_code_session::default_session_dir(&cwd.to_string_lossy()));
         Some(Self::new(
             env.pane_id.clone(),
             Box::new(CliTransport::start(env.bin)),
             Box::new(unix_millis),
             Box::new(|path: &Path| path.is_file()),
+            launch_dir,
         ))
     }
 
     /// The mode's state now. `file` is the session file (`None` when not
-    /// persisted) and `default_dir` this project's default session dir.
-    /// Reports only when something Herdr shows has changed. The file is
-    /// checked only then, and only until it is seen.
+    /// persisted). Called every loop pass, so an unchanged state costs only
+    /// comparisons. Reports only when something Herdr shows has changed. The
+    /// file is checked, and the resume command built, only then.
     pub fn update(
         &mut self,
         state: AgentState,
         message: Option<&str>,
         session_id: &str,
         file: Option<&Path>,
-        default_dir: &Path,
     ) {
         if self.released {
             return;
         }
         let message = if state == AgentState::Blocked {
-            message.map(str::to_string)
+            message
         } else {
             None
         };
-        let saved = self.saved.as_deref() == Some(session_id);
-        if let Some(last) = &self.last {
-            if last.state == state
-                && last.message == message
+        if self.last.as_ref().is_some_and(|last| {
+            last.state == state
+                && last.message.as_deref() == message
                 && last.session_id == session_id
-                && (last.resumable || !saved)
-            {
-                return;
-            }
+        }) {
+            return;
         }
+        let saved = self.saved.as_deref() == Some(session_id);
         let resume = match file {
             Some(file) if saved || (self.exists)(file) => {
                 self.saved = Some(session_id.to_string());
-                resume_argv(session_id, file, default_dir)
+                resume_argv(session_id, file, self.launch_dir.as_deref())
             }
             _ => None,
         };
-        let seen = Seen {
-            state,
-            message: message.clone(),
-            session_id: session_id.to_string(),
-            resumable: resume.is_some(),
-        };
-        if self.last.as_ref() == Some(&seen) {
-            return;
-        }
         let session = (!session_id.is_empty()).then(|| SessionReport {
             id: session_id.to_string(),
             path: file.and_then(Path::to_str).map(str::to_string),
@@ -318,14 +322,27 @@ impl Reporter {
         self.transport.send(report_argv(
             &self.pane_id,
             state,
-            message.as_deref(),
+            message,
             seq,
             session.as_ref(),
         ));
-        self.last = Some(seen);
+        self.last = Some(Last {
+            state,
+            message: message.map(str::to_string),
+            session_id: session_id.to_string(),
+        });
     }
 
-    /// The user quits: release the pane (once). Not for a session switch.
+    /// The loop ended. Only a quit the user asked for releases the pane (not a
+    /// switch of sessions, and not a fatal exit, where Herdr keeps the resume
+    /// command and its own check clears the pane).
+    pub fn finish(&mut self, user_quit: bool) {
+        if user_quit {
+            self.release();
+        }
+    }
+
+    /// The user quits: release the pane (once).
     pub fn release(&mut self) {
         if std::mem::replace(&mut self.released, true) {
             return;
@@ -335,70 +352,117 @@ impl Reporter {
     }
 }
 
+/// What the worker thread is asked to run.
+enum Job {
+    Report(Vec<String>),
+    /// The release, and where to say it is done.
+    Release(Vec<String>, mpsc::Sender<()>),
+}
+
 /// Runs the Herdr CLI: reports on one background thread, latest first.
 pub struct CliTransport {
-    bin: PathBuf,
-    tx: mpsc::Sender<Vec<String>>,
-    closed: Arc<AtomicBool>,
+    tx: mpsc::Sender<Job>,
+    /// Set by the release: a report in flight is cut short, none starts.
+    releasing: Arc<AtomicBool>,
+    release_timeout: Duration,
 }
 
 impl CliTransport {
     pub fn start(bin: PathBuf) -> Self {
-        let (tx, rx) = mpsc::channel::<Vec<String>>();
-        let closed = Arc::new(AtomicBool::new(false));
-        let worker_bin = bin.clone();
-        let worker_closed = closed.clone();
+        Self::start_with(bin, REPORT_TIMEOUT, RELEASE_TIMEOUT)
+    }
+
+    /// [`Self::start`] with the two timeouts given (tests use longer ones).
+    pub fn start_with(bin: PathBuf, report_timeout: Duration, release_timeout: Duration) -> Self {
+        let (tx, rx) = mpsc::channel::<Job>();
+        let releasing = Arc::new(AtomicBool::new(false));
+        let worker_releasing = releasing.clone();
         let _ = hoocode_runtime::spawn_named_thread("hoocode-herdr", move || {
-            while let Ok(mut argv) = rx.recv() {
-                // Only the latest state matters: skip the ones behind it.
+            while let Ok(mut job) = rx.recv() {
+                // Only the latest matters: skip the ones behind it. The
+                // release is always last.
                 while let Ok(newer) = rx.try_recv() {
-                    argv = newer;
+                    job = newer;
                 }
-                if worker_closed.load(Ordering::SeqCst) {
-                    break;
+                match job {
+                    Job::Report(argv) => {
+                        if worker_releasing.load(Ordering::SeqCst) {
+                            continue;
+                        }
+                        run_cli(&bin, &argv, report_timeout, Some(&worker_releasing));
+                    }
+                    Job::Release(argv, done) => {
+                        run_cli(&bin, &argv, release_timeout, None);
+                        let _ = done.send(());
+                        break;
+                    }
                 }
-                run_cli(&worker_bin, &argv, REPORT_TIMEOUT);
             }
         });
-        Self { bin, tx, closed }
+        Self {
+            tx,
+            releasing,
+            release_timeout,
+        }
     }
 }
 
 impl Transport for CliTransport {
     fn send(&self, argv: Vec<String>) {
-        let _ = self.tx.send(argv);
+        let _ = self.tx.send(Job::Report(argv));
     }
 
     fn release(&self, argv: Vec<String>) {
-        self.closed.store(true, Ordering::SeqCst);
-        run_cli(&self.bin, &argv, RELEASE_TIMEOUT);
+        self.releasing.store(true, Ordering::SeqCst);
+        let (done, wait) = mpsc::channel();
+        if self.tx.send(Job::Release(argv, done)).is_ok() {
+            let _ = wait.recv_timeout(self.release_timeout);
+        }
     }
 }
 
-/// Runs `bin argv` with no terminal attached, killed after `timeout`.
-/// Failures are ignored: Herdr is never in hoocode's way.
-pub fn run_cli(bin: &Path, argv: &[String], timeout: Duration) {
-    let Ok(mut child) = Command::new(bin)
+/// Runs `bin argv` with no terminal attached, in a session of its own (so a
+/// kill reaches whatever it started), killed after `timeout` or as soon as
+/// `cancel` is set. Failures are ignored: Herdr is never in hoocode's way.
+pub fn run_cli(bin: &Path, argv: &[String], timeout: Duration, cancel: Option<&AtomicBool>) {
+    let mut command = Command::new(bin);
+    command
         .args(argv)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    else {
+        .stderr(Stdio::null());
+    hoocode_runtime::spawn_in_new_session(&mut command);
+    let Ok(mut child) = command.spawn() else {
         return;
     };
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(_)) | Err(_) => return,
-            Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
+            Ok(None)
+                if Instant::now() >= deadline
+                    || cancel.is_some_and(|c| c.load(Ordering::SeqCst)) =>
+            {
+                kill_tree(&mut child);
                 let _ = child.wait();
                 return;
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(5)),
         }
     }
+}
+
+/// Kills the child and its process group (the child leads one: it was started
+/// in a new session).
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    if let Ok(pid) = i32::try_from(child.id()) {
+        // SAFETY: kill(2) with a group id of our own child; no memory is touched.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill();
 }
 
 #[cfg(test)]
@@ -459,26 +523,35 @@ mod tests {
     }
 
     #[test]
-    fn resume_by_id_in_the_default_dir_else_by_path() {
+    fn resume_by_id_only_in_the_launch_dirs_sessions_else_by_path() {
         let dir = Path::new("/s/--w--");
+        let by = |id: &str, file: &str, launch: Option<&Path>| {
+            resume_argv(id, Path::new(file), launch).map(|v| v[1..].join(" "))
+        };
         assert_eq!(
-            resume_argv("abc-123", &dir.join("x_abc-123.jsonl"), dir),
-            Some(vec!["hoocode".into(), "--session".into(), "abc-123".into()])
+            by("abc-123", "/s/--w--/x_abc-123.jsonl", Some(dir)).as_deref(),
+            Some("--session abc-123")
+        );
+        // A session resumed from another project: `--session <id>` would not
+        // find it from the pane's directory, and would ask to fork it.
+        assert_eq!(
+            by("abc-123", "/s/--other--/x_abc-123.jsonl", Some(dir)).as_deref(),
+            Some("--session /s/--other--/x_abc-123.jsonl")
         );
         assert_eq!(
-            resume_argv("abc-123", Path::new("/custom/x.jsonl"), dir),
-            Some(vec![
-                "hoocode".into(),
-                "--session".into(),
-                "/custom/x.jsonl".into()
-            ])
+            by("abc-123", "/custom/x.jsonl", Some(dir)).as_deref(),
+            Some("--session /custom/x.jsonl")
         );
         assert_eq!(
-            resume_argv("abc", Path::new("/it's/x.jsonl"), dir),
-            None,
-            "an apostrophe breaks the rules"
+            by("abc-123", "/s/--w--/x.jsonl", None).as_deref(),
+            Some("--session /s/--w--/x.jsonl"),
+            "no launch dir known: by path"
         );
-        assert_eq!(resume_argv("a\nb", &dir.join("x.jsonl"), dir), None);
+        let relative = resume_argv("abc", Path::new("x.jsonl"), None).unwrap();
+        assert!(Path::new(&relative[2]).is_absolute(), "{relative:?}");
+        assert_eq!(by("abc", "/it's/x.jsonl", Some(dir)), None);
+        assert_eq!(by("a\nb", "/s/--w--/x.jsonl", Some(dir)), None);
+        assert_eq!(by("abc", "/other/x\ny.jsonl", Some(dir)), None);
     }
 
     #[test]
@@ -541,6 +614,7 @@ mod tests {
                 checks.set(checks.get() + 1);
                 on_disk.get()
             }),
+            Some(PathBuf::from("/s")),
         )
     }
 
@@ -550,39 +624,20 @@ mod tests {
         let on_disk = Rc::new(Cell::new(false));
         let checks = Rc::new(Cell::new(0));
         let mut r = reporter(&log, on_disk.clone(), checks.clone());
-        let dir = Path::new("/s");
         let file = Path::new("/s/a.jsonl");
-        r.update(AgentState::Idle, None, "a", Some(file), dir);
-        r.update(AgentState::Idle, None, "a", Some(file), dir);
+        r.update(AgentState::Idle, None, "a", Some(file));
+        r.update(AgentState::Idle, None, "a", Some(file));
         assert_eq!(checks.get(), 1, "the file is checked only on a change");
-        r.update(AgentState::Working, Some("ignored"), "a", Some(file), dir);
+        r.update(AgentState::Working, Some("ignored"), "a", Some(file));
         on_disk.set(true);
-        r.update(AgentState::Working, None, "a", Some(file), dir);
-        r.update(
-            AgentState::Blocked,
-            Some("Permission"),
-            "a",
-            Some(file),
-            dir,
-        );
-        r.update(
-            AgentState::Blocked,
-            Some("Permission"),
-            "a",
-            Some(file),
-            dir,
-        );
-        r.update(AgentState::Idle, None, "a", Some(file), dir);
-        r.update(
-            AgentState::Idle,
-            None,
-            "b",
-            Some(Path::new("/s/b.jsonl")),
-            dir,
-        );
+        r.update(AgentState::Working, None, "a", Some(file));
+        r.update(AgentState::Blocked, Some("Permission"), "a", Some(file));
+        r.update(AgentState::Blocked, Some("Permission"), "a", Some(file));
+        r.update(AgentState::Idle, None, "a", Some(file));
+        r.update(AgentState::Idle, None, "b", Some(Path::new("/s/b.jsonl")));
+        r.finish(true);
         r.release();
-        r.release();
-        r.update(AgentState::Working, None, "b", None, dir);
+        r.update(AgentState::Working, None, "b", None);
         let base = "pane report-agent p --source hoocode --agent hoocode --state";
         assert_eq!(
             *log.0.borrow(),
@@ -604,5 +659,43 @@ mod tests {
                 "pane release-agent p --source hoocode --agent hoocode --seq 1006".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn a_rejected_resume_is_not_rebuilt_every_pass() {
+        let log = Log::default();
+        let checks = Rc::new(Cell::new(0));
+        let mut r = reporter(&log, Rc::new(Cell::new(true)), checks.clone());
+        let file = Path::new("/it's/a.jsonl");
+        for _ in 0..5 {
+            r.update(AgentState::Idle, None, "a", Some(file));
+        }
+        assert_eq!(log.0.borrow().len(), 1);
+        assert!(!log.0.borrow()[0].contains(" -- "), "no resume part");
+        assert_eq!(checks.get(), 1);
+    }
+
+    #[test]
+    fn a_session_from_another_project_resumes_by_path() {
+        let log = Log::default();
+        let mut r = reporter(&log, Rc::new(Cell::new(true)), Rc::new(Cell::new(0)));
+        r.update(AgentState::Idle, None, "z", Some(Path::new("/s2/z.jsonl")));
+        assert!(
+            log.0.borrow()[0].ends_with("-- hoocode --session /s2/z.jsonl"),
+            "{:?}",
+            log.0.borrow()
+        );
+    }
+
+    #[test]
+    fn only_a_user_quit_releases() {
+        let log = Log::default();
+        let mut r = reporter(&log, Rc::new(Cell::new(true)), Rc::new(Cell::new(0)));
+        r.update(AgentState::Idle, None, "a", None);
+        r.finish(false);
+        assert_eq!(log.0.borrow().len(), 1, "a fatal exit sends no release");
+        r.finish(true);
+        assert_eq!(log.0.borrow().len(), 2);
+        assert!(log.0.borrow()[1].starts_with("pane release-agent"));
     }
 }

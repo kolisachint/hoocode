@@ -119,6 +119,29 @@ impl Mode {
         }
     }
 
+    /// A question from the permission gate (`DialogRequest::Select`): a
+    /// selector whose answer goes back on `reply`. Herdr reads it as blocked
+    /// while it waits (`dialog_select`). The count goes up before the selector
+    /// is shown: showing it disposes a selector it replaces, which answers
+    /// (and counts itself out) on the way.
+    pub(super) fn show_gate_selector(
+        &mut self,
+        title: &str,
+        options: Vec<String>,
+        reply: mpsc::Sender<Option<String>>,
+    ) {
+        self.dialog_select.set(self.dialog_select.get() + 1);
+        let open = self.dialog_select.clone();
+        self.show_selector(
+            title,
+            options,
+            Box::new(move |choice| {
+                open.set(open.get().saturating_sub(1));
+                let _ = reply.send(choice);
+            }),
+        );
+    }
+
     /// `showSelector`: swap the selector into the editor's slot.
     pub(super) fn show_selector(&mut self, title: &str, options: Vec<String>, answer: Answer) {
         let sink = self.actions.clone();
@@ -433,5 +456,31 @@ impl Mode {
         }
         self.tui.set_focus(Some(component));
         self.dirty.set(true);
+    }
+}
+
+#[cfg(test)]
+mod gate_selector_tests {
+    use super::super::test_support::test_mode;
+    use super::*;
+
+    /// A gate question that replaces another leaves exactly one counted: the
+    /// replaced one answers `None` on the way and counts itself out.
+    #[test]
+    fn a_replaced_gate_question_leaves_one_counted() {
+        let mut mode = test_mode(None);
+        let (first_reply, first_answer) = mpsc::channel();
+        let (second_reply, second_answer) = mpsc::channel();
+        mode.show_gate_selector("one", vec!["Yes".into()], first_reply);
+        assert_eq!(mode.dialog_select.get(), 1);
+        mode.show_gate_selector("two", vec!["Yes".into()], second_reply);
+        assert_eq!(first_answer.try_recv().ok(), Some(None));
+        assert_eq!(mode.dialog_select.get(), 1);
+        assert!(matches!(mode.picker, Some(ActivePicker::Selector(..))));
+        if let Some(picker) = mode.picker.take() {
+            picker.dispose();
+        }
+        assert_eq!(second_answer.try_recv().ok(), Some(None));
+        assert_eq!(mode.dialog_select.get(), 0);
     }
 }

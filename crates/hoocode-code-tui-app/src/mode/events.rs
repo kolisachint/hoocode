@@ -122,10 +122,11 @@ impl Mode {
     }
 
     /// Reports the agent's state to Herdr (once per loop pass; the reporter
-    /// sends only changes): blocked while a clearance card, a permission question
-    /// or an options pane waits for the user, working while a prompt, a run or a compaction is in
-    /// flight, else idle. The session id and file go with it, so a `/new`,
-    /// resume or fork re-reports the resume command.
+    /// sends only changes): blocked while a clearance card, a permission
+    /// question or an options pane waits for the user, working while a
+    /// prompt, run or compaction is in flight, else idle. The session id and
+    /// file go with it, so a `/new`, resume or fork re-reports the resume
+    /// command.
     pub(super) fn sync_herdr(&mut self) {
         if self.herdr.is_none() {
             return;
@@ -135,26 +136,22 @@ impl Mode {
                 AgentState::Blocked,
                 Some("Waiting for a permission decision"),
             )
-        } else if self.dialog_select.get()
+        } else if self.dialog_select.get() > 0
             && matches!(self.picker, Some(ActivePicker::Selector(..)))
         {
             (AgentState::Blocked, Some("Waiting for a decision"))
         } else if self.ask_options.is_some() {
             (AgentState::Blocked, Some("Waiting for an answer"))
-        } else if self.prompt_pending
-            || self.compaction_loader.is_some()
-            || self.session.is_streaming()
-        {
+        } else if self.agent_busy() || self.compaction_loader.is_some() {
             (AgentState::Working, None)
         } else {
             (AgentState::Idle, None)
         };
-        let session_id = self.session.session_id();
-        let file = self.session.session_file();
-        let default_dir =
-            hoocode_code_session::default_session_dir(&self.session.cwd().to_string_lossy());
+        // Borrowed from the session manager: nothing is copied unless the
+        // reporter has a change to send.
+        let manager = self.session.session_manager();
         if let Some(herdr) = self.herdr.as_mut() {
-            herdr.update(state, message, &session_id, file.as_deref(), &default_dir);
+            herdr.update(state, message, manager.session_id(), manager.session_file());
         }
     }
 
