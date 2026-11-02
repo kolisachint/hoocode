@@ -90,7 +90,7 @@ fn commands_are_listed_as_a_temporary_extension() {
     assert_eq!(names, ["mode", "plan", "grill", "goal", "approve"]);
     assert_eq!(
         commands[0].description.as_deref(),
-        Some("Switch active mode. Usage: /mode <ask|plan|build|debug>")
+        Some("Switch agent mode: ask, plan, build, debug")
     );
     assert_eq!(commands[0].source_info["scope"], "temporary");
 }
