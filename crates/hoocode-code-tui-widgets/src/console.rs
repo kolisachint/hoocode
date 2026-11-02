@@ -55,11 +55,21 @@ pub struct Console {
     /// Layer tabs on the top edge between the name and the count
     /// (CONTROLS' `plain ctrl alt`); empty draws nothing.
     pub tabs: Line<'static>,
-    /// How the tabs join the name: a three-space gap by default, or a
-    /// frame-coloured ` ━ ` (FLIGHT PLAN's `FLIGHT PLAN ━ [Plan 2/5] …`).
-    pub tabs_on_edge: bool,
+    /// How the tabs join the name.
+    pub tabs_join: TabsJoin,
     /// The frame colour; the `you` token when `None`.
     pub frame: Option<Style>,
+}
+
+/// What sits between a console's name and its tabs on the top edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabsJoin {
+    /// Three spaces (CONTROLS' `plain ctrl alt`).
+    Gap,
+    /// A frame-coloured ` ━ ` (FLIGHT PLAN's `FLIGHT PLAN ━ [Plan 2/5] …`).
+    Edge,
+    /// One space: the narrow form of [`TabsJoin::Edge`].
+    Space,
 }
 
 impl Console {
@@ -77,7 +87,7 @@ impl Console {
             hint: Line::raw(""),
             right: Line::raw(""),
             tabs: Line::raw(""),
-            tabs_on_edge: false,
+            tabs_join: TabsJoin::Gap,
             frame: None,
         }
     }
@@ -94,16 +104,24 @@ impl Console {
     /// then the count.
     fn title_spans(&self, pal: &Palette, tabs: Line<'static>) -> Vec<Span<'static>> {
         let frame = self.frame.unwrap_or_else(|| pal.you());
-        let mut spans = vec![Span::styled(self.name.clone(), bold(frame))];
+        let mut spans = Vec::new();
+        if !self.name.is_empty() {
+            spans.push(Span::styled(self.name.clone(), bold(frame)));
+        }
         if tabs.width() > 0 {
-            if self.tabs_on_edge {
-                spans.push(Span::raw(" "));
-                spans.push(Span::styled("━", frame));
-                spans.push(Span::raw(" "));
-            } else {
-                // CONTROLS (spec d9): the layer tabs read between the name
-                // and the count (`CONTROLS · ?   plain   ctrl   alt   N bindings`).
-                spans.push(Span::raw("   ".to_string()));
+            // No name, no join: the tabs start the title.
+            if !self.name.is_empty() {
+                match self.tabs_join {
+                    // CONTROLS (spec d9): the layer tabs read between the name
+                    // and the count (`CONTROLS · ?   plain   ctrl   alt   N bindings`).
+                    TabsJoin::Gap => spans.push(Span::raw("   ".to_string())),
+                    TabsJoin::Edge => {
+                        spans.push(Span::raw(" "));
+                        spans.push(Span::styled("━", frame));
+                        spans.push(Span::raw(" "));
+                    }
+                    TabsJoin::Space => spans.push(Span::raw(" ")),
+                }
             }
             spans.extend(tabs.spans);
         }
