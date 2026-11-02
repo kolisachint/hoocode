@@ -35,7 +35,15 @@ repository, and the copy served at that URL is identical.
 
 ## npm or bun
 
-Node 18 or newer. The package pulls in only the native binary for your platform.
+The package pulls in only the native binary for your platform. Its `hoocode` and `hoo`
+commands are a small `sh` script that runs that binary directly, so Node is not needed
+to run hoocode and the installed command leaves no Node process running.
+
+Supported: npm, pnpm, Yarn classic (1.x) and bun, on macOS and Linux (x64 and arm64).
+
+- Yarn 2+ (Berry) is not supported. It runs package commands with `node`, which
+  cannot run an `sh` script.
+- Windows is not supported; use WSL. npm refuses the install there (`EBADPLATFORM`).
 
 ```bash
 npm install -g hoocode     # or: bun add -g hoocode

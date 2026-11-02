@@ -1,0 +1,75 @@
+#!/bin/sh
+# Runs the native hoocode binary from the platform package npm/bun installed
+# alongside this one (an optionalDependency picked by os/cpu). No postinstall.
+#
+# POSIX sh, not Node: it execs the binary, so no launcher process stays in
+# the foreground (terminal multiplexers name a pane after that process).
+
+# npm and bun install bins as symlinks, often relative ones: follow the
+# chain to this file's real location (no `readlink -f`, it is not POSIX).
+self=$0
+while [ -L "$self" ]; do
+	if ! command -v readlink >/dev/null 2>&1; then
+		echo "hoocode: readlink not found" >&2
+		exit 1
+	fi
+	link=$(readlink "$self")
+	case $link in
+	/*) self=$link ;;
+	*) self=$(dirname -- "$self")/$link ;;
+	esac
+done
+# CDPATH='' so `cd` never searches CDPATH or prints the directory it picks.
+pkg_dir=$(CDPATH='' cd -- "$(dirname -- "$self")/.." && pwd -P) || exit 1
+
+os=$(uname -s)
+case $os in
+Darwin) os=darwin ;;
+Linux) os=linux ;;
+esac
+cpu=$(uname -m)
+case $cpu in
+arm64 | aarch64) cpu=arm64 ;;
+x86_64 | amd64) cpu=x64 ;;
+esac
+key=$os-$cpu
+
+case $key in
+darwin-arm64) keys="darwin-arm64 darwin-x64" ;;
+darwin-x64) keys="darwin-x64 darwin-arm64" ;; # Rosetta: either one runs
+linux-arm64 | linux-x64) keys=$key ;;
+*)
+	echo "hoocode: no prebuilt binary for $key." >&2
+	echo "Supported: macOS and Linux on x64 and arm64." >&2
+	exit 1
+	;;
+esac
+
+# Look for the platform package the way Node resolves one: in node_modules
+# of this package's directory and of every directory above it. That covers
+# npm nested and hoisted layouts, bun's global dir and pnpm's virtual store.
+for k in $keys; do
+	d=$pkg_dir
+	while :; do
+		bin=$d/node_modules/@kolisachint/hoocode-$k/bin/hoocode
+		if [ -f "$bin" ]; then
+			if [ ! -x "$bin" ]; then
+				echo "hoocode: could not start $bin: not executable" >&2
+				exit 1
+			fi
+			exec "$bin" "$@"
+		fi
+		[ "$d" = / ] && break
+		d=$(dirname "$d")
+	done
+done
+
+# This launcher ships under two names (`hoocode` and `@kolisachint/hoocode`),
+# so the reinstall hint uses whichever one installed this copy.
+name=$(sed -n 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+	"$pkg_dir/package.json" 2>/dev/null | head -n 1)
+[ -n "$name" ] || name=@kolisachint/hoocode
+echo "hoocode: the platform package @kolisachint/hoocode-$key is not installed." >&2
+echo "It is an optional dependency; reinstall without --no-optional / --omit=optional:" >&2
+echo "  npm install -g $name" >&2
+exit 1
