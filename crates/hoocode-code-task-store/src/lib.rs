@@ -280,7 +280,18 @@ struct State {
     next_listener: u64,
     /// The handler of each key prefix, in registration order.
     row_actions: Vec<(String, Arc<dyn RowActions>)>,
+    /// How many `reset`s (user messages) kept an open plan with no TodoWrite
+    /// since. See [`PLAN_IDLE_MESSAGES`].
+    plan_idle_resets: u32,
 }
+
+/// A plan with open items survives a `reset` (a new user message) so its
+/// done/total stays whole. An agent that is working its plan rewrites it at
+/// nearly every step (the tool's own guidance), so a plan left untouched for
+/// this many user messages was dropped or finished without being closed: it
+/// goes whole at the third such message. One or two messages are not enough
+/// to tell: a follow-up question or a steer mid-plan must not drop it.
+pub const PLAN_IDLE_MESSAGES: u32 = 3;
 
 /// `TaskStore`.
 pub struct TaskStore {
@@ -374,6 +385,7 @@ impl TaskStore {
                 listeners: Vec::new(),
                 next_listener: 0,
                 row_actions: Vec::new(),
+                plan_idle_resets: 0,
             }),
         }
     }
@@ -749,24 +761,46 @@ impl TaskStore {
         self.emit(state);
     }
 
+    /// The main agent wrote its plan (TodoWrite): the plan is not idle.
+    pub fn note_plan_write(&self) {
+        self.lock().plan_idle_resets = 0;
+    }
+
     /// `reset`: drop finished tasks (a new user message arrived). Keyed rows are
     /// kept whatever their status, since their producer owns them. The plan
     /// goes as a whole: while any plan item is unfinished every plan item
     /// stays, done ones included, so its done/total counts the whole list
-    /// TodoWrite last sent. Numbering restarts once nothing is left. Agents
-    /// with stats survive.
+    /// TodoWrite last sent, until [`PLAN_IDLE_MESSAGES`] messages pass with no
+    /// TodoWrite ([`TaskStore::note_plan_write`]); then it goes whole, open
+    /// items too. Numbering restarts once nothing is left. Agents with stats
+    /// survive.
     pub fn reset(&self) {
         let mut state = self.lock();
-        let plan_live = state
+        let open_plan = state
             .tasks
             .iter()
             .any(|t| t.is_plan_item() && t.status.is_active());
+        state.plan_idle_resets = if open_plan {
+            state.plan_idle_resets + 1
+        } else {
+            0
+        };
+        let plan_live = open_plan && state.plan_idle_resets < PLAN_IDLE_MESSAGES;
+        let expired = open_plan && !plan_live;
         let active: Vec<Task> = state
             .tasks
             .iter()
-            .filter(|t| t.status.is_active() || t.key.is_some() || (plan_live && t.is_plan_item()))
+            .filter(|t| {
+                if expired && t.is_plan_item() {
+                    return false;
+                }
+                t.status.is_active() || t.key.is_some() || (plan_live && t.is_plan_item())
+            })
             .cloned()
             .collect();
+        if expired {
+            state.plan_idle_resets = 0;
+        }
         if active.len() == state.tasks.len() && state.next_id == 1 {
             return;
         }
@@ -800,6 +834,7 @@ impl TaskStore {
         state.tasks.clear();
         state.agents.clear();
         state.next_id = 1;
+        state.plan_idle_resets = 0;
         self.emit(state);
     }
 

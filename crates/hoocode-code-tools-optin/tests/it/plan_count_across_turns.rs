@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use hoocode_code_task_store::{TaskStatus, TaskStore};
+use hoocode_code_task_store::{TaskStatus, TaskStore, PLAN_IDLE_MESSAGES};
 use hoocode_code_tool_api::ToolDefinition;
 use hoocode_code_tools_optin::*;
 use serde_json::{json, Value};
@@ -88,4 +88,45 @@ fn a_finished_plan_still_leaves_at_the_next_message() {
     assert_eq!(counts(&store), (8, 8));
     store.reset();
     assert_eq!(counts(&store), (0, 0), "a fully done plan goes as a whole");
+}
+
+#[test]
+fn a_plan_never_closed_or_rewritten_goes_whole_at_the_third_message() {
+    let (store, tool) = setup();
+    write(&tool, plan(3));
+    for message in 1..PLAN_IDLE_MESSAGES {
+        store.reset();
+        assert_eq!(counts(&store), (3, 8), "kept at message {message}");
+    }
+    store.reset();
+    assert_eq!(counts(&store), (0, 0), "dropped whole, open items too");
+    assert!(store.list().is_empty());
+}
+
+#[test]
+fn a_todowrite_restarts_the_idle_count() {
+    let (store, tool) = setup();
+    write(&tool, plan(3));
+    store.reset();
+    store.reset();
+    // The agent touches its plan (same statuses): it is in use again.
+    write(&tool, plan(3));
+    store.reset();
+    store.reset();
+    assert_eq!(counts(&store), (3, 8));
+    store.reset();
+    assert_eq!(counts(&store), (0, 0));
+}
+
+#[test]
+fn a_new_plan_after_an_expired_one_starts_clean() {
+    let (store, tool) = setup();
+    write(&tool, plan(1));
+    for _ in 0..PLAN_IDLE_MESSAGES {
+        store.reset();
+    }
+    assert!(store.list().is_empty());
+    write(&tool, plan(2));
+    store.reset();
+    assert_eq!(counts(&store), (2, 8));
 }
