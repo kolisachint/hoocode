@@ -29,7 +29,7 @@ HUD ─ row 1: ◭ HOOCODE  <mode>  <folder> │ [◈ N agent] [⌁ N sat] SHIP 
 
 `HOOCODE_FULLSCREEN=0` turns full-screen off for one run (the env var wins over the `fullscreen` setting, default `true`). Off, the screen is the inline tree with no HUD and no gap: the rows of `mode/mod.rs` `tree_plan(false)` in `hud.rs`. The tree order for both modes is `hud.rs` `tree_plan`; the test that pins it is `tests/it/hud.rs`.
 
-The inline tree (off) from top to bottom: the header, a flex spacer (`screen_fill`), the attach slot, the chat, then the rest as above. The full-screen tree (on): the HUD, a gap, the attach slot (top chrome), the body (header and chat), then the rest as above. Root children before the body are the top chrome, those after it the bottom (`Tui::set_fullscreen_body`).
+The inline tree (off) from top to bottom: the header, a flex spacer (`screen_fill`), the attach slot, the chat, then the rest as above. When a buffer taller than the screen shrinks (a picker or a tall prompt folds), the window moves back over rows already in the terminal's scrollback, so the whole buffer is redrawn with the scrollback cleared; no stale or doubled rows stay above the screen (`paint_live` in `hoocode-tui-render/src/tui.rs`, `tests/it/scrollback_fold.rs`). The full-screen tree (on): the HUD, a gap, the attach slot (top chrome), the body (header and chat), then the rest as above. Root children before the body are the top chrome, those after it the bottom (`Tui::set_fullscreen_body`).
 
 Exit leaves the alternate screen and prints nothing (`Tui::stop`). SIGTERM and SIGHUP restore the terminal first, then exit 128 plus the signal (`tui-terminal/src/interrupt.rs`, `install_terminate_restore`, M1e). A UI-thread panic restores it too (the panic hook).
 

@@ -1730,19 +1730,19 @@ impl Tui {
 
         // --- The window has to move *back* over the buffer. ---
         // A buffer taller than the screen shrank, so rows the reader scrolled
-        // past come back at the top; the append-only path cannot express that,
-        // so the visible window is painted in place. Only trees with a flex
-        // spacer take this path.
+        // past come back at the top. Those rows are already in the terminal's
+        // scrollback, as they were when they scrolled off; painting the window
+        // in place would leave that copy above the screen (a stale stub of a
+        // panel that changed meanwhile, or the same chat rows twice). So the
+        // whole buffer is drawn again, scrollback cleared. Only trees with a
+        // flex spacer take this path; without one a shrink like this is a
+        // full redraw too (`paint_deleted_lines`).
         let window_top = (line_count - height).max(0);
         if self.flex_spacer.is_some()
             && line_count < geo.prev_line_count
             && window_top < prev_viewport_top
         {
-            if line_count < height || self.saw_image_line {
-                self.full_render(new_lines, width, height, true);
-                return;
-            }
-            self.paint_window_in_place(new_lines, geo, cursor_pos);
+            self.full_render(new_lines, width, height, true);
             return;
         }
 
@@ -1855,43 +1855,6 @@ impl Tui {
         let append_start = appended_lines
             && changed.is_some_and(|(first, _)| first == prev_line_count && first > 0);
         (changed, append_start)
-    }
-
-    /// Paints the window of a shrunken buffer in place: the whole screen, since
-    /// the append-only path cannot move the window back over the buffer.
-    fn paint_window_in_place(
-        &mut self,
-        new_lines: Vec<String>,
-        geo: FrameGeometry,
-        cursor_pos: Option<CursorPos>,
-    ) {
-        let FrameGeometry { width, height, .. } = geo;
-        let line_count = new_lines.len() as i64;
-        let window_top = (line_count - height).max(0);
-        let mut buffer = String::from("\x1b[?2026h");
-        // Autowrap off: the bottom row must not wrap into a scroll.
-        buffer.push_str("\x1b[?7l");
-        for row in 0..height {
-            buffer.push_str(&format!("\x1b[{};1H\x1b[2K", row + 1));
-            let line = new_lines
-                .get((window_top + row) as usize)
-                .cloned()
-                .unwrap_or_default();
-            buffer.push_str(&self.emit_line(&line, width));
-        }
-        buffer.push_str("\x1b[?7h");
-        self.hardware_cursor_row = line_count - 1;
-        buffer.push_str(&self.build_hardware_cursor_move(&cursor_pos, line_count));
-        buffer.push_str("\x1b[?2026l");
-        self.write_frame(&buffer);
-        self.previous_kitty_image_ids = self.collect_kitty_image_ids(&new_lines);
-        self.previous_lines = new_lines;
-        self.previous_width = known_size(width);
-        self.previous_height = known_size(height);
-        self.previous_viewport_top = window_top;
-        self.max_lines_rendered = self
-            .max_lines_rendered
-            .max(self.previous_lines.len() as i64);
     }
 
     /// The frame only shortened: clear the rows past its end.

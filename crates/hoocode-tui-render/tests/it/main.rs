@@ -11,6 +11,7 @@ mod golden;
 mod hyperlink_click;
 mod screen_fill;
 mod scroll_viewport;
+mod scrollback_fold;
 mod support;
 mod toast_overlay;
 mod tui_render_ts;

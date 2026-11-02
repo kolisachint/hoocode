@@ -150,8 +150,11 @@ fn leaves_no_stale_rows_when_a_long_session_is_cleared() {
     assert_eq!(s.term.screen(), expected);
 }
 
+/// One step more: `H * 2` to `H + 1` moves the window back over rows already
+/// in the scrollback, which takes a full redraw so they are not left there
+/// twice (`scrollback_fold.rs`). Without a fill the window stays put.
 #[test]
-fn costs_no_more_full_redraws_than_without_a_fill() {
+fn costs_no_more_full_redraws_than_without_a_fill_but_the_move_back() {
     let steps = [2, 6, H, H * 2, H + 1, 4, 1];
     let mut filled = setup(2);
     for count in steps {
@@ -169,7 +172,7 @@ fn costs_no_more_full_redraws_than_without_a_fill() {
         plain.request_render(false);
     }
     assert!(
-        filled.tui.full_redraws() <= plain.full_redraws(),
+        filled.tui.full_redraws() <= plain.full_redraws() + 1,
         "filled={} plain={}",
         filled.tui.full_redraws(),
         plain.full_redraws()
