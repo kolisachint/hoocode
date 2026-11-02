@@ -750,14 +750,21 @@ impl TaskStore {
     }
 
     /// `reset`: drop finished tasks (a new user message arrived). Keyed rows are
-    /// kept whatever their status, since their producer owns them. Numbering
-    /// restarts once nothing is left. Agents with stats survive.
+    /// kept whatever their status, since their producer owns them. The plan
+    /// goes as a whole: while any plan item is unfinished every plan item
+    /// stays, done ones included, so its done/total counts the whole list
+    /// TodoWrite last sent. Numbering restarts once nothing is left. Agents
+    /// with stats survive.
     pub fn reset(&self) {
         let mut state = self.lock();
+        let plan_live = state
+            .tasks
+            .iter()
+            .any(|t| t.is_plan_item() && t.status.is_active());
         let active: Vec<Task> = state
             .tasks
             .iter()
-            .filter(|t| t.status.is_active() || t.key.is_some())
+            .filter(|t| t.status.is_active() || t.key.is_some() || (plan_live && t.is_plan_item()))
             .cloned()
             .collect();
         if active.len() == state.tasks.len() && state.next_id == 1 {

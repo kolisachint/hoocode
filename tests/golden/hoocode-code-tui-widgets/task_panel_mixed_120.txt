@@ -1,5 +1,4 @@
-┏━ FLIGHT PLAN  1/5  agents 0 · sats 0 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ /tasks · ctrl+g ━┓
-┃  [Plan 1/5]                                                                                                          ┃
+┏━ FLIGHT PLAN ━ [Plan 1/5] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ /tasks · ctrl+g ━┓
 ┃  ● Read the migration plan                                                                                       0.0s┃
 ┃  ◉ Port the task panel renderer                                                                                  0.0s┃
 ┃  ○ Add golden snapshots                                                                                              ┃
@@ -8,36 +7,35 @@
 ┗━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
-r0 c3-37 fg=#9b8cff bold
-r0 c39-100 fg=#9b8cff
+r0 c3-13 fg=#9b8cff bold
+r0 c14-16 fg=#9b8cff
+r0 c17-26 fg=#5cc8bb bold
+r0 c28-100 fg=#9b8cff
 r0 c102-116 fg=#a8a8a8
 r0 c118-119 fg=#9b8cff
 r1 c0 fg=#9b8cff
-r1 c3-12 fg=#5cc8bb bold
+r1 c3 fg=#b5bd68
+r1 c5-27 fg=#a8a8a8
+r1 c115-118 fg=#a8a8a8
 r1 c119 fg=#9b8cff
 r2 c0 fg=#9b8cff
-r2 c3 fg=#b5bd68
-r2 c5-27 fg=#a8a8a8
+r2 c3 fg=#5cc8bb
+r2 c5-32 bold
 r2 c115-118 fg=#a8a8a8
 r2 c119 fg=#9b8cff
 r3 c0 fg=#9b8cff
-r3 c3 fg=#5cc8bb
-r3 c5-32 bold
-r3 c115-118 fg=#a8a8a8
+r3 c3 fg=#a8a8a8
+r3 c5-24 fg=#989898
 r3 c119 fg=#9b8cff
 r4 c0 fg=#9b8cff
-r4 c3 fg=#a8a8a8
-r4 c5-24 fg=#989898
+r4 c3 fg=#d58181
+r4 c5-24 fg=#d58181
+r4 c115-118 fg=#a8a8a8
 r4 c119 fg=#9b8cff
 r5 c0 fg=#9b8cff
-r5 c3 fg=#d58181
-r5 c5-24 fg=#d58181
-r5 c115-118 fg=#a8a8a8
+r5 c3 fg=#989898
+r5 c5-26 fg=#989898
 r5 c119 fg=#9b8cff
-r6 c0 fg=#9b8cff
-r6 c3 fg=#989898
-r6 c5-26 fg=#989898
-r6 c119 fg=#9b8cff
-r7 c0-1 fg=#9b8cff
-r7 c4-115 fg=#9b8cff
-r7 c118-119 fg=#9b8cff
+r6 c0-1 fg=#9b8cff
+r6 c4-115 fg=#9b8cff
+r6 c118-119 fg=#9b8cff
