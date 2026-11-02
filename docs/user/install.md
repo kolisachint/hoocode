@@ -35,7 +35,9 @@ repository, and the copy served at that URL is identical.
 
 ## npm or bun
 
-Node 18 or newer. The package pulls in only the native binary for your platform.
+The package pulls in only the native binary for your platform. Its `hoocode` and `hoo`
+commands are a small `sh` script that runs that binary directly, so Node is not needed
+to run hoocode and no Node process stays running.
 
 ```bash
 npm install -g hoocode     # or: bun add -g hoocode

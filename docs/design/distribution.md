@@ -34,7 +34,10 @@ workspace version matches the tag):
    index propagation, and without this a partial publish looks identical
    to a successful one.
 4. **npm**: `hoocode` (primary install name; `@kolisachint/hoocode` is published too, as an alias with the same version) plus `@kolisachint/hoocode-{darwin,linux}-{arm64,x64}`.
-   The main package is a small Node launcher (`npm/hoocode/bin/hoocode.js`);
+   The main package is a small POSIX `sh` launcher (`npm/hoocode/bin/hoocode`)
+   that finds the installed platform package and `exec`s its binary, so no
+   Node process stays in the foreground (terminal multiplexers name a pane
+   after that process). Tested by `scripts/npm/test_launcher.sh`;
    the platform packages are `optionalDependencies` gated by `os`/`cpu`, so
    npm and bun fetch only the one for the machine. No postinstall script.
    Built by `scripts/npm/build_packages.py`, published with provenance by

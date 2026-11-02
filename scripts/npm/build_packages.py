@@ -6,7 +6,7 @@
 <archives-dir> holds the release's hoocode-<rust-target>.tar.gz files. Writes:
 
     <out-dir>/hoocode-<os>-<cpu>/   one per platform: the binary, os/cpu-gated
-    <out-dir>/hoocode/              @kolisachint/hoocode: a JS launcher that runs
+    <out-dir>/hoocode/              @kolisachint/hoocode: a sh launcher that execs
                                     whichever platform package got installed
     <out-dir>/hoocode-unscoped/    hoocode: the same launcher under the unscoped
                                     name, depending on the same SCOPED platform
@@ -93,8 +93,9 @@ def build(version: str, archives: Path, out: Path) -> None:
 
     main = out / "hoocode"
     shutil.copytree(ROOT / "npm" / "hoocode", main)
+    (main / "bin" / "hoocode").chmod(0o755)
     shutil.copy(ROOT / "LICENSE", main / "LICENSE")
-    main_files = ["bin/hoocode.js"]
+    main_files = ["bin/hoocode"]
     if NOTICE.exists():
         shutil.copy(NOTICE, main / "NOTICE")
         main_files.append("NOTICE")
@@ -105,9 +106,10 @@ def build(version: str, archives: Path, out: Path) -> None:
             "name": f"{SCOPE}/hoocode",
             "version": version,
             "description": "hoocode, the terminal coding agent",
-            "bin": {"hoocode": "bin/hoocode.js", "hoo": "bin/hoocode.js"},
+            "bin": {"hoocode": "bin/hoocode", "hoo": "bin/hoocode"},
             "files": main_files,
-            "engines": {"node": ">=18"},
+            # No "engines": the launcher is sh and execs the binary, so
+            # nothing needs Node at run time (bun installs without it).
             "optionalDependencies": optional,
             **COMMON,
         },
