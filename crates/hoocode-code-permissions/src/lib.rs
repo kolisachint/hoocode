@@ -1,5 +1,8 @@
 //! The per-mode tool policy and the approval prompt, as a [`PermissionGate`].
 
+mod safe_shell;
+pub use safe_shell::is_safe_shell_command;
+
 use hoocode_agent_types::{AgentToolCall, PermissionDecision, PermissionGate};
 use hoocode_code_modes::config::{self, HooConfig};
 use serde_json::Value;
@@ -393,6 +396,13 @@ pub fn matches_allowed_path(file_path: &str, allowed: &[String], cwd: &Path) -> 
     if file_path.is_empty() {
         return false;
     }
+    // `.hoocode/../src/x` would match `.hoocode/*` but write outside it.
+    if Path::new(file_path)
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return false;
+    }
     let to_posix = |s: &str| s.replace('\\', "/");
     let mut candidates = vec![to_posix(file_path)];
     let path = Path::new(file_path);
@@ -564,10 +574,7 @@ pub fn always_allows(command: &str, approved: &[String]) -> bool {
     if segments.is_empty() {
         return false;
     }
-    if redirects
-        .iter()
-        .any(|target| target != "/dev/null" && !target.starts_with('&'))
-    {
+    if !redirects_are_harmless(command, &redirects) {
         return false;
     }
     segments.iter().all(|words| {
@@ -576,6 +583,21 @@ pub fn always_allows(command: &str, approved: &[String]) -> bool {
             && !is_always_wrapper(program)
             && !is_assignment(program)
             && approved.iter().any(|name| name == program)
+    })
+}
+
+/// Whether a command's redirects write no file: each target is `/dev/null`
+/// or a descriptor dup (`&1`, `&2`, `&-`; `>&name` writes the file `name`),
+/// and there is no clobbering `>|` (which the segment split reads as a pipe).
+pub(crate) fn redirects_are_harmless(command: &str, redirects: &[String]) -> bool {
+    if command.contains(">|") {
+        return false;
+    }
+    redirects.iter().all(|target| {
+        target == "/dev/null"
+            || target.strip_prefix('&').is_some_and(|fd| {
+                fd == "-" || (!fd.is_empty() && fd.chars().all(|c| c.is_ascii_digit()))
+            })
     })
 }
 
@@ -704,6 +726,18 @@ pub fn evaluate(
                 ));
             }
         }
+    }
+    // `skip_permissions` (config or `--skip-permissions`): nothing is
+    // asked. The mode rules above still hold.
+    if config::skip_permissions(config) {
+        return Verdict::Allow;
+    }
+    // `safe_shell`: a read-only command runs in every mode without asking.
+    if tool_name == "Shell"
+        && config::safe_shell(config)
+        && is_safe_shell_command(input.get("command").and_then(Value::as_str).unwrap_or(""))
+    {
+        return Verdict::Allow;
     }
     if list("auto_allow").is_some_and(|a| a.iter().any(|t| t == tool_name)) {
         return Verdict::Allow;
@@ -929,7 +963,7 @@ mod tests {
     #[test]
     fn gate_defers_to_the_session_rule() {
         let dir = fresh_cwd();
-        session_allow_program(dir.path(), "build", "printf");
+        session_allow_program(dir.path(), "build", "make");
         let config = build_config();
         let allow = |command: &str| {
             evaluate(
@@ -940,9 +974,9 @@ mod tests {
                 ApprovalChannel::Ui,
             )
         };
-        assert_eq!(allow("printf y"), Verdict::Allow);
-        assert_eq!(allow("printf y | sort"), Verdict::Prompt);
-        assert_eq!(allow("printf y; rm"), Verdict::Prompt);
+        assert_eq!(allow("make y"), Verdict::Allow);
+        assert_eq!(allow("make y | sort"), Verdict::Prompt);
+        assert_eq!(allow("make y; rm"), Verdict::Prompt);
         assert_eq!(allow("rm -rf target"), Verdict::Prompt);
         // Another cwd shares nothing.
         let elsewhere = fresh_cwd();
@@ -951,7 +985,7 @@ mod tests {
                 &config,
                 elsewhere.path(),
                 "Shell",
-                &shell("printf y"),
+                &shell("make y"),
                 ApprovalChannel::Ui,
             ),
             Verdict::Prompt
@@ -961,7 +995,7 @@ mod tests {
     #[test]
     fn plan_mode_always_prompts() {
         let dir = fresh_cwd();
-        session_allow_program(dir.path(), "plan", "printf");
+        session_allow_program(dir.path(), "plan", "make");
         let config = json!({"active_mode": "plan", "modes": {"plan": {}}})
             .as_object()
             .unwrap()
@@ -971,7 +1005,7 @@ mod tests {
                 &config,
                 dir.path(),
                 "Shell",
-                &shell("printf y"),
+                &shell("make y"),
                 ApprovalChannel::Ui,
             ),
             Verdict::Prompt

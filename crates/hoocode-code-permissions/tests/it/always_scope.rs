@@ -1,6 +1,6 @@
 //! `a always` on the clearance card is session-only (M6 reviews): the gate
 //! remembers the Shell program in memory for (cwd, mode) — never in config,
-//! so a later `rm` still prompts and a later `printf` does not. The Edit
+//! so a later `rm` still prompts and a later `make` does not. The Edit
 //! path still persists to the global config, which is redirected to a
 //! scratch dir here and restored afterwards.
 
@@ -122,7 +122,7 @@ fn fresh_cwd() -> tempfile::TempDir {
 
 #[test]
 fn program_is_the_first_word() {
-    assert_eq!(shell_program("printf x | sort").as_deref(), Some("printf"));
+    assert_eq!(shell_program("make x | sort").as_deref(), Some("make"));
     assert_eq!(shell_program("  wc -l src/wrap.rs").as_deref(), Some("wc"));
     assert_eq!(shell_program("").as_deref(), None);
     assert_eq!(shell_program("   ").as_deref(), None);
@@ -143,50 +143,47 @@ fn wrappers_match_basename_case_insensitive() {
     assert!(is_always_wrapper("export"));
     assert!(is_always_wrapper("[["));
     assert!(is_always_wrapper("if"));
-    assert!(!is_always_wrapper("printf"));
+    assert!(!is_always_wrapper("make"));
     assert!(!is_always_wrapper("sort"));
 }
 
 #[test]
 fn allow_table() {
-    let printf = |command: &str| always_allows(command, &["printf".to_string()]);
+    let make = |command: &str| always_allows(command, &["make".to_string()]);
     // Covered: the program alone, with arguments, leading spaces.
-    assert!(printf("printf"));
-    assert!(printf("printf y"));
-    assert!(printf("  printf y"));
+    assert!(make("make"));
+    assert!(make("make y"));
+    assert!(make("  make y"));
     // Another program anywhere in the chain prompts.
-    assert!(!printf("printf x; rm -rf /"));
-    assert!(!printf("printf x && rm"));
-    assert!(!printf("printf x || rm"));
-    assert!(!printf("printf x | rm"));
-    assert!(!printf("rm"));
-    assert!(!printf("printfoo"));
-    assert!(!printf(""));
+    assert!(!make("make x; rm -rf /"));
+    assert!(!make("make x && rm"));
+    assert!(!make("make x || rm"));
+    assert!(!make("make x | rm"));
+    assert!(!make("rm"));
+    assert!(!make("makeoo"));
+    assert!(!make(""));
     // A pipe where every program is approved stays covered.
     assert!(always_allows(
-        "printf x | sort -r",
-        &["printf".to_string(), "sort".to_string()]
+        "make x | sort -r",
+        &["make".to_string(), "sort".to_string()]
     ));
-    assert!(!always_allows(
-        "printf x | sort -r",
-        &["printf".to_string()]
-    ));
+    assert!(!always_allows("make x | sort -r", &["make".to_string()]));
     // Newlines, substitutions, expansions and here-docs prompt.
-    assert!(!printf("printf x\nrm"));
-    assert!(!printf("printf x\rrm"));
-    assert!(!printf("printf $(rm -rf /)"));
-    assert!(!printf("printf `rm -rf /`"));
-    assert!(!printf("printf <(rm)"));
-    assert!(!printf("printf >(rm)"));
-    assert!(!printf("echo ${HOME}"));
-    assert!(!printf("printf x <<EOF"));
+    assert!(!make("make x\nrm"));
+    assert!(!make("make x\rrm"));
+    assert!(!make("make $(rm -rf /)"));
+    assert!(!make("make `rm -rf /`"));
+    assert!(!make("make <(rm)"));
+    assert!(!make("make >(rm)"));
+    assert!(!make("echo ${HOME}"));
+    assert!(!make("make x <<EOF"));
     // Quoted markers are data, not code.
-    assert!(printf("printf '$(not-a-command)'"));
-    assert!(printf("printf 'a;b'"));
+    assert!(make("make '$(not-a-command)'"));
+    assert!(make("make 'a;b'"));
     // Assignments and wrappers prompt.
-    assert!(!printf("VAR=1 printf"));
-    assert!(!printf("sudo printf"));
-    assert!(!always_allows("sudo printf", &["sudo".to_string()]));
+    assert!(!make("VAR=1 make"));
+    assert!(!make("sudo make"));
+    assert!(!always_allows("sudo make", &["sudo".to_string()]));
     // Builtins and keywords never approve, even when listed.
     for builtin in [
         "cd", "export", "read", "if", "for", "time", "kill", "[[", "exec", "set",
@@ -197,21 +194,21 @@ fn allow_table() {
         );
     }
     // File redirects prompt; adjacent descriptor dups and /dev/null do not.
-    assert!(!printf("printf x > file"));
-    assert!(!printf("printf x >> file"));
-    assert!(!printf("printf x 2>file"));
-    assert!(!printf("printf x 2> &1"));
-    assert!(!printf("printf x > &2"));
-    assert!(printf("printf x 2>&1"));
-    assert!(printf("printf x > /dev/null"));
+    assert!(!make("make x > file"));
+    assert!(!make("make x >> file"));
+    assert!(!make("make x 2>file"));
+    assert!(!make("make x 2> &1"));
+    assert!(!make("make x > &2"));
+    assert!(make("make x 2>&1"));
+    assert!(make("make x > /dev/null"));
     // Slash programs are never approvable.
     assert!(!always_allows("./run.sh", &["./run.sh".to_string()]));
-    assert!(!always_allows("/bin/printf x", &["printf".to_string()]));
+    assert!(!always_allows("/bin/make x", &["make".to_string()]));
     // Exact names otherwise: odd but harmless programs work.
     assert!(always_allows("c++ x", &["c++".to_string()]));
     // Overlong commands never auto-allow.
-    assert!(!printf(&format!("printf {}", "y".repeat(40 * 1024))));
-    assert!(printf(&format!("printf {}", "y".repeat(1024))));
+    assert!(!make(&format!("make {}", "y".repeat(40 * 1024))));
+    assert!(make(&format!("make {}", "y".repeat(1024))));
 }
 
 #[test]
@@ -243,18 +240,18 @@ fn always_is_session_only_and_scoped() {
     let _home = AgentHome::new();
     let dir = fresh_cwd();
     let ui = Arc::new(ScriptedUi::new(vec![ClearanceChoice::Always]));
-    // `a` on `printf x | sort`: allowed, remembered, nothing written.
+    // `a` on `make x | sort`: allowed, remembered, nothing written.
     assert_eq!(
-        gate(dir.path(), ui.clone()).check("Shell", &shell("printf x | sort -r")),
+        gate(dir.path(), ui.clone()).check("Shell", &shell("make x | sort -r")),
         None
     );
     assert_eq!(
         ui.notices(),
-        vec!["\"printf\" always allowed in this session".to_string()]
+        vec!["\"make\" always allowed in this session".to_string()]
     );
     assert!(!_home.path().exists());
 
-    // A later `printf` runs free; `rm`, `printfoo` and chained `rm` prompt
+    // A later `make` runs free; `rm`, `makeoo` and chained `rm` prompt
     // (and are denied by the scripted UI).
     let ui = Arc::new(ScriptedUi::new(vec![
         ClearanceChoice::Deny { reason: None },
@@ -262,11 +259,11 @@ fn always_is_session_only_and_scoped() {
         ClearanceChoice::Deny { reason: None },
     ]));
     let gate = gate(dir.path(), ui.clone());
-    assert_eq!(gate.check("Shell", &shell("printf y")), None);
+    assert_eq!(gate.check("Shell", &shell("make y")), None);
     assert_eq!(ui.prompts(), 0);
     assert!(gate.check("Shell", &shell("rm -rf target")).is_some());
-    assert!(gate.check("Shell", &shell("printfoo x")).is_some());
-    assert!(gate.check("Shell", &shell("printf y; rm")).is_some());
+    assert!(gate.check("Shell", &shell("makeoo x")).is_some());
+    assert!(gate.check("Shell", &shell("make y; rm")).is_some());
     assert_eq!(ui.prompts(), 3);
 }
 

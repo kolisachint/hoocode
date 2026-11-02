@@ -196,6 +196,14 @@ pub fn main(argv: &[String]) -> i32 {
     }
 
     let parsed = parse_args(argv);
+    // `--skip-permissions` is process-wide and reaches every child (subagents)
+    // through the env var the permission gate reads.
+    if parsed.skip_permissions == Some(true) {
+        std::env::set_var(hoocode_code_modes::config::SKIP_PERMISSIONS_ENV, "1");
+    }
+    // First run: ship the default `hoo-config.json` (mode rules, safe shell)
+    // so it is there to read and edit. An existing file is never touched.
+    let _ = hoocode_code_modes::config::ensure_default_config();
     match run(&parsed, env, &mut stdout, &mut stderr) {
         Ok(code) => code,
         Err(e) => {

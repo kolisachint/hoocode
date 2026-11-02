@@ -113,6 +113,8 @@ pub struct Args {
     pub no_context_files: Option<bool>,
     pub list_models: Option<ListModels>,
     pub offline: Option<bool>,
+    /// `--skip-permissions`: run every tool without asking (mode rules still apply).
+    pub skip_permissions: Option<bool>,
     pub verbose: Option<bool>,
     pub messages: Vec<String>,
     pub file_args: Vec<String>,
@@ -389,6 +391,7 @@ pub fn parse_args(args: &[String]) -> Args {
             }
             "--verbose" => result.verbose = Some(true),
             "--offline" => result.offline = Some(true),
+            "--skip-permissions" => result.skip_permissions = Some(true),
             _ if arg.starts_with('@') => result.file_args.push(arg[1..].to_string()),
             _ if arg.starts_with("--") => {
                 if let Some(eq) = arg.find('=') {
@@ -796,6 +799,7 @@ mod tests {
     #[test]
     fn parses_offline_flag() {
         assert_eq!(parse(&["--offline"]).offline, Some(true));
+        assert_eq!(parse(&["--skip-permissions"]).skip_permissions, Some(true));
     }
 
     // tool flags
