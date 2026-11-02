@@ -621,6 +621,10 @@ struct Mode {
     /// When the current prompt was submitted (set at submit, taken at `PromptDone`).
     turn_timer: Rc<RefCell<TurnTimer>>,
     chime: ChimeDebounce,
+    /// Reports state to Herdr when hoocode runs in a Herdr pane (set in `run`).
+    herdr: Option<crate::herdr::Reporter>,
+    /// Set while a selector asked for by `DialogRequest::Select` waits for its answer.
+    dialog_select: Rc<Cell<bool>>,
     update_notice: Option<std::sync::mpsc::Receiver<hoocode_code_update::UpdateAvailable>>,
     tool_output_view: ToolOutputView,
     hide_thinking_block: bool,
@@ -1209,6 +1213,8 @@ impl Mode {
             plugin_notices: Vec::new(),
             turn_timer,
             chime: ChimeDebounce::default(),
+            herdr: None,
+            dialog_select: Rc::new(Cell::new(false)),
             update_notice: options.update_notice,
             tool_output_view,
             hide_thinking_block,
@@ -1541,6 +1547,9 @@ impl Mode {
         })));
         let mut input = self.tui.start();
         self.install_interrupt_hook();
+        // Only the interactive mode reports to Herdr: print, RPC and subagent
+        // runs never build a reporter.
+        self.herdr = crate::herdr::Reporter::from_process_env();
         // A stop hoocode did not ask for, ended by `fg`: the loop restores the
         // UI (`tick_external_resume`). Held until the loop ends.
         #[cfg(unix)]
@@ -1766,13 +1775,19 @@ impl Mode {
                         title,
                         options,
                         reply,
-                    }) => self.show_selector(
-                        &title,
-                        options,
-                        Box::new(move |choice| {
-                            let _ = reply.send(choice);
-                        }),
-                    ),
+                    }) => {
+                        // A question from the permission gate: Herdr shows it as blocked.
+                        self.dialog_select.set(true);
+                        let open = self.dialog_select.clone();
+                        self.show_selector(
+                            &title,
+                            options,
+                            Box::new(move |choice| {
+                                open.set(false);
+                                let _ = reply.send(choice);
+                            }),
+                        )
+                    }
                     AppEvent::Dialog(DialogRequest::Notify(message)) => self.show_record(&message),
                     AppEvent::Dialog(DialogRequest::AskOptions {
                         questions,
@@ -1927,6 +1942,7 @@ impl Mode {
             if self.editor.borrow_mut().editor.poll_autocomplete() {
                 self.dirty.set(true);
             }
+            self.sync_herdr();
             if self.ready_to_quit() {
                 break;
             }
@@ -1945,6 +1961,10 @@ impl Mode {
         }
 
         hoocode_runtime::watchdog::ui_stopped();
+        // The user quit: Herdr drops the agent and its resume command.
+        if let Some(herdr) = self.herdr.as_mut() {
+            herdr.release();
+        }
         set_dialog_sink(None);
         hoocode_code_subagents::instance::set_live_sink(None);
         hoocode_code_subagents::instance::set_clearance_relay(None);

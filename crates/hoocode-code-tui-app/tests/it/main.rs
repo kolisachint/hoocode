@@ -13,6 +13,7 @@ mod footer;
 mod footer_data_provider;
 mod fullscreen_scroll;
 mod golden;
+mod herdr;
 mod hud;
 mod import_command_ts;
 mod input_frame;
