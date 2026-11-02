@@ -41,10 +41,7 @@ pub const KNOWN_MODES: [&str; 4] = ["ask", "plan", "build", "debug"];
 
 /// The mode commands with their `description`s.
 pub const MODE_COMMANDS: [(&str, &str); 5] = [
-    (
-        "mode",
-        "Switch active mode. Usage: /mode <ask|plan|build|debug>",
-    ),
+    ("mode", "Switch agent mode: ask, plan, build, debug"),
     ("plan", "Switch to plan mode. Shorthand for /mode plan."),
     (
         "grill",

@@ -1972,13 +1972,21 @@ fn resource_listing(
 /// binary settles as skipped.
 fn start_semantic_index(args: &Args, session: &AgentSession) {
     use hoocode_code_tui_app::embsearch_progress::{report_embsearch_progress, EmbsearchState};
+    // Only an explicit opt-in (the flag, or the key in a settings file) gets a
+    // status line: the merged default is on, but this build has no indexer, so
+    // a default start stays silent.
     let (enabled, configured) = {
         let settings = session.settings();
-        (
-            args.enable_semantic_index
-                .unwrap_or_else(|| settings.enable_semantic_index()),
-            settings.embsearch_binary_path(),
-        )
+        let explicit = args.enable_semantic_index.or_else(|| {
+            let in_file = settings
+                .global_settings()
+                .contains_key("enableSemanticIndex")
+                || settings
+                    .project_settings()
+                    .contains_key("enableSemanticIndex");
+            in_file.then(|| settings.enable_semantic_index())
+        });
+        (explicit == Some(true), settings.embsearch_binary_path())
     };
     if !enabled {
         return;

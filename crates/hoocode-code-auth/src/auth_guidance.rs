@@ -2,12 +2,12 @@
 
 const UNKNOWN_PROVIDER: &str = "unknown";
 
+/// Login guidance that works for an installed binary: the docs are online
+/// (the install ships no docs directory).
 fn provider_login_help() -> String {
-    let docs = hoocode_code_paths::docs_path();
     [
-        "Use /login to log into a provider via OAuth or API key. See:".to_string(),
-        format!("  {}", docs.join("providers.md").display()),
-        format!("  {}", docs.join("models.md").display()),
+        "Use /login to log into a provider (subscription or API key), or set a provider API key such as ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+        "Docs: https://kolisachint.github.io/hoocode/",
     ]
     .join("\n")
 }
@@ -48,6 +48,18 @@ pub fn format_no_api_key_found_message(provider: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn login_help_points_at_login_env_vars_and_the_online_docs() {
+        let help = format_no_models_available_message();
+        assert!(help.contains("/login"), "{help}");
+        assert!(help.contains("ANTHROPIC_API_KEY"), "{help}");
+        assert!(
+            help.contains("https://kolisachint.github.io/hoocode/"),
+            "{help}"
+        );
+        assert!(!help.contains("providers.md"), "{help}");
+    }
 
     #[test]
     fn auth_failed_names_the_provider_and_the_login_command() {
