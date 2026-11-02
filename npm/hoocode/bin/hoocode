@@ -9,13 +9,18 @@
 # chain to this file's real location (no `readlink -f`, it is not POSIX).
 self=$0
 while [ -L "$self" ]; do
+	if ! command -v readlink >/dev/null 2>&1; then
+		echo "hoocode: readlink not found" >&2
+		exit 1
+	fi
 	link=$(readlink "$self")
 	case $link in
 	/*) self=$link ;;
-	*) self=$(dirname "$self")/$link ;;
+	*) self=$(dirname -- "$self")/$link ;;
 	esac
 done
-pkg_dir=$(cd "$(dirname "$self")/.." && pwd -P) || exit 1
+# CDPATH='' so `cd` never searches CDPATH or prints the directory it picks.
+pkg_dir=$(CDPATH='' cd -- "$(dirname -- "$self")/.." && pwd -P) || exit 1
 
 os=$(uname -s)
 case $os in

@@ -6,9 +6,10 @@
 #     SHELL_UNDER_TEST=dash scripts/npm/test_launcher.sh
 
 set -u
-root=$(cd "$(dirname "$0")/../.." && pwd -P)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd -P)
 launcher=$root/npm/hoocode/bin/hoocode
 sh_=${SHELL_UNDER_TEST:-/bin/sh}
+case $sh_ in /*) ;; *) sh_=$(command -v "$sh_") || exit 1 ;; esac
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 fails=0
@@ -96,6 +97,39 @@ if [ -n "$other" ]; then
 	check darwin-fallback "stub $other" 0 "$sh_" "$p/node_modules/hoocode/bin/hoocode"
 fi
 
+# Path with spaces, through a relative symlink.
+p="$tmp/with space"
+install_pkg "$p/lib/node_modules/hoocode" hoocode
+install_stub "$p/lib/node_modules" "$key"
+mkdir -p "$p/bin"
+ln -s "../lib/node_modules/hoocode/bin/hoocode" "$p/bin/hoocode"
+check spaces "stub $key
+[a b]" 0 "$sh_" "$p/bin/hoocode" "a b"
+
+# bun global: <root>/install/global/node_modules/{hoocode,@kolisachint/...},
+# bin linked from <root>/bin.
+p=$tmp/bun
+install_pkg "$p/install/global/node_modules/hoocode" hoocode
+install_stub "$p/install/global/node_modules" "$key"
+mkdir -p "$p/bin"
+ln -s ../install/global/node_modules/hoocode/bin/hoocode "$p/bin/hoocode"
+check bun-global "stub $key" 0 "$sh_" "$p/bin/hoocode"
+
+# CDPATH exported, launcher run by a relative path: `cd` must not search
+# CDPATH (a decoy `bin/..` is there) or print anything.
+mkdir -p "$tmp/decoy/bin"
+# shellcheck disable=SC2016 # $1.. are for the inner sh -c
+check cdpath "stub $key" 0 sh -c 'cd "$1" && CDPATH=$2 "$3" bin/hoocode' sh \
+	"$tmp/bun" "$tmp/decoy" "$sh_"
+# shellcheck disable=SC2016
+check cdpath-hoisted "stub $key" 0 sh -c 'cd "$1" && CDPATH=$2:. "$3" bin/hoocode' sh \
+	"$tmp/hoisted" "$tmp/decoy" "$sh_"
+
+# No readlink on PATH: say so, not a reinstall hint.
+mkdir -p "$tmp/empty"
+check no-readlink "hoocode: readlink not found" 1 \
+	/usr/bin/env PATH="$tmp/empty" "$sh_" "$tmp/bun/bin/hoocode"
+
 # Missing platform package: the hint names the installing package.
 for n in hoocode @kolisachint/hoocode; do
 	p=$tmp/missing-$(echo "$n" | tr '@/' '__')
@@ -110,7 +144,7 @@ p=$tmp/noexec
 install_pkg "$p/node_modules/hoocode" hoocode
 install_stub "$p/node_modules" "$key"
 chmod 644 "$p/node_modules/@kolisachint/hoocode-$key/bin/hoocode"
-bin=$(cd "$p/node_modules/@kolisachint/hoocode-$key/bin" && pwd -P)/hoocode
+bin=$(CDPATH='' cd -- "$p/node_modules/@kolisachint/hoocode-$key/bin" && pwd -P)/hoocode
 check noexec "hoocode: could not start $bin: not executable" 1 \
 	"$sh_" "$p/node_modules/hoocode/bin/hoocode"
 

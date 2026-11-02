@@ -37,7 +37,11 @@ workspace version matches the tag):
    The main package is a small POSIX `sh` launcher (`npm/hoocode/bin/hoocode`)
    that finds the installed platform package and `exec`s its binary, so no
    Node process stays in the foreground (terminal multiplexers name a pane
-   after that process). Tested by `scripts/npm/test_launcher.sh`;
+   after that process). If the `exec` itself fails (say the binary is not
+   executable) the shell reports its own error and exits 126; the launcher
+   adds no message. Yarn Berry (2+) runs bins with `node`, so it is
+   unsupported; so is Windows (the main package is `os`-gated).
+   Tested by `scripts/npm/test_launcher.sh` (CI runs it under sh and dash);
    the platform packages are `optionalDependencies` gated by `os`/`cpu`, so
    npm and bun fetch only the one for the machine. No postinstall script.
    Built by `scripts/npm/build_packages.py`, published with provenance by

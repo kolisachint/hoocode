@@ -187,3 +187,11 @@ jobs:
           sudo apt-get install -y -qq dash >/dev/null
           sh -n install/install.sh
           dash -n install/install.sh
+      # The npm launcher is sh too: parse it and run its layout tests under
+      # both sh and dash (dash installed by the step above).
+      - name: npm launcher
+        run: |
+          sh -n npm/hoocode/bin/hoocode
+          dash -n npm/hoocode/bin/hoocode
+          sh scripts/npm/test_launcher.sh
+          SHELL_UNDER_TEST=dash sh scripts/npm/test_launcher.sh

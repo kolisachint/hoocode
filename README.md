@@ -64,7 +64,7 @@ npm install -g hoocode     # or: bun add -g hoocode
 ```
 
 The package pulls in only the native binary for your platform. It installs `hoocode`
-and `hoo`, which run the binary directly: no Node process stays running.
+and `hoo`, whose installed commands run the binary directly.
 
 **pip** (Python 3.8 or newer):
 
