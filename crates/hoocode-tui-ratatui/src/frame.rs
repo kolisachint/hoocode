@@ -127,6 +127,13 @@ fn pad_right(frame: Style, content: Line<'static>) -> Line<'static> {
     Line::from(spans)
 }
 
+/// The cells the title gets in the top edge at `width` beside `right` (the
+/// right label, cut to fit first). A title wider than this is cut with `…`.
+pub fn chrome_title_budget(right: &Line<'static>, width: usize) -> usize {
+    let budget = width.saturating_sub(9);
+    budget.saturating_sub(spans_width(&right.spans).min(budget))
+}
+
 /// Draws the chrome around `body`: the thick [`Block`] with the title and
 /// right label up top and the foot below, the body rows inside the `┃`
 /// edges. Every row is exactly `width` cells; rows that do not fit are cut
@@ -145,8 +152,7 @@ pub fn render_chrome(chrome: &Chrome, body: &[Line<'static>], width: usize) -> V
     // The title goes first when the row is short; past that both sides are cut.
     let budget = width.saturating_sub(9);
     let right = truncate_line(&chrome.right, budget);
-    let used_right: usize = right.spans.iter().map(|s| s.width()).sum();
-    let title = truncate_line(&chrome.title, budget.saturating_sub(used_right));
+    let title = truncate_line(&chrome.title, chrome_title_budget(&chrome.right, width));
     let foot = truncate_line(&chrome.foot, budget);
     let inner = width.saturating_sub(2);
     let block = Block::bordered()

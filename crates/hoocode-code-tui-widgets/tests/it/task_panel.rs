@@ -138,7 +138,7 @@ fn shows_active_subagent_tasks_with_status_icons_ids_and_mode_tags() {
     set(plain_task, TaskStatus::InProgress);
 
     let lines = render(&mut TaskPanelComponent::new(), 120);
-    assert_eq!(lines.len(), 6, "frame, tab strip, three rows, foot");
+    assert_eq!(lines.len(), 5, "frame with the tabs, three rows, foot");
     let text = lines.join("\n");
     for s in [
         "SSE watch endpoint",
@@ -319,7 +319,7 @@ fn completed_and_failed_tasks_stay_visible_with_their_status() {
     let f = create("Broken build");
     set(f, TaskStatus::Failed);
     let lines = render(&mut TaskPanelComponent::new(), 120);
-    assert_eq!(lines.len(), 6, "frame, tab strip, three rows, foot");
+    assert_eq!(lines.len(), 5, "frame with the tabs, three rows, foot");
     let text = lines.join("\n");
     for s in ["Still running", "Finished work", "Broken build", "●", "⊗"] {
         assert!(text.contains(s), "{s}");
@@ -447,12 +447,12 @@ fn the_shown_tab_is_bracketed_so_the_strip_reads_without_colour() {
     let _g = lock();
     plan_and_done_run();
     let mut panel = TaskPanelComponent::new();
-    // The strip is the console's second row: the shown tab in brackets.
-    let strip_row = strip(&render(&mut panel, 120)[1]);
+    // The strip is on the console's top edge: the shown tab in brackets.
+    let strip_row = strip(&render(&mut panel, 120)[0]);
     assert!(strip_row.contains("[Plan 0/1]"), "{strip_row}");
     assert!(!strip_row.contains("[Agents"), "{strip_row}");
     panel.set_view(TaskPanelView::Subagents);
-    let strip_row = strip(&render(&mut panel, 120)[1]);
+    let strip_row = strip(&render(&mut panel, 120)[0]);
     assert!(strip_row.contains("[Agents 1/1]"), "{strip_row}");
 }
 
@@ -466,7 +466,11 @@ fn the_console_keeps_the_tab_strip_and_drops_the_cycle_hint_when_narrow() {
     let lines = render(&mut TaskPanelComponent::new(), 20);
     assert!(lines.iter().all(|l| visible_width(l) <= 20), "{lines:#?}");
     assert!(!strip(&lines.join("\n")).contains("cycle"));
-    assert!(strip(&lines[1]).contains("Plan"));
+    // Past the name the edge has no room: the title is cut, never the frame.
+    assert!(strip(&lines[0]).contains("FLIGHT"), "{lines:#?}");
+    let lines = render(&mut TaskPanelComponent::new(), 34);
+    assert!(lines.iter().all(|l| visible_width(l) <= 34), "{lines:#?}");
+    assert!(strip(&lines[0]).contains("[Plan 1/1]"), "{lines:#?}");
 }
 
 #[test]
@@ -487,12 +491,13 @@ fn reset_clears_finished_tasks_and_restarts_numbering() {
 #[test]
 fn reset_keeps_active_tasks_and_their_numbering() {
     let _g = lock();
-    let running = create_with("Still running", mode("explore"));
+    let running = create_with("Still running", sub("explore"));
     set(running, TaskStatus::InProgress);
     let d = create("Finished work");
     set(d, TaskStatus::Done);
     task_store().reset();
     let mut panel = TaskPanelComponent::new();
+    panel.set_view(TaskPanelView::Subagents);
     let text = render(&mut panel, 120).join("\n");
     assert!(text.contains("Still running") && !text.contains("Finished work"));
     set(running, TaskStatus::Done);
@@ -509,7 +514,7 @@ fn shows_all_tasks_without_a_line_limit() {
         set(t, TaskStatus::InProgress);
     }
     let lines = render(&mut TaskPanelComponent::new(), 120);
-    assert_eq!(lines.len(), 9, "frame, tab strip, six rows, foot");
+    assert_eq!(lines.len(), 8, "frame with the tabs, six rows, foot");
     let text = lines.join("\n");
     assert!(text.contains("Task 0") && text.contains("Task 5"));
 }
@@ -520,12 +525,12 @@ fn the_strip_lists_the_tabs_that_have_rows() {
     let t = create("Plain work");
     set(t, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
-    let one = strip(&render(&mut panel, 120)[1]);
+    let one = strip(&render(&mut panel, 120)[0]);
     assert!(one.contains("Plan 0/1") && !one.contains("Agents"), "{one}");
     assert!(strip(&render(&mut panel, 120)[0]).contains("/tasks · ctrl+g"));
 
     create_with("find the bug", sub("explore"));
-    let two = strip(&render(&mut panel, 120)[1]);
+    let two = strip(&render(&mut panel, 120)[0]);
     assert!(
         two.contains("Plan 0/1") && two.contains("Agents 0/1"),
         "{two}"
@@ -565,7 +570,7 @@ fn a_selected_lens_that_empties_falls_back_to_flat_rendering() {
     panel.set_view(TaskPanelView::Subagents);
     let lines = plain(&mut panel, 120);
     assert!(lines.join("\n").contains("Plain work"));
-    assert_eq!(lines.len(), 4, "frame, tab strip, one row, foot");
+    assert_eq!(lines.len(), 3, "frame with the tabs, one row, foot");
     assert_eq!(panel.cycle_view(true), TaskPanelView::Plan);
 }
 
@@ -585,7 +590,7 @@ fn subagents_view_renders_a_recursive_task_tree() {
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Subagents);
     let lines = plain(&mut panel, 120);
-    assert_eq!(lines.len(), 5, "frame, tab strip, two rows, foot");
+    assert_eq!(lines.len(), 4, "frame with the tabs, two rows, foot");
     let explore_row = find(&lines, "Explore module");
     let review_row = find(&lines, "Review findings");
     assert!(!explore_row.contains("└─") && !explore_row.contains("├─"));
@@ -628,7 +633,7 @@ fn subagents_tree_with_only_top_level_tasks_renders_flat() {
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Subagents);
     let lines = plain(&mut panel, 120);
-    assert_eq!(lines.len(), 5, "frame, tab strip, two rows, foot");
+    assert_eq!(lines.len(), 4, "frame with the tabs, two rows, foot");
     let (ra, rb) = (find(&lines, "Explore A"), find(&lines, "Explore B"));
     for row in [ra, rb] {
         assert!(!row.contains("└─") && !row.contains("├─"));
@@ -717,9 +722,11 @@ fn the_shown_tab_keeps_its_brackets_at_80_columns_with_double_digit_counts() {
     panel.set_view(TaskPanelView::Mcp);
     let lines = plain(&mut panel, 80);
     assert!(lines.iter().all(|l| visible_width(l) <= 80), "{lines:#?}");
-    // The full strip is 80 cells, past the body row's 78. The counts of the
-    // tabs not shown go first; the shown tab keeps its count and brackets.
-    let strip = &lines[1];
+    // The full strip is past what the edge leaves it. The counts of the tabs
+    // not shown go first; the shown tab keeps its count and brackets.
+    let lines = plain(&mut panel, 100);
+    assert!(lines.iter().all(|l| visible_width(l) <= 100), "{lines:#?}");
+    let strip = &lines[0];
     assert!(strip.contains("[MCP 3 running]"), "{strip}");
     assert!(
         !strip.contains("12") && !strip.contains("Agents 12"),
@@ -732,7 +739,7 @@ fn the_shown_tab_keeps_its_brackets_at_80_columns_with_double_digit_counts() {
     let mut keyboard = focused();
     keyboard.set_view(TaskPanelView::Mcp);
     let lines = plain(&mut keyboard, 80);
-    assert!(lines[1].contains("[MCP 3 running]"), "{lines:#?}");
+    assert!(lines[0].contains("[MCP"), "{lines:#?}");
     assert!(lines.iter().all(|l| visible_width(l) <= 80), "{lines:#?}");
 }
 
@@ -742,16 +749,27 @@ fn the_tab_strip_drops_counts_then_labels_before_it_cuts_the_shown_tab() {
     crowded_tabs();
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Mcp);
-    // At 40 columns the body row is 38 cells: the counts (44 cells) do not fit,
-    // the labels (34 cells) do.
-    let strip = plain(&mut panel, 40)[1].clone();
+    // At 80 columns the edge leaves the strip 42 cells: only the shown tab
+    // keeps its count.
+    let strip = plain(&mut panel, 80)[0].clone();
+    assert!(strip.contains("Schedule [MCP 3 running]"), "{strip}");
+    assert!(!strip.contains("12"), "{strip}");
+    // At 75 (37 cells) the labels alone fit.
+    let strip = plain(&mut panel, 75)[0].clone();
     assert!(strip.contains("Schedule [MCP]"), "{strip}");
     assert!(!strip.contains("running"), "{strip}");
-    // Only the shown tab fits 12 columns: its brackets stay whole.
-    let strip = plain(&mut panel, 12)[1].clone();
-    assert!(strip.contains("[MCP]"), "{strip}");
+    // At 60 only the shown tab fits, with its count.
+    let strip = plain(&mut panel, 60)[0].clone();
+    assert!(strip.contains("━ [MCP 3 running] ━"), "{strip}");
     assert!(!strip.contains("Plan"), "{strip}");
-    assert!(visible_width(&strip) <= 12, "{strip}");
+    // At 40 the right label goes before the shown tab is cut.
+    let strip = plain(&mut panel, 40)[0].clone();
+    assert!(strip.contains("[MCP 3 running]"), "{strip}");
+    assert!(!strip.contains("ctrl+g"), "{strip}");
+    // At 30 the shown tab drops its count; its brackets stay whole.
+    let strip = plain(&mut panel, 30)[0].clone();
+    assert!(strip.contains("[MCP]"), "{strip}");
+    assert!(visible_width(&strip) <= 30, "{strip}");
 }
 
 #[test]
@@ -810,7 +828,7 @@ fn a_stale_arm_does_not_swallow_escape() {
 }
 
 #[test]
-fn a_narrow_strip_keeps_a_lone_shown_tab_whole_without_its_indent() {
+fn a_narrow_strip_keeps_a_lone_shown_tab_whole_and_drops_the_right_label_first() {
     let _g = lock();
     create("a plan item");
     let job = create_with(
@@ -823,12 +841,14 @@ fn a_narrow_strip_keeps_a_lone_shown_tab_whole_without_its_indent() {
     set(job, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Schedule);
-    // The body row is 10 cells at width 12: `  [Schedule]` (12) does not fit,
-    // `[Schedule]` (10) does.
-    let strip = plain(&mut panel, 12)[1].clone();
-    assert!(strip.contains("[Schedule]"), "{strip}");
+    // At 36 columns the edge leaves 12 cells with the right label (too few for
+    // `[Schedule 0/1]` with its count), then 27 without it: the shown tab's
+    // brackets stay whole and the frame never overflows.
+    let strip = plain(&mut panel, 36)[0].clone();
+    assert!(strip.contains("[Schedule"), "{strip}");
+    assert!(strip.contains(']'), "{strip}");
     assert!(!strip.contains("Plan"), "{strip}");
-    assert!(visible_width(&strip) <= 12, "{strip}");
+    assert!(visible_width(&strip) <= 36, "{strip}");
 }
 
 #[test]
@@ -850,9 +870,8 @@ fn the_plan_tab_counts_its_items_not_the_runs_nested_under_them() {
     }
     let mut panel = TaskPanelComponent::new();
     let lines = plain(&mut panel, 120);
-    assert!(lines[0].contains("FLIGHT PLAN  1/2"), "{lines:#?}");
-    assert!(lines[1].contains("[Plan 1/2]"), "{lines:#?}");
-    assert!(lines[1].contains("Agents 3/3"), "{lines:#?}");
+    assert!(lines[0].contains("FLIGHT PLAN ━ [Plan 1/2]"), "{lines:#?}");
+    assert!(lines[0].contains("Agents 3/3"), "{lines:#?}");
 }
 
 #[test]
@@ -867,19 +886,19 @@ fn live_tabs_count_what_runs_and_the_plan_stays_done_of_total() {
     let job = create_with("sleep 60", shell());
     set(job, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
-    let strip_row = strip(&render(&mut panel, 120)[1]);
+    let strip_row = strip(&render(&mut panel, 120)[0]);
     assert!(strip_row.contains("[Plan 0/1]"), "{strip_row}");
     assert!(strip_row.contains("Agents 2 running"), "{strip_row}");
     assert!(strip_row.contains("Shell 1 running"), "{strip_row}");
     // The shown tab is bracketed, running count and all.
     panel.set_view(TaskPanelView::Shell);
-    let strip_row = strip(&render(&mut panel, 120)[1]);
+    let strip_row = strip(&render(&mut panel, 120)[0]);
     assert!(strip_row.contains("[Shell 1 running]"), "{strip_row}");
     // Once nothing runs, the tab reads done/total again.
     set(first, TaskStatus::Done);
     set(second, TaskStatus::Done);
     set(job, TaskStatus::Done);
-    let strip_row = strip(&render(&mut panel, 120)[1]);
+    let strip_row = strip(&render(&mut panel, 120)[0]);
     assert!(strip_row.contains("[Shell 1/1]"), "{strip_row}");
     assert!(strip_row.contains("Agents 2/2"), "{strip_row}");
 }
@@ -924,9 +943,9 @@ fn subagents_tree_renders_delegated_roots_without_a_roster() {
     let mut panel = TaskPanelComponent::new();
     panel.set_view(TaskPanelView::Subagents);
     let lines = plain(&mut panel, 120);
-    assert_eq!(lines.len(), 4, "frame, tab strip, one row, foot");
+    assert_eq!(lines.len(), 3, "frame with the tabs, one row, foot");
     for s in ["find the bug", "[explore]", "◈"] {
-        assert!(lines[2].contains(s), "{s}");
+        assert!(lines[1].contains(s), "{s}");
     }
 }
 
@@ -1522,19 +1541,20 @@ fn focus_opens_the_flight_plan_console() {
     create("row a");
     let mut panel = focused();
     let lines = plain(&mut panel, 120);
-    // Spec §4 c6: `FLIGHT PLAN  2/5  agents 0 · sats 0` with `/tasks · ctrl+g`
-    // on the right edge.
+    // Spec §4 c6: `FLIGHT PLAN ━ [Plan 0/1]` with `/tasks · ctrl+g` on the
+    // right edge; the counts read once, on the tabs.
     assert!(
-        lines[0].contains("FLIGHT PLAN  0/1  agents 0 · sats 0"),
+        lines[0].contains("FLIGHT PLAN ━ [Plan 0/1] ━"),
         "{lines:#?}"
     );
+    assert!(!lines[0].contains("agents"), "{lines:#?}");
     assert!(lines[0].contains("/tasks · ctrl+g"), "{lines:#?}");
     assert!(
         lines.iter().any(|l| l.contains('›') && l.contains("row a")),
         "{lines:#?}"
     );
-    // The tab strip is the second row, the shown tab bracketed.
-    assert!(lines[1].contains("[Plan 0/1]"), "{lines:#?}");
+    // The tab strip is on the top edge, the shown tab bracketed.
+    assert!(lines[0].contains("[Plan 0/1]"), "{lines:#?}");
     assert!(
         !lines.iter().any(|l| l.contains("agents in flight")),
         "{lines:#?}"
@@ -1555,9 +1575,9 @@ fn unfocused_the_console_draws_the_same_rows_without_the_pick_or_the_hint() {
     create("row a");
     let mut panel = TaskPanelComponent::new();
     let lines = plain(&mut panel, 120);
-    assert_eq!(lines.len(), 4, "frame, tab strip, one row, foot");
+    assert_eq!(lines.len(), 3, "frame with the tabs, one row, foot");
     assert!(lines[0].contains("FLIGHT PLAN"), "{lines:#?}");
-    assert!(lines[2].contains("row a"), "{lines:#?}");
+    assert!(lines[1].contains("row a"), "{lines:#?}");
     assert!(!lines.iter().any(|l| l.contains('›')), "{lines:#?}");
     assert!(!lines.last().unwrap().contains("move"), "{lines:#?}");
 }
@@ -1604,9 +1624,8 @@ fn a_background_agent_run_is_an_agents_row_like_a_shell_job() {
     set(job, TaskStatus::InProgress);
     let mut panel = TaskPanelComponent::new();
     let lines = plain(&mut panel, 120);
-    assert!(lines[0].contains("agents 1 · sats 1"), "{lines:#?}");
     assert!(
-        lines[1].contains("Agents 1 running") && lines[1].contains("Shell 1 running"),
+        lines[0].contains("Agents 1 running") && lines[0].contains("Shell 1 running"),
         "{lines:#?}"
     );
     panel.set_view(TaskPanelView::Subagents);
@@ -1655,9 +1674,9 @@ fn a_schedule_row_gets_its_own_tab_and_shows_when_it_next_fires() {
     );
     let mut panel = TaskPanelComponent::new();
     let lines = plain(&mut panel, 120);
-    assert_eq!(lines.len(), 4, "frame, tab strip, one row, foot");
+    assert_eq!(lines.len(), 3, "frame with the tabs, one row, foot");
     assert!(
-        lines[2].contains("nightly sweep") && lines[2].contains("next in"),
+        lines[1].contains("nightly sweep") && lines[1].contains("next in"),
         "{lines:#?}"
     );
     panel.set_view(TaskPanelView::Schedule);
@@ -1692,7 +1711,7 @@ fn a_schedule_row_shows_its_next_fire_after_a_run_but_not_while_running() {
     };
     let row = || {
         let mut panel = TaskPanelComponent::new();
-        plain(&mut panel, 120)[2].clone()
+        plain(&mut panel, 120)[1].clone()
     };
 
     set(TaskStatus::Done, None, Some(4 * 60 * 1000 + 30_000));
@@ -1823,7 +1842,7 @@ fn shell() -> CreateTaskOptions {
 }
 
 #[test]
-fn focused_title_counts_live_agents_and_satellites() {
+fn focused_tabs_count_live_agents_and_satellites() {
     let _g = lock();
     let a = create("row a");
     let run = create_with("scan the repo", sub("explore"));
@@ -1833,16 +1852,16 @@ fn focused_title_counts_live_agents_and_satellites() {
     let mut panel = focused();
     let lines = plain(&mut panel, 120);
     assert!(
-        lines[0].contains("FLIGHT PLAN  0/1  agents 1 · sats 1"),
+        lines[0].contains("FLIGHT PLAN ━ [Plan 0/1] Agents 1 running Shell 1 running"),
         "{lines:#?}"
     );
-    // Landed work drops out of the counts.
+    // Landed work reads done/total.
     set(a, TaskStatus::Done);
     set(run, TaskStatus::Done);
     set(job, TaskStatus::Done);
     let lines = plain(&mut panel, 120);
     assert!(
-        lines[0].contains("FLIGHT PLAN  1/1  agents 0 · sats 0"),
+        lines[0].contains("FLIGHT PLAN ━ [Plan 1/1] Agents 1/1 Shell 1/1"),
         "{lines:#?}"
     );
 }
@@ -1915,10 +1934,10 @@ fn the_console_shows_at_most_six_rows_and_says_how_many_are_hidden() {
     }
     let mut panel = TaskPanelComponent::new();
     let lines = plain(&mut panel, 120);
-    // Frame, tab strip, six rows, the `N more` row, foot.
-    assert_eq!(lines.len(), 10, "{lines:#?}");
-    assert!(lines[2].contains("Step 00") && lines[7].contains("Step 05"));
-    assert!(lines[8].contains("6 more"), "{lines:#?}");
+    // Frame with the tabs, six rows, the `N more` row, foot.
+    assert_eq!(lines.len(), 9, "{lines:#?}");
+    assert!(lines[1].contains("Step 00") && lines[6].contains("Step 05"));
+    assert!(lines[7].contains("6 more"), "{lines:#?}");
 }
 
 #[test]
@@ -1930,9 +1949,9 @@ fn a_short_terminal_shows_a_quarter_of_its_rows() {
     let mut panel = TaskPanelComponent::new();
     panel.set_screen_rows(12);
     let lines = plain(&mut panel, 120);
-    // Frame, tab strip, three rows, the `N more` row, foot.
-    assert_eq!(lines.len(), 7, "{lines:#?}");
-    assert!(lines[5].contains("9 more"), "{lines:#?}");
+    // Frame with the tabs, three rows, the `N more` row, foot.
+    assert_eq!(lines.len(), 6, "{lines:#?}");
+    assert!(lines[4].contains("9 more"), "{lines:#?}");
 }
 
 #[test]

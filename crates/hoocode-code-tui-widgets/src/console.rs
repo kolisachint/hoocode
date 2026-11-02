@@ -10,7 +10,9 @@
 //! [`Palette`]; this module adds only the marker, the gutter, the band and
 //! the scrolling window.
 
-use hoocode_tui_ratatui::{bold, render_chrome, truncate_line, Chrome, Line, Palette, Span, Style};
+use hoocode_tui_ratatui::{
+    bold, chrome_title_budget, render_chrome, truncate_line, Chrome, Line, Palette, Span, Style,
+};
 use hoocode_tui_util::visible_width;
 
 /// The `›` marker every console flags its selected row with (accent, spec
@@ -53,6 +55,9 @@ pub struct Console {
     /// Layer tabs on the top edge between the name and the count
     /// (CONTROLS' `plain ctrl alt`); empty draws nothing.
     pub tabs: Line<'static>,
+    /// How the tabs join the name: a three-space gap by default, or a
+    /// frame-coloured ` ━ ` (FLIGHT PLAN's `FLIGHT PLAN ━ [Plan 2/5] …`).
+    pub tabs_on_edge: bool,
     /// The frame colour; the `you` token when `None`.
     pub frame: Option<Style>,
 }
@@ -72,8 +77,40 @@ impl Console {
             hint: Line::raw(""),
             right: Line::raw(""),
             tabs: Line::raw(""),
+            tabs_on_edge: false,
             frame: None,
         }
+    }
+
+    /// The cells [`Console::tabs`] may take in the top edge at `width`:
+    /// what the edge leaves beside the right label, less the name, the join
+    /// and the count. Wider tabs are cut with `…`.
+    pub fn tabs_budget(&self, width: usize) -> usize {
+        let fixed = Line::from(self.title_spans(&Palette::current(), Line::raw("x"))).width() - 1;
+        chrome_title_budget(&self.right, width).saturating_sub(fixed)
+    }
+
+    /// The title spans: name, then the tabs (when any) after their join,
+    /// then the count.
+    fn title_spans(&self, pal: &Palette, tabs: Line<'static>) -> Vec<Span<'static>> {
+        let frame = self.frame.unwrap_or_else(|| pal.you());
+        let mut spans = vec![Span::styled(self.name.clone(), bold(frame))];
+        if tabs.width() > 0 {
+            if self.tabs_on_edge {
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled("━", frame));
+                spans.push(Span::raw(" "));
+            } else {
+                // CONTROLS (spec d9): the layer tabs read between the name
+                // and the count (`CONTROLS · ?   plain   ctrl   alt   N bindings`).
+                spans.push(Span::raw("   ".to_string()));
+            }
+            spans.extend(tabs.spans);
+        }
+        if !self.count.is_empty() {
+            spans.push(Span::styled(format!("  {}", self.count), bold(frame)));
+        }
+        spans
     }
 
     /// Draws the console at `width` columns. Narrow frames draw bare, like
@@ -81,17 +118,7 @@ impl Console {
     pub fn render(&self, width: usize) -> Vec<String> {
         let pal = Palette::current();
         let frame = self.frame.unwrap_or_else(|| pal.you());
-        let mut spans = vec![Span::styled(self.name.clone(), bold(frame))];
-        if self.tabs.width() > 0 {
-            // CONTROLS (spec d9): the layer tabs read between the name
-            // and the count (`CONTROLS · ?   plain   ctrl   alt   N bindings`).
-            spans.push(Span::raw("   ".to_string()));
-            spans.extend(self.tabs.spans.iter().cloned());
-        }
-        if !self.count.is_empty() {
-            spans.push(Span::styled(format!("  {}", self.count), bold(frame)));
-        }
-        let title = Line::from(spans);
+        let title = Line::from(self.title_spans(&pal, self.tabs.clone()));
         let (rows, selected) = window_rows(&self.rows, self.selected, self.max_visible);
         let mut body = self.top.clone();
         if let Some(query) = &self.query {
