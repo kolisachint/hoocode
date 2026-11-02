@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: defaults for a first run (2026-11-02)
+- **`~/.hoocode/hoo-config.json` is written on first run** with the shipped mode rules: ask and debug block Edit and Write, plan writes only under `.hoocode/` without asking, build allows everything with the usual approvals. A mode key your file leaves out takes the shipped value.
+- **Read-only shell commands run without asking, in every mode** (`safe_shell`, on by default): `ls`, `cat`, `head`, `grep`, `rg`, `git status`/`diff`/`log`/`show` and similar, alone or joined by pipes and `&&`. A file redirect, `$(…)`, or any other program asks as before.
+- **`--skip-permissions`** (or `HOOCODE_SKIP_PERMISSIONS=1`, or `"skip_permissions": true` in the global `hoo-config.json`) runs every tool without asking; the mode rules still apply and the header shows SKIP PERMISSIONS. Subagents of such a session inherit it.
+- **Shift+Tab cycles the agent mode** (ask → plan → build → debug). Thinking level stays on Alt+T.
+
+### Fixed: first-run rough edges (2026-11-02)
+- The "no model selected" message no longer points at doc files that are not installed; it names `/login`, the API key variables and the online docs.
+- A default start no longer warns that the semantic search index is unavailable; the notice shows only when you turn the index on.
+- An allowed write path no longer matches a path that climbs out of it with `..`, and `>&file` / `>|` redirects no longer count as harmless for an Always-approved program.
+
 ### Removed: migration and old-format readers (2026-11-02)
 - **hoocode is a new product, so nothing converts older data.** Gone: the one-time merge of the pre-1.2 (old product name) home and project folders into `~/.hoocode`, the `hoocode migrate` command, the v1/v2 session upgrade (a session file that is not the current version no longer loads), the settings key migrations (`queueMode`, `enableEmbsearchTools`, `websockets`, old `skills`, `retry.maxDelayMs`, `enabledModels`/`modelCategories` to `scopedModels`, `toolOutputDisplay` and `bare` values), the keybinding id renames, the `.hoocode/scheduled_tasks.json` fallback and owner-less scheduled tasks, and the `.hoocode/plan.md` plan fallback. Old values fall back to defaults.
 

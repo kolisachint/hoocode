@@ -11,12 +11,15 @@ hoocode                        # full-screen session
 
 ## In a session
 
-Shell, Edit and Write ask before they run: **Yes**, **No**, or **Always**.
+Shell, Edit and Write ask before they run: **Yes**, **No**, or **Always**. Read-only
+commands such as `ls`, `cat`, `rg` and `git status`/`diff`/`log` run without asking.
+To run every tool without asking, start with `hoocode --skip-permissions` (the header
+then shows **SKIP PERMISSIONS**).
 
 | Type | What it does |
 |---|---|
 | `/model` | Pick a model (Ctrl+P cycles through your favourites) |
-| `/mode` | Switch between ask, plan, build and debug |
+| `/mode` | Switch between ask, plan, build and debug (or press Shift+Tab) |
 | `/resume` | Reopen an earlier session in this folder |
 | `@path/to/file` | Attach a file to your message |
 | `/hotkeys` | Show the keyboard shortcuts |
@@ -24,12 +27,17 @@ Shell, Edit and Write ask before they run: **Yes**, **No**, or **Always**.
 
 ## Modes
 
+hoocode starts in **build**.
+
 | Mode | What the agent may do |
 |---|---|
-| **ask** | Read and answer. No edits, no state-changing commands |
-| **plan** | Explore and write a plan. No other file changes |
-| **build** | Implement and verify, one change at a time |
-| **debug** | Find the root cause. No edits; switch to build to fix |
+| **ask** | Read, run shell commands, answer. Edit and Write are blocked |
+| **plan** | Explore and write a plan. Edit and Write work only under `.hoocode/` (no prompt) |
+| **build** | Everything: implement and verify, one change at a time |
+| **debug** | Find the root cause. Edit and Write are blocked; switch to build to fix |
+
+These rules live in `~/.hoocode/hoo-config.json`, written on first run; see
+[configuration](configuration.md#modes-and-approvals).
 
 ## Sessions
 

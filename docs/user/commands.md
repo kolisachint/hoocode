@@ -40,6 +40,7 @@ For managing plugins without starting a session:
 | `--no-session` | Don't save this run |
 | `-t`, `--tools <list>` | Only these tools, e.g. `Read,CodeSearch` for a read-only run |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high` or `xhigh` |
+| `--skip-permissions` | Run every tool without asking for approval (mode rules still apply). Same as `HOOCODE_SKIP_PERMISSIONS=1` |
 | `--light` | Minimal low-token preset for small or local models |
 | `--list-models [search]` | List the models hoocode knows |
 | `--offline` | No startup network calls, such as the version check |

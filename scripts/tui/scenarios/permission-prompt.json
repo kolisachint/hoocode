@@ -1,9 +1,9 @@
 {
-  "description": "Interactive bash tool call: the permission gate raises a CLEARANCE NEEDED card for '$ ls' (y once, a always, n abort); choosing n blocks the call with 'Denied by permission gate' and the model's follow-up is shown.",
+  "description": "Interactive bash tool call: the permission gate raises a CLEARANCE NEEDED card for '$ touch notes.txt' (y once, a always, n abort); choosing n blocks the call with 'Denied by permission gate' and the model's follow-up is shown.",
   "phase": "10.6",
   "terminal": {"cols": 100, "rows": 30},
   "llm": [
-    {"text": "Listing files.", "tool_calls": [{"id": "call_bash_1", "name": "Shell", "arguments": {"command": "ls"}}]},
+    {"text": "Listing files.", "tool_calls": [{"id": "call_bash_1", "name": "Shell", "arguments": {"command": "touch notes.txt"}}]},
     {"text": "The command was denied."}
   ],
   "steps": [
@@ -13,7 +13,7 @@
     {"keys": ["Enter"]},
     {"wait_for": "CLEARANCE NEEDED", "timeout": 30},
     {"wait_stable": 1.0, "timeout": 20},
-    {"snapshot": "prompt", "contains": ["CLEARANCE NEEDED", "$ ls", "go, once", "abort"]},
+    {"snapshot": "prompt", "contains": ["CLEARANCE NEEDED", "$ touch notes.txt", "go, once", "abort"]},
     {"keys": ["n"]},
     {"wait_for": "The command was denied", "timeout": 30},
     {"wait_stable": 1.0, "timeout": 20},

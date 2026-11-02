@@ -30,8 +30,10 @@ binary: no Node, no Python, no runtime to install.
 
 - **Any provider.** Anthropic, OpenAI, Google, OpenRouter, Groq, DeepSeek, xAI, Fireworks
   and more, by API key or by `/login` (Anthropic, GitHub Copilot, OpenAI Codex, Google).
-- **You stay in control.** Shell, Edit and Write ask first (Yes / No / Always). Four
-  agent modes (ask, plan, build, debug) scope what the agent may do.
+- **You stay in control.** Shell, Edit and Write ask first (Yes / No / Always);
+  read-only commands such as `ls` or `git status` just run. Four agent modes (ask,
+  plan, build, debug; Shift+Tab cycles them) scope what the agent may do, and
+  `--skip-permissions` runs everything without asking when you want that.
 - **Subagents.** The agent can hand work to background subagents and keep going; their
   tool calls go through the same approval gate as the main agent.
 - **Sessions you can come back to.** `--continue`, `/resume`, `/fork`, `/tree`, and
