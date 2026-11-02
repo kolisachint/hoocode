@@ -6,8 +6,7 @@
 //! available models (never a hardcoded provider/model); otherwise it is `None`
 //! ("no override"). With a scope (`scopedModels`), subagents may only run on a
 //! scoped model, and categories pick from the scope (see [`select_model`]).
-//! The retired `modelCategories` setting is no longer read; the migration
-//! moved it into `scopedModels`.
+//! The old `modelCategories` setting is not read.
 
 use std::cmp::Ordering;
 

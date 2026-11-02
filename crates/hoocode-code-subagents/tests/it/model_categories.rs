@@ -171,8 +171,7 @@ fn keeps_tiers_monotonic_across_providers() {
 
 #[test]
 fn the_retired_model_categories_key_is_not_read() {
-    // `modelCategories` was migrated into `scopedModels`; a leftover key does
-    // not pin a tier any more.
+    // A leftover `modelCategories` key does not pin a tier.
     let settings = CategorySettings::from_settings(
         json!({"modelCategories": {"fast": "explicit/pin"}})
             .as_object()

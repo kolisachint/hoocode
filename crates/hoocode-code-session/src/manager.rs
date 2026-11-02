@@ -342,8 +342,7 @@ impl SessionManager {
         if session_file.exists() {
             let LoadedSession {
                 entries: loaded,
-                migrated,
-                unrecognized,
+                unrecognized: _,
             } = load_session_file(&session_file);
             if loaded.is_empty() {
                 let explicit = self.session_file.clone();
@@ -367,11 +366,6 @@ impl SessionManager {
             }
 
             self.entries = iter.collect();
-            // hoocode rewrites migrated files. Only do so when every line was understood,
-            // so an entry shape we don't know is never dropped from disk.
-            if migrated && unrecognized == 0 {
-                let _ = self.rewrite_file();
-            }
             self.build_index();
             self.flushed = true;
         } else {
@@ -1124,8 +1118,6 @@ fn parse_timestamp_ms(ts: &str) -> Option<i64> {
 pub struct LoadedSession {
     /// Typed entries, header first. Empty if the file is missing or has no valid header.
     pub entries: Vec<FileEntry>,
-    /// A legacy (v1/v2) file was migrated to the current version in memory.
-    pub migrated: bool,
     /// JSON lines that did not match a known entry shape (kept on disk; never rewritten away).
     pub unrecognized: usize,
 }
@@ -1151,80 +1143,16 @@ pub fn load_raw_entries(path: impl AsRef<Path>) -> Vec<serde_json::Value> {
     }
 }
 
-/// `migrateToCurrentVersion()`: bring raw entries to [`CURRENT_SESSION_VERSION`] in place.
-/// Returns true if a migration was applied.
-pub fn migrate_session_entries(entries: &mut [serde_json::Value]) -> bool {
-    let version = entries
-        .iter()
-        .find(|e| e["type"] == "session")
-        .and_then(|h| h["version"].as_u64())
-        .unwrap_or(1);
-    if version >= CURRENT_SESSION_VERSION as u64 {
-        return false;
-    }
-    if version < 2 {
-        migrate_v1_to_v2(entries);
-    }
-    if version < 3 {
-        migrate_v2_to_v3(entries);
-    }
-    true
-}
-
-/// v1 → v2: add the id/parentId tree; compaction `firstKeptEntryIndex` → `firstKeptEntryId`.
-fn migrate_v1_to_v2(entries: &mut [serde_json::Value]) {
-    let mut ids = std::collections::HashSet::new();
-    let mut prev_id: Option<String> = None;
-    for i in 0..entries.len() {
-        if !entries[i].is_object() {
-            continue;
-        }
-        if entries[i]["type"] == "session" {
-            entries[i]["version"] = 2.into();
-            continue;
-        }
-        let id = generate_id(&ids);
-        ids.insert(id.clone());
-        entries[i]["id"] = id.clone().into();
-        entries[i]["parentId"] = prev_id.clone().map_or(serde_json::Value::Null, Into::into);
-        prev_id = Some(id);
-
-        if entries[i]["type"] == "compaction" {
-            if let Some(index) = entries[i]["firstKeptEntryIndex"].as_u64() {
-                let target = entries.get(index as usize).cloned();
-                if let Some(target) = target.filter(|t| t["type"] != "session") {
-                    entries[i]["firstKeptEntryId"] = target["id"].clone();
-                }
-                if let Some(obj) = entries[i].as_object_mut() {
-                    obj.remove("firstKeptEntryIndex");
-                }
-            }
-        }
-    }
-}
-
-/// v2 → v3: the `hookMessage` role was renamed to `custom`.
-fn migrate_v2_to_v3(entries: &mut [serde_json::Value]) {
-    for entry in entries.iter_mut() {
-        if !entry.is_object() {
-            continue;
-        }
-        if entry["type"] == "session" {
-            entry["version"] = 3.into();
-        } else if entry["type"] == "message" && entry["message"]["role"] == "hookMessage" {
-            entry["message"]["role"] = "custom".into();
-        }
-    }
-}
-
-/// Read, migrate and type a session file.
+/// Read and type a session file. A file whose header is not at
+/// [`CURRENT_SESSION_VERSION`] is unsupported and loads as empty, like a file
+/// with no valid header.
 pub fn load_session_file(path: impl AsRef<Path>) -> LoadedSession {
-    let mut raw = load_raw_entries(path);
-    let migrated = migrate_session_entries(&mut raw);
-    let mut loaded = LoadedSession {
-        migrated,
-        ..Default::default()
-    };
+    let raw = load_raw_entries(path);
+    let mut loaded = LoadedSession::default();
+    let current = u64::from(CURRENT_SESSION_VERSION);
+    if raw.first().and_then(|h| h["version"].as_u64()) != Some(current) {
+        return loaded;
+    }
     for value in raw {
         match serde_json::from_value::<FileEntry>(value) {
             Ok(entry) => loaded.entries.push(entry),
@@ -1237,7 +1165,7 @@ pub fn load_session_file(path: impl AsRef<Path>) -> LoadedSession {
     loaded
 }
 
-/// Load entries from a session file (migrated, unrecognized lines skipped).
+/// Load entries from a session file (unrecognized lines skipped).
 pub fn load_entries_from_file(path: impl AsRef<Path>) -> Vec<FileEntry> {
     load_session_file(path).entries
 }

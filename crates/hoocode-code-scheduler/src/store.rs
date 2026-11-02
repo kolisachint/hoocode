@@ -11,10 +11,7 @@
 //! Every task records its owner, the process that created it. Only the owner
 //! fires a due task, so an idle hoocode that happens to share the folder does
 //! not run another session's schedule. A task whose owner has exited is
-//! adopted by the first process that finds it due. A legacy task with no owner
-//! is adopted only by a session that vouches for it (its `/loop` created it);
-//! otherwise it does not fire until it is re-created (see
-//! [`TaskStore::claim_due_tick_adopting`]).
+//! adopted by the first process that finds it due.
 
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
@@ -30,8 +27,6 @@ use crate::cron;
 
 /// The store's path under the working directory.
 pub const STORE_RELATIVE_PATH: &str = ".agents/scheduled_tasks.json";
-/// The store hoocode-ts wrote before `.agents/`; read when the new store is absent.
-pub const LEGACY_STORE_RELATIVE_PATH: &str = ".hoocode/scheduled_tasks.json";
 
 /// A task due while the agent was busy still fires on the next idle tick when
 /// that tick comes within this many minutes of its due minute; later, it is
@@ -68,9 +63,9 @@ pub struct ScheduledTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run_minute: Option<i64>,
     /// Pid of the process that owns the task: only it fires the task, until it
-    /// exits. Absent on tasks written before owners were recorded.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner_pid: Option<u32>,
+    /// exits. A missing or zero pid is never alive, so any session adopts the task.
+    #[serde(default)]
+    pub owner_pid: u32,
     /// The owner's session id, for display. Absent when the creator did not
     /// know it (the Cron tools record the pid only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -187,8 +182,8 @@ impl Fired {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Adopted {
     pub task_id: String,
-    /// The previous owner's pid; `None` for a legacy task that had no owner.
-    pub previous_pid: Option<u32>,
+    /// The previous owner's pid.
+    pub previous_pid: u32,
     /// The previous owner's session id, when it was recorded.
     pub previous_session: Option<String>,
 }
@@ -204,7 +199,7 @@ pub struct Claimed {
     /// Prompts whose due minute is more than [`LATE_FIRE_MINUTES`] old. They
     /// do not run; the caller says so.
     pub skipped: Vec<String>,
-    /// Tasks taken over from an owner that has exited, or from no owner. They
+    /// Tasks taken over from an owner that has exited. They
     /// belong to this process now; the caller says so.
     pub adopted: Vec<Adopted>,
 }
@@ -224,11 +219,10 @@ struct StoreFile {
     tasks: Vec<ScheduledTask>,
 }
 
-/// The task store at one path, with the legacy path it falls back to.
+/// The task store at one path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskStore {
     path: PathBuf,
-    legacy_path: Option<PathBuf>,
     /// Who new tasks belong to, and who claims fire for.
     owner: Owner,
 }
@@ -238,16 +232,14 @@ impl TaskStore {
     pub fn for_cwd(cwd: &Path) -> Self {
         Self {
             path: cwd.join(STORE_RELATIVE_PATH),
-            legacy_path: Some(cwd.join(LEGACY_STORE_RELATIVE_PATH)),
             owner: Owner::this_process(None),
         }
     }
 
-    /// A store at an explicit path, with no legacy fallback.
+    /// A store at an explicit path.
     pub fn at(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
-            legacy_path: None,
             owner: Owner::this_process(None),
         }
     }
@@ -273,14 +265,9 @@ impl TaskStore {
         &self.path
     }
 
-    /// `load()`: the primary store, or the legacy one until the primary exists.
-    /// A missing or unreadable file is an empty store (best effort, as TS).
+    /// `load()`: a missing or unreadable file is an empty store (best effort, as TS).
     fn read(&self) -> Vec<ScheduledTask> {
-        let source = match &self.legacy_path {
-            Some(legacy) if !self.path.exists() && legacy.exists() => legacy.as_path(),
-            _ => self.path.as_path(),
-        };
-        fs::read_to_string(source)
+        fs::read_to_string(&self.path)
             .ok()
             .and_then(|text| serde_json::from_str::<StoreFile>(&text).ok())
             .map(|file| file.tasks)
@@ -346,7 +333,7 @@ impl TaskStore {
             recurring,
             created_at: now_millis(),
             last_run_minute: None,
-            owner_pid: Some(self.owner.pid),
+            owner_pid: self.owner.pid,
             owner_session_id: self.owner.session_id.clone(),
             fire_count: 0,
         };
@@ -404,33 +391,18 @@ impl TaskStore {
     }
 
     /// [`claim_due_tick`](Self::claim_due_tick) with `alive` deciding whether an
-    /// owner pid is running. A legacy task with no owner is not adopted (see
-    /// [`claim_due_tick_adopting`](Self::claim_due_tick_adopting)).
-    pub fn claim_due_tick_with(
-        &self,
-        now: &DateTime<Local>,
-        alive: &dyn Fn(u32) -> bool,
-    ) -> io::Result<Tick> {
-        self.claim_due_tick_adopting(now, alive, &|_| false)
-    }
-
-    /// [`claim_due_tick_with`](Self::claim_due_tick_with), with
-    /// `adopt_ownerless` saying whether this claimer vouches for a task that has
-    /// no owner (the argument is the task id).
+    /// owner pid is running.
     ///
     /// This store's owner claims a due task when it owns it. It also claims,
     /// and adopts (the task's owner becomes this one, and the claim reports it
     /// in [`Claimed::adopted`]), a due task whose owner pid is not alive. A due
-    /// task that has no owner (written before owners were recorded) is adopted
-    /// only when `adopt_ownerless` accepts its id; otherwise it is left alone,
-    /// as a task of a live other owner is, so an idle session that merely
+    /// task of a live other owner is left alone, so an idle session that merely
     /// shares the folder does not run it. A task left untouched keeps its
     /// last-run minute and nothing is reported.
-    pub fn claim_due_tick_adopting(
+    pub fn claim_due_tick_with(
         &self,
         now: &DateTime<Local>,
         alive: &dyn Fn(u32) -> bool,
-        adopt_ownerless: &dyn Fn(&str) -> bool,
     ) -> io::Result<Tick> {
         self.with_lock(|held| {
             // Without the lock file another process could claim the same minute
@@ -453,7 +425,7 @@ impl TaskStore {
                     continue;
                 };
                 match task.owner_pid {
-                    Some(pid) if pid == self.owner.pid => {
+                    pid if pid == self.owner.pid => {
                         // Ours; keep the session id current (it changes on /new).
                         if self.owner.session_id.is_some()
                             && task.owner_session_id != self.owner.session_id
@@ -461,15 +433,14 @@ impl TaskStore {
                             task.owner_session_id = self.owner.session_id.clone();
                         }
                     }
-                    Some(pid) if alive(pid) => continue,
-                    None if !adopt_ownerless(&task.id) => continue,
+                    pid if alive(pid) => continue,
                     previous => {
                         claimed.adopted.push(Adopted {
                             task_id: task.id.clone(),
                             previous_pid: previous,
                             previous_session: task.owner_session_id.take(),
                         });
-                        task.owner_pid = Some(self.owner.pid);
+                        task.owner_pid = self.owner.pid;
                         task.owner_session_id = self.owner.session_id.clone();
                     }
                 }
@@ -637,26 +608,6 @@ mod tests {
             .exists());
     }
 
-    #[test]
-    fn legacy_store_is_read_until_the_primary_exists() {
-        let dir = tempfile::tempdir().unwrap();
-        let legacy = dir.path().join(LEGACY_STORE_RELATIVE_PATH);
-        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
-        std::fs::write(
-            &legacy,
-            r#"{"tasks":[{"id":"task_old","cron":"0 * * * *","prompt":"p","recurring":false,"createdAt":1}]}"#,
-        )
-        .unwrap();
-        let store = store_in(&dir);
-        assert_eq!(store.list()[0].id, "task_old");
-        store.create("0 9 * * *", "new", true).unwrap();
-        assert_eq!(
-            store.list().len(),
-            2,
-            "the legacy tasks migrate into the primary store"
-        );
-    }
-
     /// Adds a task created at `created_at` (ms), without `create`'s clock.
     fn put(store: &TaskStore, cron: &str, prompt: &str, recurring: bool, created_at: u64) {
         let mut tasks = store.read();
@@ -667,7 +618,7 @@ mod tests {
             recurring,
             created_at,
             last_run_minute: None,
-            owner_pid: Some(std::process::id()),
+            owner_pid: std::process::id(),
             owner_session_id: None,
             fire_count: 0,
         });
@@ -679,7 +630,7 @@ mod tests {
         put(store, cron, prompt, true, 0);
         let mut tasks = store.read();
         let last = tasks.last_mut().unwrap();
-        last.owner_pid = Some(pid);
+        last.owner_pid = pid;
         last.owner_session_id = session.map(str::to_owned);
         store.write(&tasks).unwrap();
     }
@@ -845,7 +796,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let owner = store_for(&dir, 100, Some("sess-a"));
         let task = owner.create("30 9 * * *", "mine", true).unwrap();
-        assert_eq!(task.owner_pid, Some(100));
+        assert_eq!(task.owner_pid, 100);
         assert_eq!(task.owner_session_id.as_deref(), Some("sess-a"));
         // Backdate it, so the 9:30 slot is after its creation.
         let mut tasks = owner.read();
@@ -857,7 +808,7 @@ mod tests {
         assert!(claimed.adopted.is_empty(), "its own task is not adopted");
         let after = owner.list();
         assert_eq!(after[0].fire_count, 1);
-        assert_eq!(after[0].owner_pid, Some(100));
+        assert_eq!(after[0].owner_pid, 100);
         // A later day fires it again and counts again.
         let next = Local
             .with_ymd_and_hms(2026, 10, 9, 9, 30, 5)
@@ -880,7 +831,7 @@ mod tests {
         }
         let task = &bystander.list()[0];
         assert_eq!(task.last_run_minute, None, "the due minute is left alone");
-        assert_eq!(task.owner_pid, Some(100));
+        assert_eq!(task.owner_pid, 100);
         assert_eq!(task.fire_count, 0);
         // The owner still fires it afterwards.
         let owner = store_for(&dir, 100, Some("sess-a"));
@@ -903,12 +854,12 @@ mod tests {
             claimed.adopted,
             vec![Adopted {
                 task_id: claimed.fired[0].id.clone(),
-                previous_pid: Some(100),
+                previous_pid: 100,
                 previous_session: Some("sess-a".into()),
             }]
         );
         let task = &adopter.list()[0];
-        assert_eq!(task.owner_pid, Some(200));
+        assert_eq!(task.owner_pid, 200);
         assert_eq!(task.owner_session_id.as_deref(), Some("sess-b"));
         // It is theirs now: the old owner's pid, if it came back, would not fire it.
         let next = Local
@@ -926,55 +877,6 @@ mod tests {
         assert!(claimed.adopted.is_empty(), "adopted once");
     }
 
-    /// A legacy task (no owner recorded) due at 09:30.
-    fn put_legacy(dir: &tempfile::TempDir, prompt: &str) -> String {
-        let store = store_in(dir);
-        put(&store, "30 9 * * *", prompt, true, 0);
-        let mut tasks = store.read();
-        let last = tasks.last_mut().unwrap();
-        last.owner_pid = None;
-        let id = last.id.clone();
-        store.write(&tasks).unwrap();
-        id
-    }
-
-    #[test]
-    fn a_task_with_no_owner_is_not_adopted_by_an_idle_session_that_did_not_create_it() {
-        let dir = tempfile::tempdir().unwrap();
-        put_legacy(&dir, "legacy");
-        let idle = store_for(&dir, 200, None);
-        let tick = idle
-            .claim_due_tick_adopting(&at(9, 30, 10), &|_| true, &|_| false)
-            .unwrap();
-        assert_eq!(tick.claimed, Claimed::default());
-        let after = idle.list();
-        assert_eq!(after[0].owner_pid, None, "still ownerless");
-        assert_eq!(after[0].last_run_minute, None, "its minute did not move");
-        // The plain claim does not vouch for it either.
-        let claimed = idle.claim_due_with(&at(9, 30, 20), &|_| true).unwrap();
-        assert!(claimed.fired.is_empty() && claimed.adopted.is_empty());
-    }
-
-    #[test]
-    fn a_task_with_no_owner_is_adopted_by_the_session_that_vouches_for_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let id = put_legacy(&dir, "legacy");
-        let other = put_legacy(&dir, "someone else's");
-        let adopter = store_for(&dir, 200, None);
-        let claimed = adopter
-            .claim_due_tick_adopting(&at(9, 30, 10), &|_| true, &|task| task == id)
-            .unwrap()
-            .claimed;
-        assert_eq!(prompts(&claimed), vec!["legacy"]);
-        assert_eq!(claimed.adopted.len(), 1);
-        assert_eq!(claimed.adopted[0].previous_pid, None);
-        let after = adopter.list();
-        assert_eq!(after[0].owner_pid, Some(200));
-        let untouched = after.iter().find(|t| t.id == other).unwrap();
-        assert_eq!(untouched.owner_pid, None);
-        assert_eq!(untouched.last_run_minute, None);
-    }
-
     #[test]
     fn a_task_nobody_is_due_to_fire_is_not_adopted() {
         let dir = tempfile::tempdir().unwrap();
@@ -987,7 +889,7 @@ mod tests {
             .claim_due_tick_with(&at(8, 0, 0), &all_alive_but(100))
             .unwrap();
         assert_eq!(tick.claimed, Claimed::default());
-        assert_eq!(other.list()[0].owner_pid, Some(100));
+        assert_eq!(other.list()[0].owner_pid, 100);
     }
 
     #[test]
@@ -1004,16 +906,13 @@ mod tests {
         let task = store.list().remove(0);
         assert_eq!(
             (task.owner_pid, task.owner_session_id, task.fire_count),
-            (None, None, 0)
+            (0, None, 0)
         );
         store.write(&store.list()).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(
-            !text.contains("ownerPid") && !text.contains("fireCount"),
-            "{text}"
-        );
+        assert!(!text.contains("fireCount"), "{text}");
         let created = store.create("0 * * * *", "new", true).unwrap();
-        assert_eq!(created.owner_pid, Some(std::process::id()));
+        assert_eq!(created.owner_pid, std::process::id());
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("\"ownerPid\""), "{text}");
         assert!(!text.contains("ownerSessionId"), "{text}");

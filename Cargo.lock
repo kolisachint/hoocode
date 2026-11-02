@@ -1550,7 +1550,6 @@ dependencies = [
  "hoocode-code-agent-session",
  "hoocode-code-auth",
  "hoocode-code-media",
- "hoocode-code-migrate",
  "hoocode-code-models",
  "hoocode-code-modes",
  "hoocode-code-paths",
@@ -1617,16 +1616,6 @@ dependencies = [
  "hoocode-tui-util",
  "image",
  "serde_json",
-]
-
-[[package]]
-name = "hoocode-code-migrate"
-version = "0.2.30"
-dependencies = [
- "hoocode-code-auth",
- "hoocode-code-paths",
- "serde_json",
- "tempfile",
 ]
 
 [[package]]

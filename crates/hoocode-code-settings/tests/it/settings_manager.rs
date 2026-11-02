@@ -181,34 +181,29 @@ fn tool_output_view_defaults_round_trips_and_rejects_bogus() {
 }
 
 #[test]
-fn tool_output_view_reads_retired_values_and_prefers_explicit() {
+fn tool_output_view_reads_known_values_and_falls_back_to_peek() {
     let d = Dirs::new();
     let read_view = |value: &str| {
-        write(&d.global_path(), &json!({"toolOutputDisplay": value}));
+        write(&d.global_path(), &json!({"toolOutputView": value}));
         d.manager().tool_output_view()
     };
-    assert_eq!(read_view("collapsed"), ToolOutputView::Radar);
-    assert_eq!(read_view("glance"), ToolOutputView::Peek);
-    assert_eq!(read_view("standard"), ToolOutputView::Peek);
+    assert_eq!(read_view("radar"), ToolOutputView::Radar);
     assert_eq!(read_view("full"), ToolOutputView::Full);
     assert_eq!(read_view("peek"), ToolOutputView::Peek);
-
-    write(
-        &d.global_path(),
-        &json!({"toolOutputDisplay": "standard", "toolOutputView": "radar"}),
-    );
-    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Radar);
+    // Old or unknown values fall back to the default.
+    assert_eq!(read_view("collapsed"), ToolOutputView::Peek);
+    assert_eq!(read_view("standard"), ToolOutputView::Peek);
 }
 
 // --- chromeDensity ---
 
 #[test]
-fn chrome_density_reads_a_saved_bare_as_compact_and_ignores_junk() {
+fn chrome_density_ignores_old_and_unknown_values() {
     let d = Dirs::new();
     assert_eq!(d.manager().chrome_density(), None);
 
     write(&d.global_path(), &json!({"chromeDensity": "bare"}));
-    assert_eq!(d.manager().chrome_density(), Some(ChromeDensity::Compact));
+    assert_eq!(d.manager().chrome_density(), None);
 
     write(&d.global_path(), &json!({"chromeDensity": "full"}));
     assert_eq!(d.manager().chrome_density(), Some(ChromeDensity::Full));
@@ -356,22 +351,6 @@ fn webtools_timeout_env_is_used_when_unset_but_the_setting_wins() {
     });
 }
 
-// --- enableEmbsearchTools -> enableSemanticIndex migration ---
-
-#[test]
-fn semantic_index_migration() {
-    let d = Dirs::new();
-    write(&d.global_path(), &json!({"enableEmbsearchTools": false}));
-    assert!(!d.manager().enable_semantic_index());
-    write(
-        &d.global_path(),
-        &json!({"enableEmbsearchTools": false, "enableSemanticIndex": true}),
-    );
-    assert!(d.manager().enable_semantic_index());
-    write(&d.global_path(), &json!({}));
-    assert!(d.manager().enable_semantic_index());
-}
-
 // --- webtools search ---
 
 #[test]
@@ -436,7 +415,7 @@ fn preserves_externally_added_flag_keys() {
     );
 }
 
-// --- packages migration ---
+// --- packages ---
 
 #[test]
 fn keeps_local_only_extensions_in_the_extensions_array() {
@@ -698,52 +677,6 @@ fn in_memory_project_changes_override_external_changes_for_the_same_field() {
     );
 }
 
-// --- beyond the TS files ---
-
-#[test]
-fn migrates_retired_keys() {
-    let migrated = migrate_settings(
-        json!({
-            "queueMode": "all",
-            "websockets": true,
-            "skills": {"enableSkillCommands": false, "customDirectories": ["~/skills"]},
-            "retry": {"maxDelayMs": 5000, "maxRetries": 2}
-        })
-        .as_object()
-        .unwrap()
-        .clone(),
-    );
-    assert_eq!(
-        Value::Object(migrated),
-        json!({
-            "skills": ["~/skills"],
-            "retry": {"maxRetries": 2, "provider": {"maxRetryDelayMs": 5000}},
-            "steeringMode": "all",
-            "transport": "websocket",
-            "enableSkillCommands": false
-        })
-    );
-    let kept = migrate_settings(
-        json!({
-            "queueMode": "all",
-            "steeringMode": "one-at-a-time",
-            "skills": {"customDirectories": []},
-            "retry": {"maxDelayMs": 5000, "provider": {"maxRetryDelayMs": 1}}
-        })
-        .as_object()
-        .unwrap()
-        .clone(),
-    );
-    assert_eq!(
-        Value::Object(kept),
-        json!({
-            "queueMode": "all",
-            "steeringMode": "one-at-a-time",
-            "retry": {"provider": {"maxRetryDelayMs": 1}}
-        })
-    );
-}
-
 #[test]
 fn project_overrides_merge_one_level_deep_and_defaults_fill_in() {
     let d = Dirs::new();
@@ -794,7 +727,7 @@ fn project_overrides_merge_one_level_deep_and_defaults_fill_in() {
 #[test]
 fn in_memory_manager_and_misc_setters() {
     let mut manager = SettingsManager::in_memory(
-        json!({"queueMode": "all", "maxSubagentDepth": 0, "learnMaxSessions": -3})
+        json!({"steeringMode": "all", "maxSubagentDepth": 0, "learnMaxSessions": -3})
             .as_object()
             .unwrap()
             .clone(),

@@ -102,7 +102,6 @@ mod tests {
             "hoocode plugin <command>",
             "hoocode config ",
             "hoocode update ",
-            "hoocode migrate [--dry-run]",
             "hoocode app-server [--listen URL]",
         ] {
             assert!(help.contains(command), "missing {command}");
@@ -127,7 +126,6 @@ mod tests {
             "plugin",
             "config",
             "update",
-            "migrate",
             "app-server",
             "<command>",
         ];

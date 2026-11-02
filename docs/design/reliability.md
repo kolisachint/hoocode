@@ -45,12 +45,9 @@ stop the same bug classes coming back.
    - Approval dialogs over rpc are dropped (2026-10-08); hoobot uses the
      app-server ([rpc-approvals.md](rpc-approvals.md) is kept for the record).
 2. **Paths** (changed 2026-10-08): [naming-and-paths.md](../../archive/docs/naming-and-paths.md) §2–4.
-   **Status (2026-10-14): done.** `agent_dir()` is `~/.hoocode`, `hoocode-code-migrate` runs
-   the one-time merge at startup, and the `.agents` scope is documented (below).
-   Data moves to `~/.hoocode`, **shared with hoocode-ts** (drop-in replacement);
-   `HOOCODE_` is the only env prefix; a one-time merge copies `~/.hoocode` and
-   `<repo>/.hoocode/` in (hoocode wins, backups first). The crate and binary
-   rename is §1 of that card and happens in step 0, before this card.
+   **Status (2026-10-14): done.** `agent_dir()` is `~/.hoocode` and the `.agents` scope is documented (below).
+   `HOOCODE_` is the only env prefix. There is no migration of older folders
+   (removed 2026-11-02: hoocode is a new product with no earlier data to carry over).
    - **`.agents` is a cross-vendor scope (decided 2026-10-14, kept).** `~/.agents` and
      `<project>/.agents` use the Agent Skills and AGENTS.md layout that other tools share
      (`hoocode-code-paths`: `user_agents_dir`, `collect_agents_ancestor_dirs`). hoocode reads

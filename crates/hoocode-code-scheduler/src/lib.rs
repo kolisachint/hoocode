@@ -26,7 +26,7 @@ pub use cron::{is_five_field, matches as cron_matches};
 pub use rows::Runs;
 pub use store::{
     fire_message, is_slash_prompt, process_alive, Adopted, Claimed, Fired, Owner, ScheduledTask,
-    TaskStore, Tick, LATE_FIRE_MINUTES, LEGACY_STORE_RELATIVE_PATH, STORE_RELATIVE_PATH,
+    TaskStore, Tick, LATE_FIRE_MINUTES, STORE_RELATIVE_PATH,
 };
 pub use tools::{
     create_cron_create_tool_definition, create_cron_delete_tool_definition,
@@ -55,27 +55,15 @@ pub fn claim_due_now(cwd: &Path) -> Claimed {
 /// task panel's Schedule rows; see [`rows`]). Nothing is read when the lock is
 /// not taken. The claim is made for this process and the session `session_id`:
 /// it fires the tasks this process owns, and adopts the ones whose owner has
-/// exited. A task with no owner (written before owners were recorded) is
-/// adopted only when `adopt_ownerless` accepts its id (in practice only the
-/// session that created the task can vouch for it, so a file written before
-/// owners were recorded stays unfired until it is re-created).
-pub fn tick(
-    cwd: &Path,
-    session_id: Option<&str>,
-    now: &DateTime<Local>,
-    adopt_ownerless: &dyn Fn(&str) -> bool,
-) -> Tick {
+/// exited.
+pub fn tick(cwd: &Path, session_id: Option<&str>, now: &DateTime<Local>) -> Tick {
     TaskStore::for_cwd(cwd)
         .with_session_id(session_id.map(str::to_owned))
-        .claim_due_tick_adopting(now, &store::process_alive, adopt_ownerless)
+        .claim_due_tick_with(now, &store::process_alive)
         .unwrap_or_default()
 }
 
 /// [`tick`] at the current local time.
-pub fn tick_now(
-    cwd: &Path,
-    session_id: Option<&str>,
-    adopt_ownerless: &dyn Fn(&str) -> bool,
-) -> Tick {
-    tick(cwd, session_id, &Local::now(), adopt_ownerless)
+pub fn tick_now(cwd: &Path, session_id: Option<&str>) -> Tick {
+    tick(cwd, session_id, &Local::now())
 }

@@ -140,11 +140,9 @@ fn clock(at: &DateTime<Local>, now: &DateTime<Local>) -> String {
     }
 }
 
-/// Who owns a task, for a list: this session, a pid, or nobody.
+/// Who owns a task, for a list: this session or a pid.
 fn owner_label(task: &ScheduledTask, my_pid: u32, alive: &dyn Fn(u32) -> bool) -> String {
-    let Some(pid) = task.owner_pid else {
-        return "none — written by an older hoocode; it will not fire. Run CronDelete, then CronCreate, to re-create it here".into();
-    };
+    let pid = task.owner_pid;
     if pid == my_pid {
         return "this session".into();
     }
@@ -336,7 +334,7 @@ mod tests {
             recurring: true,
             created_at: 0,
             last_run_minute: None,
-            owner_pid: None,
+            owner_pid: 0,
             owner_session_id: None,
             fire_count: 0,
         }
@@ -353,7 +351,7 @@ mod tests {
     #[test]
     fn the_list_shows_owner_last_and_next_fire_and_the_count() {
         let mut task = listed_task();
-        task.owner_pid = Some(100);
+        task.owner_pid = 100;
         task.owner_session_id = Some("abcdef0123456789".into());
         task.fire_count = 3;
         let last = Local
@@ -378,15 +376,6 @@ mod tests {
             text.contains("pid 100 (session abcdef01), exited (the next session"),
             "{text}"
         );
-        // No owner recorded.
-        task.owner_pid = None;
-        task.owner_session_id = None;
-        let text = list_at(task, 200, true);
-        assert!(
-            text.contains("owner: none — written by an older hoocode; it will not fire."),
-            "{text}"
-        );
-        assert!(text.contains("CronDelete, then CronCreate"), "{text}");
     }
 
     #[test]

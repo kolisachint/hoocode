@@ -2,8 +2,7 @@
 //!
 //! hoocode keeps its data in `~/.hoocode` (project: `<repo>/.hoocode/`).
 //! Env overrides take the `HOOCODE_` prefix only.
-//! The one-time merge of the pre-1.2 folders lives in
-//! `hoocode-code-migrate`. The install-method / self-update part of the app
+//! The install-method / self-update part of the app
 //! configuration is not implemented yet.
 
 pub mod git;

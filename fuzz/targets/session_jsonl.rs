@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use hoocode_code_session::manager::{load_raw_entries, load_session_file, migrate_session_entries};
+use hoocode_code_session::manager::{load_raw_entries, load_session_file};
 
 pub fn run(data: &[u8]) {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -19,8 +19,7 @@ pub fn run(data: &[u8]) {
     std::fs::write(&path, data).expect("write scratch session file");
 
     let _ = load_session_file(&path);
-    let mut entries = load_raw_entries(&path);
-    migrate_session_entries(&mut entries);
+    let _ = load_raw_entries(&path);
 
     let _ = std::fs::remove_file(&path);
 }
