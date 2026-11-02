@@ -155,24 +155,24 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-session` | Session handling for the hoocode coding agent | 6 | 2128 / 746 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2450 / 1858 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 12319 / 12842 | keep |
-| `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1112 / 0 | keep |
+| `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1154 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1094 / 125 | keep |
 | `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 3201 / 1911 | keep |
 | `code-tool-search` | CodeSearch for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking | 1 | 1957 / 1185 | keep |
 | `code-tools` | Coding tools for the hoocode coding agent | 4 | 1702 / 0 | keep |
 | `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3355 / 2478 | keep |
-| `code-tools-optin` | Opt-in tools for the hoocode coding agent: TodoWrite, AskUserQuestion and the plugin tools | 3 | 966 / 1000 | keep |
+| `code-tools-optin` | Opt-in tools for the hoocode coding agent: TodoWrite, AskUserQuestion and the plugin tools | 3 | 967 / 1134 | keep |
 | `code-update` | Startup version check and the `hoocode update` command for the hoocode coding agent | 2 | 505 / 0 | keep |
 
 ### Coding agent UI (`code-tui-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 25752 / 7659 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 26548 / 7831 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 790 / 896 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9033 / 4789 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2524 / 2142 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14373 / 10380 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14428 / 10445 | keep |
 
 ### TUI library (`tui-*`)
 
@@ -185,8 +185,8 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI, using the highlight.js 10.7.3 engine and grammars | 1 | 2327 / 291 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1048 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1966 / 583 | keep |
-| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1510 / 172 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4928 / 2800 | keep |
+| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1516 / 172 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4882 / 2958 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3273 / 343 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 15 | 2495 / 682 | keep |
 
