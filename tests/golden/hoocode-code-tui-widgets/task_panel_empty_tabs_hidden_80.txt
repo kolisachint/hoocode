@@ -1,22 +1,21 @@
-┏━ FLIGHT PLAN  1/1  agents 0 · sats 0 ━━━━━━━━━━━━━━━━━━━━━━ /tasks · ctrl+g ━┓
-┃  [Plan 1/1] MCP 1/1                                                          ┃
+┏━ FLIGHT PLAN ━ [Plan 1/1] MCP 1/1 ━━━━━━━━━━━━━━━━━━━━━━━━━ /tasks · ctrl+g ━┓
 ┃  ● Read the migration plan                                               0.0s┃
 ┗━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
 --- styles ---
 r0 c0-1 fg=#9b8cff
-r0 c3-37 fg=#9b8cff bold
-r0 c39-60 fg=#9b8cff
+r0 c3-13 fg=#9b8cff bold
+r0 c14-16 fg=#9b8cff
+r0 c17-26 fg=#5cc8bb bold
+r0 c27 fg=#9b8cff
+r0 c28-34 fg=#a8a8a8
+r0 c36-60 fg=#9b8cff
 r0 c62-76 fg=#a8a8a8
 r0 c78-79 fg=#9b8cff
 r1 c0 fg=#9b8cff
-r1 c3-12 fg=#5cc8bb bold
-r1 c14-20 fg=#a8a8a8
+r1 c3 fg=#b5bd68
+r1 c5-27 fg=#a8a8a8
+r1 c75-78 fg=#a8a8a8
 r1 c79 fg=#9b8cff
-r2 c0 fg=#9b8cff
-r2 c3 fg=#b5bd68
-r2 c5-27 fg=#a8a8a8
-r2 c75-78 fg=#a8a8a8
-r2 c79 fg=#9b8cff
-r3 c0-1 fg=#9b8cff
-r3 c4-75 fg=#9b8cff
-r3 c78-79 fg=#9b8cff
+r2 c0-1 fg=#9b8cff
+r2 c4-75 fg=#9b8cff
+r2 c78-79 fg=#9b8cff

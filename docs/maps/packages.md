@@ -52,6 +52,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | Transcript render cache: a `Container` keeps each child's lines under the child's `render_stamp` (a stamp changes with every `&mut` mutator; none while a clock or registry is read) and draws only changed children; debug builds redraw each hit and assert equality (`HOOCODE_RENDER_CACHE_CHECK=0` off). Theme changes bump `bump_render_epoch` | `tui-render` (`component.rs`: `Component::render_stamp`, `Container`, `Rendered`); stamps in `tui-components` (`Spacer`, `Text`) and `code-tui-widgets` (`AssistantMessageComponent`, `ToolChainComponent`, `ToolExecutionComponent`, `MissionHeader`, `LandingLine`, `PeekOnly`); epoch bump in `code-tui-theme` (`registry.rs`); a resumed history freezes all but the newest `LIVE_TOOL_WINDOW` blocks (`mode/transcript.rs`, `render_session_context`) |
 | Terminal writes (the `hoocode-term-out` thread, one frame in flight), input batching, SIGWINCH, SIGTERM and SIGHUP | `tui-terminal` (`output.rs`, `interrupt.rs`), `tui-render` (`tui.rs`), `runtime` (`signals.rs`: `watch_sigwinch`, `watch_terminate`); [concurrency.md](../design/concurrency.md) Phase 2 |
 | Ctrl+C fast path and emergency exit, the ESC timer (no thread on Unix), the UI heartbeat, the panic hook (restore, flush, log, chain) | `tui-terminal` (`interrupt.rs`, `stdin_hub.rs`, `panic_hook.rs`); the UI beats and sets the hook in `code-tui-app` `run`; the panic hook is installed in `code-tui-app` `mode/mod.rs` `install_panic_hook`; [concurrency.md](../design/concurrency.md) Phase 2 |
+| Herdr support: inside a Herdr pane (`HERDR_ENV=1` + `HERDR_PANE_ID`, `HERDR_BIN_PATH`, `HERDR_SOCKET_PATH`), the interactive mode reports `working` / `idle` / `blocked`, the resume command (`hoocode --session <id>` for a file in the launch cwd's default session dir, else the absolute path) and a release on quit through `"$HERDR_BIN_PATH" pane report-agent` / `release-agent`; never in print, RPC or subagent runs, not on SIGTERM/SIGHUP (Herdr keeps the resume command) | `code-tui-app/src/herdr.rs` (pure env/argv/seq/dedupe core, `Reporter`, `CliTransport` thread that sends only the latest report, in a new session, 2 s kill; the release goes through it, cuts a report in flight short and waits 500 ms; only a user quit releases); polled once per loop pass by `sync_herdr` in `mode/events.rs`, created and released in `mode/mod.rs` `run`; tests `tests/it/herdr.rs` (fake CLI script) |
 | Shell pipes read by async tasks on `hoocode-io` (no thread per pipe) | `code-tool-bash` (`operations.rs`) |
 | Background shell jobs: `Shell` with `run_in_background`, the job registry and its logs, `ShellOutput`, `ShellKill` (`enableBackgroundShell`, on by default; never in a subagent) | `code-tool-bash` (`jobs.rs`, `job_tools.rs`; each job is a Shell-tab row, `set_task_rows`, T5.3; a job's stdout and stderr are its log file, with no pipe); the session's registry is built in `code-cli` `runtime.rs` (`background_job_registry`); completion notices reach the model in `code-agent-session` `services.rs` (`transform_context`, `JobNotices`); an idle agent is woken by `AgentSession::job_wake_pending` (`session.rs`; the generic `JOB_WAKE_MESSAGE`), called by the TUI's `tick_job_wake` (`code-tui-app` `mode/events.rs`); `ShellOutput` takes `wait`/`timeout_ms` (`JobRegistry::wait_for_exit`), and a subagent handle or `job-N` id given to the wrong output tool is refused (`job_tools.rs`, `code-subagents` `tools.rs`) |
 | Child processes with no controlling terminal (`Shell` commands, background jobs, subagent children, harness exec, extension exec, MCP stdio servers and `!cmd` config values run in a new session, so an interactive shell such as `zsh -i` cannot take the terminal's foreground and stop the TUI with SIGTTIN/SIGTTOU; the external editor keeps the terminal on purpose) | `runtime` (`child.rs`: `spawn_in_new_session`), `code-tool-bash` (`operations.rs`: `ProcessSession`), `code-subagents` (`runner.rs`), `agent-harness` (`env.rs`), `code-agent-session` (`exec.rs`), `agent-mcp` (`stdio.rs`), `code-models` (`config_value.rs`); tests in `code-tool-bash` and `code-subagents` `tests/it/tty.rs` |
@@ -154,24 +155,24 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-session` | Session handling for the hoocode coding agent | 6 | 2128 / 746 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2450 / 1858 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 12319 / 12842 | keep |
-| `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1112 / 0 | keep |
+| `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1154 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1094 / 125 | keep |
 | `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output, background jobs (ShellOutput, ShellKill) | 5 | 3201 / 1911 | keep |
 | `code-tool-search` | CodeSearch for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking | 1 | 1957 / 1185 | keep |
 | `code-tools` | Coding tools for the hoocode coding agent | 4 | 1702 / 0 | keep |
 | `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3355 / 2478 | keep |
-| `code-tools-optin` | Opt-in tools for the hoocode coding agent: TodoWrite, AskUserQuestion and the plugin tools | 3 | 966 / 1000 | keep |
+| `code-tools-optin` | Opt-in tools for the hoocode coding agent: TodoWrite, AskUserQuestion and the plugin tools | 3 | 967 / 1134 | keep |
 | `code-update` | Startup version check and the `hoocode update` command for the hoocode coding agent | 2 | 505 / 0 | keep |
 
 ### Coding agent UI (`code-tui-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 25752 / 7659 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 26548 / 7831 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 790 / 896 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9033 / 4789 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2524 / 2142 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14373 / 10380 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14428 / 10445 | keep |
 
 ### TUI library (`tui-*`)
 
@@ -184,8 +185,8 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI, using the highlight.js 10.7.3 engine and grammars | 1 | 2327 / 291 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1048 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1966 / 583 | keep |
-| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1510 / 172 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4928 / 2800 | keep |
+| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1516 / 172 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4882 / 2958 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3273 / 343 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 15 | 2495 / 682 | keep |
 

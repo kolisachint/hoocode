@@ -46,3 +46,26 @@ The same commands work from the shell, without a session: `hoocode install`,
 
 `hoocode config` opens a list for turning skills, prompts and other resources on
 or off.
+
+## Herdr
+
+Run hoocode in a [Herdr](https://herdr.dev) pane and it tells Herdr what it is
+doing. Nothing to set up: it turns on by itself inside Herdr, and does nothing
+anywhere else.
+
+- The sidebar shows **working** during a turn, **idle** when hoocode waits for you,
+  and **blocked** when it needs a decision (an approval card or a question).
+- Herdr stores the command that reopens your session. After a Herdr restart, the
+  pane opens the same session again (`hoocode --session <id>`).
+- When you quit hoocode, it releases the pane.
+
+To show the hoocode icon in Herdr desktop, save an icon (an SVG) as
+`~/.config/herdr-app/my-icons/hoocode.svg` and add this to
+`~/.config/herdr-app/programs.json`:
+
+```json
+{ "programs": {
+    "hoocode": { "name": "hoocode", "icon": "my-icons/hoocode.svg",
+                 "tint": false, "tile": "#09090B", "color": "#ffffff",
+                 "match": ["hoo"], "run": ["hoocode"] } } }
+```

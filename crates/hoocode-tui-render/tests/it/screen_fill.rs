@@ -222,41 +222,53 @@ fn puts_the_prompt_back_on_the_floor_after_a_pinned_view() {
     assert_eq!(s.term.screen()[H - 1], "prompt");
 }
 
-fn assert_no_band(rows: &[String]) {
-    assert_eq!(rows[H - 1], "prompt", "{rows:?}");
-    assert!(!rows[..H - 1].contains(&String::new()), "{rows:?}");
+/// A shrink of a buffer taller than the screen holds the window: the rows
+/// below the prompt go blank (`blanks` of them) and nothing above moves, so
+/// no row is drawn again into the scrollback.
+fn assert_held(rows: &[String], blanks: usize) {
+    assert_eq!(rows.len(), H);
+    let (content, tail) = rows.split_at(H - blanks);
+    assert!(tail.iter().all(String::is_empty), "{rows:?}");
+    assert!(!content.contains(&String::new()), "{rows:?}");
+    assert_eq!(content[H - blanks - 1], "prompt", "{rows:?}");
 }
 
 #[test]
-fn floor_holds_when_a_picker_closes() {
+fn a_picker_closing_holds_the_window_and_blanks_the_rows_below() {
     let mut s = setup(H * 2);
     assert_eq!(s.fill(), 0);
     s.chrome(6);
     assert_eq!(s.term.screen()[H - 1], "prompt");
+    let top = s.term.screen()[0].clone();
     s.chrome(0);
     let rows = s.term.screen();
-    assert_no_band(&rows);
+    assert_held(&rows, 6);
+    assert_eq!(rows[0], top, "the window did not move");
     assert_eq!(s.fill(), 0);
-    assert_eq!(rows[H - 2], format!("body {}", H * 2));
+    assert_eq!(rows[H - 8], format!("body {}", H * 2));
 }
 
 #[test]
-fn floor_holds_when_a_notification_fades() {
+fn a_notification_fading_holds_the_window() {
     let mut s = setup(H * 2);
     s.chrome(2);
     s.chrome(0);
-    assert_no_band(&s.term.screen());
+    assert_held(&s.term.screen(), 2);
 }
 
 #[test]
-fn appends_normally_after_the_window_moved_back() {
+fn growth_after_a_fold_fills_the_blank_rows_before_it_scrolls() {
     let mut s = setup(H * 2);
     s.chrome(6);
     s.chrome(0);
     s.body(H * 2 + 4);
     let rows = s.term.screen();
-    assert_no_band(&rows);
-    assert_eq!(rows[H - 2], format!("body {}", H * 2 + 4));
+    assert_held(&rows, 2);
+    assert_eq!(rows[H - 4], format!("body {}", H * 2 + 4));
+    s.body(H * 2 + 6);
+    let rows = s.term.screen();
+    assert_eq!(rows[H - 1], "prompt", "{rows:?}");
+    assert_eq!(rows[H - 2], format!("body {}", H * 2 + 6));
 }
 
 #[test]
@@ -265,7 +277,9 @@ fn handles_a_fold_bigger_than_the_screen() {
     s.chrome(H * 2);
     s.chrome(0);
     assert_eq!(s.fill(), 0);
-    assert_no_band(&s.term.screen());
+    let rows = s.term.screen();
+    assert_eq!(rows[H - 1], "prompt", "{rows:?}");
+    assert!(!rows.contains(&String::new()), "{rows:?}");
 }
 
 #[test]

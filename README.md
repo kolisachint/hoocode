@@ -57,14 +57,14 @@ It downloads the release archive for your platform, checks it against the releas
 `~/.hoocode/bin` to your `PATH`. Pass `--help` for the options (`--version`, `--dir`,
 `--no-modify-path`). The script is [`install/install.sh`](install/install.sh) in this repo.
 
-**npm or bun** (Node 18 or newer):
+**npm or bun**:
 
 ```bash
 npm install -g hoocode     # or: bun add -g hoocode
 ```
 
 The package pulls in only the native binary for your platform. It installs `hoocode`
-and `hoo`.
+and `hoo`, whose installed commands run the binary directly.
 
 **pip** (Python 3.8 or newer):
 

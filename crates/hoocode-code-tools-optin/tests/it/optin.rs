@@ -233,6 +233,7 @@ fn store_batches_notifications_and_resets_numbering() {
     assert_eq!(store.version(), 4);
     store.create("  ", Default::default());
     assert_eq!(store.list()[2].title, "(untitled task)");
+    // The plan has open items, so a reset keeps it whole, done ones included.
     store.reset();
     assert_eq!(
         store
@@ -240,11 +241,11 @@ fn store_batches_notifications_and_resets_numbering() {
             .iter()
             .map(|t| t.title.as_str())
             .collect::<Vec<_>>(),
-        ["b", "(untitled task)"]
+        ["a", "b", "(untitled task)"]
     );
-    let b = store.list()[0].id;
-    store.arrange(&[store.list()[1].id, b]);
-    assert_eq!(store.list()[1].id, b);
+    let b = store.list()[1].id;
+    store.arrange(&[store.list()[2].id, b]);
+    assert_eq!(store.list()[2].id, b);
     store.update(
         b,
         TaskPatch {
@@ -252,7 +253,7 @@ fn store_batches_notifications_and_resets_numbering() {
             ..Default::default()
         },
     );
-    let other = store.list()[0].id;
+    let other = store.list()[1].id;
     store.update(
         other,
         TaskPatch {

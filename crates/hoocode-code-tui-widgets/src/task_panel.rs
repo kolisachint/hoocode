@@ -1,10 +1,10 @@
 //! `components/task-panel.ts`: the task ledger above the prompt.
 //!
 //! Mission Control chrome (spec §4 c6): when shown, the panel is the single
-//! FLIGHT PLAN console. The plan's done/total with the live agent and satellite
-//! counts sit in the title, the tab strip on the top edge (the shown tab in
-//! brackets), one row per row of the shown lens, and the hint foot while the
-//! keyboard is in the panel. It draws the same at every density.
+//! FLIGHT PLAN console: the tab strip on the top edge after the name, each tab
+//! with its count (the shown tab in brackets), one row per row of the shown
+//! lens, and the hint foot while the keyboard is in the panel. It draws the
+//! same at every density.
 //!
 //! The panel is shown by default in the peek and full views and hidden in
 //! radar, where the flight log carries the work. Ctrl+G toggles it in every
@@ -45,7 +45,7 @@ use hoocode_tui_ratatui::{bold, truncate_line, Line, Modifier, Palette, Span, St
 use hoocode_tui_render::Component;
 use hoocode_tui_util::truncate_to_width;
 
-use crate::console::{hints, Console};
+use crate::console::{hints, Console, TabsJoin};
 use crate::trajectory::short_dur;
 
 fn task_status_icon(status: TaskStatus) -> &'static str {
@@ -319,15 +319,6 @@ impl RowModel {
     }
 }
 
-/// Rows of one lens with live work (spec §4 c6: `agents`/`sats` count
-/// what is still up, not what has landed).
-fn live_lens_count(model: &RowModel, view: TaskPanelView) -> usize {
-    model
-        .lens(view)
-        .filter(|(_, task)| task.status.is_active())
-        .count()
-}
-
 /// The rows of one tab for a set of tasks.
 fn lens_rows(view: TaskPanelView, tasks: &[Task]) -> Vec<PanelRow> {
     match view {
@@ -360,54 +351,83 @@ enum StripFit {
     ShownCount,
     /// Labels only, no counts.
     Labels,
+    /// The shown tab alone, with its count (the plan's done/total stays on
+    /// the edge on a narrow terminal).
+    ShownOnlyCount,
     /// The shown tab alone.
     ShownOnly,
 }
 
-/// The tab strip, the console's first body row: one label per tab (its count
-/// is [`LensStats::label`]), the shown tab in brackets (`[Agents 1 running]`), so
-/// the strip reads without colour. Indented to line up with the rows' `›` gutter.
-/// When the strip is wider than the body row (`width` less the frame's two
-/// edges), the counts of the tabs not shown go first, then the shown tab's count,
-/// then the other tabs. The shown tab's brackets are never cut.
-fn lens_tabs(model: &RowModel, view: TaskPanelView, width: usize) -> Line<'static> {
-    let budget = width.saturating_sub(2);
-    // Each candidate is tried in turn; the last one is kept even when it
-    // overflows, so the console cuts only what no candidate could save.
-    const INDENT: &str = "  ";
-    let candidates = [
-        (StripFit::Full, INDENT),
-        (StripFit::ShownCount, INDENT),
-        (StripFit::Labels, INDENT),
-        (StripFit::ShownOnly, INDENT),
-        (StripFit::ShownOnly, ""),
+/// The top edge of the FLIGHT PLAN console: what to draw there at a width.
+/// Attempts run in order and the first that fits the edge wins. The shown
+/// tab's count is the only `done/total` on screen, so it goes last. First,
+/// with the count: each strip from every tab with its count down to the shown
+/// tab alone, beside the `/tasks · ctrl+g` hint; then without the hint; then
+/// with the ` ━ ` join narrowed to a space; then with no name. Then the same
+/// without the count (labels, the bare shown tab). The shown tab keeps its
+/// brackets in every attempt; if none fits, it is cut by the frame.
+fn flight_edge(model: &RowModel, view: TaskPanelView, width: usize) -> Console {
+    let pal = Palette::current();
+    let hint = Line::from(vec![Span::styled("/tasks · ctrl+g", pal.faint())]);
+    // The name, narrowing: ` ━ ` to a space, then no name at all.
+    let names = [
+        ("FLIGHT PLAN", TabsJoin::Edge),
+        ("FLIGHT PLAN", TabsJoin::Space),
+        ("", TabsJoin::Space),
     ];
-    let mut strip = Line::default();
-    for (fit, indent) in candidates {
-        strip = tab_strip(model, view, fit, indent);
-        if strip.spans.iter().map(|s| s.width()).sum::<usize>() <= budget {
-            break;
-        }
+    const COUNTED: [StripFit; 3] = [
+        StripFit::Full,
+        StripFit::ShownCount,
+        StripFit::ShownOnlyCount,
+    ];
+    const BARE: [StripFit; 2] = [StripFit::Labels, StripFit::ShownOnly];
+    let mut attempts: Vec<(bool, usize, StripFit)> = Vec::new();
+    // With the count: the hint goes before the name narrows.
+    for (hint_on, name) in [(true, 0), (false, 0), (false, 1), (false, 2)] {
+        attempts.extend(COUNTED.map(|fit| (hint_on, name, fit)));
     }
-    strip
+    // The count goes last.
+    for (hint_on, name) in [(true, 0), (false, 0), (false, 1), (false, 2)] {
+        attempts.extend(BARE.map(|fit| (hint_on, name, fit)));
+    }
+    let build = |(hint_on, name, fit): (bool, usize, StripFit)| {
+        let (title, join) = names[name];
+        let mut console = Console::new(title, "");
+        console.tabs_join = join;
+        if hint_on {
+            console.right = hint.clone();
+        }
+        console.tabs = tab_strip(model, view, fit);
+        console
+    };
+    attempts
+        .into_iter()
+        .map(build)
+        .find(|console| console.tabs.width() <= console.tabs_budget(width))
+        // Nothing fits: the bare shown tab alone, cut by the frame.
+        .unwrap_or_else(|| build((false, 2, StripFit::ShownOnly)))
 }
 
-/// The tab strip drawn at `fit`, after `indent`. See [`lens_tabs`].
-fn tab_strip(model: &RowModel, view: TaskPanelView, fit: StripFit, indent: &str) -> Line<'static> {
+/// The tab strip drawn at `fit`: the shown tab in brackets and bold (`[Agents 1 running]`), so
+/// the strip reads without colour. See [`flight_edge`].
+fn tab_strip(model: &RowModel, view: TaskPanelView, fit: StripFit) -> Line<'static> {
     let pal = Palette::current();
-    let mut spans = vec![Span::raw(indent.to_string())];
+    let mut spans = Vec::new();
     let mut drawn = false;
     for &tab in model.views() {
         let shown = tab == view;
-        if fit == StripFit::ShownOnly && !shown {
+        if matches!(fit, StripFit::ShownOnlyCount | StripFit::ShownOnly) && !shown {
             continue;
         }
         let label = match fit {
             StripFit::Full => model.lens_stats(tab).label(tab),
-            StripFit::ShownCount if shown => model.lens_stats(tab).label(tab),
-            StripFit::ShownCount | StripFit::Labels | StripFit::ShownOnly => {
-                tab.label().to_string()
+            StripFit::ShownCount | StripFit::ShownOnlyCount if shown => {
+                model.lens_stats(tab).label(tab)
             }
+            StripFit::ShownCount
+            | StripFit::ShownOnlyCount
+            | StripFit::Labels
+            | StripFit::ShownOnly => tab.label().to_string(),
         };
         if drawn {
             spans.push(Span::raw(" "));
@@ -785,12 +805,13 @@ fn row_cap(screen_rows: u16) -> usize {
     (usize::from(screen_rows) / 4).clamp(1, PANEL_MAX_ROWS)
 }
 
-/// The FLIGHT PLAN console (M7, spec §4 c6): the plan's done/total with the
-/// live agent and satellite counts in the title, the tab strip on the top
-/// edge, one waypoint row per row of the shown lens, and the hint foot while
-/// the keyboard is in the panel. Shown at every density; the pick marker and
-/// the hint foot only while `focused`. Rows beyond `max_rows` are windowed
-/// around the pick, and a `N more` row says how many are hidden.
+/// The FLIGHT PLAN console (M7, spec §4 c6): the tab strip on the top edge
+/// after the name (each tab with its count, so the plan's done/total and the
+/// live agents read there once), one waypoint row per row of the shown lens,
+/// and the hint foot while the keyboard is in the panel. Shown at every
+/// density; the pick marker and the hint foot only while `focused`. Rows
+/// beyond `max_rows` are windowed around the pick, and a `N more` row says
+/// how many are hidden.
 #[allow(clippy::too_many_arguments)]
 fn render_flight_plan(
     model: &RowModel,
@@ -803,18 +824,7 @@ fn render_flight_plan(
     max_rows: usize,
 ) -> Vec<String> {
     let pal = Palette::current();
-    let plan = model.lens_stats(TaskPanelView::Plan);
-    let agents = live_lens_count(model, TaskPanelView::Subagents);
-    let sats = live_lens_count(model, TaskPanelView::Shell);
-    let mut console = Console::new(
-        "FLIGHT PLAN",
-        format!(
-            "{}/{}  agents {agents} · sats {sats}",
-            plan.done, plan.total
-        ),
-    );
-    console.top = vec![lens_tabs(model, view, width)];
-    console.right = Line::from(vec![Span::styled("/tasks · ctrl+g", pal.faint())]);
+    let mut console = flight_edge(model, view, width);
     let ids = model.row_ids(view);
     // Rows sit behind the console's `› ` marker or gutter, so they get two
     // cells less than the frame's inner width.
