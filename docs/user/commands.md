@@ -13,7 +13,6 @@ covers the ones most people need.
 |---|---|
 | `hoocode config` | Turn skills, prompts and other resources on or off |
 | `hoocode update` | Print the command that updates hoocode |
-| `hoocode migrate [--dry-run]` | Merge data from an older hoocode home folder into `~/.hoocode` |
 | `hoocode app-server [--listen URL]` | Serve this folder's sessions over the app-server protocol |
 
 For managing plugins without starting a session:

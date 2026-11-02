@@ -90,16 +90,10 @@ pub(super) fn fire_notice(fired: &Fired) -> Option<String> {
 
 /// The notice for a task this session took over.
 pub(super) fn adoption_notice(adopted: &Adopted) -> String {
-    match adopted.previous_pid {
-        Some(_) => format!(
-            "Adopted scheduled task {} from an exited session.",
-            adopted.task_id
-        ),
-        None => format!(
-            "Adopted scheduled task {} (it had no owner recorded).",
-            adopted.task_id
-        ),
-    }
+    format!(
+        "Adopted scheduled task {} from an exited session.",
+        adopted.task_id
+    )
 }
 
 fn kind(recurring: bool) -> &'static str {
@@ -404,21 +398,12 @@ mod tests {
     fn an_adopted_task_is_announced_by_id() {
         let exited = Adopted {
             task_id: "task_1".into(),
-            previous_pid: Some(42),
+            previous_pid: 42,
             previous_session: Some("abc".into()),
         };
         assert_eq!(
             adoption_notice(&exited),
             "Adopted scheduled task task_1 from an exited session."
-        );
-        let legacy = Adopted {
-            task_id: "task_2".into(),
-            previous_pid: None,
-            previous_session: None,
-        };
-        assert_eq!(
-            adoption_notice(&legacy),
-            "Adopted scheduled task task_2 (it had no owner recorded)."
         );
     }
 

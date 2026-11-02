@@ -6,8 +6,6 @@
 # Allowlist (paths are git pathspecs):
 #   - the naming card and the dated decision pages, which must name the old names
 #   - this script
-#   - the migrate crate: the one-time merge that reads the old ~/.cortexcode and
-#     <repo>/.cortexcode folders (naming-and-paths.md §3)
 #
 # Status: CI job `guards` is staged in archive/migration/ci/step1-workflows.patch (not yet applied). Run it by hand too:
 # scripts/ci/no_cortex.sh
@@ -25,7 +23,6 @@ ALLOW=(
   ':(exclude)archive/migration/ci/applied/rename-to-hoocode.patch'  # the applied CI rename: it removes the old names
   ':(exclude)scripts/dev/prune_target.sh'          # deletes stale build output under the old cortex* names
   ':(exclude)CLAUDE.md'                             # names the guard's target in its rule ("don't add new cortex names")
-  ':(exclude)crates/hoocode-code-migrate'           # the merge code that reads the old folders (naming-and-paths.md §3)
 )
 
 # Only the other project's name is exempt: pycortex (another project, the Python migration

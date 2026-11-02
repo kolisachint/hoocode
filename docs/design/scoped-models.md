@@ -46,17 +46,16 @@ The main model never sees concrete model names today.
 | 15 | Project `scopedModels` | A project `scopedModels` replaces the global list. It does not merge. |
 | 16 | `complexity` | Removed now, not aliased. `model` is the only param. |
 | 17 | Unsupported effort | Clamp to the closest level the model supports. The picker offers only the levels that model supports. |
-| 18 | Empty list | `scopedModels: []` counts as present, so no migration runs. |
+| 18 | Empty list | `scopedModels: []` is a present, empty list. |
 | 19 | Aliases | Unique across the list. Only `[a-z0-9-]` characters. |
-| 20 | Migration write | Migration writes `scopedModels` to disk on first load. |
+| 20 | Migration write | **Dropped 2026-11-02.** No migration: hoocode is a new product with no older settings to convert. The old `enabledModels` and `modelCategories` keys are not read. |
 
 ## What we build
 
 Affected files and crates (from Current state):
 
 - `crates/hoocode-code-settings`: `src/types.rs` gets the `scopedModels` type; `src/manager.rs`
-  reads and writes it, runs the migration from `enabledModels` and `modelCategories` on first
-  load, and applies the project replace (decision 15).
+  reads and writes it, and applies the project replace (decision 15).
 - `crates/hoocode-code-models`: `src/resolver.rs` `resolve_model_scope` reads `scopedModels`;
   name matching (decision 7); nearest-tier fallback (decisions 10, 14); clamp effort (decision 17).
 - `crates/hoocode-code-subagents`: `src/model_categories.rs` resolves categories over the scope;
@@ -81,10 +80,8 @@ Affected files and crates (from Current state):
 
 ## Test plan
 
-- **Unit:** migration (both source keys, `:level` to `effort`, missing and present cases);
-  migration runs on first load and is written to disk, and a second load does not re-migrate;
-  `scopedModels: []` counts as present, so no migration runs; old keys are ignored after
-  migration; project `scopedModels` replaces the global list and does not merge (decision 15);
+- **Unit:** `scopedModels: []` is a present, empty list; the old `enabledModels` and
+  `modelCategories` keys are ignored; project `scopedModels` replaces the global list and does not merge (decision 15);
   resolution by alias, id and substring; the ambiguous-match error; alias validation (unique
   across the list, `[a-z0-9-]` only; decision 19); tie-break by list order; nearest-tier fallback
   in both directions; step-up fallback when the lowest tier (`cheap`) is empty, with the tool
@@ -118,8 +115,7 @@ Affected files and crates (from Current state):
   for a category (decision 11). A category ask over a list with no categories, such as the
   `--models` list, derives its tiers from that list alone with the existing derived-category
   logic. It does not look outside the scope.
-- **Migration.** Runs on every load of the global scope; it builds `scopedModels` only when the key
-  is missing. A project file does not trigger it.
+- **No migration** (2026-11-02). The old `enabledModels` and `modelCategories` keys are not read or converted.
 - **Tool result prefix.** Each Agent result starts with `[model: ...]` (for example
   `[model: acme/mid, effort high; ...]`). It names the model that ran, the alias when there is
   one, the effort, and any note such as a fallback step or a clamped effort.
@@ -132,8 +128,7 @@ Affected files and crates (from Current state):
 
 - Changing hoocode-ts. It keeps reading its own settings and does not see `scopedModels`.
 - Category picks for the main model. Categories choose subagent models only.
-- A separate settings key for the picker. `scopedModels` is the only key read or written after
-  migration.
+- A separate settings key for the picker. `scopedModels` is the only key read or written.
 
 ## Closed questions
 

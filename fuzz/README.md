@@ -26,7 +26,7 @@ push, with no nightly.
 |---|---|---|
 | `sse` | SSE decoder, and the same events for any chunk split | `hoocode-ai-sse` |
 | `rpc_jsonl` | RPC LF framing, chunk invariance, JSON round trip | `hoocode-code-rpc` |
-| `session_jsonl` | session file load and entry migration | `hoocode-code-session` |
+| `session_jsonl` | session file load | `hoocode-code-session` |
 | `settings_json` | global and project `settings.json` | `hoocode-code-settings` |
 | `models_json` | custom `models.json` (comments, trailing commas) | `hoocode-code-models` |
 | `tui_keys` | legacy, Kitty and modifyOtherKeys key input | `hoocode-tui-keys` |

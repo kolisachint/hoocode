@@ -320,12 +320,6 @@ pub fn plan_path(cwd: &Path, session_id: &str) -> PathBuf {
         .join(format!("{session_id}.md"))
 }
 
-/// `getLegacyPlanPath`: `.hoocode/plan.md`.
-pub fn legacy_plan_path(cwd: &Path) -> PathBuf {
-    cwd.join(hoocode_code_paths::CONFIG_DIR_NAME)
-        .join("plan.md")
-}
-
 /// `PlanLoadResult`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanLoad {

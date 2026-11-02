@@ -33,72 +33,9 @@ pub fn deep_merge_settings(base: &Settings, overrides: &Settings) -> Settings {
     result
 }
 
-/// `migrateSettings`: rewrite retired keys into their current form.
-pub fn migrate_settings(mut settings: Settings) -> Settings {
-    if settings.contains_key("queueMode") && !settings.contains_key("steeringMode") {
-        let value = settings.shift_remove("queueMode").unwrap_or(Value::Null);
-        settings.insert("steeringMode".into(), value);
-    }
-
-    // The tool rename was a clean break, but this key is a user's stored
-    // choice: dropping it would silently turn indexing back on.
-    if settings.contains_key("enableEmbsearchTools")
-        && !settings.contains_key("enableSemanticIndex")
-    {
-        let value = settings
-            .shift_remove("enableEmbsearchTools")
-            .unwrap_or(Value::Null);
-        settings.insert("enableSemanticIndex".into(), value);
-    }
-
-    if !settings.contains_key("transport") {
-        if let Some(websockets) = settings.get("websockets").and_then(Value::as_bool) {
-            let transport = if websockets { "websocket" } else { "sse" };
-            settings.insert("transport".into(), transport.into());
-            settings.shift_remove("websockets");
-        }
-    }
-
-    // Old `skills: { enableSkillCommands, customDirectories }` object.
-    if let Some(Value::Object(skills)) = settings.get("skills").cloned() {
-        if let Some(enable) = skills.get("enableSkillCommands") {
-            if !settings.contains_key("enableSkillCommands") {
-                settings.insert("enableSkillCommands".into(), enable.clone());
-            }
-        }
-        match skills.get("customDirectories") {
-            Some(Value::Array(dirs)) if !dirs.is_empty() => {
-                settings.insert("skills".into(), Value::Array(dirs.clone()));
-            }
-            _ => {
-                settings.shift_remove("skills");
-            }
-        }
-    }
-
-    // retry.maxDelayMs -> retry.provider.maxRetryDelayMs
-    if let Some(Value::Object(retry)) = settings.get_mut("retry") {
-        let provider = retry.get("provider").and_then(Value::as_object).cloned();
-        if let Some(max_delay) = retry.get("maxDelayMs").filter(|v| v.is_number()).cloned() {
-            let unset = provider
-                .as_ref()
-                .and_then(|p| p.get("maxRetryDelayMs"))
-                .is_none_or(Value::is_null);
-            if unset {
-                let mut provider = provider.unwrap_or_default();
-                provider.insert("maxRetryDelayMs".into(), max_delay);
-                retry.insert("provider".into(), Value::Object(provider));
-            }
-        }
-        retry.shift_remove("maxDelayMs");
-    }
-
-    settings
-}
-
 fn parse_settings(content: &str) -> Result<Settings, Error> {
     match serde_json::from_str(content)? {
-        Value::Object(map) => Ok(migrate_settings(map)),
+        Value::Object(map) => Ok(map),
         _ => Err(Error::NotAnObject),
     }
 }
@@ -116,78 +53,6 @@ fn load_from_storage(
         None | Some("") => Ok(Settings::new()),
         Some(content) => parse_settings(content),
     }
-}
-
-/// Splits a `:level` suffix off an `enabledModels` pattern (decision 4). The
-/// suffix counts only when it names a thinking level, so ids that contain a
-/// colon stay whole.
-fn split_level_suffix(pattern: &str) -> (String, Option<String>) {
-    if let Some((model, level)) = pattern.rsplit_once(':') {
-        if !model.is_empty() && ThinkingLevelSetting::parse(level).is_some() {
-            return (model.to_owned(), Some(level.to_owned()));
-        }
-    }
-    (pattern.to_owned(), None)
-}
-
-/// Builds `scopedModels` from the retired `enabledModels` and `modelCategories`.
-/// `None` when neither key is present. A categorized model that is already in
-/// `enabledModels` takes the category on its untagged entry. Otherwise it is
-/// appended. When one model has two categories, the second entry copies the
-/// effort of the first.
-fn scoped_models_from_legacy(settings: &Settings) -> Option<Vec<ScopedModel>> {
-    let enabled = string_list(settings.get("enabledModels"));
-    let categories = defined(settings.get("modelCategories")).and_then(Value::as_object);
-    if enabled.is_none() && categories.is_none() {
-        return None;
-    }
-
-    let mut entries: Vec<ScopedModel> = enabled
-        .unwrap_or_default()
-        .iter()
-        .map(|pattern| {
-            let (model, effort) = split_level_suffix(pattern);
-            ScopedModel {
-                model,
-                effort,
-                category: None,
-                alias: None,
-            }
-        })
-        .collect();
-
-    let tier = |name: &str| {
-        categories
-            .and_then(|c| defined(c.get(name)))
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-    };
-    let tiers = [
-        (ModelCategoryName::Fast, tier("fast")),
-        (ModelCategoryName::Standard, tier("standard")),
-        (ModelCategoryName::Capable, tier("capable")),
-    ];
-    for (category, model) in tiers {
-        let Some(model) = model else { continue };
-        if let Some(entry) = entries
-            .iter_mut()
-            .find(|e| e.model == model && e.category.is_none())
-        {
-            entry.category = Some(category);
-            continue;
-        }
-        let effort = entries
-            .iter()
-            .find(|e| e.model == model)
-            .and_then(|e| e.effort.clone());
-        entries.push(ScopedModel {
-            model,
-            effort,
-            category: Some(category),
-            alias: None,
-        });
-    }
-    Some(entries)
 }
 
 /// Fields changed this session, in first-change order (`modifiedFields` /
@@ -391,7 +256,6 @@ impl SettingsManager {
             project_load_failed,
             errors,
         };
-        this.migrate_scoped_models();
         this.check_scoped_model_entries();
         this.check_thinking_display();
         this
@@ -400,9 +264,8 @@ impl SettingsManager {
     /// `inMemory`: no file I/O; `settings` become the global scope.
     pub fn in_memory(settings: Settings) -> Self {
         let storage = InMemorySettingsStorage::new();
-        let initial = migrate_settings(settings);
         let content =
-            serde_json::to_string_pretty(&Value::Object(initial)).expect("settings serialize");
+            serde_json::to_string_pretty(&Value::Object(settings)).expect("settings serialize");
         let _ = storage.with_lock(SettingsScope::Global, &mut |_| Ok(Some(content.clone())));
         Self::from_storage(Arc::new(storage))
     }
@@ -450,7 +313,6 @@ impl SettingsManager {
             }
         }
         self.settings = deep_merge_settings(&self.global, &self.project);
-        self.migrate_scoped_models();
         self.check_scoped_model_entries();
         self.check_thinking_display();
     }
@@ -866,18 +728,11 @@ impl SettingsManager {
         self.set("disabledTools", Some(strings(names)));
     }
 
-    /// `getToolOutputView`, reading the retired `toolOutputDisplay` values.
+    /// `getToolOutputView`; an unknown value reads as peek.
     pub fn tool_output_view(&self) -> ToolOutputView {
-        if let Some(view) = self
-            .get("toolOutputView")
+        self.get("toolOutputView")
             .and_then(Value::as_str)
-            .and_then(|v| ToolOutputView::parse(v).or_else(|| ToolOutputView::from_legacy(v)))
-        {
-            return view;
-        }
-        self.get("toolOutputDisplay")
-            .and_then(Value::as_str)
-            .and_then(|v| ToolOutputView::parse(v).or_else(|| ToolOutputView::from_legacy(v)))
+            .and_then(ToolOutputView::parse)
             .unwrap_or(ToolOutputView::Peek)
     }
 
@@ -886,11 +741,11 @@ impl SettingsManager {
     }
 
     /// The chrome dial's stop, or `None` when never set (the caller picks a
-    /// default from the terminal size). A saved `bare` reads as `compact`.
+    /// default from the terminal size).
     pub fn chrome_density(&self) -> Option<ChromeDensity> {
         self.get("chromeDensity")
             .and_then(Value::as_str)
-            .and_then(|v| ChromeDensity::parse(v).or_else(|| ChromeDensity::from_legacy(v)))
+            .and_then(ChromeDensity::parse)
     }
 
     pub fn set_chrome_density(&mut self, density: ChromeDensity) {
@@ -1478,7 +1333,7 @@ impl SettingsManager {
     /// Writes `scopedModels`. When the project settings already define the key,
     /// the list goes to the project file (it replaces the global list there,
     /// decision 15). Otherwise it goes to the global file. An empty slice is a
-    /// present, empty list, so the retired keys are never migrated again.
+    /// present, empty list.
     /// Callers validate first with [`SettingsManager::validate_scoped_models`].
     pub fn set_scoped_models(&mut self, models: &[ScopedModel]) {
         let value = serde_json::to_value(models).expect("scoped models serialize");
@@ -1563,26 +1418,6 @@ impl SettingsManager {
             seen.push(alias);
         }
         Ok(())
-    }
-
-    /// Migration to `scopedModels` (decisions 4, 18, 20). Runs on every load of
-    /// the global scope. If the key is missing and `enabledModels` or
-    /// `modelCategories` exists, it is built once and written to disk. The old
-    /// keys stay on disk and are not read afterwards.
-    fn migrate_scoped_models(&mut self) {
-        if self.global_load_failed || self.get_global("scopedModels").is_some() {
-            return;
-        }
-        let Some(entries) = scoped_models_from_legacy(&self.global) else {
-            return;
-        };
-        let value = serde_json::to_value(entries).expect("scoped models serialize");
-        self.set("scopedModels", Some(value));
-    }
-
-    /// A global key with null treated as absent.
-    fn get_global(&self, key: &str) -> Option<&Value> {
-        defined(self.global.get(key))
     }
 
     pub fn double_escape_action(&self) -> DoubleEscapeAction {

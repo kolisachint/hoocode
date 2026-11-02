@@ -1,8 +1,7 @@
 #![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Compaction over coding-agent sessions: the harness compaction functions,
-//! plus a large synthetic v1 session. The session is generated in code (no
-//! checked-in fixture) and migrated on load by `hoocode-code-session`, which
-//! exercises the legacy v1 format. The LLM cases are `#[ignore]`d and need
+//! plus a large synthetic session. The session is generated in code (no
+//! checked-in fixture) and loaded by `hoocode-code-session`. The LLM cases are `#[ignore]`d and need
 //! `ANTHROPIC_OAUTH_TOKEN`.
 
 use std::fs;
@@ -17,7 +16,7 @@ use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{
     AssistantMessage, Content, Model, StopReason, Usage, UserContent, UserMessage,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 
 fn usage(input: u64, output: u64, cache_read: u64, cache_write: u64) -> Usage {
     Usage {
@@ -165,11 +164,10 @@ fn role(entry: &FileEntry) -> &'static str {
 /// entries: user, assistant tool call, tool result, assistant answer.
 const LARGE_SESSION_TURNS: usize = 30;
 
-/// Writes a v1 session (header without `version`, entries without `id` or
-/// `parentId`) to `CARGO_TARGET_TMPDIR` and returns its path. Loading it migrates
-/// it to the current format. It has 120 message entries, including tool calls
-/// and tool results.
-fn write_large_session_v1() -> PathBuf {
+/// Writes a current-version session (a chain of entries linked by `id` and
+/// `parentId`) to `CARGO_TARGET_TMPDIR` and returns its path. It has 120 message
+/// entries, including tool calls and tool results.
+fn write_large_session() -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
@@ -179,7 +177,7 @@ fn write_large_session_v1() -> PathBuf {
     // model_change sits inside the session, not before the first message.
     const SWITCH_TURN: usize = 15;
     let mut lines = vec![json!({
-        "type": "session", "id": "large-session", "timestamp": NOW, "cwd": "/work/synthetic",
+        "type": "session", "version": 3, "id": "large-session", "timestamp": NOW, "cwd": "/work/synthetic",
     })];
     for turn in 0..LARGE_SESSION_TURNS {
         let model = if turn < SWITCH_TURN {
@@ -234,7 +232,14 @@ fn write_large_session_v1() -> PathBuf {
     }
 
     let mut text = String::new();
-    for line in &lines {
+    let mut parent = Value::Null;
+    for (i, line) in lines.iter_mut().enumerate() {
+        if i > 0 {
+            let id = format!("e{i:04}");
+            line["id"] = json!(id);
+            line["parentId"] = parent;
+            parent = json!(id);
+        }
         text.push_str(&line.to_string());
         text.push('\n');
     }
@@ -242,13 +247,12 @@ fn write_large_session_v1() -> PathBuf {
     path
 }
 
-/// `loadLargeSessionEntries`: writes the synthetic v1 session, then loads and
-/// migrates it. The header is dropped, as the cut-point helpers expect entries only.
+/// `loadLargeSessionEntries`: writes the synthetic session, then loads it. The header is dropped, as the cut-point helpers expect entries only.
 fn load_large_session_entries() -> Vec<FileEntry> {
-    let path = write_large_session_v1();
+    let path = write_large_session();
     let loaded = hoocode_code_session::load_session_file(&path);
     fs::remove_file(&path).ok();
-    assert!(loaded.migrated, "v1 session should be migrated on load");
+    assert_eq!(loaded.unrecognized, 0);
     loaded
         .entries
         .into_iter()

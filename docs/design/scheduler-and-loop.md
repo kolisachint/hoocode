@@ -6,8 +6,7 @@ Built so far (crate `hoocode-code-scheduler`; 2026-10-08, and 2026-10-14 for ite
 the late-fire rule):
 
 - Done 2026-10-08: the cron matcher (ported from `core/scheduler.ts`), the store at
-  `<cwd>/.agents/scheduled_tasks.json` (same shape, legacy `.hoocode/` read until the new
-  file exists, write-temp-and-rename, lock file so a fire is claimed once), the three
+  `<cwd>/.agents/scheduled_tasks.json` (same shape, write-temp-and-rename, lock file so a fire is claimed once), the three
   tools with hoocode-ts's names, labels, descriptions and schemas, in the default bundle
   after AskUserQuestion (13 tools in the print-basic request, as in TS), and firing in
   the interactive loop: a 30-second tick, idle only, the due prompts sent one per free
@@ -53,11 +52,7 @@ the late-fire rule):
     `ownerSessionId` (display only; `/loop` sets it, the Cron tools set the pid alone, since
     they are built before the session exists and the id changes on `/new`). Both are
     optional in the file, so old files load. A claim fires a due task only for its owner. A
-    task whose owner pid is not alive is adopted by the claimer. A task with no owner
-    (an old file) is adopted only when the claiming session vouches for it (the TUI passes
-    its `/loop` task ids, `claim_due_tick_adopting`), so an idle session in the same folder
-    does not run it: it stays unfired, `CronList` says to re-create it, and the old file's
-    tasks must be re-created to fire. Adoption rewrites the owner: the
+    task whose owner pid is not alive is adopted by the claimer. Adoption rewrites the owner: the
     claim rewrites the owner under the lock and reports it (`Claimed.adopted`), and the TUI
     warns `Adopted scheduled task <id> from an exited session.` A process that does not own
     a due task, and sees its owner alive, leaves it entirely alone (no last-run minute, no
@@ -127,7 +122,7 @@ made in either hoocode is visible to the other.
 | Same file as hoocode-ts: `<cwd>/.agents/scheduled_tasks.json`, same shape | The two tools share schedules |
 | Port hoocode-ts's cron matcher (5 fields, local time) instead of a cron library | Both tools must read the same expression the same way |
 | Fires are claimed under a file lock, so a task fires once | Two sessions, or hoocode next to hoocode-ts, must not both fire it |
-| A task fires only in the process that created it, until that process exits; then the next session that finds it due adopts it (an ownerless old task is never adopted by an idle session) | An idle hoocode in the same folder used to claim another session's fires and run them as if typed |
+| A task fires only in the process that created it, until that process exits; then the next session that finds it due adopts it | An idle hoocode in the same folder used to claim another session's fires and run them as if typed |
 | A prompt due while the agent is busy **runs at the next idle moment, up to 10 minutes late**; after that it's skipped with a notice | hoocode-ts silently drops it |
 | Schedules run only while a session is open (no headless daemon runs in v1) | Nobody would be there to approve tools |
 

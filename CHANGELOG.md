@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed: migration and old-format readers (2026-11-02)
+- **hoocode is a new product, so nothing converts older data.** Gone: the one-time merge of the pre-1.2 (old product name) home and project folders into `~/.hoocode`, the `hoocode migrate` command, the v1/v2 session upgrade (a session file that is not the current version no longer loads), the settings key migrations (`queueMode`, `enableEmbsearchTools`, `websockets`, old `skills`, `retry.maxDelayMs`, `enabledModels`/`modelCategories` to `scopedModels`, `toolOutputDisplay` and `bare` values), the keybinding id renames, the `.hoocode/scheduled_tasks.json` fallback and owner-less scheduled tasks, and the `.hoocode/plan.md` plan fallback. Old values fall back to defaults.
+
 ### Fixed: the TUI froze after an interactive shell command (2026-11-01)
 - **A command can no longer take over hoocode's terminal.** `Shell` commands, background jobs and subagent processes now run in a session of their own, with no controlling terminal. Before, an interactive program in a command (for example `zsh -i -c '…'`) made itself the terminal's foreground job, and the next key you pressed stopped hoocode ("suspended (tty input)"). Such a command now runs without a terminal, so a program that needs one fails instead of freezing hoocode.
 - **The other helpers hoocode starts run without a terminal too.** MCP stdio servers, harness and extension commands, and `!cmd` config values (such as an API key read by a command) get the same treatment. The external editor still gets the terminal, as before. A `!cmd` credential helper that asks for a password on `/dev/tty` now fails instead of prompting. Use one that prompts through a desktop dialog or `pinentry`, or that needs no prompt.
