@@ -5,10 +5,8 @@
 
 
 
-
-
 «fg=#5cc8bb»▟«fg=#66bec6»▀«fg=#71b4d1»▀«fg=#7baadd»▀«fg=#86a0e8»▀«fg=#9096f3»▀«fg=#9b8cff»▙«»  «bold»<app>«»                                  «fg=#a8a8a8»✦«»                                     «fg=#a8a8a8»·
-«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERS«»ION>                                      «fg=#a8a8a8»·
+«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>«»                                      «fg=#a8a8a8»·
 «fg=#5cc8bb»▜«fg=#66bec6»▄«fg=#71b4d1»▄«fg=#7baadd»▄«fg=#86a0e8»▄«fg=#9096f3»▄«fg=#9b8cff»▛«»  «fg=#989898»<WORK>«»                                       «fg=#a8a8a8»⋆
 
 «» «fg=#a8a8a8»SHIP«» mock-model   «fg=#5cc8bb»✦«» 1 «fg=#989898»skill«»  «fg=#9b8cff»◈«» 5 «fg=#989898»agents
@@ -24,7 +22,9 @@
 
 «»  «fg=#b5bd68»●«» «bold;fg=#b5bd68»LANDED«fg=#989898» · «fg=#a8a8a8»1 step«fg=#989898» · «fg=#a8a8a8»0 hits«fg=#989898» · «fg=#a8a8a8»<DUR>«fg=#989898» · «fg=#a8a8a8»240 tokens«fg=#989898» · «fg=#a8a8a8»$0.000
 «»   «fg=#989898»Delegated 1 task
-«fg=#a8a8a8»┊«» «fg=#b5bd68»●«» «fg=#9b8cff»◈«» «fg=#4ec9b0»[general-purpose]«» «fg=#a8a8a8»Compute a product«»                                                 «fg=#a8a8a8»120 tokens
+«fg=#9b8cff»┏━«» «bold;fg=#9b8cff»FLIGHT PLAN«fg=#9b8cff» ━ «bold;fg=#5cc8bb»[Agents 1/1]«» «fg=#9b8cff»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«» «fg=#a8a8a8»/tasks · ctrl+g«» «fg=#9b8cff»━┓
+«fg=#9b8cff»┃«»  «fg=#b5bd68»●«» «fg=#9b8cff»◈«» «fg=#4ec9b0»[general-purpose]«» «fg=#a8a8a8»Compute a product«»                                               «fg=#a8a8a8»120 tokens«fg=#9b8cff»┃
+«fg=#9b8cff»┗━«»  «fg=#9b8cff»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«»  «fg=#9b8cff»━┛
 «fg=#9b8cff»┏━«» «bold;fg=#9b8cff»Subagent runs«» «fg=#9b8cff»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«»  «fg=#9b8cff»━┓
 «fg=#9b8cff»┃«bg=#2a2a36;fg=#5cc8bb»› general-purpose · complete · What is 6 times 7? Reply with the number only. · dispatch-<id>…«fg=#9b8cff»┃
 «fg=#9b8cff»┗━«» «fg=#989898»↑↓«fg=#a8a8a8» navigate · «fg=#989898»enter«fg=#a8a8a8» select · «fg=#989898»esc«fg=#a8a8a8» cancel«» «fg=#9b8cff»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«»  «fg=#9b8cff»━┛

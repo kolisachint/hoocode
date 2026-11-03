@@ -1,5 +1,5 @@
 {
-  "description": "The model calls bash (piped output, then a non-zero exit), then answers. Interactive build mode asks to allow each command (answered 'Yes (once)'); renders the bash execution blocks ($ command line, output preview, exit status, 'Took' line).",
+  "description": "The model calls bash (piped output, then a non-zero exit), then answers. The read-only printf | sort runs without asking (safe shell allowlist); interactive build mode asks to allow the echo/exit command (answered 'go, once'); renders the bash execution blocks ($ command line, output preview, exit status, 'Took' line).",
   "phase": "10.2b",
   "terminal": {
     "cols": 100,
@@ -47,7 +47,7 @@
       ]
     },
     {
-      "wait_for": "\\$ printf",
+      "wait_for": "\\$ echo boom",
       "timeout": 30
     },
     {
@@ -59,19 +59,6 @@
       "contains": [
         "go, once"
       ]
-    },
-    {
-      "keys": [
-        "Enter"
-      ]
-    },
-    {
-      "wait_for": "\\$ echo boom",
-      "timeout": 30
-    },
-    {
-      "wait_stable": 0.5,
-      "timeout": 20
     },
     {
       "keys": [

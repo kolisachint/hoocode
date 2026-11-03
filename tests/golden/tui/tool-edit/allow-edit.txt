@@ -10,8 +10,10 @@
 
 
 
+
+
 «fg=#5cc8bb»▟«fg=#66bec6»▀«fg=#71b4d1»▀«fg=#7baadd»▀«fg=#86a0e8»▀«fg=#9096f3»▀«fg=#9b8cff»▙«»  «bold»<app>«»                                  «fg=#a8a8a8»✦«»                                     «fg=#a8a8a8»·
-«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERS«»ION>                                      «fg=#a8a8a8»·
+«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSION>«»                                      «fg=#a8a8a8»·
 «fg=#5cc8bb»▜«fg=#66bec6»▄«fg=#71b4d1»▄«fg=#7baadd»▄«fg=#86a0e8»▄«fg=#9096f3»▄«fg=#9b8cff»▛«»  «fg=#989898»<WORK>«»                                       «fg=#a8a8a8»⋆
 
 «» «fg=#a8a8a8»SHIP«» mock-model   «fg=#5cc8bb»✦«» 1 «fg=#989898»skill«»  «fg=#9b8cff»◈«» 5 «fg=#989898»agents
@@ -31,8 +33,6 @@
 «»   «fg=#a8a8a8»┊
 «»   «fg=#a8a8a8»┊
 «»   «fg=#a8a8a8»┊«»  «fg=#989898»… 9 more lines
-
-
 «fg=#ffff00»┏━«» «bold;fg=#ffff00»◎ CLEARANCE NEEDED«» «fg=#ffff00»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«» «fg=#ffff00»BUILD asks for Edit«» «fg=#ffff00»━┓
 «fg=#ffff00»┃«»Edit src/app.ts                                                                                   «fg=#ffff00»┃
 «fg=#ffff00»┃«fg=#989898»REACH«»   «fg=#ffff00»■«» read«fg=#989898» src/app.ts«»   «fg=#ffff00»■«» write«fg=#989898» src/app.ts«»   «fg=#a8a8a8»□«» network   «fg=#a8a8a8»□«» pipe                               «fg=#ffff00»┃

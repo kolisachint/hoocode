@@ -21,10 +21,10 @@
 
 
 
-«fg=#5cc8bb»▟«fg=#66bec6»▀«fg=#71b4d1»▀«fg=#7baadd»▀«fg=#86a0e8»▀«fg=#9096f3»▀«fg=#9b8cff»▙«»  «bold»<app>«»                                  «fg=#a8a8a8»✦«»                                     «fg=#a8a8a8»·
-«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERS«»ION>                                      «fg=#a8a8a8»·
-«fg=#5cc8bb»▜«fg=#66bec6»▄«fg=#71b4d1»▄«fg=#7baadd»▄«fg=#86a0e8»▄«fg=#9096f3»▄«fg=#9b8cff»▛«»  «fg=#989898»<WORK>«»                                       «fg=#a8a8a8»⋆
 
 
-«fg=#a8a8a8»┊«» «fg=#5cc8bb»◉«» «fg=#9b8cff»◈«» «fg=#4ec9b0»[general-purpose]«» «bold»Compute a product«»           «fg=#5cc8bb»⋯ starting · <DUR> · mock/mock-model · 4h00m left
+
+«fg=#9b8cff»┏━«» «bold;fg=#9b8cff»FLIGHT PLAN«fg=#9b8cff» ━ «bold;fg=#5cc8bb»[Agents 1 running]«» «fg=#9b8cff»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«» «fg=#a8a8a8»/tasks · ctrl+g«» «fg=#9b8cff»━┓
+«fg=#9b8cff»┃«»  «fg=#5cc8bb»◉«» «fg=#9b8cff»◈«» «fg=#4ec9b0»[general-purpose]«» «bold»Compute a product«»         «fg=#5cc8bb»⋯ starting · <DUR> · mock/mock-model · 4h00m left«fg=#9b8cff»┃
+«fg=#9b8cff»┗━«»  «fg=#9b8cff»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«»  «fg=#9b8cff»━┛
 «fg=#989898»▸ READ-ONLY · this agent's own log · Escape back to the main ship
