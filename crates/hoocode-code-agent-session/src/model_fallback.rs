@@ -29,6 +29,17 @@ const UNUSABLE_400_HINTS: [&str; 6] = [
     "not supported for model",
 ];
 
+/// A 403 about this request (moderation, or a rate limit some providers send
+/// as 403), not about the model.
+const REQUEST_403_HINTS: [&str; 6] = [
+    "flagged",
+    "moderation",
+    "content policy",
+    "safety",
+    "rate limit",
+    "rate_limit",
+];
+
 /// Whether an errored response says the provider will not serve this model
 /// to this account: HTTP 402, 403, 404 or 410, a 400 naming the model as
 /// unavailable, or a 429 whose wait is hours (a used-up free tier). A bad
@@ -47,7 +58,8 @@ pub fn is_model_unusable_error(message: &AssistantMessage) -> bool {
         .collect();
     let lower = error.to_ascii_lowercase();
     match status.as_str() {
-        "402" | "403" | "404" | "410" => true,
+        "403" => !REQUEST_403_HINTS.iter().any(|h| lower.contains(h)),
+        "402" | "404" | "410" => true,
         "400" => UNUSABLE_400_HINTS.iter().any(|h| lower.contains(h)),
         "429" => {
             hoocode_ai_util::is_long_retry_delay_error(Some(error))
@@ -127,6 +139,10 @@ impl AgentSession {
         let Some(next) = next else {
             return false;
         };
+        // Keep `prompt()` waiting for the continued turn, and end any retry
+        // streak the refused model was in.
+        self.retry_state().pending = true;
+        self.on_unretried_error(message);
 
         // Drop the error from the context (the session keeps it for history).
         let mut messages = self.messages();
@@ -176,6 +192,8 @@ mod tests {
             "400 messages: field required",
             "429 Too Many Requests",
             "500 internal error",
+            "403 Your input was flagged by moderation",
+            "403 You have exceeded a secondary rate limit",
             "connection refused",
         ] {
             assert!(!is_model_unusable_error(&errored(e)), "{e}");

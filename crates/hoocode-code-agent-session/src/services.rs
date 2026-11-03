@@ -338,7 +338,11 @@ pub fn create_agent_session(
         if let Some(chosen) = &picked {
             let is_saved_default = default_provider.as_deref() == Some(chosen.provider.as_str())
                 && default_model_id.as_deref() == Some(chosen.id.as_str());
-            if !is_saved_default && model_fallback_message.is_none() {
+            // `--models` (a scope) is the user's choice too: no fallback.
+            if !is_saved_default
+                && model_fallback_message.is_none()
+                && options.scoped_models.is_empty()
+            {
                 model_fallbacks = default_model_fallbacks(
                     &hoocode_code_models::ModelSource::available_models(&source),
                     chosen,

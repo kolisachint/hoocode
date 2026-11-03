@@ -857,6 +857,14 @@ impl AgentSession {
 
     /// The `agent_end` tail: retry a transient error, else check compaction.
     async fn after_agent_end(&self, message: AssistantMessage) {
+        // An automatically picked model the provider refuses: switch to the
+        // next default and continue (the retry wait stays armed). Checked
+        // before the retry: retrying a refused model only delays the switch,
+        // and a retry that gives up (or is disabled) releases the prompt's
+        // wait before the switched model has answered.
+        if self.try_model_fallback(&message) {
+            return;
+        }
         let model = self.model();
         if crate::retry::is_retryable_error(&message, model.as_ref()) {
             if self.handle_retryable_error(&message).await {
@@ -874,11 +882,6 @@ impl AgentSession {
                     );
                 }
             }
-        }
-        // An automatically picked model the provider refuses: switch to the
-        // next default and continue (the retry wait stays armed).
-        if self.try_model_fallback(&message) {
-            return;
         }
         // A streak that ends on an error it does not retry is over, failed.
         self.on_unretried_error(&message);
@@ -1881,11 +1884,17 @@ impl AgentSession {
     /// `cycleModel`: through `--models` when set, else every available model.
     /// `None` when there is nothing to switch to.
     pub fn cycle_model(&self, direction: CycleDirection) -> Option<ModelCycleResult> {
-        if lock(&self.inner.state).scoped_models.is_empty() {
+        let result = if lock(&self.inner.state).scoped_models.is_empty() {
             self.cycle_available_model(direction)
         } else {
             self.cycle_scoped_model(direction)
+        };
+        // The user picked a model: never switch away from it, and never save
+        // a model an earlier fallback switched to.
+        if result.is_some() {
+            self.clear_model_fallbacks();
         }
+        result
     }
 
     fn next_index(current: Option<usize>, len: usize, direction: CycleDirection) -> usize {
