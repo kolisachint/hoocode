@@ -328,7 +328,16 @@ pub struct ResponsesStreamState {
     current_item: Option<Value>,
     /// Content index of the open block.
     current_block: Option<usize>,
-    /// `partialJson` of the open tool-call block.
+    /// Open tool-call blocks, so interleaved parallel calls keep their own
+    /// arguments.
+    tool_slots: Vec<ToolSlot>,
+}
+
+/// An open function-call block and its `partialJson`.
+struct ToolSlot {
+    item_id: Option<String>,
+    output_index: Option<u64>,
+    block: usize,
     partial_json: String,
 }
 
@@ -340,8 +349,35 @@ impl ResponsesStreamState {
             output: output.into(),
             current_item: None,
             current_block: None,
-            partial_json: String::new(),
+            tool_slots: Vec::new(),
         }
+    }
+
+    /// Position of the open tool-call slot an event refers to: by item id,
+    /// then output index; the newest slot when the event carries neither.
+    fn find_slot(&self, item_id: Option<&str>, output_index: Option<u64>) -> Option<usize> {
+        if let Some(id) = item_id {
+            if let Some(pos) = self
+                .tool_slots
+                .iter()
+                .position(|s| s.item_id.as_deref() == Some(id))
+            {
+                return Some(pos);
+            }
+        }
+        if let Some(idx) = output_index {
+            if let Some(pos) = self
+                .tool_slots
+                .iter()
+                .position(|s| s.output_index == Some(idx))
+            {
+                return Some(pos);
+            }
+        }
+        if item_id.is_none() && output_index.is_none() {
+            return self.tool_slots.len().checked_sub(1);
+        }
+        None
     }
 
     fn last_index(&self) -> usize {
@@ -472,8 +508,15 @@ impl ResponsesStreamState {
                             arguments: json!({}),
                             thought_signature: None,
                         }));
-                        self.partial_json =
-                            item["arguments"].as_str().unwrap_or_default().to_string();
+                        self.tool_slots.push(ToolSlot {
+                            item_id: item["id"].as_str().map(str::to_string),
+                            output_index: event["output_index"].as_u64(),
+                            block: self.last_index(),
+                            partial_json: item["arguments"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .to_string(),
+                        });
                         self.current_block = Some(self.last_index());
                         sender.push(AssistantMessageEvent::ToolCallStart {
                             index: self.last_index(),
@@ -550,32 +593,41 @@ impl ResponsesStreamState {
                 }
             }
             "response.function_call_arguments.delta" => {
-                if self.item_type() == Some("function_call") && self.block_is("toolCall") {
+                let slot =
+                    self.find_slot(event["item_id"].as_str(), event["output_index"].as_u64());
+                if let Some(pos) = slot {
                     let delta = event["delta"].as_str().unwrap_or_default();
-                    self.partial_json.push_str(delta);
-                    let args = parse_arguments(&self.partial_json);
-                    if let Some(Content::ToolCall(tc)) = self.block() {
+                    self.tool_slots[pos].partial_json.push_str(delta);
+                    let args = parse_arguments(&self.tool_slots[pos].partial_json);
+                    let block = self.tool_slots[pos].block;
+                    if let Some(Content::ToolCall(tc)) = self.output.content.get_mut(block) {
                         tc.arguments = args;
                     }
                     sender.push(AssistantMessageEvent::ToolCallDelta {
-                        index: self.last_index(),
+                        index: block,
                         delta: delta.to_string(),
                         partial: self.output.share(),
                     });
                 }
             }
             "response.function_call_arguments.done" => {
-                if self.item_type() == Some("function_call") && self.block_is("toolCall") {
+                let slot =
+                    self.find_slot(event["item_id"].as_str(), event["output_index"].as_u64());
+                if let Some(pos) = slot {
                     let arguments = event["arguments"].as_str().unwrap_or_default().to_string();
-                    let previous = std::mem::replace(&mut self.partial_json, arguments.clone());
-                    let args = parse_arguments(&self.partial_json);
-                    if let Some(Content::ToolCall(tc)) = self.block() {
+                    let previous = std::mem::replace(
+                        &mut self.tool_slots[pos].partial_json,
+                        arguments.clone(),
+                    );
+                    let args = parse_arguments(&arguments);
+                    let block = self.tool_slots[pos].block;
+                    if let Some(Content::ToolCall(tc)) = self.output.content.get_mut(block) {
                         tc.arguments = args;
                     }
                     if let Some(delta) = arguments.strip_prefix(previous.as_str()) {
                         if !delta.is_empty() {
                             sender.push(AssistantMessageEvent::ToolCallDelta {
-                                index: self.last_index(),
+                                index: block,
                                 delta: delta.to_string(),
                                 partial: self.output.share(),
                             });
@@ -647,20 +699,31 @@ impl ResponsesStreamState {
                         self.current_block = None;
                     }
                     Some("function_call") => {
-                        if self.block_is("toolCall") {
-                            let args = if self.partial_json.is_empty() {
+                        let slot =
+                            self.find_slot(item["id"].as_str(), event["output_index"].as_u64());
+                        let (block, partial_json) = match slot {
+                            Some(pos) => {
+                                let slot = self.tool_slots.remove(pos);
+                                (Some(slot.block), slot.partial_json)
+                            }
+                            None => (None, String::new()),
+                        };
+                        if let Some(block) = block {
+                            let args = if partial_json.is_empty() {
                                 parse_arguments(item["arguments"].as_str().unwrap_or("{}"))
                             } else {
-                                parse_arguments(&self.partial_json)
+                                parse_arguments(&partial_json)
                             };
-                            if let Some(Content::ToolCall(tc)) = self.block() {
+                            if let Some(Content::ToolCall(tc)) = self.output.content.get_mut(block)
+                            {
                                 tc.arguments = args;
                             }
+                            if self.current_block == Some(block) {
+                                self.current_block = None;
+                            }
                         }
-                        self.partial_json.clear();
-                        self.current_block = None;
                         sender.push(AssistantMessageEvent::ToolCallEnd {
-                            index: self.last_index(),
+                            index: block.unwrap_or_else(|| self.last_index()),
                             partial: self.output.share(),
                         });
                     }

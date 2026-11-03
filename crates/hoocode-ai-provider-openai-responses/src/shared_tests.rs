@@ -374,6 +374,83 @@ fn removes_partial_json_from_persisted_tool_call_blocks() {
     assert_eq!(deltas, 2);
 }
 
+fn fc_item(n: u32, name: &str, args: &str) -> Value {
+    json!({"type": "function_call", "id": format!("fc_{n}"), "call_id": format!("call_{n}"), "name": name, "arguments": args})
+}
+
+fn tool_args(output: &AssistantMessage) -> Vec<(String, Value)> {
+    output
+        .content
+        .iter()
+        .filter_map(|c| match c {
+            Content::ToolCall(tc) => Some((tc.name.clone(), tc.arguments.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn interleaved_parallel_tool_calls_keep_their_own_arguments() {
+    let a0 = r#"{"query":"q"}"#;
+    let a1 = r#"{"command":"ls"}"#;
+    let (events, output, result) = process(
+        &responses_model(),
+        &[
+            json!({"type": "response.output_item.added", "output_index": 0, "item": fc_item(0, "CodeSearch", "")}),
+            json!({"type": "response.output_item.added", "output_index": 1, "item": fc_item(1, "Shell", "")}),
+            json!({"type": "response.function_call_arguments.delta", "item_id": "fc_0", "output_index": 0, "delta": a0}),
+            json!({"type": "response.function_call_arguments.delta", "item_id": "fc_1", "output_index": 1, "delta": a1}),
+            json!({"type": "response.function_call_arguments.done", "item_id": "fc_0", "output_index": 0, "arguments": a0}),
+            json!({"type": "response.function_call_arguments.done", "item_id": "fc_1", "output_index": 1, "arguments": a1}),
+            json!({"type": "response.output_item.done", "output_index": 0, "item": fc_item(0, "CodeSearch", a0)}),
+            json!({"type": "response.output_item.done", "output_index": 1, "item": fc_item(1, "Shell", a1)}),
+        ],
+    );
+    assert!(result.is_ok());
+    assert_eq!(
+        tool_args(&output),
+        vec![
+            ("CodeSearch".to_string(), json!({"query": "q"})),
+            ("Shell".to_string(), json!({"command": "ls"})),
+        ]
+    );
+    let ends: Vec<usize> = events
+        .iter()
+        .filter_map(|e| match e {
+            AssistantMessageEvent::ToolCallEnd { index, .. } => Some(*index),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends, vec![0, 1]);
+}
+
+#[test]
+fn sequential_parallel_tool_calls_keep_their_own_arguments() {
+    let a0 = r#"{"query":"q"}"#;
+    let a1 = r#"{"command":"ls"}"#;
+    let (_, output, result) = process(
+        &responses_model(),
+        &[
+            json!({"type": "response.output_item.added", "output_index": 0, "item": fc_item(0, "CodeSearch", "")}),
+            json!({"type": "response.function_call_arguments.delta", "item_id": "fc_0", "output_index": 0, "delta": a0}),
+            json!({"type": "response.function_call_arguments.done", "item_id": "fc_0", "output_index": 0, "arguments": a0}),
+            json!({"type": "response.output_item.done", "output_index": 0, "item": fc_item(0, "CodeSearch", a0)}),
+            json!({"type": "response.output_item.added", "output_index": 1, "item": fc_item(1, "Shell", "")}),
+            json!({"type": "response.function_call_arguments.delta", "item_id": "fc_1", "output_index": 1, "delta": a1}),
+            json!({"type": "response.function_call_arguments.done", "item_id": "fc_1", "output_index": 1, "arguments": a1}),
+            json!({"type": "response.output_item.done", "output_index": 1, "item": fc_item(1, "Shell", a1)}),
+        ],
+    );
+    assert!(result.is_ok());
+    assert_eq!(
+        tool_args(&output),
+        vec![
+            ("CodeSearch".to_string(), json!({"query": "q"})),
+            ("Shell".to_string(), json!({"command": "ls"})),
+        ]
+    );
+}
+
 #[test]
 fn reasoning_summaries_text_and_completion() {
     let reasoning = json!({"type": "reasoning", "id": "rs_1", "summary": []});
