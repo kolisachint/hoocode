@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added: defaults for a first run (2026-11-02)
+- **`~/.hoocode/hoo-config.json` is written on first run** with the shipped mode rules: ask and debug block Edit and Write, plan writes only under `.hoocode/` without asking, build allows everything with the usual approvals. A mode key your file leaves out takes the shipped value.
+- **Read-only shell commands run without asking, in every mode** (`safe_shell`, on by default): `ls`, `cat`, `head`, `grep`, `rg`, `git status`/`diff`/`log`/`show` and similar, alone or joined by pipes and `&&`. A file redirect, `$(…)`, or any other program asks as before.
+- **`--skip-permissions`** (or `HOOCODE_SKIP_PERMISSIONS=1`, or `"skip_permissions": true` in the global `hoo-config.json`) runs every tool without asking; the mode rules still apply and the header shows SKIP PERMISSIONS. Subagents of such a session inherit it.
+- **`hoocode --help`, the README, the install docs and the installer's closing message explain modes, approvals and `--skip-permissions`** up front.
+- **Shift+Tab cycles the agent mode** (ask → plan → build → debug). Thinking level stays on Alt+T.
+- **A project cannot loosen your approvals.** A project's `.hoocode/hoo-config.json` no longer adds to `auto_allow` or widens your `allowed_write_paths`, and a write to `.hoocode/*.json` (hoocode's own project config) always asks, in every mode and with `--skip-permissions`. A plan-mode write that a symlink would send out of `.hoocode/` is blocked.
+- `/mode` shows in the first rows of the `/` menu, right after `/model`.
+
+### Fixed: first-run rough edges (2026-11-02)
+- The "no model selected" message no longer points at doc files that are not installed; it names `/login`, the API key variables and the online docs.
+- A default start no longer warns that the semantic search index is unavailable; the notice shows only when you turn the index on.
+- An allowed write path no longer matches a path that climbs out of it with `..`, and `>&file` / `>|` redirects no longer count as harmless for an Always-approved program.
+- `--skip-permissions` now shows SKIP PERMISSIONS in the header from the first frame (it only appeared after a reload), with a line in the chat at startup.
+- A Write or Edit blocked by a mode rule or denied no longer counts as "Edited" in the turn's summary.
+- The install script creates the shell rc file when a fresh account has none (for the login shell: `.bashrc`, `.zshrc`, fish `config.fish`, else `.profile`), so `hoocode` is on `PATH` in the next terminal instead of a warning to add it by hand.
+- **A first start with no model shows a "Sign in to start" transmission** pointing at `/login` and the API key variables, instead of failing only after the first message.
+- The OpenCode Muse models (`muse-spark-*`, `muse-wonder-1.0` on `opencode` and `opencode-go`) no longer fail with thinking off: hoocode sends no reasoning effort instead of `none`, which they reject.
+- **A default model your account cannot use no longer stops the first message.** When hoocode picked the model itself (no `--model` or `--models`, no saved default) and the provider refuses it (402, 403 other than a content refusal, 404, 410, a model it calls unavailable or deprecated, or a free tier used up for hours), it switches to the next provider default you have a key for, says so (`opencode/kimi-k2.6 is not available on this account (...). Switched to opencode-go/kimi-k3`), continues the turn, and saves the model that answered as your default. One OpenCode key serves both `opencode` (Zen) and `opencode-go` (Go), with different access. A model you chose is never switched. JSON and RPC clients see a `model_fallback` event.
+
+### Removed: migration and old-format readers (2026-11-02)
+- **hoocode is a new product, so nothing converts older data.** Gone: the one-time merge of the pre-1.2 (old product name) home and project folders into `~/.hoocode`, the `hoocode migrate` command, the v1/v2 session upgrade (a session file that is not the current version no longer loads), the settings key migrations (`queueMode`, `enableEmbsearchTools`, `websockets`, old `skills`, `retry.maxDelayMs`, `enabledModels`/`modelCategories` to `scopedModels`, `toolOutputDisplay` and `bare` values), the keybinding id renames, the `.hoocode/scheduled_tasks.json` fallback and owner-less scheduled tasks, and the `.hoocode/plan.md` plan fallback. Old values fall back to defaults.
+
 ### Fixed: the TUI froze after an interactive shell command (2026-11-01)
 - **A command can no longer take over hoocode's terminal.** `Shell` commands, background jobs and subagent processes now run in a session of their own, with no controlling terminal. Before, an interactive program in a command (for example `zsh -i -c '…'`) made itself the terminal's foreground job, and the next key you pressed stopped hoocode ("suspended (tty input)"). Such a command now runs without a terminal, so a program that needs one fails instead of freezing hoocode.
 - **The other helpers hoocode starts run without a terminal too.** MCP stdio servers, harness and extension commands, and `!cmd` config values (such as an API key read by a command) get the same treatment. The external editor still gets the terminal, as before. A `!cmd` credential helper that asks for a password on `/dev/tty` now fails instead of prompting. Use one that prompts through a desktop dialog or `pinentry`, or that needs no prompt.

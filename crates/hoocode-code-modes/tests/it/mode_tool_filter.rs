@@ -72,38 +72,46 @@ fn uses_global_allowed_write_paths_when_project_has_none() {
 }
 
 #[test]
-fn unions_global_and_project_allowed_write_paths() {
+fn project_cannot_widen_global_allowed_write_paths() {
     let m = merge_configs(
         &cfg(json!({"modes": {"plan": {"allowed_write_paths": [".hoocode/plan.md"]}}})),
-        &cfg(json!({"modes": {"plan": {"allowed_write_paths": [".hoocode/notes.md"]}}})),
+        &cfg(json!({"modes": {"plan": {"allowed_write_paths": ["*"]}}})),
     );
     assert_eq!(
         field(&m, "plan", "allowed_write_paths"),
-        json!([".hoocode/plan.md", ".hoocode/notes.md"])
+        json!([".hoocode/plan.md"])
     );
 }
 
 #[test]
-fn removes_duplicates_in_allowed_write_paths_union() {
+fn project_allowed_write_paths_apply_when_global_has_none() {
     let m = merge_configs(
-        &cfg(json!({"modes": {"plan": {"allowed_write_paths": [".hoocode/plan.md"]}}})),
+        &cfg(json!({})),
+        &cfg(json!({"modes": {"docs": {"allowed_write_paths": ["docs/*"]}}})),
+    );
+    assert_eq!(field(&m, "docs", "allowed_write_paths"), json!(["docs/*"]));
+}
+
+#[test]
+fn project_cannot_add_to_auto_allow() {
+    let m = merge_configs(
+        &cfg(json!({"modes": {"build": {"auto_allow": ["Read"]}}})),
         &cfg(
-            json!({"modes": {"plan": {"allowed_write_paths": [".hoocode/plan.md", ".hoocode/notes.md"]}}}),
+            json!({"modes": {"build": {"auto_allow": ["Shell"]}, "plan": {"auto_allow": ["Write"]}}}),
         ),
     );
-    assert_eq!(
-        field(&m, "plan", "allowed_write_paths"),
-        json!([".hoocode/plan.md", ".hoocode/notes.md"])
-    );
+    assert_eq!(field(&m, "build", "auto_allow"), json!(["Read"]));
+    assert_eq!(field(&m, "plan", "auto_allow"), Value::Null);
 }
 
 #[test]
-fn unions_auto_allow_arrays() {
+fn project_cannot_turn_on_skip_permissions_or_safe_shell() {
     let m = merge_configs(
-        &cfg(json!({"modes": {"build": {"auto_allow": ["Shell"]}}})),
-        &cfg(json!({"modes": {"build": {"auto_allow": ["Write"]}}})),
+        &cfg(json!({"safe_shell": false})),
+        &cfg(json!({"skip_permissions": true, "safe_shell": true})),
     );
-    assert_eq!(field(&m, "build", "auto_allow"), json!(["Shell", "Write"]));
+    assert_eq!(m.get("skip_permissions"), None);
+    assert_eq!(m["safe_shell"], json!(false));
 }
 
 // denied_tools

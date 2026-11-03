@@ -160,6 +160,14 @@ pub enum AgentSessionEvent {
         attempt: u64,
         final_error: Option<String>,
     },
+    /// The automatically picked model was refused by its provider (no access,
+    /// no funds, deprecated, ...): the session switched to `to` (`provider/id`)
+    /// and continues.
+    ModelFallback {
+        from: String,
+        to: String,
+        error_message: String,
+    },
 }
 
 /// The TS `CompactionResult` object (`{summary, firstKeptEntryId, tokensBefore,
@@ -241,6 +249,16 @@ impl AgentSessionEvent {
                 "attempt": attempt,
                 "maxAttempts": max_attempts,
                 "delayMs": delay_ms,
+                "errorMessage": error_message,
+            }),
+            AgentSessionEvent::ModelFallback {
+                from,
+                to,
+                error_message,
+            } => json!({
+                "type": "model_fallback",
+                "from": from,
+                "to": to,
                 "errorMessage": error_message,
             }),
             AgentSessionEvent::AutoRetryEnd {
@@ -468,6 +486,7 @@ struct Inner {
     next_listener_id: Mutex<usize>,
     agent_subscription: Mutex<Option<Subscription>>,
     retry: Mutex<RetryState>,
+    model_fallback: Mutex<crate::model_fallback::FallbackState>,
     retry_notify: tokio::sync::Notify,
     /// Set once the current run has emitted `agent_end`; the run still holds
     /// its slot until its listeners return (see `prompt_inner`).
@@ -608,6 +627,7 @@ impl AgentSession {
             next_listener_id: Mutex::new(1),
             agent_subscription: Mutex::new(None),
             retry: Mutex::new(RetryState::default()),
+            model_fallback: Mutex::new(Default::default()),
             retry_notify: tokio::sync::Notify::new(),
             run_ended: std::sync::atomic::AtomicBool::new(false),
             compaction: Mutex::new(CompactionState::default()),
@@ -657,6 +677,12 @@ impl AgentSession {
     // ------------------------------------------------------------------
     // Event subscription
     // ------------------------------------------------------------------
+
+    pub(crate) fn model_fallback_state(
+        &self,
+    ) -> MutexGuard<'_, crate::model_fallback::FallbackState> {
+        lock(&self.inner.model_fallback)
+    }
 
     pub(crate) fn retry_state(&self) -> MutexGuard<'_, RetryState> {
         lock(&self.inner.retry)
@@ -808,6 +834,7 @@ impl AgentSession {
                         self.on_aborted_assistant_response();
                     } else {
                         self.on_successful_assistant_response();
+                        self.on_model_answered();
                     }
                 }
             }
@@ -830,6 +857,14 @@ impl AgentSession {
 
     /// The `agent_end` tail: retry a transient error, else check compaction.
     async fn after_agent_end(&self, message: AssistantMessage) {
+        // An automatically picked model the provider refuses: switch to the
+        // next default and continue (the retry wait stays armed). Checked
+        // before the retry: retrying a refused model only delays the switch,
+        // and a retry that gives up (or is disabled) releases the prompt's
+        // wait before the switched model has answered.
+        if self.try_model_fallback(&message) {
+            return;
+        }
         let model = self.model();
         if crate::retry::is_retryable_error(&message, model.as_ref()) {
             if self.handle_retryable_error(&message).await {
@@ -1502,7 +1537,7 @@ impl AgentSession {
         }
     }
 
-    fn has_configured_auth(&self, model: &Model) -> bool {
+    pub(crate) fn has_configured_auth(&self, model: &Model) -> bool {
         self.inner
             .model_registry
             .has_configured_auth(model, self.inner.auth.as_ref())
@@ -1828,7 +1863,7 @@ impl AgentSession {
     /// Switch this session's model. Saved to the session file only: the
     /// default model in settings is never changed by a switch, so one
     /// session (a TUI, a Discord thread, an RPC client) can't move another's.
-    fn apply_model(&self, model: &Model) {
+    pub(crate) fn apply_model(&self, model: &Model) {
         self.inner.agent.set_model(model.clone());
         lock(&self.inner.session_manager).append_model_change(&model.provider, &model.id);
     }
@@ -1841,17 +1876,25 @@ impl AgentSession {
         let thinking_level = self.thinking_level_for_model_switch(None);
         self.apply_model(&model);
         self.set_thinking_level(thinking_level);
+        // The user picked a model: never switch away from it on their behalf.
+        self.clear_model_fallbacks();
         Ok(())
     }
 
     /// `cycleModel`: through `--models` when set, else every available model.
     /// `None` when there is nothing to switch to.
     pub fn cycle_model(&self, direction: CycleDirection) -> Option<ModelCycleResult> {
-        if lock(&self.inner.state).scoped_models.is_empty() {
+        let result = if lock(&self.inner.state).scoped_models.is_empty() {
             self.cycle_available_model(direction)
         } else {
             self.cycle_scoped_model(direction)
+        };
+        // The user picked a model: never switch away from it, and never save
+        // a model an earlier fallback switched to.
+        if result.is_some() {
+            self.clear_model_fallbacks();
         }
+        result
     }
 
     fn next_index(current: Option<usize>, len: usize, direction: CycleDirection) -> usize {
@@ -1971,7 +2014,10 @@ impl AgentSession {
         self.model().is_some_and(|m| m.reasoning)
     }
 
-    fn thinking_level_for_model_switch(&self, explicit: Option<ThinkingLevel>) -> ThinkingLevel {
+    pub(crate) fn thinking_level_for_model_switch(
+        &self,
+        explicit: Option<ThinkingLevel>,
+    ) -> ThinkingLevel {
         if let Some(level) = explicit {
             return level;
         }

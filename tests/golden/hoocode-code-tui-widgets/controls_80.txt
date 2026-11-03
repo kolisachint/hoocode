@@ -42,7 +42,7 @@
 ┃  alt+q  Copy the agent's last message to the clipboard                       ┃
 ┃  alt+enter  Queue follow-up message                                          ┃
 ┃  alt+up  Restore queued messages                                             ┃
-┃  alt+a  Cycle agent mode (ask → plan → build → debug)                        ┃
+┃  shift+tab  Cycle agent mode (ask → plan → build → debug)                    ┃
 ┃  shift+alt+a  Cycle agent mode backward                                      ┃
 ┃  alt+m  Cycle to next model                                                  ┃
 ┃  shift+alt+m  Cycle to previous model                                        ┃

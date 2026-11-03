@@ -102,7 +102,6 @@ mod tests {
             "hoocode plugin <command>",
             "hoocode config ",
             "hoocode update ",
-            "hoocode migrate [--dry-run]",
             "hoocode app-server [--listen URL]",
         ] {
             assert!(help.contains(command), "missing {command}");
@@ -127,7 +126,6 @@ mod tests {
             "plugin",
             "config",
             "update",
-            "migrate",
             "app-server",
             "<command>",
         ];
@@ -145,6 +143,18 @@ mod tests {
                 assert!(block.contains(&format!("hoocode {word} ")), "{word}");
             }
         }
+    }
+
+    #[test]
+    fn help_highlights_modes_and_skip_permissions() {
+        let help = render_help(false);
+        let usage = help.find("Usage:").unwrap();
+        let modes = help.find("Modes and approvals:").unwrap();
+        let commands = help.find("Commands:").unwrap();
+        assert!(usage < modes && modes < commands);
+        assert!(help.contains("hoocode --skip-permissions     Run every tool without asking"));
+        assert!(help.contains("Shift+Tab"));
+        assert!(help.contains("\"skip_permissions\": true"));
     }
 
     #[test]

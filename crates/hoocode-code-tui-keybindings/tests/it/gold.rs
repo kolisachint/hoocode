@@ -1,4 +1,4 @@
-//! The keyboard map, key text and config migration against
+//! The keyboard map, key text and config ordering against
 //! `fixtures/keybindings-gold.json`, generated from the pinned hoocode build
 //! (on linux, so platform-specific defaults are the non-Windows ones).
 
@@ -104,22 +104,20 @@ fn formats_key_text_like_hoocode() {
 }
 
 #[test]
-fn migrates_and_orders_a_config_like_hoocode() {
+fn orders_a_config_like_hoocode() {
     let raw: serde_json::Map<String, Value> = serde_json::from_value(serde_json::json!({
-        "zzz": "x", "expandTools": "ctrl+x", "app.tools.expand": "ctrl+y", "cursorUp": ["up"],
-        "app.interrupt": "escape", "aaa": 1, "tui.editor.undo": "ctrl+z", "selectConfirm": "enter"
+        "zzz": "x", "app.tools.expand": "ctrl+y",
+        "app.interrupt": "escape", "aaa": 1, "tui.editor.undo": "ctrl+z"
     }))
     .unwrap();
-    let (config, migrated) = migrate_keybindings_config(&raw);
-    let gold = gold();
-    assert_eq!(Value::Object(config.clone()), gold["migrate"]["config"]);
-    // Key order is part of the contract (the file is written in it).
-    let order: Vec<&String> = config.keys().collect();
-    let expected: Vec<&String> = gold["migrate"]["config"]
-        .as_object()
-        .unwrap()
-        .keys()
+    let config = order_keybindings_config(&raw);
+    // Known ids in declaration order, then the rest sorted: the file is written in it.
+    let order: Vec<&str> = config.keys().map(String::as_str).collect();
+    let known: Vec<&str> = keybindings()
+        .iter()
+        .map(|e| e.id)
+        .filter(|id| raw.contains_key(*id))
         .collect();
-    assert_eq!(order, expected);
-    assert_eq!(migrated, gold["migrate"]["migrated"].as_bool().unwrap());
+    assert_eq!(order[..3], known[..]);
+    assert_eq!(order[3..], ["aaa", "zzz"]);
 }

@@ -93,33 +93,10 @@ str_enum!(
     ToolOutputView { Radar => "radar", Peek => "peek", Full => "full" }
 );
 
-impl ToolOutputView {
-    /// `LEGACY_TOOL_OUTPUT_VIEWS`: values older versions wrote. The retired
-    /// `standard` stop reads as peek, the stop it now sits beside.
-    pub fn from_legacy(value: &str) -> Option<Self> {
-        match value {
-            "collapsed" => Some(Self::Radar),
-            "glance" | "standard" => Some(Self::Peek),
-            _ => None,
-        }
-    }
-}
-
 str_enum!(
-    /// `chromeDensity` (chrome-density.ts). Two stops: the `bare` stop is retired.
+    /// `chromeDensity` (chrome-density.ts). Two stops.
     ChromeDensity { Full => "full", Compact => "compact" }
 );
-
-impl ChromeDensity {
-    /// Values older versions wrote. The retired `bare` stop reads as compact,
-    /// the stop that still shows the footer.
-    pub fn from_legacy(value: &str) -> Option<Self> {
-        match value {
-            "bare" => Some(Self::Compact),
-            _ => None,
-        }
-    }
-}
 
 str_enum!(
     /// `pluginInstallScope`.
@@ -303,7 +280,7 @@ impl std::fmt::Display for ModelCategoryName {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScopedModel {
-    /// `provider/id`, or a glob pattern as `enabledModels` allowed.
+    /// `provider/id`, or a glob pattern.
     pub model: String,
     /// A thinking level name (`off` ... `xhigh`), kept as written.
     #[serde(default, skip_serializing_if = "Option::is_none")]

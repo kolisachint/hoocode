@@ -895,6 +895,11 @@ impl Mode {
         let footer_data = FooterDataProvider::new(session.cwd());
         footer_data
             .set_subagent_enabled(session.get_active_tool_names().iter().any(|t| t == "Agent"));
+        // The HUD and footer name SKIP PERMISSIONS from the first frame (the
+        // first `apply_runtime_settings` only runs on a reload or switch).
+        footer_data.set_skip_permissions(hoocode_code_modes::config::skip_permissions(
+            &hoocode_code_modes::config::read_merged_config(session.cwd()),
+        ));
         let is_oauth: Rc<dyn Fn(&str) -> bool> = Rc::from(options.is_oauth);
         let mut footer = FooterComponent::new(
             Box::new(SessionFooter {
@@ -1592,6 +1597,25 @@ impl Mode {
         self.show_startup_notices(changelog);
         // Messages after the resource listing, as the pin orders them.
         self.render_initial_messages();
+        if self.footer_data.get_skip_permissions() {
+            self.show_record(
+                "Skip permissions is on: tools run without asking (mode rules still apply).",
+            );
+        }
+        // First run: no key and no login yet. Say how to get a model before
+        // the first message fails with "No model selected".
+        if self.session.model().is_none() {
+            let (title, body) = crate::transmission::NO_MODEL_NOTICE;
+            self.notifications.borrow_mut().notify(
+                NotificationKind::Warning,
+                title,
+                &body,
+                None,
+                Some(Duration::from_secs(60)),
+                Some("login"),
+            );
+            self.dirty.set(true);
+        }
         self.setup_autocomplete_provider();
         self.update_available_provider_count();
         self.maybe_warn_about_anthropic_subscription_auth(None);

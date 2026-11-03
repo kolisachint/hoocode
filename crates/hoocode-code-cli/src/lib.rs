@@ -163,18 +163,6 @@ pub fn main(argv: &[String]) -> i32 {
     let mut stderr = std::io::stderr();
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
-    // naming-and-paths.md §3: the one-time merge of the pre-1.2 home folder runs at every
-    // start, in every mode; `migrate` runs it on demand.
-    if argv.first().is_some_and(|a| a == "migrate") {
-        return hoocode_code_migrate::run_migrate_command(
-            &argv[1..],
-            &cwd,
-            &mut stdout,
-            &mut stderr,
-        );
-    }
-    hoocode_code_migrate::run_startup(&cwd, &mut stderr);
-
     if argv.first().is_some_and(|a| a == "app-server") {
         return app_server::run(&argv[1..], &mut stderr);
     }
@@ -196,6 +184,14 @@ pub fn main(argv: &[String]) -> i32 {
     }
 
     let parsed = parse_args(argv);
+    // `--skip-permissions` is process-wide and reaches every child (subagents)
+    // through the env var the permission gate reads.
+    if parsed.skip_permissions == Some(true) {
+        std::env::set_var(hoocode_code_modes::config::SKIP_PERMISSIONS_ENV, "1");
+    }
+    // First run: ship the default `hoo-config.json` (mode rules, safe shell)
+    // so it is there to read and edit. An existing file is never touched.
+    let _ = hoocode_code_modes::config::ensure_default_config();
     match run(&parsed, env, &mut stdout, &mut stderr) {
         Ok(code) => code,
         Err(e) => {

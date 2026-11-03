@@ -1182,12 +1182,23 @@ fn run_print_body(
     install_clearance_relay(args);
     let (session, diagnostics) = build_session(args, false);
     let ran_tools = Arc::clone(ran);
-    let _ran_subscription = session.subscribe(move |event| {
-        if let AgentSessionEvent::Agent(AgentEvent::ToolExecutionStart { tool_name, .. }) = event {
+    let _ran_subscription = session.subscribe(move |event| match event {
+        AgentSessionEvent::Agent(AgentEvent::ToolExecutionStart { tool_name, .. }) => {
             if let Ok(mut set) = ran_tools.lock() {
                 set.insert(tool_name.clone());
             }
         }
+        // The auto-picked model was refused and the session switched: say so
+        // on stderr (stdout stays the answer).
+        AgentSessionEvent::ModelFallback {
+            from,
+            to,
+            error_message,
+        } => {
+            let reason = error_message.lines().next().unwrap_or("").trim();
+            eprintln!("{from} is not available on this account ({reason}). Switched to {to}.");
+        }
+        _ => {}
     });
     let mut messages = args.messages.clone();
     let (initial_message, initial_images) = match crate::initial_message::prepare_initial_message(
@@ -1972,13 +1983,21 @@ fn resource_listing(
 /// binary settles as skipped.
 fn start_semantic_index(args: &Args, session: &AgentSession) {
     use hoocode_code_tui_app::embsearch_progress::{report_embsearch_progress, EmbsearchState};
+    // Only an explicit opt-in (the flag, or the key in a settings file) gets a
+    // status line: the merged default is on, but this build has no indexer, so
+    // a default start stays silent.
     let (enabled, configured) = {
         let settings = session.settings();
-        (
-            args.enable_semantic_index
-                .unwrap_or_else(|| settings.enable_semantic_index()),
-            settings.embsearch_binary_path(),
-        )
+        let explicit = args.enable_semantic_index.or_else(|| {
+            let in_file = settings
+                .global_settings()
+                .contains_key("enableSemanticIndex")
+                || settings
+                    .project_settings()
+                    .contains_key("enableSemanticIndex");
+            in_file.then(|| settings.enable_semantic_index())
+        });
+        (explicit == Some(true), settings.embsearch_binary_path())
     };
     if !enabled {
         return;

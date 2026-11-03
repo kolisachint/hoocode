@@ -1,5 +1,8 @@
 //! The per-mode tool policy and the approval prompt, as a [`PermissionGate`].
 
+mod safe_shell;
+pub use safe_shell::is_safe_shell_command;
+
 use hoocode_agent_types::{AgentToolCall, PermissionDecision, PermissionGate};
 use hoocode_code_modes::config::{self, HooConfig};
 use serde_json::Value;
@@ -135,9 +138,34 @@ pub fn reach_for(tool_name: &str, input: &Value) -> Reach {
     }
 }
 
-/// One word of a Shell command, with whether it opens a quoted run.
-fn push_word(words: &mut Vec<String>, current: &mut String) {
-    if !current.is_empty() {
+/// One word of a Shell command as the parser sees it (quotes and escapes
+/// removed), plus whether the shell may expand it into words that start
+/// with `-`: an unquoted glob or brace (`*`, `?`, `[`, `{`) before any `/`
+/// (`*` can match a file named `--pre=x`; `src/*` cannot).
+#[derive(Debug, Default)]
+struct Word {
+    text: String,
+    /// An unquoted `*?[{` came before any `/`.
+    expands_to_flag: bool,
+    /// The word holds a `/` so far.
+    slash: bool,
+}
+
+impl Word {
+    fn push(&mut self, c: char, quoted: bool) {
+        if c == '/' {
+            self.slash = true;
+        }
+        if !quoted && !self.slash && matches!(c, '*' | '?' | '[' | '{') {
+            self.expands_to_flag = true;
+        }
+        self.text.push(c);
+    }
+}
+
+/// Ends the current word, if any.
+fn push_word(words: &mut Vec<Word>, current: &mut Word) {
+    if !current.text.is_empty() {
         words.push(std::mem::take(current));
     }
 }
@@ -146,9 +174,19 @@ fn push_word(words: &mut Vec<String>, current: &mut String) {
 /// redirect targets. Quotes and backslash escapes hold words together;
 /// `||`, `&&`, `;`, `<` and `(` end a segment without joining a pipe.
 fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
-    let mut segments: Vec<Vec<String>> = vec![Vec::new()];
+    let (segments, redirects, piped) = split_words(command);
+    let segments = segments
+        .into_iter()
+        .map(|words| words.into_iter().map(|w| w.text).collect())
+        .collect();
+    (segments, redirects, piped)
+}
+
+/// [`split_segments`] with each word's [`Word`] marks.
+fn split_words(command: &str) -> (Vec<Vec<Word>>, Vec<String>, bool) {
+    let mut segments: Vec<Vec<Word>> = vec![Vec::new()];
     let mut redirects = Vec::new();
-    let mut current = String::new();
+    let mut current = Word::default();
     let mut quote: Option<char> = None;
     let mut escaped = false;
     let mut chars = command.chars().peekable();
@@ -161,7 +199,7 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
     let mut prev: Option<char> = None;
     while let Some(c) = chars.next() {
         if escaped {
-            current.push(c);
+            current.push(c, true);
             escaped = false;
             continue;
         }
@@ -173,7 +211,7 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
             if c == q {
                 quote = None;
             } else {
-                current.push(c);
+                current.push(c, true);
             }
             continue;
         }
@@ -194,7 +232,7 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
             '&' | ';' | '<' | '(' | ')' => {
                 if c == '&' && prev == Some('>') {
                     // A descriptor dup (`2>&1`): the word continues.
-                    current.push(c);
+                    current.push(c, false);
                     prev = Some(c);
                     continue;
                 }
@@ -222,7 +260,7 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
                 prev = Some(' ');
             }
             _ => {
-                current.push(c);
+                current.push(c, false);
                 prev = Some(c);
             }
         }
@@ -234,9 +272,9 @@ fn split_segments(command: &str) -> (Vec<Vec<String>>, Vec<String>, bool) {
 }
 
 /// Completes a pending redirect target (`>` then a word).
-fn take_redirect(redirects: &mut Vec<String>, pending: &mut bool, current: &mut String) {
-    if *pending && !current.is_empty() {
-        redirects.push(std::mem::take(current));
+fn take_redirect(redirects: &mut Vec<String>, pending: &mut bool, current: &mut Word) {
+    if *pending && !current.text.is_empty() {
+        redirects.push(std::mem::take(current).text);
         *pending = false;
     }
 }
@@ -393,6 +431,13 @@ pub fn matches_allowed_path(file_path: &str, allowed: &[String], cwd: &Path) -> 
     if file_path.is_empty() {
         return false;
     }
+    // `.hoocode/../src/x` would match `.hoocode/*` but write outside it.
+    if Path::new(file_path)
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return false;
+    }
     let to_posix = |s: &str| s.replace('\\', "/");
     let mut candidates = vec![to_posix(file_path)];
     let path = Path::new(file_path);
@@ -425,6 +470,72 @@ pub fn matches_allowed_path(file_path: &str, allowed: &[String], cwd: &Path) -> 
         }
     }
     false
+}
+
+/// `file_path` (relative to `cwd`) lexically, with `.`/`..` folded.
+fn lexical_abs(cwd: &Path, file_path: &str) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in cwd.join(file_path).components() {
+        match c {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Whether a symlink inside the project sends a write to `file_path`
+/// somewhere other than where its path says (`.hoocode/link/x` with
+/// `link -> ../src`), so a path rule cannot be trusted.
+fn resolves_elsewhere(cwd: &Path, file_path: &str) -> bool {
+    let target = lexical_abs(cwd, file_path);
+    let Ok(rel) = target.strip_prefix(cwd) else {
+        // Outside the project: the path rules already judged the text.
+        return false;
+    };
+    let Ok(real_cwd) = cwd.canonicalize() else {
+        return false;
+    };
+    // The deepest part of the path that exists, resolved, plus the rest.
+    let mut existing = target.clone();
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    loop {
+        if std::fs::symlink_metadata(&existing).is_ok() {
+            break;
+        }
+        match (existing.file_name(), existing.parent()) {
+            (Some(name), Some(parent)) => {
+                tail.push(name.to_os_string());
+                existing = parent.to_path_buf();
+            }
+            _ => return false,
+        }
+    }
+    let Ok(mut resolved) = existing.canonicalize() else {
+        // A dangling symlink: it would create a file at its target.
+        return true;
+    };
+    for name in tail.iter().rev() {
+        resolved.push(name);
+    }
+    resolved != real_cwd.join(rel)
+}
+
+/// Whether `file_path` is one of hoocode's config files directly under the
+/// project's `.hoocode/` (`hoo-config.json`, `settings.json`, ...).
+fn is_project_config_file(cwd: &Path, file_path: &str) -> bool {
+    if file_path.is_empty() {
+        return false;
+    }
+    let target = lexical_abs(cwd, file_path);
+    let config_dir = cwd.join(hoocode_code_paths::CONFIG_DIR_NAME);
+    target.parent() == Some(config_dir.as_path())
+        && target
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("json"))
 }
 
 /// Node's `path.relative(from, to)` for absolute paths (lexical).
@@ -564,10 +675,7 @@ pub fn always_allows(command: &str, approved: &[String]) -> bool {
     if segments.is_empty() {
         return false;
     }
-    if redirects
-        .iter()
-        .any(|target| target != "/dev/null" && !target.starts_with('&'))
-    {
+    if !redirects_are_harmless(command, &redirects) {
         return false;
     }
     segments.iter().all(|words| {
@@ -576,6 +684,21 @@ pub fn always_allows(command: &str, approved: &[String]) -> bool {
             && !is_always_wrapper(program)
             && !is_assignment(program)
             && approved.iter().any(|name| name == program)
+    })
+}
+
+/// Whether a command's redirects write no file: each target is `/dev/null`
+/// or a descriptor dup (`&1`, `&2`, `&-`; `>&name` writes the file `name`),
+/// and there is no clobbering `>|` (which the segment split reads as a pipe).
+pub(crate) fn redirects_are_harmless(command: &str, redirects: &[String]) -> bool {
+    if command.contains(">|") {
+        return false;
+    }
+    redirects.iter().all(|target| {
+        target == "/dev/null"
+            || target.strip_prefix('&').is_some_and(|fd| {
+                fd == "-" || (!fd.is_empty() && fd.chars().all(|c| c.is_ascii_digit()))
+            })
     })
 }
 
@@ -697,13 +820,39 @@ pub fn evaluate(
     if tool_name == "Write" || tool_name == "Edit" {
         if let Some(allowed) = list("allowed_write_paths") {
             let file_path = mutation_path(input).unwrap_or_default();
-            if !matches_allowed_path(&file_path, &allowed, cwd) {
+            if !matches_allowed_path(&file_path, &allowed, cwd)
+                || resolves_elsewhere(cwd, &file_path)
+            {
                 return Verdict::Block(format!(
                     "Mode \"{mode}\" only allows writes to: {}. Attempted to {tool_name}: {file_path}. Switch to \"/mode build\" to modify source files.",
                     allowed.join(", ")
                 ));
             }
         }
+        // hoocode's own project config (`.hoocode/hoo-config.json`,
+        // `.hoocode/settings.json`, ...) can switch modes or run commands:
+        // a write to it always asks, even with `skip_permissions` or
+        // `auto_allow`.
+        if is_project_config_file(cwd, &mutation_path(input).unwrap_or_default()) {
+            if fail_closed {
+                return Verdict::Block(format!(
+                    "Tool \"{tool_name}\" may not change hoocode's project config without approval, and no client can answer in this session."
+                ));
+            }
+            return Verdict::Prompt;
+        }
+    }
+    // `skip_permissions` (config or `--skip-permissions`): nothing is
+    // asked. The mode rules above still hold.
+    if config::skip_permissions(config) {
+        return Verdict::Allow;
+    }
+    // `safe_shell`: a read-only command runs in every mode without asking.
+    if tool_name == "Shell"
+        && config::safe_shell(config)
+        && is_safe_shell_command(input.get("command").and_then(Value::as_str).unwrap_or(""))
+    {
+        return Verdict::Allow;
     }
     if list("auto_allow").is_some_and(|a| a.iter().any(|t| t == tool_name)) {
         return Verdict::Allow;
@@ -929,7 +1078,7 @@ mod tests {
     #[test]
     fn gate_defers_to_the_session_rule() {
         let dir = fresh_cwd();
-        session_allow_program(dir.path(), "build", "printf");
+        session_allow_program(dir.path(), "build", "make");
         let config = build_config();
         let allow = |command: &str| {
             evaluate(
@@ -940,9 +1089,9 @@ mod tests {
                 ApprovalChannel::Ui,
             )
         };
-        assert_eq!(allow("printf y"), Verdict::Allow);
-        assert_eq!(allow("printf y | sort"), Verdict::Prompt);
-        assert_eq!(allow("printf y; rm"), Verdict::Prompt);
+        assert_eq!(allow("make y"), Verdict::Allow);
+        assert_eq!(allow("make y | sort"), Verdict::Prompt);
+        assert_eq!(allow("make y; rm"), Verdict::Prompt);
         assert_eq!(allow("rm -rf target"), Verdict::Prompt);
         // Another cwd shares nothing.
         let elsewhere = fresh_cwd();
@@ -951,7 +1100,7 @@ mod tests {
                 &config,
                 elsewhere.path(),
                 "Shell",
-                &shell("printf y"),
+                &shell("make y"),
                 ApprovalChannel::Ui,
             ),
             Verdict::Prompt
@@ -961,7 +1110,7 @@ mod tests {
     #[test]
     fn plan_mode_always_prompts() {
         let dir = fresh_cwd();
-        session_allow_program(dir.path(), "plan", "printf");
+        session_allow_program(dir.path(), "plan", "make");
         let config = json!({"active_mode": "plan", "modes": {"plan": {}}})
             .as_object()
             .unwrap()
@@ -971,7 +1120,7 @@ mod tests {
                 &config,
                 dir.path(),
                 "Shell",
-                &shell("printf y"),
+                &shell("make y"),
                 ApprovalChannel::Ui,
             ),
             Verdict::Prompt

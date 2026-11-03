@@ -11,8 +11,7 @@
 //! ids remapped, timestamps masked) and work files.
 //!
 //! The snapshots are hoocode's output. Never accept a change into them without
-//! reviewing it (`cargo insta accept`). The frozen recordings under
-//! `tests/fixtures/hoocode-0.5.89/replay/` are kept for reference only.
+//! reviewing it (`cargo insta accept`).
 
 use std::collections::HashMap;
 use std::fs;

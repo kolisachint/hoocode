@@ -320,6 +320,7 @@
   [
    "app.mode.cycleForward",
    [
+    "shift+tab",
     "alt+a"
    ],
    "Cycle agent mode (ask → plan → build → debug)"
@@ -353,8 +354,7 @@
   [
    "app.thinking.cycleForward",
    [
-    "alt+t",
-    "shift+tab"
+    "alt+t"
    ],
    "Cycle thinking level (off → … → high)"
   ],
@@ -882,19 +882,5 @@
    "",
    ""
   ]
- },
- "migrate": {
-  "config": {
-   "tui.editor.cursorUp": [
-    "up"
-   ],
-   "tui.editor.undo": "ctrl+z",
-   "tui.select.confirm": "enter",
-   "app.interrupt": "escape",
-   "app.tools.expand": "ctrl+y",
-   "aaa": 1,
-   "zzz": "x"
-  },
-  "migrated": true
  }
 }

@@ -30,6 +30,9 @@ struct State {
     next_callback: u64,
     available_provider_count: usize,
     active_mode: String,
+    /// `skip_permissions` is on (`--skip-permissions`, the env var or the
+    /// config): every tool runs without a prompt. The HUD and footer say so.
+    skip_permissions: bool,
     subagent_enabled: bool,
     /// The hull paint (`/color`, M8e5); `None` is unpainted.
     hull_paint: Option<crate::hull_paint::HullPaint>,
@@ -69,6 +72,7 @@ impl FooterDataProvider {
                     next_callback: 0,
                     available_provider_count: 0,
                     active_mode: "build".into(),
+                    skip_permissions: false,
                     subagent_enabled: false,
                     hull_paint: None,
                     git_poll: poll,
@@ -140,6 +144,15 @@ impl FooterDataProvider {
 
     pub fn get_active_mode(&self) -> String {
         self.state().active_mode.clone()
+    }
+
+    /// Whether every tool runs without a prompt (the skip-permissions flag).
+    pub fn get_skip_permissions(&self) -> bool {
+        self.state().skip_permissions
+    }
+
+    pub fn set_skip_permissions(&self, on: bool) {
+        self.state().skip_permissions = on;
     }
 
     pub fn set_active_mode(&self, mode: &str) {

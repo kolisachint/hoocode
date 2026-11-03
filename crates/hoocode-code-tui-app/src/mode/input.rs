@@ -786,24 +786,41 @@ impl Mode {
             }
             let completer = extensions.clone();
             let name = info.name.clone();
-            commands.push(CommandEntry::Slash(SlashCommand {
-                description: prefix_autocomplete_description(info.description, &info.source_info),
-                name: info.name,
-                argument_hint: None,
-                get_argument_completions: Some(Box::new(move |prefix: &str| {
-                    let values = completer.argument_completions(&name, prefix)?;
-                    Some(
-                        values
-                            .into_iter()
-                            .map(|value| AutocompleteItem {
-                                label: value.clone(),
-                                value,
-                                description: None,
-                            })
-                            .collect(),
-                    )
-                }) as ArgumentCompletionsFn),
-            }));
+            // `/mode` sits right after `/model`, so a bare `/` shows it in
+            // the first rows; the other extension commands follow the
+            // built-ins.
+            let at = if name == "mode" {
+                commands
+                    .iter()
+                    .position(|c| matches!(c, CommandEntry::Slash(s) if s.name == "model"))
+                    .map_or(commands.len(), |i| i + 1)
+            } else {
+                commands.len()
+            };
+            commands.insert(
+                at,
+                CommandEntry::Slash(SlashCommand {
+                    description: prefix_autocomplete_description(
+                        info.description,
+                        &info.source_info,
+                    ),
+                    name: info.name,
+                    argument_hint: None,
+                    get_argument_completions: Some(Box::new(move |prefix: &str| {
+                        let values = completer.argument_completions(&name, prefix)?;
+                        Some(
+                            values
+                                .into_iter()
+                                .map(|value| AutocompleteItem {
+                                    label: value.clone(),
+                                    value,
+                                    description: None,
+                                })
+                                .collect(),
+                        )
+                    }) as ArgumentCompletionsFn),
+                }),
+            );
         }
         for info in skills {
             if !skill_commands {

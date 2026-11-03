@@ -297,23 +297,6 @@ fn the_job_wake_waits_while_the_user_types_or_a_loop_runs() {
 }
 
 #[test]
-fn an_ownerless_task_of_the_folder_is_not_fired_by_an_idle_session() {
-    let (mut mode, store) = mode_with_due_task("ownerless");
-    // Written by an older hoocode: no owner recorded.
-    let path = store.path().to_path_buf();
-    let text = std::fs::read_to_string(&path).unwrap();
-    let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
-    value["tasks"][0]
-        .as_object_mut()
-        .unwrap()
-        .retain(|k, _| !k.starts_with("owner"));
-    std::fs::write(&path, value.to_string()).unwrap();
-    tick_due(&mut mode);
-    assert_eq!(store.list()[0].last_run_minute, None);
-    assert!(!mode.prompt_pending);
-}
-
-#[test]
 fn a_prompt_that_ends_without_a_turn_runs_what_was_queued_behind_it() {
     // An extension command (e.g. `/grill`) ends at once with no turn, and may
     // send its own follow-up while the prompt still shows as in flight. That

@@ -5,8 +5,8 @@
 
 use crate::config::{self, HooConfig};
 use crate::plan::{
-    build_approve_message, build_goal_messages, build_grill_message, legacy_plan_path,
-    load_plan_sections, parse_goal_args, parse_grill_target, plan_path, GrillTarget, PlanLoad,
+    build_approve_message, build_goal_messages, build_grill_message, load_plan_sections,
+    parse_goal_args, parse_grill_target, plan_path, GrillTarget, PlanLoad,
 };
 use crate::prompts::{default_mode_prompt, DEFAULT_MODE};
 pub use hoocode_code_agent_session::NotifyLevel;
@@ -41,10 +41,7 @@ pub const KNOWN_MODES: [&str; 4] = ["ask", "plan", "build", "debug"];
 
 /// The mode commands with their `description`s.
 pub const MODE_COMMANDS: [(&str, &str); 5] = [
-    (
-        "mode",
-        "Switch active mode. Usage: /mode <ask|plan|build|debug>",
-    ),
+    ("mode", "Switch agent mode: ask, plan, build, debug"),
     ("plan", "Switch to plan mode. Shorthand for /mode plan."),
     (
         "grill",
@@ -218,7 +215,7 @@ impl ModesExtension {
             .plan_path
             .clone()
             .unwrap_or_else(|| plan_path(&self.session.cwd, &self.session.session_id));
-        let candidates = vec![session_plan.clone(), legacy_plan_path(&self.session.cwd)];
+        let candidates = vec![session_plan.clone()];
         (session_plan, candidates)
     }
 

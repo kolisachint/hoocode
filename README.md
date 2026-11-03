@@ -30,8 +30,10 @@ binary: no Node, no Python, no runtime to install.
 
 - **Any provider.** Anthropic, OpenAI, Google, OpenRouter, Groq, DeepSeek, xAI, Fireworks
   and more, by API key or by `/login` (Anthropic, GitHub Copilot, OpenAI Codex, Google).
-- **You stay in control.** Shell, Edit and Write ask first (Yes / No / Always). Four
-  agent modes (ask, plan, build, debug) scope what the agent may do.
+- **You stay in control.** Shell, Edit and Write ask first (Yes / No / Always);
+  read-only commands such as `ls` or `git status` just run. Four agent modes (ask,
+  plan, build, debug; Shift+Tab cycles them) scope what the agent may do, and
+  `--skip-permissions` runs everything without asking when you want that.
 - **Subagents.** The agent can hand work to background subagents and keep going; their
   tool calls go through the same approval gate as the main agent.
 - **Sessions you can come back to.** `--continue`, `/resume`, `/fork`, `/tree`, and
@@ -114,12 +116,19 @@ hoocode                               # full-screen interactive session
 
 No API key? Start `hoocode` and run `/login` to sign in with a subscription instead.
 
+> **Approvals.** hoocode starts in **build** mode: Shell, Edit and Write ask before they
+> run (Yes / No / Always), and read-only commands like `ls`, `cat` or `git status` just
+> run. To let it work without asking, start it with **`hoocode --skip-permissions`**, or
+> make that the default with `"skip_permissions": true` in `~/.hoocode/hoo-config.json`.
+> Mode rules still apply (ask mode never edits). Shift+Tab cycles ask, plan, build and
+> debug.
+
 A few things to try in the interactive session:
 
 | Type | What it does |
 |---|---|
 | `/model` | Pick a model (Ctrl+P cycles through your favourites) |
-| `/mode` | Switch between ask, plan, build and debug |
+| `/mode` | Switch between ask, plan, build and debug (or Shift+Tab) |
 | `/resume` | Reopen an earlier session in this folder |
 | `@path/to/file` | Attach a file to your message |
 | `/hotkeys` | Show the keyboard shortcuts |
@@ -134,6 +143,7 @@ hoocode --model anthropic/claude-sonnet-4-5 "Review the last commit"
 hoocode --continue "And now fix the first one"          # continue the last session
 hoocode --tools Read,CodeSearch -p "Review src/"        # read-only run
 hoocode --mode rpc                                      # JSON-RPC over stdin/stdout
+hoocode --skip-permissions "Fix the failing tests"      # no approval prompts
 ```
 
 Plugins add skills, subagents and MCP servers. Add a git marketplace, then install

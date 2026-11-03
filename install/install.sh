@@ -227,9 +227,11 @@ add_to_path() {
     [ "$INSTALL_DIR" = "$HOME/.hoocode" ] || _line="export PATH=\"$BIN_DIR:\$PATH\""
 
     _touched=""
+    _seen=""
     # zsh reads its rc from $ZDOTDIR when that is set.
     for rc in "$HOME/.bashrc" "${ZDOTDIR:-$HOME}/.zshrc" "$HOME/.profile"; do
         [ -f "$rc" ] || continue
+        _seen=1
         grep -qF "$BIN_DIR" "$rc" 2>/dev/null && continue
         grep -qF '.hoocode/bin' "$rc" 2>/dev/null && continue
         printf '\n# Added by the hoocode installer\n%s\n' "$_line" >> "$rc"
@@ -237,9 +239,28 @@ add_to_path() {
     done
 
     _fish="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
+    [ -f "$_fish" ] && _seen=1
     if [ -f "$_fish" ] && ! grep -qF "$BIN_DIR" "$_fish" 2>/dev/null; then
         printf '\n# Added by the hoocode installer\nfish_add_path %s\n' "$BIN_DIR" >> "$_fish"
         _touched="$_touched $_fish"
+    fi
+
+    # No rc file at all (a fresh account): create the one the login shell
+    # reads. Not when one exists and already has the line (a re-run).
+    if [ -z "$_seen" ]; then
+        case "$(basename "${SHELL:-sh}")" in
+            zsh) _rc="${ZDOTDIR:-$HOME}/.zshrc" ;;
+            bash) _rc="$HOME/.bashrc" ;;
+            fish) _rc="$_fish" ;;
+            *) _rc="$HOME/.profile" ;;
+        esac
+        if mkdir -p "$(dirname "$_rc")" 2>/dev/null; then
+            if [ "$_rc" = "$_fish" ]; then
+                printf '# Added by the hoocode installer\nfish_add_path %s\n' "$BIN_DIR" >> "$_rc"
+            else
+                printf '# Added by the hoocode installer\n%s\n' "$_line" >> "$_rc"
+            fi && _touched=" $_rc"
+        fi
     fi
 
     printf '%s' "$_touched"
@@ -278,7 +299,9 @@ fi
 say ""
 say "${C_OK}${C_B}hoocode is installed.${C_0}"
 say ""
-say "  ${C_B}hoocode${C_0}          start in build mode ${C_DIM}(or ${C_B}hoo${C_0}${C_DIM}, same thing)${C_0}"
+say "  ${C_B}hoocode${C_0}          start in build mode ${C_DIM}(or ${C_B}hoo${C_0}${C_DIM}, same thing)${C_0}; Shell, Edit and Write ask first"
+say "  ${C_B}hoocode --skip-permissions${C_0}"
+say "                   run every tool without asking"
 say "  ${C_B}hoocode --help${C_0}   every flag"
 say ""
 say "  Docs      ${C_ACC}$WEBSITE${C_0}"

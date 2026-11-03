@@ -150,7 +150,7 @@ async fn emits_one_failure_response_when_prompt_preflight_rejects() {
     assert_eq!(response["success"], false);
     let error = response["error"].as_str().unwrap();
     assert!(
-        error.contains("\n\nUse /login to log into a provider via OAuth or API key. See:"),
+        error.contains("\n\nUse /login to log into a provider (subscription or API key)"),
         "{error}"
     );
     assert!(error.starts_with("No API key found for "), "{error}");

@@ -46,6 +46,25 @@ pub const DEFAULT_MODEL_PER_PROVIDER: &[(&str, &str)] = &[
 /// `DEFAULT_THINKING_LEVEL` (core/defaults.ts).
 pub const DEFAULT_THINKING_LEVEL: ThinkingLevel = ThinkingLevel::Off;
 
+/// The models to try after `chosen` when it was picked automatically and the
+/// provider refuses it (no access, no funds, deprecated): every provider's
+/// default from [`DEFAULT_MODEL_PER_PROVIDER`] that is in `available`, in
+/// that order, without `chosen`. One key can serve two providers (OpenCode's
+/// `opencode` and `opencode-go`) with different access, so the next default
+/// often works where the first did not.
+pub fn default_model_fallbacks(available: &[Model], chosen: &Model) -> Vec<Model> {
+    DEFAULT_MODEL_PER_PROVIDER
+        .iter()
+        .filter_map(|(provider, id)| {
+            available
+                .iter()
+                .find(|m| m.provider == *provider && m.id == *id)
+        })
+        .filter(|m| !(m.provider == chosen.provider && m.id == chosen.id))
+        .cloned()
+        .collect()
+}
+
 /// `defaultModelPerProvider[provider]`.
 pub fn default_model_for_provider(provider: &str) -> Option<&'static str> {
     DEFAULT_MODEL_PER_PROVIDER

@@ -175,13 +175,9 @@ impl Mode {
         }
         // The tick's store read also feeds the Schedule rows (no extra read here).
         // The claim is for this session: it fires the tasks it owns and adopts
-        // the ones whose owner has exited. A task with no owner (older hoocode)
-        // is adopted only when this session's `/loop` created it.
+        // the ones whose owner has exited.
         let session_id = self.session.session_id();
-        let mine: Vec<String> = self.loop_tasks.iter().map(|(_, id)| id.clone()).collect();
-        let tick = hoocode_code_scheduler::tick_now(self.session.cwd(), Some(&session_id), &|id| {
-            mine.iter().any(|known| known == id)
-        });
+        let tick = hoocode_code_scheduler::tick_now(self.session.cwd(), Some(&session_id));
         let claimed = tick.claimed;
         self.scheduled_runs.publish_tick(
             task_store(),
@@ -261,6 +257,18 @@ impl Mode {
                         max_attempts,
                         &error_message,
                     )));
+            }
+            AgentSessionEvent::ModelFallback {
+                from,
+                to,
+                error_message,
+            } => {
+                // The auto-picked model was refused; the session already
+                // switched and continues the turn.
+                let reason = error_message.lines().next().unwrap_or("").trim();
+                self.show_warning(&format!(
+                    "{from} is not available on this account ({reason}). Switched to {to}; /model picks another."
+                ));
             }
             AgentSessionEvent::AutoRetryEnd {
                 success,

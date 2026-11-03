@@ -10,7 +10,7 @@ pub mod platform_targets;
 mod storage;
 mod types;
 
-pub use manager::{deep_merge_settings, migrate_settings, SettingsManager};
+pub use manager::{deep_merge_settings, SettingsManager};
 pub use storage::{
     Error, FileSettingsStorage, InMemorySettingsStorage, LockFn, SettingsError, SettingsScope,
     SettingsStorage,

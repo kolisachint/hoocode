@@ -75,7 +75,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         // ── Steer — what the agent is before it runs
         entry(
             "app.mode.cycleForward",
-            &["alt+a"],
+            &["shift+tab", "alt+a"],
             "Cycle agent mode (ask → plan → build → debug)",
         ),
         entry(
@@ -92,7 +92,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry("app.model.select", &[], "Open model selector"),
         entry(
             "app.thinking.cycleForward",
-            &["alt+t", "shift+tab"],
+            &["alt+t"],
             "Cycle thinking level (off → … → high)",
         ),
         entry(
@@ -425,79 +425,6 @@ pub fn keybinding_definitions() -> HashMap<String, KeybindingDefinition> {
         .collect()
 }
 
-/// Legacy (un-namespaced or renamed) ids and what each is called now.
-pub const KEYBINDING_NAME_MIGRATIONS: [(&str, &str); 62] = [
-    ("cursorUp", "tui.editor.cursorUp"),
-    ("cursorDown", "tui.editor.cursorDown"),
-    ("cursorLeft", "tui.editor.cursorLeft"),
-    ("cursorRight", "tui.editor.cursorRight"),
-    ("cursorWordLeft", "tui.editor.cursorWordLeft"),
-    ("cursorWordRight", "tui.editor.cursorWordRight"),
-    ("cursorLineStart", "tui.editor.cursorLineStart"),
-    ("cursorLineEnd", "tui.editor.cursorLineEnd"),
-    ("jumpForward", "tui.editor.jumpForward"),
-    ("jumpBackward", "tui.editor.jumpBackward"),
-    ("pageUp", "tui.editor.pageUp"),
-    ("pageDown", "tui.editor.pageDown"),
-    ("deleteCharBackward", "tui.editor.deleteCharBackward"),
-    ("deleteCharForward", "tui.editor.deleteCharForward"),
-    ("deleteWordBackward", "tui.editor.deleteWordBackward"),
-    ("deleteWordForward", "tui.editor.deleteWordForward"),
-    ("deleteToLineStart", "tui.editor.deleteToLineStart"),
-    ("deleteToLineEnd", "tui.editor.deleteToLineEnd"),
-    ("yank", "tui.editor.yank"),
-    ("yankPop", "tui.editor.yankPop"),
-    ("undo", "tui.editor.undo"),
-    ("newLine", "tui.input.newLine"),
-    ("submit", "tui.input.submit"),
-    ("tab", "tui.input.tab"),
-    ("copy", "tui.input.copy"),
-    ("selectUp", "tui.select.up"),
-    ("selectDown", "tui.select.down"),
-    ("selectPageUp", "tui.select.pageUp"),
-    ("selectPageDown", "tui.select.pageDown"),
-    ("selectConfirm", "tui.select.confirm"),
-    ("selectCancel", "tui.select.cancel"),
-    ("app.thinking.cycle", "app.thinking.cycleForward"),
-    ("app.mode.cycle", "app.mode.cycleForward"),
-    ("app.tasks.cycleView", "app.tasks.cycleForward"),
-    ("interrupt", "app.interrupt"),
-    ("clear", "app.clear"),
-    ("exit", "app.exit"),
-    ("suspend", "app.suspend"),
-    ("cycleThinkingLevel", "app.thinking.cycleForward"),
-    ("cycleModelForward", "app.model.cycleForward"),
-    ("cycleModelBackward", "app.model.cycleBackward"),
-    ("selectModel", "app.model.select"),
-    ("expandTools", "app.tools.expand"),
-    ("toggleThinking", "app.thinking.toggle"),
-    ("toggleSessionNamedFilter", "app.session.toggleNamedFilter"),
-    ("externalEditor", "app.editor.external"),
-    ("followUp", "app.message.followUp"),
-    ("dequeue", "app.message.dequeue"),
-    ("pasteImage", "app.clipboard.pasteImage"),
-    ("newSession", "app.session.new"),
-    ("tree", "app.session.tree"),
-    ("fork", "app.session.fork"),
-    ("resume", "app.session.resume"),
-    ("treeFoldOrUp", "app.tree.foldOrUp"),
-    ("treeUnfoldOrDown", "app.tree.unfoldOrDown"),
-    ("treeEditLabel", "app.tree.editLabel"),
-    ("treeToggleLabelTimestamp", "app.tree.toggleLabelTimestamp"),
-    ("toggleSessionPath", "app.session.togglePath"),
-    ("toggleSessionSort", "app.session.toggleSort"),
-    ("renameSession", "app.session.rename"),
-    ("deleteSession", "app.session.delete"),
-    ("deleteSessionNoninvasive", "app.session.deleteNoninvasive"),
-];
-
-fn migrated_name(key: &str) -> Option<&'static str> {
-    KEYBINDING_NAME_MIGRATIONS
-        .iter()
-        .find(|(old, _)| *old == key)
-        .map(|(_, new)| *new)
-}
-
 /// `toKeybindingsConfig`: keep string and string-array bindings; a string
 /// becomes a one-key list.
 pub fn to_keybindings_config(value: &Value) -> HashMap<String, Vec<String>> {
@@ -523,24 +450,6 @@ pub fn to_keybindings_config(value: &Value) -> HashMap<String, Vec<String>> {
         }
     }
     config
-}
-
-/// `migrateKeybindingsConfig`: rename legacy ids (a namespaced value wins
-/// over its legacy twin) and order the result.
-pub fn migrate_keybindings_config(raw: &Map<String, Value>) -> (Map<String, Value>, bool) {
-    let mut config = Map::new();
-    let mut migrated = false;
-    for (key, value) in raw {
-        let next_key = migrated_name(key).unwrap_or(key);
-        if next_key != key {
-            migrated = true;
-            if raw.contains_key(next_key) {
-                continue;
-            }
-        }
-        config.insert(next_key.to_string(), value.clone());
-    }
-    (order_keybindings_config(&config), migrated)
 }
 
 /// `orderKeybindingsConfig`: known ids in declaration order, then the rest
@@ -575,23 +484,7 @@ fn load_from_file(path: &Path) -> HashMap<String, Vec<String>> {
     let Some(raw) = load_raw_config(path) else {
         return HashMap::new();
     };
-    to_keybindings_config(&Value::Object(migrate_keybindings_config(&raw).0))
-}
-
-/// The keybindings file migration from `migrations.ts`: rewrite legacy ids in
-/// `<agent_dir>/keybindings.json` in place. Malformed files are left alone.
-pub fn migrate_keybindings_config_file(agent_dir: &Path) {
-    let path = agent_dir.join("keybindings.json");
-    let Some(raw) = load_raw_config(&path) else {
-        return;
-    };
-    let (config, migrated) = migrate_keybindings_config(&raw);
-    if !migrated {
-        return;
-    }
-    if let Ok(text) = serde_json::to_string_pretty(&Value::Object(config)) {
-        let _ = std::fs::write(&path, format!("{text}\n"));
-    }
+    to_keybindings_config(&Value::Object(raw))
 }
 
 /// The app's keybindings manager: the TUI manager over [`keybindings`], plus
@@ -611,7 +504,6 @@ impl AppKeybindingsManager {
     }
 
     /// `KeybindingsManager.create`: load `<agent_dir>/keybindings.json`
-    /// (legacy names migrated in memory).
     pub fn create(agent_dir: Option<&Path>) -> Self {
         let agent_dir = agent_dir
             .map(Path::to_path_buf)

@@ -186,7 +186,13 @@ fn hard_rules_apply_without_a_ui_and_everything_else_runs() {
     let allow = json!({"modes": {"plan": {"enabled_tools": ["Read"]}}, "active_mode": "plan"});
     let c = allow.as_object().unwrap().clone();
     assert_eq!(
-        evaluate(&c, d.path(), "Shell", &json!({"command": "ls"}), PRINT),
+        evaluate(
+            &c,
+            d.path(),
+            "Shell",
+            &json!({"command": "make build"}),
+            PRINT
+        ),
         Verdict::Block("Tool \"Shell\" is not enabled in mode \"plan\" (enabled: Read).".into())
     );
 }
@@ -218,7 +224,13 @@ fn ungated_tools_are_never_prompted_and_bash_is_described_collapsed() {
 fn gated_call(channel: ApprovalChannel, config: Value) -> Verdict {
     let d = cwd();
     let c = config.as_object().unwrap().clone();
-    evaluate(&c, d.path(), "Shell", &json!({"command": "ls"}), channel)
+    evaluate(
+        &c,
+        d.path(),
+        "Shell",
+        &json!({"command": "make build"}),
+        channel,
+    )
 }
 
 #[test]

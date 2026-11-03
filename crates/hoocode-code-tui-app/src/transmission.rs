@@ -24,6 +24,16 @@ pub const TOAST_WIDTH: usize = 46;
 /// At most this many body rows under the title; the band budgets the same.
 pub const TOAST_BODY_ROWS: usize = 3;
 
+/// The first-run toast when no model is available (no key, no login): its
+/// title and body rows, each short enough for the toast's inner width.
+pub const NO_MODEL_NOTICE: (&str, [&str; 2]) = (
+    "Sign in to start",
+    [
+        "Run /login: a subscription or an API key.",
+        "Or set e.g. OPENAI_API_KEY and restart.",
+    ],
+);
+
 /// What one toast shows: the notice title first, then its body rows. `note`
 /// rides the title row (`shift+alt+z undo`). `remaining` is the share of its
 /// time left (0 to 1) and drives the `▔` drain row.

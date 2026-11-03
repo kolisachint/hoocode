@@ -654,7 +654,7 @@ pub struct CompactionPreparation {
 }
 
 /// `prepareCompaction`: `None` when the path already ends in a compaction or
-/// the kept entry has no id (an unmigrated session).
+/// the kept entry has no id.
 pub fn prepare_compaction(
     path_entries: &[FileEntry],
     settings: &CompactionSettings,
@@ -781,7 +781,7 @@ pub async fn compact(
     let (read_files, modified_files) = compute_file_lists(&preparation.file_ops);
     summary.push_str(&format_file_operations(&read_files, &modified_files));
     if preparation.first_kept_entry_id.is_empty() {
-        return Err("First kept entry has no UUID - session may need migration".to_string());
+        return Err("First kept entry has no UUID".to_string());
     }
 
     let discarded: u64 = preparation

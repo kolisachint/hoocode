@@ -22,11 +22,11 @@ pub use config_value::{
 };
 pub use resolver::{clamp_effort, match_scoped_model, pick_by_category, resolve_scoped_models};
 pub use resolver::{
-    default_model_for_provider, find_exact_model_reference_match, find_initial_model,
-    locale_compare, parse_model_pattern, parse_thinking_level, resolve_cli_model,
-    resolve_model_scope, InitialModelOptions, InitialModelResult, ModelScope, ModelSource,
-    ParsedModelResult, RegistryWithAuth, ResolveCliModelResult, ResolvedScoped, ScopedModel,
-    DEFAULT_MODEL_PER_PROVIDER,
+    default_model_fallbacks, default_model_for_provider, find_exact_model_reference_match,
+    find_initial_model, locale_compare, parse_model_pattern, parse_thinking_level,
+    resolve_cli_model, resolve_model_scope, InitialModelOptions, InitialModelResult, ModelScope,
+    ModelSource, ParsedModelResult, RegistryWithAuth, ResolveCliModelResult, ResolvedScoped,
+    ScopedModel, DEFAULT_MODEL_PER_PROVIDER,
 };
 use std::sync::Arc;
 

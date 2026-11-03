@@ -6,7 +6,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use hoocode_code_tui_app::notification_panel::{NotificationKind, NotificationPanel};
-use hoocode_code_tui_app::transmission::{transmission_component, TransmissionData, TOAST_WIDTH};
+use hoocode_code_tui_app::transmission::{
+    transmission_component, TransmissionData, NO_MODEL_NOTICE, TOAST_BODY_ROWS, TOAST_WIDTH,
+};
 use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::{assert_golden, Component};
 
@@ -114,4 +116,16 @@ fn overlay_mode_quiets_the_band_but_keeps_the_toast() {
     assert!(!panel.toast_lines(100).is_empty());
     panel.set_overlay(false);
     assert!(!panel.render(100).is_empty());
+}
+
+#[test]
+fn the_sign_in_notice_fits_the_toast() {
+    let (title, body) = NO_MODEL_NOTICE;
+    assert!(title.contains("Sign in"));
+    assert!(body.len() <= TOAST_BODY_ROWS);
+    assert!(body.iter().any(|row| row.contains("/login")));
+    // The frame and one blank each side leave TOAST_WIDTH - 4 cells.
+    for row in body {
+        assert!(row.chars().count() <= TOAST_WIDTH - 4, "{row}");
+    }
 }
