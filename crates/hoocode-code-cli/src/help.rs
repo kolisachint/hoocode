@@ -146,6 +146,18 @@ mod tests {
     }
 
     #[test]
+    fn help_highlights_modes_and_skip_permissions() {
+        let help = render_help(false);
+        let usage = help.find("Usage:").unwrap();
+        let modes = help.find("Modes and approvals:").unwrap();
+        let commands = help.find("Commands:").unwrap();
+        assert!(usage < modes && modes < commands);
+        assert!(help.contains("hoocode --skip-permissions     Run every tool without asking"));
+        assert!(help.contains("Shift+Tab"));
+        assert!(help.contains("\"skip_permissions\": true"));
+    }
+
+    #[test]
     fn bold_headers_only_with_color() {
         assert!(render_help(true).contains("\x1b[1mOptions:\x1b[22m"));
         assert!(!render_help(false).contains('\x1b'));

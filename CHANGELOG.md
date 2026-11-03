@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`~/.hoocode/hoo-config.json` is written on first run** with the shipped mode rules: ask and debug block Edit and Write, plan writes only under `.hoocode/` without asking, build allows everything with the usual approvals. A mode key your file leaves out takes the shipped value.
 - **Read-only shell commands run without asking, in every mode** (`safe_shell`, on by default): `ls`, `cat`, `head`, `grep`, `rg`, `git status`/`diff`/`log`/`show` and similar, alone or joined by pipes and `&&`. A file redirect, `$(…)`, or any other program asks as before.
 - **`--skip-permissions`** (or `HOOCODE_SKIP_PERMISSIONS=1`, or `"skip_permissions": true` in the global `hoo-config.json`) runs every tool without asking; the mode rules still apply and the header shows SKIP PERMISSIONS. Subagents of such a session inherit it.
+- **`hoocode --help`, the README, the install docs and the installer's closing message explain modes, approvals and `--skip-permissions`** up front.
 - **Shift+Tab cycles the agent mode** (ask → plan → build → debug). Thinking level stays on Alt+T.
 - **A project cannot loosen your approvals.** A project's `.hoocode/hoo-config.json` no longer adds to `auto_allow` or widens your `allowed_write_paths`, and a write to `.hoocode/*.json` (hoocode's own project config) always asks, in every mode and with `--skip-permissions`. A plan-mode write that a symlink would send out of `.hoocode/` is blocked.
 - `/mode` shows in the first rows of the `/` menu, right after `/model`.

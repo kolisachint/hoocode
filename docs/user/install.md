@@ -33,6 +33,29 @@ curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh -s -- --no-modi
 The script is [`install/install.sh`](../../install/install.sh) in the
 repository, and the copy served at that URL is identical.
 
+## First run
+
+```bash
+cd your-project
+hoocode                       # asks before Shell, Edit and Write
+hoocode --skip-permissions    # runs every tool without asking
+```
+
+On its first start hoocode writes `~/.hoocode/hoo-config.json` with the default mode
+rules. It starts in **build** mode: Shell, Edit and Write ask before they run, and
+read-only commands such as `ls`, `cat`, `rg` and `git status` run without asking.
+
+**Skip permissions.** `hoocode --skip-permissions` runs every tool without asking; the
+header shows SKIP PERMISSIONS while it is on. To make it the default, set
+`"skip_permissions": true` in `~/.hoocode/hoo-config.json` (or export
+`HOOCODE_SKIP_PERMISSIONS=1`). The mode rules still apply: ask and debug never edit
+files. A project's own `.hoocode/hoo-config.json` cannot turn it on. See
+[modes and approvals](configuration.md#modes-and-approvals).
+
+Then sign in: run `/login` in the session, or set a provider key such as
+`ANTHROPIC_API_KEY` or `OPENAI_API_KEY` before starting. See the
+[quickstart](quickstart.md).
+
 ## npm or bun
 
 The package pulls in only the native binary for your platform. Its `hoocode` and `hoo`
