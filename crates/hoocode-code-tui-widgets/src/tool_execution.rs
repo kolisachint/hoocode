@@ -816,9 +816,10 @@ impl ToolExecutionComponent {
     }
 
     /// The step header's right side (M4): the stats, right-aligned by the
-    /// chain. A failed step shows only the `HIT` chip (plus the exit code
-    /// and duration when known): it replaces the success stats, never
-    /// appends to them. Empty when the step carries no stats.
+    /// chain. A failed step shows only the `HIT` chip (plus the duration when
+    /// known): it replaces the success stats, never appends to them. A Shell
+    /// step that only exited non-zero shows a muted `exit N` instead of the
+    /// HIT. Empty when the step carries no stats.
     pub fn peek_right(&self, palette: &hoocode_tui_ratatui::Palette) -> String {
         let t = theme();
         let dim = |s: &str| t.fg("muted", s);
@@ -826,12 +827,18 @@ impl ToolExecutionComponent {
             return dim("interrupted");
         }
         if self.is_error() {
-            let mut stats = crate::trajectory::hit_chip(palette);
-            if self.tool_name == "Shell" {
-                if let Some(code) = shell_exit_code(&self.text_output()) {
-                    stats.push_str(&format!(" {}", dim(&format!("exit {code}"))));
-                }
-            }
+            // A Shell call that only exited non-zero ran and said no (grep
+            // found nothing): a muted `exit N`, not a HIT. A timeout, an
+            // abort or a spawn error names no code and keeps the HIT.
+            let exit = if self.tool_name == "Shell" {
+                shell_exit_code(&self.text_output())
+            } else {
+                None
+            };
+            let mut stats = match exit {
+                Some(code) => dim(&format!("exit {code}")),
+                None => crate::trajectory::hit_chip(palette),
+            };
             if let Some(dur) = self.result_duration() {
                 stats.push_str(&format!(" {} {}", dim("·"), dim(&dur)));
             }

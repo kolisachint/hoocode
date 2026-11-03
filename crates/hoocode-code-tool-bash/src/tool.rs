@@ -420,6 +420,9 @@ impl BashCall<'_> {
                 let (text, details) =
                     format_output(&snapshot, last_line_bytes, self.max_bytes, "(no output)");
                 if let Some(code) = exit_code.filter(|c| *c != 0) {
+                    // The TUI reads this line for the `exit N` chip
+                    // (`tool_execution.rs` `shell_exit_code`): keep the wording.
+                    // An error result carries no details, so it cannot be structured.
                     let status = format!("Command exited with code {code}");
                     return Err(append_status(&text, &status).into());
                 }
