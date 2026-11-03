@@ -979,7 +979,10 @@ impl HooPermissionGate {
                     });
                 }
                 let Some(ui) = self.ui.as_ref() else {
-                    return Some("Denied by permission gate".into());
+                    let mode = config::active_mode(&merged).unwrap_or_else(|| "build".into());
+                    return Some(format!(
+                        "Denied by permission gate: {tool_name} needs approval in mode \"{mode}\", but no approval prompt is available in this session. Ask the user to allow it, or use a read-only alternative."
+                    ));
                 };
                 let info = ClearanceInfo {
                     tool: tool_name.to_string(),
