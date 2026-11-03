@@ -10090,6 +10090,9 @@
   "provider": "opencode",
   "baseUrl": "https://opencode.ai/zen/v1",
   "reasoning": true,
+  "thinkingLevelMap": {
+   "off": null
+  },
   "input": [
    "text",
    "image"
@@ -10110,6 +10113,9 @@
   "provider": "opencode",
   "baseUrl": "https://opencode.ai/zen/v1",
   "reasoning": true,
+  "thinkingLevelMap": {
+   "off": null
+  },
   "input": [
    "text",
    "image"
@@ -10130,6 +10136,9 @@
   "provider": "opencode",
   "baseUrl": "https://opencode.ai/zen/v1",
   "reasoning": true,
+  "thinkingLevelMap": {
+   "off": null
+  },
   "input": [
    "text",
    "image"
@@ -10484,6 +10493,9 @@
   "provider": "opencode",
   "baseUrl": "https://opencode.ai/zen/v1",
   "reasoning": true,
+  "thinkingLevelMap": {
+   "off": null
+  },
   "input": [
    "text",
    "image"
@@ -11027,6 +11039,9 @@
   "provider": "opencode-go",
   "baseUrl": "https://opencode.ai/zen/go/v1",
   "reasoning": true,
+  "thinkingLevelMap": {
+   "off": null
+  },
   "input": [
    "text",
    "image"
@@ -11047,6 +11062,9 @@
   "provider": "opencode-go",
   "baseUrl": "https://opencode.ai/zen/go/v1",
   "reasoning": true,
+  "thinkingLevelMap": {
+   "off": null
+  },
   "input": [
    "text",
    "image"

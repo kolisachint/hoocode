@@ -64,6 +64,18 @@ fn sends_none_reasoning_effort_when_off_is_supported() {
 }
 
 #[test]
+fn omits_reasoning_for_opencode_muse_models_when_off() {
+    // They reject `reasoning_effort: "none"` (400 "Supported values: minimal, low, ...").
+    for (provider, id) in [
+        ("opencode", "muse-spark-1.3"),
+        ("opencode-go", "muse-spark-1.3-contributor"),
+    ] {
+        let (req, _) = capture(catalog(provider, id), ResponsesOptions::default());
+        assert!(req.json().get("reasoning").is_none(), "{provider}/{id}");
+    }
+}
+
+#[test]
 fn omits_reasoning_effort_when_off_is_unsupported() {
     for id in [
         "gpt-5",
