@@ -31,7 +31,7 @@ pub use retry_delay::{
     DEFAULT_MAX_RETRY_DELAY_MS, DEFAULT_SDK_MAX_RETRIES, MAX_TIMER_DELAY_MS,
 };
 pub use tool_constraints::to_strict_json_schema;
-pub use transform_messages::{transform_messages, NormalizeToolCallId};
+pub use transform_messages::{transform_messages, NormalizeToolCallId, MISSING_TOOL_RESULT};
 pub use validation::{
     check_schema, coerce_with_json_schema, schema_validation_errors, typebox_convert,
     validate_tool_arguments, SchemaOrigin, ValidationError,

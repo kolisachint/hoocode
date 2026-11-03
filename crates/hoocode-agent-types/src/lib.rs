@@ -832,6 +832,10 @@ pub struct AgentLoopConfig {
         >,
     >,
     pub signal: Option<hoocode_ai_types::AbortSignal>,
+    /// Set before `signal` aborts when the session is shutting down rather
+    /// than the user stopping the turn. The results the loop writes for calls
+    /// the abort cut short then say the session ended.
+    pub session_ending: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub api_key: Option<String>,
     pub session_id: Option<String>,
     pub max_retry_delay_ms: Option<u64>,
@@ -871,6 +875,7 @@ impl AgentLoopConfig {
             max_parallel_tools: 8,
             stream_fn: None,
             signal: None,
+            session_ending: None,
             api_key: None,
             session_id: None,
             max_retry_delay_ms: None,

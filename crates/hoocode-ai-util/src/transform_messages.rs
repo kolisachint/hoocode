@@ -67,10 +67,15 @@ fn now_millis() -> i64 {
         .as_millis() as i64
 }
 
+/// The text of a synthesized result for a tool call the log has no result for
+/// (the process was killed mid-call, or an older log).
+pub const MISSING_TOOL_RESULT: &str =
+    "No result recorded: the session ended or was interrupted before this call finished";
+
 /// `transformMessages`: downgrade images for non-vision models, convert
 /// thinking from other models to text, normalize tool call ids (and the
 /// matching tool results), drop errored/aborted assistant turns, and
-/// synthesize `No result provided` results for orphaned tool calls.
+/// synthesize [`MISSING_TOOL_RESULT`] results for orphaned tool calls.
 pub fn transform_messages(
     messages: &[Message],
     model: &Model,
@@ -164,7 +169,7 @@ pub fn transform_messages(
                     duration_ms: None,
                     tool_call_id: tc.id.clone(),
                     tool_name: tc.name.clone(),
-                    content: vec![Content::Text(TextContent::new("No result provided"))],
+                    content: vec![Content::Text(TextContent::new(MISSING_TOOL_RESULT))],
                     details: None,
                     is_error: true,
                     timestamp: now_millis(),
@@ -368,7 +373,7 @@ mod tests {
         assert!(r.is_error);
         assert_eq!(
             r.content,
-            vec![Content::Text(TextContent::new("No result provided"))]
+            vec![Content::Text(TextContent::new(MISSING_TOOL_RESULT))]
         );
     }
 }

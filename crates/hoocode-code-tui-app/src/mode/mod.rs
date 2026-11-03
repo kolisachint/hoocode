@@ -1533,12 +1533,17 @@ impl Mode {
     }
 
     /// Ctrl+C aborts the turn from the input thread, without waiting for this
-    /// loop. Set again on a session switch, so it reaches the current session.
+    /// loop; an exit by signal answers the open tool calls first. Set again
+    /// on a session switch, so they reach the current session.
     fn install_interrupt_hook(&self) {
         let session = self.session.clone();
         hoocode_tui_terminal::interrupt::set_hook(Some(Arc::new(move || {
             session.abort_retry();
             session.agent().abort();
+        })));
+        let session = self.session.clone();
+        hoocode_tui_terminal::interrupt::set_exit_hook(Some(Arc::new(move || {
+            let _ = session.try_close_unanswered_tool_calls();
         })));
     }
 
@@ -2006,6 +2011,7 @@ impl Mode {
         }
         self.task_panel.borrow_mut().dispose();
         hoocode_tui_terminal::interrupt::set_hook(None);
+        hoocode_tui_terminal::interrupt::set_exit_hook(None);
         // Abort, kill tool groups, flush, close MCP, release, then restore the terminal.
         let reports = shutdown::run(&self.session, || {
             set_terminal_owned_by_tui(false);

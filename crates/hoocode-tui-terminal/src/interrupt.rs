@@ -38,6 +38,7 @@ const PASTE_END: &[u8] = b"\x1b[201~";
 type Hook = Arc<dyn Fn() + Send + Sync>;
 
 static HOOK: Mutex<Option<Hook>> = Mutex::new(None);
+static EXIT_HOOK: Mutex<Option<Hook>> = Mutex::new(None);
 static EPOCH: OnceLock<Instant> = OnceLock::new();
 /// Nanoseconds after [`EPOCH`] of the last UI beat, plus one (0 = never beat).
 static LAST_BEAT: AtomicU64 = AtomicU64::new(0);
@@ -57,6 +58,20 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// so it must return at once. `None` clears it.
 pub fn set_hook(hook: Option<Hook>) {
     *lock(&HOOK) = hook;
+}
+
+/// Sets the exit hook: run on the emergency exit and on `SIGTERM`/`SIGHUP`,
+/// before the session flush (it answers the open tool calls). It must not
+/// block: the UI may be stuck holding locks. `None` clears it.
+pub fn set_exit_hook(hook: Option<Hook>) {
+    *lock(&EXIT_HOOK) = hook;
+}
+
+fn run_exit_hook() {
+    let hook = EXIT_HOOK.try_lock().ok().and_then(|hook| hook.clone());
+    if let Some(hook) = hook {
+        hook();
+    }
 }
 
 /// The UI loop reports progress. Call it once per loop iteration.
@@ -147,7 +162,7 @@ fn emergency(previous: Option<Instant>, now: Instant, ui_stalled: bool) -> bool 
 #[cfg(unix)]
 static TERMINATE_WATCH: OnceLock<hoocode_runtime::SignalWatch> = OnceLock::new();
 
-/// `SIGTERM` and `SIGHUP` restore the terminal, flush the session (bounded) and
+/// `SIGTERM` and `SIGHUP` restore the terminal, run the exit hook, flush the session (bounded) and
 /// exit with 128 plus the signal, as the emergency exit does. Without this the
 /// process dies on the alternate screen, which the full-screen TUI keeps. Idempotent.
 #[cfg(unix)]
@@ -157,6 +172,7 @@ pub fn install_terminate_restore() {
     }
     let watch = hoocode_runtime::watch_terminate("hoocode-terminate", |signal| {
         restore_terminal();
+        run_exit_hook();
         let _ = hoocode_runtime::session_io().flush_blocking(EMERGENCY_FLUSH);
         std::process::exit(128 + signal);
     });
@@ -168,6 +184,7 @@ pub fn install_terminate_restore() {
 /// Restores the terminal, flushes the session (bounded) and exits 130.
 fn emergency_exit() -> ! {
     restore_terminal();
+    run_exit_hook();
     let _ = hoocode_runtime::session_io().flush_blocking(EMERGENCY_FLUSH);
     std::process::exit(EMERGENCY_EXIT_CODE);
 }
