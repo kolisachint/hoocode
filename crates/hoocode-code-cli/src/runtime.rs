@@ -1182,12 +1182,23 @@ fn run_print_body(
     install_clearance_relay(args);
     let (session, diagnostics) = build_session(args, false);
     let ran_tools = Arc::clone(ran);
-    let _ran_subscription = session.subscribe(move |event| {
-        if let AgentSessionEvent::Agent(AgentEvent::ToolExecutionStart { tool_name, .. }) = event {
+    let _ran_subscription = session.subscribe(move |event| match event {
+        AgentSessionEvent::Agent(AgentEvent::ToolExecutionStart { tool_name, .. }) => {
             if let Ok(mut set) = ran_tools.lock() {
                 set.insert(tool_name.clone());
             }
         }
+        // The auto-picked model was refused and the session switched: say so
+        // on stderr (stdout stays the answer).
+        AgentSessionEvent::ModelFallback {
+            from,
+            to,
+            error_message,
+        } => {
+            let reason = error_message.lines().next().unwrap_or("").trim();
+            eprintln!("{from} is not available on this account ({reason}). Switched to {to}.");
+        }
+        _ => {}
     });
     let mut messages = args.messages.clone();
     let (initial_message, initial_images) = match crate::initial_message::prepare_initial_message(

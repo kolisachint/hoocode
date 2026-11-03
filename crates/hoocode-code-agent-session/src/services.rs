@@ -12,8 +12,8 @@ use hoocode_agent_core::{Agent, AgentOptions, ConvertToLlmFn, SharedStreamFn, Tr
 use hoocode_agent_types::{AgentMessage, AgentState, AgentTools, PermissionGate};
 use hoocode_ai_types::{Content, Message, Model, StopReason, ThinkingDisplay, ThinkingLevel};
 use hoocode_code_models::{
-    find_initial_model, AuthLookup, InitialModelOptions, ModelRegistry, RegistryWithAuth,
-    ResolvedScoped,
+    default_model_fallbacks, find_initial_model, AuthLookup, InitialModelOptions, ModelRegistry,
+    RegistryWithAuth, ResolvedScoped,
 };
 use hoocode_code_session::{FileEntry, SessionManager};
 use hoocode_code_settings::SettingsManager;
@@ -289,6 +289,7 @@ pub fn create_agent_session(
 
     let mut model = options.model;
     let mut model_fallback_message = None;
+    let mut model_fallbacks: Vec<Model> = Vec::new();
     if model.is_none() && has_existing_session {
         if let Some(restored) = &existing.model {
             model = registry
@@ -320,7 +321,7 @@ pub fn create_agent_session(
             registry: &registry,
             auth: auth.as_ref(),
         };
-        model = find_initial_model(
+        let picked = find_initial_model(
             InitialModelOptions {
                 is_continuing: has_existing_session,
                 default_provider: default_provider.as_deref(),
@@ -332,6 +333,19 @@ pub fn create_agent_session(
         )
         .ok()
         .and_then(|r| r.model);
+        // Picked by hoocode, not by the user (no --model, no saved default
+        // in use, no resumed model): keep the other defaults to fall back on.
+        if let Some(chosen) = &picked {
+            let is_saved_default = default_provider.as_deref() == Some(chosen.provider.as_str())
+                && default_model_id.as_deref() == Some(chosen.id.as_str());
+            if !is_saved_default && model_fallback_message.is_none() {
+                model_fallbacks = default_model_fallbacks(
+                    &hoocode_code_models::ModelSource::available_models(&source),
+                    chosen,
+                );
+            }
+        }
+        model = picked;
         match (&model, &mut model_fallback_message) {
             (None, message) => *message = Some(format_no_models_available_message()),
             (Some(m), Some(message)) => {
@@ -557,6 +571,7 @@ pub fn create_agent_session(
         extensions: options.extensions,
         session_start_event: options.session_start_event,
     });
+    session.set_model_fallbacks(model_fallbacks);
     // The interactive app wakes an idle agent from the same notices (`job_wake_pending`).
     if let Some(notices) = job_notices {
         session.set_job_notices(notices);

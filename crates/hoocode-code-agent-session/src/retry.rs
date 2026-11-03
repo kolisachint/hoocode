@@ -63,11 +63,14 @@ impl AgentSession {
     /// `createPromiseForAgentEnd`: arm the retry synchronously as the agent
     /// ends, so `prompt()`'s wait can never miss it.
     pub(crate) fn arm_retry_for_agent_end(&self, messages: &[AgentMessage]) {
-        if self.retry_state().pending || !self.settings().retry_settings().enabled {
+        if self.retry_state().pending {
             return;
         }
+        let retry_enabled = self.settings().retry_settings().enabled;
         let model = self.model();
-        if last_assistant(messages).is_some_and(|m| is_retryable_error(m, model.as_ref())) {
+        if last_assistant(messages).is_some_and(|m| {
+            (retry_enabled && is_retryable_error(m, model.as_ref())) || self.model_fallback_ready(m)
+        }) {
             self.retry_state().pending = true;
         }
     }

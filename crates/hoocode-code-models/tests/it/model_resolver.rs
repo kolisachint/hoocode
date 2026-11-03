@@ -2,8 +2,8 @@
 
 use hoocode_ai_types::{Model, ModelCost, ThinkingLevel};
 use hoocode_code_models::{
-    default_model_for_provider, find_initial_model, parse_model_pattern, resolve_cli_model,
-    resolve_model_scope, InitialModelOptions, ModelSource,
+    default_model_fallbacks, default_model_for_provider, find_initial_model, parse_model_pattern,
+    resolve_cli_model, resolve_model_scope, InitialModelOptions, ModelSource,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -666,4 +666,39 @@ fn resolve_model_scope_glob_star_stays_within_a_segment() {
     assert!(scope.models.is_empty());
     let scope = resolve_model_scope(&["OPENROUTER/*/*".to_string()], &all_models());
     assert_eq!(scope.models.len(), 2);
+}
+
+#[test]
+fn fallbacks_follow_the_provider_defaults_and_skip_the_chosen_model() {
+    let m = |provider: &str, id: &str| {
+        model(
+            id,
+            id,
+            provider,
+            "https://x",
+            true,
+            &["text"],
+            [0.0; 4],
+            1000,
+            100,
+        )
+    };
+    let zen = m("opencode", "kimi-k2.6");
+    let go = m("opencode-go", "kimi-k3");
+    let other = m("opencode-go", "glm-5.3");
+    let available = vec![other.clone(), go.clone(), zen.clone()];
+    let ids = |v: Vec<Model>| -> Vec<String> {
+        v.into_iter()
+            .map(|m| format!("{}/{}", m.provider, m.id))
+            .collect()
+    };
+    // Only provider defaults, in DEFAULT_MODEL_PER_PROVIDER order, never the chosen one.
+    assert_eq!(
+        ids(default_model_fallbacks(&available, &zen)),
+        vec!["opencode-go/kimi-k3"]
+    );
+    assert!(default_model_fallbacks(&available, &go)
+        .iter()
+        .all(|f| f.id != "kimi-k3"));
+    assert!(default_model_fallbacks(&[], &zen).is_empty());
 }

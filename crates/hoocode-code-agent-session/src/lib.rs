@@ -12,6 +12,7 @@ pub mod format;
 pub mod hooks;
 pub mod mcp;
 pub mod mcp_rows;
+pub mod model_fallback;
 pub mod output_guard;
 pub mod provider_health;
 pub mod resources;

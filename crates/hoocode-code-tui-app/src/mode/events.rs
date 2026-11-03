@@ -258,6 +258,18 @@ impl Mode {
                         &error_message,
                     )));
             }
+            AgentSessionEvent::ModelFallback {
+                from,
+                to,
+                error_message,
+            } => {
+                // The auto-picked model was refused; the session already
+                // switched and continues the turn.
+                let reason = error_message.lines().next().unwrap_or("").trim();
+                self.show_warning(&format!(
+                    "{from} is not available on this account ({reason}). Switched to {to}; /model picks another."
+                ));
+            }
             AgentSessionEvent::AutoRetryEnd {
                 success,
                 attempt,
