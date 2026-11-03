@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An allowed write path no longer matches a path that climbs out of it with `..`, and `>&file` / `>|` redirects no longer count as harmless for an Always-approved program.
 - `--skip-permissions` now shows SKIP PERMISSIONS in the header from the first frame (it only appeared after a reload), with a line in the chat at startup.
 - A Write or Edit blocked by a mode rule or denied no longer counts as "Edited" in the turn's summary.
+- The install script creates the shell rc file when a fresh account has none (for the login shell: `.bashrc`, `.zshrc`, fish `config.fish`, else `.profile`), so `hoocode` is on `PATH` in the next terminal instead of a warning to add it by hand.
 
 ### Removed: migration and old-format readers (2026-11-02)
 - **hoocode is a new product, so nothing converts older data.** Gone: the one-time merge of the pre-1.2 (old product name) home and project folders into `~/.hoocode`, the `hoocode migrate` command, the v1/v2 session upgrade (a session file that is not the current version no longer loads), the settings key migrations (`queueMode`, `enableEmbsearchTools`, `websockets`, old `skills`, `retry.maxDelayMs`, `enabledModels`/`modelCategories` to `scopedModels`, `toolOutputDisplay` and `bare` values), the keybinding id renames, the `.hoocode/scheduled_tasks.json` fallback and owner-less scheduled tasks, and the `.hoocode/plan.md` plan fallback. Old values fall back to defaults.

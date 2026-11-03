@@ -242,6 +242,23 @@ add_to_path() {
         _touched="$_touched $_fish"
     fi
 
+    # No rc file at all (a fresh account): create the one the login shell reads.
+    if [ -z "$_touched" ]; then
+        case "$(basename "${SHELL:-sh}")" in
+            zsh) _rc="${ZDOTDIR:-$HOME}/.zshrc" ;;
+            bash) _rc="$HOME/.bashrc" ;;
+            fish) _rc="$_fish" ;;
+            *) _rc="$HOME/.profile" ;;
+        esac
+        if mkdir -p "$(dirname "$_rc")" 2>/dev/null; then
+            if [ "$_rc" = "$_fish" ]; then
+                printf '# Added by the hoocode installer\nfish_add_path %s\n' "$BIN_DIR" >> "$_rc"
+            else
+                printf '# Added by the hoocode installer\n%s\n' "$_line" >> "$_rc"
+            fi && _touched=" $_rc"
+        fi
+    fi
+
     printf '%s' "$_touched"
 }
 
