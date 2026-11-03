@@ -436,7 +436,7 @@ fn a_failed_shell_step_names_its_exit_status_and_keeps_the_last_lines() {
     let mut chain = chain_with(Peek, vec![shell_block(Peek, output, true)]);
     let rows = render(&mut chain, 100);
     assert!(
-        rows[0].contains("HIT") && rows[0].contains("exit 1"),
+        rows[0].contains("exit 1") && !rows[0].contains("HIT"),
         "{rows:?}"
     );
     let joined = rows.join("\n");
@@ -444,6 +444,22 @@ fn a_failed_shell_step_names_its_exit_status_and_keeps_the_last_lines() {
     assert!(joined.contains("error: could not compile"), "{joined}");
     assert!(joined.contains("Command exited with code 1"), "{joined}");
     assert!(!joined.contains("mismatched types"), "{joined}");
+}
+
+#[test]
+fn a_shell_timeout_or_abort_keeps_the_hit_chip() {
+    let _g = lock();
+    for output in [
+        "partial\n\nCommand timed out after 5 seconds",
+        "partial\n\nCommand aborted",
+    ] {
+        let mut chain = chain_with(Peek, vec![shell_block(Peek, output, true)]);
+        let rows = render(&mut chain, 100);
+        assert!(
+            rows[0].contains("HIT") && !rows[0].contains("exit"),
+            "{output}: {rows:?}"
+        );
+    }
 }
 
 #[test]
