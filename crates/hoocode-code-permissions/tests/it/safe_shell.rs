@@ -44,6 +44,13 @@ fn read_only_commands_are_safe() {
         "sort -r names.txt | head",
         "echo hello",
         "ls 2>&1",
+        "ls *.rs",
+        "wc -l src/*.rs",
+        "rg -g '*.rs' 'fn main$' src",
+        "rg foo src/*",
+        "git log -p -- 'src/*'",
+        "tail -n 5 log.txt",
+        "cat ~/notes.txt",
     ] {
         assert!(is_safe_shell_command(command), "{command}");
     }
@@ -78,6 +85,48 @@ fn commands_that_write_or_run_code_are_not_safe() {
         "cargo build",
         "sudo ls",
         "tree -o out",
+        // GNU long-option abbreviations.
+        "sort --out=x a",
+        "sort --compress=sh a",
+        "file --comp -m x",
+        "git diff --outp=x",
+        "git log --ext",
+        // Short-flag clusters in git.
+        "git grep -nOvim foo",
+        // Programs that run a command.
+        "rg --hostname-bin=sh foo",
+        "rg --pre=sh foo",
+        "rg '--pre'=sh foo",
+        "rg --p\\re=sh foo",
+        // `tree -R` writes 00Tree.html files.
+        "tree -R -H .",
+        // Never ends.
+        "tail -f log.txt",
+        "tail -nF log.txt",
+        "tail --follow=name log.txt",
+        // Expansions the word checks cannot see.
+        "rg $'--pre' sh foo",
+        "sort $'-o' x a",
+        "rg $PRE foo",
+        "echo \"$HOME\"",
+        "cat ${HOME}",
+        "cat <(ls)",
+        "cat x <<EOF",
+        // Globs and braces that can expand to a flag (a file named `--pre=x`).
+        "rg foo *",
+        "rg foo -*",
+        "sort ?",
+        "git log *",
+        "rg x {--pre=sh,a}",
+        "tree [-]o",
+        // Redirect / list forms.
+        "cat <> f",
+        "ls &> out",
+        "ls & rm x",
+        "ls | sh",
+        "(rm x)",
+        "{ rm x; }",
+        "git status; git push",
     ] {
         assert!(!is_safe_shell_command(command), "{command:?}");
     }
@@ -201,4 +250,53 @@ fn the_shipped_file_names_every_mode() {
     for mode in ["ask", "plan", "build", "debug"] {
         assert!(config["modes"][mode].is_object(), "{mode}");
     }
+}
+
+#[test]
+fn plan_writes_to_project_config_still_ask() {
+    let config = shipped("plan");
+    for path in [".hoocode/hoo-config.json", ".hoocode/settings.json"] {
+        assert_eq!(
+            verdict(&config, "Write", json!({ "path": path })),
+            Verdict::Prompt,
+            "{path}"
+        );
+    }
+    // Even with skip_permissions on.
+    let mut skip = shipped("plan");
+    skip.insert("skip_permissions".into(), true.into());
+    assert_eq!(
+        verdict(&skip, "Edit", json!({"path": ".hoocode/hoo-config.json"})),
+        Verdict::Prompt
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn plan_writes_through_a_symlink_out_of_dot_hoocode_are_blocked() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".hoocode")).unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::os::unix::fs::symlink(dir.path().join("src"), dir.path().join(".hoocode/link")).unwrap();
+    let config = shipped("plan");
+    assert!(matches!(
+        evaluate(
+            &config,
+            dir.path(),
+            "Write",
+            &json!({"path": ".hoocode/link/main.rs"}),
+            UI
+        ),
+        Verdict::Block(_)
+    ));
+    assert_eq!(
+        evaluate(
+            &config,
+            dir.path(),
+            "Write",
+            &json!({"path": ".hoocode/plans/a.md"}),
+            UI
+        ),
+        Verdict::Allow
+    );
 }

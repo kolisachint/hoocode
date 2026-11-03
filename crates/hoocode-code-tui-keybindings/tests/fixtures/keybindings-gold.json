@@ -882,19 +882,5 @@
    "",
    ""
   ]
- },
- "migrate": {
-  "config": {
-   "tui.editor.cursorUp": [
-    "up"
-   ],
-   "tui.editor.undo": "ctrl+z",
-   "tui.select.confirm": "enter",
-   "app.interrupt": "escape",
-   "app.tools.expand": "ctrl+y",
-   "aaa": 1,
-   "zzz": "x"
-  },
-  "migrated": true
  }
 }

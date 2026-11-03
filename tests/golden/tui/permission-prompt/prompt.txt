@@ -10,8 +10,10 @@
 
 
 
+
+
 «fg=#5cc8bb»▟«fg=#66bec6»▀«fg=#71b4d1»▀«fg=#7baadd»▀«fg=#86a0e8»▀«fg=#9096f3»▀«fg=#9b8cff»▙«»  «bold»<app>«»                                  «fg=#a8a8a8»✦«»                                     «fg=#a8a8a8»·
-«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERS«»ION>                                      «fg=#a8a8a8»·
+«fg=#5cc8bb»▌«fg=#66bec6»▟«fg=#71b4d1»▙«fg=#7baadd» «fg=#86a0e8»▟«fg=#9096f3»▙«fg=#9b8cff»▐«»  «fg=#989898»coding agent«» «fg=#a8a8a8»·«» «fg=#989898»v<VERSI«»ON>                                      «fg=#a8a8a8»·
 «fg=#5cc8bb»▜«fg=#66bec6»▄«fg=#71b4d1»▄«fg=#7baadd»▄«fg=#86a0e8»▄«fg=#9096f3»▄«fg=#9b8cff»▛«»  «fg=#989898»<WORK>«»                                       «fg=#a8a8a8»⋆
 
 «» «fg=#a8a8a8»SHIP«» mock-model   «fg=#5cc8bb»✦«» 1 «fg=#989898»skill«»  «fg=#9b8cff»◈«» 5 «fg=#989898»agents
@@ -20,11 +22,9 @@
 
 «» Listing files.
 
-«» «bold;fg=#f0c674»01«» «fg=#ffff00»● «bold»Shell«»  ls
-
-
+«» «bold;fg=#f0c674»01«» «fg=#ffff00»● «bold»Shell«»  touch notes.txt
 «fg=#ffff00»┏━«» «bold;fg=#ffff00»◎ CLEARANCE NEEDED«» «fg=#ffff00»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«» «fg=#ffff00»BUILD asks for Shell«» «fg=#ffff00»━┓
-«fg=#ffff00»┃«»$ ls                                                                                              «fg=#ffff00»┃
-«fg=#ffff00»┃«fg=#989898»REACH«»   «fg=#a8a8a8»□«» read   «fg=#a8a8a8»□«» write   «fg=#a8a8a8»□«» network   «fg=#a8a8a8»□«» pipe                                                     «fg=#ffff00»┃
-«fg=#ffff00»┃«fg=#989898»y«fg=#a8a8a8» go, once · «fg=#989898»a«fg=#a8a8a8» always ls in this session · «fg=#989898»n«fg=#a8a8a8» abort + say why · «fg=#989898»e«fg=#a8a8a8» edit first«»                       «fg=#ffff00»┃
+«fg=#ffff00»┃«»$ touch notes.txt                                                                                 «fg=#ffff00»┃
+«fg=#ffff00»┃«fg=#989898»REACH«»   «fg=#ffff00»■«» read«fg=#989898» notes.txt«»   «fg=#a8a8a8»□«» write   «fg=#a8a8a8»□«» network   «fg=#a8a8a8»□«» pipe                                           «fg=#ffff00»┃
+«fg=#ffff00»┃«fg=#989898»y«fg=#a8a8a8» go, once · «fg=#989898»a«fg=#a8a8a8» always touch in this session · «fg=#989898»n«fg=#a8a8a8» abort + say why · «fg=#989898»e«fg=#a8a8a8» edit first«»                    «fg=#ffff00»┃
 «fg=#ffff00»┗━«» «fg=#989898»or type a reply«» «fg=#ffff00»━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━«»  «fg=#ffff00»━┛

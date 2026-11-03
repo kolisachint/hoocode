@@ -60,6 +60,17 @@ fn isolate_agent_dir() {
         let dir =
             std::env::temp_dir().join(format!("hoocode-app-server-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
+        // `auto_allow` comes from the global file only (a project cannot
+        // add to it); the project picks the mode.
+        std::fs::write(
+            dir.join("hoo-config.json"),
+            json!({"modes": {
+                "ask": {"auto_allow": ["Read"]},
+                "trusting": {"auto_allow": ["Read", "Shell"]}
+            }})
+            .to_string(),
+        )
+        .unwrap();
         std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir);
     });
 }
@@ -452,15 +463,10 @@ fn setup_with(ask_bash: bool, scope: Option<Vec<ScopeEntry>>) -> Setup {
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path().canonicalize().unwrap();
     let mode = if ask_bash { "ask" } else { "trusting" };
-    let auto_allow: Vec<&str> = if ask_bash {
-        vec!["Read"]
-    } else {
-        vec!["Read", "Shell"]
-    };
     std::fs::create_dir_all(dir.join(".hoocode")).unwrap();
     std::fs::write(
         dir.join(".hoocode/hoo-config.json"),
-        json!({"active_mode": mode, "modes": {mode: {"auto_allow": auto_allow}}}).to_string(),
+        json!({"active_mode": mode}).to_string(),
     )
     .unwrap();
     let mut ids: Vec<&'static str> = match &scope {
@@ -620,7 +626,8 @@ async fn a_turn_streams_items_and_completes() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn bash_asks_and_accept_runs_it() {
     let s = setup(true);
-    s.faux.set_responses(vec![bash_call("ls"), reply("listed")]);
+    s.faux
+        .set_responses(vec![bash_call("make"), reply("listed")]);
     let mut c = Client::connect(&s.server);
     c.initialize().await;
     let thread = start_thread(&mut c).await;
@@ -629,7 +636,7 @@ async fn bash_asks_and_accept_runs_it() {
     let request = c
         .server_request("item/commandExecution/requestApproval")
         .await;
-    assert_eq!(request["params"]["command"], json!("ls"));
+    assert_eq!(request["params"]["command"], json!("make"));
     assert_eq!(request["params"]["threadId"], json!(thread));
     assert_eq!(request["params"]["turnId"], json!(turn));
     assert_eq!(request["params"]["itemId"], json!("call-1"));
@@ -648,7 +655,7 @@ async fn bash_asks_and_accept_runs_it() {
         .unwrap()
         .clone();
     assert_eq!(cmd["status"], json!("completed"));
-    assert_eq!(cmd["aggregatedOutput"], json!("ran ls"));
+    assert_eq!(cmd["aggregatedOutput"], json!("ran make"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -680,7 +687,7 @@ async fn decline_blocks_the_tool_and_the_turn_continues() {
 async fn cancel_denies_and_interrupts() {
     let s = setup(true);
     s.faux
-        .set_responses(vec![bash_call("ls"), reply("should not run")]);
+        .set_responses(vec![bash_call("make"), reply("should not run")]);
     let mut c = Client::connect(&s.server);
     c.initialize().await;
     let thread = start_thread(&mut c).await;
@@ -697,8 +704,11 @@ async fn cancel_denies_and_interrupts() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn accept_for_session_skips_later_prompts() {
     let s = setup(true);
-    s.faux
-        .set_responses(vec![bash_call("ls"), bash_call("pwd"), reply("done")]);
+    s.faux.set_responses(vec![
+        bash_call("make"),
+        bash_call("make test"),
+        reply("done"),
+    ]);
     let mut c = Client::connect(&s.server);
     c.initialize().await;
     let thread = start_thread(&mut c).await;
@@ -745,7 +755,7 @@ async fn interrupt_denies_open_approval() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn two_clients_share_a_thread_and_first_answer_wins() {
     let s = setup(true);
-    s.faux.set_responses(vec![bash_call("ls"), reply("done")]);
+    s.faux.set_responses(vec![bash_call("make"), reply("done")]);
     let mut a = Client::connect(&s.server);
     let mut b = Client::connect(&s.server);
     a.initialize().await;
@@ -790,7 +800,7 @@ async fn two_clients_share_a_thread_and_first_answer_wins() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_reconnecting_client_gets_the_open_approval() {
     let s = setup(true);
-    s.faux.set_responses(vec![bash_call("ls"), reply("done")]);
+    s.faux.set_responses(vec![bash_call("make"), reply("done")]);
     let mut a = Client::connect(&s.server);
     a.initialize().await;
     let thread = start_thread(&mut a).await;
@@ -1381,7 +1391,7 @@ async fn without_a_scope_any_model_is_accepted_and_an_effort_applied() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn resuming_a_busy_thread_with_an_effort_is_rejected() {
     let s = setup(true);
-    s.faux.set_responses(vec![bash_call("ls"), reply("done")]);
+    s.faux.set_responses(vec![bash_call("make"), reply("done")]);
     let mut c = Client::connect(&s.server);
     c.initialize().await;
     let thread = start_thread(&mut c).await;

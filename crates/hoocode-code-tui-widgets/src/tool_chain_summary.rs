@@ -509,10 +509,13 @@ fn family_phrase(family: &ToolFamily, matched: &[&ChainEntry], long: bool, brief
     )
 }
 
+/// A family's calls. A failed edit (blocked by a mode rule or denied,
+/// or one whose match missed) changed nothing, so it is no edit.
 fn family_matches<'a>(entries: &'a [ChainEntry], family: &ToolFamily) -> Vec<&'a ChainEntry> {
     entries
         .iter()
         .filter(|e| family.tools.contains(&e.tool.as_str()))
+        .filter(|e| !(e.is_error && family.verb == "Edited"))
         .collect()
 }
 

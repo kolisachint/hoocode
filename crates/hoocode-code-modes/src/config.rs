@@ -67,10 +67,12 @@ fn union(a: Option<&Value>, b: Option<&Value>) -> Value {
 }
 
 /// `mergeConfigs`: project `active_mode` / `thinking_escalation` win; per
-/// mode, `auto_allow`, `allowed_write_paths`,
-/// `denied_tools` and `denied_bash_commands` are unioned, while
+/// mode, `denied_tools` and `denied_bash_commands` are unioned, while
 /// `enabled_tools` and `allowed_bash_commands` fall back to the global
-/// value; project `mode_paths` come first.
+/// value; project `mode_paths` come first. `auto_allow` comes from the
+/// global file only, and so does `allowed_write_paths` when the global
+/// sets it. Top-level `skip_permissions` and `safe_shell` are never read
+/// from the project file.
 pub fn merge_configs(global: &HooConfig, project: &HooConfig) -> HooConfig {
     let mut merged = global.clone();
     for key in ["active_mode", "thinking_escalation"] {
@@ -92,13 +94,18 @@ pub fn merge_configs(global: &HooConfig, project: &HooConfig) -> HooConfig {
             for (k, v) in project_cfg {
                 cfg.insert(k.clone(), v.clone());
             }
-            for key in [
-                "auto_allow",
-                "allowed_write_paths",
-                "denied_tools",
-                "denied_bash_commands",
-            ] {
+            for key in ["denied_tools", "denied_bash_commands"] {
                 cfg.insert(key.into(), union(global_cfg.get(key), project_cfg.get(key)));
+            }
+            // A cloned repo must not widen what runs without a prompt: the
+            // project cannot add to `auto_allow`, and cannot widen a global
+            // `allowed_write_paths` (it may set one where the global has none).
+            match global_cfg.get("auto_allow") {
+                Some(v) => cfg.insert("auto_allow".into(), v.clone()),
+                None => cfg.remove("auto_allow"),
+            };
+            if let Some(v) = global_cfg.get("allowed_write_paths") {
+                cfg.insert("allowed_write_paths".into(), v.clone());
             }
             for key in ["enabled_tools", "allowed_bash_commands"] {
                 match project_cfg.get(key).or_else(|| global_cfg.get(key)) {

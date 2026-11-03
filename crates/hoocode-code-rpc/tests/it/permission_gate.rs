@@ -38,6 +38,13 @@ fn isolate_agent_dir() {
         let dir =
             std::env::temp_dir().join(format!("hoocode-rpc-gate-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
+        // `auto_allow` comes from the global file only; a project picks
+        // the mode that has it.
+        std::fs::write(
+            dir.join("hoo-config.json"),
+            r#"{"modes":{"trusting":{"auto_allow":["Shell"]}}}"#,
+        )
+        .unwrap();
         std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir);
     });
 }
@@ -205,7 +212,7 @@ async fn a_gated_tool_call_is_denied_in_rpc_mode_and_never_runs() {
     // The gate reads the project config from its cwd: an empty dir has none.
     let cwd = tempfile::tempdir().unwrap();
     let s = setup(
-        vec![bash_call("echo hi"), reply("I could not run it.")],
+        vec![bash_call("make"), reply("I could not run it.")],
         rpc_gate(cwd.path()),
     )
     .await;
@@ -233,18 +240,14 @@ async fn an_auto_allowed_tool_still_runs_in_rpc_mode() {
     std::fs::create_dir_all(&project).unwrap();
     std::fs::write(
         project.join("hoo-config.json"),
-        r#"{"active_mode":"build","modes":{"build":{"auto_allow":["Shell"]}}}"#,
+        r#"{"active_mode":"trusting"}"#,
     )
     .unwrap();
-    let s = setup(
-        vec![bash_call("echo hi"), reply("done")],
-        rpc_gate(cwd.path()),
-    )
-    .await;
+    let s = setup(vec![bash_call("make"), reply("done")], rpc_gate(cwd.path())).await;
 
     s.client
         .prompt_and_wait("run echo", None, WAIT)
         .await
         .unwrap();
-    assert_eq!(*s.ran.lock().unwrap(), vec!["echo hi".to_string()]);
+    assert_eq!(*s.ran.lock().unwrap(), vec!["make".to_string()]);
 }

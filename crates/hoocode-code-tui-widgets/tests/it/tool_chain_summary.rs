@@ -486,3 +486,16 @@ mod turn_phrase_the_whole_turn {
         assert!(phrase.ends_with("2 other calls"), "{phrase}");
     }
 }
+
+mod failed_edits {
+    use super::*;
+
+    #[test]
+    fn a_blocked_write_is_not_an_edit() {
+        let blocked = call("Write", "x.txt", 1, true, false);
+        let phrase = turn_phrase(&[c("Read", "a.rs"), blocked.clone()]);
+        assert!(!phrase.contains("Edited"), "{phrase}");
+        assert!(!turn_phrase(std::slice::from_ref(&blocked)).contains("Edited"));
+        assert_eq!(turn_phrase(&[blocked, c("Edit", "b.rs")]), "Edited b.rs");
+    }
+}

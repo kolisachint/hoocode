@@ -90,8 +90,9 @@ To show the hoocode icon in Herdr desktop, save an icon (an SVG) as
 
 - **`safe_shell`**: read-only commands (`ls`, `cat`, `head`, `grep`, `rg`, `wc`,
   `git status`, `git diff`, `git log`, and similar, joined by pipes or `&&`) run in every
-  mode without asking. A redirect to a file, `$(…)`, or any other program asks as usual.
-  Set it to `false` to be asked for every command.
+  mode without asking. A redirect to a file, `$(…)`, `$VAR`, a flag that writes or runs
+  a program (`sort -o`, `rg --pre`, `git diff --output`), `tail -f`, or any other
+  program asks as usual. Set it to `false` to be asked for every command.
 - **`skip_permissions`**: `true` runs every tool without asking, like
   `hoocode --skip-permissions` or `HOOCODE_SKIP_PERMISSIONS=1`. The mode rules still
   apply (ask mode still blocks Edit). Only the global file can turn it on; a project's
@@ -102,4 +103,10 @@ To show the hoocode icon in Herdr desktop, save an icon (an SVG) as
   A key you leave out takes the shipped value above; set it (even to `[]`) to override.
 - **Always** on an approval card: for Shell it lasts for the session and covers that
   program; for other tools it adds the tool to the mode's `auto_allow` in this file.
-- A project can add rules in `.hoocode/hoo-config.json`; its lists are merged with yours.
+- A project can add rules in `.hoocode/hoo-config.json`: its `denied_tools` and
+  `denied_bash_commands` add to yours. It cannot make anything run without asking:
+  `auto_allow`, `safe_shell` and `skip_permissions` come from your file only, and so
+  does `allowed_write_paths` when your file sets it.
+- A write to hoocode's own project config (`.hoocode/*.json`, such as
+  `.hoocode/hoo-config.json` or `.hoocode/settings.json`) always asks, in every mode and
+  even with `skip_permissions`.

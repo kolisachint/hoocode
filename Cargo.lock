@@ -1660,6 +1660,7 @@ version = "0.2.30"
 dependencies = [
  "hoocode-agent-types",
  "hoocode-code-modes",
+ "hoocode-code-paths",
  "regex",
  "serde_json",
  "tempfile",
