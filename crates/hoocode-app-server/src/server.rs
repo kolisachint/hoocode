@@ -791,15 +791,21 @@ impl AppServer {
         Arc::new(self.clone())
     }
 
-    /// Deny open approvals and stop running turns.
+    /// Deny open approvals, stop running turns and answer their open tool calls.
     pub async fn shutdown(&self) {
         let threads: Vec<Arc<LoadedThread>> =
             lock(&self.inner.state).threads.values().cloned().collect();
         for thread in threads {
             thread.deny_all_approvals();
             if thread.session.is_streaming() {
-                let _ = tokio::time::timeout(Duration::from_secs(5), thread.session.abort()).await;
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    thread.session.abort_for_shutdown(),
+                )
+                .await;
             }
+            // Calls the abort could not settle in time get a result too.
+            thread.session.close_unanswered_tool_calls();
         }
     }
 }

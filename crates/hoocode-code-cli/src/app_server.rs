@@ -169,6 +169,9 @@ pub fn run(argv: &[String], err: &mut dyn Write) -> i32 {
         server.shutdown().await;
         result
     });
+    // Write out what the shutdown persisted (the results for cut-short calls).
+    let _ =
+        hoocode_code_session::flush_session_writes(hoocode_code_session::SESSION_FLUSH_DEADLINE);
     match result {
         Ok(()) => 0,
         Err(e) => {

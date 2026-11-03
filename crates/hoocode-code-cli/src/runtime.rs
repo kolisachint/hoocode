@@ -1787,6 +1787,11 @@ fn termination_handler(
         );
         let cwd = std::path::PathBuf::from(session.session_manager().cwd());
         hoocode_code_subagents::result::write_subagent_result(&cwd, &task_id, &result);
+        // The session log answers the calls this stop cut short.
+        let _ = session.try_close_unanswered_tool_calls();
+        let _ = hoocode_code_session::flush_session_writes(
+            hoocode_code_session::SESSION_FLUSH_DEADLINE,
+        );
         // The pool is watching for this exit; it already knows why.
         std::process::exit(0);
     });

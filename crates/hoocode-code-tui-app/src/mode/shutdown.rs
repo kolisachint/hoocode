@@ -52,13 +52,13 @@ fn steps(session: &AgentSession) -> Vec<ShutdownStep> {
     ]
 }
 
-/// Runs `session.abort()` on the io runtime and waits for it. The step's
+/// Runs `session.abort_for_shutdown()` on the io runtime and waits for it. The step's
 /// deadline cuts the wait; an abort that is still going continues on the io
 /// runtime and ends with the process.
 fn abort_on_io(session: AgentSession) {
     let (done, finished) = sync_bounded_channel::<()>(1);
     io_handle().spawn(async move {
-        session.abort().await;
+        session.abort_for_shutdown().await;
         let _ = done.send(());
     });
     let _ = finished.recv();
