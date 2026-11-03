@@ -36,7 +36,14 @@ fn apply_edits_matches_hoocode() {
                     && diff.first_changed_line.map(|n| n as u64)
                         == case["diff"]["firstChangedLine"].as_u64()
             }
-            (Err(message), _, Some(expected)) => message == expected.as_str().unwrap(),
+            (Err(message), _, Some(expected)) => {
+                let expected = expected.as_str().unwrap();
+                // Not-found errors may carry a trailing closest-match hint.
+                message == expected
+                    || (expected.starts_with("Could not find")
+                        && message.starts_with(expected)
+                        && message[expected.len()..].starts_with(" Closest match"))
+            }
             _ => false,
         };
         if !ok {

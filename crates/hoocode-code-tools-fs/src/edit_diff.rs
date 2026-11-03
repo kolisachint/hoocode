@@ -623,11 +623,100 @@ fn find_line_block_matches(
 // Errors
 // ---------------------------------------------------------------------------
 
-fn not_found_error(path: &str, edit_index: usize, total: usize) -> String {
+const HINT_MAX_LINES: usize = 20_000;
+const HINT_MAX_BYTES: usize = 2 * 1024 * 1024;
+const HINT_MAX_OLD_LINES: usize = 200;
+const HINT_SNIPPET_LINES: usize = 5;
+const HINT_LINE_CHARS: usize = 160;
+
+/// Most similar region of `content` to `old_text`: 1-based inclusive line
+/// range plus a short snippet. Windows are scored by how many of the old
+/// lines (trimmed, non-blank) match the file line at the same offset.
+fn similar_region_hint(content: &str, old_text: &str) -> Option<String> {
+    if content.len() > HINT_MAX_BYTES {
+        return None;
+    }
+    let file_lines: Vec<&str> = content.lines().collect();
+    if file_lines.is_empty() || file_lines.len() > HINT_MAX_LINES {
+        return None;
+    }
+    let mut old_lines: Vec<&str> = old_text.lines().collect();
+    while old_lines.last().is_some_and(|l| l.trim().is_empty()) {
+        old_lines.pop();
+    }
+    old_lines.truncate(HINT_MAX_OLD_LINES);
+    let n = old_lines.len();
+    if n == 0 {
+        return None;
+    }
+    let mut by_line: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
+    for (j, l) in old_lines.iter().enumerate() {
+        let t = l.trim();
+        if !t.is_empty() {
+            by_line.entry(t).or_default().push(j);
+        }
+    }
+    let mut scores = vec![0usize; file_lines.len()];
+    for (f, l) in file_lines.iter().enumerate() {
+        if let Some(js) = by_line.get(l.trim()) {
+            for &j in js {
+                if f >= j {
+                    scores[f - j] += 1;
+                }
+            }
+        }
+    }
+    let mut best = 0usize;
+    let mut start = 0usize;
+    for (i, &sc) in scores.iter().enumerate() {
+        if sc > best {
+            best = sc;
+            start = i;
+        }
+    }
+    if best == 0 {
+        return None;
+    }
+    let end = (start + n).min(file_lines.len());
+    let shown_end = end.min(start + HINT_SNIPPET_LINES);
+    let snippet: Vec<String> = file_lines[start..shown_end]
+        .iter()
+        .map(|l| {
+            if l.chars().count() > HINT_LINE_CHARS {
+                let cut: String = l.chars().take(HINT_LINE_CHARS).collect();
+                format!("{cut}...")
+            } else {
+                (*l).to_string()
+            }
+        })
+        .collect();
+    let more = if shown_end < end { "\n..." } else { "" };
+    Some(format!(
+        " Closest match is at lines {}-{}:\n{}{more}\nRe-Read lines {}-{} and retry with the exact current text.",
+        start + 1,
+        end,
+        snippet.join("\n"),
+        start + 1,
+        end
+    ))
+}
+
+fn not_found_error(
+    path: &str,
+    edit_index: usize,
+    total: usize,
+    content: &[u16],
+    old_text: &[u16],
+) -> String {
+    let hint = similar_region_hint(
+        &String::from_utf16_lossy(content),
+        &String::from_utf16_lossy(old_text),
+    )
+    .unwrap_or_default();
     if total == 1 {
-        format!("Could not find the exact text in {path}. The old text must match exactly including all whitespace and newlines.")
+        format!("Could not find the exact text in {path}. The old text must match exactly including all whitespace and newlines.{hint}")
     } else {
-        format!("Could not find edits[{edit_index}] in {path}. The oldText must match exactly including all whitespace and newlines.")
+        format!("Could not find edits[{edit_index}] in {path}. The oldText must match exactly including all whitespace and newlines.{hint}")
     }
 }
 
@@ -805,7 +894,7 @@ pub fn apply_edits_to_normalized_content(
     for (i, edit) in normalized_edits.iter().enumerate() {
         let found = find_edit_spans(&base, edit, &mut fuzzy_index);
         if found.spans.is_empty() {
-            return Err(not_found_error(path, i, total));
+            return Err(not_found_error(path, i, total, &base, &edit.old_text));
         }
         if let Some(span) = &found.noop_fuzzy_span {
             return Err(fuzzy_noop_error(path, i, total, &base, span));
