@@ -14,7 +14,7 @@ use hoocode_code_tui_app::comms_frame::{
 use hoocode_code_tui_app::footer::{FooterModel, FooterSource, ToolOutputView};
 use hoocode_code_tui_app::footer_data::FooterDataProvider;
 use hoocode_code_tui_theme::get_editor_theme;
-use hoocode_code_tui_widgets::radar::FlightMark;
+use hoocode_code_tui_widgets::outline::FlightMark;
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle};
 use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
@@ -214,7 +214,7 @@ fn settled_missions_read_landed_did_not_land_or_aborted_until_the_next() {
         secs: 3.0,
         steps: 1,
     };
-    let mut shown = frame(landed.comms_state(), ToolOutputView::Radar, "build");
+    let mut shown = frame(landed.comms_state(), ToolOutputView::Outline, "build");
     let row = rows(&mut shown, 100)[0].clone();
     assert!(row.contains("● LANDED · 3.0s · 1 step"), "row 0: {row:?}");
 
@@ -223,7 +223,7 @@ fn settled_missions_read_landed_did_not_land_or_aborted_until_the_next() {
         secs: 2.5,
         steps: 4,
     };
-    let mut shown = frame(lost.comms_state(), ToolOutputView::Radar, "build");
+    let mut shown = frame(lost.comms_state(), ToolOutputView::Outline, "build");
     let row = rows(&mut shown, 100)[0].clone();
     assert!(
         row.contains("⊗ DID NOT LAND · 2.5s · 4 steps"),
@@ -235,7 +235,7 @@ fn settled_missions_read_landed_did_not_land_or_aborted_until_the_next() {
         secs: 1.0,
         steps: 2,
     };
-    let mut shown = frame(aborted.comms_state(), ToolOutputView::Radar, "build");
+    let mut shown = frame(aborted.comms_state(), ToolOutputView::Outline, "build");
     let row = rows(&mut shown, 100)[0].clone();
     assert!(row.contains("⊘ ABORTED · READY"), "row 0: {row:?}");
 }
@@ -344,12 +344,12 @@ fn queued_messages_draw_inside_the_frame_with_their_dispositions() {
 }
 
 #[test]
-fn foot_shows_the_radar_dial_and_plan_note() {
+fn foot_shows_the_outline_dial_and_plan_note() {
     let _g = lock(Some("dark"));
-    let mut frame = frame(CommsState::Ready, ToolOutputView::Radar, "plan");
+    let mut frame = frame(CommsState::Ready, ToolOutputView::Outline, "plan");
     let rows = rows(&mut frame, 100);
     assert!(
-        rows[2].contains("radar · PLAN · nothing gets changed"),
+        rows[2].contains("outline · PLAN · nothing gets changed"),
         "row 2: {:?}",
         rows[2]
     );
@@ -359,7 +359,7 @@ fn foot_shows_the_radar_dial_and_plan_note() {
 fn foot_names_each_layer_of_the_dial() {
     let _g = lock(Some("dark"));
     for (view, label) in [
-        (ToolOutputView::Radar, "radar"),
+        (ToolOutputView::Outline, "outline"),
         (ToolOutputView::Peek, "peek"),
         (ToolOutputView::Full, "full"),
     ] {

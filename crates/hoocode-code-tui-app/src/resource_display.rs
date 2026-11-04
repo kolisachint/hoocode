@@ -351,7 +351,7 @@ fn handle<C: hoocode_tui_render::Component + 'static>(c: C) -> ComponentHandle {
 }
 
 /// Whether the startup header and the resource details are open: under
-/// `verbose`, or at the full stop. The dial moves them, so peek and radar
+/// `verbose`, or at the full stop. The dial moves them, so peek and outline
 /// fold them again (unless `verbose`).
 pub fn startup_details_open(verbose: bool, view: ToolOutputView) -> bool {
     verbose || view == ToolOutputView::Full

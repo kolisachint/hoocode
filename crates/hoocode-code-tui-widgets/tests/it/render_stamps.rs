@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::support::{assistant, lock, strip};
 use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::radar::{FlightMark, FlightStats, PeekOnly};
+use hoocode_code_tui_widgets::outline::{FlightMark, FlightStats, PeekOnly};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -85,10 +85,10 @@ fn an_assistant_message_follows_its_updates_and_view() {
     let after = joined(&mut container, 40);
     assert!(after.contains("goodbye now") && !after.contains("hello there"));
 
-    // The peek view draws the prose on the rail; radar draws none of it.
+    // The peek view draws the prose on the rail; outline draws none of it.
     component.borrow_mut().set_view(ToolOutputView::Peek);
     assert!(joined(&mut container, 40).contains('┊'));
-    component.borrow_mut().set_view(ToolOutputView::Radar);
+    component.borrow_mut().set_view(ToolOutputView::Outline);
     assert!(!joined(&mut container, 40).contains('┊'));
     component.borrow_mut().invalidate();
     joined(&mut container, 40);
@@ -180,7 +180,7 @@ fn a_mission_header_follows_the_view_and_its_flight_data() {
     }));
     let mut header = MissionHeader::new(1, "fix the build", None);
     header.set_flight(flight.clone());
-    header.set_view(ToolOutputView::Radar);
+    header.set_view(ToolOutputView::Outline);
     let header = Rc::new(RefCell::new(header));
     let mut container = Container::new();
     container.add_child(header.clone());
@@ -209,7 +209,7 @@ fn a_flying_mission_header_has_no_stamp() {
     }));
     let mut header = MissionHeader::new(1, "go", None);
     header.set_flight(flight.clone());
-    header.set_view(ToolOutputView::Radar);
+    header.set_view(ToolOutputView::Outline);
     assert_eq!(header.render_stamp(), None);
     // Landing sets the mark and the landed time together.
     let mut landed = flight.borrow_mut();
@@ -239,7 +239,7 @@ fn a_landing_line_follows_its_counts_and_the_peek_flag() {
     line.borrow_mut().set_counts(5, 0);
     let counted = joined(&mut container, 100);
     assert_ne!(counted, before);
-    // Radar hides the row; flipping the shared flag must show.
+    // Outline hides the row; flipping the shared flag must show.
     hidden.set(true);
     note_change();
     assert_eq!(joined(&mut container, 100).trim(), "");

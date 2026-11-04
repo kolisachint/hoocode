@@ -1,4 +1,4 @@
-//! The three transcript layers: radar, peek, and full (peek with nothing cut).
+//! The three transcript layers: outline, peek, and full (peek with nothing cut).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::support::{lock, strip};
 use hoocode_ai_types::{Content, ImageContent};
 use hoocode_code_tui_widgets::fold::{fold_rows, fold_rows_tail, parse_more_lines};
-use hoocode_code_tui_widgets::radar::{mission_rows, FlightItem, FlightMark, FlightStats};
+use hoocode_code_tui_widgets::outline::{mission_rows, FlightItem, FlightMark, FlightStats};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -20,7 +20,7 @@ use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
 
-use ToolOutputView::{Full, Peek, Radar};
+use ToolOutputView::{Full, Outline, Peek};
 
 const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
@@ -92,15 +92,15 @@ fn read_chain(view: ToolOutputView, lines: usize) -> ToolChainComponent {
 }
 
 #[test]
-fn the_dial_steps_radar_peek_full_and_wraps() {
-    assert_eq!(TOOL_OUTPUT_VIEWS, [Radar, Peek, Full]);
-    let mut view = Radar;
+fn the_dial_steps_outline_peek_full_and_wraps() {
+    assert_eq!(TOOL_OUTPUT_VIEWS, [Outline, Peek, Full]);
+    let mut view = Outline;
     let mut seen = Vec::new();
     for _ in 0..4 {
         view = cycle_tool_output_view(view, true);
         seen.push(view);
     }
-    assert_eq!(seen, [Peek, Full, Radar, Peek]);
+    assert_eq!(seen, [Peek, Full, Outline, Peek]);
 }
 
 #[test]
@@ -534,13 +534,13 @@ fn a_settled_agent_keeps_its_failed_calls_in_peek_and_every_call_in_full() {
     assert!(rows.contains("● 01.1 Read"), "{rows}");
     assert!(rows.contains("⊗ 01.2 Grep"), "{rows}");
 
-    // Radar: a mission's block shows the problem row only, under the agent
+    // Outline: a mission's block shows the problem row only, under the agent
     // call's number (the mission draws its batch's calls, not the chain).
-    let radar = chain_with(Radar, vec![settled_agent(Radar, "it-agent-radar")]);
+    let outline = chain_with(Outline, vec![settled_agent(Outline, "it-agent-outline")]);
     let stats = FlightStats {
         mark: FlightMark::Landed,
         landed_time: Some("1s".to_string()),
-        items: vec![FlightItem::Batch(radar.tool_blocks().to_vec())],
+        items: vec![FlightItem::Batch(outline.tool_blocks().to_vec())],
         ..Default::default()
     };
     let rows: Vec<String> = mission_rows(1, "run it", &stats, &Palette::default(), 100)

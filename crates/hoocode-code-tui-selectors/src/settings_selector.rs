@@ -798,8 +798,8 @@ fn tool_settings_submenu(
             "tool-output-view",
             "View",
             format!(
-                "How much of a tool call the transcript shows, least to most. 'radar': {}. 'peek': {}. 'full': {}.",
-                tool_output_view_description(ToolOutputView::Radar),
+                "How much of a tool call the transcript shows, least to most. 'outline': {}. 'peek': {}. 'full': {}.",
+                tool_output_view_description(ToolOutputView::Outline),
                 tool_output_view_description(ToolOutputView::Peek),
                 tool_output_view_description(ToolOutputView::Full)
             ),

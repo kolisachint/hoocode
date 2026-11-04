@@ -1,4 +1,4 @@
-//! `components/tool-chain-summary.ts`: the radar view's chain line.
+//! `components/tool-chain-summary.ts`: the outline view's chain line.
 //!
 //! While a run is going it shows its shape, in order; once it is over, what it
 //! amounted to:

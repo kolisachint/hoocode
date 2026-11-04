@@ -1,5 +1,5 @@
 //! The startup header and the resource listing's details open at the full
-//! stop and fold at peek and radar. `verbose` keeps them open. The dial flips
+//! stop and fold at peek and outline. `verbose` keeps them open. The dial flips
 //! them in place (`Expandable::set_expanded`), so a live move and a fresh
 //! listing (`/reload`, a session switch) show the same thing.
 
@@ -52,7 +52,7 @@ fn text_of(components: &[ComponentHandle]) -> String {
 #[test]
 fn the_dial_policy_opens_at_full_and_under_verbose_only() {
     for view in [
-        ToolOutputView::Radar,
+        ToolOutputView::Outline,
         ToolOutputView::Peek,
         ToolOutputView::Full,
     ] {

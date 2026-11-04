@@ -1,5 +1,5 @@
 //! The `<skill …>` block a `/skill:name` message carries, as the transcript
-//! draws it. Radar shows one row, `◆ skill: <name>`. Peek (the default)
+//! draws it. Outline shows one row, `◆ skill: <name>`. Peek (the default)
 //! adds the first lines of the skill's body, then how many are left. Full
 //! shows the whole body.
 
@@ -32,7 +32,7 @@ impl SkillBlockComponent {
         this
     }
 
-    /// `true` at peek (the body shows), `false` at radar (the row only).
+    /// `true` at peek (the body shows), `false` at outline (the row only).
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
         self.rebuild();

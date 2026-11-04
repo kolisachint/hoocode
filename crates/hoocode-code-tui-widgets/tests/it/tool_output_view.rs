@@ -12,24 +12,24 @@ use hoocode_code_tui_widgets::tool_signal::{
 use serde_json::json;
 use std::rc::Rc;
 
-use ToolOutputView::{Full, Peek, Radar};
+use ToolOutputView::{Full, Outline, Peek};
 
 mod tool_output_view_dial {
     use super::*;
 
     #[test]
-    fn has_three_stops_radar_peek_full() {
-        assert_eq!(TOOL_OUTPUT_VIEWS, [Radar, Peek, Full]);
+    fn has_three_stops_outline_peek_full() {
+        assert_eq!(TOOL_OUTPUT_VIEWS, [Outline, Peek, Full]);
     }
 
     #[test]
     fn cycles_forward_and_backward_wrapping_at_both_ends() {
-        assert_eq!(cycle_tool_output_view(Radar, true), Peek);
+        assert_eq!(cycle_tool_output_view(Outline, true), Peek);
         assert_eq!(cycle_tool_output_view(Peek, true), Full);
-        assert_eq!(cycle_tool_output_view(Full, true), Radar);
-        assert_eq!(cycle_tool_output_view(Radar, false), Full);
+        assert_eq!(cycle_tool_output_view(Full, true), Outline);
+        assert_eq!(cycle_tool_output_view(Outline, false), Full);
         assert_eq!(cycle_tool_output_view(Full, false), Peek);
-        assert_eq!(cycle_tool_output_view(Peek, false), Radar);
+        assert_eq!(cycle_tool_output_view(Peek, false), Outline);
     }
 
     #[test]
@@ -44,7 +44,7 @@ mod tool_output_view_dial {
     fn maps_every_retired_value_and_leaves_the_live_ones_alone() {
         assert_eq!(
             LEGACY_TOOL_OUTPUT_VIEWS,
-            [("collapsed", Radar), ("glance", Peek), ("standard", Peek),]
+            [("collapsed", Outline), ("glance", Peek), ("standard", Peek),]
         );
         assert!(!LEGACY_TOOL_OUTPUT_VIEWS.iter().any(|(k, _)| *k == "peek"));
     }
@@ -71,7 +71,7 @@ fn text_result(text: &str, is_error: bool) -> ToolResult {
     }
 }
 
-mod radar_signal_row {
+mod outline_signal_row {
     use super::*;
 
     #[test]

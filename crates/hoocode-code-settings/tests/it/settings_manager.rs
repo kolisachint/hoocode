@@ -162,9 +162,9 @@ fn tool_output_view_defaults_round_trips_and_rejects_bogus() {
     let d = Dirs::new();
     assert_eq!(d.manager().tool_output_view(), ToolOutputView::Peek);
     let mut manager = d.manager();
-    manager.set_tool_output_view(ToolOutputView::Radar);
-    assert_eq!(read(&d.global_path())["toolOutputView"], "radar");
-    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Radar);
+    manager.set_tool_output_view(ToolOutputView::Outline);
+    assert_eq!(read(&d.global_path())["toolOutputView"], "outline");
+    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Outline);
 
     write(&d.global_path(), &json!({"toolOutputView": "bogus"}));
     assert_eq!(d.manager().tool_output_view(), ToolOutputView::Peek);
@@ -187,7 +187,13 @@ fn tool_output_view_reads_known_values_and_falls_back_to_peek() {
         write(&d.global_path(), &json!({"toolOutputView": value}));
         d.manager().tool_output_view()
     };
-    assert_eq!(read_view("radar"), ToolOutputView::Radar);
+    assert_eq!(read_view("outline"), ToolOutputView::Outline);
+    // `radar` was the outline stop's name before it was renamed; it still reads.
+    assert_eq!(read_view("radar"), ToolOutputView::Outline);
+    assert_eq!(
+        ToolOutputView::parse("radar"),
+        Some(ToolOutputView::Outline)
+    );
     assert_eq!(read_view("full"), ToolOutputView::Full);
     assert_eq!(read_view("peek"), ToolOutputView::Peek);
     // Old or unknown values fall back to the default.

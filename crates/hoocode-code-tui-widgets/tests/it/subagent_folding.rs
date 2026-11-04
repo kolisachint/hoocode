@@ -1,11 +1,11 @@
-//! Radar's delegated-work rows (their hits) and AgentOutput's folded peek.
+//! Outline's delegated-work rows (their hits) and AgentOutput's folded peek.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::radar::{mission_rows, FlightItem, FlightMark, FlightStats};
+use hoocode_code_tui_widgets::outline::{mission_rows, FlightItem, FlightMark, FlightStats};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -16,7 +16,7 @@ use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
 
-use ToolOutputView::{Peek, Radar};
+use ToolOutputView::{Outline, Peek};
 
 fn cwd() -> String {
     std::env::current_dir()
@@ -112,12 +112,12 @@ fn plain(lines: Vec<String>) -> Vec<String> {
     lines.iter().map(|l| strip(l)).collect()
 }
 
-// --- radar: a settled subagent folds into its batch; only a failed one keeps
+// --- outline: a settled subagent folds into its batch; only a failed one keeps
 // --- its own hit row ---------------------------------------------------------
 
-/// The radar rows of one mission that holds the chain's calls as one batch,
+/// The outline rows of one mission that holds the chain's calls as one batch,
 /// keeping only the rows that carry a hit.
-fn radar_hits(chain: &ToolChainComponent) -> Vec<String> {
+fn outline_hits(chain: &ToolChainComponent) -> Vec<String> {
     let stats = FlightStats {
         mark: FlightMark::Landed,
         landed_time: Some("1s".to_string()),
@@ -137,27 +137,27 @@ fn radar_hits(chain: &ToolChainComponent) -> Vec<String> {
 }
 
 #[test]
-fn radar_keeps_only_the_failed_subagent_as_a_hit_row() {
+fn outline_keeps_only_the_failed_subagent_as_a_hit_row() {
     let _g = lock();
     let mut subs: Vec<Sub> = (0..10).map(|_| agent_done()).collect();
     subs.push(agent_stopped());
-    let chain = group(Radar, subs, ChainState::Done);
+    let chain = group(Outline, subs, ChainState::Done);
     // Ten settled subagents fold into the batch line; the stopped one keeps a hit row.
-    let hits = radar_hits(&chain);
+    let hits = outline_hits(&chain);
     assert_eq!(hits.len(), 1, "{hits:?}");
     assert!(hits[0].starts_with("   ┊   └ 11 Agent"), "{hits:?}");
     assert!(hits[0].trim_end().ends_with("HIT"), "{hits:?}");
 }
 
 #[test]
-fn radar_shows_no_hit_when_the_subagents_outcomes_all_happened() {
+fn outline_shows_no_hit_when_the_subagents_outcomes_all_happened() {
     let _g = lock();
-    let chain = group(Radar, vec![agent_done(), agent_done()], ChainState::Done);
-    assert!(radar_hits(&chain).is_empty());
+    let chain = group(Outline, vec![agent_done(), agent_done()], ChainState::Done);
+    assert!(outline_hits(&chain).is_empty());
 }
 
 #[test]
-fn radar_counts_each_task_once_however_often_it_was_polled() {
+fn outline_counts_each_task_once_however_often_it_was_polled() {
     let _g = lock();
     let subs = vec![
         poll("explore#1", "running"),
@@ -165,16 +165,16 @@ fn radar_counts_each_task_once_however_often_it_was_polled() {
         poll("explore#1", "done"),
         poll("explore#2", "done"),
     ];
-    let chain = group(Radar, subs, ChainState::Done);
-    assert!(radar_hits(&chain).is_empty());
+    let chain = group(Outline, subs, ChainState::Done);
+    assert!(outline_hits(&chain).is_empty());
 }
 
 #[test]
-fn radar_has_no_hit_for_a_background_dispatch_without_an_outcome() {
+fn outline_has_no_hit_for_a_background_dispatch_without_an_outcome() {
     let _g = lock();
     let subs = vec![background_placeholder(), background_placeholder()];
-    let chain = group(Radar, subs, ChainState::Done);
-    assert!(radar_hits(&chain).is_empty());
+    let chain = group(Outline, subs, ChainState::Done);
+    assert!(outline_hits(&chain).is_empty());
 }
 
 // --- peek: AgentOutput's folded body ---------------------------------------------

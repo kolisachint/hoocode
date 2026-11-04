@@ -1,5 +1,5 @@
 //! Layer goldens: one scripted session rendered in each transcript layer
-//! (radar, peek, full) at 80 and 120 columns.
+//! (outline, peek, full) at 80 and 120 columns.
 //!
 //! `Mode` needs a live session, so a session cannot be built here as a whole.
 //! [`Replay`] plays the script through the same `Transcript` calls the rebuild
@@ -21,7 +21,7 @@ use hoocode_code_agent_session::stats::{add_assistant_usage, AssistantUsageTotal
 use hoocode_code_settings::ToolOutputView;
 use hoocode_code_subagents::live;
 use hoocode_code_tui_theme::{get_markdown_theme, init_theme};
-use hoocode_code_tui_widgets::radar::FlightItem;
+use hoocode_code_tui_widgets::outline::FlightItem;
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -81,9 +81,9 @@ impl Replay {
     fn new(view: ToolOutputView) -> Self {
         let chat = Rc::new(RefCell::new(Container::new()));
         let t = Transcript::new(chat.clone());
-        // `apply_tool_output_view`: radar hides the peek-only rows (the
+        // `apply_tool_output_view`: outline hides the peek-only rows (the
         // landing line and its summary); the full stop opens `!` output.
-        t.radar_active.set(view == ToolOutputView::Radar);
+        t.outline_active.set(view == ToolOutputView::Outline);
         t.full_active.set(view == ToolOutputView::Full);
         hoocode_tui_render::note_change();
         Self {
@@ -100,7 +100,7 @@ impl Replay {
     /// transcript, and an unlanded mission has no clock or cost yet.
     fn refresh(&mut self) {
         self.t.refresh_flight_marks();
-        self.t.sync_radar_prose();
+        self.t.sync_outline_prose();
         if let Some(mission) = self.t.missions.last() {
             if !mission.landed {
                 let mut flight = mission.flight.borrow_mut();
@@ -112,7 +112,7 @@ impl Replay {
     }
 
     fn thinking_display(&self) -> ThinkingDisplay {
-        if self.view == ToolOutputView::Radar {
+        if self.view == ToolOutputView::Outline {
             ThinkingDisplay::Omit
         } else {
             ThinkingDisplay::Full
@@ -153,13 +153,13 @@ impl Replay {
         {
             let mut c = component.borrow_mut();
             c.set_view(self.view);
-            c.set_radar_above(self.t.radar_chain_above());
-            c.set_radar_mission(self.t.current_mission());
+            c.set_outline_above(self.t.outline_chain_above());
+            c.set_outline_mission(self.t.current_mission());
         }
         self.t.note_assistant(&component);
         self.t.assistant_components.push(component.clone());
         self.t.chat.borrow_mut().add_child(as_component(&component));
-        self.t.sync_radar_prose();
+        self.t.sync_outline_prose();
         if message
             .content
             .iter()
@@ -740,36 +740,36 @@ macro_rules! layer_golden {
     };
 }
 
-layer_golden!(layers_landed_radar_80, landed, Radar, 80);
-layer_golden!(layers_landed_radar_120, landed, Radar, 120);
+layer_golden!(layers_landed_outline_80, landed, Outline, 80);
+layer_golden!(layers_landed_outline_120, landed, Outline, 120);
 layer_golden!(layers_landed_peek_80, landed, Peek, 80);
 layer_golden!(layers_landed_peek_120, landed, Peek, 120);
 layer_golden!(layers_landed_full_80, landed, Full, 80);
 layer_golden!(layers_landed_full_120, landed, Full, 120);
 
-layer_golden!(layers_failed_radar_80, failed, Radar, 80);
-layer_golden!(layers_failed_radar_120, failed, Radar, 120);
+layer_golden!(layers_failed_outline_80, failed, Outline, 80);
+layer_golden!(layers_failed_outline_120, failed, Outline, 120);
 layer_golden!(layers_failed_peek_80, failed, Peek, 80);
 layer_golden!(layers_failed_peek_120, failed, Peek, 120);
 layer_golden!(layers_failed_full_80, failed, Full, 80);
 layer_golden!(layers_failed_full_120, failed, Full, 120);
 
-layer_golden!(layers_aborted_radar_80, aborted, Radar, 80);
-layer_golden!(layers_aborted_radar_120, aborted, Radar, 120);
+layer_golden!(layers_aborted_outline_80, aborted, Outline, 80);
+layer_golden!(layers_aborted_outline_120, aborted, Outline, 120);
 layer_golden!(layers_aborted_peek_80, aborted, Peek, 80);
 layer_golden!(layers_aborted_peek_120, aborted, Peek, 120);
 layer_golden!(layers_aborted_full_80, aborted, Full, 80);
 layer_golden!(layers_aborted_full_120, aborted, Full, 120);
 
-layer_golden!(layers_agent_radar_80, agent, Radar, 80);
-layer_golden!(layers_agent_radar_120, agent, Radar, 120);
+layer_golden!(layers_agent_outline_80, agent, Outline, 80);
+layer_golden!(layers_agent_outline_120, agent, Outline, 120);
 layer_golden!(layers_agent_peek_80, agent, Peek, 80);
 layer_golden!(layers_agent_peek_120, agent, Peek, 120);
 layer_golden!(layers_agent_full_80, agent, Full, 80);
 layer_golden!(layers_agent_full_120, agent, Full, 120);
 
-layer_golden!(layers_stepless_radar_80, stepless, Radar, 80);
-layer_golden!(layers_stepless_radar_120, stepless, Radar, 120);
+layer_golden!(layers_stepless_outline_80, stepless, Outline, 80);
+layer_golden!(layers_stepless_outline_120, stepless, Outline, 120);
 layer_golden!(layers_stepless_peek_80, stepless, Peek, 80);
 layer_golden!(layers_stepless_peek_120, stepless, Peek, 120);
 layer_golden!(layers_stepless_full_80, stepless, Full, 80);
@@ -815,7 +815,7 @@ fn call_message(id: &str, name: &str, args: Value, at: i64) -> AssistantMessage 
 #[test]
 fn sequential_calls_without_thinking_make_one_batch() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Radar);
+    let mut r = Replay::new(ToolOutputView::Outline);
     r.user("fix the wrap helper", 1_000);
     r.assistant(&call_message(
         "c1",
@@ -845,7 +845,7 @@ fn sequential_calls_without_thinking_make_one_batch() {
 #[test]
 fn thinking_between_calls_splits_the_batch_at_its_gist() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Radar);
+    let mut r = Replay::new(ToolOutputView::Outline);
     r.user("fix the wrap helper", 1_000);
     r.assistant(&call_message(
         "c1",
@@ -878,7 +878,7 @@ fn thinking_between_calls_splits_the_batch_at_its_gist() {
 #[test]
 fn thinking_on_the_opening_message_comes_before_the_first_batch() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Radar);
+    let mut r = Replay::new(ToolOutputView::Outline);
     r.user("fix the wrap helper", 1_000);
     r.assistant(&assistant(
         vec![
@@ -900,7 +900,7 @@ fn thinking_on_the_opening_message_comes_before_the_first_batch() {
 #[test]
 fn a_message_without_thinking_text_adds_no_item() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Radar);
+    let mut r = Replay::new(ToolOutputView::Outline);
     r.user("fix the wrap helper", 1_000);
     r.assistant(&assistant(
         vec![
@@ -919,7 +919,7 @@ fn a_message_without_thinking_text_adds_no_item() {
 #[test]
 fn thinking_before_the_final_answer_follows_the_last_batch() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Radar);
+    let mut r = Replay::new(ToolOutputView::Outline);
     r.user("fix the wrap helper", 1_000);
     r.assistant(&call_message(
         "c1",
@@ -947,7 +947,7 @@ fn thinking_before_the_final_answer_follows_the_last_batch() {
 #[test]
 fn an_older_finished_mission_folds_and_the_latest_finished_and_live_stay_open() {
     let _g = guard();
-    let mut r = Replay::new(ToolOutputView::Radar);
+    let mut r = Replay::new(ToolOutputView::Outline);
     let folded = |r: &mut Replay| -> Vec<bool> {
         r.refresh();
         r.t.missions

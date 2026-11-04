@@ -412,7 +412,7 @@ async fn the_pool_listener_sends_a_runs_events_to_the_live_sink() {
 fn sub_steps_keep_running_and_failed_calls_and_drop_clean_ones() {
     // The run's own calls: a clean one settles away, a failed one stays with
     // its first output line, and the run's end clears them all.
-    let task = "live-sub-steps-radar";
+    let task = "live-sub-steps-outline";
     apply(task, &json!({"type": "task_started"}));
     apply(
         task,

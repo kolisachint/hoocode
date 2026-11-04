@@ -23,7 +23,7 @@ fn declares_every_binding_in_hoocodes_order_with_its_defaults_and_description() 
         (
             "app.tools.expand",
             "Jump to the full view from wherever you are, and back again",
-            "Step tool output: radar → peek → full → radar",
+            "Step tool output: outline → peek → full → outline",
         ),
         (
             "app.tasks.cycleForward",

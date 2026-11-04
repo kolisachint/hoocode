@@ -1,5 +1,5 @@
 //! The background-subagent notice: parsing the text the loop hands the
-//! transcript, and its radar and peek drawings.
+//! transcript, and its outline and peek drawings.
 //!
 //! The inputs are the loop's real text. `create_default_background_result_message`
 //! writes the header, the Agent tool writes the body, and the transcript joins
@@ -79,7 +79,7 @@ fn still_running_is_absent_when_nothing_else_runs() {
 }
 
 #[test]
-fn radar_is_one_line_with_the_counts() {
+fn outline_is_one_line_with_the_counts() {
     let lines = render(&done_text(SUMMARY, " 4 still running."), false);
     assert_eq!(
         lines,
@@ -90,7 +90,7 @@ fn radar_is_one_line_with_the_counts() {
 }
 
 #[test]
-fn radar_omits_the_running_count_when_absent() {
+fn outline_omits_the_running_count_when_absent() {
     let lines = render(&done_text(SUMMARY, ""), false);
     assert_eq!(lines, vec!["◦ explore#4 finished ✓ · 1m27s"]);
 }

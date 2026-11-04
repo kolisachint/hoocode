@@ -1324,9 +1324,9 @@ fn up_from_the_prompt_does_not_take_a_hidden_or_empty_panel() {
     let mut panel = TaskPanelComponent::new();
     assert!(!panel.enter_from_below(), "no rows");
     create("row a");
-    panel.set_radar(true);
-    assert!(!panel.enter_from_below(), "hidden in radar");
-    panel.set_radar(false);
+    panel.set_outline(true);
+    assert!(!panel.enter_from_below(), "hidden in outline");
+    panel.set_outline(false);
     assert!(panel.enter_from_below());
 }
 
@@ -1629,16 +1629,16 @@ fn unfocused_the_console_draws_the_same_rows_without_the_pick_or_the_hint() {
 }
 
 #[test]
-fn the_panel_is_shown_in_peek_and_full_and_hidden_in_radar_by_default() {
+fn the_panel_is_shown_in_peek_and_full_and_hidden_in_outline_by_default() {
     let _g = lock();
     create("row a");
     let mut panel = TaskPanelComponent::new();
     assert!(panel.is_shown());
     assert!(!render(&mut panel, 120).is_empty());
-    panel.set_radar(true);
+    panel.set_outline(true);
     assert!(!panel.is_shown());
     assert!(render(&mut panel, 120).is_empty());
-    panel.set_radar(false);
+    panel.set_outline(false);
     assert!(!render(&mut panel, 120).is_empty());
 }
 
@@ -1652,13 +1652,13 @@ fn ctrl_g_toggles_the_panel_and_a_view_switch_resets_the_toggle() {
     assert!(panel.toggle_shown(), "and shown again");
     assert!(!render(&mut panel, 120).is_empty());
 
-    // Hide in peek, then switch to radar: radar's default (hidden) wins.
+    // Hide in peek, then switch to outline: outline's default (hidden) wins.
     panel.toggle_shown();
-    panel.set_radar(true);
+    panel.set_outline(true);
     assert!(!panel.is_shown());
-    // Show in radar, then switch back to peek: peek's default (shown) wins.
+    // Show in outline, then switch back to peek: peek's default (shown) wins.
     assert!(panel.toggle_shown());
-    panel.set_radar(false);
+    panel.set_outline(false);
     assert!(panel.is_shown());
 }
 
@@ -1946,7 +1946,7 @@ fn focused_rows_use_mission_circles_and_one_status_glyph_per_shell_job() {
 #[test]
 fn running_shell_rows_carry_the_satellite_detail() {
     // Spec §4 r9/c7: a running job reads `⌁ sat job-1 · in orbit 4s` on
-    // the right, like the radar row.
+    // the right, like the outline row.
     let _g = lock();
     let job = task_store().create(
         "sleep 60",
@@ -2066,9 +2066,9 @@ fn up_is_handed_over_only_while_the_panel_is_shown_with_rows() {
     assert!(!panel.can_take_up(), "no rows");
     create("row a");
     assert!(panel.can_take_up());
-    panel.set_radar(true);
-    assert!(!panel.can_take_up(), "hidden in radar");
-    panel.set_radar(false);
+    panel.set_outline(true);
+    assert!(!panel.can_take_up(), "hidden in outline");
+    panel.set_outline(false);
     panel.toggle_shown();
     assert!(!panel.can_take_up(), "hidden by Ctrl+G");
 }

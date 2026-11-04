@@ -7,9 +7,9 @@
 //! same at every density.
 //!
 //! The panel is shown by default in the peek and full views and hidden in
-//! radar, where the flight log carries the work. Ctrl+G toggles it in every
+//! outline, where the flight log carries the work. Ctrl+G toggles it in every
 //! view. A view switch resets the toggle to that view's default
-//! ([`TaskPanelComponent::set_radar`]). With no rows it draws nothing.
+//! ([`TaskPanelComponent::set_outline`]). With no rows it draws nothing.
 //!
 //! One tab per kind of task, in tab order (see [`TaskPanelView`]); a tab
 //! with no rows is hidden.
@@ -767,7 +767,7 @@ fn flight_row(
     spans.push(Span::styled(task.title.clone(), title_style));
     let mut row = Line::from(spans);
     // A running shell job is a satellite (spec §4 r9/c7): `⌁ sat job-1 ·
-    // in orbit 4s` on the right, spanned like the radar row.
+    // in orbit 4s` on the right, spanned like the outline row.
     if !confirm
         && task.note.is_none()
         && task.kind() == TaskKind::Shell
@@ -894,8 +894,8 @@ fn pick_hints(model: &RowModel, picked: Option<u64>) -> Vec<(&'static str, &'sta
 /// `TaskPanelComponent`.
 pub struct TaskPanelComponent {
     view: TaskPanelView,
-    /// Radar view: the panel starts hidden (see [`TaskPanelComponent::is_shown`]).
-    radar: bool,
+    /// Outline view: the panel starts hidden (see [`TaskPanelComponent::is_shown`]).
+    outline: bool,
     /// The user's Ctrl+G choice for the current view; `None` takes the view's default.
     shown_override: Option<bool>,
     disposed: bool,
@@ -948,7 +948,7 @@ impl TaskPanelComponent {
     pub fn new() -> Self {
         Self {
             view: TaskPanelView::Plan,
-            radar: false,
+            outline: false,
             shown_override: None,
             disposed: false,
             ticking: false,
@@ -976,18 +976,18 @@ impl TaskPanelComponent {
         self.selected = None;
     }
 
-    /// Radar view (M5): the flight log carries the running work, so the panel
+    /// Outline view (M5): the flight log carries the running work, so the panel
     /// starts hidden there. A view switch clears the Ctrl+G choice, so every
     /// view starts from its own default.
-    pub fn set_radar(&mut self, radar: bool) {
-        self.radar = radar;
+    pub fn set_outline(&mut self, outline: bool) {
+        self.outline = outline;
         self.shown_override = None;
     }
 
     /// Whether the panel is drawn: the user's Ctrl+G choice for this view,
-    /// else shown in peek and full and hidden in radar.
+    /// else shown in peek and full and hidden in outline.
     pub fn is_shown(&self) -> bool {
-        self.shown_override.unwrap_or(!self.radar)
+        self.shown_override.unwrap_or(!self.outline)
     }
 
     /// Ctrl+G: flips shown and hidden for this view. Returns the new state.

@@ -1,11 +1,11 @@
 //! The turn's end in every layer: the landing line's outcome, the abort and
-//! error reason, and the agent's whole final text in radar.
+//! error reason, and the agent's whole final text in outline.
 
 use std::rc::Rc;
 
 use crate::support::{assistant, lock, strip};
 use hoocode_ai_types::{Content, StopReason, ToolCallContent};
-use hoocode_code_tui_widgets::radar::{FlightMark, FlightStats};
+use hoocode_code_tui_widgets::outline::{FlightMark, FlightStats};
 use hoocode_code_tui_widgets::trajectory::{LandingLine, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay};
 use hoocode_tui_render::Component;
@@ -102,7 +102,7 @@ fn the_reason_shows_in_peek_even_when_the_message_has_tool_calls() {
     assert!(text.contains("Error: boom"), "{text}");
 }
 
-fn radar_text(
+fn outline_text(
     stop: StopReason,
     reason: Option<&str>,
     content: Vec<Content>,
@@ -112,7 +112,7 @@ fn radar_text(
     message.stop_reason = stop;
     message.error_message = reason.map(str::to_string);
     let mut component = AssistantMessageComponent::new(Some(&message), ThinkingDisplay::Omit);
-    component.set_radar_prose_shown(true);
+    component.set_outline_prose_shown(true);
     component
         .render(width)
         .iter()
@@ -122,12 +122,12 @@ fn radar_text(
 }
 
 #[test]
-fn radar_shows_the_whole_final_text_wrapped_at_the_step_indent() {
+fn outline_shows_the_whole_final_text_wrapped_at_the_step_indent() {
     let _g = lock();
     let text = "First I read the wrap helper and found the overflow in the second branch.\n\n\
                 - It cut every row at the edge\n- It dropped the rest of the prompt\n\n\
                 Then I fixed **both** and the `suite` passes.";
-    let rows = radar_text(StopReason::Stop, None, vec![Content::text(text)], 40);
+    let rows = outline_text(StopReason::Stop, None, vec![Content::text(text)], 40);
     assert!(rows.len() >= 6, "{rows:#?}");
     for row in &rows {
         assert!(row.starts_with("        "), "{row:?}");
@@ -150,9 +150,9 @@ fn radar_shows_the_whole_final_text_wrapped_at_the_step_indent() {
 }
 
 #[test]
-fn radar_shows_the_abort_and_error_reason_after_the_text() {
+fn outline_shows_the_abort_and_error_reason_after_the_text() {
     let _g = lock();
-    let rows = radar_text(
+    let rows = outline_text(
         StopReason::Aborted,
         Some("Aborted after 2 retry attempts"),
         vec![Content::text("Started the build."), tool_call()],
@@ -161,16 +161,16 @@ fn radar_shows_the_abort_and_error_reason_after_the_text() {
     let text = rows.join("\n");
     assert!(text.contains("Started the build."), "{text}");
     assert!(text.contains("Aborted after 2 retry attempts"), "{text}");
-    let rows = radar_text(StopReason::Error, Some("503 overloaded"), vec![], 60);
+    let rows = outline_text(StopReason::Error, Some("503 overloaded"), vec![], 60);
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert!(rows[0].contains("Error: 503 overloaded"), "{rows:?}");
 }
 
 #[test]
-fn a_radar_mission_block_lists_its_batch_under_the_whole_prompt() {
-    use hoocode_code_tui_widgets::radar::FlightItem;
+fn a_outline_mission_block_lists_its_batch_under_the_whole_prompt() {
+    use hoocode_code_tui_widgets::outline::FlightItem;
     use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-    use hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Radar;
+    use hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Outline;
     use hoocode_code_tui_widgets::tool_signal::ToolResult;
     use serde_json::json;
     let _g = lock();
@@ -184,7 +184,7 @@ fn a_radar_mission_block_lists_its_batch_under_the_whole_prompt() {
             &format!("{tool}-{args}"),
             args,
             ToolExecutionOptions {
-                view: Radar,
+                view: Outline,
                 ..Default::default()
             },
             None,
@@ -218,7 +218,7 @@ fn a_radar_mission_block_lists_its_batch_under_the_whole_prompt() {
         "fix the overflow in the wrap helper and make sure that the whole suite still passes",
         None,
     );
-    header.set_view(hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Radar);
+    header.set_view(hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Outline);
     header.set_flight(stats.clone());
     let rows: Vec<String> = header.render(50).iter().map(|row| strip(row)).collect();
     assert!(rows.len() >= 4, "{rows:#?}");

@@ -1,4 +1,4 @@
-//! Direct Mission Control radar checks (R3): the mission block on the `┊` rail,
+//! Direct Mission Control outline checks (R3): the mission block on the `┊` rail,
 //! its batches, nested hit rows, thinking lines, the answer, the folded
 //! summary and the turn end (LANDED, DID NOT LAND, IN FLIGHT, WAITING).
 
@@ -9,12 +9,12 @@ use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
 use hoocode_code_subagents::live;
 use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
-use hoocode_code_tui_widgets::radar::{
+use hoocode_code_tui_widgets::outline::{
     mission_rows, prose_rows, FlightItem, FlightMark, FlightStats, STEP_INDENT,
 };
 use hoocode_code_tui_widgets::tool_chain::ToolBlock;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
-use hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Radar;
+use hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Outline;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::Component;
@@ -41,7 +41,7 @@ fn call_with_id(tool: &str, id: &str, args: Value, outcome: Option<(&str, bool)>
         id,
         args,
         ToolExecutionOptions {
-            view: Radar,
+            view: Outline,
             ..Default::default()
         },
         None,
@@ -210,7 +210,7 @@ fn a_batch_line_never_wraps_however_many_calls_it_holds() {
 }
 
 #[test]
-fn a_batch_splits_at_a_thinking_block_and_radar_hides_the_thought() {
+fn a_batch_splits_at_a_thinking_block_and_outline_hides_the_thought() {
     let _g = lock();
     let gist = "The helper is 13 lines and the wrap point is at the word boundary every time";
     let stats = landed(
@@ -229,7 +229,7 @@ fn a_batch_splits_at_a_thinking_block_and_radar_hides_the_thought() {
         !rows
             .iter()
             .any(|row| row.contains('✻') || row.contains("The helper")),
-        "radar shows no thinking: {rows:#?}"
+        "outline shows no thinking: {rows:#?}"
     );
 }
 
@@ -514,15 +514,15 @@ fn a_mission_block_carries_its_header_body_and_turn_end_in_order() {
 #[test]
 fn a_subagent_hold_reads_waiting_on_the_turn_end() {
     let _g = lock();
-    live::remember_run("radar-hold-agent-call", "radar-hold-run");
-    live::apply("radar-hold-run", &json!({"type": "task_started"}));
+    live::remember_run("outline-hold-agent-call", "outline-hold-run");
+    live::apply("outline-hold-run", &json!({"type": "task_started"}));
     live::apply(
-        "radar-hold-run",
+        "outline-hold-run",
         &json!({"type": "task_clearance", "tool": "Edit", "subject": "src/lex.rs", "held": true, "call": "k1"}),
     );
     let agent = call_with_id(
         "Agent",
-        "radar-hold-agent-call",
+        "outline-hold-agent-call",
         json!({"subagent_type": "explore", "description": "Survey"}),
         None,
     );
@@ -540,26 +540,26 @@ fn a_subagent_hold_reads_waiting_on_the_turn_end() {
             .starts_with("   ╰ ◆ WAITING · approve Edit src/lex.rs"),
         "{rows:#?}"
     );
-    live::apply("radar-hold-run", &json!({"type": "task_done"}));
+    live::apply("outline-hold-run", &json!({"type": "task_done"}));
 }
 
 #[test]
 fn a_failed_subagent_call_turns_its_settled_batch_red_and_nests_its_hit() {
     let _g = lock();
-    live::remember_run("radar-fail-agent-call", "radar-fail-run");
-    live::apply("radar-fail-run", &json!({"type": "task_started"}));
+    live::remember_run("outline-fail-agent-call", "outline-fail-run");
+    live::apply("outline-fail-run", &json!({"type": "task_started"}));
     live::apply(
-        "radar-fail-run",
+        "outline-fail-run",
         &json!({"type": "tool_execution_start", "toolCallId": "s1", "toolName": "Grep", "args": {"pattern": "x"}}),
     );
     live::apply(
-        "radar-fail-run",
+        "outline-fail-run",
         &json!({"type": "tool_execution_end", "toolCallId": "s1", "isError": true}),
     );
-    live::apply("radar-fail-run", &json!({"type": "task_done"}));
+    live::apply("outline-fail-run", &json!({"type": "task_done"}));
     let agent = call_with_id(
         "Agent",
-        "radar-fail-agent-call",
+        "outline-fail-agent-call",
         json!({"subagent_type": "explore", "description": "Survey"}),
         Some(("done", false)),
     );
@@ -651,7 +651,7 @@ fn a_held_call_keeps_the_key_off_so_its_row_is_drawn_fresh() {
 #[test]
 fn a_live_background_job_keeps_a_landed_missions_key_off() {
     let _g = lock();
-    let key = hoocode_code_tool_bash::jobs::row_key("j-radar");
+    let key = hoocode_code_tool_bash::jobs::row_key("j-outline");
     task_store().upsert_keyed(
         &key,
         "npm run dev",
@@ -668,10 +668,10 @@ fn a_live_background_job_keeps_a_landed_missions_key_off() {
     let job = {
         let mut component = ToolExecutionComponent::new(
             "Shell",
-            "bg-radar",
+            "bg-outline",
             json!({"command": "npm run dev", "run_in_background": true}),
             ToolExecutionOptions {
-                view: Radar,
+                view: Outline,
                 ..Default::default()
             },
             None,
@@ -679,8 +679,8 @@ fn a_live_background_job_keeps_a_landed_missions_key_off() {
         );
         component.update_result(
             ToolResult {
-                content: vec![Content::text("Started background job j-radar")],
-                details: json!({"jobId": "j-radar"}),
+                content: vec![Content::text("Started background job j-outline")],
+                details: json!({"jobId": "j-outline"}),
                 is_error: false,
             },
             false,

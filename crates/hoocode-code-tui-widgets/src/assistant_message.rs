@@ -16,7 +16,7 @@ use hoocode_tui_render::{
 };
 use hoocode_tui_util::js_regex::is_js_space;
 
-use crate::radar::{self, STEP_INDENT};
+use crate::outline::{self, STEP_INDENT};
 use crate::tool_chain::ToolChainComponent;
 use crate::tool_output_view::ToolOutputView;
 use crate::trajectory;
@@ -24,7 +24,7 @@ use crate::wrap_zone;
 
 /// How a thinking block renders.
 ///
-/// `Omit` exists for radar: the flight log shows the message's last prose
+/// `Omit` exists for outline: the flight log shows the message's last prose
 /// line plus its `✻ thought Ns` line, so a stack of `Thinking...` lines
 /// would be pure noise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -37,7 +37,7 @@ pub enum ThinkingDisplay {
 
 /// Why a message ended badly, in the words every layer prints: the abort
 /// line (`Operation aborted`, or the reason it carries) or `Error: …`. `None`
-/// for a message that ended any other way. Peek and radar read this one text,
+/// for a message that ended any other way. Peek and outline read this one text,
 /// whether or not the message has tool calls.
 pub fn end_reason(message: &AssistantMessage) -> Option<String> {
     match message.stop_reason {
@@ -57,12 +57,12 @@ pub fn end_reason(message: &AssistantMessage) -> Option<String> {
     }
 }
 
-/// The radar prose of a message (M5): all of its text, as plain lines. Block
+/// The outline prose of a message (M5): all of its text, as plain lines. Block
 /// markers (`#`, `>`, bullets, numbers) and inline marks (`**`, backticks,
 /// link targets) drop, blank lines and fences go, and each remaining line
-/// stands whole: radar wraps it, never cuts it. Empty when the message has no
+/// stands whole: outline wraps it, never cuts it. Empty when the message has no
 /// text.
-fn radar_prose(message: &AssistantMessage) -> Vec<String> {
+fn outline_prose(message: &AssistantMessage) -> Vec<String> {
     let mut out = Vec::new();
     for content in &message.content {
         let Content::Text(t) = content else {
@@ -73,7 +73,7 @@ fn radar_prose(message: &AssistantMessage) -> Vec<String> {
     out
 }
 
-/// `text` as plain lines (see [`radar_prose`]). Lines inside a code fence are
+/// `text` as plain lines (see [`outline_prose`]). Lines inside a code fence are
 /// kept as they are, trimmed.
 fn plain_lines(text: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -197,7 +197,7 @@ fn unlink(text: &str) -> String {
 
 /// A thinking trace's gist (Mission Control spec a2/r11): the first
 /// non-blank line of the message's first thinking block,
-/// whitespace-collapsed. The Think header and the radar think row both
+/// whitespace-collapsed. The Think header and the outline think row both
 /// read it; the row itself truncates it to fit.
 fn think_gist(message: &AssistantMessage) -> Option<String> {
     message
@@ -431,13 +431,13 @@ pub struct AssistantMessageComponent {
     full: bool,
     /// The mission chain whose rows sit right above this message (M5). Peek
     /// reads it for the blank row that opens the message.
-    radar_above: Option<Weak<RefCell<ToolChainComponent>>>,
-    /// Radar (M5): the mission (header number) this message belongs to; `None`
+    outline_above: Option<Weak<RefCell<ToolChainComponent>>>,
+    /// Outline (M5): the mission (header number) this message belongs to; `None`
     /// before the first mission. The transcript groups prose by it.
-    radar_mission: Option<usize>,
-    /// Radar (M5): whether this message's prose line shows. The transcript
+    outline_mission: Option<usize>,
+    /// Outline (M5): whether this message's prose line shows. The transcript
     /// sets it: only the last prose message of an ended mission shows one.
-    radar_prose_shown: bool,
+    outline_prose_shown: bool,
     /// Shared with the caller's streaming message, so a delta does not copy it.
     last_message: Option<Rc<AssistantMessage>>,
     has_tool_calls: bool,
@@ -466,7 +466,7 @@ pub struct AssistantMessageComponent {
     /// steady frame does not append a line per render.
     last_width_log: Option<(u16, usize, usize)>,
     /// Changes whenever something that shows in the output does: every
-    /// `&mut self` method that sets the message, the view or the radar links
+    /// `&mut self` method that sets the message, the view or the outline links
     /// takes a new one (the render stamp).
     rev: u64,
 }
@@ -508,9 +508,9 @@ impl AssistantMessageComponent {
             markdown_theme,
             rail: false,
             full: false,
-            radar_above: None,
-            radar_mission: None,
-            radar_prose_shown: false,
+            outline_above: None,
+            outline_mission: None,
+            outline_prose_shown: false,
             last_message: None,
             has_tool_calls: false,
             markdown_cache: HashMap::new(),
@@ -604,7 +604,7 @@ impl AssistantMessageComponent {
     /// full also wraps the Think row's gist where the others cut it.
     pub fn set_view(&mut self, view: ToolOutputView) {
         self.rev = fresh_stamp();
-        self.rail = view != ToolOutputView::Radar;
+        self.rail = view != ToolOutputView::Outline;
         let full = view == ToolOutputView::Full;
         if self.full != full {
             self.full = full;
@@ -614,25 +614,25 @@ impl AssistantMessageComponent {
 
     /// Links the message to the mission chain above it (`None` when no
     /// mission chain precedes it). Peek reads the link for the rail.
-    pub fn set_radar_above(&mut self, chain: Option<Weak<RefCell<ToolChainComponent>>>) {
+    pub fn set_outline_above(&mut self, chain: Option<Weak<RefCell<ToolChainComponent>>>) {
         self.rev = fresh_stamp();
-        self.radar_above = chain;
+        self.outline_above = chain;
     }
 
-    /// Radar (M5): the mission this message belongs to (`None` before the
+    /// Outline (M5): the mission this message belongs to (`None` before the
     /// first mission).
-    pub fn radar_mission(&self) -> Option<usize> {
-        self.radar_mission
+    pub fn outline_mission(&self) -> Option<usize> {
+        self.outline_mission
     }
 
-    /// Radar (M5): tags the message with its mission.
-    pub fn set_radar_mission(&mut self, mission: Option<usize>) {
+    /// Outline (M5): tags the message with its mission.
+    pub fn set_outline_mission(&mut self, mission: Option<usize>) {
         self.rev = fresh_stamp();
-        self.radar_mission = mission;
+        self.outline_mission = mission;
     }
 
-    /// Radar (M5): whether the message has prose a radar line can show.
-    pub fn has_radar_prose(&self) -> bool {
+    /// Outline (M5): whether the message has prose a outline line can show.
+    pub fn has_outline_prose(&self) -> bool {
         // Cheap: the transcript asks for every message on every refresh.
         self.last_message.as_deref().is_some_and(|m| {
             end_reason(m).is_some()
@@ -642,33 +642,33 @@ impl AssistantMessageComponent {
         })
     }
 
-    /// Radar (M5): shows or hides the message's prose line. Thinking's
+    /// Outline (M5): shows or hides the message's prose line. Thinking's
     /// `✻ thought` line is not affected.
-    pub fn set_radar_prose_shown(&mut self, shown: bool) {
+    pub fn set_outline_prose_shown(&mut self, shown: bool) {
         // Only a change moves the revision: the transcript refreshes this on
         // every event, and an unchanged flag must not drop the render cache.
-        if self.radar_prose_shown != shown {
+        if self.outline_prose_shown != shown {
             self.rev = fresh_stamp();
-            self.radar_prose_shown = shown;
+            self.outline_prose_shown = shown;
         }
     }
 
-    /// Radar (R3): the message's thinking gist, one line, for its flight-log
+    /// Outline (R3): the message's thinking gist, one line, for its flight-log
     /// thought row. `None` when the message has no thinking text.
-    pub fn radar_gist(&self) -> Option<String> {
+    pub fn outline_gist(&self) -> Option<String> {
         self.last_message.as_deref().and_then(think_gist)
     }
 
-    /// Radar (R3): the revision of the message, new whenever its content
+    /// Outline (R3): the revision of the message, new whenever its content
     /// changes. The transcript re-reads the answer only when it moves.
-    pub fn radar_revision(&self) -> u64 {
+    pub fn outline_revision(&self) -> u64 {
         self.rev
     }
 
-    /// Radar (R3): the message's answer for the mission's flight log, one
-    /// Markdown source per text block (radar renders it as peek and full do).
+    /// Outline (R3): the message's answer for the mission's flight log, one
+    /// Markdown source per text block (outline renders it as peek and full do).
     /// Empty when the message has no text.
-    pub fn radar_answer(&self) -> Vec<String> {
+    pub fn outline_answer(&self) -> Vec<String> {
         self.last_message
             .as_deref()
             .map(|message| {
@@ -684,20 +684,20 @@ impl AssistantMessageComponent {
             .unwrap_or_default()
     }
 
-    /// Radar (R3): why the message ended badly, without the `Error: ` prefix
+    /// Outline (R3): why the message ended badly, without the `Error: ` prefix
     /// (the DID NOT LAND row's reason): its first non-empty line, trimmed.
     /// `None` for any other end.
-    pub fn radar_reason(&self) -> Option<String> {
+    pub fn outline_reason(&self) -> Option<String> {
         self.last_message
             .as_deref()
             .and_then(end_reason)
             .and_then(|reason| {
                 let reason = reason.strip_prefix("Error: ").unwrap_or(&reason);
-                crate::radar::first_line(reason)
+                crate::outline::first_line(reason)
             })
     }
 
-    /// Radar (R3): whether the message's last content is a tool call. Its prose
+    /// Outline (R3): whether the message's last content is a tool call. Its prose
     /// came before the call, so it is not the mission's answer.
     pub fn ends_in_tool_call(&self) -> bool {
         self.last_message
@@ -821,29 +821,34 @@ impl AssistantMessageComponent {
 }
 
 impl AssistantMessageComponent {
-    /// The radar flight log (M5): the message's whole text as plain wrapped
-    /// rows, when the transcript shows it (`set_radar_prose_shown`), the abort
+    /// The outline flight log (M5): the message's whole text as plain wrapped
+    /// rows, when the transcript shows it (`set_outline_prose_shown`), the abort
     /// or error reason after it, then its `✻ thought Ns` rows. A message with
     /// none of these renders nothing.
-    fn render_radar(&mut self, width: u16, palette: &Palette) -> Vec<String> {
+    fn render_outline(&mut self, width: u16, palette: &Palette) -> Vec<String> {
         // A mission's thinking, answer and reason are drawn by its header
-        // (`radar::mission_rows`), so a message in a mission draws nothing.
-        if self.radar_mission.is_some() {
+        // (`outline::mission_rows`), so a message in a mission draws nothing.
+        if self.outline_mission.is_some() {
             return Vec::new();
         }
         let width = width as usize;
         let mut out = Vec::new();
-        if self.radar_prose_shown {
+        if self.outline_prose_shown {
             if let Some(message) = self.last_message.as_deref() {
-                out.extend(radar::prose_rows(
-                    &radar_prose(message),
+                out.extend(outline::prose_rows(
+                    &outline_prose(message),
                     STEP_INDENT,
                     palette.ink(),
                     width,
                 ));
                 if let Some(reason) = end_reason(message) {
                     let lines: Vec<String> = reason.lines().map(str::to_string).collect();
-                    out.extend(radar::prose_rows(&lines, STEP_INDENT, palette.err(), width));
+                    out.extend(outline::prose_rows(
+                        &lines,
+                        STEP_INDENT,
+                        palette.err(),
+                        width,
+                    ));
                 }
             }
         }
@@ -922,7 +927,12 @@ impl Component for AssistantMessageComponent {
         if self.streaming {
             return None;
         }
-        let above = u64::from(self.radar_above.as_ref().and_then(Weak::upgrade).is_some());
+        let above = u64::from(
+            self.outline_above
+                .as_ref()
+                .and_then(Weak::upgrade)
+                .is_some(),
+        );
         Some(mix_stamps([self.rev, above]))
     }
 
@@ -1013,7 +1023,7 @@ impl AssistantMessageComponent {
         // One palette per render pass, passed down to every row.
         let palette = Palette::current();
         if self.thinking_display == ThinkingDisplay::Omit {
-            return self.render_radar(width, &palette);
+            return self.render_outline(width, &palette);
         }
         if self.has_tool_calls {
             return self.content.render(width);
@@ -1032,7 +1042,7 @@ impl AssistantMessageComponent {
         // anywhere else on the screen, unless a step of the mission sits right
         // above it: then the rail runs on through it.
         let after_step = self
-            .radar_above
+            .outline_above
             .as_ref()
             .is_some_and(|chain| chain.upgrade().is_some());
         let width = width as usize;
@@ -1227,7 +1237,7 @@ mod tests {
     }
 
     #[test]
-    fn radar_prose_reads_plain_text() {
+    fn outline_prose_reads_plain_text() {
         let text = "# Title\n\nIt is **bold**, `code` and [a link](https://x.y/z).\n- one _em_ and snake_case\n- two 2. three";
         assert_eq!(
             plain_lines(text),

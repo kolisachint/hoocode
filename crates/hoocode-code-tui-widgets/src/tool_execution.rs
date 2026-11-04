@@ -1,7 +1,7 @@
 //! `components/tool-execution.ts`: one tool call's block in the transcript.
 //!
 //! The block draws a status dot, the tool's call line (its `renderCall`, or
-//! the radar signal row) and, depending on the view dial, its result body
+//! the outline signal row) and, depending on the view dial, its result body
 //! (`renderResult`, or a peek-trimmed fallback). Renderers come from the
 //! built-in table ([`crate::tools::builtin_tool_definition`]) and the tool's
 //! registered definition, slot by slot, as in the pin.
@@ -255,7 +255,7 @@ fn is_file_tool(name: &str) -> bool {
     matches!(name, "Read" | "Write" | "Edit")
 }
 
-/// Indents every non-blank line of a child: a failure's body under a radar row.
+/// Indents every non-blank line of a child: a failure's body under a outline row.
 struct IndentAll {
     child: ComponentHandle,
     indent: String,
@@ -285,7 +285,7 @@ impl Component for IndentAll {
 
 /// What a frozen block draws at each stop, captured at `frozen_width`.
 struct FrozenLines {
-    radar: Vec<String>,
+    outline: Vec<String>,
     peek: Vec<String>,
     full: Vec<String>,
     /// The block's rows split for a chain step, at peek and at full.
@@ -296,7 +296,7 @@ struct FrozenLines {
 impl FrozenLines {
     fn for_view(&self, view: ToolOutputView) -> &[String] {
         match view {
-            ToolOutputView::Radar => &self.radar,
+            ToolOutputView::Outline => &self.outline,
             ToolOutputView::Peek => &self.peek,
             ToolOutputView::Full => &self.full,
         }
@@ -305,7 +305,7 @@ impl FrozenLines {
     fn parts_for(&self, view: ToolOutputView) -> &StepParts {
         match view {
             ToolOutputView::Full => &self.full_parts,
-            ToolOutputView::Radar | ToolOutputView::Peek => &self.peek_parts,
+            ToolOutputView::Outline | ToolOutputView::Peek => &self.peek_parts,
         }
     }
 }
@@ -427,7 +427,7 @@ pub struct ToolExecutionComponent {
     builtin_definition: Option<ToolRenderDefinition>,
     cwd: String,
     execution_started: bool,
-    /// The permission gate holds this call for clearance (radar's `◉` row).
+    /// The permission gate holds this call for clearance (outline's `◉` row).
     waiting_for_clearance: bool,
     args_complete: bool,
     result: Option<Rc<ResultHolder>>,
@@ -448,7 +448,7 @@ pub struct ToolExecutionComponent {
     /// The call's summary, taken when it freezes: its payloads are released then.
     frozen_entry: Option<ChainEntry>,
     /// A failed call's first error line, kept when it freezes: the result is
-    /// released then, and the radar's HIT row still reads its snippet.
+    /// released then, and the outline's HIT row still reads its snippet.
     frozen_error: String,
     /// The step's clock (M4): block creation starts it, `update_result`
     /// stops it. Rebuilt history settles at once, so its span reads ~0.
@@ -954,7 +954,7 @@ impl ToolExecutionComponent {
 
     /// Seconds since the block opened (settled at `update_result`).
     /// Rebuilt history settles at once, so its span reads ~0.
-    /// When the call started (radar's batch clock reads the earliest one).
+    /// When the call started (outline's batch clock reads the earliest one).
     pub(crate) fn started_at(&self) -> Instant {
         self.started
     }
@@ -989,19 +989,19 @@ impl ToolExecutionComponent {
 
     /// A failure always shows its reason, in every view.
     fn should_show_body(&self) -> bool {
-        !self.interrupted && (self.view != ToolOutputView::Radar || self.is_error())
+        !self.interrupted && (self.view != ToolOutputView::Outline || self.is_error())
     }
 
     fn should_show_signal_line(&self) -> bool {
-        self.view == ToolOutputView::Radar
+        self.view == ToolOutputView::Outline
     }
 
-    /// Whether this block draws its own blank row above itself (radar rows do not).
+    /// Whether this block draws its own blank row above itself (outline rows do not).
     pub fn draws_leading_gap(&self) -> bool {
         !self.should_show_signal_line()
     }
 
-    /// Peek indents under the tool name, past the `● ` dot; radar under its row.
+    /// Peek indents under the tool name, past the `● ` dot; outline under its row.
     fn indent_under_signal_row(&self, component: ComponentHandle) -> ComponentHandle {
         let indent = if self.should_show_signal_line() { 3 } else { 2 };
         handle(IndentAll {
@@ -1189,7 +1189,7 @@ impl ToolExecutionComponent {
             .set_lines(if self.should_show_signal_line() { 0 } else { 1 });
 
         if self.has_renderer_definition() {
-            // Peek sits 2 columns in, past the dot; radar keeps 1.
+            // Peek sits 2 columns in, past the dot; outline keeps 1.
             let padding_x = if self.should_show_signal_line() { 1 } else { 2 };
             self.content_box.borrow_mut().set_padding_x(padding_x);
             // A peek file block gets a full-width band; everything else none.
@@ -1520,12 +1520,12 @@ impl ToolExecutionComponent {
     fn capture_frozen(&mut self, width: u16) {
         self.rev = fresh_stamp();
         let current = self.view;
-        let radar = self.draw_at(ToolOutputView::Radar, width);
+        let outline = self.draw_at(ToolOutputView::Outline, width);
         let (peek, peek_parts) = self.draw_with_parts(ToolOutputView::Peek, width);
         let (full, full_parts) = self.draw_with_parts(ToolOutputView::Full, width);
         self.view = current;
         self.frozen_lines = Some(FrozenLines {
-            radar,
+            outline,
             peek,
             full,
             peek_parts,

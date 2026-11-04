@@ -1,10 +1,10 @@
-//! Mission Control flight log (radar) rows (R3, `docs/design/radar-r3.md`).
+//! Mission Control flight log (outline) rows (R3, `docs/design/outline-r3.md`).
 //!
 //! A mission is one block on a `┊` rail, drawn by its header from the
 //! mission's [`FlightStats`]: the header `▲ Mn  prompt`; the body in story
 //! order (one line per tool batch, the calls that failed nested under it as
 //! `└ NN Tool  subject  → snippet  HIT`; a thinking block splits batches
-//! but draws nothing, as radar hides thinking); the final answer on the rail; and the turn-end row closing
+//! but draws nothing, as outline hides thinking); the final answer on the rail; and the turn-end row closing
 //! the rail with `╰`. The turn end reads the landing line's words and stats
 //! (`● LANDED`, `⊗ DID NOT LAND`, `⊘ ABORTED`), `◐ IN FLIGHT` while the
 //! mission flies, or `◆ WAITING` while a call waits for the user's approval.
@@ -12,7 +12,7 @@
 //!
 //! Like the trajectory, every row draws through a ratatui buffer and the
 //! Mission Control palette. Prose outside a mission keeps its own rows
-//! (`prose_rows`); radar draws no thinking.
+//! (`prose_rows`); outline draws no thinking.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -33,8 +33,8 @@ use crate::tool_chain::ToolBlock;
 use crate::tool_chain_summary::{turn_phrase, ChainEntry};
 use crate::trajectory::{landing_spans, two_part_row};
 
-/// The in-flight glyph: the mission mark, a live batch and a live agent. Radar-
-/// local: `status` has no half circle, and the radar keeps this one for its
+/// The in-flight glyph: the mission mark, a live batch and a live agent. Outline-
+/// local: `status` has no half circle, and the outline keeps this one for its
 /// flying rows.
 const IN_FLIGHT_STR: &str = "◐";
 
@@ -275,7 +275,7 @@ fn duration_text(secs: u64) -> String {
     format_duration_secs(secs as f64)
 }
 
-/// The radar's call count: `1 call`, `9 calls`. Radar-only: `chain_stats`
+/// The outline's call count: `1 call`, `9 calls`. Outline-only: `chain_stats`
 /// keeps the peek and orphan wording.
 fn calls_text(count: usize) -> String {
     if count == 1 {
@@ -892,7 +892,7 @@ fn body_rows(stats: &FlightStats, palette: &Palette, width: usize) -> Vec<String
                         rows.extend(call_rows(block, step, palette, width));
                     }
                 }
-                // Radar hides thinking (2026-10-31); the block still splits batches.
+                // Outline hides thinking (2026-10-31); the block still splits batches.
                 FlightItem::Thinking(_) => {}
             }
         }
@@ -1013,7 +1013,7 @@ pub fn prose_rows(lines: &[String], indent: usize, style: Style, width: usize) -
         .collect()
 }
 
-/// A child that only draws in peek view: radar hides it. The hidden flag is
+/// A child that only draws in peek view: outline hides it. The hidden flag is
 /// shared with the transcript, which flips it with the view dial, so rows
 /// added in either view follow later flips.
 pub struct PeekOnly {

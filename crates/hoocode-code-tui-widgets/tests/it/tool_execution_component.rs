@@ -19,7 +19,7 @@ use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::visible_width;
 use serde_json::{json, Value};
 
-use ToolOutputView::{Peek, Radar};
+use ToolOutputView::{Outline, Peek};
 
 fn cwd() -> String {
     std::env::current_dir()
@@ -550,7 +550,7 @@ mod view_dial {
     #[test]
     fn a_failure_shows_why_it_failed_in_every_view_unasked() {
         let _g = lock();
-        for view in [Radar, Peek] {
+        for view in [Outline, Peek] {
             let def = ToolRenderDefinition {
                 render_call: call_renderer("custom call"),
                 render_result: result_renderer("WHY IT BROKE"),
@@ -571,9 +571,9 @@ mod view_dial {
     }
 
     #[test]
-    fn radar_replaces_the_call_renderer_with_a_signal_row() {
+    fn outline_replaces_the_call_renderer_with_a_signal_row() {
         let _g = lock();
-        let rendered = strip_all(&build(Radar, json!({"command": "npm run check"})).render(120));
+        let rendered = strip_all(&build(Outline, json!({"command": "npm run check"})).render(120));
         assert!(!rendered.contains("custom call"));
         assert!(!rendered.contains("TRIMMED BODY"));
         assert!(rendered.contains("custom_to"));
@@ -582,29 +582,29 @@ mod view_dial {
     }
 
     #[test]
-    fn a_radar_row_stays_a_row_until_the_dial_itself_moves() {
+    fn a_outline_row_stays_a_row_until_the_dial_itself_moves() {
         let _g = lock();
-        let mut c = build(Radar, json!({"command": "npm run check"}));
+        let mut c = build(Outline, json!({"command": "npm run check"}));
         assert!(strip_all(&c.render(120)).contains("npm run check"));
         c.set_view(Peek);
         let peeked = strip_all(&c.render(120));
         assert!(peeked.contains("custom call"));
         assert!(peeked.contains("TRIMMED BODY"));
-        c.set_view(Radar);
+        c.set_view(Outline);
         assert!(strip_all(&c.render(120)).contains("npm run check"));
     }
 
     #[test]
-    fn radar_rows_stack_without_the_separator_the_other_views_keep() {
+    fn outline_rows_stack_without_the_separator_the_other_views_keep() {
         let _g = lock();
-        let radar = build(Radar, json!({"command": "npm run check"})).render(120);
-        assert!(radar.iter().all(|l| !strip(l).trim().is_empty()));
+        let outline = build(Outline, json!({"command": "npm run check"})).render(120);
+        assert!(outline.iter().all(|l| !strip(l).trim().is_empty()));
         let peek = build(Peek, json!({"command": "npm run check"})).render(120);
         assert_eq!(strip(&peek[0]).trim(), "");
     }
 
     #[test]
-    fn radar_gives_a_self_rendering_tool_the_same_row_framing_as_every_other() {
+    fn outline_gives_a_self_rendering_tool_the_same_row_framing_as_every_other() {
         let _g = lock();
         let def = ToolRenderDefinition {
             render_call: call_renderer("custom call"),
@@ -612,14 +612,14 @@ mod view_dial {
         };
         let mut c = component(
             "self_tool",
-            "view-radar-self",
+            "view-outline-self",
             json!({"command": "npm run check"}),
-            Radar,
+            Outline,
             Some(def),
         );
         c.update_result(result("a\nb", false), false);
         let self_row = strip_all(&c.render(120));
-        let plain_row = strip_all(&build(Radar, json!({"command": "npm run check"})).render(120));
+        let plain_row = strip_all(&build(Outline, json!({"command": "npm run check"})).render(120));
         assert_eq!(
             self_row.find("npm run check"),
             plain_row.find("npm run check")
@@ -657,13 +657,13 @@ mod view_dial {
     #[test]
     fn set_view_switches_an_existing_block_live() {
         let _g = lock();
-        let mut c = build(Radar, json!({"command": "npm run check"}));
+        let mut c = build(Outline, json!({"command": "npm run check"}));
         assert!(!strip_all(&c.render(120)).contains("custom call"));
         c.set_view(Peek);
         let peeked = strip_all(&c.render(120));
         assert!(peeked.contains("custom call"));
         assert!(peeked.contains("TRIMMED BODY"));
-        c.set_view(Radar);
+        c.set_view(Outline);
         let folded = strip_all(&c.render(120));
         assert!(!folded.contains("custom call"));
         assert!(folded.contains("npm run check"));

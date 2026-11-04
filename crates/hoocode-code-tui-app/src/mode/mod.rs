@@ -527,14 +527,14 @@ fn expanded_instructions() -> String {
         dial(
             "app.view.cycleForward",
             "app.view.cycleBackward",
-            "tool output (radar/peek/full)",
+            "tool output (outline/peek/full)",
         ),
         dial(
             "app.tasks.cycleForward",
             "app.tasks.cycleBackward",
             "task panel view",
         ),
-        hint("app.tools.expand", "to cycle radar, peek and full"),
+        hint("app.tools.expand", "to cycle outline, peek and full"),
         hint("app.thinking.toggle", "to show or hide thinking"),
         group("Go — sessions and places"),
         hint("app.session.resume", "to resume a session"),
@@ -971,7 +971,7 @@ impl Mode {
         ));
         let footer_slot = handle(Slot::new(as_component(&footer)));
         let mut task_panel_component = TaskPanelComponent::new();
-        task_panel_component.set_radar(tool_output_view == ToolOutputView::Radar);
+        task_panel_component.set_outline(tool_output_view == ToolOutputView::Outline);
         let task_panel = handle(task_panel_component);
         let tasks_slot = handle(Slot::new(as_component(&task_panel)));
         let footer_for_density = footer.clone();
@@ -1285,10 +1285,10 @@ impl Mode {
             mode_dial_after: None,
         };
         // Peek-only rows follow the saved view from the first frame: a
-        // restored radar session hides them without waiting for a flip.
+        // restored outline session hides them without waiting for a flip.
         mode.transcript
-            .radar_active
-            .set(mode.tool_output_view == ToolOutputView::Radar);
+            .outline_active
+            .set(mode.tool_output_view == ToolOutputView::Outline);
         mode.transcript
             .full_active
             .set(mode.tool_output_view == ToolOutputView::Full);
@@ -1912,7 +1912,7 @@ impl Mode {
                 if self.task_panel.borrow().ticking() {
                     self.dirty.set(true);
                 }
-                // A flying mission's clock: the radar mission row, the live
+                // A flying mission's clock: the outline mission row, the live
                 // step times and the comms title read it, so they redraw
                 // once a second while a turn runs.
                 if self.turn_cost_anchor.is_some() {

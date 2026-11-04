@@ -1,4 +1,4 @@
-//! `components/tool-signal.ts`: the radar view's one-line row per call.
+//! `components/tool-signal.ts`: the outline view's one-line row per call.
 //!
 //! ```text
 //! ● bash            npm run check                             412 lines
@@ -26,8 +26,8 @@ const VERB_WIDTH: usize = 14;
 const VERB_GAP: usize = 2;
 /// Minimum space kept for the flush-right signal before the subject is trimmed.
 const MIN_SIGNAL_GAP: usize = 2;
-/// Radar target width in display columns. A longer target ends in `…`.
-const RADAR_TARGET_WIDTH: usize = 40;
+/// Outline target width in display columns. A longer target ends in `…`.
+const OUTLINE_TARGET_WIDTH: usize = 40;
 
 /// Argument names that carry a call's subject, most specific first.
 const SUBJECT_KEYS: [&str; 12] = [
@@ -75,15 +75,15 @@ fn subject_source(args: &Value, cwd: &str) -> String {
     }
 }
 
-/// The radar target: the first non-blank line, cut to `RADAR_TARGET_WIDTH` columns.
-fn radar_target(args: &Value, cwd: &str) -> String {
+/// The outline target: the first non-blank line, cut to `OUTLINE_TARGET_WIDTH` columns.
+fn outline_target(args: &Value, cwd: &str) -> String {
     let source = subject_source(args, cwd);
     let first = source
         .lines()
         .map(js_trim)
         .find(|line| !line.is_empty())
         .unwrap_or("");
-    truncate_to_width(first, RADAR_TARGET_WIDTH, "…", false)
+    truncate_to_width(first, OUTLINE_TARGET_WIDTH, "…", false)
 }
 
 /// The subject a chain line names a call by. An Agent call is named by its
@@ -240,12 +240,12 @@ pub fn tool_signal(input: &ToolSignalInput) -> (String, &'static str) {
     )
 }
 
-/// `renderToolSignalLine`: one radar row, without the status dot.
+/// `renderToolSignalLine`: one outline row, without the status dot.
 pub fn render_tool_signal_line(input: &ToolSignalInput, width: usize) -> String {
     let name = truncate_to_width(&input.tool_name, VERB_WIDTH, "…", false);
     let verb = format!("{name:<w$}", w = VERB_WIDTH + VERB_GAP);
     let (signal, color) = tool_signal(input);
-    let subject = radar_target(&input.args, &input.cwd);
+    let subject = outline_target(&input.args, &input.cwd);
 
     let available = width;
     let signal_width = if signal.is_empty() {
@@ -383,7 +383,7 @@ line two
     }
 
     #[test]
-    fn a_radar_signal_counts_the_memoized_lines() {
+    fn a_outline_signal_counts_the_memoized_lines() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let input = ToolSignalInput {
             tool_name: "Bash".into(),
