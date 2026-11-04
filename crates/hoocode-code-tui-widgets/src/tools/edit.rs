@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use hoocode_code_tools_fs::edit_diff::{compute_edits_diff, Edit};
 use hoocode_code_tui_theme::{theme, Theme};
-use hoocode_tui_components::{BoxComponent, Spacer, Text};
+use hoocode_tui_components::{BoxComponent, Text};
 use hoocode_tui_render::{Component, ComponentHandle, Container};
 use serde_json::{json, Value};
 
@@ -156,7 +156,7 @@ fn format_edit_call(args: &Value) -> String {
     let path = str_arg(arg_or(args, "file_path", "path")).map(|p| shorten_path(&p));
     let display = match path {
         None => invalid_arg_text(),
-        Some(p) if !p.is_empty() => t.fg("accent", &p),
+        Some(p) if !p.is_empty() => t.fg("text", &p),
         Some(_) => t.fg("toolOutput", "…"),
     };
     format!("{} {display}", t.fg("toolTitle", &t.bold("Edit")))
@@ -311,8 +311,7 @@ pub fn definition() -> ToolRenderDefinition {
             };
             let mut container = Container::new();
             if let Some(output) = output {
-                container.add_child(Rc::new(RefCell::new(Spacer::new(1))));
-                container.add_child(Rc::new(RefCell::new(Text::new(output, 1, 0))));
+                container.add_child(Rc::new(RefCell::new(Text::new(output, 0, 0))));
             }
             let handle: ComponentHandle = Rc::new(RefCell::new(container));
             Ok(handle)
