@@ -1,4 +1,4 @@
-  DOCKING  /login  Anthropic
+  Log in  /login  Anthropic
  1 https://example.test/oauth/authorize?code=WXYZ-1234
  scan, or enter to open the browser
  No QR code in this terminal build — the link above docks the same provider.
@@ -7,12 +7,12 @@
  esc cancel
 --- styles ---
 r0 c0 fg=#e5e5e7 bg=#1e1e2a
-r0 c1-9 fg=#14141c bg=#5cc8bb bold
-r0 c10 fg=#e5e5e7 bg=#1e1e2a
-r0 c11-16 fg=#989898 bg=#1e1e2a
-r0 c17-18 fg=#e5e5e7 bg=#1e1e2a
-r0 c19-27 fg=#989898 bg=#1e1e2a
-r0 c28-79 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-8 fg=#14141c bg=#5cc8bb bold
+r0 c9 fg=#e5e5e7 bg=#1e1e2a
+r0 c10-15 fg=#989898 bg=#1e1e2a
+r0 c16-17 fg=#e5e5e7 bg=#1e1e2a
+r0 c18-26 fg=#989898 bg=#1e1e2a
+r0 c27-79 fg=#e5e5e7 bg=#1e1e2a
 r1 c0 fg=#e5e5e7 bg=#1e1e2a
 r1 c1-53 fg=#5cc8bb bg=#1e1e2a
 r1 c54-79 fg=#e5e5e7 bg=#1e1e2a

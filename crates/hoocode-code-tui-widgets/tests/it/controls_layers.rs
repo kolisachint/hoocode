@@ -1,7 +1,7 @@
-//! Behavior: the CONTROLS console's layer tabs, search filter and close.
+//! Behavior: the Keys pane's layer tabs, search filter and close.
 //! `tab` cycles plain/ctrl/alt, typing narrows the action list, and `esc`
 //! reports `Close` so the app can give the editor back. All three are the
-//! foot's promises (`tab layer · type search · esc close`).
+//! hint row's promises (`tab layer · esc close`, typing filters).
 
 use hoocode_code_tui_widgets::controls::{ControlsComponent, ControlsEvent};
 use hoocode_tui_render::Component;
@@ -19,16 +19,21 @@ fn text_at(width: u16, controls: &mut ControlsComponent) -> String {
 }
 
 #[test]
-fn tab_cycles_the_lit_layer() {
+fn tab_cycles_the_shown_layer() {
     let _g = lock();
     let mut controls = ControlsComponent::new();
-    assert!(text_at(100, &mut controls).contains("ctrl layer"));
+    assert!(text_at(100, &mut controls).contains("ctrl+a"));
     controls.handle_input("\t");
-    assert!(text_at(100, &mut controls).contains("alt layer"));
+    let alt = text_at(100, &mut controls);
+    assert!(alt.contains("alt+") && !alt.contains("ctrl+a"), "{alt}");
     controls.handle_input("\t");
-    assert!(text_at(100, &mut controls).contains("plain layer"));
+    let plain = text_at(100, &mut controls);
+    assert!(
+        !plain.contains("ctrl+a") && !plain.contains("alt+"),
+        "{plain}"
+    );
     controls.handle_input("\t");
-    assert!(text_at(100, &mut controls).contains("ctrl layer"));
+    assert!(text_at(100, &mut controls).contains("ctrl+a"));
 }
 
 #[test]

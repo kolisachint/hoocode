@@ -1,22 +1,20 @@
-//! A `SelectList` in a Mission Control console: the shape the small pickers
-//! share (`thinking`, `theme`, `images`, `session colour`).
+//! A `SelectList` in a pane: the shape the small pickers share
+//! (`Thinking`, `Theme`, `Images`, `Session colour`).
 //!
 //! Behaviour (keys, filtering, the `on_select` / `on_cancel` /
 //! `on_selection_change` callbacks the owners wire, e.g. the theme live
 //! preview) stays on the shared [`SelectList`]; only the chrome changed:
-//! the title names the [`Console`], the items draw as console rows, and the
-//! hint sits in the foot edge. No `InputFrame`, no SGR theme painting.
+//! the title names the pane, the items draw as pane rows, the selected
+//! item's detail sits beside them, and the hint closes the pane. No
+//! `InputFrame`, no SGR theme painting.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use hoocode_code_tui_theme::get_select_list_theme;
-use hoocode_code_tui_theme::hex_to_rgb;
 use hoocode_code_tui_widgets::console::{hints, Console};
 use hoocode_tui_components::{SelectItem, SelectList, SelectListLayoutOptions};
-use hoocode_tui_ratatui::core::style::{Color, Style};
-use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_ratatui::{bold, Line, Palette, Span};
 use hoocode_tui_render::Component;
 
 /// The pickers' primary column: at least 12 cells, at most 32. Still the
@@ -30,29 +28,18 @@ pub(crate) fn layout(min: usize, max: usize) -> SelectListLayoutOptions {
     }
 }
 
-/// One picker row (content only; the console adds the `›` marker or gutter
-/// and the selection band): the swatch blocks, the primary label with its
-/// dim description.
-fn select_row(item: &SelectItem, swatches: &[String], pal: &Palette) -> Line<'static> {
+/// What a pane shows beside the list for the selected item.
+pub type DetailFn = fn(&SelectItem) -> Vec<Line<'static>>;
+
+/// One picker row (content only; the pane adds the ` › ` marker or gutter
+/// and the selection band): the label with its dim description.
+fn select_row(item: &SelectItem, pal: &Palette) -> Line<'static> {
     let label = if item.label.is_empty() {
         item.value.clone()
     } else {
         item.label.clone()
     };
-    let mut spans = Vec::new();
-    for hex in swatches {
-        let Ok((r, g, b)) = hex_to_rgb(hex) else {
-            continue;
-        };
-        spans.push(Span::styled(
-            "█".to_string(),
-            Style::default().fg(Color::Rgb(r as u8, g as u8, b as u8)),
-        ));
-    }
-    if !spans.is_empty() {
-        spans.push(Span::raw(" ".to_string()));
-    }
-    spans.push(Span::raw(label));
+    let mut spans = vec![Span::raw(label)];
     if let Some(description) = item.description.as_deref() {
         let single = description
             .split(['\r', '\n'])
@@ -68,15 +55,50 @@ fn select_row(item: &SelectItem, swatches: &[String], pal: &Palette) -> Line<'st
     Line::from(spans)
 }
 
+/// The theme picker's detail: the theme's name and description, then a
+/// few transcript lines drawn in the live theme (the picker previews as
+/// the cursor moves, so the sample shows the highlighted theme).
+pub(crate) fn theme_detail(item: &SelectItem) -> Vec<Line<'static>> {
+    let pal = Palette::current();
+    let description = hoocode_code_tui_theme::get_theme_description(&item.value)
+        .or_else(|| (item.value == "auto").then(|| "Follows the terminal background".to_string()))
+        .unwrap_or_default();
+    let mut rows = vec![Line::from(vec![
+        Span::styled(item.value.clone(), pal.ink()),
+        Span::raw("  "),
+        Span::styled(description, pal.dim()),
+    ])];
+    rows.push(Line::raw(""));
+    rows.push(Line::from(vec![
+        Span::styled("› ".to_string(), pal.dim()),
+        Span::styled("add a width check to wrap_text".to_string(), pal.ink()),
+    ]));
+    rows.push(Line::from(vec![
+        Span::styled("● ".to_string(), pal.ok()),
+        Span::styled("Edit".to_string(), bold(pal.dim())),
+        Span::styled(" src/wrap.rs  +4 −1".to_string(), pal.dim()),
+    ]));
+    rows.push(Line::from(vec![
+        Span::styled("⊗ ".to_string(), pal.err()),
+        Span::styled("Shell".to_string(), bold(pal.dim())),
+        Span::styled(" cargo test -p wrap  exit 1 · 3.1s".to_string(), pal.dim()),
+    ]));
+    rows.push(Line::from(vec![Span::styled(
+        "Width is checked now; the wrap tests pass.".to_string(),
+        pal.ink(),
+    )]));
+    rows
+}
+
 /// A titled select list: the title names the console, the list owns the
 /// behaviour.
 pub struct FramedSelectList {
     name: String,
     count: String,
     list: Rc<RefCell<SelectList>>,
-    /// Swatch colours (CSS hex) per item value, drawn ahead of the label.
-    /// Items without an entry render as before.
-    swatches: HashMap<String, Vec<String>>,
+    /// The detail beside the list for the selected item; none draws a
+    /// list alone.
+    detail: Option<DetailFn>,
 }
 
 impl FramedSelectList {
@@ -99,7 +121,7 @@ impl FramedSelectList {
             name: title.to_string(),
             count: String::new(),
             list: Rc::new(RefCell::new(list)),
-            swatches: HashMap::new(),
+            detail: None,
         }
     }
 
@@ -109,9 +131,9 @@ impl FramedSelectList {
         self
     }
 
-    /// Swatch colours per item value for [`select_row`].
-    pub fn with_swatches(mut self, swatches: HashMap<String, Vec<String>>) -> Self {
-        self.swatches = swatches;
+    /// The detail drawn beside the list for the selected item.
+    pub fn with_detail(mut self, detail: DetailFn) -> Self {
+        self.detail = Some(detail);
         self
     }
 
@@ -122,8 +144,9 @@ impl FramedSelectList {
 }
 
 impl Component for FramedSelectList {
-    /// The console: the named frame, one row per item with `›` on the
-    /// selection band, the scroll position below, and the hint foot.
+    /// The pane: the named title, one row per item with ` › ` on the
+    /// selection band, the selected item's detail, the scroll position
+    /// below, and the hint row.
     fn render(&mut self, width: u16) -> Vec<String> {
         let pal = Palette::current();
         let list = self.list.borrow();
@@ -131,14 +154,7 @@ impl Component for FramedSelectList {
         console.rows = list
             .shown_items()
             .iter()
-            .map(|item| {
-                let swatches = self
-                    .swatches
-                    .get(&item.value)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]);
-                select_row(item, swatches, &pal)
-            })
+            .map(|item| select_row(item, &pal))
             .collect();
         console.selected =
             (!console.rows.is_empty()).then(|| list.selected_index().min(console.rows.len() - 1));
@@ -146,10 +162,13 @@ impl Component for FramedSelectList {
         if let Some(footer) = list.footer() {
             console.bottom = vec![Line::from(vec![Span::styled(
                 format!("  {footer}"),
-                pal.faint(),
+                pal.dim(),
             )])];
         }
-        console.hint = hints(&[("↑↓", "navigate"), ("enter", "select"), ("esc", "cancel")]);
+        if let (Some(detail), Some(item)) = (self.detail, list.get_selected_item()) {
+            console.detail = detail(item);
+        }
+        console.hint = hints(&[("↑↓", "move"), ("enter", "pick"), ("esc", "back")]);
         console.render(width as usize)
     }
 

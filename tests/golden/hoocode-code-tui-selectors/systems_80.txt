@@ -1,7 +1,5 @@
-  SYSTEMS  /settings  4,140 tok/turn
- LAUNCH WEIGHT every turn carries 4,140 tokens
- ████████████████████████████████████████████████ prompt 1,430 · schemas 2,710
- › Tools        1 on  2,710 tok/turn
+  Settings  /settings  4,140 tokens per turn · prompt 1,430 · tools 2,710
+ › Tools        1 on
    Tool output  peek
    Models       all models
    Context      3 settings
@@ -11,36 +9,42 @@
    Images       2 settings
    Learning     5 settings
    Advanced     8 settings
-   Enable/disable tools and tool groups (web, semantic search), each priced by
-   what its schema costs per turn. Changes persist across sessions.
-   Per-turn surface: 4,140 tokens  (1,430 system prompt + 2,710 schemas, 2 too…
+ Tools
+ current   1 on
+ price     2,710 tok/turn
+
+ Enable/disable tools and tool groups (web,
+ semantic search), each priced by what its
+ schema costs per turn. Changes persist across
+ sessions.
+
+ per turn  4,140 tokens
+ prompt    1,430 tokens
+ tools     2,710 tokens
+ Read 162 · Shell 128
  › filter
  ↑↓ move · space toggle · enter open · esc close
 --- styles ---
 r0 c0 fg=#e5e5e7 bg=#1e1e2a
-r0 c1-9 fg=#14141c bg=#5cc8bb bold
-r0 c10 fg=#e5e5e7 bg=#1e1e2a
-r0 c11-19 fg=#989898 bg=#1e1e2a
-r0 c20-21 fg=#e5e5e7 bg=#1e1e2a
-r0 c22-35 fg=#989898 bg=#1e1e2a
-r0 c36-79 fg=#e5e5e7 bg=#1e1e2a
-r1 c0 fg=#e5e5e7 bg=#1e1e2a
-r1 c1-14 fg=#989898 bg=#1e1e2a
-r1 c15-79 fg=#e5e5e7 bg=#1e1e2a
-r2 c0 fg=#e5e5e7 bg=#1e1e2a
-r2 c1-16 fg=#5cc8bb bg=#1e1e2a
-r2 c17-48 fg=#9b8cff bg=#1e1e2a
-r2 c49 fg=#e5e5e7 bg=#1e1e2a
-r2 c50-77 fg=#989898 bg=#1e1e2a
-r2 c78-79 fg=#e5e5e7 bg=#1e1e2a
-r3 c0-13 fg=#5cc8bb bg=#233239
-r3 c14-15 fg=#e5e5e7 bg=#233239
-r3 c16-19 fg=#5cc8bb bg=#233239
-r3 c20-35 fg=#989898 bg=#233239
-r3 c36-79 fg=#e5e5e7 bg=#233239
+r0 c1-10 fg=#14141c bg=#5cc8bb bold
+r0 c11 fg=#e5e5e7 bg=#1e1e2a
+r0 c12-20 fg=#989898 bg=#1e1e2a
+r0 c21-22 fg=#e5e5e7 bg=#1e1e2a
+r0 c23-72 fg=#989898 bg=#1e1e2a
+r0 c73-79 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-2 fg=#5cc8bb bg=#233239
+r1 c3-15 fg=#e5e5e7 bg=#233239
+r1 c16-19 fg=#989898 bg=#233239
+r1 c20-79 fg=#e5e5e7 bg=#233239
+r2 c0-15 fg=#e5e5e7 bg=#1e1e2a
+r2 c16-19 fg=#989898 bg=#1e1e2a
+r2 c20-79 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-15 fg=#e5e5e7 bg=#1e1e2a
+r3 c16-25 fg=#989898 bg=#1e1e2a
+r3 c26-79 fg=#e5e5e7 bg=#1e1e2a
 r4 c0-15 fg=#e5e5e7 bg=#1e1e2a
-r4 c16-19 fg=#989898 bg=#1e1e2a
-r4 c20-79 fg=#e5e5e7 bg=#1e1e2a
+r4 c16-25 fg=#989898 bg=#1e1e2a
+r4 c26-79 fg=#e5e5e7 bg=#1e1e2a
 r5 c0-15 fg=#e5e5e7 bg=#1e1e2a
 r5 c16-25 fg=#989898 bg=#1e1e2a
 r5 c26-79 fg=#e5e5e7 bg=#1e1e2a
@@ -59,30 +63,48 @@ r9 c26-79 fg=#e5e5e7 bg=#1e1e2a
 r10 c0-15 fg=#e5e5e7 bg=#1e1e2a
 r10 c16-25 fg=#989898 bg=#1e1e2a
 r10 c26-79 fg=#e5e5e7 bg=#1e1e2a
-r11 c0-15 fg=#e5e5e7 bg=#1e1e2a
-r11 c16-25 fg=#989898 bg=#1e1e2a
-r11 c26-79 fg=#e5e5e7 bg=#1e1e2a
-r12 c0-15 fg=#e5e5e7 bg=#1e1e2a
-r12 c16-25 fg=#989898 bg=#1e1e2a
-r12 c26-79 fg=#e5e5e7 bg=#1e1e2a
-r13 c0 fg=#e5e5e7 bg=#1e1e2a
-r13 c1-77 fg=#989898 bg=#1e1e2a
-r13 c78-79 fg=#e5e5e7 bg=#1e1e2a
-r14 c0 fg=#e5e5e7 bg=#1e1e2a
-r14 c1-66 fg=#989898 bg=#1e1e2a
-r14 c67-79 fg=#e5e5e7 bg=#1e1e2a
-r15 c0-34 fg=#e5e5e7 bg=#1e1e2a
-r15 c35-78 fg=#989898 bg=#1e1e2a
-r15 c79 fg=#e5e5e7 bg=#1e1e2a
-r16 c0-2 fg=#5cc8bb bg=#2a2a36
-r16 c3-8 fg=#989898 bg=#2a2a36
-r16 c9-79 fg=#e5e5e7 bg=#2a2a36
-r17 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r17 c3-10 fg=#989898 bg=#1e1e2a
-r17 c11-15 fg=#e5e5e7 bg=#1e1e2a
-r17 c16-25 fg=#989898 bg=#1e1e2a
-r17 c26-30 fg=#e5e5e7 bg=#1e1e2a
-r17 c31-38 fg=#989898 bg=#1e1e2a
-r17 c39-41 fg=#e5e5e7 bg=#1e1e2a
-r17 c42-47 fg=#989898 bg=#1e1e2a
-r17 c48-79 fg=#e5e5e7 bg=#1e1e2a
+r11 c0-79 fg=#e5e5e7 bg=#292b40
+r12 c0 fg=#e5e5e7 bg=#292b40
+r12 c1-10 fg=#989898 bg=#292b40
+r12 c11-79 fg=#e5e5e7 bg=#292b40
+r13 c0 fg=#e5e5e7 bg=#292b40
+r13 c1-10 fg=#989898 bg=#292b40
+r13 c11-79 fg=#e5e5e7 bg=#292b40
+r14 c0-79 fg=#e5e5e7 bg=#292b40
+r15 c0 fg=#e5e5e7 bg=#292b40
+r15 c1-42 fg=#989898 bg=#292b40
+r15 c43-79 fg=#e5e5e7 bg=#292b40
+r16 c0 fg=#e5e5e7 bg=#292b40
+r16 c1-41 fg=#989898 bg=#292b40
+r16 c42-79 fg=#e5e5e7 bg=#292b40
+r17 c0 fg=#e5e5e7 bg=#292b40
+r17 c1-45 fg=#989898 bg=#292b40
+r17 c46-79 fg=#e5e5e7 bg=#292b40
+r18 c0 fg=#e5e5e7 bg=#292b40
+r18 c1-9 fg=#989898 bg=#292b40
+r18 c10-79 fg=#e5e5e7 bg=#292b40
+r19 c0-79 fg=#e5e5e7 bg=#292b40
+r20 c0 fg=#e5e5e7 bg=#292b40
+r20 c1-10 fg=#989898 bg=#292b40
+r20 c11-79 fg=#e5e5e7 bg=#292b40
+r21 c0 fg=#e5e5e7 bg=#292b40
+r21 c1-10 fg=#989898 bg=#292b40
+r21 c11-79 fg=#e5e5e7 bg=#292b40
+r22 c0 fg=#e5e5e7 bg=#292b40
+r22 c1-10 fg=#989898 bg=#292b40
+r22 c11-79 fg=#e5e5e7 bg=#292b40
+r23 c0-8 fg=#e5e5e7 bg=#292b40
+r23 c9-11 fg=#989898 bg=#292b40
+r23 c12-79 fg=#e5e5e7 bg=#292b40
+r24 c0-2 fg=#5cc8bb bg=#2a2a36
+r24 c3-8 fg=#989898 bg=#2a2a36
+r24 c9-79 fg=#e5e5e7 bg=#2a2a36
+r25 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r25 c3-10 fg=#989898 bg=#1e1e2a
+r25 c11-15 fg=#e5e5e7 bg=#1e1e2a
+r25 c16-25 fg=#989898 bg=#1e1e2a
+r25 c26-30 fg=#e5e5e7 bg=#1e1e2a
+r25 c31-38 fg=#989898 bg=#1e1e2a
+r25 c39-41 fg=#e5e5e7 bg=#1e1e2a
+r25 c42-47 fg=#989898 bg=#1e1e2a
+r25 c48-79 fg=#e5e5e7 bg=#1e1e2a

@@ -386,6 +386,22 @@ impl Pane {
         self.title_line(&st, bordered).width()
     }
 
+    /// The cells a list row's content may use at `width` columns: the list
+    /// column (the whole pane unless it splits) less the gutter and the
+    /// right pad. Rows built to this width never get cut.
+    pub fn row_width(&self, width: usize) -> usize {
+        let st = self.resolved_style();
+        let bordered = st.mono && width >= MONO_BORDER_MIN_WIDTH;
+        let inner = if bordered { width - 2 } else { width };
+        let split = !self.detail.is_empty() && width >= SPLIT_MIN_WIDTH;
+        let column = if split {
+            self.split_list_width(inner)
+        } else {
+            inner
+        };
+        column.saturating_sub(GUTTER + 1)
+    }
+
     /// The list column width of a split at inner width `inner`.
     fn split_list_width(&self, inner: usize) -> usize {
         let want = self.list_width.unwrap_or(inner * 36 / 100);

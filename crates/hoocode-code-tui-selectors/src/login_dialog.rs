@@ -1,9 +1,9 @@
 //! The login dialog that replaces the prompt during `/login`, hoocode
 //! `components/login-dialog.ts`.
 //!
-//! The dialog draws as the DOCKING console (M7, spec §4 d10): the heavy
-//! frame names the flow, the rows carry the URL and any code prompt, the
-//! `▸` query row takes the typed answer, and the hint foot names the keys.
+//! The dialog draws as the Log in pane: the title names the flow, the rows
+//! carry the URL and any code prompt, the input row takes the typed answer,
+//! and the hint row names the keys.
 //! There is no QR facility in the repo and no new deps are allowed, so the
 //! dialog shows the URL/code only and notes that gap on the auth step.
 //!
@@ -70,7 +70,7 @@ impl LoginDialogComponent {
         }));
         Self {
             provider_name: provider_name.to_string(),
-            rows: vec![line("Starting…".to_string(), pal.faint())],
+            rows: vec![line("Starting…".to_string(), pal.dim())],
             placeholder: true,
             hint: hints(&[("esc", "cancel")]),
             input: Rc::new(RefCell::new(input)),
@@ -117,12 +117,12 @@ impl LoginDialogComponent {
         self.rows.push(line(format!("1 {url}"), pal.acc()));
         self.rows.push(line(
             "scan, or enter to open the browser".to_string(),
-            pal.faint(),
+            pal.dim(),
         ));
         self.rows.push(line(
             "No QR code in this terminal build — the link above docks the same provider."
                 .to_string(),
-            pal.faint(),
+            pal.dim(),
         ));
         if let Some(instructions) = instructions.filter(|i| !i.is_empty()) {
             self.rows.push(Line::raw(""));
@@ -136,7 +136,7 @@ impl LoginDialogComponent {
     pub fn show_manual_input(&mut self, prompt: &str) {
         let pal = Palette::current();
         self.separate();
-        self.rows.push(line(format!("2 {prompt}"), pal.faint()));
+        self.rows.push(line(format!("2 {prompt}"), pal.dim()));
         self.awaiting_input = true;
         self.hint = hints(&[("enter", "submit"), ("esc", "cancel")]);
     }
@@ -147,8 +147,7 @@ impl LoginDialogComponent {
         self.separate();
         self.rows.push(line(message.to_string(), Style::default()));
         if let Some(example) = placeholder.filter(|p| !p.is_empty()) {
-            self.rows
-                .push(line(format!("e.g., {example}"), pal.faint()));
+            self.rows.push(line(format!("e.g., {example}"), pal.dim()));
         }
         self.input.borrow_mut().set_value("");
         self.awaiting_input = true;
@@ -170,7 +169,7 @@ impl LoginDialogComponent {
         let pal = Palette::current();
         self.separate();
         self.rows
-            .push(line(format!("{} {message}", status::RUNNING), pal.faint()));
+            .push(line(format!("{} {message}", status::RUNNING), pal.dim()));
         self.hint = hints(&[("esc", "cancel")]);
     }
 
@@ -178,16 +177,16 @@ impl LoginDialogComponent {
     pub fn show_progress(&mut self, message: &str) {
         let pal = Palette::current();
         self.separate();
-        self.rows.push(line(message.to_string(), pal.faint()));
+        self.rows.push(line(message.to_string(), pal.dim()));
     }
 }
 
 impl Component for LoginDialogComponent {
-    /// The DOCKING console: the provider in the title count, the rows above
+    /// The Log in pane: the provider in the title count, the rows above
     /// the input row while an answer is armed, and the hint row. Keys
     /// and events are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
-        let mut console = Console::new("DOCKING · /login", self.provider_name.clone());
+        let mut console = Console::new("Log in · /login", self.provider_name.clone());
         console.top = self.rows.clone();
         if self.awaiting_input {
             let query = self.input.borrow().get_value().to_string();

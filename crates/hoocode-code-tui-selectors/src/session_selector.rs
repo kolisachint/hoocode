@@ -2,10 +2,11 @@
 //! current folder or of every folder, threaded by fork parent or searched,
 //! with rename and delete.
 //!
-//! The MISSION LOG console (M7, ratatui): `MISSION LOG · /resume`, scope
-//! tabs on top, the `▸` query row, one row per session with `›` on the
-//! selection band, and the hint foot. Shared `Console` chrome in
-//! `code-tui-widgets/src/console.rs`; keys, filtering and events unchanged.
+//! The Sessions pane: `Sessions  /resume  N sessions · this folder`, one row
+//! per session with ` › ` on the selection band, the selected session's
+//! detail beside them, the filter row, and the hint row (`f1` lists every
+//! key). Shared pane chrome in `code-tui-widgets/src/console.rs`; keys,
+//! filtering and events unchanged.
 //!
 //! Loading is asynchronous in the pin. Here a loader receives a [`LoadSink`]
 //! (`Send`, so it can finish on another thread) and the picker applies what
@@ -28,14 +29,15 @@ use hoocode_code_session::{subagents_dir, SessionInfo, SubagentRun, SubagentStat
 use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_theme::{session_color_token, style_input};
 use hoocode_code_tui_widgets::brand::GIT_BRANCH_GLYPH;
-use hoocode_code_tui_widgets::console::{hints, query_row, Console};
+use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
+use hoocode_code_tui_widgets::pane::capped_hint_line;
 use hoocode_home::shorten_path;
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, KeybindingsManager};
 use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::js_regex::js_trim;
-use hoocode_tui_util::{truncate_to_width, visible_width};
+use hoocode_tui_util::{strip_vt_control_characters, truncate_to_width, visible_width};
 
 use crate::session_selector_search::{
     filter_and_sort_sessions, has_session_name, NameFilter, SortMode,
@@ -76,6 +78,16 @@ pub fn format_session_date(date: DateTime<Utc>, now: DateTime<Utc>) -> String {
     }
 }
 
+/// `3m ago`, `2d ago`; `now` while under a minute.
+fn format_session_age(modified: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    let age = format_session_date(modified, now);
+    if age == "now" {
+        age
+    } else {
+        format!("{age} ago")
+    }
+}
+
 fn canonical(path: &Path) -> PathBuf {
     canonicalize_path(path)
 }
@@ -101,6 +113,8 @@ struct SessionSelectorHeader {
     /// An interrupted subagent run is highlighted: the hint offers view/resume.
     choosing_subagent: bool,
     can_resume: bool,
+    /// The full key list shows (`f1`).
+    help: bool,
 }
 
 impl SessionSelectorHeader {
@@ -132,56 +146,57 @@ impl SessionSelectorHeader {
 }
 
 impl SessionSelectorHeader {
-    /// The scope tabs with the name and sort flags: the console's first
-    /// top row, with the active scope in accent. Literal keys only, so the
-    /// goldens hold on macOS and Linux.
-    fn scope_line(&self) -> Line<'static> {
-        let pal = Palette::current();
-        let sort_label = match self.sort_mode {
-            SortMode::Threaded => "Threaded",
-            SortMode::Recent => "Recent",
-            SortMode::Relevance => "Fuzzy",
-        };
-        let name_label = match self.name_filter {
-            NameFilter::All => "All",
-            NameFilter::Named => "Named",
-        };
-        let mut spans = if self.loading {
-            let progress = match self.load_progress {
-                Some((loaded, total)) => format!("{loaded}/{total}"),
-                None => "...".to_string(),
-            };
-            vec![
-                Span::styled("○ Current Folder | ".to_string(), pal.faint()),
-                Span::styled(format!("Loading {progress}"), pal.acc()),
-            ]
+    /// The title facts after the count: the scope, then the name and sort
+    /// flags when they are not the default. Loading says so with its
+    /// progress.
+    fn facts_text(&self) -> String {
+        let mut parts = Vec::new();
+        if self.loading {
+            parts.push(match self.load_progress {
+                Some((loaded, total)) => format!("loading {loaded}/{total}"),
+                None => "loading".to_string(),
+            });
         } else if self.scope == SessionScope::Current {
-            vec![
-                Span::styled("◉ Current Folder".to_string(), pal.acc()),
-                Span::styled(" | ○ All".to_string(), pal.faint()),
-            ]
+            parts.push("this folder".to_string());
         } else {
-            vec![
-                Span::styled("○ Current Folder | ".to_string(), pal.faint()),
-                Span::styled("◉ All".to_string(), pal.acc()),
-            ]
-        };
-        spans.push(Span::styled("  Name: ".to_string(), pal.faint()));
-        spans.push(Span::styled(name_label.to_string(), pal.acc()));
-        spans.push(Span::styled("  Sort: ".to_string(), pal.faint()));
-        spans.push(Span::styled(sort_label.to_string(), pal.acc()));
-        Line::from(spans)
+            parts.push("all folders".to_string());
+        }
+        if self.name_filter == NameFilter::Named {
+            parts.push("named only".to_string());
+        }
+        match self.sort_mode {
+            SortMode::Threaded => {}
+            SortMode::Recent => parts.push("recent first".to_string()),
+            SortMode::Relevance => parts.push("best match".to_string()),
+        }
+        parts.join(" · ")
     }
 
-    /// The console's other top rows: the delete prompt, the interrupted-run
-    /// choice, the timed status, or the search legend in the steady state.
-    fn top_lines(&self) -> Vec<Line<'static>> {
+    /// Every key the picker answers to, in hint order (the first four
+    /// show; `f1` lists the rest).
+    fn all_hints() -> [(&'static str, &'static str); 9] {
+        [
+            ("↑↓", "move"),
+            ("enter", "open"),
+            ("tab", "scope"),
+            ("esc", "close"),
+            ("alt+o", "sort"),
+            ("alt+n", "named only"),
+            ("alt+p", "show path"),
+            ("alt+r", "rename"),
+            ("alt+x", "delete"),
+        ]
+    }
+
+    /// The hint row: the delete prompt, the interrupted-run choice or the
+    /// timed status while one is up (the row spans the pane, so long
+    /// prompts are not cut by a split), else four keys and `f1 more`.
+    fn hint_line(&self) -> Line<'static> {
         let pal = Palette::current();
         if self.confirming_delete {
-            return vec![Line::from(vec![Span::styled(
-                "Delete session? enter confirm · esc cancel".to_string(),
-                pal.err(),
-            )])];
+            let mut spans = vec![Span::styled("Delete session? ".to_string(), pal.err())];
+            spans.extend(hints(&[("enter", "confirm"), ("esc", "cancel")]).spans);
+            return Line::from(spans);
         }
         if self.choosing_subagent {
             let text = if self.can_resume {
@@ -189,7 +204,7 @@ impl SessionSelectorHeader {
             } else {
                 "Interrupted run · v view · esc back"
             };
-            return vec![Line::from(vec![Span::styled(text.to_string(), pal.acc())])];
+            return Line::from(vec![Span::styled(text.to_string(), pal.acc())]);
         }
         if let Some((kind, message)) = &self.status {
             let style = if *kind == StatusKind::Error {
@@ -197,35 +212,17 @@ impl SessionSelectorHeader {
             } else {
                 pal.acc()
             };
-            return vec![Line::from(vec![Span::styled(message.clone(), style)])];
+            return Line::from(vec![Span::styled(message.clone(), style)]);
         }
-        vec![
-            self.scope_line(),
-            Line::from(vec![
-                Span::styled("tab".to_string(), pal.dim()),
-                Span::styled(
-                    " scope · re:<pattern> regex · \"phrase\" exact".to_string(),
-                    pal.faint(),
-                ),
-            ]),
-        ]
+        capped_hint_line(&Self::all_hints(), true)
     }
 
-    /// The hint foot: confirm/cancel while a delete is pending, else the
-    /// console keys (the target's `logRows` foot: move, jump there, close —
-    /// plus the picker's real scope, sort and delete keys).
-    fn hint_line(&self) -> Line<'static> {
-        if self.confirming_delete {
-            hints(&[("enter", "confirm"), ("esc", "cancel")])
+    /// The full key list rows (after `f1`); none while it is closed.
+    fn help_lines(&self) -> Vec<Line<'static>> {
+        if self.help && !self.confirming_delete {
+            help_rows(&Self::all_hints())
         } else {
-            hints(&[
-                ("↑↓", "move"),
-                ("tab", "scope"),
-                ("alt+o", "sort"),
-                ("alt+x", "delete"),
-                ("enter", "jump there"),
-                ("esc", "close"),
-            ])
+            Vec::new()
         }
     }
 }
@@ -737,7 +734,7 @@ impl SessionList {
 }
 
 impl SessionList {
-    /// The MISSION LOG count: the listed sessions, or the matches of the
+    /// The Sessions count: the listed sessions, or the matches of the
     /// total while searching.
     fn count_text(&self) -> String {
         let total = self.all_sessions.len();
@@ -748,10 +745,10 @@ impl SessionList {
         }
     }
 
-    /// One session row (content only; the console adds the `›` marker or
+    /// One session row (content only; the pane adds the ` › ` marker or
     /// gutter and the selection band): the colour swatch, the tree prefix,
-    /// the branch, the name, and the stats right-aligned, laid out like
-    /// the old framed rows.
+    /// the branch, the name, and the facts right-aligned (search hits, then
+    /// the age). The rest of a session shows in the detail column.
     fn console_row(
         &self,
         i: usize,
@@ -797,52 +794,38 @@ impl SessionList {
         ];
         if !branch.is_empty() {
             spans.push(Span::styled(format!("{GIT_BRANCH_GLYPH} "), pal.dim()));
-            spans.push(Span::styled(branch.to_string(), pal.faint()));
+            spans.push(Span::styled(branch.to_string(), pal.dim()));
             spans.push(Span::raw("  ".to_string()));
         }
-        let age = format_session_date(session.modified, now);
-        // The mission table's right columns: the ship that flew the
-        // session, its step count, the search hit count, and when. Hits
-        // read red; unnamed rows keep the id slug so they stay
-        // distinguishable.
+        let age = format_session_age(session.modified, now);
         let body = if is_confirming_delete {
             pal.err()
         } else {
             pal.dim()
         };
         let hits = hit_count(session, &self.search_value());
-        let mut right: Vec<(String, Style)> = match &session.subagent {
-            Some(run) => vec![(format!("{} {age}", subagent_label(run)), body)],
-            None => {
-                let mut columns = Vec::new();
-                if !has_name {
-                    columns.push((session_slug_for(&session.id), body));
-                }
-                columns.push((
-                    ship_name(session),
-                    if session.model.is_some() && !is_confirming_delete {
-                        Style::default()
-                    } else {
-                        body
-                    },
-                ));
-                columns.push((session.message_count.to_string(), body));
-                columns.push((hits.to_string(), if hits > 0 { pal.err() } else { body }));
-                columns.push((age, body));
-                columns
-            }
-        };
-        if self.show_cwd && !session.cwd.is_empty() {
-            right.insert(0, (shorten_path(&session.cwd).to_string(), body));
+        let mut right: Vec<(String, Style)> = Vec::new();
+        // A subagent run says what it is and how it ended instead of its age.
+        if let Some(run) = &session.subagent {
+            right.push((subagent_label(run), body));
         }
         if self.show_path {
-            right.insert(
-                0,
-                (
-                    shorten_path(&session.path.to_string_lossy()).to_string(),
-                    body,
-                ),
-            );
+            right.push((
+                shorten_path(&session.path.to_string_lossy()).to_string(),
+                body,
+            ));
+        }
+        if self.show_cwd && !session.cwd.is_empty() {
+            right.push((shorten_path(&session.cwd).to_string(), body));
+        }
+        if hits > 0 {
+            right.push((
+                format!("{hits} {}", if hits == 1 { "hit" } else { "hits" }),
+                pal.err(),
+            ));
+        }
+        if session.subagent.is_none() {
+            right.push((age, body));
         }
         let prefix_width = visible_width(&prefix) as i64;
         let branch_width = if branch.is_empty() {
@@ -854,16 +837,21 @@ impl SessionList {
             .iter()
             .map(|(text, _)| visible_width(text) as i64)
             .sum::<i64>()
-            + right.len().saturating_sub(1) as i64;
-        let available = inner as i64 - 2 - prefix_width - branch_width - right_width - 2;
-        let truncated = truncate_to_width(normalized, available.max(10) as usize, "…", false);
+            + 2 * right.len().saturating_sub(1) as i64;
+        // The row's cells, less the swatch and its space.
+        let room = inner as i64 - 4;
+        let available = room - prefix_width - branch_width - right_width - 2;
+        let truncated = strip_vt_control_characters(&truncate_to_width(
+            normalized,
+            available.max(10) as usize,
+            "…",
+            false,
+        ));
         let name_width = visible_width(&truncated) as i64;
         let mut name_span = if is_confirming_delete {
             Span::styled(truncated, pal.err())
         } else if is_current {
             Span::styled(truncated, pal.acc())
-        } else if has_name {
-            Span::styled(truncated, pal.warn())
         } else {
             Span::raw(truncated)
         };
@@ -871,16 +859,81 @@ impl SessionList {
             name_span.style = bold(name_span.style);
         }
         spans.push(name_span);
-        let spacing =
-            (inner as i64 - 2 - prefix_width - branch_width - name_width - right_width).max(1);
+        let spacing = (room - prefix_width - branch_width - name_width - right_width).max(1);
         spans.push(Span::raw(" ".repeat(spacing as usize)));
         for (n, (text, style)) in right.into_iter().enumerate() {
             if n > 0 {
-                spans.push(Span::raw(" ".to_string()));
+                spans.push(Span::raw("  ".to_string()));
             }
             spans.push(Span::styled(text, style));
         }
         Line::from(spans)
+    }
+
+    /// The selected session's detail column: its name, then the slug,
+    /// model, message count, folder, branch and age, then its first
+    /// message. Empty when nothing is selected.
+    fn detail_rows(&self, now: DateTime<Utc>) -> Vec<Line<'static>> {
+        let pal = Palette::current();
+        let Some(node) = self.filtered.get(self.cursor.selected()) else {
+            return Vec::new();
+        };
+        let session = &node.session;
+        let clean = |text: &str| -> String {
+            let text: String = text
+                .chars()
+                .map(|c| if (c as u32) < 0x20 { ' ' } else { c })
+                .collect();
+            js_trim(&text).to_string()
+        };
+        let title = clean(session.name.as_deref().unwrap_or(&session.first_message));
+        let mut rows = vec![Line::from(vec![Span::styled(title, pal.ink())])];
+        let mut facts = vec![session_slug_for(&session.id)];
+        if let Some(run) = &session.subagent {
+            facts.push(subagent_label(run));
+        }
+        if session.model.is_some() {
+            facts.push(ship_name(session));
+        }
+        facts.push(format!(
+            "{} {}",
+            session.message_count,
+            if session.message_count == 1 {
+                "message"
+            } else {
+                "messages"
+            }
+        ));
+        rows.push(Line::from(vec![Span::styled(facts.join(" · "), pal.dim())]));
+        if !session.cwd.is_empty() {
+            rows.push(Line::from(vec![Span::styled(
+                shorten_path(&session.cwd).to_string(),
+                pal.dim(),
+            )]));
+        }
+        if let Some(branch) = session
+            .branch
+            .as_deref()
+            .filter(|b| session.name.is_none() && !b.is_empty() && !DEFAULT_BRANCHES.contains(b))
+        {
+            rows.push(Line::from(vec![Span::styled(
+                format!("branch {branch}"),
+                pal.dim(),
+            )]));
+        }
+        rows.push(Line::from(vec![Span::styled(
+            format!("last used {}", format_session_age(session.modified, now)),
+            pal.dim(),
+        )]));
+        let first = clean(&session.first_message);
+        if !first.is_empty() && session.name.is_some() {
+            rows.push(Line::raw(""));
+            rows.push(Line::from(vec![
+                Span::styled("› ".to_string(), pal.dim()),
+                Span::styled(first, pal.ink()),
+            ]));
+        }
+        rows
     }
 
     /// The cursor's window as console rows, with the selection remapped
@@ -895,21 +948,21 @@ impl SessionList {
             let message = if self.name_filter == NameFilter::Named {
                 let toggle = key_text("app.session.toggleNamedFilter");
                 if self.show_cwd {
-                    format!("  No named sessions found. Press {toggle} to show all.")
+                    format!("No named sessions found. Press {toggle} to show all.")
                 } else {
                     format!(
                         "  No named sessions in current folder. Press {toggle} to show all, or tab to view all."
                     )
                 }
             } else if self.show_cwd {
-                "  No sessions found".to_string()
+                "No sessions found".to_string()
             } else {
-                "  No sessions in current folder. Press tab to view all.".to_string()
+                "No sessions in this folder. Press tab to view all.".to_string()
             };
             return (
                 Vec::new(),
                 None,
-                vec![Line::from(vec![Span::styled(message, pal.faint())])],
+                vec![Line::from(vec![Span::styled(message, pal.dim())])],
             );
         }
         let window = self.cursor.window();
@@ -923,7 +976,7 @@ impl SessionList {
         if let Some(footer) = self.cursor.footer() {
             bottom.push(Line::from(vec![Span::styled(
                 format!("  {footer}"),
-                pal.faint(),
+                pal.dim(),
             )]));
         }
         (rows, window.clone().position(|i| i == selected), bottom)
@@ -1183,6 +1236,7 @@ impl SessionSelectorComponent {
             status_deadline: None,
             choosing_subagent: false,
             can_resume,
+            help: false,
         }));
         let session_list = Rc::new(RefCell::new(SessionList::new(
             SortMode::Threaded,
@@ -1479,10 +1533,10 @@ impl SessionSelectorComponent {
     /// with a caret, and save/cancel in the foot.
     fn render_rename(&self, width: usize) -> Vec<String> {
         let pal = Palette::current();
-        let mut console = Console::new("MISSION LOG · /resume", String::new());
+        let mut console = Console::new("Sessions · /resume", "rename");
         console.top = vec![Line::from(vec![Span::styled(
-            "Rename Session".to_string(),
-            bold(pal.acc()),
+            "New name for this session".to_string(),
+            pal.dim(),
         )])];
         let value = self.rename_input.borrow().get_value().to_string();
         console.query = Some(query_row(&value, self.focused));
@@ -1549,9 +1603,10 @@ impl SessionSelectorComponent {
 }
 
 impl Component for SessionSelectorComponent {
-    /// The MISSION LOG console: scope tabs on top, the `▸` query row, one
-    /// row per session with `›` on the selection band, and the hint foot.
-    /// Rename draws as a console too. Keys, filtering and events unchanged.
+    /// The Sessions pane: one row per session with ` › ` on the selection
+    /// band, the selected session's detail beside them (below at narrow
+    /// widths), the filter row and the hint row. Rename draws as a pane
+    /// too. Keys, filtering and events unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
         let width = width as usize;
         if self.mode == Mode::Rename {
@@ -1559,13 +1614,20 @@ impl Component for SessionSelectorComponent {
         }
         let header = self.header.borrow();
         let list = self.session_list.borrow();
-        let mut console = Console::new("MISSION LOG · /resume", list.count_text());
-        console.top = header.top_lines();
+        let facts = header.facts_text();
+        let mut console = Console::new(
+            "Sessions · /resume",
+            format!("{} · {facts}", list.count_text()),
+        );
         console.query = Some(query_row(&list.search_value(), self.focused));
-        let inner = width.saturating_sub(2);
-        let (rows, selected, bottom) = list.console_rows(inner);
+        console.detail = list.detail_rows(list.now.unwrap_or_else(Utc::now));
+        console.list_width = Some(width * 58 / 100);
+        // Rows are laid out for the list column: a split narrows it.
+        let inner = console.row_width(width) + 2;
+        let (rows, selected, mut bottom) = list.console_rows(inner);
         console.rows = rows;
         console.selected = selected;
+        bottom.extend(header.help_lines());
         console.bottom = bottom;
         console.hint = header.hint_line();
         console.render(width)
@@ -1582,6 +1644,11 @@ impl Component for SessionSelectorComponent {
             if let Some(value) = submitted {
                 self.confirm_rename(&value);
             }
+            return;
+        }
+        if hoocode_tui_keys::matches_key(data, "f1") {
+            let mut header = self.header.borrow_mut();
+            header.help = !header.help;
             return;
         }
         let events = self.session_list.borrow_mut().handle_key(data);

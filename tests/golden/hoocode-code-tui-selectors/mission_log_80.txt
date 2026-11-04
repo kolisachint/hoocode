@@ -1,67 +1,55 @@
-  MISSION LOG  /resume  2 sessions
- ◉ Current Folder | ○ All  Name: All  Sort: Threaded
- tab scope · re:<pattern> regex · "phrase" exact
- ›   wrap width                                                         — 5 0 …
-     add a width check to wrap_text in src/wrap.rs          coral-basin — 5 0 …
+  Sessions  /resume  2 sessions · this folder
+ ›   wrap width                                                         56y ago
+     add a width check to wrap_text in src/wrap.rs                      56y ago
+ wrap width
+ clay-arbor · 5 messages
+ last used 56y ago
+
+ › why does wrap_text ignore width
  › filter
- ↑↓ move · tab scope · alt+o sort · alt+x delete · enter jump there · esc close
+ ↑↓ move · enter open · tab scope · esc close · f1 more
 --- styles ---
 r0 c0 fg=#e5e5e7 bg=#1e1e2a
-r0 c1-13 fg=#14141c bg=#5cc8bb bold
-r0 c14 fg=#e5e5e7 bg=#1e1e2a
-r0 c15-21 fg=#989898 bg=#1e1e2a
-r0 c22-23 fg=#e5e5e7 bg=#1e1e2a
-r0 c24-33 fg=#989898 bg=#1e1e2a
-r0 c34-79 fg=#e5e5e7 bg=#1e1e2a
-r1 c0 fg=#e5e5e7 bg=#1e1e2a
-r1 c1-16 fg=#5cc8bb bg=#1e1e2a
-r1 c17-32 fg=#989898 bg=#1e1e2a
-r1 c33-35 fg=#5cc8bb bg=#1e1e2a
-r1 c36-43 fg=#989898 bg=#1e1e2a
-r1 c44-51 fg=#5cc8bb bg=#1e1e2a
-r1 c52-79 fg=#e5e5e7 bg=#1e1e2a
-r2 c0 fg=#e5e5e7 bg=#1e1e2a
-r2 c1-47 fg=#989898 bg=#1e1e2a
-r2 c48-79 fg=#e5e5e7 bg=#1e1e2a
-r3 c0-2 fg=#5cc8bb bg=#233239
-r3 c3 fg=#e5e5e7 bg=#4ec9b0
-r3 c4 fg=#e5e5e7 bg=#233239
-r3 c5-14 fg=#f0c674 bg=#233239 bold
-r3 c15-71 fg=#e5e5e7 bg=#233239
-r3 c72 fg=#989898 bg=#233239
-r3 c73 fg=#e5e5e7 bg=#233239
-r3 c74 fg=#989898 bg=#233239
-r3 c75 fg=#e5e5e7 bg=#233239
-r3 c76 fg=#989898 bg=#233239
-r3 c77 fg=#e5e5e7 bg=#233239
-r3 c78 fg=#989898 bg=#233239
-r3 c79 fg=#e5e5e7 bg=#233239
-r4 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r4 c3 fg=#e5e5e7 bg=#7aa2f7
-r4 c4-59 fg=#e5e5e7 bg=#1e1e2a
-r4 c60-70 fg=#989898 bg=#1e1e2a
-r4 c71 fg=#e5e5e7 bg=#1e1e2a
-r4 c72 fg=#989898 bg=#1e1e2a
-r4 c73 fg=#e5e5e7 bg=#1e1e2a
-r4 c74 fg=#989898 bg=#1e1e2a
-r4 c75 fg=#e5e5e7 bg=#1e1e2a
-r4 c76 fg=#989898 bg=#1e1e2a
-r4 c77 fg=#e5e5e7 bg=#1e1e2a
-r4 c78 fg=#989898 bg=#1e1e2a
-r4 c79 fg=#e5e5e7 bg=#1e1e2a
-r5 c0-2 fg=#5cc8bb bg=#2a2a36
-r5 c3-8 fg=#989898 bg=#2a2a36
-r5 c9-79 fg=#e5e5e7 bg=#2a2a36
-r6 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r6 c3-10 fg=#989898 bg=#1e1e2a
-r6 c11-13 fg=#e5e5e7 bg=#1e1e2a
-r6 c14-22 fg=#989898 bg=#1e1e2a
-r6 c23-27 fg=#e5e5e7 bg=#1e1e2a
-r6 c28-35 fg=#989898 bg=#1e1e2a
-r6 c36-40 fg=#e5e5e7 bg=#1e1e2a
-r6 c41-50 fg=#989898 bg=#1e1e2a
-r6 c51-55 fg=#e5e5e7 bg=#1e1e2a
-r6 c56-69 fg=#989898 bg=#1e1e2a
-r6 c70-72 fg=#e5e5e7 bg=#1e1e2a
-r6 c73-78 fg=#989898 bg=#1e1e2a
-r6 c79 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-10 fg=#14141c bg=#5cc8bb bold
+r0 c11 fg=#e5e5e7 bg=#1e1e2a
+r0 c12-18 fg=#989898 bg=#1e1e2a
+r0 c19-20 fg=#e5e5e7 bg=#1e1e2a
+r0 c21-44 fg=#989898 bg=#1e1e2a
+r0 c45-79 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-2 fg=#5cc8bb bg=#233239
+r1 c3 fg=#e5e5e7 bg=#4ec9b0
+r1 c4 fg=#e5e5e7 bg=#233239
+r1 c5-14 fg=#e5e5e7 bg=#233239 bold
+r1 c15-71 fg=#e5e5e7 bg=#233239
+r1 c72-78 fg=#989898 bg=#233239
+r1 c79 fg=#e5e5e7 bg=#233239
+r2 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r2 c3 fg=#e5e5e7 bg=#7aa2f7
+r2 c4-71 fg=#e5e5e7 bg=#1e1e2a
+r2 c72-78 fg=#989898 bg=#1e1e2a
+r2 c79 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-79 fg=#e5e5e7 bg=#292b40
+r4 c0 fg=#e5e5e7 bg=#292b40
+r4 c1-23 fg=#989898 bg=#292b40
+r4 c24-79 fg=#e5e5e7 bg=#292b40
+r5 c0 fg=#e5e5e7 bg=#292b40
+r5 c1-17 fg=#989898 bg=#292b40
+r5 c18-79 fg=#e5e5e7 bg=#292b40
+r6 c0-79 fg=#e5e5e7 bg=#292b40
+r7 c0 fg=#e5e5e7 bg=#292b40
+r7 c1-2 fg=#989898 bg=#292b40
+r7 c3-79 fg=#e5e5e7 bg=#292b40
+r8 c0-2 fg=#5cc8bb bg=#2a2a36
+r8 c3-8 fg=#989898 bg=#2a2a36
+r8 c9-79 fg=#e5e5e7 bg=#2a2a36
+r9 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r9 c3-10 fg=#989898 bg=#1e1e2a
+r9 c11-15 fg=#e5e5e7 bg=#1e1e2a
+r9 c16-23 fg=#989898 bg=#1e1e2a
+r9 c24-26 fg=#e5e5e7 bg=#1e1e2a
+r9 c27-35 fg=#989898 bg=#1e1e2a
+r9 c36-38 fg=#e5e5e7 bg=#1e1e2a
+r9 c39-47 fg=#989898 bg=#1e1e2a
+r9 c48-49 fg=#e5e5e7 bg=#1e1e2a
+r9 c50-54 fg=#989898 bg=#1e1e2a
+r9 c55-79 fg=#e5e5e7 bg=#1e1e2a

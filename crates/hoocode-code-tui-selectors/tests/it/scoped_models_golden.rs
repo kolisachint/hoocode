@@ -64,21 +64,20 @@ fn check(name: &str, width: u16) {
             })
             .collect();
         for row in [
-            vec!["model", "effort", "category"],
-            vec!["›", "claude-haiku-5-5", "[anthropic]", "✓", "low", "cheap"],
-            vec!["gpt-5-mini", "[openai]", "✓", "-", "standard"],
-            vec!["gpt-5", "[openai]", "✗", "-", "-"],
+            vec!["›", "claude-haiku-5-5", "on"],
+            vec!["gpt-5-mini", "on"],
+            vec!["gpt-5", "off"],
         ] {
             assert!(
-                rows.contains(&row),
+                rows.iter().any(|r| r.starts_with(&row)),
                 "{name}: missing row {row:?} in\n{text}"
             );
         }
-        let hint = format!(
-            "{} effort · {} category",
-            format_key_text("tab", false),
-            format_key_text("alt+j", false)
+        assert!(
+            text.contains("effort low · cheap"),
+            "{name}: missing the selected row's facts in\n{text}"
         );
+        let hint = format!("{} effort", format_key_text("tab", false));
         assert!(
             text.contains(&hint),
             "{name}: missing hint {hint:?} in\n{text}"

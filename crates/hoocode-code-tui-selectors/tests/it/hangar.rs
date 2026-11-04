@@ -41,7 +41,7 @@ fn check(name: &str, width: u16) {
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("HANGAR  /model  2 ships"),
+        text.contains("Models  /model  showing scoped · 2 models"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -55,7 +55,7 @@ fn check(name: &str, width: u16) {
         "{name}: missing query row in\n{text}"
     );
     assert!(
-        text.contains("enter fly it"),
+        text.contains("enter pick"),
         "{name}: missing hint foot in\n{text}"
     );
     assert_golden!(name, rendered);
@@ -84,7 +84,7 @@ fn hangar_search_counts_the_match() {
     let rendered = render_golden(&mut selector, 100);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("1 ship of 2"),
+        text.contains("1 model of 2"),
         "missing filtered count in\n{text}"
     );
     assert!(
