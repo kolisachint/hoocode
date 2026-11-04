@@ -1,6 +1,6 @@
 # TUI declutter: plain, minimal, easy on the eyes
 
-Status: **design, in review** ([decisions-2026-11-03.md](decisions-2026-11-03.md)). Not built yet.
+Status: **building** (2026-11-04, PR #174) ([decisions-2026-11-03.md](decisions-2026-11-03.md)). Not built yet.
 Supersedes the look (not the behaviour) of [mission-control.md](mission-control.md),
 [radar-r3.md](radar-r3.md), [tui-surfaces.md](tui-surfaces.md),
 [footer-two-modes.md](footer-two-modes.md) and [tool-calls-peek-radar.md](tool-calls-peek-radar.md).
@@ -67,7 +67,11 @@ Proposed build plan (not started). Four waves; packages in one wave own disjoint
 - Renaming internal identifiers beyond the code each WP rewrites anyway.
 - New features. Behaviour of views, tasks, attach and queueing is unchanged.
 
-## Open questions
+## Resolved questions (user, 2026-11-04)
 
-- Not signed in: the status line's right side shows only view and session (no model, context or cost). Keep?
-- No colour: a `├─┤` rule above a pane's filter row (two extra rows per pane). Keep?
+- Not signed in: the status line's right side shows only view and session (no model,
+  context or cost). **Keep.**
+- No colour: panes keep light `┌─┐` borders, but **no** `├─┤` rule above the filter row.
+- This declutter **replaces Phase S** of [tui-activity.md](tui-activity.md); still-useful
+  Phase S items are folded into the WPs here.
+- Scope: all four waves in PR #174.

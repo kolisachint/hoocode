@@ -21,8 +21,8 @@ reference, pin, shim or parity checks remain; don't ask about TS parity.
   (`docs/design/tui-activity.md`, 2026-10-09). When the user asks to proceed or implement,
   ask which plan and which step first.
 - **TUI work is done by Haiku subagents** (user, 2026-10-09): review, implement and test.
-  The main session orchestrates, briefs and merges. In the TUI plan, simplification
-  (Phase S of `docs/design/tui-activity.md`) comes before the feature phases.
+  The main session orchestrates, briefs and merges. The TUI declutter
+  (`docs/design/tui-declutter.md`, 2026-11-04) replaces Phase S of `docs/design/tui-activity.md`.
 - **User docs:** `docs/user/` is the website's /hoocode pages, copied from each release
   tag. When a change alters a flag, command, path or install route, update the page in
   the same commit.
