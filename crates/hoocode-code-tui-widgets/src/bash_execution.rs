@@ -106,8 +106,8 @@ pub struct BashExecutionComponent {
     full_output_path: Option<String>,
     expanded: bool,
     tail: OutputTail,
-    /// The transcript's radar flag, shared so a view flip reaches every row.
-    radar: Option<Rc<Cell<bool>>>,
+    /// The transcript's outline flag, shared so a view flip reaches every row.
+    outline: Option<Rc<Cell<bool>>>,
     /// The transcript's full flag: at the full stop the output shows whole
     /// and the command is never cut.
     full: Option<Rc<Cell<bool>>>,
@@ -138,19 +138,19 @@ impl BashExecutionComponent {
             truncation: None,
             full_output_path: None,
             expanded: false,
-            radar: None,
+            outline: None,
             full: None,
         }
     }
 
-    /// Radar (M5): while `flag` is set the row shows its header only, the
-    /// output stays in peek. The flag is the transcript's radar flag.
-    pub fn set_radar_flag(&mut self, flag: Rc<Cell<bool>>) {
-        self.radar = Some(flag);
+    /// Outline (M5): while `flag` is set the row shows its header only, the
+    /// output stays in peek. The flag is the transcript's outline flag.
+    pub fn set_outline_flag(&mut self, flag: Rc<Cell<bool>>) {
+        self.outline = Some(flag);
     }
 
-    fn radar_hidden(&self) -> bool {
-        self.radar.as_ref().is_some_and(|flag| flag.get())
+    fn outline_hidden(&self) -> bool {
+        self.outline.as_ref().is_some_and(|flag| flag.get())
     }
 
     /// The transcript's full flag, shared so a view flip reaches every row.
@@ -330,7 +330,7 @@ impl Component for BashExecutionComponent {
         let palette = Palette::current();
         let width = (width as usize).max(1);
         let mut lines = self.header_rows(width, &palette);
-        if !self.radar_hidden() {
+        if !self.outline_hidden() {
             lines.extend(self.body_rows(width, &palette));
         }
         lines

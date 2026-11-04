@@ -11,6 +11,12 @@ pub type Settings = Map<String, Value>;
 
 macro_rules! str_enum {
     ($(#[$meta:meta])* $name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
+        str_enum!($(#[$meta])* $name { $($variant => $text),+ } aliases {});
+    };
+    // `aliases`: retired spellings `parse` still reads (`as_str` writes only the
+    // current one).
+    ($(#[$meta:meta])* $name:ident { $($variant:ident => $text:literal),+ $(,)? }
+        aliases { $($alias:literal => $avariant:ident),* $(,)? }) => {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum $name {
@@ -30,6 +36,7 @@ macro_rules! str_enum {
             pub fn parse(value: &str) -> Option<Self> {
                 match value {
                     $($text => Some($name::$variant),)+
+                    $($alias => Some($name::$avariant),)*
                     _ => None,
                 }
             }
@@ -90,7 +97,8 @@ impl From<hoocode_ai_types::ThinkingLevel> for ThinkingLevelSetting {
 
 str_enum!(
     /// `toolOutputView`: the three layers of the transcript, least to most.
-    ToolOutputView { Radar => "radar", Peek => "peek", Full => "full" }
+    ToolOutputView { Outline => "outline", Peek => "peek", Full => "full" }
+    aliases { "radar" => Outline }
 );
 
 str_enum!(

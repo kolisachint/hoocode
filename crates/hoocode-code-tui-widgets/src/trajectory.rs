@@ -25,7 +25,7 @@ use hoocode_tui_ratatui::{
 };
 use hoocode_tui_render::{fresh_stamp, mix_stamps, Component};
 
-use crate::radar::FlightMark;
+use crate::outline::FlightMark;
 use crate::tool_output_view::ToolOutputView;
 #[cfg(test)]
 use hoocode_tui_util::visible_width;
@@ -679,7 +679,7 @@ pub fn hits_text(hits: usize) -> String {
 
 /// The landing line's spans: `● LANDED · 2 steps · 1 hit · …`, muted with
 /// dim separators, as the row joins them. The mark is the mission's outcome,
-/// the one the radar row and the comms title read: `● LANDED` (ok),
+/// the one the outline row and the comms title read: `● LANDED` (ok),
 /// `⊗ DID NOT LAND` (err) or `⊘ ABORTED` (dim). A stepless mission (no steps,
 /// no hits) leaves those counts out.
 pub fn landing_spans(
@@ -739,7 +739,7 @@ pub fn landing_line(
 
 /// A mission's landing line as a component (M5): the peek row the
 /// transcript refreshes when a landed mission's counts change, so peek
-/// and radar agree. The spans render at the render width; overlong rows
+/// and outline agree. The spans render at the render width; overlong rows
 /// wrap exactly the way the old padded `Text` did. A mission that did
 /// something also gets one dim line right after, saying what the turn
 /// amounted to (`Edited 3 files · ran 2 commands`).
@@ -800,7 +800,7 @@ impl LandingLine {
         }
     }
 
-    /// The counts the row reads, for the peek/radar agreement check.
+    /// The counts the row reads, for the peek/outline agreement check.
     pub fn counts(&self) -> (usize, usize) {
         (self.steps, self.hits)
     }
@@ -936,15 +936,15 @@ pub(crate) fn wrapped_band_rows(
 /// The mission header: `▲ M1  prompt`, the `▲` and `M1` in the `you` colour.
 /// A skill chip (`✦ name`) sits right-aligned. The prompt is never cut: it
 /// wraps across continuation band rows so the whole mission stays visible.
-/// In radar view the header draws the mission's flight-log row instead (M5);
-/// see `radar`.
+/// In outline view the header draws the mission's flight-log row instead (M5);
+/// see `outline`.
 #[derive(Debug)]
 pub struct MissionHeader {
     seq: usize,
     prompt: String,
     skill: Option<String>,
     view: ToolOutputView,
-    flight: Option<Rc<RefCell<crate::radar::FlightStats>>>,
+    flight: Option<Rc<RefCell<crate::outline::FlightStats>>>,
     cache: RefCell<RowCache>,
     rev: u64,
 }
@@ -963,7 +963,7 @@ impl MissionHeader {
         }
     }
 
-    /// The view dial's current stop: peek draws the `▲ M{n}` header, radar
+    /// The view dial's current stop: peek draws the `▲ M{n}` header, outline
     /// the flight-log row.
     pub fn set_view(&mut self, view: ToolOutputView) {
         self.view = view;
@@ -973,17 +973,17 @@ impl MissionHeader {
 
     /// The mission's flight-log data, refreshed by the transcript as the
     /// mission runs and lands; the header reads it on every render.
-    pub fn set_flight(&mut self, flight: Rc<RefCell<crate::radar::FlightStats>>) {
+    pub fn set_flight(&mut self, flight: Rc<RefCell<crate::outline::FlightStats>>) {
         self.flight = Some(flight);
         self.rev = fresh_stamp();
     }
 }
 
 impl Component for MissionHeader {
-    /// Peek draws what the header was built with. Radar reads the shared
+    /// Peek draws what the header was built with. Outline reads the shared
     /// flight data too, so its key goes in (none while the clock runs).
     fn render_stamp(&self) -> Option<u64> {
-        if self.view != ToolOutputView::Radar {
+        if self.view != ToolOutputView::Outline {
             return Some(self.rev);
         }
         let Some(flight) = &self.flight else {
@@ -1000,7 +1000,7 @@ impl Component for MissionHeader {
         let palette = Palette::current();
         let theme = hoocode_tui_ratatui::current_theme_key();
         let width = width as usize;
-        if self.view == ToolOutputView::Radar {
+        if self.view == ToolOutputView::Outline {
             if let Some(flight) = &self.flight {
                 let stats = flight.borrow();
                 // Live data behind shared state: redraw every tick. The whole
@@ -1010,7 +1010,7 @@ impl Component for MissionHeader {
                 if self.seq > 1 {
                     rows.push(String::new());
                 }
-                rows.extend(crate::radar::mission_rows(
+                rows.extend(crate::outline::mission_rows(
                     self.seq,
                     &self.prompt,
                     &stats,

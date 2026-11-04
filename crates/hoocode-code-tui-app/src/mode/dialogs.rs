@@ -288,7 +288,7 @@ impl Mode {
         }
         self.tui.set_focus(Some(as_component(&card)));
         self.clearance = Some((card, reply));
-        // The held step reads its waiting row (radar `◉`) while the card is up.
+        // The held step reads its waiting row (outline `◉`) while the card is up.
         // A subagent's call is not one of this session's steps; its Agent block
         // shows the hold from the run's own events.
         for block in self.transcript.pending_tools.values() {

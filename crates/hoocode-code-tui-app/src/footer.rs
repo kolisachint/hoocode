@@ -72,7 +72,7 @@ pub use hoocode_code_settings::ToolOutputView;
 /// The view dial's glyph, filling as the view widens.
 pub fn tool_output_view_glyph(view: ToolOutputView) -> &'static str {
     match view {
-        ToolOutputView::Radar => "◌",
+        ToolOutputView::Outline => "◌",
         ToolOutputView::Peek => "◍",
         ToolOutputView::Full => "●",
     }
@@ -553,7 +553,7 @@ fn fit_line2(width: usize, d: &Line2Data, p: &Line2Parts) -> Option<String> {
 }
 
 /// The short layout's parts, before any dropping. One row:
-/// `BUILD  ▱▱▱▱▱▱▱▱   2%  ⑂ main  opus-5-5 · med  hoocode  $0.30  ◌ radar  ◇2`.
+/// `BUILD  ▱▱▱▱▱▱▱▱   2%  ⑂ main  opus-5-5 · med  hoocode  $0.30  ◌ outline  ◇2`.
 struct ShortData {
     chip: Piece,
     gauge: Piece,

@@ -3,7 +3,7 @@
 //! The text the model receives is unchanged. Only its drawing changes:
 //!
 //! ```text
-//! ◦ explore#4 finished ✓ · 1m27s · 4 still running        radar
+//! ◦ explore#4 finished ✓ · 1m27s · 4 still running        outline
 //! ◦ explore#4 finished ✓ · 1m27s · 4 still running        peek
 //!   │ Mapped the module and its three callers
 //!   model haiku-5-5 · effort high
@@ -134,7 +134,7 @@ pub fn parse_background_notice(text: &str) -> Option<BackgroundNotice> {
     })
 }
 
-/// The notice as the transcript draws it: one line at radar, plus the
+/// The notice as the transcript draws it: one line at outline, plus the
 /// summary and the model at peek.
 pub struct BackgroundNoticeComponent {
     notice: BackgroundNotice,
@@ -163,7 +163,7 @@ impl BackgroundNoticeComponent {
         }
     }
 
-    /// `true` at peek (the summary and model show), `false` at radar.
+    /// `true` at peek (the summary and model show), `false` at outline.
     pub fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
     }

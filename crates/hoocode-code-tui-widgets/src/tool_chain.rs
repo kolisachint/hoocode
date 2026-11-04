@@ -1,5 +1,5 @@
 //! `components/tool-chain.ts`: a run of consecutive tool calls, one line in
-//! a collapsed radar view and a plain pass-through everywhere else.
+//! a collapsed outline view and a plain pass-through everywhere else.
 //!
 //! A chain closes when the agent next speaks or the turn settles; closing
 //! while it is still the bottom of the screen keeps the rewrite to one line.
@@ -17,7 +17,7 @@ use hoocode_tui_ratatui::{ansi_spans, spans_width, truncate_spans, with_base_sty
 
 use crate::assistant_message::AssistantMessageComponent;
 use crate::fold::{fold_rows, fold_rows_tail, more_lines_span};
-use crate::radar;
+use crate::outline;
 use crate::tool_chain_summary::{
     chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
 };
@@ -53,10 +53,10 @@ pub struct ToolChainComponent {
     lead_ins: Vec<LeadIn>,
     view: ToolOutputView,
     state: ChainState,
-    /// The newest run in the transcript; radar marks it.
+    /// The newest run in the transcript; outline marks it.
     latest: bool,
     /// A chain before the first mission has no flight-log row above it, so
-    /// radar keeps its old summary line (M5). Chains inside a mission drop
+    /// outline keeps its old summary line (M5). Chains inside a mission drop
     /// the summary: the mission row carries the stats.
     orphan: bool,
     /// The mission step number this chain starts at (M4: steps are numbered
@@ -81,7 +81,7 @@ impl ToolChainComponent {
         }
     }
 
-    /// Whether this chain stands outside every mission (M5): radar keeps
+    /// Whether this chain stands outside every mission (M5): outline keeps
     /// its summary line, since no flight-log row covers it.
     pub fn set_orphan(&mut self, orphan: bool) {
         self.rev = fresh_stamp();
@@ -179,19 +179,19 @@ impl ToolChainComponent {
         self.latest = latest;
     }
 
-    /// Radar summarises every orphan chain, a lone call included, so one
+    /// Outline summarises every orphan chain, a lone call included, so one
     /// call and a run of calls read the same
     /// (`Ran npm run check   1 call · 412 lines`). Chains inside a mission
     /// collapse into the mission's flight-log rows instead.
     fn is_collapsed(&self) -> bool {
-        self.view == ToolOutputView::Radar && !self.blocks.is_empty()
+        self.view == ToolOutputView::Outline && !self.blocks.is_empty()
     }
 
-    /// The blank row that holds an orphan radar run off whatever came
+    /// The blank row that holds an orphan outline run off whatever came
     /// before it. Chains inside a mission attach their flight-log rows
     /// straight under the mission.
     fn needs_lead_in(&self) -> bool {
-        if self.view != ToolOutputView::Radar {
+        if self.view != ToolOutputView::Outline {
             return false;
         }
         if self.is_collapsed() {
@@ -280,7 +280,7 @@ impl ToolChainComponent {
                 let full = self.view == ToolOutputView::Full;
                 for sub in block.borrow().settled_sub_steps() {
                     if full || sub.failure.is_some() {
-                        let line = radar::sub_step_line(step, &sub, palette);
+                        let line = outline::sub_step_line(step, &sub, palette);
                         out.extend(trajectory::sub_step_rows(&line, width, full, palette));
                     }
                 }
@@ -301,13 +301,13 @@ impl ToolChainComponent {
             return self.peek_rows(width, &palette);
         }
         if !self.orphan {
-            // A mission's calls are drawn by its header (radar, R3).
+            // A mission's calls are drawn by its header (outline, R3).
             return Vec::new();
         }
         self.orphan_rows(width as usize, &palette)
     }
 
-    /// A chain outside every mission keeps the old summary line in radar:
+    /// A chain outside every mission keeps the old summary line in outline:
     /// the state glyph, the run's labels and its stats, then one folded
     /// block per failed call. Drawn from spans like every other row.
     fn orphan_rows(&self, width: usize, palette: &Palette) -> Vec<String> {

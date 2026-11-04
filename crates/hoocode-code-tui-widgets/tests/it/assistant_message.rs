@@ -79,7 +79,7 @@ fn omit_drops_the_thinking_block_but_keeps_the_text_around_it() {
         ThinkingDisplay::Omit,
     );
     // The transcript shows the prose once the mission has ended.
-    c.set_radar_prose_shown(true);
+    c.set_outline_prose_shown(true);
     let rendered = c.render(60).join("\n");
     assert!(rendered.contains("here is the answer"));
     assert!(!rendered.contains("weighing the options"));
@@ -149,7 +149,7 @@ fn a_message_on_the_rail_opens_with_a_plain_blank_unless_a_step_is_above_it() {
 }
 
 #[test]
-fn radar_reason_is_the_first_line_of_the_failure_trimmed() {
+fn outline_reason_is_the_first_line_of_the_failure_trimmed() {
     let _g = lock();
     let message = hoocode_ai_types::AssistantMessage {
         stop_reason: hoocode_ai_types::StopReason::Error,
@@ -158,7 +158,7 @@ fn radar_reason_is_the_first_line_of_the_failure_trimmed() {
     };
     let component = AssistantMessageComponent::new(Some(&message), ThinkingDisplay::Omit);
     assert_eq!(
-        component.radar_reason().as_deref(),
+        component.outline_reason().as_deref(),
         Some("Request failed: boom")
     );
 }

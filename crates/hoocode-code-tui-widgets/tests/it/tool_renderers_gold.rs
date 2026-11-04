@@ -82,7 +82,7 @@ fn rename_lines(lines: Option<Vec<String>>, ts: &str, rs: &str) -> Option<Vec<St
 }
 
 /// Declared divergence from the pin (2026-10-09, user decision: dial is
-/// radar/peek only, ctrl+o toggles): the pinned `ctrl+o to expand` hints are
+/// outline/peek only, ctrl+o toggles): the pinned `ctrl+o to expand` hints are
 /// gone from our renderers. Rewrites the pinned bytes of one line into our form
 /// and, when the pinned line was padded to the width, moves its trailing padding
 /// by the width the hint took, as `rename_title` does. A pinned line the pin left
@@ -155,7 +155,7 @@ fn compact_read_path(args: &Value) -> bool {
         || path.contains("/docs/")
 }
 
-#[ignore = "frozen TS pin; tool renderers redesigned 2026-10-10 (docs/design/tool-calls-peek-radar.md)"]
+#[ignore = "frozen TS pin; tool renderers redesigned 2026-10-10 (docs/design/tool-calls-peek-outline.md)"]
 #[test]
 fn renderers_match_the_pin() {
     let _g = lock();
@@ -165,7 +165,7 @@ fn renderers_match_the_pin() {
     let mut renamed_cases = 0usize;
     let mut hint_rewrites = 0usize;
     let mut peek_exempt = 0usize;
-    // Declared divergence from the pin (2026-10-09, user decision: radar/peek
+    // Declared divergence from the pin (2026-10-09, user decision: outline/peek
     // dial). The Full stop is gone, so no block renders with `expanded` set;
     // the pinned `expanded: true` cases describe a view we no longer have and
     // are skipped. Counted below so the skip cannot grow silently.

@@ -171,7 +171,7 @@ fn streamed_full_view_matches_fresh_render_at_every_char() {
 }
 
 #[test]
-fn streamed_radar_view_matches_fresh_render_at_every_char() {
+fn streamed_outline_view_matches_fresh_render_at_every_char() {
     let _g = lock();
-    stream_matches_fresh_render(ToolOutputView::Radar);
+    stream_matches_fresh_render(ToolOutputView::Outline);
 }

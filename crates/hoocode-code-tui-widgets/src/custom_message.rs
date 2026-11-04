@@ -43,7 +43,7 @@ fn peek_hint_text() -> String {
     format!(" · {} for peek", key_text("app.tools.expand"))
 }
 
-/// The folded (radar) line: label, plain summary and peek hint on one row.
+/// The folded (outline) line: label, plain summary and peek hint on one row.
 /// The summary gives way first: it is cut to the room the label and hint
 /// leave. If that room is under 10 columns the hint is dropped. The row is
 /// never wrapped onto a second row.
@@ -77,7 +77,7 @@ impl Component for OneRow {
 }
 
 /// `CustomMessageComponent`: a displayed custom message, as its label over
-/// its markdown. Radar folds it to its label and first line; peek (the
+/// its markdown. Outline folds it to its label and first line; peek (the
 /// default) shows all of it. (Extension message renderers arrive with 12.3.)
 pub struct CustomMessageComponent {
     message: CustomMessage,

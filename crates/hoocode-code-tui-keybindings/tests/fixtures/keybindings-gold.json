@@ -370,7 +370,7 @@
    [
     "alt+o"
    ],
-   "Cycle tool output view (radar → peek → full)"
+   "Cycle tool output view (outline → peek → full)"
   ],
   [
    "app.view.cycleBackward",

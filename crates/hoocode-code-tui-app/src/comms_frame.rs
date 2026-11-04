@@ -30,7 +30,7 @@ use crate::footer::{FooterSource, ToolOutputView};
 use crate::footer_data::FooterDataProvider;
 use crate::hull_paint::HullPaint;
 use crate::session_chip::{render_session_chip, session_chip_fits};
-use hoocode_code_tui_widgets::radar::FlightMark;
+use hoocode_code_tui_widgets::outline::FlightMark;
 
 /// The READY placeholder: what the empty prompt invites. Short on purpose:
 /// the `/`, `@` and `!` keys get their own suggestion row.
@@ -412,7 +412,7 @@ impl ChromeData {
         );
         let mut foot = match view {
             ToolOutputView::Peek => vec![Seg::new(palette.dim(), "peek")],
-            ToolOutputView::Radar => vec![Seg::new(palette.dim(), "radar")],
+            ToolOutputView::Outline => vec![Seg::new(palette.dim(), "outline")],
             ToolOutputView::Full => vec![Seg::new(palette.dim(), "full")],
         };
         if plan_mode {

@@ -2828,8 +2828,8 @@ mod tests {
         }
 
         #[test]
-        fn radar_keeps_the_run_whole_because_it_draws_no_trace() {
-            let lines = draw(two_turns(), json!({"toolOutputView": "radar"}));
+        fn outline_keeps_the_run_whole_because_it_draws_no_trace() {
+            let lines = draw(two_turns(), json!({"toolOutputView": "outline"}));
             assert_eq!(line_of(&lines, "TRACE_ONE"), None);
             assert_eq!(line_of(&lines, "TRACE_TWO"), None);
             // One chain of two calls.
@@ -2855,10 +2855,10 @@ mod tests {
                     spoken,
                     tool_result("call-2", "RESULT_TWO"),
                 ],
-                json!({"toolOutputView": "radar"}),
+                json!({"toolOutputView": "outline"}),
             );
             // Two chains of one call each, the spoken text between them. A
-            // lone call in radar is a group-of-one row (`1 call · …`), so the
+            // lone call in outline is a group-of-one row (`1 call · …`), so the
             // rows are found by that stat, not by the tool's name.
             assert_eq!(line_of(&lines, "×2"), None, "{}", lines.join("\n"));
             let spoken_at = at(&lines, "SPOKEN");
@@ -2888,7 +2888,7 @@ mod tests {
     }
 
     /// The Ctrl+O (`app.tools.expand`) toggle and the footer's view stop, on
-    /// the real interactive mode. Ctrl+O steps radar, peek, full, radar.
+    /// the real interactive mode. Ctrl+O steps outline, peek, full, outline.
     mod interactive_mode_status {
         use super::*;
         use serde_json::json;
@@ -2963,46 +2963,54 @@ mod tests {
         const CTRL_O: &str = "\x0f";
 
         #[test]
-        fn ctrl_o_cycles_radar_peek_full_and_back() {
-            let radar = "━ radar ━";
+        fn ctrl_o_cycles_outline_peek_full_and_back() {
+            let outline = "━ outline ━";
             let (drawn, _) = run(
-                json!({ "toolOutputView": "radar" }),
+                json!({ "toolOutputView": "outline" }),
                 &[CTRL_O, CTRL_O, CTRL_O],
             );
             assert!(
-                in_order(&drawn, &[radar, "━ peek ━", "━ full ━", radar]),
+                in_order(&drawn, &[outline, "━ peek ━", "━ full ━", outline]),
                 "{drawn}"
             );
             let (drawn, _) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O, CTRL_O]);
             assert!(
-                in_order(&drawn, &["━ peek ━", "━ full ━", radar]),
+                in_order(&drawn, &["━ peek ━", "━ full ━", outline]),
                 "{drawn}"
             );
         }
 
         #[test]
-        fn a_stored_full_setting_loads_as_full_and_cycles_to_radar() {
+        fn a_stored_full_setting_loads_as_full_and_cycles_to_outline() {
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[]);
             assert!(drawn.contains("━ full ━"), "{drawn}");
-            assert!(!drawn.contains("━ radar ━"), "{drawn}");
+            assert!(!drawn.contains("━ outline ━"), "{drawn}");
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
-            assert!(in_order(&drawn, &["━ full ━", "━ radar ━"]), "{drawn}");
+            assert!(in_order(&drawn, &["━ full ━", "━ outline ━"]), "{drawn}");
+        }
+
+        #[test]
+        fn a_stored_radar_setting_still_loads_as_outline() {
+            // `radar` was the outline stop's name before the rename.
+            let (drawn, session) = run(json!({ "toolOutputView": "radar" }), &[]);
+            assert!(drawn.contains("━ outline ━"), "{drawn}");
+            assert_eq!(session.settings().tool_output_view().as_str(), "outline");
         }
 
         #[test]
         fn the_cycled_choice_is_saved() {
-            let (_, session) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O]);
+            let (_, session) = run(json!({ "toolOutputView": "outline" }), &[CTRL_O]);
             assert_eq!(session.settings().tool_output_view().as_str(), "peek");
             let (_, session) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O]);
             assert_eq!(session.settings().tool_output_view().as_str(), "full");
             let (_, session) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
-            assert_eq!(session.settings().tool_output_view().as_str(), "radar");
+            assert_eq!(session.settings().tool_output_view().as_str(), "outline");
         }
 
         #[test]
         fn the_toggle_leaves_the_startup_header_compact() {
             // The header opens under `verbose`, not with the dial.
-            let (drawn, _) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O]);
+            let (drawn, _) = run(json!({ "toolOutputView": "outline" }), &[CTRL_O]);
             assert!(in_order(&drawn, &["━ peek ━"]), "{drawn}");
             assert!(
                 !drawn.contains("Compose — the message in your hands"),

@@ -104,7 +104,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry(
             "app.view.cycleForward",
             &["alt+o"],
-            "Cycle tool output view (radar → peek → full)",
+            "Cycle tool output view (outline → peek → full)",
         ),
         entry(
             "app.view.cycleBackward",
@@ -114,7 +114,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry(
             "app.tools.expand",
             &["ctrl+o"],
-            "Step tool output: radar → peek → full → radar",
+            "Step tool output: outline → peek → full → outline",
         ),
         entry("app.thinking.toggle", &["ctrl+t"], "Toggle thinking blocks"),
         entry(
