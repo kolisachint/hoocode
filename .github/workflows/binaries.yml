@@ -37,6 +37,9 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    env:
+      # Every target this job builds (space-separated).
+      TARGETS: ${{ matrix.targets || matrix.target }}
     permissions:
       contents: write
     strategy:
@@ -48,9 +51,11 @@ jobs:
             os: ubuntu-latest
           - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04-arm
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: aarch64-apple-darwin
+          # Both macOS targets on one arm64 runner (x86_64 is cross-built).
+          # macOS runners are scarce: v0.2.33's two macOS jobs were never
+          # given a runner and were cancelled, so one job asks for half as many.
+          - target: apple-darwin
+            targets: aarch64-apple-darwin x86_64-apple-darwin
             os: macos-latest
           # No Windows build: it was the slowest leg of every release.
 
@@ -63,7 +68,8 @@ jobs:
         shell: bash
         run: |
           rustup toolchain install
-          rustup target add ${{ matrix.target }}
+          # shellcheck disable=SC2086 # one word per target
+          rustup target add $TARGETS
 
       - name: musl toolchain (Linux)
         if: contains(matrix.target, 'musl')
@@ -80,43 +86,49 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build binary
-        run: cargo build --locked --release --target ${{ matrix.target }} --bin hoocode
+        shell: bash
+        run: |
+          for t in $TARGETS; do
+            cargo build --locked --release --target "$t" --bin hoocode
+          done
 
       - name: Smoke test
-        # x86_64-apple-darwin is cross-built on an arm64 runner; skip running it.
-        if: matrix.target != 'x86_64-apple-darwin'
         shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
         run: |
-          bin="target/$TARGET/release/hoocode"
-          "$bin" --version
-          if [[ "$TARGET" == *musl ]]; then
-            file "$bin"
-            file "$bin" | grep -Eq 'static(ally|-pie) linked' || { echo "not statically linked" >&2; exit 1; }
-          fi
+          for TARGET in $TARGETS; do
+            # x86_64-apple-darwin is cross-built on an arm64 runner; skip running it.
+            [ "$TARGET" = x86_64-apple-darwin ] && continue
+            bin="target/$TARGET/release/hoocode"
+            "$bin" --version
+            if [[ "$TARGET" == *musl ]]; then
+              file "$bin"
+              file "$bin" | grep -Eq 'static(ally|-pie) linked' || { echo "not statically linked" >&2; exit 1; }
+            fi
+          done
 
       - name: Package
         id: pkg
         shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
         run: |
-          name="hoocode-$TARGET"
-          mkdir -p "dist/$name"
-          cp README.md LICENSE "dist/$name/"
-          # Tags older than NOTICE have none.
-          if [ -f NOTICE ]; then cp NOTICE "dist/$name/"; fi
-          cp "target/$TARGET/release/hoocode" "dist/$name/hoocode"
-          chmod +x "dist/$name/hoocode"
-          tar czf "dist/$name.tar.gz" -C dist "$name"
-          echo "file=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"
+          files=()
+          for TARGET in $TARGETS; do
+            name="hoocode-$TARGET"
+            mkdir -p "dist/$name"
+            cp README.md LICENSE "dist/$name/"
+            # Tags older than NOTICE have none.
+            if [ -f NOTICE ]; then cp NOTICE "dist/$name/"; fi
+            cp "target/$TARGET/release/hoocode" "dist/$name/hoocode"
+            chmod +x "dist/$name/hoocode"
+            tar czf "dist/$name.tar.gz" -C dist "$name"
+            files+=("dist/$name.tar.gz")
+          done
+          echo "files=${files[*]}" >> "$GITHUB_OUTPUT"
 
       - name: Upload to release
         # Under workflow_call, event_name is the caller's, so the input decides.
         if: github.event_name == 'release' || inputs.upload
         shell: bash
-        run: gh release upload "$TAG" "${{ steps.pkg.outputs.file }}" --clobber
+        run: gh release upload "$TAG" ${{ steps.pkg.outputs.files }} --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -125,7 +137,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: hoocode-${{ matrix.target }}
-          path: ${{ steps.pkg.outputs.file }}
+          path: dist/*.tar.gz
 
   checksums:
     # One SHA256SUMS file covering every archive, for installers to verify.
