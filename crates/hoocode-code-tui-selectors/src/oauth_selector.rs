@@ -2,11 +2,11 @@
 //! `components/oauth-selector.ts`, and `isApiKeyLoginProvider` from
 //! `login-controller.ts`.
 //!
-//! The picker draws as the DOCKING console (M7, spec §4 d10): the heavy
-//! frame names the flow and counts the providers, the `▸` query row filters,
-//! and the hint foot names the keys. There is no QR facility in the repo and
-//! no new deps are allowed, so docking shows the provider rows here and the
-//! URL/code in the login dialog; the dialog notes the QR gap.
+//! The picker draws as the Log in / Log out pane: the title names the flow
+//! and counts the providers, the filter row filters, and the hint row names
+//! the keys. There is no QR facility in the repo and no new deps are
+//! allowed, so the provider rows show here and the URL/code in the login
+//! dialog; the dialog notes the QR gap.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -20,8 +20,9 @@ use hoocode_code_tui_widgets::console::{hints, query_row, Console};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_ratatui::{Line, Palette, Span, Style};
+use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
+use hoocode_tui_util::visible_width;
 
 /// Whether a provider signs in with an API key rather than a subscription
 /// (`isApiKeyLoginProvider`). `built_in_provider_ids` defaults to every
@@ -91,7 +92,7 @@ struct State {
 
 impl State {
     /// The auth state after the provider name, as styled spans
-    /// (`formatStatusIndicator`).
+    /// (`formatStatusIndicator`): plain words, `configured` in green.
     fn status_spans(&self, provider: &AuthSelectorProvider) -> Vec<Span<'static>> {
         let pal = Palette::current();
         let stored = self.auth.get(&provider.id).map(|c| match c {
@@ -99,33 +100,34 @@ impl State {
             AuthCredential::ApiKey { .. } => AuthType::ApiKey,
         });
         if stored == Some(provider.auth_type) {
-            return vec![Span::styled(" ✓ configured", pal.ok())];
+            return vec![Span::styled("configured", pal.ok())];
         }
         if let Some(stored) = stored {
             let label = match stored {
                 AuthType::OAuth => "subscription configured",
                 AuthType::ApiKey => "API key configured",
             };
-            return vec![
-                Span::styled(" • ", pal.faint()),
-                Span::styled(label, pal.warn()),
-            ];
+            return vec![Span::styled(label, pal.warn())];
         }
+        let not_configured = || vec![Span::styled("not configured", pal.dim())];
         if provider.auth_type != AuthType::ApiKey {
-            return vec![Span::styled(" • unconfigured", pal.faint())];
+            return not_configured();
         }
         let status = (self.status)(&provider.id);
-        let label = match status.source {
+        let source = match status.source {
             Some(AuthSource::Environment) => {
-                format!(" ✓ env: {}", status.label.as_deref().unwrap_or("API key"))
+                format!("env {}", status.label.as_deref().unwrap_or("API key"))
             }
-            Some(AuthSource::Runtime) => " ✓ runtime API key".to_string(),
-            Some(AuthSource::Fallback) => " ✓ custom API key".to_string(),
-            Some(AuthSource::ModelsJsonKey) => " ✓ key in models.json".to_string(),
-            Some(AuthSource::ModelsJsonCommand) => " ✓ command in models.json".to_string(),
-            _ => return vec![Span::styled(" • unconfigured", pal.faint())],
+            Some(AuthSource::Runtime) => "runtime API key".to_string(),
+            Some(AuthSource::Fallback) => "custom API key".to_string(),
+            Some(AuthSource::ModelsJsonKey) => "key in models.json".to_string(),
+            Some(AuthSource::ModelsJsonCommand) => "command in models.json".to_string(),
+            _ => return not_configured(),
         };
-        vec![Span::styled(label, pal.ok())]
+        vec![
+            Span::styled("configured", pal.ok()),
+            Span::styled(format!("  {source}"), pal.dim()),
+        ]
     }
 
     fn filter(&mut self, query: &str) {
@@ -144,26 +146,17 @@ impl State {
     }
 }
 
-/// One provider row (content only; the console adds the `›` marker or gutter
-/// and the selection band): its number, the name (accent on the selected
-/// row) and the auth-state suffix.
+/// One provider row (content only; the pane adds the ` › ` marker or
+/// gutter and the selection band): the name padded to `name_width`, then
+/// the auth state.
 fn provider_row(
-    index: usize,
     provider: &AuthSelectorProvider,
+    name_width: usize,
     status: Vec<Span<'static>>,
-    selected: bool,
 ) -> Line<'static> {
     let mut spans = vec![
-        Span::styled(format!("{} ", index + 1), Palette::current().dim()),
-        Span::styled(
-            provider.name.clone(),
-            if selected {
-                Palette::current().acc()
-            } else {
-                Style::default()
-            },
-        ),
-        Span::raw(" ".to_string()),
+        Span::raw(format!("{:<name_width$}", provider.name)),
+        Span::raw("  ".to_string()),
     ];
     spans.extend(status);
     Line::from(spans)
@@ -179,7 +172,7 @@ fn providers(count: usize) -> String {
 }
 
 /// `OAuthSelectorComponent`: a searchable provider list with each
-/// provider's auth state, drawn as the DOCKING console.
+/// provider's auth state, drawn as the Log in / Log out pane.
 pub struct OAuthSelectorComponent {
     search: Rc<RefCell<Input>>,
     state: Rc<RefCell<State>>,
@@ -237,9 +230,9 @@ impl OAuthSelectorComponent {
 }
 
 impl Component for OAuthSelectorComponent {
-    /// The DOCKING console: the `▸` query row, the providers with `›` on the
-    /// selection band, the scroll position and empty-list rows, and the hint
-    /// foot. Keys and filtering are unchanged.
+    /// The Log in / Log out pane: the providers with ` › ` on the selection
+    /// band, the scroll position and empty-list rows, the filter row and the
+    /// hint row. Keys and filtering are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
         let pal = Palette::current();
         let state = self.state.borrow();
@@ -251,27 +244,30 @@ impl Component for OAuthSelectorComponent {
         } else {
             format!("{} of {}", providers(state.filtered.len()), total)
         };
-        let name = match state.mode {
-            LoginMode::Login => "DOCKING · /login",
-            LoginMode::Logout => "DOCKING · /logout",
+        let (name, action) = match state.mode {
+            LoginMode::Login => ("Log in · /login", "log in"),
+            LoginMode::Logout => ("Log out · /logout", "log out"),
         };
         let mut console = Console::new(name, count);
         console.query = Some(query_row(&query, state.focused));
         let selected = state.cursor.selected();
+        let name_width = state
+            .filtered
+            .iter()
+            .map(|p| visible_width(&p.name))
+            .max()
+            .unwrap_or(0);
         console.rows = state
             .filtered
             .iter()
-            .enumerate()
-            .map(|(i, provider)| {
-                provider_row(i, provider, state.status_spans(provider), i == selected)
-            })
+            .map(|provider| provider_row(provider, name_width, state.status_spans(provider)))
             .collect();
         console.selected = (!state.filtered.is_empty()).then_some(selected);
         console.max_visible = Some(state.cursor.max_visible());
         if let Some(footer) = state.cursor.footer() {
             console.bottom.push(Line::from(vec![Span::styled(
                 format!("  {footer}"),
-                pal.faint(),
+                pal.dim(),
             )]));
         }
         if state.filtered.is_empty() {
@@ -284,10 +280,10 @@ impl Component for OAuthSelectorComponent {
             };
             console.bottom.push(Line::from(vec![Span::styled(
                 format!("  {message}"),
-                pal.faint(),
+                pal.dim(),
             )]));
         }
-        console.hint = hints(&[("↑↓", "move"), ("enter", "dock"), ("esc", "cancel")]);
+        console.hint = hints(&[("↑↓", "move"), ("enter", action), ("esc", "cancel")]);
         console.render(width as usize)
     }
 

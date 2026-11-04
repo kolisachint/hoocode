@@ -1,41 +1,27 @@
-┏━ FLIGHT PLAN ━ [Plan 1/5] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ /tasks · ctrl+g ━┓
-┃  ● Read the migration plan                                                                                       0.0s┃
-┃  ◉ Port the task panel renderer                                                                                  0.0s┃
-┃  ○ Add golden snapshots                                                                                              ┃
-┃  ⊗ Run the parity check                                                                                          0.0s┃
-┃  ⊘ Drop the old lens tabs                                                                                            ┃
-┗━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+   ● Read the migration plan
+   ◉ Port the task panel renderer
+   ○ Add golden snapshots
+   ⊗ Run the parity check
+   ⊗ Drop the old lens tabs                                                                                   cancelled
 --- styles ---
-r0 c0-1 fg=#9b8cff
-r0 c3-13 fg=#9b8cff bold
-r0 c14-16 fg=#9b8cff
-r0 c17-26 fg=#5cc8bb bold
-r0 c28-100 fg=#9b8cff
-r0 c102-116 fg=#989898
-r0 c118-119 fg=#9b8cff
-r1 c0 fg=#9b8cff
-r1 c3 fg=#b5bd68
-r1 c5-27 fg=#989898
-r1 c115-118 fg=#989898
-r1 c119 fg=#9b8cff
-r2 c0 fg=#9b8cff
-r2 c3 fg=#5cc8bb
-r2 c5-32 bold
-r2 c115-118 fg=#989898
-r2 c119 fg=#9b8cff
-r3 c0 fg=#9b8cff
-r3 c3 fg=#989898
-r3 c5-24 fg=#989898
-r3 c119 fg=#9b8cff
-r4 c0 fg=#9b8cff
-r4 c3 fg=#d58181
-r4 c5-24 fg=#d58181
-r4 c115-118 fg=#989898
-r4 c119 fg=#9b8cff
-r5 c0 fg=#9b8cff
-r5 c3 fg=#989898
-r5 c5-26 fg=#989898
-r5 c119 fg=#9b8cff
-r6 c0-1 fg=#9b8cff
-r6 c4-115 fg=#9b8cff
-r6 c118-119 fg=#9b8cff
+r0 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r0 c3 fg=#b5bd68 bg=#1e1e2a
+r0 c4 fg=#e5e5e7 bg=#1e1e2a
+r0 c5-27 fg=#989898 bg=#1e1e2a
+r0 c28-119 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r1 c3 fg=#f0c674 bg=#1e1e2a
+r1 c4-119 fg=#e5e5e7 bg=#1e1e2a
+r2 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r2 c3 fg=#989898 bg=#1e1e2a
+r2 c4-119 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r3 c3 fg=#d58181 bg=#1e1e2a
+r3 c4-119 fg=#e5e5e7 bg=#1e1e2a
+r4 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r4 c3 fg=#989898 bg=#1e1e2a
+r4 c4 fg=#e5e5e7 bg=#1e1e2a
+r4 c5-26 fg=#989898 bg=#1e1e2a
+r4 c27-109 fg=#e5e5e7 bg=#1e1e2a
+r4 c110-118 fg=#989898 bg=#1e1e2a
+r4 c119 fg=#e5e5e7 bg=#1e1e2a

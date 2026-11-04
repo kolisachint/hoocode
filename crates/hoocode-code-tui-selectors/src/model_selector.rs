@@ -11,15 +11,14 @@ use std::rc::Rc;
 
 use hoocode_ai_models::models_are_equal;
 use hoocode_ai_types::Model;
-use hoocode_code_agent_session::format::format_tokens;
-use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{hints, query_row, Console};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_ratatui::{Line, Palette, Span, Style};
+use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
+use hoocode_tui_util::visible_width;
 
 use crate::config_selector::locale_compare;
 
@@ -74,64 +73,39 @@ impl State {
         self.cursor.set_query(self.filtered.len());
     }
 
-    fn scope_text(&self, pal: &Palette) -> Line<'static> {
-        let pick = |scope, label: &str| {
-            Span::styled(
-                label.to_string(),
-                if self.scope == scope {
-                    pal.acc()
-                } else {
-                    pal.faint()
-                },
-            )
-        };
-        Line::from(vec![
-            Span::styled("Scope: ", pal.faint()),
-            pick(ModelScope::All, "all"),
-            Span::styled(" | ", pal.faint()),
-            pick(ModelScope::Scoped, "scoped"),
-        ])
-    }
-
-    /// The HANGAR title count: the filtered ships of the scope's ships.
+    /// The title facts: the scope and the filtered models of its models
+    /// (`showing all · 2 of 3 models`).
     fn count_text(&self, query: &str) -> String {
+        let scope = match self.scope {
+            ModelScope::All => "all",
+            ModelScope::Scoped => "scoped",
+        };
         let total = self.active().len();
+        let models = |n: usize| {
+            if n == 1 {
+                "1 model".to_string()
+            } else {
+                format!("{n} models")
+            }
+        };
         if query.is_empty() {
-            format!("{} signed in", ships(total))
+            format!("showing {scope} · {}", models(total))
         } else {
-            format!("{} of {total} signed in", ships(self.filtered.len()))
+            format!(
+                "showing {scope} · {} of {total}",
+                models(self.filtered.len())
+            )
         }
     }
 
-    /// Scope lines above the query: the switch and its hint, or the
-    /// providers warning when the scope is all there is.
-    fn top_rows(&self, pal: &Palette) -> Vec<Line<'static>> {
-        if self.scope == ModelScope::All {
-            vec![Line::from(vec![Span::styled(
-                "Only showing models from configured providers. Use /login to add providers.",
-                pal.warn(),
-            )])]
-        } else {
-            vec![
-                self.scope_text(pal),
-                Line::from(vec![
-                    Span::styled(key_text("tui.input.tab"), pal.dim()),
-                    Span::styled(" scope", pal.faint()),
-                    Span::styled(" (all/scoped)", pal.faint()),
-                ]),
-            ]
-        }
-    }
-
-    /// Rows below the list: the scroll position, errors, the selected
-    /// ship's display name, and its context window, price and thinking
-    /// support (M8d3).
+    /// Rows below the list: the scroll position, errors, and a note when
+    /// nothing matches.
     fn bottom_rows(&self, pal: &Palette) -> Vec<Line<'static>> {
         let mut rows = Vec::new();
         if let Some(footer) = self.cursor.footer() {
             rows.push(Line::from(vec![Span::styled(
                 format!("  {footer}"),
-                pal.faint(),
+                pal.dim(),
             )]));
         }
         if let Some(error) = &self.error {
@@ -143,83 +117,80 @@ impl State {
             }
         } else if self.filtered.is_empty() {
             rows.push(Line::from(vec![Span::styled(
-                "  No matching models",
-                pal.faint(),
-            )]));
-        } else {
-            rows.push(Line::raw(""));
-            let model = &self.filtered[self.cursor.selected()];
-            rows.push(Line::from(vec![Span::styled(
-                format!("  Model Name: {}", model.name),
-                pal.faint(),
-            )]));
-            rows.push(Line::from(vec![Span::styled(
-                format!(
-                    "  {} context · {} per 1M · thinking {}",
-                    format_context(model.context_window),
-                    format_price(&model.cost),
-                    if model.reasoning {
-                        "supported"
-                    } else {
-                        "fixed"
-                    },
-                ),
-                pal.faint(),
+                "No matching models",
+                pal.dim(),
             )]));
         }
         rows
     }
 
-    /// The hint foot: the console keys (the scope switch only where it
+    /// The detail column for the selected model: its id and state, then
+    /// provider, context, price and thinking support.
+    fn detail_rows(&self, pal: &Palette) -> Vec<Line<'static>> {
+        if self.error.is_some() {
+            return Vec::new();
+        }
+        let Some(model) = self.filtered.get(self.cursor.selected()) else {
+            return Vec::new();
+        };
+        let mut head = vec![Span::styled(model.id.clone(), pal.ink())];
+        if self.expired.contains(&model.provider) {
+            head.push(Span::styled("  expired".to_string(), pal.warn()));
+        } else if models_are_equal(self.current.as_ref(), Some(model)) {
+            head.push(Span::styled("  in use".to_string(), pal.dim()));
+        }
+        let fact = |label: &str, value: String| {
+            Line::from(vec![
+                Span::styled(format!("{label:<10}"), pal.dim()),
+                Span::styled(value, pal.ink()),
+            ])
+        };
+        let mut rows = vec![Line::from(head)];
+        if model.name != model.id {
+            rows.push(fact("name", model.name.clone()));
+        }
+        rows.push(fact("provider", model.provider.clone()));
+        rows.push(fact("context", format_context(model.context_window)));
+        rows.push(fact("price", format_price(&model.cost)));
+        rows.push(fact(
+            "thinking",
+            if model.reasoning {
+                "supported".to_string()
+            } else {
+                "fixed".to_string()
+            },
+        ));
+        rows
+    }
+
+    /// The hint foot: the picker keys (the scope switch only where it
     /// flips something).
     fn hint_row(&self) -> Line<'static> {
         if self.scoped.is_empty() {
-            hints(&[("↑↓", "ship"), ("enter", "fly it"), ("esc", "close")])
+            hints(&[("↑↓", "move"), ("enter", "pick"), ("esc", "close")])
         } else {
             hints(&[
-                ("↑↓", "ship"),
-                ("enter", "fly it"),
-                ("tab", "scope"),
+                ("↑↓", "move"),
+                ("enter", "pick"),
+                ("tab", "all / scoped"),
                 ("esc", "close"),
             ])
         }
     }
 }
 
-/// One ship row (content only; the console adds the `›` marker or gutter
-/// and the selection band): the id, the provider, the context window and
-/// the in/out price per 1M tokens (the target's `hangarRows` columns), plus
-/// the `expired` or current `✓` marker.
-fn ship_row(
-    model: &Model,
-    current: Option<&Model>,
-    expired: &HashSet<String>,
-    selected: bool,
-) -> Line<'static> {
+/// One model row (content only; the console adds the ` › ` marker or
+/// gutter and the selection band): the id padded to `id_width`, then the
+/// price, dim. A model whose login expired says so.
+fn model_row(model: &Model, id_width: usize, expired: &HashSet<String>) -> Line<'static> {
     let pal = Palette::current();
     let mut spans = vec![
-        Span::styled(
-            format!("{:<12}", model.id),
-            if selected {
-                pal.acc()
-            } else {
-                Style::default()
-            },
-        ),
+        Span::raw(format!("{:<id_width$}", model.id)),
         Span::raw("  "),
-        Span::styled(format!("{:<10}", model.provider), pal.faint()),
-        Span::raw("  "),
-        Span::styled(
-            format!("{:<8}", format_tokens(model.context_window)),
-            pal.ink(),
-        ),
-        Span::raw("  "),
-        Span::styled(ship_price(model), pal.dim()),
+        Span::styled(format_price(&model.cost), pal.dim()),
     ];
     if expired.contains(&model.provider) {
-        spans.push(Span::styled(" expired".to_string(), pal.warn()));
-    } else if models_are_equal(current, Some(model)) {
-        spans.push(Span::styled(" ✓", pal.ok()));
+        spans.push(Span::styled("  expired".to_string(), pal.warn()));
     }
     Line::from(spans)
 }
@@ -239,24 +210,6 @@ fn format_price(cost: &hoocode_ai_types::ModelCost) -> String {
         return "free".to_string();
     }
     format!("${:.2} / ${:.2}", cost.input, cost.output)
-}
-
-/// The in/out price per 1M tokens (`$3.00 / $15.00`), or `free` when the
-/// ship costs nothing (the target's `hangarRows` price column).
-fn ship_price(model: &Model) -> String {
-    if model.cost.input == 0.0 && model.cost.output == 0.0 {
-        return "free".to_string();
-    }
-    format!("${:.2} / ${:.2}", model.cost.input, model.cost.output)
-}
-
-/// `1 ship`, `N ships`.
-fn ships(count: usize) -> String {
-    if count == 1 {
-        "1 ship".to_string()
-    } else {
-        format!("{count} ships")
-    }
 }
 
 /// `ModelSelectorComponent`: a searchable model list, with an all/scoped
@@ -381,37 +334,33 @@ impl ModelSelectorComponent {
 }
 
 impl Component for ModelSelectorComponent {
-    /// The HANGAR console: scope lines, the `▸` query row, the ships with
-    /// `›` on the selection band, the scroll position and detail rows, and
-    /// the hint foot. Keys and filtering are unchanged.
+    /// The Models pane: the model rows with ` › ` on the selection band, the
+    /// selected model's detail beside them (below at narrow widths), the
+    /// filter row and the hint row. Keys and filtering are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
         let pal = Palette::current();
         let state = self.state.borrow();
         let search = self.search.borrow();
         let query = search.get_value().to_string();
-        let mut console = Console::new("HANGAR · /model", state.count_text(&query));
-        console.top = state.top_rows(&pal);
-        if !state.filtered.is_empty() {
-            // The column header over the ships (the target's `hangarRows`
-            // header): ship, provider, context, and price per 1M tokens.
-            console.top.push(Line::from(vec![Span::styled(
-                "  ship         provider    context   price in / out per 1M".to_string(),
-                pal.faint(),
-            )]));
-        }
+        let mut console = Console::new("Models · /model", state.count_text(&query));
         console.query = Some(query_row(&query, state.focused));
-        let current = state.current.clone();
         let expired = state.expired.clone();
+        let id_width = state
+            .filtered
+            .iter()
+            .map(|m| visible_width(&m.id))
+            .max()
+            .unwrap_or(0);
         let selected = state.cursor.selected();
         console.rows = state
             .filtered
             .iter()
-            .enumerate()
-            .map(|(i, model)| ship_row(model, current.as_ref(), &expired, i == selected))
+            .map(|model| model_row(model, id_width, &expired))
             .collect();
         console.selected = (!state.filtered.is_empty()).then_some(selected);
         console.max_visible = Some(state.cursor.max_visible());
         console.bottom = state.bottom_rows(&pal);
+        console.detail = state.detail_rows(&pal);
         console.hint = state.hint_row();
         console.render(width as usize)
     }

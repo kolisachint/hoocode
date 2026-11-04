@@ -1,25 +1,13 @@
-┏━ ◉ END OF SHIFT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ esc stay ━┓
-┃2 missions · 5 steps · ↑48.2k ↓9.8k · CR $1.234                                                   ┃
-┃                                                                                                  ┃
-┃enter end the shift · esc stay                                                                    ┃
-┗━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+  Quit?   2 messages · 5 tool calls · ↑48.2k ↓9.8k · $1.234
+ enter quit · esc stay
 --- styles ---
-r0 c0-1 fg=#f0c674
-r0 c3-16 fg=#f0c674 bold
-r0 c18-87 fg=#f0c674
-r0 c89-96 fg=#f0c674
-r0 c98-99 fg=#f0c674
-r1 c0 fg=#f0c674
-r1 c1-10 fg=#e5e5e7
-r1 c11-13 fg=#989898
-r1 c14-20 fg=#e5e5e7
-r1 c21-47 fg=#989898
-r1 c99 fg=#f0c674
-r2 c0 fg=#f0c674
-r2 c99 fg=#f0c674
-r3 c0 fg=#f0c674
-r3 c1-30 fg=#989898
-r3 c99 fg=#f0c674
-r4 c0-1 fg=#f0c674
-r4 c4-95 fg=#f0c674
-r4 c98-99 fg=#f0c674
+r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-7 fg=#14141c bg=#5cc8bb bold
+r0 c8-9 fg=#e5e5e7 bg=#1e1e2a
+r0 c10-58 fg=#989898 bg=#1e1e2a
+r0 c59-99 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-5 fg=#e5e5e7 bg=#1e1e2a
+r1 c6-13 fg=#989898 bg=#1e1e2a
+r1 c14-16 fg=#e5e5e7 bg=#1e1e2a
+r1 c17-21 fg=#989898 bg=#1e1e2a
+r1 c22-99 fg=#e5e5e7 bg=#1e1e2a

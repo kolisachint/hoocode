@@ -53,15 +53,6 @@ fn questions() -> Vec<AskQuestion> {
 type Submitted = Rc<RefCell<Option<Vec<String>>>>;
 
 fn pane() -> (AskOptionsComponent, Submitted, Rc<RefCell<bool>>) {
-    pane_with(true)
-}
-
-/// The elicitation form: esc skips instead of picking option 1.
-fn elicitation_pane() -> (AskOptionsComponent, Submitted, Rc<RefCell<bool>>) {
-    pane_with(false)
-}
-
-fn pane_with(esc_answers_first: bool) -> (AskOptionsComponent, Submitted, Rc<RefCell<bool>>) {
     let submitted: Submitted = Rc::default();
     let cancelled = Rc::new(RefCell::new(false));
     let (s, c) = (submitted.clone(), cancelled.clone());
@@ -69,7 +60,7 @@ fn pane_with(esc_answers_first: bool) -> (AskOptionsComponent, Submitted, Rc<Ref
         questions(),
         Box::new(move |answers| *s.borrow_mut() = Some(answers)),
         Box::new(move || *c.borrow_mut() = true),
-        AskOptionsOptions { esc_answers_first },
+        AskOptionsOptions::default(),
     );
     (pane, submitted, cancelled)
 }
@@ -87,15 +78,19 @@ fn renders_header_question_options_and_custom_row() {
     let _g = lock();
     let (mut c, _, _) = pane();
     let out = out(&mut c);
-    assert!(out.contains("MISSION CONTROL ASKS"), "{out}");
-    assert!(out.contains("1/2 where should retry logic live?"), "{out}");
+    assert!(out.contains("Question"), "{out}");
+    assert!(
+        out.contains("where should retry logic live?  1 of 2"),
+        "{out}"
+    );
     assert!(out.contains("the http client is shared by every provider adapter"));
     assert!(out.contains("1  hoocode-ai"));
     assert!(out.contains("2  agent-core"));
-    assert!(out.contains("3  something else"));
-    assert!(out.contains("type it"));
-    assert!(out.contains("1–3 answer"));
-    assert!(out.contains("pick 1"));
+    assert!(out.contains("or type your own answer"));
+    assert!(out.contains("1–2 pick"));
+    assert!(out.contains("tab next question"));
+    assert!(out.contains("esc skip"));
+    assert!(!out.contains("pick 1"), "{out}");
 }
 
 #[test]
@@ -105,7 +100,7 @@ fn moves_the_cursor_and_clamps_at_both_ends() {
     c.handle_input(DOWN);
     let o = out(&mut c);
     assert!(o.contains("› 2  agent-core"), "{o}");
-    assert!(o.contains("1–3 answer"), "{o}");
+    assert!(o.contains("1–2 pick"), "{o}");
     c.handle_input(UP);
     assert!(out(&mut c).contains("› 1  hoocode-ai"));
     c.handle_input(UP);
@@ -123,7 +118,7 @@ fn advances_with_right_and_submits_on_the_last_step() {
     let o = out(&mut c);
     assert!(o.contains("retry lives in"), "{o}");
     assert!(o.contains("hoocode-ai"));
-    assert!(o.contains("2/2 backoff strategy?"));
+    assert!(o.contains("backoff strategy?  2 of 2"));
     c.handle_input(DOWN);
     c.handle_input(RIGHT);
     assert_eq!(*submitted.borrow(), answers(&["hoocode-ai", "fixed 1s"]));
@@ -146,9 +141,9 @@ fn steps_back_with_left() {
     let _g = lock();
     let (mut c, submitted, _) = pane();
     c.handle_input("1");
-    assert!(out(&mut c).contains("2/2 backoff strategy?"));
+    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
     c.handle_input(LEFT);
-    assert!(out(&mut c).contains("1/2 where should retry logic live?"));
+    assert!(out(&mut c).contains("where should retry logic live?  1 of 2"));
     c.handle_input("2");
     c.handle_input("1");
     assert_eq!(
@@ -172,7 +167,7 @@ fn accepts_a_typed_custom_answer() {
     type_custom(&mut c);
     assert!(out(&mut c).contains("per-provider"));
     c.handle_input(RIGHT);
-    assert!(out(&mut c).contains("2/2 backoff strategy?"));
+    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
     c.handle_input("2");
     assert_eq!(*submitted.borrow(), answers(&["per-provider", "fixed 1s"]));
 }
@@ -184,12 +179,12 @@ fn gives_the_arrows_to_the_text_once_typed() {
     type_custom(&mut c);
     c.handle_input(LEFT);
     let o = out(&mut c);
-    assert!(o.contains("1/2 where should retry logic live?"), "{o}");
+    assert!(o.contains("where should retry logic live?  1 of 2"), "{o}");
     assert!(o.contains("per-provider"));
     c.handle_input(RIGHT);
-    assert!(out(&mut c).contains("1/2 where should retry logic live?"));
+    assert!(out(&mut c).contains("where should retry logic live?  1 of 2"));
     c.handle_input(RIGHT);
-    assert!(out(&mut c).contains("2/2 backoff strategy?"));
+    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
     c.handle_input("2");
     assert_eq!(*submitted.borrow(), answers(&["per-provider", "fixed 1s"]));
 }
@@ -202,7 +197,7 @@ fn commits_a_custom_answer_with_enter_anywhere() {
     c.handle_input(LEFT);
     c.handle_input(LEFT);
     c.handle_input(ENTER);
-    assert!(out(&mut c).contains("2/2 backoff strategy?"));
+    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
     c.handle_input("2");
     assert_eq!(*submitted.borrow(), answers(&["per-provider", "fixed 1s"]));
 }
@@ -214,7 +209,7 @@ fn does_not_submit_an_empty_custom_answer() {
     c.handle_input(DOWN);
     c.handle_input(DOWN);
     c.handle_input(RIGHT);
-    assert!(out(&mut c).contains("1/2 where should retry logic live?"));
+    assert!(out(&mut c).contains("where should retry logic live?  1 of 2"));
     assert_eq!(*submitted.borrow(), None);
 }
 
@@ -246,25 +241,24 @@ fn recommended_tag_shows() {
         }],
         Box::new(move |answers| *submitted.borrow_mut() = Some(answers)),
         Box::new(|| {}),
-        AskOptionsOptions {
-            esc_answers_first: true,
-        },
+        AskOptionsOptions::default(),
     );
     let out = strip(&pane.render(100));
     assert!(out.contains("1  exponential"), "{out}");
     assert!(out.contains("recommended"), "{out}");
-    assert!(out.contains("3  something else"), "{out}");
+    assert!(out.contains("or type your own answer"), "{out}");
 }
 
 #[test]
 fn custom_row_number_moves_without_answering() {
     let _g = lock();
     let (mut c, submitted, _) = pane();
-    // Row 3 is the custom row: its number only moves there.
+    // Row 3 is the answer row: its number only moves there.
     c.handle_input("3");
     assert_eq!(*submitted.borrow(), None);
     let rendered = out(&mut c);
-    assert!(rendered.contains("› 3  something else"), "{rendered}");
+    assert!(rendered.contains("› "), "{rendered}");
+    assert!(!rendered.contains("or type your own answer"), "{rendered}");
     // Typing then sends with enter on the next step.
     for key in ["m", "i", "n"] {
         c.handle_input(key);
@@ -272,31 +266,32 @@ fn custom_row_number_moves_without_answering() {
     assert!(out(&mut c).contains("min"));
 }
 #[test]
-fn escape_picks_option_one_on_the_card() {
+fn escape_skips_the_question() {
     let _g = lock();
     let (mut c, submitted, cancelled) = pane();
-    // Esc answers the current step with option 1, then the next.
-    c.handle_input(ESC);
-    assert!(!*cancelled.borrow());
-    assert_eq!(*submitted.borrow(), None);
-    c.handle_input(ESC);
-    assert!(!*cancelled.borrow());
-    assert_eq!(
-        *submitted.borrow(),
-        Some(vec![
-            "hoocode-ai".to_string(),
-            "exponential + jitter".to_string()
-        ])
-    );
-}
-
-#[test]
-fn escape_skips_for_elicitation_forms() {
-    let _g = lock();
-    let (mut c, submitted, cancelled) = elicitation_pane();
     c.handle_input(ESC);
     assert!(*cancelled.borrow());
     assert_eq!(*submitted.borrow(), None);
+}
+
+#[test]
+fn a_letter_on_an_option_starts_the_answer() {
+    let _g = lock();
+    let (mut c, submitted, _) = pane();
+    c.handle_input("z");
+    assert!(out(&mut c).contains('z'));
+    c.handle_input(ENTER);
+    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
+    c.handle_input("2");
+    assert_eq!(*submitted.borrow(), answers(&["z", "fixed 1s"]));
+}
+
+#[test]
+fn tab_advances_like_right() {
+    let _g = lock();
+    let (mut c, _, _) = pane();
+    c.handle_input("\t");
+    assert!(out(&mut c).contains("backoff strategy?  2 of 2"));
 }
 
 #[test]
@@ -315,9 +310,7 @@ fn escape_skips_when_no_option_can_answer() {
         }],
         Box::new(move |answers| *s.borrow_mut() = Some(answers)),
         Box::new(move || *c.borrow_mut() = true),
-        AskOptionsOptions {
-            esc_answers_first: true,
-        },
+        AskOptionsOptions::default(),
     );
     pane.handle_input(ESC);
     assert!(*cancelled.borrow());

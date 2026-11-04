@@ -61,7 +61,7 @@
       ]
     },
     {
-      "wait_for": "CLEARANCE NEEDED",
+      "wait_for": "Allow Edit\\?",
       "timeout": 30
     },
     {
@@ -71,7 +71,7 @@
     {
       "snapshot": "allow-edit",
       "contains": [
-        "go, once",
+        "1  yes",
         "+2"
       ]
     },

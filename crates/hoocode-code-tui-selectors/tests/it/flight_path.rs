@@ -1,4 +1,4 @@
-//! Component goldens: the `/tree` picker as the FLIGHT PATH console, at 100
+//! Component goldens: the `/tree` picker as the Tree pane, at 100
 //! and 80 columns. Hints use literal keys (no `alt`), so the bytes hold on
 //! every platform. Accept a deliberate change with
 //! `UPDATE_GOLDENS=1 cargo nextest run -p hoocode-code-tui-selectors flight_path`.
@@ -72,7 +72,7 @@ fn check(name: &str, width: u16) {
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("FLIGHT PATH · /tree"),
+        text.contains("Tree  /tree"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -81,7 +81,8 @@ fn check(name: &str, width: u16) {
         "{name}: missing selected entry in\n{text}"
     );
     assert!(
-        text.lines().any(|l| l.contains('▸')),
+        text.lines()
+            .any(|l| l.starts_with(" › ") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
     assert!(
@@ -113,7 +114,7 @@ fn flight_path_search_counts_the_matches() {
     let rendered = render_golden(&mut selector, 100);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("1 node of 3"),
+        text.contains("1 entry of 3"),
         "missing filtered count in\n{text}"
     );
 }

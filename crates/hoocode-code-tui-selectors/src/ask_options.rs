@@ -1,42 +1,30 @@
 //! The question card (`components/ask-options.ts`): the agent asks the user,
-//! one decision per step. It draws the Mission Control amber card (M6,
-//! spec §4 c2): `◉ MISSION CONTROL ASKS` with numbered answers, the
-//! recommended one tagged, and the last row `N something else · type it`.
-//! Up/down move (wrapping), `app.options.next` (→) confirms and advances
-//! (submitting on the last step), `app.options.back` (←) steps back, 1-9
-//! quick-pick (the custom row's number only moves there, typing sends with
-//! `enter`), and esc picks option 1 for the tool — or skips, for MCP
-//! elicitation forms, which keep esc-as-cancel. Answered steps stay as a
-//! breadcrumb.
+//! one decision per step. It draws a blocking pane in the prompt's slot
+//! (declutter spec, Dialogs): a yellow `Question` chip with the question in
+//! bold and `1 of 2` dim, a dim detail line, numbered options with their
+//! descriptions in aligned columns, and the answer row (`or type your own
+//! answer`) with the hint row last. Up/down move (wrapping, down from the
+//! last option lands on the answer row), `tab` or `app.options.next` (right)
+//! confirms and advances (submitting on the last step), `app.options.back`
+//! (left) steps back, 1-9 quick-pick (the answer row's number only moves
+//! there, typing sends with `enter`), and esc skips the question: the agent
+//! is told it was skipped and states the default it uses. Answered steps
+//! stay as a breadcrumb.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use hoocode_code_tools_optin::ask_options::AskQuestion;
-use hoocode_code_tui_keybindings::format_key_text;
-use hoocode_code_tui_theme::{select_gutter, SELECT_CURSOR};
-use hoocode_code_tui_widgets::card_frame::render_card;
+use hoocode_code_tui_widgets::pane::{hint_line, input_line, Chip, Pane, PaneStyle};
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::{get_keybindings, matches_key};
-use hoocode_tui_ratatui::{bold, Line, Palette, Span, Style};
+use hoocode_tui_ratatui::{Line, Modifier, Palette, Span};
 use hoocode_tui_render::Component;
+use hoocode_tui_util::visible_width;
 
-/// `AskOptionsOptions`.
-#[derive(Debug, Clone, Copy)]
-pub struct AskOptionsOptions {
-    /// Mission Control: esc answers the current step with option 1 (the
-    /// question card, spec §6.2). False keeps esc-as-skip, for MCP
-    /// elicitation forms (their Cancel choice must stay reachable).
-    pub esc_answers_first: bool,
-}
-
-impl Default for AskOptionsOptions {
-    fn default() -> Self {
-        Self {
-            esc_answers_first: true,
-        }
-    }
-}
+/// `AskOptionsOptions`: nothing to set yet (esc always skips).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AskOptionsOptions {}
 
 struct State {
     questions: Vec<AskQuestion>,
@@ -47,7 +35,6 @@ struct State {
     answers: Vec<String>,
     custom_input: Input,
     focused: bool,
-    esc_answers_first: bool,
 }
 
 impl State {
@@ -74,180 +61,128 @@ impl State {
         (self.custom_input.get_cursor() >= typed, typed == 0)
     }
 
-    /// One hint: the dim key plus its muted description.
-    fn hint(&self, keys: &str, desc: &str) -> Vec<Span<'static>> {
-        let pal = Palette::current();
-        vec![
-            Span::styled(format_key_text(keys, false), pal.dim()),
-            Span::styled(format!(" {desc}"), pal.faint()),
-        ]
-    }
-
+    /// The hint row: `1–2 pick · tab next question · esc skip`.
     fn render_hints(&self, last: bool) -> Line<'static> {
-        let pal = Palette::current();
-        let mut spans = vec![
-            Span::styled(format!("1–{}", Self::row_count(self.current())), pal.dim()),
-            Span::styled(" answer", pal.faint()),
-        ];
-        let (next, back) = self.custom_arrows();
-        let mut parts = vec![self.hint("↑↓", "move")];
-        // Mid-answer the arrows are the text cursor's: enter commits.
-        parts.push(self.hint(
-            if next { "→" } else { "enter" },
-            if last { "submit" } else { "next" },
-        ));
+        let pick = format!("1–{}", self.current().options.len().max(1));
+        let (_, back) = self.custom_arrows();
+        let mut hints: Vec<(&str, &str)> = vec![(pick.as_str(), "pick")];
+        hints.push(("tab", if last { "submit" } else { "next question" }));
         if self.step > 0 && back {
-            parts.push(self.hint("←", "back"));
+            hints.push(("←", "back"));
         }
-        // Spec §6.2: esc picks option 1 on the card (elicitation skips).
-        parts.push(self.hint(
-            "esc",
-            if self.esc_answers_first {
-                "pick 1"
-            } else {
-                "skip"
-            },
-        ));
-        for part in parts {
-            spans.push(Span::styled(" · ", pal.faint()));
-            spans.extend(part);
-        }
-        Line::from(spans)
+        hints.push(("esc", "skip"));
+        hint_line(&hints)
     }
 
-    fn render_rows(&self) -> Vec<Line<'static>> {
+    /// The pane: title chip, breadcrumb and detail rows, the option rows
+    /// and the answer row.
+    fn pane(&self, width: usize) -> Pane {
+        let st = PaneStyle::current();
         let pal = Palette::current();
-        let mut lines = Vec::new();
         let cur = self.current();
         let last = self.step == self.questions.len() - 1;
+        let mut pane = Pane::new("Question");
+        pane.chip = Chip::Warn;
+
+        // The title row: the question in bold, then `1 of 2`; a question too
+        // long for the row moves under the title.
+        let count = if self.questions.len() > 1 {
+            format!("{} of {}", self.step + 1, self.questions.len())
+        } else {
+            String::new()
+        };
+        let bold_text = st.text_style().add_modifier(Modifier::BOLD);
+        let fits = visible_width(&cur.question) + visible_width(&count) + 14 <= width;
+        let mut facts = Vec::new();
+        if fits {
+            facts.push(Span::styled(cur.question.clone(), bold_text));
+            if !count.is_empty() {
+                facts.push(Span::styled(format!("  {count}"), st.dim_style()));
+            }
+        } else if !count.is_empty() {
+            facts.push(Span::styled(count.clone(), st.dim_style()));
+        }
+        pane.facts = Line::from(facts);
 
         for i in 0..self.step {
             let q = &self.questions[i];
-            lines.push(Line::from(vec![
-                Span::styled("✓", pal.ok()),
-                Span::raw(" "),
+            pane.top.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled("✓ ", pal.ok()),
                 Span::styled(
                     q.short.as_deref().unwrap_or(&q.question).to_string(),
-                    pal.dim(),
+                    st.dim_style(),
                 ),
-                Span::raw("   "),
-                Span::styled("→ ", pal.dim()),
+                Span::styled(" → ", st.dim_style()),
                 Span::styled(
                     self.answers.get(i).map_or(String::new(), |s| s.clone()),
-                    pal.acc(),
+                    st.text_style(),
                 ),
             ]));
         }
-        if self.step > 0 {
-            lines.push(Line::raw(""));
+        if !fits {
+            pane.top.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(cur.question.clone(), bold_text),
+            ]));
         }
-
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("{}/{}", self.step + 1, self.questions.len()),
-                pal.dim(),
-            ),
-            Span::raw(" "),
-            Span::styled(cur.question.clone(), bold(Style::default())),
-        ]));
         if let Some(detail) = &cur.detail {
-            lines.push(Line::from(vec![Span::styled(
-                format!("    {detail}"),
-                pal.faint(),
-            )]));
+            pane.top.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(detail.clone(), st.dim_style()),
+            ]));
         }
-        lines.push(Line::raw(""));
 
+        // Option rows: number, label and description in aligned columns.
+        let label_w = cur
+            .options
+            .iter()
+            .map(|o| visible_width(&o.label))
+            .max()
+            .unwrap_or(0);
+        let on_custom = self.is_on_custom_row();
         for (i, o) in cur.options.iter().enumerate() {
-            let active = i == self.cursor.selected();
-            let cursor = if active {
-                SELECT_CURSOR.to_string()
+            let active = !on_custom && i == self.cursor.selected();
+            let number = if active && !st.mono {
+                st.text_style()
             } else {
-                select_gutter()
+                st.dim_style()
             };
             let mut spans = vec![
-                Span::styled(cursor, pal.acc()),
-                Span::styled(
-                    (i + 1).to_string(),
-                    if active { pal.acc() } else { pal.dim() },
-                ),
-                Span::raw("  "),
-                Span::styled(
-                    o.label.clone(),
-                    if active {
-                        bold(Style::default())
-                    } else {
-                        Style::default()
-                    },
-                ),
+                Span::styled(format!("{}  ", i + 1), number),
+                Span::styled(o.label.clone(), st.text_style()),
             ];
             if let Some(description) = &o.description {
-                spans.push(Span::styled(format!("   {description}"), pal.faint()));
+                let fill = label_w.saturating_sub(visible_width(&o.label));
+                spans.push(Span::raw(" ".repeat(fill + 2)));
+                spans.push(Span::styled(
+                    description.clone(),
+                    if active && !st.mono {
+                        st.text_style()
+                    } else {
+                        st.dim_style()
+                    },
+                ));
             }
             if o.recommended {
-                // The recommended answer reads green (spec §4 c2): it is the
-                // safe default, not a warning.
-                spans.push(Span::styled("   recommended", pal.ok()));
+                // The recommended answer reads green: it is the safe
+                // default, not a warning.
+                spans.push(Span::styled("  recommended", pal.ok()));
             }
-            lines.push(Line::from(spans));
+            pane.rows.push(Line::from(spans));
         }
+        pane.selected = (!on_custom && !cur.options.is_empty()).then(|| self.cursor.selected());
 
         if cur.allow_custom {
-            let active = self.cursor.selected() == cur.options.len();
-            let cursor = if active {
-                SELECT_CURSOR.to_string()
+            pane.input = Some(if on_custom {
+                input_line(self.custom_input.get_value(), "", self.focused)
             } else {
-                select_gutter()
-            };
-            let mut spans = vec![
-                Span::styled(cursor, pal.acc()),
-                Span::styled(
-                    (cur.options.len() + 1).to_string(),
-                    if active { pal.acc() } else { pal.dim() },
-                ),
-                Span::raw("  "),
-            ];
-            if active {
-                let value = self.custom_input.get_value();
-                let caret = if self.focused {
-                    Some(Span::styled("▏", pal.warn()))
-                } else {
-                    None
-                };
-                spans.push(Span::styled("something else", bold(Style::default())));
-                spans.push(Span::raw("  "));
-                if value.is_empty() {
-                    if let Some(caret) = caret.clone() {
-                        spans.push(caret);
-                    }
-                    spans.push(Span::styled("type it", pal.dim()));
-                } else {
-                    spans.push(Span::styled(value.to_string(), pal.legacy("text")));
-                    if let Some(caret) = caret {
-                        spans.push(caret);
-                    }
-                }
-            } else {
-                spans.push(Span::styled("something else", pal.faint()));
-                spans.push(Span::raw("   "));
-                spans.push(Span::styled("type it", pal.dim()));
-            }
-            lines.push(Line::from(spans));
+                input_line("", "or type your own answer", false)
+            });
         }
-
-        lines.push(self.render_hints(last));
-        lines
-    }
-
-    fn render_body(&self) -> Vec<Line<'static>> {
-        let mut rows = self.render_rows();
-        rows.pop();
-        rows
-    }
-
-    fn render_foot(&self) -> Line<'static> {
-        let rows = self.render_rows();
-        rows.last().cloned().unwrap_or_else(|| Line::raw(""))
+        pane.hint = self.render_hints(last);
+        pane.style = Some(st);
+        pane
     }
 }
 
@@ -263,7 +198,7 @@ impl AskOptionsComponent {
         questions: Vec<AskQuestion>,
         on_submit: Box<dyn FnMut(Vec<String>)>,
         on_cancel: Box<dyn FnMut()>,
-        options: AskOptionsOptions,
+        _options: AskOptionsOptions,
     ) -> Self {
         let rows = questions.first().map_or(0, State::row_count);
         let state = Rc::new(RefCell::new(State {
@@ -273,7 +208,6 @@ impl AskOptionsComponent {
             answers: Vec::new(),
             custom_input: Input::new(),
             focused: false,
-            esc_answers_first: options.esc_answers_first,
         }));
         Self {
             state,
@@ -311,18 +245,9 @@ impl AskOptionsComponent {
         }
     }
 
-    /// Esc on the card: answer this step with option 1 (Mission Control,
-    /// spec §6.2). Anything else skips: elicitation forms, and a step with
-    /// no options to pick.
+    /// Esc skips the question: the agent is told and states its default.
     fn escape(&mut self) {
-        let first = self.state.borrow().esc_answers_first
-            && !self.state.borrow().current().options.is_empty();
-        if !first {
-            (self.on_cancel)();
-            return;
-        }
-        self.state.borrow_mut().cursor.select(0);
-        self.confirm();
+        (self.on_cancel)();
     }
 
     fn back(&mut self) {
@@ -339,16 +264,10 @@ impl AskOptionsComponent {
 
 impl Component for AskOptionsComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
-        let state = self.state.borrow();
-        let rows = state.render_body();
-        let foot = state.render_foot();
-        render_card(
-            "◉ MISSION CONTROL ASKS",
-            "sets the default for every call",
-            &rows,
-            &foot,
-            width as usize,
-        )
+        self.state
+            .borrow()
+            .pane(width as usize)
+            .render(width as usize)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -369,7 +288,9 @@ impl Component for AskOptionsComponent {
             self.back();
             return;
         }
-        if (next && kb.matches(data, "app.options.next")) || kb.matches(data, "tui.select.confirm")
+        if (next && kb.matches(data, "app.options.next"))
+            || data == "\t"
+            || kb.matches(data, "tui.select.confirm")
         {
             self.confirm();
             return;
@@ -383,6 +304,18 @@ impl Component for AskOptionsComponent {
             // Free-form typing goes to the hidden input; its value is drawn inline.
             self.state.borrow_mut().custom_input.handle_input(data);
             return;
+        }
+
+        // A letter on an option row starts the answer row's text.
+        let allow_custom = self.state.borrow().current().allow_custom;
+        let mut typed = data.chars();
+        if let (true, Some(c), None) = (allow_custom, typed.next(), typed.next()) {
+            if c.is_alphabetic() {
+                let mut state = self.state.borrow_mut();
+                state.cursor.select(option_count);
+                state.custom_input.handle_input(data);
+                return;
+            }
         }
 
         // Quick-pick among the rows: an option answers at once; the custom

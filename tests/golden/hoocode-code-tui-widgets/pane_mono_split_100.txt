@@ -1,0 +1,13 @@
+┌─ Models ─ /model  showing all · 2 signed in ─────────────────────────────────────────────────────┐
+│ › mock-large   free               │ mock-large  in use                                           │
+│   mock-fast    free               │ provider  mock                                               │
+│                                   │ context   128k                                               │
+│                                   │ price     free                                               │
+│                                   │ thinking  supported                                          │
+│ › filter                                                                                         │
+│ ↑↓ move · enter pick · tab all / scoped · esc close                                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+--- styles ---
+r1 c1-20 bold
+r1 c38-47 bold
+r6 c1-3 bold

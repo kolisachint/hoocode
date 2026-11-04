@@ -2650,10 +2650,13 @@ mod tests {
         assert_eq!(landed.len(), 1, "{text}");
         assert!(landed[0].contains("1 step"), "{text}");
         let rendered = strip_vt_control_characters(&m2.borrow_mut().render(100).join("\n"));
-        assert!(rendered.contains(" 01 "), "{rendered}");
+        // Tool rows carry no step number now: the chain still draws its call.
+        assert!(rendered.contains(" ● "), "{rendered}");
+        assert!(!rendered.contains(" 01 "), "{rendered}");
     }
 
-    /// Taking a block out renumbers the later steps (01, 02 — never 01, 03).
+    /// Taking a block out leaves the later chain drawing its calls (the step
+    /// counts the landing line reads are rebased, rows carry no number).
     #[test]
     fn removing_a_block_renumbers_the_later_steps() {
         let mut t = fresh_transcript();
@@ -2668,8 +2671,11 @@ mod tests {
         // The drop path renumbers once after the loop.
         t.rebase_steps();
         let rendered = strip_vt_control_characters(&second.borrow_mut().render(100).join("\n"));
-        assert!(rendered.contains(" 02 "), "{rendered}");
-        assert!(!rendered.contains(" 03 "), "{rendered}");
+        assert!(rendered.contains(" ● "), "{rendered}");
+        assert!(
+            !rendered.contains(" 02 ") && !rendered.contains(" 03 "),
+            "{rendered}"
+        );
     }
 
     fn result(details: Option<Value>, duration_ms: Option<u64>) -> ToolResultMessage {

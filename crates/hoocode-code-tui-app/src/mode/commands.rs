@@ -187,7 +187,7 @@ impl Mode {
         self.dirty.set(true);
     }
 
-    /// `handleHotkeys`: the CONTROLS console (M7, spec d9), as a picker in
+    /// `handleHotkeys`: the Keys pane, as a picker in
     /// the editor's slot: `tab` switches the lit layer, typing filters the
     /// actions, `esc` closes it. The board reads the live keybindings, so
     /// a rebound key repaints it.
@@ -199,7 +199,7 @@ impl Mode {
         );
     }
 
-    /// The CONTROLS picker's answer: `esc` gives the editor back.
+    /// The Keys picker's answer: `esc` gives the editor back.
     pub(super) fn poll_controls(&mut self) {
         let done = matches!(
             &self.picker,

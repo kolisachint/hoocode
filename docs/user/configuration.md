@@ -101,8 +101,16 @@ To show the hoocode icon in Herdr desktop, save an icon (an SVG) as
   `allowed_write_paths` limits Edit and Write to matching paths, `auto_allow` runs
   tools without asking, and `allowed_bash_commands` / `denied_bash_commands` take regexes.
   A key you leave out takes the shipped value above; set it (even to `[]`) to override.
-- **Always** on an approval card: for Shell it lasts for the session and covers that
-  program; for other tools it adds the tool to the mode's `auto_allow` in this file.
+- **Approval card** (`Allow Shell?`): press `1` to allow once, `2` to always allow
+  (when offered), `3` to refuse and tell the agent why. `e` edits the command first, and
+  any other letter starts typing a reply that `enter` sends as the reason. `enter`
+  takes the highlighted option and `esc` refuses. An `access:` line appears only when
+  the call writes, uses the network or pipes.
+- **Always** on an approval card (`2`): for Shell it lasts for the session and covers
+  that program; for other tools it adds the tool to the mode's `auto_allow` in this file.
+- **Questions**: when the agent asks a question, `1`-`9` pick an answer, `tab` moves to
+  the next question and `esc` skips it. The agent is told it was skipped and states the
+  default it will use.
 - A project can add rules in `.hoocode/hoo-config.json`: its `denied_tools` and
   `denied_bash_commands` add to yours. It cannot make anything run without asking:
   `auto_allow`, `safe_shell` and `skip_permissions` come from your file only, and so

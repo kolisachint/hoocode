@@ -360,18 +360,13 @@ fn a_single_call_in_peek_is_still_its_own_block() {
     );
     chain.close(ChainState::Done);
     let out = render(&mut chain);
-    // Mission Control peek: the step is numbered and sits on the `┊` rail —
-    // ` 01 ● Shell  command` with `exit 0 · 1 line` right-aligned, then
-    // `   ┊    l1` — with no summary row.
+    // Peek: ` ● Shell npm run check  exit 0` with its facts right after the
+    // subject, then the output at column 4 — no step number, no rail, no
+    // summary row.
     let rows: Vec<&str> = out.lines().map(str::trim_end).collect();
-    // Stem ` 01 ● Shell  npm run check` is 26 cells, stats 15: 59 spaces.
-    let header = format!(
-        " 01 ● Shell  npm run check{}exit 0 · 1 line",
-        " ".repeat(59)
-    );
     assert!(
         rows.windows(2)
-            .any(|w| w == [header.as_str(), "   ┊    l1"]),
+            .any(|w| w == [" ● Shell npm run check  exit 0", "    l1"]),
         "{out}"
     );
     assert!(!out.contains("1 call"), "{out}");

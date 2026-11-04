@@ -1,5 +1,6 @@
-//! jsdiff `diffWords` and the pin's `renderDiff` against the real ones
-//! (`fixtures/diff-gold.json`, from `archive/migration/tools/goldens/diff.mjs`).
+//! jsdiff `diffWords` against the real one (`fixtures/diff-gold.json`, from
+//! `archive/migration/tools/goldens/diff.mjs`), and the diff's colouring: the
+//! sign alone carries colour.
 
 use crate::support::lock;
 use hoocode_code_tui_widgets::diff::render_diff;
@@ -50,29 +51,27 @@ fn diff_words_matches_jsdiff() {
 }
 
 #[test]
-fn render_diff_matches_the_pin() {
+fn only_the_sign_is_coloured_and_the_rest_is_dim() {
     let _g = lock();
-    let gold = gold();
-    let mut failures = Vec::new();
-    for case in gold["rendered"].as_array().unwrap() {
-        let diff = case["diff"].as_str().unwrap();
-        let got = render_diff(diff);
-        if got != case["out"].as_str().unwrap() {
-            failures.push(format!(
-                "{diff:?}\n  want {:?}\n  got  {got:?}",
-                case["out"]
-            ));
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "{} mismatches:\n{}",
-        failures.len(),
-        failures
-            .iter()
-            .take(5)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n")
+    let t = hoocode_code_tui_theme::theme();
+    let out = render_diff("-14 let raw = 1;\n+14 let raw = 2;\n 15 let rest = 3;");
+    let rows: Vec<&str> = out.split('\n').collect();
+    assert_eq!(
+        rows[0],
+        format!(
+            "{}{}",
+            t.fg("toolDiffRemoved", "-"),
+            t.fg("dim", "14 let raw = 1;")
+        )
     );
+    assert_eq!(
+        rows[1],
+        format!(
+            "{}{}",
+            t.fg("toolDiffAdded", "+"),
+            t.fg("dim", "14 let raw = 2;")
+        )
+    );
+    assert_eq!(rows[2], t.fg("dim", " 15 let rest = 3;"));
+    assert!(!out.contains("\x1b[7m"), "no word-level inverse: {out:?}");
 }

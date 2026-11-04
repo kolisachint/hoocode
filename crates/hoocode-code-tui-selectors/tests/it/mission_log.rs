@@ -1,4 +1,4 @@
-//! Component goldens: the `/resume` picker as the MISSION LOG console, at 100
+//! Component goldens: the `/resume` picker as the Sessions pane, at 100
 //! and 80 columns. Hints use literal keys (no `alt`), so the bytes hold on
 //! every platform. Accept a deliberate change with
 //! `UPDATE_GOLDENS=1 cargo nextest run -p hoocode-code-tui-selectors mission_log`.
@@ -64,7 +64,7 @@ fn check(name: &str, width: u16) {
     let rendered = render_golden(&mut s, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("MISSION LOG · /resume"),
+        text.contains("Sessions  /resume"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -77,11 +77,12 @@ fn check(name: &str, width: u16) {
         "{name}: missing selected session in\n{text}"
     );
     assert!(
-        text.lines().any(|l| l.contains('▸')),
+        text.lines()
+            .any(|l| l.starts_with(" › ") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
     assert!(
-        text.contains("enter jump there"),
+        text.contains("enter open"),
         "{name}: missing hint foot in\n{text}"
     );
     assert_golden!(name, rendered);

@@ -32,7 +32,7 @@ pub(super) enum ActivePicker {
     Model(Rc<RefCell<ModelSelectorComponent>>),
     ScopedModels(Rc<RefCell<ScopedModelsSelectorComponent>>),
     Settings(Rc<RefCell<SettingsSelectorComponent>>),
-    /// The CONTROLS console: the drawn keyboard with a lit layer.
+    /// The Keys pane: the layer's bindings grouped as prompt, transcript and app.
     Controls(Rc<RefCell<ControlsComponent>>),
 }
 
@@ -184,7 +184,6 @@ impl Mode {
         &mut self,
         questions: Vec<AskQuestion>,
         reply: mpsc::Sender<Option<Vec<String>>>,
-        esc_answers_first: bool,
     ) {
         if questions.is_empty() {
             let _ = reply.send(None);
@@ -202,7 +201,7 @@ impl Mode {
                     .push(Action::AskOptionsDone(Some(answers)))
             }),
             Box::new(move || on_cancel.borrow_mut().push(Action::AskOptionsDone(None))),
-            AskOptionsOptions { esc_answers_first },
+            AskOptionsOptions::default(),
         ));
         {
             let mut container = self.editor_container.borrow_mut();

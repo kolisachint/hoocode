@@ -1,10 +1,9 @@
 //! `components/diff.ts`: a unified-ish diff (`+12 line`, `-12 line`,
-//! ` 12 line`) coloured, with word-level inverse on a one-line change.
+//! ` 12 line`): the sign coloured, the rest dim.
 
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_util::js_regex::is_js_space;
 
-use crate::jsdiff::diff_words;
 use crate::render_utils::replace_tabs;
 
 struct DiffLine<'a> {
@@ -58,113 +57,34 @@ fn parse_diff_line(line: &str) -> Option<DiffLine<'_>> {
     }
 }
 
-/// `renderIntraLineDiff`: the changed words inverted.
-fn render_intra_line_diff(old: &str, new: &str) -> (String, String) {
+/// One diff row: the sign in its own colour, the rest of the row dim.
+fn diff_row(sign: char, token: &str, line_num: &str, content: &str) -> String {
     let t = theme();
-    let mut removed = String::new();
-    let mut added = String::new();
-    let (mut first_removed, mut first_added) = (true, true);
-    for part in diff_words(old, new) {
-        if part.removed {
-            let mut value = part.value.as_str();
-            if first_removed {
-                let ws = value.len() - value.trim_start_matches(is_js_space).len();
-                removed.push_str(hoocode_tui_util::text_slice::prefix(value, ws));
-                value = hoocode_tui_util::text_slice::suffix_from(value, ws);
-                first_removed = false;
-            }
-            if !value.is_empty() {
-                removed.push_str(&t.inverse(value));
-            }
-        } else if part.added {
-            let mut value = part.value.as_str();
-            if first_added {
-                let ws = value.len() - value.trim_start_matches(is_js_space).len();
-                added.push_str(hoocode_tui_util::text_slice::prefix(value, ws));
-                value = hoocode_tui_util::text_slice::suffix_from(value, ws);
-                first_added = false;
-            }
-            if !value.is_empty() {
-                added.push_str(&t.inverse(value));
-            }
-        } else {
-            removed.push_str(&part.value);
-            added.push_str(&part.value);
-        }
-    }
-    (removed, added)
+    format!(
+        "{}{}",
+        t.fg(token, &sign.to_string()),
+        t.fg("dim", &format!("{line_num} {}", replace_tabs(content)))
+    )
 }
 
-/// `renderDiff`.
+/// `renderDiff`: a unified-ish diff (`+12 line`, `-12 line`, ` 12 line`). Only
+/// the sign carries colour (`-` red, `+` green); the line number and the text
+/// are dim, so a diff reads as quiet as any other tool body.
 pub fn render_diff(diff_text: &str) -> String {
     let t = theme();
-    let lines: Vec<&str> = diff_text.split('\n').collect();
-    let mut result = Vec::new();
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i];
-        let Some(parsed) = parse_diff_line(line) else {
-            result.push(t.fg("toolDiffContext", line));
-            i += 1;
-            continue;
-        };
-        match parsed.prefix {
-            '-' => {
-                let mut removed = Vec::new();
-                while i < lines.len() {
-                    match parse_diff_line(lines[i]) {
-                        Some(p) if p.prefix == '-' => removed.push(p),
-                        _ => break,
-                    }
-                    i += 1;
-                }
-                let mut added = Vec::new();
-                while i < lines.len() {
-                    match parse_diff_line(lines[i]) {
-                        Some(p) if p.prefix == '+' => added.push(p),
-                        _ => break,
-                    }
-                    i += 1;
-                }
-                if removed.len() == 1 && added.len() == 1 {
-                    let (r, a) = (&removed[0], &added[0]);
-                    let (removed_line, added_line) =
-                        render_intra_line_diff(&replace_tabs(r.content), &replace_tabs(a.content));
-                    result.push(t.fg(
-                        "toolDiffRemoved",
-                        &format!("-{} {removed_line}", r.line_num),
-                    ));
-                    result.push(t.fg("toolDiffAdded", &format!("+{} {added_line}", a.line_num)));
-                } else {
-                    for r in &removed {
-                        result.push(t.fg(
-                            "toolDiffRemoved",
-                            &format!("-{} {}", r.line_num, replace_tabs(r.content)),
-                        ));
-                    }
-                    for a in &added {
-                        result.push(t.fg(
-                            "toolDiffAdded",
-                            &format!("+{} {}", a.line_num, replace_tabs(a.content)),
-                        ));
-                    }
-                }
-            }
-            '+' => {
-                result.push(t.fg(
-                    "toolDiffAdded",
-                    &format!("+{} {}", parsed.line_num, replace_tabs(parsed.content)),
-                ));
-                i += 1;
-            }
-            _ => {
-                result.push(t.fg(
-                    "toolDiffContext",
+    diff_text
+        .split('\n')
+        .map(|line| match parse_diff_line(line) {
+            None => t.fg("dim", line),
+            Some(parsed) => match parsed.prefix {
+                '-' => diff_row('-', "toolDiffRemoved", parsed.line_num, parsed.content),
+                '+' => diff_row('+', "toolDiffAdded", parsed.line_num, parsed.content),
+                _ => t.fg(
+                    "dim",
                     &format!(" {} {}", parsed.line_num, replace_tabs(parsed.content)),
-                ));
-                i += 1;
-            }
-        }
-    }
-    result.join("\n")
+                ),
+            },
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }

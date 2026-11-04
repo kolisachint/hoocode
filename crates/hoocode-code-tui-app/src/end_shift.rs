@@ -1,16 +1,14 @@
-//! The Mission Control end-of-shift cards (M6, spec §4 c8 and the "Jettison,
-//! end of shift, hull paint" card): the amber cards that replace the comms
-//! frame when a quit is asked. With nothing running, the card carries the
-//! shift's debrief (`enter` ends the shift, `esc` stays); with satellites up,
-//! the `◎ END SHIFT WITH 1 SATELLITE UP?` card lists them with their orbit
-//! clocks (`k` brings them down and ends, `l` leaves them in orbit, `enter`
-//! is the default: bring them down).
+//! The quit dialogs (declutter spec, Dialogs): the `Quit?` pane in the
+//! prompt's slot. With nothing running it carries the session's totals
+//! (`enter` quits, `esc` stays); with background jobs it lists them (`k`
+//! stops them and quits, `l` leaves them running, `enter` is stop and quit,
+//! `esc` stays).
 
-use hoocode_code_tui_keybindings::format_key_text;
-use hoocode_code_tui_widgets::card_frame::{card_foot, render_card};
+use hoocode_code_tui_widgets::pane::{hint_line, Pane, PaneStyle};
 use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
+use hoocode_tui_util::visible_width;
 
 /// The plain end-of-shift card's answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,49 +55,27 @@ impl EndShiftCard {
         }
     }
 
-    fn body(&self) -> Vec<Line<'static>> {
-        let pal = Palette::current();
-        let sep = Span::styled(" · ", pal.faint());
-        let debrief = [
-            Span::styled(
-                format!("{} missions", self.debrief.missions),
-                pal.legacy("text"),
-            ),
-            Span::styled(format!("{} steps", self.debrief.steps), pal.legacy("text")),
-            Span::styled(
-                format!(
-                    "↑{} ↓{}",
-                    format_tokens(self.debrief.input_tokens),
-                    format_tokens(self.debrief.output_tokens)
-                ),
-                pal.dim(),
-            ),
-            Span::styled(format!("CR ${:.3}", self.debrief.cost), pal.dim()),
-        ];
-        let mut first = Line::from(vec![debrief[0].clone()]);
-        for span in &debrief[1..] {
-            let mut spans = first.spans.clone();
-            spans.push(sep.clone());
-            spans.push(span.clone());
-            first = Line::from(spans);
-        }
-        vec![
-            first,
-            Line::raw(""),
-            hints_line(&[("enter", "end the shift"), ("esc", "stay")]),
-        ]
+    /// The session's totals, dim, after the title.
+    fn facts(&self) -> String {
+        format!(
+            "{} messages · {} tool calls · ↑{} ↓{} · ${:.3}",
+            self.debrief.missions,
+            self.debrief.steps,
+            format_tokens(self.debrief.input_tokens),
+            format_tokens(self.debrief.output_tokens),
+            self.debrief.cost
+        )
     }
 }
 
 impl Component for EndShiftCard {
     fn render(&mut self, width: u16) -> Vec<String> {
-        render_card(
-            "◉ END OF SHIFT",
-            "esc stay",
-            &self.body(),
-            &card_foot(""),
-            width as usize,
-        )
+        let st = PaneStyle::current();
+        let mut pane = Pane::new("Quit?");
+        pane.facts = Line::from(vec![Span::styled(self.facts(), st.dim_style())]);
+        pane.hint = hint_line(&[("enter", "quit"), ("esc", "stay")]);
+        pane.style = Some(st);
+        pane.render(width as usize)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -164,78 +140,90 @@ impl EndShiftJobsCard {
         }
     }
 
-    /// `◎ END SHIFT WITH 1 SATELLITE UP?` The ring (`◎`) is the card's own
-    /// glyph, shared with the clearance card.
-    fn title(&self) -> String {
+    /// `2 background jobs running`
+    fn facts(&self) -> String {
         let n = self.jobs.len();
-        let noun = if n == 1 { "SATELLITE" } else { "SATELLITES" };
-        format!("◎ END SHIFT WITH {n} {noun} UP?")
+        let noun = if n == 1 { "job" } else { "jobs" };
+        format!("{n} background {noun} running")
     }
 
-    fn body(&self) -> Vec<Line<'static>> {
+    /// The state column: `4s of ~60s`, `4s`, or `done`.
+    fn state(job: &ShiftJob) -> String {
+        if !job.running {
+            return "done".to_string();
+        }
+        match (job.elapsed_secs, job.total_secs) {
+            (Some(elapsed), Some(total)) => format!("{elapsed}s of ~{total}s"),
+            (Some(elapsed), None) => format!("{elapsed}s"),
+            _ => String::new(),
+        }
+    }
+
+    /// One row per job, columns aligned: glyph, id (dim), command, state (dim).
+    fn rows(&self) -> Vec<Line<'static>> {
+        let st = PaneStyle::current();
         let pal = Palette::current();
-        let mut rows = Vec::new();
-        for job in &self.jobs {
-            let (mark, mark_style) = if job.running {
-                (status::RUNNING_STR, pal.acc())
-            } else {
-                (status::DONE_STR, pal.dim())
-            };
-            let mut state = if job.running {
-                "in orbit".to_string()
-            } else {
-                "done".to_string()
-            };
-            // The orbit clock, when the host knows it: `in orbit 4s of ~60s`.
-            if job.running {
-                match (job.elapsed_secs, job.total_secs) {
-                    (Some(elapsed), Some(total)) => {
-                        state = format!("in orbit {elapsed}s of ~{total}s");
-                    }
-                    (Some(elapsed), None) => {
-                        state = format!("in orbit {elapsed}s");
-                    }
-                    _ => {}
+        let id_w = self
+            .jobs
+            .iter()
+            .map(|j| visible_width(&j.id))
+            .max()
+            .unwrap_or(0);
+        let cmd_w = self
+            .jobs
+            .iter()
+            .map(|j| visible_width(&j.command))
+            .max()
+            .unwrap_or(0);
+        let mut rows: Vec<Line<'static>> = self
+            .jobs
+            .iter()
+            .map(|job| {
+                let (mark, mark_style) = if job.running {
+                    (status::RUNNING_STR, pal.warn())
+                } else {
+                    (status::DONE_STR, pal.ok())
+                };
+                let state = Self::state(job);
+                let mut spans = vec![
+                    Span::styled(format!("{mark} "), mark_style),
+                    Span::styled(pad(&job.id, id_w), st.dim_style()),
+                    Span::raw("  "),
+                    Span::styled(pad(&job.command, cmd_w), st.text_style()),
+                ];
+                if !state.is_empty() {
+                    spans.push(Span::raw("   "));
+                    spans.push(Span::styled(state, st.dim_style()));
                 }
-            }
-            rows.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(mark, mark_style),
-                Span::raw(" "),
-                Span::styled(job.id.clone(), pal.legacy("text")),
-                Span::raw("  "),
-                Span::styled(job.command.clone(), pal.legacy("text")),
-                Span::raw("   "),
-                Span::styled(state, pal.dim()),
-            ]));
-        }
-        rows.push(Line::raw(""));
-        let mut hints: Vec<(&str, &str)> = vec![
-            ("k", "bring it down, then end shift"),
-            ("l", "leave it in orbit"),
-        ];
-        // One satellite: the foot names where its log stays (spec §4 c8).
-        let log_note;
-        if self.jobs.len() == 1 {
-            if let Some(path) = self.jobs[0].log_path.as_deref() {
-                log_note = format!("log stays in {path}");
-                hints.push(("", log_note.as_str()));
+                Line::from(spans)
+            })
+            .collect();
+        // One job: where its output stays.
+        if let [job] = self.jobs.as_slice() {
+            if let Some(path) = job.log_path.as_deref() {
+                rows.push(Line::from(vec![Span::styled(
+                    format!("  log stays in {path}"),
+                    st.dim_style(),
+                )]));
             }
         }
-        rows.push(hints_line(&hints));
         rows
     }
 }
 
 impl Component for EndShiftJobsCard {
     fn render(&mut self, width: u16) -> Vec<String> {
-        render_card(
-            &self.title(),
-            "esc stay",
-            &self.body(),
-            &card_foot(""),
-            width as usize,
-        )
+        let st = PaneStyle::current();
+        let mut pane = Pane::new("Quit?");
+        pane.facts = Line::from(vec![Span::styled(self.facts(), st.dim_style())]);
+        pane.rows = self.rows();
+        pane.hint = hint_line(&[
+            ("k", "stop jobs and quit"),
+            ("l", "leave them running"),
+            ("esc", "stay"),
+        ]);
+        pane.style = Some(st);
+        pane.render(width as usize)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -253,18 +241,10 @@ impl Component for EndShiftJobsCard {
     }
 }
 
-/// One hints row: dim keys plus muted descriptions, joined by `·`.
-fn hints_line(hints: &[(&str, &str)]) -> Line<'static> {
-    let pal = Palette::current();
-    let mut spans = Vec::new();
-    for (i, (key, description)) in hints.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(" · ", pal.faint()));
-        }
-        spans.push(Span::styled(format_key_text(key, false), pal.dim()));
-        spans.push(Span::styled(format!(" {description}"), pal.faint()));
-    }
-    Line::from(spans)
+/// `text` padded with spaces to `width` cells.
+fn pad(text: &str, width: usize) -> String {
+    let fill = width.saturating_sub(visible_width(text));
+    format!("{text}{}", " ".repeat(fill))
 }
 
 /// Compact token counts (`48.2k`), like the comms foot's totals.

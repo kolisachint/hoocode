@@ -14,7 +14,6 @@ use hoocode_code_tui_theme::{get_language_from_path, highlight_code, message_lab
 use serde_json::Value;
 
 use super::text;
-use crate::read_output::render_read_output;
 use crate::render_utils::{arg_or, invalid_arg_text, replace_tabs, str_arg};
 use crate::tool_execution::{ToolRenderDefinition, ToolResultView};
 use crate::tool_output_view::{line_budget, peek_window};
@@ -41,7 +40,7 @@ fn format_read_call(args: &Value) -> String {
     let path = raw_path(args).map(|p| shorten_path(&p));
     let display = match path {
         None => invalid_arg_text(),
-        Some(p) if !p.is_empty() => t.fg("accent", &p),
+        Some(p) if !p.is_empty() => t.fg("text", &p),
         Some(_) => t.fg("toolOutput", "…"),
     };
     format!("{} {display}", t.fg("toolTitle", &t.bold("Read")))
@@ -245,15 +244,20 @@ fn format_read_result(
     let lang = raw.as_deref().and_then(get_language_from_path);
     let mut memo = memo.borrow_mut();
     let preview = ensure_preview(&mut memo, output, lang, expanded);
-    let start_line = args
-        .get("offset")
-        .and_then(Value::as_f64)
-        .map(|n| n as i64)
-        .unwrap_or(1);
+    // The lines as they are, no line-number gutter: plain text reads dim.
     let body = peek_window(preview.total, &preview.shown, |shown| {
-        render_read_output(&shown.join("\n"), start_line)
+        shown
+            .iter()
+            .map(|line| {
+                if lang.is_some() {
+                    line.clone()
+                } else {
+                    t.fg("toolOutput", line)
+                }
+            })
+            .collect()
     });
-    // An image-only result has no text to number: just its placeholder.
+    // An image-only result has no text to show: just its placeholder.
     let mut text = if output.is_empty() && !placeholders.is_empty() {
         String::new()
     } else {

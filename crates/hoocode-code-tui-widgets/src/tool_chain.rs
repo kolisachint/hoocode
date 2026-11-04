@@ -16,14 +16,15 @@ use hoocode_tui_ratatui::core::text::Span;
 use hoocode_tui_ratatui::{ansi_spans, spans_width, truncate_spans, with_base_style, Palette};
 
 use crate::assistant_message::AssistantMessageComponent;
-use crate::fold::{fold_rows, fold_rows_tail, more_lines_span};
-use crate::outline;
+use crate::fold::{
+    earlier_lines_text, fold_rows, fold_rows_tail, more_lines_span, more_lines_text,
+};
 use crate::tool_chain_summary::{
     chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
 };
 use crate::tool_execution::ToolExecutionComponent;
 use crate::tool_output_view::ToolOutputView;
-use crate::trajectory;
+use crate::tool_row;
 use crate::trajectory::two_part_row;
 use hoocode_tui_ratatui::row;
 
@@ -46,6 +47,167 @@ const FAILURE_TAIL_LINES: usize = 2;
 struct LeadIn {
     before: usize,
     component: Rc<RefCell<AssistantMessageComponent>>,
+}
+
+/// Pushes one blank row unless the rows end in one (or are empty, which still
+/// gets its opening blank).
+fn ensure_blank(out: &mut Vec<String>) {
+    if out.last().is_none_or(|row| !tool_row::is_blank_row(row)) {
+        out.push(String::new());
+    }
+}
+
+/// How many lines of a body show before the fold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fold {
+    /// No body at all.
+    Hidden,
+    /// The first lines, the hint below.
+    Head(usize),
+    /// The last lines, the hint above.
+    Tail(usize),
+}
+
+/// Bodies this short show whole, never behind a fold.
+const WHOLE_BODY_LINES: usize = 4;
+/// A failed call's error: its last lines.
+const FAILED_BODY_LINES: usize = 4;
+/// Edit and Write at peek: their first lines.
+const HEAD_BODY_LINES: usize = 4;
+/// A settled shell call at peek: its last lines.
+const SHELL_BODY_LINES: usize = 2;
+
+/// The peek rule for a tool's body (spec "Transcript", tool body).
+fn peek_fold(tool: &str, failed: bool, tail: bool) -> Fold {
+    if failed {
+        return if tail {
+            Fold::Tail(FAILED_BODY_LINES)
+        } else {
+            Fold::Head(FAILED_BODY_LINES)
+        };
+    }
+    match tool {
+        "Read" | "CodeSearch" | "WebFetch" | "WebSearch" | "Agent" | "AgentOutput" => Fold::Hidden,
+        "Shell" => Fold::Tail(SHELL_BODY_LINES),
+        _ if tail => Fold::Tail(SHELL_BODY_LINES),
+        _ => Fold::Head(HEAD_BODY_LINES),
+    }
+}
+
+/// A body's rows after the view's fold rule. `body` is the renderer's rows
+/// (already at column 4); `footer` the rows after them that are not output (a
+/// truncation note), always whole.
+#[allow(clippy::too_many_arguments)]
+fn fold_body(
+    mut body: Vec<String>,
+    tail: bool,
+    footer: Vec<String>,
+    tool: &str,
+    failed: bool,
+    full: bool,
+    width: usize,
+    palette: &Palette,
+) -> Vec<String> {
+    while body.last().is_some_and(|r| tool_row::is_blank_row(r)) {
+        body.pop();
+    }
+    while body.first().is_some_and(|r| tool_row::is_blank_row(r)) {
+        body.remove(0);
+    }
+    if full {
+        body.extend(footer);
+        return body;
+    }
+    let fold = peek_fold(tool, failed, tail);
+    let mut out = Vec::new();
+    match fold {
+        Fold::Hidden => {}
+        Fold::Head(budget) | Fold::Tail(budget) => {
+            let whole = fold_rows(body.clone(), Some(WHOLE_BODY_LINES));
+            if whole.hidden == 0 {
+                out.extend(whole.shown);
+            } else if matches!(fold, Fold::Tail(_)) {
+                let folded = fold_rows_tail(body, Some(budget));
+                if folded.hidden > 0 {
+                    out.push(tool_row::fold_row(
+                        &earlier_lines_text(folded.hidden),
+                        width,
+                        palette,
+                    ));
+                }
+                out.extend(folded.shown);
+            } else {
+                let folded = fold_rows(body, Some(budget));
+                out.extend(folded.shown);
+                if folded.hidden > 0 {
+                    out.push(tool_row::fold_row(
+                        &more_lines_text(folded.hidden),
+                        width,
+                        palette,
+                    ));
+                }
+            }
+        }
+    }
+    if !matches!(fold, Fold::Hidden) {
+        out.extend(footer);
+    }
+    out
+}
+
+/// A subagent's own call under its row, indented 3: `   ⊗ Grep \\"  reason`.
+/// A failed call reads in red with its reason after two spaces.
+fn sub_step_rows(
+    step: &hoocode_code_subagents::live::SettledStep,
+    width: usize,
+    palette: &Palette,
+) -> Vec<String> {
+    let t = hoocode_code_tui_theme::theme();
+    let plain = |text: &str| hoocode_tui_util::strip_vt_control_characters(text);
+    let subject = plain(&step.subject);
+    match step
+        .failure
+        .as_deref()
+        .map(plain)
+        .filter(|f| !f.trim().is_empty())
+    {
+        Some(reason) => {
+            let label = format!(
+                "{} {}",
+                t.fg("error", &t.bold(&step.tool)),
+                t.fg("error", &subject)
+            );
+            let facts = vec![Span::styled(reason.trim().to_string(), palette.err())];
+            tool_row::tool_rows(
+                tool_row::SUB_INDENT,
+                tool_row::Mark::Failed,
+                &label,
+                facts,
+                width,
+                palette,
+            )
+        }
+        None => {
+            let mark = if step.failure.is_some() {
+                tool_row::Mark::Failed
+            } else {
+                tool_row::Mark::Done
+            };
+            let label = format!(
+                "{} {}",
+                t.fg("text", &t.bold(&step.tool)),
+                t.fg("text", &subject)
+            );
+            tool_row::tool_rows(
+                tool_row::SUB_INDENT,
+                mark,
+                &label,
+                Vec::new(),
+                width,
+                palette,
+            )
+        }
+    }
 }
 
 pub struct ToolChainComponent {
@@ -202,94 +364,70 @@ impl ToolChainComponent {
             .is_some_and(|b| !b.borrow().draws_leading_gap())
     }
 
-    /// The peek trajectory: each block a numbered step on the `┊` rail
-    /// (an Agent block keeps the violet `┃` rail). The step's header is its
-    /// call line, laid out beside the step number and the stats and wrapped,
-    /// never cut. Up to [`trajectory::TRAJECTORY_BODY_LINES`] body lines show,
-    /// then one `… N more lines` fold that counts every hidden output line,
-    /// the ones the renderer already left out included; images are never
-    /// folded; a Shell step shows its last lines instead, under a
-    /// `… N earlier lines` fold, and its footer (`Took 8.2s`) stays whole. The
-    /// full stop shows every body line and no fold. A failed
-    /// step shows the `HIT` chip in place of its success stats; an Edit step
-    /// its `+a −b` counts and a Write step the `NEW` chip; a live background
-    /// job shows its satellite row.
+    /// The peek and full rows: each block a tool row (` ● Name subject  facts`)
+    /// with its body under it at column 4, dim, and no rail.
+    ///
+    /// Consecutive body-less rows stay tight; a row that shows a body is
+    /// followed by one blank row, and one blank row opens the run. Peek shows
+    /// no body for Read, search and web calls or for a settled agent; an Edit
+    /// or Write its first four lines, a Shell call its last two (a failed
+    /// call its last four, any tool's error likewise); a body of four lines or
+    /// fewer shows whole. Every fold counts all the lines left out, the ones
+    /// the renderer already cut included. The full stop shows every line and
+    /// no fold. A subagent's own calls sit under its row, indented 3: the
+    /// failed ones at peek, every one at full.
     fn peek_rows(&mut self, width: u16, palette: &Palette) -> Vec<String> {
-        let width = width as usize;
-        let budget =
-            (self.view != ToolOutputView::Full).then_some(trajectory::TRAJECTORY_BODY_LINES);
-        let mut out = Vec::new();
+        let w = width as usize;
+        let full = self.view == ToolOutputView::Full;
+        let mut out: Vec<String> = Vec::new();
+        let mut spaced = true;
         for (i, block) in self.blocks.iter().enumerate() {
             for lead in self.lead_ins.iter().filter(|l| l.before == i) {
-                out.extend(lead.component.borrow_mut().render(width as u16));
+                out.extend(lead.component.borrow_mut().render(width));
             }
-            let step = self.base_step + i + 1;
-            let agent = block.borrow().is_agent();
-            let parts = block.borrow_mut().step_parts(width as u16);
-            // The block's own leading gap stays untouched.
-            out.extend(parts.lead);
+            let parts = block.borrow_mut().step_parts(width);
             let Some(header) = parts.header else {
                 out.extend(parts.images);
                 continue;
             };
-            let (prefix, content) = trajectory::split_padding(&header);
-            // A failed step carries `⊗` in place of its dot, and the `HIT`
-            // chip replaces its success stats (never appends to them).
-            let content = if block.borrow().is_interrupted() {
-                trajectory::interrupted_dot(&content)
-            } else if block.borrow().is_error() {
-                trajectory::failure_dot(&content)
-            } else {
-                content
+            if i == 0 || !spaced {
+                ensure_blank(&mut out);
+            }
+            let (mark, facts, tool, failed) = {
+                let b = block.borrow();
+                (
+                    b.mark(),
+                    b.facts(palette),
+                    b.tool_name().to_string(),
+                    b.is_error(),
+                )
             };
-            out.extend(trajectory::step_header_rows(
-                &trajectory::step_number(step, palette),
-                &prefix,
-                &content,
-                &block.borrow().peek_right(palette),
-                width,
-                parts
-                    .header_band
-                    .then(|| palette.bg_color("toolBandBg"))
-                    .flatten(),
-            ));
-            // A body that shows the end of the output folds its first rows,
-            // with the hint above; any other folds its last, hint below.
-            let folded = if parts.tail {
-                fold_rows_tail(parts.body, budget)
-            } else {
-                fold_rows(parts.body, budget)
-            };
-            if parts.tail && folded.hidden > 0 {
-                out.push(trajectory::earlier_fold_line(
-                    folded.hidden,
-                    width,
-                    agent,
-                    palette,
-                ));
-            }
-            for line in &folded.shown {
-                out.push(trajectory::rail_line(line, width, agent, palette));
-            }
-            if !parts.tail && folded.hidden > 0 {
-                out.push(trajectory::fold_line(folded.hidden, width, agent, palette));
-            }
-            // A settled agent's own calls: the failed ones in peek, every one
-            // at the full stop, on the agent's rail.
-            if agent {
-                let full = self.view == ToolOutputView::Full;
+            out.extend(tool_row::tool_rows(0, mark, &header, facts, w, palette));
+
+            let mut shown_body = false;
+            if tool == "Agent" {
                 for sub in block.borrow().settled_sub_steps() {
                     if full || sub.failure.is_some() {
-                        let line = outline::sub_step_line(step, &sub, palette);
-                        out.extend(trajectory::sub_step_rows(&line, width, full, palette));
+                        out.extend(sub_step_rows(&sub, w, palette));
+                        shown_body = true;
                     }
                 }
             }
-            // The rows that are not output close the step, never folded.
-            for line in &parts.footer {
-                out.push(trajectory::rail_line(line, width, agent, palette));
-            }
+            let body = fold_body(
+                parts.body,
+                parts.tail,
+                parts.footer,
+                &tool,
+                failed,
+                full,
+                w,
+                palette,
+            );
+            shown_body |= !body.is_empty();
+            out.extend(body);
+            shown_body |= !parts.images.is_empty();
             out.extend(parts.images);
+            spaced = !shown_body;
         }
         out
     }

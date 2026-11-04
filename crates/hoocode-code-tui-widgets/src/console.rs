@@ -1,45 +1,42 @@
-//! The Mission Control console (M7, spec §4 d1–d10): the thick block that
-//! replaces the comms frame for every picker. The title names the console
-//! and its count (`HANGAR · /model  3 ships`); an optional query row carries
-//! `▸ text`; each row marks the selection with accent `›` on the selection
-//! band; the hint row sits in the foot edge.
+//! The picker console: the pane every picker draws (declutter spec v2.4,
+//! drawn by [`Pane`]). The console name `Models · /model` splits into the
+//! title chip and the dim command; the tabs, count and right label follow as
+//! facts. Rows mark the selection with ` › ` on the selection background;
+//! the query is the pane's input row at the bottom; the hint row is last.
 //!
-//! The chrome is the shared card chrome ([`render_chrome`]: thick [`Block`]);
-//! the frame defaults to the `you` token (spec §2.4: console frames that
-//! take keys). Rows, query and hint arrive as styled [`Line`]s from the
-//! [`Palette`]; this module adds only the marker, the gutter, the band and
-//! the scrolling window.
+//! Rows, query and hint arrive as styled [`Line`]s; this module only maps
+//! them onto the pane. The picker keeps all behaviour (keys, filtering,
+//! events).
 
-use hoocode_tui_ratatui::{
-    bold, chrome_title_budget, render_chrome, truncate_line, Chrome, Line, Palette, Span, Style,
-};
-use hoocode_tui_util::visible_width;
+use hoocode_tui_ratatui::{Line, Span};
 
-/// The `›` marker every console flags its selected row with (accent, spec
-/// §2.4). Unselected rows carry a blank gutter of the same width.
-pub const CONSOLE_CURSOR: &str = "› ";
+use crate::pane::{hint_line, input_line, Chip, Pane, PaneStyle, PANE_CURSOR};
+
+/// The ` › ` marker every console flags its selected row with (accent).
+/// Unselected rows carry a blank gutter of the same width.
+pub const CONSOLE_CURSOR: &str = PANE_CURSOR;
 
 /// The blank gutter of an unselected console row.
 pub fn console_gutter() -> String {
-    " ".repeat(visible_width(CONSOLE_CURSOR))
+    crate::pane::gutter()
 }
 
-/// A console: the title (name + count), optional query, selectable rows
-/// with a scrolling window, and the hint foot. `top` rows sit above the
-/// query (scope lines, headers); `bottom` rows below the list (footers,
-/// errors, detail lines). The picker keeps all behaviour (keys, filtering,
-/// events); this only draws.
+/// A console: the title (name + count), selectable rows with a scrolling
+/// window, the optional query (input) row and the hint row. `top` rows sit
+/// above the list (scope lines, headers); `bottom` rows below it (footers,
+/// errors, detail lines).
 #[derive(Debug, Clone)]
 pub struct Console {
-    /// `HANGAR · /model`.
+    /// `Models · /model`: the part before ` · ` is the title chip, the rest
+    /// the dim command.
     pub name: String,
-    /// `3 ships` (empty when the console counts nothing).
+    /// `3 models` (empty when the console counts nothing).
     pub count: String,
-    /// Rows above the query.
+    /// Rows above the list.
     pub top: Vec<Line<'static>>,
-    /// The `▸ text` query row (see [`query_row`]); none without a query.
+    /// The query row's content (see [`query_row`]); none without a query.
     pub query: Option<Line<'static>>,
-    /// The selectable rows (content only; marker and band added here).
+    /// The selectable rows (content only; gutter and marker added here).
     pub rows: Vec<Line<'static>>,
     /// The selected row's index into [`Console::rows`]; none when empty.
     pub selected: Option<usize>,
@@ -48,27 +45,34 @@ pub struct Console {
     pub max_visible: Option<usize>,
     /// Rows below the list.
     pub bottom: Vec<Line<'static>>,
-    /// The hint row, drawn in the foot edge.
+    /// The hint row, drawn last.
     pub hint: Line<'static>,
-    /// The right label on the top edge (`/tasks · ctrl+g`); empty draws nothing.
+    /// A label after the count (`/tasks · ctrl+g`); empty draws nothing.
     pub right: Line<'static>,
-    /// Layer tabs on the top edge between the name and the count
-    /// (CONTROLS' `plain ctrl alt`); empty draws nothing.
+    /// Layer tabs between the name and the count (the Keys pane's `plain ctrl
+    /// alt`); empty draws nothing.
     pub tabs: Line<'static>,
     /// How the tabs join the name.
     pub tabs_join: TabsJoin,
-    /// The frame colour; the `you` token when `None`.
-    pub frame: Option<Style>,
+    /// The title chip's look.
+    pub chip: Chip,
+    /// The selected row's detail: a column beside the list from
+    /// [`SPLIT_MIN_WIDTH`](crate::pane::SPLIT_MIN_WIDTH) columns, stacked
+    /// under it when narrower. Empty draws none.
+    pub detail: Vec<Line<'static>>,
+    /// The list column's width in a split (about a third when `None`).
+    pub list_width: Option<usize>,
 }
 
-/// What sits between a console's name and its tabs on the top edge.
+/// What sits between a console's name and its tabs on the title row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabsJoin {
-    /// Three spaces (CONTROLS' `plain ctrl alt`).
+    /// Three spaces (the Keys pane's `plain ctrl alt`).
     Gap,
-    /// A frame-coloured ` ━ ` (FLIGHT PLAN's `FLIGHT PLAN ━ [Plan 2/5] …`).
+    /// Two spaces (the task panel's tab strip).
     Edge,
-    /// One space: the narrow form of [`TabsJoin::Edge`].
+    /// Two spaces: kept for the task panel's narrowing steps, which now
+    /// draw like [`TabsJoin::Edge`].
     Space,
 }
 
@@ -88,166 +92,105 @@ impl Console {
             right: Line::raw(""),
             tabs: Line::raw(""),
             tabs_join: TabsJoin::Gap,
-            frame: None,
+            chip: Chip::Accent,
+            detail: Vec::new(),
+            list_width: None,
         }
     }
 
-    /// The cells [`Console::tabs`] may take in the top edge at `width`:
-    /// what the edge leaves beside the right label, less the name, the join
-    /// and the count. Wider tabs are cut with `…`.
+    /// The cells [`Console::tabs`] may take on the title row at `width`:
+    /// the title budget less the name, the join, the count and the right
+    /// label. Wider tabs are cut with `…`.
     pub fn tabs_budget(&self, width: usize) -> usize {
-        let fixed = Line::from(self.title_spans(&Palette::current(), Line::raw("x"))).width() - 1;
-        chrome_title_budget(&self.right, width).saturating_sub(fixed)
+        let pane = self.title_pane(Line::raw("x"));
+        let fixed = pane.title_width(width).saturating_sub(1);
+        pane.title_budget(width).saturating_sub(fixed)
     }
 
-    /// The title spans: name, then the tabs (when any) after their join,
-    /// then the count.
-    fn title_spans(&self, pal: &Palette, tabs: Line<'static>) -> Vec<Span<'static>> {
-        let frame = self.frame.unwrap_or_else(|| pal.you());
-        let mut spans = Vec::new();
-        if !self.name.is_empty() {
-            spans.push(Span::styled(self.name.clone(), bold(frame)));
-        }
+    /// The pane carrying only the title: chip, command, then the facts
+    /// (tabs, count, right label).
+    fn title_pane(&self, tabs: Line<'static>) -> Pane {
+        let st = PaneStyle::current();
+        let (title, command) = match self.name.split_once(" · ") {
+            Some((title, command)) => (title.to_string(), command.to_string()),
+            None => (self.name.clone(), String::new()),
+        };
+        let mut facts: Vec<Span<'static>> = Vec::new();
         if tabs.width() > 0 {
-            // No name, no join: the tabs start the title.
-            if !self.name.is_empty() {
-                match self.tabs_join {
-                    // CONTROLS (spec d9): the layer tabs read between the name
-                    // and the count (`CONTROLS · ?   plain   ctrl   alt   N bindings`).
-                    TabsJoin::Gap => spans.push(Span::raw("   ".to_string())),
-                    TabsJoin::Edge => {
-                        spans.push(Span::raw(" "));
-                        spans.push(Span::styled("━", frame));
-                        spans.push(Span::raw(" "));
-                    }
-                    TabsJoin::Space => spans.push(Span::raw(" ")),
-                }
+            // The pane puts two spaces before the facts; the gap join adds one.
+            if self.tabs_join == TabsJoin::Gap && !title.is_empty() {
+                facts.push(Span::raw(" "));
             }
-            spans.extend(tabs.spans);
+            facts.extend(tabs.spans);
         }
         if !self.count.is_empty() {
-            spans.push(Span::styled(format!("  {}", self.count), bold(frame)));
+            if !facts.is_empty() {
+                facts.push(Span::raw("  "));
+            }
+            facts.push(Span::styled(self.count.clone(), st.dim_style()));
         }
-        spans
+        if self.right.width() > 0 {
+            if !facts.is_empty() {
+                facts.push(Span::raw("  "));
+            }
+            facts.extend(self.right.spans.iter().cloned());
+        }
+        let mut pane = Pane::new(title);
+        pane.command = command;
+        pane.chip = self.chip;
+        pane.facts = Line::from(facts);
+        pane
     }
 
-    /// Draws the console at `width` columns. Narrow frames draw bare, like
-    /// the card chrome.
+    /// The cells a row's content may use at `width` columns, given the
+    /// detail already set on the console (a split narrows the list).
+    pub fn row_width(&self, width: usize) -> usize {
+        let mut pane = Pane::new("");
+        pane.detail = self.detail.clone();
+        pane.list_width = self.list_width;
+        pane.row_width(width)
+    }
+
+    /// Draws the console at `width` columns.
     pub fn render(&self, width: usize) -> Vec<String> {
-        let pal = Palette::current();
-        let frame = self.frame.unwrap_or_else(|| pal.you());
-        let title = Line::from(self.title_spans(&pal, self.tabs.clone()));
-        let (rows, selected) = window_rows(&self.rows, self.selected, self.max_visible);
-        let mut body = self.top.clone();
-        if let Some(query) = &self.query {
-            body.push(query.clone());
-        }
-        body.extend(
-            rows.iter()
-                .zip(rows_visible(rows.len(), selected))
-                .map(|(line, is_selected)| console_row(line, is_selected, &pal, width)),
-        );
-        body.extend(self.bottom.iter().cloned());
-        render_chrome(
-            &Chrome {
-                frame,
-                title,
-                right: self.right.clone(),
-                foot: self.hint.clone(),
-            },
-            &body,
-            width,
-        )
+        let mut pane = self.title_pane(self.tabs.clone());
+        pane.top = self.top.clone();
+        pane.rows = self.rows.clone();
+        pane.selected = self.selected;
+        pane.max_visible = self.max_visible;
+        pane.bottom = self.bottom.clone();
+        pane.input = self.query.clone();
+        pane.hint = self.hint.clone();
+        pane.detail = self.detail.clone();
+        pane.list_width = self.list_width;
+        pane.render(width)
     }
 }
 
-/// `true` per visible row: only the selected row.
-fn rows_visible(len: usize, selected: Option<usize>) -> Vec<bool> {
-    (0..len).map(|i| Some(i) == selected).collect()
-}
-
-/// The visible window of `rows`: at most `max` rows centred on `selected`
-/// (the head or tail when the selection sits at an end). No cap without
-/// `max`. The selection is remapped into the window (clamped away when it
-/// points past the rows).
-fn window_rows(
-    rows: &[Line<'static>],
-    selected: Option<usize>,
-    max: Option<usize>,
-) -> (Vec<Line<'static>>, Option<usize>) {
-    let len = rows.len();
-    let Some(max) = max.filter(|&max| max > 0 && len > max) else {
-        let sel = selected.filter(|&s| s < len);
-        return (rows.to_vec(), sel);
-    };
-    let sel = selected.map(|s| s.min(len.saturating_sub(1)));
-    let start = sel
-        .map(|s| s.saturating_sub(max / 2).min(len - max))
-        .unwrap_or(0);
-    let window = rows[start..start + max].to_vec();
-    (window, sel.map(|s| s.saturating_sub(start)))
-}
-
-/// One list row: the accent `›` marker (or the blank gutter) plus the
-/// picker's content. The selected row carries the selection band, padded to
-/// the inner width.
-fn console_row(line: &Line<'static>, selected: bool, pal: &Palette, width: usize) -> Line<'static> {
-    let mut spans = if selected {
-        vec![Span::styled(CONSOLE_CURSOR, pal.acc())]
-    } else {
-        vec![Span::raw(console_gutter())]
-    };
-    spans.extend(line.spans.iter().cloned());
-    let mut row = Line::from(spans);
-    if selected {
-        let band = pal.band();
-        for span in &mut row.spans {
-            span.style = span.style.patch(band);
-        }
-        let inner = width.saturating_sub(2);
-        let used: usize = row.spans.iter().map(|s| s.width()).sum();
-        if used < inner {
-            row.spans.push(Span::styled(" ".repeat(inner - used), band));
-        }
-    }
-    truncate_line(&row, width.saturating_sub(2).max(1))
-}
-
-/// The `▸ text` query row, with a warn caret while the picker has focus.
+/// The query row's content: the typed text, or the dim `filter`
+/// placeholder; a caret while the picker has focus.
 pub fn query_row(text: &str, caret: bool) -> Line<'static> {
-    let pal = Palette::current();
-    let mut spans = vec![
-        Span::styled("▸", pal.acc()),
-        Span::raw(" "),
-        Span::raw(text.to_string()),
-    ];
-    if caret {
-        spans.push(Span::styled("▏", pal.warn()));
-    }
-    Line::from(spans)
+    input_line(text, "filter", caret)
 }
 
-/// One hints row: dim keys plus faint descriptions, joined by `·`.
+/// One hints row: keys in normal text, dim actions, joined by ` · `.
 pub fn hints(hints: &[(&str, &str)]) -> Line<'static> {
-    let pal = Palette::current();
-    let mut spans = Vec::new();
-    for (i, (key, description)) in hints.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(" · ", pal.faint()));
-        }
-        spans.push(Span::styled((*key).to_string(), pal.dim()));
-        spans.push(Span::styled(format!(" {description}"), pal.faint()));
-    }
-    Line::from(spans)
+    hint_line(hints)
+}
+
+/// The full key list a picker shows after `f1`: every `(key, action)`,
+/// four to a row, as hint rows.
+pub fn help_rows(all: &[(&str, &str)]) -> Vec<Line<'static>> {
+    all.chunks(crate::pane::MAX_HINTS).map(hint_line).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hoocode_tui_ratatui::flatten;
+    use hoocode_tui_util::{strip_vt_control_characters, visible_width};
 
     fn console() -> Console {
-        let mut console = Console::new("HANGAR · /model", "3 ships");
+        let mut console = Console::new("Models · /model", "3 models");
         console.rows = vec![
             Line::raw("mock-large  mock  200k"),
             Line::raw("mock-fast  mock  128k"),
@@ -259,7 +202,13 @@ mod tests {
         console
     }
 
-    /// Every emitted line fits its width, even where the frame has no room.
+    fn plain(rows: &[String]) -> Vec<String> {
+        rows.iter()
+            .map(|row| strip_vt_control_characters(row))
+            .collect()
+    }
+
+    /// Every emitted line fits its width, even where the pane has no room.
     #[test]
     fn console_rows_fit() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
@@ -276,57 +225,44 @@ mod tests {
     }
 
     #[test]
-    fn selected_row_carries_the_marker_and_band() {
+    fn selected_row_carries_the_marker() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
-        let rows = console().render(40);
+        let rows = plain(&console().render(40));
         let selected = rows.iter().find(|r| r.contains("mock-fast")).unwrap();
-        assert!(selected.contains('›'), "{selected:?} marks the selection");
-        let plain: String = hoocode_tui_util::strip_vt_control_characters(selected)
-            .chars()
-            .collect();
-        assert!(plain.starts_with("┃› mock-fast"), "{plain:?}");
+        assert!(selected.starts_with(" › mock-fast"), "{selected:?}");
         let unselected = rows.iter().find(|r| r.contains("mock-large")).unwrap();
-        assert!(!unselected.contains('›'), "{unselected:?} has no marker");
-    }
-
-    #[test]
-    fn window_centres_on_the_selection() {
-        let rows: Vec<Line<'static>> = (0..10).map(|i| Line::raw(format!("row {i}"))).collect();
-        let (window, selected) = window_rows(&rows, Some(7), Some(4));
-        assert_eq!(window.len(), 4);
-        assert_eq!(selected, Some(2));
-        assert_eq!(flatten(&window[2]), "row 7");
-        let (head, selected) = window_rows(&rows, Some(0), Some(4));
-        assert_eq!(selected, Some(0));
-        assert_eq!(flatten(&head[0]), "row 0");
-        let (tail, selected) = window_rows(&rows, Some(9), Some(4));
-        assert_eq!(selected, Some(3));
-        assert_eq!(flatten(&tail[3]), "row 9");
-        // No cap without max; a past-the-end selection clamps away.
-        let (all, selected) = window_rows(&rows, Some(99), None);
-        assert_eq!(all.len(), 10);
-        assert_eq!(selected, None);
+        assert!(unselected.starts_with("   mock-large"), "{unselected:?}");
     }
 
     #[test]
     fn title_names_the_console_and_its_count() {
-        use hoocode_tui_util::strip_vt_control_characters;
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
-        // ANSI splits styled runs: strip it before searching the text.
-        let rows: Vec<String> = console()
-            .render(100)
-            .iter()
-            .map(|row| strip_vt_control_characters(row))
-            .collect();
+        let rows = plain(&console().render(100));
         assert!(
-            rows[0].contains("HANGAR · /model  3 ships"),
+            rows[0].starts_with("  Models  /model  3 models"),
             "{:?}",
             rows[0]
         );
+        // The query is the input row, above the hint row.
+        assert!(rows[rows.len() - 2].starts_with(" › filter"), "{rows:?}");
         assert!(
             rows[rows.len() - 1].contains("esc close"),
             "{:?}",
             rows[rows.len() - 1]
         );
+    }
+
+    #[test]
+    fn tabs_budget_leaves_room_for_the_title() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let mut console = Console::new("FLIGHT PLAN", "");
+        console.tabs_join = TabsJoin::Edge;
+        let budget = console.tabs_budget(40);
+        console.tabs = Line::raw("x".repeat(budget));
+        let rows = plain(&console.render(40));
+        assert!(!rows[0].contains('…'), "{:?}", rows[0]);
+        console.tabs = Line::raw("x".repeat(budget + 1));
+        let rows = plain(&console.render(40));
+        assert!(rows[0].contains('…'), "{:?}", rows[0]);
     }
 }

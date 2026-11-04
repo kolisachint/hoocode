@@ -1,36 +1,15 @@
 
- 01 ● Read src/wrap.rs                                                   2 lines
-   ┊     1 line one
-   ┊     2 line two
-
- 02 ⊗ Shell  cargo test -p hoocode-code-tui-widgets           HIT  exit 3 · 0.1s
-   ┊    boom
-   ┊    Command exited with code 3
+ ● Read src/wrap.rs  2 lines
+ ⊗ Shell cargo test -p hoocode-code-tui-widgets  exit 3 · 0.1s
+    boom
 --- styles ---
-r1 c1-2 fg=#f0c674 bold
-r1 c4-5 fg=#b5bd68 bg=#16161f
-r1 c6-9 fg=#e5e5e7 bg=#16161f bold
-r1 c10 bg=#16161f
-r1 c11-21 fg=#5cc8bb bg=#16161f
-r1 c73-79 fg=#989898
-r2 c3 fg=#989898
-r2 c6-7 bg=#16161f
-r2 c8-9 fg=#989898 bg=#16161f
-r2 c10 bg=#16161f
-r2 c11-18 fg=#989898 bg=#16161f
-r3 c3 fg=#989898
-r3 c6-7 bg=#16161f
-r3 c8-9 fg=#989898 bg=#16161f
-r3 c10 bg=#16161f
-r3 c11-18 fg=#989898 bg=#16161f
-r5 c1-2 fg=#f0c674 bold
-r5 c4-5 fg=#d58181
-r5 c6-10 fg=#e5e5e7 bold
-r5 c61-65 fg=#d58181 bold inverse
-r5 c67-72 fg=#989898
-r5 c74 fg=#989898
-r5 c76-79 fg=#989898
-r6 c3 fg=#989898
-r6 c8-11 fg=#989898
-r7 c3 fg=#989898
-r7 c8-33 fg=#989898
+r1 c1 fg=#b5bd68
+r1 c3-6 fg=#e5e5e7 bold
+r1 c8-18 fg=#e5e5e7
+r1 c21-27 fg=#989898
+r2 c1 fg=#d58181
+r2 c3-7 fg=#e5e5e7 bold
+r2 c9-46 fg=#e5e5e7
+r2 c49-54 fg=#d58181
+r2 c55-61 fg=#989898
+r3 c4-7 fg=#989898
