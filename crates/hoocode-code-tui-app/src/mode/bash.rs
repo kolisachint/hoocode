@@ -11,7 +11,6 @@ impl Mode {
     /// and would see no transition, so the prefix is reset too.
     pub(super) fn leave_bash_mode(&mut self) {
         self.is_bash_mode = false;
-        self.update_editor_border_color();
         self.update_editor_prompt_prefix();
     }
 

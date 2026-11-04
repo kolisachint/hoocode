@@ -57,14 +57,6 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
         description: "Set session display name",
     },
     BuiltinSlashCommand {
-        name: "color",
-        description: "Cycle the hull paint: /color [none|parity|cyan|violet|lime|red]",
-    },
-    BuiltinSlashCommand {
-        name: "chrome",
-        description: "Set how much screen the chrome gets: /chrome <full|compact>",
-    },
-    BuiltinSlashCommand {
         name: "session",
         description: "Show session info and stats",
     },

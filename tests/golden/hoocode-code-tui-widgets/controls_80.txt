@@ -1,4 +1,4 @@
-┏━ CONTROLS · ?   plain   ctrl   alt  118 bindings ━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
+┏━ CONTROLS · ?   plain   ctrl   alt  114 bindings ━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
 ┃▸                                                                             ┃
 ┃  up  Move cursor up                                                          ┃
 ┃  down  Move cursor down                                                      ┃
@@ -55,8 +55,6 @@
 ┃  alt+l  Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)        ┃
 ┃  shift+alt+l  Cycle task panel view backward                                 ┃
 ┃  ctrl+g  Show or hide the task panel                                         ┃
-┃  alt+z  Toggle chrome density (full ↔ compact)                               ┃
-┃  shift+alt+z  Toggle chrome density (full ↔ compact), backward               ┃
 ┃  pageup  Scroll the transcript up a page (pins the view)                     ┃
 ┃  pagedown  Scroll the transcript down a page                                 ┃
 ┃  ctrl+home  Jump to the start of the transcript                              ┃
@@ -68,8 +66,6 @@
 ┃  shift+down  Scroll down a line (pinned view)                                ┃
 ┃  alt+h  Resume a session from history                                        ┃
 ┃  alt+w  Change working directory (move to another repo without quitting)     ┃
-┃  alt+c  Cycle the session chip's color                                       ┃
-┃  shift+alt+c  Cycle the session chip's color backward                        ┃
 ┃  alt+s  Open settings                                                        ┃
 ┃  alt+k  Show keyboard shortcuts                                              ┃
 ┃  up  Scroll up a line (pinned view)                                          ┃
@@ -344,15 +340,7 @@ r108 c0 fg=#9b8cff
 r108 c79 fg=#9b8cff
 r109 c0 fg=#9b8cff
 r109 c79 fg=#9b8cff
-r110 c0 fg=#9b8cff
-r110 c79 fg=#9b8cff
-r111 c0 fg=#9b8cff
-r111 c79 fg=#9b8cff
-r112 c0 fg=#9b8cff
-r112 c79 fg=#9b8cff
-r113 c0 fg=#9b8cff
-r113 c79 fg=#9b8cff
-r114 c0-1 fg=#9b8cff
-r114 c3-37 fg=#989898
-r114 c39-75 fg=#9b8cff
-r114 c78-79 fg=#9b8cff
+r110 c0-1 fg=#9b8cff
+r110 c3-37 fg=#989898
+r110 c39-75 fg=#9b8cff
+r110 c78-79 fg=#9b8cff

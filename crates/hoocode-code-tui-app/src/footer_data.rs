@@ -31,11 +31,9 @@ struct State {
     available_provider_count: usize,
     active_mode: String,
     /// `skip_permissions` is on (`--skip-permissions`, the env var or the
-    /// config): every tool runs without a prompt. The HUD and footer say so.
+    /// config): every tool runs without a prompt.
     skip_permissions: bool,
     subagent_enabled: bool,
-    /// The hull paint (`/color`, M8e5); `None` is unpainted.
-    hull_paint: Option<crate::hull_paint::HullPaint>,
     /// How often the git HEAD watcher polls.
     git_poll: Duration,
 }
@@ -74,7 +72,6 @@ impl FooterDataProvider {
                     active_mode: "build".into(),
                     skip_permissions: false,
                     subagent_enabled: false,
-                    hull_paint: None,
                     git_poll: poll,
                 }),
                 generation: AtomicU64::new(0),
@@ -157,15 +154,6 @@ impl FooterDataProvider {
 
     pub fn set_active_mode(&self, mode: &str) {
         self.state().active_mode = mode.to_string();
-    }
-
-    /// The hull paint (`/color`, M8e5); `None` is unpainted.
-    pub fn get_hull_paint(&self) -> Option<crate::hull_paint::HullPaint> {
-        self.state().hull_paint
-    }
-
-    pub fn set_hull_paint(&self, paint: Option<crate::hull_paint::HullPaint>) {
-        self.state().hull_paint = paint;
     }
 
     pub fn get_subagent_enabled(&self) -> bool {

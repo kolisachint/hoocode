@@ -47,8 +47,6 @@ const GLOBAL_SCOPE: &[&str] = &[
     "app.view.cycleForward",
     "app.view.cycleBackward",
     "app.thinking.toggle",
-    "app.chrome.cycleForward",
-    "app.chrome.cycleBackward",
     "app.scroll.pageUp",
     "app.scroll.pageDown",
     "app.scroll.top",
@@ -70,8 +68,6 @@ const GLOBAL_SCOPE: &[&str] = &[
     "app.session.fork",
     "app.session.resume",
     "app.session.changeDirectory",
-    "app.session.color.cycleForward",
-    "app.session.color.cycleBackward",
     "app.settings.open",
     "app.hotkeys.open",
     "app.mode.cycleForward",
@@ -315,8 +311,6 @@ fn gives_every_action_at_least_one_key_a_non_kitty_terminal_can_send() {
             "app.thinking.cycleBackward",
             "app.view.cycleBackward",
             "app.tasks.cycleBackward",
-            "app.chrome.cycleBackward",
-            "app.session.color.cycleBackward",
             "app.tree.filter.cycleBackward",
         ]
     );
@@ -342,8 +336,6 @@ fn pins_which_actions_a_terminal_must_send_alt_to_reach() {
     let mut expected: Vec<&str> = vec![
         "tui.editor.redo",
         "app.clipboard.copyMessage",
-        "app.chrome.cycleForward",
-        "app.chrome.cycleBackward",
         "tui.editor.jumpBackward",
         "tui.editor.deleteWordForward",
         "tui.editor.yankPop",
@@ -361,8 +353,6 @@ fn pins_which_actions_a_terminal_must_send_alt_to_reach() {
         "app.input.voiceTranscribe",
         "app.session.resume",
         "app.session.changeDirectory",
-        "app.session.color.cycleForward",
-        "app.session.color.cycleBackward",
         "app.settings.open",
         "app.hotkeys.open",
         "app.mode.cycleBackward",
@@ -480,19 +470,9 @@ const DIALS: &[(&str, &str, &str)] = &[
         "app.view.cycleBackward",
     ),
     (
-        "session colour",
-        "app.session.color.cycleForward",
-        "app.session.color.cycleBackward",
-    ),
-    (
         "task ledger",
         "app.tasks.cycleForward",
         "app.tasks.cycleBackward",
-    ),
-    (
-        "chrome",
-        "app.chrome.cycleForward",
-        "app.chrome.cycleBackward",
     ),
 ];
 
@@ -537,7 +517,7 @@ fn gives_each_dial_a_letter_no_other_dial_claims() {
 
 #[test]
 fn leaves_every_dial_reachable_on_a_terminal_that_does_not_send_alt() {
-    let with_slash_command = ["agent mode", "model", "session colour", "chrome"];
+    let with_slash_command = ["agent mode", "model"];
     let m = manager();
     let stranded: Vec<&str> = DIALS
         .iter()
@@ -578,9 +558,8 @@ fn families() -> Vec<(&'static str, Regex)> {
         ("Compose", r"^app\.(editor\.external|input\.voiceTranscribe|clipboard\.|message\.)"),
         ("Steer", r"^app\.(mode|model)\.|^app\.thinking\.cycle"),
         ("Read", r"^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|panel\.focus$)"),
-        ("Screen", r"^app\.chrome\."),
         ("Scroll", r"^app\.scroll\.(pageUp|pageDown|top|bottom|previousMessage|nextMessage|shiftLineUp|shiftLineDown|search)$"),
-        ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)"),
+        ("Go", r"^app\.(session\.(resume|tree|new|fork|changeDirectory)|settings|hotkeys)"),
         (
             "Overlays",
             r"^app\.(options\.|subagent\.(attach|detach)$|panel\.(nextTab|prevTab|up|down|open|cancel|exit)$|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)",

@@ -32,7 +32,7 @@ use hoocode_tui_components::{Spacer, Text};
 use hoocode_tui_render::Container;
 
 use super::*;
-use crate::footer::sanitize_status_text;
+use crate::transient_lines::sanitize_status_text;
 
 /// The error text the session gives a streak it cancelled (`abort_retry`).
 pub(crate) const RETRY_CANCELLED: &str = "Retry cancelled";

@@ -16,7 +16,6 @@ use hoocode_code_tui_theme::get_available_themes;
 use hoocode_code_tui_theme::set_theme;
 use hoocode_tui_components::FrameBorderStyle;
 use hoocode_tui_images::get_capabilities;
-use hoocode_tui_render::Component;
 
 use crate::input_frame::set_input_frame_border;
 
@@ -190,7 +189,6 @@ impl Mode {
             }
             SettingsChange::AutoCompact(enabled) => {
                 self.session.set_auto_compaction_enabled(enabled);
-                self.footer.borrow_mut().set_auto_compact_enabled(enabled);
             }
             SettingsChange::ToolEnabled { name, enabled } => {
                 // Persisted for future sessions (the startup denylist).
@@ -288,8 +286,6 @@ impl Mode {
             SettingsChange::ThinkingLevel(level) => {
                 if let Some(level) = parse_thinking_level(&level) {
                     self.session.set_thinking_level(level);
-                    self.footer.borrow_mut().invalidate();
-                    self.update_editor_border_color();
                 }
             }
             SettingsChange::Theme(name) => {

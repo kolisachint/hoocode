@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 use std::time::Instant;
 
-use crate::comms_frame::MissionOutcome;
+use crate::status_line::{TurnOutcome, TurnResult};
 use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{
     AssistantMessage, Content, ImageContent, StopReason, UserContent, UserMessage,
@@ -44,7 +44,7 @@ use hoocode_tui_components::{Loader, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_render::ComponentHandle;
 
 use crate::expandable_text::{Expandable, ExpandableText};
-use crate::hull_paint::HullPaint;
+
 use crate::notification_panel::NotificationKind;
 use crate::resource_display::{show_loaded_resources_with_details, startup_details_open};
 use crate::scroll_view;
@@ -823,6 +823,15 @@ impl Mode {
         listing.columns = Some(self.size.get().0 as usize);
         listing.verbose = self.verbose;
         listing.expanded = self.tool_output_view == ToolOutputView::Full;
+        // The start screen's second line counts what loaded.
+        listing.summary_in_header = true;
+        *self.start_facts.borrow_mut() = crate::start_header::StartFacts {
+            cwd: crate::resource_display::format_display_path(
+                &self.session.cwd().to_string_lossy(),
+            ),
+            skills: listing.skills.len(),
+            agents: listing.agents.len(),
+        };
         let loaded = show_loaded_resources_with_details(&listing, false, true);
         for component in loaded.components {
             self.add_to_chat(component);
@@ -830,7 +839,7 @@ impl Mode {
         self.transcript.resource_details = loaded.details;
     }
 
-    /// Whether the startup header and the resource details are open: under
+    /// Whether the resource details are open: under
     /// `verbose`, or at the full stop. Peek and outline fold them.
     pub(super) fn startup_details_open(&self) -> bool {
         startup_details_open(self.verbose, self.tool_output_view)
@@ -899,10 +908,10 @@ impl Mode {
         }
         self.transcript
             .begin_mission(text, skill, self.tool_output_view);
-        // The comms title reads the new mission until it settles. An attached
+        // The status line drops the last result for the new turn. An attached
         // run's missions are not the session's, so they leave it alone.
         if !self.drawing_run_view() {
-            self.mission_outcome.borrow_mut().take();
+            self.last_turn = None;
         }
         self.refresh_flight_stats();
     }
@@ -1276,13 +1285,6 @@ impl Mode {
     /// `renderInitialMessages`: the loaded session's transcript, and how often
     /// it was compacted.
     pub(super) fn render_initial_messages(&mut self) {
-        // The hull paint lives in the session file; the provider is only
-        // its render cache (M8e5).
-        let paint = self
-            .session
-            .hull_paint()
-            .and_then(|name| HullPaint::parse(&name).ok().flatten());
-        self.footer_data.set_hull_paint(paint);
         let messages = self.session.messages();
         // The plan is the session's own: rebuilt from its last TodoWrite, so a
         // resumed or reloaded session shows the plan it ended with. That call
@@ -1299,7 +1301,6 @@ impl Mode {
             })
             .collect();
         hoocode_code_tools_optin::restore_plan(hoocode_code_task_store::task_store(), &branch);
-        self.update_editor_border_color();
         self.render_session_context(&messages, true);
         let compactions = self
             .session
@@ -1681,11 +1682,9 @@ impl Mode {
         if persist {
             self.session.settings().set_tool_output_view(view);
         }
-        self.footer.borrow_mut().set_tool_output_view(view);
         self.task_panel
             .borrow_mut()
             .set_outline(view == ToolOutputView::Outline);
-        self.comms.borrow_mut().set_tool_output_view(view);
         // Outline hides the peek-only rows (landing lines, message bodies)
         // and switches the mission headers to their flight-log rows.
         self.transcript
@@ -1737,9 +1736,8 @@ impl Mode {
         for component in &self.transcript.compaction_summaries {
             component.borrow_mut().set_expanded(peek);
         }
-        // The startup header and resource details open at full, fold at peek and outline.
+        // The resource details open at full, fold at peek and outline.
         let open = self.startup_details_open();
-        self.header.borrow_mut().set_expanded(open);
         if let Some(details) = &self.transcript.resource_details {
             details.borrow_mut().set_expanded(open);
         }
@@ -1807,9 +1805,9 @@ impl Mode {
             .is_some_and(super::attach::Attached::shows_run)
     }
 
-    /// Records how the mission that just settled ended, for the comms title
-    /// (LANDED, DID NOT LAND, ABORTED) until the next mission opens.
-    fn record_mission_outcome(&self, secs: f64) {
+    /// Records how the turn that just settled ended, for the status line's
+    /// left slot (`● done · 11s · 23k tokens`) until the next prompt.
+    fn record_mission_outcome(&mut self, secs: f64, tokens: u64) {
         // An attached run's history is drawn through the same turn rows. Its
         // missions are the run's, not the session's: they must not replace how
         // the session's own last mission ended (the title lost its "1 step"
@@ -1821,11 +1819,25 @@ impl Mode {
             return;
         };
         let flight = mission.flight.borrow();
-        *self.mission_outcome.borrow_mut() = Some(MissionOutcome {
-            mark: flight.mark,
-            secs,
-            steps: flight.steps,
-        });
+        let failed = flight.failure.is_some() || flight.reason.is_some();
+        let outcome = match flight.mark {
+            FlightMark::Aborted => TurnOutcome::Stopped,
+            FlightMark::DidNotLand if failed => TurnOutcome::Failed,
+            _ => TurnOutcome::Done,
+        };
+        let failed_calls = if outcome == TurnOutcome::Done {
+            flight.hits
+        } else {
+            0
+        };
+        let result = TurnResult {
+            outcome,
+            elapsed: std::time::Duration::from_secs_f64(secs.max(0.0)),
+            tokens,
+            failed_calls,
+        };
+        drop(flight);
+        self.last_turn = Some(result);
     }
 
     /// The per-turn row of a settled turn in a rebuilt transcript: the same
@@ -1867,14 +1879,14 @@ impl Mode {
             self.transcript
                 .land_mission(seq, input, output, cost, secs, stop);
             self.refresh_flight_stats();
-            self.record_mission_outcome(secs);
+            self.record_mission_outcome(secs, (input.max(0) + output.max(0)) as u64);
             // Landed here, with a row or silently: nothing more to print.
             if open {
                 return;
             }
         }
         self.refresh_flight_stats();
-        self.record_mission_outcome(secs);
+        self.record_mission_outcome(secs, (input.max(0) + output.max(0)) as u64);
         // Nothing was accounted: stay silent rather than print zeroes.
         if input <= 0 && output <= 0 {
             return;

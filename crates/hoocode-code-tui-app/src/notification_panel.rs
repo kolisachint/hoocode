@@ -8,6 +8,10 @@
 //! hoocode runs one timer; here the owner polls: [`NotificationPanel::poll`]
 //! expires what is due and [`NotificationPanel::deadline`] says when to poll
 //! next. The clock is injectable for tests.
+//!
+//! A notice with no body rows is one row: it shows in the status line's left
+//! slot ([`NotificationPanel::status_notice`]) and the band stays empty. A
+//! longer one is drawn here, above the prompt.
 
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -16,7 +20,7 @@ use hoocode_code_tui_theme::theme;
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_tui_render::Component;
 
-use crate::transmission::{transmission_component, TransmissionData, TOAST_WIDTH};
+use crate::status_line::{KeyHint, NoticeLevel, StatusNotice};
 use hoocode_tui_util::{apply_background_to_line, truncate_to_width, visible_width};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +78,24 @@ fn ink(color: &str, text: &str) -> String {
     }
 }
 
+/// The first-run notice when no model is signed in: the title and its two
+/// body rows.
+pub const NO_MODEL_NOTICE: (&str, [&str; 2]) = (
+    "Sign in to start",
+    [
+        "Run /login: a subscription or an API key.",
+        "Or set e.g. OPENAI_API_KEY and restart.",
+    ],
+);
+
+/// A title as one row: styling dropped, line breaks as spaces.
+fn one_line(text: &str) -> String {
+    hoocode_tui_util::strip_vt_control_characters(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 type Clock = Rc<dyn Fn() -> Instant>;
 
 pub struct NotificationPanel {
@@ -83,9 +105,9 @@ pub struct NotificationPanel {
     max_body_rows: Box<dyn Fn() -> usize>,
     clock: Clock,
     cache: Option<(usize, usize, Vec<String>)>,
-    /// Mission Control overlay mode (M8e4): the band goes quiet and the
-    /// newest notification floats top-right over the transcript instead.
-    overlay: bool,
+    /// The status line's left slot is free for a one-row notice (no turn
+    /// is running): such a notice shows there and the band stays empty.
+    status_slot_free: bool,
 }
 
 impl NotificationPanel {
@@ -108,7 +130,7 @@ impl NotificationPanel {
             max_body_rows: max_body_rows.unwrap_or_else(|| Box::new(|| MAX_BODY_ROWS)),
             clock,
             cache: None,
-            overlay: false,
+            status_slot_free: true,
         }
     }
 
@@ -221,48 +243,40 @@ impl NotificationPanel {
         (current.kind.ttl() + BODY_ROW * self.body_rows(current).len() as u32).min(MAX_TTL)
     }
 
-    /// Mission Control overlay mode (M8e4): `true` in fullscreen, where
-    /// the toast lines float over the transcript and the band stays empty.
-    pub fn set_overlay(&mut self, overlay: bool) {
-        self.overlay = overlay;
-        self.cache = None;
+    /// Whether the status line's left slot is free for a one-row notice:
+    /// false while a turn runs (`◉ working` keeps the slot), and the notice
+    /// is drawn in the band instead.
+    pub fn set_status_slot_free(&mut self, free: bool) {
+        if self.status_slot_free != free {
+            self.status_slot_free = free;
+            self.cache = None;
+            (self.request_render)();
+        }
     }
 
-    /// The newest notification as transmission toast lines (M8e4), `width`
-    /// cells wide: the title, its body rows, and the drain row. Empty when
-    /// nothing is up, or when the screen cannot frame a toast.
-    pub fn toast_lines(&self, width: usize) -> Vec<String> {
-        let Some(current) = self.queue.last() else {
-            return Vec::new();
+    /// The notice up now as a status-line notice, when it is one row (no
+    /// body). Its `note` (`shift+alt+m back`) becomes the key hint: the first
+    /// word the key, the rest what it does. The panel's own clock expires it.
+    pub fn status_notice(&self) -> Option<StatusNotice> {
+        let current = self
+            .queue
+            .first()
+            .filter(|n| n.body.is_empty() && self.status_slot_free)?;
+        let level = match current.kind {
+            NotificationKind::Info => NoticeLevel::Info,
+            NotificationKind::Warning => NoticeLevel::Warning,
         };
-        let render_width = width.min(TOAST_WIDTH);
-        if render_width < 12 {
-            return Vec::new();
+        let mut notice = StatusNotice::new(level, one_line(&current.title));
+        if let Some(note) = current
+            .note
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+        {
+            let (key, action) = note.split_once(' ').unwrap_or((note, ""));
+            notice.keys.push(KeyHint::new(key, action.trim()));
         }
-        // The head owns the clock: a toast still queued behind it has not
-        // started draining, so its bar is full.
-        let remaining = if self.queue.len() == 1 {
-            match self.deadline {
-                Some(deadline) => {
-                    let now = (self.clock)();
-                    let total = self.ttl(current).as_secs_f32().max(0.001);
-                    (deadline.saturating_duration_since(now).as_secs_f32() / total).clamp(0.0, 1.0)
-                }
-                None => 1.0,
-            }
-        } else {
-            1.0
-        };
-        let mut toast = transmission_component(
-            TransmissionData {
-                title: current.title.clone(),
-                body: current.body.clone(),
-                note: current.note.clone(),
-                remaining,
-            },
-            render_width,
-        );
-        toast.render(render_width as u16)
+        Some(notice)
     }
 
     fn arm(&mut self, from: Instant) {
@@ -302,7 +316,8 @@ impl Component for NotificationPanel {
         if width < 4 {
             return Vec::new();
         }
-        if self.overlay {
+        // One row: the status line shows it while its slot is free.
+        if current.body.is_empty() && self.status_slot_free {
             return Vec::new();
         }
         let rows = self.budget();

@@ -1,5 +1,6 @@
-  ◂◂ REWIND  43–61 of 78  55%  ↓ 3 new                                               PgUp/PgDn page
+ scrolled 43–61 of 78 · ↓ 3 new  esc live      peek · amber-harbor · claude-haiku-5-5 · 42% context
 --- styles ---
-r0 c0-1 inverse
-r0 c2-10 fg=#9b8cff inverse
-r0 c11-99 inverse
+r0 c1-32 fg=#989898
+r0 c33-35 fg=#e5e5e7
+r0 c36-40 fg=#989898
+r0 c47-98 fg=#989898

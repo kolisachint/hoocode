@@ -61,6 +61,9 @@ pub struct ResourceListing {
     pub verbose: bool,
     /// The tool output dial is at full (verbose opens the details as well).
     pub expanded: bool,
+    /// The start screen's header already counts the skills and agents: leave
+    /// the summary line (and its blank row) out.
+    pub summary_in_header: bool,
 }
 
 /// `localeCompare`, approximately: case-insensitive, then exact.
@@ -416,7 +419,9 @@ pub fn show_loaded_resources_with_details(
     }
 
     if show_listing {
-        out.push(handle(Spacer::new(1)));
+        if !listing.summary_in_header {
+            out.push(handle(Spacer::new(1)));
+        }
         let plural = |n: usize, s: &str, many: Option<&str>| {
             if n == 1 {
                 s.to_string()
@@ -471,7 +476,9 @@ pub fn show_loaded_resources_with_details(
             .map(|f| f.tokens.unwrap_or(0))
             .sum();
 
-        if cells.is_empty() && context_names.is_empty() {
+        if listing.summary_in_header {
+            // The start header carries the counts.
+        } else if cells.is_empty() && context_names.is_empty() {
             out.push(handle(Text::new(
                 t.fg("dim", "no project resources loaded"),
                 0,

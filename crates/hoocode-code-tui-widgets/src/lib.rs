@@ -19,7 +19,6 @@ pub mod outline;
 pub mod read_output;
 pub mod render_utils;
 pub mod selected_row_list;
-pub mod session_chip;
 pub mod skill_block;
 pub mod task_panel;
 pub mod tool_chain;

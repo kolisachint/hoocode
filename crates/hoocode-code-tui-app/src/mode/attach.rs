@@ -236,7 +236,7 @@ impl Mode {
     pub(super) fn prompt_component(&self) -> ComponentHandle {
         match &self.attached {
             Some(attached) => as_component(&attached.prompt),
-            None => as_component(&self.comms),
+            None => as_component(&self.prompt_row),
         }
     }
 
@@ -909,7 +909,6 @@ fn drop_covered(queued: Vec<Value>, history: &[AgentMessage]) -> Vec<Value> {
 
 #[cfg(test)]
 mod tests {
-    use crate::expandable_text::Expandable;
     use hoocode_ai_types::{Message, StopReason, UserMessage};
     use hoocode_code_session::{
         append_custom_entry_to_file, flush_session_writes, subagents_dir, SessionManager,
@@ -1275,9 +1274,6 @@ mod tests {
         assert!(mode.attached_to("task-1"));
         assert_eq!(header_count(&mode), 0, "no logo above the run's transcript");
         mode.attach_loaded("task-1".into(), Ok(loaded(vec![user("Compute a product")])));
-        // A header refresh while attached does not put the logo back.
-        mode.header.borrow_mut().refresh();
-        mode.header.borrow_mut().set_expanded(true);
         assert_eq!(header_count(&mode), 0);
         mode.attach_run("task-2".into(), shown);
         assert_eq!(

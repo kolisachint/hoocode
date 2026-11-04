@@ -38,8 +38,6 @@ pub(super) enum Action {
     Exit,
     Suspend,
     ToolsExpand,
-    ChromeForward,
-    ChromeBackward,
     ThinkingForward,
     ThinkingBackward,
     ThinkingToggle,
@@ -80,9 +78,6 @@ pub(super) enum Action {
     PasteImage,
     /// `app.hotkeys.open`: `/hotkeys`.
     HotkeysOpen,
-    /// `app.session.color.cycleForward` / `cycleBackward`.
-    SessionColorForward,
-    SessionColorBackward,
     /// `app.session.changeDirectory`: prefill `/cd `.
     ChangeDirectoryPrefill,
     /// `app.session.fork`: `/fork`.
@@ -104,7 +99,7 @@ pub(super) enum Action {
 }
 
 /// Bindings the prompt answers to, and their action (`CustomEditor.onAction`).
-const EDITOR_ACTIONS: [(&str, Action); 31] = [
+const EDITOR_ACTIONS: [(&str, Action); 27] = [
     ("app.tasks.cycleForward", Action::TasksForward),
     ("app.tasks.cycleBackward", Action::TasksBackward),
     ("app.panel.focus", Action::PanelToggle),
@@ -116,14 +111,6 @@ const EDITOR_ACTIONS: [(&str, Action); 31] = [
         Action::ChangeDirectoryPrefill,
     ),
     ("app.session.fork", Action::ForkOpen),
-    (
-        "app.session.color.cycleForward",
-        Action::SessionColorForward,
-    ),
-    (
-        "app.session.color.cycleBackward",
-        Action::SessionColorBackward,
-    ),
     ("app.hotkeys.open", Action::HotkeysOpen),
     ("app.clipboard.copyMessage", Action::CopyMessage),
     ("app.view.cycleForward", Action::ViewForward),
@@ -131,8 +118,6 @@ const EDITOR_ACTIONS: [(&str, Action); 31] = [
     ("app.clear", Action::Clear),
     ("app.suspend", Action::Suspend),
     ("app.tools.expand", Action::ToolsExpand),
-    ("app.chrome.cycleForward", Action::ChromeForward),
-    ("app.chrome.cycleBackward", Action::ChromeBackward),
     ("app.thinking.cycleForward", Action::ThinkingForward),
     ("app.model.cycleForward", Action::ModelForward),
     ("app.model.cycleBackward", Action::ModelBackward),
@@ -466,7 +451,6 @@ impl Mode {
     fn on_editor_change(&mut self, bash_mode: bool) {
         if self.is_bash_mode != bash_mode {
             self.is_bash_mode = bash_mode;
-            self.update_editor_border_color();
             self.update_editor_prompt_prefix();
         }
     }
@@ -928,13 +912,6 @@ impl Mode {
             Action::ViewForward | Action::ViewBackward => {
                 self.cycle_tool_output_view(action == Action::ViewForward)
             }
-            Action::ChromeForward | Action::ChromeBackward => {
-                let density = self.chrome.cycle_density(action == Action::ChromeForward);
-                let mut settings = self.session.settings();
-                settings.set_chrome_density(density);
-                drop(settings);
-                self.show_dial_step("app.chrome.cycleBackward", &format!("Chrome: {density}"));
-            }
             Action::ThinkingForward | Action::ThinkingBackward => {
                 let direction = if action == Action::ThinkingForward {
                     hoocode_code_agent_session::CycleDirection::Forward
@@ -944,7 +921,6 @@ impl Mode {
                 match self.session.cycle_thinking_level(direction) {
                     None => self.show_status("Current model does not support thinking"),
                     Some(level) => {
-                        self.update_editor_border_color();
                         self.show_dial_step(
                             "app.thinking.cycleBackward",
                             &format!("Thinking level: {}", level.as_str()),
@@ -969,9 +945,6 @@ impl Mode {
             Action::CopyMessage => self.handle_copy_command(""),
             Action::PasteImage => self.handle_clipboard_image_paste(),
             Action::HotkeysOpen => self.handle_hotkeys_command(),
-            Action::SessionColorForward | Action::SessionColorBackward => {
-                self.cycle_session_color(action == Action::SessionColorForward)
-            }
             Action::ChangeDirectoryPrefill => {
                 // Prefill rather than act: the editor's path completion is the
                 // way to name the target.
@@ -1011,11 +984,7 @@ impl Mode {
                 self.close_session_selector();
                 self.resume_subagent(run);
             }
-            Action::AutocompleteVisibility(visible) => {
-                if self.chrome.set_autocomplete_open(visible) {
-                    self.dirty.set(true);
-                }
-            }
+            Action::AutocompleteVisibility(_) => self.dirty.set(true),
         }
     }
 }

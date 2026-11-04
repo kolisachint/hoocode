@@ -1,16 +1,18 @@
-//! The Mission Control rewind and scan bars (M8 e2/e3) as component
-//! goldens: one inverse row above the comms frame while the view is pinned,
-//! drawn with ratatui. The theme lock pins the palette; the keybindings
-//! manager pins the key names.
+//! The scrolled-back and search bars in the status line's left slot
+//! (declutter v2.5): `scrolled 43–61 of 78 · ↓ 3 new  esc live` and
+//! `search  query  1 match  enter next · esc close`, with the session facts
+//! on the right. The theme lock pins the palette; the keybindings manager
+//! pins the key names.
 
 use hoocode_code_tui_app::scroll_view::format_scroll_status;
+use hoocode_code_tui_app::status_line::StatusLineData;
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::{assert_golden, Component, ScrollSearchStatus, ScrollStatus};
 
 use crate::support::{lock, plain};
 
-/// One bar row as a component, so the golden harness can draw it.
+/// One status row as a component, so the golden harness can draw it.
 struct BarLine(String);
 
 impl Component for BarLine {
@@ -19,13 +21,18 @@ impl Component for BarLine {
     }
 }
 
-fn rewind_status() -> ScrollStatus {
-    rewind_status_picker(false)
+fn base() -> StatusLineData {
+    StatusLineData {
+        view: "peek".into(),
+        session: Some("amber-harbor".into()),
+        model: Some("claude-haiku-5-5".into()),
+        context_percent: Some(42.0),
+        cost: Some(1.23),
+        ..Default::default()
+    }
 }
 
-/// The rewind bar with `picker` focus: picker keys are the literal paging
-/// keys, so the golden holds on every platform.
-fn rewind_status_picker(picker: bool) -> ScrollStatus {
+fn scrolled(picker: bool) -> ScrollStatus {
     ScrollStatus {
         top: 43,
         bottom: 61,
@@ -40,7 +47,7 @@ fn rewind_status_picker(picker: bool) -> ScrollStatus {
     }
 }
 
-fn scan_status(query: &str, typing: bool) -> ScrollStatus {
+fn searching(query: &str, typing: bool, count: usize) -> ScrollStatus {
     ScrollStatus {
         top: 60,
         bottom: 78,
@@ -51,7 +58,7 @@ fn scan_status(query: &str, typing: bool) -> ScrollStatus {
         width: 100,
         search: Some(ScrollSearchStatus {
             query: query.to_string(),
-            count: 1,
+            count,
             index: 1,
             typing,
         }),
@@ -60,57 +67,64 @@ fn scan_status(query: &str, typing: bool) -> ScrollStatus {
     }
 }
 
-/// The bar's plain row at 100 columns.
+/// The status row, plain, at 100 columns.
 fn row(status: &ScrollStatus) -> String {
     AppKeybindingsManager::default().install();
-    plain(&format_scroll_status(status, true))
+    plain(&format_scroll_status(status, &base()))
 }
 
 #[test]
-fn rewind_bar_golden() {
+fn scrolled_golden() {
     let _g = lock(Some("dark"));
-    // The bar reads the global bindings: pin the defaults so the golden
-    // holds whatever else runs beside it.
     AppKeybindingsManager::default().install();
-    let mut line = BarLine(format_scroll_status(&rewind_status_picker(true), true));
+    let mut line = BarLine(format_scroll_status(&scrolled(false), &base()));
     assert_golden!("scroll_rewind_100x1", render_golden(&mut line, 100));
 }
 
 #[test]
-fn scan_bar_golden() {
+fn search_golden() {
     let _g = lock(Some("dark"));
     AppKeybindingsManager::default().install();
     let mut line = BarLine(format_scroll_status(
-        &scan_status("beta item 25", false),
-        true,
+        &searching("beta item 25", false, 1),
+        &base(),
     ));
     assert_golden!("scroll_scan_100x1", render_golden(&mut line, 100));
 }
 
 #[test]
-fn rewind_bar_shows_the_range_percent_and_new_lines() {
+fn scrolled_shows_the_range_new_lines_and_the_live_key() {
     let _g = lock(Some("dark"));
-    let text = row(&rewind_status());
+    let text = row(&scrolled(false));
     assert!(
-        text.contains("◂◂ REWIND  43–61 of 78  55%  ↓ 3 new"),
+        text.starts_with(" scrolled 43–61 of 78 · ↓ 3 new  esc live"),
         "{text:?}"
     );
-    assert!(text.contains("PgUp/PgDn page"), "{text:?}");
-    assert!(text.contains("live"), "{text:?}");
+    assert!(
+        // Too wide for the cost at 100 columns: it drops first.
+        text.ends_with("peek · amber-harbor · claude-haiku-5-5 · 42% context"),
+        "{text:?}"
+    );
 }
 
 #[test]
-fn scan_bar_shows_the_query_contacts_and_keys() {
+fn a_focused_picker_keeps_its_keys() {
     let _g = lock(Some("dark"));
-    let text = row(&scan_status("beta item 25", false));
-    assert!(text.contains("⌕ SCAN  beta item 25  1 contact"), "{text:?}");
-    assert!(text.contains("enter next · escape clear · n/p"), "{text:?}");
+    let text = row(&scrolled(true));
+    assert!(!text.contains("esc"), "{text:?}");
 }
 
 #[test]
-fn scan_bar_typing_shows_the_caret_and_lock_keys() {
+fn search_shows_the_query_matches_and_keys() {
     let _g = lock(Some("dark"));
-    let text = row(&scan_status("beta", true));
-    assert!(text.contains("⌕ SCAN  beta█  1 contact"), "{text:?}");
-    assert!(text.contains("enter lock · escape clear"), "{text:?}");
+    let text = row(&searching("beta item 25", false, 1));
+    assert!(
+        text.starts_with(" search  beta item 25  1 match  enter next · esc close"),
+        "{text:?}"
+    );
+    let typing = row(&searching("beta", true, 3));
+    assert!(
+        typing.starts_with(" search  beta  3 matches  enter find · esc close"),
+        "{typing:?}"
+    );
 }

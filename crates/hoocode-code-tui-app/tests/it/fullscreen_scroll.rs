@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use hoocode_code_tui_app::scroll_view::install_scroll_view;
+use hoocode_code_tui_app::scroll_view::{install_scroll_status, install_scroll_view};
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_theme::{get_editor_theme, init_theme};
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions};
@@ -173,6 +173,7 @@ fn screen() -> Screen {
         Rc::new(move || prompt.borrow().get_text().is_empty()),
         Rc::new(|| false),
     );
+    install_scroll_status(&mut ui, Rc::default());
     ui.set_focus(Some(editor_handle));
     let _events = ui.start();
     Screen {

@@ -1,130 +1,32 @@
-//! Chrome around the transcript: the footer, the terminal title, the session chip and colour, and the
-//! editor border and prompt prefix.
+//! The rows around the transcript: the status line's data, the terminal
+//! title, and the prompt's bash-mode marker.
 
-use std::rc::Rc;
-
-use hoocode_code_agent_session::mcp::McpStatus;
-use hoocode_code_agent_session::AgentSession;
 use hoocode_code_paths::APP_TITLE;
-use hoocode_code_session::identity::{
-    cycle_session_color_slot, session_color_name, CycleDirection as SessionCycleDirection,
-};
-use hoocode_code_settings::ChromeDensity;
-use hoocode_code_tui_theme::theme;
+use hoocode_code_tui_widgets::trajectory::MissionHeader;
 
-use crate::footer::{FooterModel, FooterSource};
-use crate::hull_paint::HullPaint;
-use crate::session_chip::render_session_chip;
+use crate::status_line::StatusLineData;
 
 use super::*;
 
-/// The footer's view of the session.
-pub(super) struct SessionFooter {
-    pub(super) session: AgentSession,
-    pub(super) is_oauth: Rc<dyn Fn(&str) -> bool>,
-}
-
-impl FooterSource for SessionFooter {
-    fn usage_totals(&self) -> (u64, u64, u64, u64, f64) {
-        let manager = self.session.session_manager();
-        let totals = hoocode_code_agent_session::stats::sum_assistant_usage(manager.entries());
-        (
-            totals.input,
-            totals.output,
-            totals.cache_read,
-            totals.cache_write,
-            totals.cost,
-        )
-    }
-
-    fn context_usage(&self) -> Option<(u64, Option<f64>)> {
-        self.session
-            .get_context_usage()
-            .map(|u| (u.context_window, u.percent))
-    }
-
-    fn session_color_slot(&self) -> u8 {
-        self.session.session_color_slot()
-    }
-
-    fn model(&self) -> Option<FooterModel> {
-        self.session.model().map(|m| FooterModel {
-            id: m.id.clone(),
-            provider: m.provider.to_string(),
-            context_window: m.context_window,
-            reasoning: m.reasoning,
+/// Whether a transcript child stands for a turn: something the user said
+/// (a message, a mission header, a skill run, a background notice). The
+/// start screen ends with the first one; the scroll view jumps between them.
+pub(super) fn is_turn_row(child: &ComponentHandle) -> bool {
+    child.try_borrow().is_ok_and(|child| {
+        child.as_any().is_some_and(|any| {
+            any.is::<UserMessageComponent>()
+                || any.is::<MissionHeader>()
+                || any.is::<SkillBlockComponent>()
+                || any.is::<BackgroundNoticeComponent>()
         })
-    }
-
-    fn thinking_level(&self) -> String {
-        self.session.thinking_level().as_str().to_string()
-    }
-
-    fn cwd(&self) -> String {
-        self.session.cwd().to_string_lossy().into_owned()
-    }
-
-    fn display_name(&self) -> String {
-        self.session.display_name()
-    }
-
-    fn reserve_tokens(&self) -> u64 {
-        self.session.settings().compaction_reserve_tokens()
-    }
-
-    fn is_using_oauth(&self) -> bool {
-        self.session
-            .model()
-            .is_some_and(|m| (self.is_oauth)(&m.provider.to_string()))
-    }
-
-    fn satellite_count(&self) -> usize {
-        // TODO(M3): confirm the satellite count counts connected servers only.
-        self.session.mcp().map_or(0, |hub| {
-            hub.servers()
-                .iter()
-                .filter(|s| s.status == McpStatus::Connected)
-                .count()
-        })
-    }
+    })
 }
 
 impl Mode {
-    pub(super) fn update_editor_border_color(&mut self) {
-        self.editor.borrow_mut().editor.border_color = if self.is_bash_mode {
-            Box::new(|s: &str| theme().bash_mode_border(s))
-        } else {
-            let level = thinking_border_level(self.session.thinking_level().as_str());
-            Box::new(move |s: &str| theme().thinking_border(level, s))
-        };
-        self.dirty.set(true);
-    }
-
-    /// `updateEditorPromptPrefix`: `!` in the bash-mode colour, else `❯`.
+    /// `updateEditorPromptPrefix`: the prompt's marker is `!` in the
+    /// bash-mode colour while the input is a `!` command, else ` ›`.
     pub(super) fn update_editor_prompt_prefix(&mut self) {
-        let mut editor = self.editor.borrow_mut();
-        if self.is_bash_mode {
-            editor.editor.prompt_prefix = "!".into();
-            editor.editor.prompt_color = Box::new(|s: &str| theme().bash_mode_border(s));
-        } else {
-            // The comms frame colours the glyph per state on each render.
-            editor.editor.prompt_prefix = "▸".into();
-            editor.editor.prompt_color = Box::new(|s: &str| s.to_string());
-        }
-        self.dirty.set(true);
-    }
-
-    pub(super) fn update_session_chip(&mut self) {
-        // The prompt lives inside the comms frame and draws no border of
-        // its own, so the session chip has nowhere to ride there. The
-        // inline footer keeps its own chip flag; fullscreen shows the
-        // session name in the terminal title and `/resume`.
-        let shown = render_session_chip(
-            &self.session.display_name(),
-            self.session.session_color_slot() as i64,
-        )
-        .is_some();
-        self.footer.borrow_mut().set_session_chip_shown(shown);
+        self.bash_marker.set(self.is_bash_mode);
         self.dirty.set(true);
     }
 
@@ -138,208 +40,67 @@ impl Mode {
             Some(name) => format!("{APP_TITLE} - {name} - {base}"),
             None => format!("{APP_TITLE} - {base}"),
         };
-        // The tab title takes the hull paint too (M8e5).
-        let title = match self.footer_data.get_hull_paint() {
-            Some(paint) => format!("{title} - {}", paint.name()),
-            None => title,
-        };
         self.tui.terminal.set_title(&title);
     }
 
-    /// The session chip, or the plain display name without a theme slot.
-    pub(super) fn current_chip(&self) -> String {
-        render_session_chip(
-            &self.session.display_name(),
-            self.session.session_color_slot() as i64,
+    /// What the status line shows now, read from the session and the mode.
+    pub(super) fn status_line_data(&self) -> StatusLineData {
+        let session = &self.session;
+        let model = session.model();
+        let signed_out = model.is_none();
+        let busy = session.is_streaming() || session.is_retrying() || self.prompt_pending;
+        // A permission or a question names what it needs in its own yellow
+        // title: the left slot stays empty while one is open.
+        let asking = self.clearance.is_some() || self.ask_options.is_some();
+        let working = (busy && !asking).then(|| {
+            self.turn_timer
+                .borrow()
+                .elapsed(Instant::now())
+                .unwrap_or_default()
+        });
+        let effort = model
+            .as_ref()
+            .filter(|m| m.reasoning)
+            .map(|_| session.thinking_level().as_str().to_string())
+            .filter(|level| level != "off");
+        let cost = hoocode_code_agent_session::stats::sum_assistant_usage(
+            session.session_manager().entries(),
         )
-        .map(|chip| chip.styled)
-        .unwrap_or_else(|| self.session.display_name())
-    }
-
-    /// `handleColor`: bare `/color` cycles the hull paint (M8e5);
-    /// `/color <name>` sets it outright, with the old session-chip colour
-    /// names mapped to the nearest paint. A toast shows the name.
-    pub(super) fn handle_color_command(&mut self, text: &str) -> bool {
-        let arg = text.strip_prefix("/color").unwrap_or(text).trim();
-        if arg.is_empty() {
-            let next = HullPaint::next(self.footer_data.get_hull_paint());
-            self.set_hull_paint(next);
-            return true;
-        }
-        match HullPaint::parse(arg) {
-            Ok(paint) => {
-                self.set_hull_paint(paint);
-            }
-            Err(_) => {
-                self.show_warning(
-                    "Usage: /color [none|parity|cyan|violet|lime|red] (old chip names still work)",
-                );
-            }
-        }
-        true
-    }
-
-    /// The hull paint, announced with its swatches (design e5): `hull
-    /// paint` plus one swatch per paint (`◂` marks the active one) and the
-    /// `· <colour>` suffix, then what the paint takes. A record, so cycling
-    /// updates one transcript row. The session file keeps it, so a resume
-    /// restores it; the provider feeds the chrome.
-    fn set_hull_paint(&mut self, paint: Option<HullPaint>) {
-        self.session.set_hull_paint(paint.map(HullPaint::name));
-        self.footer_data.set_hull_paint(paint);
-        self.show_record(&hull_paint_record(paint));
-    }
-
-    /// `cycleSessionColor`: one step on the colour dial.
-    pub(super) fn cycle_session_color(&mut self, forward: bool) {
-        let direction = if forward {
-            SessionCycleDirection::Forward
-        } else {
-            SessionCycleDirection::Backward
-        };
-        let slot =
-            cycle_session_color_slot(f64::from(self.session.session_color_slot()), direction);
-        self.session.set_session_color(slot);
-        let name = session_color_name(slot).map_or_else(|| slot.to_string(), str::to_string);
-        self.show_dial_step(
-            "app.session.color.cycleBackward",
-            &format!("Session color: {name}"),
-        );
-    }
-
-    /// `handleChromeCommand`: `/chrome` names the stop, `/chrome <full|compact>`
-    /// sets it (the dial's only way in where alt never arrives).
-    pub(super) fn handle_chrome_command(&mut self, text: &str) {
-        let argument = text
-            .strip_prefix("/chrome")
-            .unwrap_or(text)
-            .trim()
-            .to_lowercase();
-        if argument.is_empty() {
-            self.show_status(&format!(
-                "Chrome: {} — {}",
-                self.chrome.density(),
-                chrome_stops()
-            ));
-            return;
-        }
-        let density = match parse_chrome_stop(&argument) {
-            Ok(density) => density,
-            Err(message) => {
-                self.show_error(&message);
-                return;
-            }
-        };
-        self.chrome.set_density(density);
-        self.session.settings().set_chrome_density(density);
-        self.dirty.set(true);
-        self.show_status(&format!("Chrome: {density}"));
-    }
-}
-
-/// The valid stops, as the user types them: `full · compact`.
-fn chrome_stops() -> String {
-    let all: Vec<&str> = ChromeDensity::ALL.iter().map(|d| d.as_str()).collect();
-    all.join(" · ")
-}
-
-/// The argument of `/chrome`, parsed. `bare` was a stop until it was retired:
-/// it gets its own message, and the message names the two stops that are left.
-fn parse_chrome_stop(argument: &str) -> Result<ChromeDensity, String> {
-    if let Some(density) = ChromeDensity::parse(argument) {
-        return Ok(density);
-    }
-    let all: Vec<&str> = ChromeDensity::ALL.iter().map(|d| d.as_str()).collect();
-    if argument == "bare" {
-        return Err(format!(
-            "\"bare\" is no longer a chrome stop. Use: {}",
-            all.join(", ")
-        ));
-    }
-    Err(format!(
-        "Unknown chrome stop \"{argument}\". Use: {}",
-        all.join(", ")
-    ))
-}
-
-// The `/color` notice as transcript rows (design e5): `hull paint` plus one
-// swatch per paint (`◂` marks the active one) and the `· <colour>` suffix,
-// then what the paint takes. `show_record` keeps ANSI, so the swatches and
-// the name carry their colours; cycling updates one row.
-fn hull_paint_record(paint: Option<HullPaint>) -> String {
-    let t = theme();
-    // Optional theme tokens fall back to accent.
-    let swatch = |candidate: HullPaint| {
-        let token = candidate.swatch_token();
-        let token = if t.has(token) { token } else { "accent" };
-        t.fg(token, "\u{25a0}\u{25a0}")
-    };
-    let mut cells = String::new();
-    for candidate in [
-        HullPaint::Parity,
-        HullPaint::Cyan,
-        HullPaint::Violet,
-        HullPaint::Lime,
-        HullPaint::Red,
-    ] {
-        if !cells.is_empty() {
-            cells.push_str("  ");
-        }
-        cells.push_str(&swatch(candidate));
-        if Some(candidate) == paint {
-            let token = candidate.swatch_token();
-            let token = if t.has(token) { token } else { "accent" };
-            cells.push_str(&t.fg(token, "\u{25c2}"));
+        .cost;
+        StatusLineData {
+            working,
+            notice: if asking {
+                None
+            } else {
+                self.notifications.borrow().status_notice()
+            },
+            scroll: None,
+            search: None,
+            last_turn: if asking || busy {
+                None
+            } else {
+                self.last_turn.clone()
+            },
+            signed_out,
+            view: self.tool_output_view.as_str().to_string(),
+            plan_mode: self.footer_data.get_active_mode() == "plan",
+            session: Some(session.display_name()).filter(|name| !name.is_empty()),
+            model: model.map(|m| m.id.clone()),
+            effort,
+            context_percent: session.get_context_usage().and_then(|u| u.percent),
+            cost: Some(cost),
         }
     }
-    let name = match paint {
-        Some(active) => {
-            let token = active.swatch_token();
-            let token = if t.has(token) { token } else { "accent" };
-            t.bold(&t.fg(
-                token,
-                &format!("{} \u{b7} {}", active.name(), active.legacy_name()),
-            ))
+
+    /// Refreshes the status line's data before the frame; a change repaints.
+    pub(super) fn refresh_status_line(&mut self) {
+        let busy = self.session.is_streaming() || self.session.is_retrying() || self.prompt_pending;
+        self.notifications.borrow_mut().set_status_slot_free(!busy);
+        let data = self.status_line_data();
+        let mut current = self.status_data.borrow_mut();
+        if *current != data {
+            *current = data;
+            self.dirty.set(true);
         }
-        None => t.fg("dim", "none"),
-    };
-    let faint = if t.has("faint") {
-        t.fg(
-            "faint",
-            "the HUD, the comms frame and the terminal tab title all take it",
-        )
-    } else {
-        t.fg(
-            "muted",
-            "the HUD, the comms frame and the terminal tab title all take it",
-        )
-    };
-    format!("{} {cells}  {name}\n{faint}", t.fg("text", "hull paint"),)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn takes_the_two_stops() {
-        assert_eq!(parse_chrome_stop("full"), Ok(ChromeDensity::Full));
-        assert_eq!(parse_chrome_stop("compact"), Ok(ChromeDensity::Compact));
-    }
-
-    #[test]
-    fn bare_is_refused_and_the_error_names_the_two_stops() {
-        let err = parse_chrome_stop("bare").unwrap_err();
-        assert_eq!(
-            err,
-            "\"bare\" is no longer a chrome stop. Use: full, compact"
-        );
-    }
-
-    #[test]
-    fn anything_else_is_an_unknown_stop_naming_the_two_stops() {
-        let err = parse_chrome_stop("nope").unwrap_err();
-        assert_eq!(err, "Unknown chrome stop \"nope\". Use: full, compact");
-        assert_eq!(chrome_stops(), "full · compact");
     }
 }

@@ -415,20 +415,6 @@
    "Show or hide the task panel"
   ],
   [
-   "app.chrome.cycleForward",
-   [
-    "alt+z"
-   ],
-   "Cycle chrome density (full → compact → bare)"
-  ],
-  [
-   "app.chrome.cycleBackward",
-   [
-    "shift+alt+z"
-   ],
-   "Cycle chrome density backward"
-  ],
-  [
    "app.scroll.pageUp",
    [
     "pageUp"
@@ -519,20 +505,6 @@
     "alt+w"
    ],
    "Change working directory (move to another repo without quitting)"
-  ],
-  [
-   "app.session.color.cycleForward",
-   [
-    "alt+c"
-   ],
-   "Cycle the session chip's color"
-  ],
-  [
-   "app.session.color.cycleBackward",
-   [
-    "shift+alt+c"
-   ],
-   "Cycle the session chip's color backward"
   ],
   [
    "app.settings.open",

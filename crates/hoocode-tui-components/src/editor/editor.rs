@@ -206,6 +206,9 @@ pub struct Editor {
 
     /// Last layout width, for cursor navigation.
     last_width: usize,
+    /// Rows the last render gave the text (borders included, the
+    /// autocomplete list after them not).
+    text_rows: usize,
     /// Vertical scroll over layout lines.
     scroll_offset: usize,
 
@@ -287,6 +290,7 @@ impl Editor {
             border: options.border.unwrap_or(FrameBorderStyle::Rule),
             border_chars,
             last_width: 80,
+            text_rows: 0,
             scroll_offset: 0,
             border_color,
             top_border_label: None,
@@ -1700,6 +1704,12 @@ impl Editor {
         self.autocomplete_state.is_some()
     }
 
+    /// The rows the last render gave the text itself; the autocomplete list,
+    /// when shown, follows them.
+    pub fn text_rows(&self) -> usize {
+        self.text_rows
+    }
+
     fn update_autocomplete(&mut self) {
         let Some(state) = self.autocomplete_state else {
             return;
@@ -2117,6 +2127,7 @@ impl Component for Editor {
         if !bare {
             result.push(self.render_border(FrameEdge::Bottom, lines_below, bar_width, is_box));
         }
+        self.text_rows = result.len();
 
         if self.autocomplete_state.is_some() {
             // Aligned to the inner text edge, not the outer box edge. The

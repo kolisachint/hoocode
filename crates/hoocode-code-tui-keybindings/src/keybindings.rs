@@ -1,6 +1,6 @@
 //! The keyboard map (`core/keybindings.ts`).
 //!
-//! Bindings are grouped by intention — Flow, Compose, Steer, Read, Screen,
+//! Bindings are grouped by intention — Flow, Compose, Steer, Read,
 //! Scroll, Go, then the overlays that print their own keys — and the
 //! declaration order *is* the grouping: `keybindings.json` is written in it.
 //! The layout rules (alt sets a value, ctrl acts on what is drawn, a dial
@@ -132,17 +132,6 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             &["ctrl+g"],
             "Show or hide the task panel",
         ),
-        // ── Screen — how much room there is
-        entry(
-            "app.chrome.cycleForward",
-            &["alt+z"],
-            "Toggle chrome density (full ↔ compact)",
-        ),
-        entry(
-            "app.chrome.cycleBackward",
-            &["shift+alt+z"],
-            "Toggle chrome density (full ↔ compact), backward",
-        ),
         // ── Scroll — where in the transcript you are looking
         entry(
             "app.scroll.pageUp",
@@ -198,16 +187,6 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
             "app.session.changeDirectory",
             &["alt+w"],
             "Change working directory (move to another repo without quitting)",
-        ),
-        entry(
-            "app.session.color.cycleForward",
-            &["alt+c"],
-            "Cycle the session chip's color",
-        ),
-        entry(
-            "app.session.color.cycleBackward",
-            &["shift+alt+c"],
-            "Cycle the session chip's color backward",
         ),
         entry("app.settings.open", &["alt+s"], "Open settings"),
         entry("app.hotkeys.open", &["alt+k"], "Show keyboard shortcuts"),

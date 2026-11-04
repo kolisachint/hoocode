@@ -201,37 +201,16 @@ fn tool_output_view_reads_known_values_and_falls_back_to_peek() {
     assert_eq!(read_view("standard"), ToolOutputView::Peek);
 }
 
-// --- chromeDensity ---
-
+/// The chrome dial is gone (TUI declutter): a saved `chromeDensity` still
+/// loads with the rest of the file and has no effect.
 #[test]
-fn chrome_density_ignores_old_and_unknown_values() {
+fn a_saved_chrome_density_is_ignored() {
     let d = Dirs::new();
-    assert_eq!(d.manager().chrome_density(), None);
-
-    write(&d.global_path(), &json!({"chromeDensity": "bare"}));
-    assert_eq!(d.manager().chrome_density(), None);
-
-    write(&d.global_path(), &json!({"chromeDensity": "full"}));
-    assert_eq!(d.manager().chrome_density(), Some(ChromeDensity::Full));
-
-    // Unknown values load as unset (the caller picks a default), never an error.
-    write(&d.global_path(), &json!({"chromeDensity": "hidden"}));
-    assert_eq!(d.manager().chrome_density(), None);
-    write(&d.global_path(), &json!({"chromeDensity": 3}));
-    assert_eq!(d.manager().chrome_density(), None);
-}
-
-#[test]
-fn chrome_density_saves_only_the_two_stops() {
-    let d = Dirs::new();
-    let mut manager = d.manager();
-    manager.set_chrome_density(ChromeDensity::Compact);
-    assert_eq!(read(&d.global_path())["chromeDensity"], "compact");
-    assert_eq!(d.manager().chrome_density(), Some(ChromeDensity::Compact));
-    assert_eq!(
-        ChromeDensity::ALL,
-        &[ChromeDensity::Full, ChromeDensity::Compact]
+    write(
+        &d.global_path(),
+        &json!({"chromeDensity": "compact", "toolOutputView": "full"}),
     );
+    assert_eq!(d.manager().tool_output_view(), ToolOutputView::Full);
 }
 
 // --- tool settings (output caps + context GC) ---

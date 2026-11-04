@@ -10,7 +10,6 @@ use std::rc::Rc;
 use hoocode_ai_types::{AssistantMessage, Content, ThinkingContent};
 use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
-use hoocode_code_tui_widgets::session_chip::render_session_chip;
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelView};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -19,7 +18,6 @@ use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
 use hoocode_code_tui_widgets::trajectory::{LandingLine, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
-use hoocode_tui_components::Text;
 use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::{assert_golden, Component};
 use serde_json::{json, Value};
@@ -493,33 +491,6 @@ fn agent_output_failed_80() {
         false,
     );
     assert_golden!("agent_output_failed_80", render_golden(&mut block, 80));
-}
-
-// ---- session chip ----
-
-#[test]
-fn session_chip_80() {
-    let _g = lock();
-    let chip = render_session_chip("refactor-auth", 1).expect("a chip for a name");
-    let mut line = Text::new(chip.styled, 0, 0);
-    assert_golden!("session_chip_80", render_golden(&mut line, 80));
-}
-
-#[test]
-fn session_chip_truncated_80() {
-    let _g = lock();
-    let chip = render_session_chip("an-extremely-long-session-name-nobody-can-scan", 3)
-        .expect("a chip for a name");
-    let mut line = Text::new(chip.styled, 0, 0);
-    assert_golden!("session_chip_truncated_80", render_golden(&mut line, 80));
-}
-
-#[test]
-fn session_chip_120() {
-    let _g = lock();
-    let chip = render_session_chip("amber-harbor", 4).expect("a chip for a name");
-    let mut line = Text::new(chip.styled, 0, 0);
-    assert_golden!("session_chip_120", render_golden(&mut line, 120));
 }
 
 // ---- user message ----

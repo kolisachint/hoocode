@@ -81,9 +81,43 @@ fn draws_nothing_at_all_when_nothing_is_up() {
 }
 
 #[test]
+fn a_one_row_notice_goes_to_the_status_line_and_the_band_stays_empty() {
+    use hoocode_code_tui_app::status_line::{KeyHint, NoticeLevel};
+    let _g = lock(Some("dark"));
+    let mut s = setup(None);
+    s.panel.notify(
+        NotificationKind::Info,
+        "View: outline",
+        &[],
+        Some("shift+alt+o back"),
+        None,
+        None,
+    );
+    assert!(s.panel.render(WIDTH).is_empty());
+    let notice = s.panel.status_notice().expect("a status notice");
+    assert_eq!(notice.level, NoticeLevel::Info);
+    assert_eq!(notice.message, "View: outline");
+    assert_eq!(notice.keys, [KeyHint::new("shift+alt+o", "back")]);
+    // A longer notice stays in the band.
+    s.panel.notify(
+        NotificationKind::Warning,
+        "Two rows",
+        &["the second"],
+        None,
+        None,
+        None,
+    );
+    s.advance(INFO);
+    assert!(s.panel.status_notice().is_none());
+    assert!(!s.panel.render(WIDTH).is_empty());
+}
+
+#[test]
 fn leads_with_a_blank_row_and_never_pads_its_own_bottom_edge() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
+    // While a turn runs the status line keeps its slot: one row goes to the band.
+    s.panel.set_status_slot_free(false);
     s.info("Model: opus-5");
     let lines = s.rows(WIDTH);
     assert_eq!(lines[0], "");
@@ -95,6 +129,7 @@ fn leads_with_a_blank_row_and_never_pads_its_own_bottom_edge() {
 fn puts_the_note_flush_right_and_drops_it_before_the_headline() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
+    s.panel.set_status_slot_free(false);
     s.panel.notify(
         NotificationKind::Info,
         "Thinking level: high",
@@ -116,9 +151,9 @@ fn puts_the_note_flush_right_and_drops_it_before_the_headline() {
 fn fades_on_its_own_clock() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
-    s.info("Chrome: compact");
+    s.info("View: outline");
     s.advance(INFO - 1);
-    assert_eq!(s.showing().as_deref(), Some("Chrome: compact"));
+    assert_eq!(s.showing().as_deref(), Some("View: outline"));
     s.advance(1);
     assert_eq!(s.showing(), None);
     assert!(s.panel.render(WIDTH).is_empty());
@@ -161,13 +196,13 @@ fn never_cuts_short_the_notification_already_on_screen() {
 fn steps_a_dial_on_the_band_as_fast_as_the_dial_is_stepped() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
-    s.topic("Chrome: compact", "app.chrome");
+    s.topic("View: outline", "app.view");
     s.advance(1000);
-    s.topic("Chrome: full", "app.chrome");
-    assert_eq!(s.showing().as_deref(), Some("Chrome: full"));
+    s.topic("View: full", "app.view");
+    assert_eq!(s.showing().as_deref(), Some("View: full"));
     assert!(s.pending().is_empty());
     s.advance(INFO - 1);
-    assert_eq!(s.showing().as_deref(), Some("Chrome: full"));
+    assert_eq!(s.showing().as_deref(), Some("View: full"));
     s.advance(1);
     assert_eq!(s.showing(), None);
 }
@@ -176,9 +211,9 @@ fn steps_a_dial_on_the_band_as_fast_as_the_dial_is_stepped() {
 fn keeps_two_different_dials_apart() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
-    s.topic("Chrome: full", "app.chrome");
+    s.topic("View: full", "app.view");
     s.topic("Thinking level: high", "app.thinking");
-    assert_eq!(s.showing().as_deref(), Some("Chrome: full"));
+    assert_eq!(s.showing().as_deref(), Some("View: full"));
     assert_eq!(s.pending(), ["Thinking level: high"]);
 }
 
@@ -187,10 +222,10 @@ fn replaces_a_queued_glimpse_of_the_same_dial_without_jumping_the_queue() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
     s.warning("held");
-    s.topic("Chrome: compact", "app.chrome");
-    s.topic("Chrome: full", "app.chrome");
+    s.topic("View: outline", "app.view");
+    s.topic("View: full", "app.view");
     assert_eq!(s.showing().as_deref(), Some("held"));
-    assert_eq!(s.pending(), ["Chrome: full"]);
+    assert_eq!(s.pending(), ["View: full"]);
 }
 
 #[test]
@@ -276,6 +311,7 @@ fn paints_every_row_it_draws_edge_to_edge() {
 fn paints_a_warning_in_the_warning_fill() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
+    s.panel.set_status_slot_free(false);
     s.warning("No previous directory to return to");
     assert!(s.panel.render(WIDTH)[1].contains(theme().get_bg_ansi("warningBg")));
 }

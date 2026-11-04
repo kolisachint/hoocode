@@ -17,7 +17,6 @@ use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::AssistantMessageComponent;
 use hoocode_tui_components::{Loader, Spacer, Text};
-use hoocode_tui_render::Component;
 
 use crate::herdr::AgentState;
 use crate::startup_progress;
@@ -225,7 +224,7 @@ impl Mode {
     pub(super) fn handle_session_event(&mut self, event: AgentSessionEvent) {
         match event {
             AgentSessionEvent::Agent(event) => self.handle_agent_event(event),
-            AgentSessionEvent::ThinkingLevelChanged { .. } => self.update_editor_border_color(),
+            AgentSessionEvent::ThinkingLevelChanged { .. } => self.dirty.set(true),
             AgentSessionEvent::CompactionStart { reason } => self.on_compaction_start(reason),
             AgentSessionEvent::QueueUpdate { .. } => self.update_pending_messages_display(),
             AgentSessionEvent::CompactionEnd {
@@ -239,7 +238,6 @@ impl Mode {
                 self.flush_compaction_queue(will_retry);
             }
             AgentSessionEvent::SessionInfoChanged { .. } => {
-                self.update_session_chip();
                 self.update_terminal_title();
             }
             AgentSessionEvent::AutoRetryStart {
@@ -250,7 +248,7 @@ impl Mode {
             } => {
                 self.transcript.start_retry(&error_message);
                 self.comms_lost.set(false);
-                self.footer
+                self.transient
                     .borrow_mut()
                     .set_retry_notice(Some(retry_notice_text(
                         attempt,
@@ -283,7 +281,7 @@ impl Mode {
                 let lost =
                     !success && final_error.as_deref() != Some(RETRY_CANCELLED) && attempt >= 2;
                 self.comms_lost.set(lost);
-                self.footer.borrow_mut().set_retry_notice(None);
+                self.transient.borrow_mut().set_retry_notice(None);
             }
         }
         self.dirty.set(true);
@@ -367,7 +365,6 @@ impl Mode {
                 mission_range,
             });
             self.add_message_to_chat(&summary, false);
-            self.footer.borrow_mut().invalidate();
         } else if let Some(error) = error_message {
             if manual {
                 self.show_error(&error);

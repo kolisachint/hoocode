@@ -10,7 +10,6 @@ use hoocode_code_tui_selectors::model_selector::{ModelSelectorComponent, ModelSe
 use hoocode_code_tui_selectors::scoped_models_selector::{
     ScopedModelsEvent, ScopedModelsSelectorComponent,
 };
-use hoocode_tui_render::Component;
 
 use super::*;
 
@@ -169,8 +168,6 @@ impl Mode {
                 self.show_status(message);
             }
             Some(result) => {
-                self.footer.borrow_mut().invalidate();
-                self.update_editor_border_color();
                 self.dirty.set(true);
                 let thinking =
                     if result.model.reasoning && result.thinking_level != ThinkingLevel::Off {
@@ -215,8 +212,6 @@ impl Mode {
     fn switch_model(&mut self, model: Model) {
         match self.session.set_model(model.clone()) {
             Ok(()) => {
-                self.footer.borrow_mut().invalidate();
-                self.update_editor_border_color();
                 // The HUD shows the model: the frame must follow it.
                 self.dirty.set(true);
                 self.show_status(&format!("Model: {}", model.id));

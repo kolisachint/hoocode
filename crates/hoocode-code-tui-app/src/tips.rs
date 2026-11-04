@@ -125,7 +125,7 @@ pub fn tips() -> Vec<Tip> {
         Tip::new("settings", "Settings live behind one key")
             .dynamic(|| {
                 vec![format!(
-                    "{} or /settings — models, chrome, search, voice, tools.",
+                    "{} or /settings — models, search, voice, tools.",
                     key_text("app.settings.open")
                 )]
             })
@@ -204,9 +204,6 @@ pub fn tips() -> Vec<Tip> {
         Tip::new("cd", "Move without leaving")
             .rows(&["/cd <path> starts a session there. Bare /cd goes home, /cd - goes back."])
             .note("/cd"),
-        Tip::new("chrome", "Small terminal? Take the chrome back")
-            .rows(&["/chrome compact shortens the footer and the task list."])
-            .note("/chrome"),
         Tip::new("offline", "It works with no network").rows(&[
             "HOOCODE_OFFLINE=1 skips every startup fetch; search and completion fall back to built-ins.",
         ]),

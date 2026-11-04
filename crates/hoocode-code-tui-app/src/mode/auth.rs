@@ -10,7 +10,6 @@ use hoocode_code_tui_selectors::login_dialog::{LoginDialogComponent, LoginDialog
 use hoocode_code_tui_selectors::oauth_selector::{
     AuthSelectorProvider, AuthType, LoginMode, OAuthSelectorComponent, OAuthSelectorEvent,
 };
-use hoocode_tui_render::Component;
 
 use crate::extension_selector::{ExtensionSelectorComponent, SelectorOutcome};
 use crate::login_controller::{
@@ -415,8 +414,6 @@ impl Mode {
             },
         };
         self.update_available_provider_count();
-        self.footer.borrow_mut().invalidate();
-        self.update_editor_border_color();
         let path = hoocode_code_paths::auth_path();
         match selected {
             Some(model) => {

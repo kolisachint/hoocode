@@ -6,12 +6,15 @@
 //! context, cost (`peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23`).
 //!
 //! The component is a pure function of [`StatusLineData`]: no session reads,
-//! no clock. The caller owns the state (and the notice's age); it is not
-//! wired into the screen yet.
+//! no clock. The caller owns the state (and the notice's age): the mode
+//! refreshes a shared [`StatusLineData`] each loop pass and
+//! [`StatusLineView`] draws it as the screen's last row.
 //!
 //! Colours come from the existing palette tokens (`ink`, `dim`, `ok`, `err`,
 //! `warn`). With colour off (NO_COLOR) only shapes, bold and dim are used.
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Duration;
 
 use hoocode_tui_ratatui::core::buffer::Buffer;
@@ -19,6 +22,7 @@ use hoocode_tui_ratatui::core::layout::Rect;
 use hoocode_tui_ratatui::core::style::{Modifier, Style};
 use hoocode_tui_ratatui::core::text::{Line, Span};
 use hoocode_tui_ratatui::{bold, spans_width, truncate_spans, Palette, RatatuiComponent};
+use hoocode_tui_render::Component;
 
 /// Info notices leave the status line after this long.
 pub const INFO_TTL: Duration = Duration::from_secs(3);
@@ -493,6 +497,36 @@ pub fn status_line_text(data: &StatusLineData, width: usize, pal: &Palette) -> S
         .iter()
         .map(|s| s.content.as_ref())
         .collect()
+}
+
+/// The status line as one ANSI row `width` columns wide.
+pub fn status_line_ansi(data: &StatusLineData, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let data = data.clone();
+    let mut row = status_line_component(data);
+    row.render(width.min(u16::MAX as usize) as u16)
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
+/// The live status line: one row drawn from the data the mode refreshes.
+pub struct StatusLineView {
+    data: Rc<RefCell<StatusLineData>>,
+}
+
+impl StatusLineView {
+    pub fn new(data: Rc<RefCell<StatusLineData>>) -> Self {
+        Self { data }
+    }
+}
+
+impl Component for StatusLineView {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        vec![status_line_ansi(&self.data.borrow(), width as usize)]
+    }
 }
 
 /// The status line as a one-row component for a fixed snapshot of `data`.

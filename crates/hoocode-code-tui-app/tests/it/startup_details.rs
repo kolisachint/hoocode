@@ -1,22 +1,21 @@
-//! The startup header and the resource listing's details open at the full
-//! stop and fold at peek and outline. `verbose` keeps them open. The dial flips
-//! them in place (`Expandable::set_expanded`), so a live move and a fresh
-//! listing (`/reload`, a session switch) show the same thing.
+//! The resource listing's details open at the full stop and fold at peek and
+//! outline. `verbose` keeps them open. The dial flips them in place
+//! (`Expandable::set_expanded`), so a live move and a fresh listing (`/reload`,
+//! a session switch) show the same thing. The start header is two lines, then
+//! one blank row once there is a turn.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
 use hoocode_code_settings::ToolOutputView;
 use hoocode_code_tui_app::expandable_text::Expandable;
-use hoocode_code_tui_app::mode::startup_header;
 use hoocode_code_tui_app::resource_display::{
     show_loaded_resources_with_details, startup_details_open, ListedItem, ResourceListing,
 };
+use hoocode_code_tui_app::start_header::{start_lines, StartFacts, StartHeader};
 use hoocode_tui_render::{Component, ComponentHandle};
 
 use crate::support::{lock, plain};
-
-const ONBOARDING: &str = "look up its docs";
 
 fn item(name: &str, path: &str) -> ListedItem {
     ListedItem {
@@ -140,101 +139,46 @@ fn the_listing_rows_name_each_skill_as_it_is_typed() {
 }
 
 #[test]
-fn the_startup_header_folds_at_peek_and_opens_at_full() {
+fn the_summary_line_leaves_the_listing_when_the_header_counts() {
     let _g = lock(Some("dark"));
-    let mut header = startup_header(
-        Rc::new(Cell::new((100, 24))),
-        "0.2.22",
-        "~/w",
-        Rc::new(Cell::new(false)),
-        startup_details_open(false, ToolOutputView::Peek),
-    );
-    let folded = plain(&header.render(100).join("\n"));
-    assert!(!folded.contains(ONBOARDING), "{folded}");
-    assert!(!folded.contains("to queue follow-up"), "{folded}");
-
-    header.set_expanded(startup_details_open(false, ToolOutputView::Full));
-    let open = plain(&header.render(100).join("\n"));
-    assert!(open.contains(ONBOARDING), "{open}");
-    assert!(open.contains("to queue follow-up"), "{open}");
-
-    header.set_expanded(startup_details_open(false, ToolOutputView::Peek));
-    assert!(!plain(&header.render(100).join("\n")).contains(ONBOARDING));
+    let mut listed = listing(false, false);
+    listed.summary_in_header = true;
+    let loaded = show_loaded_resources_with_details(&listed, false, true);
+    let text = text_of(&loaded.components);
+    assert!(!text.contains("skill"), "{text}");
+    assert!(!text.contains("agent"), "{text}");
 }
 
 #[test]
-fn the_startup_header_opens_at_startup_when_the_saved_view_is_full() {
-    let _g = lock(Some("dark"));
-    let mut header = startup_header(
-        Rc::new(Cell::new((100, 24))),
-        "0.2.22",
-        "~/w",
-        Rc::new(Cell::new(false)),
-        startup_details_open(false, ToolOutputView::Full),
-    );
-    assert!(plain(&header.render(100).join("\n")).contains(ONBOARDING));
+fn the_start_lines_name_the_version_then_the_folder_and_what_loaded() {
+    let facts = StartFacts {
+        cwd: "/work/hoocode".into(),
+        skills: 1,
+        agents: 5,
+    };
+    let (name, place) = start_lines("0.2.31", &facts);
+    assert_eq!(name, " hoocode v0.2.31");
+    assert_eq!(place, " /work/hoocode · 1 skill · 5 agents");
+    let none = StartFacts {
+        cwd: "~/w".into(),
+        ..Default::default()
+    };
+    assert_eq!(start_lines("0.2.31", &none).1, " ~/w");
 }
 
 #[test]
-fn the_logo_keeps_three_rows_at_the_fullscreen_body_width() {
-    // Fullscreen lays the body out one column narrower than the terminal
-    // (`body_width`), so an edge star dot built for the full width wraps
-    // onto its own row and tears the owl apart. A 51-wide terminal keeps the
-    // dot at column 50; the body renders at 50.
+fn the_start_header_is_two_lines_then_one_blank_row_once_there_is_a_turn() {
     let _g = lock(Some("dark"));
-    let mut header = startup_header(
-        Rc::new(Cell::new((51, 24))),
-        "0.2.22",
-        "~/w",
-        Rc::new(Cell::new(false)),
-        startup_details_open(false, ToolOutputView::Peek),
-    );
-    let rows = header.render(50);
-    let text = plain(&rows.join("\n"));
-    assert_eq!(rows.len(), 3, "{text}");
-}
-
-#[test]
-fn the_logo_re_lays_itself_out_after_a_resize() {
-    // The header reads the live terminal size on each rebuild: narrowing the
-    // terminal (a vertical split) and refreshing must drop the dots that no
-    // longer fit instead of wrapping them onto their own rows.
-    let _g = lock(Some("dark"));
-    let size = Rc::new(Cell::new((100u16, 24u16)));
-    let mut header = startup_header(
-        size.clone(),
-        "0.2.22",
-        "~/w",
-        Rc::new(Cell::new(false)),
-        startup_details_open(false, ToolOutputView::Peek),
-    );
-    assert_eq!(header.render(99).len(), 3);
-    size.set((60, 24));
-    header.refresh();
-    let rows = header.render(59);
-    let text = plain(&rows.join("\n"));
-    assert_eq!(rows.len(), 3, "{text}");
-    assert!(text.contains('\u{2726}'), "{text}");
-    assert!(!text.contains('\u{22c6}'), "far dot no longer fits: {text}");
-}
-
-#[test]
-fn the_logo_skips_a_dot_that_would_land_past_the_edge() {
-    // Row 2 carries the cwd: with a long one the row already reaches past
-    // the dot's column, so appending the dot would push the row past the
-    // body width and wrap it onto its own row. 70 chars of cwd make row 2
-    // exactly 79 wide; the body renders at 79 on an 80-wide terminal.
-    let _g = lock(Some("dark"));
-    let cwd = format!("~/{}", "x".repeat(68));
-    assert_eq!(cwd.len(), 70);
-    let mut header = startup_header(
-        Rc::new(Cell::new((80, 24))),
-        "0.2.22",
-        &cwd,
-        Rc::new(Cell::new(false)),
-        startup_details_open(false, ToolOutputView::Peek),
-    );
-    let rows = header.render(79);
-    let text = plain(&rows.join("\n"));
-    assert_eq!(rows.len(), 3, "{text}");
+    let turns = Rc::new(Cell::new(false));
+    let read = turns.clone();
+    let facts = Rc::new(std::cell::RefCell::new(StartFacts {
+        cwd: "~/w".into(),
+        skills: 2,
+        agents: 0,
+    }));
+    let mut header = StartHeader::new("0.2.31", facts, Rc::new(move || read.get()));
+    let rows: Vec<String> = header.render(100).iter().map(|r| plain(r)).collect();
+    assert_eq!(rows, [" hoocode v0.2.31", " ~/w · 2 skills"]);
+    turns.set(true);
+    assert_eq!(header.render(100), [""]);
 }

@@ -102,11 +102,6 @@ str_enum!(
 );
 
 str_enum!(
-    /// `chromeDensity` (chrome-density.ts). Two stops.
-    ChromeDensity { Full => "full", Compact => "compact" }
-);
-
-str_enum!(
     /// `pluginInstallScope`.
     PluginInstallScope { User => "user", Project => "project" }
 );

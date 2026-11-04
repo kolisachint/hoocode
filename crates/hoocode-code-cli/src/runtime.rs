@@ -2079,12 +2079,6 @@ pub fn run_interactive_mode(
         session_runtime: Some(session_runtime),
         runtime: async_runtime(),
         listing: Box::new(resource_listing),
-        is_oauth: {
-            let auth = auth.clone();
-            Box::new(move |provider| {
-                hoocode_code_models::AuthLookup::is_oauth(auth.as_ref(), provider)
-            })
-        },
         auth_storage: auth,
         version: hoocode_code_paths::VERSION.to_string(),
         verbose: args.verbose == Some(true),
@@ -2253,7 +2247,6 @@ mod tests {
                 session_runtime: None,
                 runtime: async_runtime(),
                 listing: Box::new(resource_listing),
-                is_oauth: Box::new(|_| false),
                 auth_storage: Arc::new(AuthStorage::in_memory([])),
                 version: "0.0.1".into(),
                 verbose: false,
@@ -2269,9 +2262,9 @@ mod tests {
         );
         assert!(result.is_ok());
         let drawn = hoocode_tui_util::strip_vt_control_characters(&output.lock().unwrap());
-        assert!(drawn.contains("▸ name your mission"), "{drawn}");
-        assert!(drawn.contains("━ peek ━"), "{drawn}");
-        assert!(drawn.contains("coding agent · v0.0.1"), "{drawn}");
+        assert!(drawn.contains(" › "), "{drawn}");
+        assert!(drawn.contains("peek · "), "{drawn}");
+        assert!(drawn.contains(" hoocode v0.0.1"), "{drawn}");
         assert!(drawn.contains("hi"), "{drawn}");
         assert_eq!(*title.lock().unwrap(), "HooCode - w");
     }
@@ -2684,7 +2677,6 @@ mod tests {
                     session_runtime: None,
                     runtime: async_runtime(),
                     listing: Box::new(resource_listing),
-                    is_oauth: Box::new(|_| false),
                     auth_storage: Arc::new(AuthStorage::in_memory([])),
                     version: "0.0.1".into(),
                     verbose: false,
@@ -2929,7 +2921,6 @@ mod tests {
                     session_runtime: None,
                     runtime: async_runtime(),
                     listing: Box::new(resource_listing),
-                    is_oauth: Box::new(|_| false),
                     auth_storage: Arc::new(AuthStorage::in_memory([])),
                     version: "0.0.1".into(),
                     verbose: false,
@@ -2964,18 +2955,18 @@ mod tests {
 
         #[test]
         fn ctrl_o_cycles_outline_peek_full_and_back() {
-            let outline = "━ outline ━";
+            let outline = "outline · ";
             let (drawn, _) = run(
                 json!({ "toolOutputView": "outline" }),
                 &[CTRL_O, CTRL_O, CTRL_O],
             );
             assert!(
-                in_order(&drawn, &[outline, "━ peek ━", "━ full ━", outline]),
+                in_order(&drawn, &[outline, "peek · ", "full · ", outline]),
                 "{drawn}"
             );
             let (drawn, _) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O, CTRL_O]);
             assert!(
-                in_order(&drawn, &["━ peek ━", "━ full ━", outline]),
+                in_order(&drawn, &["peek · ", "full · ", outline]),
                 "{drawn}"
             );
         }
@@ -2983,17 +2974,17 @@ mod tests {
         #[test]
         fn a_stored_full_setting_loads_as_full_and_cycles_to_outline() {
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[]);
-            assert!(drawn.contains("━ full ━"), "{drawn}");
-            assert!(!drawn.contains("━ outline ━"), "{drawn}");
+            assert!(drawn.contains("full · "), "{drawn}");
+            assert!(!drawn.contains("outline · "), "{drawn}");
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
-            assert!(in_order(&drawn, &["━ full ━", "━ outline ━"]), "{drawn}");
+            assert!(in_order(&drawn, &["full · ", "outline · "]), "{drawn}");
         }
 
         #[test]
         fn a_stored_radar_setting_still_loads_as_outline() {
             // `radar` was the outline stop's name before the rename.
             let (drawn, session) = run(json!({ "toolOutputView": "radar" }), &[]);
-            assert!(drawn.contains("━ outline ━"), "{drawn}");
+            assert!(drawn.contains("outline · "), "{drawn}");
             assert_eq!(session.settings().tool_output_view().as_str(), "outline");
         }
 
@@ -3011,7 +3002,7 @@ mod tests {
         fn the_toggle_leaves_the_startup_header_compact() {
             // The header opens under `verbose`, not with the dial.
             let (drawn, _) = run(json!({ "toolOutputView": "outline" }), &[CTRL_O]);
-            assert!(in_order(&drawn, &["━ peek ━"]), "{drawn}");
+            assert!(in_order(&drawn, &["peek · "]), "{drawn}");
             assert!(
                 !drawn.contains("Compose — the message in your hands"),
                 "{drawn}"

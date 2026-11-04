@@ -45,8 +45,6 @@ pub(super) enum BuiltinCommand {
     Perf,
     Mcp,
     Plugin,
-    Color,
-    Chrome,
     Fork,
     Clone,
     Cd,
@@ -86,8 +84,6 @@ impl BuiltinCommand {
             "perf" => Self::Perf,
             "mcp" => Self::Mcp,
             "plugin" => Self::Plugin,
-            "color" => Self::Color,
-            "chrome" => Self::Chrome,
             "fork" => Self::Fork,
             "clone" => Self::Clone,
             "cd" => Self::Cd,
@@ -114,8 +110,6 @@ impl BuiltinCommand {
             | Self::Compact
             | Self::Model
             | Self::Copy
-            | Self::Color
-            | Self::Chrome
             | Self::Cd
             | Self::Mcp
             | Self::Plugin
@@ -170,10 +164,6 @@ impl Mode {
             BuiltinCommand::Perf => self.handle_perf_command(),
             BuiltinCommand::Mcp => self.handle_mcp_command(text),
             BuiltinCommand::Plugin => self.handle_plugin_command(text),
-            BuiltinCommand::Color => {
-                self.handle_color_command(text);
-            }
-            BuiltinCommand::Chrome => self.handle_chrome_command(text),
             BuiltinCommand::Fork => self.show_user_message_selector(),
             BuiltinCommand::Clone => self.handle_clone_command(),
             BuiltinCommand::Cd => self.handle_change_directory(text),

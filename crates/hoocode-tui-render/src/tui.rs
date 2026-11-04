@@ -184,10 +184,6 @@ pub struct ScrollSearchStatus {
 }
 
 pub type ScrollStatusFormatter = Box<dyn Fn(&ScrollStatus) -> String>;
-/// Mission Control transmission toast lines (M8e4): the app draws the toast
-/// with ratatui and the frame only floats its pre-rendered lines top-right
-/// over the body. The provider gets the body width; empty means no toast.
-pub type ToastProvider = Box<dyn Fn(usize) -> Vec<String>>;
 
 /// Opens a clicked URL (`onHyperlink`).
 pub type HyperlinkHandler = Box<dyn FnMut(&str)>;
@@ -427,7 +423,9 @@ pub struct Tui {
     /// Transcript length measured by the last pinned paint.
     scroll_total_lines: i64,
     scroll_status_formatter: ScrollStatusFormatter,
-    toast_provider: Option<ToastProvider>,
+    /// The scroll status replaces the last bottom row (the app's status
+    /// line) instead of taking a row of its own above the bottom.
+    scroll_status_in_bottom: bool,
     scroll_search: Option<ScrollSearch>,
     /// Whether the view may pin right now (unset means always). Given the
     /// TUI so it can ask what holds focus.
@@ -516,7 +514,7 @@ impl Tui {
             scroll_offset: None,
             scroll_total_lines: 0,
             scroll_status_formatter: Box::new(default_scroll_status),
-            toast_provider: None,
+            scroll_status_in_bottom: false,
             scroll_search: None,
             can_pin_scroll: None,
             scroll_prompt: None,
@@ -636,11 +634,12 @@ impl Tui {
         self.scroll_status_formatter = formatter;
     }
 
-    /// Float the app's transmission toast lines top-right over the body.
-    /// Only the fullscreen frame floats them; the pinned painter leaves the
-    /// band to the app.
-    pub fn set_toast_provider(&mut self, provider: ToastProvider) {
-        self.toast_provider = Some(provider);
+    /// Draw the full-screen scroll status in place of the last bottom row
+    /// (the app's status line) rather than on a row of its own between the
+    /// body and the bottom. A focused picker that takes the bottom while
+    /// pinned keeps the row of its own.
+    pub fn set_scroll_status_in_bottom(&mut self, on: bool) {
+        self.scroll_status_in_bottom = on;
     }
 
     /// Nominate the child that absorbs the leftover rows. It must already be
@@ -730,12 +729,11 @@ impl Tui {
                 .render_into(fullscreen::body_width(width) as u16, &mut rendered);
             rendered.len()
         });
-        let rows = fullscreen::split_rows(
-            height,
-            top_natural,
-            self.scroll_offset.is_some(),
-            bottom_natural,
-        );
+        let bar = self.scroll_offset.is_some()
+            && !(self.scroll_status_in_bottom
+                && self.scroll_pane().is_none()
+                && bottom_natural > 0);
+        let rows = fullscreen::split_rows(height, top_natural, bar, bottom_natural);
         (total as i64, rows.body as i64)
     }
 
@@ -2244,12 +2242,22 @@ impl Tui {
         } else {
             Vec::new()
         };
-        let mut bottom_lines = if pane.is_empty() {
-            render_children(&bottom_children, width as u16)
-        } else {
+        let picker_bottom = !pane.is_empty();
+        let mut bottom_lines = if picker_bottom {
             pane
+        } else {
+            render_children(&bottom_children, width as u16)
         };
-        let rows = fullscreen::split_rows(height, top_lines.len(), pinned, bottom_lines.len());
+        // The status replaces the bottom's last row (the app's status line),
+        // unless a picker took the bottom.
+        let status_in_bottom =
+            pinned && self.scroll_status_in_bottom && !picker_bottom && !bottom_lines.is_empty();
+        let rows = fullscreen::split_rows(
+            height,
+            top_lines.len(),
+            pinned && !status_in_bottom,
+            bottom_lines.len(),
+        );
 
         // A pinned view keeps its share of the transcript through a resize.
         let mut pinned_top = self.scroll_offset.map(|top| top.max(0) as usize);
@@ -2330,14 +2338,6 @@ impl Tui {
         for (row, text) in top_lines.iter().take(rows.top).enumerate() {
             out.push(self.region_row(text, width, row));
         }
-        // Mission Control transmissions (M8e4): the newest toast floats
-        // top-right over the body, starting on its first row. The lines are
-        // drawn by the app; the frame only splices them over the body rows.
-        let toast = self
-            .toast_provider
-            .as_ref()
-            .map(|provide| provide(fullscreen::body_width(width)))
-            .unwrap_or_default();
         for row in 0..rows.body {
             let text = window_lines.get(row).map_or("", String::as_str);
             let marked = if query.is_empty() || hoocode_tui_images::is_image_line(text) {
@@ -2346,13 +2346,10 @@ impl Tui {
                 Self::highlight_scroll_matches(text, &query)
             };
             let glyph = glyphs.get(row).copied();
-            let mut line = self.body_row(&marked, width, row, glyph);
-            if let Some(floated) = toast.get(row) {
-                line = Self::float_toast_line(&line, floated, width, glyph);
-            }
+            let line = self.body_row(&marked, width, row, glyph);
             out.push(line);
         }
-        if rows.bar == 1 {
+        let status_row = (rows.bar == 1 || status_in_bottom).then(|| {
             let status = ScrollStatus {
                 top: start as i64 + 1,
                 bottom: (start + rows.body).min(total) as i64,
@@ -2366,16 +2363,24 @@ impl Tui {
                 new_lines: fullscreen::new_lines_since(self.fullscreen_seen_total as usize, total)
                     as i64,
             };
-            let text = (self.scroll_status_formatter)(&status);
-            out.push(self.emit_line(&text, width as i64));
+            (self.scroll_status_formatter)(&status)
+        });
+        if rows.bar == 1 {
+            if let Some(text) = &status_row {
+                out.push(self.emit_line(text, width as i64));
+            }
         }
+        let last_shown = window.len().saturating_sub(1);
         for (row, text) in bottom_lines
             .iter()
             .skip(window.start)
             .take(window.len())
             .enumerate()
         {
-            out.push(self.region_row(text, width, row));
+            match (&status_row, status_in_bottom && row == last_shown) {
+                (Some(status), true) => out.push(self.emit_line(status, width as i64)),
+                _ => out.push(self.region_row(text, width, row)),
+            }
         }
         // Screens under four rows show the bottom alone, which may leave rows blank.
         out.resize(height, String::new());
@@ -2394,22 +2399,6 @@ impl Tui {
             return self.emit_line(IMAGE_PLACEHOLDER, width as i64);
         }
         self.emit_line(text, width as i64)
-    }
-
-    /// One body row with the toast's line spliced over its right end: the
-    /// body keeps its left cells, the toast its own width, and the reserved
-    /// scrollbar column keeps its glyph. `width` is the full row including
-    /// that column. The row ends reset so no style leaks into the next row.
-    fn float_toast_line(line: &str, toast: &str, width: usize, glyph: Option<char>) -> String {
-        let toast_width = visible_width(toast);
-        if toast_width == 0 || toast_width + 1 > width {
-            return line.to_string();
-        }
-        let keep = width - 1 - toast_width;
-        let kept = slice_by_column(line, 0, keep, true);
-        let pad = keep.saturating_sub(visible_width(&kept));
-        let suffix: String = glyph.map_or_else(|| " ".to_string(), |g| g.to_string());
-        format!("{kept}{}{toast}{SEGMENT_RESET}{suffix}", " ".repeat(pad))
     }
 
     /// One body row. With a scrollbar glyph, the row is padded to the body
