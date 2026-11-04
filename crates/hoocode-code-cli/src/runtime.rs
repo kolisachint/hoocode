@@ -2235,9 +2235,16 @@ mod tests {
         let output = Arc::new(Mutex::new(String::new()));
         let title = Arc::new(Mutex::new(String::new()));
         let terminal = ScriptedTerminal {
-            // Type, clear with ctrl+c, then leave with ctrl+d on the empty prompt
-            // and end the shift on the card that quit raises.
-            script: vec![(300, "hi"), (100, "\x03"), (600, "\x04"), (150, "\r")],
+            // No model, so the Log in pane opens first: Esc leaves it. Then type,
+            // clear with ctrl+c, then leave with ctrl+d on the empty prompt and
+            // end the shift on the card that quit raises.
+            script: vec![
+                (200, "\x1b"),
+                (300, "hi"),
+                (100, "\x03"),
+                (600, "\x04"),
+                (150, "\r"),
+            ],
             output: output.clone(),
             title: title.clone(),
         };
@@ -2666,8 +2673,9 @@ mod tests {
             );
             let output = Arc::new(Mutex::new(String::new()));
             let terminal = ScriptedTerminal {
-                // ctrl+d raises the end-of-shift card; enter ends the shift.
-                script: vec![(400, "\x04"), (150, "\r")],
+                // Esc leaves the first-run Log in pane; ctrl+d raises the
+                // end-of-shift card; enter ends the shift.
+                script: vec![(200, "\x1b"), (400, "\x04"), (150, "\r")],
                 output: output.clone(),
                 title: Arc::new(Mutex::new(String::new())),
             };
@@ -2824,8 +2832,12 @@ mod tests {
             let lines = draw(two_turns(), json!({"toolOutputView": "outline"}));
             assert_eq!(line_of(&lines, "TRACE_ONE"), None);
             assert_eq!(line_of(&lines, "TRACE_TWO"), None);
-            // One chain of two calls.
-            assert!(lines[at(&lines, "CodeSearch ×2")].contains("2 calls"));
+            // One chain of two calls: a single row names both.
+            assert!(
+                lines[at(&lines, "QUERY_ONE")].contains("QUERY_TWO"),
+                "{}",
+                lines.join("\n")
+            );
         }
 
         #[test]
@@ -2849,33 +2861,26 @@ mod tests {
                 ],
                 json!({"toolOutputView": "outline"}),
             );
-            // Two chains of one call each, the spoken text between them. A
-            // lone call in outline is a group-of-one row (`1 call · …`), so the
-            // rows are found by that stat, not by the tool's name.
-            assert_eq!(line_of(&lines, "×2"), None, "{}", lines.join("\n"));
-            let spoken_at = at(&lines, "SPOKEN");
-            // The first chain is closed by the speech, so it reads done (`●`).
-            // The second is the last one in a history that ends on a tool
-            // result with no answer: the turn was cut short, so it reads
-            // interrupted (`⊘`), never green.
-            // The scripted output holds every repaint (the settled
-            // frame and the quit card), so the rows are read off the
-            // final frame: the last two matches, not a total count.
-            let calls: Vec<(usize, &str)> = lines
-                .iter()
-                .enumerate()
-                .filter(|(_, l)| l.contains("1 call") && (l.contains("● ") || l.contains("⊘ ")))
-                .map(|(i, l)| (i, if l.contains("⊘ ") { "⊘" } else { "●" }))
-                .collect();
-            assert!(calls.len() >= 2, "{}", lines.join("\n"));
-            let tail = &calls[calls.len() - 2..];
-            assert_eq!(tail[0].1, "●", "{}", lines.join("\n"));
-            assert_eq!(tail[1].1, "⊘", "{}", lines.join("\n"));
-            let spoken_last = lines
-                .iter()
-                .rposition(|l| l.contains("SPOKEN"))
-                .unwrap_or(spoken_at);
-            assert!(tail[0].0 < spoken_last && spoken_last < tail[1].0);
+            // Two chains of one call each, the spoken text between them: two
+            // rows (`● CodeSearch <query>`), not one row naming both calls.
+            assert!(
+                !lines
+                    .iter()
+                    .any(|l| l.contains("QUERY_ONE") && l.contains("QUERY_TWO")),
+                "{}",
+                lines.join("\n")
+            );
+            // The scripted output holds every repaint (the settled frame and
+            // the quit card), so the rows are read off the final frame: the
+            // last occurrences, not a total count.
+            let last = |needle: &str| {
+                lines
+                    .iter()
+                    .rposition(|l| l.contains(needle))
+                    .unwrap_or_else(|| panic!("{needle} not drawn:\n{}", lines.join("\n")))
+            };
+            let (one, spoken_at, two) = (last("QUERY_ONE"), last("SPOKEN"), last("QUERY_TWO"));
+            assert!(one < spoken_at && spoken_at < two, "{}", lines.join("\n"));
         }
     }
 
@@ -2905,7 +2910,7 @@ mod tests {
                 &hoocode_code_plugins::PluginSet::default(),
             );
             let output = Arc::new(Mutex::new(String::new()));
-            let mut script: Vec<(u64, &'static str)> = vec![(300, "")];
+            let mut script: Vec<(u64, &'static str)> = vec![(300, "\x1b")]; // Esc leaves the first-run Log in pane
             script.extend(keys.iter().map(|k| (150, *k)));
             script.push((300, "\x04"));
             // The end-of-shift card that quit raises: enter ends the shift.
