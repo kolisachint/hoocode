@@ -1,19 +1,13 @@
-  ◉ END OF SHIFT   esc stay
-   2 missions · 5 steps · ↑48.2k ↓9.8k · CR $1.234
-
-   enter end the shift · esc stay
+  Quit?   2 messages · 5 tool calls · ↑48.2k ↓9.8k · $1.234
+ enter quit · esc stay
 --- styles ---
 r0 c0 fg=#e5e5e7 bg=#1e1e2a
-r0 c1-16 fg=#14141c bg=#f0c674 bold
-r0 c17-18 fg=#e5e5e7 bg=#1e1e2a
-r0 c19-26 fg=#989898 bg=#1e1e2a
-r0 c27-99 fg=#e5e5e7 bg=#1e1e2a
-r1 c0-12 fg=#e5e5e7 bg=#1e1e2a
-r1 c13-15 fg=#989898 bg=#1e1e2a
-r1 c16-22 fg=#e5e5e7 bg=#1e1e2a
-r1 c23-49 fg=#989898 bg=#1e1e2a
-r1 c50-99 fg=#e5e5e7 bg=#1e1e2a
-r2 c0-99 fg=#e5e5e7 bg=#1e1e2a
-r3 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r3 c3-32 fg=#989898 bg=#1e1e2a
-r3 c33-99 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-7 fg=#14141c bg=#5cc8bb bold
+r0 c8-9 fg=#e5e5e7 bg=#1e1e2a
+r0 c10-58 fg=#989898 bg=#1e1e2a
+r0 c59-99 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-5 fg=#e5e5e7 bg=#1e1e2a
+r1 c6-13 fg=#989898 bg=#1e1e2a
+r1 c14-16 fg=#e5e5e7 bg=#1e1e2a
+r1 c17-21 fg=#989898 bg=#1e1e2a
+r1 c22-99 fg=#e5e5e7 bg=#1e1e2a

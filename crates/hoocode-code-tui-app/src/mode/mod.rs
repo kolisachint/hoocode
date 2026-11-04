@@ -1811,12 +1811,11 @@ impl Mode {
                         questions,
                         reply,
                         chime,
-                        esc_answers_first,
                     }) => {
                         if chime {
                             self.ring_chime();
                         }
-                        self.show_ask_options(questions, reply, esc_answers_first)
+                        self.show_ask_options(questions, reply)
                     }
                     AppEvent::Dialog(DialogRequest::HideAskOptions) => self.hide_ask_options(None),
                     AppEvent::Dialog(DialogRequest::Clearance { id, info, reply }) => {

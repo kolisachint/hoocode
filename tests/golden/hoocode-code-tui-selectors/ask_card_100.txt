@@ -1,46 +1,33 @@
-  ◉ MISSION CONTROL ASKS   sets the default for every call
-   1/2 where should retry logic live?
-       the http client is shared by every provider adapter
-
-   › 1  hoocode-ai   unified provider client
-     2  agent-core   runtime wrap each tool call
-     3  something else   type it
- 1–3 answer · ↑↓ move · → next · esc pick 1
+  Question   where should retry logic live?  1 of 2
+   the http client is shared by every provider adapter
+ › 1  hoocode-ai  unified provider client
+   2  agent-core  runtime wrap each tool call
+ › or type your own answer
+ 1–2 pick · tab next question · esc skip
 --- styles ---
 r0 c0 fg=#e5e5e7 bg=#1e1e2a
-r0 c1-24 fg=#14141c bg=#f0c674 bold
-r0 c25-26 fg=#e5e5e7 bg=#1e1e2a
-r0 c27-57 fg=#989898 bg=#1e1e2a
-r0 c58-99 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-10 fg=#14141c bg=#f0c674 bold
+r0 c11-12 fg=#e5e5e7 bg=#1e1e2a
+r0 c13-42 fg=#e5e5e7 bg=#1e1e2a bold
+r0 c43-50 fg=#989898 bg=#1e1e2a
+r0 c51-99 fg=#e5e5e7 bg=#1e1e2a
 r1 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r1 c3-5 fg=#989898 bg=#1e1e2a
-r1 c6 fg=#e5e5e7 bg=#1e1e2a
-r1 c7-36 fg=#e5e5e7 bg=#1e1e2a bold
-r1 c37-99 fg=#e5e5e7 bg=#1e1e2a
-r2 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r2 c3-57 fg=#989898 bg=#1e1e2a
-r2 c58-99 fg=#e5e5e7 bg=#1e1e2a
-r3 c0-99 fg=#e5e5e7 bg=#1e1e2a
-r4 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r4 c3-5 fg=#5cc8bb bg=#1e1e2a
-r4 c6-7 fg=#e5e5e7 bg=#1e1e2a
-r4 c8-17 fg=#e5e5e7 bg=#1e1e2a bold
-r4 c18-43 fg=#989898 bg=#1e1e2a
-r4 c44-99 fg=#e5e5e7 bg=#1e1e2a
-r5 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r5 c3-4 fg=#5cc8bb bg=#1e1e2a
-r5 c5 fg=#989898 bg=#1e1e2a
-r5 c6-17 fg=#e5e5e7 bg=#1e1e2a
-r5 c18-47 fg=#989898 bg=#1e1e2a
-r5 c48-99 fg=#e5e5e7 bg=#1e1e2a
-r6 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r6 c3-4 fg=#5cc8bb bg=#1e1e2a
-r6 c5 fg=#989898 bg=#1e1e2a
-r6 c6-7 fg=#e5e5e7 bg=#1e1e2a
-r6 c8-21 fg=#989898 bg=#1e1e2a
-r6 c22-24 fg=#e5e5e7 bg=#1e1e2a
-r6 c25-31 fg=#989898 bg=#1e1e2a
-r6 c32-99 fg=#e5e5e7 bg=#1e1e2a
-r7 c0 fg=#e5e5e7 bg=#1e1e2a
-r7 c1-42 fg=#989898 bg=#1e1e2a
-r7 c43-99 fg=#e5e5e7 bg=#1e1e2a
+r1 c3-53 fg=#989898 bg=#1e1e2a
+r1 c54-99 fg=#e5e5e7 bg=#1e1e2a
+r2 c0-2 fg=#5cc8bb bg=#233239
+r2 c3-99 fg=#e5e5e7 bg=#233239
+r3 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r3 c3-5 fg=#989898 bg=#1e1e2a
+r3 c6-17 fg=#e5e5e7 bg=#1e1e2a
+r3 c18-44 fg=#989898 bg=#1e1e2a
+r3 c45-99 fg=#e5e5e7 bg=#1e1e2a
+r4 c0-2 fg=#5cc8bb bg=#2a2a36
+r4 c3-25 fg=#989898 bg=#2a2a36
+r4 c26-99 fg=#e5e5e7 bg=#2a2a36
+r5 c0-3 fg=#e5e5e7 bg=#1e1e2a
+r5 c4-11 fg=#989898 bg=#1e1e2a
+r5 c12-14 fg=#e5e5e7 bg=#1e1e2a
+r5 c15-31 fg=#989898 bg=#1e1e2a
+r5 c32-34 fg=#e5e5e7 bg=#1e1e2a
+r5 c35-39 fg=#989898 bg=#1e1e2a
+r5 c40-99 fg=#e5e5e7 bg=#1e1e2a

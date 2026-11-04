@@ -216,7 +216,7 @@ fn colors_panel_rows_and_roster_names_with_the_same_per_type_hue() {
     set_status(run.id, TaskStatus::InProgress);
     let lines = render(&mut panel);
     let row = find(&lines, "scan the repo");
-    // The `[explore]` tag carries the per-type hue (on the pane's
+    // The `explore` tag carries the per-type hue (on the pane's
     // background): the SGR right before the tag sets that foreground.
     let hue = hoocode_tui_ratatui::Palette::current()
         .style(agent_color_for("explore"))
@@ -224,7 +224,7 @@ fn colors_panel_rows_and_roster_names_with_the_same_per_type_hue() {
     let Some(hoocode_tui_ratatui::core::style::Color::Rgb(r, g, b)) = hue else {
         panic!("explore has an rgb hue: {hue:?}");
     };
-    let at = row.find("[explore]").expect("the tag renders");
+    let at = row.find("explore").expect("the tag renders");
     let sgr_start = row[..at].rfind('\x1b').expect("the tag is styled");
     let sgr = &row[sgr_start..at];
     assert!(sgr.contains(&format!("38;2;{r};{g};{b}")), "{row:?}");
@@ -403,11 +403,11 @@ fn nests_a_linked_run_under_its_plan_item_in_the_flat_lens_and_counts_it() {
     assert!(todo_idx > 0);
     assert_eq!(run_idx, todo_idx + 1, "{lines:#?}");
     assert!(lines[run_idx].contains("└─"));
-    assert!(lines[run_idx].contains("[explore]"));
+    assert!(lines[run_idx].contains("explore"));
     assert!(lines[run_idx].contains("⋯ CodeSearch"));
     assert!(!lines.iter().any(|l| l.contains("free-floating run")));
     // The tab strip (top edge) counts the plan items only: the todo and the pending one, not the nested run.
-    assert!(lines[0].contains("[Plan 0/2]"), "{}", lines[0]);
+    assert!(lines[0].contains("plan 0/2"), "{}", lines[0]);
 
     // The run still appears in the subagents lens.
     panel.set_view(TaskPanelView::Subagents);

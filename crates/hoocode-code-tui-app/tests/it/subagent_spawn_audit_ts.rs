@@ -302,7 +302,7 @@ fn renders_orphaned_children_as_roots_so_the_tab_count_matches_the_rows() {
         "{lines:#?}"
     );
     // The tab strip is on the console's top edge.
-    assert!(lines[0].contains("Agents 1/1"), "{}", lines[0]);
+    assert!(lines[0].contains("agents 1/1"), "{}", lines[0]);
     panel.dispose();
 }
 
@@ -350,7 +350,7 @@ fn clears_a_task_note_when_the_next_update_omits_it_explicitly() {
     panel.set_view(TaskPanelView::Subagents);
     assert!(plain(&mut panel)
         .join("\n")
-        .contains("⚠\u{fe0e} ran on inherited model"));
+        .contains("ran on inherited model"));
     // The finishing update clears the note, as finalizing a dispatch with no
     // warning does.
     update(
