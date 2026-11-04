@@ -146,9 +146,9 @@ impl PaneStyle {
 
     /// The pane style for the current theme and terminal: monochrome when
     /// colour is off (NO_COLOR, `TERM=dumb`; the app has no below-256-colour
-    /// tier yet, see `detect_color_mode`); otherwise
-    /// the dark or light palette (by the theme's surfaces), with the
-    /// theme's text, dim and accent colours where it sets them.
+    /// tier yet, see `detect_color_mode`); otherwise the theme's pane
+    /// tokens and text colours, over the dark or light palette (picked by
+    /// the theme's surfaces) where a colour does not resolve.
     pub fn current() -> Self {
         if !hoocode_code_tui_theme::chalk::enabled() {
             return Self::mono();
@@ -159,10 +159,8 @@ impl PaneStyle {
         } else {
             Self::dark()
         };
-        // TODO(WP1 merge): read theme tokens. The pane tokens (`surface`,
-        // `pane`, `paneSel`, `paneInput`, `paneDetail`, `chip`, `chipWarn`,
-        // `chipFg`) land with WP1; until a theme sets them the spec hexes
-        // above stand in.
+        // The theme's pane surfaces (each falls back to `selectedBg` in a
+        // theme that predates them) and its chip text.
         for (token, slot) in [
             ("surface", &mut style.surface),
             ("pane", &mut style.pane),
@@ -171,13 +169,16 @@ impl PaneStyle {
             ("paneDetail", &mut style.pane_detail),
             ("chip", &mut style.chip),
             ("chipWarn", &mut style.chip_warn),
-            ("chipFg", &mut style.chip_fg),
         ] {
             if let Some(color) = pal.bg_color(token) {
                 *slot = color;
             }
         }
+        // Text colours: the theme's where they resolve (`ink` is empty on
+        // dark, meaning the default text, so the dark text stands in). The
+        // warn chip's dark text has no token: it stays the palette's.
         for (fg, slot) in [
+            (pal.style("chipFg").fg, &mut style.chip_fg),
             (pal.ink().fg, &mut style.text),
             (pal.dim().fg, &mut style.dim),
             (pal.acc().fg, &mut style.accent),

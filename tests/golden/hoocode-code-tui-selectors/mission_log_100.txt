@@ -15,19 +15,18 @@ r0 c24-33 fg=#989898 bg=#1e1e2a
 r0 c34-99 fg=#e5e5e7 bg=#1e1e2a
 r1 c0 fg=#e5e5e7 bg=#1e1e2a
 r1 c1-16 fg=#5cc8bb bg=#1e1e2a
-r1 c17-32 fg=#a8a8a8 bg=#1e1e2a
+r1 c17-32 fg=#989898 bg=#1e1e2a
 r1 c33-35 fg=#5cc8bb bg=#1e1e2a
-r1 c36-43 fg=#a8a8a8 bg=#1e1e2a
+r1 c36-43 fg=#989898 bg=#1e1e2a
 r1 c44-51 fg=#5cc8bb bg=#1e1e2a
 r1 c52-99 fg=#e5e5e7 bg=#1e1e2a
 r2 c0 fg=#e5e5e7 bg=#1e1e2a
-r2 c1-3 fg=#989898 bg=#1e1e2a
-r2 c4-47 fg=#a8a8a8 bg=#1e1e2a
+r2 c1-47 fg=#989898 bg=#1e1e2a
 r2 c48-99 fg=#e5e5e7 bg=#1e1e2a
 r3 c0-2 fg=#5cc8bb bg=#233239
 r3 c3 fg=#e5e5e7 bg=#4ec9b0
 r3 c4 fg=#e5e5e7 bg=#233239
-r3 c5-14 fg=#ffff00 bg=#233239 bold
+r3 c5-14 fg=#f0c674 bg=#233239 bold
 r3 c15-91 fg=#e5e5e7 bg=#233239
 r3 c92 fg=#989898 bg=#233239
 r3 c93 fg=#e5e5e7 bg=#233239

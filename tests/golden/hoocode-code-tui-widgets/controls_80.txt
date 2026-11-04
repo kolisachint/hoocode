@@ -47,9 +47,9 @@
    shift+alt+m  Cycle to previous model
    alt+t  Cycle thinking level (off → … → high)
    shift+alt+t  Cycle thinking level backward
-   alt+o  Cycle tool output view (radar → peek → full)
+   alt+o  Cycle tool output view (outline → peek → full)
    shift+alt+o  Cycle tool output view backward
-   ctrl+o  Step tool output: radar → peek → full → radar
+   ctrl+o  Step tool output: outline → peek → full → outline
    ctrl+t  Toggle thinking blocks
    alt+l  Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)
    shift+alt+l  Cycle task panel view backward
