@@ -15,7 +15,10 @@ use hoocode_code_agent_session::PromptOptions;
 use hoocode_code_session::FileEntry;
 use hoocode_code_tool_api::ToolDefinition;
 
-const SESSION_ENDED: &str = "Session ended before this call finished";
+const SESSION_ENDED: &str =
+    "Session ended before this call finished; it may still complete in the background";
+const USER_ABORTED: &str =
+    "Aborted by the user before this call finished; it may still complete in the background";
 
 /// A `wait` tool that ignores the abort: it marks itself running, then blocks
 /// until released.
@@ -146,4 +149,83 @@ async fn closing_open_calls_at_shutdown_persists_one_result_per_call() {
     let results = persisted_results(&h);
     assert_eq!(results.len(), 1, "{results:?}");
     assert_eq!(text_of(&results[0]), SESSION_ENDED);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn compact_mid_call_persists_the_result_before_the_compaction_entry() {
+    let wait = StuckTool::new();
+    let h = Harness::new(HarnessOptions {
+        tools: vec![wait.definition.clone()],
+        ..Default::default()
+    });
+    h.set_responses(vec![
+        wait_call(),
+        faux_assistant_message("summary from model", Default::default()).into(),
+        faux_assistant_message("summary from model", Default::default()).into(),
+    ]);
+    let session = h.session.clone();
+    let run = tokio::spawn(async move { session.prompt("go", PromptOptions::default()).await });
+    wait.running().await;
+
+    // compact() disconnects before it aborts: the loop's result is not persisted.
+    let _ = h.session.compact(None, None).await;
+    run.await.unwrap().unwrap();
+    wait.release();
+
+    let entries = h.session.session_manager().entries().to_vec();
+    let result_at = entries
+        .iter()
+        .position(|e| {
+            matches!(
+                e,
+                FileEntry::Message {
+                    message: AgentMessage::ToolResult(_),
+                    ..
+                }
+            )
+        })
+        .expect("the cut-short call has a result");
+    if let Some(compaction_at) = entries
+        .iter()
+        .position(|e| matches!(e, FileEntry::Compaction { .. }))
+    {
+        assert!(
+            result_at < compaction_at,
+            "result before the compaction entry"
+        );
+    }
+    let results = persisted_results(&h);
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert_eq!(text_of(&results[0]), USER_ABORTED);
+    // Nothing is left for the shutdown to answer, so no orphan later.
+    assert_eq!(h.session.close_unanswered_tool_calls(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_prompt_after_the_run_leaves_nothing_for_shutdown_to_answer() {
+    let wait = StuckTool::new();
+    let h = Harness::new(HarnessOptions {
+        tools: vec![wait.definition.clone()],
+        ..Default::default()
+    });
+    h.set_responses(vec![
+        wait_call(),
+        faux_assistant_message("after abort", Default::default()).into(),
+        faux_assistant_message("next", Default::default()).into(),
+    ]);
+    let session = h.session.clone();
+    let run = tokio::spawn(async move { session.prompt("go", PromptOptions::default()).await });
+    wait.running().await;
+    h.session.abort().await;
+    run.await.unwrap().unwrap();
+    wait.release();
+    h.session
+        .prompt("next", PromptOptions::default())
+        .await
+        .unwrap();
+
+    assert_eq!(h.session.close_unanswered_tool_calls(), 0);
+    let results = persisted_results(&h);
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert_eq!(text_of(&results[0]), USER_ABORTED);
 }

@@ -69,7 +69,7 @@ pub fn create_write_tool_definition(
         .operations
         .unwrap_or_else(|| Arc::new(LocalWriteOperations));
     ToolDefinition { background_when: None,
-        background_placeholder: None, ordered_start: true,
+        background_placeholder: None, ordered_start: true, abort_grace: None,
         name: "Write".into(),
         label: "Write".into(),
         description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.".into(),

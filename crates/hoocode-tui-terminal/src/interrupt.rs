@@ -67,11 +67,28 @@ pub fn set_exit_hook(hook: Option<Hook>) {
     *lock(&EXIT_HOOK) = hook;
 }
 
+/// Longest the exit paths wait for the exit hook before the bounded flush.
+pub const EXIT_HOOK_WAIT: Duration = Duration::from_millis(300);
+
+/// Runs the exit hook on a helper thread and waits at most [`EXIT_HOOK_WAIT`]:
+/// a hook stuck on a full session-io queue or a held lock must not hold the
+/// exit. A hook still running then ends with the process.
 fn run_exit_hook() {
     let hook = EXIT_HOOK.try_lock().ok().and_then(|hook| hook.clone());
     if let Some(hook) = hook {
-        hook();
+        run_bounded(hook, EXIT_HOOK_WAIT);
     }
+}
+
+/// Runs `hook` on a helper thread; returns once it finished or `wait` passed.
+/// Returns whether it finished.
+fn run_bounded(hook: Hook, wait: Duration) -> bool {
+    let (done, finished) = hoocode_runtime::sync_bounded_channel::<()>(1);
+    let started = hoocode_runtime::spawn_named_thread("hoocode-exit-hook", move || {
+        hook();
+        let _ = done.send(());
+    });
+    started.is_ok() && finished.recv_timeout(wait).is_ok()
 }
 
 /// The UI loop reports progress. Call it once per loop iteration.
@@ -216,6 +233,16 @@ mod tests {
 
     /// The statics are process-wide: the tests that touch them run one at a time.
     static SERIAL: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn a_stuck_exit_hook_does_not_hold_the_exit() {
+        let started = Instant::now();
+        let stuck: Hook = Arc::new(|| std::thread::sleep(Duration::from_secs(5)));
+        assert!(!run_bounded(stuck, Duration::from_millis(50)));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        let quick: Hook = Arc::new(|| {});
+        assert!(run_bounded(quick, Duration::from_secs(2)));
+    }
 
     #[test]
     fn counts_ctrl_c_in_each_encoding() {

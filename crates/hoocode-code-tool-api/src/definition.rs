@@ -89,6 +89,8 @@ pub struct ToolDefinition {
     pub background_placeholder: Option<DefinitionPlaceholderFn>,
     /// See [`AgentTool::ordered_start`].
     pub ordered_start: bool,
+    /// See [`AgentTool::abort_grace`].
+    pub abort_grace: Option<std::time::Duration>,
     pub execute: DefinitionExecuteFn,
 }
 
@@ -131,6 +133,7 @@ pub fn wrap_tool_definition(
             wrapped
         }),
         ordered_start: definition.ordered_start,
+        abort_grace: definition.abort_grace,
         execute: Arc::new(move |id, params, signal, on_update| {
             let ctx = ctx_factory.as_ref().map(|f| f());
             execute(id, params, signal, on_update, ctx.as_ref())
@@ -170,6 +173,7 @@ pub fn tool_definition_from_agent_tool(tool: AgentTool) -> ToolDefinition {
             wrapped
         }),
         ordered_start: tool.ordered_start,
+        abort_grace: tool.abort_grace,
         execute: Arc::new(move |id, params, signal, on_update, _ctx| {
             execute(id, params, signal, on_update)
         }),
@@ -184,6 +188,7 @@ mod tests {
     fn echo_definition() -> ToolDefinition {
         ToolDefinition {
             ordered_start: false,
+            abort_grace: None,
             background_when: None,
             background_placeholder: None,
             name: "echo".into(),

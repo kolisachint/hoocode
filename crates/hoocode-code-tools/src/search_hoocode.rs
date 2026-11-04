@@ -86,6 +86,7 @@ pub fn create_search_hoocode_tool_definition(
         background_when: None,
         background_placeholder: None,
         ordered_start: false,
+        abort_grace: None,
         execute: Arc::new(move |_id, args: Value, signal, _on_update, _ctx| {
             run_search(&cwd, &options, args, signal)
         }),
