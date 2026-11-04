@@ -45,6 +45,10 @@ On its first start hoocode writes `~/.hoocode/hoo-config.json` with the default 
 rules. It starts in **build** mode: Shell, Edit and Write ask before they run, and
 read-only commands such as `ls`, `cat`, `rg` and `git status` run without asking.
 
+With no provider signed in, the Log in pane opens on its own. Press Esc to leave it: the
+status line then shows `not signed in  /login` until a provider works, and a prompt you
+submit meanwhile stays in the input and opens Log in again.
+
 **Skip permissions.** `hoocode --skip-permissions` runs every tool without asking; the
 header shows SKIP PERMISSIONS while it is on. To make it the default, set
 `"skip_permissions": true` in `~/.hoocode/hoo-config.json` (or export

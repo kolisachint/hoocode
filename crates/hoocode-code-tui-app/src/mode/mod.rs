@@ -26,6 +26,7 @@ use hoocode_code_task_store::task_store;
 use hoocode_code_tool_bash::BashResult;
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_selectors::model_selector::ModelSelectorComponent;
+use hoocode_code_tui_selectors::oauth_selector::LoginMode;
 use hoocode_code_tui_selectors::scoped_models_selector::ScopedModelsSelectorComponent;
 use hoocode_code_tui_selectors::session_selector::SessionSelectorComponent;
 use hoocode_code_tui_selectors::settings_selector::{SettingsChange, SettingsSelectorComponent};
@@ -692,9 +693,18 @@ impl Mode {
         let comms_lost = Rc::new(Cell::new(false));
         let bash_marker = Rc::new(Cell::new(false));
         let rows_editor = editor.clone();
+        let menu_editor = editor.clone();
+        // The prompt row draws the completion menu above the prompt.
+        editor.borrow_mut().editor.set_inline_completion(false);
         let prompt_row = handle(PromptRow::new(
             as_component(&editor),
             Rc::new(move || rows_editor.try_borrow().map_or(1, |e| e.editor.text_rows())),
+            Rc::new(move |max| {
+                menu_editor
+                    .try_borrow_mut()
+                    .ok()
+                    .and_then(|mut e| e.editor.render_completion(max))
+            }),
             Rc::new(move || queue_read.borrow().clone()),
             bash_marker.clone(),
         ));
@@ -1253,19 +1263,10 @@ impl Mode {
                 "Skip permissions is on: tools run without asking (mode rules still apply).",
             );
         }
-        // First run: no key and no login yet. Say how to get a model before
-        // the first message fails with "No model selected".
+        // First run: no working provider. The Log in pane opens on its own;
+        // Esc leaves `⊗ not signed in  /login` in the status line.
         if self.session.model().is_none() {
-            let (title, body) = crate::notification_panel::NO_MODEL_NOTICE;
-            self.notifications.borrow_mut().notify(
-                NotificationKind::Warning,
-                title,
-                &body,
-                None,
-                Some(Duration::from_secs(60)),
-                Some("login"),
-            );
-            self.dirty.set(true);
+            self.show_oauth_selector(LoginMode::Login);
         }
         self.setup_autocomplete_provider();
         self.update_available_provider_count();

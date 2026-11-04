@@ -18,6 +18,7 @@ fn select_theme(band: bool) -> SelectListTheme {
         no_match: id(),
         cursor: None,
         selected_row: band.then(|| -> ColorFn { Box::new(|t: &str| format!("[BG{t}/BG]")) }),
+        row: None,
     }
 }
 

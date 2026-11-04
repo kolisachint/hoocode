@@ -1,6 +1,7 @@
 //! The prompt: the custom editor and its keys (`Action`), submit, the `!` bash prefix, and the
 //! autocomplete providers (`/` commands, `@file`, paths).
 
+use hoocode_code_tui_selectors::oauth_selector::LoginMode;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -629,6 +630,12 @@ impl Mode {
             self.queue_behind_pending_prompt(text, Vec::new());
             return;
         }
+        // Signed out: the text stays in the prompt and Log in opens again.
+        if self.session.model().is_none() {
+            self.editor.borrow_mut().editor.set_text(&text);
+            self.show_oauth_selector(LoginMode::Login);
+            return;
+        }
         self.flush_pending_bash_components();
         self.editor.borrow_mut().editor.add_to_history(&text);
         self.prompt(text);
@@ -1077,5 +1084,22 @@ mod tests {
         // A prompt in flight (its turn not begun) blocks a hail too.
         assert!(!can_hail(false, false, false, false, true));
         assert!(!can_hail(true, true, true, true, true));
+    }
+}
+
+#[cfg(test)]
+mod signed_out_tests {
+    use super::super::test_support::test_mode;
+
+    /// With no working provider a typed prompt stays in the editor and the
+    /// Log in pane opens again (spec v2.9, first run).
+    #[test]
+    fn submitting_while_signed_out_keeps_the_text_and_reopens_log_in() {
+        let mut mode = test_mode(None);
+        assert!(mode.session.model().is_none());
+        mode.submit("hello there".into());
+        assert_eq!(mode.editor.borrow().editor.get_text(), "hello there");
+        assert!(mode.login.is_some());
+        assert!(mode.status_line_data().signed_out);
     }
 }
