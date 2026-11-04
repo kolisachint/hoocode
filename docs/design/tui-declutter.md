@@ -9,7 +9,9 @@ the latest amendment wins). Mockups (styled text, `«fg=…;bg=…»` runs, 100 
 [tui-declutter/mockups/](tui-declutter/mockups/) (`dark/`, `light/`, `mono/` for NO_COLOR; each
 with `screens/`, `dialogs/`, `notices/`). Side-by-side page (today's goldens vs the redesign,
 dark/light switch): [tui-declutter/compare.html](tui-declutter/compare.html), open it locally
-in a browser.
+in a browser. Rebuild mockups and page: `docs/design/tui-declutter/tools/build.sh`
+([tools/README.md](tui-declutter/tools/README.md)). Audits and research behind the decisions:
+[tui-declutter/research.md](tui-declutter/research.md).
 
 ## Goal
 
