@@ -48,6 +48,9 @@ first.** Don't pick one yourself.
 | Core | this page, "The core plan" | milestones 0a–8 | per the status line below |
 | TUI | [tui-activity.md](tui-activity.md) | T0 goldens · S simplification of every TUI component (tiers Now → Next → Later) · T2 subagent storage · T3 live attach · T4 panel tabs · T5 background shell · U surfaces ([tui-surfaces.md](tui-surfaces.md), agreed 2026-10-17) · Mission Control ([mission-control.md](mission-control.md), design 2026-10-17, after U). All work by Haiku subagents | T0 done 2026-10-09; T3, T4 and T5 done 2026-10-15 (T5.3 closed T1.3 too) |
 
+**TUI declutter (2026-11-03):** [tui-declutter.md](tui-declutter.md) replaces the Mission
+Control look with a plain, minimal one (waves WP1–WP10, built on branch `agent/tui-declutter`).
+
 ## Next session (from 2026-10-15, third session)
 
 Status: **proposed, not confirmed by the user.** Ask the user which item to start with
