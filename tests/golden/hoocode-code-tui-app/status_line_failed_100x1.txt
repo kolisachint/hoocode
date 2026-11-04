@@ -1,0 +1,5 @@
+ ⊗ failed · 5.0s · 14k tokens          peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23
+--- styles ---
+r0 c1 fg=#d58181
+r0 c2-28 fg=#989898
+r0 c39-98 fg=#989898
