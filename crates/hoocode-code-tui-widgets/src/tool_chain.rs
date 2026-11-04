@@ -221,10 +221,6 @@ pub struct ToolChainComponent {
     /// outline keeps its old summary line (M5). Chains inside a mission drop
     /// the summary: the mission row carries the stats.
     orphan: bool,
-    /// The mission step number this chain starts at (M4: steps are numbered
-    /// per mission, so a chain opened after prose keeps counting). The
-    /// transcript sets it when the chain opens.
-    base_step: usize,
     /// New whenever one of the fields above changes (the render stamp).
     rev: u64,
 }
@@ -238,7 +234,6 @@ impl ToolChainComponent {
             state: ChainState::Running,
             latest: false,
             orphan: false,
-            base_step: 0,
             rev: fresh_stamp(),
         }
     }
@@ -254,11 +249,6 @@ impl ToolChainComponent {
     /// mission's flight-log mark).
     pub fn chain_state(&self) -> ChainState {
         self.state
-    }
-
-    pub fn set_base_step(&mut self, base: usize) {
-        self.rev = fresh_stamp();
-        self.base_step = base;
     }
 
     pub fn add(&mut self, block: ToolBlock) {

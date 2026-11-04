@@ -47,7 +47,7 @@ use hoocode_tui_render::Component;
 use hoocode_tui_util::truncate_to_width;
 
 use crate::pane::{hint_line, Pane, PaneStyle};
-use crate::trajectory::short_dur;
+use crate::tool_row::short_dur;
 
 fn task_status_icon(status: TaskStatus) -> &'static str {
     // Mission Control circles (spec §2): hollow = not started, fisheye =

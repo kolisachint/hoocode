@@ -23,7 +23,6 @@ use hoocode_code_tui_theme::{
 use hoocode_code_tui_widgets::custom_message::{
     BranchSummaryMessageComponent, CompactionSummaryMessageComponent, CustomMessageComponent,
 };
-use hoocode_code_tui_widgets::UserMessageComponent;
 use hoocode_tui_components::{BoxComponent, MarkdownTheme, Text};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{strip_vt_control_characters, visible_width};
@@ -45,10 +44,6 @@ fn blocks() -> Vec<(&'static str, Box<dyn Component>)> {
         0,
     ))));
     vec![
-        (
-            "user message",
-            Box::new(UserMessageComponent::new("hello there")),
-        ),
         (
             "extension message",
             Box::new(CustomMessageComponent::new(

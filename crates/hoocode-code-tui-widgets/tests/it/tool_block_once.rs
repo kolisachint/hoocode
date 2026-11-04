@@ -8,9 +8,11 @@ use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecu
 use hoocode_code_tui_widgets::tool_output_view::ToolOutputView;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
-use hoocode_code_tui_widgets::trajectory::TRAJECTORY_BODY_LINES;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
+
+/// How many body lines the fold check keeps.
+const BODY_LINES: usize = 3;
 
 fn block(name: &str, args: Value) -> ToolExecutionComponent {
     let definition =
@@ -163,9 +165,9 @@ fn todo_write_failure_shows_no_counts_from_its_args() {
 fn peek_fold(b: &mut ToolExecutionComponent) -> Folded {
     let parts = b.step_parts(80);
     if parts.tail {
-        fold_rows_tail(parts.body, Some(TRAJECTORY_BODY_LINES))
+        fold_rows_tail(parts.body, Some(BODY_LINES))
     } else {
-        fold_rows(parts.body, Some(TRAJECTORY_BODY_LINES))
+        fold_rows(parts.body, Some(BODY_LINES))
     }
 }
 

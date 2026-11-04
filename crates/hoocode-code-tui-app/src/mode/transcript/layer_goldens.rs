@@ -124,7 +124,7 @@ impl Replay {
         if let Some(previous) = self.turn.take() {
             self.settle_turn(previous);
         }
-        self.t.begin_mission(text, None, self.view);
+        self.t.begin_mission(text, self.view);
         self.refresh();
         self.turn = Some(Turn {
             started_ms: timestamp,
@@ -153,7 +153,6 @@ impl Replay {
         {
             let mut c = component.borrow_mut();
             c.set_view(self.view);
-            c.set_outline_above(self.t.outline_chain_above());
             c.set_outline_mission(self.t.current_mission());
         }
         self.t.note_assistant(&component);
@@ -334,7 +333,6 @@ impl Replay {
             Some(chain) if chain.borrow().is_open() => chain.clone(),
             _ => {
                 let chain = handle(ToolChainComponent::new(self.view));
-                chain.borrow_mut().set_base_step(self.t.mission_tally().0);
                 self.t.chat.borrow_mut().add_child(as_component(&chain));
                 self.t.chains.push(chain.clone());
                 self.t.open_chain = Some(chain.clone());

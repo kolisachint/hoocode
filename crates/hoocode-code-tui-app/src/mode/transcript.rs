@@ -2,7 +2,7 @@
 //! rows, and the tool output views.
 
 use std::cell::{Cell, RefCell};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::time::Instant;
 
 use crate::status_line::{TurnOutcome, TurnResult};
@@ -32,7 +32,7 @@ use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
 use hoocode_code_tui_widgets::outline::{FlightItem, FlightMark, FlightStats, PeekOnly};
 use hoocode_code_tui_widgets::skill_block::SkillBlockComponent;
 use hoocode_code_tui_widgets::tool_chain::{speaking_ends_chain, ToolChainComponent};
-use hoocode_code_tui_widgets::tool_chain_summary::{turn_phrase, ChainEntry, ChainState};
+use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
 use hoocode_code_tui_widgets::tool_output_view::cycle_tool_output_view;
 use hoocode_code_tui_widgets::tool_signal::ToolResult;
@@ -135,10 +135,9 @@ pub(super) fn user_prompt(user: &UserMessage) -> LastPrompt {
     prompt
 }
 
-/// One M4 mission: its header number, the chain index it starts at, and
-/// whether its landing line is out yet. The header handle and flight data
-/// back the outline flight-log row (M5); the header itself carries the
-/// prompt and skill.
+/// One turn: its header number, the chain index it starts at, and whether it
+/// has ended yet. The header (the user message) and the shared outline data
+/// back the outline rows; the end line reads the same data.
 #[derive(Debug, Clone)]
 pub(super) struct MissionRange {
     pub(super) seq: usize,
@@ -210,8 +209,8 @@ impl Transcript {
         self.full_active = full_active;
     }
 
-    /// The missions a compaction folds, first to last (`M1–M3`), for the
-    /// JETTISONED row (M8e6). `None` when the transcript holds no missions.
+    /// The turns a compaction folds, first to last (`turns 1–3`), for the
+    /// compaction row. `None` when the transcript holds no turns.
     pub(super) fn jettisoned_range(&self) -> Option<(usize, usize)> {
         let first = self.missions.first()?.seq;
         let last = self.missions.last()?.seq;
@@ -262,13 +261,6 @@ fn settle_mark(chain_mark: FlightMark, stop: Option<StopReason>) -> FlightMark {
     }
 }
 
-/// The one line saying what a turn amounted to (`Edited 3 files · ran 2
-/// commands`), shared by peek's landing line and the outline progress row.
-/// `None` when the turn made no calls.
-fn summary_of(entries: &[ChainEntry]) -> Option<String> {
-    (!entries.is_empty()).then(|| turn_phrase(entries))
-}
-
 /// A `{ truncated: true }` result for a `!` row: the row only reads the flag.
 pub(super) fn truncated_marker(content: &str) -> TruncationResult {
     TruncationResult {
@@ -305,24 +297,6 @@ impl Transcript {
             }
         }
         (steps, hits)
-    }
-
-    /// Every call of `chains[start..end]` as chain entries, in order: what the
-    /// outline progress row and the landing summary read.
-    fn mission_entries(&self, start: usize, end: usize) -> Vec<ChainEntry> {
-        let end = end.min(self.chains.len());
-        let start = start.min(end);
-        self.chains[start..end]
-            .iter()
-            .flat_map(|chain| {
-                chain
-                    .borrow()
-                    .tool_blocks()
-                    .iter()
-                    .map(|block| block.borrow().chain_entry())
-                    .collect::<Vec<_>>()
-            })
-            .collect()
     }
 
     /// Steps and failed steps in the current (last) mission. Before the
@@ -462,19 +436,6 @@ impl Transcript {
         FlightMark::Landed
     }
 
-    /// The chain a new outline prose line sits under (M5): the open mission's
-    /// latest chain. `None` when no chain of the open mission precedes it.
-    pub(super) fn outline_chain_above(&self) -> Option<Weak<RefCell<ToolChainComponent>>> {
-        let in_mission = self
-            .missions
-            .last()
-            .is_some_and(|mission| self.chains.len() > mission.start);
-        if !in_mission {
-            return None;
-        }
-        self.chains.last().map(Rc::downgrade)
-    }
-
     /// Outline prose (R3): a mission's answer, and the reason its message ended
     /// badly, go into its flight data, which its header draws. The answer is
     /// the last message with prose that does not end on a call, and it shows
@@ -588,22 +549,10 @@ impl Transcript {
             // A landed mission's calls are read again only when its tally
             // moved (a retry took blocks out); a flying one's every time.
             let moved = steps != was_steps || hits != was_hits;
-            let entries = (landed && moved).then(|| self.mission_entries(start, end));
             let seq = self.missions[i].seq;
             let items = (!landed || moved).then(|| self.mission_items(seq, start, end));
             // An older finished mission folds to its summary once a later one landed.
             let folded = landed && last_landed.is_some_and(|last| last > i);
-            if landed && moved {
-                if let (Some(landing), Some(entries)) =
-                    (self.missions[i].landing.clone(), entries.as_ref())
-                {
-                    // A retry took blocks out after landing: the row and its
-                    // summary follow, so peek and outline agree.
-                    let mut landing = landing.borrow_mut();
-                    landing.set_counts(steps, hits);
-                    landing.set_summary(summary_of(entries));
-                }
-            }
             let mut flight = self.missions[i].flight.borrow_mut();
             // The mission header's stamp reads this data (hoocode_tui_render::note_change).
             // Only a change moves it: refresh runs on every event.
@@ -634,20 +583,15 @@ impl Transcript {
         }
     }
 
-    /// Opens a mission: the `▲ M{n}` header over the chat. In outline the
-    /// header draws the mission's flight-log row instead.
-    pub(super) fn begin_mission(
-        &mut self,
-        prompt: &str,
-        skill: Option<&str>,
-        view: ToolOutputView,
-    ) {
+    /// Opens a turn: the user message over the chat. In outline the header
+    /// draws the turn's whole block instead.
+    pub(super) fn begin_mission(&mut self, prompt: &str, view: ToolOutputView) {
         let seq = self.missions.len() + 1;
         let flight = Rc::new(RefCell::new(FlightStats {
             mark: FlightMark::InFlight,
             ..Default::default()
         }));
-        let mut header = MissionHeader::new(seq, prompt, skill);
+        let mut header = MissionHeader::new(seq, prompt);
         header.set_view(view);
         header.set_flight(flight.clone());
         let header = handle(header);
@@ -668,13 +612,12 @@ impl Transcript {
         self.chat.borrow_mut().add_child(as_component(&header));
     }
 
-    /// Lands the mission: its flight data takes the time, cost and outcome,
-    /// and its landing line goes in the chat, `● LANDED`, `⊗ DID NOT LAND` or
-    /// `⊘ ABORTED` as the outline row and the comms title read it. `stop` is how
-    /// the turn's last message ended: an error is a mission that did not
-    /// land, an abort one that was aborted, even with no steps to show it. A
-    /// stepless mission that landed clean and used nothing stays silent
-    /// (returns false); every other one gets its row, steps or not.
+    /// Ends the turn: its outline data takes the time, cost and outcome, and
+    /// its end line goes in the chat (peek and full). `stop` is how the turn's
+    /// last message ended: an error is a turn that failed, an abort one that
+    /// was stopped, even with no calls to show it. The end line reads the
+    /// shared data, so it shows only for a failed or stopped turn; returns
+    /// whether it does.
     pub(super) fn land_mission(
         &mut self,
         seq: usize,
@@ -706,28 +649,18 @@ impl Transcript {
             .map(|m| m.start)
             .unwrap_or(self.chains.len());
         let mark = settle_mark(self.mission_mark(start, end), stop);
-        let entries = self.mission_entries(start, end);
         let used = input.max(0) + output.max(0);
         let tokens = format!("{} tokens", format_tokens(used as u64));
         let items = self.mission_items(seq, start, end);
-        let mut landing = None;
-        if steps > 0 || used > 0 || mark != FlightMark::Landed {
-            // The landing row draws from spans (M5 review): the transcript
-            // refreshes its counts when a landed mission's tally moves.
-            let mut line =
-                trajectory::LandingLine::new(mark, steps, hits, &landed_time, &tokens, &cost_text);
-            line.set_summary(summary_of(&entries));
-            let line = handle(line);
-            self.chat
-                .borrow_mut()
-                .add_child(self.peek_child(as_component(&handle(Spacer::new(1)))));
-            self.chat
-                .borrow_mut()
-                .add_child(self.peek_child(as_component(&line)));
-            landing = Some(line);
-        }
-        let shown = landing.is_some();
-        self.missions[i].landing = landing;
+        // The end line reads the shared data: it draws nothing for a turn
+        // that finished, and its own blank row when it shows.
+        let line = handle(trajectory::LandingLine::new(
+            self.missions[i].flight.clone(),
+        ));
+        self.chat
+            .borrow_mut()
+            .add_child(self.peek_child(as_component(&line)));
+        self.missions[i].landing = Some(line.clone());
         let mut flight = self.missions[i].flight.borrow_mut();
         // The mission header's stamp reads this data (hoocode_tui_render::note_change).
         hoocode_tui_render::note_change();
@@ -741,6 +674,9 @@ impl Transcript {
         flight.started = None;
         drop(flight);
         self.missions[i].landed = true;
+        // The reason a failed turn names arrives with the outline prose.
+        self.sync_outline_prose();
+        let shown = line.borrow().end().is_some();
         shown
     }
 
@@ -773,27 +709,6 @@ impl Transcript {
             self.latest_chain = None;
         }
         self.refresh_flight_marks();
-    }
-
-    /// Renumbers every chain from the mission ranges: a retry that takes
-    /// blocks out leaves positional numbering behind otherwise.
-    pub(super) fn rebase_steps(&mut self) {
-        let mut current_start: Option<usize> = None;
-        let mut steps_before = 0;
-        for (i, chain) in self.chains.iter().enumerate() {
-            let start = self
-                .missions
-                .iter()
-                .rev()
-                .find(|m| m.start <= i)
-                .map(|m| m.start);
-            if start != current_start {
-                current_start = start;
-                steps_before = 0;
-            }
-            chain.borrow_mut().set_base_step(steps_before);
-            steps_before += chain.borrow().tool_blocks().len();
-        }
     }
 }
 
@@ -891,23 +806,14 @@ impl Mode {
         self.status.borrow_mut().clear();
     }
 
-    /// Steps and failed steps in the current mission, for the step numbers
-    /// and the landing line (M4). A user message opens a mission: everything
-    /// after it, up to the next one, belongs to it.
-    fn mission_tally(&self) -> (usize, usize) {
-        self.transcript.mission_tally()
-    }
-
-    /// The mission header opening a user turn: `▲ M{n}  prompt`, with the
-    /// skill chip when the turn runs a skill (M4). A queued follow-up opens
-    /// its own mission while the previous one still runs; see
+    /// The header opening a user turn: the user message. A queued follow-up
+    /// opens its own turn while the previous one still runs; see
     /// `land_previous_mission`.
-    fn add_mission_header(&mut self, text: &str, skill: Option<&str>) {
+    fn add_mission_header(&mut self, text: &str) {
         if let Some(seq) = self.transcript.unlanded_current() {
             self.land_previous_mission(seq);
         }
-        self.transcript
-            .begin_mission(text, skill, self.tool_output_view);
+        self.transcript.begin_mission(text, self.tool_output_view);
         // The status line drops the last result for the new turn. An attached
         // run's missions are not the session's, so they leave it alone.
         if !self.drawing_run_view() {
@@ -916,11 +822,10 @@ impl Mode {
         self.refresh_flight_stats();
     }
 
-    /// A queued follow-up lands the running mission where its own header
-    /// lands: the open chain closes and the mission gets its own landing
-    /// line. Usage since the turn anchor is that mission's; the anchor
-    /// resets so the final landing at PromptDone shows only the remainder
-    /// (no double counting).
+    /// A queued follow-up ends the running turn where its own header opens:
+    /// the open chain closes and the turn takes its own time and usage.
+    /// Usage since the turn anchor is that turn's; the anchor resets so the
+    /// final end at PromptDone counts only the remainder (no double counting).
     fn land_previous_mission(&mut self, seq: usize) {
         self.close_open_chain(ChainState::Done);
         let now = sum_assistant_usage(self.session.session_manager().entries());
@@ -990,12 +895,12 @@ impl Mode {
                 if text.is_empty() {
                     return;
                 }
-                // Every user turn opens a mission (M4): the `▲ M{n}` header
-                // carries the whole prompt, wrapped across band rows.
+                // Every user turn opens with its header: the user message,
+                // the whole prompt wrapped on the surface colour.
                 match parse_skill_block(&text) {
                     Some(skill) => {
                         let prompt = skill.user_message.as_deref().unwrap_or(&text);
-                        self.add_mission_header(prompt, Some(&skill.name));
+                        self.add_mission_header(prompt);
                         let component =
                             handle(SkillBlockComponent::new(&skill.name, &skill.content));
                         {
@@ -1008,7 +913,7 @@ impl Mode {
                     }
                     None => match parse_background_notice(&text) {
                         Some(notice) => {
-                            self.add_mission_header(&text, None);
+                            self.add_mission_header(&text);
                             let component = handle(BackgroundNoticeComponent::new(notice));
                             {
                                 let mut notice = component.borrow_mut();
@@ -1020,7 +925,7 @@ impl Mode {
                             self.add_to_chat(as_component(&component));
                         }
                         None => {
-                            self.add_mission_header(&text, None);
+                            self.add_mission_header(&text);
                         }
                     },
                 }
@@ -1035,11 +940,7 @@ impl Mode {
                     self.markdown_theme(),
                     DEFAULT_HIDDEN_THINKING_LABEL,
                 ));
-                // Mission Control peek: prose sits on the `┊` rail.
                 component.borrow_mut().set_view(self.tool_output_view);
-                component
-                    .borrow_mut()
-                    .set_outline_above(self.transcript.outline_chain_above());
                 component
                     .borrow_mut()
                     .set_outline_mission(self.transcript.current_mission());
@@ -1168,12 +1069,9 @@ impl Mode {
                                     std::time::Duration::from_millis(elapsed as u64),
                                     false,
                                 ),
-                                // A rebuilt streak that gave up is COMMS LOST
-                                // too (M8e1): its hails are its attempts.
-                                failed.len() as u64 + 1,
                             );
-                            // Without a user message behind it there is
-                            // nothing to hail again: stay out of COMMS LOST.
+                            // A rebuilt streak that gave up arms empty enter
+                            // too, unless no user message is behind it.
                             if self.transcript.last_prompt.is_some() {
                                 self.comms_lost.set(failed.len() as u64 + 1 >= 2);
                             }
@@ -1379,9 +1277,6 @@ impl Mode {
             Some(chain) if chain.borrow().is_open() => chain.clone(),
             _ => {
                 let chain = handle(ToolChainComponent::new(self.tool_output_view));
-                // Steps number per mission (M4): the chain starts after the
-                // steps the mission already holds.
-                chain.borrow_mut().set_base_step(self.mission_tally().0);
                 self.add_to_chat(as_component(&chain));
                 self.transcript.chains.push(chain.clone());
                 self.transcript.open_chain = Some(chain.clone());
@@ -1560,7 +1455,6 @@ impl Mode {
                 let mut c = component.borrow_mut();
                 c.set_thinking_display(self.thinking_display());
                 c.update_shared(message.clone(), true);
-                c.set_outline_above(self.transcript.outline_chain_above());
                 c.set_outline_mission(self.transcript.current_mission());
             }
             let registered = self
@@ -1969,7 +1863,7 @@ mod tests {
         let answer =
             |t: &Transcript, seq: usize| t.missions[seq - 1].flight.borrow().answer.join(" ");
         let mut t = fresh_transcript();
-        t.begin_mission("run alpha", None, ToolOutputView::Outline);
+        t.begin_mission("run alpha", ToolOutputView::Outline);
         let running = outline_prose_message(&mut t, "Running alpha.");
         let last = outline_prose_message(&mut t, "Alpha printed.");
 
@@ -1987,7 +1881,7 @@ mod tests {
         assert!(!outline_text(&last).contains("Alpha printed."));
 
         // A later mission opens: the ended one keeps its answer, the open one has none.
-        t.begin_mission("run beta", None, ToolOutputView::Outline);
+        t.begin_mission("run beta", ToolOutputView::Outline);
         let beta = outline_prose_message(&mut t, "Beta is running.");
         t.sync_outline_prose();
         assert_eq!(answer(&t, 1), "Alpha printed.");
@@ -2051,7 +1945,7 @@ mod tests {
         // Thinking and calls with no text open no new chain: the message's
         // thinking sits between the calls it came before and the ones after.
         let mut t = fresh_transcript();
-        t.begin_mission("do it", None, ToolOutputView::Outline);
+        t.begin_mission("do it", ToolOutputView::Outline);
         let chain = chain_with(2);
         t.chains.push(chain.clone());
         t.open_chain = Some(chain.clone());
@@ -2081,7 +1975,7 @@ mod tests {
     #[test]
     fn a_retry_drops_the_thinking_mark_of_the_attempt_it_takes_out() {
         let mut t = fresh_transcript();
-        t.begin_mission("try it", None, ToolOutputView::Outline);
+        t.begin_mission("try it", ToolOutputView::Outline);
         let failed = mission_message(&mut t, vec![thinking("Try the build")], StopReason::Error);
         t.keep_attempt_error(failed, Vec::new());
         assert_eq!(t.thinking.len(), 1);
@@ -2093,7 +1987,7 @@ mod tests {
     fn the_opening_messages_thinking_comes_first() {
         // Thinking before any call (no chain yet) leads the mission's items.
         let mut t = fresh_transcript();
-        t.begin_mission("do it", None, ToolOutputView::Outline);
+        t.begin_mission("do it", ToolOutputView::Outline);
         mission_message(&mut t, vec![thinking("Plan the change")], StopReason::Stop);
         let chain = chain_with(2);
         t.chains.push(chain.clone());
@@ -2113,7 +2007,7 @@ mod tests {
     #[test]
     fn the_answer_is_read_again_after_its_message_changes() {
         let mut t = fresh_transcript();
-        t.begin_mission("run it", None, ToolOutputView::Outline);
+        t.begin_mission("run it", ToolOutputView::Outline);
         let message = outline_prose_message(&mut t, "First draft.");
         t.land_mission(1, 0, 0, 0.0, 0.1, None);
         t.sync_outline_prose();
@@ -2131,7 +2025,7 @@ mod tests {
     #[test]
     fn a_message_that_ends_on_a_call_is_not_the_answer() {
         let mut t = fresh_transcript();
-        t.begin_mission("run it", None, ToolOutputView::Outline);
+        t.begin_mission("run it", ToolOutputView::Outline);
         mission_message(
             &mut t,
             vec![Content::text("Let me check the file."), tool_call("Read")],
@@ -2147,7 +2041,7 @@ mod tests {
         use hoocode_code_tui_widgets::outline::FlightMark;
 
         let mut t = fresh_transcript();
-        t.begin_mission("try it", None, ToolOutputView::Outline);
+        t.begin_mission("try it", ToolOutputView::Outline);
         // The last attempt fails with no prose. The streak's retries run out,
         // which takes the failed attempt out of the chat.
         let failed = mission_message(&mut t, Vec::new(), StopReason::Error);
@@ -2176,7 +2070,7 @@ mod tests {
         // The turn's error arrives with PromptDone: the last message carries
         // no error of its own (it stopped clean), so the failure is the reason.
         let mut t = fresh_transcript();
-        t.begin_mission("try it", None, ToolOutputView::Outline);
+        t.begin_mission("try it", ToolOutputView::Outline);
         mission_message(&mut t, Vec::new(), StopReason::Stop);
         // A retry that succeeds clears a failure the open mission had recorded.
         t.set_mission_failure(Some("529 upstream overloaded".into()));
@@ -2198,7 +2092,7 @@ mod tests {
         // "No model selected" ends a turn before any user message opens a
         // mission, so the last mission is the one that already landed.
         let mut t = fresh_transcript();
-        t.begin_mission("try it", None, ToolOutputView::Outline);
+        t.begin_mission("try it", ToolOutputView::Outline);
         mission_message(&mut t, Vec::new(), StopReason::Stop);
         t.set_mission_failure(Some("529 upstream overloaded".into()));
         t.land_mission(1, 0, 0, 0.0, 0.5, Some(StopReason::Error));
@@ -2301,7 +2195,7 @@ mod tests {
         use hoocode_code_tui_widgets::outline::FlightMark;
 
         let mut t = fresh_transcript();
-        t.begin_mission("do it", None, ToolOutputView::Peek);
+        t.begin_mission("do it", ToolOutputView::Peek);
         let chain = chain_with(2);
         t.chains.push(chain.clone());
         t.refresh_flight_marks();
@@ -2311,7 +2205,8 @@ mod tests {
         assert_eq!(flight.mark, FlightMark::InFlight);
         drop(flight);
         chain.borrow_mut().close(ChainState::Done);
-        assert!(t.land_mission(1, 100, 200, 0.002, 0.5, None));
+        // A turn that finished has no end line: its result is the status line's.
+        assert!(!t.land_mission(1, 100, 200, 0.002, 0.5, None));
         let flight = t.missions[0].flight.borrow();
         assert_eq!(flight.steps, 2);
         assert_eq!(flight.hits, 0);
@@ -2321,28 +2216,20 @@ mod tests {
         assert!(flight.started.is_none());
     }
 
-    /// A landed mission whose tally moves rebuilds its landing row, so
-    /// peek and outline agree on the counts.
+    /// A finished turn whose tally moves (a retry took a block out) keeps
+    /// its counts current for the status line.
     #[test]
-    fn landed_counts_rebuild_the_landing_row() {
+    fn landed_counts_follow_a_removed_block() {
         let mut t = fresh_transcript();
-        t.begin_mission("do it", None, ToolOutputView::Peek);
+        t.begin_mission("do it", ToolOutputView::Peek);
         let chain = chain_with(2);
         t.chains.push(chain.clone());
         chain.borrow_mut().close(ChainState::Done);
-        assert!(t.land_mission(1, 100, 200, 0.002, 0.5, None));
-        assert!(chat_text(&t.chat).contains("2 steps"));
-        // A retry takes a block out after landing: both rows follow.
+        t.land_mission(1, 100, 200, 0.002, 0.5, None);
         let dropped = chain.borrow().tool_blocks()[0].clone();
         t.remove_tool_block(&dropped);
-        t.rebase_steps();
-        let text = chat_text(&t.chat);
-        assert!(text.contains("1 step"), "{text}");
-        assert!(!text.contains("2 steps"), "{text}");
         let flight = t.missions[0].flight.borrow();
         assert_eq!((flight.steps, flight.hits), (1, 0));
-        let landing = t.missions[0].landing.as_ref().unwrap().borrow();
-        assert_eq!(landing.counts(), (1, 0));
     }
 
     /// An interrupted mission keeps `⊗` when a step failed, `⊘` when none did.
@@ -2351,7 +2238,7 @@ mod tests {
         use hoocode_code_tui_widgets::outline::FlightMark;
 
         let mut t = fresh_transcript();
-        t.begin_mission("run it", None, ToolOutputView::Peek);
+        t.begin_mission("run it", ToolOutputView::Peek);
         let mut failed = ToolExecutionComponent::new(
             "Shell",
             "call-bad",
@@ -2379,7 +2266,7 @@ mod tests {
         assert_eq!(t.missions[0].flight.borrow().mark, FlightMark::DidNotLand);
 
         let mut t = fresh_transcript();
-        t.begin_mission("run it", None, ToolOutputView::Peek);
+        t.begin_mission("run it", ToolOutputView::Peek);
         let clean = chain_with(1);
         t.chains.push(clean.clone());
         clean.borrow_mut().close(ChainState::Interrupted);
@@ -2387,115 +2274,97 @@ mod tests {
         assert_eq!(t.missions[0].flight.borrow().mark, FlightMark::Aborted);
     }
 
-    /// A queued follow-up lands the running mission where its own header
-    /// lands: two missions, two landing lines, each with its own steps and
-    /// its own usage (no double counting).
+    /// A queued follow-up ends the running turn where its own header opens:
+    /// two turns, each with its own steps and its own usage (no double
+    /// counting), and no end line for either, since both finished.
     #[test]
     fn a_queued_follow_up_lands_each_mission_with_its_own_steps() {
         let mut t = fresh_transcript();
-        t.begin_mission("first prompt", None, ToolOutputView::Peek);
+        t.begin_mission("first prompt", ToolOutputView::Peek);
         let first = chain_with(2);
         t.chains.push(first.clone());
         t.open_chain = Some(first);
-        // The follow-up's header finds M1 unlanded with steps: the mode
-        // closes the chain and lands it with the usage known so far.
+        // The follow-up's header finds turn 1 open with steps: the mode
+        // closes the chain and ends it with the usage known so far.
         assert_eq!(t.unlanded_current(), Some(1));
         t.chains[0].borrow_mut().close(ChainState::Done);
         t.open_chain = None;
-        assert!(t.land_mission(1, 100, 200, 0.002, 0.5, None));
-        // M2 opens with one step; PromptDone lands it with the remainder.
-        t.begin_mission("second prompt", None, ToolOutputView::Peek);
+        assert!(!t.land_mission(1, 100, 200, 0.002, 0.5, None));
+        t.begin_mission("second prompt", ToolOutputView::Peek);
         assert_eq!(t.unlanded_current(), None);
         let second = chain_with(1);
-        second.borrow_mut().set_base_step(t.mission_tally().0);
         t.chains.push(second.clone());
         t.open_chain = Some(second);
-        assert!(t.land_mission(2, 50, 60, 0.001, 0.3, None));
+        assert!(!t.land_mission(2, 50, 60, 0.001, 0.3, None));
+        let stats = |i: usize| {
+            let flight = t.missions[i].flight.borrow();
+            (flight.steps, flight.tokens.clone().unwrap_or_default())
+        };
+        assert_eq!(stats(0), (2, format!("{} tokens", format_tokens(300))));
+        assert_eq!(stats(1), (1, format!("{} tokens", format_tokens(110))));
         let text = chat_text(&t.chat);
-        let landed: Vec<&str> = text.lines().filter(|l| l.contains("LANDED")).collect();
-        assert_eq!(landed.len(), 2, "{text}");
-        assert!(landed[0].contains("2 steps"), "{text}");
-        assert!(landed[1].contains("1 step"), "{text}");
-        assert!(
-            landed[0].contains(&format!("{} tokens", format_tokens(300))),
-            "{text}"
-        );
-        assert!(
-            landed[1].contains(&format!("{} tokens", format_tokens(110))),
-            "{text}"
-        );
+        assert!(!text.contains('⊗'), "{text}");
     }
 
-    /// A mission with steps always lands, even when nothing was used.
+    /// A turn with steps ends even when nothing was used: its time and
+    /// tokens are recorded for the status line.
     #[test]
     fn a_mission_with_steps_lands_even_when_nothing_was_used() {
         let mut t = fresh_transcript();
-        t.begin_mission("do it", None, ToolOutputView::Peek);
+        t.begin_mission("do it", ToolOutputView::Peek);
         t.chains.push(chain_with(1));
-        assert!(t.land_mission(1, 0, 0, 0.0, 0.5, None));
-        let text = chat_text(&t.chat);
-        assert!(text.contains("LANDED"), "{text}");
-        assert!(text.contains("1 step"), "{text}");
-        assert!(text.contains("0 tokens"), "{text}");
-        assert!(text.contains("$0.000"), "{text}");
-    }
-
-    /// A stepless mission lands with a row too, so a turn with no tools ends
-    /// as visibly as one with: no step counts on it, its time and tokens
-    /// instead.
-    #[test]
-    fn a_stepless_mission_lands_with_a_row_without_step_counts() {
-        let mut t = fresh_transcript();
-        t.begin_mission("just talking", None, ToolOutputView::Peek);
-        assert!(t.land_mission(1, 10, 20, 0.01, 0.5, Some(StopReason::Stop)));
-        let text = chat_text(&t.chat);
-        assert!(text.contains("● LANDED"), "{text}");
-        assert!(!text.contains("step"), "{text}");
-        assert!(text.contains("30 tokens"), "{text}");
-        assert_eq!(t.missions[0].flight.borrow().mark, FlightMark::Landed);
-    }
-
-    /// A stepless turn that landed clean and used nothing stays silent, but
-    /// still lands: its time reads in outline.
-    #[test]
-    fn a_stepless_mission_that_used_nothing_stays_silent() {
-        let mut t = fresh_transcript();
-        t.begin_mission("just talking", None, ToolOutputView::Peek);
-        assert!(!t.land_mission(1, 0, 0, 0.0, 0.5, Some(StopReason::Stop)));
-        assert!(!chat_text(&t.chat).contains("LANDED"));
+        t.land_mission(1, 0, 0, 0.0, 0.5, None);
         let flight = t.missions[0].flight.borrow();
         assert_eq!(flight.mark, FlightMark::Landed);
-        assert!(flight.landed_time.is_some());
+        assert_eq!(flight.tokens.as_deref(), Some("0 tokens"));
+        assert_eq!(flight.cost.as_deref(), Some("$0.000"));
     }
 
-    /// The landing line, the outline mark and the comms outcome come from one
-    /// mark: an errored turn did not land and an aborted one was aborted,
-    /// with steps or without.
+    /// A stepless turn that finished ends silently, used tokens or not; its
+    /// time still reads in the status line.
     #[test]
-    fn the_turns_end_sets_the_outcome_on_the_landing_line_and_the_flight_row() {
-        let landing_text = |stop: StopReason, steps: usize| {
+    fn a_stepless_mission_that_finished_stays_silent() {
+        for (input, output) in [(10, 20), (0, 0)] {
             let mut t = fresh_transcript();
-            t.begin_mission("do it", None, ToolOutputView::Peek);
+            t.begin_mission("just talking", ToolOutputView::Peek);
+            assert!(!t.land_mission(1, input, output, 0.01, 0.5, Some(StopReason::Stop)));
+            let text = chat_text(&t.chat);
+            assert!(!text.contains('⊗'), "{text}");
+            let flight = t.missions[0].flight.borrow();
+            assert_eq!(flight.mark, FlightMark::Landed);
+            assert!(flight.landed_time.is_some());
+        }
+    }
+
+    /// The end line and the outline mark come from one mark: an errored turn
+    /// failed and an aborted one was stopped, with steps or without; a turn
+    /// that finished has no end line.
+    #[test]
+    fn the_turns_end_sets_the_outcome_on_the_end_line_and_the_outline() {
+        let end_text = |stop: StopReason, steps: usize| {
+            let mut t = fresh_transcript();
+            t.begin_mission("do it", ToolOutputView::Peek);
             if steps > 0 {
                 let chain = chain_with(steps);
                 chain.borrow_mut().close(ChainState::Done);
                 t.chains.push(chain);
             }
-            assert!(t.land_mission(1, 10, 20, 0.01, 0.5, Some(stop)));
+            if stop == StopReason::Error {
+                t.set_mission_failure(Some("connection reset by peer".into()));
+            }
+            let shown = t.land_mission(1, 10, 20, 0.01, 0.5, Some(stop));
             let mark = t.missions[0].flight.borrow().mark;
-            (chat_text(&t.chat), mark)
+            (chat_text(&t.chat), mark, shown)
         };
         for steps in [0, 2] {
-            let (text, mark) = landing_text(StopReason::Error, steps);
-            assert!(text.contains("⊗ DID NOT LAND"), "{text}");
-            assert!(!text.contains("LANDED"), "{text}");
+            let (text, mark, shown) = end_text(StopReason::Error, steps);
+            assert!(shown && text.contains("⊗ failed · 0.5s"), "{text}");
             assert_eq!(mark, FlightMark::DidNotLand);
-            let (text, mark) = landing_text(StopReason::Aborted, steps);
-            assert!(text.contains("⊘ ABORTED"), "{text}");
-            assert!(!text.contains("LANDED"), "{text}");
+            let (text, mark, shown) = end_text(StopReason::Aborted, steps);
+            assert!(shown && text.contains("⊗ stopped · 0.5s"), "{text}");
             assert_eq!(mark, FlightMark::Aborted);
-            let (text, mark) = landing_text(StopReason::Stop, steps);
-            assert!(text.contains("● LANDED"), "{text}");
+            let (text, mark, shown) = end_text(StopReason::Stop, steps);
+            assert!(!shown && !text.contains('⊗'), "{text}");
             assert_eq!(mark, FlightMark::Landed);
         }
     }
@@ -2507,7 +2376,7 @@ mod tests {
         use hoocode_code_tui_widgets::outline::FlightMark;
 
         let mut t = fresh_transcript();
-        t.begin_mission("run it", None, ToolOutputView::Peek);
+        t.begin_mission("run it", ToolOutputView::Peek);
         let chain = Rc::new(RefCell::new(ToolChainComponent::new(ToolOutputView::Peek)));
         for (id, interrupted) in [("failed", false), ("cut", true)] {
             let mut block = ToolExecutionComponent::new(
@@ -2538,36 +2407,30 @@ mod tests {
         t.chains.push(chain);
         assert_eq!(t.mission_tally(), (2, 1), "only the real failure is a hit");
         assert!(t.land_mission(1, 10, 20, 0.01, 0.5, Some(StopReason::Aborted)));
-        assert_eq!(t.missions[0].flight.borrow().mark, FlightMark::Aborted);
+        let flight = t.missions[0].flight.borrow();
+        assert_eq!(flight.mark, FlightMark::Aborted);
+        assert_eq!((flight.steps, flight.hits), (2, 1));
         let text = chat_text(&t.chat);
-        assert!(text.contains("⊘ ABORTED"), "{text}");
-        assert!(text.contains("2 steps · 1 hit"), "{text}");
+        assert!(text.contains("⊗ stopped"), "{text}");
     }
 
-    /// The landing line sums the turn up on one line after it, and the outline
-    /// row reads the same calls.
+    /// Outline recaps a finished turn's calls on one row under the user
+    /// message; peek draws no such row.
     #[test]
-    fn a_landed_mission_sums_up_its_calls_in_peek_and_outline() {
+    fn a_finished_turn_recaps_its_calls_only_in_outline() {
         let mut t = fresh_transcript();
-        t.begin_mission("do it", None, ToolOutputView::Peek);
+        t.begin_mission("do it", ToolOutputView::Peek);
         let chain = chain_with(2);
         chain.borrow_mut().close(ChainState::Done);
         t.chains.push(chain);
-        assert!(t.land_mission(1, 10, 20, 0.01, 0.5, Some(StopReason::Stop)));
-        let text = chat_text(&t.chat);
-        assert!(
-            text.contains("ran echo hi") || text.contains("Ran echo hi"),
-            "{text}"
-        );
-        let landing = t.missions[0].landing.as_ref().unwrap().borrow();
-        let summary = landing.summary().expect("a summary").to_string();
-        drop(landing);
-        let flight = t.missions[0].flight.borrow();
-        assert_eq!(flight.calls().len(), 2);
-        assert_eq!(
-            hoocode_code_tui_widgets::tool_chain_summary::turn_phrase(&flight.calls()),
-            summary
-        );
+        t.land_mission(1, 10, 20, 0.01, 0.5, Some(StopReason::Stop));
+        let header = t.missions[0].header.clone();
+        let peek = strip_vt_control_characters(&header.borrow_mut().render(100).join("\n"));
+        assert!(!peek.contains("Shell"), "{peek}");
+        header.borrow_mut().set_view(ToolOutputView::Outline);
+        let outline = strip_vt_control_characters(&header.borrow_mut().render(100).join("\n"));
+        assert!(outline.contains(" ● Shell echo hi"), "{outline}");
+        assert_eq!(t.missions[0].flight.borrow().calls().len(), 2);
     }
 
     /// Calls a subagent's own run saw fail count as the mission's hits, not
@@ -2577,7 +2440,7 @@ mod tests {
         use hoocode_code_subagents::live;
 
         let mut t = fresh_transcript();
-        t.begin_mission("delegate it", None, ToolOutputView::Peek);
+        t.begin_mission("delegate it", ToolOutputView::Peek);
         let mut agent = ToolExecutionComponent::new(
             "Agent",
             "call-agent-hits",
@@ -2623,53 +2486,45 @@ mod tests {
         assert_eq!((flight.steps, flight.hits), (1, 2));
     }
 
-    /// A removed chain pulls later mission starts down: M2 keeps its first
-    /// chain and still lands with its own step, numbered 01.
+    /// A removed chain pulls later turn starts down: turn 2 keeps its first
+    /// chain and still ends with its own step.
     #[test]
     fn removing_a_whole_chain_keeps_the_later_missions_start() {
         let mut t = fresh_transcript();
-        t.begin_mission("first", None, ToolOutputView::Peek);
+        t.begin_mission("first", ToolOutputView::Peek);
         let failed = chain_with(1);
         t.chains.push(failed.clone());
         t.open_chain = Some(failed.clone());
-        t.begin_mission("second", None, ToolOutputView::Peek);
+        t.begin_mission("second", ToolOutputView::Peek);
         assert_eq!(t.missions[1].start, 1);
         // The failed attempt's chain leaves after M2 began.
         let block = failed.borrow().tool_blocks()[0].clone();
         t.remove_tool_block(&block);
-        t.rebase_steps();
         assert!(t.chains.iter().all(|c| !Rc::ptr_eq(c, &failed)));
         assert_eq!(t.missions[1].start, 0);
-        // M2 still lands with its own step, numbered 01.
+        // Turn 2 still ends with its own step.
         let m2 = chain_with(1);
-        m2.borrow_mut().set_base_step(t.mission_tally().0);
         t.chains.push(m2.clone());
-        assert!(t.land_mission(2, 10, 20, 0.001, 0.2, None));
-        let text = chat_text(&t.chat);
-        let landed: Vec<&str> = text.lines().filter(|l| l.contains("LANDED")).collect();
-        assert_eq!(landed.len(), 1, "{text}");
-        assert!(landed[0].contains("1 step"), "{text}");
+        t.land_mission(2, 10, 20, 0.001, 0.2, None);
+        assert_eq!(t.missions[1].flight.borrow().steps, 1);
         let rendered = strip_vt_control_characters(&m2.borrow_mut().render(100).join("\n"));
         // Tool rows carry no step number now: the chain still draws its call.
         assert!(rendered.contains(" ● "), "{rendered}");
         assert!(!rendered.contains(" 01 "), "{rendered}");
     }
 
-    /// Taking a block out leaves the later chain drawing its calls (the step
-    /// counts the landing line reads are rebased, rows carry no number).
+    /// Taking a block out leaves the later chain drawing its calls (rows
+    /// carry no number).
     #[test]
     fn removing_a_block_renumbers_the_later_steps() {
         let mut t = fresh_transcript();
-        t.begin_mission("m", None, ToolOutputView::Peek);
+        t.begin_mission("m", ToolOutputView::Peek);
         let first = chain_with(2);
         let second = chain_with(1);
-        second.borrow_mut().set_base_step(2);
         t.chains.push(first.clone());
         t.chains.push(second.clone());
         let dropped = first.borrow().tool_blocks()[0].clone();
         t.remove_tool_block(&dropped);
-        // The drop path renumbers once after the loop.
-        t.rebase_steps();
         let rendered = strip_vt_control_characters(&second.borrow_mut().render(100).join("\n"));
         assert!(rendered.contains(" ● "), "{rendered}");
         assert!(

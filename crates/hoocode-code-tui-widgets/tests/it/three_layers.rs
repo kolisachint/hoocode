@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::support::{lock, strip};
 use hoocode_ai_types::{Content, ImageContent};
 use hoocode_code_tui_widgets::fold::{fold_rows, fold_rows_tail, parse_more_lines};
-use hoocode_code_tui_widgets::outline::{mission_rows, FlightItem, FlightMark, FlightStats};
+use hoocode_code_tui_widgets::outline::{turn_rows, FlightItem, FlightMark, FlightStats};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -186,7 +186,7 @@ fn a_long_user_prompt_wraps_whole_in_peek_and_full() {
     let words: Vec<String> = (1..=40).map(|i| format!("word{i:02}")).collect();
     let prompt = format!("{}\nsecond line of the prompt", words.join(" "));
     for view in [Peek, Full] {
-        let mut header = MissionHeader::new(1, &prompt, None);
+        let mut header = MissionHeader::new(1, &prompt);
         header.set_view(view);
         let lines = header.render(50);
         let text = strip(&lines.join("\n"));
@@ -538,8 +538,8 @@ fn a_settled_agent_keeps_its_failed_calls_in_peek_and_every_call_in_full() {
     assert!(rows.contains("   ● Read"), "{rows}");
     assert!(rows.contains("   ⊗ Grep"), "{rows}");
 
-    // Outline: a mission's block shows the problem row only, under the agent
-    // call's number (the mission draws its batch's calls, not the chain).
+    // Outline: the turn's block shows the failed call only, nested under the
+    // recap (the turn draws its batch's calls, not the chain).
     let outline = chain_with(Outline, vec![settled_agent(Outline, "it-agent-outline")]);
     let stats = FlightStats {
         mark: FlightMark::Landed,
@@ -547,11 +547,11 @@ fn a_settled_agent_keeps_its_failed_calls_in_peek_and_every_call_in_full() {
         items: vec![FlightItem::Batch(outline.tool_blocks().to_vec())],
         ..Default::default()
     };
-    let rows: Vec<String> = mission_rows(1, "run it", &stats, &Palette::default(), 100)
+    let rows: Vec<String> = turn_rows("run it", &stats, &Palette::default(), 100)
         .iter()
         .map(|row| strip(row))
-        .filter(|row| row.contains("HIT"))
+        .filter(|row| row.trim_start().starts_with('⊗'))
         .collect();
     assert_eq!(rows.len(), 1, "{rows:?}");
-    assert!(rows[0].contains("01.2 Grep"), "{rows:?}");
+    assert!(rows[0].starts_with("   ⊗ Grep"), "{rows:?}");
 }

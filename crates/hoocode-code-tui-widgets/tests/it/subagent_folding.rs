@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::outline::{mission_rows, FlightItem, FlightMark, FlightStats};
+use hoocode_code_tui_widgets::outline::{turn_rows, FlightItem, FlightMark, FlightStats};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -112,11 +112,11 @@ fn plain(lines: Vec<String>) -> Vec<String> {
     lines.iter().map(|l| strip(l)).collect()
 }
 
-// --- outline: a settled subagent folds into its batch; only a failed one keeps
-// --- its own hit row ---------------------------------------------------------
+// --- outline: a settled subagent folds into its recap; only a failed one keeps
+// --- its own row -------------------------------------------------------------
 
-/// The outline rows of one mission that holds the chain's calls as one batch,
-/// keeping only the rows that carry a hit.
+/// The outline rows of one turn that holds the chain's calls as one batch,
+/// keeping only the failed calls' rows.
 fn outline_hits(chain: &ToolChainComponent) -> Vec<String> {
     let stats = FlightStats {
         mark: FlightMark::Landed,
@@ -124,33 +124,26 @@ fn outline_hits(chain: &ToolChainComponent) -> Vec<String> {
         items: vec![FlightItem::Batch(chain.tool_blocks().to_vec())],
         ..Default::default()
     };
-    plain(mission_rows(
-        1,
-        "delegate",
-        &stats,
-        &Palette::default(),
-        120,
-    ))
-    .into_iter()
-    .filter(|l| l.contains("HIT"))
-    .collect()
+    plain(turn_rows("delegate", &stats, &Palette::default(), 120))
+        .into_iter()
+        .filter(|l| l.trim_start().starts_with('⊗'))
+        .collect()
 }
 
 #[test]
-fn outline_keeps_only_the_failed_subagent_as_a_hit_row() {
+fn outline_keeps_only_the_failed_subagent_as_its_own_row() {
     let _g = lock();
     let mut subs: Vec<Sub> = (0..10).map(|_| agent_done()).collect();
     subs.push(agent_stopped());
     let chain = group(Outline, subs, ChainState::Done);
-    // Ten settled subagents fold into the batch line; the stopped one keeps a hit row.
+    // Ten settled subagents fold into the recap; the stopped one keeps its own row.
     let hits = outline_hits(&chain);
     assert_eq!(hits.len(), 1, "{hits:?}");
-    assert!(hits[0].starts_with("   ┊   └ 11 Agent"), "{hits:?}");
-    assert!(hits[0].trim_end().ends_with("HIT"), "{hits:?}");
+    assert!(hits[0].starts_with(" ⊗ Agent"), "{hits:?}");
 }
 
 #[test]
-fn outline_shows_no_hit_when_the_subagents_outcomes_all_happened() {
+fn outline_shows_no_failed_row_when_the_subagents_outcomes_all_happened() {
     let _g = lock();
     let chain = group(Outline, vec![agent_done(), agent_done()], ChainState::Done);
     assert!(outline_hits(&chain).is_empty());
@@ -170,7 +163,7 @@ fn outline_counts_each_task_once_however_often_it_was_polled() {
 }
 
 #[test]
-fn outline_has_no_hit_for_a_background_dispatch_without_an_outcome() {
+fn outline_has_no_failed_row_for_a_background_dispatch_without_an_outcome() {
     let _g = lock();
     let subs = vec![background_placeholder(), background_placeholder()];
     let chain = group(Outline, subs, ChainState::Done);

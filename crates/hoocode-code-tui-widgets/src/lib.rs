@@ -35,7 +35,7 @@ pub mod visual_truncate;
 pub use assistant_message::{
     segment_streaming_markdown, AssistantMessageComponent, ThinkingDisplay,
 };
-pub use user_message::UserMessageComponent;
+pub use user_message::{user_band_rows, UserMessageComponent, USER_INDENT};
 
 /// Whether `s` is empty after `String.prototype.trim`.
 pub(crate) fn is_blank(s: &str) -> bool {
