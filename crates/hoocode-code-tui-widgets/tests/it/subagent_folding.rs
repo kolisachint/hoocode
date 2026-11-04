@@ -193,13 +193,13 @@ fn output_peek(text: &'static str, width: u16) -> Vec<String> {
     plain(lines)
 }
 
-/// The peek rows that carry the gutter. The content box indents every row
-/// one column and pads it to the width, so both ends are trimmed.
-fn gutter_rows(lines: &[String]) -> Vec<&str> {
+/// The body rows: dim text at column 4, no gutter. Rows are padded to the
+/// width, so the right end is trimmed.
+fn body_rows(lines: &[String]) -> Vec<&str> {
     lines
         .iter()
+        .filter(|l| l.starts_with("    "))
         .map(|l| l.trim())
-        .filter(|l| l.starts_with("│ "))
         .collect()
 }
 
@@ -214,35 +214,31 @@ fn agent_output_peek_shows_three_summary_rows_then_how_many_are_left() {
             .any(|l| l.contains("AgentOutput explore#1 · done")),
         "{lines:?}"
     );
-    let rows = gutter_rows(&lines);
+    let rows = body_rows(&lines);
     assert_eq!(
         rows.len(),
         4,
         "three rows and the more-lines row: {lines:?}"
     );
-    assert_eq!(rows[0], "│ one");
-    assert_eq!(rows[2], "│ three");
-    assert_eq!(rows[3], "│ … 3 more lines");
+    assert_eq!(rows[0], "one");
+    assert_eq!(rows[2], "three");
+    assert_eq!(rows[3], "… 3 more lines");
 }
 
 #[test]
-fn agent_output_peek_guards_every_wrapped_row_with_the_gutter() {
+fn agent_output_peek_keeps_every_wrapped_row_at_the_body_column() {
     let _g = lock();
     let long = "a wrapped summary line that is long enough to need a second peek row\nnext";
     let lines = output_peek(long, 40);
-    let rows = gutter_rows(&lines);
-    // Three peek rows (all from the wrapped line), then the more-lines row.
-    assert_eq!(rows.len(), 4, "{lines:?}");
-    assert_eq!(rows[0], "│ a wrapped summary line that is");
+    let rows = body_rows(&lines);
+    // The wrapped line takes two rows, then the next line: three rows in all.
+    assert_eq!(rows.len(), 3, "{lines:?}");
+    assert_eq!(rows[0], "a wrapped summary line that is long");
     assert_eq!(
-        rows[1], "│ long enough to need a second",
-        "the continuation row keeps the gutter: {lines:?}"
+        rows[1], "enough to need a second peek row",
+        "the continuation row keeps the column: {lines:?}"
     );
-    assert_eq!(
-        rows[2], "│ peek row",
-        "the second continuation row keeps the gutter: {lines:?}"
-    );
-    assert_eq!(rows[3], "│ … 1 more line", "{lines:?}");
+    assert_eq!(rows[2], "next", "{lines:?}");
 }
 
 #[test]
@@ -250,8 +246,8 @@ fn agent_output_peek_strips_markdown_from_the_summary() {
     let _g = lock();
     let lines = output_peek("# Findings\n- **Mapped** the `module`\nlast", 60);
     let joined = lines.join("\n");
-    assert!(joined.contains("│ Findings"), "{lines:?}");
-    assert!(joined.contains("│ Mapped the module"), "{lines:?}");
+    assert!(joined.contains("    Findings"), "{lines:?}");
+    assert!(joined.contains("    Mapped the module"), "{lines:?}");
     assert!(!joined.contains("**"), "{lines:?}");
     assert!(!joined.contains('`'), "{lines:?}");
     assert!(!joined.contains("# "), "{lines:?}");

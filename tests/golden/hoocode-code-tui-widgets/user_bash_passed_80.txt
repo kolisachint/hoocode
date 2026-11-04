@@ -1,0 +1,13 @@
+
+ ● ! cargo test  exit 0
+    … 7 earlier lines
+    test case_08
+    test case_09
+--- styles ---
+r1 c1 fg=#b5bd68
+r1 c3 fg=#e5e5e7 bold
+r1 c5-14 fg=#e5e5e7
+r1 c17-22 fg=#989898
+r2 c4-20 fg=#989898
+r3 c4-15 fg=#989898
+r4 c4-15 fg=#989898

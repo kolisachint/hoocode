@@ -34,7 +34,7 @@ pub fn format_webfetch_call(args: &Value) -> String {
     let t = theme();
     let url = match str_arg(args.get("url")) {
         None => invalid_arg_text(),
-        Some(u) if !u.is_empty() => u,
+        Some(u) if !u.is_empty() => t.fg("text", &u),
         Some(_) => t.fg("toolOutput", "…"),
     };
     let format = if args.get("output").and_then(Value::as_str) == Some("markdown") {
@@ -42,11 +42,7 @@ pub fn format_webfetch_call(args: &Value) -> String {
     } else {
         String::new()
     };
-    format!(
-        "{}{}{format}",
-        t.fg("toolTitle", &t.bold("WebFetch ")),
-        t.fg("accent", &url)
-    )
+    format!("{} {url}{format}", t.fg("toolTitle", &t.bold("WebFetch")))
 }
 
 pub fn format_webfetch_result(
@@ -95,9 +91,9 @@ pub fn format_websearch_call(args: &Value) -> String {
         Some(_) => t.fg("toolOutput", "…"),
     };
     let mut text = format!(
-        "{}{}",
-        t.fg("toolTitle", &t.bold("WebSearch ")),
-        t.fg("accent", &query)
+        "{} {}",
+        t.fg("toolTitle", &t.bold("WebSearch")),
+        t.fg("text", &query)
     );
     if let Some(limit) = args.get("maxResults") {
         text.push_str(&t.fg("muted", &format!(" ({})", js_number(limit))));

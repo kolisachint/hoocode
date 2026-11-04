@@ -72,22 +72,21 @@ pub fn format_task_call_at(args: &Value, expanded: bool) -> String {
     // explore`. The pin's `Agent [explore]` was right about the word while the
     // tool was still called `Task`; now the two agree.
     let title = if truthy(args.get("resume_task_id")) {
-        "Agent resume "
+        "Agent resume"
     } else {
-        "Agent "
+        "Agent"
     };
-    let mut tail = Vec::new();
+    let mut tail = String::new();
     if let Some(summary) = task_summary(args) {
-        tail.push(t.fg("dim", &format!("· {summary}")));
+        tail.push_str(&t.fg("text", &format!(" · {summary}")));
     }
     if args.get("background").and_then(Value::as_bool) == Some(true) {
-        tail.push(t.fg("dim", "· background"));
+        tail.push_str(&t.fg("dim", " · background"));
     }
     let mut line = format!(
-        "{}{} {}",
+        "{} {}{tail}",
         t.fg("toolTitle", &t.bold(title)),
-        t.fg(agent_color_for(&agent_type), &agent_type),
-        tail.join(" ")
+        t.fg("text", &agent_type),
     );
     if expanded {
         if let Some(rest) = task_rest(args) {
@@ -137,8 +136,8 @@ pub fn format_task_output_call(args: &Value) -> String {
         _ => t.fg("dim", &target),
     };
     format!(
-        "{}{styled}{}",
-        t.fg("toolTitle", &t.bold("AgentOutput ")),
+        "{} {styled}{}",
+        t.fg("toolTitle", &t.bold("AgentOutput")),
         if truthy(args.get("wait")) {
             t.fg("dim", " (wait)")
         } else {
@@ -268,10 +267,11 @@ pub fn format_task_output_result(result: &ToolResultView<'_>, expanded: bool) ->
 
 /// The rows a result shows at peek.
 const SUMMARY_ROWS: usize = 3;
-/// The gutter before every peek row: `  │ `, four columns.
-const GUTTER_WIDTH: usize = 4;
+/// An Agent block's body rows carry no gutter: the block indents them (dim,
+/// column 4), like every tool body.
+const GUTTER_WIDTH: usize = 0;
 
-/// The gutter before every peek row: `  │ `, as the summary rows draw it.
+/// The gutter a background notice draws before its rows: `  │ `.
 pub(crate) fn peek_gutter() -> String {
     format!("  {} ", theme().fg("borderMuted", "│"))
 }
@@ -295,7 +295,7 @@ pub(crate) fn strip_markdown(line: &str) -> String {
 /// (the full stop) keeps every row.
 fn summary_rows(body: &str, width: usize, expanded: bool) -> Vec<String> {
     let t = theme();
-    let gutter = peek_gutter();
+    let gutter = String::new();
     let inner = width.saturating_sub(GUTTER_WIDTH).max(1);
     let budget = if expanded { usize::MAX } else { SUMMARY_ROWS };
     let rows: Vec<String> = body
@@ -360,7 +360,7 @@ impl Component for LiveTail {
             return summary_rows(&self.fallback, width as usize, self.expanded);
         }
         let t = theme();
-        let gutter = peek_gutter();
+        let gutter = String::new();
         let rows = self.run.as_deref().map(live::tail).unwrap_or_default();
         if rows.is_empty() {
             return vec![format!("{gutter}{}", t.fg("muted", "starting…"))];

@@ -323,7 +323,7 @@ fn the_call_lines_say_agent_and_agentout() {
     let strip = crate::support::strip;
     assert_eq!(
         strip(&format_task_call(&json!({"subagent_type": "explore"}))),
-        "Agent explore "
+        "Agent explore"
     );
     assert_eq!(
         strip(&format_task_call(
