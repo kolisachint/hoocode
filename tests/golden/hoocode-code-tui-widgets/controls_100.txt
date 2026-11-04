@@ -1,4 +1,4 @@
-  Keys  ?   plain   ctrl   alt  118 bindings · 17 shown
+  Keys  ?   plain   ctrl   alt  114 bindings · 17 shown
  prompt
  ctrl+a  Move to line start    ctrl+f  Move cursor right             ctrl+w  Delete word backward
  ctrl+b  Move cursor left      ctrl+k  Delete to line end            ctrl+y  Yank

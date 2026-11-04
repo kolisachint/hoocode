@@ -1,4 +1,4 @@
-  Keys  ?   plain   ctrl   alt  118 bindings · 17 shown
+  Keys  ?   plain   ctrl   alt  114 bindings · 17 shown
  prompt
  ctrl+a  Move to line start
  ctrl+b  Move cursor left
