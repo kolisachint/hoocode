@@ -959,14 +959,9 @@ impl ToolExecutionComponent {
 
     /// Seconds since the block opened (settled at `update_result`).
     /// Rebuilt history settles at once, so its span reads ~0.
-    /// When the call started (outline's batch clock reads the earliest one).
-    pub(crate) fn started_at(&self) -> Instant {
-        self.started
-    }
-
     pub(crate) fn block_elapsed_secs(&self) -> Option<u64> {
         // A live background job outlives its start (which returns at once):
-        // its satellite clock keeps running until the job exits.
+        // its clock keeps running until the job exits.
         let end = match self.settled_at {
             Some(settled) if !self.is_live_background_job() => settled,
             _ => Instant::now(),

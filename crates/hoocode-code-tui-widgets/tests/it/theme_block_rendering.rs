@@ -23,7 +23,6 @@ use hoocode_code_tui_theme::{
 use hoocode_code_tui_widgets::custom_message::{
     BranchSummaryMessageComponent, CompactionSummaryMessageComponent, CustomMessageComponent,
 };
-use hoocode_code_tui_widgets::UserMessageComponent;
 use hoocode_tui_components::{BoxComponent, MarkdownTheme, Text};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{strip_vt_control_characters, visible_width};
@@ -59,12 +58,6 @@ fn frame(fill: BlockFill, text: &str) -> BoxComponent {
 /// Every component that paints a message block, built the way the mode builds it.
 fn blocks() -> Vec<(&'static str, Box<dyn Component>)> {
     vec![
-        (
-            "user message",
-            Box::new(UserMessageComponent::new(
-                "hello **there**, a longer line to wrap",
-            )),
-        ),
         (
             "extension message",
             Box::new(CustomMessageComponent::new(
@@ -197,8 +190,8 @@ fn every_shipped_theme_loads_and_renders_every_message_block() {
         for &width in WIDTHS {
             for (label, mut block) in blocks() {
                 let lines = block.render(width);
-                // The folded compaction summary is Mission Control chrome
-                // (the JETTISONED row, M8e6), never a paper sheet.
+                // The folded compaction summary is a plain row
+                // (the compaction row), never a paper sheet.
                 let sheet = sheet && label != "compaction summary";
                 found.extend(faults(
                     &format!("{name}: {label} @{width}"),
@@ -228,8 +221,8 @@ fn follows_a_theme_switch_under_blocks_already_on_screen_both_ways() {
             None => init_paper_theme(),
         }
         for (label, block) in built.iter_mut() {
-            // The folded compaction summary is Mission Control chrome
-            // (the JETTISONED row, M8e6), never a paper sheet.
+            // The folded compaction summary is a plain row
+            // (the compaction row), never a paper sheet.
             let sheet = sheet && *label != "compaction summary";
             found.extend(faults(
                 &format!("{label} {stage}"),

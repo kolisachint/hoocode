@@ -1,7 +1,0 @@
-  ⊗ DID NOT LAND · 5 steps · 1 hit · 4.2s · 1.2k tokens · $0.012
-   Edited 3 files · ran 2 commands
---- styles ---
-r0 c2 fg=#d58181
-r0 c4-15 fg=#d58181 bold
-r0 c16-63 fg=#989898
-r1 c3-33 fg=#989898

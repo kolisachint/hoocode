@@ -1,66 +1,68 @@
-//! The turn's end in every layer: the landing line's outcome, the abort and
-//! error reason, and the agent's whole final text in outline.
+//! The turn's end in every layer: no end line for a turn that finished, the
+//! failed or stopped end line, the error reason, and the agent's whole final
+//! text in outline.
 
 use std::rc::Rc;
 
 use crate::support::{assistant, lock, strip};
 use hoocode_ai_types::{Content, StopReason, ToolCallContent};
-use hoocode_code_tui_widgets::outline::{FlightMark, FlightStats};
+use hoocode_code_tui_widgets::outline::{FlightMark, FlightStats, TurnEnd};
 use hoocode_code_tui_widgets::trajectory::{LandingLine, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay};
 use hoocode_tui_render::Component;
 use std::cell::RefCell;
 
-fn landing(mark: FlightMark) -> String {
-    let mut line = LandingLine::new(mark, 2, 1, "0.5s", "0.8k tokens", "$0.002");
-    strip(&line.render(100).join("\n"))
+fn stats(mark: FlightMark, failure: Option<&str>) -> Rc<RefCell<FlightStats>> {
+    Rc::new(RefCell::new(FlightStats {
+        mark,
+        steps: 2,
+        hits: 1,
+        landed_time: Some("0.5s".to_string()),
+        tokens: Some("0.8k tokens".to_string()),
+        cost: Some("$0.002".to_string()),
+        failure: failure.map(str::to_string),
+        ..Default::default()
+    }))
+}
+
+fn end_rows(mark: FlightMark, failure: Option<&str>) -> Vec<String> {
+    let mut line = LandingLine::new(stats(mark, failure));
+    line.render(100)
+        .iter()
+        .map(|row| strip(row).trim_end().to_string())
+        .collect()
 }
 
 #[test]
-fn the_landing_line_carries_the_missions_outcome() {
+fn a_finished_turn_has_no_end_line() {
     let _g = lock();
-    let landed = landing(FlightMark::Landed);
-    assert!(landed.contains("● LANDED"), "{landed}");
-    assert!(landed.contains("2 steps · 1 hit"), "{landed}");
-
-    let failed = landing(FlightMark::DidNotLand);
-    assert!(failed.contains("⊗ DID NOT LAND"), "{failed}");
-    assert!(!failed.contains("LANDED ·"), "{failed}");
-    assert!(failed.contains("2 steps · 1 hit"), "{failed}");
-
-    let aborted = landing(FlightMark::Aborted);
-    assert!(aborted.contains("⊘ ABORTED"), "{aborted}");
-    assert!(!aborted.contains("LANDED"), "{aborted}");
-}
-
-#[test]
-fn a_stepless_landing_leaves_the_step_counts_out() {
-    let _g = lock();
-    let mut line = LandingLine::new(FlightMark::Landed, 0, 0, "1.2s", "40 tokens", "$0.001");
-    let text = strip(&line.render(100).join("\n"));
-    assert!(
-        text.contains("● LANDED · 1.2s · 40 tokens · $0.001"),
-        "{text}"
+    assert!(end_rows(FlightMark::Landed, None).is_empty());
+    // Failed calls alone do not fail the turn: the status line counts them.
+    assert!(end_rows(FlightMark::DidNotLand, None).is_empty());
+    assert_eq!(
+        LandingLine::new(stats(FlightMark::Landed, None)).end(),
+        None
     );
-    assert!(!text.contains("step"), "{text}");
 }
 
 #[test]
-fn the_landing_line_sums_up_the_turn_on_one_dim_line_after_it() {
+fn a_failed_or_stopped_turn_ends_with_one_plain_line() {
     let _g = lock();
-    let mut line = LandingLine::new(FlightMark::Landed, 5, 0, "1.2s", "40 tokens", "$0.001");
-    line.set_summary(Some("Edited 3 files · ran 2 commands".to_string()));
-    let rows: Vec<String> = line.render(100).iter().map(|row| strip(row)).collect();
-    assert_eq!(rows.len(), 2, "{rows:?}");
-    assert!(rows[0].contains("LANDED"), "{rows:?}");
-    assert_eq!(rows[1].trim(), "Edited 3 files · ran 2 commands");
-    // A narrow width wraps it, never cuts it.
-    let rows: Vec<String> = line.render(24).iter().map(|row| strip(row)).collect();
-    assert!(!rows.iter().any(|row| row.contains('…')), "{rows:?}");
-    let flat = rows.join(" ");
-    for word in ["Edited", "3", "files", "ran", "2", "commands"] {
-        assert!(flat.contains(word), "{rows:?}");
-    }
+    assert_eq!(
+        end_rows(FlightMark::DidNotLand, Some("boom")),
+        vec!["", " ⊗ failed · 0.5s"]
+    );
+    assert_eq!(
+        end_rows(FlightMark::Aborted, None),
+        vec!["", " ⊗ stopped · 0.5s"]
+    );
+    assert_eq!(
+        LandingLine::new(stats(FlightMark::Aborted, None)).end(),
+        Some(TurnEnd::Stopped)
+    );
+    // Tokens and cost are the status line's.
+    let text = end_rows(FlightMark::DidNotLand, Some("boom")).join("\n");
+    assert!(!text.contains("tokens") && !text.contains('$'), "{text}");
 }
 
 fn tool_call() -> Content {
@@ -88,18 +90,36 @@ fn the_reason_shows_in_peek_even_when_the_message_has_tool_calls() {
     let _g = lock();
     let mut aborted = ended(
         StopReason::Aborted,
-        Some("Operation aborted"),
+        Some("Aborted after 2 retry attempts"),
         vec![Content::text("calling"), tool_call()],
     );
     let text = strip(&aborted.render(60).join("\n"));
-    assert!(text.contains("Operation aborted"), "{text}");
+    assert!(text.contains("⊗ Aborted after 2 retry attempts"), "{text}");
     let mut errored = ended(
         StopReason::Error,
         Some("boom"),
         vec![Content::text("calling"), tool_call()],
     );
     let text = strip(&errored.render(60).join("\n"));
-    assert!(text.contains("Error: boom"), "{text}");
+    assert!(text.contains(" ⊗ boom"), "{text}");
+    assert!(!text.contains("Error:"), "{text}");
+}
+
+#[test]
+fn a_plain_abort_inside_a_turn_leaves_the_word_to_the_end_line() {
+    let _g = lock();
+    let mut aborted = ended(
+        StopReason::Aborted,
+        Some("Operation aborted"),
+        vec![Content::text("calling"), tool_call()],
+    );
+    aborted.set_outline_mission(Some(1));
+    let text = strip(&aborted.render(60).join("\n"));
+    assert!(!text.contains("Operation aborted"), "{text}");
+    // Outside every turn there is no end line: the abort line stays.
+    aborted.set_outline_mission(None);
+    let text = strip(&aborted.render(60).join("\n"));
+    assert!(text.contains("⊗ Operation aborted"), "{text}");
 }
 
 fn outline_text(
@@ -122,15 +142,15 @@ fn outline_text(
 }
 
 #[test]
-fn outline_shows_the_whole_final_text_wrapped_at_the_step_indent() {
+fn outline_shows_the_whole_final_text_wrapped_at_the_prose_indent() {
     let _g = lock();
     let text = "First I read the wrap helper and found the overflow in the second branch.\n\n\
                 - It cut every row at the edge\n- It dropped the rest of the prompt\n\n\
                 Then I fixed **both** and the `suite` passes.";
     let rows = outline_text(StopReason::Stop, None, vec![Content::text(text)], 40);
-    assert!(rows.len() >= 6, "{rows:#?}");
+    assert!(rows.len() >= 5, "{rows:#?}");
     for row in &rows {
-        assert!(row.starts_with("        "), "{row:?}");
+        assert!(row.starts_with(' ') && !row.starts_with("  "), "{row:?}");
         assert!(!row.contains('…'), "{row:?}");
         assert!(row.chars().count() <= 39, "{row:?}");
     }
@@ -160,14 +180,14 @@ fn outline_shows_the_abort_and_error_reason_after_the_text() {
     );
     let text = rows.join("\n");
     assert!(text.contains("Started the build."), "{text}");
-    assert!(text.contains("Aborted after 2 retry attempts"), "{text}");
+    assert!(text.contains("⊗ Aborted after 2 retry attempts"), "{text}");
     let rows = outline_text(StopReason::Error, Some("503 overloaded"), vec![], 60);
     assert_eq!(rows.len(), 1, "{rows:?}");
-    assert!(rows[0].contains("Error: 503 overloaded"), "{rows:?}");
+    assert!(rows[0].contains("⊗ 503 overloaded"), "{rows:?}");
 }
 
 #[test]
-fn a_outline_mission_block_lists_its_batch_under_the_whole_prompt() {
+fn an_outline_turn_lists_its_calls_under_the_whole_prompt() {
     use hoocode_code_tui_widgets::outline::FlightItem;
     use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
     use hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Outline;
@@ -213,34 +233,36 @@ fn a_outline_mission_block_lists_its_batch_under_the_whole_prompt() {
         ])],
         ..Default::default()
     }));
-    let mut header = MissionHeader::new(
-        1,
-        "fix the overflow in the wrap helper and make sure that the whole suite still passes",
-        None,
-    );
-    header.set_view(hoocode_code_tui_widgets::tool_output_view::ToolOutputView::Outline);
+    let prompt =
+        "fix the overflow in the wrap helper and make sure that the whole suite still passes";
+    let mut header = MissionHeader::new(1, prompt);
+    header.set_view(Outline);
     header.set_flight(stats.clone());
-    let rows: Vec<String> = header.render(50).iter().map(|row| strip(row)).collect();
-    assert!(rows.len() >= 4, "{rows:#?}");
-    assert!(rows[0].starts_with("▲ M1  fix the overflow"), "{rows:#?}");
-    assert!(
-        rows.iter().any(|row| row.contains("suite still passes")),
-        "{rows:#?}"
-    );
-    // The live batch line, then the turn end that closes the rail.
-    assert!(
-        rows.iter()
-            .any(|row| row.contains("◐ … Read › Edit › Shell")),
-        "{rows:#?}"
-    );
-    assert!(
-        rows.last()
-            .unwrap()
-            .starts_with("   ╰ ◐ IN FLIGHT · 3 steps"),
+    let rows: Vec<String> = header
+        .render(50)
+        .iter()
+        .map(|row| strip(row).trim_end().to_string())
+        .collect();
+    assert!(rows[0].starts_with(" › fix the overflow"), "{rows:#?}");
+    // The prompt is never cut: every word of it shows in the band rows.
+    let band: Vec<&String> = rows.iter().take_while(|row| !row.is_empty()).collect();
+    assert!(band.iter().all(|row| !row.contains('…')), "{rows:#?}");
+    let flat = band
+        .iter()
+        .map(|row| row.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for word in prompt.split_whitespace() {
+        assert!(flat.contains(word), "{word}: {rows:#?}");
+    }
+    // A running turn: its calls in one recap row, and no end line.
+    assert_eq!(
+        rows.last().unwrap(),
+        " ● Read a.rs · Edit a.rs · Shell cargo test",
         "{rows:#?}"
     );
 
-    // The shell finishes: the batch settles to one line, and the turn end reads LANDED.
+    // The shell finishes and the turn ends: the same row, still no end line.
     shell.borrow_mut().update_result(
         ToolResult {
             content: vec![Content::text("ok")],
@@ -254,34 +276,10 @@ fn a_outline_mission_block_lists_its_batch_under_the_whole_prompt() {
         flight.mark = FlightMark::Landed;
         flight.landed_time = Some("2s".to_string());
     }
-    let rows: Vec<String> = header.render(50).iter().map(|row| strip(row)).collect();
-    // The prompt is never cut: every word of it shows in the header rows.
-    let header_rows: Vec<&String> = rows
+    let after: Vec<String> = header
+        .render(50)
         .iter()
-        .take_while(|row| !row.starts_with("   ┊"))
+        .map(|row| strip(row).trim_end().to_string())
         .collect();
-    assert!(
-        header_rows.iter().all(|row| !row.contains('…')),
-        "{rows:#?}"
-    );
-    let header_text = header_rows
-        .iter()
-        .map(|row| row.split_whitespace().collect::<Vec<_>>().join(" "))
-        .collect::<Vec<_>>()
-        .join(" ");
-    for word in
-        "fix the overflow in the wrap helper and make sure that the whole suite still passes"
-            .split_whitespace()
-    {
-        assert!(header_text.contains(word), "{word}: {rows:#?}");
-    }
-    assert!(
-        rows.iter()
-            .any(|row| row.starts_with("   ┊ ●") && row.contains("ran cargo test")),
-        "{rows:#?}"
-    );
-    assert!(
-        rows.last().unwrap().starts_with("   ╰ ● LANDED · 3 steps"),
-        "{rows:#?}"
-    );
+    assert_eq!(after, rows, "{after:#?}");
 }

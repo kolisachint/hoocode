@@ -589,32 +589,33 @@ fn assistant_message_thinking_label_80() {
     );
 }
 
-// ---- Mission Control trajectory (M4) ----
+// ---- The turn: user message, failed call (peek) ----
 
 #[test]
-fn trajectory_mission_header_80() {
+fn user_message_band_80() {
     let _g = lock();
-    let mut header = MissionHeader::new(1, "how does wrapping work?", None);
+    let mut header = MissionHeader::new(1, "how does wrapping work?");
+    assert_golden!("user_message_band_80", render_golden(&mut header, 80));
+}
+
+#[test]
+fn user_message_band_wrapped_40() {
+    // Wrapped and later lines start under the text, at column 3.
+    let _g = lock();
+    let mut header = MissionHeader::new(
+        6,
+        "check wrap.rs for the overflow in the second branch\nthen run the tests",
+    );
     assert_golden!(
-        "trajectory_mission_header_80",
-        render_golden(&mut header, 80)
+        "user_message_band_wrapped_40",
+        render_golden(&mut header, 40)
     );
 }
 
 #[test]
-fn trajectory_mission_header_skill_80() {
-    let _g = lock();
-    let mut header = MissionHeader::new(6, "check wrap.rs", Some("review"));
-    assert_golden!(
-        "trajectory_mission_header_skill_80",
-        render_golden(&mut header, 80)
-    );
-}
-
-#[test]
-fn trajectory_steps_hit_80() {
-    // Numbered steps on the `┊` rail; the failed Shell shows the HIT chip
-    // in place of its success stats.
+fn peek_failed_call_80() {
+    // Peek: tool rows with no step number and no rail; the failed Shell
+    // reads red `⊗` and its error lines.
     let _g = lock();
     let mut chain = ToolChainComponent::new(ToolOutputView::Peek);
     let mut read = tool(
@@ -634,10 +635,10 @@ fn trajectory_steps_hit_80() {
         false,
     );
     chain.add(Rc::new(RefCell::new(shell)));
-    assert_golden!("trajectory_steps_hit_80", render_golden(&mut chain, 80));
+    assert_golden!("peek_failed_call_80", render_golden(&mut chain, 80));
 }
 
-// ---- Mission Control flight log (M5, outline) ----
+// ---- Outline: the user message, recap rows, end line ----
 
 use hoocode_code_tui_widgets::outline::{FlightItem, FlightMark, FlightStats};
 
@@ -691,7 +692,7 @@ fn flight_stats(
 }
 
 fn outline_header(seq: usize, prompt: &str, stats: Rc<RefCell<FlightStats>>) -> MissionHeader {
-    let mut header = MissionHeader::new(seq, prompt, None);
+    let mut header = MissionHeader::new(seq, prompt);
     header.set_view(ToolOutputView::Outline);
     header.set_flight(stats);
     header
@@ -771,7 +772,6 @@ fn outline_chain_hits_80() {
     // tool, subject, first output line, `HIT`. Settled clean calls get none.
     let _g = lock();
     let mut chain = ToolChainComponent::new(ToolOutputView::Outline);
-    chain.set_base_step(3);
     let mut read = tool(
         "Read",
         json!({ "path": "src/wrap.rs" }),
@@ -799,7 +799,6 @@ fn outline_chain_hits_40() {
     // Narrow: the subject is cut first, `HIT` stays whole.
     let _g = lock();
     let mut chain = ToolChainComponent::new(ToolOutputView::Outline);
-    chain.set_base_step(3);
     let mut shell = tool("Shell", shell_args(), ToolOutputView::Outline);
     shell.update_result(
         result(
@@ -899,18 +898,20 @@ fn outline_mission_chain_landed_80() {
 }
 
 #[test]
-fn landing_did_not_land_80() {
-    // Peek and full: the same outcome the outline row and the comms title
-    // read, with the turn's summary on the dim line after it.
+fn turn_end_failed_80() {
+    // Peek and full: a failed turn's end line; tokens and cost are the
+    // status line's.
     let _g = lock();
-    let mut landing = LandingLine::new(
-        FlightMark::DidNotLand,
-        5,
-        1,
-        "4.2s",
-        "1.2k tokens",
-        "$0.012",
-    );
-    landing.set_summary(Some("Edited 3 files · ran 2 commands".to_string()));
-    assert_golden!("landing_did_not_land_80", render_golden(&mut landing, 80));
+    let stats = Rc::new(RefCell::new(FlightStats {
+        mark: FlightMark::DidNotLand,
+        steps: 5,
+        hits: 1,
+        landed_time: Some("4.2s".to_string()),
+        tokens: Some("1.2k tokens".to_string()),
+        cost: Some("$0.012".to_string()),
+        failure: Some("connection reset by peer".to_string()),
+        ..Default::default()
+    }));
+    let mut landing = LandingLine::new(stats);
+    assert_golden!("turn_end_failed_80", render_golden(&mut landing, 80));
 }

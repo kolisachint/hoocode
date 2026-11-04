@@ -3,30 +3,26 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::rc::{Rc, Weak};
-use std::time::Instant;
+use std::rc::Rc;
 
 use hoocode_ai_types::{AssistantMessage, Content, StopReason, ABORTED_MESSAGE};
 use hoocode_code_tui_theme::{get_markdown_theme, theme};
 use hoocode_tui_components::markdown::js_trim;
 use hoocode_tui_components::{DefaultTextStyle, Markdown, MarkdownTheme, Spacer, Text};
 use hoocode_tui_ratatui::Palette;
-use hoocode_tui_render::{
-    fresh_stamp, mix_stamps, render_epoch, Component, ComponentHandle, Container,
-};
+use hoocode_tui_render::{fresh_stamp, Component, ComponentHandle, Container};
 use hoocode_tui_util::js_regex::is_js_space;
 
 use crate::outline::{self, STEP_INDENT};
-use crate::tool_chain::ToolChainComponent;
 use crate::tool_output_view::ToolOutputView;
-use crate::trajectory;
 use crate::wrap_zone;
 
-/// How a thinking block renders.
+/// How a thinking block renders (declutter spec "Transcript").
 ///
-/// `Omit` exists for outline: the flight log shows the message's last prose
-/// line plus its `✻ thought Ns` line, so a stack of `Thinking...` lines
-/// would be pure noise.
+/// `Full` follows the view: peek shows one dim italic line (the first
+/// sentence, `…`), full the whole trace in dim italic. `Label` (the hidden
+/// thinking setting) keeps the one line at every stop. `Omit` is outline,
+/// which hides thinking. No glyph, no header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThinkingDisplay {
     #[default]
@@ -215,6 +211,46 @@ fn think_gist(message: &AssistantMessage) -> Option<String> {
         .filter(|gist| !gist.is_empty())
 }
 
+/// The one line peek shows of a thinking trace: its first sentence, with
+/// `…` in place of its stop when more follows. Whitespace collapses; a trace
+/// of one sentence reads whole.
+fn think_line(thinking: &str) -> String {
+    let flat = thinking.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = flat.char_indices().peekable();
+    while let Some((at, c)) = chars.next() {
+        if matches!(c, '.' | '!' | '?' | ':') && chars.peek().is_some_and(|(_, n)| *n == ' ') {
+            let head = hoocode_tui_util::text_slice::prefix(&flat, at);
+            return format!("{head}…");
+        }
+    }
+    flat
+}
+
+/// The peek line of a thinking trace: dim italic at the prose indent, cut
+/// with `…` at the width.
+struct ThinkingLine {
+    text: String,
+}
+
+impl Component for ThinkingLine {
+    fn render(&mut self, width: u16) -> Vec<String> {
+        use hoocode_tui_ratatui::core::text::Span;
+        let palette = Palette::current();
+        let width = usize::from(width).max(1);
+        let text = vec![Span::styled(
+            self.text.clone(),
+            hoocode_tui_ratatui::italic(palette.style("thinkingText")),
+        )];
+        let mut spans = vec![Span::raw(" ".to_string())];
+        spans.extend(hoocode_tui_ratatui::truncate_spans(
+            text,
+            width.saturating_sub(2).max(1),
+            "…",
+        ));
+        vec![hoocode_tui_ratatui::row(spans, width)]
+    }
+}
+
 /// Up to three leading spaces, then the rest. `None` for four or more: an
 /// indented code line, which no block pattern here matches.
 fn after_indent(line: &str) -> Option<&str> {
@@ -364,15 +400,6 @@ enum BlockKey {
     Segment { of: Box<BlockKey>, index: usize },
 }
 
-/// A content child's lines already on the rail, for the stamp, width and
-/// render epoch they were drawn at.
-struct RailedChild {
-    stamp: u64,
-    width: u16,
-    epoch: u64,
-    lines: Rc<[String]>,
-}
-
 struct CachedMarkdown {
     md: Rc<RefCell<Markdown>>,
     /// What goes in the container: the markdown, or for a later segment the
@@ -424,16 +451,11 @@ pub struct AssistantMessageComponent {
     content: Container,
     thinking_display: ThinkingDisplay,
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
-    /// Mission Control peek (M4): prose lines sit on the `┊` rail. Think
-    /// headers (`·· …`) keep their own slot and skip the rail.
-    rail: bool,
-    /// The full stop: the Think row wraps its gist instead of cutting it.
+    /// The full stop: thinking shows whole instead of its first sentence.
     full: bool,
-    /// The mission chain whose rows sit right above this message (M5). Peek
-    /// reads it for the blank row that opens the message.
-    outline_above: Option<Weak<RefCell<ToolChainComponent>>>,
-    /// Outline (M5): the mission (header number) this message belongs to; `None`
-    /// before the first mission. The transcript groups prose by it.
+    /// The turn (header number) this message belongs to; `None` before the
+    /// first turn. The transcript groups prose by it, and the turn's own end
+    /// line stands in for a plain abort line.
     outline_mission: Option<usize>,
     /// Outline (M5): whether this message's prose line shows. The transcript
     /// sets it: only the last prose message of an ended mission shows one.
@@ -448,17 +470,9 @@ pub struct AssistantMessageComponent {
     /// The one-row gap every block boundary uses, shared so its stamp is
     /// stable across updates.
     gap: ComponentHandle,
-    /// Peek: each content child's rail lines, by the child's address. Only
-    /// children with a render stamp are kept.
-    rail_cache: HashMap<usize, RailedChild>,
     /// Whether the last `update_content` was a streaming update, so a
     /// `refresh` (e.g. a thinking toggle mid-stream) keeps the same form.
     streaming: bool,
-    /// The Think row's clock (M4): when the trace started streaming and
-    /// when it settled. Unknown for resumed sessions, which never timed
-    /// the trace; the header then omits the time.
-    think_start: Option<Instant>,
-    think_end: Option<Instant>,
     /// Width-diagnosis log (`HOOCODE_WIDTH_DEBUG`): resolved once at
     /// construction, so per-frame rendering does no environment I/O.
     width_log: Option<PathBuf>,
@@ -506,9 +520,7 @@ impl AssistantMessageComponent {
             content: Container::new(),
             thinking_display,
             markdown_theme,
-            rail: false,
             full: false,
-            outline_above: None,
             outline_mission: None,
             outline_prose_shown: false,
             last_message: None,
@@ -516,10 +528,7 @@ impl AssistantMessageComponent {
             markdown_cache: HashMap::new(),
             has_segmented_blocks: false,
             gap: handle(Spacer::new(1)),
-            rail_cache: HashMap::new(),
             streaming: false,
-            think_start: None,
-            think_end: None,
             width_log: width_log_path(),
             last_width_log: None,
             rev: fresh_stamp(),
@@ -600,23 +609,15 @@ impl AssistantMessageComponent {
         self.refresh();
     }
 
-    /// The view dial's stop: peek and full put prose on the `┊` rail (M4);
-    /// full also wraps the Think row's gist where the others cut it.
+    /// The view dial's stop: full shows thinking whole, peek its first
+    /// sentence.
     pub fn set_view(&mut self, view: ToolOutputView) {
         self.rev = fresh_stamp();
-        self.rail = view != ToolOutputView::Outline;
         let full = view == ToolOutputView::Full;
         if self.full != full {
             self.full = full;
             self.refresh();
         }
-    }
-
-    /// Links the message to the mission chain above it (`None` when no
-    /// mission chain precedes it). Peek reads the link for the rail.
-    pub fn set_outline_above(&mut self, chain: Option<Weak<RefCell<ToolChainComponent>>>) {
-        self.rev = fresh_stamp();
-        self.outline_above = chain;
     }
 
     /// Outline (M5): the mission this message belongs to (`None` before the
@@ -628,7 +629,11 @@ impl AssistantMessageComponent {
     /// Outline (M5): tags the message with its mission.
     pub fn set_outline_mission(&mut self, mission: Option<usize>) {
         self.rev = fresh_stamp();
-        self.outline_mission = mission;
+        if self.outline_mission != mission {
+            self.outline_mission = mission;
+            // Whether a plain abort line shows depends on it.
+            self.refresh();
+        }
     }
 
     /// Outline (M5): whether the message has prose a outline line can show.
@@ -706,17 +711,6 @@ impl AssistantMessageComponent {
             .is_some_and(|content| matches!(content, Content::ToolCall(_)))
     }
 
-    /// The Think row's seconds: elapsed since the trace started while it
-    /// runs, the settled span once done, `None` when never timed.
-    fn think_secs(&self, streaming: bool) -> Option<u64> {
-        let start = self.think_start?;
-        if streaming {
-            return Some(start.elapsed().as_secs());
-        }
-        self.think_end
-            .map(|end| end.duration_since(start).as_secs())
-    }
-
     fn refresh(&mut self) {
         if let Some(message) = self.last_message.clone() {
             let streaming = self.streaming;
@@ -745,20 +739,6 @@ impl AssistantMessageComponent {
         self.rev = fresh_stamp();
         self.last_message = Some(message.clone());
         self.streaming = streaming;
-        // The Think row's clock: the first streaming update carrying
-        // thinking starts it; the first settled update stops it.
-        let has_thinking = message
-            .content
-            .iter()
-            .any(|c| matches!(c, Content::Thinking(t) if !is_blank(&t.thinking)));
-        if has_thinking {
-            if streaming && self.think_start.is_none() {
-                self.think_start = Some(Instant::now());
-            }
-            if !streaming && self.think_start.is_some() && self.think_end.is_none() {
-                self.think_end = Some(Instant::now());
-            }
-        }
 
         // A final render replaces streaming segments with the single form.
         if !streaming && self.has_segmented_blocks {
@@ -783,20 +763,22 @@ impl AssistantMessageComponent {
                     if self.thinking_display == ThinkingDisplay::Omit {
                         continue;
                     }
-                    // The Think row: the `··` slot with the trace's gist
-                    // (Mission Control spec a2). Full display adds the
-                    // trace itself under it, on the rail.
+                    // Full: the whole trace, dim italic. Peek (and hidden
+                    // thinking): its first sentence on one dim italic line.
                     let visible_after = message.content[i + 1..]
                         .iter()
                         .any(|c| self.is_visible_block(c));
-                    let mut header =
-                        trajectory::ThinkHeader::new(streaming, self.think_secs(streaming));
-                    header.set_gist(think_gist(&message));
-                    header.set_wrap(self.full);
-                    self.content.add_child(handle(header));
-                    if self.thinking_display == ThinkingDisplay::Full {
-                        let text = format!("✻ {}", js_trim(&t.thinking));
-                        self.add_markdown_block(BlockKey::Thinking(i), &text, streaming, true);
+                    if self.full && self.thinking_display == ThinkingDisplay::Full {
+                        self.add_markdown_block(
+                            BlockKey::Thinking(i),
+                            js_trim(&t.thinking),
+                            streaming,
+                            true,
+                        );
+                    } else {
+                        self.content.add_child(handle(ThinkingLine {
+                            text: think_line(&t.thinking),
+                        }));
                     }
                     if visible_after {
                         self.content.add_child(self.gap.clone());
@@ -812,22 +794,37 @@ impl AssistantMessageComponent {
             .content
             .iter()
             .any(|c| matches!(c, Content::ToolCall(_)));
-        if let Some(reason) = end_reason(&message) {
+        // A plain abort inside a turn says nothing the turn's own end line
+        // (`⊗ stopped`) does not.
+        let plain_abort = message.stop_reason == StopReason::Aborted
+            && self.outline_mission.is_some()
+            && end_reason(&message).as_deref() == Some("Operation aborted");
+        if let Some(reason) = end_reason(&message).filter(|_| !plain_abort) {
+            let t = theme();
+            let glyph_color = if message.stop_reason == StopReason::Error {
+                "error"
+            } else {
+                "dim"
+            };
+            let reason = reason.strip_prefix("Error: ").unwrap_or(&reason);
             self.content.add_child(self.gap.clone());
-            self.content
-                .add_child(handle(Text::new(theme().fg("error", &reason), 1, 0)));
+            self.content.add_child(handle(Text::new(
+                format!("{} {}", t.fg(glyph_color, "⊗"), t.fg("dim", reason)),
+                1,
+                0,
+            )));
         }
     }
 }
 
 impl AssistantMessageComponent {
-    /// The outline flight log (M5): the message's whole text as plain wrapped
-    /// rows, when the transcript shows it (`set_outline_prose_shown`), the abort
-    /// or error reason after it, then its `✻ thought Ns` rows. A message with
-    /// none of these renders nothing.
+    /// Outline, for a message outside every turn: its whole text as plain
+    /// wrapped rows, when the transcript shows it (`set_outline_prose_shown`),
+    /// then ` ⊗ reason` when it ended badly. A message with neither renders
+    /// nothing.
     fn render_outline(&mut self, width: u16, palette: &Palette) -> Vec<String> {
-        // A mission's thinking, answer and reason are drawn by its header
-        // (`outline::mission_rows`), so a message in a mission draws nothing.
+        // A turn's answer and reason are drawn by its header
+        // (`outline::turn_rows`), so a message in a turn draws nothing.
         if self.outline_mission.is_some() {
             return Vec::new();
         }
@@ -842,11 +839,22 @@ impl AssistantMessageComponent {
                     width,
                 ));
                 if let Some(reason) = end_reason(message) {
-                    let lines: Vec<String> = reason.lines().map(str::to_string).collect();
+                    let reason = reason.strip_prefix("Error: ").unwrap_or(&reason);
+                    let lines: Vec<String> = reason
+                        .lines()
+                        .enumerate()
+                        .map(|(i, line)| {
+                            if i == 0 {
+                                format!("⊗ {line}")
+                            } else {
+                                line.to_string()
+                            }
+                        })
+                        .collect();
                     out.extend(outline::prose_rows(
                         &lines,
                         STEP_INDENT,
-                        palette.err(),
+                        palette.dim(),
                         width,
                     ));
                 }
@@ -904,9 +912,9 @@ impl AssistantMessageComponent {
             use std::io::Write;
             let _ = writeln!(
                 file,
-                "assistant-message render width={width} rail={} src_chars={src_chars} \
+                "assistant-message render width={width} full={} src_chars={src_chars} \
                  src_longest={src_longest} out_lines={} out_longest={out_longest}",
-                u8::from(self.rail),
+                u8::from(self.full),
                 lines.len(),
             );
         }
@@ -920,20 +928,13 @@ impl Component for AssistantMessageComponent {
         lines
     }
 
-    /// A streaming message reads a live clock and changes with every delta:
-    /// no stamp. A settled one is drawn from its own state and, for peek's
-    /// rail, from whether the chain above it still exists.
+    /// A streaming message changes with every delta: no stamp. A settled
+    /// one is drawn from its own state.
     fn render_stamp(&self) -> Option<u64> {
         if self.streaming {
             return None;
         }
-        let above = u64::from(
-            self.outline_above
-                .as_ref()
-                .and_then(Weak::upgrade)
-                .is_some(),
-        );
-        Some(mix_stamps([self.rev, above]))
+        Some(self.rev)
     }
 
     fn invalidate(&mut self) {
@@ -943,81 +944,11 @@ impl Component for AssistantMessageComponent {
             entry.md.borrow_mut().invalidate();
         }
         self.content.invalidate();
-        self.rail_cache.clear();
         self.refresh();
     }
 }
 
 impl AssistantMessageComponent {
-    /// The peek form of the content: every line on the `┊` rail. A child with
-    /// a stamp keeps its railed lines between frames, so a streaming message
-    /// puts only its changed tail on the rail again.
-    fn render_railed(
-        &mut self,
-        inner: u16,
-        width: usize,
-        after_step: bool,
-        palette: &Palette,
-    ) -> Vec<String> {
-        let rail = |lines: &[String], first: bool| -> Vec<String> {
-            lines
-                .iter()
-                .enumerate()
-                .map(|(index, line)| {
-                    let opening_blank = first && index == 0 && !after_step && is_blank(line);
-                    if opening_blank || trajectory::is_think_header(line) {
-                        line.clone()
-                    } else {
-                        trajectory::rail_line(line, width, false, palette)
-                    }
-                })
-                .collect()
-        };
-        let epoch = render_epoch();
-        let mut kept = HashMap::new();
-        let mut out = Vec::new();
-        for (index, child) in self.content.children().iter().enumerate() {
-            let stamp = child.borrow().render_stamp();
-            // The first child holds the opening row, which has its own rule.
-            let Some(stamp) = stamp.filter(|_| index > 0) else {
-                let lines = child.borrow_mut().render(inner);
-                out.extend(rail(&lines, index == 0));
-                continue;
-            };
-            let key = Rc::as_ptr(child) as *const () as usize;
-            let hit = self
-                .rail_cache
-                .remove(&key)
-                .or_else(|| kept.remove(&key))
-                .filter(|e| e.stamp == stamp && e.width == inner && e.epoch == epoch);
-            let entry = match hit {
-                Some(entry) => {
-                    // Builds with debug assertions draw every hit again, as the
-                    // container does, so a stale entry fails the test that
-                    // touches it.
-                    if cfg!(debug_assertions) {
-                        let fresh = rail(&child.borrow_mut().render(inner), false);
-                        assert!(fresh[..] == entry.lines[..], "peek rail cache is stale");
-                    }
-                    entry
-                }
-                None => {
-                    let lines = child.borrow_mut().render(inner);
-                    RailedChild {
-                        stamp,
-                        width: inner,
-                        epoch,
-                        lines: rail(&lines, false).into(),
-                    }
-                }
-            };
-            out.extend(entry.lines.iter().cloned());
-            kept.insert(key, entry);
-        }
-        self.rail_cache = kept;
-        out
-    }
-
     /// The render body, without the width-diagnosis logging.
     fn render_inner(&mut self, width: u16) -> Vec<String> {
         // One palette per render pass, passed down to every row.
@@ -1028,26 +959,7 @@ impl AssistantMessageComponent {
         if self.has_tool_calls {
             return self.content.render(width);
         }
-        if !self.rail {
-            let lines = self.content.render(width);
-            if lines.is_empty() {
-                return lines;
-            }
-            return wrap_zone(lines);
-        }
-        // Mission Control peek: prose sits on the `┊` rail, so the inner
-        // content wraps six cells narrower and every line takes the rail.
-        // Think headers keep their own `··` slot.
-        // The blank row that opens a message is a plain blank, as it is
-        // anywhere else on the screen, unless a step of the mission sits right
-        // above it: then the rail runs on through it.
-        let after_step = self
-            .outline_above
-            .as_ref()
-            .is_some_and(|chain| chain.upgrade().is_some());
-        let width = width as usize;
-        let inner = width.saturating_sub(6).max(1) as u16;
-        let lines = self.render_railed(inner, width, after_step, &palette);
+        let lines = self.content.render(width);
         if lines.is_empty() {
             return lines;
         }

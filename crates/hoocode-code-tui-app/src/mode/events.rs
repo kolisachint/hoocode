@@ -412,9 +412,6 @@ impl Mode {
                     component.borrow_mut().set_view(self.tool_output_view);
                     component
                         .borrow_mut()
-                        .set_outline_above(self.transcript.outline_chain_above());
-                    component
-                        .borrow_mut()
                         .set_outline_mission(self.transcript.current_mission());
                     self.transcript.note_assistant(&component);
                     self.add_to_chat(as_component(&component));
