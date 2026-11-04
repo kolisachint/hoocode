@@ -1,0 +1,5 @@
+ ● done · 11s · 23k tokens    peek · claude-haiku-5-5 · 42%
+--- styles ---
+r0 c1 fg=#b5bd68
+r0 c2-25 fg=#989898
+r0 c30-58 fg=#989898

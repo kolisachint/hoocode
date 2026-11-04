@@ -28,6 +28,7 @@ mod session_chip;
 mod stale_todo_settle_ts;
 mod startup_details;
 mod startup_progress;
+mod status_line;
 mod subagent_footer_indicator_ts;
 mod subagent_spawn_audit_ts;
 mod subagent_visual_tie_ts;

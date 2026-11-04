@@ -33,6 +33,7 @@ pub use hoocode_code_tui_widgets::session_chip;
 pub mod scroll_view;
 pub mod session_picker;
 pub mod startup_progress;
+pub mod status_line;
 pub mod suspend;
 pub mod tips;
 pub mod transmission;
