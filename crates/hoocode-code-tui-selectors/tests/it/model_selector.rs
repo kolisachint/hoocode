@@ -62,10 +62,10 @@ fn full_ids(models: &[Model]) -> Vec<String> {
         .collect()
 }
 
-/// The model id on each list row, in order (the columnar `hangarRows`
-/// format: id, provider, context window and price columns, plus an
-/// `expired` or current-model `✓` marker — no `[provider]` brackets).
-fn listed_ids(rendered: &str, provider: &str) -> Vec<String> {
+/// The model id on each list row, in order (the row format: id, then the
+/// price, then an `expired` marker). `price` picks the rows: the detail
+/// column beside the list prints on the same lines. The test models are free.
+fn listed_ids(rendered: &str, price: &str) -> Vec<String> {
     rendered
         .lines()
         .filter_map(|line| {
@@ -76,8 +76,12 @@ fn listed_ids(rendered: &str, provider: &str) -> Vec<String> {
             let trimmed = trimmed.strip_prefix(SELECT_CURSOR).unwrap_or(trimmed);
             let mut cols = trimmed.split_whitespace();
             let id = cols.next()?;
-            let row_provider = cols.next()?;
-            (row_provider == provider).then(|| id.to_string())
+            // The detail column prints on the same lines as the first rows.
+            if ["name", "provider", "context", "price", "thinking"].contains(&id) {
+                return None;
+            }
+            let row_price = cols.next()?;
+            (row_price == price).then(|| id.to_string())
         })
         .collect()
 }
@@ -127,9 +131,9 @@ fn preserves_scoped_model_order_in_the_model_scoped_tab() {
         None,
     );
     let rendered = strip(&selector.render(120));
-    let ids = listed_ids(&rendered, "faux");
+    let ids = listed_ids(&rendered, "free");
     assert_eq!(ids[..3], [two.id, one.id, three.id]);
-    assert!(rendered.contains("Scope: all | scoped"));
+    assert!(rendered.contains("showing scoped"));
 }
 
 #[test]
@@ -143,11 +147,9 @@ fn lists_the_current_model_first_ticked_then_by_provider() {
     let current = models[2].clone();
     let mut selector = ModelSelectorComponent::new(Some(current), Ok(models), None, vec![], None);
     let rendered = strip(&selector.render(100));
-    assert!(rendered.contains("Only showing models from configured providers"));
     let current_row = row_for(&rendered, "m-1");
-    assert!(current_row.contains("mid"), "{rendered}");
-    assert!(current_row.contains('✓'), "{rendered}");
-    assert!(rendered.contains("Model Name: M"));
+    assert!(current_row.contains("in use"), "{rendered}");
+    assert!(current_row.contains("m-1"), "{rendered}");
     let order: Vec<_> = rendered
         .lines()
         .filter_map(|l| ["z-1", "a-1", "m-1"].into_iter().find(|id| l.contains(id)))
@@ -163,10 +165,8 @@ fn marks_only_the_models_of_expired_providers() {
     selector.set_expired_providers(["beta".to_string()]);
     let rendered = strip(&selector.render(100));
     let expired_row = row_for(&rendered, "b-1");
-    assert!(expired_row.contains("beta"), "{rendered}");
     assert!(expired_row.contains("expired"), "{rendered}");
     let fresh_row = row_for(&rendered, "a-1");
-    assert!(fresh_row.contains("alpha"), "{rendered}");
     assert!(!fresh_row.contains("expired"), "{rendered}");
     assert_eq!(rendered.matches("expired").count(), 1, "{rendered}");
 }
@@ -188,7 +188,7 @@ fn typing_narrows_and_enter_selects_the_highlighted_model() {
         ModelSelectorComponent::new(Some(models[0].clone()), Ok(models), None, vec![], None);
     selector.handle_input("2");
     let rendered = strip(&selector.render(100));
-    assert_eq!(listed_ids(&rendered, "faux"), ["faux-2"]);
+    assert_eq!(listed_ids(&rendered, "free"), ["faux-2"]);
     selector.handle_input("\r");
     match selector.take_events().as_slice() {
         [ModelSelectorEvent::Select(m)] => assert_eq!(m.id, "faux-2"),
@@ -234,17 +234,17 @@ fn up_and_down_clamp_and_tab_switches_scope() {
     );
     // Scoped first: only faux-3.
     assert_eq!(
-        listed_ids(&strip(&selector.render(100)), "faux"),
+        listed_ids(&strip(&selector.render(100)), "free"),
         ["faux-3"]
     );
     selector.handle_input("\t");
     let rendered = strip(&selector.render(100));
-    assert_eq!(listed_ids(&rendered, "faux").len(), 3);
+    assert_eq!(listed_ids(&rendered, "free").len(), 3);
     // The current model (One) is first; up at the top stays put.
     selector.handle_input("\x1b[A");
-    assert!(strip(&selector.render(100)).contains("Model Name: One"));
+    assert!(strip(&selector.render(100)).contains("One"));
     selector.handle_input("\x1b[B");
-    assert!(strip(&selector.render(100)).contains("Model Name: Two"));
+    assert!(strip(&selector.render(100)).contains("Two"));
 }
 
 #[test]
@@ -264,29 +264,27 @@ fn toggle_from_all_enabled_keeps_only_that_model_and_marks_unsaved() {
     let models = faux();
     let ids = full_ids(&models);
     let mut selector = ScopedModelsSelectorComponent::new(models, None);
-    // The footer lists five hotkeys. On macOS `alt` is printed as `option`, so
-    // the footer is about 20 columns wider than on Linux and wraps at 120,
-    // splitting "all enabled". Render wide enough for both platforms.
     let rendered = strip(&selector.render(200));
     // "option+s" on macOS, like the pin's formatKeyText.
     let save = hoocode_code_tui_keybindings::format_key_text("alt+s", false);
-    assert!(rendered.contains(&format!("Session-only. {save} to save to settings.")));
-    assert!(rendered.contains("all enabled"));
+    assert!(rendered.contains(&format!("{save} save to settings")));
+    assert!(rendered.contains("all 3 on · this session only"));
     selector.handle_input("\r");
     assert_eq!(
         selector.take_events(),
         vec![ScopedModelsEvent::Change(Some(vec![ids[0].clone()]))]
     );
     let rendered = strip(&selector.render(200));
-    assert!(rendered.contains("1/3 enabled (unsaved)"));
-    assert!(rendered.contains("faux-2 [faux] ✗"));
+    assert!(rendered.contains("1 of 3 on · unsaved"));
+    let off_row = row_for(&rendered, "faux-2");
+    assert!(off_row.contains("off"), "{rendered}");
     // alt+s saves and clears the mark.
     selector.handle_input("\x1bs");
     assert_eq!(
         selector.take_events(),
         vec![ScopedModelsEvent::Persist(vec![plain(&ids[0])])]
     );
-    assert!(!strip(&selector.render(200)).contains("(unsaved)"));
+    assert!(!strip(&selector.render(200)).contains("unsaved"));
 }
 
 #[test]

@@ -1,18 +1,16 @@
-//! The CONTROLS console (`/hotkeys`, M7 spec §4 d9): the keyboard with
-//! one layer's bindings lit, and what each lit key does. Below 100
-//! columns the drawing cannot fit, so it falls back to a key list in
-//! the same console.
+//! The Keys pane (`/hotkeys`, which-key style): one layer's bindings in
+//! a grid grouped as prompt, transcript and app, each `key  what it does`.
+//! Below 100 columns the groups stack in one column.
 //!
-//! Everything on screen comes from the real keybindings: the lit caps from
-//! the bindings' effective keys (user customizations included), the actions
-//! from their descriptions. Physical cap positions are the board; the text
-//! is not hard-coded. Key names print literally (`ctrl`, `alt`, `esc` — no
-//! platform `option`), so goldens hold on macOS and Linux.
+//! Everything on screen comes from the real keybindings: the keys from the
+//! bindings' effective keys (user customizations included), the actions
+//! from their descriptions. Key names print literally (`ctrl`, `alt`,
+//! `esc` — no platform `option`), so goldens hold on macOS and Linux.
 //!
-//! The console is a picker: `tab` switches the lit layer (plain, ctrl,
-//! alt), typing filters the action list, and `esc` closes it. The title
-//! tabs name the layers with the lit one accented, and the foot only
-//! promises those three keys.
+//! The pane is a picker: `tab` switches the layer (plain, ctrl, alt),
+//! typing filters the actions, and `esc` closes it. The title tabs name the
+//! layers with the shown one accented, and the hint row only promises those
+//! keys.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -22,14 +20,14 @@ use hoocode_code_tui_keybindings::{keybindings, KeybindingEntry};
 use hoocode_code_tui_theme::style_input;
 use hoocode_tui_components::Input;
 use hoocode_tui_keys::get_keybindings;
-use hoocode_tui_ratatui::{Line, Palette, Span, Style};
+use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::{truncate_to_width, visible_width};
+use hoocode_tui_util::visible_width;
 
 use crate::console::{hints, query_row, Console};
 
-/// The keyboard is drawn at the spec width; narrower falls back to the list.
-const KEYBOARD_MIN_WIDTH: usize = 100;
+/// The groups sit side by side from this width; narrower they stack.
+const GRID_MIN_WIDTH: usize = 100;
 
 /// The effective keys of a binding: the installed manager's, or the
 /// definition's defaults where the manager knows nothing (so the console
@@ -114,32 +112,62 @@ impl Layer {
     }
 }
 
-/// The caps of one keyboard row that have a binding in `layer`.
-fn lit_caps(
-    entries: &[(&KeybindingEntry, Vec<String>)],
-    layer: Layer,
-    letters: &[char],
-) -> Vec<char> {
-    letters
-        .iter()
-        .copied()
-        .filter(|cap| {
-            entries
-                .iter()
-                .any(|(_, keys)| keys.iter().any(|k| layer_cap(k) == Some((layer, *cap))))
-        })
-        .collect()
+/// What part of the app a binding belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Group {
+    Prompt,
+    Transcript,
+    App,
 }
 
-/// The bindings of one layer by cap, in board order: the lit keys and what
-/// each does. Later entries win a shared cap, so app bindings name a key
-/// over the TUI library's editing defaults. `query` keeps the actions whose
-/// key or description contains it; empty keeps all.
+impl Group {
+    fn name(self) -> &'static str {
+        match self {
+            Group::Prompt => "prompt",
+            Group::Transcript => "transcript",
+            Group::App => "app",
+        }
+    }
+}
+
+/// The group of a binding id: the editor and its clipboard keys are the
+/// prompt; scrolling, tool output, thinking, subagent and tree keys are the
+/// transcript; the rest is the app.
+fn group_of(id: &str) -> Group {
+    if id.starts_with("tui.") || id == "app.clear" || id.starts_with("app.clipboard.") {
+        Group::Prompt
+    } else if [
+        "app.scroll.",
+        "app.tools.",
+        "app.thinking.",
+        "app.subagent.",
+        "app.tree.",
+    ]
+    .iter()
+    .any(|prefix| id.starts_with(prefix))
+    {
+        Group::Transcript
+    } else {
+        Group::App
+    }
+}
+
+/// One shown binding.
+struct Action {
+    key: String,
+    text: String,
+    group: Group,
+}
+
+/// The bindings of one layer by cap, in cap order. Later entries win a
+/// shared cap, so app bindings name a key over the TUI library's editing
+/// defaults. `query` keeps the actions whose key or description contains
+/// it; empty keeps all.
 fn layer_actions(
     entries: &[(&KeybindingEntry, Vec<String>)],
     layer: Layer,
     query: &str,
-) -> Vec<(char, String, String)> {
+) -> Vec<Action> {
     let mut by_cap: BTreeMap<char, (&KeybindingEntry, String)> = BTreeMap::new();
     for (entry, keys) in entries {
         for key in keys {
@@ -152,152 +180,110 @@ fn layer_actions(
     }
     let needle = query.to_lowercase();
     by_cap
-        .into_iter()
-        .filter(|(_, (entry, key))| {
+        .into_values()
+        .filter(|(entry, key)| {
             needle.is_empty()
                 || key.to_lowercase().contains(&needle)
                 || entry.description.to_lowercase().contains(&needle)
         })
-        .map(|(cap, (entry, key))| (cap, key, entry.description.to_string()))
+        .map(|(entry, key)| Action {
+            key,
+            text: entry.description.to_string(),
+            group: group_of(entry.id),
+        })
         .collect()
 }
 
-/// One keyboard row: the label cap plus the letter caps, lit caps in
-/// `lit_style`, the rest faint.
-fn keyboard_row(label: &str, letters: &[char], lit: &[char], lit_style: Style) -> Line<'static> {
+/// `items` as `cols` columns filled top to bottom: the key in normal text,
+/// the action dim, columns four cells apart.
+fn grid(items: &[&Action], cols: usize, inner: usize) -> Vec<Line<'static>> {
     let pal = Palette::current();
-    let mut spans = vec![
-        Span::styled(label.to_string(), pal.dim()),
-        Span::raw("  ".to_string()),
-    ];
-    for letter in letters {
-        let style = if lit.contains(letter) {
-            lit_style
-        } else {
-            pal.faint()
-        };
-        spans.push(Span::styled(format!("{letter} "), style));
+    if items.is_empty() {
+        return Vec::new();
     }
-    Line::from(spans)
-}
-
-/// The keyboard board: esc and digits, tab's row, ctrl's row, shift's row.
-/// Only caps with a binding in `layer` light up; the board itself is positions.
-fn keyboard(entries: &[(&KeybindingEntry, Vec<String>)], layer: Layer) -> Vec<Line<'static>> {
-    let pal = Palette::current();
-    let digits: Vec<char> = "1234567890".chars().collect();
-    let top: Vec<char> = "qwertyuiop".chars().collect();
-    let home: Vec<char> = "asdfghjkl".chars().collect();
-    let bottom: Vec<char> = "zxcvbnm".chars().collect();
-    let lit_style = if layer == Layer::Plain {
-        Style::default()
-    } else {
-        pal.acc()
-    };
-    let mut rows = Vec::new();
-    let mut esc_row = vec![Span::styled("esc  ".to_string(), {
-        let lit = entries
-            .iter()
-            .any(|(_, keys)| keys.iter().any(|k| k.eq_ignore_ascii_case("escape")));
-        if lit && layer == Layer::Plain {
-            Style::default()
-        } else {
-            pal.faint()
-        }
-    })];
-    esc_row.push(Span::raw("  ".to_string()));
-    for digit in &digits {
-        let lit = entries.iter().any(|(_, keys)| {
-            keys.iter().any(|k| {
-                let lower = k.to_ascii_lowercase();
-                lower == digit.to_string()
-            })
-        });
-        esc_row.push(Span::styled(
-            format!("{digit} "),
-            if lit && layer == Layer::Plain {
-                Style::default()
-            } else {
-                pal.faint()
-            },
-        ));
-    }
-    rows.push(Line::from(esc_row));
-    rows.push(keyboard_row(
-        "tab  ",
-        &top,
-        &lit_caps(entries, layer, &top),
-        lit_style,
-    ));
-    rows.push(keyboard_row(
-        " ctrl",
-        &home,
-        &lit_caps(entries, layer, &home),
-        lit_style,
-    ));
-    rows.push(keyboard_row(
-        "shift",
-        &bottom,
-        &lit_caps(entries, layer, &bottom),
-        lit_style,
-    ));
-    rows
-}
-
-/// One `key action` row's right side: the key in ink, the action faint.
-fn action_spans(key: &str, action: &str) -> Vec<Span<'static>> {
-    let pal = Palette::current();
-    vec![
-        Span::styled(key.to_string(), Style::default()),
-        Span::styled(format!("  {action}"), pal.faint()),
-    ]
-}
-
-/// The board with the layer's action list down the right side (M8d9): the
-/// first row names the lit layer, then each action reads beside the board.
-/// Extra actions past the board read on action-only rows.
-fn board_rows(
-    entries: &[(&KeybindingEntry, Vec<String>)],
-    layer: Layer,
-    actions: &[(char, String, String)],
-    query: &str,
-    inner: usize,
-) -> Vec<Line<'static>> {
-    let pal = Palette::current();
-    let boards = keyboard(entries, layer);
-    let board_width = boards
+    let cols = cols.clamp(1, items.len());
+    let rows = items.len().div_ceil(cols);
+    let key_width = items
         .iter()
-        .map(|row| row.width())
+        .map(|a| visible_width(&a.key))
         .max()
-        .unwrap_or(0)
-        .min(inner);
-    let mut right: Vec<Line<'static>> = Vec::with_capacity(actions.len() + 1);
-    right.push(Line::from(vec![Span::styled(
-        format!("{} layer", layer.name()),
-        pal.acc(),
-    )]));
-    for (_, key, action) in actions {
-        right.push(Line::from(action_spans(key, action)));
+        .unwrap_or(0);
+    let col_widths: Vec<usize> = (0..cols)
+        .map(|c| {
+            items
+                .iter()
+                .skip(c * rows)
+                .take(rows)
+                .map(|a| key_width + 2 + visible_width(&a.text))
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
+    (0..rows)
+        .map(|r| {
+            let mut spans: Vec<Span<'static>> = Vec::new();
+            for (c, col_width) in col_widths.iter().enumerate() {
+                let Some(action) = items.get(c * rows + r) else {
+                    continue;
+                };
+                let used = key_width + 2 + visible_width(&action.text);
+                spans.push(Span::raw(format!("{:<key_width$}", action.key)));
+                spans.push(Span::styled(format!("  {}", action.text), pal.dim()));
+                if c + 1 < cols {
+                    spans.push(Span::raw(" ".repeat(col_width - used + 4)));
+                }
+            }
+            Line::from(truncate_spans(spans, inner))
+        })
+        .collect()
+}
+
+/// A group's header row.
+fn group_header(group: Group) -> Line<'static> {
+    Line::from(vec![Span::styled(
+        group.name().to_string(),
+        Palette::current().dim(),
+    )])
+}
+
+/// The groups as rows: prompt first (three columns across), then
+/// transcript and app side by side when the width allows, else stacked.
+fn group_rows(actions: &[Action], width: usize) -> Vec<Line<'static>> {
+    let inner = width.saturating_sub(2);
+    let of =
+        |group: Group| -> Vec<&Action> { actions.iter().filter(|a| a.group == group).collect() };
+    let wide = width >= GRID_MIN_WIDTH;
+    let mut rows = Vec::new();
+    let prompt = of(Group::Prompt);
+    if !prompt.is_empty() {
+        rows.push(group_header(Group::Prompt));
+        rows.extend(grid(&prompt, if wide { 3 } else { 1 }, inner));
     }
-    if actions.is_empty() && !query.is_empty() {
-        right.push(Line::from(vec![Span::styled(
-            "No matching bindings".to_string(),
-            pal.faint(),
-        )]));
-    }
-    let total = right.len().max(boards.len() + 3).max(7);
-    let mut rows = Vec::with_capacity(total);
-    for (i, right) in right.into_iter().enumerate().take(total) {
-        let left = if i.is_multiple_of(2) {
-            boards.get(i / 2).cloned().unwrap_or_default()
-        } else {
-            Line::from("")
-        };
-        let used = left.width().min(inner);
-        let mut spans = left.spans.clone();
-        spans.push(Span::raw(" ".repeat(board_width.saturating_sub(used) + 2)));
-        spans.extend(right.spans.iter().cloned());
-        rows.push(Line::from(truncate_spans(spans, inner)));
+    let column = |group: Group| -> Vec<Line<'static>> {
+        let items = of(group);
+        if items.is_empty() {
+            return Vec::new();
+        }
+        let mut lines = vec![group_header(group)];
+        lines.extend(grid(&items, 1, inner));
+        lines
+    };
+    let (left, right) = (column(Group::Transcript), column(Group::App));
+    let left_width = left.iter().map(|l| l.width()).max().unwrap_or(0) + 4;
+    let right_width = right.iter().map(|l| l.width()).max().unwrap_or(0);
+    if wide && !left.is_empty() && !right.is_empty() && left_width + right_width <= inner {
+        for i in 0..left.len().max(right.len()) {
+            let mut spans = left.get(i).map(|l| l.spans.clone()).unwrap_or_default();
+            let used = left.get(i).map(|l| l.width()).unwrap_or(0);
+            if let Some(line) = right.get(i) {
+                spans.push(Span::raw(" ".repeat(left_width - used)));
+                spans.extend(line.spans.iter().cloned());
+            }
+            rows.push(Line::from(spans));
+        }
+    } else {
+        rows.extend(left);
+        rows.extend(right);
     }
     rows
 }
@@ -335,40 +321,6 @@ fn truncate_spans(spans: Vec<Span<'static>>, max: usize) -> Vec<Span<'static>> {
     out
 }
 
-/// The full key list: every binding with its first effective key, kept by
-/// the query. The narrow fallback when the board cannot fit.
-fn key_list(
-    entries: &[(&KeybindingEntry, Vec<String>)],
-    query: &str,
-    inner: usize,
-) -> Vec<Line<'static>> {
-    let pal = Palette::current();
-    let needle = query.to_lowercase();
-    let mut rows: Vec<Line<'static>> = entries
-        .iter()
-        .filter(|(entry, keys)| {
-            needle.is_empty()
-                || keys
-                    .first()
-                    .is_some_and(|key| lit_key(key).to_lowercase().contains(&needle))
-                || entry.description.to_lowercase().contains(&needle)
-        })
-        .filter_map(|(entry, keys)| {
-            keys.first().map(|key| {
-                let text = format!("{}  {}", lit_key(key), entry.description);
-                Line::from(truncate_to_width(&text, inner, "…", false))
-            })
-        })
-        .collect();
-    if rows.is_empty() {
-        rows.push(Line::from(vec![Span::styled(
-            "No matching bindings".to_string(),
-            pal.faint(),
-        )]));
-    }
-    rows
-}
-
 /// What the picker owes the app: only closing. Layer and search are the
 /// console's own state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,9 +328,9 @@ pub enum ControlsEvent {
     Close,
 }
 
-/// `ControlsComponent`: the CONTROLS console. Reads the live keybindings on
-/// every render, so a rebound key repaints the board. `tab` switches the lit
-/// layer, typing filters the actions, `esc` closes the picker.
+/// `ControlsComponent`: the Keys pane. Reads the live keybindings on every
+/// render, so a rebound key repaints the grid. `tab` switches the layer,
+/// typing filters the actions, `esc` closes the picker.
 pub struct ControlsComponent {
     layer: Layer,
     search: Rc<RefCell<Input>>,
@@ -429,8 +381,9 @@ impl Default for ControlsComponent {
 }
 
 impl Component for ControlsComponent {
-    /// At the spec width the drawn keyboard with the lit layer's actions;
-    /// narrower the full key list. Both come from the real keybindings.
+    /// The Keys pane: the layer's bindings grouped as prompt, transcript
+    /// and app, then the filter row and the hint row. Both come from the
+    /// real keybindings.
     fn render(&mut self, width: u16) -> Vec<String> {
         let width = width as usize;
         let all = keybindings();
@@ -438,21 +391,23 @@ impl Component for ControlsComponent {
             .iter()
             .map(|entry| (entry, effective_keys(entry)))
             .collect();
-        let count = entries.len();
-        let mut console = Console::new("CONTROLS · ?", format!("{count} bindings"));
-        console.tabs = self.tabs();
         let query = self.search.borrow().get_value().to_string();
+        let actions = layer_actions(&entries, self.layer, &query);
+        let mut console = Console::new(
+            "Keys · ?",
+            format!("{} bindings · {} shown", entries.len(), actions.len()),
+        );
+        console.tabs = self.tabs();
         console.query = Some(query_row(&query, self.focused));
-        if width >= KEYBOARD_MIN_WIDTH {
-            let inner = width.saturating_sub(4);
-            let actions = layer_actions(&entries, self.layer, &query);
-            console.rows = board_rows(&entries, self.layer, &actions, &query, inner);
-        } else {
-            let inner = width.saturating_sub(4);
-            console.rows = key_list(&entries, &query, inner);
+        console.top = group_rows(&actions, width);
+        if actions.is_empty() {
+            console.top = vec![Line::from(vec![Span::styled(
+                "No matching bindings".to_string(),
+                Palette::current().dim(),
+            )])];
         }
-        // The foot only promises what the console does.
-        console.hint = hints(&[("tab", "layer"), ("type", "search"), ("esc", "close")]);
+        // The hint row only promises what the pane does.
+        console.hint = hints(&[("tab", "layer"), ("esc", "close")]);
         console.render(width)
     }
 

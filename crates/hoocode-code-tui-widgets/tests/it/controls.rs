@@ -1,8 +1,8 @@
-//! Component goldens: `/hotkeys` as the CONTROLS console — the drawn
-//! keyboard with the lit layer's keys and the per-layer action list at
-//! 100 columns, the key list at 80. Everything on screen comes from the
-//! real keybindings with literal key names (no `option`), so the bytes
-//! hold on macOS and Linux. Accept a deliberate change with
+//! Component goldens: `/hotkeys` as the Keys pane: the layer's bindings
+//! grouped as prompt, transcript and app at 100 columns, stacked at 80.
+//! Everything on screen comes from the real keybindings with literal key
+//! names (no `option`), so the bytes hold on macOS and Linux. Accept a
+//! deliberate change with
 //! `UPDATE_GOLDENS=1 cargo nextest run -p hoocode-code-tui-widgets controls`.
 
 use hoocode_code_tui_widgets::controls::ControlsComponent;
@@ -16,46 +16,35 @@ fn check(name: &str, width: u16) {
     let mut controls = ControlsComponent::new();
     let rendered = render_golden(&mut controls, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
-    assert!(
-        text.contains("CONTROLS  ?"),
-        "{name}: missing title in\n{text}"
-    );
+    assert!(text.contains("Keys  ?"), "{name}: missing title in\n{text}");
     assert!(
         text.contains("plain") && text.contains("ctrl") && text.contains("alt"),
         "{name}: missing layer tabs in\n{text}"
     );
     assert!(
-        text.contains("bindings"),
+        text.contains("bindings") && text.contains("shown"),
         "{name}: missing binding count in\n{text}"
+    );
+    for group in ["prompt", "transcript", "app"] {
+        assert!(
+            text.lines().any(|l| l.trim_start().starts_with(group)),
+            "{name}: missing the {group} group in\n{text}"
+        );
+    }
+    assert!(
+        text.contains("tab layer · esc close"),
+        "{name}: missing hint row in\n{text}"
     );
     assert_golden!(name, rendered);
 }
 
-/// The keyboard: esc and the letter rows with the lit layer's caps.
+/// The grouped grid: prompt keys across, transcript and app side by side.
 #[test]
 fn controls_100() {
-    let _g = lock();
-    let mut controls = ControlsComponent::new();
-    let rendered = render_golden(&mut controls, 100);
-    let text = rendered.split("--- styles ---").next().unwrap_or_default();
-    assert!(text.contains("CONTROLS  ?"), "missing title");
-    assert!(text.contains("ctrl layer"), "missing layer label");
-    assert!(
-        text.lines().any(|l| l.contains("esc")),
-        "missing keyboard in\n{text}"
-    );
-    assert!(
-        text.contains("bindings"),
-        "missing binding count in\n{text}"
-    );
-    assert!(
-        text.contains("tab layer · type search · esc close"),
-        "missing foot in\n{text}"
-    );
-    assert_golden!("controls_100", rendered);
+    check("controls_100", 100);
 }
 
-/// Below the spec width: the key list in the same console.
+/// Below the spec width: the groups stack in one column.
 #[test]
 fn controls_80() {
     check("controls_80", 80);

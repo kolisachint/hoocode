@@ -220,7 +220,7 @@ fn toggles_label_timestamps_for_labeled_nodes() {
     press(&mut s, &alt_t());
     let render = list_render(&mut s);
     assert!(render.contains("3/28 14:32"));
-    assert!(render.contains("[timestamps]"));
+    assert!(render.contains("· timestamps"));
 }
 
 #[test]
@@ -235,7 +235,7 @@ fn types_an_uppercase_letter_into_the_search_instead_of_firing_a_verb() {
     }
     let render = list_render(&mut s);
     assert!(!s.is_editing_label());
-    assert!(!render.contains("[timestamps]"));
+    assert!(!render.contains("· timestamps"));
     assert!(!render.contains("3/28 14:32"));
 }
 
@@ -549,7 +549,7 @@ fn key_hints_drop_whole_items_when_the_width_is_short() {
 
     let wide = hint_row(s.render(160));
     assert!(
-        wide.contains("move") && wide.contains("timestamps"),
+        wide.contains("move") && wide.contains("f1 more"),
         "{wide:?}"
     );
 }

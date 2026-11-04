@@ -1,5 +1,5 @@
 //! The picker console: the pane every picker draws (declutter spec v2.4,
-//! drawn by [`Pane`]). The console name `HANGAR · /model` splits into the
+//! drawn by [`Pane`]). The console name `Models · /model` splits into the
 //! title chip and the dim command; the tabs, count and right label follow as
 //! facts. Rows mark the selection with ` › ` on the selection background;
 //! the query is the pane's input row at the bottom; the hint row is last.
@@ -27,10 +27,10 @@ pub fn console_gutter() -> String {
 /// errors, detail lines).
 #[derive(Debug, Clone)]
 pub struct Console {
-    /// `HANGAR · /model`: the part before ` · ` is the title chip, the rest
+    /// `Models · /model`: the part before ` · ` is the title chip, the rest
     /// the dim command.
     pub name: String,
-    /// `3 ships` (empty when the console counts nothing).
+    /// `3 models` (empty when the console counts nothing).
     pub count: String,
     /// Rows above the list.
     pub top: Vec<Line<'static>>,
@@ -49,19 +49,25 @@ pub struct Console {
     pub hint: Line<'static>,
     /// A label after the count (`/tasks · ctrl+g`); empty draws nothing.
     pub right: Line<'static>,
-    /// Layer tabs between the name and the count (CONTROLS' `plain ctrl
+    /// Layer tabs between the name and the count (the Keys pane's `plain ctrl
     /// alt`); empty draws nothing.
     pub tabs: Line<'static>,
     /// How the tabs join the name.
     pub tabs_join: TabsJoin,
     /// The title chip's look.
     pub chip: Chip,
+    /// The selected row's detail: a column beside the list from
+    /// [`SPLIT_MIN_WIDTH`](crate::pane::SPLIT_MIN_WIDTH) columns, stacked
+    /// under it when narrower. Empty draws none.
+    pub detail: Vec<Line<'static>>,
+    /// The list column's width in a split (about a third when `None`).
+    pub list_width: Option<usize>,
 }
 
 /// What sits between a console's name and its tabs on the title row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabsJoin {
-    /// Three spaces (CONTROLS' `plain ctrl alt`).
+    /// Three spaces (the Keys pane's `plain ctrl alt`).
     Gap,
     /// Two spaces (the task panel's tab strip).
     Edge,
@@ -87,6 +93,8 @@ impl Console {
             tabs: Line::raw(""),
             tabs_join: TabsJoin::Gap,
             chip: Chip::Accent,
+            detail: Vec::new(),
+            list_width: None,
         }
     }
 
@@ -134,6 +142,15 @@ impl Console {
         pane
     }
 
+    /// The cells a row's content may use at `width` columns, given the
+    /// detail already set on the console (a split narrows the list).
+    pub fn row_width(&self, width: usize) -> usize {
+        let mut pane = Pane::new("");
+        pane.detail = self.detail.clone();
+        pane.list_width = self.list_width;
+        pane.row_width(width)
+    }
+
     /// Draws the console at `width` columns.
     pub fn render(&self, width: usize) -> Vec<String> {
         let mut pane = self.title_pane(self.tabs.clone());
@@ -144,6 +161,8 @@ impl Console {
         pane.bottom = self.bottom.clone();
         pane.input = self.query.clone();
         pane.hint = self.hint.clone();
+        pane.detail = self.detail.clone();
+        pane.list_width = self.list_width;
         pane.render(width)
     }
 }
@@ -159,13 +178,19 @@ pub fn hints(hints: &[(&str, &str)]) -> Line<'static> {
     hint_line(hints)
 }
 
+/// The full key list a picker shows after `f1`: every `(key, action)`,
+/// four to a row, as hint rows.
+pub fn help_rows(all: &[(&str, &str)]) -> Vec<Line<'static>> {
+    all.chunks(crate::pane::MAX_HINTS).map(hint_line).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use hoocode_tui_util::{strip_vt_control_characters, visible_width};
 
     fn console() -> Console {
-        let mut console = Console::new("HANGAR · /model", "3 ships");
+        let mut console = Console::new("Models · /model", "3 models");
         console.rows = vec![
             Line::raw("mock-large  mock  200k"),
             Line::raw("mock-fast  mock  128k"),
@@ -214,7 +239,7 @@ mod tests {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let rows = plain(&console().render(100));
         assert!(
-            rows[0].starts_with("  HANGAR  /model  3 ships"),
+            rows[0].starts_with("  Models  /model  3 models"),
             "{:?}",
             rows[0]
         );
