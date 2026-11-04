@@ -190,6 +190,9 @@ impl AgentSession {
     ) -> Result<CompactionResult, AgentSessionError> {
         self.disconnect_from_agent();
         self.abort().await;
+        // Disconnected, so the loop's results for the calls the abort cut
+        // short were not persisted: answer them before the compaction entry.
+        self.close_unanswered_tool_calls_with(crate::session::USER_ABORTED_RESULT);
         let signal = AbortSignal::new();
         self.compaction_state().manual_abort = Some(signal.clone());
         self.emit(AgentSessionEvent::CompactionStart {

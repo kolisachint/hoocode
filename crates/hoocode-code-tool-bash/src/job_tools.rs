@@ -92,6 +92,7 @@ fn definition(
 ) -> ToolDefinition {
     ToolDefinition {
         ordered_start: false,
+        abort_grace: None,
         background_when: None,
         background_placeholder: None,
         name: name.into(),

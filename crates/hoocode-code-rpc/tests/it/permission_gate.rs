@@ -62,6 +62,7 @@ impl AuthLookup for FauxAuth {
 fn recording_bash(ran: Arc<Mutex<Vec<String>>>) -> ToolDefinition {
     ToolDefinition {
         ordered_start: false,
+        abort_grace: None,
         background_when: None,
         background_placeholder: None,
         name: "Shell".into(),

@@ -474,6 +474,11 @@ pub struct AgentTool {
     /// [`dispatch::dispatch_point`] (or finished). Edit/write take their
     /// file-mutation ticket there, so same-file mutations apply in call order.
     pub ordered_start: bool,
+    /// How long the loop waits, once the run is aborted, for this tool to
+    /// return its own result before it writes one itself. `None` is the
+    /// loop's default (250 ms). A subagent call needs longer: its child
+    /// writes the cancelled result before it exits.
+    pub abort_grace: Option<std::time::Duration>,
 }
 
 /// Ordered starts for parallel tool calls (see [`AgentTool::ordered_start`]).
@@ -581,6 +586,7 @@ impl AgentTool {
         let name = name.into();
         Self {
             ordered_start: false,
+            abort_grace: None,
             name: name.clone(),
             description: description.into(),
             label: name,
@@ -608,6 +614,7 @@ impl Clone for AgentTool {
     fn clone(&self) -> Self {
         Self {
             ordered_start: self.ordered_start,
+            abort_grace: self.abort_grace,
             name: self.name.clone(),
             description: self.description.clone(),
             label: self.label.clone(),

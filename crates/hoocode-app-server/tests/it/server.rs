@@ -87,6 +87,7 @@ impl AuthLookup for FauxAuth {
 fn fake_bash() -> ToolDefinition {
     ToolDefinition {
         ordered_start: false,
+        abort_grace: None,
         background_when: None,
         background_placeholder: None,
         name: "Shell".into(),

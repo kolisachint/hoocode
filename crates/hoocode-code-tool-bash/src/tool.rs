@@ -486,6 +486,7 @@ fn build_bash_tool_definition(
     let jobs = options.jobs.clone();
     ToolDefinition {
         ordered_start: false,
+        abort_grace: None,
         background_when: None,
         background_placeholder: None,
         name: "Shell".into(),

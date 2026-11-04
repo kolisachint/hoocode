@@ -16,7 +16,8 @@ use hoocode_ai_types::{
     ToolCallContent, ToolResultMessage,
 };
 
-const ABORTED: &str = "Aborted by the user before this call finished";
+const ABORTED: &str =
+    "Aborted by the user before this call finished; it may still complete in the background";
 const NOT_RUN: &str = "Not run: the turn was aborted";
 
 fn model() -> Model {
@@ -181,18 +182,18 @@ async fn run(tools: Vec<AgentTool>, config: AgentLoopConfig) -> Vec<ToolResultMe
         })
         .collect();
     let persisted = persisted.lock().unwrap().clone();
+    // Background results are announced first; the set is what matters.
+    let ids = |results: &[ToolResultMessage]| {
+        let mut ids: Vec<String> = results.iter().map(|r| r.tool_call_id.clone()).collect();
+        ids.sort();
+        ids
+    };
     assert_eq!(
-        returned
-            .iter()
-            .map(|r| r.tool_call_id.clone())
-            .collect::<Vec<_>>(),
-        persisted
-            .iter()
-            .map(|r| r.tool_call_id.clone())
-            .collect::<Vec<_>>(),
+        ids(&returned),
+        ids(&persisted),
         "every returned result was announced for persisting"
     );
-    persisted
+    returned
 }
 
 fn summary(results: &[ToolResultMessage]) -> Vec<(String, String, bool)> {
@@ -348,10 +349,73 @@ async fn a_shutdown_abort_says_the_session_ended() {
         vec![
             (
                 "c0".into(),
-                "Session ended before this call finished".into(),
+                "Session ended before this call finished; it may still complete in the background"
+                    .into(),
                 true
             ),
             ("c1".into(), "Not run: the session ended".into(), true),
         ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_tool_with_a_longer_abort_grace_keeps_its_own_late_result() {
+    let signal = AbortSignal::new();
+    let started = Arc::new(AtomicBool::new(false));
+    let seen = started.clone();
+    let mut tool = AgentTool::new(
+        "subagent",
+        "writes its cancelled result before it returns",
+        serde_json::json!({"type": "object"}),
+        Box::new(move |_id, _args, signal, _update| {
+            seen.store(true, Ordering::SeqCst);
+            let signal = signal.expect("the run's signal");
+            while !signal.aborted() {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            // Past the default grace (250 ms), within its own.
+            std::thread::sleep(Duration::from_millis(600));
+            Err("cancelled".into())
+        }),
+    );
+    tool.abort_grace = Some(Duration::from_secs(5));
+    let config = config_calling(&["subagent"], &signal);
+
+    let run = tokio::spawn(run(vec![tool], config));
+    while !started.load(Ordering::SeqCst) {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    signal.abort();
+    let results = run.await.unwrap();
+
+    assert_eq!(
+        summary(&results),
+        vec![("c0".into(), "cancelled".into(), true)]
+    );
+}
+
+#[tokio::test]
+async fn abort_before_a_background_call_is_dispatched_answers_it_not_run() {
+    let signal = AbortSignal::new();
+    let runs = Arc::new(AtomicUsize::new(0));
+    let mut background = counting_tool("later", runs.clone());
+    background.background = true;
+    let tools = vec![aborting_tool("first", signal.clone()), background];
+    let mut config = config_calling(&["first", "later"], &signal);
+    config.tool_execution = ToolExecutionMode::Sequential;
+    // Background calls are dispatched before the foreground ones, so abort
+    // before the run: the dispatch sees it.
+    signal.abort();
+
+    let results = run(tools, config).await;
+
+    assert_eq!(
+        runs.load(Ordering::SeqCst),
+        0,
+        "the background call never ran"
+    );
+    assert!(
+        summary(&results).contains(&("c1".into(), NOT_RUN.into(), true)),
+        "{results:?}"
     );
 }
