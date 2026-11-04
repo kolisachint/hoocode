@@ -9,35 +9,30 @@ r0 c3-13 fg=#9b8cff bold
 r0 c14-16 fg=#9b8cff
 r0 c17-26 fg=#5cc8bb bold
 r0 c27 fg=#9b8cff
-r0 c28-37 fg=#a8a8a8
+r0 c28-37 fg=#989898
 r0 c38 fg=#9b8cff
-r0 c39-45 fg=#a8a8a8
+r0 c39-45 fg=#989898
 r0 c47-60 fg=#9b8cff
-r0 c62-76 fg=#a8a8a8
+r0 c62-76 fg=#989898
 r0 c78-79 fg=#9b8cff
 r1 c0 fg=#9b8cff
-r1 c1-2 fg=#5cc8bb bg=#2a2a36
-r1 c3 fg=#b5bd68 bg=#2a2a36
-r1 c4 bg=#2a2a36
-r1 c5-27 fg=#a8a8a8 bg=#2a2a36
-r1 c28-74 bg=#2a2a36
-r1 c75-78 fg=#a8a8a8 bg=#2a2a36
+r1 c1-2 fg=#5cc8bb bg=#233239
+r1 c3 fg=#b5bd68 bg=#233239
+r1 c4 bg=#233239
+r1 c5-27 fg=#989898 bg=#233239
+r1 c28-74 bg=#233239
+r1 c75-78 fg=#989898 bg=#233239
 r1 c79 fg=#9b8cff
 r2 c0 fg=#9b8cff
 r2 c3 fg=#5cc8bb
 r2 c5-32 bold
-r2 c75-78 fg=#a8a8a8
+r2 c75-78 fg=#989898
 r2 c79 fg=#9b8cff
 r3 c0 fg=#9b8cff
-r3 c3 fg=#a8a8a8
+r3 c3 fg=#989898
 r3 c5-24 fg=#989898
 r3 c79 fg=#9b8cff
 r4 c0-1 fg=#9b8cff
-r4 c3-4 fg=#989898
-r4 c5-12 fg=#a8a8a8
-r4 c13-14 fg=#989898
-r4 c15-21 fg=#a8a8a8
-r4 c22-24 fg=#989898
-r4 c25-29 fg=#a8a8a8
+r4 c3-29 fg=#989898
 r4 c31-75 fg=#9b8cff
 r4 c78-79 fg=#9b8cff

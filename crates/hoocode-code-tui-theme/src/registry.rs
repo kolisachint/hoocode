@@ -11,21 +11,11 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::color::{ansi256_to_hex, detect_color_mode, relative_luminance, ColorMode, RawColor};
 use crate::schema::{parse_theme_json_content, ColorValue, ThemeJson};
-use crate::theme::{Theme, ThemeOptions, AGENT_COLOR_TOKENS, THEME_BGS};
+use crate::theme::{Theme, ThemeOptions, AGENT_COLOR_TOKENS, PANE_BG_TOKENS, THEME_BGS};
 
 /// The bundled theme files, by file name (the `readdirSync().sort()` order).
-const BUILTIN_THEME_FILES: [(&str, &str); 6] = [
-    (
-        "colorsafe-dark.json",
-        include_str!("../themes/colorsafe-dark.json"),
-    ),
-    (
-        "colorsafe-light.json",
-        include_str!("../themes/colorsafe-light.json"),
-    ),
+const BUILTIN_THEME_FILES: [(&str, &str); 2] = [
     ("dark.json", include_str!("../themes/dark.json")),
-    ("daylight.json", include_str!("../themes/daylight.json")),
-    ("deep-space.json", include_str!("../themes/deep-space.json")),
     ("light.json", include_str!("../themes/light.json")),
 ];
 
@@ -58,38 +48,6 @@ fn builtin_themes() -> &'static BTreeMap<String, ThemeJson> {
 /// True for themes shipped with the package.
 fn is_builtin_theme(name: &str) -> bool {
     builtin_themes().contains_key(name)
-}
-
-/// Built-ins that were retired, and what each one resolves to now.
-const RETIRED_THEMES: [(&str, &str); 10] = [
-    ("high-contrast-dark", "colorsafe-dark"),
-    ("high-contrast-light", "colorsafe-light"),
-    ("warm-dark", "colorsafe-dark"),
-    ("warm-light", "colorsafe-light"),
-    ("vox-dark", "dark"),
-    ("vox-light", "light"),
-    ("solarized-dark", "deep-space"),
-    ("solarized-light", "daylight"),
-    ("vox-cutout-dark", "dark"),
-    ("vox-cutout-light", "light"),
-];
-
-/// `successorThemeFor`: the theme a retired name now stands for.
-pub fn successor_theme_for(name: &str) -> Option<&'static str> {
-    RETIRED_THEMES
-        .iter()
-        .find(|(retired, _)| *retired == name)
-        .map(|(_, heir)| *heir)
-        .filter(|heir| is_builtin_theme(heir))
-}
-
-/// `resolveThemeName`: itself if anything defines it, its successor if
-/// retired, else itself.
-pub fn resolve_theme_name(name: &str) -> String {
-    if get_available_themes().iter().any(|t| t == name) {
-        return name.to_string();
-    }
-    successor_theme_for(name).unwrap_or(name).to_string()
 }
 
 fn custom_themes_dir() -> PathBuf {
@@ -200,10 +158,6 @@ pub fn load_theme_json(name: &str) -> Result<ThemeJson, String> {
     }
     let theme_path = custom_themes_dir().join(format!("{name}.json"));
     if !theme_path.exists() {
-        // A retired name loads as its successor rather than failing.
-        if let Some(successor) = successor_theme_for(name) {
-            return Ok(builtin_themes()[successor].clone());
-        }
         return Err(format!("Theme not found: {name}"));
     }
     let content = read_file(&theme_path)?;
@@ -281,10 +235,24 @@ pub fn create_theme(
             fg.push(("mcp".to_string(), accent.clone()));
         }
     }
+    // Chip text falls back to the theme's own text colour.
+    if !fg.iter().any(|(k, _)| k == "chipFg") {
+        if let Some((_, v)) = fg.iter().find(|(k, _)| k == "text").cloned() {
+            fg.push(("chipFg".to_string(), v));
+        }
+    }
     // Custom themes predate the warning surface: fall back to customMessageBg.
     if !bg.iter().any(|(k, _)| k == "warningBg") {
         if let Some((_, v)) = bg.iter().find(|(k, _)| k == "customMessageBg").cloned() {
             bg.push(("warningBg".to_string(), v));
+        }
+    }
+    // Pane surfaces predate the declutter: they fall back to selectedBg.
+    for token in PANE_BG_TOKENS {
+        if !bg.iter().any(|(k, _)| k == token) {
+            if let Some((_, v)) = bg.iter().find(|(k, _)| k == "selectedBg").cloned() {
+                bg.push((token.to_string(), v));
+            }
         }
     }
     // The tool peek band falls back to the pending tint when a theme omits it.
@@ -354,10 +322,10 @@ fn default_theme() -> &'static str {
     detect_terminal_background_with(std::env::var("COLORFGBG").ok().as_deref())
 }
 
-/// The concrete themes `"auto"` follows: Light maps to `daylight`, Dark
-/// maps to `deep-space` (both built in, so the pair always loads).
-pub const AUTO_LIGHT_THEME: &str = "daylight";
-pub const AUTO_DARK_THEME: &str = "deep-space";
+/// The concrete themes `"auto"` follows: Light maps to `light`, Dark maps
+/// to `dark` (both built in, so the pair always loads).
+pub const AUTO_LIGHT_THEME: &str = "light";
+pub const AUTO_DARK_THEME: &str = "dark";
 
 /// How often the interactive mode re-checks the OS appearance while the
 /// settings theme is an auto value.
@@ -373,7 +341,7 @@ pub fn is_auto_theme(value: &str) -> bool {
 
 /// The concrete pair an auto value stands for, as `(light, dark)`. Blank
 /// sides fall back to the built-in pair, so `"auto"` means
-/// `(daylight, deep-space)`.
+/// `(light, dark)`.
 fn auto_pair(value: &str) -> (String, String) {
     let mut parts = value.splitn(3, ':');
     parts.next();
@@ -436,7 +404,7 @@ pub fn resolve_auto_theme(value: &str) -> String {
     } else {
         (light, AUTO_LIGHT_THEME)
     };
-    let name = resolve_theme_name(&side);
+    let name = side;
     if get_available_themes().iter().any(|t| t == &name) {
         name
     } else {
@@ -534,8 +502,11 @@ fn fallback_dark() -> Arc<Theme> {
 /// silently.
 pub fn init_theme(theme_name: Option<&str>, enable_watcher: bool) {
     let requested = theme_name.map_or_else(|| default_theme().to_string(), str::to_string);
-    let requested = resolve_auto_theme(&requested);
-    let name = resolve_theme_name(&requested);
+    let mut name = resolve_auto_theme(&requested);
+    // An unknown saved value (an old theme name) quietly follows `auto`.
+    if !get_available_themes().iter().any(|t| t == &name) {
+        name = resolve_auto_theme("auto");
+    }
     state().current_name = Some(name.clone());
     match load_theme(&name, None) {
         Ok(theme) => {
@@ -574,8 +545,7 @@ fn notify_change() {
 /// error. `"auto"` resolves to the OS side first, so the current name is
 /// always concrete.
 pub fn set_theme(requested: &str, enable_watcher: bool) -> Result<(), String> {
-    let requested = resolve_auto_theme(requested);
-    let name = resolve_theme_name(&requested);
+    let name = resolve_auto_theme(requested);
     state().current_name = Some(name.clone());
     match load_theme(&name, None) {
         Ok(theme) => {

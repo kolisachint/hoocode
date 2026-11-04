@@ -12,7 +12,7 @@ to move it.
 | `~/.hoocode/models.json` | Your own providers and models, for example a local OpenAI-compatible server |
 | `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules, written on first run ([below](#modes-and-approvals)) |
 | `~/.hoocode/skills/` | Skills |
-| `~/.hoocode/themes/` | Custom themes |
+| `~/.hoocode/themes/` | Custom themes. The built-in themes are `dark` and `light`; the `theme` setting also accepts `auto` (follows the terminal background). An unknown value falls back to `auto` |
 | `~/.hoocode/sessions/` | Saved sessions |
 
 ## Per project

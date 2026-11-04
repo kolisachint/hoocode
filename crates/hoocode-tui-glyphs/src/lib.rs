@@ -31,6 +31,29 @@ pub mod status {
     pub const WAITING: char = '◆';
     /// Waiting, as a string slice for span and row building.
     pub const WAITING_STR: &str = "◆";
+    /// Failed, stopped or denied: `⊗` (red).
+    pub const FAILED: char = '⊗';
+    /// Failed, as a string slice for span and row building.
+    pub const FAILED_STR: &str = "⊗";
+    /// The marker before a user line, a selected row and the prompt: `›`.
+    pub const MARKER: char = '›';
+    /// The marker, as a string slice for span and row building.
+    pub const MARKER_STR: &str = "›";
+
+    /// ASCII stand-ins for terminals without the glyphs above (for
+    /// `NO_COLOR`-style plain output or a font without coverage).
+    pub mod ascii {
+        /// Done.
+        pub const DONE: &str = "*";
+        /// Failed, stopped or denied.
+        pub const FAILED: &str = "x";
+        /// Working.
+        pub const RUNNING: &str = "@";
+        /// Todo or queued.
+        pub const TODO: &str = "o";
+        /// Marker.
+        pub const MARKER: &str = ">";
+    }
 }
 
 /// The running-mark animation: a pulse through the status set, driven by the
@@ -75,6 +98,11 @@ mod tests {
         assert_eq!(status::RUNNING_STR, "◉");
         assert_eq!(status::TODO_STR, "○");
         assert_eq!(status::WAITING_STR, "◆");
+        assert_eq!(status::FAILED, '⊗');
+        assert_eq!(status::FAILED_STR, "⊗");
+        assert_eq!(status::MARKER, '›');
+        assert_eq!(status::MARKER_STR, "›");
+        assert!(status::ascii::DONE.is_ascii() && status::ascii::MARKER.is_ascii());
     }
 
     #[test]

@@ -3,8 +3,8 @@
       │ Found the footer in footer.rs.
 --- styles ---
 r1 c2-3 fg=#b5bd68
-r1 c4-9 bold
+r1 c4-9 fg=#e5e5e7 bold
 r1 c10-16 fg=#56b6c2
 r1 c18-39 fg=#989898
 r2 c6 fg=#757575
-r2 c8-37 fg=#a8a8a8
+r2 c8-37 fg=#989898

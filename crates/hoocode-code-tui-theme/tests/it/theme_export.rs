@@ -131,13 +131,12 @@ fn lists_custom_themes_with_their_paths_and_descriptions() {
 }
 
 #[test]
-fn a_custom_file_named_like_a_retired_theme_wins_over_the_successor() {
+fn a_custom_theme_file_loads_by_its_name() {
     let agent = AgentDir::new();
     let mut theme = dark_theme();
     theme["name"] = json!("warm-light");
     theme["colors"]["accent"] = json!("#123456");
     agent.write("warm-light", &theme);
-    assert_eq!(resolve_theme_name("warm-light"), "warm-light");
     assert_eq!(
         get_resolved_theme_colors(Some("warm-light")).unwrap()["accent"],
         "#123456"
@@ -165,11 +164,11 @@ fn init_and_set_fall_back_to_dark_on_an_invalid_theme() {
 }
 
 #[test]
-fn init_records_a_retired_name_as_its_successor() {
+fn init_with_an_unknown_name_quietly_follows_auto() {
     let _agent = AgentDir::new();
     init_theme(Some("solarized-dark"), false);
-    assert_eq!(current_theme_name().as_deref(), Some("deep-space"));
-    assert_eq!(theme().name.as_deref(), Some("deep-space"));
+    let current = current_theme_name().unwrap();
+    assert!(current == "dark" || current == "light", "{current}");
 }
 
 #[test]
@@ -182,11 +181,11 @@ fn set_theme_runs_the_change_callback_and_instances_are_in_memory() {
     set_theme("light", false).unwrap();
     assert_eq!(*calls.lock().unwrap(), 1);
 
-    let instance = load_theme_json("deep-space").unwrap();
+    let instance = load_theme_json("dark").unwrap();
     let t = create_theme(&instance, Some(ColorMode::Truecolor), None).unwrap();
     set_theme_instance(t);
     assert_eq!(current_theme_name().as_deref(), Some("<in-memory>"));
-    assert_eq!(theme().name.as_deref(), Some("deep-space"));
+    assert_eq!(theme().name.as_deref(), Some("dark"));
     assert_eq!(*calls.lock().unwrap(), 2);
     on_theme_change(|| {});
 }
