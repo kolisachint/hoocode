@@ -652,7 +652,7 @@ fn similar_region_hint(content: &str, old_text: &str) -> Option<String> {
     let mut by_line: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
     for (j, l) in old_lines.iter().enumerate() {
         let t = l.trim();
-        if !t.is_empty() {
+        if t.chars().count() > 2 {
             by_line.entry(t).or_default().push(j);
         }
     }
@@ -674,7 +674,8 @@ fn similar_region_hint(content: &str, old_text: &str) -> Option<String> {
             start = i;
         }
     }
-    if best == 0 {
+    let scorable = by_line.values().map(Vec::len).sum::<usize>();
+    if best == 0 || (scorable > 1 && best < 2) {
         return None;
     }
     let end = (start + n).min(file_lines.len());
@@ -708,11 +709,16 @@ fn not_found_error(
     content: &[u16],
     old_text: &[u16],
 ) -> String {
-    let hint = similar_region_hint(
-        &String::from_utf16_lossy(content),
-        &String::from_utf16_lossy(old_text),
-    )
-    .unwrap_or_default();
+    // Bound the work before copying the file into a String.
+    let hint = if content.len() > HINT_MAX_BYTES {
+        String::new()
+    } else {
+        similar_region_hint(
+            &String::from_utf16_lossy(content),
+            &String::from_utf16_lossy(old_text),
+        )
+        .unwrap_or_default()
+    };
     if total == 1 {
         format!("Could not find the exact text in {path}. The old text must match exactly including all whitespace and newlines.{hint}")
     } else {
