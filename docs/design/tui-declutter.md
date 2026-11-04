@@ -40,7 +40,7 @@ a few keys change.
 | Permission | `Allow Shell?` yellow chip, `$ command`, `access:` row when it writes, uses the network or pipes; options `1 yes · 2 always for <program> this session · 3 no, tell it why`; `e` edits; letters type a reply. No y/a/n. |
 | Question | Question text in a yellow chip, numbered options, `esc` skips (the agent states the default it uses). |
 | Notices | No toast. A one-row notice takes the status line's left slot for its timeout; longer ones are dim rows above the prompt (max 3). |
-| Themes | Only `dark` and `light`. `daylight`, `deep-space`, `colorsafe-dark`, `colorsafe-light` are deleted. `auto` follows dark/light; the old names and their aliases (`high-contrast-*`, `warm-*`, `solarized-*`) map to `dark`/`light`. |
+| Themes | Only `dark` and `light`. `daylight`, `deep-space`, `colorsafe-dark`, `colorsafe-light` are deleted. `auto` follows dark/light. The old names and their aliases (`high-contrast-*`, `warm-*`, `solarized-*`) are removed too (user, 2026-11-04); an unknown saved value falls back to `auto`. |
 | Removed | HUD, comms frame, wordmark/starfield, session chip and `/color`, `/chrome` and `alt+z`, toast float, two-row footer layouts (inline mode uses the status line). |
 | Scroll/search bars | In the status line's left slot: `scrolled 43–61 of 78 · ↓ 3 new`, `search  query  1 match`. |
 
@@ -50,7 +50,7 @@ Proposed build plan (not started). Four waves; packages in one wave own disjoint
 
 | Wave | WP | Scope | Size |
 |---|---|---|---|
-| 1 | WP1 | Theme tokens (`surface`, `pane`, `paneSel`, `paneInput`, `paneDetail`, `chip`, `chipWarn`, `chipFg`) for dark and light; delete the four other themes (aliases map to dark/light); glyph set | M |
+| 1 | WP1 | Theme tokens (`surface`, `pane`, `paneSel`, `paneInput`, `paneDetail`, `chip`, `chipWarn`, `chipFg`) for dark and light; delete the four other themes and all old names/aliases; glyph set | M |
 | 1 | WP2 | `radar` → `outline` (setting alias, enum, names, golden file names, user docs) | M |
 | 1 | WP3 | `status_line.rs` component (not wired) | M |
 | 1 | WP4 | `pane.rs` primitives; `console.rs`, `card_frame.rs` onto it | L |
