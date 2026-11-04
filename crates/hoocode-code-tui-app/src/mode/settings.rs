@@ -106,8 +106,8 @@ impl Mode {
                     .map(|l| l.as_str().to_string())
                     .collect(),
                 current_theme: settings.theme().unwrap_or_else(|| "dark".into()),
-                // `"auto"` first: it follows the OS appearance (daylight /
-                // deep-space), resolved before the loader ever sees it.
+                // `"auto"` first: it follows the OS appearance (light /
+                // dark), resolved before the loader ever sees it.
                 available_themes: std::iter::once("auto".to_string())
                     .chain(get_available_themes())
                     .collect(),

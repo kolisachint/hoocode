@@ -375,6 +375,38 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Warning notice background (optional; falls back to customMessageBg)"
 				},
+				"surface": {
+					"$ref": "#/$defs/colorValue",
+					"description": "User band and prompt row surface (optional; falls back to selectedBg)"
+				},
+				"pane": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Pane background for dialogs, pickers, tasks, completion menu (optional; falls back to selectedBg)"
+				},
+				"paneSel": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Selected row inside a pane (optional; falls back to selectedBg)"
+				},
+				"paneInput": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Filter input row inside a pane (optional; falls back to selectedBg)"
+				},
+				"paneDetail": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Detail column of a split pane (optional; falls back to selectedBg)"
+				},
+				"chip": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Title chip background (optional; falls back to selectedBg)"
+				},
+				"chipWarn": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Blocking title chip background, permission and question (optional; falls back to selectedBg)"
+				},
+				"chipFg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Text colour on the accent title chip (optional; the blocking chipWarn chip uses the dark ink of the page text in both themes)"
+				},
 				"brandBg": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Brand chip background (optional; set with brandText to paint the footer mark as a filled chip instead of accent text)"
@@ -409,7 +441,7 @@
 				},
 				"activeToolBg": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Marker stroke over the most recent tool row in radar (optional; unset draws no stroke)"
+					"description": "Marker stroke over the most recent tool row in outline (optional; unset draws no stroke)"
 				}
 			},
 			"additionalProperties": false

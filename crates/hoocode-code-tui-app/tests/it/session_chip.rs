@@ -81,14 +81,7 @@ fn lifts_a_light_themes_fill_off_the_ink_it_is_drawn_from() {
 #[test]
 fn can_fill_every_slot_in_every_shipped_theme() {
     let _g = lock(None);
-    for name in [
-        "colorsafe-dark",
-        "colorsafe-light",
-        "dark",
-        "daylight",
-        "deep-space",
-        "light",
-    ] {
+    for name in ["dark", "light"] {
         let t = get_theme_by_name(name).unwrap();
         for slot in 1..=6 {
             assert!(t.can_fill(session_color_token(slot)), "{name} slot {slot}");

@@ -5,10 +5,7 @@
 r1 c0 fg=#9b8cff bold
 r1 c2-3 fg=#9b8cff bold
 r1 c6-21 fg=#e5e5e7 bold
-r2 c3 fg=#a8a8a8
+r2 c3 fg=#989898
 r2 c5 fg=#5cc8bb
 r2 c7-15 fg=#5cc8bb bold
-r2 c16-18 fg=#989898
-r2 c19-24 fg=#a8a8a8
-r2 c25-27 fg=#989898
-r2 c28-33 fg=#a8a8a8
+r2 c16-33 fg=#989898

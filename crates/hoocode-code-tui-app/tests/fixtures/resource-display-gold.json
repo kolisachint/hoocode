@@ -50,7 +50,7 @@
    },
    "lines": [
     "",
-    " \u001b[38;2;92;200;187m✦\u001b[39m \u001b[39m2\u001b[39m \u001b[38;2;152;152;152mskills\u001b[39m  \u001b[38;2;155;140;255m◈\u001b[39m \u001b[39m5\u001b[39m \u001b[38;2;152;152;152magents\u001b[39m                                                                             "
+    " \u001b[38;2;92;200;187m✦\u001b[39m \u001b[38;2;229;229;231m2\u001b[39m \u001b[38;2;152;152;152mskills\u001b[39m  \u001b[38;2;155;140;255m◈\u001b[39m \u001b[38;2;229;229;231m5\u001b[39m \u001b[38;2;152;152;152magents\u001b[39m                                                                             "
    ]
   },
   "empty": {
@@ -179,15 +179,15 @@
    },
    "lines": [
     "",
-    " \u001b[38;2;92;200;187m✦\u001b[39m \u001b[39m3\u001b[39m \u001b[38;2;152;152;152mskills\u001b[39m  \u001b[38;2;155;140;255m◈\u001b[39m \u001b[39m1\u001b[39m \u001b[38;2;152;152;152magent\u001b[39m  \u001b[38;2;92;200;187m⌘\u001b[39m \u001b[39m2\u001b[39m \u001b[38;2;152;152;152mcommands\u001b[39m  \u001b[38;2;92;200;187m⧉\u001b[39m \u001b[39m2\u001b[39m \u001b[38;2;152;152;152mmcp servers\u001b[39m   \u001b[38;2;168;168;168m· AGENTS.md, CLAUDE.md 31k tok/turn\u001b[39m         ",
+    " \u001b[38;2;92;200;187m✦\u001b[39m \u001b[38;2;229;229;231m3\u001b[39m \u001b[38;2;152;152;152mskills\u001b[39m  \u001b[38;2;155;140;255m◈\u001b[39m \u001b[38;2;229;229;231m1\u001b[39m \u001b[38;2;152;152;152magent\u001b[39m  \u001b[38;2;92;200;187m⌘\u001b[39m \u001b[38;2;229;229;231m2\u001b[39m \u001b[38;2;152;152;152mcommands\u001b[39m  \u001b[38;2;92;200;187m⧉\u001b[39m \u001b[38;2;229;229;231m2\u001b[39m \u001b[38;2;152;152;152mmcp servers\u001b[39m   \u001b[38;2;152;152;152m· AGENTS.md, CLAUDE.md 31k tok/turn\u001b[39m         ",
     "\u001b[38;2;240;198;116m[Skills]\u001b[39m                                                                                            ",
     "\u001b[38;2;152;152;152m  alpha, pkg-skill, zeta\u001b[39m                                                                            ",
     "  \u001b[38;2;92;200;187mproject\u001b[39m                                                                                           ",
-    "    \u001b[39m/skill:zeta\u001b[39m \u001b[38;2;152;152;152m/w/.agents/skills/zeta/SKILL.md\u001b[39m                                                     ",
+    "    \u001b[38;2;229;229;231m/skill:zeta\u001b[39m \u001b[38;2;152;152;152m/w/.agents/skills/zeta/SKILL.md\u001b[39m                                                     ",
     "  \u001b[38;2;92;200;187muser\u001b[39m                                                                                              ",
-    "    \u001b[39m/skill:alpha\u001b[39m \u001b[38;2;152;152;152m~/.hoo/skills/alpha/SKILL.md\u001b[39m                                                       ",
+    "    \u001b[38;2;229;229;231m/skill:alpha\u001b[39m \u001b[38;2;152;152;152m~/.hoo/skills/alpha/SKILL.md\u001b[39m                                                       ",
     "    \u001b[38;2;129;162;190mnpm:@acme/tools\u001b[39m                                                                                 ",
-    "      \u001b[39m/skill:pkg-skill\u001b[39m \u001b[38;2;152;152;152mskills/x/SKILL.md\u001b[39m                                                            ",
+    "      \u001b[38;2;229;229;231m/skill:pkg-skill\u001b[39m \u001b[38;2;152;152;152mskills/x/SKILL.md\u001b[39m                                                            ",
     "                                                                                                    ",
     "\u001b[38;2;240;198;116m[Commands]\u001b[39m                                                                                          ",
     "\u001b[38;2;152;152;152m  /fix, /review\u001b[39m                                                                                     ",
@@ -196,18 +196,18 @@
     "\u001b[38;2;152;152;152m    /review\u001b[39m                                                                                         ",
     "                                                                                                    ",
     "\u001b[38;2;240;198;116m[Agents]\u001b[39m                                                                                            ",
-    "  \u001b[38;2;168;168;168mexplore\u001b[39m  \u001b[38;2;152;152;152mExplores the codebase quickly and reports back w…\u001b[39m                                        ",
+    "  \u001b[38;2;152;152;152mexplore\u001b[39m  \u001b[38;2;152;152;152mExplores the codebase quickly and reports back w…\u001b[39m                                        ",
     "                                                                                                    ",
     "\u001b[38;2;240;198;116m[MCP]\u001b[39m                                                                                               ",
     "\u001b[38;2;152;152;152m  github 12 tools · foreground · schemas deferred\u001b[39m                                                   ",
     "\u001b[38;2;152;152;152m  auth awaiting authorization\u001b[39m                                                                       ",
-    "\u001b[38;2;255;255;0mCould not read /w/BROKEN.md\u001b[39m                                                                         ",
-    "\u001b[38;2;255;255;0m[Skill conflicts]\u001b[39m                                                                                   ",
-    "\u001b[38;2;255;255;0m  \"dup\" collision:\u001b[39m                                                                                  ",
+    "\u001b[38;2;240;198;116mCould not read /w/BROKEN.md\u001b[39m                                                                         ",
+    "\u001b[38;2;240;198;116m[Skill conflicts]\u001b[39m                                                                                   ",
+    "\u001b[38;2;240;198;116m  \"dup\" collision:\u001b[39m                                                                                  ",
     "\u001b[38;2;152;152;152m    \u001b[38;2;181;189;104m✓\u001b[39m project /w/.agents/skills/zeta/SKILL.md\u001b[39m                                                       ",
-    "\u001b[38;2;152;152;152m    \u001b[38;2;255;255;0m✗\u001b[39m ~/.hoo/skills/dup/SKILL.md (skipped)\u001b[39m                                                          ",
-    "\u001b[38;2;255;255;0m  project /w/.agents/skills/zeta/SKILL.md\u001b[39m                                                           ",
-    "\u001b[38;2;255;255;0m    bad frontmatter\u001b[39m                                                                                 ",
+    "\u001b[38;2;152;152;152m    \u001b[38;2;240;198;116m✗\u001b[39m ~/.hoo/skills/dup/SKILL.md (skipped)\u001b[39m                                                          ",
+    "\u001b[38;2;240;198;116m  project /w/.agents/skills/zeta/SKILL.md\u001b[39m                                                           ",
+    "\u001b[38;2;240;198;116m    bad frontmatter\u001b[39m                                                                                 ",
     "\u001b[38;2;213;129;129m  no path error\u001b[39m                                                                                     ",
     ""
    ]
@@ -236,9 +236,9 @@
     ]
    },
    "lines": [
-    "\u001b[38;2;255;255;0m[Prompt conflicts]\u001b[39m                                                                                  ",
-    "\u001b[38;2;255;255;0m  project /w/.hoo/prompts/fix.md\u001b[39m                                                                    ",
-    "\u001b[38;2;255;255;0m    dup name\u001b[39m                                                                                        ",
+    "\u001b[38;2;240;198;116m[Prompt conflicts]\u001b[39m                                                                                  ",
+    "\u001b[38;2;240;198;116m  project /w/.hoo/prompts/fix.md\u001b[39m                                                                    ",
+    "\u001b[38;2;240;198;116m    dup name\u001b[39m                                                                                        ",
     ""
    ]
   }

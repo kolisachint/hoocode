@@ -1,7 +1,7 @@
 //! Port of the pin's `test/theme-cutout-tokens.test.ts`.
 //!
-//! N/A until 11.2: the three radar-row cases ("draws no marker stroke on the
-//! newest radar row", "strokes the newest radar row and nothing else") need
+//! N/A until 11.2: the three outline-row cases ("draws no marker stroke on the
+//! newest outline row", "strokes the newest outline row and nothing else") need
 //! `tool-signal.ts`'s `renderToolSignalLine`, which arrives with the chat
 //! widgets.
 
@@ -133,7 +133,7 @@ mod a_theme_without_them {
 
     #[test]
     fn has_no_marker_stroke_token() {
-        // The radar half of this case waits on tool-signal (11.2).
+        // The outline half of this case waits on tool-signal (11.2).
         let _g = lock("dark");
         assert!(!theme().has_bg("activeToolBg"));
     }

@@ -20,9 +20,8 @@ fn isolate() {
     });
 }
 
-const ACCESSIBLE_THEMES: [&str; 2] = ["colorsafe-dark", "colorsafe-light"];
-const LIGHT_THEMES: [&str; 3] = ["colorsafe-light", "daylight", "light"];
-const DARK_THEMES: [&str; 3] = ["colorsafe-dark", "dark", "deep-space"];
+const LIGHT_THEMES: [&str; 1] = ["light"];
+const DARK_THEMES: [&str; 1] = ["dark"];
 
 fn shipped_themes() -> Vec<&'static str> {
     let mut all: Vec<&str> = LIGHT_THEMES
@@ -34,25 +33,15 @@ fn shipped_themes() -> Vec<&'static str> {
     all
 }
 
-const RETIRED: [(&str, &str); 10] = [
-    ("high-contrast-dark", "colorsafe-dark"),
-    ("high-contrast-light", "colorsafe-light"),
-    ("warm-dark", "colorsafe-dark"),
-    ("warm-light", "colorsafe-light"),
-    ("vox-dark", "dark"),
-    ("vox-light", "light"),
-    ("solarized-dark", "deep-space"),
-    ("solarized-light", "daylight"),
-    ("vox-cutout-dark", "dark"),
-    ("vox-cutout-light", "light"),
-];
-
-/// AAA for body text.
-const MIN_CONTRAST: f64 = 7.0;
 /// CIEDE2000 floor for two tokens in the same group.
 const MIN_DIFFERENCE: f64 = 11.0;
 
-const BG_TOKENS: [&str; 8] = [
+const BG_TOKENS: [&str; 13] = [
+    "surface",
+    "pane",
+    "paneSel",
+    "paneInput",
+    "paneDetail",
     "selectedBg",
     "userMessageBg",
     "customMessageBg",
@@ -261,60 +250,6 @@ fn difference(hex_a: &str, hex_b: &str) -> f64 {
         .sqrt()
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Cvd {
-    Protan,
-    Deutan,
-    Tritan,
-}
-
-/// Viénot-Brettel-Mollon dichromat simulation.
-fn simulate_cvd(hex: &str, kind: Cvd) -> String {
-    let rgb = srgb_linear(hex);
-    let apply =
-        |m: [[f64; 3]; 3], v: [f64; 3]| m.map(|row| row[0] * v[0] + row[1] * v[1] + row[2] * v[2]);
-    let rgb_to_lms = [
-        [0.31399, 0.63951, 0.04649],
-        [0.15537, 0.75789, 0.0867],
-        [0.01775, 0.10945, 0.87259],
-    ];
-    let lms_to_rgb = [
-        [5.47221, -4.64196, 0.16963],
-        [-1.12524, 2.29317, -0.16789],
-        [0.0298, -0.19318, 1.16364],
-    ];
-    let collapse = match kind {
-        Cvd::Protan => [
-            [0.0, 1.05118294, -0.05116099],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ],
-        Cvd::Deutan => [
-            [1.0, 0.0, 0.0],
-            [0.9513092, 0.0, 0.04866992],
-            [0.0, 0.0, 1.0],
-        ],
-        Cvd::Tritan => [
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [-0.86744736, 1.86727089, 0.0],
-        ],
-    };
-    let out = apply(lms_to_rgb, apply(collapse, apply(rgb_to_lms, rgb)));
-    let hex: Vec<String> = out
-        .iter()
-        .map(|&c| {
-            let s = if c <= 0.0031308 {
-                12.92 * c
-            } else {
-                1.055 * c.max(0.0).powf(1.0 / 2.4) - 0.055
-            };
-            format!("{:02x}", ((s.clamp(0.0, 1.0) * 255.0) + 0.5).floor() as i64)
-        })
-        .collect();
-    format!("#{}", hex.join(""))
-}
-
 /// HSL saturation (0-1).
 fn saturation(hex: &str) -> f64 {
     let [r, g, b] = channels(hex).map(|c| c / 255.0);
@@ -444,7 +379,9 @@ fn light_hue_tokens() -> Vec<&'static str> {
 }
 
 /// Chip fills, and the inks that only ever render inside them.
-const CHIP_PAIRS: [(&str, &str); 3] = [
+const CHIP_PAIRS: [(&str, &str); 5] = [
+    ("chip", "chipFg"),
+    ("chipWarn", "chipFg"),
     ("headlineBg", "headlineText"),
     ("tapeBg", "tapeText"),
     ("brandBg", "brandText"),
@@ -640,6 +577,9 @@ mod default_light_theme {
     #[test]
     fn keeps_every_foreground_legible_on_every_surface_it_paints() {
         let failures = legibility_failures("light", &surfaces("light"), |token| {
+            if is_chip_token(token) {
+                return None;
+            }
             Some(if LIGHT_DECORATIVE_TOKENS.contains(&token) {
                 MIN_DECORATIVE_CONTRAST
             } else {
@@ -691,11 +631,11 @@ mod the_shipped_roster {
     use super::*;
 
     #[test]
-    fn is_six_themes_three_light_and_three_dark() {
+    fn is_two_themes_one_light_and_one_dark() {
         isolate();
         assert_eq!(get_available_themes(), shipped_themes());
-        assert_eq!(LIGHT_THEMES.len(), 3);
-        assert_eq!(DARK_THEMES.len(), 3);
+        assert_eq!(LIGHT_THEMES.len(), 1);
+        assert_eq!(DARK_THEMES.len(), 1);
     }
 
     #[test]
@@ -703,17 +643,6 @@ mod the_shipped_roster {
         for theme in LIGHT_THEMES.iter().chain(DARK_THEMES.iter()) {
             let is_light = LIGHT_THEMES.contains(theme);
             assert_eq!(wrong_side(theme, is_light), Vec::<String>::new(), "{theme}");
-        }
-    }
-
-    #[test]
-    fn loads_each_retired_name_as_its_successor_rather_than_dropping_to_the_fallback() {
-        isolate();
-        for (retired, heir) in RETIRED {
-            assert!(!get_available_themes().iter().any(|t| t == retired));
-            assert_eq!(successor_theme_for(retired), Some(heir));
-            assert_eq!(resolve_theme_name(retired), heir);
-            assert_eq!(colors(retired), colors(heir));
         }
     }
 
@@ -733,106 +662,28 @@ mod the_shipped_roster {
     }
 
     #[test]
-    fn leaves_a_name_nobody_retired_alone() {
+    fn old_theme_names_are_not_themes() {
         isolate();
-        assert_eq!(successor_theme_for("dark"), None);
-        assert_eq!(successor_theme_for("a-theme-that-never-existed"), None);
-        assert_eq!(
-            resolve_theme_name("a-theme-that-never-existed"),
-            "a-theme-that-never-existed"
-        );
-        for shipped in shipped_themes() {
-            assert_eq!(resolve_theme_name(shipped), shipped);
+        assert_eq!(get_available_themes(), shipped_themes());
+        for old in ["daylight", "deep-space", "colorsafe-dark", "warm-light"] {
+            assert!(load_theme_json(old).is_err(), "{old}");
         }
     }
 }
 
-mod accessible_themes {
+mod chips {
     use super::*;
 
     #[test]
-    fn defines_every_color_token_explicitly() {
-        for theme in ACCESSIBLE_THEMES {
-            let (name, raw) = raw_colors(theme);
-            assert_eq!(name, theme);
-            let missing: Vec<String> = all_tokens()
-                .into_iter()
-                .filter(|t| !raw.contains_key(t))
-                .collect();
-            assert_eq!(missing, Vec::<String>::new());
-            let defaults: Vec<String> = all_tokens().into_iter().filter(|t| raw[t] == "").collect();
-            assert_eq!(defaults, Vec::<String>::new());
-        }
-    }
-
-    #[test]
-    fn renders_every_token_without_falling_back() {
-        isolate();
-        for theme in ACCESSIBLE_THEMES {
-            renders_every_token(theme);
-        }
-    }
-
-    #[test]
-    fn keeps_every_foreground_at_aaa_contrast_on_every_surface() {
-        for theme in ACCESSIBLE_THEMES {
-            let failures = legibility_failures(theme, &surfaces(theme), |_| Some(MIN_CONTRAST));
-            assert_eq!(failures, Vec::<String>::new(), "{theme}");
-        }
-    }
-
-    #[test]
-    fn keeps_tokens_that_mean_different_things_apart() {
-        for theme in ACCESSIBLE_THEMES {
-            // colorsafe-dark's agent palette is full at AAA (a known gap).
-            let known_full = theme == "colorsafe-dark";
-            let found = collisions(theme, |label| known_full && label == "agent identity");
-            assert_eq!(found, Vec::<String>::new(), "{theme}");
-        }
-    }
-
-    #[test]
-    fn keeps_its_surfaces_on_one_side_of_the_light_dark_split() {
-        for theme in ACCESSIBLE_THEMES {
-            assert_eq!(
-                wrong_side(theme, theme.ends_with("-light")),
-                Vec::<String>::new(),
-                "{theme}"
-            );
-        }
-    }
-
-    #[test]
-    fn colorsafe_light_keeps_its_semantic_pairs_apart_under_color_blind_vision() {
-        let c = colors("colorsafe-light");
-        let pairs = [
-            ("success", "error"),
-            ("error", "warning"),
-            ("success", "warning"),
-            ("toolDiffAdded", "toolDiffRemoved"),
-            ("toolDiffAdded", "toolDiffContext"),
-            ("toolDiffRemoved", "toolDiffContext"),
-        ];
-        let mut failures = Vec::new();
-        for (a, b) in pairs {
-            for kind in [Cvd::Protan, Cvd::Deutan, Cvd::Tritan] {
-                let delta = difference(&simulate_cvd(&c[a], kind), &simulate_cvd(&c[b], kind));
-                if delta < MIN_DIFFERENCE {
-                    failures.push(format!("{a} ~ {b} under {kind:?}: ΔE {}", fixed(delta, 1)));
-                }
-            }
-        }
-        assert_eq!(failures, Vec::<String>::new());
-    }
-
-    #[test]
-    fn marks_selection_and_tool_state_visibly_against_the_page() {
-        for theme in ACCESSIBLE_THEMES {
+    fn chip_text_reads_on_both_title_chips() {
+        for theme in ["dark", "light"] {
             let c = colors(theme);
-            let page_bg = get_theme_export_colors(Some(theme))
-                .page_bg
-                .expect("pageBg");
-            assert!(contrast(&c["selectedBg"], &page_bg) > 1.2, "{theme}");
+            assert!(contrast(&c["chipFg"], &c["chip"]) >= 4.5, "{theme} chip");
+            assert!(
+                contrast(&c["text"], &c["chipWarn"]) >= 4.5
+                    || contrast(&c["chipFg"], &c["chipWarn"]) >= 4.5,
+                "{theme} chipWarn"
+            );
         }
     }
 }
