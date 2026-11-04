@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: a plainer, calmer screen (2026-11-04)
+- **Plain words everywhere.** The space words (SHIP, FUEL, CR, LANDED, HIT, CLEARANCE, HANGAR, mission, comms, satellites) are gone from the screen, help and notices. `scripts/ci/plain_words.sh` keeps them out.
+- **No header, logo or frames.** The start screen is two text lines. The prompt is one row (` › `). Under it a status line shows the view, session, model, context use, cost and what hoocode is doing now (`◉ working`, the last turn's result, `not signed in  /login`). Scroll and search position show there too.
+- **Transcript** reads as: your message on a band, one dim line of thinking, one row per tool call (`● Edit src/wrap.rs  +4 −1`), then the answer. Step numbers, rails and "Took" lines are gone; only a failed or stopped turn gets an end line.
+- **`outline` view** (the old `radar`, which still works as a setting value) shows one recap row per turn (` ● Read x · Edit y`). `alt+o` cycles outline, peek and full.
+- **Dialogs are panes** that take the prompt's place: a title chip, rows, a filter row and a hint row, with a detail column beside the list at 100 columns or more. With `NO_COLOR` they get light borders instead.
+- **Permission asks** `Allow Shell?` with `$ command` and an `access:` line when the call writes, uses the network or pipes. Keys: `1` yes, `2` always for that program this session, `3` no and say why, `e` edit first. Questions use numbered options and `esc` skips (the agent says which default it uses).
+- **Notices** no longer pop up: a short one takes the left of the status line for a few seconds, a longer one is a dim row above the prompt.
+- **First run** opens the Log in pane by itself when no provider works. Esc leaves `not signed in  /login` in the status line.
+- **Themes** are `dark` and `light`, and `auto` follows the terminal background and re-checks when it changes. The other built-in themes and their old names are removed; an unknown saved theme falls back to `auto`.
+- **Completion menus** (`/` commands, `@` files) use the same pane look.
+
+### Removed: screen chrome (2026-11-04)
+- The `/chrome` and `/color` commands and the `alt+z` key.
+- The HUD, wordmark and starfield, session chip, toast float and the two-row footers.
+
 ### Added: defaults for a first run (2026-11-02)
 - **`~/.hoocode/hoo-config.json` is written on first run** with the shipped mode rules: ask and debug block Edit and Write, plan writes only under `.hoocode/` without asking, build allows everything with the usual approvals. A mode key your file leaves out takes the shipped value.
 - **Read-only shell commands run without asking, in every mode** (`safe_shell`, on by default): `ls`, `cat`, `head`, `grep`, `rg`, `git status`/`diff`/`log`/`show` and similar, alone or joined by pipes and `&&`. A file redirect, `$(…)`, or any other program asks as before.

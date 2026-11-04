@@ -1,0 +1,12 @@
+«fg=#e5e5e7;bold» hoocode v0.2.31«»
+«fg=#989898» /work/hoocode · 1 skill · 5 agents«»
+«»
+«»
+«bg=#1e1e2a» «fg=#14141c;bg=#f0c674;bold» Log in «fg=#989898;bg=#1e1e2a» /login«bg=#1e1e2a»  «fg=#989898;bg=#1e1e2a»3 providers«bg=#1e1e2a»                                                                       «»
+«fg=#989898;bg=#1e1e2a»   no model is signed in yet«bg=#1e1e2a»                                                                        «»
+«fg=#5cc8bb;bg=#233239» › «fg=#e5e5e7;bg=#233239»Anthropic«bg=#233239»  «fg=#e5e5e7;bg=#233239»subscription or API key«bg=#233239»                                                               «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»OpenAI«bg=#1e1e2a»     «fg=#989898;bg=#1e1e2a»subscription or API key«bg=#1e1e2a»                                                               «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»Ollama«bg=#1e1e2a»     «fg=#989898;bg=#1e1e2a»local, no key«bg=#1e1e2a»                                                                         «»
+«fg=#5cc8bb;bg=#2a2a36» › «fg=#989898;bg=#2a2a36»filter«bg=#2a2a36»                                                                                           «»
+«bg=#1e1e2a» «fg=#e5e5e7;bg=#1e1e2a»enter«fg=#989898;bg=#1e1e2a» log in«fg=#989898;bg=#1e1e2a» · «fg=#e5e5e7;bg=#1e1e2a»esc«fg=#989898;bg=#1e1e2a» later«bg=#1e1e2a»                                                                           «»
+«»                                                                                «fg=#989898»peek · amber-harbor«»

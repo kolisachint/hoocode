@@ -1,37 +1,26 @@
-//! The Mission Control card chrome (M6): the heavy warn frame every card
-//! draws when it replaces the comms frame (spec §4 c1–c2, c8). The top
-//! border holds the title and a right label; the body rows sit between `┃`
-//! edges; the bottom border holds the foot. Titles and edges read the
-//! `warn` token, so `/theme` and NO_COLOR keep working (shapes carry the
-//! state with no colour).
+//! The card pane: the pane every blocking card draws when it takes the
+//! prompt's place (permission, question, quit; declutter spec v2.4). The
+//! title is a warn (yellow) chip, the right label its dim facts, the body
+//! rows sit in the 3-column gutter and the foot is the hint row. Drawn by
+//! [`Pane`], so `/theme` and NO_COLOR keep working (monochrome panes get
+//! light borders with the title in the top border).
 //!
-//! The frame is drawn with ratatui ([`render_chrome`]: a thick [`Block`] with
-//! the title, right label and foot as edge titles). Callers build the body
-//! and foot as styled [`Line`]s from the [`Palette`].
+//! Callers build the body and foot as styled [`Line`]s from the
+//! [`Palette`].
 
-use hoocode_tui_ratatui::{bold, render_chrome, Chrome, Line, Palette, Span};
+use hoocode_tui_ratatui::{Line, Span};
 
-/// The card's title, already styled (bold warn): `◉ …` plus `· step NN`
-/// when the host knows the held step.
-pub fn card_title(title: &str, pal: &Palette) -> Line<'static> {
-    Line::from(vec![Span::styled(title.to_string(), bold(pal.warn()))])
-}
-
-/// The card's right label, already styled (warn).
-fn card_right(right: &str, pal: &Palette) -> Line<'static> {
-    Line::from(vec![Span::styled(right.to_string(), pal.warn())])
-}
+use crate::pane::{Chip, Pane, PaneStyle};
 
 /// The card's foot, already styled (dim).
 pub fn card_foot(foot: &str) -> Line<'static> {
-    let pal = Palette::current();
-    Line::from(vec![Span::styled(foot.to_string(), pal.dim())])
+    let st = PaneStyle::current();
+    Line::from(vec![Span::styled(foot.to_string(), st.dim_style())])
 }
 
-/// Draws the card at `width` columns: the warn top edge with `title` and
-/// `right`, `body` between `┃` edges, and the `foot` edge. Rows that do not
-/// fit are cut with `…`, the title first. Below ten columns the frame has
-/// no room, so the body draws bare.
+/// Draws the card at `width` columns: the warn chip with `title`, `right`
+/// as dim facts after it, `body` in the row gutter and the `foot` as the
+/// hint row. Rows that do not fit are cut with `…`.
 pub fn render_card(
     title: &str,
     right: &str,
@@ -39,23 +28,22 @@ pub fn render_card(
     foot: &Line<'static>,
     width: usize,
 ) -> Vec<String> {
-    let pal = Palette::current();
-    render_chrome(
-        &Chrome {
-            frame: pal.warn(),
-            title: card_title(title, &pal),
-            right: card_right(right, &pal),
-            foot: foot.clone(),
-        },
-        body,
-        width,
-    )
+    let st = PaneStyle::current();
+    let mut pane = Pane::new(title);
+    pane.chip = Chip::Warn;
+    if !right.is_empty() {
+        pane.facts = Line::from(vec![Span::styled(right.to_string(), st.dim_style())]);
+    }
+    pane.rows = body.to_vec();
+    pane.hint = foot.clone();
+    pane.style = Some(st);
+    pane.render(width)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hoocode_tui_util::visible_width;
+    use hoocode_tui_util::{strip_vt_control_characters, visible_width};
 
     fn body() -> Vec<Line<'static>> {
         vec![
@@ -65,14 +53,14 @@ mod tests {
         ]
     }
 
-    /// Every emitted line fits its width, even where the frame has no room.
+    /// Every emitted line fits its width, even where the pane has no room.
     #[test]
     fn narrow_cards_fit() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
-        for width in [3, 19] {
+        for width in [3, 19, 100] {
             let rows = render_card(
-                "◉ CLEARANCE NEEDED",
-                "BUILD asks for Shell",
+                "Allow Shell?",
+                "build mode",
                 &body(),
                 &card_foot("or type a reply"),
                 width,
@@ -85,5 +73,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn card_rows_sit_in_the_gutter() {
+        hoocode_code_tui_theme::init_theme(Some("dark"), false);
+        let rows: Vec<String> = render_card(
+            "Allow Shell?",
+            "build mode",
+            &body(),
+            &card_foot("or type a reply"),
+            60,
+        )
+        .iter()
+        .map(|row| strip_vt_control_characters(row))
+        .collect();
+        assert!(rows[0].contains("Allow Shell?"), "{rows:?}");
+        assert!(rows[1].starts_with("   $ printf"), "{rows:?}");
+        assert!(rows[4].starts_with(" or type a reply"), "{rows:?}");
     }
 }

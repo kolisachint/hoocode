@@ -15,7 +15,7 @@
   ],
   "steps": [
     {
-      "wait_for": "▸ name your mission",
+      "wait_for": "(?m)^ ›",
       "timeout": 30
     },
     {
@@ -66,7 +66,7 @@
     {
       "snapshot": "pinned",
       "contains": [
-        "page"
+        "scrolled"
       ]
     },
     {
@@ -93,7 +93,7 @@
     {
       "snapshot": "previous-message",
       "contains": [
-        "second question"
+        "first question"
       ]
     },
     {
@@ -128,7 +128,7 @@
     {
       "snapshot": "search-typing",
       "contains": [
-        "⌕ SCAN  beta item 25"
+        "beta item 25"
       ]
     },
     {
@@ -143,7 +143,7 @@
     {
       "snapshot": "search-kept",
       "contains": [
-        "⌕ SCAN  beta item 25"
+        "beta item 25"
       ]
     },
     {
@@ -170,7 +170,7 @@
     {
       "snapshot": "live",
       "contains": [
-        "▸"
+        "›"
       ]
     }
   ]

@@ -52,10 +52,10 @@ pub fn format_bash_call(args: &Value) -> String {
         .unwrap_or_default();
     let display = match command {
         None => invalid_arg_text(),
-        Some(c) if !c.is_empty() => c,
+        Some(c) if !c.is_empty() => t.fg("text", &c),
         Some(_) => t.fg("toolOutput", "…"),
     };
-    format!("{}  {display}{suffix}", t.fg("toolTitle", &t.bold("Shell")))
+    format!("{} {display}{suffix}", t.fg("toolTitle", &t.bold("Shell")))
 }
 
 /// The result body (`BashResultRenderComponent`), laid out at render width.
@@ -66,7 +66,6 @@ pub struct BashResult {
     /// The full stop: every line of the output, wrapped, nothing folded.
     expanded: bool,
     warning: Option<String>,
-    timing: Option<String>,
 }
 
 impl Component for BashResult {
@@ -80,7 +79,7 @@ impl Component for BashResult {
             lines.extend(preview.visual_lines);
         }
         let output_rows = lines.len();
-        for extra in [&self.warning, &self.timing].into_iter().flatten() {
+        for extra in [&self.warning].into_iter().flatten() {
             lines.extend(Text::new(extra.clone(), 0, 0).render(width));
         }
         self.layout.footer_rows.set(lines.len() - output_rows);
@@ -92,15 +91,18 @@ fn build_result(
     result: &ToolResultView<'_>,
     options: ToolRenderResultOptions,
     show_images: bool,
-    started_at: Option<f64>,
-    ended_at: Option<f64>,
-    // A failed run shows no `Took`: the header's `HIT` chip carries the
-    // exit code and duration instead.
+    // A failed run's exit code lives in the row's facts (`exit 1`), so the
+    // body leaves its `Command exited with code N` line out.
     is_error: bool,
     layout: Rc<BodyLayout>,
 ) -> BashResult {
     let t = theme();
     let output = js_trim(result.text(show_images));
+    let output = if is_error {
+        without_exit_line(output)
+    } else {
+        output
+    };
     let styled_output = (!output.is_empty()).then(|| {
         output
             .split('\n')
@@ -152,31 +154,24 @@ fn build_result(
         )
     });
 
-    // Live: the wall clock from the call's start. A rebuilt transcript has no
-    // clock; the duration the loop stored on the result stands in for it.
-    let elapsed_ms = match started_at {
-        Some(start) => Some(ended_at.unwrap_or_else(now_ms) - start),
-        None if !options.is_partial => result.details.get("durationMs").and_then(Value::as_f64),
-        None => None,
-    };
-    let timing = (!is_error).then_some(elapsed_ms).flatten().map(|ms| {
-        let label = if options.is_partial {
-            "Elapsed"
-        } else {
-            "Took"
-        };
-        format!(
-            "\n{}",
-            t.fg("muted", &format!("{label} {}", format_duration(ms)))
-        )
-    });
-
     BashResult {
         styled_output,
         layout,
         expanded: options.expanded,
         warning,
-        timing,
+    }
+}
+
+/// `output` without a last line reading `Command exited with code N`, and the
+/// blank lines above it.
+fn without_exit_line(output: &str) -> &str {
+    let trimmed = output.trim_end();
+    match trimmed.rsplit_once('\n') {
+        Some((head, last)) if last.trim().starts_with("Command exited with code ") => {
+            head.trim_end()
+        }
+        None if trimmed.starts_with("Command exited with code ") => "",
+        _ => output,
     }
 }
 
@@ -200,13 +195,10 @@ pub fn definition() -> ToolRenderDefinition {
                 }
                 ctx.state.remove(TICKING_KEY);
             }
-            let ended = ctx.state.get("endedAt").and_then(Value::as_f64);
             let body = build_result(
                 result,
                 options,
                 ctx.show_images,
-                started,
-                ended,
                 ctx.is_error,
                 body_layout(ctx.objects, true),
             );

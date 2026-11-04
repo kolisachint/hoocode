@@ -47,6 +47,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | A built-in tool | `code-tool-bash`, `code-tools-fs`, `code-tool-search`, `code-tools-optin`; registration in `code-tools` |
 | The Cron tools (CronCreate, CronList, CronDelete), the schedule store, the cron matcher | `code-scheduler`; registered in `code-cli` `runtime.rs` `custom_tools`; fired by `code-tui-app` `mode/events.rs` `tick_scheduler`; the Schedule rows of the task panel: `rows.rs` ([scheduler-and-loop.md](../design/scheduler-and-loop.md)) |
 | How a tool looks in the transcript | `code-tui-widgets/src/tools/` ([ui.md](ui.md)) |
+| How a dialog, picker or card pane looks (title chip, rows, input row, hint row, split list \| detail, monochrome borders, pane colours) | `code-tui-widgets/src/pane.rs` (`Pane`, `PaneStyle`); pickers map onto it through `console.rs` (`Console`), cards through `card_frame.rs` (`render_card`) ([ui.md](ui.md#pickers-and-dialogs)) |
 | A slash command | list: `code-resources/src/slash_commands.rs`; handler: `code-tui-app/src/mode/commands.rs` `run_builtin_command` |
 | Screen goldens: the scenarios, the mock LLM | `scripts/tui/` (`goldens.py`, `mockllm.py`, `scenarios/`); component goldens use the `tui-render` feature `golden` ([ui.md](ui.md)) |
 | Transcript render cache: a `Container` keeps each child's lines under the child's `render_stamp` (a stamp changes with every `&mut` mutator; none while a clock or registry is read) and draws only changed children; debug builds redraw each hit and assert equality (`HOOCODE_RENDER_CACHE_CHECK=0` off). Theme changes bump `bump_render_epoch` | `tui-render` (`component.rs`: `Component::render_stamp`, `Container`, `Rendered`); stamps in `tui-components` (`Spacer`, `Text`) and `code-tui-widgets` (`AssistantMessageComponent`, `ToolChainComponent`, `ToolExecutionComponent`, `MissionHeader`, `LandingLine`, `PeekOnly`); epoch bump in `code-tui-theme` (`registry.rs`); a resumed history freezes all but the newest `LIVE_TOOL_WINDOW` blocks (`mode/transcript.rs`, `render_session_context`) |
@@ -71,7 +72,8 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | Config paths, env prefixes | `code-paths` |
 | MCP server discovery, `mcp.json` precedence, folder and plugin trust, `/mcp` states | `code-mcp` (`config.rs`, `trust.rs`, `discover.rs`); design in [mcp.md](../design/mcp.md) |
 | Permissions and modes | `code-permissions`, `code-modes` |
-| Themes | `code-tui-theme` |
+| Themes (`dark`, `light`, `auto`; pane/chip tokens) | `code-tui-theme` |
+| Screen frame: start header, prompt row, status line (scroll and search bars included), transient rows | `code-tui-app` (`start_header.rs`, `prompt_row.rs`, `status_line.rs`, `transient_lines.rs`, wired in `mode/mod.rs` and `mode/chrome.rs`); the pinned status row goes in place of the bottom's last row via `tui-render` `Tui::set_scroll_status_in_bottom` |
 | Key bindings | `code-tui-keybindings` (app), `tui-keys` (parsing) |
 | Threads, the io runtime, `run_blocking`, channel caps, parallel-tool cap, the ordered shutdown (`run_ordered`, timed steps) | `runtime` (`runtime.rs`, `threads.rs`, `limits.rs`, `shutdown.rs`; the exit path's steps are in `code-tui-app` `mode/shutdown.rs`); the only crate that builds runtimes, threads or channels ([concurrency.md](../design/concurrency.md)) |
 | `performance.*` settings | `code-settings` (`manager.rs` getters), caps in `runtime` (`limits.rs`) |
@@ -134,10 +136,10 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2764 / 1580 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1204 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 8356 / 7265 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 8 | 8341 / 7265 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 4 | 876 / 822 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 574 / 0 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 6474 / 0 | keep |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent | 1 | 6478 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1639 | the `hoocode` binary |
 | `code-mcp` | MCP server discovery and folder/plugin trust for the hoocode coding agent: mcp.json sources, precedence, trust store and /mcp states (no MCP client here) | 2 | 2059 / 0 | keep |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1582 / 608 | keep |
@@ -148,11 +150,11 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-plugins` | Plugins for the hoocode coding agent: loading Agent Plugins 1.0 and Claude plugin layouts (discovery, precedence, folder trust, and the skills, subagents and MCP servers they contribute), and installing them from git marketplaces | 4 | 4398 / 2034 | keep |
 | `code-print` | Output formatting for the hoocode coding agent | 1 | 297 / 281 | keep |
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 829 / 0 | keep |
-| `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 7 | 4471 / 3067 | keep |
+| `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 7 | 4463 / 3067 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1585 / 1051 | keep |
 | `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 2854 / 0 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 2055 / 631 | keep |
-| `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2262 / 1642 | keep |
+| `code-settings` | Global and project settings.json for the hoocode coding agent | 9 | 2253 / 1627 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 12323 / 12841 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 8 | 1154 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1099 / 125 | keep |
@@ -167,25 +169,25 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 26628 / 7860 | keep |
-| `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 681 / 807 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 9033 / 4789 | keep |
-| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2524 / 2142 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 14431 / 10458 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 23097 / 6323 | keep |
+| `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 660 / 775 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 8800 / 4766 | keep |
+| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 6 | 2544 / 1886 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 13089 / 10617 | keep |
 
 ### TUI library (`tui-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 10494 / 7586 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 10594 / 7616 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 303 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 365 / 0 | keep |
-| `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 98 / 0 | keep |
+| `tui-glyphs` | The TUI status glyphs and their animation frames: one set for every surface | 3 | 120 / 0 | keep |
 | `tui-highlight` | Syntax highlighting for the hoocode TUI, using the highlight.js 10.7.3 engine and grammars | 1 | 2327 / 291 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1048 / 377 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 7 | 1966 / 583 | keep |
-| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (Mission Control frame chrome, palette, RatatuiComponent) | 3 | 1516 / 172 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4882 / 2958 | keep |
+| `tui-ratatui` | Generic ratatui adapter for the hoocode TUI: renders ratatui widgets into the line-based Component model (line helpers, palette, RatatuiComponent) | 3 | 1381 / 172 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 6 | 4871 / 2923 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 3317 / 343 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 15 | 2495 / 682 | keep |
 

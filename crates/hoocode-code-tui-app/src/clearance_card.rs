@@ -1,23 +1,21 @@
-//! The Mission Control clearance card (M6, spec §4 c1, r5): the warn frame
-//! that replaces the comms frame while a gated call waits. The title is the
-//! bare `◎ CLEARANCE NEEDED` (the held step is the card's only step, so no
-//! number); the right label names the mode and the tool; the REACH line
-//! reads the call's real data ([`reach_for`]); the keys row keeps each key's
-//! behaviour (`y` once, `a` always, `n` abort, `e` edit first). Typed text is
-//! the abort's reason (`enter` sends it).
+//! The permission ("clearance") card, a blocking pane in the prompt's slot
+//! (declutter spec, Dialogs): a yellow `Allow Shell?` chip, the `$ command`
+//! row, an `access:` row only when the call writes, uses the network or
+//! pipes, then numbered options (`1 yes`, `2 yes, always for <program> this
+//! session`, `3 no, tell it why`), the reply row and the hint row. `1`/`2`/`3`
+//! pick, `e` edits the command first, and every other letter types a reply
+//! that `enter` sends as the denial's reason.
 //!
 //! `e edit first` cannot run inside the gate (the call's arguments are
 //! fixed), so `enter` denies the original call and the host sends the edited
 //! text as the next message instead; the agent then runs the revised command
 //! (asking again when it still needs clearance).
 
-use hoocode_code_permissions::{
-    is_always_wrapper, shell_program, ClearanceChoice, ClearanceInfo, ReachCell,
-};
-use hoocode_code_tui_keybindings::format_key_text;
-use hoocode_code_tui_widgets::card_frame::{card_foot, render_card};
+use hoocode_code_permissions::{is_always_wrapper, shell_program, ClearanceChoice, ClearanceInfo};
+use hoocode_code_tui_widgets::pane::{hint_line, input_line, Chip, Pane, PaneStyle};
 use hoocode_tui_components::Input;
-use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_keys::matches_key;
+use hoocode_tui_ratatui::{Line, Span};
 use hoocode_tui_render::Component;
 
 /// What the card answers with (the gate's [`ClearanceChoice`], sent on).
@@ -29,6 +27,8 @@ pub struct ClearanceCard {
     reply: String,
     editing: bool,
     edit: Input,
+    /// The highlighted option (0 is `yes`).
+    selected: usize,
     focused: bool,
     on_done: Option<ClearanceAnswer>,
 }
@@ -41,6 +41,7 @@ impl ClearanceCard {
             reply: String::new(),
             editing: false,
             edit: Input::new(),
+            selected: 0,
             focused: false,
             on_done: Some(on_done),
         }
@@ -52,27 +53,24 @@ impl ClearanceCard {
         }
     }
 
-    /// `◎ CLEARANCE NEEDED`, bare: the held call is the card's only step,
-    /// so no number (spec §4 c1). The ring (`◎`) is the card's own glyph;
-    /// the question card keeps `◉`.
+    /// `Allow Shell?`
     fn title(&self) -> String {
-        "◎ CLEARANCE NEEDED".to_string()
+        format!("Allow {}?", self.info.tool)
     }
 
-    /// `BUILD asks for Shell`; a subagent's call names it: `BUILD · explore asks for Shell`.
-    fn right(&self) -> String {
-        let mode = self.info.mode.to_uppercase();
-        match &self.info.from {
-            Some(from) => format!("{mode} · {from} asks for {}", self.info.tool),
-            None => format!("{mode} asks for {}", self.info.tool),
-        }
+    /// The facts after the chip: the subagent that asks, when one does.
+    fn facts(&self) -> Option<String> {
+        self.info
+            .from
+            .as_ref()
+            .map(|from| format!("asked by {from}"))
     }
 
-    /// The `a` key's program, when `a` is offered at all: the Shell
-    /// command's first word, else the tool. Never offered in PLAN mode,
-    /// nor for slash programs (`/bin/sh`) or wrappers like sudo (the
-    /// word comes from the gate's [`shell_program`], so the label and
-    /// the stored rule always agree).
+    /// The program the `always` option names, when it is offered at all:
+    /// the Shell command's first word, else the tool. Never offered in PLAN
+    /// mode, nor for slash programs (`/bin/sh`) or wrappers like sudo (the
+    /// word comes from the gate's [`shell_program`], so the label and the
+    /// stored rule always agree).
     fn always_offer(&self) -> Option<String> {
         if self.info.mode.trim().eq_ignore_ascii_case("plan") {
             return None;
@@ -99,130 +97,114 @@ impl ClearanceCard {
         }
     }
 
-    fn reach_row(&self) -> Line<'static> {
-        let pal = Palette::current();
-        let mut spans = vec![Span::styled("REACH", pal.dim()), Span::raw("   ")];
-        let cells = [
-            ("read", &self.info.reach.read),
-            ("write", &self.info.reach.write),
-            ("network", &self.info.reach.network),
-            ("pipe", &self.info.reach.pipe),
-        ];
-        for (i, (name, cell)) in cells.iter().enumerate() {
-            if i > 0 {
-                spans.push(Span::raw("   "));
-            }
-            spans.extend(reach_cell(name, cell));
+    /// `access: writes notes.txt, network, pipes 2 programs`: only what the
+    /// call writes, reaches over the network or pipes. None when it does none.
+    fn access_text(&self) -> Option<String> {
+        let reach = &self.info.reach;
+        let mut parts = Vec::new();
+        if reach.write.on {
+            parts.push(match &reach.write.qualifier {
+                Some(path) => format!("writes {path}"),
+                None => "writes files".to_string(),
+            });
         }
-        Line::from(spans)
+        if reach.network.on {
+            parts.push("network".to_string());
+        }
+        if reach.pipe.on {
+            parts.push(match &reach.pipe.qualifier {
+                Some(count) => format!("pipes {count}"),
+                None => "pipes".to_string(),
+            });
+        }
+        (!parts.is_empty()).then(|| format!("access: {}", parts.join(", ")))
     }
 
-    fn keys_row(&self) -> Line<'static> {
-        let pal = Palette::current();
-        let mut hints = vec![key_hint("y", "go, once")];
-        // Wrappers (sudo, …) are never approvable: no `a` hint, and the
-        // key answers once.
+    /// The option labels, in key order: yes, [always], no.
+    fn options(&self) -> Vec<String> {
+        let mut options = vec!["yes".to_string()];
         if let Some(program) = self.always_offer() {
             // Shell approvals live for this session only; other tools
             // persist to the mode's auto-allow.
             let scope = if self.info.tool == "Shell" {
-                "in this session".to_string()
+                "this session".to_string()
             } else {
-                format!("in {}", self.info.mode.to_uppercase())
+                format!("in {}", self.info.mode.trim().to_lowercase())
             };
-            hints.push(key_hint("a", &format!("always {program} {scope}")));
+            options.push(format!("yes, always for {program} {scope}"));
         }
-        hints.push(key_hint("n", "abort + say why"));
-        hints.push(key_hint("e", "edit first"));
-        let mut spans = Vec::new();
-        for (i, hint) in hints.iter().enumerate() {
-            if i > 0 {
-                spans.push(Span::styled(" · ", pal.faint()));
-            }
-            spans.extend(hint.clone().spans);
-        }
-        Line::from(spans)
+        options.push("no, tell it why".to_string());
+        options
     }
 
-    fn body(&self) -> Vec<Line<'static>> {
-        let pal = Palette::current();
-        let mut rows = Vec::new();
-        if self.editing {
-            let mut spans = vec![
-                Span::styled("✎", pal.warn()),
-                Span::raw(" "),
-                Span::styled(self.edit.get_value().to_string(), pal.legacy("text")),
-            ];
-            if self.focused {
-                spans.push(Span::styled("▏", pal.warn()));
-            }
-            rows.push(Line::from(spans));
+    /// The pane for the current state.
+    fn pane(&self) -> Pane {
+        let st = PaneStyle::current();
+        let mut pane = Pane::new(self.title());
+        pane.chip = Chip::Warn;
+        if let Some(facts) = self.facts() {
+            pane.facts = Line::from(vec![Span::styled(facts, st.dim_style())]);
+        }
+        let mut subject = vec![Span::raw("  ")];
+        if self.info.tool == "Shell" {
+            subject.push(Span::styled("$ ", st.dim_style()));
+            subject.push(Span::styled(self.editable(), st.text_style()));
         } else {
-            rows.push(Line::from(vec![Span::styled(
-                self.info.detail.clone(),
-                pal.legacy("text"),
-            )]));
-            if !self.reply.is_empty() {
-                let mut spans = vec![
-                    Span::styled("▸", pal.warn()),
-                    Span::raw(" "),
-                    Span::styled(self.reply.clone(), pal.legacy("text")),
-                ];
-                if self.focused {
-                    spans.push(Span::styled("▏", pal.warn()));
-                }
-                rows.push(Line::from(spans));
-            }
+            subject.push(Span::styled(self.info.detail.clone(), st.text_style()));
         }
-        rows.push(self.reach_row());
-        rows.push(self.keys_row());
-        rows
-    }
-
-    fn foot(&self) -> String {
+        pane.top.push(Line::from(subject));
+        if let Some(access) = self.access_text() {
+            pane.top.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(access, st.dim_style()),
+            ]));
+        }
         if self.editing {
-            "enter run · esc cancel".to_string()
+            pane.input = Some(input_line(self.edit.get_value(), "", self.focused));
+            pane.hint = hint_line(&[("enter", "run"), ("esc", "cancel")]);
         } else {
-            "or type a reply".to_string()
+            let options = self.options();
+            let count = options.len();
+            pane.rows = options
+                .into_iter()
+                .enumerate()
+                .map(|(i, label)| {
+                    let number_style = if i == self.selected && !st.mono {
+                        st.text_style()
+                    } else {
+                        st.dim_style()
+                    };
+                    Line::from(vec![
+                        Span::styled(format!("{}  ", i + 1), number_style),
+                        Span::styled(label, st.text_style()),
+                    ])
+                })
+                .collect();
+            pane.selected = Some(self.selected.min(count - 1));
+            pane.input = Some(input_line(&self.reply, "or type a reply", self.focused));
+            let pick = format!("1–{count}");
+            pane.hint = hint_line(&[(pick.as_str(), "pick"), ("e", "edit first")]);
+        }
+        pane.style = Some(st);
+        pane
+    }
+
+    /// Answers with the option at `index` (0 is yes, the last is no).
+    fn choose(&mut self, index: usize) {
+        let count = self.options().len();
+        if index == 0 {
+            self.done(ClearanceChoice::Once);
+        } else if index + 1 >= count {
+            self.done(ClearanceChoice::Deny { reason: None });
+        } else {
+            self.done(ClearanceChoice::Always);
         }
     }
-}
-
-/// One key hint: the dim key plus its muted description.
-fn key_hint(key: &str, description: &str) -> Line<'static> {
-    let pal = Palette::current();
-    Line::from(vec![
-        Span::styled(format_key_text(key, false), pal.dim()),
-        Span::styled(format!(" {description}"), pal.faint()),
-    ])
-}
-
-/// One REACH cell: `■` warn when on, `□` faint when off, then the name and
-/// the qualifier (a real path, a program count).
-fn reach_cell(name: &str, cell: &ReachCell) -> Vec<Span<'static>> {
-    let pal = Palette::current();
-    let mut spans = if cell.on {
-        vec![Span::styled("■", pal.warn())]
-    } else {
-        vec![Span::styled("□", pal.faint())]
-    };
-    spans.push(Span::raw(" "));
-    spans.push(Span::styled(name.to_string(), pal.legacy("text")));
-    if let Some(qualifier) = &cell.qualifier {
-        spans.push(Span::styled(format!(" {qualifier}"), pal.dim()));
-    }
-    spans
 }
 
 impl Component for ClearanceCard {
     fn render(&mut self, width: u16) -> Vec<String> {
-        render_card(
-            &self.title(),
-            &self.right(),
-            &self.body(),
-            &card_foot(&self.foot()),
-            width as usize,
-        )
+        self.pane().render(width as usize)
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -243,9 +225,9 @@ impl Component for ClearanceCard {
             self.edit.handle_input(data);
             return;
         }
-        // Card keys fire only while no reason is typed: once text is
-        // there, letters join it, Enter sends it as the abort reason, and
-        // Esc clears it first (a second Esc denies).
+        // Card keys fire only while no reply is typed: once text is there,
+        // letters join it, Enter sends it as the denial's reason, and Esc
+        // clears it first (a second Esc denies).
         if !self.reply.is_empty() {
             match data {
                 "\r" | "\n" => {
@@ -262,17 +244,11 @@ impl Component for ClearanceCard {
             }
             return;
         }
+        let count = self.options().len();
         match data {
-            "y" => self.done(ClearanceChoice::Once),
-            // Without an `a` offer (a wrapper), `a` answers once.
-            "a" => match self.always_offer() {
-                Some(_) => self.done(ClearanceChoice::Always),
-                None => self.done(ClearanceChoice::Once),
-            },
-            "n" => self.done(ClearanceChoice::Deny { reason: None }),
             // Esc alone is no (spec §6.2).
             "\x1b" => self.done(ClearanceChoice::Deny { reason: None }),
-            "\r" | "\n" => self.done(ClearanceChoice::Once),
+            "\r" | "\n" => self.choose(self.selected),
             "e" => {
                 self.editing = true;
                 self.edit.set_value(self.editable());
@@ -280,7 +256,14 @@ impl Component for ClearanceCard {
                 self.edit.handle_input("\x05");
                 self.edit.set_focused(self.focused);
             }
+            "1" => self.choose(0),
+            "2" if count >= 2 => self.choose(1),
+            "3" if count >= 3 => self.choose(2),
             "\u{7f}" | "\u{8}" => {}
+            _ if matches_key(data, "up") => {
+                self.selected = (self.selected + count - 1) % count;
+            }
+            _ if matches_key(data, "down") => self.selected = (self.selected + 1) % count,
             _ => push_text(&mut self.reply, data),
         }
     }
@@ -297,8 +280,8 @@ impl Component for ClearanceCard {
     }
 }
 
-/// Appends `data` to the typed abort reason when it is a single printable
-/// key (multi-key sequences like arrows never type).
+/// Appends `data` to the typed reply when it is a single printable key
+/// (multi-key sequences like arrows never type).
 fn push_text(reply: &mut String, data: &str) {
     let mut chars = data.chars();
     if let (Some(c), None) = (chars.next(), chars.next()) {

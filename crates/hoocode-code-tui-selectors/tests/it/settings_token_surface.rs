@@ -75,14 +75,8 @@ fn prices_the_whole_surface_in_the_side_panel_exactly_rather_than_rounded() {
         ignore,
     );
     let shown = rendered(&mut pane);
-    assert!(
-        shown.contains("every turn carries 4,140 tokens"),
-        "in\n{shown}"
-    );
-    assert!(
-        shown.contains("prompt 1,430 · schemas 2,710"),
-        "in\n{shown}"
-    );
+    assert!(shown.contains("4,140 tokens per turn"), "in\n{shown}");
+    assert!(shown.contains("prompt 1,430 · tools 2,710"), "in\n{shown}");
 }
 
 #[test]
@@ -108,7 +102,7 @@ fn re_prices_after_a_change_since_a_tool_toggle_moves_the_surface_at_once() {
         .borrow_mut()
         .emit_change("autocompact", "false");
 
-    assert!(rendered(&mut pane).contains("every turn carries 3,291 tokens"));
+    assert!(rendered(&mut pane).contains("3,291 tokens per turn"));
 }
 
 #[test]

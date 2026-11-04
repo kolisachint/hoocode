@@ -1,4 +1,4 @@
-//! The three transcript layers: radar, peek, and full (peek with nothing cut).
+//! The three transcript layers: outline, peek, and full (peek with nothing cut).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::support::{lock, strip};
 use hoocode_ai_types::{Content, ImageContent};
 use hoocode_code_tui_widgets::fold::{fold_rows, fold_rows_tail, parse_more_lines};
-use hoocode_code_tui_widgets::radar::{mission_rows, FlightItem, FlightMark, FlightStats};
+use hoocode_code_tui_widgets::outline::{turn_rows, FlightItem, FlightMark, FlightStats};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -20,7 +20,7 @@ use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
 
-use ToolOutputView::{Full, Peek, Radar};
+use ToolOutputView::{Full, Outline, Peek};
 
 const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
@@ -79,28 +79,30 @@ fn render(chain: &mut ToolChainComponent, width: u16) -> Vec<String> {
         .collect()
 }
 
+/// A chain of one Write call whose content is `lines` rows: a tool that shows
+/// its first lines at peek (a Read shows no body there).
 fn read_chain(view: ToolOutputView, lines: usize) -> ToolChainComponent {
     chain_with(
         view,
         vec![block(
             view,
-            "Read",
-            json!({"file_path": "notes.txt"}),
-            vec![Content::text(rows_of(lines))],
+            "Write",
+            json!({"file_path": "notes.txt", "content": rows_of(lines)}),
+            vec![Content::text("ok")],
         )],
     )
 }
 
 #[test]
-fn the_dial_steps_radar_peek_full_and_wraps() {
-    assert_eq!(TOOL_OUTPUT_VIEWS, [Radar, Peek, Full]);
-    let mut view = Radar;
+fn the_dial_steps_outline_peek_full_and_wraps() {
+    assert_eq!(TOOL_OUTPUT_VIEWS, [Outline, Peek, Full]);
+    let mut view = Outline;
     let mut seen = Vec::new();
     for _ in 0..4 {
         view = cycle_tool_output_view(view, true);
         seen.push(view);
     }
-    assert_eq!(seen, [Peek, Full, Radar, Peek]);
+    assert_eq!(seen, [Peek, Full, Outline, Peek]);
 }
 
 #[test]
@@ -125,15 +127,12 @@ fn the_chain_fold_reports_the_true_hidden_count_once() {
     let rows = render(&mut read_chain(Peek, 40), 100);
     let hints: Vec<&String> = rows.iter().filter(|r| r.contains("more line")).collect();
     assert_eq!(hints.len(), 1, "the hint shows once: {rows:?}");
-    // 40 lines, the first three shown on the rail: 37 hidden. The block's own
+    // 40 lines, the first four shown: 36 hidden. The block's own
     // `… 35 more lines` is folded into the count, not shown next to it.
-    assert_eq!(
-        parse_more_lines(hints[0].trim_start_matches(['┊', ' '])),
-        Some(37)
-    );
+    assert_eq!(parse_more_lines(hints[0]), Some(36));
     assert_eq!(
         rows.iter().filter(|r| r.contains("row-0")).count(),
-        3,
+        4,
         "{rows:?}"
     );
 }
@@ -174,7 +173,7 @@ fn a_long_tool_header_wraps_in_peek_and_full_instead_of_being_cut() {
             );
         }
         assert!(!rows.iter().any(|r| r.contains('…')), "{view:?}: {rows:?}");
-        assert!(rows[0].contains("01"), "the step number leads: {rows:?}");
+        assert!(rows[0].contains("● Shell"), "the glyph leads: {rows:?}");
         assert!(rows.len() >= 3, "the header took several rows: {rows:?}");
         // The wrapped header rows are not body: the output still follows.
         assert!(joined.contains("ok"), "{rows:?}");
@@ -187,7 +186,7 @@ fn a_long_user_prompt_wraps_whole_in_peek_and_full() {
     let words: Vec<String> = (1..=40).map(|i| format!("word{i:02}")).collect();
     let prompt = format!("{}\nsecond line of the prompt", words.join(" "));
     for view in [Peek, Full] {
-        let mut header = MissionHeader::new(1, &prompt, None);
+        let mut header = MissionHeader::new(1, &prompt);
         header.set_view(view);
         let lines = header.render(50);
         let text = strip(&lines.join("\n"));
@@ -203,7 +202,7 @@ fn a_long_user_prompt_wraps_whole_in_peek_and_full() {
 fn image_block(view: ToolOutputView) -> ToolBlock {
     block(
         view,
-        "Read",
+        "mystery",
         json!({"file_path": "shot.png"}),
         vec![
             Content::text(rows_of(8)),
@@ -295,9 +294,9 @@ fn a_frozen_block_keeps_the_whole_output_for_the_full_stop() {
     shell.borrow_mut().freeze();
     let mut chain = chain_with(Peek, vec![shell.clone()]);
     let peek = render(&mut chain, 100).join("\n");
-    assert!(peek.contains("27 earlier lines"), "{peek}");
+    assert!(peek.contains("28 earlier lines"), "{peek}");
     assert!(
-        peek.contains("row-30"),
+        peek.contains("row-30") && peek.contains("row-29"),
         "peek shows the end of the output: {peek}"
     );
     assert!(
@@ -338,7 +337,8 @@ fn an_image_only_result_shows_just_its_placeholder() {
         data: PNG_1X1.into(),
         media_type: "image/png".into(),
     });
-    for tool in ["Read", "mystery"] {
+    {
+        let tool = "mystery";
         let view = Peek;
         let mut chain = chain_with(
             view,
@@ -350,9 +350,9 @@ fn an_image_only_result_shows_just_its_placeholder() {
             )],
         );
         let rows = render(&mut chain, 100);
-        let body: Vec<&String> = rows.iter().filter(|r| r.contains("┊")).collect();
+        let body: Vec<&String> = rows.iter().filter(|r| r.contains("[Image: ")).collect();
         assert_eq!(body.len(), 1, "{tool}: {rows:?}");
-        assert!(body[0].contains("[Image: "), "{tool}: {rows:?}");
+        assert!(body[0].starts_with("    [Image: "), "{tool}: {rows:?}");
         assert!(
             !rows.iter().any(|r| r.contains("more line")),
             "{tool}: {rows:?}"
@@ -412,19 +412,17 @@ fn a_shell_step_shows_the_end_of_its_output_and_counts_only_hidden_output_lines(
         .iter()
         .position(|r| r.contains("earlier lines"))
         .unwrap_or_else(|| panic!("no fold hint: {rows:?}"));
-    // 40 lines, the last three shown: 37 hidden, the footer not among them.
-    assert_eq!(
-        parse_more_lines(rows[hint].trim_start_matches(['┊', ' '])),
-        Some(37)
-    );
+    // 40 lines, the last two shown: 38 hidden.
+    assert_eq!(parse_more_lines(&rows[hint]), Some(38));
     let shown: Vec<&String> = rows.iter().filter(|r| r.contains("row-")).collect();
-    assert_eq!(shown.len(), 3, "{rows:?}");
+    assert_eq!(shown.len(), 2, "{rows:?}");
     assert!(
-        rows[hint + 1].contains("row-38"),
+        rows[hint + 1].contains("row-39"),
         "the hint sits above: {rows:?}"
     );
-    assert!(rows.last().unwrap().contains("Took 8.2s"), "{rows:?}");
+    assert!(!rows.iter().any(|r| r.contains("Took")), "{rows:?}");
     assert!(!rows.iter().any(|r| r.contains("more line")), "{rows:?}");
+    assert!(rows[0].ends_with("exit 0 · 8.2s"), "{rows:?}");
 }
 
 #[test]
@@ -436,13 +434,15 @@ fn a_failed_shell_step_names_its_exit_status_and_keeps_the_last_lines() {
     let mut chain = chain_with(Peek, vec![shell_block(Peek, output, true)]);
     let rows = render(&mut chain, 100);
     assert!(
-        rows[0].contains("HIT") && rows[0].contains("exit 1"),
+        rows[0].contains('⊗') && rows[0].ends_with("exit 1 · 8.2s"),
         "{rows:?}"
     );
     let joined = rows.join("\n");
-    assert!(joined.contains("earlier lines"), "{joined}");
+    assert!(!joined.contains("HIT"), "{joined}");
+    // Seven lines: the last four show, two fall behind the hint.
+    assert!(joined.contains("… 2 earlier lines"), "{joined}");
     assert!(joined.contains("error: could not compile"), "{joined}");
-    assert!(joined.contains("Command exited with code 1"), "{joined}");
+    assert!(!joined.contains("Command exited"), "{joined}");
     assert!(!joined.contains("mismatched types"), "{joined}");
 }
 
@@ -457,7 +457,7 @@ fn an_interrupted_step_is_no_hit_and_leaves_the_reason_to_the_message() {
     let rows = render(&mut chain, 100);
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert!(
-        rows[0].contains('⊘') && rows[0].contains("interrupted"),
+        rows[0].contains('⊗') && rows[0].ends_with("stopped"),
         "{rows:?}"
     );
     assert!(!rows[0].contains("HIT"), "{rows:?}");
@@ -521,33 +521,37 @@ fn a_settled_agent_keeps_its_failed_calls_in_peek_and_every_call_in_full() {
     let _g = lock();
     let mut peek = chain_with(Peek, vec![settled_agent(Peek, "it-agent-peek")]);
     let rows = render(&mut peek, 100).join("\n");
-    assert!(rows.contains("⊗ 01.2 Grep"), "{rows}");
-    assert!(rows.contains("→ bad regex"), "{rows}");
-    assert!(rows.contains("HIT"), "{rows}");
+    assert!(rows.contains("   ⊗ Grep"), "{rows}");
+    assert!(rows.contains("bad regex"), "{rows}");
+    assert!(!rows.contains("HIT"), "{rows}");
     assert!(
-        !rows.contains("01.1 Read"),
+        !rows.contains("Found it"),
+        "a settled agent shows no body: {rows}"
+    );
+    assert!(
+        !rows.contains("   ● Read"),
         "peek shows problems only: {rows}"
     );
 
     let mut full = chain_with(Full, vec![settled_agent(Full, "it-agent-full")]);
     let rows = render(&mut full, 100).join("\n");
-    assert!(rows.contains("● 01.1 Read"), "{rows}");
-    assert!(rows.contains("⊗ 01.2 Grep"), "{rows}");
+    assert!(rows.contains("   ● Read"), "{rows}");
+    assert!(rows.contains("   ⊗ Grep"), "{rows}");
 
-    // Radar: a mission's block shows the problem row only, under the agent
-    // call's number (the mission draws its batch's calls, not the chain).
-    let radar = chain_with(Radar, vec![settled_agent(Radar, "it-agent-radar")]);
+    // Outline: the turn's block shows the failed call only, nested under the
+    // recap (the turn draws its batch's calls, not the chain).
+    let outline = chain_with(Outline, vec![settled_agent(Outline, "it-agent-outline")]);
     let stats = FlightStats {
         mark: FlightMark::Landed,
         landed_time: Some("1s".to_string()),
-        items: vec![FlightItem::Batch(radar.tool_blocks().to_vec())],
+        items: vec![FlightItem::Batch(outline.tool_blocks().to_vec())],
         ..Default::default()
     };
-    let rows: Vec<String> = mission_rows(1, "run it", &stats, &Palette::default(), 100)
+    let rows: Vec<String> = turn_rows("run it", &stats, &Palette::default(), 100)
         .iter()
         .map(|row| strip(row))
-        .filter(|row| row.contains("HIT"))
+        .filter(|row| row.trim_start().starts_with('⊗'))
         .collect();
     assert_eq!(rows.len(), 1, "{rows:?}");
-    assert!(rows[0].contains("01.2 Grep"), "{rows:?}");
+    assert!(rows[0].starts_with("   ⊗ Grep"), "{rows:?}");
 }

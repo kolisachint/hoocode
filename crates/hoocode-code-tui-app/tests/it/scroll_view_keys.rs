@@ -11,13 +11,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hoocode_code_tui_app::scroll_view::{capture_top, reanchor_top};
-use hoocode_code_tui_app::scroll_view::{
-    format_scroll_status, install_scroll_view, jump_to_user_message, TurnDirection,
-};
-use hoocode_code_tui_keybindings::{key_text, AppKeybindingsManager};
+use hoocode_code_tui_app::scroll_view::{install_scroll_view, jump_to_user_message, TurnDirection};
+use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_theme::{get_editor_theme, init_theme};
 use hoocode_tui_components::{Editor, EditorHost, EditorOptions};
-use hoocode_tui_render::{Component, ComponentHandle, Container, ScrollStatus, Tui, TuiEvent};
+use hoocode_tui_render::{Component, ComponentHandle, Container, Tui, TuiEvent};
 use hoocode_tui_terminal::Terminal;
 
 const WIDTH: u16 = 60;
@@ -597,62 +595,6 @@ fn leaves_slash_alone_at_the_prompt_where_it_starts_a_slash_command() {
     assert_eq!(h.text(), "/");
 }
 
-// --- the indicator's hints ----------------------------------------------------
-
-fn indicator(picker: bool) -> String {
-    indicator_over(picker, true)
-}
-
-fn indicator_over(picker: bool, editor_empty: bool) -> String {
-    init_theme(Some("dark"), false);
-    AppKeybindingsManager::default().install();
-    format_scroll_status(
-        &ScrollStatus {
-            top: 10,
-            bottom: 20,
-            total: 120,
-            view_height: 11,
-            at_top: false,
-            at_bottom: false,
-            width: 120,
-            search: None,
-            picker,
-            new_lines: 0,
-        },
-        editor_empty,
-    )
-}
-
-#[test]
-fn the_indicator_at_the_prompt_offers_the_arrows_and_escape() {
-    let text = indicator(false);
-    let up = key_text("app.scroll.lineUp");
-    let down = key_text("app.scroll.lineDown");
-    let top = key_text("app.scroll.top");
-    let exit = key_text("app.scroll.exit");
-    assert!(text.contains("PgUp/PgDn page"), "{text}");
-    assert!(text.contains(&format!("{up}/{down} line")), "{text}");
-    assert!(text.contains(&format!("{top} top")), "{text}");
-    assert!(text.contains(&format!("{exit} live")), "{text}");
-}
-
-#[test]
-fn the_indicator_with_a_picker_focused_offers_only_paging() {
-    let text = indicator(true);
-    assert!(text.contains("PgUp/PgDn page"), "{text}");
-    for id in [
-        "app.scroll.lineUp",
-        "app.scroll.lineDown",
-        "app.scroll.exit",
-    ] {
-        assert!(!text.contains(&key_text(id)), "{text}");
-    }
-    assert!(
-        !text.contains('\u{2191}') && !text.contains('\u{2193}'),
-        "{text}"
-    );
-}
-
 // --- the plain arrows and the prompt's text --------------------------------------
 
 #[test]
@@ -679,27 +621,6 @@ fn shifted_arrows_still_step_the_view_over_prompt_text() {
     h.send(SHIFT_DOWN);
     assert_eq!(h.top(), top);
     assert_eq!(h.text(), "one\ntwo", "the prompt kept its text");
-}
-
-#[test]
-fn the_indicator_over_prompt_text_names_the_shifted_arrows() {
-    init_theme(Some("dark"), false);
-    AppKeybindingsManager::default().install();
-    let plain = format!(
-        "{}/{} line",
-        key_text("app.scroll.lineUp"),
-        key_text("app.scroll.lineDown")
-    );
-    let shifted = format!(
-        "{}/{} line",
-        key_text("app.scroll.shiftLineUp"),
-        key_text("app.scroll.shiftLineDown")
-    );
-    let over_text = indicator_over(false, false);
-    assert!(over_text.contains(&shifted), "{over_text}");
-    assert!(!over_text.contains(&plain), "{over_text}");
-    let empty = indicator_over(false, true);
-    assert!(empty.contains(&plain), "{empty}");
 }
 
 /// A focused component that records the keys it is sent, as the prompt would.

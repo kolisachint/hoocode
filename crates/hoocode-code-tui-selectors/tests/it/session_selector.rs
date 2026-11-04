@@ -153,7 +153,7 @@ fn rename_key_opens_rename_mode_when_a_handler_is_set() {
     );
     press_list(&mut s, &rename_input);
     let out = render(&mut s, 120);
-    assert!(out.contains("Rename Session"), "{out}");
+    assert!(out.contains("New name for this session"), "{out}");
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn enters_rename_mode_and_submits_with_enter() {
     s.poll();
 
     let out = render(&mut s, 120);
-    assert!(out.contains("Rename Session"), "{out}");
+    assert!(out.contains("New name for this session"), "{out}");
     assert!(!out.contains("Resume Session"), "{out}");
 
     s.handle_input("X");
@@ -301,8 +301,8 @@ fn late_all_load_does_not_switch_scope_back_to_all() {
     s.poll();
 
     let out = render(&mut s, 120);
-    assert!(out.contains("◉ Current Folder"), "{out}");
-    assert!(!out.contains("◉ All"), "{out}");
+    assert!(out.contains("this folder"), "{out}");
+    assert!(!out.contains("all folders"), "{out}");
 }
 
 #[test]

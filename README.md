@@ -30,7 +30,7 @@ binary: no Node, no Python, no runtime to install.
 
 - **Any provider.** Anthropic, OpenAI, Google, OpenRouter, Groq, DeepSeek, xAI, Fireworks
   and more, by API key or by `/login` (Anthropic, GitHub Copilot, OpenAI Codex, Google).
-- **You stay in control.** Shell, Edit and Write ask first (Yes / No / Always);
+- **You stay in control.** Shell, Edit and Write ask first (1 yes · 2 always · 3 no);
   read-only commands such as `ls` or `git status` just run. Four agent modes (ask,
   plan, build, debug; Shift+Tab cycles them) scope what the agent may do, and
   `--skip-permissions` runs everything without asking when you want that.
@@ -117,7 +117,7 @@ hoocode                               # full-screen interactive session
 No API key? Start `hoocode` and run `/login` to sign in with a subscription instead.
 
 > **Approvals.** hoocode starts in **build** mode: Shell, Edit and Write ask before they
-> run (Yes / No / Always), and read-only commands like `ls`, `cat` or `git status` just
+> run (1 yes · 2 always · 3 no), and read-only commands like `ls`, `cat` or `git status` just
 > run. To let it work without asking, start it with **`hoocode --skip-permissions`**, or
 > make that the default with `"skip_permissions": true` in `~/.hoocode/hoo-config.json`.
 > Mode rules still apply (ask mode never edits). Shift+Tab cycles ask, plan, build and

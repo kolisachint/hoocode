@@ -1,5 +1,5 @@
-//! Component goldens: the `/settings` pane as the SYSTEMS console and its
-//! theme submenu as the HULL console, at 100 and 80 columns. Hints use
+//! Component goldens: the `/settings` pane as the Settings pane and its
+//! theme submenu as the Theme pane, at 100 and 80 columns. Hints use
 //! literal keys (no `alt`), so the bytes hold on every platform. Accept a
 //! deliberate change with
 //! `UPDATE_GOLDENS=1 cargo nextest run -p hoocode-code-tui-selectors systems_console`.
@@ -29,17 +29,7 @@ fn surface() -> PromptSurface {
 }
 
 fn themes() -> Vec<String> {
-    [
-        "dark",
-        "light",
-        "deep-space",
-        "daylight",
-        "colorsafe-dark",
-        "colorsafe-light",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
+    ["dark", "light"].iter().map(|s| s.to_string()).collect()
 }
 
 fn pane(changes: Rc<RefCell<Vec<SettingsChange>>>) -> SettingsSelectorComponent {
@@ -70,7 +60,7 @@ fn check_systems(name: &str, width: u16) {
     let rendered = render_golden(&mut pane, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("SYSTEMS · /settings  4,140 tok/turn"),
+        text.contains("Settings  /settings  4,140 tokens per turn · prompt 1,430 · tools 2,710"),
         "{name}: missing title and count in\n{text}"
     );
     assert!(
@@ -78,27 +68,20 @@ fn check_systems(name: &str, width: u16) {
         "{name}: missing selected row in\n{text}"
     );
     assert!(
-        text.lines().any(|l| l.contains('▸')),
+        text.lines()
+            .any(|l| l.starts_with(" › ") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
-    if width >= 100 {
-        // Wide screens draw the launch weight as spec d4's right-side
-        // panel, not the stacked rows.
-        assert!(
-            text.lines()
-                .any(|l| l.contains('│') && l.contains("LAUNCH WEIGHT")),
-            "{name}: missing launch-weight panel in\n{text}"
-        );
-        assert!(
-            !text.contains("Per-turn surface"),
-            "{name}: stacked surface row in\n{text}"
-        );
-    } else {
-        assert!(
-            text.contains("Per-turn surface: 4,140 tokens"),
-            "{name}: missing surface row in\n{text}"
-        );
-    }
+    // The selected setting's detail: beside the rows from 100 columns,
+    // under them below.
+    assert!(
+        text.contains("per turn  4,140 tokens"),
+        "{name}: missing the detail in\n{text}"
+    );
+    assert!(
+        !text.contains("Per-turn surface"),
+        "{name}: stacked surface row in\n{text}"
+    );
     assert!(
         text.contains("enter open"),
         "{name}: missing hint foot in\n{text}"
@@ -128,7 +111,7 @@ fn systems_search_narrows_the_rows() {
     assert!(!text.contains("Tools"), "unfiltered row in\n{text}");
 }
 
-/// Open the Interface category, then its Theme submenu: the HULL console
+/// Open the Interface category, then its Theme submenu: the Theme pane
 /// handle and its outcome slot.
 fn open_hull(pane: &mut SettingsSelectorComponent) -> (ComponentHandle, DoneSlot) {
     pane.settings_list().borrow_mut().apply_filter("Interface");
@@ -155,12 +138,12 @@ fn check_hull(name: &str, width: u16) {
     let rendered = render_golden(&mut *hull.borrow_mut(), width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("HULL · /theme  6 themes"),
+        text.contains("Theme  /theme  3 themes"),
         "{name}: missing title and count in\n{text}"
     );
     assert!(
         text.lines()
-            .any(|l| l.contains('›') && l.contains("dark") && l.contains("● in use")),
+            .any(|l| l.contains('›') && l.contains("dark") && l.contains("in use")),
         "{name}: missing selected theme in\n{text}"
     );
     assert!(

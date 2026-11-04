@@ -31,12 +31,12 @@ fn format_search_call(args: &Value) -> String {
     let t = theme();
     let query_display = match str_arg(args.get("query")) {
         None => invalid_arg_text(),
-        Some(q) if !q.is_empty() => t.fg("accent", &q),
+        Some(q) if !q.is_empty() => t.fg("text", &q),
         Some(_) => t.fg("toolOutput", "…"),
     };
     let mut text = format!(
-        "{}{query_display}",
-        t.fg("toolTitle", &t.bold("CodeSearch "))
+        "{} {query_display}",
+        t.fg("toolTitle", &t.bold("CodeSearch"))
     );
     let mut extras = Vec::new();
     if let Some(mode) = args.get("mode").and_then(Value::as_str) {

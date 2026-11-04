@@ -1,6 +1,6 @@
-//! The end-of-shift cards (M6, spec §4 c8 and §6.2): the amber card with
-//! the shift's debrief (`enter` ends, `esc` stays), and the satellites card
-//! for quitting with jobs running (`k` brings them down, `l` leaves them).
+//! The quit dialogs: the `Quit?` pane with the session's totals (`enter`
+//! quits, `esc` stays), and the one for quitting with background jobs running
+//! (`k` stops them and quits, `l` leaves them running).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -64,18 +64,13 @@ fn plain_card_shows_the_debrief_and_keys() {
         Box::new(move |choice| *sink.borrow_mut() = Some(choice)),
     );
     let rows = rows(&mut card, 100);
-    assert_eq!(rows.len(), 5, "{rows:?}");
-    assert!(rows[0].contains("◉ END OF SHIFT"), "row 0: {:?}", rows[0]);
-    assert!(rows[0].contains("esc stay"), "row 0: {:?}", rows[0]);
-    assert!(rows[1].contains("2 missions"), "row 1: {:?}", rows[1]);
-    assert!(rows[1].contains("5 steps"), "row 1: {:?}", rows[1]);
-    assert!(rows[1].contains("CR $1.234"), "row 1: {:?}", rows[1]);
-    assert!(
-        rows[3].contains("enter end the shift"),
-        "row 3: {:?}",
-        rows[3]
-    );
-    assert!(rows[3].contains("esc stay"), "row 3: {:?}", rows[3]);
+    assert_eq!(rows.len(), 2, "title, keys: {rows:?}");
+    assert!(rows[0].contains("Quit?"), "row 0: {:?}", rows[0]);
+    assert!(rows[0].contains("2 messages"), "row 0: {:?}", rows[0]);
+    assert!(rows[0].contains("5 tool calls"), "row 0: {:?}", rows[0]);
+    assert!(rows[0].contains("$1.234"), "row 0: {:?}", rows[0]);
+    assert!(rows[1].contains("enter quit"), "row 1: {:?}", rows[1]);
+    assert!(rows[1].contains("esc stay"), "row 1: {:?}", rows[1]);
 }
 
 #[test]
@@ -108,33 +103,25 @@ fn plain_card_enter_ends_and_esc_stays() {
 }
 
 #[test]
-fn jobs_card_lists_the_satellites() {
+fn jobs_card_lists_the_jobs() {
     let _g = lock(Some("dark"));
     let mut card = EndShiftJobsCard::new(jobs(), Box::new(|_| {}));
     let rows = rows(&mut card, 100);
-    assert_eq!(rows.len(), 6, "{rows:?}");
+    assert_eq!(rows.len(), 4, "title, two jobs, keys: {rows:?}");
+    assert!(rows[0].contains("Quit?"), "row 0: {:?}", rows[0]);
     assert!(
-        rows[0].contains("◎ END SHIFT WITH 2 SATELLITES UP?"),
+        rows[0].contains("2 background jobs running"),
         "row 0: {:?}",
         rows[0]
     );
     assert!(rows[1].contains("◉ job-1"), "row 1: {:?}", rows[1]);
     assert!(rows[1].contains("sleep 60"), "row 1: {:?}", rows[1]);
-    assert!(
-        rows[1].contains("in orbit 4s of ~60s"),
-        "row 1: {:?}",
-        rows[1]
-    );
+    assert!(rows[1].contains("4s of ~60s"), "row 1: {:?}", rows[1]);
     assert!(rows[2].contains("◉ job-2"), "row 2: {:?}", rows[2]);
     assert!(
-        rows[4].contains("k bring it down, then end shift"),
-        "row 4: {:?}",
-        rows[4]
-    );
-    assert!(
-        rows[4].contains("l leave it in orbit"),
-        "row 4: {:?}",
-        rows[4]
+        rows[3].contains("k stop jobs and quit · l leave them running · esc stay"),
+        "row 3: {:?}",
+        rows[3]
     );
 }
 
@@ -146,19 +133,19 @@ fn jobs_card_golden() {
 }
 
 #[test]
-fn single_satellite_uses_the_singular() {
+fn single_job_uses_the_singular() {
     let _g = lock(Some("dark"));
     let mut card = EndShiftJobsCard::new(jobs()[..1].to_vec(), Box::new(|_| {}));
     let rows = rows(&mut card, 100);
     assert!(
-        rows[0].contains("◎ END SHIFT WITH 1 SATELLITE UP?"),
+        rows[0].contains("1 background job running"),
         "row 0: {:?}",
         rows[0]
     );
     assert!(
-        rows[3].contains("log stays in jobs/job-1.log"),
-        "foot names the log: {:?}",
-        rows[3]
+        rows[2].contains("log stays in jobs/job-1.log"),
+        "names the log: {:?}",
+        rows[2]
     );
 }
 

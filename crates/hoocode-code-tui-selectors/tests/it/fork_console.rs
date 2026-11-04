@@ -1,4 +1,4 @@
-//! Component goldens: the `/fork` picker as the STAGE SEPARATION console,
+//! Component goldens: the `/fork` picker as the Fork pane,
 //! at 100 and 80 columns. Hints use literal keys (no `alt`), so the bytes
 //! hold on every platform. Accept a deliberate change with
 //! `UPDATE_GOLDENS=1 cargo nextest run -p hoocode-code-tui-selectors fork_console`.
@@ -37,7 +37,7 @@ fn check(name: &str, width: u16) {
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("STAGE SEPARATION · /fork"),
+        text.contains("Fork  /fork"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -46,7 +46,7 @@ fn check(name: &str, width: u16) {
         "{name}: missing selected message in\n{text}"
     );
     assert!(
-        text.contains("Message 2 of 3"),
+        text.contains("message 2 of 3"),
         "{name}: missing position row in\n{text}"
     );
     assert!(

@@ -1872,7 +1872,7 @@ impl PoolInner {
             }
         });
         if started.is_err() {
-            deny("Could not start the clearance relay.");
+            deny("Could not start the permission relay.");
         }
     }
 

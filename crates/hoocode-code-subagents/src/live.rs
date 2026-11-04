@@ -230,7 +230,7 @@ fn flushed(coalescer: &mut DeltaCoalescer) -> Vec<Value> {
 /// Most sub-steps a run keeps: its running calls and its failed ones.
 const SUB_STEPS_KEPT: usize = 16;
 
-/// One of a subagent's own tool calls, as the radar flight log shows it:
+/// One of a subagent's own tool calls, as the outline flight log shows it:
 /// a running call, or a failed one that stays until it is read. A call that
 /// settles clean is dropped.
 #[derive(Debug, Clone, PartialEq)]
@@ -246,7 +246,7 @@ pub struct SubStep {
     pub started: Instant,
     /// The first line of the failure's output, once the call failed.
     pub failure: Option<String>,
-    /// The call waits for the parent's clearance (`◉ holding for clearance`).
+    /// The call waits for the parent's clearance (`◉ waiting for permission`).
     pub held: bool,
 }
 
@@ -255,7 +255,7 @@ const SETTLED_STEPS_KEPT: usize = 32;
 
 /// One of a settled run's own tool calls, for the transcript to show under
 /// the Agent step: every call in peek's full stop, the failed ones in peek and
-/// radar.
+/// outline.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SettledStep {
     /// The call's place in the run, 1-based: the `.2` of step `01.2`. Calls
@@ -525,7 +525,7 @@ fn hold(run: &mut RunTail, event: &Value) {
         while run.steps.len() > SUB_STEPS_KEPT {
             run.steps.remove(0);
         }
-        push_row(run, &format!("◉ {tool} {subject} holding for clearance"));
+        push_row(run, &format!("◉ {tool} {subject} waiting for permission"));
     } else if let Some(at) = run.steps.iter().position(|step| step.id == stand_in) {
         run.steps.remove(at);
     } else if let Some(step) = run.steps.iter_mut().find(|step| same(step) && step.held) {

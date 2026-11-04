@@ -1,10 +1,10 @@
-//! `core/tool-output-view.ts`: the radar / peek / full dial.
+//! `core/tool-output-view.ts`: the outline / peek / full dial.
 //!
-//! Radar folds each run of tool calls to one line. Peek shows each call's
+//! Outline folds each run of tool calls to one line. Peek shows each call's
 //! line and the first [`PEEK_LINES`] lines of what it returned. Full draws
 //! what peek draws with nothing cut: no line budgets, no `… N more lines`
 //! folds, no width ellipsis on content (long rows wrap), whole thinking,
-//! whole tool output. Ctrl+O steps radar → peek → full → radar.
+//! whole tool output. Ctrl+O steps outline → peek → full → outline.
 
 pub use hoocode_code_settings::ToolOutputView;
 
@@ -12,7 +12,7 @@ use crate::fold::more_lines_hint;
 
 /// The dial's order, least to most. Cycling wraps at both ends.
 pub const TOOL_OUTPUT_VIEWS: [ToolOutputView; 3] = [
-    ToolOutputView::Radar,
+    ToolOutputView::Outline,
     ToolOutputView::Peek,
     ToolOutputView::Full,
 ];
@@ -41,7 +41,7 @@ pub fn line_budget(expanded: bool) -> usize {
 /// One-line description per view, shared by the settings pane and `/hotkeys`.
 pub fn tool_output_view_description(view: ToolOutputView) -> &'static str {
     match view {
-        ToolOutputView::Radar => {
+        ToolOutputView::Outline => {
             "one line per run of tool calls; failures still show why they failed"
         }
         ToolOutputView::Peek => "the call line and the first few lines of the result",
@@ -81,7 +81,7 @@ pub fn peek_window(
 /// `LEGACY_TOOL_OUTPUT_VIEWS`: values written by older versions. `standard`
 /// loaded when it was a stop of its own; it loads as peek.
 pub const LEGACY_TOOL_OUTPUT_VIEWS: [(&str, ToolOutputView); 3] = [
-    ("collapsed", ToolOutputView::Radar),
+    ("collapsed", ToolOutputView::Outline),
     ("glance", ToolOutputView::Peek),
     ("standard", ToolOutputView::Peek),
 ];
@@ -92,7 +92,7 @@ pub fn is_tool_output_view(value: Option<&str>) -> bool {
 }
 
 /// `cycleToolOutputView`: the next stop, wrapping at both ends. Ctrl+O steps
-/// forward: radar → peek → full → radar.
+/// forward: outline → peek → full → outline.
 pub fn cycle_tool_output_view(current: ToolOutputView, forward: bool) -> ToolOutputView {
     let index = TOOL_OUTPUT_VIEWS
         .iter()

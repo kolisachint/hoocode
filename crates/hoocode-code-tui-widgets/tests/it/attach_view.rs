@@ -64,7 +64,7 @@ fn the_prompt_hint_says_the_view_is_read_only_and_names_the_way_back() {
     let shown = strip_all(&prompt.render(80));
     assert!(shown.contains("READ-ONLY"), "{shown}");
     assert!(shown.contains("this agent's own log"), "{shown}");
-    assert!(shown.contains("back to the main ship"), "{shown}");
+    assert!(shown.contains("back to the session"), "{shown}");
     assert_golden!("attach_prompt_80", render_golden(&mut prompt, 80));
 }
 

@@ -1,7 +1,7 @@
 //! `components/tool-execution.ts`: one tool call's block in the transcript.
 //!
 //! The block draws a status dot, the tool's call line (its `renderCall`, or
-//! the radar signal row) and, depending on the view dial, its result body
+//! the outline signal row) and, depending on the view dial, its result body
 //! (`renderResult`, or a peek-trimmed fallback). Renderers come from the
 //! built-in table ([`crate::tools::builtin_tool_definition`]) and the tool's
 //! registered definition, slot by slot, as in the pin.
@@ -13,10 +13,8 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use hoocode_ai_types::Content;
-use hoocode_code_tui_theme::{get_language_from_path, theme};
-use hoocode_tui_components::{
-    BoxComponent, ColorFn, Image, ImageOptions, ImageTheme, Spacer, Text,
-};
+use hoocode_code_tui_theme::theme;
+use hoocode_tui_components::{BoxComponent, Image, ImageOptions, ImageTheme, Spacer, Text};
 use hoocode_tui_images::{get_capabilities, is_image_line, ImageProtocol};
 use hoocode_tui_render::{fresh_stamp, Component, ComponentHandle};
 use hoocode_tui_util::{
@@ -27,11 +25,13 @@ use serde_json::Value;
 use crate::fold::{more_lines_hint, ELLIPSIS};
 use crate::tool_chain_summary::ChainEntry;
 use crate::tool_output_view::{line_budget, ToolOutputView, DEFAULT_TOOL_OUTPUT_VIEW};
+use crate::tool_row::Mark;
 use crate::tool_signal::{
     chain_subject, tool_subject, ResultHolder, ResultText, ToolResult, ToolSignalComponent,
     ToolSignalInput,
 };
 use crate::tools::builtin_tool_definition;
+use hoocode_tui_ratatui::core::text::Span;
 
 /// The exit code of a failed Shell result: our tool reports it as
 /// `Command exited with code N` on the last line. Timeouts and aborts name
@@ -205,8 +205,10 @@ fn handle<C: Component + 'static>(c: C) -> ComponentHandle {
     Rc::new(RefCell::new(c))
 }
 
-/// Renders a child and prepends a prefix (the status dot) to its first line,
-/// indenting continuation lines under the content.
+/// Renders a child and prepends a prefix (the status glyph) to its first line.
+/// Continuation lines hang under the content: as far in as the prefix is wide,
+/// or one column further for a call line ([`PrefixFirstLine::hanging`]), so
+/// with the block's one column of padding they sit at the body column, 4.
 struct PrefixFirstLine {
     prefix: String,
     child: ComponentHandle,
@@ -221,6 +223,13 @@ impl PrefixFirstLine {
             child,
             indent_width,
         }
+    }
+
+    /// A call line: continuation lines start at the body column.
+    fn hanging(prefix: String, child: ComponentHandle) -> Self {
+        let mut line = Self::new(prefix, child);
+        line.indent_width += 1;
+        line
     }
 }
 
@@ -250,12 +259,7 @@ impl Component for PrefixFirstLine {
     }
 }
 
-/// Whether a tool reads or writes a file: its peek block is banded.
-fn is_file_tool(name: &str) -> bool {
-    matches!(name, "Read" | "Write" | "Edit")
-}
-
-/// Indents every non-blank line of a child: a failure's body under a radar row.
+/// Indents every non-blank line of a child: a failure's body under a outline row.
 struct IndentAll {
     child: ComponentHandle,
     indent: String,
@@ -285,7 +289,7 @@ impl Component for IndentAll {
 
 /// What a frozen block draws at each stop, captured at `frozen_width`.
 struct FrozenLines {
-    radar: Vec<String>,
+    outline: Vec<String>,
     peek: Vec<String>,
     full: Vec<String>,
     /// The block's rows split for a chain step, at peek and at full.
@@ -296,7 +300,7 @@ struct FrozenLines {
 impl FrozenLines {
     fn for_view(&self, view: ToolOutputView) -> &[String] {
         match view {
-            ToolOutputView::Radar => &self.radar,
+            ToolOutputView::Outline => &self.outline,
             ToolOutputView::Peek => &self.peek,
             ToolOutputView::Full => &self.full,
         }
@@ -305,7 +309,7 @@ impl FrozenLines {
     fn parts_for(&self, view: ToolOutputView) -> &StepParts {
         match view {
             ToolOutputView::Full => &self.full_parts,
-            ToolOutputView::Radar | ToolOutputView::Peek => &self.peek_parts,
+            ToolOutputView::Outline | ToolOutputView::Peek => &self.peek_parts,
         }
     }
 }
@@ -319,12 +323,11 @@ impl FrozenLines {
 pub struct StepParts {
     /// Blank rows the block draws above itself.
     pub lead: Vec<String>,
-    /// The call's first line, unwrapped, dot included. `None` when the block
-    /// draws nothing.
+    /// The call's first line, unwrapped, without its glyph: the bold tool name
+    /// and the subject. `None` when the block draws nothing.
     pub header: Option<String>,
-    /// Whether the header sits on the file-tool band (`toolBandBg`).
-    pub header_band: bool,
-    /// The rows under the header: renderer output, at the block's width.
+    /// The rows under the header: renderer output, at the block's width,
+    /// already at body indent (column 4).
     pub body: Vec<String>,
     /// Whether the body shows the last lines of the output (its fold hint,
     /// when it has one, sits above the rows).
@@ -427,7 +430,7 @@ pub struct ToolExecutionComponent {
     builtin_definition: Option<ToolRenderDefinition>,
     cwd: String,
     execution_started: bool,
-    /// The permission gate holds this call for clearance (radar's `◉` row).
+    /// The permission gate holds this call for clearance (outline's `◉` row).
     waiting_for_clearance: bool,
     args_complete: bool,
     result: Option<Rc<ResultHolder>>,
@@ -440,7 +443,7 @@ pub struct ToolExecutionComponent {
     frozen_lines: Option<FrozenLines>,
     frozen_width: usize,
     frozen_truncated: Option<(usize, ToolOutputView, Vec<String>)>,
-    /// The call component the header is read from (peek and full).
+    /// The call component the header line is read from (peek and full).
     header_source: Option<ComponentHandle>,
     /// Width the frozen step parts were captured at, and the width they were
     /// last fitted to.
@@ -448,7 +451,7 @@ pub struct ToolExecutionComponent {
     /// The call's summary, taken when it freezes: its payloads are released then.
     frozen_entry: Option<ChainEntry>,
     /// A failed call's first error line, kept when it freezes: the result is
-    /// released then, and the radar's HIT row still reads its snippet.
+    /// released then, and the outline's HIT row still reads its snippet.
     frozen_error: String,
     /// The step's clock (M4): block creation starts it, `update_result`
     /// stops it. Rebuilt history settles at once, so its span reads ~0.
@@ -761,7 +764,7 @@ impl ToolExecutionComponent {
 
     /// Whether the call is parked waiting for user clearance: the permission
     /// gate set the flag and the call has no result yet (Mission Control
-    /// spec r5: the `holding for clearance` row).
+    /// spec r5: the `waiting for permission` row).
     pub fn is_waiting_for_clearance(&self) -> bool {
         self.waiting_for_clearance && self.result.is_none() && !self.frozen
     }
@@ -815,61 +818,76 @@ impl ToolExecutionComponent {
         Some(crate::trajectory::diff_stats(diff))
     }
 
-    /// The step header's right side (M4): the stats, right-aligned by the
-    /// chain. A failed step shows only the `HIT` chip (plus the exit code
-    /// and duration when known): it replaces the success stats, never
-    /// appends to them. Empty when the step carries no stats.
-    pub fn peek_right(&self, palette: &hoocode_tui_ratatui::Palette) -> String {
-        let t = theme();
-        let dim = |s: &str| t.fg("muted", s);
+    /// The glyph of the call's row: green `●` done, dim `●` running, red
+    /// `⊗` failed, dim `⊗` stopped.
+    pub fn mark(&self) -> Mark {
         if self.interrupted {
-            return dim("interrupted");
+            Mark::Stopped
+        } else if self.result.as_ref().is_some_and(|r| r.is_error) {
+            Mark::Failed
+        } else if self.result.is_none() || self.is_partial {
+            Mark::Running
+        } else {
+            Mark::Done
+        }
+    }
+
+    /// The facts after the subject (`30 lines`, `+2 −2`, `exit 0 · 8.2s`):
+    /// dim, a zero value left out. A failed shell call shows `exit N` in red
+    /// first. Empty when the call has no fact to give yet.
+    pub fn facts(&self, palette: &hoocode_tui_ratatui::Palette) -> Vec<Span<'static>> {
+        use crate::tool_row::{diff_facts, dim_fact, join_facts, lines_fact, short_dur};
+        let dim = |s: String| {
+            if s.is_empty() {
+                Vec::new()
+            } else {
+                vec![dim_fact(&s, palette)]
+            }
+        };
+        if self.interrupted {
+            return dim("stopped".to_string());
         }
         if self.is_error() {
-            let mut stats = crate::trajectory::hit_chip(palette);
+            let mut facts = Vec::new();
             if self.tool_name == "Shell" {
                 if let Some(code) = shell_exit_code(&self.text_output()) {
-                    stats.push_str(&format!(" {}", dim(&format!("exit {code}"))));
+                    facts.push(vec![Span::styled(format!("exit {code}"), palette.err())]);
                 }
             }
-            if let Some(dur) = self.result_duration() {
-                stats.push_str(&format!(" {} {}", dim("·"), dim(&dur)));
-            }
-            return stats;
+            facts.push(dim(self.result_duration().unwrap_or_default()));
+            return join_facts(facts, palette);
         }
         if let Some(job) = self.background_job_id() {
-            return crate::trajectory::satellite_text(&job, self.block_elapsed_secs(), palette);
-        }
-        match self.tool_name.as_str() {
-            "Shell" => {
-                let Some(_) = self.result.as_ref() else {
-                    return String::new();
-                };
-                let mut parts = vec![dim("exit 0")];
-                let lines = shell_output_lines(&self.text_output());
-                if lines > 0 {
-                    parts.push(dim(&crate::trajectory::lines_text(lines)));
-                }
-                if let Some(dur) = self.result_duration() {
-                    parts.push(dim(&dur));
-                }
-                parts.join(&dim(" · "))
+            let mut text = format!("background {job}");
+            if let Some(secs) = self.block_elapsed_secs().filter(|s| *s >= 1) {
+                text.push_str(&format!(" · {}", short_dur(secs)));
             }
-            "Read" => {
-                let Some(_) = self.result.as_ref() else {
-                    return String::new();
-                };
-                let total = self
+            return dim(text);
+        }
+        let settled = self.result.is_some() && !self.is_partial;
+        match self.tool_name.as_str() {
+            "Shell" if settled => join_facts(
+                vec![
+                    dim("exit 0".to_string()),
+                    dim(self.result_duration().unwrap_or_default()),
+                ],
+                palette,
+            ),
+            "Read" if settled => {
+                let truncation = self
                     .result
                     .as_ref()
-                    .and_then(|r| r.details.get("truncation"))
-                    .and_then(|tr| tr.get("totalLines"))
-                    .and_then(Value::as_u64)
-                    .map(|n| n as usize)
-                    .unwrap_or_else(|| self.text_output().lines().count());
+                    .and_then(|r| r.details.get("truncation"));
+                let count = |key: &str| {
+                    truncation
+                        .and_then(|tr| tr.get(key))
+                        .and_then(Value::as_u64)
+                        .map(|n| n as usize)
+                };
+                let text_lines = shell_output_lines(&self.text_output());
                 let ranged = self.args.get("offset").is_some() || self.args.get("limit").is_some();
                 if !ranged {
-                    return dim(&crate::trajectory::lines_text(total));
+                    return dim(lines_fact(count("totalLines").unwrap_or(text_lines)));
                 }
                 let start = self
                     .args
@@ -877,67 +895,54 @@ impl ToolExecutionComponent {
                     .and_then(Value::as_u64)
                     .unwrap_or(1)
                     .max(1) as usize;
-                let shown = if self.expanded() {
-                    total
-                } else {
-                    total.min(crate::trajectory::TRAJECTORY_BODY_LINES)
-                };
-                dim(&format!(
-                    "lines {start}–{} of {total}",
-                    start + shown.saturating_sub(1)
-                ))
+                let read = count("outputLines").unwrap_or(text_lines);
+                if read == 0 {
+                    return Vec::new();
+                }
+                dim(format!("lines {start}–{}", start + read - 1))
             }
-            "CodeSearch" => {
-                let Some(result) = self.result.as_ref() else {
-                    return String::new();
-                };
-                let hits = result
-                    .details
-                    .get("resultCount")
+            "CodeSearch" if settled => {
+                let hits = self
+                    .result
+                    .as_ref()
+                    .and_then(|r| r.details.get("resultCount"))
                     .and_then(Value::as_u64)
                     .unwrap_or(0) as usize;
-                let mut stats = if hits == 1 {
-                    "1 hit".to_string()
-                } else {
-                    format!("{hits} hits")
-                };
                 let files = search_file_count(&self.text_output());
-                if files > 0 {
-                    stats.push_str(&format!(" · {}", crate::trajectory::files_text(files)));
-                }
-                dim(&stats)
+                join_facts(
+                    vec![
+                        dim(match hits {
+                            0 => String::new(),
+                            1 => "1 hit".to_string(),
+                            n => format!("{n} hits"),
+                        }),
+                        dim(match files {
+                            0 => String::new(),
+                            1 => "1 file".to_string(),
+                            n => format!("{n} files"),
+                        }),
+                    ],
+                    palette,
+                )
             }
             "Edit" => self
                 .edit_diff_stats()
-                .map(|(added, removed)| crate::trajectory::diff_counts_text(added, removed))
+                .map(|(added, removed)| diff_facts(added, removed, palette))
                 .unwrap_or_default(),
-            "Write" => {
-                let Some(_) = self.result.as_ref() else {
-                    return String::new();
-                };
-                let mut stats = crate::trajectory::new_chip(palette);
+            "Write" if settled => {
                 let lines = self
                     .args
                     .get("content")
                     .and_then(Value::as_str)
                     .map_or(0, |c| c.lines().count());
-                stats.push_str(&format!("  +{lines}"));
-                let path = self
-                    .args
-                    .get("file_path")
-                    .or_else(|| self.args.get("path"))
-                    .and_then(Value::as_str);
-                if let Some(lang) = path.and_then(get_language_from_path) {
-                    stats.push_str(&format!(" {} {}", dim("·"), dim(lang)));
-                }
-                stats
+                diff_facts(lines, 0, palette)
             }
-            "Agent" => self
+            "Agent" => dim(self
                 .block_elapsed_secs()
                 .filter(|s| *s >= 1)
-                .map(|s| dim(&crate::trajectory::short_dur(s)))
-                .unwrap_or_default(),
-            _ => String::new(),
+                .map(short_dur)
+                .unwrap_or_default()),
+            _ => Vec::new(),
         }
     }
 
@@ -954,14 +959,9 @@ impl ToolExecutionComponent {
 
     /// Seconds since the block opened (settled at `update_result`).
     /// Rebuilt history settles at once, so its span reads ~0.
-    /// When the call started (radar's batch clock reads the earliest one).
-    pub(crate) fn started_at(&self) -> Instant {
-        self.started
-    }
-
     pub(crate) fn block_elapsed_secs(&self) -> Option<u64> {
         // A live background job outlives its start (which returns at once):
-        // its satellite clock keeps running until the job exits.
+        // its clock keeps running until the job exits.
         let end = match self.settled_at {
             Some(settled) if !self.is_live_background_job() => settled,
             _ => Instant::now(),
@@ -989,24 +989,24 @@ impl ToolExecutionComponent {
 
     /// A failure always shows its reason, in every view.
     fn should_show_body(&self) -> bool {
-        !self.interrupted && (self.view != ToolOutputView::Radar || self.is_error())
+        !self.interrupted && (self.view != ToolOutputView::Outline || self.is_error())
     }
 
     fn should_show_signal_line(&self) -> bool {
-        self.view == ToolOutputView::Radar
+        self.view == ToolOutputView::Outline
     }
 
-    /// Whether this block draws its own blank row above itself (radar rows do not).
+    /// Whether this block draws its own blank row above itself (outline rows do not).
     pub fn draws_leading_gap(&self) -> bool {
         !self.should_show_signal_line()
     }
 
-    /// Peek indents under the tool name, past the `● ` dot; radar under its row.
+    /// A body sits at column 4: the block's one column of padding plus these
+    /// three, in every view.
     fn indent_under_signal_row(&self, component: ComponentHandle) -> ComponentHandle {
-        let indent = if self.should_show_signal_line() { 3 } else { 2 };
         handle(IndentAll {
             child: component,
-            indent: " ".repeat(indent),
+            indent: " ".repeat(3),
         })
     }
 
@@ -1179,6 +1179,18 @@ impl ToolExecutionComponent {
         self.rebuild_display();
     }
 
+    /// The glyph and the space after it, themed for the block's state.
+    fn mark_prefix(&self) -> String {
+        let t = theme();
+        let (glyph, color) = match self.mark() {
+            Mark::Done => (hoocode_tui_glyphs::status::DONE_STR, "success"),
+            Mark::Running => (hoocode_tui_glyphs::status::DONE_STR, "dim"),
+            Mark::Failed => (hoocode_tui_glyphs::status::FAILED_STR, "error"),
+            Mark::Stopped => (hoocode_tui_glyphs::status::FAILED_STR, "dim"),
+        };
+        format!("{} ", t.fg(color, glyph))
+    }
+
     #[allow(unused_assignments)]
     fn rebuild_display(&mut self) {
         let mut has_content = false;
@@ -1189,30 +1201,13 @@ impl ToolExecutionComponent {
             .set_lines(if self.should_show_signal_line() { 0 } else { 1 });
 
         if self.has_renderer_definition() {
-            // Peek sits 2 columns in, past the dot; radar keeps 1.
-            let padding_x = if self.should_show_signal_line() { 1 } else { 2 };
-            self.content_box.borrow_mut().set_padding_x(padding_x);
-            // A peek file block gets a full-width band; everything else none.
-            let band_bg: Option<ColorFn> =
-                if !self.should_show_signal_line() && is_file_tool(&self.tool_name) {
-                    Some(Box::new(|s: &str| theme().bg("toolBandBg", s)))
-                } else {
-                    None
-                };
-            self.content_box.borrow_mut().set_bg_fn(band_bg);
+            // One column in, then the glyph: ` ● Name subject`. Nothing has a
+            // fill but the user's band, so a tool block has no background.
+            self.content_box.borrow_mut().set_padding_x(1);
+            self.content_box.borrow_mut().set_bg_fn(None);
             self.content_box.borrow_mut().clear();
 
-            let t = theme();
-            let dot_color = if self.interrupted {
-                "dim"
-            } else if self.result.as_ref().is_some_and(|r| r.is_error) {
-                "error"
-            } else if self.is_partial {
-                "warning"
-            } else {
-                "success"
-            };
-            let dot = t.fg(dot_color, "● ");
+            let dot = self.mark_prefix();
 
             if self.should_show_signal_line() {
                 let signal = self.signal_component();
@@ -1222,8 +1217,9 @@ impl ToolExecutionComponent {
                 match self.call_renderer() {
                     None => {
                         let fallback = self.create_call_fallback();
-                        let header = handle(PrefixFirstLine::new(dot.clone(), fallback));
-                        self.header_source = Some(header.clone());
+                        let header =
+                            handle(PrefixFirstLine::hanging(dot.clone(), fallback.clone()));
+                        self.header_source = Some(fallback);
                         self.add_to_shell(header);
                         has_content = true;
                     }
@@ -1241,8 +1237,9 @@ impl ToolExecutionComponent {
                                 self.create_call_fallback()
                             }
                         };
-                        let header = handle(PrefixFirstLine::new(dot.clone(), component));
-                        self.header_source = Some(header.clone());
+                        let header =
+                            handle(PrefixFirstLine::hanging(dot.clone(), component.clone()));
+                        self.header_source = Some(component);
                         self.add_to_shell(header);
                         has_content = true;
                     }
@@ -1358,20 +1355,12 @@ impl ToolExecutionComponent {
     /// The whole block as text, for a tool with no definition at all.
     fn format_tool_execution(&self) -> String {
         let t = theme();
-        let dot_color = if self.interrupted {
-            "dim"
-        } else if self.result.as_ref().is_some_and(|r| r.is_error) {
-            "error"
-        } else if self.is_partial {
-            "warning"
-        } else {
-            "success"
-        };
+        let dot = self.mark_prefix();
         if self.should_show_signal_line() {
             let subject = tool_subject(&self.args, &self.cwd);
             return format!(
                 "{}{}{}",
-                t.fg(dot_color, "● "),
+                dot,
                 t.fg("toolTitle", &t.bold(&self.tool_name)),
                 if subject.is_empty() {
                     String::new()
@@ -1380,11 +1369,7 @@ impl ToolExecutionComponent {
                 }
             );
         }
-        let mut text = format!(
-            "{}{}",
-            t.fg(dot_color, "● "),
-            t.fg("toolTitle", &t.bold(&self.tool_name))
-        );
+        let mut text = format!("{}{}", dot, t.fg("toolTitle", &t.bold(&self.tool_name)));
         let content = crate::js_json::stringify_pretty(&self.args);
         if !content.is_empty() {
             text.push_str(&format!("\n\n{content}"));
@@ -1520,12 +1505,12 @@ impl ToolExecutionComponent {
     fn capture_frozen(&mut self, width: u16) {
         self.rev = fresh_stamp();
         let current = self.view;
-        let radar = self.draw_at(ToolOutputView::Radar, width);
+        let outline = self.draw_at(ToolOutputView::Outline, width);
         let (peek, peek_parts) = self.draw_with_parts(ToolOutputView::Peek, width);
         let (full, full_parts) = self.draw_with_parts(ToolOutputView::Full, width);
         self.view = current;
         self.frozen_lines = Some(FrozenLines {
-            radar,
+            outline,
             peek,
             full,
             peek_parts,
@@ -1567,14 +1552,12 @@ impl ToolExecutionComponent {
             self.capture_frozen(width);
         }
         let view = self.view;
-        // The rail takes four columns beyond the block's own two of padding:
-        // a body row, padding included, fits `width - 4`.
-        let target = (width as usize).saturating_sub(4).max(1);
+        let target = (width as usize).max(1);
         let Some(frozen) = &self.frozen_lines else {
             return StepParts::default();
         };
         let parts = frozen.parts_for(view);
-        let captured = self.frozen_width.saturating_sub(4).max(1);
+        let captured = self.frozen_width.max(1);
         if target >= captured {
             return parts.clone();
         }
@@ -1600,7 +1583,7 @@ impl ToolExecutionComponent {
         if self.hide_component {
             return StepParts::default();
         }
-        let main_width = width.saturating_sub(2).max(1);
+        let main_width = width.max(1);
         let mut lead = Vec::new();
         let mut main = Vec::new();
         let mut images = Vec::new();
@@ -1616,7 +1599,6 @@ impl ToolExecutionComponent {
             return StepParts {
                 lead,
                 header: None,
-                header_band: false,
                 body: Vec::new(),
                 tail: false,
                 footer: Vec::new(),
@@ -1637,7 +1619,8 @@ impl ToolExecutionComponent {
             })
             .map(|row| crate::trajectory::trim_end_styled(&row))
             .unwrap_or_else(|| crate::trajectory::trim_end_styled(&main[first]));
-        let target = glyph_count(&header);
+        // The glyph of the row counts as one visible character.
+        let target = glyph_count(&header) + 1;
         let mut taken = 0;
         let mut seen = 0;
         for row in &main[first..] {
@@ -1659,7 +1642,6 @@ impl ToolExecutionComponent {
         StepParts {
             lead,
             header: Some(header),
-            header_band: is_file_tool(&self.tool_name) && !self.should_show_signal_line(),
             body,
             tail,
             footer,

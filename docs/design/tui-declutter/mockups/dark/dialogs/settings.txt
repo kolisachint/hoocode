@@ -1,0 +1,19 @@
+«»
+«fg=#b5bd68» ● «fg=#989898;bold»Edit«fg=#989898» src/wrap.rs«»  «fg=#989898»+4 −1«»
+«fg=#b5bd68» ● «fg=#989898;bold»Shell«fg=#989898» cargo test -p wrap«»  «fg=#989898»exit 0 · 2.4s«»
+«fg=#989898» Width is checked now; the two wrap tests pass.«»
+«»
+«bg=#1e1e2a» «fg=#14141c;bg=#5cc8bb;bold» Settings «fg=#989898;bg=#1e1e2a» /settings«bg=#1e1e2a»  «fg=#989898;bg=#1e1e2a»4,140 tokens per turn«fg=#989898;bg=#1e1e2a» · «fg=#989898;bg=#1e1e2a»prompt 1,430«fg=#989898;bg=#1e1e2a» · «fg=#989898;bg=#1e1e2a»tools 2,710«bg=#1e1e2a»                           «»
+«fg=#5cc8bb;bg=#233239» › «fg=#e5e5e7;bg=#233239»Tools«bg=#233239»         «fg=#e5e5e7;bg=#233239»1 on«bg=#233239»               «bg=#1e1e2a» «fg=#e5e5e7;bg=#292b40;bold» Tools«bg=#292b40»                                                         «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»Tool output«bg=#1e1e2a»   «fg=#989898;bg=#1e1e2a»peek«bg=#1e1e2a»               «bg=#1e1e2a» «fg=#989898;bg=#292b40» current   «fg=#e5e5e7;bg=#292b40»1 on«bg=#292b40»                                                «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»Models«bg=#1e1e2a»        «fg=#989898;bg=#1e1e2a»all models«bg=#1e1e2a»         «bg=#1e1e2a» «fg=#989898;bg=#292b40» per turn  «fg=#e5e5e7;bg=#292b40»2,710 tokens«bg=#292b40»                                        «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»Context«bg=#1e1e2a»       «fg=#989898;bg=#1e1e2a»3 settings«bg=#1e1e2a»         «bg=#1e1e2a» «fg=#989898;bg=#292b40»           «fg=#e5e5e7;bg=#292b40»Read 162«fg=#989898;bg=#292b40» · «fg=#e5e5e7;bg=#292b40»Shell 128«bg=#292b40»                                «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»Behavior«bg=#1e1e2a»      «fg=#989898;bg=#1e1e2a»6 settings«bg=#1e1e2a»         «bg=#1e1e2a» «bg=#292b40»                                                               «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»Interface«bg=#1e1e2a»     «fg=#989898;bg=#1e1e2a»8 settings«bg=#1e1e2a»         «bg=#1e1e2a» «fg=#989898;bg=#292b40» Turn tools and tool groups (web, semantic search) on or off.«bg=#292b40»  «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»Plugins«bg=#1e1e2a»       «fg=#989898;bg=#1e1e2a»3 settings«bg=#1e1e2a»         «bg=#1e1e2a» «fg=#989898;bg=#292b40» Each is priced by what its schema costs per turn. Changes«bg=#292b40»     «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»Images«bg=#1e1e2a»        «fg=#989898;bg=#1e1e2a»2 settings«bg=#1e1e2a»         «bg=#1e1e2a» «fg=#989898;bg=#292b40» persist across sessions.«bg=#292b40»                                      «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»Learning«bg=#1e1e2a»      «fg=#989898;bg=#1e1e2a»5 settings«bg=#1e1e2a»         «bg=#1e1e2a» «bg=#292b40»                                                               «»
+«bg=#1e1e2a»   «fg=#e5e5e7;bg=#1e1e2a»Advanced«bg=#1e1e2a»      «fg=#989898;bg=#1e1e2a»8 settings«bg=#1e1e2a»         «bg=#1e1e2a» «bg=#292b40»                                                               «»
+«fg=#5cc8bb;bg=#2a2a36» › «fg=#989898;bg=#2a2a36»filter«bg=#2a2a36»                                                                                           «»
+«bg=#1e1e2a» «fg=#e5e5e7;bg=#1e1e2a»↑↓«fg=#989898;bg=#1e1e2a» move«fg=#989898;bg=#1e1e2a» · «fg=#e5e5e7;bg=#1e1e2a»space«fg=#989898;bg=#1e1e2a» toggle«fg=#989898;bg=#1e1e2a» · «fg=#e5e5e7;bg=#1e1e2a»enter«fg=#989898;bg=#1e1e2a» open«fg=#989898;bg=#1e1e2a» · «fg=#e5e5e7;bg=#1e1e2a»esc«fg=#989898;bg=#1e1e2a» close«bg=#1e1e2a»                                                    «»
+«fg=#b5bd68» ● «fg=#989898»done · 11s · 23k tokens«»             «fg=#989898»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

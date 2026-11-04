@@ -43,7 +43,7 @@ fn peek_hint_text() -> String {
     format!(" · {} for peek", key_text("app.tools.expand"))
 }
 
-/// The folded (radar) line: label, plain summary and peek hint on one row.
+/// The folded (outline) line: label, plain summary and peek hint on one row.
 /// The summary gives way first: it is cut to the room the label and hint
 /// leave. If that room is under 10 columns the hint is dropped. The row is
 /// never wrapped onto a second row.
@@ -77,7 +77,7 @@ impl Component for OneRow {
 }
 
 /// `CustomMessageComponent`: a displayed custom message, as its label over
-/// its markdown. Radar folds it to its label and first line; peek (the
+/// its markdown. Outline folds it to its label and first line; peek (the
 /// default) shows all of it. (Extension message renderers arrive with 12.3.)
 pub struct CustomMessageComponent {
     message: CustomMessage,
@@ -232,14 +232,14 @@ impl Component for BranchSummaryMessageComponent {
     }
 }
 
-/// The JETTISONED row's text (M8e6): the missions folded into one summary
-/// stage, with the real token counts. `earlier missions` covers summaries
-/// from before compaction knew the transcript's missions.
+/// The compaction row's text: the turns folded into one summary, with the
+/// real token counts. `earlier turns` covers summaries from before
+/// compaction knew the transcript's turns.
 pub(crate) fn jettison_text(message: &CompactionSummaryMessage) -> String {
     let range = match message.mission_range {
-        Some((first, last)) if first == last => format!("M{first}"),
-        Some((first, last)) => format!("M{first}–M{last}"),
-        None => "earlier missions".to_string(),
+        Some((first, last)) if first == last => format!("turn {first}"),
+        Some((first, last)) => format!("turns {first}–{last}"),
+        None => "earlier turns".to_string(),
     };
     match (message.tokens_before, message.tokens_after) {
         (before, Some(after)) if before > 0 => {
@@ -249,26 +249,25 @@ pub(crate) fn jettison_text(message: &CompactionSummaryMessage) -> String {
                 format!("saved {}", group_digits(before - after))
             };
             format!(
-                "≋≋≋ JETTISONED {range} into one summary stage · {} → {} tokens ({change})",
+                "Compacted {range} into one summary · {} → {} tokens ({change})",
                 group_digits(before),
                 group_digits(after)
             )
         }
         (before, _) => format!(
-            "≋≋≋ JETTISONED {range} into one summary stage · from {} tokens",
+            "Compacted {range} into one summary · from {} tokens",
             group_digits(before)
         ),
     }
 }
 
-/// The folded JETTISONED row as ratatui spans, exactly `width` cells: the
-/// row in vio with the dim peek hint. The hint shows only when whole;
-/// past that the row is cut short, and vio blanks pad to the full
-/// width so the row stays one band.
+/// The folded compaction row as ratatui spans, exactly `width` cells: the
+/// row in dim with the peek hint. The hint shows only when whole; past that
+/// the row is cut short, and blanks pad to the full width.
 fn jettison_spans(text: &str, hint: &str, width: usize, pal: &Palette) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let push_vio = |text: String, spans: &mut Vec<Span<'static>>| {
-        spans.push(Span::styled(text, pal.vio()));
+        spans.push(Span::styled(text, pal.dim()));
     };
     let (text_width, hint_width) = (visible_width(text), visible_width(hint));
     if text_width + hint_width <= width {
@@ -291,7 +290,7 @@ fn jettison_spans(text: &str, hint: &str, width: usize, pal: &Palette) -> Vec<Sp
     spans
 }
 
-/// The folded JETTISONED row: one ratatui line, `width` cells wide.
+/// The folded compaction row: one ratatui line, `width` cells wide.
 fn jettison_row(text: String, hint: String, width: usize) -> Vec<String> {
     if width == 0 {
         return Vec::new();
@@ -308,7 +307,7 @@ fn jettison_row(text: String, hint: String, width: usize) -> Vec<String> {
 }
 
 /// `CompactionSummaryMessageComponent`: what a compaction kept, folded to
-/// the JETTISONED row until expanded.
+/// the compaction row until expanded.
 pub struct CompactionSummaryMessageComponent {
     message: CompactionSummaryMessage,
     markdown_theme: Rc<dyn Fn() -> MarkdownTheme>,
@@ -338,7 +337,7 @@ impl CompactionSummaryMessageComponent {
 
     fn update_display(&mut self) {
         // The sheet is the expanded view; folded, the message is the
-        // JETTISONED row drawn with ratatui.
+        // compaction row drawn with ratatui.
         let summary_text = jettison_text(&self.message);
         let body = format!("**{summary_text}**\n\n{}", self.message.summary);
         self.sheet = summary_sheet(

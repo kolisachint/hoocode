@@ -11,7 +11,7 @@ use crate::color::{
 /// Foreground tokens (`ThemeColor`). A theme may also carry tokens beyond
 /// these (theme JSON is open), so the API takes token names as strings.
 /// The trailing ten are the Mission Control chrome tokens (spec §2.3).
-pub const THEME_COLORS: [&str; 67] = [
+pub const THEME_COLORS: [&str; 68] = [
     "accent",
     "border",
     "borderAccent",
@@ -57,6 +57,7 @@ pub const THEME_COLORS: [&str; 67] = [
     "thinkingHigh",
     "thinkingXhigh",
     "bashMode",
+    "chipFg",
     "agent1",
     "agent2",
     "agent3",
@@ -83,7 +84,7 @@ pub const THEME_COLORS: [&str; 67] = [
 ];
 
 /// Background tokens (`ThemeBg`).
-pub const THEME_BGS: [&str; 12] = [
+pub const THEME_BGS: [&str; 19] = [
     "selectedBg",
     "userMessageBg",
     "customMessageBg",
@@ -96,6 +97,25 @@ pub const THEME_BGS: [&str; 12] = [
     "headlineBg",
     "tapeBg",
     "activeToolBg",
+    "surface",
+    "pane",
+    "paneSel",
+    "paneInput",
+    "paneDetail",
+    "chip",
+    "chipWarn",
+];
+
+/// The declutter surface tokens a theme may omit; each falls back to
+/// `selectedBg` (the chips too, so old custom themes keep painting).
+pub const PANE_BG_TOKENS: [&str; 7] = [
+    "surface",
+    "pane",
+    "paneSel",
+    "paneInput",
+    "paneDetail",
+    "chip",
+    "chipWarn",
 ];
 
 /// The agent identity palette, in hash order.

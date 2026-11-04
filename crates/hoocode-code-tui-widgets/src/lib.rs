@@ -14,18 +14,17 @@ pub mod dynamic_border;
 pub mod fold;
 pub mod input_frame;
 mod js_json;
-pub mod jsdiff;
-pub mod radar;
-pub mod read_output;
+pub mod outline;
+pub mod pane;
 pub mod render_utils;
 pub mod selected_row_list;
-pub mod session_chip;
 pub mod skill_block;
 pub mod task_panel;
 pub mod tool_chain;
 pub mod tool_chain_summary;
 pub mod tool_execution;
 pub mod tool_output_view;
+pub mod tool_row;
 pub mod tool_signal;
 pub mod tools;
 pub mod trajectory;
@@ -35,7 +34,7 @@ pub mod visual_truncate;
 pub use assistant_message::{
     segment_streaming_markdown, AssistantMessageComponent, ThinkingDisplay,
 };
-pub use user_message::UserMessageComponent;
+pub use user_message::{user_band_rows, UserMessageComponent, USER_INDENT};
 
 /// Whether `s` is empty after `String.prototype.trim`.
 pub(crate) fn is_blank(s: &str) -> bool {

@@ -1,5 +1,5 @@
-//! Behavior: `/settings` draws the launch weight as spec d4's right-side
-//! `│` panel on wide screens and keeps the stacked bar under 100 columns.
+//! Behavior: `/settings` draws the selected setting's detail (what every
+//! turn carries) beside the rows from 100 columns and under them below.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -39,22 +39,18 @@ fn pane() -> SettingsSelectorComponent {
 }
 
 #[test]
-fn wide_screens_pair_rows_with_the_launch_panel() {
+fn wide_screens_pair_rows_with_the_detail() {
     let _g = lock();
     let shown = strip(&pane().render(100));
     assert!(
-        shown.contains("LAUNCH WEIGHT every turn carries 4,140 tokens"),
-        "missing panel title in\n{shown}"
+        shown.contains("per turn  4,140 tokens"),
+        "missing the detail in\n{shown}"
     );
     assert!(
         shown
             .lines()
-            .any(|l| l.contains('│') && l.contains("Tools") && l.contains("LAUNCH WEIGHT")),
-        "panel is not beside the rows in\n{shown}"
-    );
-    assert!(
-        shown.contains("prompt 1,430 · schemas 2,710"),
-        "missing panel breakdown in\n{shown}"
+            .any(|l| l.contains("Tool output") && l.contains("current")),
+        "the detail is not beside the rows in\n{shown}"
     );
     assert!(
         !shown.contains("Per-turn surface"),
@@ -63,15 +59,21 @@ fn wide_screens_pair_rows_with_the_launch_panel() {
 }
 
 #[test]
-fn narrow_screens_keep_the_stacked_bar() {
+fn narrow_screens_stack_the_detail_under_the_rows() {
     let _g = lock();
     let shown = strip(&pane().render(80));
+    let lines: Vec<&str> = shown.lines().collect();
+    let tools = lines.iter().position(|l| l.contains("Tools")).unwrap();
+    let detail = lines
+        .iter()
+        .position(|l| l.contains("per turn  4,140 tokens"))
+        .expect("the detail renders");
     assert!(
-        shown.contains("Per-turn surface: 4,140 tokens"),
-        "missing stacked surface row in\n{shown}"
+        detail > tools,
+        "the detail is not under the rows in\n{shown}"
     );
     assert!(
-        !shown.lines().any(|l| l.contains('│')),
+        !lines.iter().any(|l| l.contains('│')),
         "side panel on a narrow screen in\n{shown}"
     );
 }

@@ -1,6 +1,7 @@
 //! The prompt: the custom editor and its keys (`Action`), submit, the `!` bash prefix, and the
 //! autocomplete providers (`/` commands, `@file`, paths).
 
+use hoocode_code_tui_selectors::oauth_selector::LoginMode;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -38,8 +39,6 @@ pub(super) enum Action {
     Exit,
     Suspend,
     ToolsExpand,
-    ChromeForward,
-    ChromeBackward,
     ThinkingForward,
     ThinkingBackward,
     ThinkingToggle,
@@ -80,9 +79,6 @@ pub(super) enum Action {
     PasteImage,
     /// `app.hotkeys.open`: `/hotkeys`.
     HotkeysOpen,
-    /// `app.session.color.cycleForward` / `cycleBackward`.
-    SessionColorForward,
-    SessionColorBackward,
     /// `app.session.changeDirectory`: prefill `/cd `.
     ChangeDirectoryPrefill,
     /// `app.session.fork`: `/fork`.
@@ -104,7 +100,7 @@ pub(super) enum Action {
 }
 
 /// Bindings the prompt answers to, and their action (`CustomEditor.onAction`).
-const EDITOR_ACTIONS: [(&str, Action); 31] = [
+const EDITOR_ACTIONS: [(&str, Action); 27] = [
     ("app.tasks.cycleForward", Action::TasksForward),
     ("app.tasks.cycleBackward", Action::TasksBackward),
     ("app.panel.focus", Action::PanelToggle),
@@ -116,14 +112,6 @@ const EDITOR_ACTIONS: [(&str, Action); 31] = [
         Action::ChangeDirectoryPrefill,
     ),
     ("app.session.fork", Action::ForkOpen),
-    (
-        "app.session.color.cycleForward",
-        Action::SessionColorForward,
-    ),
-    (
-        "app.session.color.cycleBackward",
-        Action::SessionColorBackward,
-    ),
     ("app.hotkeys.open", Action::HotkeysOpen),
     ("app.clipboard.copyMessage", Action::CopyMessage),
     ("app.view.cycleForward", Action::ViewForward),
@@ -131,8 +119,6 @@ const EDITOR_ACTIONS: [(&str, Action); 31] = [
     ("app.clear", Action::Clear),
     ("app.suspend", Action::Suspend),
     ("app.tools.expand", Action::ToolsExpand),
-    ("app.chrome.cycleForward", Action::ChromeForward),
-    ("app.chrome.cycleBackward", Action::ChromeBackward),
     ("app.thinking.cycleForward", Action::ThinkingForward),
     ("app.model.cycleForward", Action::ModelForward),
     ("app.model.cycleBackward", Action::ModelBackward),
@@ -466,7 +452,6 @@ impl Mode {
     fn on_editor_change(&mut self, bash_mode: bool) {
         if self.is_bash_mode != bash_mode {
             self.is_bash_mode = bash_mode;
-            self.update_editor_border_color();
             self.update_editor_prompt_prefix();
         }
     }
@@ -643,6 +628,12 @@ impl Mode {
         if self.prompt_pending {
             self.editor.borrow_mut().editor.add_to_history(&text);
             self.queue_behind_pending_prompt(text, Vec::new());
+            return;
+        }
+        // Signed out: the text stays in the prompt and Log in opens again.
+        if self.session.model().is_none() {
+            self.editor.borrow_mut().editor.set_text(&text);
+            self.show_oauth_selector(LoginMode::Login);
             return;
         }
         self.flush_pending_bash_components();
@@ -928,13 +919,6 @@ impl Mode {
             Action::ViewForward | Action::ViewBackward => {
                 self.cycle_tool_output_view(action == Action::ViewForward)
             }
-            Action::ChromeForward | Action::ChromeBackward => {
-                let density = self.chrome.cycle_density(action == Action::ChromeForward);
-                let mut settings = self.session.settings();
-                settings.set_chrome_density(density);
-                drop(settings);
-                self.show_dial_step("app.chrome.cycleBackward", &format!("Chrome: {density}"));
-            }
             Action::ThinkingForward | Action::ThinkingBackward => {
                 let direction = if action == Action::ThinkingForward {
                     hoocode_code_agent_session::CycleDirection::Forward
@@ -944,7 +928,6 @@ impl Mode {
                 match self.session.cycle_thinking_level(direction) {
                     None => self.show_status("Current model does not support thinking"),
                     Some(level) => {
-                        self.update_editor_border_color();
                         self.show_dial_step(
                             "app.thinking.cycleBackward",
                             &format!("Thinking level: {}", level.as_str()),
@@ -969,9 +952,6 @@ impl Mode {
             Action::CopyMessage => self.handle_copy_command(""),
             Action::PasteImage => self.handle_clipboard_image_paste(),
             Action::HotkeysOpen => self.handle_hotkeys_command(),
-            Action::SessionColorForward | Action::SessionColorBackward => {
-                self.cycle_session_color(action == Action::SessionColorForward)
-            }
             Action::ChangeDirectoryPrefill => {
                 // Prefill rather than act: the editor's path completion is the
                 // way to name the target.
@@ -1011,11 +991,7 @@ impl Mode {
                 self.close_session_selector();
                 self.resume_subagent(run);
             }
-            Action::AutocompleteVisibility(visible) => {
-                if self.chrome.set_autocomplete_open(visible) {
-                    self.dirty.set(true);
-                }
-            }
+            Action::AutocompleteVisibility(_) => self.dirty.set(true),
         }
     }
 }
@@ -1108,5 +1084,22 @@ mod tests {
         // A prompt in flight (its turn not begun) blocks a hail too.
         assert!(!can_hail(false, false, false, false, true));
         assert!(!can_hail(true, true, true, true, true));
+    }
+}
+
+#[cfg(test)]
+mod signed_out_tests {
+    use super::super::test_support::test_mode;
+
+    /// With no working provider a typed prompt stays in the editor and the
+    /// Log in pane opens again (spec v2.9, first run).
+    #[test]
+    fn submitting_while_signed_out_keeps_the_text_and_reopens_log_in() {
+        let mut mode = test_mode(None);
+        assert!(mode.session.model().is_none());
+        mode.submit("hello there".into());
+        assert_eq!(mode.editor.borrow().editor.get_text(), "hello there");
+        assert!(mode.login.is_some());
+        assert!(mode.status_line_data().signed_out);
     }
 }

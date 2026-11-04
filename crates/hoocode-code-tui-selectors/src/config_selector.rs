@@ -288,10 +288,10 @@ enum Entry {
 pub type OnToggle = Box<dyn FnMut(&ResourceItem, bool)>;
 
 /// `ResourceList`: the searchable, toggleable list the keyboard goes to.
-/// It draws as the RESOURCES console (M7, ratatui): `RESOURCES · config`,
-/// the `▸` query row, one row per entry with `›` on the selection band,
-/// and the hint foot. Shared `Console` chrome in
-/// `code-tui-widgets/src/console.rs`; keys, filtering and events unchanged.
+/// It draws as the Config pane: `Config  config`, one row per entry with
+/// ` › ` on the selection band, the filter row, and the hint row. Shared
+/// pane chrome in `code-tui-widgets/src/console.rs`; keys, filtering and
+/// events unchanged.
 pub struct ResourceList {
     groups: Vec<ResourceGroup>,
     flat: Vec<Entry>,
@@ -556,13 +556,13 @@ impl ResourceList {
 }
 
 impl ResourceList {
-    /// The RESOURCES console (`RESOURCES · config`): the `▸` query row,
-    /// one row per filtered entry with `›` on the selection band, the
-    /// scroll position, and the hint foot.
+    /// The Config pane (`Config · config`): one row per filtered entry
+    /// with ` › ` on the selection band, the scroll position, the filter
+    /// row and the hint row.
     fn console(&self) -> Console {
         let pal = Palette::current();
         let query = self.search.get_value().to_string();
-        let mut console = Console::new("RESOURCES · config", self.count_text(&query));
+        let mut console = Console::new("Config · config", self.count_text(&query));
         console.query = Some(query_row(&query, self.focused));
         let selected = self.cursor.selected();
         console.rows = self
@@ -590,7 +590,7 @@ impl ResourceList {
             )]),
             Entry::Subgroup(g, s) => Line::from(vec![Span::styled(
                 format!("  {}", self.groups[g].subgroups[s].label),
-                pal.faint(),
+                pal.dim(),
             )]),
             entry @ Entry::Item(..) => {
                 let item = self.item(entry).unwrap();
@@ -621,7 +621,7 @@ impl ResourceList {
         if self.filtered.is_empty() {
             return vec![Line::from(vec![Span::styled(
                 "  No resources found".to_string(),
-                pal.faint(),
+                pal.dim(),
             )])];
         }
         if self.cursor.is_scrolled() {
@@ -666,7 +666,7 @@ fn resources(count: usize) -> String {
 }
 
 impl Component for ResourceList {
-    /// The RESOURCES console: the `▸` query row, one row per entry with
+    /// The Config pane: one row per entry with
     /// `›` on the selection band, the scroll position, and the hint foot.
     /// Grouping, sorting, filtering and toggle persistence are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
@@ -732,7 +732,7 @@ impl Component for ResourceList {
 }
 
 /// `ConfigSelectorComponent`: the config subcommand's resource list as the
-/// RESOURCES console (M7, ratatui).
+/// Config pane.
 pub struct ConfigSelectorComponent {
     list: Rc<RefCell<ResourceList>>,
 }
@@ -762,7 +762,7 @@ impl ConfigSelectorComponent {
 }
 
 impl Component for ConfigSelectorComponent {
-    /// The RESOURCES console: the `▸` query row, one row per entry with `›`
+    /// The Config pane: one row per entry with `›`
     /// on the selection band, the scroll position, and the hint foot. Keys,
     /// grouping, filtering and toggle persistence are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {

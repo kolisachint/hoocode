@@ -10,7 +10,6 @@ use std::rc::Rc;
 use hoocode_ai_types::{AssistantMessage, Content, ThinkingContent};
 use hoocode_code_task_store::{task_store, CreateTaskOptions, TaskPatch, TaskSource, TaskStatus};
 use hoocode_code_tui_keybindings::AppKeybindingsManager;
-use hoocode_code_tui_widgets::session_chip::render_session_chip;
 use hoocode_code_tui_widgets::task_panel::{TaskPanelComponent, TaskPanelView};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -19,7 +18,6 @@ use hoocode_code_tui_widgets::tool_signal::ToolResult;
 use hoocode_code_tui_widgets::tools::{builtin_tool_definition, registered_tool_definition};
 use hoocode_code_tui_widgets::trajectory::{LandingLine, MissionHeader};
 use hoocode_code_tui_widgets::{AssistantMessageComponent, ThinkingDisplay, UserMessageComponent};
-use hoocode_tui_components::Text;
 use hoocode_tui_render::golden::render_golden;
 use hoocode_tui_render::{assert_golden, Component};
 use serde_json::{json, Value};
@@ -382,7 +380,7 @@ fn shell_error_80() {
 #[test]
 fn shell_output_collapsed_80() {
     let _g = lock();
-    let mut block = tool("Shell", shell_args(), ToolOutputView::Radar);
+    let mut block = tool("Shell", shell_args(), ToolOutputView::Outline);
     block.update_result(result(&output_lines(12), false, json!({})), false);
     assert_golden!("shell_output_collapsed_80", render_golden(&mut block, 80));
 }
@@ -495,33 +493,6 @@ fn agent_output_failed_80() {
     assert_golden!("agent_output_failed_80", render_golden(&mut block, 80));
 }
 
-// ---- session chip ----
-
-#[test]
-fn session_chip_80() {
-    let _g = lock();
-    let chip = render_session_chip("refactor-auth", 1).expect("a chip for a name");
-    let mut line = Text::new(chip.styled, 0, 0);
-    assert_golden!("session_chip_80", render_golden(&mut line, 80));
-}
-
-#[test]
-fn session_chip_truncated_80() {
-    let _g = lock();
-    let chip = render_session_chip("an-extremely-long-session-name-nobody-can-scan", 3)
-        .expect("a chip for a name");
-    let mut line = Text::new(chip.styled, 0, 0);
-    assert_golden!("session_chip_truncated_80", render_golden(&mut line, 80));
-}
-
-#[test]
-fn session_chip_120() {
-    let _g = lock();
-    let chip = render_session_chip("amber-harbor", 4).expect("a chip for a name");
-    let mut line = Text::new(chip.styled, 0, 0);
-    assert_golden!("session_chip_120", render_golden(&mut line, 120));
-}
-
 // ---- user message ----
 
 #[test]
@@ -618,32 +589,33 @@ fn assistant_message_thinking_label_80() {
     );
 }
 
-// ---- Mission Control trajectory (M4) ----
+// ---- The turn: user message, failed call (peek) ----
 
 #[test]
-fn trajectory_mission_header_80() {
+fn user_message_band_80() {
     let _g = lock();
-    let mut header = MissionHeader::new(1, "how does wrapping work?", None);
+    let mut header = MissionHeader::new(1, "how does wrapping work?");
+    assert_golden!("user_message_band_80", render_golden(&mut header, 80));
+}
+
+#[test]
+fn user_message_band_wrapped_40() {
+    // Wrapped and later lines start under the text, at column 3.
+    let _g = lock();
+    let mut header = MissionHeader::new(
+        6,
+        "check wrap.rs for the overflow in the second branch\nthen run the tests",
+    );
     assert_golden!(
-        "trajectory_mission_header_80",
-        render_golden(&mut header, 80)
+        "user_message_band_wrapped_40",
+        render_golden(&mut header, 40)
     );
 }
 
 #[test]
-fn trajectory_mission_header_skill_80() {
-    let _g = lock();
-    let mut header = MissionHeader::new(6, "check wrap.rs", Some("review"));
-    assert_golden!(
-        "trajectory_mission_header_skill_80",
-        render_golden(&mut header, 80)
-    );
-}
-
-#[test]
-fn trajectory_steps_hit_80() {
-    // Numbered steps on the `┊` rail; the failed Shell shows the HIT chip
-    // in place of its success stats.
+fn peek_failed_call_80() {
+    // Peek: tool rows with no step number and no rail; the failed Shell
+    // reads red `⊗` and its error lines.
     let _g = lock();
     let mut chain = ToolChainComponent::new(ToolOutputView::Peek);
     let mut read = tool(
@@ -663,16 +635,16 @@ fn trajectory_steps_hit_80() {
         false,
     );
     chain.add(Rc::new(RefCell::new(shell)));
-    assert_golden!("trajectory_steps_hit_80", render_golden(&mut chain, 80));
+    assert_golden!("peek_failed_call_80", render_golden(&mut chain, 80));
 }
 
-// ---- Mission Control flight log (M5, radar) ----
+// ---- Outline: the user message, recap rows, end line ----
 
-use hoocode_code_tui_widgets::radar::{FlightItem, FlightMark, FlightStats};
+use hoocode_code_tui_widgets::outline::{FlightItem, FlightMark, FlightStats};
 
 /// One call of a mission's batch: finished (`Some(is_error)`) or still running.
 fn batch_call(name: &str, args: Value, outcome: Option<bool>) -> ToolBlock {
-    let mut block = tool(name, args, ToolOutputView::Radar);
+    let mut block = tool(name, args, ToolOutputView::Outline);
     if let Some(is_error) = outcome {
         let text = if is_error { "boom" } else { "ok" };
         block.update_result(result(text, is_error, json!({})), false);
@@ -681,8 +653,8 @@ fn batch_call(name: &str, args: Value, outcome: Option<bool>) -> ToolBlock {
 }
 
 /// The chain's calls as one mission batch (R3). A mission's chain draws
-/// nothing in radar, so its rows are read through the mission's flight data.
-fn radar_mission_of(
+/// nothing in outline, so its rows are read through the mission's flight data.
+fn outline_mission_of(
     chain: &ToolChainComponent,
     mark: FlightMark,
     time: Option<&str>,
@@ -719,90 +691,95 @@ fn flight_stats(
     }))
 }
 
-fn radar_header(seq: usize, prompt: &str, stats: Rc<RefCell<FlightStats>>) -> MissionHeader {
-    let mut header = MissionHeader::new(seq, prompt, None);
-    header.set_view(ToolOutputView::Radar);
+fn outline_header(seq: usize, prompt: &str, stats: Rc<RefCell<FlightStats>>) -> MissionHeader {
+    let mut header = MissionHeader::new(seq, prompt);
+    header.set_view(ToolOutputView::Outline);
     header.set_flight(stats);
     header
 }
 
 #[test]
-fn radar_mission_row_80() {
+fn outline_mission_row_80() {
     // One flight-log row: the mark, the prompt, steps, hits, time, cost.
     let _g = lock();
-    let mut header = radar_header(
+    let mut header = outline_header(
         1,
         "what does the wrap crate do?",
         flight_stats(FlightMark::Landed, 1, 0, Some("0.8s"), Some("$0.003")),
     );
-    assert_golden!("radar_mission_row_80", render_golden(&mut header, 80));
+    assert_golden!("outline_mission_row_80", render_golden(&mut header, 80));
 }
 
 #[test]
-fn radar_mission_row_100() {
+fn outline_mission_row_100() {
     // Wide: the stats hold their columns counted back from the right edge.
     let _g = lock();
-    let mut header = radar_header(
+    let mut header = outline_header(
         1,
         "what does the wrap crate do?",
         flight_stats(FlightMark::Landed, 1, 0, Some("0.8s"), Some("$0.003")),
     );
-    assert_golden!("radar_mission_row_100", render_golden(&mut header, 100));
+    assert_golden!("outline_mission_row_100", render_golden(&mut header, 100));
 }
 
 #[test]
-fn radar_mission_row_40() {
+fn outline_mission_row_40() {
     // Narrow: the prompt is cut with `…` first, the stats stay whole.
     let _g = lock();
-    let mut header = radar_header(
+    let mut header = outline_header(
         2,
         "review the wrap helper for overflow bugs",
         flight_stats(FlightMark::Landed, 4, 1, Some("0.6s"), Some("$0.006")),
     );
-    assert_golden!("radar_mission_row_40", render_golden(&mut header, 40));
+    assert_golden!("outline_mission_row_40", render_golden(&mut header, 40));
 }
 
 #[test]
-fn radar_mission_in_flight_80() {
+fn outline_mission_in_flight_80() {
     // A flying mission reads `◉`; with no landed time the row shows the
     // cost only. Elapsed time comes off the turn clock at render, so the
     // golden pins the row without it.
     let _g = lock();
-    let mut header = radar_header(
+    let mut header = outline_header(
         2,
         "run a slow check",
         flight_stats(FlightMark::InFlight, 1, 0, None, Some("$0.001")),
     );
-    assert_golden!("radar_mission_in_flight_80", render_golden(&mut header, 80));
+    assert_golden!(
+        "outline_mission_in_flight_80",
+        render_golden(&mut header, 80)
+    );
 }
 
 #[test]
-fn radar_mission_stepless_80() {
+fn outline_mission_stepless_80() {
     // No steps: `0 steps 0✕` is omitted, the row reads mark, prompt, cost.
     let _g = lock();
-    let mut header = radar_header(
+    let mut header = outline_header(
         3,
         "just talking",
         flight_stats(FlightMark::Landed, 0, 0, None, Some("$0.000")),
     );
-    assert_golden!("radar_mission_stepless_80", render_golden(&mut header, 80));
+    assert_golden!(
+        "outline_mission_stepless_80",
+        render_golden(&mut header, 80)
+    );
 }
 
 #[test]
-fn radar_chain_hits_80() {
+fn outline_chain_hits_80() {
     // Each hit gets its own line under the mission: mission-relative step,
     // tool, subject, first output line, `HIT`. Settled clean calls get none.
     let _g = lock();
-    let mut chain = ToolChainComponent::new(ToolOutputView::Radar);
-    chain.set_base_step(3);
+    let mut chain = ToolChainComponent::new(ToolOutputView::Outline);
     let mut read = tool(
         "Read",
         json!({ "path": "src/wrap.rs" }),
-        ToolOutputView::Radar,
+        ToolOutputView::Outline,
     );
     read.update_result(result("line one\nline two", false, json!({})), false);
     chain.add(Rc::new(RefCell::new(read)));
-    let mut shell = tool("Shell", shell_args(), ToolOutputView::Radar);
+    let mut shell = tool("Shell", shell_args(), ToolOutputView::Outline);
     shell.update_result(
         result(
             "boom\nCommand exited with code 3",
@@ -812,18 +789,17 @@ fn radar_chain_hits_80() {
         false,
     );
     chain.add(Rc::new(RefCell::new(shell)));
-    let stats = radar_mission_of(&chain, FlightMark::Landed, Some("2s"));
-    let mut header = radar_header(1, "run the checks", stats);
-    assert_golden!("radar_chain_hits_80", render_golden(&mut header, 80));
+    let stats = outline_mission_of(&chain, FlightMark::Landed, Some("2s"));
+    let mut header = outline_header(1, "run the checks", stats);
+    assert_golden!("outline_chain_hits_80", render_golden(&mut header, 80));
 }
 
 #[test]
-fn radar_chain_hits_40() {
+fn outline_chain_hits_40() {
     // Narrow: the subject is cut first, `HIT` stays whole.
     let _g = lock();
-    let mut chain = ToolChainComponent::new(ToolOutputView::Radar);
-    chain.set_base_step(3);
-    let mut shell = tool("Shell", shell_args(), ToolOutputView::Radar);
+    let mut chain = ToolChainComponent::new(ToolOutputView::Outline);
+    let mut shell = tool("Shell", shell_args(), ToolOutputView::Outline);
     shell.update_result(
         result(
             "boom\nCommand exited with code 3",
@@ -833,31 +809,31 @@ fn radar_chain_hits_40() {
         false,
     );
     chain.add(Rc::new(RefCell::new(shell)));
-    let stats = radar_mission_of(&chain, FlightMark::Landed, Some("2s"));
-    let mut header = radar_header(1, "run the checks", stats);
-    assert_golden!("radar_chain_hits_40", render_golden(&mut header, 40));
+    let stats = outline_mission_of(&chain, FlightMark::Landed, Some("2s"));
+    let mut header = outline_header(1, "run the checks", stats);
+    assert_golden!("outline_chain_hits_40", render_golden(&mut header, 40));
 }
 
 #[test]
-fn radar_chain_live_80() {
+fn outline_chain_live_80() {
     // A flying mission's live step, indented 8: the progress bar sits inline
     // after the subject. The estimate comes off the call's `timeout`; the
     // elapsed share is zero at render, so the bar is empty.
     let _g = lock();
-    let mut chain = ToolChainComponent::new(ToolOutputView::Radar);
+    let mut chain = ToolChainComponent::new(ToolOutputView::Outline);
     chain.add(Rc::new(RefCell::new(tool(
         "Shell",
         json!({ "command": "sleep 6; echo done", "timeout": 6 }),
-        ToolOutputView::Radar,
+        ToolOutputView::Outline,
     ))));
-    let stats = radar_mission_of(&chain, FlightMark::InFlight, None);
-    let mut header = radar_header(1, "run the checks", stats);
-    assert_golden!("radar_chain_live_80", render_golden(&mut header, 80));
+    let stats = outline_mission_of(&chain, FlightMark::InFlight, None);
+    let mut header = outline_header(1, "run the checks", stats);
+    assert_golden!("outline_chain_live_80", render_golden(&mut header, 80));
 }
 
 #[test]
-fn radar_hides_thinking_outside_a_mission() {
-    // Radar draws no thinking, in or out of a mission (2026-10-31).
+fn outline_hides_thinking_outside_a_mission() {
+    // Outline draws no thinking, in or out of a mission (2026-10-31).
     let _g = lock();
     let mut msg = AssistantMessageComponent::new(None, ThinkingDisplay::Omit);
     msg.update_content(
@@ -867,7 +843,7 @@ fn radar_hides_thinking_outside_a_mission() {
         ]),
         true,
     );
-    msg.set_radar_prose_shown(true);
+    msg.set_outline_prose_shown(true);
     let drawn = hoocode_tui_render::Component::render(&mut msg, 80).join("\n");
     assert!(
         !drawn.contains('✻') && !drawn.contains("weighing"),
@@ -876,10 +852,10 @@ fn radar_hides_thinking_outside_a_mission() {
     assert!(drawn.contains("here is the answer"), "{drawn}");
 }
 
-// ---- The turn's end and progress (radar chain row, landing outcomes) ----
+// ---- The turn's end and progress (outline chain row, landing outcomes) ----
 
 #[test]
-fn radar_mission_chain_live_80() {
+fn outline_mission_chain_live_80() {
     // A flying mission: the prompt wraps whole, the progress row names the
     // calls in order (`Tool ×N`, `Tool✗`), the last one still running.
     let _g = lock();
@@ -891,19 +867,19 @@ fn radar_mission_chain_live_80() {
         batch_call("Shell", json!({"command": "cargo test"}), Some(true)),
         batch_call("Shell", json!({"command": "cargo test"}), None),
     ])];
-    let mut header = radar_header(
+    let mut header = outline_header(
         1,
         "fix the overflow bug in the wrap helper so long mission prompts never get cut, then run the suite",
         stats,
     );
     assert_golden!(
-        "radar_mission_chain_live_80",
+        "outline_mission_chain_live_80",
         render_golden(&mut header, 80)
     );
 }
 
 #[test]
-fn radar_mission_chain_landed_80() {
+fn outline_mission_chain_landed_80() {
     // Landed: the progress row reads what the turn amounted to.
     let _g = lock();
     let stats = flight_stats(FlightMark::Landed, 5, 0, Some("4.2s"), Some("$0.012"));
@@ -914,26 +890,28 @@ fn radar_mission_chain_landed_80() {
         batch_call("Shell", json!({"command": "cargo fmt"}), Some(false)),
         batch_call("Shell", json!({"command": "cargo test"}), Some(false)),
     ])];
-    let mut header = radar_header(2, "split the wrap helper", stats);
+    let mut header = outline_header(2, "split the wrap helper", stats);
     assert_golden!(
-        "radar_mission_chain_landed_80",
+        "outline_mission_chain_landed_80",
         render_golden(&mut header, 80)
     );
 }
 
 #[test]
-fn landing_did_not_land_80() {
-    // Peek and full: the same outcome the radar row and the comms title
-    // read, with the turn's summary on the dim line after it.
+fn turn_end_failed_80() {
+    // Peek and full: a failed turn's end line; tokens and cost are the
+    // status line's.
     let _g = lock();
-    let mut landing = LandingLine::new(
-        FlightMark::DidNotLand,
-        5,
-        1,
-        "4.2s",
-        "1.2k tokens",
-        "$0.012",
-    );
-    landing.set_summary(Some("Edited 3 files · ran 2 commands".to_string()));
-    assert_golden!("landing_did_not_land_80", render_golden(&mut landing, 80));
+    let stats = Rc::new(RefCell::new(FlightStats {
+        mark: FlightMark::DidNotLand,
+        steps: 5,
+        hits: 1,
+        landed_time: Some("4.2s".to_string()),
+        tokens: Some("1.2k tokens".to_string()),
+        cost: Some("$0.012".to_string()),
+        failure: Some("connection reset by peer".to_string()),
+        ..Default::default()
+    }));
+    let mut landing = LandingLine::new(stats);
+    assert_golden!("turn_end_failed_80", render_golden(&mut landing, 80));
 }

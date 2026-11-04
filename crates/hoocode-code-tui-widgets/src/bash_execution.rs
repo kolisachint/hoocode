@@ -11,17 +11,19 @@ use hoocode_code_tool_api::{
 use hoocode_code_tool_bash::shell::strip_ansi;
 use hoocode_code_tui_theme::theme;
 use hoocode_tui_components::Loader;
-use hoocode_tui_ratatui::core::style::Style;
 use hoocode_tui_ratatui::core::text::Span;
-use hoocode_tui_ratatui::{bold, Palette};
+use hoocode_tui_ratatui::{ansi_spans, row, Palette};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::wrap_text_with_ansi;
 
-use crate::fold::more_lines_hint;
-use crate::trajectory::{rail_line, wrapped_band_rows};
+use crate::fold::earlier_lines_text;
+use crate::tool_row::{dim_fact, fold_row, is_blank_row, tool_rows, Mark, BODY_INDENT};
 
-/// Preview line limit for a `!` command at peek; the full stop shows every line.
-const PREVIEW_LINES: usize = 20;
+/// Output lines a passed `!` command shows at peek (its last), a failed one,
+/// and the length up to which output shows whole. The full stop shows all.
+const PASSED_LINES: usize = 2;
+const FAILED_LINES: usize = 4;
+const WHOLE_LINES: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Status {
@@ -106,8 +108,8 @@ pub struct BashExecutionComponent {
     full_output_path: Option<String>,
     expanded: bool,
     tail: OutputTail,
-    /// The transcript's radar flag, shared so a view flip reaches every row.
-    radar: Option<Rc<Cell<bool>>>,
+    /// The transcript's outline flag, shared so a view flip reaches every row.
+    outline: Option<Rc<Cell<bool>>>,
     /// The transcript's full flag: at the full stop the output shows whole
     /// and the command is never cut.
     full: Option<Rc<Cell<bool>>>,
@@ -138,19 +140,19 @@ impl BashExecutionComponent {
             truncation: None,
             full_output_path: None,
             expanded: false,
-            radar: None,
+            outline: None,
             full: None,
         }
     }
 
-    /// Radar (M5): while `flag` is set the row shows its header only, the
-    /// output stays in peek. The flag is the transcript's radar flag.
-    pub fn set_radar_flag(&mut self, flag: Rc<Cell<bool>>) {
-        self.radar = Some(flag);
+    /// Outline (M5): while `flag` is set the row shows its header only, the
+    /// output stays in peek. The flag is the transcript's outline flag.
+    pub fn set_outline_flag(&mut self, flag: Rc<Cell<bool>>) {
+        self.outline = Some(flag);
     }
 
-    fn radar_hidden(&self) -> bool {
-        self.radar.as_ref().is_some_and(|flag| flag.get())
+    fn outline_hidden(&self) -> bool {
+        self.outline.as_ref().is_some_and(|flag| flag.get())
     }
 
     /// The transcript's full flag, shared so a view flip reaches every row.
@@ -205,55 +207,40 @@ impl BashExecutionComponent {
         self.loader.borrow_mut().stop();
     }
 
-    /// The `▲ $` band header (Mission Control spec a4): the mark in the
-    /// `you` token, the command in bold ink, and — once settled — the exit
-    /// on the right with `· no step, it's yours`. Your own `!` commands
-    /// are yours, not the agent's steps, so they get no step number.
-    ///
-    /// The command is never cut: a long one wraps across continuation rows.
+    /// The command's tool row: ` ● ! command  exit 0`. A failed run reads
+    /// `⊗` with `exit N` in red, a cancelled one a dim `⊗ cancelled`, a running
+    /// one a dim `●`. The command is never cut: a long one wraps under itself.
     fn header_rows(&self, width: usize, palette: &Palette) -> Vec<String> {
-        let prefix = vec![
-            Span::styled("▲ $".to_string(), bold(palette.you())),
-            Span::styled("  ".to_string(), Style::default()),
-        ];
-        wrapped_band_rows(
-            prefix,
-            &self.command,
-            bold(palette.ink()),
-            self.header_stats(palette),
-            width,
-            palette.bg_color("userMessageBg"),
-        )
-    }
-
-    /// The header's right side: the exit (ok/err, warn when cancelled)
-    /// plus `· no step, it's yours`. Empty while the command runs.
-    fn header_stats(&self, palette: &Palette) -> Vec<Span<'static>> {
-        let (exit, style) = match self.status {
-            Status::Running => return Vec::new(),
-            Status::Complete => (
-                format!("exit {}", self.exit_code.unwrap_or(0)),
-                palette.ok(),
-            ),
+        let (mark, facts) = match self.status {
+            Status::Running => (Mark::Running, Vec::new()),
+            Status::Complete => (Mark::Done, vec![dim_fact("exit 0", palette)]),
             Status::Error => (
-                format!(
-                    "exit {}",
-                    self.exit_code
-                        .map_or("undefined".to_string(), |c| c.to_string())
-                ),
-                palette.err(),
+                Mark::Failed,
+                vec![Span::styled(
+                    format!(
+                        "exit {}",
+                        self.exit_code
+                            .map_or("undefined".to_string(), |c| c.to_string())
+                    ),
+                    palette.err(),
+                )],
             ),
-            Status::Cancelled => ("cancelled".to_string(), palette.warn()),
+            Status::Cancelled => (Mark::Stopped, vec![dim_fact("cancelled", palette)]),
         };
-        vec![
-            Span::styled(exit, style),
-            Span::styled(" · ".to_string(), palette.dim()),
-            Span::styled("no step, it's yours".to_string(), palette.dim()),
-        ]
+        let t = theme();
+        let label = format!(
+            "{} {}",
+            t.fg("toolTitle", &t.bold("!")),
+            t.fg("text", &self.command)
+        );
+        tool_rows(0, mark, &label, facts, width, palette)
     }
 
-    /// The output and footer rows: dim output on the `┊` rail, then the
-    /// spinner while running, else the fold/cancelled/truncation notices.
+    /// The output rows, dim at column 4: the last two lines of a run that
+    /// passed, the last four of one that failed, whole when it is four lines
+    /// or fewer and at the full stop. The fold hint sits above the lines;
+    /// the cancelled and truncation notices close the body. A running
+    /// command shows its spinner.
     fn body_rows(&mut self, width: usize, palette: &Palette) -> Vec<String> {
         let t = theme();
         let mut lines = Vec::new();
@@ -267,47 +254,71 @@ impl BashExecutionComponent {
         context.truncated |= self.tail.dropped;
         let mut hidden = 0;
         if !context.content.is_empty() {
-            // The rail takes six cells; the output wraps in what is left.
-            let content_width = width.saturating_sub(6).max(1);
+            // The body column takes four cells; the output wraps in what is left.
+            let content_width = width.saturating_sub(BODY_INDENT).max(1);
             let mut visual = Vec::new();
-            for physical in context.content.split('\n') {
+            for physical in context.content.trim_end().split('\n') {
                 visual.extend(wrap_text_with_ansi(&t.fg("dim", physical), content_width));
             }
-            let shown = if self.is_expanded() {
+            let budget = if self.status == Status::Error {
+                FAILED_LINES
+            } else {
+                PASSED_LINES
+            };
+            let shown = if self.is_expanded() || visual.len() <= WHOLE_LINES {
                 visual.as_slice()
             } else {
-                let skip = visual.len().saturating_sub(PREVIEW_LINES);
+                let skip = visual.len().saturating_sub(budget);
                 hidden = skip;
                 &visual[skip..]
             };
+            if hidden > 0 {
+                lines.push(fold_row(&earlier_lines_text(hidden), width, palette));
+            }
             for line in shown {
-                lines.push(rail_line(line, width, false, palette));
+                lines.push(row(
+                    vec![Span::raw(" ".repeat(BODY_INDENT))]
+                        .into_iter()
+                        .chain(ansi_spans(line))
+                        .collect(),
+                    width,
+                ));
             }
         }
         if self.status == Status::Running {
-            lines.extend(self.loader.borrow_mut().render(width as u16));
+            let spinner: Vec<String> = self
+                .loader
+                .borrow_mut()
+                .render(width.saturating_sub(BODY_INDENT).max(1) as u16)
+                .into_iter()
+                .filter(|l| !is_blank_row(l))
+                .map(|l| format!("{}{l}", " ".repeat(BODY_INDENT)))
+                .collect();
+            lines.extend(spinner);
             return lines;
         }
         let mut footer: Vec<String> = Vec::new();
-        if hidden > 0 {
-            footer.push(rail_line(&more_lines_hint(hidden), width, false, palette));
-        }
         if self.status == Status::Cancelled {
-            footer.push(rail_line(
-                &t.fg("warning", "(cancelled)"),
+            footer.push(row(
+                vec![
+                    Span::raw(" ".repeat(BODY_INDENT)),
+                    Span::styled("(cancelled)".to_string(), palette.warn()),
+                ],
                 width,
-                false,
-                palette,
             ));
         }
         let truncated =
             self.truncation.as_ref().is_some_and(|tr| tr.truncated) || context.truncated;
         if let (true, Some(path)) = (truncated, &self.full_output_path) {
-            footer.push(rail_line(
-                &t.fg("warning", &format!("Output truncated. Full output: {path}")),
+            footer.push(row(
+                vec![
+                    Span::raw(" ".repeat(BODY_INDENT)),
+                    Span::styled(
+                        format!("Output truncated. Full output: {path}"),
+                        palette.warn(),
+                    ),
+                ],
                 width,
-                false,
-                palette,
             ));
         }
         lines.extend(footer);
@@ -329,9 +340,14 @@ impl Component for BashExecutionComponent {
     fn render(&mut self, width: u16) -> Vec<String> {
         let palette = Palette::current();
         let width = (width as usize).max(1);
-        let mut lines = self.header_rows(width, &palette);
-        if !self.radar_hidden() {
-            lines.extend(self.body_rows(width, &palette));
+        // One blank row opens the run, as it does a chain of tool rows.
+        let mut lines = vec![String::new()];
+        lines.extend(self.header_rows(width, &palette));
+        if !self.outline_hidden() {
+            let body = self.body_rows(width, &palette);
+            if !body.is_empty() {
+                lines.extend(body);
+            }
         }
         lines
     }

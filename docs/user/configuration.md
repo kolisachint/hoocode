@@ -12,7 +12,7 @@ to move it.
 | `~/.hoocode/models.json` | Your own providers and models, for example a local OpenAI-compatible server |
 | `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules, written on first run ([below](#modes-and-approvals)) |
 | `~/.hoocode/skills/` | Skills |
-| `~/.hoocode/themes/` | Custom themes |
+| `~/.hoocode/themes/` | Custom themes. The built-in themes are `dark` and `light`; the `theme` setting also accepts `auto` (follows the terminal background). An unknown value falls back to `auto` |
 | `~/.hoocode/sessions/` | Saved sessions |
 
 ## Per project
@@ -70,6 +70,27 @@ To show the hoocode icon in Herdr desktop, save an icon (an SVG) as
                  "match": ["hoo"], "run": ["hoocode"] } } }
 ```
 
+## Screen
+
+The screen has the transcript, one prompt row (` › `) and a status line under it that
+holds the view, session, model, context use, cost and what hoocode is doing now. There
+is no header, logo or frame; dialogs open as panes in the prompt's place.
+
+- **Views** (`alt+o` cycles, `shift+alt+o` goes back): `outline` shows one recap row per
+  turn, `peek` (the default) shows each call on one row with its facts, `full` shows
+  every body. The old name `radar` still works as `outline` in `toolOutputView`.
+- **Themes**: `dark` and `light`, and `auto` follows the terminal background and
+  re-checks when it changes. Pick one with `/theme`. The older names (`daylight`,
+  `deep-space`, `colorsafe-*`, `high-contrast-*`, `warm-*`, `solarized-*`) are gone; a
+  saved value that no longer exists falls back to `auto`.
+- **No colour**: with `NO_COLOR` set, `TERM=dumb` or fewer than 256 colours, panes get
+  light borders and the selected row keeps its ` › ` marker.
+- **Removed**: the `/chrome` and `/color` commands and the `alt+z` key. Notices no longer
+  pop up as a toast: a short one takes the status line's left side for a few seconds,
+  a longer one sits as dim rows above the prompt.
+- **First run**: with no working provider the Log in pane opens by itself. Esc closes it
+  and the status line shows `not signed in  /login` until a provider works.
+
 ## Modes and approvals
 
 `~/.hoocode/hoo-config.json` is written the first time hoocode runs:
@@ -101,8 +122,16 @@ To show the hoocode icon in Herdr desktop, save an icon (an SVG) as
   `allowed_write_paths` limits Edit and Write to matching paths, `auto_allow` runs
   tools without asking, and `allowed_bash_commands` / `denied_bash_commands` take regexes.
   A key you leave out takes the shipped value above; set it (even to `[]`) to override.
-- **Always** on an approval card: for Shell it lasts for the session and covers that
-  program; for other tools it adds the tool to the mode's `auto_allow` in this file.
+- **Approval card** (`Allow Shell?`): press `1` to allow once, `2` to always allow
+  (when offered), `3` to refuse and tell the agent why. `e` edits the command first, and
+  any other letter starts typing a reply that `enter` sends as the reason. `enter`
+  takes the highlighted option and `esc` refuses. An `access:` line appears only when
+  the call writes, uses the network or pipes.
+- **Always** on an approval card (`2`): for Shell it lasts for the session and covers
+  that program; for other tools it adds the tool to the mode's `auto_allow` in this file.
+- **Questions**: when the agent asks a question, `1`-`9` pick an answer, `tab` moves to
+  the next question and `esc` skips it. The agent is told it was skipped and states the
+  default it will use.
 - A project can add rules in `.hoocode/hoo-config.json`: its `denied_tools` and
   `denied_bash_commands` add to yours. It cannot make anything run without asking:
   `auto_allow`, `safe_shell` and `skip_permissions` come from your file only, and so

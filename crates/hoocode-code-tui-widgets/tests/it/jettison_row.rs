@@ -1,5 +1,5 @@
-//! The Mission Control JETTISONED row (M8e6): the folded compaction
-//! summary is one vio row drawn with ratatui, with the real token counts.
+//! The compaction row: the folded compaction summary is one dim row drawn
+//! with ratatui, with the real token counts.
 //! Expanded, the message is still its sheet.
 
 use std::rc::Rc;
@@ -34,14 +34,14 @@ fn jettison_row_golden() {
 }
 
 #[test]
-fn folded_is_one_vio_row_with_the_range_and_real_tokens() {
+fn folded_is_one_dim_row_with_the_range_and_real_tokens() {
     let _g = lock();
     let rows = folded().render(100);
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert_eq!(visible_width(&rows[0]), 100, "{:?}", rows[0]);
     let plain = strip(&rows[0]);
     assert!(
-        plain.contains("JETTISONED M1–M3 into one summary stage"),
+        plain.contains("Compacted turns 1–3 into one summary"),
         "{plain:?}"
     );
     assert!(plain.contains("120 → 144 tokens (grew 24)"), "{plain:?}");
@@ -49,7 +49,7 @@ fn folded_is_one_vio_row_with_the_range_and_real_tokens() {
 }
 
 #[test]
-fn a_single_mission_jettison_names_no_range() {
+fn a_single_turn_compaction_names_no_range() {
     let _g = lock();
     let md: Rc<dyn Fn() -> MarkdownTheme> = Rc::new(get_markdown_theme);
     let mut component = CompactionSummaryMessageComponent::new(
@@ -64,14 +64,14 @@ fn a_single_mission_jettison_names_no_range() {
     );
     let plain = strip(&component.render(100)[0]);
     assert!(
-        plain.contains("JETTISONED M2 into one summary stage"),
+        plain.contains("Compacted turn 2 into one summary"),
         "{plain:?}"
     );
     assert!(plain.contains("200 → 50 tokens (saved 150)"), "{plain:?}");
 }
 
 #[test]
-fn a_summary_from_before_mission_ranges_names_earlier_missions() {
+fn a_summary_from_before_turn_ranges_names_earlier_turns() {
     let _g = lock();
     let md: Rc<dyn Fn() -> MarkdownTheme> = Rc::new(get_markdown_theme);
     let mut component = CompactionSummaryMessageComponent::new(
@@ -86,7 +86,7 @@ fn a_summary_from_before_mission_ranges_names_earlier_missions() {
     );
     let plain = strip(&component.render(100)[0]);
     assert!(
-        plain.contains("JETTISONED earlier missions into one summary stage"),
+        plain.contains("Compacted earlier turns into one summary"),
         "{plain:?}"
     );
     assert!(plain.contains("from 100 tokens"), "{plain:?}");

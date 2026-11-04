@@ -1,15 +1,17 @@
 //! `components/task-panel.ts`: the task ledger above the prompt.
 //!
-//! Mission Control chrome (spec §4 c6): when shown, the panel is the single
-//! FLIGHT PLAN console: the tab strip on the top edge after the name, each tab
-//! with its count (the shown tab in brackets), one row per row of the shown
-//! lens, and the hint foot while the keyboard is in the panel. It draws the
-//! same at every density.
+//! Declutter spec (Dialogs, Tasks): the panel is a pane above the prompt.
+//! Unfocused it has no title: rows only, with one dim strip row first when
+//! more than one tab has rows (`plan 1/3 · agents 1/1 · mcp 1 · ctrl+g`).
+//! Focused it gets the `Tasks` chip with `/tasks · ctrl+g` and the strip
+//! after it, the pick marker and the hint row. Row glyphs: `◉` working,
+//! `○` queued, `●` done, `⊗` failed or cancelled. It draws the same at every
+//! density.
 //!
 //! The panel is shown by default in the peek and full views and hidden in
-//! radar, where the flight log carries the work. Ctrl+G toggles it in every
+//! outline, where the flight log carries the work. Ctrl+G toggles it in every
 //! view. A view switch resets the toggle to that view's default
-//! ([`TaskPanelComponent::set_radar`]). With no rows it draws nothing.
+//! ([`TaskPanelComponent::set_outline`]). With no rows it draws nothing.
 //!
 //! One tab per kind of task, in tab order (see [`TaskPanelView`]); a tab
 //! with no rows is hidden.
@@ -35,18 +37,17 @@ use std::collections::{HashMap, HashSet};
 
 use hoocode_code_agent_session::format::{format_duration_secs, format_tokens};
 use hoocode_code_task_store::{
-    task_store, RowAction, Task, TaskAgent, TaskAgentKind, TaskKind, TaskStatus, TaskStore,
+    task_store, RowAction, Task, TaskAgent, TaskKind, TaskStatus, TaskStore,
 };
 use hoocode_code_tui_theme::agent_color_for;
-use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_tui_glyphs::status;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
-use hoocode_tui_ratatui::{bold, truncate_line, Line, Modifier, Palette, Span, Style};
+use hoocode_tui_ratatui::{truncate_line, Line, Palette, Span, Style};
 use hoocode_tui_render::Component;
 use hoocode_tui_util::truncate_to_width;
 
-use crate::console::{hints, Console, TabsJoin};
-use crate::trajectory::short_dur;
+use crate::pane::{hint_line, Pane, PaneStyle};
+use crate::tool_row::short_dur;
 
 fn task_status_icon(status: TaskStatus) -> &'static str {
     // Mission Control circles (spec §2): hollow = not started, fisheye =
@@ -57,12 +58,9 @@ fn task_status_icon(status: TaskStatus) -> &'static str {
         TaskStatus::InProgress => status::RUNNING_STR,
         TaskStatus::Done => status::DONE_STR,
         TaskStatus::Failed => "⊗",
-        TaskStatus::Cancelled => "⊘",
+        TaskStatus::Cancelled => "⊗",
     }
 }
-
-/// Marker for MCP-sourced rows, which have no owning agent.
-const MCP_SOURCE_GLYPH: &str = "⧉";
 
 /// One tab of the panel: the rows of one [`TaskKind`]. Declared in tab order
 /// (the derived `Ord`), and [`TaskPanelView::ALL`] lists them, so [`RowModel`]
@@ -138,11 +136,6 @@ pub enum PanelEvent {
 fn is_delegated(task: &Task) -> bool {
     task.kind() != TaskKind::Plan
 }
-
-/// The owner glyph of a subagent's row (spec §3.2: `◈`, violet). The main
-/// agent's rows carry none (`show_owner_glyph` is false for them), so it
-/// has no glyph.
-const SUBAGENT_GLYPH: &str = "◈";
 
 fn now_ms() -> u64 {
     hoocode_code_task_store::now_ms()
@@ -342,102 +335,25 @@ fn flat_lens_rows(tasks: &[Task], kind: TaskKind) -> Vec<PanelRow> {
         .collect()
 }
 
-/// How much of the tab strip is drawn, from the most to the least.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StripFit {
-    /// Every tab with its count.
-    Full,
-    /// Only the shown tab keeps its count.
-    ShownCount,
-    /// Labels only, no counts.
-    Labels,
-    /// The shown tab alone, with its count (the plan's done/total stays on
-    /// the edge on a narrow terminal).
-    ShownOnlyCount,
-    /// The shown tab alone.
-    ShownOnly,
-}
-
-/// The top edge of the FLIGHT PLAN console: what to draw there at a width.
-/// Attempts run in order and the first that fits the edge wins. The shown
-/// tab's count is the only `done/total` on screen, so it goes last. First,
-/// with the count: each strip from every tab with its count down to the shown
-/// tab alone, beside the `/tasks · ctrl+g` hint; then without the hint; then
-/// with the ` ━ ` join narrowed to a space; then with no name. Then the same
-/// without the count (labels, the bare shown tab). The shown tab keeps its
-/// brackets in every attempt; if none fits, it is cut by the frame.
-fn flight_edge(model: &RowModel, view: TaskPanelView, width: usize) -> Console {
-    let pal = Palette::current();
-    let hint = Line::from(vec![Span::styled("/tasks · ctrl+g", pal.faint())]);
-    // The name, narrowing: ` ━ ` to a space, then no name at all.
-    let names = [
-        ("FLIGHT PLAN", TabsJoin::Edge),
-        ("FLIGHT PLAN", TabsJoin::Space),
-        ("", TabsJoin::Space),
-    ];
-    const COUNTED: [StripFit; 3] = [
-        StripFit::Full,
-        StripFit::ShownCount,
-        StripFit::ShownOnlyCount,
-    ];
-    const BARE: [StripFit; 2] = [StripFit::Labels, StripFit::ShownOnly];
-    let mut attempts: Vec<(bool, usize, StripFit)> = Vec::new();
-    // With the count: the hint goes before the name narrows.
-    for (hint_on, name) in [(true, 0), (false, 0), (false, 1), (false, 2)] {
-        attempts.extend(COUNTED.map(|fit| (hint_on, name, fit)));
-    }
-    // The count goes last.
-    for (hint_on, name) in [(true, 0), (false, 0), (false, 1), (false, 2)] {
-        attempts.extend(BARE.map(|fit| (hint_on, name, fit)));
-    }
-    let build = |(hint_on, name, fit): (bool, usize, StripFit)| {
-        let (title, join) = names[name];
-        let mut console = Console::new(title, "");
-        console.tabs_join = join;
-        if hint_on {
-            console.right = hint.clone();
-        }
-        console.tabs = tab_strip(model, view, fit);
-        console
-    };
-    attempts
-        .into_iter()
-        .map(build)
-        .find(|console| console.tabs.width() <= console.tabs_budget(width))
-        // Nothing fits: the bare shown tab alone, cut by the frame.
-        .unwrap_or_else(|| build((false, 2, StripFit::ShownOnly)))
-}
-
-/// The tab strip drawn at `fit`: the shown tab in brackets and bold (`[Agents 1 running]`), so
-/// the strip reads without colour. See [`flight_edge`].
-fn tab_strip(model: &RowModel, view: TaskPanelView, fit: StripFit) -> Line<'static> {
-    let pal = Palette::current();
+/// The tab strip: `plan 1/3 · agents 1/1 · mcp 1`. The shown tab reads in
+/// normal text, the others dim. With `hint` the dim `ctrl+g` ends it.
+fn tab_strip(model: &RowModel, view: TaskPanelView, hint: bool) -> Line<'static> {
+    let st = PaneStyle::current();
     let mut spans = Vec::new();
-    let mut drawn = false;
-    for &tab in model.views() {
-        let shown = tab == view;
-        if matches!(fit, StripFit::ShownOnlyCount | StripFit::ShownOnly) && !shown {
-            continue;
+    for (i, &tab) in model.views().iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" · ", st.dim_style()));
         }
-        let label = match fit {
-            StripFit::Full => model.lens_stats(tab).label(tab),
-            StripFit::ShownCount | StripFit::ShownOnlyCount if shown => {
-                model.lens_stats(tab).label(tab)
-            }
-            StripFit::ShownCount
-            | StripFit::ShownOnlyCount
-            | StripFit::Labels
-            | StripFit::ShownOnly => tab.label().to_string(),
-        };
-        if drawn {
-            spans.push(Span::raw(" "));
-        }
-        drawn = true;
-        if shown {
-            spans.push(Span::styled(format!("[{label}]"), bold(pal.acc())));
+        let label = model.lens_stats(tab).label(tab).to_lowercase();
+        let style = if tab == view {
+            st.text_style()
         } else {
-            spans.push(Span::styled(label, pal.faint()));
-        }
+            st.dim_style()
+        };
+        spans.push(Span::styled(label, style));
+    }
+    if hint {
+        spans.push(Span::styled(" · ctrl+g", st.dim_style()));
     }
     Line::from(spans)
 }
@@ -544,7 +460,7 @@ fn subagent_lens_rows(tasks: &[Task]) -> Vec<PanelRow> {
 fn flight_status_style(status: TaskStatus) -> Style {
     let pal = Palette::current();
     match status {
-        TaskStatus::InProgress => pal.acc(),
+        TaskStatus::InProgress => pal.warn(),
         TaskStatus::Done => pal.ok(),
         TaskStatus::Failed => pal.err(),
         // Not started reads faint (spec §3.1: `○`); a user-initiated
@@ -578,21 +494,12 @@ fn flight_detail(
         let next = schedule_next_in(task, now)
             .map(|next| format!(" · {next}"))
             .unwrap_or_default();
-        return Some((format!("{WARNING_GLYPH} {note}{next}"), pal.warn()));
-    }
-    // A waypoint names the time it took (spec §4 c6): the plan has no step
-    // linkage yet, so the wall-clock time stands in for `steps 02–03 ·
-    // 0.4s`. Pending waypoints show nothing.
-    if task.kind() == TaskKind::Plan
-        && matches!(
-            task.status,
-            TaskStatus::Done | TaskStatus::Failed | TaskStatus::InProgress
-        )
-    {
-        return Some((
-            format_duration_secs(task_elapsed_secs(task, now)),
-            pal.faint(),
-        ));
+        let style = if task.status == TaskStatus::Failed {
+            pal.err()
+        } else {
+            pal.warn()
+        };
+        return Some((format!("{note}{next}"), style));
     }
     // A running shell job is a satellite (spec §4 r9/c7). It is spanned in
     // `flight_row`, not painted here: painting over `paint` output would
@@ -663,7 +570,7 @@ fn flight_detail(
                 return Some((next, pal.dim()));
             }
         }
-        _ => {}
+        TaskStatus::Cancelled => return Some(("cancelled".to_string(), pal.dim())),
     }
     None
 }
@@ -679,14 +586,6 @@ fn schedule_next_in(task: &Task, now: u64) -> Option<String> {
         "next in {}",
         format_duration_secs(((next - now) / 1000) as f64)
     ))
-}
-
-/// The row key of a shell job without its `shell:` store prefix.
-fn shell_job_name(task: &Task) -> &str {
-    task.key
-        .as_deref()
-        .and_then(|key| key.strip_prefix("shell:"))
-        .unwrap_or("job")
 }
 
 /// The right detail of a row, laid out like every other one: the row keeps
@@ -725,64 +624,39 @@ fn flight_row(
         spans.push(Span::styled(tree_prefix.to_string(), pal.faint()));
     }
     let is_mcp = task.kind() == TaskKind::Mcp;
-    let owner_kind = owner
-        .map(|o| o.kind)
-        .unwrap_or(if task.kind() == TaskKind::Subagent {
-            TaskAgentKind::Subagent
-        } else {
-            TaskAgentKind::Main
-        });
-    if is_mcp || owner_kind != TaskAgentKind::Main {
-        let glyph = if is_mcp {
-            MCP_SOURCE_GLYPH
-        } else {
-            SUBAGENT_GLYPH
-        };
-        // Agents read violet (spec §2); MCP calls keep their own token.
-        let style = if is_mcp { pal.style("mcp") } else { pal.vio() };
-        spans.push(Span::styled(glyph, style));
-        spans.push(Span::raw(" "));
-    }
+    // An agent or MCP row names its source, then two spaces: `explore  Trace
+    // the auth flow`.
     let tag = if is_mcp {
         Some((
-            format!("[{}]", task.subagent_mode.as_deref().unwrap_or("MCP")),
+            task.subagent_mode.as_deref().unwrap_or("mcp").to_string(),
             pal.style("mcp"),
         ))
     } else {
         task.subagent_mode
             .as_ref()
-            .map(|mode| (format!("[{mode}]"), pal.style(agent_color_for(mode))))
+            .map(|mode| (mode.to_string(), pal.style(agent_color_for(mode))))
     };
     if let Some((tag, style)) = tag {
         spans.push(Span::styled(tag, style));
-        spans.push(Span::raw(" "));
+        spans.push(Span::raw("  "));
     }
+    // Normal text, except finished and cancelled rows, which sit back (dim).
     let title_style = match task.status {
-        TaskStatus::Done => pal.faint(),
-        TaskStatus::Failed => pal.err(),
-        TaskStatus::InProgress => bold(Style::default()),
-        TaskStatus::Pending => pal.dim(),
-        TaskStatus::Cancelled => pal.dim().add_modifier(Modifier::CROSSED_OUT),
+        TaskStatus::Done | TaskStatus::Cancelled => pal.dim(),
+        TaskStatus::Failed | TaskStatus::InProgress | TaskStatus::Pending => Style::default(),
     };
     spans.push(Span::styled(task.title.clone(), title_style));
     let mut row = Line::from(spans);
-    // A running shell job is a satellite (spec §4 r9/c7): `⌁ sat job-1 ·
-    // in orbit 4s` on the right, spanned like the radar row.
+    // A running shell job shows its clock: `sleep 60  4s`.
     if !confirm
         && task.note.is_none()
         && task.kind() == TaskKind::Shell
         && task.status == TaskStatus::InProgress
     {
-        let job = shell_job_name(task);
         let elapsed = task_elapsed_secs(task, now) as u64;
         append_detail(
             &mut row,
-            vec![
-                Span::styled("⌁", pal.acc()),
-                Span::styled(format!(" sat {job} "), pal.acc()),
-                Span::styled("·", pal.dim()),
-                Span::styled(format!(" in orbit {}", short_dur(elapsed)), pal.acc()),
-            ],
+            vec![Span::styled(short_dur(elapsed), pal.dim())],
             inner,
         );
         return row;
@@ -805,13 +679,10 @@ fn row_cap(screen_rows: u16) -> usize {
     (usize::from(screen_rows) / 4).clamp(1, PANEL_MAX_ROWS)
 }
 
-/// The FLIGHT PLAN console (M7, spec §4 c6): the tab strip on the top edge
-/// after the name (each tab with its count, so the plan's done/total and the
-/// live agents read there once), one waypoint row per row of the shown lens,
-/// and the hint foot while the keyboard is in the panel. Shown at every
-/// density; the pick marker and the hint foot only while `focused`. Rows
-/// beyond `max_rows` are windowed around the pick, and a `N more` row says
-/// how many are hidden.
+/// The task pane: the tab strip (a dim first row unfocused, after the
+/// `Tasks` chip focused), one row per row of the shown tab, and the hint row
+/// while the keyboard is in the panel. Rows beyond `max_rows` are windowed
+/// around the pick, and a `N more` row says how many are hidden.
 #[allow(clippy::too_many_arguments)]
 fn render_flight_plan(
     model: &RowModel,
@@ -823,17 +694,28 @@ fn render_flight_plan(
     now: u64,
     max_rows: usize,
 ) -> Vec<String> {
-    let pal = Palette::current();
-    let mut console = flight_edge(model, view, width);
+    let st = PaneStyle::current();
     let ids = model.row_ids(view);
-    // Rows sit behind the console's `› ` marker or gutter, so they get two
-    // cells less than the frame's inner width.
+    // Rows sit behind the pane's 3-column gutter and a 1-column margin.
     let row_inner = width.saturating_sub(4);
-    if focused {
-        console.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
-        console.hint = hints(&pick_hints(model, selected));
-    }
-    console.rows = model
+    let mut pane = if focused {
+        let mut pane = Pane::new("Tasks");
+        pane.command = "/tasks · ctrl+g".to_string();
+        pane.facts = tab_strip(model, view, false);
+        pane.selected = selected.and_then(|id| ids.iter().position(|row| *row == id));
+        pane.hint = hint_line(&pick_hints(model, selected));
+        pane
+    } else {
+        let mut pane = Pane::new("");
+        // One tab needs no strip; several get one dim row first.
+        if model.views().len() > 1 {
+            let mut spans = vec![Span::raw("  ")];
+            spans.extend(tab_strip(model, view, true).spans);
+            pane.top.push(Line::from(spans));
+        }
+        pane
+    };
+    pane.rows = model
         .lens(view)
         .map(|(row, task)| {
             flight_row(
@@ -846,15 +728,16 @@ fn render_flight_plan(
             )
         })
         .collect();
-    console.max_visible = Some(max_rows);
-    let hidden = console.rows.len().saturating_sub(max_rows);
+    pane.max_visible = Some(max_rows);
+    let hidden = pane.rows.len().saturating_sub(max_rows);
     if hidden > 0 {
-        console.bottom.push(Line::from(Span::styled(
+        pane.bottom.push(Line::from(Span::styled(
             format!("  {hidden} more"),
-            pal.faint(),
+            st.dim_style(),
         )));
     }
-    console.render(width)
+    pane.style = Some(st);
+    pane.render(width)
 }
 
 /// Whether `x` can cancel a row: an Abort row (a running shell job, an MCP call
@@ -894,8 +777,8 @@ fn pick_hints(model: &RowModel, picked: Option<u64>) -> Vec<(&'static str, &'sta
 /// `TaskPanelComponent`.
 pub struct TaskPanelComponent {
     view: TaskPanelView,
-    /// Radar view: the panel starts hidden (see [`TaskPanelComponent::is_shown`]).
-    radar: bool,
+    /// Outline view: the panel starts hidden (see [`TaskPanelComponent::is_shown`]).
+    outline: bool,
     /// The user's Ctrl+G choice for the current view; `None` takes the view's default.
     shown_override: Option<bool>,
     disposed: bool,
@@ -948,7 +831,7 @@ impl TaskPanelComponent {
     pub fn new() -> Self {
         Self {
             view: TaskPanelView::Plan,
-            radar: false,
+            outline: false,
             shown_override: None,
             disposed: false,
             ticking: false,
@@ -976,18 +859,18 @@ impl TaskPanelComponent {
         self.selected = None;
     }
 
-    /// Radar view (M5): the flight log carries the running work, so the panel
+    /// Outline view (M5): the flight log carries the running work, so the panel
     /// starts hidden there. A view switch clears the Ctrl+G choice, so every
     /// view starts from its own default.
-    pub fn set_radar(&mut self, radar: bool) {
-        self.radar = radar;
+    pub fn set_outline(&mut self, outline: bool) {
+        self.outline = outline;
         self.shown_override = None;
     }
 
     /// Whether the panel is drawn: the user's Ctrl+G choice for this view,
-    /// else shown in peek and full and hidden in radar.
+    /// else shown in peek and full and hidden in outline.
     pub fn is_shown(&self) -> bool {
-        self.shown_override.unwrap_or(!self.radar)
+        self.shown_override.unwrap_or(!self.outline)
     }
 
     /// Ctrl+G: flips shown and hidden for this view. Returns the new state.
@@ -1300,7 +1183,9 @@ fn describe_run(owner: &TaskAgent, now: u64) -> String {
 #[cfg(test)]
 mod row_model_tests {
     use super::*;
-    use hoocode_code_task_store::{CreateTaskOptions, TaskAgentPatch, TaskPatch, TaskSource};
+    use hoocode_code_task_store::{
+        CreateTaskOptions, TaskAgentKind, TaskAgentPatch, TaskPatch, TaskSource,
+    };
 
     fn plan(store: &TaskStore, title: &str) -> u64 {
         store.create(title, CreateTaskOptions::default()).id

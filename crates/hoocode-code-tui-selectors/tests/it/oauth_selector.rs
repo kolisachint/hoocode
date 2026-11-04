@@ -96,8 +96,8 @@ fn shows_environment_api_key_auth_as_configured() {
     );
     let output = render(&mut selector);
     assert!(output.contains("OpenAI"));
-    assert!(output.contains("✓ env: OPENAI_API_KEY"));
-    assert!(!output.contains("unconfigured"));
+    assert!(output.contains("env OPENAI_API_KEY"));
+    assert!(!output.contains("not configured"));
 }
 
 fn with_status(id: &str, status: AuthStatus) -> String {
@@ -123,8 +123,8 @@ fn shows_custom_provider_environment_api_key_auth_from_the_status_resolver() {
         },
     );
     assert!(output.contains("ollama"));
-    assert!(output.contains("✓ env: OLLAMA_API_KEY"));
-    assert!(!output.contains("unconfigured"));
+    assert!(output.contains("env OLLAMA_API_KEY"));
+    assert!(!output.contains("not configured"));
 }
 
 #[test]
@@ -139,8 +139,8 @@ fn shows_models_json_api_key_auth_as_configured() {
         },
     );
     assert!(output.contains("local-proxy"));
-    assert!(output.contains("✓ key in models.json"));
-    assert!(!output.contains("unconfigured"));
+    assert!(output.contains("key in models.json"));
+    assert!(!output.contains("not configured"));
 }
 
 #[test]
@@ -155,8 +155,8 @@ fn shows_models_json_command_auth_as_configured() {
         },
     );
     assert!(output.contains("op-proxy"));
-    assert!(output.contains("✓ command in models.json"));
-    assert!(!output.contains("unconfigured"));
+    assert!(output.contains("command in models.json"));
+    assert!(!output.contains("not configured"));
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn the_login_dialog_hands_back_a_prompted_answer_and_aborts_on_escape() {
     let _g = lock();
     let mut dialog = LoginDialogComponent::new("OpenAI", None);
     let screen = strip(&dialog.render(80));
-    assert!(screen.contains("DOCKING · /login"));
+    assert!(screen.contains("Log in  /login"));
     assert!(screen.contains("OpenAI"));
     assert!(screen.contains("Starting…"));
 
@@ -250,7 +250,7 @@ fn check_docking_provider(name: &str, width: u16) {
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("DOCKING · /login  3 providers"),
+        text.contains("Log in  /login  3 providers"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -259,19 +259,19 @@ fn check_docking_provider(name: &str, width: u16) {
         "{name}: missing selected provider in\n{text}"
     );
     assert!(
-        text.contains("✓ configured"),
+        text.contains("configured"),
         "{name}: missing stored-auth suffix in\n{text}"
     );
     assert!(
-        text.contains("env: OPENAI_API_KEY"),
+        text.contains("env OPENAI_API_KEY"),
         "{name}: missing env suffix in\n{text}"
     );
     assert!(
-        text.contains("unconfigured"),
+        text.contains("not configured"),
         "{name}: missing unconfigured suffix in\n{text}"
     );
     assert!(
-        text.contains("enter dock"),
+        text.contains("enter log in"),
         "{name}: missing hint foot in\n{text}"
     );
     assert_golden!(name, rendered);
@@ -317,7 +317,7 @@ fn check_docking_auth(name: &str, width: u16) {
     let rendered = render_golden(&mut dialog, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("DOCKING · /login  Anthropic"),
+        text.contains("Log in  /login  Anthropic"),
         "{name}: missing title in\n{text}"
     );
     assert!(

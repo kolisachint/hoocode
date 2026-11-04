@@ -1,8 +1,7 @@
 
-  ● Agent explore · Find the footer code · background
+ ● Agent explore · Find the footer code · background
 --- styles ---
-r1 c2-3 fg=#ffff00
-r1 c4-9 bold
-r1 c10-16 fg=#56b6c2
-r1 c18-39 fg=#989898
-r1 c41-52 fg=#989898
+r1 c1 fg=#989898
+r1 c3-7 fg=#e5e5e7 bold
+r1 c9-38 fg=#e5e5e7
+r1 c39-51 fg=#989898

@@ -1,0 +1,9 @@
+
+«fg=#00625c;bg=#dadbe6» › «fg=#2b2f36;bg=#dadbe6»first question«bg=#dadbe6»                                                                                   «»
+
+ «fg=#555864»●«» «fg=#2b2f36;bold»Shell«fg=#2b2f36» cargo test -p hoocode-config«»
+
+«fg=#555864» ○ steer this way · sends after this step«»
+«fg=#555864» ○ and then this · sends after this turn«»
+«fg=#00625c;bg=#dadbe6» › «bg=#dadbe6»                                                                                                 «»
+ «fg=#7a5200»◉«fg=#555864» working · 4s · esc stop«»             «fg=#555864»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

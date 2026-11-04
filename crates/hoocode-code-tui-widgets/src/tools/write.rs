@@ -9,7 +9,6 @@ use serde_json::{json, Value};
 
 use super::{text, trim_trailing_empty_lines};
 use crate::fold::more_lines_hint;
-use crate::read_output::render_read_output;
 use crate::render_utils::{
     arg_or, invalid_arg_text, normalize_display_text, replace_tabs, str_arg,
 };
@@ -140,8 +139,7 @@ fn update_incremental(
     Some(cache)
 }
 
-/// The success preview: the first lines of the written content, numbered like
-/// Read, with the shared `… N more lines` hint. `None` for empty content.
+/// The success preview: the first lines of the written content, with the shared `… N more lines` hint. `None` for empty content.
 fn format_write_preview(raw_path: Option<&str>, content: &str, expanded: bool) -> Option<String> {
     let normalized = replace_tabs(&normalize_display_text(content));
     let rendered: Vec<String> = match raw_path.and_then(get_language_from_path) {
@@ -152,15 +150,13 @@ fn format_write_preview(raw_path: Option<&str>, content: &str, expanded: bool) -
     if lines.is_empty() {
         return None;
     }
-    Some(peek_block(expanded, &lines, |shown| {
-        render_read_output(&shown.join("\n"), 1)
-    }))
+    Some(peek_block(expanded, &lines, |shown| shown.to_vec()))
 }
 
 /// The call line. `show_body` holds while there is no result: the content
 /// previews under the header as it streams, and stays while the call runs
 /// or if it was cut short. Once a result exists it is the one copy of the
-/// content (numbered, or the error), so the call is a header only.
+/// content (or the error), so the call is a header only.
 fn format_write_call(
     args: &Value,
     cache: Option<&HighlightCache>,
@@ -172,7 +168,7 @@ fn format_write_call(
     let path = raw_path.as_deref().map(shorten_path);
     let path_display = match path {
         None => invalid_arg_text(),
-        Some(p) if !p.is_empty() => t.fg("accent", &p),
+        Some(p) if !p.is_empty() => t.fg("text", &p),
         Some(_) => t.fg("toolOutput", "…"),
     };
     let mut text = format!("{} {path_display}", t.fg("toolTitle", &t.bold("Write")));

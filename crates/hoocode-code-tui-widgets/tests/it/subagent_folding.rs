@@ -1,11 +1,11 @@
-//! Radar's delegated-work rows (their hits) and AgentOutput's folded peek.
+//! Outline's delegated-work rows (their hits) and AgentOutput's folded peek.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::support::{lock, strip};
 use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::radar::{mission_rows, FlightItem, FlightMark, FlightStats};
+use hoocode_code_tui_widgets::outline::{turn_rows, FlightItem, FlightMark, FlightStats};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -16,7 +16,7 @@ use hoocode_tui_ratatui::Palette;
 use hoocode_tui_render::Component;
 use serde_json::{json, Value};
 
-use ToolOutputView::{Peek, Radar};
+use ToolOutputView::{Outline, Peek};
 
 fn cwd() -> String {
     std::env::current_dir()
@@ -112,52 +112,45 @@ fn plain(lines: Vec<String>) -> Vec<String> {
     lines.iter().map(|l| strip(l)).collect()
 }
 
-// --- radar: a settled subagent folds into its batch; only a failed one keeps
-// --- its own hit row ---------------------------------------------------------
+// --- outline: a settled subagent folds into its recap; only a failed one keeps
+// --- its own row -------------------------------------------------------------
 
-/// The radar rows of one mission that holds the chain's calls as one batch,
-/// keeping only the rows that carry a hit.
-fn radar_hits(chain: &ToolChainComponent) -> Vec<String> {
+/// The outline rows of one turn that holds the chain's calls as one batch,
+/// keeping only the failed calls' rows.
+fn outline_hits(chain: &ToolChainComponent) -> Vec<String> {
     let stats = FlightStats {
         mark: FlightMark::Landed,
         landed_time: Some("1s".to_string()),
         items: vec![FlightItem::Batch(chain.tool_blocks().to_vec())],
         ..Default::default()
     };
-    plain(mission_rows(
-        1,
-        "delegate",
-        &stats,
-        &Palette::default(),
-        120,
-    ))
-    .into_iter()
-    .filter(|l| l.contains("HIT"))
-    .collect()
+    plain(turn_rows("delegate", &stats, &Palette::default(), 120))
+        .into_iter()
+        .filter(|l| l.trim_start().starts_with('⊗'))
+        .collect()
 }
 
 #[test]
-fn radar_keeps_only_the_failed_subagent_as_a_hit_row() {
+fn outline_keeps_only_the_failed_subagent_as_its_own_row() {
     let _g = lock();
     let mut subs: Vec<Sub> = (0..10).map(|_| agent_done()).collect();
     subs.push(agent_stopped());
-    let chain = group(Radar, subs, ChainState::Done);
-    // Ten settled subagents fold into the batch line; the stopped one keeps a hit row.
-    let hits = radar_hits(&chain);
+    let chain = group(Outline, subs, ChainState::Done);
+    // Ten settled subagents fold into the recap; the stopped one keeps its own row.
+    let hits = outline_hits(&chain);
     assert_eq!(hits.len(), 1, "{hits:?}");
-    assert!(hits[0].starts_with("   ┊   └ 11 Agent"), "{hits:?}");
-    assert!(hits[0].trim_end().ends_with("HIT"), "{hits:?}");
+    assert!(hits[0].starts_with(" ⊗ Agent"), "{hits:?}");
 }
 
 #[test]
-fn radar_shows_no_hit_when_the_subagents_outcomes_all_happened() {
+fn outline_shows_no_failed_row_when_the_subagents_outcomes_all_happened() {
     let _g = lock();
-    let chain = group(Radar, vec![agent_done(), agent_done()], ChainState::Done);
-    assert!(radar_hits(&chain).is_empty());
+    let chain = group(Outline, vec![agent_done(), agent_done()], ChainState::Done);
+    assert!(outline_hits(&chain).is_empty());
 }
 
 #[test]
-fn radar_counts_each_task_once_however_often_it_was_polled() {
+fn outline_counts_each_task_once_however_often_it_was_polled() {
     let _g = lock();
     let subs = vec![
         poll("explore#1", "running"),
@@ -165,16 +158,16 @@ fn radar_counts_each_task_once_however_often_it_was_polled() {
         poll("explore#1", "done"),
         poll("explore#2", "done"),
     ];
-    let chain = group(Radar, subs, ChainState::Done);
-    assert!(radar_hits(&chain).is_empty());
+    let chain = group(Outline, subs, ChainState::Done);
+    assert!(outline_hits(&chain).is_empty());
 }
 
 #[test]
-fn radar_has_no_hit_for_a_background_dispatch_without_an_outcome() {
+fn outline_has_no_failed_row_for_a_background_dispatch_without_an_outcome() {
     let _g = lock();
     let subs = vec![background_placeholder(), background_placeholder()];
-    let chain = group(Radar, subs, ChainState::Done);
-    assert!(radar_hits(&chain).is_empty());
+    let chain = group(Outline, subs, ChainState::Done);
+    assert!(outline_hits(&chain).is_empty());
 }
 
 // --- peek: AgentOutput's folded body ---------------------------------------------
@@ -193,13 +186,13 @@ fn output_peek(text: &'static str, width: u16) -> Vec<String> {
     plain(lines)
 }
 
-/// The peek rows that carry the gutter. The content box indents every row
-/// one column and pads it to the width, so both ends are trimmed.
-fn gutter_rows(lines: &[String]) -> Vec<&str> {
+/// The body rows: dim text at column 4, no gutter. Rows are padded to the
+/// width, so the right end is trimmed.
+fn body_rows(lines: &[String]) -> Vec<&str> {
     lines
         .iter()
+        .filter(|l| l.starts_with("    "))
         .map(|l| l.trim())
-        .filter(|l| l.starts_with("│ "))
         .collect()
 }
 
@@ -214,35 +207,31 @@ fn agent_output_peek_shows_three_summary_rows_then_how_many_are_left() {
             .any(|l| l.contains("AgentOutput explore#1 · done")),
         "{lines:?}"
     );
-    let rows = gutter_rows(&lines);
+    let rows = body_rows(&lines);
     assert_eq!(
         rows.len(),
         4,
         "three rows and the more-lines row: {lines:?}"
     );
-    assert_eq!(rows[0], "│ one");
-    assert_eq!(rows[2], "│ three");
-    assert_eq!(rows[3], "│ … 3 more lines");
+    assert_eq!(rows[0], "one");
+    assert_eq!(rows[2], "three");
+    assert_eq!(rows[3], "… 3 more lines");
 }
 
 #[test]
-fn agent_output_peek_guards_every_wrapped_row_with_the_gutter() {
+fn agent_output_peek_keeps_every_wrapped_row_at_the_body_column() {
     let _g = lock();
     let long = "a wrapped summary line that is long enough to need a second peek row\nnext";
     let lines = output_peek(long, 40);
-    let rows = gutter_rows(&lines);
-    // Three peek rows (all from the wrapped line), then the more-lines row.
-    assert_eq!(rows.len(), 4, "{lines:?}");
-    assert_eq!(rows[0], "│ a wrapped summary line that is");
+    let rows = body_rows(&lines);
+    // The wrapped line takes two rows, then the next line: three rows in all.
+    assert_eq!(rows.len(), 3, "{lines:?}");
+    assert_eq!(rows[0], "a wrapped summary line that is long");
     assert_eq!(
-        rows[1], "│ long enough to need a second",
-        "the continuation row keeps the gutter: {lines:?}"
+        rows[1], "enough to need a second peek row",
+        "the continuation row keeps the column: {lines:?}"
     );
-    assert_eq!(
-        rows[2], "│ peek row",
-        "the second continuation row keeps the gutter: {lines:?}"
-    );
-    assert_eq!(rows[3], "│ … 1 more line", "{lines:?}");
+    assert_eq!(rows[2], "next", "{lines:?}");
 }
 
 #[test]
@@ -250,8 +239,8 @@ fn agent_output_peek_strips_markdown_from_the_summary() {
     let _g = lock();
     let lines = output_peek("# Findings\n- **Mapped** the `module`\nlast", 60);
     let joined = lines.join("\n");
-    assert!(joined.contains("│ Findings"), "{lines:?}");
-    assert!(joined.contains("│ Mapped the module"), "{lines:?}");
+    assert!(joined.contains("    Findings"), "{lines:?}");
+    assert!(joined.contains("    Mapped the module"), "{lines:?}");
     assert!(!joined.contains("**"), "{lines:?}");
     assert!(!joined.contains('`'), "{lines:?}");
     assert!(!joined.contains("# "), "{lines:?}");

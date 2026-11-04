@@ -1,39 +1,30 @@
-┏━ STAGE SEPARATION · /fork ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
-┃Everything above the line launches as a new session; this one keeps flying.   ┃
-┃  what does the wrap crate do?                                                ┃
-┃› add a width check to wrap_text in src/wrap.rs · carries 2 messages · 0.0k f…┃
-┃  lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor┃
-┃  ✂ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┃
-┃  Message 2 of 3                                                              ┃
-┗━ ↑↓ move the line · enter fork · esc close ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+  Fork  /fork  message 2 of 3
+ The new session gets the selected message and everything above it; this one s…
+   what does the wrap crate do?
+ › add a width check to wrap_text in src/wrap.rs  carries 2 messages
+   lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod temp…
+ ↑↓ move · enter fork · esc close
 --- styles ---
-r0 c0-1 fg=#9b8cff
-r0 c3-26 fg=#9b8cff bold
-r0 c28-75 fg=#9b8cff
-r0 c78-79 fg=#9b8cff
-r1 c0 fg=#9b8cff
-r1 c1-75 fg=#a8a8a8
-r1 c79 fg=#9b8cff
-r2 c0 fg=#9b8cff
-r2 c79 fg=#9b8cff
-r3 c0 fg=#9b8cff
-r3 c1-2 fg=#5cc8bb bg=#2a2a36
-r3 c3-78 fg=#5cc8bb bg=#2a2a36 bold
-r3 c79 fg=#9b8cff
-r4 c0 fg=#9b8cff
-r4 c79 fg=#9b8cff
-r5 c0 fg=#9b8cff
-r5 c1-78 fg=#ffff00
-r5 c79 fg=#9b8cff
-r6 c0 fg=#9b8cff
-r6 c1-16 fg=#a8a8a8
-r6 c79 fg=#9b8cff
-r7 c0-1 fg=#9b8cff
-r7 c3-4 fg=#989898
-r7 c5-21 fg=#a8a8a8
-r7 c22-26 fg=#989898
-r7 c27-34 fg=#a8a8a8
-r7 c35-37 fg=#989898
-r7 c38-43 fg=#a8a8a8
-r7 c45-75 fg=#9b8cff
-r7 c78-79 fg=#9b8cff
+r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-6 fg=#14141c bg=#5cc8bb bold
+r0 c7 fg=#e5e5e7 bg=#1e1e2a
+r0 c8-12 fg=#989898 bg=#1e1e2a
+r0 c13-14 fg=#e5e5e7 bg=#1e1e2a
+r0 c15-28 fg=#989898 bg=#1e1e2a
+r0 c29-79 fg=#e5e5e7 bg=#1e1e2a
+r1 c0 fg=#e5e5e7 bg=#1e1e2a
+r1 c1-78 fg=#989898 bg=#1e1e2a
+r1 c79 fg=#e5e5e7 bg=#1e1e2a
+r2 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-2 fg=#5cc8bb bg=#233239
+r3 c3-49 fg=#e5e5e7 bg=#233239
+r3 c50-67 fg=#989898 bg=#233239
+r3 c68-79 fg=#e5e5e7 bg=#233239
+r4 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r5 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r5 c3-10 fg=#989898 bg=#1e1e2a
+r5 c11-15 fg=#e5e5e7 bg=#1e1e2a
+r5 c16-23 fg=#989898 bg=#1e1e2a
+r5 c24-26 fg=#e5e5e7 bg=#1e1e2a
+r5 c27-32 fg=#989898 bg=#1e1e2a
+r5 c33-79 fg=#e5e5e7 bg=#1e1e2a

@@ -236,7 +236,7 @@ impl Mode {
     pub(super) fn prompt_component(&self) -> ComponentHandle {
         match &self.attached {
             Some(attached) => as_component(&attached.prompt),
-            None => as_component(&self.comms),
+            None => as_component(&self.prompt_row),
         }
     }
 
@@ -667,10 +667,7 @@ impl Mode {
                 component.borrow_mut().set_view(self.tool_output_view);
                 component
                     .borrow_mut()
-                    .set_radar_above(self.transcript.radar_chain_above());
-                component
-                    .borrow_mut()
-                    .set_radar_mission(self.transcript.current_mission());
+                    .set_outline_mission(self.transcript.current_mission());
                 self.transcript.note_assistant(&component);
                 self.add_to_chat(as_component(&component));
                 self.transcript.assistant_components.push(component.clone());
@@ -909,7 +906,6 @@ fn drop_covered(queued: Vec<Value>, history: &[AgentMessage]) -> Vec<Value> {
 
 #[cfg(test)]
 mod tests {
-    use crate::expandable_text::Expandable;
     use hoocode_ai_types::{Message, StopReason, UserMessage};
     use hoocode_code_session::{
         append_custom_entry_to_file, flush_session_writes, subagents_dir, SessionManager,
@@ -1275,9 +1271,6 @@ mod tests {
         assert!(mode.attached_to("task-1"));
         assert_eq!(header_count(&mode), 0, "no logo above the run's transcript");
         mode.attach_loaded("task-1".into(), Ok(loaded(vec![user("Compute a product")])));
-        // A header refresh while attached does not put the logo back.
-        mode.header.borrow_mut().refresh();
-        mode.header.borrow_mut().set_expanded(true);
         assert_eq!(header_count(&mode), 0);
         mode.attach_run("task-2".into(), shown);
         assert_eq!(
@@ -1292,7 +1285,7 @@ mod tests {
 
     #[test]
     fn a_run_read_keeps_the_sessions_comms_lost_on_a_reread() {
-        let dir = temp_dir("comms-lost-on");
+        let dir = temp_dir("link-lost-on");
         let mut mode = test_mode(Some(&dir));
         mode.comms_lost.set(true);
         let shown = Some(("general-purpose".to_string(), "Compute".to_string()));
@@ -1316,7 +1309,7 @@ mod tests {
 
     #[test]
     fn a_runs_failed_attempts_do_not_set_the_sessions_comms_lost() {
-        let dir = temp_dir("comms-lost-off");
+        let dir = temp_dir("link-lost-off");
         let mut mode = test_mode(Some(&dir));
         assert!(!mode.comms_lost.get());
         let shown = Some(("general-purpose".to_string(), "Compute".to_string()));

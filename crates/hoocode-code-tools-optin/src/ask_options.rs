@@ -212,7 +212,7 @@ pub fn create_ask_options_tool_definition(host: Arc<dyn AskOptionsHost>) -> Tool
             }
             let Some(answers) = host.ask_options(&questions, signal) else {
                 return Ok(text_result(
-                    "The user skipped the question(s) without answering. Ask how they would like to proceed.".into(),
+                    "Skipped by user: the user chose not to answer the question(s). Do not ask again. State the default you will use (the recommended option if there is one) in your reply, then continue with it.".into(),
                 ));
             };
             let text: Vec<String> = questions

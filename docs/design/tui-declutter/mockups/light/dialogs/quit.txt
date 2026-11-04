@@ -1,0 +1,10 @@
+«»
+«fg=#0a6b27» ● «fg=#555864;bold»Edit«fg=#555864» src/wrap.rs«»  «fg=#555864»+4 −1«»
+«fg=#0a6b27» ● «fg=#555864;bold»Shell«fg=#555864» cargo test -p wrap«»  «fg=#555864»exit 0 · 2.4s«»
+«fg=#555864» Width is checked now; the two wrap tests pass.«»
+«»
+«bg=#e8e8f0» «fg=#f8f8fb;bg=#00625c;bold» Quit? «bg=#e8e8f0»  «fg=#555864;bg=#e8e8f0»2 background jobs running«bg=#e8e8f0»                                                                 «»
+«bg=#e8e8f0»   «fg=#7a5200;bg=#e8e8f0»◉ «fg=#555864;bg=#e8e8f0»job-1  «fg=#2b2f36;bg=#e8e8f0»sleep 60«bg=#e8e8f0»   «fg=#555864;bg=#e8e8f0»4s of ~60s«bg=#e8e8f0»                                                                   «»
+«bg=#e8e8f0»   «fg=#7a5200;bg=#e8e8f0»◉ «fg=#555864;bg=#e8e8f0»job-2  «fg=#2b2f36;bg=#e8e8f0»sleep 120«bg=#e8e8f0»                                                                               «»
+«bg=#e8e8f0» «fg=#2b2f36;bg=#e8e8f0»k«fg=#555864;bg=#e8e8f0» stop jobs and quit«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»l«fg=#555864;bg=#e8e8f0» leave them running«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»esc«fg=#555864;bg=#e8e8f0» stay«bg=#e8e8f0»                                             «»
+«fg=#0a6b27» ● «fg=#555864»done · 11s · 23k tokens«»             «fg=#555864»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

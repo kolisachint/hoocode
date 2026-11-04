@@ -45,7 +45,7 @@
   ],
   "steps": [
     {
-      "wait_for": "▸ name your mission",
+      "wait_for": "(?m)^ ›",
       "timeout": 30
     },
     {
@@ -61,7 +61,7 @@
       ]
     },
     {
-      "wait_for": "CLEARANCE NEEDED",
+      "wait_for": "Allow Edit\\?",
       "timeout": 30
     },
     {
@@ -71,7 +71,7 @@
     {
       "snapshot": "allow-edit",
       "contains": [
-        "go, once",
+        "1  yes",
         "+2"
       ]
     },
@@ -105,7 +105,7 @@
       "snapshot": "after-tool",
       "contains": [
         "src/app.ts",
-        "… 9 more lines",
+        "… 4 more lines",
         "wrote tools/util.py"
       ]
     }

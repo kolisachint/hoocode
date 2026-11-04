@@ -206,6 +206,9 @@ pub struct Editor {
 
     /// Last layout width, for cursor navigation.
     last_width: usize,
+    /// Rows the last render gave the text (borders included, the
+    /// autocomplete list after them not).
+    text_rows: usize,
     /// Vertical scroll over layout lines.
     scroll_offset: usize,
 
@@ -227,6 +230,10 @@ pub struct Editor {
     autocomplete_state: Option<AutocompleteState>,
     autocomplete_prefix: String,
     autocomplete_max_visible: usize,
+    /// The list follows the text rows in `render` (default). A host that
+    /// draws it elsewhere (above the prompt) turns this off and reads
+    /// [`Editor::render_completion`].
+    inline_completion: bool,
     /// A debounced request: `(deadline, force, explicit_tab)`.
     pending_autocomplete: Option<(Instant, bool, bool)>,
     /// Whether a finished background walk may reopen the list. Set by a
@@ -287,6 +294,7 @@ impl Editor {
             border: options.border.unwrap_or(FrameBorderStyle::Rule),
             border_chars,
             last_width: 80,
+            text_rows: 0,
             scroll_offset: 0,
             border_color,
             top_border_label: None,
@@ -298,6 +306,7 @@ impl Editor {
             autocomplete_list: None,
             autocomplete_state: None,
             autocomplete_prefix: String::new(),
+            inline_completion: true,
             autocomplete_max_visible: clamp_max_visible(
                 options.autocomplete_max_visible.unwrap_or(5),
             ),
@@ -370,6 +379,23 @@ impl Editor {
             self.border = border;
             self.request_render();
         }
+    }
+
+    /// Whether `render` draws the completion list under the text. A host
+    /// that places the menu itself turns it off.
+    pub fn set_inline_completion(&mut self, inline: bool) {
+        self.inline_completion = inline;
+    }
+
+    /// The completion menu as pmenu rows, each as wide as the widest (at
+    /// most `max_width`), and the column of the token being completed
+    /// (counted from the text's first column). `None` when no list shows.
+    pub fn render_completion(&mut self, max_width: usize) -> Option<(Vec<String>, usize, usize)> {
+        self.autocomplete_state?;
+        let (rows, width) = self.autocomplete_list.as_mut()?.render_menu(max_width);
+        let before = slice16(self.current_line(), 0, self.state.cursor_col);
+        let anchor = visible_width(before).saturating_sub(visible_width(&self.autocomplete_prefix));
+        Some((rows, width, anchor.min(self.last_width)))
     }
 
     pub fn set_autocomplete_max_visible(&mut self, max_visible: usize) {
@@ -1700,6 +1726,12 @@ impl Editor {
         self.autocomplete_state.is_some()
     }
 
+    /// The rows the last render gave the text itself; the autocomplete list,
+    /// when shown, follows them.
+    pub fn text_rows(&self) -> usize {
+        self.text_rows
+    }
+
     fn update_autocomplete(&mut self) {
         let Some(state) = self.autocomplete_state else {
             return;
@@ -2117,8 +2149,9 @@ impl Component for Editor {
         if !bare {
             result.push(self.render_border(FrameEdge::Bottom, lines_below, bar_width, is_box));
         }
+        self.text_rows = result.len();
 
-        if self.autocomplete_state.is_some() {
+        if self.autocomplete_state.is_some() && self.inline_completion {
             // Aligned to the inner text edge, not the outer box edge. The
             // popup is a frameless drop-down under the line: one surface at
             // a time, so the comms frame stays the single box. Keys,

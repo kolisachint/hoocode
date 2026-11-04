@@ -20,6 +20,7 @@ pub fn select_theme() -> SelectListTheme {
         no_match: Box::new(|t: &str| dim(t)),
         cursor: None,
         selected_row: None,
+        row: None,
     }
 }
 

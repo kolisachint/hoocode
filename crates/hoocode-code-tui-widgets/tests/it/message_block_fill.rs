@@ -281,36 +281,25 @@ fn md() -> Rc<dyn Fn() -> MarkdownTheme> {
     Rc::new(get_markdown_theme)
 }
 
-fn non_empty(lines: Vec<String>) -> Vec<String> {
-    lines.into_iter().filter(|l| !scan(l).is_empty()).collect()
-}
-
 #[test]
-fn a_sheet_runs_to_the_terminals_last_cell() {
+fn the_user_message_is_a_band_not_a_sheet() {
+    // The user message is surface rows the full width, ` › ` first: no
+    // paper inset, no shadow, under any theme.
     let _g = lock();
-    assert_eq!(PAPER_INSET, 1);
     for theme_name in THEMES {
         init_paper_theme();
-        for width in [120u16, 100, 80, 60, 40] {
-            let lines = non_empty(UserMessageComponent::new("a message").render(width));
-            let w = width as usize;
+        for width in [120u16, 80, 40] {
+            let lines = UserMessageComponent::new("a message").render(width);
+            assert_eq!(lines.len(), 1, "{theme_name} @{width}: {lines:?}");
             assert_eq!(
-                scan(&lines[0]).len(),
-                w - 1,
-                "{theme_name} @{w}: the top row"
+                hoocode_tui_util::visible_width(&lines[0]),
+                width as usize,
+                "{theme_name} @{width}"
             );
-            for (i, line) in lines[1..lines.len() - 1].iter().enumerate() {
-                assert_eq!(
-                    scan(line).len(),
-                    w,
-                    "{theme_name} @{w}: row {} stops short of the margin",
-                    i + 1
-                );
-            }
-            assert_eq!(
-                scan(&lines[lines.len() - 1]).len(),
-                w - 1,
-                "{theme_name} @{w}: the bottom run"
+            assert!(
+                hoocode_tui_util::strip_vt_control_characters(&lines[0])
+                    .starts_with(" › a message"),
+                "{lines:?}"
             );
         }
     }
@@ -327,11 +316,6 @@ fn a_sheet_holds_its_geometry_at_every_width() {
             for &width in WIDTHS {
                 let w = width as usize;
                 let label = format!("{theme_name} {label}");
-                faults.extend(faults_in(
-                    &format!("user {label:?}"),
-                    &UserMessageComponent::new(&text).render(width),
-                    w,
-                ));
                 let mut custom = CustomMessageComponent::new(
                     CustomMessage {
                         custom_type: "skill".into(),

@@ -4,9 +4,9 @@
 //! and what the original's `entry.type` / `entry.message.role` checks see),
 //! so the filter, search and display rules stay line for line with the TS.
 //!
-//! The FLIGHT PATH console (M7, ratatui): `FLIGHT PATH · /tree  N nodes`,
-//! the `▸` query row, one row per entry with `›` on the selection band,
-//! the position footer, and the hint foot. Shared `Console` chrome in
+//! The Tree pane: `Tree  /tree  N entries`, one row per entry with ` › ` on
+//! the selection band, the selected entry's detail beside them, the filter
+//! row, and the hint row (`f1` lists every key). Shared pane chrome in
 //! `code-tui-widgets/src/console.rs`; keys, filtering and events unchanged.
 
 use std::cell::RefCell;
@@ -18,12 +18,12 @@ use chrono::{DateTime, Datelike, Local, Timelike};
 use hoocode_code_session::SessionTreeNode;
 use hoocode_code_settings::TreeFilterMode;
 use hoocode_code_tui_theme::style_input;
-use hoocode_code_tui_widgets::console::{hints, query_row, Console};
+use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
+use hoocode_code_tui_widgets::pane::capped_hint_line;
 use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_keys::get_keybindings;
 use hoocode_tui_ratatui::{bold, italic, Line, Palette, Span};
 use hoocode_tui_render::Component;
-use hoocode_tui_util::visible_width;
 use serde_json::Value;
 
 /// One session entry, flattened out of the tree.
@@ -763,22 +763,6 @@ impl TreeList {
             node.label = label;
         }
     }
-
-    fn status_labels(&self) -> String {
-        let mut labels = match self.filter_mode {
-            TreeFilterMode::NoTools => " [no-tools]",
-            TreeFilterMode::UserOnly => " [user]",
-            TreeFilterMode::LabeledOnly => " [labeled]",
-            TreeFilterMode::All => " [all]",
-            TreeFilterMode::Default => "",
-        }
-        .to_string();
-        if self.show_label_timestamps {
-            labels.push_str(" [timestamps]");
-        }
-        labels
-    }
-
     /// `getEntryDisplayText`.
     /// One entry's content (the console adds the `›` marker or gutter and
     /// the selection band): the same text as the old string renderer, as
@@ -791,22 +775,23 @@ impl TreeList {
                 let message = &entry["message"];
                 match str_field(message, "role").unwrap_or("") {
                     "user" => vec![
-                        Span::styled("user: ".to_string(), pal.acc()),
+                        Span::styled(format!("{:<11}", "user"), pal.acc()),
                         Span::raw(normalize(&extract_content(message.get("content")))),
                     ],
                     "assistant" => {
                         let text = normalize(&extract_content(message.get("content")));
-                        let mut spans = vec![Span::styled("assistant: ".to_string(), pal.ok())];
+                        let mut spans =
+                            vec![Span::styled(format!("{:<11}", "assistant"), pal.ok())];
                         if !text.is_empty() {
                             spans.push(Span::raw(text));
                         } else if str_field(message, "stopReason") == Some("aborted") {
-                            spans.push(Span::styled("(aborted)".to_string(), pal.faint()));
+                            spans.push(Span::styled("(aborted)".to_string(), pal.dim()));
                         } else if let Some(err) =
                             str_field(message, "errorMessage").filter(|e| !e.is_empty())
                         {
                             spans.push(Span::styled(js_slice(&normalize(err), 80), pal.err()));
                         } else {
-                            spans.push(Span::styled("(no content)".to_string(), pal.faint()));
+                            spans.push(Span::styled("(no content)".to_string(), pal.dim()));
                         }
                         spans
                     }
@@ -815,11 +800,11 @@ impl TreeList {
                             str_field(message, "toolCallId").and_then(|id| self.tool_calls.get(id));
                         match call {
                             Some((name, args)) => {
-                                vec![Span::styled(format_tool_call(name, args), pal.faint())]
+                                vec![Span::styled(format_tool_call(name, args), pal.dim())]
                             }
                             None => vec![Span::styled(
                                 format!("[{}]", str_field(message, "toolName").unwrap_or("tool")),
-                                pal.faint(),
+                                pal.dim(),
                             )],
                         }
                     }
@@ -1007,20 +992,35 @@ impl TreeList {
 }
 
 impl TreeList {
-    /// The FLIGHT PATH count: the visible entries, or the matches of the
-    /// total while searching.
+    /// The title facts: the visible entries (or the matches of the total
+    /// while searching), then the active filter and timestamp flags.
     fn count_text(&self) -> String {
         let total = self.flat_nodes.len();
-        if self.search_query.is_empty() {
-            nodes(self.filtered_nodes.len())
+        let mut text = if self.search_query.is_empty() {
+            entries(self.filtered_nodes.len())
         } else {
-            format!("{} of {}", nodes(self.filtered_nodes.len()), total)
+            format!("{} of {}", entries(self.filtered_nodes.len()), total)
+        };
+        let filter = match self.filter_mode {
+            TreeFilterMode::NoTools => "no tool calls",
+            TreeFilterMode::UserOnly => "user messages only",
+            TreeFilterMode::LabeledOnly => "labeled only",
+            TreeFilterMode::All => "everything",
+            TreeFilterMode::Default => "",
+        };
+        if !filter.is_empty() {
+            text.push_str(" · ");
+            text.push_str(filter);
         }
+        if self.show_label_timestamps {
+            text.push_str(" · timestamps");
+        }
+        text
     }
 
-    /// One entry row (content only; the console adds the `›` marker or
-    /// gutter and the selection band): the graph prefix, the fold and path
-    /// markers, the label, and the entry's text.
+    /// One entry row (content only; the pane adds the ` › ` marker or
+    /// gutter and the selection band): the graph prefix, the fold marker,
+    /// the label, and the entry's text.
     fn console_row(&self, i: usize, selected: bool) -> Line<'static> {
         let pal = Palette::current();
         let flat = &self.filtered_nodes[i];
@@ -1057,13 +1057,6 @@ impl TreeList {
         if folded && !connector {
             spans.push(Span::styled("⊞ ".to_string(), pal.acc()));
         }
-        if self.active_path_ids.contains(&node.id) {
-            spans.push(Span::styled("• ".to_string(), pal.acc()));
-        }
-        // The design's cyan tag on the live node (M8d7).
-        if self.current_leaf_id.as_deref() == Some(node.id.as_str()) {
-            spans.push(Span::styled("YOU ARE HERE ".to_string(), pal.acc()));
-        }
         if let Some(label) = &node.label {
             spans.push(Span::styled(format!("[{label}] "), pal.warn()));
         }
@@ -1071,7 +1064,7 @@ impl TreeList {
             (Some(_), Some(ts)) if self.show_label_timestamps => {
                 spans.push(Span::styled(
                     format!("{} ", format_label_timestamp(ts)),
-                    pal.faint(),
+                    pal.dim(),
                 ));
             }
             _ => {}
@@ -1093,27 +1086,69 @@ impl TreeList {
         (rows, window.clone().position(|i| i == selected))
     }
 
-    /// Rows below the list: the empty-list line and the scroll position
-    /// with the filter and timestamp flags.
+    /// Rows below the list: the empty-list line, or the scroll position
+    /// when the list is scrolled.
     fn footer_lines(&self) -> Vec<Line<'static>> {
         let pal = Palette::current();
-        let mut out = Vec::new();
         if self.filtered_nodes.is_empty() {
-            out.push(Line::from(vec![Span::styled(
-                "  No entries found".to_string(),
-                pal.faint(),
-            )]));
-            out.push(Line::from(vec![Span::styled(
-                format!("  (0/0){}", self.status_labels()),
-                pal.faint(),
-            )]));
-        } else {
-            out.push(Line::from(vec![Span::styled(
-                format!("  {}{}", self.cursor.position(), self.status_labels()),
-                pal.faint(),
-            )]));
+            return vec![Line::from(vec![Span::styled(
+                "No entries found".to_string(),
+                pal.dim(),
+            )])];
         }
-        out
+        self.cursor
+            .footer()
+            .map(|footer| {
+                vec![Line::from(vec![Span::styled(
+                    format!("  {footer}"),
+                    pal.dim(),
+                )])]
+            })
+            .unwrap_or_default()
+    }
+
+    /// The selected entry's detail column: its kind and place in the list
+    /// (`you are here` on the live node), then the entry's text.
+    fn detail_rows(&self) -> Vec<Line<'static>> {
+        let pal = Palette::current();
+        let Some(flat) = self.filtered_nodes.get(self.cursor.selected()) else {
+            return Vec::new();
+        };
+        let node = &self.nodes[flat.node];
+        let is_message = entry_type(&node.entry) == "message";
+        let kind = if is_message {
+            str_field(&node.entry["message"], "role")
+                .unwrap_or("message")
+                .to_string()
+        } else {
+            entry_type(&node.entry).replace('_', " ")
+        };
+        let mut head = vec![
+            Span::styled(kind.clone(), pal.ink()),
+            Span::styled(
+                format!(
+                    "  {} {} of {}",
+                    if is_message { "message" } else { "entry" },
+                    self.cursor.selected() + 1,
+                    self.filtered_nodes.len()
+                ),
+                pal.dim(),
+            ),
+        ];
+        if self.current_leaf_id.as_deref() == Some(node.id.as_str()) {
+            head.push(Span::styled(" · you are here".to_string(), pal.dim()));
+        }
+        let mut body = self.entry_line(flat.node, false);
+        // The kind is in the heading: a message's body keeps its text alone.
+        if is_message
+            && body
+                .spans
+                .first()
+                .is_some_and(|span| span.content.trim_end() == kind)
+        {
+            body.spans.remove(0);
+        }
+        vec![Line::from(head), body]
     }
 
     fn handle_input(&mut self, data: &str) {
@@ -1199,37 +1234,23 @@ impl TreeList {
 }
 
 /// `1 node`, `N nodes`.
-fn nodes(count: usize) -> String {
+fn entries(count: usize) -> String {
     if count == 1 {
-        "1 node".to_string()
+        "1 entry".to_string()
     } else {
-        format!("{count} nodes")
+        format!("{count} entries")
     }
 }
 
 /// The hint foot with literal keys, so the bytes hold on macOS and Linux:
 /// the longest leading run that fits `available`, like the old top row.
-fn tree_hint(available: usize) -> Line<'static> {
-    const HINTS: [(&str, &str); 6] = [
-        ("↑↓", "move"),
-        ("enter", "go here"),
-        ("f", "fork"),
-        ("alt+l", "label"),
-        ("alt+t", "timestamps"),
-        ("esc", "close"),
-    ];
-    for count in (1..=HINTS.len()).rev() {
-        let plain = HINTS[..count]
-            .iter()
-            .map(|(key, description)| format!("{key} {description}"))
-            .collect::<Vec<_>>()
-            .join(" · ");
-        if visible_width(&plain) <= available {
-            return hints(&HINTS[..count]);
-        }
-    }
-    hints(&HINTS[..1])
-}
+const TREE_HINTS: [(&str, &str); 5] = [
+    ("↑↓", "move"),
+    ("enter", "go here"),
+    ("alt+l", "label"),
+    ("esc", "close"),
+    ("alt+t", "timestamps"),
+];
 
 /// `LabelInput`: the label editor that replaces the tree while open.
 struct LabelInput {
@@ -1266,16 +1287,18 @@ impl LabelInput {
         vec![
             Line::from(vec![Span::styled(
                 "  Label (empty to remove):".to_string(),
-                pal.faint(),
+                pal.dim(),
             )]),
             Line::from(row),
         ]
     }
 }
 
-/// `TreeSelectorComponent`: the FLIGHT PATH console, titled
-/// `FLIGHT PATH · /tree`, with the query row and the hint foot.
+/// `TreeSelectorComponent`: the Tree pane, titled `Tree · /tree`, with
+/// the filter row and the hint row.
 pub struct TreeSelectorComponent {
+    /// The full key list shows (`f1`).
+    help: bool,
     list: Rc<RefCell<TreeList>>,
     label_input: Rc<RefCell<Option<LabelInput>>>,
     focused: bool,
@@ -1303,6 +1326,7 @@ impl TreeSelectorComponent {
             .is_empty()
             .then(|| Instant::now() + Duration::from_millis(100));
         Self {
+            help: false,
             list,
             label_input,
             focused: false,
@@ -1370,13 +1394,13 @@ impl TreeSelectorComponent {
 }
 
 impl Component for TreeSelectorComponent {
-    /// The FLIGHT PATH console: the `▸` query row, one row per entry with
-    /// `›` on the selection band, the position footer, and the hint foot.
-    /// The label editor replaces the tree while open. Keys, filtering
-    /// and events are unchanged.
+    /// The Tree pane: one row per entry with ` › ` on the selection band,
+    /// the selected entry's detail beside them (below at narrow widths),
+    /// the filter row and the hint row. The label editor replaces the
+    /// tree while open. Keys, filtering and events are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
         let width = width as usize;
-        let mut console = Console::new("FLIGHT PATH · /tree", self.list.borrow().count_text());
+        let mut console = Console::new("Tree · /tree", self.list.borrow().count_text());
         if self.label_input.borrow().is_some() {
             console.top = self.label_lines();
             console.hint = hints(&[("enter", "save"), ("esc", "cancel")]);
@@ -1387,8 +1411,13 @@ impl Component for TreeSelectorComponent {
             console.rows = rows;
             console.selected = selected;
             console.bottom = list.footer_lines();
+            console.detail = list.detail_rows();
+            console.list_width = Some(width * 56 / 100);
             drop(list);
-            console.hint = tree_hint(width.saturating_sub(12));
+            if self.help {
+                console.bottom.extend(help_rows(&TREE_HINTS));
+            }
+            console.hint = capped_hint_line(&TREE_HINTS, true);
         }
         console.render(width)
     }
@@ -1396,6 +1425,10 @@ impl Component for TreeSelectorComponent {
     fn handle_input(&mut self, data: &str) {
         if self.label_input.borrow().is_some() {
             self.label_input_key(data);
+            return;
+        }
+        if hoocode_tui_keys::matches_key(data, "f1") {
+            self.help = !self.help;
             return;
         }
         self.list.borrow_mut().handle_input(data);

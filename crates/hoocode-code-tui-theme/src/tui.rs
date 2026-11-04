@@ -359,6 +359,28 @@ pub fn get_select_list_theme() -> SelectListTheme {
         // Unstyled: SelectList passes the cursor through `selected_text`.
         cursor: Some(SELECT_CURSOR.to_string()),
         selected_row: Some(Box::new(|text: &str| theme().bg("selectedBg", text))),
+        row: None,
+    }
+}
+
+/// The completion menu's list (slash commands, files, arguments), pmenu
+/// style: rows on the pane colour, the selected row on `paneSel` and bold,
+/// dim descriptions. Text on a pane colour also sets its foreground.
+pub fn get_completion_list_theme() -> SelectListTheme {
+    let dim = |text: &str| theme().fg("dim", text);
+    SelectListTheme {
+        selected_prefix: Box::new(|text: &str| theme().bold(text)),
+        selected_text: Box::new(|text: &str| theme().bold(text)),
+        description: Box::new(dim),
+        scroll_info: Box::new(dim),
+        no_match: Box::new(dim),
+        cursor: Some(" › ".to_string()),
+        selected_row: Some(Box::new(|text: &str| {
+            theme().bg("paneSel", &theme().fg("text", text))
+        })),
+        row: Some(Box::new(|text: &str| {
+            theme().bg("pane", &theme().fg("text", text))
+        })),
     }
 }
 
@@ -367,7 +389,7 @@ pub fn get_editor_theme() -> EditorTheme {
     EditorTheme {
         border_color: Box::new(|text: &str| theme().fg("borderMuted", text)),
         border_chars: None,
-        select_list: Box::new(get_select_list_theme),
+        select_list: Box::new(get_completion_list_theme),
     }
 }
 

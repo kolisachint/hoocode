@@ -12,7 +12,7 @@ mod hyperlink_click;
 mod screen_fill;
 mod scroll_viewport;
 mod scrollback_fold;
+mod status_in_bottom;
 mod support;
-mod toast_overlay;
 mod tui_render_ts;
 mod wake_handle;

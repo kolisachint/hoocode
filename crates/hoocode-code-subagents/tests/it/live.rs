@@ -412,7 +412,7 @@ async fn the_pool_listener_sends_a_runs_events_to_the_live_sink() {
 fn sub_steps_keep_running_and_failed_calls_and_drop_clean_ones() {
     // The run's own calls: a clean one settles away, a failed one stays with
     // its first output line, and the run's end clears them all.
-    let task = "live-sub-steps-radar";
+    let task = "live-sub-steps-outline";
     apply(task, &json!({"type": "task_started"}));
     apply(
         task,
@@ -560,7 +560,7 @@ fn a_clearance_hold_marks_the_running_step_and_clears_with_the_answer() {
     assert!(
         tail(task)
             .last()
-            .is_some_and(|row| row.contains("holding for clearance")),
+            .is_some_and(|row| row.contains("waiting for permission")),
         "{:?}",
         tail(task)
     );

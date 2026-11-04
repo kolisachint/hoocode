@@ -1,0 +1,9 @@
+
+ «bold»›«» first question
+
+ «dim»●«» «bold»Shell«» cargo test -p hoocode-config
+
+«dim» ○ steer this way · sends after this step«»
+«dim» ○ and then this · sends after this turn«»
+ ›
+ ◉«dim» working · 4s · esc stop«»             «dim»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

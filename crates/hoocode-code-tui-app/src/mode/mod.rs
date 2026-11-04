@@ -17,17 +17,16 @@ use hoocode_code_agent_session::{
 use hoocode_code_auth::AuthStorage;
 use hoocode_code_media::clipboard_image::ClipboardImage;
 use hoocode_code_media::rich_clipboard::CopyFlavour;
-use hoocode_code_paths::{env_override, APP_NAME, VERSION};
+use hoocode_code_paths::{env_override, VERSION};
 use hoocode_code_permissions::ClearanceChoice;
-use hoocode_code_settings::{ChromeDensity, EditorBorder, ToolOutputView};
+use hoocode_code_settings::{EditorBorder, ToolOutputView};
 use hoocode_code_subagents::agent_log::{agent_log, set_terminal_owned_by_tui};
 use hoocode_code_subagents::live::LiveSink;
 use hoocode_code_task_store::task_store;
 use hoocode_code_tool_bash::BashResult;
-use hoocode_code_tui_keybindings::{
-    app_key_label, key_hint, key_text, raw_key_hint, AppKeybindingsManager,
-};
+use hoocode_code_tui_keybindings::AppKeybindingsManager;
 use hoocode_code_tui_selectors::model_selector::ModelSelectorComponent;
+use hoocode_code_tui_selectors::oauth_selector::LoginMode;
 use hoocode_code_tui_selectors::scoped_models_selector::ScopedModelsSelectorComponent;
 use hoocode_code_tui_selectors::session_selector::SessionSelectorComponent;
 use hoocode_code_tui_selectors::settings_selector::{SettingsChange, SettingsSelectorComponent};
@@ -36,8 +35,7 @@ use hoocode_code_tui_selectors::user_message_selector::UserMessageSelectorCompon
 use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_code_tui_theme::{
     current_theme_name, get_editor_theme, init_theme, is_auto_theme, on_theme_change,
-    resolve_auto_theme, set_registered_themes, set_theme, theme, ThinkingBorderLevel,
-    AUTO_THEME_POLL_INTERVAL,
+    resolve_auto_theme, set_registered_themes, set_theme, theme, AUTO_THEME_POLL_INTERVAL,
 };
 use hoocode_code_tui_widgets::background_notice::BackgroundNoticeComponent;
 use hoocode_code_tui_widgets::bash_execution::BashExecutionComponent;
@@ -50,32 +48,29 @@ use hoocode_tui_components::{Editor, EditorHost, EditorOptions, FrameBorderStyle
 use hoocode_tui_render::{
     Component, ComponentHandle, Container, FlexSpacer, Slot, Tui, TuiEvent, WakeHandle,
 };
+
+use crate::prompt_row::PromptRow;
+use crate::start_header::{StartFacts, StartHeader};
+use crate::status_line::{StatusLineData, StatusLineView, TurnResult};
+use crate::transient_lines::TransientLines;
 use hoocode_tui_terminal::Terminal;
 
 use crate::changelog::changelog_for_display;
 use crate::chime::{ChimeDebounce, TurnTimer, BELL};
-use crate::chrome_layout::{
-    ChromeLayoutController, ChromeSurfaces, FooterLayout, SMALL_TERMINAL_ROWS,
-};
 use crate::clearance_queue::ClearanceQueue;
-use crate::comms_frame::{CommsFrame, CommsState, InputStyle, MissionOutcome};
 use crate::dialog_bridge::{set_dialog_sink, DialogRequest};
-use crate::expandable_text::ExpandableText;
-use crate::footer::{FooterComponent, FooterDensity, FooterSource};
 use crate::footer_data::FooterDataProvider;
-use crate::hud::{fullscreen_enabled, hud_component_shared, tree_plan, TreePart};
 use crate::input_frame::set_input_frame_border;
 use crate::login_controller::LoginUpdate;
 use crate::notification_panel::{NotificationKind, NotificationPanel};
 use crate::perf::Perf;
 use crate::record_row::RecordRows;
-use crate::resource_display::{format_display_path, startup_details_open, ResourceListing};
-use crate::scroll_view::install_scroll_view;
+use crate::resource_display::{format_display_path, ResourceListing};
+use crate::scroll_view::{install_scroll_status, install_scroll_view};
 use crate::startup_progress;
 use crate::tips::{
     render_tip, tip_ttl, TipRotation, TipRotationOptions, TipsController, TipsControllerOptions,
 };
-use crate::wordmark::{build_compact_wordmark, CompactWordmarkOptions, CursorBlink};
 
 mod attach;
 mod auth;
@@ -126,8 +121,6 @@ pub struct InteractiveOptions {
     pub runtime: tokio::runtime::Handle,
     /// The resource listing for a session, read when it is drawn.
     pub listing: Box<dyn Fn(&AgentSession) -> ResourceListing>,
-    /// Whether a provider's stored credential is an OAuth token.
-    pub is_oauth: Box<dyn Fn(&str) -> bool>,
     /// The credential store `/login` and `/logout` write (the session's own).
     pub auth_storage: Arc<AuthStorage>,
     pub version: String,
@@ -338,32 +331,13 @@ fn as_component<C: Component + 'static>(c: &Rc<RefCell<C>>) -> ComponentHandle {
     c.clone()
 }
 
-/// The footer's transient lines (warning, extension statuses, startup
-/// progress), shown in the notification area above the prompt. Hidden exactly
-/// when the footer slot is.
-struct FooterTransientLines {
-    footer: Rc<RefCell<FooterComponent>>,
-    footer_slot: Rc<RefCell<Slot>>,
-}
-
-impl Component for FooterTransientLines {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        if !self.footer_slot.borrow().visible() {
-            return Vec::new();
-        }
-        self.footer.borrow().transient_lines(width as usize)
-    }
-}
-
-fn thinking_border_level(level: &str) -> ThinkingBorderLevel {
-    match level {
-        "minimal" => ThinkingBorderLevel::Minimal,
-        "low" => ThinkingBorderLevel::Low,
-        "medium" => ThinkingBorderLevel::Medium,
-        "high" => ThinkingBorderLevel::High,
-        "xhigh" => ThinkingBorderLevel::Xhigh,
-        _ => ThinkingBorderLevel::Off,
-    }
+/// Whether full-screen is on. `HOOCODE_FULLSCREEN` reads as a boolean
+/// (`0`/`false`/`no`/`off` or `1`/`true`/`yes`/`on`, see `parse_env_bool`)
+/// and wins over the `fullscreen` setting for one run. Any other value, or
+/// none, takes the setting.
+pub fn fullscreen_enabled(env: Option<&str>, setting: bool) -> bool {
+    env.and_then(hoocode_code_paths::parse_env_bool)
+        .unwrap_or(setting)
 }
 
 /// Whether `text` flips the bash-mode (`!`) state recorded in `last`. It records the new state,
@@ -371,190 +345,6 @@ fn thinking_border_level(level: &str) -> ThinkingBorderLevel {
 fn bash_mode_flip(last: &Cell<bool>, text: &str) -> Option<bool> {
     let now = text.trim_start().starts_with('!');
     (last.replace(now) != now).then_some(now)
-}
-
-/// Whether the header cursor blinks: only while the transcript is empty (the
-/// header is still the top of the screen, so a resumed session never blinks),
-/// and not while the view is pinned to a scrolled-back transcript.
-pub(crate) fn cursor_should_blink(chat_empty: bool, pinned: bool) -> bool {
-    chat_empty && !pinned
-}
-
-/// The startup header: the logo, and under it the keys banner while
-/// `expanded` (under `verbose`, and at the full stop: the dial moves it).
-/// `cursor_on` is the header cursor's blink state, read on each render.
-/// `size` is the live terminal size, read on each rebuild: a resize rebuilds
-/// the logo for the new width instead of wrapping the old one (`refresh`).
-pub fn startup_header(
-    size: Rc<Cell<(u16, u16)>>,
-    version: &str,
-    cwd: &str,
-    cursor_on: Rc<Cell<bool>>,
-    expanded: bool,
-) -> ExpandableText {
-    // The collapsed and the expanded form each own their copies.
-    let (v1, c1) = (version.to_string(), cwd.to_string());
-    let (v2, c2) = (version.to_string(), cwd.to_string());
-    let cursor_on2 = cursor_on.clone();
-    let size2 = size.clone();
-    ExpandableText::new(
-        move || logo(size.get().0, &v1, &c1, cursor_on.get()),
-        move || {
-            let onboarding = theme().fg(
-                "dim",
-                &format!(
-                    "{APP_NAME} can explain its own features and look up its docs. Ask it how to use or extend {APP_NAME}."
-                ),
-            );
-            format!(
-                "{}\n{}\n\n{onboarding}",
-                logo(size2.get().0, &v2, &c2, cursor_on2.get()),
-                expanded_instructions()
-            )
-        },
-        expanded,
-        0,
-        0,
-    )
-}
-
-/// The banner's logo (the compact wordmark, or the name on a narrow screen).
-/// `cursor_visible` is the app-driven blink state: a space when hidden, so the
-/// brand does not shift.
-fn logo(columns: u16, version: &str, cwd: &str, _cursor_visible: bool) -> String {
-    let t = theme();
-    if columns < 40 {
-        return t.bold(&t.fg("accent", APP_NAME)) + &t.fg("dim", &format!(" v{version}"));
-    }
-    let accent = |s: &str| theme().fg("accent", s);
-    let glyph = |s: &str| theme().fg("text", s);
-    let dim = |s: &str| theme().fg("dim", s);
-    let muted = |s: &str| theme().fg("muted", s);
-    // Plain bold brand in ink: no `hoo│code` split, no cursor (design a1).
-    let brand = |s: &str| theme().bold(&theme().fg("text", s));
-    let banner = build_compact_wordmark(&CompactWordmarkOptions {
-        app_name: APP_NAME,
-        version,
-        cwd,
-        tagline: None,
-        accent: &accent,
-        glyph: Some(&glyph),
-        dim: &dim,
-        muted: &muted,
-        cursor: None,
-        brand: Some(&brand),
-        gradient: true,
-    });
-    // The body renders one column narrower than the terminal in fullscreen
-    // (`body_width` keeps the scrollbar's column), so the dots are placed
-    // for one less: an edge dot would otherwise wrap onto its own row and
-    // tear the owl apart. Inline gains one column of slack, unnoticeable.
-    let star_columns = columns.saturating_sub(1);
-    starfield(&banner, star_columns, &muted)
-}
-
-/// Starfield dots scattered right of the wordmark rows (design a1): faint
-/// `✦`/`·`/`⋆` at fixed columns, only where they fit the terminal width.
-fn starfield(banner: &str, columns: u16, faint: &dyn Fn(&str) -> String) -> String {
-    const DOTS: [&[(usize, &str)]; 3] = [&[(50, "✦"), (88, "·")], &[(72, "·")], &[(74, "⋆")]];
-    let width = columns as usize;
-    banner
-        .lines()
-        .enumerate()
-        .map(|(i, line)| {
-            let Some(dots) = DOTS.get(i) else {
-                return line.to_string();
-            };
-            let mut line = line.to_string();
-            for (col, dot) in dots.iter() {
-                let w = hoocode_tui_util::visible_width(&line);
-                // The dot lands where the line ends when the line already
-                // reaches past its column (a long cwd on row 2): skip it
-                // unless it truly fits, or it wraps onto its own row.
-                if (*col).max(w) + 1 > width {
-                    continue;
-                }
-                if w < *col {
-                    line.push_str(&" ".repeat(col - w));
-                }
-                line.push_str(&faint(dot));
-            }
-            line
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// The expanded banner: the keys, grouped as the map is.
-fn expanded_instructions() -> String {
-    let hint = |id: &str, description: &str| key_hint(id, description);
-    let dial = |forward: &str, backward: &str, subject: &str| {
-        raw_key_hint(
-            // " or", not "/": a slash is itself a key (`/` for commands).
-            &format!("{} or {}", app_key_label(forward), app_key_label(backward)),
-            &format!("to step {subject}"),
-        )
-    };
-    let group = |title: &str| theme().fg("dim", &format!("\n{title}"));
-    [
-        group("Compose — the message in your hands"),
-        hint("app.editor.external", "for external editor"),
-        hint("app.input.voiceTranscribe", "to speak instead of type"),
-        hint("app.clipboard.pasteImage", "to paste image"),
-        hint("app.message.followUp", "to queue follow-up"),
-        hint("app.message.dequeue", "to edit all queued messages"),
-        raw_key_hint("drop files", "to attach"),
-        raw_key_hint("/", "for commands"),
-        raw_key_hint("!", "to run bash"),
-        raw_key_hint("!!", "to run bash (no context)"),
-        group("Steer — what the agent is before it runs"),
-        dial(
-            "app.mode.cycleForward",
-            "app.mode.cycleBackward",
-            "agent mode (ask/plan/build/debug)",
-        ),
-        dial(
-            "app.model.cycleForward",
-            "app.model.cycleBackward",
-            "model — /model to pick one",
-        ),
-        dial(
-            "app.thinking.cycleForward",
-            "app.thinking.cycleBackward",
-            "thinking level",
-        ),
-        group("Read — what you see of what it did"),
-        dial(
-            "app.view.cycleForward",
-            "app.view.cycleBackward",
-            "tool output (radar/peek/full)",
-        ),
-        dial(
-            "app.tasks.cycleForward",
-            "app.tasks.cycleBackward",
-            "task panel view",
-        ),
-        hint("app.tools.expand", "to cycle radar, peek and full"),
-        hint("app.thinking.toggle", "to show or hide thinking"),
-        group("Go — sessions and places"),
-        hint("app.session.resume", "to resume a session"),
-        hint("app.session.changeDirectory", "to change working directory"),
-        dial(
-            "app.session.color.cycleForward",
-            "app.session.color.cycleBackward",
-            "session colour",
-        ),
-        hint("app.settings.open", "for settings"),
-        hint("app.hotkeys.open", "for all shortcuts"),
-        group("Flow — getting out, getting back"),
-        hint("app.interrupt", "to interrupt"),
-        hint("app.clear", "to clear"),
-        raw_key_hint(&format!("{} twice", key_text("app.clear")), "to exit"),
-        hint("app.exit", "to exit (empty)"),
-        hint("app.suspend", "to suspend"),
-        key_hint("tui.editor.deleteToLineEnd", "to delete to end"),
-    ]
-    .join("\n")
 }
 
 struct Mode {
@@ -574,13 +364,13 @@ struct Mode {
     size: Rc<Cell<(u16, u16)>>,
     dirty: Rc<Cell<bool>>,
     perf: Perf,
-    header: Rc<RefCell<ExpandableText>>,
+    /// The top rows: the start screen's two lines, then one blank row.
+    header: Rc<RefCell<StartHeader>>,
+    /// What the start screen's second line counts (folder, skills, agents).
+    start_facts: Rc<RefCell<StartFacts>>,
     /// The startup header's container: the header is in it, except while the
     /// attached view is up (`attach.rs` `set_start_header`).
     header_container: Rc<RefCell<Container>>,
-    /// The header cursor's app-driven blink. It stops once the transcript has
-    /// content: the header is then off the top.
-    cursor_blink: CursorBlink,
     status: Rc<RefCell<Container>>,
     loader: Option<Rc<RefCell<Loader>>>,
     stream_render_at: Option<Instant>,
@@ -610,9 +400,9 @@ struct Mode {
     /// Scheduled prompts fired and not yet finished: their Schedule rows in the task panel.
     scheduled_runs: hoocode_code_scheduler::Runs,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
-    /// How the last settled mission ended: the comms title's LANDED,
-    /// DID NOT LAND or ABORTED until the next mission opens.
-    mission_outcome: Rc<RefCell<Option<MissionOutcome>>>,
+    /// How the last settled turn ended, for the status line's left slot
+    /// until the next prompt is sent.
+    last_turn: Option<TurnResult>,
     turn_stop_reason: Option<StopReason>,
     /// A `/plugin` change made while a turn ran: applied when the turn ends (`PromptDone`).
     plugin_reload_pending: bool,
@@ -639,28 +429,28 @@ struct Mode {
     image_width_cells: u32,
     code_block_indent: String,
     editor: Rc<RefCell<CustomEditor>>,
-    /// The comms frame around the prompt (M2). Dialogs and the attached
-    /// view replace it in the editor's slot; the prompt itself stays focused.
-    comms: Rc<RefCell<CommsFrame>>,
-    /// COMMS LOST (M8e1): the last retry gave up and no hail or mission has
-    /// gone out since. Shared with the comms frame's state closure.
+    /// The prompt row around the editor. Dialogs and the attached view
+    /// replace it in the editor's slot; the prompt itself stays focused.
+    prompt_row: Rc<RefCell<PromptRow>>,
+    /// The prompt's bash-mode marker (`!`), kept with `is_bash_mode`.
+    bash_marker: Rc<Cell<bool>>,
+    /// The last retry gave up and no new prompt has gone out since: an empty
+    /// enter sends the last prompt again (M8e1).
     comms_lost: Rc<Cell<bool>>,
+    /// The status line's data, refreshed each loop pass before the frame.
+    status_data: Rc<RefCell<StatusLineData>>,
     editor_container: Rc<RefCell<Container>>,
     /// The picker in the editor's slot (`dialogs.rs`).
     picker: Option<ActivePicker>,
     actions: Rc<RefCell<Vec<Action>>>,
     notifications: Rc<RefCell<NotificationPanel>>,
     tips: TipsController,
-    footer: Rc<RefCell<FooterComponent>>,
-    /// The HUD's session source: the component reads it on every render, so
-    /// a rebind swaps the boxed source instead of rebuilding the tree — and
-    /// SHIP follows the new session's model.
-    hud_source: Rc<RefCell<Box<dyn FooterSource>>>,
+    /// The transient rows above the prompt (warning, retry, statuses, progress).
+    transient: Rc<RefCell<TransientLines>>,
     /// The warning now (shedding or UI stall), if any: shown above the prompt.
     runtime_notice: Option<String>,
     shedding_shown: bool,
     footer_data: FooterDataProvider,
-    chrome: ChromeLayoutController,
     last_sigint: Option<Instant>,
     tx: AppSender,
     rx: Receiver<AppEvent>,
@@ -675,7 +465,6 @@ struct Mode {
     listing: Box<dyn Fn(&AgentSession) -> ResourceListing>,
     session_runtime: Option<AgentSessionRuntime>,
     subscription: Option<hoocode_code_agent_session::SessionSubscription>,
-    is_oauth: Rc<dyn Fn(&str) -> bool>,
     auth_storage: Arc<AuthStorage>,
     login: Option<LoginStep>,
     ask_options: Option<OpenAskOptions>,
@@ -694,8 +483,8 @@ struct Mode {
     editor_dialog: Option<OpenEditorDialog>,
     pending_messages: Rc<RefCell<Container>>,
     /// The queued steering and follow-up messages, as `(steering, follow-up)`.
-    /// Written by `update_pending_messages_display`, read by the comms frame,
-    /// which draws them inside itself (spec §4 c4). Shared so the frame's
+    /// Written by `update_pending_messages_display`, read by the prompt row,
+    /// which draws them as dim rows above the input. Shared so the row's
     /// closure can read it without borrowing the mode.
     queue_snapshot: Rc<RefCell<(Vec<String>, Vec<String>)>>,
     is_bash_mode: bool,
@@ -795,9 +584,7 @@ impl Mode {
             editor_border,
             editor_padding_x,
             autocomplete_max_visible,
-            compaction_enabled,
             tool_output_view,
-            chrome_density,
             hide_thinking_block,
             code_block_indent,
             show_images,
@@ -809,15 +596,13 @@ impl Mode {
             settings.editor_border(),
             settings.editor_padding_x() as usize,
             settings.autocomplete_max_visible() as usize,
-            settings.compaction_enabled(),
             settings.tool_output_view(),
-            settings.chrome_density(),
             settings.hide_thinking_block(),
             settings.code_block_indent(),
             settings.show_images(),
             settings.image_width_cells() as u32,
         );
-        // HOOCODE_FULLSCREEN=0 wins over the `fullscreen` setting (hud.rs).
+        // HOOCODE_FULLSCREEN=0 wins over the `fullscreen` setting.
         let fullscreen =
             fullscreen_enabled(env_override("FULLSCREEN").as_deref(), settings.fullscreen());
         drop(settings);
@@ -829,6 +614,8 @@ impl Mode {
         let mut tui = Tui::new(terminal, Some(show_hardware_cursor));
         tui.set_clear_on_shrink(clear_on_shrink);
         tui.set_fullscreen(fullscreen);
+        // The scroll and search bars live in the status line's left slot.
+        tui.set_scroll_status_in_bottom(true);
         // A plain click on a link (OSC 8 or a bare URL) opens it in the
         // browser; `open_url` takes only http, https and mailto.
         tui.on_hyperlink = Some(Box::new(crate::login_controller::open_url));
@@ -858,17 +645,13 @@ impl Mode {
             EditorOptions {
                 padding_x: Some(editor_padding_x),
                 autocomplete_max_visible: Some(autocomplete_max_visible),
-                // The comms frame rules the prompt: the editor renders
-                // only its text content, with no border of its own.
+                // The prompt row draws the marker and the surface: the
+                // editor renders only its text content, with no border.
                 // NOTE: `None` would mean the editor default (`Rule`);
                 // `Some(None-style)` is the borderless editor.
                 border: Some(FrameBorderStyle::None),
             },
         );
-        editor.prompt_prefix = "▸".into();
-        editor.placeholder_color = Box::new(|text: &str| {
-            hoocode_tui_ratatui::paint(hoocode_tui_ratatui::Palette::current().faint(), text)
-        });
         let sink = actions.clone();
         editor.on_submit = Some(Box::new(move |text: &str| {
             sink.borrow_mut().push(Action::Submit(text.to_string()))
@@ -895,107 +678,40 @@ impl Mode {
         let footer_data = FooterDataProvider::new(session.cwd());
         footer_data
             .set_subagent_enabled(session.get_active_tool_names().iter().any(|t| t == "Agent"));
-        // The HUD and footer name SKIP PERMISSIONS from the first frame (the
-        // first `apply_runtime_settings` only runs on a reload or switch).
+        // Skip permissions is known from the first frame (the first
+        // `apply_runtime_settings` only runs on a reload or switch).
         footer_data.set_skip_permissions(hoocode_code_modes::config::skip_permissions(
             &hoocode_code_modes::config::read_merged_config(session.cwd()),
         ));
-        let is_oauth: Rc<dyn Fn(&str) -> bool> = Rc::from(options.is_oauth);
-        let mut footer = FooterComponent::new(
-            Box::new(SessionFooter {
-                session: session.clone(),
-                is_oauth: is_oauth.clone(),
-            }),
-            footer_data.clone(),
-        );
-        footer.set_auto_compact_enabled(compaction_enabled);
-        footer.set_tool_output_view(tool_output_view);
-        let footer = handle(footer);
-        // The comms frame around the prompt: the state title, the input row
-        // and the foot replace the prompt's own border. The turn clock is
-        // shared so the IN FLIGHT title can read the elapsed time.
+        let transient = handle(TransientLines::new(footer_data.clone()));
+        // The prompt row: ` ›` on the surface, the queued messages above it.
         let turn_timer = Rc::new(RefCell::new(TurnTimer::default()));
-        let comms_session = session.clone();
-        let comms_turn = turn_timer.clone();
-        let comms_editor = editor.clone();
-        // The queue snapshot the comms frame reads: `update_pending_messages_display`
-        // writes it, the frame draws it inside itself (spec §4 c4).
+        // The queue snapshot the prompt row reads: `update_pending_messages_display`
+        // writes it, the row draws it above the input.
         let queue_snapshot: Rc<RefCell<(Vec<String>, Vec<String>)>> = Rc::default();
-        let queue_snapshot_state = queue_snapshot.clone();
-        // COMMS LOST (M8e1): set when the last retry gives up, cleared by
-        // the next hail or mission. Shared with the event handler because
-        // the frame's state closure cannot borrow the mode.
+        let queue_read = queue_snapshot.clone();
         let comms_lost = Rc::new(Cell::new(false));
-        let comms_lost_state = comms_lost.clone();
-        let mission_outcome: Rc<RefCell<Option<MissionOutcome>>> = Rc::default();
-        let outcome_state = mission_outcome.clone();
-        let comms = handle(CommsFrame::new(
+        let bash_marker = Rc::new(Cell::new(false));
+        let rows_editor = editor.clone();
+        let menu_editor = editor.clone();
+        // The prompt row draws the completion menu above the prompt.
+        editor.borrow_mut().editor.set_inline_completion(false);
+        let prompt_row = handle(PromptRow::new(
             as_component(&editor),
-            move || {
-                if comms_session.is_streaming() || comms_session.is_retrying() {
-                    // The running step's number: the calls already settled in
-                    // this session, plus the one in flight (steps number
-                    // session-wide, so M2 keeps counting past M1).
-                    let step = comms_session.get_session_stats().tool_calls + 1;
-                    CommsState::InFlight {
-                        elapsed: comms_turn.borrow().elapsed(Instant::now()),
-                        step: Some(step),
-                    }
-                } else if comms_lost_state.get() {
-                    CommsState::CommsLost
-                } else {
-                    match outcome_state.borrow().as_ref() {
-                        Some(outcome) => outcome.comms_state(),
-                        None => CommsState::Ready,
-                    }
-                }
-            },
-            move || queue_snapshot_state.borrow().clone(),
-            move |style: InputStyle| {
-                let mut editor = comms_editor.borrow_mut();
-                editor.editor.placeholder = style.placeholder;
-                // Bash mode keeps its own `!` colour; otherwise the glyph
-                // follows the comms state.
-                if editor.editor.prompt_prefix != "!" {
-                    let glyph = style.glyph;
-                    editor.editor.prompt_color =
-                        Box::new(move |text: &str| hoocode_tui_ratatui::paint(glyph.style(), text));
-                }
-            },
-            Box::new(SessionFooter {
-                session: session.clone(),
-                is_oauth: is_oauth.clone(),
+            Rc::new(move || rows_editor.try_borrow().map_or(1, |e| e.editor.text_rows())),
+            Rc::new(move |max| {
+                menu_editor
+                    .try_borrow_mut()
+                    .ok()
+                    .and_then(|mut e| e.editor.render_completion(max))
             }),
-            footer_data.clone(),
-            tool_output_view,
+            Rc::new(move || queue_read.borrow().clone()),
+            bash_marker.clone(),
         ));
-        let footer_slot = handle(Slot::new(as_component(&footer)));
         let mut task_panel_component = TaskPanelComponent::new();
-        task_panel_component.set_radar(tool_output_view == ToolOutputView::Radar);
+        task_panel_component.set_outline(tool_output_view == ToolOutputView::Outline);
         let task_panel = handle(task_panel_component);
         let tasks_slot = handle(Slot::new(as_component(&task_panel)));
-        let footer_for_density = footer.clone();
-        let density = chrome_density.unwrap_or(if size.get().1 < SMALL_TERMINAL_ROWS {
-            ChromeDensity::Compact
-        } else {
-            ChromeDensity::Full
-        });
-        let mut chrome = ChromeLayoutController::new(
-            ChromeSurfaces {
-                footer_slot: footer_slot.clone(),
-                set_footer_density: Box::new(move |d| {
-                    footer_for_density
-                        .borrow_mut()
-                        .set_density(if d == FooterLayout::Line {
-                            FooterDensity::Line
-                        } else {
-                            FooterDensity::Full
-                        })
-                }),
-            },
-            density,
-        );
-        chrome.apply();
 
         let render_flag = dirty.clone();
         let budget = size.clone();
@@ -1043,23 +759,24 @@ impl Mode {
             ))
         };
 
-        // The startup header and resource listing open under `verbose`, and at
-        // the full stop (the dial moves them after this).
-        let expanded = startup_details_open(options.verbose, tool_output_view);
+        // The top rows: the start screen's two lines, then one blank row.
         let cwd = format_display_path(&session.cwd().to_string_lossy());
-        // The header's cursor blinks by app clock (Ghostty ignores SGR 5).
-        let cursor_blink = CursorBlink::new();
-        // The header reads the live terminal size on each rebuild, so a
-        // resize re-lays the logo out instead of wrapping the old one.
-        let header = handle(startup_header(
-            size.clone(),
-            &options.version,
-            &cwd,
-            cursor_blink.visible(),
-            expanded,
-        ));
-
+        let start_facts = Rc::new(RefCell::new(StartFacts {
+            cwd,
+            skills: 0,
+            agents: 0,
+        }));
         let chat = handle(Container::new());
+        let turns_chat = chat.clone();
+        let header = handle(StartHeader::new(
+            &options.version,
+            start_facts.clone(),
+            Rc::new(move || {
+                turns_chat
+                    .try_borrow()
+                    .map_or(true, |chat| chat.children().iter().any(is_turn_row))
+            }),
+        ));
         let header_container = handle(Container::new());
         header_container
             .borrow_mut()
@@ -1067,10 +784,10 @@ impl Mode {
         let body = handle(Container::new());
         let screen_fill = handle(FlexSpacer::new());
         let widget_above = handle(Container::new());
-        // Inline only: one blank row between the chat and the chrome that
-        // hangs off the bottom. Full-screen's bottom is exactly the spec's
-        // (the console or the 3-row comms frame), so an empty container
-        // renders zero rows there.
+        // Inline only: one blank row between the chat and the rows that hang
+        // off the bottom. Full-screen's bottom is exactly the spec's (the
+        // prompt and the status line), so an empty container renders zero
+        // rows there.
         if !fullscreen {
             widget_above
                 .borrow_mut()
@@ -1079,89 +796,51 @@ impl Mode {
         let editor_container = handle(Container::new());
         editor_container
             .borrow_mut()
-            .add_child(as_component(&comms));
-
-        // The app tree, in the order `tree_plan` gives (hud.rs). Inline: today's
-        // tree. Full-screen: the HUD row, a gap, the attach slot, then the body
-        // (header and chat), which `Tui` lays out and scrolls itself.
-        // The HUD's session source, shared with the component: rebinds swap
-        // the boxed source so SHIP follows the current session (`session_ops`).
-        let hud_source: Rc<RefCell<Box<dyn FooterSource>>> =
-            Rc::new(RefCell::new(Box::new(SessionFooter {
-                session: session.clone(),
-                is_oauth: is_oauth.clone(),
-            })));
-        let hud = fullscreen.then(|| {
-            handle(hud_component_shared(
-                hud_source.clone(),
-                footer_data.clone(),
-            ))
-        });
-        let gap = handle(Spacer::new(1));
+            .add_child(as_component(&prompt_row));
+        let status_data: Rc<RefCell<StatusLineData>> = Rc::default();
+        let status_line = handle(StatusLineView::new(status_data.clone()));
         let attach_slot = handle(Container::new());
         let pending_messages = handle(Container::new());
         let status = handle(Container::new());
-        for part in tree_plan(fullscreen) {
-            match part {
-                TreePart::Hud => {
-                    if let Some(hud) = &hud {
-                        tui.add_child(as_component(hud));
-                    }
-                }
-                TreePart::Gap => tui.add_child(as_component(&gap)),
-                TreePart::Header => tui.add_child(as_component(&header_container)),
-                TreePart::ScreenFill => {
-                    tui.add_child(as_component(&screen_fill));
-                    tui.set_flex_spacer(Some(screen_fill.clone()));
-                }
-                TreePart::Attach => tui.add_child(as_component(&attach_slot)),
-                TreePart::Chat => tui.add_child(as_component(&chat)),
-                TreePart::Body => {
-                    body.borrow_mut().add_child(as_component(&header_container));
-                    body.borrow_mut().add_child(as_component(&chat));
-                    tui.add_child(as_component(&body));
-                    tui.set_fullscreen_body(Some(as_component(&body)));
-                }
-                TreePart::Pending => tui.add_child(as_component(&pending_messages)),
-                TreePart::Status => tui.add_child(as_component(&status)),
-                TreePart::WidgetAbove => tui.add_child(as_component(&widget_above)),
-                TreePart::Tasks => tui.add_child(tasks_slot.clone()),
-                TreePart::Notifications => tui.add_child(as_component(&notifications)),
-                TreePart::FooterTransient => tui.add_child(handle(FooterTransientLines {
-                    footer: footer.clone(),
-                    footer_slot: footer_slot.clone(),
-                })),
-                TreePart::Editor => tui.add_child(as_component(&editor_container)),
-                TreePart::WidgetsBelow => {
-                    tui.add_child(as_component(&handle(Container::new()))); // widgets below
-                }
-                TreePart::Footer => {
-                    // Inline mode only: full-screen replaces the two-row
-                    // footer with the HUD (`TreePart::Hud`).
-                    if !fullscreen {
-                        tui.add_child(footer_slot.clone());
-                    }
-                }
-            }
+
+        // The app tree, top to bottom: the start header (or the blank top
+        // row), the attach slot and the transcript; then the bottom: pending
+        // rows, the status area, the task panel, notices, the transient rows,
+        // the prompt (or the dialog in its place) and the status line.
+        // Full-screen lays the transcript out in a body it scrolls itself;
+        // inline pushes it down with a fill.
+        tui.add_child(as_component(&header_container));
+        if fullscreen {
+            tui.add_child(as_component(&attach_slot));
+            body.borrow_mut().add_child(as_component(&chat));
+            tui.add_child(as_component(&body));
+            tui.set_fullscreen_body(Some(as_component(&body)));
+        } else {
+            tui.add_child(as_component(&screen_fill));
+            tui.set_flex_spacer(Some(screen_fill.clone()));
+            tui.add_child(as_component(&attach_slot));
+            tui.add_child(as_component(&chat));
         }
-        tui.set_focus(Some(as_component(&comms)));
+        tui.add_child(as_component(&pending_messages));
+        tui.add_child(as_component(&status));
+        tui.add_child(as_component(&widget_above));
+        tui.add_child(tasks_slot.clone());
+        tui.add_child(as_component(&notifications));
+        tui.add_child(as_component(&transient));
+        tui.add_child(as_component(&editor_container));
+        tui.add_child(as_component(&handle(Container::new()))); // widgets below
+        tui.add_child(as_component(&status_line));
+        tui.set_focus(Some(as_component(&prompt_row)));
         // Scrolling the transcript: the prompt's pager keys, and the keys of
         // the pinned view (`scroll_view.rs`).
         let prompt_text = editor.clone();
         let busy_session = session.clone();
         install_scroll_view(
             &mut tui,
-            as_component(&comms),
+            as_component(&prompt_row),
             chat.clone(),
             fullscreen.then(|| body.clone()),
-            Rc::new(|child: &ComponentHandle| {
-                child.borrow().as_any().is_some_and(|any| {
-                    any.is::<UserMessageComponent>()
-                        || any.is::<hoocode_code_tui_widgets::trajectory::MissionHeader>()
-                        || any.is::<SkillBlockComponent>()
-                        || any.is::<BackgroundNoticeComponent>()
-                })
-            }),
+            Rc::new(is_turn_row),
             Rc::new(move || {
                 prompt_text
                     .try_borrow()
@@ -1169,15 +848,7 @@ impl Mode {
             }),
             Rc::new(move || busy_session.is_streaming() || busy_session.is_retrying()),
         );
-
-        // Mission Control transmissions (M8e4): in fullscreen the newest
-        // notice floats top-right over the transcript and the band stays
-        // empty; inline keeps the band.
-        notifications.borrow_mut().set_overlay(fullscreen);
-        let toast_panel = notifications.clone();
-        tui.set_toast_provider(Box::new(move |width| {
-            toast_panel.borrow().toast_lines(width)
-        }));
+        install_scroll_status(&mut tui, status_data.clone());
 
         let (tx, rx) = mpsc::channel();
         let tx = AppSender {
@@ -1193,8 +864,8 @@ impl Mode {
             dirty,
             perf,
             header,
+            start_facts,
             header_container,
-            cursor_blink,
             scroll_body: fullscreen.then(|| body.clone()),
             transcript: Transcript::new(chat),
             attached: None,
@@ -1213,7 +884,7 @@ impl Mode {
             loop_tasks: Vec::new(),
             scheduled_runs: Default::default(),
             turn_cost_anchor: None,
-            mission_outcome,
+            last_turn: None,
             turn_stop_reason: None,
             plugin_reload_pending: false,
             plugin_notices: Vec::new(),
@@ -1232,18 +903,18 @@ impl Mode {
             image_width_cells,
             code_block_indent,
             editor,
-            comms,
+            prompt_row,
+            bash_marker,
             comms_lost,
+            status_data,
             editor_container,
             actions,
             notifications,
             tips,
-            footer,
-            hud_source,
+            transient,
             runtime_notice: None,
             shedding_shown: false,
             footer_data,
-            chrome,
             last_sigint: None,
             tx,
             rx,
@@ -1254,7 +925,6 @@ impl Mode {
             listing: options.listing,
             session_runtime: options.session_runtime,
             subscription: None,
-            is_oauth,
             auth_storage: options.auth_storage,
             login: None,
             picker: None,
@@ -1285,10 +955,10 @@ impl Mode {
             mode_dial_after: None,
         };
         // Peek-only rows follow the saved view from the first frame: a
-        // restored radar session hides them without waiting for a flip.
+        // restored outline session hides them without waiting for a flip.
         mode.transcript
-            .radar_active
-            .set(mode.tool_output_view == ToolOutputView::Radar);
+            .outline_active
+            .set(mode.tool_output_view == ToolOutputView::Outline);
         mode.transcript
             .full_active
             .set(mode.tool_output_view == ToolOutputView::Full);
@@ -1308,9 +978,6 @@ impl Mode {
         if let TuiEvent::Resize = event {
             let terminal = &self.tui.terminal;
             self.size.set((terminal.columns(), terminal.rows()));
-            // The logo is laid out for the terminal width: rebuild it for
-            // the new one, or its star dots wrap onto their own rows.
-            self.header.borrow_mut().refresh();
         }
         // Keys reach the screen's components with the view they show on screen.
         self.show_attached();
@@ -1361,18 +1028,10 @@ impl Mode {
             None
         };
         if notice != self.runtime_notice {
-            self.footer.borrow_mut().set_notice(notice.clone());
+            self.transient.borrow_mut().set_notice(notice.clone());
             self.runtime_notice = notice;
             self.dirty.set(true);
         }
-    }
-
-    /// Whether the header cursor should blink now (see `cursor_should_blink`).
-    fn cursor_blink_running(&self) -> bool {
-        cursor_should_blink(
-            self.transcript.chat.borrow().children().is_empty(),
-            self.tui.scroll_pinned(),
-        )
     }
 
     /// `PromptDone`: the prompt in flight is over (its turn, if it ran one, has
@@ -1455,7 +1114,6 @@ impl Mode {
             self.notifications.borrow().deadline(),
             self.tips.deadline(),
             self.editor.borrow().editor.autocomplete_deadline(),
-            self.cursor_blink.deadline(),
         ];
         for deadline in deadlines.into_iter().flatten() {
             wait = wait.min(deadline.saturating_duration_since(now));
@@ -1581,9 +1239,7 @@ impl Mode {
         }));
         self.subscription = Some(self.subscribe());
 
-        // Everything the chrome shows about the session.
-        self.update_editor_border_color();
-        self.update_session_chip();
+        // Everything the screen shows about the session.
         self.update_terminal_title();
         let theme_name = self.session.settings().theme();
         if let Some(name) = theme_name {
@@ -1607,19 +1263,10 @@ impl Mode {
                 "Skip permissions is on: tools run without asking (mode rules still apply).",
             );
         }
-        // First run: no key and no login yet. Say how to get a model before
-        // the first message fails with "No model selected".
+        // First run: no working provider. The Log in pane opens on its own;
+        // Esc leaves `⊗ not signed in  /login` in the status line.
         if self.session.model().is_none() {
-            let (title, body) = crate::transmission::NO_MODEL_NOTICE;
-            self.notifications.borrow_mut().notify(
-                NotificationKind::Warning,
-                title,
-                &body,
-                None,
-                Some(Duration::from_secs(60)),
-                Some("login"),
-            );
-            self.dirty.set(true);
+            self.show_oauth_selector(LoginMode::Login);
         }
         self.setup_autocomplete_provider();
         self.update_available_provider_count();
@@ -1811,12 +1458,11 @@ impl Mode {
                         questions,
                         reply,
                         chime,
-                        esc_answers_first,
                     }) => {
                         if chime {
                             self.ring_chime();
                         }
-                        self.show_ask_options(questions, reply, esc_answers_first)
+                        self.show_ask_options(questions, reply)
                     }
                     AppEvent::Dialog(DialogRequest::HideAskOptions) => self.hide_ask_options(None),
                     AppEvent::Dialog(DialogRequest::Clearance { id, info, reply }) => {
@@ -1879,8 +1525,7 @@ impl Mode {
                     } => self.tree_navigated(navigation, entry_id, *outcome),
                     AppEvent::ThemeChanged => {
                         self.tui.invalidate();
-                        self.update_editor_border_color();
-                        self.update_session_chip();
+                        self.dirty.set(true);
                     }
                 }
             }
@@ -1892,12 +1537,6 @@ impl Mode {
                 self.dirty.set(true);
             }
             if self.tips.poll() {
-                self.dirty.set(true);
-            }
-            // The header cursor's blink: re-render the header when it flips.
-            let running = self.cursor_blink_running();
-            if self.cursor_blink.advance(Instant::now(), running) {
-                self.header.borrow_mut().refresh();
                 self.dirty.set(true);
             }
             if self.poll_picker_component() {
@@ -1912,8 +1551,8 @@ impl Mode {
                 if self.task_panel.borrow().ticking() {
                     self.dirty.set(true);
                 }
-                // A flying mission's clock: the radar mission row, the live
-                // step times and the comms title read it, so they redraw
+                // A running turn's clock: the outline mission row, the live
+                // step times and the status line read it, so they redraw
                 // once a second while a turn runs.
                 if self.turn_cost_anchor.is_some() {
                     self.dirty.set(true);
@@ -1969,6 +1608,7 @@ impl Mode {
                 .borrow_mut()
                 .set_screen_rows(self.size.get().1);
             self.show_attached();
+            self.refresh_status_line();
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
             }
@@ -2043,36 +1683,5 @@ mod bash_mode_flip_tests {
         assert_eq!(bash_mode_flip(&last, "!ls"), None);
         assert_eq!(bash_mode_flip(&last, "  !!ls"), None);
         assert_eq!(bash_mode_flip(&last, ""), Some(false));
-    }
-}
-
-#[cfg(test)]
-mod cursor_blink_tests {
-    use super::cursor_should_blink;
-
-    #[test]
-    fn blinks_only_on_an_empty_unpinned_transcript() {
-        assert!(cursor_should_blink(true, false));
-        assert!(!cursor_should_blink(false, false));
-        assert!(!cursor_should_blink(true, true));
-        assert!(!cursor_should_blink(false, true));
-    }
-}
-
-#[cfg(test)]
-mod expanded_instructions_tests {
-    use super::*;
-
-    #[test]
-    fn dial_hints_join_their_keys_with_or_not_a_slash() {
-        init_theme(Some("dark"), false);
-        let text = hoocode_tui_util::strip_vt_control_characters(&expanded_instructions());
-        let line = text
-            .lines()
-            .find(|l| l.contains("to step thinking level"))
-            .expect("thinking dial line");
-        let keys = line.split(" to step").next().unwrap_or_default();
-        assert!(keys.contains(" or "), "keys joined with or: {line}");
-        assert!(!keys.contains('/'), "no slash between keys: {line}");
     }
 }

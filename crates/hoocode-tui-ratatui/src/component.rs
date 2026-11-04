@@ -44,7 +44,7 @@ where
 
 /// One row of `spans` as a line `width` cells wide: spans are cut with `…`
 /// first when they do not fit, and the 1-line buffer only clips. The shared
-/// row path (trajectory, tool chains, radar rows); rows laid out elsewhere
+/// row path (trajectory, tool chains, outline rows); rows laid out elsewhere
 /// draw their own buffer, and rows that must never truncate use `set_line`
 /// directly.
 pub fn row(spans: Vec<Span<'static>>, width: usize) -> String {

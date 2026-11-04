@@ -24,9 +24,8 @@ use hoocode_code_tui_selectors::user_message_selector::{
 use hoocode_code_tui_theme::{set_theme, theme};
 use hoocode_code_tui_widgets::dynamic_border::DynamicBorder;
 use hoocode_tui_components::{FrameBorderStyle, Spacer, Text};
-use hoocode_tui_render::{Component, Container};
+use hoocode_tui_render::Container;
 
-use crate::expandable_text::Expandable;
 use crate::input_frame::set_input_frame_border;
 use crate::session_picker;
 
@@ -286,7 +285,6 @@ impl Mode {
     pub(super) fn finish_reload(&mut self) {
         self.apply_runtime_settings();
         self.apply_session_theme();
-        self.update_editor_border_color();
         self.setup_autocomplete_provider();
         self.reset_transcript_view();
         // From the session file, as the pin replays it: messages recorded
@@ -430,7 +428,7 @@ impl Mode {
             let line = format!(
                 "{} {}  {}",
                 t.fg("dim", label),
-                self.current_chip(),
+                self.session.display_name(),
                 t.fg("dim", "/name <name> to change")
             );
             self.add_to_chat(as_component(&handle(Spacer::new(1))));
@@ -441,7 +439,7 @@ impl Mode {
         let message = format!(
             "{} {}",
             t.fg("dim", "Session name set:"),
-            self.current_chip()
+            self.session.display_name()
         );
         self.show_status(&message);
     }
@@ -457,7 +455,7 @@ impl Mode {
         } else {
             "Name (auto):"
         };
-        info += &format!("{} {}\n", dim(name_label), self.current_chip());
+        info += &format!("{} {}\n", dim(name_label), self.session.display_name());
         if let Some(branch) = self.session.session_manager().session_branch() {
             info += &format!("{} {branch}\n", dim("Branch:"));
         }
@@ -739,22 +737,11 @@ impl Mode {
         self.drop_scheduled_backlog();
         self.install_interrupt_hook();
         self.transcript.clear_retry();
-        self.footer.borrow_mut().set_retry_notice(None);
-        self.footer.borrow_mut().set_source(Box::new(SessionFooter {
-            session: self.session.clone(),
-            is_oauth: self.is_oauth.clone(),
-        }));
-        // The HUD keeps its component: swap its source so SHIP reads the new
-        // session's model on the next render (the old source would freeze it).
-        *self.hud_source.borrow_mut() = Box::new(SessionFooter {
-            session: self.session.clone(),
-            is_oauth: self.is_oauth.clone(),
-        });
+        self.transient.borrow_mut().set_retry_notice(None);
+        // The status line reads the new session on the next pass.
         self.dirty.set(true);
         self.footer_data.set_cwd(self.session.cwd());
         self.subscription = Some(self.subscribe());
-        self.update_editor_border_color();
-        self.update_session_chip();
         self.update_terminal_title();
         self.setup_autocomplete_provider();
         self.update_available_provider_count();
@@ -762,15 +749,8 @@ impl Mode {
         self.apply_session_theme();
     }
 
-    /// `applySessionTheme`: load the theme the settings name and rebuild the
-    /// banner, whose text carries its escapes. As the pin renders it, the
-    /// banner is rebuilt before the new theme loads: a theme edited on disk
-    /// reaches the banner on the next rebuild (a second /new or /reload),
-    /// everything else at once.
+    /// `applySessionTheme`: load the theme the settings name.
     fn apply_session_theme(&mut self) {
-        self.header
-            .borrow_mut()
-            .set_expanded(self.startup_details_open());
         let theme_name = self.session.settings().theme();
         if let Some(name) = theme_name {
             if let Err(error) = set_theme(&name, true) {
@@ -784,10 +764,8 @@ impl Mode {
     }
 
     /// `applyRuntimeSettings`: push the current settings and session onto
-    /// the chrome (keybindings, footer, editor, cursor). Startup, a session
-    /// swap and /reload all rebuild these from disk, so they repaint alike;
-    /// a `compaction.enabled` edit used to leave the footer promising
-    /// auto-compaction after /new or /reload.
+    /// the screen (keybindings, editor, cursor). Startup, a session swap and
+    /// /reload all rebuild these from disk, so they repaint alike.
     fn apply_runtime_settings(&mut self) {
         AppKeybindingsManager::create(None).install();
         let settings = self.session.settings();
@@ -805,12 +783,6 @@ impl Mode {
             settings.autocomplete_max_visible() as usize,
         );
         drop(settings);
-        {
-            let mut footer = self.footer.borrow_mut();
-            footer.set_auto_compact_enabled(self.session.auto_compaction_enabled());
-            footer.set_tool_output_view(self.tool_output_view);
-            footer.invalidate();
-        }
         self.footer_data.set_cwd(self.session.cwd());
         let skip = hoocode_code_modes::config::skip_permissions(
             &hoocode_code_modes::config::read_merged_config(self.session.cwd()),
@@ -825,7 +797,6 @@ impl Mode {
         // `ctx.ui.setMode` from the mode system's `session_start`.
         if let Some(mode) = self.session.extensions().active_mode() {
             self.footer_data.set_active_mode(&mode);
-            self.footer.borrow_mut().invalidate();
         }
         self.hide_thinking_block = hide_thinking_block;
         self.tui.set_show_hardware_cursor(show_hardware_cursor);
@@ -833,9 +804,8 @@ impl Mode {
         set_input_frame_border(border);
         {
             let mut editor = self.editor.borrow_mut();
-            // The main prompt lives inside the comms frame, which draws
-            // the only border. The `editorBorder` setting rules the
-            // dialogs (`InputFrame`) above; the prompt stays borderless.
+            // The prompt row draws no border. The `editorBorder` setting
+            // rules the dialogs (`InputFrame`); the prompt stays borderless.
             editor.editor.set_padding_x(padding_x);
             editor
                 .editor

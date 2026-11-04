@@ -79,7 +79,7 @@ fn omit_drops_the_thinking_block_but_keeps_the_text_around_it() {
         ThinkingDisplay::Omit,
     );
     // The transcript shows the prose once the mission has ended.
-    c.set_radar_prose_shown(true);
+    c.set_outline_prose_shown(true);
     let rendered = c.render(60).join("\n");
     assert!(rendered.contains("here is the answer"));
     assert!(!rendered.contains("weighing the options"));
@@ -87,30 +87,38 @@ fn omit_drops_the_thinking_block_but_keeps_the_text_around_it() {
 }
 
 #[test]
-fn label_shows_the_header_with_the_trace_gist() {
-    // Mission Control (spec a2): the collapsed trace is a Think row in the
-    // `··` slot with the trace's gist; Full adds the trace itself under it.
+fn thinking_is_one_dim_line_with_no_glyph_and_no_header() {
+    // Peek and hidden thinking: the first sentence, `…` when more follows.
     let _g = lock();
-    let mut c = AssistantMessageComponent::new(
-        Some(&assistant(vec![thinking("weighing the options")])),
-        ThinkingDisplay::Label,
-    );
-    let rendered = c.render(60).join("\n");
-    assert!(rendered.contains("Think"));
-    assert!(rendered.contains("··"));
-    assert!(rendered.contains("weighing the options"));
-
+    for display in [ThinkingDisplay::Label, ThinkingDisplay::Full] {
+        let mut c = AssistantMessageComponent::new(
+            Some(&assistant(vec![thinking(
+                "Weighing the options. The first one hides a trap.",
+            )])),
+            display,
+        );
+        let rows: Vec<String> = c
+            .render(60)
+            .iter()
+            .map(|l| crate::support::strip(l).trim_end().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+        assert_eq!(rows, vec![" Weighing the options…"], "{display:?}");
+    }
+    // One sentence reads whole.
     let mut c = AssistantMessageComponent::new(
         Some(&assistant(vec![thinking("weighing the options")])),
         ThinkingDisplay::Full,
     );
-    let rendered = c.render(60).join("\n");
-    assert!(rendered.contains("Think"));
-    assert!(rendered.contains("weighing the options"));
+    let rendered = crate::support::strip(&c.render(60).join("\n"));
+    assert!(rendered.contains(" weighing the options"), "{rendered}");
+    for gone in ["Think", "··", "✻", "ctrl+t"] {
+        assert!(!rendered.contains(gone), "{gone}: {rendered}");
+    }
 }
 
 #[test]
-fn the_full_stop_wraps_the_think_row_where_peek_cuts_it() {
+fn the_full_stop_shows_the_whole_trace_where_peek_cuts_it() {
     let _g = lock();
     let gist = "weighing the options one by one because the first idea hides a trap \
                 in the second step of the plan";
@@ -124,15 +132,16 @@ fn the_full_stop_wraps_the_think_row_where_peek_cuts_it() {
     };
     let peek = build(ToolOutputView::Peek);
     assert!(peek.contains('…'), "{peek}");
+    assert_eq!(peek.trim().lines().count(), 1, "{peek}");
     let full = build(ToolOutputView::Full);
     assert!(!full.contains('…'), "{full}");
     let flat = full.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(flat.contains(gist), "{full}");
-    assert!(full.contains("✻ thought · ctrl+t"), "{full}");
+    assert!(!full.contains("ctrl+t"), "{full}");
 }
 
 #[test]
-fn a_message_on_the_rail_opens_with_a_plain_blank_unless_a_step_is_above_it() {
+fn prose_opens_with_a_blank_and_sits_at_the_prose_indent_with_no_rail() {
     let _g = lock();
     let mut c = AssistantMessageComponent::new(
         Some(&assistant(vec![Content::text("The answer.")])),
@@ -142,14 +151,13 @@ fn a_message_on_the_rail_opens_with_a_plain_blank_unless_a_step_is_above_it() {
     let rows: Vec<String> = c
         .render(60)
         .iter()
-        .map(|l| crate::support::strip(l))
+        .map(|l| crate::support::strip(l).trim_end().to_string())
         .collect();
-    assert_eq!(rows[0], "", "{rows:?}");
-    assert!(rows[1].contains('┊'), "{rows:?}");
+    assert_eq!(rows, vec!["", " The answer."], "{rows:?}");
 }
 
 #[test]
-fn radar_reason_is_the_first_line_of_the_failure_trimmed() {
+fn outline_reason_is_the_first_line_of_the_failure_trimmed() {
     let _g = lock();
     let message = hoocode_ai_types::AssistantMessage {
         stop_reason: hoocode_ai_types::StopReason::Error,
@@ -158,7 +166,7 @@ fn radar_reason_is_the_first_line_of_the_failure_trimmed() {
     };
     let component = AssistantMessageComponent::new(Some(&message), ThinkingDisplay::Omit);
     assert_eq!(
-        component.radar_reason().as_deref(),
+        component.outline_reason().as_deref(),
         Some("Request failed: boom")
     );
 }

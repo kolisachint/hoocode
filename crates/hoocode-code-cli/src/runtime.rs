@@ -2079,12 +2079,6 @@ pub fn run_interactive_mode(
         session_runtime: Some(session_runtime),
         runtime: async_runtime(),
         listing: Box::new(resource_listing),
-        is_oauth: {
-            let auth = auth.clone();
-            Box::new(move |provider| {
-                hoocode_code_models::AuthLookup::is_oauth(auth.as_ref(), provider)
-            })
-        },
         auth_storage: auth,
         version: hoocode_code_paths::VERSION.to_string(),
         verbose: args.verbose == Some(true),
@@ -2241,9 +2235,16 @@ mod tests {
         let output = Arc::new(Mutex::new(String::new()));
         let title = Arc::new(Mutex::new(String::new()));
         let terminal = ScriptedTerminal {
-            // Type, clear with ctrl+c, then leave with ctrl+d on the empty prompt
-            // and end the shift on the card that quit raises.
-            script: vec![(300, "hi"), (100, "\x03"), (600, "\x04"), (150, "\r")],
+            // No model, so the Log in pane opens first: Esc leaves it. Then type,
+            // clear with ctrl+c, then leave with ctrl+d on the empty prompt and
+            // end the shift on the card that quit raises.
+            script: vec![
+                (200, "\x1b"),
+                (300, "hi"),
+                (100, "\x03"),
+                (600, "\x04"),
+                (150, "\r"),
+            ],
             output: output.clone(),
             title: title.clone(),
         };
@@ -2253,7 +2254,6 @@ mod tests {
                 session_runtime: None,
                 runtime: async_runtime(),
                 listing: Box::new(resource_listing),
-                is_oauth: Box::new(|_| false),
                 auth_storage: Arc::new(AuthStorage::in_memory([])),
                 version: "0.0.1".into(),
                 verbose: false,
@@ -2269,9 +2269,9 @@ mod tests {
         );
         assert!(result.is_ok());
         let drawn = hoocode_tui_util::strip_vt_control_characters(&output.lock().unwrap());
-        assert!(drawn.contains("▸ name your mission"), "{drawn}");
-        assert!(drawn.contains("━ peek ━"), "{drawn}");
-        assert!(drawn.contains("coding agent · v0.0.1"), "{drawn}");
+        assert!(drawn.contains(" › "), "{drawn}");
+        assert!(drawn.contains("peek · "), "{drawn}");
+        assert!(drawn.contains(" hoocode v0.0.1"), "{drawn}");
         assert!(drawn.contains("hi"), "{drawn}");
         assert_eq!(*title.lock().unwrap(), "HooCode - w");
     }
@@ -2673,8 +2673,9 @@ mod tests {
             );
             let output = Arc::new(Mutex::new(String::new()));
             let terminal = ScriptedTerminal {
-                // ctrl+d raises the end-of-shift card; enter ends the shift.
-                script: vec![(400, "\x04"), (150, "\r")],
+                // Esc leaves the first-run Log in pane; ctrl+d raises the
+                // end-of-shift card; enter ends the shift.
+                script: vec![(200, "\x1b"), (400, "\x04"), (150, "\r")],
                 output: output.clone(),
                 title: Arc::new(Mutex::new(String::new())),
             };
@@ -2684,7 +2685,6 @@ mod tests {
                     session_runtime: None,
                     runtime: async_runtime(),
                     listing: Box::new(resource_listing),
-                    is_oauth: Box::new(|_| false),
                     auth_storage: Arc::new(AuthStorage::in_memory([])),
                     version: "0.0.1".into(),
                     verbose: false,
@@ -2828,12 +2828,16 @@ mod tests {
         }
 
         #[test]
-        fn radar_keeps_the_run_whole_because_it_draws_no_trace() {
-            let lines = draw(two_turns(), json!({"toolOutputView": "radar"}));
+        fn outline_keeps_the_run_whole_because_it_draws_no_trace() {
+            let lines = draw(two_turns(), json!({"toolOutputView": "outline"}));
             assert_eq!(line_of(&lines, "TRACE_ONE"), None);
             assert_eq!(line_of(&lines, "TRACE_TWO"), None);
-            // One chain of two calls.
-            assert!(lines[at(&lines, "CodeSearch ×2")].contains("2 calls"));
+            // One chain of two calls: a single row names both.
+            assert!(
+                lines[at(&lines, "QUERY_ONE")].contains("QUERY_TWO"),
+                "{}",
+                lines.join("\n")
+            );
         }
 
         #[test]
@@ -2855,40 +2859,33 @@ mod tests {
                     spoken,
                     tool_result("call-2", "RESULT_TWO"),
                 ],
-                json!({"toolOutputView": "radar"}),
+                json!({"toolOutputView": "outline"}),
             );
-            // Two chains of one call each, the spoken text between them. A
-            // lone call in radar is a group-of-one row (`1 call · …`), so the
-            // rows are found by that stat, not by the tool's name.
-            assert_eq!(line_of(&lines, "×2"), None, "{}", lines.join("\n"));
-            let spoken_at = at(&lines, "SPOKEN");
-            // The first chain is closed by the speech, so it reads done (`●`).
-            // The second is the last one in a history that ends on a tool
-            // result with no answer: the turn was cut short, so it reads
-            // interrupted (`⊘`), never green.
-            // The scripted output holds every repaint (the settled
-            // frame and the quit card), so the rows are read off the
-            // final frame: the last two matches, not a total count.
-            let calls: Vec<(usize, &str)> = lines
-                .iter()
-                .enumerate()
-                .filter(|(_, l)| l.contains("1 call") && (l.contains("● ") || l.contains("⊘ ")))
-                .map(|(i, l)| (i, if l.contains("⊘ ") { "⊘" } else { "●" }))
-                .collect();
-            assert!(calls.len() >= 2, "{}", lines.join("\n"));
-            let tail = &calls[calls.len() - 2..];
-            assert_eq!(tail[0].1, "●", "{}", lines.join("\n"));
-            assert_eq!(tail[1].1, "⊘", "{}", lines.join("\n"));
-            let spoken_last = lines
-                .iter()
-                .rposition(|l| l.contains("SPOKEN"))
-                .unwrap_or(spoken_at);
-            assert!(tail[0].0 < spoken_last && spoken_last < tail[1].0);
+            // Two chains of one call each, the spoken text between them: two
+            // rows (`● CodeSearch <query>`), not one row naming both calls.
+            assert!(
+                !lines
+                    .iter()
+                    .any(|l| l.contains("QUERY_ONE") && l.contains("QUERY_TWO")),
+                "{}",
+                lines.join("\n")
+            );
+            // The scripted output holds every repaint (the settled frame and
+            // the quit card), so the rows are read off the final frame: the
+            // last occurrences, not a total count.
+            let last = |needle: &str| {
+                lines
+                    .iter()
+                    .rposition(|l| l.contains(needle))
+                    .unwrap_or_else(|| panic!("{needle} not drawn:\n{}", lines.join("\n")))
+            };
+            let (one, spoken_at, two) = (last("QUERY_ONE"), last("SPOKEN"), last("QUERY_TWO"));
+            assert!(one < spoken_at && spoken_at < two, "{}", lines.join("\n"));
         }
     }
 
     /// The Ctrl+O (`app.tools.expand`) toggle and the footer's view stop, on
-    /// the real interactive mode. Ctrl+O steps radar, peek, full, radar.
+    /// the real interactive mode. Ctrl+O steps outline, peek, full, outline.
     mod interactive_mode_status {
         use super::*;
         use serde_json::json;
@@ -2913,7 +2910,7 @@ mod tests {
                 &hoocode_code_plugins::PluginSet::default(),
             );
             let output = Arc::new(Mutex::new(String::new()));
-            let mut script: Vec<(u64, &'static str)> = vec![(300, "")];
+            let mut script: Vec<(u64, &'static str)> = vec![(300, "\x1b")]; // Esc leaves the first-run Log in pane
             script.extend(keys.iter().map(|k| (150, *k)));
             script.push((300, "\x04"));
             // The end-of-shift card that quit raises: enter ends the shift.
@@ -2929,7 +2926,6 @@ mod tests {
                     session_runtime: None,
                     runtime: async_runtime(),
                     listing: Box::new(resource_listing),
-                    is_oauth: Box::new(|_| false),
                     auth_storage: Arc::new(AuthStorage::in_memory([])),
                     version: "0.0.1".into(),
                     verbose: false,
@@ -2963,47 +2959,55 @@ mod tests {
         const CTRL_O: &str = "\x0f";
 
         #[test]
-        fn ctrl_o_cycles_radar_peek_full_and_back() {
-            let radar = "━ radar ━";
+        fn ctrl_o_cycles_outline_peek_full_and_back() {
+            let outline = "outline · ";
             let (drawn, _) = run(
-                json!({ "toolOutputView": "radar" }),
+                json!({ "toolOutputView": "outline" }),
                 &[CTRL_O, CTRL_O, CTRL_O],
             );
             assert!(
-                in_order(&drawn, &[radar, "━ peek ━", "━ full ━", radar]),
+                in_order(&drawn, &[outline, "peek · ", "full · ", outline]),
                 "{drawn}"
             );
             let (drawn, _) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O, CTRL_O]);
             assert!(
-                in_order(&drawn, &["━ peek ━", "━ full ━", radar]),
+                in_order(&drawn, &["peek · ", "full · ", outline]),
                 "{drawn}"
             );
         }
 
         #[test]
-        fn a_stored_full_setting_loads_as_full_and_cycles_to_radar() {
+        fn a_stored_full_setting_loads_as_full_and_cycles_to_outline() {
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[]);
-            assert!(drawn.contains("━ full ━"), "{drawn}");
-            assert!(!drawn.contains("━ radar ━"), "{drawn}");
+            assert!(drawn.contains("full · "), "{drawn}");
+            assert!(!drawn.contains("outline · "), "{drawn}");
             let (drawn, _) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
-            assert!(in_order(&drawn, &["━ full ━", "━ radar ━"]), "{drawn}");
+            assert!(in_order(&drawn, &["full · ", "outline · "]), "{drawn}");
+        }
+
+        #[test]
+        fn a_stored_radar_setting_still_loads_as_outline() {
+            // `radar` was the outline stop's name before the rename.
+            let (drawn, session) = run(json!({ "toolOutputView": "radar" }), &[]);
+            assert!(drawn.contains("outline · "), "{drawn}");
+            assert_eq!(session.settings().tool_output_view().as_str(), "outline");
         }
 
         #[test]
         fn the_cycled_choice_is_saved() {
-            let (_, session) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O]);
+            let (_, session) = run(json!({ "toolOutputView": "outline" }), &[CTRL_O]);
             assert_eq!(session.settings().tool_output_view().as_str(), "peek");
             let (_, session) = run(json!({ "toolOutputView": "peek" }), &[CTRL_O]);
             assert_eq!(session.settings().tool_output_view().as_str(), "full");
             let (_, session) = run(json!({ "toolOutputView": "full" }), &[CTRL_O]);
-            assert_eq!(session.settings().tool_output_view().as_str(), "radar");
+            assert_eq!(session.settings().tool_output_view().as_str(), "outline");
         }
 
         #[test]
         fn the_toggle_leaves_the_startup_header_compact() {
             // The header opens under `verbose`, not with the dial.
-            let (drawn, _) = run(json!({ "toolOutputView": "radar" }), &[CTRL_O]);
-            assert!(in_order(&drawn, &["━ peek ━"]), "{drawn}");
+            let (drawn, _) = run(json!({ "toolOutputView": "outline" }), &[CTRL_O]);
+            assert!(in_order(&drawn, &["peek · "]), "{drawn}");
             assert!(
                 !drawn.contains("Compose — the message in your hands"),
                 "{drawn}"

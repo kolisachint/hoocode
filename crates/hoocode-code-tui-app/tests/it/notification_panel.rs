@@ -81,9 +81,43 @@ fn draws_nothing_at_all_when_nothing_is_up() {
 }
 
 #[test]
+fn a_one_row_notice_goes_to_the_status_line_and_the_band_stays_empty() {
+    use hoocode_code_tui_app::status_line::{KeyHint, NoticeLevel};
+    let _g = lock(Some("dark"));
+    let mut s = setup(None);
+    s.panel.notify(
+        NotificationKind::Info,
+        "View: outline",
+        &[],
+        Some("shift+alt+o back"),
+        None,
+        None,
+    );
+    assert!(s.panel.render(WIDTH).is_empty());
+    let notice = s.panel.status_notice().expect("a status notice");
+    assert_eq!(notice.level, NoticeLevel::Info);
+    assert_eq!(notice.message, "View: outline");
+    assert_eq!(notice.keys, [KeyHint::new("shift+alt+o", "back")]);
+    // A longer notice stays in the band.
+    s.panel.notify(
+        NotificationKind::Warning,
+        "Two rows",
+        &["the second"],
+        None,
+        None,
+        None,
+    );
+    s.advance(INFO);
+    assert!(s.panel.status_notice().is_none());
+    assert!(!s.panel.render(WIDTH).is_empty());
+}
+
+#[test]
 fn leads_with_a_blank_row_and_never_pads_its_own_bottom_edge() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
+    // While a turn runs the status line keeps its slot: one row goes to the band.
+    s.panel.set_status_slot_free(false);
     s.info("Model: opus-5");
     let lines = s.rows(WIDTH);
     assert_eq!(lines[0], "");
@@ -92,9 +126,10 @@ fn leads_with_a_blank_row_and_never_pads_its_own_bottom_edge() {
 }
 
 #[test]
-fn puts_the_note_flush_right_and_drops_it_before_the_headline() {
+fn puts_the_note_after_the_headline_and_wraps_it_when_it_does_not_fit() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
+    s.panel.set_status_slot_free(false);
     s.panel.notify(
         NotificationKind::Info,
         "Thinking level: high",
@@ -104,21 +139,19 @@ fn puts_the_note_flush_right_and_drops_it_before_the_headline() {
         None,
     );
     let row = s.rows(WIDTH)[1].clone();
-    assert!(
-        row.contains("Thinking level: high   ") && row.ends_with("shift+alt+t steps back"),
-        "{row}"
-    );
-    let narrow = s.rows(26)[1].clone();
-    assert!(narrow.contains("Thinking level") && !narrow.contains("steps back"));
+    assert_eq!(row, " Thinking level: high  shift+alt+t steps back");
+    let narrow = s.rows(30);
+    assert_eq!(narrow[1], " Thinking level: high");
+    assert_eq!(narrow[2], " shift+alt+t steps back");
 }
 
 #[test]
 fn fades_on_its_own_clock() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
-    s.info("Chrome: compact");
+    s.info("View: outline");
     s.advance(INFO - 1);
-    assert_eq!(s.showing().as_deref(), Some("Chrome: compact"));
+    assert_eq!(s.showing().as_deref(), Some("View: outline"));
     s.advance(1);
     assert_eq!(s.showing(), None);
     assert!(s.panel.render(WIDTH).is_empty());
@@ -161,13 +194,13 @@ fn never_cuts_short_the_notification_already_on_screen() {
 fn steps_a_dial_on_the_band_as_fast_as_the_dial_is_stepped() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
-    s.topic("Chrome: compact", "app.chrome");
+    s.topic("View: outline", "app.view");
     s.advance(1000);
-    s.topic("Chrome: full", "app.chrome");
-    assert_eq!(s.showing().as_deref(), Some("Chrome: full"));
+    s.topic("View: full", "app.view");
+    assert_eq!(s.showing().as_deref(), Some("View: full"));
     assert!(s.pending().is_empty());
     s.advance(INFO - 1);
-    assert_eq!(s.showing().as_deref(), Some("Chrome: full"));
+    assert_eq!(s.showing().as_deref(), Some("View: full"));
     s.advance(1);
     assert_eq!(s.showing(), None);
 }
@@ -176,9 +209,9 @@ fn steps_a_dial_on_the_band_as_fast_as_the_dial_is_stepped() {
 fn keeps_two_different_dials_apart() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
-    s.topic("Chrome: full", "app.chrome");
+    s.topic("View: full", "app.view");
     s.topic("Thinking level: high", "app.thinking");
-    assert_eq!(s.showing().as_deref(), Some("Chrome: full"));
+    assert_eq!(s.showing().as_deref(), Some("View: full"));
     assert_eq!(s.pending(), ["Thinking level: high"]);
 }
 
@@ -187,10 +220,10 @@ fn replaces_a_queued_glimpse_of_the_same_dial_without_jumping_the_queue() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
     s.warning("held");
-    s.topic("Chrome: compact", "app.chrome");
-    s.topic("Chrome: full", "app.chrome");
+    s.topic("View: outline", "app.view");
+    s.topic("View: full", "app.view");
     assert_eq!(s.showing().as_deref(), Some("held"));
-    assert_eq!(s.pending(), ["Chrome: full"]);
+    assert_eq!(s.pending(), ["View: full"]);
 }
 
 #[test]
@@ -247,7 +280,7 @@ fn asks_for_a_frame_when_it_appears_and_when_it_goes() {
 }
 
 #[test]
-fn paints_every_row_it_draws_edge_to_edge() {
+fn draws_plain_rows_with_no_fill_indented_by_one() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
     s.panel.notify(
@@ -260,24 +293,69 @@ fn paints_every_row_it_draws_edge_to_edge() {
     );
     let lines = s.panel.render(WIDTH);
     assert_eq!(lines[0], "");
-    let bg = theme().get_bg_ansi("customMessageBg").to_string();
-    assert!(lines[1].contains(&bg) && lines[2].contains(&bg));
-    assert_eq!(
-        strip_vt_control_characters(&lines[1]).chars().count(),
-        WIDTH as usize
-    );
-    assert_eq!(
-        strip_vt_control_characters(&lines[2]).chars().count(),
-        WIDTH as usize
-    );
+    for line in &lines[1..] {
+        assert!(!line.contains("\x1b[48;"), "no background: {line:?}");
+    }
+    let plain = s.rows(WIDTH);
+    assert_eq!(plain[1], " Mode: build");
+    assert_eq!(plain[2], " described in .hoo/modes/build.md");
 }
 
 #[test]
-fn paints_a_warning_in_the_warning_fill() {
+fn a_warning_is_yellow_with_a_bold_title_over_dim_rows() {
     let _g = lock(Some("dark"));
     let mut s = setup(None);
-    s.warning("No previous directory to return to");
-    assert!(s.panel.render(WIDTH)[1].contains(theme().get_bg_ansi("warningBg")));
+    s.panel.notify(
+        NotificationKind::Warning,
+        "Sign in to start",
+        &["Run /login."],
+        None,
+        None,
+        None,
+    );
+    let lines = s.panel.render(WIDTH);
+    assert!(
+        lines[1].contains(theme().get_fg_ansi("warning")),
+        "{:?}",
+        lines[1]
+    );
+    assert!(lines[1].contains("\x1b[1m"));
+    assert!(
+        lines[2].contains(theme().get_fg_ansi("dim")),
+        "{:?}",
+        lines[2]
+    );
+    assert!(!lines[2].contains(theme().get_fg_ansi("warning")));
+}
+
+#[test]
+fn a_long_title_wraps_to_three_rows_and_ends_in_an_ellipsis() {
+    let _g = lock(Some("dark"));
+    let mut s = setup(None);
+    s.panel.set_status_slot_free(false);
+    let long = "word ".repeat(40);
+    s.warning(long.trim());
+    let rows = s.rows(30);
+    assert_eq!(rows.len(), 4, "{rows:?}");
+    assert!(rows[3].ends_with('…'), "{rows:?}");
+}
+
+#[test]
+fn a_notice_that_needs_an_action_never_times_out_until_dismissed() {
+    let _g = lock(Some("dark"));
+    let mut s = setup(None);
+    s.panel.notify_action(
+        NotificationKind::Warning,
+        "Sign in again",
+        &[],
+        Some("/login to sign in"),
+        "login",
+    );
+    assert_eq!(s.panel.deadline(), None);
+    s.advance(60_000);
+    assert_eq!(s.showing().as_deref(), Some("Sign in again"));
+    s.panel.dismiss("login");
+    assert_eq!(s.showing(), None);
 }
 
 #[test]

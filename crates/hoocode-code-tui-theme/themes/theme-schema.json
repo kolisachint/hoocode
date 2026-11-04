@@ -305,43 +305,43 @@
 				},
 				"ink": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Mission Control chrome: default text (optional; falls back to text)"
+					"description": "Screen colour: default text (optional; falls back to text)"
 				},
 				"dim": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Mission Control chrome: dimmed text (optional; falls back to dim)"
+					"description": "Screen colour: dimmed text (optional; falls back to dim)"
 				},
 				"faint": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Mission Control chrome: frame lines and faintest text (optional; falls back to muted)"
+					"description": "Screen colour: frame lines and faintest text (optional; falls back to muted)"
 				},
 				"acc": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Mission Control chrome: accent for live state (optional; falls back to accent)"
+					"description": "Screen colour: accent for live state (optional; falls back to accent)"
 				},
 				"ok": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Mission Control chrome: landed and success (optional; falls back to success)"
+					"description": "Screen colour: done and success (optional; falls back to success)"
 				},
 				"err": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Mission Control chrome: hits and lost comms (optional; falls back to error)"
+					"description": "Screen colour: failures and errors (optional; falls back to error)"
 				},
 				"warn": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Mission Control chrome: clearance and amber cards (optional; falls back to warning)"
+					"description": "Screen colour: permission and question panes (optional; falls back to warning)"
 				},
 				"you": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Mission Control chrome: the user's own missions (optional; falls back to agent2)"
+					"description": "Screen colour: the user messages (optional; falls back to agent2)"
 				},
 				"vio": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Mission Control chrome: agent rails and rewind (optional; falls back to agent2)"
+					"description": "Screen colour: agent rails and rewind (optional; falls back to agent2)"
 				},
 				"gold": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Mission Control chrome: step numbers (optional; falls back to warning)"
+					"description": "Screen colour: secondary markers (optional; falls back to warning)"
 				},
 				"agent1": {
 					"$ref": "#/$defs/colorValue",
@@ -374,6 +374,38 @@
 				"warningBg": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Warning notice background (optional; falls back to customMessageBg)"
+				},
+				"surface": {
+					"$ref": "#/$defs/colorValue",
+					"description": "User band and prompt row surface (optional; falls back to selectedBg)"
+				},
+				"pane": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Pane background for dialogs, pickers, tasks, completion menu (optional; falls back to selectedBg)"
+				},
+				"paneSel": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Selected row inside a pane (optional; falls back to selectedBg)"
+				},
+				"paneInput": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Filter input row inside a pane (optional; falls back to selectedBg)"
+				},
+				"paneDetail": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Detail column of a split pane (optional; falls back to selectedBg)"
+				},
+				"chip": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Title chip background (optional; falls back to selectedBg)"
+				},
+				"chipWarn": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Blocking title chip background, permission and question (optional; falls back to selectedBg)"
+				},
+				"chipFg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Text colour on the accent title chip (optional; the blocking chipWarn chip uses the dark ink of the page text in both themes)"
 				},
 				"brandBg": {
 					"$ref": "#/$defs/colorValue",
@@ -409,7 +441,7 @@
 				},
 				"activeToolBg": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Marker stroke over the most recent tool row in radar (optional; unset draws no stroke)"
+					"description": "Marker stroke over the most recent tool row in outline (optional; unset draws no stroke)"
 				}
 			},
 			"additionalProperties": false

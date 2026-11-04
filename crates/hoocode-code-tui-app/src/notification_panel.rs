@@ -8,16 +8,25 @@
 //! hoocode runs one timer; here the owner polls: [`NotificationPanel::poll`]
 //! expires what is due and [`NotificationPanel::deadline`] says when to poll
 //! next. The clock is injectable for tests.
+//!
+//! A notice with no body rows is one row: it shows in the status line's left
+//! slot ([`NotificationPanel::status_notice`]) and the band stays empty. A
+//! longer one is drawn here, above the prompt, as plain rows: one blank row,
+//! then rows indented by one column with no fill (a warning's first row
+//! yellow, bold when body rows follow; the rest dim).
+//!
+//! A notice that needs an action ([`NotificationPanel::notify_action`])
+//! never times out; [`NotificationPanel::dismiss`] removes it once the action
+//! is done.
 
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use hoocode_code_tui_theme::theme;
-use hoocode_code_tui_theme::tui::WARNING_GLYPH;
 use hoocode_tui_render::Component;
 
-use crate::transmission::{transmission_component, TransmissionData, TOAST_WIDTH};
-use hoocode_tui_util::{apply_background_to_line, truncate_to_width, visible_width};
+use crate::status_line::{KeyHint, NoticeLevel, StatusNotice};
+use hoocode_tui_util::{truncate_to_width, visible_width, wrap_text_with_ansi};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationKind {
@@ -31,20 +40,6 @@ impl NotificationKind {
         match self {
             NotificationKind::Info => Duration::from_millis(3000),
             NotificationKind::Warning => Duration::from_millis(8000),
-        }
-    }
-
-    fn fill(self) -> &'static str {
-        match self {
-            NotificationKind::Info => "customMessageBg",
-            NotificationKind::Warning => "warningBg",
-        }
-    }
-
-    fn glyph(self) -> &'static str {
-        match self {
-            NotificationKind::Info => "◦",
-            NotificationKind::Warning => WARNING_GLYPH,
         }
     }
 }
@@ -63,6 +58,8 @@ pub struct Notification {
     pub note: Option<String>,
     pub ttl: Option<Duration>,
     pub topic: Option<String>,
+    /// Needs the user to act: never times out.
+    pub action: bool,
 }
 
 /// A string that already carries escapes keeps its own colour.
@@ -74,6 +71,14 @@ fn ink(color: &str, text: &str) -> String {
     }
 }
 
+/// A title as one row: styling dropped, line breaks as spaces.
+fn one_line(text: &str) -> String {
+    hoocode_tui_util::strip_vt_control_characters(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 type Clock = Rc<dyn Fn() -> Instant>;
 
 pub struct NotificationPanel {
@@ -83,9 +88,9 @@ pub struct NotificationPanel {
     max_body_rows: Box<dyn Fn() -> usize>,
     clock: Clock,
     cache: Option<(usize, usize, Vec<String>)>,
-    /// Mission Control overlay mode (M8e4): the band goes quiet and the
-    /// newest notification floats top-right over the transcript instead.
-    overlay: bool,
+    /// The status line's left slot is free for a one-row notice (no turn
+    /// is running): such a notice shows there and the band stays empty.
+    status_slot_free: bool,
 }
 
 impl NotificationPanel {
@@ -108,7 +113,7 @@ impl NotificationPanel {
             max_body_rows: max_body_rows.unwrap_or_else(|| Box::new(|| MAX_BODY_ROWS)),
             clock,
             cache: None,
-            overlay: false,
+            status_slot_free: true,
         }
     }
 
@@ -136,6 +141,52 @@ impl NotificationPanel {
         ttl: Option<Duration>,
         topic: Option<&str>,
     ) {
+        self.push(kind, title, body, note, ttl, topic, false);
+    }
+
+    /// A notice that needs an action: it stays until [`Self::dismiss`] (or a
+    /// notice with the same `topic` replaces it).
+    pub fn notify_action(
+        &mut self,
+        kind: NotificationKind,
+        title: &str,
+        body: &[&str],
+        note: Option<&str>,
+        topic: &str,
+    ) {
+        self.push(kind, title, body, note, None, Some(topic), true);
+    }
+
+    /// Remove the notice with `topic`, shown or queued.
+    pub fn dismiss(&mut self, topic: &str) {
+        let Some(i) = self
+            .queue
+            .iter()
+            .position(|n| n.topic.as_deref() == Some(topic))
+        else {
+            return;
+        };
+        self.queue.remove(i);
+        if i == 0 {
+            self.deadline = None;
+            let now = (self.clock)();
+            self.arm(now);
+        }
+        self.cache = None;
+        (self.request_render)();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn push(
+        &mut self,
+        kind: NotificationKind,
+        title: &str,
+        body: &[&str],
+        note: Option<&str>,
+        ttl: Option<Duration>,
+        topic: Option<&str>,
+        action: bool,
+    ) {
         let next = Notification {
             kind,
             title: title.to_string(),
@@ -147,6 +198,7 @@ impl NotificationPanel {
             note: note.map(str::to_string),
             ttl,
             topic: topic.map(str::to_string),
+            action,
         };
         let same_topic = next
             .topic
@@ -221,75 +273,48 @@ impl NotificationPanel {
         (current.kind.ttl() + BODY_ROW * self.body_rows(current).len() as u32).min(MAX_TTL)
     }
 
-    /// Mission Control overlay mode (M8e4): `true` in fullscreen, where
-    /// the toast lines float over the transcript and the band stays empty.
-    pub fn set_overlay(&mut self, overlay: bool) {
-        self.overlay = overlay;
-        self.cache = None;
+    /// Whether the status line's left slot is free for a one-row notice:
+    /// false while a turn runs (`◉ working` keeps the slot), and the notice
+    /// is drawn in the band instead.
+    pub fn set_status_slot_free(&mut self, free: bool) {
+        if self.status_slot_free != free {
+            self.status_slot_free = free;
+            self.cache = None;
+            (self.request_render)();
+        }
     }
 
-    /// The newest notification as transmission toast lines (M8e4), `width`
-    /// cells wide: the title, its body rows, and the drain row. Empty when
-    /// nothing is up, or when the screen cannot frame a toast.
-    pub fn toast_lines(&self, width: usize) -> Vec<String> {
-        let Some(current) = self.queue.last() else {
-            return Vec::new();
+    /// The notice up now as a status-line notice, when it is one row (no
+    /// body). Its `note` (`shift+alt+m back`) becomes the key hint: the first
+    /// word the key, the rest what it does. The panel's own clock expires it.
+    pub fn status_notice(&self) -> Option<StatusNotice> {
+        let current = self
+            .queue
+            .first()
+            .filter(|n| n.body.is_empty() && self.status_slot_free)?;
+        let level = match current.kind {
+            NotificationKind::Info => NoticeLevel::Info,
+            NotificationKind::Warning => NoticeLevel::Warning,
         };
-        let render_width = width.min(TOAST_WIDTH);
-        if render_width < 12 {
-            return Vec::new();
+        let mut notice = StatusNotice::new(level, one_line(&current.title));
+        if let Some(note) = current
+            .note
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+        {
+            let (key, action) = note.split_once(' ').unwrap_or((note, ""));
+            notice.keys.push(KeyHint::new(key, action.trim()));
         }
-        // The head owns the clock: a toast still queued behind it has not
-        // started draining, so its bar is full.
-        let remaining = if self.queue.len() == 1 {
-            match self.deadline {
-                Some(deadline) => {
-                    let now = (self.clock)();
-                    let total = self.ttl(current).as_secs_f32().max(0.001);
-                    (deadline.saturating_duration_since(now).as_secs_f32() / total).clamp(0.0, 1.0)
-                }
-                None => 1.0,
-            }
-        } else {
-            1.0
-        };
-        let mut toast = transmission_component(
-            TransmissionData {
-                title: current.title.clone(),
-                body: current.body.clone(),
-                note: current.note.clone(),
-                remaining,
-            },
-            render_width,
-        );
-        toast.render(render_width as u16)
+        Some(notice)
     }
 
     fn arm(&mut self, from: Instant) {
-        self.deadline = self.queue.first().map(|current| from + self.ttl(current));
-    }
-
-    fn headline(&self, current: &Notification, width: usize) -> String {
-        let color = if current.kind == NotificationKind::Warning {
-            "warning"
-        } else {
-            "text"
-        };
-        if let Some(note) = &current.note {
-            let gap = width as i64
-                - visible_width(&current.title) as i64
-                - visible_width(note) as i64
-                - 3;
-            if gap >= 0 {
-                return ink(color, &current.title)
-                    + &" ".repeat(gap as usize + 3)
-                    + &theme().fg("halftone", note);
-            }
-        }
-        ink(
-            color,
-            &truncate_to_width(&current.title, width.max(1), "...", false),
-        )
+        self.deadline = self
+            .queue
+            .first()
+            .filter(|current| !current.action)
+            .map(|current| from + self.ttl(current));
     }
 }
 
@@ -302,7 +327,8 @@ impl Component for NotificationPanel {
         if width < 4 {
             return Vec::new();
         }
-        if self.overlay {
+        // One row: the status line shows it while its slot is free.
+        if current.body.is_empty() && self.status_slot_free {
             return Vec::new();
         }
         let rows = self.budget();
@@ -311,29 +337,66 @@ impl Component for NotificationPanel {
                 return lines.clone();
             }
         }
-        let fill = current.kind.fill();
-        let paint =
-            |line: &str| apply_background_to_line(line, width, |text: &str| theme().bg(fill, text));
-        let glyph = theme().fg(
-            if current.kind == NotificationKind::Warning {
-                "warning"
+        let inner = (width - 1).max(1);
+        let warning = current.kind == NotificationKind::Warning;
+        let has_body = !current.body.is_empty();
+        let title_color = if warning { "warning" } else { "dim" };
+        let styled_title = |row: &str| {
+            let text = ink(title_color, row);
+            if warning && has_body && !row.contains("\x1b[") {
+                theme().bold(&text)
             } else {
-                "muted"
-            },
-            current.kind.glyph(),
-        );
-        let mut lines = vec![
-            String::new(),
-            paint(&format!(" {glyph} {}", self.headline(current, width - 4))),
-        ];
+                text
+            }
+        };
+        // The title wraps at spaces (at most 3 rows, the last ends in `…`);
+        // the key hint joins the last row when it fits, else takes its own.
+        let mut title_rows = wrap_text_with_ansi(&one_line(&current.title), inner);
+        if title_rows.len() > 3 {
+            title_rows.truncate(3);
+            let last = title_rows.pop().unwrap_or_default();
+            title_rows.push(truncate_to_width(&format!("{last}…"), inner, "…", false));
+        }
+        let mut lines = vec![String::new()];
+        let hint = current
+            .note
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(|note| {
+                let (key, action) = note.split_once(' ').unwrap_or((note, ""));
+                (key.to_string(), action.trim().to_string())
+            });
+        let hint_text = |(key, action): &(String, String)| {
+            let mut out = theme().fg("text", key);
+            if !action.is_empty() {
+                out.push(' ');
+                out.push_str(&theme().fg("dim", action));
+            }
+            out
+        };
+        let last = title_rows.len().saturating_sub(1);
+        for (i, row) in title_rows.iter().enumerate() {
+            let mut line = format!(" {}", styled_title(row));
+            if i == last {
+                if let Some(hint) = &hint {
+                    let plain = format!("{}  {} {}", row, hint.0, hint.1);
+                    if visible_width(plain.trim_end()) <= inner {
+                        line.push_str("  ");
+                        line.push_str(&hint_text(hint));
+                    } else if lines.len() < 4 {
+                        lines.push(line);
+                        line = format!(" {}", hint_text(hint));
+                    }
+                }
+            }
+            lines.push(line);
+        }
         for line in self.body_rows(current) {
-            lines.push(paint(&format!(
-                "   {}",
-                ink(
-                    "muted",
-                    &truncate_to_width(line, (width - 4).max(1), "...", false)
-                )
-            )));
+            lines.push(format!(
+                " {}",
+                ink("dim", &truncate_to_width(line, inner, "…", false))
+            ));
         }
         self.cache = Some((width, rows, lines.clone()));
         lines

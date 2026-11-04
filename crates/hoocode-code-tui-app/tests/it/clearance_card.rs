@@ -54,8 +54,9 @@ fn a_subagents_card_names_the_subagent() {
     info.from = Some("explore task-3".to_string());
     let (mut card, _) = card(info);
     let rows = rows(&mut card, 100);
+    assert!(rows[0].contains("Allow Shell?"), "row 0: {:?}", rows[0]);
     assert!(
-        rows[0].contains("BUILD · explore task-3 asks for Shell"),
+        rows[0].contains("asked by explore task-3"),
         "row 0: {:?}",
         rows[0]
     );
@@ -63,42 +64,37 @@ fn a_subagents_card_names_the_subagent() {
 }
 
 #[test]
-fn shell_card_shows_title_command_reach_and_keys() {
+fn shell_card_shows_title_command_access_and_options() {
     let _g = lock(Some("dark"));
     let (mut card, _) = card(shell_info("$ printf 'alpha\\nbeta\\ngamma\\n' | sort -r"));
     let rows = rows(&mut card, 100);
-    assert_eq!(rows.len(), 5, "{rows:?}");
-    assert!(
-        rows[0].contains("◎ CLEARANCE NEEDED"),
-        "row 0: {:?}",
-        rows[0]
-    );
-    assert!(
-        rows[0].contains("BUILD asks for Shell"),
-        "row 0: {:?}",
-        rows[0]
-    );
+    assert_eq!(rows.len(), 8, "{rows:?}");
+    assert!(rows[0].contains("Allow Shell?"), "row 0: {:?}", rows[0]);
     assert!(rows[1].contains("$ printf"), "row 1: {:?}", rows[1]);
-    assert!(rows[2].contains("REACH"), "row 2: {:?}", rows[2]);
     assert!(
-        rows[2].contains("■ pipe 2 programs"),
+        rows[2].contains("access: pipes 2 programs"),
         "row 2: {:?}",
         rows[2]
     );
-    assert!(rows[2].contains("□ read"), "row 2: {:?}", rows[2]);
-    assert!(rows[3].contains("y go, once"), "row 3: {:?}", rows[3]);
+    assert!(rows[3].contains("› 1  yes"), "row 3: {:?}", rows[3]);
     assert!(
-        rows[3].contains("a always printf in this session"),
-        "row 3: {:?}",
-        rows[3]
+        rows[4].contains("2  yes, always for printf this session"),
+        "row 4: {:?}",
+        rows[4]
     );
     assert!(
-        rows[3].contains("n abort + say why"),
-        "row 3: {:?}",
-        rows[3]
+        rows[5].contains("3  no, tell it why"),
+        "row 5: {:?}",
+        rows[5]
     );
-    assert!(rows[3].contains("e edit first"), "row 3: {:?}", rows[3]);
-    assert!(rows[4].contains("or type a reply"), "row 4: {:?}", rows[4]);
+    assert!(rows[6].contains("or type a reply"), "row 6: {:?}", rows[6]);
+    assert!(
+        rows[7].contains("1–3 pick · e edit first"),
+        "row 7: {:?}",
+        rows[7]
+    );
+    // Plain words: no REACH row, no y/a/n key hints.
+    assert!(!rows.iter().any(|row| row.contains("REACH")), "{rows:?}");
 }
 
 #[test]
@@ -109,17 +105,26 @@ fn shell_card_golden() {
 }
 
 #[test]
-fn read_path_comes_from_the_command() {
+fn a_plain_read_has_no_access_row() {
     let _g = lock(Some("dark"));
     let (mut card, _) = card(shell_info("$ wc -l src/wrap.rs"));
     let rows = rows(&mut card, 100);
+    assert!(!rows.iter().any(|row| row.contains("access:")), "{rows:?}");
+    assert!(rows[2].contains("› 1  yes"), "row 2: {:?}", rows[2]);
+}
+
+#[test]
+fn a_write_or_network_call_has_an_access_row() {
+    let _g = lock(Some("dark"));
+    let (mut write_card, _) = card(shell_info("$ echo hi > out.txt"));
+    let write_rows = rows(&mut write_card, 100);
     assert!(
-        rows[2].contains("■ read src/wrap.rs"),
-        "row 2: {:?}",
-        rows[2]
+        write_rows[2].contains("access: writes out.txt"),
+        "{write_rows:?}"
     );
-    assert!(rows[2].contains("□ write"), "row 2: {:?}", rows[2]);
-    assert!(rows[2].contains("□ network"), "row 2: {:?}", rows[2]);
+    let (mut net_card, _) = card(shell_info("$ curl https://example.com"));
+    let net_rows = rows(&mut net_card, 100);
+    assert!(net_rows[2].contains("access: network"), "{net_rows:?}");
 }
 
 #[test]
@@ -135,72 +140,56 @@ fn edit_card_names_the_real_path() {
         from: None,
     });
     let rows = rows(&mut card, 100);
+    assert!(rows[0].contains("Allow Edit?"), "row 0: {:?}", rows[0]);
+    assert!(rows[1].contains("Edit src/app.ts"), "row 1: {:?}", rows[1]);
     assert!(
-        rows[0].contains("BUILD asks for Edit"),
-        "row 0: {:?}",
-        rows[0]
-    );
-    assert!(
-        rows[2].contains("■ read src/app.ts"),
+        rows[2].contains("access: writes src/app.ts"),
         "row 2: {:?}",
         rows[2]
     );
     assert!(
-        rows[2].contains("■ write src/app.ts"),
-        "row 2: {:?}",
-        rows[2]
-    );
-    assert!(
-        rows[3].contains("a always Edit in BUILD"),
-        "row 3: {:?}",
-        rows[3]
+        rows[4].contains("yes, always for Edit in build"),
+        "row 4: {:?}",
+        rows[4]
     );
 }
 
 #[test]
-fn wrapper_omits_always_and_a_runs_once() {
+fn wrapper_omits_always_and_two_is_no() {
     let _g = lock(Some("dark"));
     let (mut card, answered) = card(shell_info("$ sudo rm -rf /tmp/x"));
     let rows = rows(&mut card, 100);
     assert!(
-        !rows[3].contains("a always"),
-        "row 3 must omit `a`: {:?}",
-        rows[3]
+        !rows.iter().any(|row| row.contains("always")),
+        "must omit always: {rows:?}"
     );
-    card.handle_input("a");
-    assert_eq!(*answered.borrow(), Some(ClearanceChoice::Once));
+    assert!(
+        rows.iter().any(|row| row.contains("2  no, tell it why")),
+        "{rows:?}"
+    );
+    card.handle_input("3");
+    assert_eq!(*answered.borrow(), None, "3 is not an option here");
+    card.handle_input("\u{7f}");
+    card.handle_input("2");
+    assert_eq!(
+        *answered.borrow(),
+        Some(ClearanceChoice::Deny { reason: None })
+    );
 }
 
 #[test]
-fn plan_mode_omits_always_and_a_runs_once() {
+fn plan_mode_omits_always() {
     let _g = lock(Some("dark"));
-    let mut info = shell_info("$ printf y");
-    info.mode = "plan".to_string();
-    let (mut card, answered) = card(info);
-    let rows = rows(&mut card, 100);
-    assert!(
-        !rows[3].contains("a always"),
-        "row 3 must omit `a`: {:?}",
-        rows[3]
-    );
-    card.handle_input("a");
-    assert_eq!(*answered.borrow(), Some(ClearanceChoice::Once));
-}
-
-#[test]
-fn padded_plan_mode_omits_always_and_a_runs_once() {
-    let _g = lock(Some("dark"));
-    let mut info = shell_info("$ printf y");
-    info.mode = " plan ".to_string();
-    let (mut card, answered) = card(info);
-    let rows = rows(&mut card, 100);
-    assert!(
-        !rows[3].contains("a always"),
-        "row 3 must omit `a`: {:?}",
-        rows[3]
-    );
-    card.handle_input("a");
-    assert_eq!(*answered.borrow(), Some(ClearanceChoice::Once));
+    for mode in ["plan", " plan "] {
+        let mut info = shell_info("$ printf y");
+        info.mode = mode.to_string();
+        let (mut card, _) = card(info);
+        let rows = rows(&mut card, 100);
+        assert!(
+            !rows.iter().any(|row| row.contains("always")),
+            "{mode:?}: {rows:?}"
+        );
+    }
 }
 
 #[test]
@@ -210,22 +199,17 @@ fn the_title_stays_bare_when_the_host_knows_the_step() {
     info.step = Some(1);
     let (mut card, _) = card(info);
     let rows = rows(&mut card, 100);
-    // The held call is the card's only step, so no number (spec §4 c1).
-    assert!(
-        rows[0].contains("◎ CLEARANCE NEEDED"),
-        "row 0: {:?}",
-        rows[0]
-    );
+    assert!(rows[0].contains("Allow Shell?"), "row 0: {:?}", rows[0]);
     assert!(!rows[0].contains("step"), "row 0: {:?}", rows[0]);
 }
 
 #[test]
-fn y_a_enter_and_esc_answer() {
+fn number_keys_enter_and_esc_answer() {
     let _g = lock(Some("dark"));
     for (key, expected) in [
-        ("y", ClearanceChoice::Once),
-        ("a", ClearanceChoice::Always),
-        ("n", ClearanceChoice::Deny { reason: None }),
+        ("1", ClearanceChoice::Once),
+        ("2", ClearanceChoice::Always),
+        ("3", ClearanceChoice::Deny { reason: None }),
         ("\x1b", ClearanceChoice::Deny { reason: None }),
         ("\r", ClearanceChoice::Once),
     ] {
@@ -233,6 +217,33 @@ fn y_a_enter_and_esc_answer() {
         card.handle_input(key);
         assert_eq!(*answered.borrow(), Some(expected), "key {key:?}");
     }
+}
+
+#[test]
+fn y_a_n_no_longer_answer() {
+    let _g = lock(Some("dark"));
+    let (mut card, answered) = card(shell_info("$ echo hi"));
+    for key in ["y", "a", "n"] {
+        card.handle_input(key);
+    }
+    // They typed a reply instead.
+    assert_eq!(*answered.borrow(), None);
+    let rows = rows(&mut card, 100);
+    assert!(rows.iter().any(|row| row.contains("yan")), "{rows:?}");
+}
+
+#[test]
+fn arrows_move_the_pick_and_enter_answers_it() {
+    let _g = lock(Some("dark"));
+    let (mut card, answered) = card(shell_info("$ echo hi"));
+    card.handle_input("\x1b[B");
+    let rows = rows(&mut card, 100);
+    assert!(
+        rows.iter().any(|row| row.contains("› 2  yes, always")),
+        "{rows:?}"
+    );
+    card.handle_input("\r");
+    assert_eq!(*answered.borrow(), Some(ClearanceChoice::Always));
 }
 
 #[test]
@@ -245,7 +256,7 @@ fn typed_text_becomes_the_abort_reason() {
     }
     assert_eq!(*answered.borrow(), None);
     let rows = rows(&mut card, 100);
-    assert!(rows.iter().any(|row| row.contains("▸ why")), "{rows:?}");
+    assert!(rows.iter().any(|row| row.contains("› why")), "{rows:?}");
     card.handle_input("\r");
     assert_eq!(
         *answered.borrow(),
@@ -263,7 +274,7 @@ fn esc_clears_typed_text_before_denying() {
     card.handle_input("\x1b");
     assert_eq!(*answered.borrow(), None);
     let rows = rows(&mut card, 100);
-    assert!(!rows.iter().any(|row| row.contains('▸')), "{rows:?}");
+    assert!(!rows.iter().any(|row| row.contains("› x")), "{rows:?}");
     card.handle_input("\x1b");
     assert_eq!(
         *answered.borrow(),
@@ -277,7 +288,7 @@ fn e_edits_and_enter_revises() {
     let (mut card, answered) = card(shell_info("$ echo hi"));
     card.handle_input("e");
     let rows = rows(&mut card, 100);
-    assert!(rows.iter().any(|row| row.contains("✎")), "{rows:?}");
+    assert!(rows.iter().any(|row| row.contains("› echo hi")), "{rows:?}");
     assert!(rows.iter().any(|row| row.contains("echo hi")), "{rows:?}");
     card.handle_input("!");
     card.handle_input("\r");

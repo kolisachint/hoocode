@@ -15,6 +15,7 @@ use hoocode_tui_components::{
 use hoocode_tui_keys::{default_tui_keybindings, KeybindingsManager};
 use hoocode_tui_render::assert_golden;
 use hoocode_tui_render::golden::render_golden;
+use hoocode_tui_render::Component;
 use hoocode_tui_util::strip_vt_control_characters;
 
 use crate::editor::ed_with;
@@ -222,4 +223,31 @@ fn path_completion_keeps_the_legacy_list() {
     let rendered = render_golden(&mut editor, 100);
     let text = plain(&rendered);
     assert_frameless("path_completion_keeps_the_legacy_list", &rendered, &text);
+}
+
+/// A host that places the menu itself (above the prompt) reads rows as wide
+/// as the longest, and the token's column; `render` then leaves the list out.
+#[test]
+fn completion_menu_is_as_wide_as_its_longest_row_and_anchored_to_the_token() {
+    let (mut editor, kb) = provider_editor(slash_provider(), 24);
+    type_text(&mut editor, &kb, "/s");
+    editor.set_inline_completion(false);
+    let rows_without_list = editor.render(80).len();
+    let (rows, width, anchor) = editor.render_completion(60).expect("a menu");
+    assert_eq!(anchor, 0);
+    assert_eq!(rows.len(), 2);
+    for row in &rows {
+        assert_eq!(
+            hoocode_tui_util::visible_width(row),
+            width,
+            "{}",
+            strip_vt_control_characters(row)
+        );
+    }
+    assert!(width < 60, "natural width, not the full line: {width}");
+    let text = strip_vt_control_characters(&rows.join("\n"));
+    assert!(text.contains("session info and stats"), "{text}");
+    // Inline drawing is off: the text rows are all `render` gives.
+    editor.set_inline_completion(true);
+    assert_eq!(editor.render(80).len(), rows_without_list + rows.len());
 }

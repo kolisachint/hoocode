@@ -90,7 +90,6 @@ pub(super) fn test_mode_in(session_file: Option<&Path>, cwd: PathBuf) -> Mode {
         session_runtime: None,
         runtime: hoocode_runtime::io_handle(),
         listing: Box::new(|_| Default::default()),
-        is_oauth: Box::new(|_| false),
         auth_storage: Arc::new(hoocode_code_auth::AuthStorage::in_memory([])),
         version: "test".into(),
         verbose: false,

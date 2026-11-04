@@ -8,7 +8,7 @@ use super::global_theme_lock;
 #[test]
 fn auto_values_are_detected() {
     assert!(is_auto_theme("auto"));
-    assert!(is_auto_theme("auto:daylight:deep-space"));
+    assert!(is_auto_theme("auto:light:dark"));
     assert!(!is_auto_theme("dark"));
     assert!(!is_auto_theme("autumn"));
     assert!(!is_auto_theme(""));
@@ -17,7 +17,7 @@ fn auto_values_are_detected() {
 #[test]
 fn non_auto_values_pass_through() {
     assert_eq!(resolve_auto_theme("dark"), "dark");
-    assert_eq!(resolve_auto_theme("daylight"), "daylight");
+    assert_eq!(resolve_auto_theme("light"), "light");
 }
 
 #[test]

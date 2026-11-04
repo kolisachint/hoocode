@@ -93,7 +93,7 @@ impl AttachPrompt {
             "this agent's own log"
         };
         format!(
-            "▸ READ-ONLY · {what} · {} back to the main ship",
+            "▸ READ-ONLY · {what} · {} back to the session",
             key_display_label("app.subagent.detach")
         )
     }

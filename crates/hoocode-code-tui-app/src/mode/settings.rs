@@ -16,7 +16,6 @@ use hoocode_code_tui_theme::get_available_themes;
 use hoocode_code_tui_theme::set_theme;
 use hoocode_tui_components::FrameBorderStyle;
 use hoocode_tui_images::get_capabilities;
-use hoocode_tui_render::Component;
 
 use crate::input_frame::set_input_frame_border;
 
@@ -106,8 +105,8 @@ impl Mode {
                     .map(|l| l.as_str().to_string())
                     .collect(),
                 current_theme: settings.theme().unwrap_or_else(|| "dark".into()),
-                // `"auto"` first: it follows the OS appearance (daylight /
-                // deep-space), resolved before the loader ever sees it.
+                // `"auto"` first: it follows the OS appearance (light /
+                // dark), resolved before the loader ever sees it.
                 available_themes: std::iter::once("auto".to_string())
                     .chain(get_available_themes())
                     .collect(),
@@ -190,7 +189,6 @@ impl Mode {
             }
             SettingsChange::AutoCompact(enabled) => {
                 self.session.set_auto_compaction_enabled(enabled);
-                self.footer.borrow_mut().set_auto_compact_enabled(enabled);
             }
             SettingsChange::ToolEnabled { name, enabled } => {
                 // Persisted for future sessions (the startup denylist).
@@ -288,8 +286,6 @@ impl Mode {
             SettingsChange::ThinkingLevel(level) => {
                 if let Some(level) = parse_thinking_level(&level) {
                     self.session.set_thinking_level(level);
-                    self.footer.borrow_mut().invalidate();
-                    self.update_editor_border_color();
                 }
             }
             SettingsChange::Theme(name) => {

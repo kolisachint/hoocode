@@ -11,13 +11,14 @@ use hoocode_ai_models::{clamp_thinking_level, get_supported_thinking_levels};
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_code_settings::{ModelCategoryName, ScopedModel};
 use hoocode_code_tui_keybindings::{format_key_text, key_text};
-use hoocode_code_tui_theme::{select_gutter, style_input, theme, SELECT_CURSOR};
-use hoocode_code_tui_widgets::input_frame::{InputFrame, InputFrameOptions};
-use hoocode_code_tui_widgets::selected_row_list::{SelectableRow, SelectedRowList};
-use hoocode_tui_components::{Input, PickerCursor, Spacer, Text};
+use hoocode_code_tui_theme::style_input;
+use hoocode_code_tui_widgets::console::{help_rows, query_row, Console};
+use hoocode_code_tui_widgets::pane::capped_hint_line;
+use hoocode_tui_components::{Input, PickerCursor};
 use hoocode_tui_fuzzy::fuzzy_filter;
 use hoocode_tui_keys::{get_keybindings, matches_key};
-use hoocode_tui_render::{Component, ComponentHandle};
+use hoocode_tui_ratatui::{Line, Palette, Span};
+use hoocode_tui_render::Component;
 
 /// Cycles the selected row's effort through the model's levels, then unset.
 /// Handled by the picker itself (no `keybindings.rs` entry).
@@ -26,9 +27,6 @@ pub const EFFORT_KEY: &str = "tab";
 /// `alt+j` is not bound elsewhere; `alt+t` (thinking) and `shift+tab` (mode) are not it.
 pub const CATEGORY_KEY: &str = "alt+j";
 
-/// Width of the effort and category columns (`standard` and `minimal` fit).
-const EFFORT_WIDTH: usize = 8;
-const CATEGORY_WIDTH: usize = 8;
 const MAX_VISIBLE: usize = 8;
 
 /// `None` = all enabled (no filter); `Some` = an explicit ordered list of
@@ -214,151 +212,107 @@ impl State {
             .collect()
     }
 
-    fn footer_text(&self) -> String {
-        let t = theme();
-        let count = match &self.enabled {
-            None => "all enabled".to_string(),
-            Some(ids) => format!("{}/{} enabled", ids.len(), self.all.len()),
+    /// The title facts: how many models are on, and whether the changes
+    /// are saved.
+    fn count_text(&self) -> String {
+        let on = match &self.enabled {
+            None => format!("all {} on", self.all.len()),
+            Some(ids) => format!("{} of {} on", ids.len(), self.all.len()),
         };
-        let parts = [
-            format!("{} toggle", key_text("tui.select.confirm")),
-            format!("{} all", key_text("app.models.enableAll")),
-            format!("{} clear", key_text("app.models.clearAll")),
-            format!("{} provider", key_text("app.models.toggleProvider")),
-            format!(
-                "{}/{} reorder",
-                key_text("app.models.reorderUp"),
-                key_text("app.models.reorderDown")
-            ),
-            format!("{} save", key_text("app.models.save")),
-            count,
-        ];
-        let joined = parts.join(" · ");
         if self.dirty {
-            t.fg("dim", &format!("  {joined} ")) + &t.fg("warning", "(unsaved)")
+            format!("{on} · unsaved, this session only")
         } else {
-            t.fg("dim", &format!("  {joined}"))
+            format!("{on} · this session only")
         }
     }
-}
 
-/// The key hints for the effort and category columns.
-fn column_hint() -> String {
-    theme().fg(
-        "dim",
-        &format!(
-            "  {} effort · {} category",
-            format_key_text(EFFORT_KEY, false),
-            format_key_text(CATEGORY_KEY, false)
-        ),
-    )
-}
+    /// Every key the picker answers to, in hint order (the first four show;
+    /// `f1` lists the rest).
+    fn all_hints() -> Vec<(String, String)> {
+        let pair = |key: String, action: &str| (key, action.to_string());
+        vec![
+            pair(key_text("tui.select.confirm"), "on / off"),
+            pair(format_key_text(EFFORT_KEY, false), "effort"),
+            pair(key_text("app.models.save"), "save to settings"),
+            pair("esc".to_string(), "close"),
+            pair(format_key_text(CATEGORY_KEY, false), "category"),
+            pair(key_text("app.models.enableAll"), "all on"),
+            pair(key_text("app.models.clearAll"), "all off"),
+            pair(key_text("app.models.toggleProvider"), "provider"),
+            pair(
+                format!(
+                    "{}/{}",
+                    key_text("app.models.reorderUp"),
+                    key_text("app.models.reorderDown")
+                ),
+                "reorder",
+            ),
+        ]
+    }
 
-/// The width a row's `id [provider]` and its two-column status take.
-fn name_cell_width(item: &Item) -> usize {
-    // " [" and "]" are three columns; the status is two.
-    item.model.id.chars().count() + item.model.provider.chars().count() + 3 + 2
-}
-
-fn pad(text: &str, width: usize) -> String {
-    format!(
-        "{text}{}",
-        " ".repeat(width.saturating_sub(text.chars().count()))
-    )
-}
-
-/// A column value: muted when set, dim `-` when unset.
-fn cell(text: &str, width: usize, set: bool) -> String {
-    let t = theme();
-    let color = if set { "muted" } else { "dim" };
-    format!(
-        "{}{}",
-        t.fg(color, text),
-        " ".repeat(width.saturating_sub(text.chars().count()))
-    )
-}
-
-/// The list under the query line (`updateList`).
-struct ModelList(Rc<RefCell<State>>);
-
-impl Component for ModelList {
-    fn render(&mut self, width: u16) -> Vec<String> {
-        let t = theme();
-        let state = self.0.borrow();
-        let len = state.filtered.len();
-        if len == 0 {
-            return Text::new(t.fg("muted", "  No matching models"), 0, 0).render(width);
+    /// The selected row's facts after its name: the model's own name and
+    /// provider, then the effort, category and alias set on it.
+    fn row_facts(item: &Item) -> String {
+        let mut parts = vec![item.model.name.clone(), item.model.provider.clone()];
+        if let Some(effort) = &item.extras.effort {
+            parts.push(format!("effort {effort}"));
         }
-        let window = state.cursor.window();
-        let all_enabled = state.enabled.is_none();
-        let name_width = state
+        if let Some(category) = item.extras.category {
+            parts.push(category.as_str().to_string());
+        }
+        if let Some(alias) = &item.extras.alias {
+            parts.push(format!("alias {alias}"));
+        }
+        parts.join(" · ")
+    }
+
+    /// The pane rows: the id padded to the widest, `on` / `off`, and on the
+    /// selected row its facts. Returns the rows and the selection in them.
+    fn console_rows(&self) -> (Vec<Line<'static>>, Option<usize>) {
+        let pal = Palette::current();
+        let window = self.cursor.window();
+        let selected = self.cursor.selected();
+        let id_width = self
             .filtered
             .iter()
-            .map(name_cell_width)
+            .map(|item| item.model.id.chars().count())
             .max()
             .unwrap_or(0);
-        let header = format!(
-            "  {}  {}  category",
-            pad("model", name_width),
-            pad("effort", EFFORT_WIDTH)
-        );
-        let mut lines = Text::new(t.fg("dim", &header), 0, 0).render(width);
+        let all_enabled = self.enabled.is_none();
         let rows = window
+            .clone()
             .map(|i| {
-                let item = &state.filtered[i];
-                let selected = i == state.cursor.selected();
-                let prefix = if selected {
-                    t.fg("accent", SELECT_CURSOR)
-                } else {
-                    select_gutter()
-                };
-                let id = if selected {
-                    t.fg("accent", &item.model.id)
-                } else {
-                    item.model.id.clone()
-                };
-                let badge = t.fg("muted", &format!(" [{}]", item.model.provider));
-                let status = if all_enabled {
-                    "  ".to_string()
-                } else if item.enabled {
-                    t.fg("success", " ✓")
-                } else {
-                    t.fg("dim", " ✗")
-                };
-                let name_pad = " ".repeat(name_width.saturating_sub(name_cell_width(item)));
-                let effort = item.extras.effort.as_deref();
-                let category = item.extras.category.map(ModelCategoryName::as_str);
-                let effort_cell = cell(effort.unwrap_or("-"), EFFORT_WIDTH, effort.is_some());
-                let category_cell =
-                    cell(category.unwrap_or("-"), CATEGORY_WIDTH, category.is_some());
-                SelectableRow {
-                    text: format!(
-                        "{prefix}{id}{badge}{status}{name_pad}  {effort_cell}  {category_cell}"
-                    ),
-                    selected,
+                let item = &self.filtered[i];
+                let on = all_enabled || item.enabled;
+                let mut spans = vec![
+                    Span::raw(format!("{:<id_width$}", item.model.id)),
+                    Span::raw("  "),
+                    if on {
+                        Span::styled("on ".to_string(), pal.ok())
+                    } else {
+                        Span::styled("off".to_string(), pal.dim())
+                    },
+                ];
+                if i == selected {
+                    spans.push(Span::raw("  "));
+                    spans.push(Span::styled(Self::row_facts(item), pal.dim()));
                 }
+                Line::from(spans)
             })
             .collect();
-        lines.extend(SelectedRowList::new(rows, 0).render(width));
-        if let Some(footer) = state.cursor.footer() {
-            let info = t.fg("muted", &format!("  {footer}"));
-            lines.extend(Text::new(info, 0, 0).render(width));
-        }
-        let name = &state.filtered[state.cursor.selected()].model.name;
-        lines.extend(Spacer::new(1).render(width));
-        lines
-            .extend(Text::new(t.fg("muted", &format!("  Model Name: {name}")), 0, 0).render(width));
-        lines
+        (rows, window.clone().position(|i| i == selected))
     }
 }
 
 /// `ScopedModelsSelectorComponent`.
 pub struct ScopedModelsSelectorComponent {
-    frame: InputFrame,
     search: Rc<RefCell<Input>>,
     state: Rc<RefCell<State>>,
-    footer: Rc<RefCell<Text>>,
     events: Vec<ScopedModelsEvent>,
+    /// The picker has focus: the filter caret draws while set.
+    focused: bool,
+    /// The full key list shows (`f1`).
+    help: bool,
 }
 
 impl ScopedModelsSelectorComponent {
@@ -408,37 +362,16 @@ impl ScopedModelsSelectorComponent {
         state.filtered = state.build_items();
         state.cursor.reset(state.filtered.len());
 
-        let mut frame = InputFrame::new(InputFrameOptions::default());
-        frame.set_title("models");
-        let t = theme();
-        frame.add_child(Rc::new(RefCell::new(Text::new(
-            t.fg(
-                "muted",
-                &format!(
-                    "Session-only. {} to save to settings.",
-                    key_text("app.models.save")
-                ),
-            ),
-            0,
-            0,
-        ))));
         let mut input = Input::new();
         style_input(&mut input);
         let search = Rc::new(RefCell::new(input));
-        frame.add_child(search.clone());
-        frame.add_child(Rc::new(RefCell::new(Spacer::new(1))));
-        let footer = Rc::new(RefCell::new(Text::new(state.footer_text(), 0, 0)));
         let state = Rc::new(RefCell::new(state));
-        frame.add_child(Rc::new(RefCell::new(ModelList(state.clone()))) as ComponentHandle);
-        frame.add_child(Rc::new(RefCell::new(Spacer::new(1))));
-        frame.add_child(footer.clone());
-        frame.add_child(Rc::new(RefCell::new(Text::new(column_hint(), 0, 0))));
         Self {
-            frame,
             search,
             state,
-            footer,
             events: Vec::new(),
+            focused: false,
+            help: false,
         }
     }
 
@@ -465,7 +398,6 @@ impl ScopedModelsSelectorComponent {
         };
         let len = state.filtered.len();
         state.cursor.set_query(len);
-        self.footer.borrow_mut().set_text(state.footer_text());
     }
 
     fn notify_change(&mut self) {
@@ -552,11 +484,42 @@ impl ScopedModelsSelectorComponent {
 }
 
 impl Component for ScopedModelsSelectorComponent {
+    /// The Scoped models pane: one row per model with its `on` / `off`,
+    /// the selected row's facts after it, the filter row and the hint row.
+    /// Keys, filtering and events are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
-        self.frame.render(width)
+        let pal = Palette::current();
+        let state = self.state.borrow();
+        let mut console = Console::new("Scoped models · /scoped-models", state.count_text());
+        console.query = Some(query_row(&self.query(), self.focused));
+        let (rows, selected) = state.console_rows();
+        console.rows = rows;
+        console.selected = selected;
+        if state.filtered.is_empty() {
+            console.bottom = vec![Line::from(vec![Span::styled(
+                "No matching models".to_string(),
+                pal.dim(),
+            )])];
+        } else if let Some(footer) = state.cursor.footer() {
+            console.bottom = vec![Line::from(vec![Span::styled(
+                format!("  {footer}"),
+                pal.dim(),
+            )])];
+        }
+        let all = State::all_hints();
+        let pairs: Vec<(&str, &str)> = all.iter().map(|(k, a)| (k.as_str(), a.as_str())).collect();
+        if self.help {
+            console.bottom.extend(help_rows(&pairs));
+        }
+        console.hint = capped_hint_line(&pairs, true);
+        console.render(width as usize)
     }
 
     fn handle_input(&mut self, data: &str) {
+        if matches_key(data, "f1") {
+            self.help = !self.help;
+            return;
+        }
         let kb = get_keybindings();
         let navigated = self.state.borrow_mut().cursor.handle_query_key(data, &kb);
         if navigated {
@@ -667,7 +630,6 @@ impl Component for ScopedModelsSelectorComponent {
             {
                 let mut state = self.state.borrow_mut();
                 state.dirty = false;
-                self.footer.borrow_mut().set_text(state.footer_text());
             }
             self.events.push(ScopedModelsEvent::Persist(entries));
             return;
@@ -693,7 +655,7 @@ impl Component for ScopedModelsSelectorComponent {
     }
 
     fn invalidate(&mut self) {
-        self.frame.invalidate();
+        self.search.borrow_mut().invalidate();
     }
 
     fn is_focusable(&self) -> bool {
@@ -701,6 +663,7 @@ impl Component for ScopedModelsSelectorComponent {
     }
 
     fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
         self.search.borrow_mut().set_focused(focused);
     }
 }

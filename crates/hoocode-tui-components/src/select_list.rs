@@ -45,6 +45,10 @@ pub struct SelectListTheme {
     /// Background for the selected row, padded to the full width so the band
     /// reaches the right edge. `selected_text` still styles the content.
     pub selected_row: Option<ColorFn>,
+    /// Background for the other rows of a completion menu
+    /// ([`SelectList::render_menu`]), padded to the menu's width. `None`
+    /// leaves them unpainted.
+    pub row: Option<ColorFn>,
 }
 
 pub type SelectItemCallback = Box<dyn FnMut(&SelectItem)>;
@@ -214,6 +218,7 @@ impl SelectList {
         width: usize,
         description_single_line: Option<&str>,
         primary_column_width: usize,
+        compact: bool,
     ) -> String {
         let cursor = self
             .theme
@@ -225,7 +230,7 @@ impl SelectList {
         let prefix = if is_selected { cursor } else { &unselected };
 
         if let Some(desc) = description_single_line {
-            if width > 40 {
+            if compact || width > 40 {
                 let effective_primary_column_width = primary_column_width
                     .min(width.saturating_sub(prefix_width).saturating_sub(4))
                     .max(1);
@@ -242,7 +247,7 @@ impl SelectList {
                 let description_start = prefix_width + truncated_value_width + spacing.len();
                 let remaining_width = (width as i64) - (description_start as i64);
 
-                if remaining_width > MIN_DESCRIPTION_WIDTH as i64 {
+                if remaining_width > (if compact { 1 } else { MIN_DESCRIPTION_WIDTH }) as i64 {
                     // Cut between words, then pad: the description still runs to the last cell.
                     let cut = truncate_at_word(desc, remaining_width as usize);
                     let truncated_desc = format!(
@@ -289,11 +294,63 @@ impl Component for SelectList {
     }
 
     fn render(&mut self, width: u16) -> Vec<String> {
-        let width = width as usize;
+        self.render_rows(width as usize, false)
+    }
+}
+
+impl SelectList {
+    /// The width a completion menu wants: the marker, the primary column and
+    /// the longest description, plus one trailing column. At most `max`.
+    pub fn natural_width(&self, max: usize) -> usize {
+        let prefix = visible_width(
+            self.theme
+                .cursor
+                .as_deref()
+                .unwrap_or(DEFAULT_SELECT_CURSOR),
+        );
+        let primary = self.primary_column_width();
+        let widest_value = self
+            .filtered_items
+            .iter()
+            .map(|item| visible_width(Self::get_display_value(item)))
+            .max()
+            .unwrap_or(0);
+        let widest_desc = self
+            .filtered_items
+            .iter()
+            .filter_map(|item| item.description.as_deref())
+            .map(|d| visible_width(&normalize_to_single_line(d)))
+            .max();
+        let body = match widest_desc {
+            Some(desc) => primary.max(widest_value + PRIMARY_COLUMN_GAP) + desc,
+            None => widest_value,
+        };
+        let natural = if self.filtered_items.is_empty() {
+            visible_width(NO_MATCH)
+        } else {
+            prefix + body + 1
+        };
+        natural.min(max).max(1)
+    }
+
+    /// The rows of a completion menu (pmenu style): each as wide as the
+    /// widest (at most `max_width`), the others painted by the theme's
+    /// `row`, the selected one by `selected_row`. Returns the rows and the
+    /// width.
+    pub fn render_menu(&mut self, max_width: usize) -> (Vec<String>, usize) {
+        let width = self.natural_width(max_width);
+        (self.render_rows(width, true), width)
+    }
+
+    fn render_rows(&mut self, width: usize, compact: bool) -> Vec<String> {
         let mut lines = Vec::new();
+        let paint = |theme: &SelectListTheme, line: String| match (&theme.row, compact) {
+            (Some(band), true) => apply_background_to_line(&line, width, |t| band(t)),
+            _ => line,
+        };
 
         if self.filtered_items.is_empty() {
-            lines.push((self.theme.no_match)("  No matching commands"));
+            lines.push(paint(&self.theme, (self.theme.no_match)(NO_MATCH)));
             return lines;
         }
 
@@ -303,27 +360,36 @@ impl Component for SelectList {
             let item = &self.filtered_items[i];
             let is_selected = i == self.cursor.selected();
             let description_single_line = item.description.as_deref().map(normalize_to_single_line);
-            lines.push(self.render_item(
+            let row = self.render_item(
                 item,
                 is_selected,
                 width,
                 description_single_line.as_deref(),
                 primary_column_width,
-            ));
+                compact,
+            );
+            lines.push(if is_selected {
+                row
+            } else {
+                paint(&self.theme, row)
+            });
         }
 
         if let Some(footer) = self.cursor.footer() {
-            lines.push((self.theme.scroll_info)(&truncate_to_width(
+            let row = (self.theme.scroll_info)(&truncate_to_width(
                 &format!("  {footer}"),
                 width.saturating_sub(2),
                 "",
                 false,
-            )));
+            ));
+            lines.push(paint(&self.theme, row));
         }
 
         lines
     }
 }
+
+const NO_MATCH: &str = "  No matching commands";
 
 #[cfg(test)]
 mod tests {
@@ -339,6 +405,7 @@ mod tests {
         SelectListTheme {
             cursor: None,
             selected_row: None,
+            row: None,
             selected_prefix: identity(),
             selected_text: identity(),
             description: identity(),

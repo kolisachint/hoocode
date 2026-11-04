@@ -1,7 +1,7 @@
 //! Port of the pin's `test/tool-chain-summary.test.ts`.
 
 use hoocode_code_tui_widgets::tool_chain_summary::{
-    chain_phrase, chain_segments, chain_stats, turn_phrase, ChainEntry, ChainState, SegmentTone,
+    chain_phrase, chain_segments, chain_stats, ChainEntry, ChainState, SegmentTone,
 };
 
 fn call(tool: &str, subject: &str, lines: usize, is_error: bool, is_partial: bool) -> ChainEntry {
@@ -409,23 +409,25 @@ mod labels_and_counts {
     }
 }
 
-mod turn_phrase_the_whole_turn {
+mod failed_edits {
     use super::*;
 
     #[test]
-    fn names_every_family_the_turn_touched() {
-        let entries = [
-            c("Edit", "a/x.rs"),
-            c("Edit", "b/y.rs"),
-            c("Edit", "c/z.rs"),
-            c("Shell", "cargo fmt"),
-            c("Shell", "cargo test"),
-        ];
-        assert_eq!(turn_phrase(&entries), "Edited 3 files · ran 2 commands");
+    fn a_blocked_write_is_not_an_edit() {
+        let blocked = call("Write", "x.txt", 1, true, false);
+        let phrase = chain_phrase(&[c("Read", "a.rs"), blocked.clone()]);
+        assert!(!phrase.contains("Edited"), "{phrase}");
+        assert!(!chain_phrase(std::slice::from_ref(&blocked)).contains("Edited"));
+        assert_eq!(chain_phrase(&[blocked, c("Edit", "b.rs")]), "Edited b.rs");
     }
+}
+
+mod brief_subjects {
+    use super::*;
+    use hoocode_code_tui_widgets::tool_chain_summary::brief_subject;
 
     #[test]
-    fn names_a_command_by_its_program_and_first_subcommand() {
+    fn a_command_is_named_by_its_program_and_first_subcommand() {
         let cases = [
             ("cargo test -p hoocode-config 2>&1 | tail -40", "cargo test"),
             ("cd /repo && npm run check", "npm run"),
@@ -436,66 +438,12 @@ mod turn_phrase_the_whole_turn {
             ("ls", "ls"),
         ];
         for (command, name) in cases {
-            let entries = [c("Edit", "a/x.rs"), c("Shell", command)];
-            assert_eq!(
-                turn_phrase(&entries),
-                format!("Edited a/x.rs · ran {name}"),
-                "{command}"
-            );
+            assert_eq!(brief_subject(&c("Shell", command)), name, "{command}");
         }
-        // A turn of commands alone names it the same way.
-        assert_eq!(
-            turn_phrase(&[c("Shell", "cargo test -p a 2>&1 | tail")]),
-            "Ran cargo test"
-        );
     }
 
     #[test]
-    fn counts_distinct_commands_instead_of_naming_them() {
-        let entries = [
-            c("Edit", "a/x.rs"),
-            c("Shell", "cargo test -p a"),
-            c("Shell", "cargo test -p b"),
-        ];
-        assert_eq!(turn_phrase(&entries), "Edited a/x.rs · ran 2 commands");
-        // The chain line keeps the whole command.
-        assert_eq!(
-            chain_phrase(&[c("Shell", "cargo test -p a 2>&1 | tail")]),
-            "Ran cargo test -p a 2>&1 | tail"
-        );
-    }
-
-    #[test]
-    fn one_family_reads_as_the_chain_phrase() {
-        let entries = [c("Edit", "src/keys.ts")];
-        assert_eq!(turn_phrase(&entries), chain_phrase(&entries));
-        assert_eq!(turn_phrase(&entries), "Edited src/keys.ts");
-    }
-
-    #[test]
-    fn folds_the_rest_into_other_calls() {
-        let entries = [
-            c("Edit", "a/x.rs"),
-            c("Shell", "ls"),
-            c("Read", "d/q.rs"),
-            c("Agent", "t"),
-            c("mcp_thing", "x"),
-        ];
-        let phrase = turn_phrase(&entries);
-        assert!(phrase.starts_with("Edited a/x.rs · ran ls · "), "{phrase}");
-        assert!(phrase.ends_with("2 other calls"), "{phrase}");
-    }
-}
-
-mod failed_edits {
-    use super::*;
-
-    #[test]
-    fn a_blocked_write_is_not_an_edit() {
-        let blocked = call("Write", "x.txt", 1, true, false);
-        let phrase = turn_phrase(&[c("Read", "a.rs"), blocked.clone()]);
-        assert!(!phrase.contains("Edited"), "{phrase}");
-        assert!(!turn_phrase(std::slice::from_ref(&blocked)).contains("Edited"));
-        assert_eq!(turn_phrase(&[blocked, c("Edit", "b.rs")]), "Edited b.rs");
+    fn other_subjects_stay_as_they_are() {
+        assert_eq!(brief_subject(&c("Read", "src/config.rs")), "src/config.rs");
     }
 }

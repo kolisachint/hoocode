@@ -1,0 +1,12 @@
+«fg=#2b2f36;bold» hoocode v0.2.31«»
+«fg=#555864» /work/hoocode · 1 skill · 5 agents«»
+
+
+
+
+
+
+
+
+«fg=#00625c;bg=#dadbe6» › «bg=#dadbe6»                                                                                                 «»
+                                       «fg=#555864»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

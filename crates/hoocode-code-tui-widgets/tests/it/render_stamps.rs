@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::support::{assistant, lock, strip};
 use hoocode_ai_types::Content;
-use hoocode_code_tui_widgets::radar::{FlightMark, FlightStats, PeekOnly};
+use hoocode_code_tui_widgets::outline::{FlightMark, FlightStats, PeekOnly};
 use hoocode_code_tui_widgets::tool_chain::{ToolBlock, ToolChainComponent};
 use hoocode_code_tui_widgets::tool_chain_summary::ChainState;
 use hoocode_code_tui_widgets::tool_execution::{ToolExecutionComponent, ToolExecutionOptions};
@@ -85,11 +85,12 @@ fn an_assistant_message_follows_its_updates_and_view() {
     let after = joined(&mut container, 40);
     assert!(after.contains("goodbye now") && !after.contains("hello there"));
 
-    // The peek view draws the prose on the rail; radar draws none of it.
+    // A view change redraws: the prose stays, with no rail in any view.
     component.borrow_mut().set_view(ToolOutputView::Peek);
-    assert!(joined(&mut container, 40).contains('┊'));
-    component.borrow_mut().set_view(ToolOutputView::Radar);
-    assert!(!joined(&mut container, 40).contains('┊'));
+    assert!(joined(&mut container, 40).contains("goodbye now"));
+    component.borrow_mut().set_view(ToolOutputView::Full);
+    let full = joined(&mut container, 40);
+    assert!(full.contains("goodbye now") && !full.contains('┊'));
     component.borrow_mut().invalidate();
     joined(&mut container, 40);
 }
@@ -170,7 +171,7 @@ fn a_running_block_is_not_stamped() {
 }
 
 #[test]
-fn a_mission_header_follows_the_view_and_its_flight_data() {
+fn a_turn_header_follows_the_view_and_its_outline_data() {
     let _g = lock();
     let flight = Rc::new(RefCell::new(FlightStats {
         mark: FlightMark::Landed,
@@ -178,40 +179,37 @@ fn a_mission_header_follows_the_view_and_its_flight_data() {
         landed_time: Some("0.8s".into()),
         ..Default::default()
     }));
-    let mut header = MissionHeader::new(1, "fix the build", None);
+    let mut header = MissionHeader::new(1, "fix the build");
     header.set_flight(flight.clone());
-    header.set_view(ToolOutputView::Radar);
+    header.set_view(ToolOutputView::Outline);
     let header = Rc::new(RefCell::new(header));
     let mut container = Container::new();
     container.add_child(header.clone());
     let one = joined(&mut container, 100);
     assert_eq!(joined(&mut container, 100), one);
-    flight.borrow_mut().steps = 4;
-    flight.borrow_mut().hits = 2;
+    flight.borrow_mut().answer = vec!["Fixed.".to_string()];
     // Shared data the stamp reads: its writer says so.
     note_change();
     let two = joined(&mut container, 100);
     assert_ne!(two, one);
     header.borrow_mut().set_view(ToolOutputView::Peek);
     let peek = joined(&mut container, 100);
-    assert!(
-        peek.contains("▲") && peek.contains("fix the build"),
-        "{peek}"
-    );
+    assert!(peek.contains("› fix the build"), "{peek}");
+    assert!(!peek.contains("Fixed."), "{peek}");
 }
 
 #[test]
-fn a_flying_mission_header_has_no_stamp() {
+fn a_running_turn_header_has_no_stamp() {
     let _g = lock();
     let flight = Rc::new(RefCell::new(FlightStats {
         started: Some(std::time::Instant::now()),
         ..Default::default()
     }));
-    let mut header = MissionHeader::new(1, "go", None);
+    let mut header = MissionHeader::new(1, "go");
     header.set_flight(flight.clone());
-    header.set_view(ToolOutputView::Radar);
+    header.set_view(ToolOutputView::Outline);
     assert_eq!(header.render_stamp(), None);
-    // Landing sets the mark and the landed time together.
+    // Ending sets the mark and the time together.
     let mut landed = flight.borrow_mut();
     landed.mark = FlightMark::Landed;
     landed.landed_time = Some("1s".into());
@@ -220,30 +218,29 @@ fn a_flying_mission_header_has_no_stamp() {
 }
 
 #[test]
-fn a_landing_line_follows_its_counts_and_the_peek_flag() {
+fn an_end_line_follows_its_outline_data_and_the_peek_flag() {
     let _g = lock();
-    let line = Rc::new(RefCell::new(LandingLine::new(
-        FlightMark::Landed,
-        1,
-        0,
-        "1.0s",
-        "10 tokens",
-        "$0.001",
-    )));
+    let flight = Rc::new(RefCell::new(FlightStats {
+        mark: FlightMark::Aborted,
+        landed_time: Some("1.0s".into()),
+        ..Default::default()
+    }));
+    let line = Rc::new(RefCell::new(LandingLine::new(flight.clone())));
     let hidden = Rc::new(Cell::new(false));
     let wrapped: ComponentHandle = PeekOnly::wrap(hidden.clone(), line.clone());
     let mut container = Container::new();
     container.add_child(wrapped);
     let before = joined(&mut container, 100);
-    assert!(before.contains("LANDED"), "{before}");
-    line.borrow_mut().set_counts(5, 0);
-    let counted = joined(&mut container, 100);
-    assert_ne!(counted, before);
-    // Radar hides the row; flipping the shared flag must show.
+    assert!(before.contains("⊗ stopped · 1.0s"), "{before}");
+    flight.borrow_mut().landed_time = Some("2.0s".into());
+    note_change();
+    let changed = joined(&mut container, 100);
+    assert!(changed.contains("⊗ stopped · 2.0s"), "{changed}");
+    // Outline hides the row; flipping the shared flag must show.
     hidden.set(true);
     note_change();
     assert_eq!(joined(&mut container, 100).trim(), "");
     hidden.set(false);
     note_change();
-    assert_eq!(joined(&mut container, 100), counted);
+    assert_eq!(joined(&mut container, 100), changed);
 }

@@ -1,0 +1,11 @@
+«»
+«fg=#0a6b27» ● «fg=#555864;bold»Read«fg=#555864» docs/design/tui-activity.md«»  «fg=#555864»212 lines«»
+«fg=#555864» The renderer is next; I'll port it and then add the goldens.«»
+«»
+«bg=#e8e8f0»   «fg=#0a6b27;bg=#e8e8f0»● «fg=#555864;bg=#e8e8f0»Read the migration plan«bg=#e8e8f0»                                                                        «»
+«bg=#e8e8f0»   «fg=#7a5200;bg=#e8e8f0»◉ «fg=#2b2f36;bg=#e8e8f0»Port the task panel renderer«bg=#e8e8f0»                                                                   «»
+«bg=#e8e8f0»   «fg=#555864;bg=#e8e8f0»○ «fg=#2b2f36;bg=#e8e8f0»Add golden snapshots«bg=#e8e8f0»                                                                           «»
+«bg=#e8e8f0»   «fg=#b8111e;bg=#e8e8f0»⊗ «fg=#2b2f36;bg=#e8e8f0»Run the parity check«bg=#e8e8f0»                                                                           «»
+«bg=#e8e8f0»   «fg=#555864;bg=#e8e8f0»⊗ «fg=#555864;bg=#e8e8f0»Drop the old lens tabs«fg=#555864;bg=#e8e8f0»  cancelled«bg=#e8e8f0»                                                              «»
+«fg=#00625c;bg=#dadbe6» › «bg=#dadbe6»                                                                                                 «»
+«fg=#7a5200» ◉ «fg=#555864»working · 4s · esc stop«»             «fg=#555864»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

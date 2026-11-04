@@ -740,18 +740,6 @@ impl SettingsManager {
         self.set("toolOutputView", Some(view.as_str().into()));
     }
 
-    /// The chrome dial's stop, or `None` when never set (the caller picks a
-    /// default from the terminal size).
-    pub fn chrome_density(&self) -> Option<ChromeDensity> {
-        self.get("chromeDensity")
-            .and_then(Value::as_str)
-            .and_then(ChromeDensity::parse)
-    }
-
-    pub fn set_chrome_density(&mut self, density: ChromeDensity) {
-        self.set("chromeDensity", Some(density.as_str().into()));
-    }
-
     /// `fullscreen`: the app runs on the alternate screen (M1). On by default;
     /// `HOOCODE_FULLSCREEN=0` turns it off for one run.
     pub fn fullscreen(&self) -> bool {

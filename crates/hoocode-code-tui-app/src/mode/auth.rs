@@ -10,7 +10,6 @@ use hoocode_code_tui_selectors::login_dialog::{LoginDialogComponent, LoginDialog
 use hoocode_code_tui_selectors::oauth_selector::{
     AuthSelectorProvider, AuthType, LoginMode, OAuthSelectorComponent, OAuthSelectorEvent,
 };
-use hoocode_tui_render::Component;
 
 use crate::extension_selector::{ExtensionSelectorComponent, SelectorOutcome};
 use crate::login_controller::{
@@ -23,7 +22,7 @@ use super::*;
 
 /// Where a `/login` or `/logout` is (`LoginController`).
 pub(super) enum LoginStep {
-    /// "authentication method".
+    /// The `Log in` pane (subscription or API key).
     AuthType(Rc<RefCell<ExtensionSelectorComponent>>, Outcomes),
     /// A provider pane.
     Provider {
@@ -93,7 +92,7 @@ impl Mode {
         let sink = outcomes.clone();
         let selector = handle(ExtensionSelectorComponent::new(
             // Names the pane in its top border.
-            "authentication method",
+            "Log in",
             vec![SUBSCRIPTION_LABEL.to_string(), API_KEY_LABEL.to_string()],
             None,
             Box::new(move |outcome| sink.borrow_mut().push(outcome)),
@@ -415,8 +414,6 @@ impl Mode {
             },
         };
         self.update_available_provider_count();
-        self.footer.borrow_mut().invalidate();
-        self.update_editor_border_color();
         let path = hoocode_code_paths::auth_path();
         match selected {
             Some(model) => {
