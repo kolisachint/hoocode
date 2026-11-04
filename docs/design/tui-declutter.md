@@ -1,12 +1,15 @@
 # TUI declutter: plain, minimal, easy on the eyes
 
-Status: **design agreed 2026-11-03** ([decisions-2026-11-03.md](decisions-2026-11-03.md)).
+Status: **design, in review** ([decisions-2026-11-03.md](decisions-2026-11-03.md)). Not built yet.
 Supersedes the look (not the behaviour) of [mission-control.md](mission-control.md),
 [radar-r3.md](radar-r3.md), [tui-surfaces.md](tui-surfaces.md),
 [footer-two-modes.md](footer-two-modes.md) and [tool-calls-peek-radar.md](tool-calls-peek-radar.md).
-Full spec: [tui-declutter/spec.md](tui-declutter/spec.md) (v2 plus amendments v2.1–v2.5;
+Full spec: [tui-declutter/spec.md](tui-declutter/spec.md) (v2 plus amendments v2.1–v2.9;
 the latest amendment wins). Mockups (styled text, `«fg=…;bg=…»` runs, 100 columns):
-[tui-declutter/mockups/](tui-declutter/mockups/) (`screens/`, `dialogs/`, `notices/`).
+[tui-declutter/mockups/](tui-declutter/mockups/) (`dark/`, `light/`, `mono/` for NO_COLOR; each
+with `screens/`, `dialogs/`, `notices/`). Side-by-side page (today's goldens vs the redesign,
+dark/light switch): [tui-declutter/compare.html](tui-declutter/compare.html), open it locally
+in a browser.
 
 ## Goal
 
@@ -26,8 +29,12 @@ a few keys change.
 | Prompt | One row on the surface colour, ` › `, empty placeholder. Grows with input. No frame. |
 | Transcript | `›` user band; thinking one dim line (peek) / all (full) / hidden (outline); tool row `● Name subject  facts`; no step numbers, no rail, no `Took`, no "exited with code"; per-view body rules (spec); no success end line; failed/stopped end line. |
 | Glyphs | `●` done/call, `⊗` failed/stopped/denied, `◉` working, `○` todo/queued, `›` marker. Nothing else. |
-| Colours (dark) | Text `#e5e5e7`, one dim `#989898`, one accent teal, green/red/yellow for state only. Surface `#2a2a36` (user band, prompt). Panes: bg `#1e1e2a`, detail `#252532`, selection `#233239`, input `#2a2a36`, chips teal / yellow with dark text. Light gets its own tuned pane values. Only `dark` and `light` remain. |
-| Dialogs | Panes take the prompt's place (task panel and completion menus keep it). Title chip, rows with a 3-col gutter, input row at the bottom for filterable panes, hint row last (≤4 + `f1 more`). Split list \| detail at ≥100 cols for models, sessions, settings, theme, tree; which-key grid for keys; pmenu-style completion. |
+| Colours (dark) | Text `#e5e5e7`, one dim `#989898`, one accent teal, green/red/yellow for state only. Surface `#2a2a36` (user band, prompt). Panes: bg `#1e1e2a`, detail `#292b40`, selection `#233239`, input `#2a2a36`, chips teal / yellow with dark text. |
+| Colours (light) | Panes darker than the page (`#f8f8fb`): pane `#e8e8f0`, detail `#d3d7e9`, selection teal tint `#c3dcdc`, input/surface `#dadbe6`; dark amber `#7a5200` for yellow text; solid dark-teal chip. All text ≥4.5:1 on every surface (spec v2.7, v2.9). |
+| Theme detection | `auto` detects the terminal background (OSC 11, COLORFGBG fallback) and re-checks on change. Every painted background also sets its foreground. |
+| No colour | NO_COLOR, `TERM=dumb` or <256 colours: panes get light `┌─┐` borders with the title in the top border; selection keeps ` › ` and bold; split columns get a `│`. |
+| First run | With no working provider the Log in pane opens on its own. Esc leaves `⊗ not signed in  /login` in the status line until fixed. A notice that needs an action never times out. |
+| Dialogs | Panes take the prompt's place (task panel and completion menus keep it). Title chip, rows with a 3-col gutter, input row at the bottom for filterable panes, hint row last (≤4 + `f1 more`). Split list \| detail at ≥100 cols for models, sessions, settings, theme, tree (detail one stronger shade plus a blank 1-column gutter); which-key grid for keys; pmenu-style completion. |
 | Permission | `Allow Shell?` yellow chip, `$ command`, `access:` row when it writes, uses the network or pipes; options `1 yes · 2 always for <program> this session · 3 no, tell it why`; `e` edits; letters type a reply. No y/a/n. |
 | Question | Question text in a yellow chip, numbered options, `esc` skips (the agent states the default it uses). |
 | Notices | No toast. A one-row notice takes the status line's left slot for its timeout; longer ones are dim rows above the prompt (max 3). |
@@ -37,7 +44,7 @@ a few keys change.
 
 ## What we build
 
-Four waves; packages in one wave own disjoint files and run in parallel worktrees.
+Proposed build plan (not started). Four waves; packages in one wave own disjoint files and run in parallel worktrees.
 
 | Wave | WP | Scope | Size |
 |---|---|---|---|
@@ -60,5 +67,5 @@ Four waves; packages in one wave own disjoint files and run in parallel worktree
 
 ## Open questions
 
-- Sign-in notice: keep it until a model exists rather than 8 s?
-- NO_COLOR: panes lose their edges (every edge is a colour step); needs a rule (e.g. a blank row above a pane, title in bold).
+- Not signed in: the status line's right side shows only view and session (no model, context or cost). Keep?
+- No colour: a `├─┤` rule above a pane's filter row (two extra rows per pane). Keep?

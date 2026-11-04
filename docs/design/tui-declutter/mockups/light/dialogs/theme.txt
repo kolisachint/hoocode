@@ -1,0 +1,14 @@
+«»
+«fg=#0a6b27» ● «fg=#555864;bold»Edit«fg=#555864» src/wrap.rs«»  «fg=#555864»+4 −1«»
+«fg=#0a6b27» ● «fg=#555864;bold»Shell«fg=#555864» cargo test -p wrap«»  «fg=#555864»exit 0 · 2.4s«»
+«fg=#555864» Width is checked now; the two wrap tests pass.«»
+«»
+«bg=#e8e8f0» «fg=#f8f8fb;bg=#00625c;bold» Theme «fg=#555864;bg=#e8e8f0» /theme«bg=#e8e8f0»  «fg=#555864;bg=#e8e8f0»6 themes«bg=#e8e8f0»                                                                           «»
+«fg=#00625c;bg=#c3dcdc» › «fg=#2b2f36;bg=#c3dcdc»light«bg=#c3dcdc»            «fg=#2b2f36;bg=#c3dcdc»in use«bg=#c3dcdc»          «bg=#e8e8f0» «fg=#2b2f36;bg=#d3d7e9;bold» light«fg=#555864;bg=#d3d7e9»  Default light theme«bg=#d3d7e9»                                    «»
+«bg=#e8e8f0»   «fg=#2b2f36;bg=#e8e8f0»dark«bg=#e8e8f0»             «bg=#e8e8f0»                «bg=#e8e8f0» «bg=#d3d7e9» «bg=#f8f8fb»                                                             «bg=#d3d7e9» «»
+«bg=#e8e8f0»   «fg=#2b2f36;bg=#e8e8f0»deep-space«bg=#e8e8f0»       «bg=#e8e8f0»                «bg=#e8e8f0» «bg=#d3d7e9» «fg=#00625c;bg=#dadbe6» › «fg=#2b2f36;bg=#dadbe6»add a width check to wrap_text«bg=#dadbe6»                            «bg=#d3d7e9» «»
+«bg=#e8e8f0»   «fg=#2b2f36;bg=#e8e8f0»daylight«bg=#e8e8f0»         «bg=#e8e8f0»                «bg=#e8e8f0» «bg=#d3d7e9» «fg=#0a6b27;bg=#f8f8fb» ● «fg=#2b2f36;bg=#f8f8fb;bold»Edit«fg=#2b2f36;bg=#f8f8fb» src/wrap.rs«fg=#0a6b27;bg=#f8f8fb»  +4 «fg=#b8111e;bg=#f8f8fb»−1«bg=#f8f8fb»                                   «bg=#d3d7e9» «»
+«bg=#e8e8f0»   «fg=#2b2f36;bg=#e8e8f0»colorsafe-dark«bg=#e8e8f0»   «bg=#e8e8f0»                «bg=#e8e8f0» «bg=#d3d7e9» «fg=#b8111e;bg=#f8f8fb» ⊗ «fg=#2b2f36;bg=#f8f8fb;bold»Shell«fg=#2b2f36;bg=#f8f8fb» cargo test -p wrap«fg=#b8111e;bg=#f8f8fb»  exit 1«fg=#555864;bg=#f8f8fb» · 3.1s«bg=#f8f8fb»                   «bg=#d3d7e9» «»
+«bg=#e8e8f0»   «fg=#2b2f36;bg=#e8e8f0»colorsafe-light«bg=#e8e8f0»  «bg=#e8e8f0»                «bg=#e8e8f0» «bg=#d3d7e9» «fg=#2b2f36;bg=#f8f8fb» Width is checked now; the wrap tests pass.«bg=#f8f8fb»                  «bg=#d3d7e9» «»
+«bg=#e8e8f0» «fg=#2b2f36;bg=#e8e8f0»↑↓«fg=#555864;bg=#e8e8f0» preview«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»enter«fg=#555864;bg=#e8e8f0» keep«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»esc«fg=#555864;bg=#e8e8f0» back«bg=#e8e8f0»                                                                 «»
+«fg=#0a6b27» ● «fg=#555864»done · 11s · 23k tokens«»             «fg=#555864»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

@@ -1,0 +1,11 @@
+«»
+«fg=#b5bd68» ● «fg=#989898;bold»Read«fg=#989898» docs/design/tui-activity.md«»  «fg=#989898»212 lines«»
+«fg=#989898» The renderer is next; I'll port it and then add the goldens.«»
+«»
+«bg=#1e1e2a» «fg=#14141c;bg=#5cc8bb;bold» Tasks «fg=#989898;bg=#1e1e2a» /tasks · ctrl+g«bg=#1e1e2a»  «fg=#e5e5e7;bg=#1e1e2a»shell 1/3«bg=#1e1e2a»                                                                 «»
+«fg=#5cc8bb;bg=#233239» › «fg=#b5bd68;bg=#233239»● «fg=#e5e5e7;bg=#233239»cargo build --release«bg=#233239»                                                                          «»
+«bg=#1e1e2a»   «fg=#d58181;bg=#1e1e2a»⊗ «fg=#e5e5e7;bg=#1e1e2a»cargo test -p nope«bg=#1e1e2a»  «fg=#d58181;bg=#1e1e2a»exit 101«bg=#1e1e2a»                                                                   «»
+«bg=#1e1e2a»   «fg=#989898;bg=#1e1e2a»⊗ «fg=#989898;bg=#1e1e2a»sleep 600«fg=#989898;bg=#1e1e2a»  cancelled«bg=#1e1e2a»                                                                           «»
+«bg=#1e1e2a» «fg=#e5e5e7;bg=#1e1e2a»↑↓«fg=#989898;bg=#1e1e2a» move«fg=#989898;bg=#1e1e2a» · «fg=#e5e5e7;bg=#1e1e2a»←→«fg=#989898;bg=#1e1e2a» tab«fg=#989898;bg=#1e1e2a» · «fg=#e5e5e7;bg=#1e1e2a»enter«fg=#989898;bg=#1e1e2a» open output«fg=#989898;bg=#1e1e2a» · «fg=#e5e5e7;bg=#1e1e2a»esc«fg=#989898;bg=#1e1e2a» back«bg=#1e1e2a»                                                    «»
+«fg=#5cc8bb;bg=#2a2a36» › «bg=#2a2a36»                                                                                                 «»
+«fg=#f0c674» ◉ «fg=#989898»working · 4s · esc stop«»             «fg=#989898»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

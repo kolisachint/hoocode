@@ -24,3 +24,7 @@ rounds reviewed side by side with the real goldens.
 | 16 | `/chrome`, `alt+z` | Remove; a saved `chromeDensity` is ignored. |
 | 17 | Scroll and search bars | Status line left slot. |
 | 18 | Question `esc` | Skip (was: pick option 1); the agent states the default it uses. |
+| 19 | NO_COLOR / monochrome panes | Full light borders around panes when colour is off; borderless in colour. |
+| 20 | First run, action-required notices | Log in pane opens on its own; Esc leaves `⊗ not signed in  /login` in the status line until fixed; a notice needing action never times out. |
+| 21 | Split panes | Stronger detail step (~1.15–1.2:1) plus a blank 1-column gutter; `│` rule in monochrome. |
+| 22 | Light theme | Panes darker than the page, tinted selection, dark amber text; `auto` detects the terminal background (OSC 11) and re-checks on change. |

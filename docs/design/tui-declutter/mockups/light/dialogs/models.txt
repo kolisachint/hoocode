@@ -1,0 +1,14 @@
+«»
+«fg=#0a6b27» ● «fg=#555864;bold»Edit«fg=#555864» src/wrap.rs«»  «fg=#555864»+4 −1«»
+«fg=#0a6b27» ● «fg=#555864;bold»Shell«fg=#555864» cargo test -p wrap«»  «fg=#555864»exit 0 · 2.4s«»
+«fg=#555864» Width is checked now; the two wrap tests pass.«»
+«»
+«bg=#e8e8f0» «fg=#f8f8fb;bg=#00625c;bold» Models «fg=#555864;bg=#e8e8f0» /model«bg=#e8e8f0»  «fg=#555864;bg=#e8e8f0»showing all«fg=#555864;bg=#e8e8f0» · «fg=#555864;bg=#e8e8f0»2 signed in«bg=#e8e8f0»                                                         «»
+«fg=#00625c;bg=#c3dcdc» › «fg=#2b2f36;bg=#c3dcdc»mock-large«bg=#c3dcdc»   «fg=#2b2f36;bg=#c3dcdc»free«bg=#c3dcdc»                «bg=#e8e8f0» «fg=#2b2f36;bg=#d3d7e9;bold» mock-large«fg=#555864;bg=#d3d7e9»  in use«bg=#d3d7e9»                                            «»
+«bg=#e8e8f0»   «fg=#2b2f36;bg=#e8e8f0»mock-fast«bg=#e8e8f0»    «fg=#555864;bg=#e8e8f0»free«bg=#e8e8f0»                «bg=#e8e8f0» «fg=#555864;bg=#d3d7e9» provider  «fg=#2b2f36;bg=#d3d7e9»mock«bg=#d3d7e9»                                                «»
+«bg=#e8e8f0»                                    «bg=#e8e8f0» «fg=#555864;bg=#d3d7e9» context   «fg=#2b2f36;bg=#d3d7e9»128k«bg=#d3d7e9»                                                «»
+«bg=#e8e8f0»                                    «bg=#e8e8f0» «fg=#555864;bg=#d3d7e9» price     «fg=#2b2f36;bg=#d3d7e9»free«bg=#d3d7e9»                                                «»
+«bg=#e8e8f0»                                    «bg=#e8e8f0» «fg=#555864;bg=#d3d7e9» thinking  «fg=#2b2f36;bg=#d3d7e9»supported«bg=#d3d7e9»                                           «»
+«fg=#00625c;bg=#dadbe6» › «fg=#555864;bg=#dadbe6»filter«bg=#dadbe6»                                                                                           «»
+«bg=#e8e8f0» «fg=#2b2f36;bg=#e8e8f0»↑↓«fg=#555864;bg=#e8e8f0» move«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»enter«fg=#555864;bg=#e8e8f0» pick«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»tab«fg=#555864;bg=#e8e8f0» all / scoped«fg=#555864;bg=#e8e8f0» · «fg=#2b2f36;bg=#e8e8f0»esc«fg=#555864;bg=#e8e8f0» close«bg=#e8e8f0»                                                «»
+«fg=#0a6b27» ● «fg=#555864»done · 11s · 23k tokens«»             «fg=#555864»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

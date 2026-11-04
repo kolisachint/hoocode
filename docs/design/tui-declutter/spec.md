@@ -243,8 +243,64 @@ catppuccin `float.solid`; pmenu selection adds bold (catppuccin `PmenuSel`).
   accepted); failed turns keep the transcript end line and the status-line result; no logo,
   no step numbers.
 
-## v2.6 themes (user, 2026-11-03)
-Only `dark` and `light` remain, both tuned with the pane tokens. `daylight`, `deep-space`,
-`colorsafe-dark` and `colorsafe-light` are deleted. Their names and aliases
-(`high-contrast-*`, `warm-*`, `solarized-*`) map to `dark` / `light`; `auto` follows
-`dark` / `light`. This replaces v2.5's "tune dark only".
+## v2.7 light palette
+Light versions of all screens, dialogs and notices (option B) are in `light/`
+(reasons, inspirations and judgement calls in `light/NOTES.md`). Same roles and elevation
+order as v2.4; in light each step is a darker shade (light floats go darker, as in
+tokyonight day / catppuccin latte). WCAG contrast of each text colour on each surface;
+every pair is ≥4.5:1.
+
+| role | hex | text | dim | accent | green | red | yellow | vs base |
+|---|---|---|---|---|---|---|---|---|
+| base (transcript, status line) | `#f8f8fb` | 12.68 | 6.68 | 6.83 | 6.30 | 6.32 | 6.53 | 1.00 |
+| pane bg (dialogs, pickers, tasks, completion) | `#e8e8f0` | 11.03 | 5.81 | 5.94 | 5.48 | 5.49 | 5.68 | 1.15 |
+| detail column (split panes) | `#dfe0e9` | 10.22 | 5.39 | 5.51 | 5.08 | 5.09 | 5.27 | 1.24 |
+| pane selection (teal-tinted) | `#c3dcdc` | 9.34 | 4.92 | 5.03 | 4.64 | 4.65 | 4.81 | 1.36 |
+| pane input row = prompt surface | `#dadbe6` | 9.76 | 5.14 | 5.26 | 4.85 | 4.86 | 5.03 | 1.30 |
+| accent chip | bg `#00625c`, fg `#f8f8fb` bold | 6.83 | | | | | | |
+| blocking chip (permission, question) | bg `#f0c674`, fg `#2b2f36` bold | 8.34 | | | | | | |
+
+Text colours: text `#2b2f36`, dim `#555864`, accent `#00625c`, green `#0a6b27`, red
+`#b8111e`, yellow `#7a5200`. Steps: base→pane 1.15, pane→detail 1.08, pane→input 1.13,
+pane→selection 1.18, selection↔input 1.05 (hue differs). The draft pane `#f1f3f7` on
+`#f8f8f8` (1.05) was dropped. Accent chip is solid dark teal with light text (the dark
+theme's pastel chip looks washed out on light). Working glyph `◉` (v2.5) throughout.
+
+## v2.9 decisions (user, 2026-11-03, after research)
+- **NO_COLOR / monochrome** (NO_COLOR set, TERM=dumb, or <256 colours): panes get full
+  light borders (`┌─┐│└┘`, dim where dim exists) with the title in the top border; the
+  selected row keeps ` › ` + bold (reverse video allowed); title chips render as bold text.
+  Coloured mode stays borderless.
+- **First run / action-required**: with no working provider, the Log in pane opens on its
+  own (yellow chip). Esc closes it and the status line's left slot shows
+  `⊗ not signed in  /login` until a provider works (it outranks the last-turn result; it
+  yields to `◉ working`). Submitting a prompt while signed out keeps the text and reopens
+  Log in. A notice that needs an action never times out.
+- **Split panes**: detail column step raised to about 1.15–1.2:1 vs the pane, plus a blank
+  1-column gutter (pane colour) between list and detail. Monochrome uses a `│` rule.
+- **Light theme**: the v2.7 light palette approach (panes darker than the page, tinted
+  selection, dark amber for yellow text). `auto` detects the terminal background (OSC 11,
+  COLORFGBG fallback) and re-checks when it changes. Every painted background also sets
+  its foreground.
+
+## v2.9 palette change (split panes)
+The detail column gets a larger step and a slight blue tint. Split panes also get a blank
+1-column gutter in pane colour between list and detail. The new values replace the
+`detail column` rows of the v2.4 and v2.7 tables. Contrast is WCAG.
+
+| theme | paneDetail | was | vs pane | vs base | text | dim | accent | green | red | yellow |
+|---|---|---|---|---|---|---|---|---|---|---|
+| dark | `#292b40` | `#252532` (1.09) | 1.19 | 1.32 | 11.03 | 4.81 | 6.89 | 6.90 | 4.81 | 8.61 |
+| light | `#d3d7e9` | `#dfe0e9` (1.08) | 1.17 | 1.35 | 9.39 | 4.94 | 5.05 | 4.66 | 4.68 | 4.83 |
+
+- The detail now has about the same lightness as the input row (dark 1.02, light 1.04) and
+  the selection (dark 1.05, light 1.01). Hue keeps them apart: detail is blue-tinted, input
+  is neutral and the selection is teal. CIELAB ΔE to the input row is 6.2 (dark) and 4.1
+  (light), close to pane→input (5.8 and 4.9). The gutter separates the detail from the
+  selected list row.
+- The theme live preview now opens with a base row, so the surface band has base above and
+  below it rather than the detail shade.
+- NO_COLOR mockups are in `mono/`. First-run mockups are `first_run_login.txt` and
+  `first_run_dismissed.txt` in `after-dialogs-v3/` and `light/dialogs/`. Their status line
+  right side is `peek · amber-harbor`, because nothing is signed in yet (no model, context
+  or cost).

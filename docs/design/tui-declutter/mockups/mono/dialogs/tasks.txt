@@ -1,0 +1,12 @@
+
+ ● «bold»Read«dim» docs/design/tui-activity.md«»  «dim»212 lines«»
+«dim» The renderer is next; I'll port it and then add the goldens.«»
+
+«dim»┌──────────────────────────────────────────────────────────────────────────────────────────────────┐«»
+«dim»│«»   plan 1/3«dim» · agents 1/1 · mcp 1/1 · ctrl+g«»                                                       «dim»│«»
+«dim»│«»   ● «dim»Read the migration plan«»                                                                      «dim»│«»
+«dim»│«»   ◉ Port the task panel renderer                                                                 «dim»│«»
+«dim»│«»   «dim»○ «»Add golden snapshots                                                                         «dim»│«»
+«dim»└──────────────────────────────────────────────────────────────────────────────────────────────────┘«»
+ ›
+ ◉ «dim»working · 4s · esc stop«»             «dim»peek · amber-harbor · claude-haiku-5-5 · 42% context · $1.23«»

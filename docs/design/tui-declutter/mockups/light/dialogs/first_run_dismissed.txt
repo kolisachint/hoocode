@@ -1,0 +1,12 @@
+«fg=#2b2f36;bold» hoocode v0.2.31«»
+«fg=#555864» /work/hoocode · 1 skill · 5 agents«»
+«»
+«»
+«»
+«»
+«»
+«»
+«»
+«»
+«fg=#00625c;bg=#dadbe6» › «bg=#dadbe6»                                                                                                 «»
+«fg=#b8111e» ⊗ «fg=#555864»not signed in«»  «fg=#2b2f36»/login«»                                                        «fg=#555864»peek · amber-harbor«»
