@@ -429,9 +429,9 @@ pub fn show_loaded_resources_with_details(
                 many.map_or_else(|| format!("{s}s"), str::to_string)
             }
         };
-        // The Mission Control startup line: `SHIP <ship>   ✦ <n> skills  ◈
+        // The startup line: `model <id>   ✦ <n> skills  ◈
         // <n> agents  ⌘ <n> commands   · <context> <tok> tok/turn`. One line
-        // in this order, with the target glyphs and colours (faint SHIP,
+        // in this order, with the target glyphs and colours (faint `model`,
         // ink counts, dim labels; accent ✦, violet ◈, accent ⌘, faint
         // context tail). Cells with a zero count are skipped; with nothing
         // loaded the line says so instead. Detail sections below still list
@@ -492,7 +492,7 @@ pub fn show_loaded_resources_with_details(
             };
             let mut line: Vec<String> = Vec::new();
             if let Some(ship) = &listing.ship {
-                line.push(format!("{} {}", t.fg("faint", "SHIP"), t.fg("ink", ship)));
+                line.push(format!("{} {}", t.fg("faint", "model"), t.fg("ink", ship)));
             }
             if !cells.is_empty() {
                 line.push(

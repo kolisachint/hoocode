@@ -303,9 +303,9 @@ fn a_settled_clean_chain_reads_nothing_in_outline() {
 }
 
 #[test]
-fn an_orphan_single_call_in_outline_keeps_the_group_summary_row() {
-    // A chain before the first mission has no flight-log row above it, so
-    // outline keeps its old summary line.
+fn an_orphan_single_call_in_outline_reads_as_a_recap_row() {
+    // A chain before the first turn has no recap row above it, so outline
+    // draws its own: ` ● Shell npm run`.
     let _g = lock();
     let mut chain = chain_of(
         Outline,
@@ -321,9 +321,8 @@ fn an_orphan_single_call_in_outline_keeps_the_group_summary_row() {
     let lines = chain.render(100);
     assert_eq!(lines[0], "");
     let row = strip(&lines[1]);
-    assert!(row.starts_with(" ● Ran npm run check"), "{row:?}");
-    assert!(row.ends_with("1 call · 3 lines"), "{row:?}");
-    assert!(!row.contains("Shell"));
+    assert!(row.starts_with(" ● Shell npm run"), "{row:?}");
+    assert!(!row.contains("1 call"), "{row:?}");
 }
 
 #[test]

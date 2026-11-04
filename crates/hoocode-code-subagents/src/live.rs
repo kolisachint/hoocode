@@ -246,7 +246,7 @@ pub struct SubStep {
     pub started: Instant,
     /// The first line of the failure's output, once the call failed.
     pub failure: Option<String>,
-    /// The call waits for the parent's clearance (`◉ holding for clearance`).
+    /// The call waits for the parent's clearance (`◉ waiting for permission`).
     pub held: bool,
 }
 
@@ -525,7 +525,7 @@ fn hold(run: &mut RunTail, event: &Value) {
         while run.steps.len() > SUB_STEPS_KEPT {
             run.steps.remove(0);
         }
-        push_row(run, &format!("◉ {tool} {subject} holding for clearance"));
+        push_row(run, &format!("◉ {tool} {subject} waiting for permission"));
     } else if let Some(at) = run.steps.iter().position(|step| step.id == stand_in) {
         run.steps.remove(at);
     } else if let Some(step) = run.steps.iter_mut().find(|step| same(step) && step.held) {

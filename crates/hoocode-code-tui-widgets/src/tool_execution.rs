@@ -764,7 +764,7 @@ impl ToolExecutionComponent {
 
     /// Whether the call is parked waiting for user clearance: the permission
     /// gate set the flag and the call has no result yet (Mission Control
-    /// spec r5: the `holding for clearance` row).
+    /// spec r5: the `waiting for permission` row).
     pub fn is_waiting_for_clearance(&self) -> bool {
         self.waiting_for_clearance && self.result.is_none() && !self.frozen
     }

@@ -22,7 +22,7 @@ use super::*;
 
 /// Where a `/login` or `/logout` is (`LoginController`).
 pub(super) enum LoginStep {
-    /// "authentication method".
+    /// The `Log in` pane (subscription or API key).
     AuthType(Rc<RefCell<ExtensionSelectorComponent>>, Outcomes),
     /// A provider pane.
     Provider {
@@ -92,7 +92,7 @@ impl Mode {
         let sink = outcomes.clone();
         let selector = handle(ExtensionSelectorComponent::new(
             // Names the pane in its top border.
-            "authentication method",
+            "Log in",
             vec![SUBSCRIPTION_LABEL.to_string(), API_KEY_LABEL.to_string()],
             None,
             Box::new(move |outcome| sink.borrow_mut().push(outcome)),

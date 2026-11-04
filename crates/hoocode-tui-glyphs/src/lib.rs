@@ -1,6 +1,6 @@
 //! The TUI status glyphs: one set for every surface.
 //!
-//! Every running/done/todo mark in the transcript, the comms frame, the task
+//! Every running/done/todo mark in the transcript, the prompt row, the task
 //! panel and the dialogs comes from [`status`]. The animation frames in
 //! [`animation`] cycle the same set, so a spinner never introduces a glyph
 //! the font cannot draw.
@@ -26,11 +26,6 @@ pub mod status {
     pub const TODO: char = '○';
     /// Todo, as a string slice for span and row building.
     pub const TODO_STR: &str = "○";
-    /// Waiting for the user's approval: `◆` (amber). It ships in the font
-    /// (JetBrains Mono covers U+25C6), so the baseline holds.
-    pub const WAITING: char = '◆';
-    /// Waiting, as a string slice for span and row building.
-    pub const WAITING_STR: &str = "◆";
     /// Failed, stopped or denied: `⊗` (red).
     pub const FAILED: char = '⊗';
     /// Failed, as a string slice for span and row building.
@@ -97,7 +92,6 @@ mod tests {
         assert_eq!(status::DONE_STR, "●");
         assert_eq!(status::RUNNING_STR, "◉");
         assert_eq!(status::TODO_STR, "○");
-        assert_eq!(status::WAITING_STR, "◆");
         assert_eq!(status::FAILED, '⊗');
         assert_eq!(status::FAILED_STR, "⊗");
         assert_eq!(status::MARKER, '›');

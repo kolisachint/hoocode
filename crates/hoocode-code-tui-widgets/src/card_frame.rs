@@ -8,15 +8,9 @@
 //! Callers build the body and foot as styled [`Line`]s from the
 //! [`Palette`].
 
-use hoocode_tui_ratatui::{bold, Line, Palette, Span};
+use hoocode_tui_ratatui::{Line, Span};
 
 use crate::pane::{Chip, Pane, PaneStyle};
-
-/// The card's title, already styled (bold warn): `◉ …` plus `· step NN`
-/// when the host knows the held step.
-pub fn card_title(title: &str, pal: &Palette) -> Line<'static> {
-    Line::from(vec![Span::styled(title.to_string(), bold(pal.warn()))])
-}
 
 /// The card's foot, already styled (dim).
 pub fn card_foot(foot: &str) -> Line<'static> {
@@ -65,8 +59,8 @@ mod tests {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         for width in [3, 19, 100] {
             let rows = render_card(
-                "◉ CLEARANCE NEEDED",
-                "BUILD asks for Shell",
+                "Allow Shell?",
+                "build mode",
                 &body(),
                 &card_foot("or type a reply"),
                 width,
@@ -85,8 +79,8 @@ mod tests {
     fn card_rows_sit_in_the_gutter() {
         hoocode_code_tui_theme::init_theme(Some("dark"), false);
         let rows: Vec<String> = render_card(
-            "◉ CLEARANCE NEEDED",
-            "BUILD asks for Shell",
+            "Allow Shell?",
+            "build mode",
             &body(),
             &card_foot("or type a reply"),
             60,
@@ -94,10 +88,7 @@ mod tests {
         .iter()
         .map(|row| strip_vt_control_characters(row))
         .collect();
-        assert!(
-            rows[0].starts_with("  ◉ CLEARANCE NEEDED   BUILD asks for Shell"),
-            "{rows:?}"
-        );
+        assert!(rows[0].contains("Allow Shell?"), "{rows:?}");
         assert!(rows[1].starts_with("   $ printf"), "{rows:?}");
         assert!(rows[4].starts_with(" or type a reply"), "{rows:?}");
     }

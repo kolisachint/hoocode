@@ -14,7 +14,6 @@ pub mod dynamic_border;
 pub mod fold;
 pub mod input_frame;
 mod js_json;
-pub mod jsdiff;
 pub mod outline;
 pub mod pane;
 pub mod render_utils;

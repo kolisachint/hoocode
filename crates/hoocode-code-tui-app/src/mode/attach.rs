@@ -1285,7 +1285,7 @@ mod tests {
 
     #[test]
     fn a_run_read_keeps_the_sessions_comms_lost_on_a_reread() {
-        let dir = temp_dir("comms-lost-on");
+        let dir = temp_dir("link-lost-on");
         let mut mode = test_mode(Some(&dir));
         mode.comms_lost.set(true);
         let shown = Some(("general-purpose".to_string(), "Compute".to_string()));
@@ -1309,7 +1309,7 @@ mod tests {
 
     #[test]
     fn a_runs_failed_attempts_do_not_set_the_sessions_comms_lost() {
-        let dir = temp_dir("comms-lost-off");
+        let dir = temp_dir("link-lost-off");
         let mut mode = test_mode(Some(&dir));
         assert!(!mode.comms_lost.get());
         let shown = Some(("general-purpose".to_string(), "Compute".to_string()));

@@ -298,7 +298,7 @@ fn batch_mark(blocks: &[ToolBlock], folded: bool) -> Mark {
 /// Shell cargo test`, each tool name bold, cut with `…` at the width. The
 /// calls that failed have rows of their own and are left out (a folded
 /// turn keeps them: it has no other rows). `None` when no call is left.
-fn recap_row(
+pub(crate) fn recap_row(
     blocks: &[ToolBlock],
     folded: bool,
     palette: &Palette,

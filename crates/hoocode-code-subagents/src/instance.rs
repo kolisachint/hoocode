@@ -251,7 +251,7 @@ fn wire_progress_to_task_store(pool: &SubagentPool) {
             "task_clearance" => TaskAgentPatch {
                 activity: Some(
                     if event.data.get("held").and_then(Value::as_bool) == Some(true) {
-                        "holding for clearance".to_string()
+                        "waiting for permission".to_string()
                     } else {
                         String::new()
                     },

@@ -172,7 +172,7 @@ If you fix a bug, add a test that fails without the fix.
   `python3 scripts/ci/check_dep_firewall.py`; it enforces which crates may depend on
   what.
 - Everything is named `hoocode`: crates `hoocode-*`, data in `~/.hoocode`, environment
-  variables `HOOCODE_*`. `scripts/ci/no_cortex.sh` is a naming check.
+  variables `HOOCODE_*`. `scripts/ci/no_cortex.sh` is a naming check; `scripts/ci/plain_words.sh` keeps the TUI text in plain words.
 
 ### Keep the maps current
 

@@ -111,8 +111,8 @@ fn shows_context_file_names_without_paths_on_the_summary_tail() {
         assert!(out.contains("AGENTS.md, AGENTS.md"), "{out}");
         assert!(!out.contains(&format!("{cwd}/AGENTS.md")), "{out}");
         assert!(!out.contains(".hoocode/agent"), "{out}");
-        // No ship set: no bare SHIP label.
-        assert!(!out.contains("SHIP"), "{out}");
+        // No ship set: no bare model label.
+        assert!(!out.contains("model "), "{out}");
     }
 }
 

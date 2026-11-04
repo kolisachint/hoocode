@@ -8,24 +8,20 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use hoocode_ai_types::Content;
-use hoocode_tui_glyphs::status;
 use hoocode_tui_render::{fresh_stamp, mix_stamps, Component};
 
 use hoocode_tui_ratatui::core::style::Style;
 use hoocode_tui_ratatui::core::text::Span;
-use hoocode_tui_ratatui::{ansi_spans, spans_width, truncate_spans, with_base_style, Palette};
+use hoocode_tui_ratatui::{ansi_spans, with_base_style, Palette};
 
 use crate::assistant_message::AssistantMessageComponent;
 use crate::fold::{
     earlier_lines_text, fold_rows, fold_rows_tail, more_lines_span, more_lines_text,
 };
-use crate::tool_chain_summary::{
-    chain_phrase, chain_segments, chain_stats, ChainState, SegmentTone,
-};
+use crate::tool_chain_summary::ChainState;
 use crate::tool_execution::ToolExecutionComponent;
 use crate::tool_output_view::ToolOutputView;
 use crate::tool_row;
-use crate::trajectory::two_part_row;
 use hoocode_tui_ratatui::row;
 
 pub type ToolBlock = Rc<RefCell<ToolExecutionComponent>>;
@@ -435,110 +431,17 @@ impl ToolChainComponent {
         self.orphan_rows(width as usize, &palette)
     }
 
-    /// A chain outside every mission keeps the old summary line in outline:
-    /// the state glyph, the run's labels and its stats, then one folded
-    /// block per failed call. Drawn from spans like every other row.
+    /// A chain outside every turn summary reads as one recap row in outline
+    /// (` ● Read x · Edit y`), the same row the turn recaps use. Calls that
+    /// failed keep their folded reason rows under it.
     fn orphan_rows(&self, width: usize, palette: &Palette) -> Vec<String> {
-        let entries: Vec<_> = self
-            .blocks
-            .iter()
-            .map(|b| b.borrow().chain_entry())
-            .collect();
-        // What the line reads as: interrupted when the turn was cut short;
-        // running while any call is still going; otherwise done, even while
-        // the chain stays open for the model's next call.
-        // An interrupted turn does not stop a background job: an interrupted
-        // chain whose job is still live keeps reading running.
-        let live_job = self
-            .blocks
-            .iter()
-            .any(|b| b.borrow().is_live_background_job());
-        let shown = if self.state == ChainState::Interrupted && !live_job {
-            ChainState::Interrupted
-        } else if entries.iter().any(|e| e.is_partial) {
-            ChainState::Running
-        } else {
-            ChainState::Done
-        };
-        let running = shown == ChainState::Running;
-        let failed = entries.iter().any(|e| e.is_error);
-        let glyph = match shown {
-            ChainState::Running => status::RUNNING_STR,
-            ChainState::Interrupted if !failed => "⊘",
-            ChainState::Interrupted | ChainState::Done => status::DONE_STR,
-        };
-        // The legacy tones, as the chalk rows styled them (`toolTitle` is
-        // "" in the theme: chalk's default opener).
-        let glyph_style = if failed {
-            palette.err()
-        } else {
-            match shown {
-                ChainState::Running => palette.style("warning"),
-                ChainState::Interrupted => palette.faint(),
-                ChainState::Done => palette.ok(),
-            }
-        };
-        let segment_style = |tone: SegmentTone| match tone {
-            SegmentTone::Error => palette.err(),
-            SegmentTone::Running => palette.style("warning"),
-            SegmentTone::Ok => Style::default(),
-        };
-        let left: Vec<Span<'static>> = if shown == ChainState::Done {
-            ansi_spans(&chain_phrase(&entries))
-        } else {
-            let segments = chain_segments(&entries);
-            let mut spans = Vec::new();
-            for (i, segment) in segments.iter().enumerate() {
-                if i > 0 {
-                    spans.push(Span::styled(" › ".to_string(), palette.dim()));
-                }
-                spans.push(Span::styled(
-                    segment.label.clone(),
-                    segment_style(segment.tone),
-                ));
-            }
-            if running {
-                spans.push(Span::styled("…".to_string(), palette.dim()));
-            }
-            spans
-        };
-
-        let stats = Span::styled(chain_stats(&entries, shown), palette.faint());
-        // The latest-row stroke, merged into the label spans' background.
-        let bg = if self.latest {
-            palette.bg_color("activeToolBg")
-        } else {
-            None
-        };
-        let paint_bg = |mut span: Span<'static>| {
-            if let Some(bg) = bg {
-                span.style.bg = Some(bg);
-            }
-            span
-        };
-        let mut prefix = vec![
-            paint_bg(Span::styled(" ".to_string(), Style::default())),
-            paint_bg(Span::styled(glyph.to_string(), glyph_style)),
-            paint_bg(Span::styled(" ".to_string(), Style::default())),
-        ];
-        let mut left: Vec<Span<'static>> = left.into_iter().map(paint_bg).collect();
-        let right = vec![stats];
-        let budget = width.saturating_sub(spans_width(&prefix));
-        let stats_width = spans_width(&right);
-        // Stats whole, flush right. When the label does not fit beside them it
-        // is dropped; the stats are cut only when they do not fit alone.
-        let line = if spans_width(&left) + 2 + stats_width <= budget {
-            prefix.append(&mut left);
-            two_part_row(prefix, right, width)
-        } else if stats_width <= budget {
-            two_part_row(prefix, right, width)
-        } else {
-            // Flush left like the old row: the cut stats sit right behind
-            // the glyph, not flush right.
-            prefix.extend(truncate_spans(right, budget, "…"));
-            row(prefix, width)
-        };
-        let mut out = vec![line];
+        let mut out = Vec::new();
+        out.extend(crate::outline::recap_row(
+            &self.blocks,
+            true,
+            palette,
+            width,
+        ));
         out.extend(self.failure_lines(width, palette));
         out
     }

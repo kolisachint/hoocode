@@ -9,7 +9,6 @@ mod bash_rebuild_facts;
 mod controls;
 mod controls_layers;
 mod custom_message_outline;
-mod diff_gold;
 mod edit_agent_output_peek;
 mod golden;
 mod jettison_row;

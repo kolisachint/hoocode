@@ -560,7 +560,7 @@ fn a_clearance_hold_marks_the_running_step_and_clears_with_the_answer() {
     assert!(
         tail(task)
             .last()
-            .is_some_and(|row| row.contains("holding for clearance")),
+            .is_some_and(|row| row.contains("waiting for permission")),
         "{:?}",
         tail(task)
     );

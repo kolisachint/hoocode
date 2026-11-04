@@ -198,7 +198,7 @@ mod tests {
         ];
         console.selected = Some(1);
         console.query = Some(query_row("", false));
-        console.hint = hints(&[("↑↓", "ship"), ("enter", "fly it"), ("esc", "close")]);
+        console.hint = hints(&[("↑↓", "move"), ("enter", "select"), ("esc", "close")]);
         console
     }
 

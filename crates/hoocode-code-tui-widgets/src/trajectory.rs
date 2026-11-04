@@ -11,40 +11,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use hoocode_tui_ratatui::core::buffer::Buffer;
-use hoocode_tui_ratatui::core::layout::Rect;
-use hoocode_tui_ratatui::core::text::{Line, Span};
-use hoocode_tui_ratatui::{spans_width, truncate_spans, Palette, RatatuiComponent, RowCache};
+use hoocode_tui_ratatui::{Palette, RowCache};
 use hoocode_tui_render::{fresh_stamp, mix_stamps, Component};
 
 use crate::outline::{FlightStats, TurnEnd};
 use crate::tool_output_view::ToolOutputView;
-
-/// Draws `left` flush left and `right` flush right through a ratatui
-/// buffer. The gap between them stays blank cells.
-pub(crate) fn two_part_row(
-    left: Vec<Span<'static>>,
-    right: Vec<Span<'static>>,
-    width: usize,
-) -> String {
-    let width = u16::try_from(width).unwrap_or(u16::MAX).max(1);
-    RatatuiComponent::new(1, move |area: Rect, buf: &mut Buffer| {
-        let room = usize::from(area.width);
-        let right_width = spans_width(&right).min(room);
-        let x = (room - right_width) as u16;
-        let left = truncate_spans(left.clone(), usize::from(x), "…");
-        buf.set_line(area.x, area.y, &Line::from(left), area.width);
-        buf.set_line(
-            area.x + x,
-            area.y,
-            &Line::from(right.clone()),
-            area.width.saturating_sub(x),
-        );
-    })
-    .render(width)
-    .pop()
-    .unwrap_or_default()
-}
 
 /// Trailing padding of a width-padded block line, ignoring the styling:
 /// spaces go, and the SGR resets around them are re-attached after, so the
