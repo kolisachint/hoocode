@@ -41,7 +41,7 @@ fn check(name: &str, width: u16) {
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("HANGAR · /model  2 ships"),
+        text.contains("HANGAR  /model  2 ships"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -50,7 +50,8 @@ fn check(name: &str, width: u16) {
         "{name}: missing selected ship in\n{text}"
     );
     assert!(
-        text.lines().any(|l| l.contains('▸')),
+        text.lines()
+            .any(|l| l.starts_with(" › ") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
     assert!(

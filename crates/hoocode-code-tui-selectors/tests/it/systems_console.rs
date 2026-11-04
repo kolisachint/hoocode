@@ -60,7 +60,7 @@ fn check_systems(name: &str, width: u16) {
     let rendered = render_golden(&mut pane, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("SYSTEMS · /settings  4,140 tok/turn"),
+        text.contains("SYSTEMS  /settings  4,140 tok/turn"),
         "{name}: missing title and count in\n{text}"
     );
     assert!(
@@ -68,7 +68,8 @@ fn check_systems(name: &str, width: u16) {
         "{name}: missing selected row in\n{text}"
     );
     assert!(
-        text.lines().any(|l| l.contains('▸')),
+        text.lines()
+            .any(|l| l.starts_with(" › ") && l.contains("filter")),
         "{name}: missing query row in\n{text}"
     );
     if width >= 100 {
@@ -145,7 +146,7 @@ fn check_hull(name: &str, width: u16) {
     let rendered = render_golden(&mut *hull.borrow_mut(), width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("HULL · /theme  2 themes"),
+        text.contains("HULL  /theme  2 themes"),
         "{name}: missing title and count in\n{text}"
     );
     assert!(

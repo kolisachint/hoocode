@@ -37,7 +37,7 @@ fn check(name: &str, width: u16) {
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("STAGE SEPARATION · /fork"),
+        text.contains("STAGE SEPARATION  /fork"),
         "{name}: missing title in\n{text}"
     );
     assert!(

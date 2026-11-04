@@ -184,15 +184,16 @@ impl LoginDialogComponent {
 
 impl Component for LoginDialogComponent {
     /// The DOCKING console: the provider in the title count, the rows above
-    /// the `▸` query row while an answer is armed, and the hint foot. Keys
+    /// the input row while an answer is armed, and the hint row. Keys
     /// and events are unchanged.
     fn render(&mut self, width: u16) -> Vec<String> {
         let mut console = Console::new("DOCKING · /login", self.provider_name.clone());
         console.top = self.rows.clone();
         if self.awaiting_input {
             let query = self.input.borrow().get_value().to_string();
-            console.query = Some(hoocode_code_tui_widgets::console::query_row(
+            console.query = Some(hoocode_code_tui_widgets::pane::input_line(
                 &query,
+                "",
                 self.focused,
             ));
         }

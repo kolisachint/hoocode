@@ -64,7 +64,7 @@ fn plain_card_shows_the_debrief_and_keys() {
         Box::new(move |choice| *sink.borrow_mut() = Some(choice)),
     );
     let rows = rows(&mut card, 100);
-    assert_eq!(rows.len(), 5, "{rows:?}");
+    assert_eq!(rows.len(), 4, "title, debrief, blank, keys: {rows:?}");
     assert!(rows[0].contains("◉ END OF SHIFT"), "row 0: {:?}", rows[0]);
     assert!(rows[0].contains("esc stay"), "row 0: {:?}", rows[0]);
     assert!(rows[1].contains("2 missions"), "row 1: {:?}", rows[1]);
@@ -112,7 +112,7 @@ fn jobs_card_lists_the_satellites() {
     let _g = lock(Some("dark"));
     let mut card = EndShiftJobsCard::new(jobs(), Box::new(|_| {}));
     let rows = rows(&mut card, 100);
-    assert_eq!(rows.len(), 6, "{rows:?}");
+    assert_eq!(rows.len(), 5, "title, two jobs, blank, keys: {rows:?}");
     assert!(
         rows[0].contains("◎ END SHIFT WITH 2 SATELLITES UP?"),
         "row 0: {:?}",

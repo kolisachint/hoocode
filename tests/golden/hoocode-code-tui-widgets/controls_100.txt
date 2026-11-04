@@ -1,114 +1,127 @@
-┏━ CONTROLS · ?   plain   ctrl   alt  118 bindings ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
-┃▸                                                                                                 ┃
-┃  esc    1 2 3 4 5 6 7 8 9 0   ctrl layer                                                         ┃
-┃                               ctrl+a  Move to line start                                         ┃
-┃  tab    q w e r t y u i o p   ctrl+b  Move cursor left                                           ┃
-┃                               ctrl+c  Clear editor                                               ┃
-┃   ctrl  a s d f g h j k l     ctrl+d  Exit when editor is empty                                  ┃
-┃                               ctrl+e  Move to line end                                           ┃
-┃  shift  z x c v b n m         ctrl+f  Move cursor right                                          ┃
-┃                               ctrl+g  Show or hide the task panel                                ┃
-┃                               ctrl+k  Delete to line end                                         ┃
-┃                               ctrl+n  Attach to the subagent run of the last Agent block (read-on┃
-┃                               ctrl+o  Step tool output: outline → peek → full → outline          ┃
-┃                               ctrl+r  Search the transcript                                      ┃
-┃                               ctrl+t  Toggle thinking blocks                                     ┃
-┃                               ctrl+u  Delete to line start                                       ┃
-┃                               ctrl+v  Paste image from clipboard                                 ┃
-┃                               ctrl+w  Delete word backward                                       ┃
-┃                               ctrl+y  Yank                                                       ┃
-┃                               ctrl+z  Suspend to background                                      ┃
-┗━ tab layer · type search · esc close ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+  CONTROLS  ?   plain   ctrl   alt  118 bindings
+   esc    1 2 3 4 5 6 7 8 9 0   ctrl layer
+                                ctrl+a  Move to line start
+   tab    q w e r t y u i o p   ctrl+b  Move cursor left
+                                ctrl+c  Clear editor
+    ctrl  a s d f g h j k l     ctrl+d  Exit when editor is empty
+                                ctrl+e  Move to line end
+   shift  z x c v b n m         ctrl+f  Move cursor right
+                                ctrl+g  Show or hide the task panel
+                                ctrl+k  Delete to line end
+                                ctrl+n  Attach to the subagent run of the last Agent block (read-on
+                                ctrl+o  Step tool output: radar → peek → full → radar
+                                ctrl+r  Search the transcript
+                                ctrl+t  Toggle thinking blocks
+                                ctrl+u  Delete to line start
+                                ctrl+v  Paste image from clipboard
+                                ctrl+w  Delete word backward
+                                ctrl+y  Yank
+                                ctrl+z  Suspend to background
+ › filter
+ tab layer · type search · esc close
 --- styles ---
-r0 c0-1 fg=#9b8cff
-r0 c3-14 fg=#9b8cff bold
-r0 c15-17 fg=#9b8cff
-r0 c18-22 fg=#989898
-r0 c23-25 fg=#9b8cff
-r0 c26-29 fg=#5cc8bb
-r0 c30-32 fg=#9b8cff
-r0 c33-35 fg=#989898
-r0 c36-49 fg=#9b8cff bold
-r0 c51-95 fg=#9b8cff
-r0 c98-99 fg=#9b8cff
-r1 c0 fg=#9b8cff
-r1 c1 fg=#5cc8bb
-r1 c99 fg=#9b8cff
-r2 c0 fg=#9b8cff
-r2 c3-7 fg=#989898
-r2 c10-29 fg=#989898
-r2 c32-41 fg=#5cc8bb
-r2 c99 fg=#9b8cff
-r3 c0 fg=#9b8cff
-r3 c38-57 fg=#989898
-r3 c99 fg=#9b8cff
-r4 c0 fg=#9b8cff
-r4 c3-7 fg=#989898
-r4 c10-11 fg=#989898
-r4 c12-23 fg=#5cc8bb
-r4 c24-25 fg=#989898
-r4 c26-27 fg=#5cc8bb
-r4 c28-29 fg=#989898
-r4 c38-55 fg=#989898
-r4 c99 fg=#9b8cff
-r5 c0 fg=#9b8cff
-r5 c38-51 fg=#989898
-r5 c99 fg=#9b8cff
-r6 c0 fg=#9b8cff
-r6 c3-7 fg=#989898
-r6 c10-11 fg=#5cc8bb
-r6 c12-13 fg=#989898
-r6 c14-19 fg=#5cc8bb
-r6 c20-23 fg=#989898
-r6 c24-25 fg=#5cc8bb
-r6 c26-27 fg=#989898
-r6 c38-64 fg=#989898
-r6 c99 fg=#9b8cff
-r7 c0 fg=#9b8cff
-r7 c38-55 fg=#989898
-r7 c99 fg=#9b8cff
-r8 c0 fg=#9b8cff
-r8 c3-7 fg=#989898
-r8 c10-11 fg=#5cc8bb
-r8 c12-13 fg=#989898
-r8 c14-21 fg=#5cc8bb
-r8 c22-23 fg=#989898
-r8 c38-56 fg=#989898
-r8 c99 fg=#9b8cff
-r9 c0 fg=#9b8cff
-r9 c38-66 fg=#989898
-r9 c99 fg=#9b8cff
-r10 c0 fg=#9b8cff
-r10 c38-57 fg=#989898
-r10 c99 fg=#9b8cff
-r11 c0 fg=#9b8cff
-r11 c38-98 fg=#989898
-r11 c99 fg=#9b8cff
-r12 c0 fg=#9b8cff
-r12 c38-88 fg=#989898
-r12 c99 fg=#9b8cff
-r13 c0 fg=#9b8cff
-r13 c38-60 fg=#989898
-r13 c99 fg=#9b8cff
-r14 c0 fg=#9b8cff
-r14 c38-61 fg=#989898
-r14 c99 fg=#9b8cff
-r15 c0 fg=#9b8cff
-r15 c38-59 fg=#989898
-r15 c99 fg=#9b8cff
-r16 c0 fg=#9b8cff
-r16 c38-65 fg=#989898
-r16 c99 fg=#9b8cff
-r17 c0 fg=#9b8cff
-r17 c38-59 fg=#989898
-r17 c99 fg=#9b8cff
-r18 c0 fg=#9b8cff
-r18 c38-43 fg=#989898
-r18 c99 fg=#9b8cff
-r19 c0 fg=#9b8cff
-r19 c38-60 fg=#989898
-r19 c99 fg=#9b8cff
-r20 c0-1 fg=#9b8cff
-r20 c3-37 fg=#989898
-r20 c39-95 fg=#9b8cff
-r20 c98-99 fg=#9b8cff
+r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-10 fg=#14141c bg=#5cc8bb bold
+r0 c11 fg=#e5e5e7 bg=#1e1e2a
+r0 c12 fg=#989898 bg=#1e1e2a
+r0 c13-15 fg=#e5e5e7 bg=#1e1e2a
+r0 c16-20 fg=#989898 bg=#1e1e2a
+r0 c21-23 fg=#e5e5e7 bg=#1e1e2a
+r0 c24-27 fg=#5cc8bb bg=#1e1e2a
+r0 c28-30 fg=#e5e5e7 bg=#1e1e2a
+r0 c31-33 fg=#989898 bg=#1e1e2a
+r0 c34-35 fg=#e5e5e7 bg=#1e1e2a
+r0 c36-47 fg=#989898 bg=#1e1e2a
+r0 c48-99 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r1 c3-7 fg=#a8a8a8 bg=#1e1e2a
+r1 c8-9 fg=#e5e5e7 bg=#1e1e2a
+r1 c10-29 fg=#a8a8a8 bg=#1e1e2a
+r1 c30-31 fg=#e5e5e7 bg=#1e1e2a
+r1 c32-41 fg=#5cc8bb bg=#1e1e2a
+r1 c42-99 fg=#e5e5e7 bg=#1e1e2a
+r2 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r2 c38-57 fg=#a8a8a8 bg=#1e1e2a
+r2 c58-99 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r3 c3-7 fg=#989898 bg=#1e1e2a
+r3 c8-9 fg=#e5e5e7 bg=#1e1e2a
+r3 c10-11 fg=#a8a8a8 bg=#1e1e2a
+r3 c12-23 fg=#5cc8bb bg=#1e1e2a
+r3 c24-25 fg=#a8a8a8 bg=#1e1e2a
+r3 c26-27 fg=#5cc8bb bg=#1e1e2a
+r3 c28-29 fg=#a8a8a8 bg=#1e1e2a
+r3 c30-37 fg=#e5e5e7 bg=#1e1e2a
+r3 c38-55 fg=#a8a8a8 bg=#1e1e2a
+r3 c56-99 fg=#e5e5e7 bg=#1e1e2a
+r4 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r4 c38-51 fg=#a8a8a8 bg=#1e1e2a
+r4 c52-99 fg=#e5e5e7 bg=#1e1e2a
+r5 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r5 c3-7 fg=#989898 bg=#1e1e2a
+r5 c8-9 fg=#e5e5e7 bg=#1e1e2a
+r5 c10-11 fg=#5cc8bb bg=#1e1e2a
+r5 c12-13 fg=#a8a8a8 bg=#1e1e2a
+r5 c14-19 fg=#5cc8bb bg=#1e1e2a
+r5 c20-23 fg=#a8a8a8 bg=#1e1e2a
+r5 c24-25 fg=#5cc8bb bg=#1e1e2a
+r5 c26-27 fg=#a8a8a8 bg=#1e1e2a
+r5 c28-37 fg=#e5e5e7 bg=#1e1e2a
+r5 c38-64 fg=#a8a8a8 bg=#1e1e2a
+r5 c65-99 fg=#e5e5e7 bg=#1e1e2a
+r6 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r6 c38-55 fg=#a8a8a8 bg=#1e1e2a
+r6 c56-99 fg=#e5e5e7 bg=#1e1e2a
+r7 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r7 c3-7 fg=#989898 bg=#1e1e2a
+r7 c8-9 fg=#e5e5e7 bg=#1e1e2a
+r7 c10-11 fg=#5cc8bb bg=#1e1e2a
+r7 c12-13 fg=#a8a8a8 bg=#1e1e2a
+r7 c14-21 fg=#5cc8bb bg=#1e1e2a
+r7 c22-23 fg=#a8a8a8 bg=#1e1e2a
+r7 c24-37 fg=#e5e5e7 bg=#1e1e2a
+r7 c38-56 fg=#a8a8a8 bg=#1e1e2a
+r7 c57-99 fg=#e5e5e7 bg=#1e1e2a
+r8 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r8 c38-66 fg=#a8a8a8 bg=#1e1e2a
+r8 c67-99 fg=#e5e5e7 bg=#1e1e2a
+r9 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r9 c38-57 fg=#a8a8a8 bg=#1e1e2a
+r9 c58-99 fg=#e5e5e7 bg=#1e1e2a
+r10 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r10 c38-98 fg=#a8a8a8 bg=#1e1e2a
+r10 c99 fg=#e5e5e7 bg=#1e1e2a
+r11 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r11 c38-84 fg=#a8a8a8 bg=#1e1e2a
+r11 c85-99 fg=#e5e5e7 bg=#1e1e2a
+r12 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r12 c38-60 fg=#a8a8a8 bg=#1e1e2a
+r12 c61-99 fg=#e5e5e7 bg=#1e1e2a
+r13 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r13 c38-61 fg=#a8a8a8 bg=#1e1e2a
+r13 c62-99 fg=#e5e5e7 bg=#1e1e2a
+r14 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r14 c38-59 fg=#a8a8a8 bg=#1e1e2a
+r14 c60-99 fg=#e5e5e7 bg=#1e1e2a
+r15 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r15 c38-65 fg=#a8a8a8 bg=#1e1e2a
+r15 c66-99 fg=#e5e5e7 bg=#1e1e2a
+r16 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r16 c38-59 fg=#a8a8a8 bg=#1e1e2a
+r16 c60-99 fg=#e5e5e7 bg=#1e1e2a
+r17 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r17 c38-43 fg=#a8a8a8 bg=#1e1e2a
+r17 c44-99 fg=#e5e5e7 bg=#1e1e2a
+r18 c0-37 fg=#e5e5e7 bg=#1e1e2a
+r18 c38-60 fg=#a8a8a8 bg=#1e1e2a
+r18 c61-99 fg=#e5e5e7 bg=#1e1e2a
+r19 c0-2 fg=#5cc8bb bg=#2a2a36
+r19 c3-8 fg=#989898 bg=#2a2a36
+r19 c9-99 fg=#e5e5e7 bg=#2a2a36
+r20 c0-3 fg=#e5e5e7 bg=#1e1e2a
+r20 c4-12 fg=#989898 bg=#1e1e2a
+r20 c13-16 fg=#e5e5e7 bg=#1e1e2a
+r20 c17-26 fg=#989898 bg=#1e1e2a
+r20 c27-29 fg=#e5e5e7 bg=#1e1e2a
+r20 c30-35 fg=#989898 bg=#1e1e2a
+r20 c36-99 fg=#e5e5e7 bg=#1e1e2a

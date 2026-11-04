@@ -1,24 +1,23 @@
-┏━ FLIGHT PLAN ━ [Plan 0/2] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ /tasks · ctrl+g ━┓
-┃  ◉ Refactor the authentication middleware so that session tokens are rotated on every privileged request and th… 0.0s┃
-┃  ○ Short follow-up                                                                                                   ┃
-┗━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+  FLIGHT PLAN   [Plan 0/2]  /tasks · ctrl+g
+   ◉ Refactor the authentication middleware so that session tokens are rotated on every privileged request and th… 0.0s
+   ○ Short follow-up
 --- styles ---
-r0 c0-1 fg=#9b8cff
-r0 c3-13 fg=#9b8cff bold
-r0 c14-16 fg=#9b8cff
-r0 c17-26 fg=#5cc8bb bold
-r0 c28-100 fg=#9b8cff
-r0 c102-116 fg=#989898
-r0 c118-119 fg=#9b8cff
-r1 c0 fg=#9b8cff
-r1 c3 fg=#5cc8bb
-r1 c5-113 bold
-r1 c115-118 fg=#989898
-r1 c119 fg=#9b8cff
-r2 c0 fg=#9b8cff
-r2 c3 fg=#989898
-r2 c5-19 fg=#989898
-r2 c119 fg=#9b8cff
-r3 c0-1 fg=#9b8cff
-r3 c4-115 fg=#9b8cff
-r3 c118-119 fg=#9b8cff
+r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-13 fg=#14141c bg=#5cc8bb bold
+r0 c14-15 fg=#e5e5e7 bg=#1e1e2a
+r0 c16-25 fg=#5cc8bb bg=#1e1e2a bold
+r0 c26-27 fg=#e5e5e7 bg=#1e1e2a
+r0 c28-42 fg=#a8a8a8 bg=#1e1e2a
+r0 c43-119 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r1 c3 fg=#5cc8bb bg=#1e1e2a
+r1 c4 fg=#e5e5e7 bg=#1e1e2a
+r1 c5-113 fg=#e5e5e7 bg=#1e1e2a bold
+r1 c114 fg=#e5e5e7 bg=#1e1e2a
+r1 c115-118 fg=#a8a8a8 bg=#1e1e2a
+r1 c119 fg=#e5e5e7 bg=#1e1e2a
+r2 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r2 c3 fg=#a8a8a8 bg=#1e1e2a
+r2 c4 fg=#e5e5e7 bg=#1e1e2a
+r2 c5-19 fg=#989898 bg=#1e1e2a
+r2 c20-119 fg=#e5e5e7 bg=#1e1e2a

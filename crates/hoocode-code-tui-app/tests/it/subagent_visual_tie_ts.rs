@@ -216,13 +216,18 @@ fn colors_panel_rows_and_roster_names_with_the_same_per_type_hue() {
     set_status(run.id, TaskStatus::InProgress);
     let lines = render(&mut panel);
     let row = find(&lines, "scan the repo");
-    // The `[explore]` tag carries the per-type hue; the row renders through
-    // a ratatui buffer, so the probe paints the same span the same way.
-    let tag = hoocode_tui_ratatui::paint(
-        hoocode_tui_ratatui::Palette::current().style(agent_color_for("explore")),
-        "[explore]",
-    );
-    assert!(row.contains(&tag), "{row:?}");
+    // The `[explore]` tag carries the per-type hue (on the pane's
+    // background): the SGR right before the tag sets that foreground.
+    let hue = hoocode_tui_ratatui::Palette::current()
+        .style(agent_color_for("explore"))
+        .fg;
+    let Some(hoocode_tui_ratatui::core::style::Color::Rgb(r, g, b)) = hue else {
+        panic!("explore has an rgb hue: {hue:?}");
+    };
+    let at = row.find("[explore]").expect("the tag renders");
+    let sgr_start = row[..at].rfind('\x1b').expect("the tag is styled");
+    let sgr = &row[sgr_start..at];
+    assert!(sgr.contains(&format!("38;2;{r};{g};{b}")), "{row:?}");
     panel.dispose();
 }
 

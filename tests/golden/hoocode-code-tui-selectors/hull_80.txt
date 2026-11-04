@@ -1,27 +1,47 @@
-┏━ HULL · /theme  2 themes ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
-┃Select color theme                                                            ┃
-┃› dark  Default dark theme  ● in use                                          ┃
-┃  light  Default light theme                                                  ┃
-┗━ ↑↓ preview live · enter keep · esc back ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+  HULL  /theme  6 themes
+ Select color theme
+ › dark  Default dark theme  ● in use
+   light  Default light theme
+   deep-space  Mission Control deep-space navy void
+   daylight  Mission Control daylight paper-white cockpit
+   colorsafe-dark  Low vision + color blindness: Okabe-Ito hues on dark, no re…
+   colorsafe-light  Low vision + color blindness: blue/violet/magenta on white…
+ ↑↓ preview live · enter keep · esc back
 --- styles ---
-r0 c0-1 fg=#9b8cff
-r0 c3-25 fg=#9b8cff bold
-r0 c27-75 fg=#9b8cff
-r0 c78-79 fg=#9b8cff
-r1 c0 fg=#9b8cff
-r1 c1-18 fg=#989898
-r1 c79 fg=#9b8cff
-r2 c0 fg=#9b8cff
-r2 c1-6 fg=#5cc8bb bg=#233239
-r2 c7-8 bg=#233239
-r2 c9-26 fg=#989898 bg=#233239
+r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-6 fg=#14141c bg=#5cc8bb bold
+r0 c7 fg=#e5e5e7 bg=#1e1e2a
+r0 c8-13 fg=#989898 bg=#1e1e2a
+r0 c14-15 fg=#e5e5e7 bg=#1e1e2a
+r0 c16-23 fg=#989898 bg=#1e1e2a
+r0 c24-79 fg=#e5e5e7 bg=#1e1e2a
+r1 c0 fg=#e5e5e7 bg=#1e1e2a
+r1 c1-18 fg=#a8a8a8 bg=#1e1e2a
+r1 c19-79 fg=#e5e5e7 bg=#1e1e2a
+r2 c0-6 fg=#5cc8bb bg=#233239
+r2 c7-8 fg=#e5e5e7 bg=#233239
+r2 c9-26 fg=#a8a8a8 bg=#233239
 r2 c27-36 fg=#5cc8bb bg=#233239
-r2 c37-78 bg=#233239
-r2 c79 fg=#9b8cff
-r3 c0 fg=#9b8cff
-r3 c10-28 fg=#989898
-r3 c79 fg=#9b8cff
-r4 c0-1 fg=#9b8cff
-r4 c3-41 fg=#989898
-r4 c43-75 fg=#9b8cff
-r4 c78-79 fg=#9b8cff
+r2 c37-79 fg=#e5e5e7 bg=#233239
+r3 c0-9 fg=#e5e5e7 bg=#1e1e2a
+r3 c10-28 fg=#a8a8a8 bg=#1e1e2a
+r3 c29-79 fg=#e5e5e7 bg=#1e1e2a
+r4 c0-14 fg=#e5e5e7 bg=#1e1e2a
+r4 c15-50 fg=#a8a8a8 bg=#1e1e2a
+r4 c51-79 fg=#e5e5e7 bg=#1e1e2a
+r5 c0-12 fg=#e5e5e7 bg=#1e1e2a
+r5 c13-56 fg=#a8a8a8 bg=#1e1e2a
+r5 c57-79 fg=#e5e5e7 bg=#1e1e2a
+r6 c0-18 fg=#e5e5e7 bg=#1e1e2a
+r6 c19-78 fg=#a8a8a8 bg=#1e1e2a
+r6 c79 fg=#e5e5e7 bg=#1e1e2a
+r7 c0-19 fg=#e5e5e7 bg=#1e1e2a
+r7 c20-78 fg=#a8a8a8 bg=#1e1e2a
+r7 c79 fg=#e5e5e7 bg=#1e1e2a
+r8 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r8 c3-18 fg=#989898 bg=#1e1e2a
+r8 c19-23 fg=#e5e5e7 bg=#1e1e2a
+r8 c24-31 fg=#989898 bg=#1e1e2a
+r8 c32-34 fg=#e5e5e7 bg=#1e1e2a
+r8 c35-39 fg=#989898 bg=#1e1e2a
+r8 c40-79 fg=#e5e5e7 bg=#1e1e2a

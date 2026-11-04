@@ -164,7 +164,7 @@ fn the_login_dialog_hands_back_a_prompted_answer_and_aborts_on_escape() {
     let _g = lock();
     let mut dialog = LoginDialogComponent::new("OpenAI", None);
     let screen = strip(&dialog.render(80));
-    assert!(screen.contains("DOCKING · /login"));
+    assert!(screen.contains("DOCKING  /login"));
     assert!(screen.contains("OpenAI"));
     assert!(screen.contains("Starting…"));
 
@@ -250,7 +250,7 @@ fn check_docking_provider(name: &str, width: u16) {
     let rendered = render_golden(&mut selector, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("DOCKING · /login  3 providers"),
+        text.contains("DOCKING  /login  3 providers"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -317,7 +317,7 @@ fn check_docking_auth(name: &str, width: u16) {
     let rendered = render_golden(&mut dialog, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("DOCKING · /login  Anthropic"),
+        text.contains("DOCKING  /login  Anthropic"),
         "{name}: missing title in\n{text}"
     );
     assert!(

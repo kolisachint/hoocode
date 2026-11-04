@@ -490,9 +490,14 @@ fn fills_the_selected_row_to_the_full_width() {
     let rendered = s.render(width);
     // Exactly one row carries the selection marker: the console paints its
     // band full width (the golden's styles section locks the background).
-    let marked: Vec<&String> = rendered.iter().filter(|l| l.contains('›')).collect();
+    let marked: Vec<&String> = rendered.iter().filter(|l| picked(l)).collect();
     assert_eq!(marked.len(), 1);
     assert_eq!(visible_width(marked[0]), width as usize);
+}
+
+/// A list row with the pick marker (the input row's ` › ` is not a pick).
+fn picked(line: &str) -> bool {
+    line.contains('›') && !hoocode_tui_util::strip_vt_control_characters(line).contains("filter")
 }
 
 /// picker-widths.test.ts: "session tree fits within %i columns and fills
@@ -516,7 +521,7 @@ fn session_tree_fits_within_the_width_and_fills_its_selected_row() {
             );
         }
         // The selected row fills its width with the selection band.
-        let marked: Vec<&String> = lines.iter().filter(|l| l.contains('›')).collect();
+        let marked: Vec<&String> = lines.iter().filter(|l| picked(l)).collect();
         assert_eq!(marked.len(), 1);
         assert_eq!(visible_width(marked[0]), width as usize);
     }
@@ -549,8 +554,8 @@ fn key_hints_drop_whole_items_when_the_width_is_short() {
     );
 }
 
-/// At ten columns the console frame has no room to spare: the hint foot
-/// is cut to `…`, and every row still fits its width.
+/// At ten columns every row still fits its width, and the hint row keeps
+/// a whole item (or is cut to `…`).
 #[test]
 fn narrow_console_cuts_the_hint_foot_first() {
     let _g = lock();
@@ -562,5 +567,5 @@ fn narrow_console_cuts_the_hint_foot_first() {
     }
     let foot = lines.last().expect("a foot row");
     let plain = hoocode_tui_util::strip_vt_control_characters(foot);
-    assert!(plain.contains("…"), "{plain:?}");
+    assert!(plain.contains("move") || plain.contains("…"), "{plain:?}");
 }

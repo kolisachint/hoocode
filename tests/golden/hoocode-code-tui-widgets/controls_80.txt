@@ -1,358 +1,251 @@
-┏━ CONTROLS · ?   plain   ctrl   alt  118 bindings ━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
-┃▸                                                                             ┃
-┃  up  Move cursor up                                                          ┃
-┃  down  Move cursor down                                                      ┃
-┃  shift+up  Previous prompt from history                                      ┃
-┃  shift+down  Next prompt from history                                        ┃
-┃  left  Move cursor left                                                      ┃
-┃  right  Move cursor right                                                    ┃
-┃  alt+left  Move cursor word left                                             ┃
-┃  alt+right  Move cursor word right                                           ┃
-┃  home  Move to line start                                                    ┃
-┃  end  Move to line end                                                       ┃
-┃  ctrl+]  Jump forward to character                                           ┃
-┃  ctrl+alt+]  Jump backward to character                                      ┃
-┃  backspace  Delete character backward                                        ┃
-┃  delete  Delete character forward                                            ┃
-┃  ctrl+w  Delete word backward                                                ┃
-┃  alt+d  Delete word forward                                                  ┃
-┃  ctrl+u  Delete to line start                                                ┃
-┃  ctrl+k  Delete to line end                                                  ┃
-┃  ctrl+y  Yank                                                                ┃
-┃  alt+y  Yank pop                                                             ┃
-┃  ctrl+-  Undo                                                                ┃
-┃  alt+u  Redo                                                                 ┃
-┃  shift+enter  Insert newline                                                 ┃
-┃  enter  Submit input                                                         ┃
-┃  tab  Tab / autocomplete                                                     ┃
-┃  ctrl+c  Copy selection                                                      ┃
-┃  up  Move selection up                                                       ┃
-┃  down  Move selection down                                                   ┃
-┃  pageup  Selection page up                                                   ┃
-┃  pagedown  Selection page down                                               ┃
-┃  enter  Confirm selection                                                    ┃
-┃  esc  Cancel selection                                                       ┃
-┃  esc  Cancel or abort                                                        ┃
-┃  ctrl+c  Clear editor                                                        ┃
-┃  ctrl+d  Exit when editor is empty                                           ┃
-┃  ctrl+z  Suspend to background                                               ┃
-┃  alt+e  Open external editor                                                 ┃
-┃  alt+r  Record voice and transcribe into the editor                          ┃
-┃  ctrl+v  Paste image from clipboard                                          ┃
-┃  alt+q  Copy the agent's last message to the clipboard                       ┃
-┃  alt+enter  Queue follow-up message                                          ┃
-┃  alt+up  Restore queued messages                                             ┃
-┃  shift+tab  Cycle agent mode (ask → plan → build → debug)                    ┃
-┃  shift+alt+a  Cycle agent mode backward                                      ┃
-┃  alt+m  Cycle to next model                                                  ┃
-┃  shift+alt+m  Cycle to previous model                                        ┃
-┃  alt+t  Cycle thinking level (off → … → high)                                ┃
-┃  shift+alt+t  Cycle thinking level backward                                  ┃
-┃  alt+o  Cycle tool output view (outline → peek → full)                       ┃
-┃  shift+alt+o  Cycle tool output view backward                                ┃
-┃  ctrl+o  Step tool output: outline → peek → full → outline                   ┃
-┃  ctrl+t  Toggle thinking blocks                                              ┃
-┃  alt+l  Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)        ┃
-┃  shift+alt+l  Cycle task panel view backward                                 ┃
-┃  ctrl+g  Show or hide the task panel                                         ┃
-┃  alt+z  Toggle chrome density (full ↔ compact)                               ┃
-┃  shift+alt+z  Toggle chrome density (full ↔ compact), backward               ┃
-┃  pageup  Scroll the transcript up a page (pins the view)                     ┃
-┃  pagedown  Scroll the transcript down a page                                 ┃
-┃  ctrl+home  Jump to the start of the transcript                              ┃
-┃  ctrl+end  Jump back to live output                                          ┃
-┃  ctrl+r  Search the transcript                                               ┃
-┃  ctrl+up  Jump to your previous message                                      ┃
-┃  ctrl+down  Jump to your next message                                        ┃
-┃  shift+up  Scroll up a line (pinned view)                                    ┃
-┃  shift+down  Scroll down a line (pinned view)                                ┃
-┃  alt+h  Resume a session from history                                        ┃
-┃  alt+w  Change working directory (move to another repo without quitting)     ┃
-┃  alt+c  Cycle the session chip's color                                       ┃
-┃  shift+alt+c  Cycle the session chip's color backward                        ┃
-┃  alt+s  Open settings                                                        ┃
-┃  alt+k  Show keyboard shortcuts                                              ┃
-┃  up  Scroll up a line (pinned view)                                          ┃
-┃  down  Scroll down a line (pinned view)                                      ┃
-┃  esc  Leave the pinned view and follow live output                           ┃
-┃  /  Search the transcript (pinned view)                                      ┃
-┃  n  Next search match (pinned view)                                          ┃
-┃  p  Previous search match (pinned view)                                      ┃
-┃  right  Task panel: next tab                                                 ┃
-┃  left  Task panel: previous tab                                              ┃
-┃  up  Task panel: pick the row above                                          ┃
-┃  down  Task panel: pick the row below                                        ┃
-┃  enter  Task panel: open the picked row                                      ┃
-┃  x  Task panel: cancel the picked run (press twice)                          ┃
-┃  esc  Task panel: back to the prompt                                         ┃
-┃  ctrl+n  Attach to the subagent run of the last Agent block (read-only)      ┃
-┃  esc  Back from an attached subagent run to the session                      ┃
-┃  right  Confirm and advance to the next question                             ┃
-┃  left  Go back to the previous question                                      ┃
-┃  alt+p  Toggle session path display                                          ┃
-┃  alt+o  Toggle session sort order                                            ┃
-┃  alt+n  Toggle named session filter                                          ┃
-┃  alt+r  Rename session                                                       ┃
-┃  alt+x  Delete session                                                       ┃
-┃  ctrl+backspace  Delete session when query is empty                          ┃
-┃  alt+s  Save model selection                                                 ┃
-┃  alt+a  Enable all models                                                    ┃
-┃  alt+x  Clear all models                                                     ┃
-┃  alt+g  Toggle all models for provider                                       ┃
-┃  alt+up  Move model up in order                                              ┃
-┃  alt+down  Move model down in order                                          ┃
-┃  ctrl+left  Fold tree branch or move up                                      ┃
-┃  ctrl+right  Unfold tree branch or move down                                 ┃
-┃  alt+l  Edit tree label                                                      ┃
-┃  alt+t  Toggle tree label timestamps                                         ┃
-┃  alt+1  Tree filter: default view                                            ┃
-┃  alt+2  Tree filter: hide tool results                                       ┃
-┃  alt+3  Tree filter: user messages only                                      ┃
-┃  alt+4  Tree filter: labeled entries only                                    ┃
-┃  alt+5  Tree filter: show all entries                                        ┃
-┃  alt+c  Tree filter: cycle forward                                           ┃
-┃  shift+alt+c  Tree filter: cycle backward                                    ┃
-┗━ tab layer · type search · esc close ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+  CONTROLS  ?   plain   ctrl   alt  118 bindings
+   up  Move cursor up
+   down  Move cursor down
+   shift+up  Previous prompt from history
+   shift+down  Next prompt from history
+   left  Move cursor left
+   right  Move cursor right
+   alt+left  Move cursor word left
+   alt+right  Move cursor word right
+   home  Move to line start
+   end  Move to line end
+   ctrl+]  Jump forward to character
+   ctrl+alt+]  Jump backward to character
+   backspace  Delete character backward
+   delete  Delete character forward
+   ctrl+w  Delete word backward
+   alt+d  Delete word forward
+   ctrl+u  Delete to line start
+   ctrl+k  Delete to line end
+   ctrl+y  Yank
+   alt+y  Yank pop
+   ctrl+-  Undo
+   alt+u  Redo
+   shift+enter  Insert newline
+   enter  Submit input
+   tab  Tab / autocomplete
+   ctrl+c  Copy selection
+   up  Move selection up
+   down  Move selection down
+   pageup  Selection page up
+   pagedown  Selection page down
+   enter  Confirm selection
+   esc  Cancel selection
+   esc  Cancel or abort
+   ctrl+c  Clear editor
+   ctrl+d  Exit when editor is empty
+   ctrl+z  Suspend to background
+   alt+e  Open external editor
+   alt+r  Record voice and transcribe into the editor
+   ctrl+v  Paste image from clipboard
+   alt+q  Copy the agent's last message to the clipboard
+   alt+enter  Queue follow-up message
+   alt+up  Restore queued messages
+   shift+tab  Cycle agent mode (ask → plan → build → debug)
+   shift+alt+a  Cycle agent mode backward
+   alt+m  Cycle to next model
+   shift+alt+m  Cycle to previous model
+   alt+t  Cycle thinking level (off → … → high)
+   shift+alt+t  Cycle thinking level backward
+   alt+o  Cycle tool output view (radar → peek → full)
+   shift+alt+o  Cycle tool output view backward
+   ctrl+o  Step tool output: radar → peek → full → radar
+   ctrl+t  Toggle thinking blocks
+   alt+l  Cycle task panel tab (Plan → Agents → Shell → Schedule → MCP)
+   shift+alt+l  Cycle task panel view backward
+   ctrl+g  Show or hide the task panel
+   alt+z  Toggle chrome density (full ↔ compact)
+   shift+alt+z  Toggle chrome density (full ↔ compact), backward
+   pageup  Scroll the transcript up a page (pins the view)
+   pagedown  Scroll the transcript down a page
+   ctrl+home  Jump to the start of the transcript
+   ctrl+end  Jump back to live output
+   ctrl+r  Search the transcript
+   ctrl+up  Jump to your previous message
+   ctrl+down  Jump to your next message
+   shift+up  Scroll up a line (pinned view)
+   shift+down  Scroll down a line (pinned view)
+   alt+h  Resume a session from history
+   alt+w  Change working directory (move to another repo without quitting)
+   alt+c  Cycle the session chip's color
+   shift+alt+c  Cycle the session chip's color backward
+   alt+s  Open settings
+   alt+k  Show keyboard shortcuts
+   up  Scroll up a line (pinned view)
+   down  Scroll down a line (pinned view)
+   esc  Leave the pinned view and follow live output
+   /  Search the transcript (pinned view)
+   n  Next search match (pinned view)
+   p  Previous search match (pinned view)
+   right  Task panel: next tab
+   left  Task panel: previous tab
+   up  Task panel: pick the row above
+   down  Task panel: pick the row below
+   enter  Task panel: open the picked row
+   x  Task panel: cancel the picked run (press twice)
+   esc  Task panel: back to the prompt
+   ctrl+n  Attach to the subagent run of the last Agent block (read-only)
+   esc  Back from an attached subagent run to the session
+   right  Confirm and advance to the next question
+   left  Go back to the previous question
+   alt+p  Toggle session path display
+   alt+o  Toggle session sort order
+   alt+n  Toggle named session filter
+   alt+r  Rename session
+   alt+x  Delete session
+   ctrl+backspace  Delete session when query is empty
+   alt+s  Save model selection
+   alt+a  Enable all models
+   alt+x  Clear all models
+   alt+g  Toggle all models for provider
+   alt+up  Move model up in order
+   alt+down  Move model down in order
+   ctrl+left  Fold tree branch or move up
+   ctrl+right  Unfold tree branch or move down
+   alt+l  Edit tree label
+   alt+t  Toggle tree label timestamps
+   alt+1  Tree filter: default view
+   alt+2  Tree filter: hide tool results
+   alt+3  Tree filter: user messages only
+   alt+4  Tree filter: labeled entries only
+   alt+5  Tree filter: show all entries
+   alt+c  Tree filter: cycle forward
+   shift+alt+c  Tree filter: cycle backward
+ › filter
+ tab layer · type search · esc close
 --- styles ---
-r0 c0-1 fg=#9b8cff
-r0 c3-14 fg=#9b8cff bold
-r0 c15-17 fg=#9b8cff
-r0 c18-22 fg=#989898
-r0 c23-25 fg=#9b8cff
-r0 c26-29 fg=#5cc8bb
-r0 c30-32 fg=#9b8cff
-r0 c33-35 fg=#989898
-r0 c36-49 fg=#9b8cff bold
-r0 c51-75 fg=#9b8cff
-r0 c78-79 fg=#9b8cff
-r1 c0 fg=#9b8cff
-r1 c1 fg=#5cc8bb
-r1 c79 fg=#9b8cff
-r2 c0 fg=#9b8cff
-r2 c79 fg=#9b8cff
-r3 c0 fg=#9b8cff
-r3 c79 fg=#9b8cff
-r4 c0 fg=#9b8cff
-r4 c79 fg=#9b8cff
-r5 c0 fg=#9b8cff
-r5 c79 fg=#9b8cff
-r6 c0 fg=#9b8cff
-r6 c79 fg=#9b8cff
-r7 c0 fg=#9b8cff
-r7 c79 fg=#9b8cff
-r8 c0 fg=#9b8cff
-r8 c79 fg=#9b8cff
-r9 c0 fg=#9b8cff
-r9 c79 fg=#9b8cff
-r10 c0 fg=#9b8cff
-r10 c79 fg=#9b8cff
-r11 c0 fg=#9b8cff
-r11 c79 fg=#9b8cff
-r12 c0 fg=#9b8cff
-r12 c79 fg=#9b8cff
-r13 c0 fg=#9b8cff
-r13 c79 fg=#9b8cff
-r14 c0 fg=#9b8cff
-r14 c79 fg=#9b8cff
-r15 c0 fg=#9b8cff
-r15 c79 fg=#9b8cff
-r16 c0 fg=#9b8cff
-r16 c79 fg=#9b8cff
-r17 c0 fg=#9b8cff
-r17 c79 fg=#9b8cff
-r18 c0 fg=#9b8cff
-r18 c79 fg=#9b8cff
-r19 c0 fg=#9b8cff
-r19 c79 fg=#9b8cff
-r20 c0 fg=#9b8cff
-r20 c79 fg=#9b8cff
-r21 c0 fg=#9b8cff
-r21 c79 fg=#9b8cff
-r22 c0 fg=#9b8cff
-r22 c79 fg=#9b8cff
-r23 c0 fg=#9b8cff
-r23 c79 fg=#9b8cff
-r24 c0 fg=#9b8cff
-r24 c79 fg=#9b8cff
-r25 c0 fg=#9b8cff
-r25 c79 fg=#9b8cff
-r26 c0 fg=#9b8cff
-r26 c79 fg=#9b8cff
-r27 c0 fg=#9b8cff
-r27 c79 fg=#9b8cff
-r28 c0 fg=#9b8cff
-r28 c79 fg=#9b8cff
-r29 c0 fg=#9b8cff
-r29 c79 fg=#9b8cff
-r30 c0 fg=#9b8cff
-r30 c79 fg=#9b8cff
-r31 c0 fg=#9b8cff
-r31 c79 fg=#9b8cff
-r32 c0 fg=#9b8cff
-r32 c79 fg=#9b8cff
-r33 c0 fg=#9b8cff
-r33 c79 fg=#9b8cff
-r34 c0 fg=#9b8cff
-r34 c79 fg=#9b8cff
-r35 c0 fg=#9b8cff
-r35 c79 fg=#9b8cff
-r36 c0 fg=#9b8cff
-r36 c79 fg=#9b8cff
-r37 c0 fg=#9b8cff
-r37 c79 fg=#9b8cff
-r38 c0 fg=#9b8cff
-r38 c79 fg=#9b8cff
-r39 c0 fg=#9b8cff
-r39 c79 fg=#9b8cff
-r40 c0 fg=#9b8cff
-r40 c79 fg=#9b8cff
-r41 c0 fg=#9b8cff
-r41 c79 fg=#9b8cff
-r42 c0 fg=#9b8cff
-r42 c79 fg=#9b8cff
-r43 c0 fg=#9b8cff
-r43 c79 fg=#9b8cff
-r44 c0 fg=#9b8cff
-r44 c79 fg=#9b8cff
-r45 c0 fg=#9b8cff
-r45 c79 fg=#9b8cff
-r46 c0 fg=#9b8cff
-r46 c79 fg=#9b8cff
-r47 c0 fg=#9b8cff
-r47 c79 fg=#9b8cff
-r48 c0 fg=#9b8cff
-r48 c79 fg=#9b8cff
-r49 c0 fg=#9b8cff
-r49 c79 fg=#9b8cff
-r50 c0 fg=#9b8cff
-r50 c79 fg=#9b8cff
-r51 c0 fg=#9b8cff
-r51 c79 fg=#9b8cff
-r52 c0 fg=#9b8cff
-r52 c79 fg=#9b8cff
-r53 c0 fg=#9b8cff
-r53 c79 fg=#9b8cff
-r54 c0 fg=#9b8cff
-r54 c79 fg=#9b8cff
-r55 c0 fg=#9b8cff
-r55 c79 fg=#9b8cff
-r56 c0 fg=#9b8cff
-r56 c79 fg=#9b8cff
-r57 c0 fg=#9b8cff
-r57 c79 fg=#9b8cff
-r58 c0 fg=#9b8cff
-r58 c79 fg=#9b8cff
-r59 c0 fg=#9b8cff
-r59 c79 fg=#9b8cff
-r60 c0 fg=#9b8cff
-r60 c79 fg=#9b8cff
-r61 c0 fg=#9b8cff
-r61 c79 fg=#9b8cff
-r62 c0 fg=#9b8cff
-r62 c79 fg=#9b8cff
-r63 c0 fg=#9b8cff
-r63 c79 fg=#9b8cff
-r64 c0 fg=#9b8cff
-r64 c79 fg=#9b8cff
-r65 c0 fg=#9b8cff
-r65 c79 fg=#9b8cff
-r66 c0 fg=#9b8cff
-r66 c79 fg=#9b8cff
-r67 c0 fg=#9b8cff
-r67 c79 fg=#9b8cff
-r68 c0 fg=#9b8cff
-r68 c79 fg=#9b8cff
-r69 c0 fg=#9b8cff
-r69 c79 fg=#9b8cff
-r70 c0 fg=#9b8cff
-r70 c79 fg=#9b8cff
-r71 c0 fg=#9b8cff
-r71 c79 fg=#9b8cff
-r72 c0 fg=#9b8cff
-r72 c79 fg=#9b8cff
-r73 c0 fg=#9b8cff
-r73 c79 fg=#9b8cff
-r74 c0 fg=#9b8cff
-r74 c79 fg=#9b8cff
-r75 c0 fg=#9b8cff
-r75 c79 fg=#9b8cff
-r76 c0 fg=#9b8cff
-r76 c79 fg=#9b8cff
-r77 c0 fg=#9b8cff
-r77 c79 fg=#9b8cff
-r78 c0 fg=#9b8cff
-r78 c79 fg=#9b8cff
-r79 c0 fg=#9b8cff
-r79 c79 fg=#9b8cff
-r80 c0 fg=#9b8cff
-r80 c79 fg=#9b8cff
-r81 c0 fg=#9b8cff
-r81 c79 fg=#9b8cff
-r82 c0 fg=#9b8cff
-r82 c79 fg=#9b8cff
-r83 c0 fg=#9b8cff
-r83 c79 fg=#9b8cff
-r84 c0 fg=#9b8cff
-r84 c79 fg=#9b8cff
-r85 c0 fg=#9b8cff
-r85 c79 fg=#9b8cff
-r86 c0 fg=#9b8cff
-r86 c79 fg=#9b8cff
-r87 c0 fg=#9b8cff
-r87 c79 fg=#9b8cff
-r88 c0 fg=#9b8cff
-r88 c79 fg=#9b8cff
-r89 c0 fg=#9b8cff
-r89 c79 fg=#9b8cff
-r90 c0 fg=#9b8cff
-r90 c79 fg=#9b8cff
-r91 c0 fg=#9b8cff
-r91 c79 fg=#9b8cff
-r92 c0 fg=#9b8cff
-r92 c79 fg=#9b8cff
-r93 c0 fg=#9b8cff
-r93 c79 fg=#9b8cff
-r94 c0 fg=#9b8cff
-r94 c79 fg=#9b8cff
-r95 c0 fg=#9b8cff
-r95 c79 fg=#9b8cff
-r96 c0 fg=#9b8cff
-r96 c79 fg=#9b8cff
-r97 c0 fg=#9b8cff
-r97 c79 fg=#9b8cff
-r98 c0 fg=#9b8cff
-r98 c79 fg=#9b8cff
-r99 c0 fg=#9b8cff
-r99 c79 fg=#9b8cff
-r100 c0 fg=#9b8cff
-r100 c79 fg=#9b8cff
-r101 c0 fg=#9b8cff
-r101 c79 fg=#9b8cff
-r102 c0 fg=#9b8cff
-r102 c79 fg=#9b8cff
-r103 c0 fg=#9b8cff
-r103 c79 fg=#9b8cff
-r104 c0 fg=#9b8cff
-r104 c79 fg=#9b8cff
-r105 c0 fg=#9b8cff
-r105 c79 fg=#9b8cff
-r106 c0 fg=#9b8cff
-r106 c79 fg=#9b8cff
-r107 c0 fg=#9b8cff
-r107 c79 fg=#9b8cff
-r108 c0 fg=#9b8cff
-r108 c79 fg=#9b8cff
-r109 c0 fg=#9b8cff
-r109 c79 fg=#9b8cff
-r110 c0 fg=#9b8cff
-r110 c79 fg=#9b8cff
-r111 c0 fg=#9b8cff
-r111 c79 fg=#9b8cff
-r112 c0 fg=#9b8cff
-r112 c79 fg=#9b8cff
-r113 c0 fg=#9b8cff
-r113 c79 fg=#9b8cff
-r114 c0-1 fg=#9b8cff
-r114 c3-37 fg=#989898
-r114 c39-75 fg=#9b8cff
-r114 c78-79 fg=#9b8cff
+r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-10 fg=#14141c bg=#5cc8bb bold
+r0 c11 fg=#e5e5e7 bg=#1e1e2a
+r0 c12 fg=#989898 bg=#1e1e2a
+r0 c13-15 fg=#e5e5e7 bg=#1e1e2a
+r0 c16-20 fg=#989898 bg=#1e1e2a
+r0 c21-23 fg=#e5e5e7 bg=#1e1e2a
+r0 c24-27 fg=#5cc8bb bg=#1e1e2a
+r0 c28-30 fg=#e5e5e7 bg=#1e1e2a
+r0 c31-33 fg=#989898 bg=#1e1e2a
+r0 c34-35 fg=#e5e5e7 bg=#1e1e2a
+r0 c36-47 fg=#989898 bg=#1e1e2a
+r0 c48-79 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r2 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r4 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r5 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r6 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r7 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r8 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r9 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r10 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r11 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r12 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r13 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r14 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r15 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r16 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r17 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r18 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r19 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r20 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r21 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r22 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r23 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r24 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r25 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r26 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r27 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r28 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r29 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r30 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r31 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r32 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r33 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r34 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r35 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r36 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r37 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r38 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r39 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r40 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r41 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r42 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r43 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r44 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r45 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r46 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r47 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r48 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r49 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r50 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r51 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r52 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r53 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r54 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r55 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r56 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r57 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r58 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r59 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r60 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r61 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r62 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r63 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r64 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r65 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r66 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r67 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r68 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r69 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r70 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r71 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r72 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r73 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r74 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r75 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r76 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r77 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r78 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r79 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r80 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r81 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r82 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r83 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r84 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r85 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r86 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r87 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r88 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r89 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r90 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r91 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r92 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r93 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r94 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r95 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r96 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r97 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r98 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r99 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r100 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r101 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r102 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r103 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r104 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r105 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r106 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r107 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r108 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r109 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r110 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r111 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r112 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r113 c0-2 fg=#5cc8bb bg=#2a2a36
+r113 c3-8 fg=#989898 bg=#2a2a36
+r113 c9-79 fg=#e5e5e7 bg=#2a2a36
+r114 c0-3 fg=#e5e5e7 bg=#1e1e2a
+r114 c4-12 fg=#989898 bg=#1e1e2a
+r114 c13-16 fg=#e5e5e7 bg=#1e1e2a
+r114 c17-26 fg=#989898 bg=#1e1e2a
+r114 c27-29 fg=#e5e5e7 bg=#1e1e2a
+r114 c30-35 fg=#989898 bg=#1e1e2a
+r114 c36-79 fg=#e5e5e7 bg=#1e1e2a

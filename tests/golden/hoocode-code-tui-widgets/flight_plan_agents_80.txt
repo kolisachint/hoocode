@@ -1,30 +1,33 @@
-┏━ FLIGHT PLAN ━ Plan 1/3 [Agents 1/1] MCP 1/1 ━━━━━━━━━━━━━━ /tasks · ctrl+g ━┓
-┃› ● ◈ [explore] Trace the auth flow                                           ┃
-┗━ ↑↓ move · ←→ tab · enter open its log · esc back ━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+  FLIGHT PLAN   Plan 1/3 [Agents 1/1] MCP 1/1  /tasks · ctrl+g
+ › ● ◈ [explore] Trace the auth flow
+ ↑↓ move · ←→ tab · enter open its log · esc back
 --- styles ---
-r0 c0-1 fg=#9b8cff
-r0 c3-13 fg=#9b8cff bold
-r0 c14-16 fg=#9b8cff
-r0 c17-24 fg=#989898
-r0 c25 fg=#9b8cff
-r0 c26-37 fg=#5cc8bb bold
-r0 c38 fg=#9b8cff
-r0 c39-45 fg=#989898
-r0 c47-60 fg=#9b8cff
-r0 c62-76 fg=#989898
-r0 c78-79 fg=#9b8cff
-r1 c0 fg=#9b8cff
-r1 c1-2 fg=#5cc8bb bg=#233239
+r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-13 fg=#14141c bg=#5cc8bb bold
+r0 c14-15 fg=#e5e5e7 bg=#1e1e2a
+r0 c16-23 fg=#a8a8a8 bg=#1e1e2a
+r0 c24 fg=#e5e5e7 bg=#1e1e2a
+r0 c25-36 fg=#5cc8bb bg=#1e1e2a bold
+r0 c37 fg=#e5e5e7 bg=#1e1e2a
+r0 c38-44 fg=#a8a8a8 bg=#1e1e2a
+r0 c45-46 fg=#e5e5e7 bg=#1e1e2a
+r0 c47-61 fg=#a8a8a8 bg=#1e1e2a
+r0 c62-79 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-2 fg=#5cc8bb bg=#233239
 r1 c3 fg=#b5bd68 bg=#233239
-r1 c4 bg=#233239
+r1 c4 fg=#e5e5e7 bg=#233239
 r1 c5 fg=#9b8cff bg=#233239
-r1 c6 bg=#233239
+r1 c6 fg=#e5e5e7 bg=#233239
 r1 c7-15 fg=#56b6c2 bg=#233239
-r1 c16 bg=#233239
-r1 c17-35 fg=#989898 bg=#233239
-r1 c36-78 bg=#233239
-r1 c79 fg=#9b8cff
-r2 c0-1 fg=#9b8cff
-r2 c3-50 fg=#989898
-r2 c52-75 fg=#9b8cff
-r2 c78-79 fg=#9b8cff
+r1 c16 fg=#e5e5e7 bg=#233239
+r1 c17-35 fg=#a8a8a8 bg=#233239
+r1 c36-79 fg=#e5e5e7 bg=#233239
+r2 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r2 c3-10 fg=#989898 bg=#1e1e2a
+r2 c11-12 fg=#e5e5e7 bg=#1e1e2a
+r2 c13-19 fg=#989898 bg=#1e1e2a
+r2 c20-24 fg=#e5e5e7 bg=#1e1e2a
+r2 c25-40 fg=#989898 bg=#1e1e2a
+r2 c41-43 fg=#e5e5e7 bg=#1e1e2a
+r2 c44-48 fg=#989898 bg=#1e1e2a
+r2 c49-79 fg=#e5e5e7 bg=#1e1e2a

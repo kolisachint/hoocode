@@ -1,32 +1,28 @@
-┏━ ◎ END SHIFT WITH 2 SATELLITES UP? ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ esc stay ━┓
-┃  ◉ job-1  sleep 60   in orbit 4s of ~60s                                                         ┃
-┃  ◉ job-2  sleep 120   in orbit                                                                   ┃
-┃                                                                                                  ┃
-┃k bring it down, then end shift · l leave it in orbit                                             ┃
-┗━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+  ◎ END SHIFT WITH 2 SATELLITES UP?   esc stay
+     ◉ job-1  sleep 60   in orbit 4s of ~60s
+     ◉ job-2  sleep 120   in orbit
+
+   k bring it down, then end shift · l leave it in orbit
 --- styles ---
-r0 c0-1 fg=#f0c674
-r0 c3-35 fg=#f0c674 bold
-r0 c37-87 fg=#f0c674
-r0 c89-96 fg=#f0c674
-r0 c98-99 fg=#f0c674
-r1 c0 fg=#f0c674
-r1 c3 fg=#5cc8bb
-r1 c5-9 fg=#e5e5e7
-r1 c12-19 fg=#e5e5e7
-r1 c23-41 fg=#989898
-r1 c99 fg=#f0c674
-r2 c0 fg=#f0c674
-r2 c3 fg=#5cc8bb
-r2 c5-9 fg=#e5e5e7
-r2 c12-20 fg=#e5e5e7
-r2 c24-31 fg=#989898
-r2 c99 fg=#f0c674
-r3 c0 fg=#f0c674
-r3 c99 fg=#f0c674
-r4 c0 fg=#f0c674
-r4 c1-53 fg=#989898
-r4 c99 fg=#f0c674
-r5 c0-1 fg=#f0c674
-r5 c4-95 fg=#f0c674
-r5 c98-99 fg=#f0c674
+r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-35 fg=#14141c bg=#f0c674 bold
+r0 c36-37 fg=#e5e5e7 bg=#1e1e2a
+r0 c38-45 fg=#989898 bg=#1e1e2a
+r0 c46-99 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-4 fg=#e5e5e7 bg=#1e1e2a
+r1 c5 fg=#5cc8bb bg=#1e1e2a
+r1 c6-24 fg=#e5e5e7 bg=#1e1e2a
+r1 c25-43 fg=#989898 bg=#1e1e2a
+r1 c44-99 fg=#e5e5e7 bg=#1e1e2a
+r2 c0-4 fg=#e5e5e7 bg=#1e1e2a
+r2 c5 fg=#5cc8bb bg=#1e1e2a
+r2 c6-25 fg=#e5e5e7 bg=#1e1e2a
+r2 c26-33 fg=#989898 bg=#1e1e2a
+r2 c34-99 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-99 fg=#e5e5e7 bg=#1e1e2a
+r4 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r4 c3 fg=#989898 bg=#1e1e2a
+r4 c4-36 fg=#a8a8a8 bg=#1e1e2a
+r4 c37 fg=#989898 bg=#1e1e2a
+r4 c38-55 fg=#a8a8a8 bg=#1e1e2a
+r4 c56-99 fg=#e5e5e7 bg=#1e1e2a

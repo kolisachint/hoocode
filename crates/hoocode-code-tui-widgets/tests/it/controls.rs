@@ -17,7 +17,7 @@ fn check(name: &str, width: u16) {
     let rendered = render_golden(&mut controls, width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("CONTROLS · ?"),
+        text.contains("CONTROLS  ?"),
         "{name}: missing title in\n{text}"
     );
     assert!(
@@ -38,7 +38,7 @@ fn controls_100() {
     let mut controls = ControlsComponent::new();
     let rendered = render_golden(&mut controls, 100);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
-    assert!(text.contains("CONTROLS · ?"), "missing title");
+    assert!(text.contains("CONTROLS  ?"), "missing title");
     assert!(text.contains("ctrl layer"), "missing layer label");
     assert!(
         text.lines().any(|l| l.contains("esc")),

@@ -1,33 +1,38 @@
-┏━ ◎ CLEARANCE NEEDED ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ BUILD asks for Shell ━┓
-┃$ printf 'alpha\nbeta\ngamma\n' | sort -r                                                         ┃
-┃REACH   □ read   □ write   □ network   ■ pipe 2 programs                                          ┃
-┃y go, once · a always printf in this session · n abort + say why · e edit first                   ┃
-┗━ or type a reply ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┛
+  ◎ CLEARANCE NEEDED   BUILD asks for Shell
+   $ printf 'alpha\nbeta\ngamma\n' | sort -r
+   REACH   □ read   □ write   □ network   ■ pipe 2 programs
+   y go, once · a always printf in this session · n abort + say why · e edit first
+ or type a reply
 --- styles ---
-r0 c0-1 fg=#f0c674
-r0 c3-20 fg=#f0c674 bold
-r0 c22-75 fg=#f0c674
-r0 c77-96 fg=#f0c674
-r0 c98-99 fg=#f0c674
-r1 c0 fg=#f0c674
-r1 c1-41 fg=#e5e5e7
-r1 c99 fg=#f0c674
-r2 c0 fg=#f0c674
-r2 c1-5 fg=#989898
-r2 c9 fg=#989898
-r2 c11-14 fg=#e5e5e7
-r2 c18 fg=#989898
-r2 c20-24 fg=#e5e5e7
-r2 c28 fg=#989898
-r2 c30-36 fg=#e5e5e7
-r2 c40 fg=#f0c674
-r2 c42-45 fg=#e5e5e7
-r2 c46-56 fg=#989898
-r2 c99 fg=#f0c674
-r3 c0 fg=#f0c674
-r3 c1-79 fg=#989898
-r3 c99 fg=#f0c674
-r4 c0-1 fg=#f0c674
-r4 c3-17 fg=#989898
-r4 c19-95 fg=#f0c674
-r4 c98-99 fg=#f0c674
+r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-20 fg=#14141c bg=#f0c674 bold
+r0 c21-22 fg=#e5e5e7 bg=#1e1e2a
+r0 c23-42 fg=#989898 bg=#1e1e2a
+r0 c43-99 fg=#e5e5e7 bg=#1e1e2a
+r1 c0-99 fg=#e5e5e7 bg=#1e1e2a
+r2 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r2 c3-7 fg=#989898 bg=#1e1e2a
+r2 c8-10 fg=#e5e5e7 bg=#1e1e2a
+r2 c11 fg=#a8a8a8 bg=#1e1e2a
+r2 c12-19 fg=#e5e5e7 bg=#1e1e2a
+r2 c20 fg=#a8a8a8 bg=#1e1e2a
+r2 c21-29 fg=#e5e5e7 bg=#1e1e2a
+r2 c30 fg=#a8a8a8 bg=#1e1e2a
+r2 c31-41 fg=#e5e5e7 bg=#1e1e2a
+r2 c42 fg=#ffff00 bg=#1e1e2a
+r2 c43-47 fg=#e5e5e7 bg=#1e1e2a
+r2 c48-58 fg=#989898 bg=#1e1e2a
+r2 c59-99 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r3 c3 fg=#989898 bg=#1e1e2a
+r3 c4-15 fg=#a8a8a8 bg=#1e1e2a
+r3 c16 fg=#989898 bg=#1e1e2a
+r3 c17-49 fg=#a8a8a8 bg=#1e1e2a
+r3 c50 fg=#989898 bg=#1e1e2a
+r3 c51-69 fg=#a8a8a8 bg=#1e1e2a
+r3 c70 fg=#989898 bg=#1e1e2a
+r3 c71-81 fg=#a8a8a8 bg=#1e1e2a
+r3 c82-99 fg=#e5e5e7 bg=#1e1e2a
+r4 c0 fg=#e5e5e7 bg=#1e1e2a
+r4 c1-15 fg=#989898 bg=#1e1e2a
+r4 c16-99 fg=#e5e5e7 bg=#1e1e2a

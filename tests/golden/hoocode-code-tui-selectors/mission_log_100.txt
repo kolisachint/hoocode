@@ -1,50 +1,68 @@
-┏━ MISSION LOG · /resume  2 sessions ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━┓
-┃◉ Current Folder | ○ All  Name: All  Sort: Threaded                                               ┃
-┃tab scope · re:<pattern> regex · "phrase" exact                                                   ┃
-┃▸                                                                                                 ┃
-┃›   wrap width                                                                             — 5 0 …┃
-┃    add a width check to wrap_text in src/wrap.rs                              coral-basin — 5 0 …┃
-┗━ ↑↓ move · tab scope · alt+o sort · alt+x delete · enter jump there · esc close ━━━━━━━━━━━━━━  ━┛
+  MISSION LOG  /resume  2 sessions
+ ◉ Current Folder | ○ All  Name: All  Sort: Threaded
+ tab scope · re:<pattern> regex · "phrase" exact
+ ›   wrap width                                                                             — 5 0 …
+     add a width check to wrap_text in src/wrap.rs                              coral-basin — 5 0 …
+ › filter
+ ↑↓ move · tab scope · alt+o sort · alt+x delete · enter jump there · esc close
 --- styles ---
-r0 c0-1 fg=#9b8cff
-r0 c3-35 fg=#9b8cff bold
-r0 c37-95 fg=#9b8cff
-r0 c98-99 fg=#9b8cff
-r1 c0 fg=#9b8cff
-r1 c1-16 fg=#5cc8bb
-r1 c17-32 fg=#989898
-r1 c33-35 fg=#5cc8bb
-r1 c36-43 fg=#989898
-r1 c44-51 fg=#5cc8bb
-r1 c99 fg=#9b8cff
-r2 c0 fg=#9b8cff
-r2 c1-47 fg=#989898
-r2 c99 fg=#9b8cff
-r3 c0 fg=#9b8cff
-r3 c1 fg=#5cc8bb
-r3 c99 fg=#9b8cff
-r4 c0 fg=#9b8cff
-r4 c1-2 fg=#5cc8bb bg=#233239
-r4 c3-4 bg=#233239
-r4 c5-14 fg=#f0c674 bg=#233239 bold
-r4 c15-91 bg=#233239
-r4 c92 fg=#989898 bg=#233239
-r4 c93 bg=#233239
-r4 c94 fg=#989898 bg=#233239
-r4 c95 bg=#233239
-r4 c96 fg=#989898 bg=#233239
-r4 c97 bg=#233239
-r4 c98 fg=#989898 bg=#233239
-r4 c99 fg=#9b8cff
-r5 c0 fg=#9b8cff
-r5 c3 bg=#7aa2f7
-r5 c80-90 fg=#989898
-r5 c92 fg=#989898
-r5 c94 fg=#989898
-r5 c96 fg=#989898
-r5 c98 fg=#989898
-r5 c99 fg=#9b8cff
-r6 c0-1 fg=#9b8cff
-r6 c3-80 fg=#989898
-r6 c82-95 fg=#9b8cff
-r6 c98-99 fg=#9b8cff
+r0 c0 fg=#e5e5e7 bg=#1e1e2a
+r0 c1-13 fg=#14141c bg=#5cc8bb bold
+r0 c14 fg=#e5e5e7 bg=#1e1e2a
+r0 c15-21 fg=#989898 bg=#1e1e2a
+r0 c22-23 fg=#e5e5e7 bg=#1e1e2a
+r0 c24-33 fg=#989898 bg=#1e1e2a
+r0 c34-99 fg=#e5e5e7 bg=#1e1e2a
+r1 c0 fg=#e5e5e7 bg=#1e1e2a
+r1 c1-16 fg=#5cc8bb bg=#1e1e2a
+r1 c17-32 fg=#a8a8a8 bg=#1e1e2a
+r1 c33-35 fg=#5cc8bb bg=#1e1e2a
+r1 c36-43 fg=#a8a8a8 bg=#1e1e2a
+r1 c44-51 fg=#5cc8bb bg=#1e1e2a
+r1 c52-99 fg=#e5e5e7 bg=#1e1e2a
+r2 c0 fg=#e5e5e7 bg=#1e1e2a
+r2 c1-3 fg=#989898 bg=#1e1e2a
+r2 c4-47 fg=#a8a8a8 bg=#1e1e2a
+r2 c48-99 fg=#e5e5e7 bg=#1e1e2a
+r3 c0-2 fg=#5cc8bb bg=#233239
+r3 c3 fg=#e5e5e7 bg=#4ec9b0
+r3 c4 fg=#e5e5e7 bg=#233239
+r3 c5-14 fg=#ffff00 bg=#233239 bold
+r3 c15-91 fg=#e5e5e7 bg=#233239
+r3 c92 fg=#989898 bg=#233239
+r3 c93 fg=#e5e5e7 bg=#233239
+r3 c94 fg=#989898 bg=#233239
+r3 c95 fg=#e5e5e7 bg=#233239
+r3 c96 fg=#989898 bg=#233239
+r3 c97 fg=#e5e5e7 bg=#233239
+r3 c98 fg=#989898 bg=#233239
+r3 c99 fg=#e5e5e7 bg=#233239
+r4 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r4 c3 fg=#e5e5e7 bg=#7aa2f7
+r4 c4-79 fg=#e5e5e7 bg=#1e1e2a
+r4 c80-90 fg=#989898 bg=#1e1e2a
+r4 c91 fg=#e5e5e7 bg=#1e1e2a
+r4 c92 fg=#989898 bg=#1e1e2a
+r4 c93 fg=#e5e5e7 bg=#1e1e2a
+r4 c94 fg=#989898 bg=#1e1e2a
+r4 c95 fg=#e5e5e7 bg=#1e1e2a
+r4 c96 fg=#989898 bg=#1e1e2a
+r4 c97 fg=#e5e5e7 bg=#1e1e2a
+r4 c98 fg=#989898 bg=#1e1e2a
+r4 c99 fg=#e5e5e7 bg=#1e1e2a
+r5 c0-2 fg=#5cc8bb bg=#2a2a36
+r5 c3-8 fg=#989898 bg=#2a2a36
+r5 c9-99 fg=#e5e5e7 bg=#2a2a36
+r6 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r6 c3-10 fg=#989898 bg=#1e1e2a
+r6 c11-13 fg=#e5e5e7 bg=#1e1e2a
+r6 c14-22 fg=#989898 bg=#1e1e2a
+r6 c23-27 fg=#e5e5e7 bg=#1e1e2a
+r6 c28-35 fg=#989898 bg=#1e1e2a
+r6 c36-40 fg=#e5e5e7 bg=#1e1e2a
+r6 c41-50 fg=#989898 bg=#1e1e2a
+r6 c51-55 fg=#e5e5e7 bg=#1e1e2a
+r6 c56-69 fg=#989898 bg=#1e1e2a
+r6 c70-72 fg=#e5e5e7 bg=#1e1e2a
+r6 c73-78 fg=#989898 bg=#1e1e2a
+r6 c79-99 fg=#e5e5e7 bg=#1e1e2a
