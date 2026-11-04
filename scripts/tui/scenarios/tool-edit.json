@@ -45,7 +45,7 @@
   ],
   "steps": [
     {
-      "wait_for": "▸ name your mission",
+      "wait_for": "(?m)^ ›",
       "timeout": 30
     },
     {
@@ -105,7 +105,7 @@
       "snapshot": "after-tool",
       "contains": [
         "src/app.ts",
-        "… 9 more lines",
+        "… 4 more lines",
         "wrote tools/util.py"
       ]
     }

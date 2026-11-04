@@ -1,6 +1,6 @@
 # TUI declutter: plain, minimal, easy on the eyes
 
-Status: **building** (2026-11-04, PR #174) ([decisions-2026-11-03.md](decisions-2026-11-03.md)). Not built yet.
+Status: **built** (2026-11-04, PR #174, WP1–WP10) ([decisions-2026-11-03.md](decisions-2026-11-03.md)).
 Supersedes the look (not the behaviour) of [mission-control.md](mission-control.md),
 [radar-r3.md](radar-r3.md), [tui-surfaces.md](tui-surfaces.md),
 [footer-two-modes.md](footer-two-modes.md) and [tool-calls-peek-radar.md](tool-calls-peek-radar.md).
@@ -46,7 +46,7 @@ a few keys change.
 
 ## What we build
 
-Proposed build plan (not started). Four waves; packages in one wave own disjoint files and run in parallel worktrees.
+Build plan (all packages done). Four waves; packages in one wave own disjoint files and run in parallel worktrees.
 
 | Wave | WP | Scope | Size |
 |---|---|---|---|

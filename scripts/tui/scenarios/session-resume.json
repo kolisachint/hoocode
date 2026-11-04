@@ -43,7 +43,7 @@
   ],
   "steps": [
     {
-      "wait_for": "MISSION LOG · /resume",
+      "wait_for": "Sessions  /resume",
       "timeout": 30
     },
     {
@@ -53,7 +53,7 @@
     {
       "snapshot": "picker",
       "contains": [
-        "MISSION LOG · /resume", "Current Folder",
+        "Sessions  /resume", "this folder",
         "remember the word apple"
       ]
     },
@@ -102,15 +102,9 @@
   ],
   "normalize": [
     {
-      "_why": "session slug in the picker row is derived from the random session id (its length moves the padding)",
-      "pattern": " +[a-z]+-[a-z]+(?= \\d+ \\S+ │$)",
-      "replace": " <slug>"
-    },
-    {
-      "_why": "the row's colour swatch is derived from the random session id",
-      "pattern": "(?<=^│ › ) ",
-      "replace": " ",
-      "style": "<masked: session colour swatch>"
+      "_why": "the session slug (detail column, status line) is derived from the random session id",
+      "pattern": "[a-z]+-[a-z]+(?= · (mock-model|\\d+ messages))",
+      "replace": "<slug>"
     }
   ]
 }

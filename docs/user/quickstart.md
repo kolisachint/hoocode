@@ -11,7 +11,7 @@ hoocode                        # full-screen session
 
 ## In a session
 
-Shell, Edit and Write ask before they run: **Yes**, **No**, or **Always**. Read-only
+Shell, Edit and Write ask before they run: pick **1** yes, **2** always (for that program, this session) or **3** no, and say why. Read-only
 commands such as `ls`, `cat`, `rg` and `git status`/`diff`/`log` run without asking.
 To run every tool without asking, start with `hoocode --skip-permissions` (the header
 then shows **SKIP PERMISSIONS**).

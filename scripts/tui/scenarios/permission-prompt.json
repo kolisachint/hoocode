@@ -7,7 +7,7 @@
     {"text": "The command was denied."}
   ],
   "steps": [
-    {"wait_for": "▸ name your mission", "timeout": 30},
+    {"wait_for": "(?m)^ ›", "timeout": 30},
     {"wait_stable": 1.0, "timeout": 20},
     {"type": "list the files"},
     {"keys": ["Enter"]},

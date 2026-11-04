@@ -31,7 +31,7 @@
   ],
   "steps": [
     {
-      "wait_for": "▸ name your mission",
+      "wait_for": "(?m)^ ›",
       "timeout": 30
     },
     {
@@ -47,7 +47,7 @@
       ]
     },
     {
-      "wait_for": "\\$ printf",
+      "wait_for": "\\$ echo boom",
       "timeout": 30
     },
     {
@@ -57,21 +57,9 @@
     {
       "snapshot": "allow-prompt",
       "contains": [
-        "go, once"
+        "Allow Shell?",
+        "yes, always for echo this session"
       ]
-    },
-    {
-      "keys": [
-        "Enter"
-      ]
-    },
-    {
-      "wait_for": "\\$ echo boom",
-      "timeout": 30
-    },
-    {
-      "wait_stable": 0.5,
-      "timeout": 20
     },
     {
       "keys": [
