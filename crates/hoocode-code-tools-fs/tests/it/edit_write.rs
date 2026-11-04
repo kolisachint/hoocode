@@ -1049,3 +1049,71 @@ fn parallel_edits_and_writes_on_one_file_are_serialized() {
     editing.join().unwrap();
     assert_eq!(read(&mixed), "replacement\n");
 }
+
+// --- not-found hint and lenient stringified edits ---
+
+#[test]
+fn not_found_error_hints_closest_region() {
+    let d = TestDir::new();
+    let file = d.file("hint.txt");
+    let body: String = (1..=20).map(|i| format!("line {i}\n")).collect();
+    std::fs::write(&file, body).unwrap();
+    let msg = err(edit(
+        &edit_tool(&cwd()),
+        &file,
+        json!([{"oldText": "line 10\nline X\nline 12", "newText": "z"}]),
+    ));
+    assert!(msg.contains("Could not find the exact text"));
+    assert!(msg.contains("lines 10-12"), "{msg}");
+    assert!(msg.contains("line 11"), "{msg}");
+    assert!(msg.contains("Re-Read lines 10-12 and retry"), "{msg}");
+}
+
+#[test]
+fn not_found_error_has_no_hint_when_nothing_similar() {
+    let d = TestDir::new();
+    let file = d.file("nohint.txt");
+    std::fs::write(&file, "alpha\nbeta\n").unwrap();
+    let msg = err(edit(
+        &edit_tool(&cwd()),
+        &file,
+        json!([{"oldText": "zzz", "newText": "z"}]),
+    ));
+    assert!(msg.contains("Could not find the exact text"));
+    assert!(!msg.contains("Re-Read"), "{msg}");
+}
+
+#[test]
+fn stringified_edits_accept_trailing_brace() {
+    let args = json!({"path": "a", "edits": "[{\"oldText\":\"a\",\"newText\":\"b\"}]}"});
+    let out = prepare_edit_arguments(args);
+    assert!(out["edits"].is_array(), "{out}");
+    let args = json!({"path": "a", "edits": "[{\"oldText\":\"a\",\"newText\":\"b\"}] \n}"});
+    assert!(prepare_edit_arguments(args)["edits"].is_array());
+}
+
+#[test]
+fn stringified_edits_reject_trailing_junk() {
+    let args = json!({"path": "a", "edits": "[{\"oldText\":\"a\",\"newText\":\"b\"}] oops"});
+    assert!(prepare_edit_arguments(args)["edits"].is_string());
+}
+
+#[test]
+fn stringified_edits_accept_trailing_bracket() {
+    let args = json!({"path": "a", "edits": "[{\"oldText\":\"a\",\"newText\":\"b\"}]]"});
+    assert!(prepare_edit_arguments(args)["edits"].is_array());
+}
+
+#[test]
+fn not_found_error_ignores_lone_brace_match() {
+    let d = TestDir::new();
+    let file = d.file("brace.txt");
+    std::fs::write(&file, "fn a() {\n    x();\n}\n").unwrap();
+    let msg = err(edit(
+        &edit_tool(&cwd()),
+        &file,
+        json!([{"oldText": "fn missing() {\n    y();\n}", "newText": "z"}]),
+    ));
+    assert!(msg.contains("Could not find"));
+    assert!(!msg.contains("Re-Read"), "{msg}");
+}

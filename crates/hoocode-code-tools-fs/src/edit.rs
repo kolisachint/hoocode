@@ -85,6 +85,16 @@ pub fn edit_parameters_schema() -> Value {
     })
 }
 
+/// First JSON value of `s`, accepting trailing whitespace and stray `}`/`]`.
+fn parse_lenient_json(s: &str) -> Option<Value> {
+    let mut stream = serde_json::Deserializer::from_str(s).into_iter::<Value>();
+    let value = stream.next()?.ok()?;
+    let rest = s.get(stream.byte_offset()..)?;
+    rest.chars()
+        .all(|c| c.is_whitespace() || c == '}' || c == ']')
+        .then_some(value)
+}
+
 /// `prepareEditArguments`: parse a stringified `edits` array and fold the
 /// legacy top-level `oldText`/`newText` into `edits`.
 pub fn prepare_edit_arguments(input: Value) -> Value {
@@ -92,7 +102,7 @@ pub fn prepare_edit_arguments(input: Value) -> Value {
         return input;
     };
     if let Some(Value::String(edits)) = args.get("edits") {
-        if let Ok(parsed @ Value::Array(_)) = serde_json::from_str::<Value>(edits) {
+        if let Some(parsed @ Value::Array(_)) = parse_lenient_json(edits) {
             args.insert("edits".into(), parsed);
         }
     }
@@ -239,7 +249,7 @@ pub fn create_edit_tool_definition(
         .unwrap_or_else(|| Arc::new(LocalEditOperations));
     let prepare: PrepareArgumentsFn = Arc::new(prepare_edit_arguments);
     ToolDefinition { background_when: None,
-        background_placeholder: None, ordered_start: true,
+        background_placeholder: None, ordered_start: true, abort_grace: None,
         name: "Edit".into(),
         label: "Edit".into(),
         description: "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file, unless that edit sets replaceAll: true to replace all of its occurrences. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.".into(),

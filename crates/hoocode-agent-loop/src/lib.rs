@@ -669,6 +669,65 @@ fn create_error_tool_result(message: String) -> AgentToolResult {
     }
 }
 
+/// How long a tool may take to return its own result once the run is aborted
+/// (a killed `Shell` call reports its partial output), unless the tool sets
+/// its own [`AgentTool::abort_grace`]. After that the loop writes the result
+/// itself and stops waiting; the tool is left to finish on the blocking pool.
+/// Well under the shutdown's abort deadline.
+const ABORT_GRACE: Duration = Duration::from_millis(250);
+
+fn abort_grace_of(tool: &AgentTool) -> Duration {
+    tool.abort_grace.unwrap_or(ABORT_GRACE)
+}
+
+/// Why a call has no result of its own when the run is aborted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CutShort {
+    /// It was running and did not settle within [`ABORT_GRACE`].
+    Unfinished,
+    /// The abort landed before it started.
+    NotRun,
+}
+
+fn is_aborted(config: &AgentLoopConfig) -> bool {
+    config.signal.as_ref().is_some_and(|s| s.aborted())
+}
+
+/// The error result for a call the abort cut short. Every tool call of a
+/// persisted assistant message gets one, so a replay shows what happened.
+fn aborted_outcome(
+    tool_call: &AgentToolCall,
+    config: &AgentLoopConfig,
+    cut: CutShort,
+) -> FinalizedOutcome {
+    let session_ending = config
+        .session_ending
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::SeqCst));
+    let text = match (cut, session_ending) {
+        (CutShort::Unfinished, false) => {
+            "Aborted by the user before this call finished; it may still complete in the background"
+        }
+        (CutShort::Unfinished, true) => {
+            "Session ended before this call finished; it may still complete in the background"
+        }
+        (CutShort::NotRun, false) => "Not run: the turn was aborted",
+        (CutShort::NotRun, true) => "Not run: the session ended",
+    };
+    immediate_outcome(tool_call, create_error_tool_result(text.to_string()), true)
+}
+
+/// Resolves `grace` after `signal` aborts; never without a signal.
+async fn abort_grace_elapsed(signal: Option<AbortSignal>, grace: Duration) {
+    match signal {
+        Some(signal) => {
+            signal.cancelled().await;
+            tokio::time::sleep(grace).await;
+        }
+        None => std::future::pending().await,
+    }
+}
+
 fn should_terminate_tool_batch(finalized: &[FinalizedOutcome]) -> bool {
     !finalized.is_empty() && finalized.iter().all(|f| f.result.terminate)
 }
@@ -698,26 +757,50 @@ async fn execute_tool_calls_sequential(
     for tool_call in tool_calls {
         emit_tool_execution_start(&tool_call, emit);
         let started = Instant::now();
-        let mut finalized = match prepare_tool_call(context, assistant_message, &tool_call, config)
-        {
-            Preparation::Immediate { result, is_error } => {
+        // After an abort the rest of the batch is answered, not run.
+        let preparation = if is_aborted(config) {
+            None
+        } else {
+            Some(prepare_tool_call(
+                context,
+                assistant_message,
+                &tool_call,
+                config,
+            ))
+        };
+        let mut finalized = match preparation {
+            None => aborted_outcome(&tool_call, config, CutShort::NotRun),
+            Some(Preparation::Immediate { result, is_error }) => {
                 immediate_outcome(&tool_call, result, is_error)
             }
-            Preparation::Prepared(prepared) => {
+            Some(Preparation::Prepared(prepared)) => {
                 let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
                 let run = execute_prepared_tool_call(&prepared, config.signal.clone(), Some(tx));
                 tokio::pin!(run);
+                let grace =
+                    abort_grace_elapsed(config.signal.clone(), abort_grace_of(&prepared.tool));
+                tokio::pin!(grace);
                 let executed = loop {
                     tokio::select! {
                         biased;
                         Some(update) = rx.recv() => emit(update),
-                        executed = &mut run => break executed,
+                        executed = &mut run => break Some(executed),
+                        _ = &mut grace => break None,
                     }
                 };
                 while let Ok(update) = rx.try_recv() {
                     emit(update);
                 }
-                finalize_executed_tool_call(context, assistant_message, &prepared, executed, config)
+                match executed {
+                    Some(executed) => finalize_executed_tool_call(
+                        context,
+                        assistant_message,
+                        &prepared,
+                        executed,
+                        config,
+                    ),
+                    None => aborted_outcome(&tool_call, config, CutShort::Unfinished),
+                }
             }
         };
         finalized.duration = Some(started.elapsed());
@@ -807,6 +890,14 @@ async fn execute_tool_calls_parallel(
 
     for (index, tool_call) in tool_calls.iter().enumerate() {
         emit_tool_execution_start(tool_call, emit);
+        if is_aborted(config) {
+            // Not prepared, so no permission prompt for a call that won't run.
+            let outcome = aborted_outcome(tool_call, config, CutShort::NotRun);
+            emit_tool_execution_end(&outcome, emit);
+            finalized[index] = Some(outcome);
+            prepared_calls.push(None);
+            continue;
+        }
         match prepare_tool_call(context, assistant_message, tool_call, config) {
             Preparation::Immediate { result, is_error } => {
                 let outcome = immediate_outcome(tool_call, result, is_error);
@@ -830,14 +921,32 @@ async fn execute_tool_calls_parallel(
         ordered_starts: 0,
     };
     let mut running: FuturesUnordered<RunningCall> = FuturesUnordered::new();
-    launcher.fill(&mut waiting, &mut running, &prepared_calls);
+    if !is_aborted(config) {
+        launcher.fill(&mut waiting, &mut running, &prepared_calls);
+    }
+    // The batch waits as long as its most patient call.
+    let batch_grace = prepared_calls
+        .iter()
+        .flatten()
+        .map(|p| abort_grace_of(&p.tool))
+        .max()
+        .unwrap_or(ABORT_GRACE);
+    let grace = abort_grace_elapsed(config.signal.clone(), batch_grace);
+    tokio::pin!(grace);
 
     while !running.is_empty() {
         let mut settled = None;
+        let mut grace_over = false;
         tokio::select! {
             biased;
             Some(update) = rx.recv() => emit(update),
             Some(done) = running.next() => settled = Some(done),
+            _ = &mut grace => grace_over = true,
+        }
+        if grace_over {
+            // Stop waiting: the calls still running are answered below and
+            // left to finish on the blocking pool.
+            break;
         }
         if let Some((index, executed, elapsed)) = settled {
             let prepared = prepared_calls[index]
@@ -848,12 +957,29 @@ async fn execute_tool_calls_parallel(
             outcome.duration = Some(elapsed);
             emit_tool_execution_end(&outcome, emit);
             finalized[index] = Some(outcome);
-            // The freed slot goes to the next call in order.
-            launcher.fill(&mut waiting, &mut running, &prepared_calls);
+            // The freed slot goes to the next call in order; none after an abort.
+            if !is_aborted(config) {
+                launcher.fill(&mut waiting, &mut running, &prepared_calls);
+            }
         }
     }
+    drop(running);
     while let Ok(update) = rx.try_recv() {
         emit(update);
+    }
+    // Calls the abort cut short: still running when the grace ran out, or
+    // never started.
+    for (index, tool_call) in tool_calls.iter().enumerate() {
+        if finalized[index].is_none() {
+            let cut = if waiting.contains(&index) {
+                CutShort::NotRun
+            } else {
+                CutShort::Unfinished
+            };
+            let outcome = aborted_outcome(tool_call, config, cut);
+            emit_tool_execution_end(&outcome, emit);
+            finalized[index] = Some(outcome);
+        }
     }
 
     let finalized: Vec<FinalizedOutcome> = finalized.into_iter().flatten().collect();
@@ -1100,6 +1226,15 @@ fn dispatch_background_tool_calls(
     let mut messages = Vec::new();
     for tool_call in tool_calls {
         emit_tool_execution_start(&tool_call, emit);
+        if is_aborted(config) {
+            // Not prepared, so no permission prompt for a call that won't run.
+            let finalized = aborted_outcome(&tool_call, config, CutShort::NotRun);
+            emit_tool_execution_end(&finalized, emit);
+            let message = create_tool_result_message(&finalized);
+            emit_tool_result_message(&message, emit);
+            messages.push(message);
+            continue;
+        }
         let prepared = match prepare_tool_call(context, assistant_message, &tool_call, config) {
             Preparation::Immediate { result, is_error } => {
                 let finalized = immediate_outcome(&tool_call, result, is_error);

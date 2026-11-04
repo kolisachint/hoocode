@@ -474,7 +474,7 @@ fn build_bash_tool_definition(
         ""
     };
     let description = format!(
-        "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last {max_lines} lines or {kb}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds. {timeout_clause}{background_clause}"
+        "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last {max_lines} lines or {kb}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds. {timeout_clause}{background_clause} For scripts longer than a few lines, write them to a file under /tmp and run that file, instead of long heredocs or `python -c`/`node -e` strings (avoids quoting errors)."
     );
     let mut parameters = bash_parameters_schema_with(default_timeout);
     if options.jobs.is_some() {
@@ -486,6 +486,7 @@ fn build_bash_tool_definition(
     let jobs = options.jobs.clone();
     ToolDefinition {
         ordered_start: false,
+        abort_grace: None,
         background_when: None,
         background_placeholder: None,
         name: "Shell".into(),

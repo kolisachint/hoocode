@@ -495,7 +495,27 @@ struct Inner {
     mcp: Mutex<Option<Arc<McpHub>>>,
     /// The completion notices of the session's background shell jobs, when it has any.
     job_notices: Mutex<Option<Arc<crate::services::JobNotices>>>,
+    /// Tool calls of the last persisted assistant message that have no
+    /// persisted result yet.
+    unanswered_calls: Mutex<UnansweredCalls>,
 }
+
+/// Tracks persisted tool calls without a persisted result, so a shutdown can
+/// answer them ([`AgentSession::close_unanswered_tool_calls`]).
+#[derive(Default)]
+struct UnansweredCalls {
+    /// `(tool_call_id, tool_name)` in call order.
+    open: Vec<(String, String)>,
+    /// Calls answered at shutdown; a late real result for one is not persisted.
+    closed: HashSet<String>,
+}
+
+/// The result text for a call still open when the session ends.
+const SESSION_ENDED_RESULT: &str =
+    "Session ended before this call finished; it may still complete in the background";
+/// The result text for a call still open when the user stops the turn.
+pub(crate) const USER_ABORTED_RESULT: &str =
+    "Aborted by the user before this call finished; it may still complete in the background";
 
 /// The session branch as tools see it (`ctx.sessionManager.getBranch()`).
 struct BranchView(Arc<Mutex<SessionManager>>);
@@ -513,6 +533,72 @@ impl SessionBranch for BranchView {
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Persists an error result with `text` for each open call; see
+/// [`AgentSession::close_unanswered_tool_calls`].
+fn answer_unanswered(
+    calls: &mut UnansweredCalls,
+    manager: &mut SessionManager,
+    text: &str,
+) -> usize {
+    let open = std::mem::take(&mut calls.open);
+    calls.closed.extend(open.iter().map(|(id, _)| id.clone()));
+    for (tool_call_id, tool_name) in &open {
+        manager.append_message(AgentMessage::ToolResult(
+            hoocode_ai_types::ToolResultMessage {
+                duration_ms: None,
+                tool_call_id: tool_call_id.clone(),
+                tool_name: tool_name.clone(),
+                content: vec![Content::text(text)],
+                details: None,
+                is_error: true,
+                timestamp: hoocode_ai_types::now_ms(),
+            },
+        ));
+    }
+    open.len()
+}
+
+/// Updates the open calls for a user, assistant or tool-result message about
+/// to be persisted. Returns false for a late result of a call already
+/// answered at shutdown: each call keeps one result.
+fn note_persisted(calls: &mut UnansweredCalls, message: &AgentMessage) -> bool {
+    match message {
+        AgentMessage::ToolResult(result) => {
+            if calls.closed.contains(&result.tool_call_id) {
+                return false;
+            }
+            calls.open.retain(|(id, _)| *id != result.tool_call_id);
+        }
+        AgentMessage::Assistant(assistant) => track_tool_calls(calls, assistant),
+        // A result written after a user message would be an orphan.
+        _ => calls.open.clear(),
+    }
+    true
+}
+
+/// A persisted assistant message's tool calls now wait for results; the
+/// previous message's calls can no longer be answered in place (a result
+/// written after this message would be an orphan). Errored and aborted
+/// responses never run their calls and replay drops them, so they open nothing.
+fn track_tool_calls(calls: &mut UnansweredCalls, assistant: &AssistantMessage) {
+    use hoocode_ai_types::StopReason;
+    if matches!(
+        assistant.stop_reason,
+        StopReason::Error | StopReason::Aborted
+    ) {
+        calls.open.clear();
+        return;
+    }
+    calls.open = assistant
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            Content::ToolCall(call) => Some((call.id.clone(), call.name.clone())),
+            _ => None,
+        })
+        .collect();
 }
 
 /// The agent's model, unless it is agent-core's "no model" placeholder.
@@ -633,6 +719,7 @@ impl AgentSession {
             compaction: Mutex::new(CompactionState::default()),
             mcp: Mutex::new(None),
             job_notices: Mutex::new(None),
+            unanswered_calls: Mutex::new(UnansweredCalls::default()),
         });
         let session = Self { inner };
         session.connect_to_agent();
@@ -815,7 +902,11 @@ impl AgentSession {
                     AgentMessage::User(_)
                     | AgentMessage::Assistant(_)
                     | AgentMessage::ToolResult(_) => {
-                        manager.append_message(message.clone());
+                        let persist =
+                            note_persisted(&mut lock(&self.inner.unanswered_calls), message);
+                        if persist {
+                            manager.append_message(message.clone());
+                        }
                     }
                     // bashExecution, compactionSummary, branchSummary are persisted elsewhere.
                     _ => {}
@@ -916,8 +1007,10 @@ impl AgentSession {
         self.release();
     }
 
-    /// Shutdown step: write out queued session entries, waiting at most `deadline`.
+    /// Shutdown step: answer the tool calls still open, then write out queued
+    /// session entries, waiting at most `deadline`.
     pub fn flush_for_shutdown(&self, deadline: Duration) {
+        self.close_unanswered_tool_calls();
         let ticket = lock(&self.inner.session_manager).flush_ticket();
         let _ = ticket.wait_blocking(deadline);
     }
@@ -1856,6 +1949,43 @@ impl AgentSession {
         self.inner.agent.wait_for_idle().await;
     }
 
+    /// [`Self::abort`] because the session is ending (quit, shutdown): the
+    /// results for tool calls the abort cuts short say the session ended.
+    pub async fn abort_for_shutdown(&self) {
+        self.abort_retry();
+        self.inner.agent.abort_for_shutdown();
+        self.inner.agent.wait_for_idle().await;
+    }
+
+    /// Persist an error result for each tool call of the last assistant
+    /// message that has none yet, so the log shows the session ended there.
+    /// For shutdown, after the abort had its chance to settle the calls; a
+    /// late real result for an answered call is not persisted. Returns how
+    /// many calls it answered.
+    pub fn close_unanswered_tool_calls(&self) -> usize {
+        self.close_unanswered_tool_calls_with(SESSION_ENDED_RESULT)
+    }
+
+    /// [`Self::close_unanswered_tool_calls`] with the result text `text`.
+    pub(crate) fn close_unanswered_tool_calls_with(&self, text: &str) -> usize {
+        // The session manager first, as the persisting event handler takes them.
+        let mut manager = lock(&self.inner.session_manager);
+        let mut calls = lock(&self.inner.unanswered_calls);
+        answer_unanswered(&mut calls, &mut manager, text)
+    }
+
+    /// [`Self::close_unanswered_tool_calls`] for an exit path that must not
+    /// block (a signal, a stuck UI): does nothing when a lock is busy.
+    pub fn try_close_unanswered_tool_calls(&self) -> Option<usize> {
+        let mut manager = self.inner.session_manager.try_lock().ok()?;
+        let mut calls = self.inner.unanswered_calls.try_lock().ok()?;
+        Some(answer_unanswered(
+            &mut calls,
+            &mut manager,
+            SESSION_ENDED_RESULT,
+        ))
+    }
+
     // ------------------------------------------------------------------
     // Model and thinking level
     // ------------------------------------------------------------------
@@ -2232,5 +2362,84 @@ impl AgentSession {
     /// Tools as the agent runs them (for callers that need `AgentTools`).
     pub fn agent_tools(&self) -> AgentTools {
         self.inner.agent.with_state(|s| s.tools.clone())
+    }
+}
+
+#[cfg(test)]
+mod unanswered_tests {
+    use super::*;
+    use hoocode_ai_types::{StopReason, ToolCallContent, ToolResultMessage};
+
+    fn calling(stop_reason: StopReason, ids: &[&str]) -> AgentMessage {
+        AgentMessage::Assistant(AssistantMessage {
+            content: ids
+                .iter()
+                .map(|id| {
+                    Content::ToolCall(ToolCallContent {
+                        id: (*id).into(),
+                        name: "Shell".into(),
+                        arguments: serde_json::json!({}),
+                        thought_signature: None,
+                    })
+                })
+                .collect(),
+            stop_reason,
+            ..Default::default()
+        })
+    }
+
+    fn result(id: &str) -> AgentMessage {
+        AgentMessage::ToolResult(ToolResultMessage {
+            duration_ms: None,
+            tool_call_id: id.into(),
+            tool_name: "Shell".into(),
+            content: vec![Content::text("ok")],
+            details: None,
+            is_error: false,
+            timestamp: 0,
+        })
+    }
+
+    fn open_ids(calls: &UnansweredCalls) -> Vec<&str> {
+        calls.open.iter().map(|(id, _)| id.as_str()).collect()
+    }
+
+    #[test]
+    fn results_close_their_calls() {
+        let mut calls = UnansweredCalls::default();
+        assert!(note_persisted(
+            &mut calls,
+            &calling(StopReason::ToolUse, &["a", "b"])
+        ));
+        assert!(note_persisted(&mut calls, &result("a")));
+        assert_eq!(open_ids(&calls), ["b"]);
+    }
+
+    #[test]
+    fn a_user_message_after_unanswered_calls_leaves_nothing_to_answer() {
+        let mut calls = UnansweredCalls::default();
+        note_persisted(&mut calls, &calling(StopReason::ToolUse, &["a", "b"]));
+        assert!(note_persisted(&mut calls, &AgentMessage::user_text("next")));
+        assert!(
+            open_ids(&calls).is_empty(),
+            "a result now would be an orphan"
+        );
+    }
+
+    #[test]
+    fn an_aborted_response_after_unanswered_calls_leaves_nothing_to_answer() {
+        let mut calls = UnansweredCalls::default();
+        note_persisted(&mut calls, &calling(StopReason::ToolUse, &["a"]));
+        note_persisted(&mut calls, &calling(StopReason::Aborted, &["z"]));
+        assert!(open_ids(&calls).is_empty());
+    }
+
+    #[test]
+    fn a_late_result_for_a_call_answered_at_shutdown_is_not_persisted() {
+        let mut calls = UnansweredCalls::default();
+        note_persisted(&mut calls, &calling(StopReason::ToolUse, &["a"]));
+        calls.closed.insert("a".into());
+        calls.open.clear();
+        assert!(!note_persisted(&mut calls, &result("a")));
     }
 }

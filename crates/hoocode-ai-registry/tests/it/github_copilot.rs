@@ -307,7 +307,9 @@ fn assert_synthetic(message: &Message, id: &str, name: &str) {
     );
     assert_eq!(
         r.content,
-        vec![Content::Text(TextContent::new("No result provided"))]
+        vec![Content::Text(TextContent::new(
+            hoocode_ai_util::MISSING_TOOL_RESULT
+        ))]
     );
 }
 

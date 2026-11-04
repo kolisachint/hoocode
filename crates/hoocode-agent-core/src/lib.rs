@@ -11,7 +11,7 @@
 pub mod types;
 
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use hoocode_agent_loop::{
@@ -272,6 +272,9 @@ pub struct Agent {
     /// Woken (one stored permit) when a message is queued, so a run idling
     /// on background work picks it up at once.
     message_queued: Arc<tokio::sync::Notify>,
+    /// Set by [`Agent::abort_for_shutdown`]: results for calls an abort cuts
+    /// short say the session ended.
+    session_ending: Arc<AtomicBool>,
     settings: Mutex<RunSettings>,
 }
 
@@ -341,6 +344,7 @@ impl Agent {
                 options.follow_up_mode.unwrap_or_default(),
             ))),
             message_queued: Arc::new(tokio::sync::Notify::new()),
+            session_ending: Arc::new(AtomicBool::new(false)),
             settings: Mutex::new(RunSettings {
                 api_key: options.api_key,
                 session_id: options.session_id,
@@ -558,6 +562,14 @@ impl Agent {
         }
     }
 
+    /// Abort the current run because the session is ending (quit, shutdown),
+    /// not because the user stopped the turn. Tool calls the abort cuts short
+    /// get results that say the session ended.
+    pub fn abort_for_shutdown(&self) {
+        self.session_ending.store(true, Ordering::SeqCst);
+        self.abort();
+    }
+
     /// `waitForIdle()`: resolves once no prompt is running.
     pub async fn wait_for_idle(&self) {
         loop {
@@ -762,6 +774,7 @@ impl Agent {
         config.permission_gate = hooks.permission_gate;
         config.on_background_task_count_change = hooks.on_background_task_count_change;
         config.message_queued = Some(self.message_queued.clone());
+        config.session_ending = Some(self.session_ending.clone());
         if let Some(stream_fn) = hooks.stream_fn {
             config.stream_fn = Some(Box::new(move |m, c, o| stream_fn(m, c, o)));
         }

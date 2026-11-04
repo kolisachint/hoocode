@@ -75,9 +75,11 @@ fn a_call_that_needs_no_approval_never_reaches_the_relay() {
 fn a_gate_with_neither_ui_nor_relay_denies() {
     let dir = tempfile::tempdir().unwrap();
     let gate = HooPermissionGate::new(dir.path().to_path_buf(), ApprovalChannel::Ui, None);
-    assert_eq!(
-        gate.check("Shell", &json!({"command": "make build"}))
-            .as_deref(),
-        Some("Denied by permission gate")
+    let reason = gate
+        .check("Shell", &json!({"command": "make build"}))
+        .unwrap();
+    assert!(
+        reason.starts_with("Denied by permission gate: Shell needs approval"),
+        "{reason}"
     );
 }

@@ -76,7 +76,7 @@ pub fn create_cron_create_tool_definition(store: Arc<TaskStore>) -> ToolDefiniti
         background: false,
         background_when: None,
         background_placeholder: None,
-        ordered_start: false,
+        ordered_start: false, abort_grace: None,
         execute: Arc::new(move |_id, args, _signal, _on_update, _ctx| {
             let cron_expr = string_arg(&args, "cron")?;
             let prompt = string_arg(&args, "prompt")?;
@@ -114,6 +114,7 @@ pub fn create_cron_list_tool_definition(store: Arc<TaskStore>) -> ToolDefinition
         background_when: None,
         background_placeholder: None,
         ordered_start: false,
+        abort_grace: None,
         execute: Arc::new(move |_id, _args, _signal, _on_update, _ctx| {
             let tasks = store.list();
             if tasks.is_empty() {
@@ -215,6 +216,7 @@ pub fn create_cron_delete_tool_definition(store: Arc<TaskStore>) -> ToolDefiniti
         background_when: None,
         background_placeholder: None,
         ordered_start: false,
+        abort_grace: None,
         execute: Arc::new(move |_id, args, _signal, _on_update, _ctx| {
             let id = string_arg(&args, "id")?;
             let removed = store

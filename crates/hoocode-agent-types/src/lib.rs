@@ -474,6 +474,11 @@ pub struct AgentTool {
     /// [`dispatch::dispatch_point`] (or finished). Edit/write take their
     /// file-mutation ticket there, so same-file mutations apply in call order.
     pub ordered_start: bool,
+    /// How long the loop waits, once the run is aborted, for this tool to
+    /// return its own result before it writes one itself. `None` is the
+    /// loop's default (250 ms). A subagent call needs longer: its child
+    /// writes the cancelled result before it exits.
+    pub abort_grace: Option<std::time::Duration>,
 }
 
 /// Ordered starts for parallel tool calls (see [`AgentTool::ordered_start`]).
@@ -581,6 +586,7 @@ impl AgentTool {
         let name = name.into();
         Self {
             ordered_start: false,
+            abort_grace: None,
             name: name.clone(),
             description: description.into(),
             label: name,
@@ -608,6 +614,7 @@ impl Clone for AgentTool {
     fn clone(&self) -> Self {
         Self {
             ordered_start: self.ordered_start,
+            abort_grace: self.abort_grace,
             name: self.name.clone(),
             description: self.description.clone(),
             label: self.label.clone(),
@@ -832,6 +839,10 @@ pub struct AgentLoopConfig {
         >,
     >,
     pub signal: Option<hoocode_ai_types::AbortSignal>,
+    /// Set before `signal` aborts when the session is shutting down rather
+    /// than the user stopping the turn. The results the loop writes for calls
+    /// the abort cut short then say the session ended.
+    pub session_ending: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub api_key: Option<String>,
     pub session_id: Option<String>,
     pub max_retry_delay_ms: Option<u64>,
@@ -871,6 +882,7 @@ impl AgentLoopConfig {
             max_parallel_tools: 8,
             stream_fn: None,
             signal: None,
+            session_ending: None,
             api_key: None,
             session_id: None,
             max_retry_delay_ms: None,

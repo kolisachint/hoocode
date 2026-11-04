@@ -66,7 +66,7 @@ pub fn create_search_tool_definition(
     options: SearchToolOptions,
 ) -> ToolDefinition {
     let cwd: PathBuf = cwd.into();
-    ToolDefinition { ordered_start: false, background_when: None,
+    ToolDefinition { ordered_start: false, abort_grace: None, background_when: None,
         background_placeholder: None,
         name: "CodeSearch".into(),
         label: "CodeSearch".into(),
