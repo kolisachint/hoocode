@@ -111,7 +111,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for hoocode AI | 1 | 1720 / 0 | keep |
 | `ai-provider-openai` | OpenAI provider for hoocode AI | 1 | 3478 / 808 | keep |
 | `ai-provider-openai-codex` | OpenAI Codex (ChatGPT subscription) Responses provider for hoocode AI: SSE and WebSocket transports | 1 | 2556 / 0 | keep |
-| `ai-provider-openai-responses` | OpenAI Responses API provider for hoocode AI | 2 | 2272 / 0 | keep |
+| `ai-provider-openai-responses` | OpenAI Responses API provider for hoocode AI | 2 | 2523 / 0 | keep |
 | `ai-registry` | API provider registry for hoocode AI: dispatches streams on model.api | 4 | 308 / 3009 | keep |
 | `ai-sse` | Server-Sent Events decoder shared by the hoocode AI providers | 2 | 216 / 12 | keep |
 | `ai-stream` | Streaming response utilities for hoocode AI | 12 | 600 / 0 | keep |
