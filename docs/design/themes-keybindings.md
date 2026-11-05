@@ -1,6 +1,6 @@
 # Themes and keybindings (design, 2026-11-05)
 
-Status: **decided with the user 2026-11-05. Not built yet.** Two parts that can be
+Status: **decided with the user 2026-11-05. Building (T and K in parallel) from 2026-11-05.** Two parts that can be
 built on their own: **T** (themes) and **K** (keybindings). This is the third plan,
 next to the core plan and the TUI plan ([README](README.md)). TUI work is done by
 Haiku subagents. The main session orchestrates, briefs and merges.
@@ -54,18 +54,17 @@ Setting `theme` takes a name, `auto`, or `auto:<light>:<dark>`.
 | T8 | New built-in themes: a high-contrast theme and two more. Original palettes only, so no licence questions. Each one passes `theme_contrast.rs`. |
 | T9 | Hot reload keeps the existing poll. No `notify` crate. |
 
-Open (decide while building):
-
-- Wire `theme_paths` into the loader, or remove it. **Recommendation: remove it**, unless someone uses it.
-- Optional `ansi:<name>` colours that follow the terminal palette. Later.
+| T10 | Remove the unused `theme_paths` setting (user, 2026-11-05). Done in T-3. |
+| T11 | Persistence (user, 2026-11-05): choosing a theme in the picker saves `theme` to the global settings (`~/.hoocode`). `auto` (follow the system light or dark setting) is a picker entry and is saved the same way. Done in T-1. |
+| T12 | `ansi:<name>` colours that follow the terminal palette: later, not this round. |
 
 ### What we build (T)
 
 | Step | Size | Files | Done when |
 |---|---|---|---|
-| T-1 Picker lists user themes | S | `small_selectors.rs`, `registry.rs` (list function) | The picker shows built-ins and user themes, with paths. A test lists a user theme. |
+| T-1 Picker lists user themes; picker saves the choice | S | `small_selectors.rs`, `registry.rs` (list function), settings | The picker shows `auto`, the built-ins and user themes, with paths. Choosing one saves `theme` to the global settings and survives a restart. Tests list a user theme and check the saved value. |
 | T-2 `inherits` | M | `schema.rs`, `registry.rs` (`create_theme`), `themes/theme-schema.json`, tests in `tests/it/` | A 5-line theme that inherits from `dark` loads with every token set. A cycle is an error. |
-| T-3 Warnings and keep-last-good | S | `registry.rs`, `resource_display.rs` | A bad file shows a warning in diagnostics. The last good theme stays on screen. No silent switch. Tests cover both cases. |
+| T-3 Warnings and keep-last-good; remove `theme_paths` | S | `registry.rs`, `resource_display.rs`, `manager.rs`, `config_selector.rs` | A bad file shows a warning in diagnostics. The last good theme stays on screen. No silent switch. Tests cover both cases. `theme_paths` is gone. |
 | T-4 Defaults folder on version change | S | `registry.rs` or the startup code, `docs/user/configuration.md` | After an upgrade, `themes/defaults/` holds the current built-ins and schema. The docs page describes the folder. |
 | T-5 Token-literal test | S | `theme.rs` tests | The test fails when code uses a token that is not in the schema. |
 | T-6 New built-in themes | S each | `themes/*.json`, `theme_contrast.rs` | Each theme passes the contrast test. The picker shows it. |
@@ -152,7 +151,7 @@ mean one thing on one surface and another thing on another (`alt+s`, `alt+x`, `a
 | Key | Action | Note |
 |---|---|---|
 | Enter | Submit. While a turn runs, queue the message | Queue was Alt+Enter |
-| Shift+Enter, Ctrl+J | Newline | Ctrl+J depends on the finding in "Ctrl+J" below |
+| Shift+Enter | Newline | Leader Enter is the fallback where Shift+Enter cannot be sent. Ctrl+J is not changed (see "Ctrl+J") |
 | Esc | Interrupt the running turn, or close a popup | |
 | Esc Esc | Clear a non-empty prompt (kept in history) | |
 | Up, Down | History. Up on an empty prompt with queued messages takes the last one back | Replaces Alt+Up |
@@ -299,7 +298,11 @@ as Enter. Details:
   for terminals that send a bare LF for Shift+Enter. Ctrl+J in kitty mode arrives as a
   CSI u sequence and parses as `ctrl+j` already.
 
-Change needed (K-5):
+**Decision (user, 2026-11-05): no change.** Newline is Shift+Enter, with leader Enter as
+the fallback. Legacy Enter and 0x0A parsing stay as they are. The change below is kept
+for reference only and is not built.
+
+Change that was considered:
 
 1. `parse.rs:133`: stop mapping `"\n"` to `enter` in legacy mode. Then `parse.rs:176`
    returns `ctrl+j`.
@@ -321,7 +324,7 @@ macOS Terminal.app, tmux and a plain Linux tty before merge.
 | K-2 Leader config, grouped form, contexts | S | `AppKeybindingsManager` (`keybindings.rs`) | The grouped form loads. The flat form still works. A printable leader is rejected. |
 | K-3 Footer pending text and which-key popup | M | `hints.rs`, footer code | The footer shows "Ctrl+X …" while pending. The popup appears after 400 ms and lists keys from the keymap. |
 | K-4 New defaults in the app table | S | app key table, `keybinding_layout.rs`, `keybindings-gold.json` | The layout tests and the gold file match the table in this page. |
-| K-5 Remove Alt from the library table; Ctrl+Delete parser entry; Ctrl+J newline | S | `keys` library table, `parse.rs`, `matching.rs` | No Alt in the defaults. Ctrl+Delete parses. Ctrl+J gives a newline (see "Ctrl+J"). |
+| K-5 Remove Alt from the library table; Ctrl+Delete parser entry | S | `keys` library table, `parse.rs` | No Alt in the defaults. Ctrl+Delete parses. Enter and 0x0A parsing unchanged. |
 | K-6 Bare-letter pickers, scroll mode keys, empty-query gate, `/` focus | M | picker and scroll-mode code in `hoocode-code-tui-app` | Each list in "Pickers and panes" and "Scroll mode" works with its keys. Typing in a query field still types. |
 | K-7 Enter queues while running; Up takes back a queued message | S | `mode/input.rs` | While a turn runs, Enter queues. Up on an empty prompt takes back the last queued message. |
 | K-8 Validation, `check`, `--defaults`, `--read`, defaults file, Alt migration notice | S | `AppKeybindingsManager`, CLI | Each command works. Errors show in `/hotkeys`. A bad file never crashes. The Alt notice shows once per version. |
@@ -342,18 +345,20 @@ and `cargo nextest run -p <touched crates>` (CLAUDE.md). TUI steps are done by H
 - No rewrite of the user's `keybindings.json` or theme files.
 - No built-in theme override by name.
 - No chords beyond the leader. No second leader.
-- No ANSI-palette themes in this round (later, see Open questions).
+- No in-app key editor. No Ctrl+J newline.
+- No ANSI-palette themes in this round (later, T12).
 
-## Open questions
+## Decided questions (user, 2026-11-05)
 
-Each question lists the recommended answer first.
-
-1. **`theme_paths`:** remove it, or wire it into the loader? Recommendation: remove, unless someone uses it. Trade-off: removing is a settings change for anyone who set it (the setting is not read, so it does nothing today).
-2. **`ansi:<name>` colours** that follow the terminal palette: later, or now? Recommendation: later. Trade-off: it is useful on terminals with custom palettes, but it needs a test per terminal.
-3. **Ctrl+J:** make it a newline in legacy mode (the change in "Ctrl+J"), or only use Shift+Enter and leader Enter? Recommendation: make Ctrl+J a newline. Trade-off: a terminal or tool that sends LF (0x0A) for Enter would now insert a newline instead of submitting. Test on each terminal before merge.
-4. **Dialog keys** (K-0): use `y`, `n`, `a`, Enter and Esc as listed? Recommendation: yes. Trade-off: `a` ("always") is a bare letter, so it must not fire while a text field has focus.
-5. **Leader timeout** (1500 ms) and the which-key delay (400 ms): keep as defaults? Recommendation: yes. Trade-off: a short timeout can cancel a slow user's key.
-6. **VS Code:** does its integrated terminal take Ctrl+X? Check before K-2. If it does, the default leader stays, and the docs say so.
+1. `theme_paths`: removed (T10).
+2. `ansi:<name>` colours: later (T12).
+3. Ctrl+J: not changed. Newline is Shift+Enter and leader Enter.
+4. Dialog keys: `y`, `n`, `a`, Enter, Esc. `a` never fires while a text field has focus.
+5. Leader timeout 1500 ms and which-key delay 400 ms are the defaults.
+6. VS Code: check whether its terminal takes Ctrl+X before K-2. If it does, the default
+   leader stays and the docs say so.
+7. Persistence: the theme picker saves to the global settings, `auto` included (T11).
+   Keys change only by editing `~/.hoocode/keybindings.json`. No in-app key editor.
 
 ## Details
 
