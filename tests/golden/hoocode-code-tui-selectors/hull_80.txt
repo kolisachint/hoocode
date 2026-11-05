@@ -1,6 +1,7 @@
-  Theme  /theme  4 themes
+  Theme  /theme  5 themes
    auto
  › dark  in use
+   dusk
    high-contrast
    light
  dark  Default dark theme
@@ -26,31 +27,32 @@ r2 c7-14 fg=#989898 bg=#233239
 r2 c15-79 fg=#e5e5e7 bg=#233239
 r3 c0-79 fg=#e5e5e7 bg=#1e1e2a
 r4 c0-79 fg=#e5e5e7 bg=#1e1e2a
-r5 c0-6 fg=#e5e5e7 bg=#292b40
-r5 c7-24 fg=#989898 bg=#292b40
-r5 c25-79 fg=#e5e5e7 bg=#292b40
-r6 c0 fg=#e5e5e7 bg=#292b40
-r6 c1-8 fg=#989898 bg=#292b40
-r6 c9-79 fg=#e5e5e7 bg=#292b40
-r7 c0-79 fg=#e5e5e7 bg=#292b40
-r8 c0 fg=#e5e5e7 bg=#292b40
-r8 c1-2 fg=#989898 bg=#292b40
-r8 c3-79 fg=#e5e5e7 bg=#292b40
+r5 c0-79 fg=#e5e5e7 bg=#1e1e2a
+r6 c0-6 fg=#e5e5e7 bg=#292b40
+r6 c7-24 fg=#989898 bg=#292b40
+r6 c25-79 fg=#e5e5e7 bg=#292b40
+r7 c0 fg=#e5e5e7 bg=#292b40
+r7 c1-8 fg=#989898 bg=#292b40
+r7 c9-79 fg=#e5e5e7 bg=#292b40
+r8 c0-79 fg=#e5e5e7 bg=#292b40
 r9 c0 fg=#e5e5e7 bg=#292b40
-r9 c1-2 fg=#b5bd68 bg=#292b40
-r9 c3-6 fg=#989898 bg=#292b40 bold
-r9 c7-25 fg=#989898 bg=#292b40
-r9 c26-79 fg=#e5e5e7 bg=#292b40
+r9 c1-2 fg=#989898 bg=#292b40
+r9 c3-79 fg=#e5e5e7 bg=#292b40
 r10 c0 fg=#e5e5e7 bg=#292b40
-r10 c1-2 fg=#d58181 bg=#292b40
-r10 c3-7 fg=#989898 bg=#292b40 bold
-r10 c8-41 fg=#989898 bg=#292b40
-r10 c42-79 fg=#e5e5e7 bg=#292b40
-r11 c0-79 fg=#e5e5e7 bg=#292b40
-r12 c0-2 fg=#e5e5e7 bg=#1e1e2a
-r12 c3-13 fg=#989898 bg=#1e1e2a
-r12 c14-18 fg=#e5e5e7 bg=#1e1e2a
-r12 c19-26 fg=#989898 bg=#1e1e2a
-r12 c27-29 fg=#e5e5e7 bg=#1e1e2a
-r12 c30-34 fg=#989898 bg=#1e1e2a
-r12 c35-79 fg=#e5e5e7 bg=#1e1e2a
+r10 c1-2 fg=#b5bd68 bg=#292b40
+r10 c3-6 fg=#989898 bg=#292b40 bold
+r10 c7-25 fg=#989898 bg=#292b40
+r10 c26-79 fg=#e5e5e7 bg=#292b40
+r11 c0 fg=#e5e5e7 bg=#292b40
+r11 c1-2 fg=#d58181 bg=#292b40
+r11 c3-7 fg=#989898 bg=#292b40 bold
+r11 c8-41 fg=#989898 bg=#292b40
+r11 c42-79 fg=#e5e5e7 bg=#292b40
+r12 c0-79 fg=#e5e5e7 bg=#292b40
+r13 c0-2 fg=#e5e5e7 bg=#1e1e2a
+r13 c3-13 fg=#989898 bg=#1e1e2a
+r13 c14-18 fg=#e5e5e7 bg=#1e1e2a
+r13 c19-26 fg=#989898 bg=#1e1e2a
+r13 c27-29 fg=#e5e5e7 bg=#1e1e2a
+r13 c30-34 fg=#989898 bg=#1e1e2a
+r13 c35-79 fg=#e5e5e7 bg=#1e1e2a

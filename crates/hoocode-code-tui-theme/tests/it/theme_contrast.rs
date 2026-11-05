@@ -21,7 +21,7 @@ fn isolate() {
 }
 
 const LIGHT_THEMES: [&str; 1] = ["light"];
-const DARK_THEMES: [&str; 2] = ["dark", "high-contrast"];
+const DARK_THEMES: [&str; 3] = ["dark", "dusk", "high-contrast"];
 
 fn shipped_themes() -> Vec<&'static str> {
     let mut all: Vec<&str> = LIGHT_THEMES

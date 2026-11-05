@@ -72,7 +72,7 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | Config paths, env prefixes | `code-paths` |
 | MCP server discovery, `mcp.json` precedence, folder and plugin trust, `/mcp` states | `code-mcp` (`config.rs`, `trust.rs`, `discover.rs`); design in [mcp.md](../design/mcp.md) |
 | Permissions and modes | `code-permissions`, `code-modes` |
-| Themes (`dark`, `high-contrast`, `light`, `auto`; pane/chip tokens); `themes/defaults/` copies written after an upgrade | `code-tui-theme` (`defaults.rs`, `refresh_theme_defaults`, called at interactive startup in `code-tui-app/src/mode/mod.rs`) |
+| Themes (`dark`, `dusk`, `high-contrast`, `light`, `auto`; pane/chip tokens); `themes/defaults/` copies written after an upgrade | `code-tui-theme` (`defaults.rs`, `refresh_theme_defaults`, called at interactive startup in `code-tui-app/src/mode/mod.rs`) |
 | Screen frame: start header, prompt row, status line (scroll and search bars included), transient rows | `code-tui-app` (`start_header.rs`, `prompt_row.rs`, `status_line.rs`, `transient_lines.rs`, wired in `mode/mod.rs` and `mode/chrome.rs`); the pinned status row goes in place of the bottom's last row via `tui-render` `Tui::set_scroll_status_in_bottom` |
 | Key bindings | `code-tui-keybindings` (app), `tui-keys` (parsing) |
 | Threads, the io runtime, `run_blocking`, channel caps, parallel-tool cap, the ordered shutdown (`run_ordered`, timed steps) | `runtime` (`runtime.rs`, `threads.rs`, `limits.rs`, `shutdown.rs`; the exit path's steps are in `code-tui-app` `mode/shutdown.rs`); the only crate that builds runtimes, threads or channels ([concurrency.md](../design/concurrency.md)) |

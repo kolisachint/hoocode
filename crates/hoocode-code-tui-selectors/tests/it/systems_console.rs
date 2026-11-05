@@ -138,7 +138,7 @@ fn check_hull(name: &str, width: u16) {
     let rendered = render_golden(&mut *hull.borrow_mut(), width);
     let text = rendered.split("--- styles ---").next().unwrap_or_default();
     assert!(
-        text.contains("Theme  /theme  4 themes"),
+        text.contains("Theme  /theme  5 themes"),
         "{name}: missing title and count in\n{text}"
     );
     assert!(
@@ -203,7 +203,7 @@ fn hull_move_previews_live() {
     hull.borrow_mut().handle_input(DOWN);
     assert_eq!(
         *changes.borrow(),
-        vec![SettingsChange::ThemePreview("high-contrast".to_string())]
+        vec![SettingsChange::ThemePreview("dusk".to_string())]
     );
 }
 
@@ -219,13 +219,13 @@ fn hull_enter_keeps() {
     assert_eq!(
         *changes.borrow(),
         vec![
-            SettingsChange::ThemePreview("high-contrast".to_string()),
-            SettingsChange::Theme("high-contrast".to_string()),
+            SettingsChange::ThemePreview("dusk".to_string()),
+            SettingsChange::Theme("dusk".to_string()),
         ]
     );
     assert_eq!(
         *slot.borrow(),
-        Some(SubmenuOutcome::Selected("high-contrast".to_string()))
+        Some(SubmenuOutcome::Selected("dusk".to_string()))
     );
 }
 
@@ -241,7 +241,7 @@ fn hull_esc_reverts() {
     assert_eq!(
         *changes.borrow(),
         vec![
-            SettingsChange::ThemePreview("high-contrast".to_string()),
+            SettingsChange::ThemePreview("dusk".to_string()),
             SettingsChange::ThemePreview("dark".to_string()),
         ]
     );
