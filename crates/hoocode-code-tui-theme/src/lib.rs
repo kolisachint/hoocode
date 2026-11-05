@@ -24,9 +24,10 @@ pub use registry::{
     builtin_theme_source, create_theme, current_theme_name, detect_terminal_background_with,
     get_available_themes, get_available_themes_with_paths, get_resolved_theme_colors,
     get_theme_by_name, get_theme_description, get_theme_export_colors, init_theme, is_auto_theme,
-    load_theme_from_path, load_theme_json, on_theme_change, resolve_auto_theme,
-    set_registered_themes, set_theme, set_theme_instance, stop_theme_watcher, theme,
-    theme_generation, try_theme, ThemeExportColors, ThemeInfo, AUTO_DARK_THEME, AUTO_LIGHT_THEME,
+    load_theme_from_path, load_theme_json, on_theme_change, picker_theme_list,
+    picker_theme_list_in, resolve_auto_theme, set_registered_themes, set_theme, set_theme_instance,
+    stop_theme_watcher, theme, theme_generation, theme_warning_generation, theme_warnings,
+    try_theme, user_theme_path, ThemeExportColors, ThemeInfo, AUTO_DARK_THEME, AUTO_LIGHT_THEME,
     AUTO_THEME_POLL_INTERVAL, THEME_SCHEMA_JSON,
 };
 pub use schema::{parse_theme_json, parse_theme_json_content, ThemeJson, REQUIRED_COLOR_TOKENS};

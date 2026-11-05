@@ -117,7 +117,8 @@ const LIGHT_DECORATIVE_TOKENS: [&str; 3] = ["borderMuted", "mdHr", "thinkingOff"
 /// agent palette and `mcp`.
 fn all_tokens() -> Vec<String> {
     let schema: Value = serde_json::from_str(THEME_SCHEMA_JSON).unwrap();
-    let mut tokens: Vec<String> = schema["properties"]["colors"]["required"]
+    // The schema requires the tokens for a theme that does not inherit.
+    let mut tokens: Vec<String> = schema["then"]["properties"]["colors"]["required"]
         .as_array()
         .unwrap()
         .iter()

@@ -951,10 +951,6 @@ impl SettingsManager {
         self.set_project("slashCommands", strings(paths));
     }
 
-    pub fn theme_paths(&self) -> Vec<String> {
-        self.path_list("themes")
-    }
-
     pub fn set_theme_paths(&mut self, paths: &[String]) {
         self.set("themes", Some(strings(paths)));
     }

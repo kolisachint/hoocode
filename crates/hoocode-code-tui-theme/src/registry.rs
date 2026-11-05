@@ -10,7 +10,11 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::color::{ansi256_to_hex, detect_color_mode, relative_luminance, ColorMode, RawColor};
-use crate::schema::{parse_theme_json_content, ColorValue, ThemeJson};
+use serde_json::{Map, Value};
+
+use crate::schema::{
+    parse_theme_json, parse_theme_json_content, theme_json_value, ColorValue, ThemeJson,
+};
 use crate::theme::{Theme, ThemeOptions, AGENT_COLOR_TOKENS, PANE_BG_TOKENS, THEME_BGS};
 
 /// The bundled theme files, by file name (the `readdirSync().sort()` order).
@@ -129,6 +133,55 @@ pub fn get_available_themes_with_paths() -> Vec<ThemeInfo> {
     result
 }
 
+/// The theme picker's list, read from the user's themes folder: `auto`,
+/// the built-in themes, then every user theme in `dir` that loads, by name.
+/// Only the folder's top level counts, so `defaults/` is never listed. A
+/// user file that reuses a built-in or `auto` name is left out (built-ins
+/// win), and so is a file that does not load (its warning comes from the
+/// theme diagnostics).
+pub fn picker_theme_list_in(dir: &Path) -> Vec<ThemeInfo> {
+    let mut list = vec![ThemeInfo {
+        name: "auto".to_string(),
+        path: None,
+    }];
+    list.extend(builtin_themes().keys().map(|name| ThemeInfo {
+        name: name.clone(),
+        path: None,
+    }));
+    let mut user: Vec<ThemeInfo> = Vec::new();
+    for file in json_files(dir) {
+        let name = file.trim_end_matches(".json").to_string();
+        if is_builtin_theme(&name) || is_auto_theme(&name) {
+            continue;
+        }
+        let path = dir.join(&file);
+        if load_theme_from_path(&path, None).is_ok() {
+            user.push(ThemeInfo {
+                name,
+                path: Some(path),
+            });
+        }
+    }
+    user.sort_by(|a, b| a.name.cmp(&b.name));
+    list.extend(user);
+    list
+}
+
+/// [`picker_theme_list_in`] for the user's own themes folder.
+pub fn picker_theme_list() -> Vec<ThemeInfo> {
+    picker_theme_list_in(&custom_themes_dir())
+}
+
+/// The file of user theme `name` in the themes folder, when there is one.
+/// Built-ins, `auto` and names without a file give `None`.
+pub fn user_theme_path(name: &str) -> Option<PathBuf> {
+    if is_builtin_theme(name) || is_auto_theme(name) {
+        return None;
+    }
+    let path = custom_themes_dir().join(format!("{name}.json"));
+    path.is_file().then_some(path)
+}
+
 fn read_file(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => format!(
@@ -149,19 +202,118 @@ pub fn load_theme_json(name: &str) -> Result<ThemeJson, String> {
         return match &theme.source_path {
             Some(path) => {
                 let content = read_file(path)?;
-                parse_theme_json_content(&path.display().to_string(), &content)
+                let (stem, dir) = theme_file_identity(path);
+                parse_user_theme(&stem, &path.display().to_string(), &content, &dir)
             }
             None => Err(format!(
                 "Theme \"{name}\" does not have a source path for export"
             )),
         };
     }
-    let theme_path = custom_themes_dir().join(format!("{name}.json"));
+    let dir = custom_themes_dir();
+    let theme_path = dir.join(format!("{name}.json"));
     if !theme_path.exists() {
         return Err(format!("Theme not found: {name}"));
     }
     let content = read_file(&theme_path)?;
-    parse_theme_json_content(name, &content)
+    parse_user_theme(name, name, &content, &dir)
+}
+
+/// A theme file's name without `.json` (the name other themes inherit it by)
+/// and the folder it sits in (where its base theme is looked up).
+fn theme_file_identity(path: &Path) -> (String, PathBuf) {
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    (stem, dir)
+}
+
+/// Parses a user theme file: `inherits` is resolved against `dir` (the
+/// folder the file is in), then the merged theme is validated as a whole.
+fn parse_user_theme(
+    name: &str,
+    label: &str,
+    content: &str,
+    dir: &Path,
+) -> Result<ThemeJson, String> {
+    let raw = theme_json_value(label, content)?;
+    let merged = resolve_inherits(label, raw, dir, vec![name.to_string()])?;
+    parse_theme_json(label, &merged)
+}
+
+/// Resolves `inherits` for the theme at the end of `chain`, the names being
+/// resolved outermost first. Each level is checked on its own first. A base
+/// is a built-in theme or a file in `dir`, and its own base resolves the same
+/// way. A name already in the chain is a cycle, so this always ends.
+fn resolve_inherits(
+    label: &str,
+    raw: Value,
+    dir: &Path,
+    chain: Vec<String>,
+) -> Result<Value, String> {
+    // Required tokens wait for the merged theme (see `validate`).
+    parse_theme_json(label, &raw)?;
+    let Some(base_name) = raw.get("inherits").and_then(Value::as_str) else {
+        return Ok(raw);
+    };
+    let base_name = base_name.to_string();
+    if chain.contains(&base_name) {
+        let mut cycle = chain;
+        cycle.push(base_name);
+        return Err(format!("Theme inheritance cycle: {}", cycle.join(" -> ")));
+    }
+    let child = chain.last().cloned().unwrap_or_default();
+    let base_raw = base_theme_value(&base_name, &child, dir)?;
+    let mut next = chain;
+    next.push(base_name.clone());
+    let base = resolve_inherits(&base_name, base_raw, dir, next)?;
+    Ok(merge_over_base(raw, &base))
+}
+
+/// The JSON of base theme `base`, which theme `child` inherits: a built-in,
+/// or a file in `dir`. Anything else is an error.
+fn base_theme_value(base: &str, child: &str, dir: &Path) -> Result<Value, String> {
+    if let Some(text) = builtin_theme_source(base) {
+        return theme_json_value(base, text);
+    }
+    let path = dir.join(format!("{base}.json"));
+    if !path.is_file() {
+        return Err(format!(
+            "Theme \"{child}\" inherits \"{base}\", which is neither a built-in theme nor a file in the themes folder"
+        ));
+    }
+    let content = read_file(&path)?;
+    theme_json_value(base, &content)
+}
+
+/// `raw` over `base`: the theme's own `colors` and `vars` entries win over
+/// the base's, its `export` wins when it has one, and `inherits` is dropped.
+/// The name and description stay the theme's own.
+fn merge_over_base(mut raw: Value, base: &Value) -> Value {
+    if let (Value::Object(own), Value::Object(base)) = (&mut raw, base) {
+        own.remove("inherits");
+        for section in ["colors", "vars"] {
+            if !base.contains_key(section) && !own.contains_key(section) {
+                continue;
+            }
+            let mut merged: Map<String, Value> = match base.get(section) {
+                Some(Value::Object(entries)) => entries.clone(),
+                _ => Map::new(),
+            };
+            if let Some(Value::Object(mine)) = own.get(section) {
+                merged.extend(mine.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
+            own.insert(section.to_string(), Value::Object(merged));
+        }
+        if !own.contains_key("export") {
+            if let Some(export) = base.get("export") {
+                own.insert("export".to_string(), export.clone());
+            }
+        }
+    }
+    raw
 }
 
 /// `resolveVarRefs`.
@@ -275,7 +427,8 @@ pub fn create_theme(
 /// `loadThemeFromPath`.
 pub fn load_theme_from_path(theme_path: &Path, mode: Option<ColorMode>) -> Result<Theme, String> {
     let content = read_file(theme_path)?;
-    let theme_json = parse_theme_json_content(&theme_path.display().to_string(), &content)?;
+    let (stem, dir) = theme_file_identity(theme_path);
+    let theme_json = parse_user_theme(&stem, &theme_path.display().to_string(), &content, &dir)?;
     create_theme(&theme_json, mode, Some(theme_path.to_path_buf()))
 }
 
@@ -391,8 +544,8 @@ fn os_dark_mode() -> Option<bool> {
 /// now. Non-auto values pass through unchanged. The OS reading decides the
 /// side; when it cannot be read the `COLORFGBG` heuristic does (which itself
 /// falls back to dark), so a total failure resolves to the dark side. An
-/// unknown custom side falls back to its built-in default, silently: the
-/// loader's own `dark` fallback still covers a theme deleted mid-flight.
+/// unknown custom side falls back to its built-in default and records a
+/// theme warning (see [`theme_warnings`]), which clears once the side loads.
 pub fn resolve_auto_theme(value: &str) -> String {
     if !is_auto_theme(value) {
         return value.to_string();
@@ -406,8 +559,14 @@ pub fn resolve_auto_theme(value: &str) -> String {
     };
     let name = side;
     if get_available_themes().iter().any(|t| t == &name) {
+        clear_theme_warning(&name);
         name
     } else {
+        record_theme_warning(
+            &name,
+            "Theme not found",
+            "Using the built-in theme for that side.",
+        );
         fallback.to_string()
     }
 }
@@ -425,6 +584,42 @@ struct State {
     registered: Vec<(String, Arc<Theme>)>,
     on_change: Option<ChangeCallback>,
     watcher: Option<Watcher>,
+    /// Problems with themes the user asked for, by the name they asked for.
+    warnings: BTreeMap<String, String>,
+}
+
+/// Counts new theme warnings, so the screen can show each one once.
+static WARNING_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The theme warnings to show: a bad file, or a name that is not a theme.
+/// Each says what the screen does instead (keeps the last good theme, or
+/// uses the built-in dark for now). A warning clears when its name loads.
+pub fn theme_warnings() -> Vec<String> {
+    state().warnings.values().cloned().collect()
+}
+
+/// Bumps with every new theme warning (a repeat of the same one does not).
+pub fn theme_warning_generation() -> u64 {
+    WARNING_GENERATION.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Records that theme `name` did not load. The error text is put on one line.
+fn record_theme_warning(name: &str, error: &str, consequence: &str) {
+    let error = error.split_whitespace().collect::<Vec<_>>().join(" ");
+    let message = format!("Theme \"{name}\" did not load: {error}. {consequence}");
+    {
+        let mut s = state();
+        if s.warnings.get(name) == Some(&message) {
+            return;
+        }
+        s.warnings.insert(name.to_string(), message);
+    }
+    WARNING_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Clears the warning for theme `name`, once it loads.
+fn clear_theme_warning(name: &str) {
+    state().warnings.remove(name);
 }
 
 /// The running custom-theme watcher: told to stop by `stop`, and joined when
@@ -498,24 +693,26 @@ fn fallback_dark() -> Arc<Theme> {
 }
 
 /// `initTheme`: load the requested (or detected default) theme; `"auto"`
-/// resolves to the OS side first, and an invalid one falls back to `dark`
-/// silently.
+/// resolves to the OS side first. A theme that does not load (a bad file, or
+/// a name that is not a theme) records a warning and the built-in dark stands
+/// in, since nothing loaded yet. The requested setting is left as it is.
 pub fn init_theme(theme_name: Option<&str>, enable_watcher: bool) {
     let requested = theme_name.map_or_else(|| default_theme().to_string(), str::to_string);
-    let mut name = resolve_auto_theme(&requested);
-    // An unknown saved value (an old theme name) quietly follows `auto`.
-    if !get_available_themes().iter().any(|t| t == &name) {
-        name = resolve_auto_theme("auto");
-    }
-    state().current_name = Some(name.clone());
+    let name = resolve_auto_theme(&requested);
     match load_theme(&name, None) {
         Ok(theme) => {
-            state().theme = Some(theme);
+            clear_theme_warning(&requested);
+            {
+                let mut s = state();
+                s.current_name = Some(name.clone());
+                s.theme = Some(theme);
+            }
             if enable_watcher {
                 start_theme_watcher();
             }
         }
-        Err(_) => {
+        Err(error) => {
+            record_theme_warning(&requested, &error, "Using the built-in dark theme for now.");
             let dark = fallback_dark();
             let mut s = state();
             s.current_name = Some("dark".to_string());
@@ -541,31 +738,31 @@ fn notify_change() {
     }
 }
 
-/// `setTheme`: switch themes; on failure fall back to `dark` and return the
-/// error. `"auto"` resolves to the OS side first, so the current name is
-/// always concrete.
+/// `setTheme`: switch themes. `"auto"` resolves to the OS side first, so the
+/// current name is always concrete. On failure nothing changes: the last good
+/// theme stays on screen and the error is returned for the caller to show.
 pub fn set_theme(requested: &str, enable_watcher: bool) -> Result<(), String> {
+    // A new choice replaces the warnings about the old one. A side of an
+    // auto pair that is still missing warns again in the resolve below.
+    state().warnings.clear();
     let name = resolve_auto_theme(requested);
-    state().current_name = Some(name.clone());
-    match load_theme(&name, None) {
-        Ok(theme) => {
-            state().theme = Some(theme);
-            if enable_watcher {
-                start_theme_watcher();
-            }
-            notify_change();
-            Ok(())
-        }
+    let theme = match load_theme(&name, None) {
+        Ok(theme) => theme,
         Err(error) => {
-            let dark = fallback_dark();
-            let mut s = state();
-            s.current_name = Some("dark".to_string());
-            s.theme = Some(dark);
-            drop(s);
-            bump_theme_generation();
-            Err(error)
+            record_theme_warning(requested, &error, "Kept the current theme.");
+            return Err(error);
         }
+    };
+    {
+        let mut s = state();
+        s.current_name = Some(name.clone());
+        s.theme = Some(theme);
     }
+    if enable_watcher {
+        start_theme_watcher();
+    }
+    notify_change();
+    Ok(())
 }
 
 /// `setThemeInstance`: use a theme object directly (not watchable).
@@ -645,10 +842,15 @@ fn reload_watched(watched_name: &str, theme_file: &Path) {
     if !theme_file.exists() {
         return;
     }
-    // A file mid-edit may be invalid: keep the current theme.
-    let Ok(reloaded) = load_theme_from_path(theme_file, None) else {
-        return;
+    // A file mid-edit may be invalid: keep the current theme and say why.
+    let reloaded = match load_theme_from_path(theme_file, None) {
+        Ok(theme) => theme,
+        Err(error) => {
+            record_theme_warning(watched_name, &error, "Keeping the last good theme.");
+            return;
+        }
     };
+    clear_theme_warning(watched_name);
     {
         let reloaded = Arc::new(reloaded);
         let mut s = state();

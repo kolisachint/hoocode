@@ -45,14 +45,18 @@ pub fn thinking_selector(current_level: &str, available_levels: &[&str]) -> Fram
     FramedSelectList::new("Thinking", items, count, selected)
 }
 
-/// The themes a picker offers: `auto`, `dark` and `light`.
+/// The themes a picker offers, in list order: `auto`, the built-ins, then the
+/// user's own themes (see [`hoocode_code_tui_theme::picker_theme_list`]).
 pub fn picker_themes() -> Vec<String> {
-    ["auto", "dark", "light"].map(String::from).to_vec()
+    hoocode_code_tui_theme::picker_theme_list()
+        .into_iter()
+        .map(|t| t.name)
+        .collect()
 }
 
-/// `ThemeSelectorComponent`: `auto`, `dark` and `light`, the current one
-/// marked `in use` and selected. Wire `on_selection_change` for the live
-/// preview.
+/// `ThemeSelectorComponent`: the picker's themes, the current one marked
+/// `in use` and selected; the detail shows each user theme's file path.
+/// Wire `on_selection_change` for the live preview.
 pub fn theme_selector(current_theme: &str) -> FramedSelectList {
     let themes = picker_themes();
     let items = themes

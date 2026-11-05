@@ -68,6 +68,14 @@ pub(crate) fn theme_detail(item: &SelectItem) -> Vec<Line<'static>> {
         Span::raw("  "),
         Span::styled(description, pal.dim()),
     ])];
+    // Where the theme lives: its file for a user theme, else built in.
+    if item.value != "auto" {
+        let source = match hoocode_code_tui_theme::user_theme_path(&item.value) {
+            Some(path) => path.display().to_string(),
+            None => "built-in".to_string(),
+        };
+        rows.push(Line::from(Span::styled(source, pal.dim())));
+    }
     rows.push(Line::raw(""));
     rows.push(Line::from(vec![
         Span::styled("› ".to_string(), pal.dim()),

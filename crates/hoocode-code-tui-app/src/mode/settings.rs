@@ -289,14 +289,14 @@ impl Mode {
                 }
             }
             SettingsChange::Theme(name) => {
-                let result = set_theme(&name, true);
-                self.session.settings().set_theme(&name);
-                self.tui.invalidate();
-                if let Err(error) = result {
-                    self.show_error(&format!(
-                        "Failed to load theme \"{name}\": {error}\nFell back to dark theme."
-                    ));
+                // Saved only when it loads: a bad choice never becomes the setting.
+                match set_theme(&name, true) {
+                    Ok(()) => self.session.settings().set_theme(&name),
+                    Err(error) => self.show_error(&format!(
+                        "Theme \"{name}\" did not load: {error}. Kept the current theme."
+                    )),
                 }
+                self.tui.invalidate();
             }
             SettingsChange::ThemePreview(name) => {
                 if set_theme(&name, true).is_ok() {
