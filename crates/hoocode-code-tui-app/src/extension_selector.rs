@@ -5,9 +5,9 @@
 //! the title (with the countdown) names the console, the options are its
 //! rows, and the hint foot names the keys.
 
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, key_text};
 use std::time::{Duration, Instant};
 
-use hoocode_code_tui_keybindings::key_text;
 use hoocode_code_tui_widgets::console::{help_rows, hints, Console};
 use hoocode_tui_components::PickerCursor;
 use hoocode_tui_keys::{get_keybindings, KeybindingsManager};
@@ -229,7 +229,14 @@ impl Component for ExtensionSelectorComponent {
             .collect();
         console.selected = (!self.options.is_empty()).then_some(selected);
         console.max_visible = Some(self.cursor.max_visible());
-        console.hint = hints(&[("↑↓", "navigate"), ("enter", "select"), ("esc", "cancel")]);
+        let moves = key_pair_hint("tui.select.up", "tui.select.down");
+        let confirm = key_hint_text("tui.select.confirm");
+        let cancel = key_hint_text("tui.select.cancel");
+        console.hint = hints(&[
+            (moves.as_str(), "navigate"),
+            (confirm.as_str(), "select"),
+            (cancel.as_str(), "cancel"),
+        ]);
         if self.help {
             console.bottom = self.help_rows();
         }

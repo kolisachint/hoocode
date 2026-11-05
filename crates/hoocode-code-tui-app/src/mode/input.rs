@@ -1,6 +1,7 @@
 //! The prompt: the custom editor and its keys (`Action`), submit, the `!` bash prefix, and the
 //! autocomplete providers (`/` commands, `@file`, paths).
 
+use hoocode_code_tui_keybindings::key_hint_text;
 use hoocode_code_tui_selectors::oauth_selector::LoginMode;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
@@ -643,9 +644,10 @@ impl Mode {
             .trim();
             if !command.is_empty() {
                 if self.session.is_bash_running() {
-                    self.show_warning(
-                        "A bash command is already running. Press esc to cancel it first.",
-                    );
+                    self.show_warning(&format!(
+                        "A bash command is already running. Press {} to cancel it first.",
+                        key_hint_text("tui.select.cancel")
+                    ));
                     self.editor.borrow_mut().editor.set_text(&text);
                     return;
                 }

@@ -29,6 +29,7 @@
 //! one before it, so the next frame is built only after the terminal has taken
 //! the previous one; the output thread then sends [`TuiEvent::OutputDrained`].
 
+use hoocode_tui_keys::{first_key_name, is_key_release};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -40,7 +41,6 @@ use std::time::{Duration, Instant};
 use hoocode_tui_images::{
     allocate_image_id, delete_kitty_image, get_capabilities, set_cell_dimensions, CellDimensions,
 };
-use hoocode_tui_keys::is_key_release;
 use hoocode_tui_terminal::{move_rows, parse_mouse_report, MouseEvent, MouseEventKind, Terminal};
 use hoocode_tui_util::{
     bare_url_at, hyperlink_at, normalize_terminal_output, slice_by_column,
@@ -224,17 +224,39 @@ fn fold_match_ranges(plain: &str, needle_folded: &str) -> Vec<(usize, usize)> {
     ranges
 }
 
+/// The arrow glyph for a bare arrow key name; any other key is shown as it is.
+fn arrow_glyph(key: &str) -> String {
+    match key {
+        "up" => "\u{2191}".to_string(),
+        "down" => "\u{2193}".to_string(),
+        "left" => "\u{2190}".to_string(),
+        "right" => "\u{2192}".to_string(),
+        other => other.to_string(),
+    }
+}
+
 pub fn default_scroll_status(status: &ScrollStatus) -> String {
     let position = format!("{}\u{2013}{}/{}", status.top, status.bottom, status.total);
     let where_ = if status.at_top { " top" } else { "" };
     let keys = if status.picker {
-        "PgUp/PgDn page"
+        format!(
+            "{}/{} page",
+            first_key_name("tui.select.pageUp"),
+            first_key_name("tui.select.pageDown")
+        )
     } else {
-        "\u{2191}\u{2193} line \u{b7} PgUp/PgDn page \u{b7} esc live"
+        format!(
+            "{}{} line · {}/{} page · {} live",
+            arrow_glyph(&first_key_name("app.scroll.lineUp")),
+            arrow_glyph(&first_key_name("app.scroll.lineDown")),
+            first_key_name("app.scroll.pageUp"),
+            first_key_name("app.scroll.pageDown"),
+            first_key_name("app.scroll.exit")
+        )
     };
     let left = format!(" {position}{where_} ");
     let width = status.width.max(0) as usize;
-    let body = if visible_width(&left) + visible_width(keys) < width {
+    let body = if visible_width(&left) + visible_width(&keys) < width {
         format!("{left}{keys} ")
     } else {
         left

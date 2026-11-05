@@ -5,6 +5,7 @@
 //! back; here the owner hands in what it loaded, and does the save when the
 //! [`ModelSelectorEvent::Select`] arrives.
 
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -167,13 +168,23 @@ impl State {
     /// flips something).
     fn hint_row(&self) -> Line<'static> {
         if self.scoped.is_empty() {
-            hints(&[("↑↓", "move"), ("enter", "pick"), ("esc", "close")])
+            hints(&[
+                (
+                    key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                    "move",
+                ),
+                (key_hint_text("tui.select.confirm").as_str(), "pick"),
+                (key_hint_text("tui.select.cancel").as_str(), "close"),
+            ])
         } else {
             hints(&[
-                ("↑↓", "move"),
-                ("enter", "pick"),
-                ("tab", "all / scoped"),
-                ("esc", "close"),
+                (
+                    key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                    "move",
+                ),
+                (key_hint_text("tui.select.confirm").as_str(), "pick"),
+                (key_hint_text("tui.input.tab").as_str(), "all / scoped"),
+                (key_hint_text("tui.select.cancel").as_str(), "close"),
             ])
         }
     }

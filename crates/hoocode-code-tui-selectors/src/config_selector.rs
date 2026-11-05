@@ -4,6 +4,7 @@
 //! `+pattern` / `-pattern` entry to the settings file it belongs to. Themes
 //! are not listed: they are picked with `/theme`, not switched off here.
 
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, SPACE_KEY};
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::rc::Rc;
@@ -566,7 +567,14 @@ impl ResourceList {
         console.selected = (!self.filtered.is_empty()).then_some(selected);
         console.max_visible = Some(self.cursor.max_visible());
         console.bottom = self.bottom_rows(&pal);
-        console.hint = hints(&[("↑↓", "move"), ("space", "toggle"), ("esc", "close")]);
+        console.hint = hints(&[
+            (
+                key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                "move",
+            ),
+            (SPACE_KEY, "toggle"),
+            (key_hint_text("tui.select.cancel").as_str(), "close"),
+        ]);
         console
     }
 

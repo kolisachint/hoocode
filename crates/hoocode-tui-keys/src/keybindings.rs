@@ -153,6 +153,26 @@ impl KeybindingsManager {
     }
 }
 
+/// The Space key. Screens answer to it as a second toggle beside the keymap's
+/// confirm key, by its byte, so no keymap id holds it. Hints name it with this
+/// constant, the one place the name is written.
+pub const SPACE_KEY: &str = "space";
+
+/// The first key bound to `id` in the installed keymap, with `escape` shown as
+/// `esc`. Empty when nothing is bound. For hints in crates below the app.
+pub fn first_key_name(id: &str) -> String {
+    let key = get_keybindings()
+        .get_keys(id)
+        .into_iter()
+        .next()
+        .unwrap_or_default();
+    if key == "escape" {
+        "esc".to_string()
+    } else {
+        key
+    }
+}
+
 /// `TUI_KEYBINDINGS` in declaration order: `(id, default keys, description)`.
 /// The order is meaningful to apps that write a keybindings file from it.
 pub const TUI_KEYBINDINGS: &[(&str, &[&str], &str)] = &[

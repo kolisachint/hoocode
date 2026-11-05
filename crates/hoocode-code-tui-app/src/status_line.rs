@@ -13,6 +13,7 @@
 //! Colours come from the existing palette tokens (`ink`, `dim`, `ok`, `err`,
 //! `warn`). With colour off (NO_COLOR) only shapes, bold and dim are used.
 
+use hoocode_code_tui_keybindings::key_hint_text;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -308,7 +309,11 @@ fn left_spans(slot: &LeftSlot, st: &Styles) -> Vec<Span<'static>> {
         LeftSlot::Working(elapsed) => {
             out.push(span("◉", st.warn));
             out.push(span(
-                format!(" working · {} · esc stop", format_clock(*elapsed)),
+                format!(
+                    " working · {} · {} stop",
+                    format_clock(*elapsed),
+                    key_hint_text("app.interrupt")
+                ),
                 st.dim,
             ));
         }

@@ -16,7 +16,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use hoocode_code_tui_keybindings::{keybindings, KeybindingEntry};
+use hoocode_code_tui_keybindings::{key_hint_text, keybindings, KeybindingEntry};
 use hoocode_code_tui_theme::style_input;
 use hoocode_tui_components::Input;
 use hoocode_tui_keys::get_keybindings;
@@ -449,7 +449,10 @@ impl Component for ControlsComponent {
             }
         }
         // The hint row only promises what the pane does.
-        console.hint = hints(&[("tab", "layer"), ("esc", "close")]);
+        console.hint = hints(&[
+            (key_hint_text("tui.input.tab").as_str(), "layer"),
+            (key_hint_text("tui.select.cancel").as_str(), "close"),
+        ]);
         console.render(width)
     }
 

@@ -12,8 +12,8 @@ mod sequence;
 mod state;
 
 pub use keybindings::{
-    default_tui_keybindings, get_keybindings, set_keybindings, KeybindingConflict,
-    KeybindingDefinition, KeybindingsManager, TUI_KEYBINDINGS,
+    default_tui_keybindings, first_key_name, get_keybindings, set_keybindings, KeybindingConflict,
+    KeybindingDefinition, KeybindingsManager, SPACE_KEY, TUI_KEYBINDINGS,
 };
 pub use kitty::{
     decode_kitty_printable, decode_modify_other_keys_printable, decode_printable_key,

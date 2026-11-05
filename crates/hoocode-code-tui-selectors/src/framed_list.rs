@@ -8,6 +8,7 @@
 //! item's detail sits beside them, and the hint closes the pane. No
 //! `InputFrame`, no SGR theme painting.
 
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -176,7 +177,14 @@ impl Component for FramedSelectList {
         if let (Some(detail), Some(item)) = (self.detail, list.get_selected_item()) {
             console.detail = detail(item);
         }
-        console.hint = hints(&[("↑↓", "move"), ("enter", "pick"), ("esc", "back")]);
+        console.hint = hints(&[
+            (
+                key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                "move",
+            ),
+            (key_hint_text("tui.select.confirm").as_str(), "pick"),
+            (key_hint_text("tui.select.cancel").as_str(), "back"),
+        ]);
         console.render(width as usize)
     }
 

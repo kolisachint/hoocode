@@ -15,7 +15,8 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use hoocode_tui_keys::{
-    KeybindingDefinition, KeybindingsManager, LeaderKey, LeaderMachine, TUI_KEYBINDINGS,
+    KeySequence, KeybindingDefinition, KeybindingsManager, LeaderKey, LeaderMachine,
+    TUI_KEYBINDINGS,
 };
 use serde_json::{Map, Value};
 
@@ -23,7 +24,6 @@ use crate::config::{
     effective_overrides, normalize_key, Context, ContextOverride, KeymapConfig, DEFAULT_LEADER,
 };
 use crate::defaults::context_of;
-use hoocode_tui_keys::KeySequence;
 
 /// One binding: id, default keys, description.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -390,7 +390,7 @@ pub fn app_keybindings() -> Vec<KeybindingEntry> {
         entry("app.list.up", &["k"], "List: move up"),
         entry("app.list.down", &["j"], "List: move down"),
         entry("app.list.search", &["/"], "List: focus the search"),
-        entry("app.list.help", &["?"], "List: show or hide the keys"),
+        entry("app.list.help", &["f1", "?"], "List: show or hide the keys"),
         entry("app.list.close", &["q"], "List: close"),
         // ── Dialogs — letters answer while no reply is typed (K-P4)
         entry("app.dialog.yes", &["y"], "Dialog: yes"),

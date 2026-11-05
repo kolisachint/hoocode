@@ -10,7 +10,7 @@ use std::rc::Rc;
 use hoocode_ai_models::{clamp_thinking_level, get_supported_thinking_levels};
 use hoocode_ai_types::{Model, ThinkingLevel};
 use hoocode_code_settings::{ModelCategoryName, ScopedModel};
-use hoocode_code_tui_keybindings::{format_key_text, key_text};
+use hoocode_code_tui_keybindings::{key_hint_text, key_text};
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{help_rows, query_row, Console};
 use hoocode_code_tui_widgets::pane::capped_hint_line;
@@ -20,10 +20,9 @@ use hoocode_tui_keys::{get_keybindings, matches_key};
 use hoocode_tui_ratatui::{Line, Palette, Span};
 use hoocode_tui_render::Component;
 
-/// Cycles the selected row's effort through the model's levels, then unset.
-/// Handled by the picker itself (no `keybindings.rs` entry).
-pub const EFFORT_KEY: &str = "tab";
-// The category cycle is `app.models.category` (a bare letter, K-P4).
+// The effort cycle is the picker's own Tab (`tui.input.tab`): it cycles the
+// selected row's effort through the model's levels, then unset. The category
+// cycle is `app.models.category` (a bare letter, K-P4).
 
 const MAX_VISIBLE: usize = 8;
 
@@ -230,9 +229,9 @@ impl State {
         let pair = |key: String, action: &str| (key, action.to_string());
         vec![
             pair(key_text("tui.select.confirm"), "on / off"),
-            pair(format_key_text(EFFORT_KEY, false), "effort"),
+            pair(key_hint_text("tui.input.tab"), "effort"),
             pair(key_text("app.models.save"), "save to settings"),
-            pair("esc".to_string(), "close"),
+            pair(key_hint_text("tui.select.cancel"), "close"),
             pair(key_text("app.models.category"), "category"),
             pair(key_text("app.models.enableAll"), "all on"),
             pair(key_text("app.models.clearAll"), "all off"),
@@ -633,7 +632,7 @@ impl Component for ScopedModelsSelectorComponent {
             return;
         }
 
-        if matches_key(data, EFFORT_KEY) {
+        if kb.matches(data, "tui.input.tab") {
             self.edit_selected(|extras, model| {
                 let levels = effort_levels(model);
                 extras.effort = next_effort(extras.effort.as_deref(), &levels);

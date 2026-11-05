@@ -11,6 +11,7 @@
 //! is told it was skipped and states the default it uses. Answered steps
 //! stay as a breadcrumb.
 
+use hoocode_code_tui_keybindings::{key_glyph_text, key_hint_text};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -65,12 +66,15 @@ impl State {
     fn render_hints(&self, last: bool) -> Line<'static> {
         let pick = format!("1–{}", self.current().options.len().max(1));
         let (_, back) = self.custom_arrows();
+        let tab = key_hint_text("tui.input.tab");
+        let back_key = key_glyph_text("app.options.back");
+        let skip = key_hint_text("tui.select.cancel");
         let mut hints: Vec<(&str, &str)> = vec![(pick.as_str(), "pick")];
-        hints.push(("tab", if last { "submit" } else { "next question" }));
+        hints.push((tab.as_str(), if last { "submit" } else { "next question" }));
         if self.step > 0 && back {
-            hints.push(("←", "back"));
+            hints.push((back_key.as_str(), "back"));
         }
-        hints.push(("esc", "skip"));
+        hints.push((skip.as_str(), "skip"));
         hint_line(&hints)
     }
 

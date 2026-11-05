@@ -89,7 +89,7 @@ fn shell_card_shows_title_command_access_and_options() {
     );
     assert!(rows[6].contains("or type a reply"), "row 6: {:?}", rows[6]);
     assert!(
-        rows[7].contains("1–3 pick · e edit first"),
+        rows[7].contains("1–3 pick · y yes · a always · n no · e edit first"),
         "row 7: {:?}",
         rows[7]
     );

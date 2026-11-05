@@ -22,10 +22,10 @@
 //! keys are gated on the editor holding focus, as editor actions are, and app
 //! actions win over the editor's own keys in both.
 
+use hoocode_code_tui_keybindings::key_hint_text;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use hoocode_code_tui_keybindings::key_text;
 use hoocode_tui_keys::{get_keybindings, is_key_release};
 use hoocode_tui_render::{Component, ComponentHandle, Container, ScrollStatus, Tui};
 
@@ -131,13 +131,7 @@ fn is_typed_text(data: &str) -> bool {
 /// A key's short name for a hint: the first key bound to `id`, lowercase,
 /// `escape` as `esc`. Empty when nothing is bound.
 fn hint_key(id: &str) -> String {
-    let keys = key_text(id);
-    let first = keys.split('/').next().unwrap_or("").trim().to_lowercase();
-    if first == "escape" {
-        "esc".to_string()
-    } else {
-        first
-    }
+    key_hint_text(id).to_lowercase()
 }
 
 /// `key action` hints, leaving out keys that are not bound.

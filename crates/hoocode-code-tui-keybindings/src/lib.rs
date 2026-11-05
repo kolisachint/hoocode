@@ -17,8 +17,8 @@ pub use config::{
     normalize_key, Context, ContextOverride, KeymapConfig, RESERVED_KEYS, WARNED_KEYS,
 };
 pub use hints::{
-    app_key_label, format_key_text, key_display_label, key_display_text, key_hint, key_hint_text,
-    key_text, matches_app_key, raw_key_hint,
+    app_key_label, format_key_text, key_display_label, key_display_text, key_glyph_text, key_hint,
+    key_hint_text, key_pair_hint, key_text, matches_app_key, raw_key_hint, SPACE_KEY,
 };
 pub use keybindings::{
     app_keybindings, check_file, keybinding, keybinding_definitions, keybinding_definitions_for,

@@ -9,12 +9,12 @@
 //! slot": the submenu component writes its outcome into the slot when
 //! done, and `SettingsList` polls the slot after dispatching each input.
 
+use hoocode_tui_keys::{first_key_name, KeybindingsManager, SPACE_KEY};
 use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
 
 use hoocode_tui_fuzzy::fuzzy_filter;
-use hoocode_tui_keys::KeybindingsManager;
 use hoocode_tui_render::{Component, ComponentHandle};
 use hoocode_tui_util::{
     apply_background_to_line, truncate_to_width, visible_width, wrap_text_with_ansi,
@@ -312,13 +312,18 @@ impl SettingsList {
 
     fn add_hint_line(&self, lines: &mut Vec<String>, width: usize) {
         lines.push(String::new());
+        let change = format!(
+            "{}/{SPACE_KEY} to change",
+            first_key_name("tui.select.confirm")
+        );
+        let cancel = format!("{} to cancel", first_key_name("tui.select.cancel"));
         let text = if self.search_enabled {
-            "  Type to search · Enter/Space to change · esc to cancel"
+            format!("  Type to search · {change} · {cancel}")
         } else {
-            "  Enter/Space to change · esc to cancel"
+            format!("  {change} · {cancel}")
         };
         lines.push(truncate_to_width(
-            &(self.theme.hint)(text),
+            &(self.theme.hint)(&text),
             width,
             "...",
             false,

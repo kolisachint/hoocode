@@ -8,6 +8,7 @@
 //! allowed, so the provider rows show here and the URL/code in the login
 //! dialog; the dialog notes the QR gap.
 
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -283,7 +284,14 @@ impl Component for OAuthSelectorComponent {
                 pal.dim(),
             )]));
         }
-        console.hint = hints(&[("↑↓", "move"), ("enter", action), ("esc", "cancel")]);
+        console.hint = hints(&[
+            (
+                key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                "move",
+            ),
+            (key_hint_text("tui.select.confirm").as_str(), action),
+            (key_hint_text("tui.select.cancel").as_str(), "cancel"),
+        ]);
         console.render(width as usize)
     }
 

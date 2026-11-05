@@ -4,6 +4,7 @@
 //! stops them and quits, `l` leaves them running, `enter` is stop and quit,
 //! `esc` stays).
 
+use hoocode_code_tui_keybindings::key_hint_text;
 use hoocode_code_tui_widgets::pane::{hint_line, Pane, PaneStyle};
 use hoocode_tui_glyphs::status;
 use hoocode_tui_ratatui::{Line, Palette, Span};
@@ -73,7 +74,9 @@ impl Component for EndShiftCard {
         let st = PaneStyle::current();
         let mut pane = Pane::new("Quit?");
         pane.facts = Line::from(vec![Span::styled(self.facts(), st.dim_style())]);
-        pane.hint = hint_line(&[("enter", "quit"), ("esc", "stay")]);
+        let confirm = key_hint_text("tui.select.confirm");
+        let cancel = key_hint_text("tui.select.cancel");
+        pane.hint = hint_line(&[(confirm.as_str(), "quit"), (cancel.as_str(), "stay")]);
         pane.style = Some(st);
         pane.render(width as usize)
     }
@@ -217,10 +220,11 @@ impl Component for EndShiftJobsCard {
         let mut pane = Pane::new("Quit?");
         pane.facts = Line::from(vec![Span::styled(self.facts(), st.dim_style())]);
         pane.rows = self.rows();
+        let cancel = key_hint_text("tui.select.cancel");
         pane.hint = hint_line(&[
             ("k", "stop jobs and quit"),
             ("l", "leave them running"),
-            ("esc", "stay"),
+            (cancel.as_str(), "stay"),
         ]);
         pane.style = Some(st);
         pane.render(width as usize)

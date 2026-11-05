@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Datelike, Local, Timelike};
 use hoocode_code_session::SessionTreeNode;
 use hoocode_code_settings::TreeFilterMode;
-use hoocode_code_tui_keybindings::{key_hint_text, key_text};
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, key_text};
 use hoocode_code_tui_theme::style_input;
 use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
 use hoocode_code_tui_widgets::pane::capped_hint_line;
@@ -1254,7 +1254,7 @@ fn entries(count: usize) -> String {
 /// run that fits shows, like the old top row.
 fn tree_hints() -> Vec<(String, &'static str)> {
     vec![
-        ("↑↓".to_string(), "move"),
+        (key_pair_hint("tui.select.up", "tui.select.down"), "move"),
         (key_hint_text("tui.select.confirm"), "go here"),
         (key_text("app.tree.editLabel"), "label"),
         (key_hint_text("tui.select.cancel"), "close"),
@@ -1421,7 +1421,10 @@ impl Component for TreeSelectorComponent {
         let mut console = Console::new("Tree · /tree", self.list.borrow().count_text());
         if self.label_input.borrow().is_some() {
             console.top = self.label_lines();
-            console.hint = hints(&[("enter", "save"), ("esc", "cancel")]);
+            console.hint = hints(&[
+                (key_hint_text("tui.select.confirm").as_str(), "save"),
+                (key_hint_text("tui.select.cancel").as_str(), "cancel"),
+            ]);
         } else {
             let list = self.list.borrow();
             console.query = Some(query_row(list.search_query(), false));

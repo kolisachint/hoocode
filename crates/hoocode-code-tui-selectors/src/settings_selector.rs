@@ -19,6 +19,7 @@
 //! and writes changes back to. The forty `on*Change` callbacks are one
 //! [`SettingsChange`] enum through one callback.
 
+use hoocode_code_tui_keybindings::{key_display_text, key_hint_text, key_pair_hint, SPACE_KEY};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -30,7 +31,6 @@ use hoocode_code_settings::{
     TreeFilterMode, WarningSettings,
 };
 use hoocode_code_tools::light::PromptSurface;
-use hoocode_code_tui_keybindings::key_display_text;
 use hoocode_code_tui_theme::{get_select_list_theme, get_settings_list_theme, style_input, theme};
 use hoocode_code_tui_widgets::console::{hints, query_row, Console};
 use hoocode_code_tui_widgets::tool_output_view::{tool_output_view_description, TOOL_OUTPUT_VIEWS};
@@ -876,7 +876,15 @@ impl FlagStringEditSubmenu {
             0,
         ))));
         container.add_child(Rc::new(RefCell::new(Text::new(
-            t.fg("muted", "Enter a value · Enter to save · esc to cancel"),
+            t.fg(
+                "muted",
+                &format!(
+                    "{} a value · {} to save · {} to cancel",
+                    key_display_text("tui.input.submit"),
+                    key_display_text("tui.input.submit"),
+                    key_hint_text("tui.select.cancel")
+                ),
+            ),
             0,
             0,
         ))));
@@ -1051,7 +1059,14 @@ impl SelectSubmenu {
         container.add_child(list.clone());
         container.add_child(Rc::new(RefCell::new(Spacer::new(1))));
         container.add_child(Rc::new(RefCell::new(Text::new(
-            t.fg("dim", "  Enter to select · esc to go back"),
+            t.fg(
+                "dim",
+                &format!(
+                    "  {} to select · {} to go back",
+                    key_display_text("tui.select.confirm"),
+                    key_hint_text("tui.select.cancel")
+                ),
+            ),
             0,
             0,
         ))));
@@ -1450,7 +1465,7 @@ impl SettingsSelectorComponent {
         leaves.push(Leaf::cycle(
             "steering-mode",
             "Steering mode",
-            "Enter while streaming queues steering messages. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.",
+            format!("{} while streaming queues steering messages. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.", key_display_text("tui.input.submit")),
             config.steering_mode.as_str().into(),
             strings(&["one-at-a-time", "all"]),
         ));
@@ -1608,9 +1623,12 @@ impl SettingsSelectorComponent {
                         count: themes_count(themes.len()),
                         top,
                         hint: vec![
-                            ("↑↓".to_string(), "preview".to_string()),
-                            ("enter".to_string(), "keep".to_string()),
-                            ("esc".to_string(), "back".to_string()),
+                            (
+                                key_pair_hint("tui.select.up", "tui.select.down"),
+                                "preview".to_string(),
+                            ),
+                            (key_hint_text("tui.select.confirm"), "keep".to_string()),
+                            (key_hint_text("tui.select.cancel"), "back".to_string()),
                         ],
                         detail: Some(crate::framed_list::theme_detail),
                     };
@@ -1722,7 +1740,7 @@ impl SettingsSelectorComponent {
         top.push(Leaf::cycle(
             "models",
             "Models",
-            "The scoped model list: each model's effort and category, for alt+m and subagents. Enter opens /scoped-models.",
+            format!("The scoped model list: each model's effort and category, for {} and subagents. {} opens /scoped-models.", key_hint_text("app.model.cycleForward"), key_display_text("tui.select.confirm")),
             config.scoped_models_summary.clone(),
             vec![config.scoped_models_summary.clone()],
         ));
@@ -2049,10 +2067,13 @@ impl Component for SettingsSelectorComponent {
             console.detail = detail;
         }
         console.hint = hints(&[
-            ("↑↓", "move"),
-            ("space", "toggle"),
-            ("enter", "open"),
-            ("esc", "close"),
+            (
+                key_pair_hint("tui.select.up", "tui.select.down").as_str(),
+                "move",
+            ),
+            (SPACE_KEY, "toggle"),
+            (key_hint_text("tui.select.confirm").as_str(), "open"),
+            (key_hint_text("tui.select.cancel").as_str(), "close"),
         ]);
         console.render(width)
     }

@@ -12,6 +12,7 @@
 //! (asking again when it still needs clearance).
 
 use hoocode_code_permissions::{is_always_wrapper, shell_program, ClearanceChoice, ClearanceInfo};
+use hoocode_code_tui_keybindings::key_hint_text;
 use hoocode_code_tui_widgets::pane::{hint_line, input_line, Chip, Pane, PaneStyle};
 use hoocode_tui_components::Input;
 use hoocode_tui_keys::{get_keybindings, matches_key};
@@ -161,7 +162,9 @@ impl ClearanceCard {
         }
         if self.editing {
             pane.input = Some(input_line(self.edit.get_value(), "", self.focused));
-            pane.hint = hint_line(&[("enter", "run"), ("esc", "cancel")]);
+            let run = key_hint_text("tui.input.submit");
+            let cancel = key_hint_text("tui.select.cancel");
+            pane.hint = hint_line(&[(run.as_str(), "run"), (cancel.as_str(), "cancel")]);
         } else {
             let options = self.options();
             let count = options.len();
@@ -183,7 +186,17 @@ impl ClearanceCard {
             pane.selected = Some(self.selected.min(count - 1));
             pane.input = Some(input_line(&self.reply, "or type a reply", self.focused));
             let pick = format!("1–{count}");
-            pane.hint = hint_line(&[(pick.as_str(), "pick"), ("e", "edit first")]);
+            let yes = key_hint_text("app.dialog.yes");
+            let always = key_hint_text("app.dialog.always");
+            let no = key_hint_text("app.dialog.no");
+            // The letters answer only the options offered: `always` needs three.
+            let mut hint = vec![(pick.as_str(), "pick"), (yes.as_str(), "yes")];
+            if count >= 3 {
+                hint.push((always.as_str(), "always"));
+            }
+            hint.push((no.as_str(), "no"));
+            hint.push(("e", "edit first"));
+            pane.hint = hint_line(&hint);
         }
         pane.style = Some(st);
         pane

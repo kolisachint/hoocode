@@ -26,7 +26,7 @@ use chrono::{DateTime, Utc};
 use hoocode_code_paths::canonicalize_path;
 use hoocode_code_session::identity::{session_color_slot_for, session_slug_for};
 use hoocode_code_session::{subagents_dir, SessionInfo, SubagentRun, SubagentState};
-use hoocode_code_tui_keybindings::{key_hint_text, key_text};
+use hoocode_code_tui_keybindings::{key_hint_text, key_pair_hint, key_text};
 use hoocode_code_tui_theme::{session_color_token, style_input};
 use hoocode_code_tui_widgets::brand::GIT_BRANCH_GLYPH;
 use hoocode_code_tui_widgets::console::{help_rows, hints, query_row, Console};
@@ -176,7 +176,7 @@ impl SessionSelectorHeader {
     /// show; `f1` lists the rest).
     fn all_hints() -> Vec<(String, &'static str)> {
         vec![
-            ("↑↓".to_string(), "move"),
+            (key_pair_hint("tui.select.up", "tui.select.down"), "move"),
             (key_hint_text("tui.select.confirm"), "open"),
             (key_hint_text("tui.input.tab"), "scope"),
             (key_hint_text("tui.select.cancel"), "close"),
@@ -195,14 +195,26 @@ impl SessionSelectorHeader {
         let pal = Palette::current();
         if self.confirming_delete {
             let mut spans = vec![Span::styled("Delete session? ".to_string(), pal.err())];
-            spans.extend(hints(&[("enter", "confirm"), ("esc", "cancel")]).spans);
+            spans.extend(
+                hints(&[
+                    (key_hint_text("tui.select.confirm").as_str(), "confirm"),
+                    (key_hint_text("tui.select.cancel").as_str(), "cancel"),
+                ])
+                .spans,
+            );
             return Line::from(spans);
         }
         if self.choosing_subagent {
             let text = if self.can_resume {
-                "Interrupted run · v view · r resume · esc back"
+                &format!(
+                    "Interrupted run · v view · r resume · {} back",
+                    key_hint_text("tui.select.cancel")
+                )
             } else {
-                "Interrupted run · v view · esc back"
+                &format!(
+                    "Interrupted run · v view · {} back",
+                    key_hint_text("tui.select.cancel")
+                )
             };
             return Line::from(vec![Span::styled(text.to_string(), pal.acc())]);
         }
@@ -968,17 +980,21 @@ impl SessionList {
         if self.filtered.is_empty() {
             let message = if self.name_filter == NameFilter::Named {
                 let toggle = key_text("app.session.toggleNamedFilter");
+                let tab = key_hint_text("tui.input.tab");
                 if self.show_cwd {
                     format!("No named sessions found. Press {toggle} to show all.")
                 } else {
                     format!(
-                        "  No named sessions in current folder. Press {toggle} to show all, or tab to view all."
+                        "  No named sessions in current folder. Press {toggle} to show all, or {tab} to view all."
                     )
                 }
             } else if self.show_cwd {
                 "No sessions found".to_string()
             } else {
-                "No sessions in this folder. Press tab to view all.".to_string()
+                format!(
+                    "No sessions in this folder. Press {} to view all.",
+                    key_hint_text("tui.input.tab")
+                )
             };
             return (
                 Vec::new(),
@@ -1561,7 +1577,10 @@ impl SessionSelectorComponent {
         )])];
         let value = self.rename_input.borrow().get_value().to_string();
         console.query = Some(query_row(&value, self.focused));
-        console.hint = hints(&[("enter", "save"), ("esc", "cancel")]);
+        console.hint = hints(&[
+            (key_hint_text("tui.select.confirm").as_str(), "save"),
+            (key_hint_text("tui.select.cancel").as_str(), "cancel"),
+        ]);
         console.render(width)
     }
 
