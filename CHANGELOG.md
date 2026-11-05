@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed: duplicate parallel tool calls (2026-11-05)
+- **Parallel tool calls keep their own arguments.** Proxies may deliver one call's completion after the next call started; the Responses stream reader applied every completion to the open call, so the first call's arguments leaked into the last call of a batch (`Read` rows appearing twice, `Shell` calls carrying a `Read`'s `path`). Argument assembly is now routed per call, and a replayed add reuses its row instead of pushing a second one.
+
 ### Changed: themes and keys (2026-11-05)
 - **Themes.** `/theme` lists `auto` (follows the system light or dark setting), the built-ins and your themes in `~/.hoocode/themes/`, and saves the choice to the global settings. A project's own `theme` setting wins, and the picker says so. New built-ins: `high-contrast`, `dusk`, `paper`.
 - **`"inherits": "<theme>"`** in a theme file takes the missing colours from another theme, so a custom theme can be a few lines. Reference copies of the built-ins and the schema are written to `~/.hoocode/themes/defaults/` on each upgrade.
