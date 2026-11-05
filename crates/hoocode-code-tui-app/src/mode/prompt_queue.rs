@@ -192,8 +192,8 @@ impl Mode {
         self.update_pending_messages_display();
     }
 
-    /// `handleFollowUp`: alt+enter queues the prompt as a follow-up while the
-    /// agent works (held during a compaction), else submits it.
+    /// `handleFollowUp` (ctrl+x f, leader `f`): queues the prompt as a follow-up
+    /// while the agent works (held during a compaction), else submits it.
     pub(super) fn handle_follow_up(&mut self) {
         let text = self.editor.borrow().editor.get_text().trim().to_string();
         if text.is_empty() {

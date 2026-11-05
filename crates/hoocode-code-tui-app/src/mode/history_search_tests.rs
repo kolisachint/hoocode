@@ -3,7 +3,7 @@
 //!
 //! Keys go through the prompt editor and then the actions it queues, the same
 //! route the screen takes. A streaming turn cannot run in a test (the test agent
-//! has no model), so Enter-while-running is covered by the follow-up queue it uses.
+//! has no model); the keys for a running turn are in `steer_tests.rs`.
 
 use hoocode_code_agent_session::StreamingBehavior;
 use hoocode_code_tui_keybindings::AppKeybindingsManager;

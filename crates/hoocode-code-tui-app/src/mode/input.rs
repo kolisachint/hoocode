@@ -666,11 +666,11 @@ impl Mode {
             self.queue_compaction_message(text, StreamingBehavior::Steer);
             return;
         }
-        // Enter while a turn runs queues the message as a follow-up (K-7: the
-        // old Alt+Enter), and it is sent after the turn.
+        // Enter while a turn runs steers it: the message reaches the agent
+        // mid-run. A follow-up for after the turn is ctrl+x f (`handle_follow_up`).
         if self.session.is_streaming() {
             self.editor.borrow_mut().editor.add_to_history(&text);
-            self.queue_prompt(text, StreamingBehavior::FollowUp);
+            self.queue_prompt(text, StreamingBehavior::Steer);
             return;
         }
         // Typed in the gap before the prompt in flight begins its turn: queued

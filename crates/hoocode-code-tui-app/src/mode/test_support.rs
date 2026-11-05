@@ -53,13 +53,66 @@ pub(super) fn test_mode(session_file: Option<&Path>) -> Mode {
 
 /// [`test_mode`] with the session working in `cwd` (the scheduler's store lives there).
 pub(super) fn test_mode_in(session_file: Option<&Path>, cwd: PathBuf) -> Mode {
+    let agent = Arc::new(hoocode_agent_core::Agent::with_options(
+        hoocode_agent_core::AgentOptions::default(),
+    ));
+    mode_over(agent, Arc::new(NoAuth), session_file, cwd)
+}
+
+/// Auth for the faux model only: every provider has a key.
+pub(super) struct FauxAuth;
+
+impl hoocode_code_models::AuthLookup for FauxAuth {
+    fn api_key(&self, _: &str) -> Option<String> {
+        Some("faux-key".into())
+    }
+}
+
+/// A `Mode` whose agent streams one turn (`prompt("start")`). The faux model
+/// answers only when `gate` is notified, so the session stays busy until then.
+pub(super) fn streaming_mode(gate: Arc<tokio::sync::Notify>) -> Mode {
+    let faux = hoocode_ai_provider_faux::FauxProvider::new();
+    faux.set_responses(vec![
+        hoocode_ai_provider_faux::FauxResponseStep::async_factory(move |_, _, _, _| async move {
+            gate.notified().await;
+            Ok(hoocode_ai_provider_faux::faux_assistant_message(
+                "done",
+                Default::default(),
+            ))
+        }),
+    ]);
+    let agent = Arc::new(hoocode_agent_core::Agent::with_options(
+        hoocode_agent_core::AgentOptions {
+            initial_state: Some(hoocode_agent_types::AgentState {
+                system_prompt: "You are a test assistant.".into(),
+                model: faux.get_model(),
+                thinking_level: hoocode_ai_types::ThinkingLevel::Off,
+                tools: hoocode_agent_types::AgentTools::new(vec![]),
+                messages: vec![],
+                is_streaming: false,
+                streaming_message: None,
+                pending_tool_calls: Default::default(),
+                error_message: None,
+            }),
+            stream_fn: Some(Arc::new(faux.stream_fn())),
+            api_key: Some("faux-key".into()),
+            ..Default::default()
+        },
+    ));
+    mode_over(agent, Arc::new(FauxAuth), None, std::env::temp_dir())
+}
+
+/// The `Mode` over `agent`, with `auth` for its model and the session in `cwd`.
+fn mode_over(
+    agent: Arc<hoocode_agent_core::Agent>,
+    auth: Arc<dyn hoocode_code_models::AuthLookup + Send + Sync>,
+    session_file: Option<&Path>,
+    cwd: PathBuf,
+) -> Mode {
     let session_manager = match session_file {
         Some(dir) => SessionManager::create("/work", Some(dir.into())),
         None => SessionManager::in_memory("/work"),
     };
-    let agent = Arc::new(hoocode_agent_core::Agent::with_options(
-        hoocode_agent_core::AgentOptions::default(),
-    ));
     // The theme is `dark`, as the layer goldens load it: `Mode::new` loads
     // the settings' theme into the process-wide state.
     let settings = hoocode_code_settings::SettingsManager::in_memory(
@@ -77,7 +130,7 @@ pub(super) fn test_mode_in(session_file: Option<&Path>, cwd: PathBuf) -> Mode {
         resource_loader: Arc::new(StaticResourceLoader::default()),
         custom_tools: vec![],
         model_registry: Arc::new(hoocode_code_models::ModelRegistry::in_memory()),
-        auth: Arc::new(NoAuth),
+        auth,
         initial_active_tool_names: None,
         allowed_tool_names: None,
         disallowed_tool_names: None,

@@ -104,6 +104,20 @@ it: a bad part is skipped, and the rest applies. The problems it reports:
 `/hotkeys` lists the problems under the key groups. Startup and `/reload` show a
 one-line count.
 
+## While a turn runs
+
+Keys at the prompt while the agent works, with the defaults:
+
+- **Enter** sends the message as a steer: it reaches the running agent now.
+- **Ctrl+X f** (`app.message.followUp`) queues the message as a follow-up: it is
+  sent after the turn ends.
+- **Up** on an empty prompt, or **Ctrl+X d** (`app.message.dequeue`), takes the
+  last queued message back into the prompt. This works for a steer and for a
+  follow-up. Both are shown above the prompt until they run.
+
+How each kind is delivered follows its mode in `/settings` (`steering-mode`,
+`follow-up-mode`: one at a time, or all at once).
+
 ## Terminals
 
 Some keys depend on the terminal. These are the usual cases.

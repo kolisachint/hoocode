@@ -1465,7 +1465,7 @@ impl SettingsSelectorComponent {
         leaves.push(Leaf::cycle(
             "steering-mode",
             "Steering mode",
-            format!("{} while streaming queues steering messages. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.", key_display_text("tui.input.submit")),
+            format!("{} while streaming steers the running agent with that message. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.", key_display_text("tui.input.submit")),
             config.steering_mode.as_str().into(),
             strings(&["one-at-a-time", "all"]),
         ));

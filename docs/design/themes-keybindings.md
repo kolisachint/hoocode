@@ -151,7 +151,7 @@ mean one thing on one surface and another thing on another (`alt+s`, `alt+x`, `a
 
 | Key | Action | Note |
 |---|---|---|
-| Enter | Submit. While a turn runs, queue the message | Queue was Alt+Enter |
+| Enter | Submit. While a turn runs, steer the agent with the message (user, 2026-11-05) | Queue was Alt+Enter (K-7 had made it a queue; reverted) |
 | Shift+Enter | Newline | Leader Enter is the fallback where Shift+Enter cannot be sent. Ctrl+J is not changed (see "Ctrl+J") |
 | Esc | Interrupt the running turn, or close a popup | |
 | Esc Esc | Clear a non-empty prompt (kept in history) | |
@@ -181,7 +181,7 @@ mean one thing on one surface and another thing on another (`alt+s`, `alt+x`, `a
 | `g` | Task panel show or hide | Ctrl+G |
 | `l` / `L` | Task panel tab next / previous | Alt+L |
 | `n` | Attach subagent | Ctrl+N |
-| `f` | Queue follow-up (same as Enter while running) | Alt+Enter |
+| `f` | Queue follow-up, sent after the turn (Enter steers while running) | Alt+Enter |
 | `d` | Take back a queued message | Alt+Up |
 | `/` | Search transcript | Ctrl+R |
 | `r` | Voice input | Alt+R |
@@ -420,6 +420,7 @@ What was built differs from the text above in these places. The user pages
    leader stays and the docs say so.
 7. Persistence: the theme picker saves to the global settings, `auto` included (T11).
    Keys change only by editing `~/.hoocode/keybindings.json`. No in-app key editor.
+8. Enter while running steers; Ctrl+X f queues a follow-up (user, 2026-11-05).
 
 ## Details
 

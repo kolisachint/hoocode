@@ -101,6 +101,8 @@ mod session_op;
 mod session_ops;
 mod settings;
 mod shutdown;
+#[cfg(test)]
+mod steer_tests;
 mod subagents;
 mod task_panel;
 #[cfg(test)]

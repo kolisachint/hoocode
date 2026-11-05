@@ -1933,6 +1933,7 @@ dependencies = [
  "hoocode-agent-core",
  "hoocode-agent-types",
  "hoocode-ai-oauth",
+ "hoocode-ai-provider-faux",
  "hoocode-ai-types",
  "hoocode-ai-util",
  "hoocode-code-agent-session",
