@@ -18,8 +18,12 @@ use crate::schema::{
 use crate::theme::{Theme, ThemeOptions, AGENT_COLOR_TOKENS, PANE_BG_TOKENS, THEME_BGS};
 
 /// The bundled theme files, by file name (the `readdirSync().sort()` order).
-pub(crate) const BUILTIN_THEME_FILES: [(&str, &str); 2] = [
+pub(crate) const BUILTIN_THEME_FILES: [(&str, &str); 3] = [
     ("dark.json", include_str!("../themes/dark.json")),
+    (
+        "high-contrast.json",
+        include_str!("../themes/high-contrast.json"),
+    ),
     ("light.json", include_str!("../themes/light.json")),
 ];
 

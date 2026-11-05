@@ -20,6 +20,10 @@ fn writes_the_builtins_and_schema_then_leaves_a_current_folder_alone() {
         builtin_theme_source("dark").unwrap()
     );
     assert_eq!(
+        std::fs::read_to_string(dir.join("high-contrast.json")).unwrap(),
+        builtin_theme_source("high-contrast").unwrap()
+    );
+    assert_eq!(
         std::fs::read_to_string(dir.join("light.json")).unwrap(),
         builtin_theme_source("light").unwrap()
     );
@@ -69,7 +73,7 @@ fn the_copies_are_never_listed_as_themes() {
         .into_iter()
         .map(|t| t.name)
         .collect();
-    assert_eq!(names, ["auto", "dark", "light"]);
+    assert_eq!(names, ["auto", "dark", "high-contrast", "light"]);
 }
 
 #[test]

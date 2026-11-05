@@ -37,7 +37,10 @@ fn the_picker_lists_auto_builtins_and_valid_user_themes_with_paths() {
     write_theme(&themes.join("defaults"), "solarized.json", &mine);
 
     let list = picker_theme_list_in(&themes);
-    assert_eq!(names(&list), ["auto", "dark", "light", "mine"]);
+    assert_eq!(
+        names(&list),
+        ["auto", "dark", "high-contrast", "light", "mine"]
+    );
 
     let auto = &list[0];
     assert!(auto.path.is_none());
@@ -54,7 +57,7 @@ fn the_picker_lists_auto_builtins_and_valid_user_themes_with_paths() {
 fn a_missing_themes_folder_lists_only_auto_and_the_builtins() {
     let root = tempfile::tempdir().unwrap();
     let list = picker_theme_list_in(&root.path().join("no-such-dir"));
-    assert_eq!(names(&list), ["auto", "dark", "light"]);
+    assert_eq!(names(&list), ["auto", "dark", "high-contrast", "light"]);
 }
 
 #[test]
@@ -67,5 +70,19 @@ fn user_themes_are_listed_by_name() {
         write_theme(&themes, &format!("{name}.json"), &theme);
     }
     let list = picker_theme_list_in(&themes);
-    assert_eq!(names(&list), ["auto", "dark", "light", "Alpha", "zebra"]);
+    assert_eq!(
+        names(&list),
+        ["auto", "dark", "high-contrast", "light", "Alpha", "zebra"]
+    );
+}
+
+#[test]
+fn the_picker_lists_the_high_contrast_builtin() {
+    let root = tempfile::tempdir().unwrap();
+    let list = picker_theme_list_in(&root.path().join("no-such-dir"));
+    let high = list
+        .iter()
+        .find(|t| t.name == "high-contrast")
+        .expect("high-contrast is listed");
+    assert!(high.path.is_none(), "built-ins have no file");
 }

@@ -12,8 +12,8 @@ to move it.
 | `~/.hoocode/models.json` | Your own providers and models, for example a local OpenAI-compatible server |
 | `~/.hoocode/hoo-config.json` | Agent modes and tool approval rules, written on first run ([below](#modes-and-approvals)) |
 | `~/.hoocode/skills/` | Skills |
-| `~/.hoocode/themes/` | Custom themes, one JSON file each. `/theme` lists `auto`, the built-in themes `dark` and `light`, and your files here (by file name, with the path shown). A theme may set `"inherits": "<name>"` to take the colors it leaves out from a built-in theme or another file here. The `theme` setting also accepts `auto` (follows the terminal background). A file that does not load, or a name that is not a theme, shows a warning under theme diagnostics: a switch keeps the theme on screen, and at startup the built-in `dark` stands in until the setting is fixed. |
-| `~/.hoocode/themes/defaults/` | Reference copies of the built-in themes (`dark.json`, `light.json`) and `theme-schema.json`. hoocode writes them again after each upgrade, so they match the version you run; a copy you edit is replaced at the next upgrade. The folder is not a theme list: `/theme` never shows it. To start a custom theme, copy one up a level to `~/.hoocode/themes/`, rename it, and change what you need. A shorter theme can instead set `"inherits": "dark"` (or `"light"`, or another file in `~/.hoocode/themes/`) and keep only its own colors. For editor completion, set a custom theme's `"$schema"` to the local `theme-schema.json` path. |
+| `~/.hoocode/themes/` | Custom themes, one JSON file each. `/theme` lists `auto`, the built-in themes `dark`, `high-contrast` (white text on black, for low vision) and `light`, and your files here (by file name, with the path shown). A theme may set `"inherits": "<name>"` to take the colors it leaves out from a built-in theme or another file here. The `theme` setting also accepts `auto` (follows the terminal background). A file that does not load, or a name that is not a theme, shows a warning under theme diagnostics: a switch keeps the theme on screen, and at startup the built-in `dark` stands in until the setting is fixed. |
+| `~/.hoocode/themes/defaults/` | Reference copies of the built-in themes (`dark.json`, `high-contrast.json`, `light.json`) and `theme-schema.json`. hoocode writes them again after each upgrade, so they match the version you run; a copy you edit is replaced at the next upgrade. The folder is not a theme list: `/theme` never shows it. To start a custom theme, copy one up a level to `~/.hoocode/themes/`, rename it, and change what you need. A shorter theme can instead set `"inherits": "dark"` (or `"light"`, or another file in `~/.hoocode/themes/`) and keep only its own colors. For editor completion, set a custom theme's `"$schema"` to the local `theme-schema.json` path. |
 | `~/.hoocode/sessions/` | Saved sessions |
 
 ## Per project
@@ -80,11 +80,11 @@ is no header, logo or frame; dialogs open as panes in the prompt's place.
 - **Views** (`alt+o` cycles, `shift+alt+o` goes back): `outline` shows one recap row per
   turn, `peek` (the default) shows each call on one row with its facts, `full` shows
   every body. The old name `radar` still works as `outline` in `toolOutputView`.
-- **Themes**: `dark` and `light`, and `auto` follows the terminal background and
+- **Themes**: `dark`, `high-contrast` and `light`, and `auto` follows the terminal background and
   re-checks when it changes. Pick one with `/theme`, which also lists your own themes.
   A pick is saved to your global settings. If this repo's `.hoocode/settings.json` sets
   `theme`, that wins over the pick, and the picker says so.
-  The older names (`daylight`, `deep-space`, `colorsafe-*`, `high-contrast-*`, `warm-*`,
+  The older names (`daylight`, `deep-space`, `colorsafe-*`, `high-contrast-*` (the built-in is `high-contrast`), `warm-*`,
   `solarized-*`) are gone; a saved value that no longer exists shows a warning under
   theme diagnostics and the built-in `dark` stands in until you pick another theme.
 - **No colour**: with `NO_COLOR` set, `TERM=dumb` or fewer than 256 colours, panes get
