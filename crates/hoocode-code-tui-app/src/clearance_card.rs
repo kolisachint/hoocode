@@ -4,7 +4,9 @@
 //! pipes, then numbered options (`1 yes`, `2 yes, always for <program> this
 //! session`, `3 no, tell it why`), the reply row and the hint row. `1`/`2`/`3`
 //! pick, `e` edits the command first, and every other letter types a reply
-//! that `enter` sends as the denial's reason.
+//! that `enter` sends as the denial's reason. While the reply is empty, `y`
+//! answers yes and `n` no at once; `a` only moves the highlight to the always
+//! row, and `enter` confirms it. With no always row, `a` types like any letter.
 //!
 //! `e edit first` cannot run inside the gate (the call's arguments are
 //! fixed), so `enter` denies the original call and the host sends the edited
@@ -189,12 +191,18 @@ impl ClearanceCard {
             let yes = key_hint_text("app.dialog.yes");
             let always = key_hint_text("app.dialog.always");
             let no = key_hint_text("app.dialog.no");
+            let enter = key_hint_text("tui.input.submit");
+            // `a` only highlights the always row, so its hint names enter too.
             // The letters answer only the options offered: `always` needs three.
-            let mut hint = vec![(pick.as_str(), "pick"), (yes.as_str(), "yes")];
+            let always_label = format!("always ({enter})");
+            let mut hint = vec![
+                (pick.as_str(), "pick"),
+                (yes.as_str(), "yes"),
+                (no.as_str(), "no"),
+            ];
             if count >= 3 {
-                hint.push((always.as_str(), "always"));
+                hint.push((always.as_str(), always_label.as_str()));
             }
-            hint.push((no.as_str(), "no"));
             hint.push(("e", "edit first"));
             pane.hint = hint_line(&hint);
         }
@@ -273,9 +281,10 @@ impl Component for ClearanceCard {
             "1" => self.choose(0),
             "2" if count >= 2 => self.choose(1),
             "3" if count >= 3 => self.choose(2),
-            // The dialog letters (K-P4): y yes, a always, n no. Only here, with no reply typed.
+            // The dialog letters (K-P4), only here with no reply typed: y and n
+            // answer at once. a moves the highlight to the always row; enter confirms it.
             _ if kb.matches(data, "app.dialog.yes") => self.choose(0),
-            _ if kb.matches(data, "app.dialog.always") && count >= 3 => self.choose(1),
+            _ if kb.matches(data, "app.dialog.always") && count >= 3 => self.selected = 1,
             _ if kb.matches(data, "app.dialog.no") => self.choose(count - 1),
             "\u{7f}" | "\u{8}" => {}
             _ if matches_key(data, "up") => {

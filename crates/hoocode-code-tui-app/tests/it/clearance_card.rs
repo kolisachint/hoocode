@@ -89,7 +89,7 @@ fn shell_card_shows_title_command_access_and_options() {
     );
     assert!(rows[6].contains("or type a reply"), "row 6: {:?}", rows[6]);
     assert!(
-        rows[7].contains("1–3 pick · y yes · a always · n no · e edit first"),
+        rows[7].contains("1–3 pick · y yes · n no · a always (enter) · e edit first"),
         "row 7: {:?}",
         rows[7]
     );
@@ -220,19 +220,56 @@ fn number_keys_enter_and_esc_answer() {
 }
 
 #[test]
-fn y_a_n_answer_while_the_reply_is_empty() {
-    // K-P4: the dialog letters answer while no reply is typed.
+fn y_and_n_answer_at_once_while_the_reply_is_empty() {
+    // K-P4: y and n answer while no reply is typed.
     let _g = lock(Some("dark"));
     hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
     for (key, expected) in [
         ("y", ClearanceChoice::Once),
-        ("a", ClearanceChoice::Always),
         ("n", ClearanceChoice::Deny { reason: None }),
     ] {
         let (mut card, answered) = card(shell_info("$ echo hi"));
         card.handle_input(key);
         assert_eq!(*answered.borrow(), Some(expected), "key {key:?}");
     }
+}
+
+#[test]
+fn a_then_enter_answers_always() {
+    let _g = lock(Some("dark"));
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
+    let (mut card, answered) = card(shell_info("$ echo hi"));
+    card.handle_input("a");
+    assert_eq!(*answered.borrow(), None, "a only highlights the always row");
+    card.handle_input("\r");
+    assert_eq!(*answered.borrow(), Some(ClearanceChoice::Always));
+}
+
+#[test]
+fn a_alone_only_moves_the_highlight_to_always() {
+    let _g = lock(Some("dark"));
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
+    let (mut card, answered) = card(shell_info("$ echo hi"));
+    card.handle_input("a");
+    assert_eq!(*answered.borrow(), None);
+    let rows = rows(&mut card, 100);
+    assert!(
+        rows.iter().any(|row| row.contains("› 2  yes, always")),
+        "{rows:?}"
+    );
+    assert!(!rows.iter().any(|row| row.contains("› a")), "{rows:?}");
+}
+
+#[test]
+fn a_types_when_no_always_row_is_offered() {
+    // A wrapper has no always row, so `a` is an ordinary letter in the reply.
+    let _g = lock(Some("dark"));
+    hoocode_code_tui_keybindings::AppKeybindingsManager::default().install();
+    let (mut card, answered) = card(shell_info("$ sudo rm -rf /tmp/x"));
+    card.handle_input("a");
+    assert_eq!(*answered.borrow(), None);
+    let rows = rows(&mut card, 100);
+    assert!(rows.iter().any(|row| row.contains("› a")), "{rows:?}");
 }
 
 #[test]

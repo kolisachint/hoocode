@@ -222,7 +222,7 @@ user, 2026-11-05).
 
 | Surface | Current key | Target key | file:line |
 |---|---|---|---|
-| Tool clearance card (yes, always, no) | Enter picks the highlighted row (yes at the start). `1` `2` `3` pick. `↑` `↓` move. Esc = no. `e` edits the command first. Letters type into the reply | `y` yes, `a` always, `n` no. Enter default, Esc no. `1` `2` `3` stay as aliases. `e` stays | `clearance_card.rs:125-136` (labels), `:193-202` (`choose`), `:210` (handler), `:250-267` (keys) |
+| Tool clearance card (yes, always, no) | Enter picks the highlighted row (yes at the start). `1` `2` `3` pick. `↑` `↓` move. Esc = no. `e` edits the command first. Letters type into the reply | `y` yes and `n` no answer at once while the reply is empty. `a` highlights always, and Enter confirms it (`a` alone does not answer; with no always row `a` types). Enter default, Esc no. `1` `2` `3` stay as aliases. `e` stays | `clearance_card.rs:125-136` (labels), `:193-202` (`choose`), `:210` (handler), `:250-267` (keys) |
 | Tool clearance card, reply typed | Enter sends the reply as the denial. Esc clears the reply (a second Esc denies). Letters type | No change. Letters type while the reply holds text | `clearance_card.rs:231-243` |
 | End-of-shift card (quit) | Enter ends the shift. Esc stays | No change (Enter default, Esc stay) | `end_shift.rs:81-87` (keys `:83-84`) |
 | End-of-shift jobs card | Enter or `k` kills all. `l` leaves them running. Esc stays | Enter kills all (default). `k` and `l` stay, since they name the action. Open question 4 | `end_shift.rs:229-236` (keys `:232-234`) |
@@ -414,7 +414,9 @@ What was built differs from the text above in these places. The user pages
 2. `ansi:<name>` colours: later (T12).
 3. Ctrl+J: not changed. Newline is Shift+Enter and leader Enter.
 4. Dialog keys: `y`, `n`, `a`, Enter, Esc. A bare letter fires only while the text field is
-   empty. On the clearance card, whose reply field is always open, y/n/a work while the reply is empty.
+   empty. On the clearance card, whose reply field is always open, `y` and `n` answer at once while
+   the reply is empty. `a` only highlights the always row, and Enter confirms it (user, 2026-11-05:
+   "y/n instant, a needs Enter").
 5. Leader timeout 1500 ms and which-key delay 400 ms are the defaults.
 6. VS Code: check whether its terminal takes Ctrl+X before K-2. If it does, the default
    leader stays and the docs say so.

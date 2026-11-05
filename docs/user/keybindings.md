@@ -118,6 +118,22 @@ Keys at the prompt while the agent works, with the defaults:
 How each kind is delivered follows its mode in `/settings` (`steering-mode`,
 `follow-up-mode`: one at a time, or all at once).
 
+## The approval card
+
+When a tool asks for permission, the card at the prompt answers to these keys
+while the reply field is empty:
+
+- **y** answers yes and **n** answers no, at once.
+- **a** highlights the always row (where one is offered). **Enter** confirms it.
+  Pressing `a` alone does not answer. Where no always row is offered, `a` types
+  into the reply.
+- **1**, **2** and **3** pick a row. **Up** and **Down** move the highlight, and
+  **Enter** picks it. **Esc** refuses.
+
+Once the reply has text, letters type into it, and Enter sends it as the reason
+for the refusal. `y`, `n` and `a` are the dialog keys `app.dialog.yes`,
+`app.dialog.no` and `app.dialog.always`.
+
 ## Terminals
 
 Some keys depend on the terminal. These are the usual cases.
