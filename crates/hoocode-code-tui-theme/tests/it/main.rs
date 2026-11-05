@@ -21,3 +21,4 @@ mod theme_defaults;
 mod theme_export;
 mod theme_inherits;
 mod theme_picker_list;
+mod theme_token_literals;
